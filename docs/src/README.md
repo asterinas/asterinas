@@ -1,3 +1,5 @@
+# Introduction
+
 This document describes KxOS, a secure, fast, and modern OS written in Rust.
 
 As the project is a work in progress, this document is by no means complete.
@@ -7,7 +9,7 @@ Despite the incompleteness, this evolving document serves several important purp
 2. To convey the vision of this project to partners and stakeholders.
 3. To serve as a blueprint for implementation.
 
-# Opportunities
+## Opportunities
 
 We believe now is the perfect time to start a new Rust OS project. We argue that
 if we are doing things right, the project can have a promising prospect to
@@ -61,13 +63,13 @@ Can such success stories be repeated in the field of OSes? I think so.
 There are some China's home-grown OSes like [openKylin](https://www.openkylin.top/index.php?lang=en), but all of them are based on Linux and lack a self-developed
 OS _kernel_. The long-term goal of KxOS is to fill this key missing core of the home-grown OSes.
 
-# Architecture Overview
+## Architecture Overview
 
 Here is an overview of the architecture of KxOS.
 
 ![architecture overview](images/arch_overview.png)
 
-# Features
+## Features
 
 **1. Security by design.** Security is our top priority in the design of KxOS. As such, we adopt the widely acknowledged security best practice of [least privilege principle](https://en.wikipedia.org/wiki/Principle_of_least_privilege) and enforce it in a fashion that leverages the full strengths of Rust. To do so, we partition KxOS into two halves: a _privileged_ OS core and _unprivileged_ OS components. As a result, we can write the OS components almost entirely in _safe_ Rust, while taking extra cautions with the _unsafe_ Rust code in the OS core. Furthermore, we propose the idea of _everything-is-a-capability_, which elevates the status of [capabilities](https://en.wikipedia.org/wiki/Capability-based_security) to the level of a ubiquitous security primitive used throughout the OS. We make novel use of Rust's advanced features (e.g., [type-level programming](https://willcrichton.net/notes/type-level-programming/)) to make capabilities more accessible and efficient. The net result is improved security and uncompromised performance.
 
