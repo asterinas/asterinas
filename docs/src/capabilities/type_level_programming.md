@@ -362,58 +362,6 @@ pub type SetContainOp<Set, Item> = <Set as SetContain<Item>>::Output;
 
 Note: needs to implement `SameAs` for all possible item types (e.g., among `A` through `D`).
 
-### Where are the boundaries for TLP?
-
-#### Expressiveness: practically unlimited.
-
-![[Pasted image 20210825015426.png]]
-
----
-
-![[Pasted image 20210825015401.png]]
-
-#### Ergonomics: probably fixable.
-
-An example from the `typ` crate.
-
-```rust
-typ! {
-	fn BinaryGcd<lhs, rhs>(lhs: Unsigned, rhs: Unsigned) -> Unsigned {
-		if lhs == rhs {
-			lhs
-		} else if lhs == 0u {
-			rhs
-		} else if rhs == 0u {
-			lhs
-		} else {
-			if lhs % 2u == 1u {
-				if rhs % 2u == 1u {
-					if lhs > rhs {
-						let sub: Unsigned = lhs - rhs;
-						BinaryGcd(sub, rhs)
-					} else {
-						let sub: Unsigned = rhs - lhs;
-						BinaryGcd(sub, lhs)
-					}
-				} else {
-					let div: Unsigned = rhs / 2u;
-					BinaryGcd(lhs, div)
-				}
-			} else {
-				if rhs % 2u == 1u {
-					let div: Unsigned = lhs / 2u;
-					BinaryGcd(div, rhs)
-				} else {
-					let ldiv: Unsigned = lhs / 2u;
-					let rdiv: Unsigned = rhs / 2u;
-					BinaryGcd(ldiv, rdiv) * 2u
-				}
-			}
-		}
-	}
-}
-```
-
 ## An Application of TLP
 
 ### Capabilities in Rust
