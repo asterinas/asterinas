@@ -1,3 +1,17 @@
+<!-- 
+# Table of Content
+
+1. Introduction
+2. Design
+   1. Privilege Separation
+      1. Case Study 1: Syscall Workflow
+      2. Case Study 2: Drivers for Virtio Devices on PCI
+   2. Everything as a Capability
+      1. Type-Level Programming in Rust
+      2. CapComp: Zero-Cost Capabilities and Component
+   3. (More content...)
+-->
+
 # Introduction
 
 This document describes KxOS, a secure, fast, and modern OS written in Rust.
@@ -78,4 +92,8 @@ is allowed to have _unsafe_ Rust code. Furthermore, we propose the idea of _ever
 
 **3. Fast user-mode development.** Traditional OS kernels like Linux are hard to develop, test, and debug. Kernel development involves countless rounds of programming, failing, and rebooting on bare-metal or virtual machines. This way of life is unproductive and painful. Such a pain point is also recognized and partially addressed by [research work](https://www.usenix.org/conference/fast21/presentation/miller), but we think we can do more. In this spirit, we design the OS core to provide high-level APIs that are largely independent of the underlying hardware and implement it with two targets: one target is as part of a regular OS in kernel space and the other is as a library OS in user space. This way, all the OS components of KxOS, which are stacked above the OS core, can be developed, tested, and debugged in user space, which is more friendly to developers than kernel space.
 
-**4. High-fidelity Linux ABI.** An OS without usable applications is useless. So we believe it is important for KxOS to fit in an established and thriving ecosystem of software, such as the one around Linux. This is why we conclude that KxOS should aim at implementing high-fidelity Linux ABI, including the system calls, the proc file system, etc. 
+**4. High-fidelity Linux ABI.** An OS without usable applications is useless. So we believe it is important for KxOS to fit in an established and thriving ecosystem of software, such as the one around Linux. This is why we conclude that KxOS should aim at implementing high-fidelity Linux ABI, including the system calls, the proc file system, etc.
+
+**5. TEEs as top-tier targets.** (Todo)
+
+**6. Reservation-based OOM prevention.** (Todo)
