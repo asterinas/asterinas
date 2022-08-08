@@ -81,10 +81,12 @@ impl FpRegs {
 
     /// Save the floating state given by a slice of u8.
     ///
+    /// After calling this method, the state of the instance will be considered valid.
+    ///
+    /// # Safety
+    ///
     /// It is the caller's responsibility to ensure that the source slice contains
     /// data that is in xsave/xrstor format. The slice must have a length of 512 bytes.
-    ///
-    /// After calling this method, the state of the instance will be considered valid.
     pub unsafe fn save_from_slice(&mut self, src: &[u8]) {
         //(&mut self.buf).copy_from_slice(src);
         //self.is_valid = true;

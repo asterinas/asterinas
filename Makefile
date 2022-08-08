@@ -9,12 +9,14 @@ test: build
 	@cd src && cargo test
 
 docs:
-	@cd src && cargo doc
+	@cd src && cargo doc 					# Build Rust docs
 	@echo "" 								# Add a blank line
-	@cd docs && mdbook build
+	@cd docs && mdbook build 				# Build mdBook
 
-fmt:
-	@cd src && cargo fmt
+check:
+	@cd src && cargo check					# Check dependency errors
+	@cd src && cargo fmt --check 			# Check Rust format issues
+	@cd src && cargo clippy					# Check common programming mistakes
 
 clean:
 	@cd src && cargo clean

@@ -48,6 +48,12 @@ impl VmSpace {
     }
 }
 
+impl Default for VmSpace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Options for mapping physical memory pages into a VM address space.
 /// See `VmSpace::map`.
 pub struct VmMapOptions {}
@@ -90,6 +96,12 @@ impl VmMapOptions {
     /// The default value of this option is `false`.
     pub fn can_overwrite(&mut self, can_overwrite: bool) -> &mut Self {
         todo!()
+    }
+}
+
+impl Default for VmMapOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
