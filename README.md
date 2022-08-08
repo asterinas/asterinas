@@ -29,6 +29,11 @@ While there is nothing revolutionary in KxOS, it does explore some new design po
 - [ ] Iteration 5: Add a minimal set of OS-level virtualization functionalities
 - [ ] More iterations...
 
-## Technical Details
+## How to build and test
 
-TODO...
+While most code is written in Rust, the project-scope build process is governed 
+by Makefile.
+
+```bash
+make
+```
