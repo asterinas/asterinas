@@ -24,7 +24,10 @@ pub unsafe trait Pod: Copy + Sized {
     /// Creates a new instance of Pod type with uninitialized content.
     fn new_uninit() -> Self {
         // SAFETY. A value of `T: Pod` can have arbitrary bits.
-        unsafe { MaybeUninit::uninit().assume_init() }
+        #[allow(clippy::uninit_assumed_init)]
+        unsafe {
+            MaybeUninit::uninit().assume_init()
+        }
     }
 
     /// Creates a new instance from the given bytes.

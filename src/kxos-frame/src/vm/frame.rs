@@ -62,6 +62,11 @@ impl VmFrameVec {
         todo!()
     }
 
+    /// Returns whether the frame collection is empty.
+    pub fn is_empty(&self) -> bool {
+        todo!()
+    }
+
     /// Returns the number of bytes.
     ///
     /// This method is equivalent to `self.len() * PAGE_SIZE`.
