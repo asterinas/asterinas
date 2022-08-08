@@ -47,7 +47,9 @@ impl UserSpace {
 ///
 /// Here is a sample code on how to use `UserMode`.
 ///  
-/// ```
+/// ```no_run
+/// use kxos_frame::task::Task;
+/// 
 /// let current = Task::current();
 /// let user_space = current.user_space()
 ///     .expect("the current task is associated with a user space");
