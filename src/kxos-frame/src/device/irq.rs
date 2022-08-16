@@ -134,16 +134,6 @@ impl IrqLine {
     }
 }
 
-pub fn test1(irq: &IrqLine) {
-    let a: Arc<&'static IrqLine>;
-    unsafe {
-        a = IrqLine::acquire(1);
-    }
-    a.on_active(test_callback);
-}
-
-pub fn test_callback(ira: InterruptInformation) {}
-
 /// The handle to a registered callback for a IRQ line.
 ///
 /// When the handle is dropped, the callback will be unregistered automatically.
