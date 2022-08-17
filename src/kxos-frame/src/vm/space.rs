@@ -4,6 +4,8 @@ use core::ops::Range;
 use crate::prelude::*;
 use crate::vm::VmFrameVec;
 
+use super::VmIo;
+
 /// Virtual memory space.
 ///
 /// A virtual memory space (`VmSpace`) can be created and assigned to a user space so that
@@ -51,6 +53,16 @@ impl VmSpace {
 impl Default for VmSpace {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl VmIo for VmSpace {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        todo!()
+    }
+
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+        todo!()
     }
 }
 

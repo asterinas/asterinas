@@ -6,3 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+kxos-frame = {path = "../kxos-frame"}
+
+# parse elf file
+xmas-elf = "0.8.0"
+# goblin = {version= "0.5.3", default-features = false, features = ["elf64"]}
+
+# data-structures
+intrusive-collections = "0.9.4"
+
