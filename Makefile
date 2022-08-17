@@ -1,12 +1,21 @@
-.PHONY: all build clean docs fmt test 
+.PHONY: all build clean docs fmt run setup test
 
 all: build test
 
+setup:
+	@rustup component add rust-src
+	@rustup component add llvm-tools-preview
+	@cargo install mdbook
+
 build:
-	@cd src && cargo build
+	@cd src && cargo kbuild
+	@cd src && cargo kimage
+
+run: build
+	@cd src && cargo krun
 
 test: build
-	@cd src && cargo test
+	@#cd src && cargo test
 
 docs:
 	@cd src && cargo doc 					# Build Rust docs

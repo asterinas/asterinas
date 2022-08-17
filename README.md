@@ -34,6 +34,18 @@ While there is nothing revolutionary in KxOS, it does explore some new design po
 While most code is written in Rust, the project-scope build process is governed 
 by Makefile.
 
+After downloading the source code, run the following command once to make sure
+all developmennt tools are installed.
+```bash
+make setup
+```
+
+Then, we can build and test the project.
 ```bash
 make
+```
+
+If everything goes well, then we can run the OS.
+```bash
+make run
 ```
