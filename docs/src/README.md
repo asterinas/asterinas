@@ -25,6 +25,9 @@ Despite the incompleteness, this evolving document serves several important purp
 
 ## Opportunities
 
+> The crazy people who are crazy enough to think they can change the world,
+> are the ones who do. --Steve Jobs
+
 We believe now is the perfect time to start a new Rust OS project. We argue that
 if we are doing things right, the project can have a promising prospect to
 success and a real shot of challenging the dominance of Linux in the long run.
@@ -42,8 +45,9 @@ OSes, e.g., [Kerla](https://github.com/nuta/kerla),
 [Occlum](https://github.com/occlum/occlum),
 [Redox](https://github.com/redox-os/redox),
 [rCore](https://github.com/rcore-os/rCore),
-[RedLeaf](https://github.com/mars-research/redleaf), and
-[zCore](https://github.com/rcore-os/zCore). Despite their varying degrees of
+[RedLeaf](https://github.com/mars-research/redleaf),
+[Theseus](https://github.com/theseus-os/Theseus),
+and [zCore](https://github.com/rcore-os/zCore). Despite their varying degrees of
 success, none of them are general-purpose, industrial-strength OSes that are or
 will ever be competitive with Linux. Eventually, a winner will emerge out of this
 market of Rust OSes, and KxOS is our bet for this competition.
