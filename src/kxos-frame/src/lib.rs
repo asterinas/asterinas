@@ -15,14 +15,14 @@ pub mod config;
 pub mod cpu;
 pub mod device;
 mod error;
+pub mod log;
 pub mod prelude;
+pub mod sync;
 pub mod task;
 pub mod timer;
 pub mod user;
 mod util;
-pub mod log;
 pub mod vm;
-pub mod sync;
 
 pub use self::error::Error;
 use alloc::sync::Arc;

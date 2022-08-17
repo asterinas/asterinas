@@ -19,7 +19,7 @@ pub struct Process {
     task: Arc<Task>,
     exit_code: i32,
     // user_space: Option<Arc<UserSpace>>,
-    // TODO: childs, parent, files, 
+    // TODO: childs, parent, files,
 }
 
 impl Process {
@@ -27,7 +27,11 @@ impl Process {
         let pid = new_pid();
         let task = spawn_user_task_from_elf(elf_file_content);
         let exit_code = 0;
-        Self { pid, task, exit_code }
+        Self {
+            pid,
+            task,
+            exit_code,
+        }
     }
 }
 
