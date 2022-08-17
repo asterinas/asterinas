@@ -23,6 +23,6 @@ pub fn run_first_process() {
     Process::spawn_from_elf(elf_file_content);
 }
 
-fn read_elf_content<'a>() -> &'a [u8]{
-    todo!()
+fn read_elf_content() -> &'static [u8] {
+    include_bytes!("../../kxos-user/hello_world/hello_world")
 }

@@ -2,7 +2,7 @@ use core::ops::Range;
 
 use alloc::vec::Vec;
 use kxos_frame::{
-    vm::{Vaddr, VmIo, VmPerm, VmSpace, VmFrameVec, VmAllocOptions},
+    vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmPerm, VmSpace},
     Error,
 };
 use xmas_elf::{

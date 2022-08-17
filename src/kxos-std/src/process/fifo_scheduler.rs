@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc};
-use kxos_frame::task::{set_scheduler, Scheduler, Task};
 use kxos_frame::sync::SpinLock;
+use kxos_frame::task::{set_scheduler, Scheduler, Task};
 
 pub const TASK_INIT_CAPABILITY: usize = 16;
 

@@ -1,5 +1,10 @@
 use alloc::sync::Arc;
-use kxos_frame::{cpu::CpuContext, task::Task, user::{UserSpace, UserEvent}, vm::VmSpace};
+use kxos_frame::{
+    cpu::CpuContext,
+    task::Task,
+    user::{UserEvent, UserSpace},
+    vm::VmSpace,
+};
 
 use crate::{memory::load_elf_to_vm_space, syscall::syscall_handler};
 
@@ -22,7 +27,10 @@ pub fn spawn_user_task_from_elf(elf_file_content: &[u8]) -> Arc<Task> {
         loop {
             let user_event = user_mode.execute();
             let context = user_mode.context_mut();
-            handle_user_event(user_event, context);
+            if let HandlerResult::Exit = handle_user_event(user_event, context) {
+                // FIXME: How to set task status? How to set exit code of process?
+                break;
+            }
         }
     }
 
@@ -30,10 +38,15 @@ pub fn spawn_user_task_from_elf(elf_file_content: &[u8]) -> Arc<Task> {
     Task::spawn(user_task_entry, None::<u8>, Some(user_space)).expect("spawn user task failed.")
 }
 
-fn handle_user_event(user_event: UserEvent, context: &mut CpuContext) {
+fn handle_user_event(user_event: UserEvent, context: &mut CpuContext) -> HandlerResult {
     match user_event {
         UserEvent::Syscall => syscall_handler(context),
         UserEvent::Fault => todo!(),
         UserEvent::Exception => todo!(),
     }
+}
+
+pub enum HandlerResult {
+    Exit,
+    Continue,
 }

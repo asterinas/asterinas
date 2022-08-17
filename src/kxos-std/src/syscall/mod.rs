@@ -1,10 +1,12 @@
 use alloc::vec;
 use alloc::{sync::Arc, vec::Vec};
-use kxos_frame::Error;
 use kxos_frame::cpu::CpuContext;
+use kxos_frame::Error;
 use kxos_frame::{task::Task, user::UserSpace, vm::VmIo};
 
 use kxos_frame::info;
+
+use crate::process::task::HandlerResult;
 
 const SYS_WRITE: u64 = 64;
 const SYS_EXIT: u64 = 93;
@@ -12,6 +14,11 @@ const SYS_EXIT: u64 = 93;
 pub struct SyscallFrame {
     syscall_number: u64,
     args: [u64; 6],
+}
+
+pub enum SyscallResult {
+    Exit(i32),
+    Return(i32),
 }
 
 impl SyscallFrame {
@@ -25,20 +32,27 @@ impl SyscallFrame {
         args[4] = context.gp_regs.r8;
         args[5] = context.gp_regs.r9;
         Self {
-            syscall_number, args,
+            syscall_number,
+            args,
         }
     }
 }
 
-pub fn syscall_handler(context: &mut CpuContext) {
+pub fn syscall_handler(context: &mut CpuContext) -> HandlerResult {
     let syscall_frame = SyscallFrame::new_from_context(context);
     let syscall_return = syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args);
 
-    // FIXME: set return value?
-    context.gp_regs.rax = syscall_return as u64;
+    match syscall_return {
+        SyscallResult::Return(return_value) => {
+            // FIXME: set return value?
+            context.gp_regs.rax = return_value as u64;
+            HandlerResult::Continue
+        }
+        SyscallResult::Exit(exit_code) => HandlerResult::Exit,
+    }
 }
 
-pub fn syscall_dispatch(syscall_number: u64, args: [u64; 6]) -> isize {
+pub fn syscall_dispatch(syscall_number: u64, args: [u64; 6]) -> SyscallResult {
     match syscall_number {
         SYS_WRITE => sys_write(args[0], args[1], args[2]),
         SYS_EXIT => sys_exit(args[0] as _),
@@ -46,27 +60,26 @@ pub fn syscall_dispatch(syscall_number: u64, args: [u64; 6]) -> isize {
     }
 }
 
-pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> isize {
+pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult {
     // only suppprt STDOUT now.
     const STDOUT: u64 = 1;
     if fd == STDOUT {
         let task = Task::current();
         let user_space = task.user_space().expect("No user space attached");
-        let user_buffer = copy_bytes_from_user(user_space, user_buf_ptr as usize, user_buf_len as usize)
-            .expect("read user buffer failed");
+        let user_buffer =
+            copy_bytes_from_user(user_space, user_buf_ptr as usize, user_buf_len as usize)
+                .expect("read user buffer failed");
         let content = alloc::str::from_utf8(user_buffer.as_slice()).expect("Invalid content");
         // TODO: print content
         info!("Message from user mode: {}", content);
-        0
+        SyscallResult::Return(0)
     } else {
         panic!("Unsupported fd number {}", fd);
     }
 }
 
-pub fn sys_exit(exit_code: i32) -> isize {
-    // let current = Task::current();
-    // current.exit(exit_code);
-    todo!()
+pub fn sys_exit(exit_code: i32) -> SyscallResult {
+    SyscallResult::Exit(exit_code)
 }
 
 fn copy_bytes_from_user(
