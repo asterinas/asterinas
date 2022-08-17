@@ -20,7 +20,9 @@ pub mod task;
 pub mod timer;
 pub mod user;
 mod util;
+pub mod log;
 pub mod vm;
+pub mod sync;
 
 pub use self::error::Error;
 use alloc::sync::Arc;

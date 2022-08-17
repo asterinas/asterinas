@@ -1,3 +1,5 @@
+use core::ops::{Deref, DerefMut};
+
 /// A spin lock.
 pub struct SpinLock<T: ?Sized> {
    val: T, 
@@ -13,7 +15,7 @@ impl<T> SpinLock<T> {
     /// 
     /// This method runs in a busy loop until the lock can be acquired.
     /// After acquiring the spin lock, all interrupts are disabled.
-    pub fn lock(&self) -> SpinLockGuard<'a> {
+    pub fn lock<'a>(&self) -> SpinLockGuard<'a, T> {
         todo!()
     }
 }
@@ -30,6 +32,12 @@ impl<'a, T> Deref for SpinLockGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
+        todo!()
+    }
+}
+
+impl <'a, T> DerefMut for SpinLockGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         todo!()
     }
 }
