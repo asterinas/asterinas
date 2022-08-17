@@ -1,7 +1,22 @@
+[package]
+name = "kxos"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bootloader = {version="0.10.12"}
+kxos-frame = {path = "kxos-frame"}
+
 [workspace]
 
 members = [
-    "kxos",
     "kxos-frame",
     "kxos-std",
+    "kxos-boot",
 ]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
