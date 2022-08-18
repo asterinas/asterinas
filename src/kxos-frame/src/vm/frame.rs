@@ -2,6 +2,8 @@ use core::iter::Iterator;
 
 use crate::prelude::*;
 
+use super::VmIo;
+
 /// A collection of page frames (physical memory pages).
 ///
 /// For the most parts, `VmFrameVec` is like `Vec<VmFrame>`. But the
@@ -71,6 +73,16 @@ impl VmFrameVec {
     ///
     /// This method is equivalent to `self.len() * PAGE_SIZE`.
     pub fn nbytes(&self) -> usize {
+        todo!()
+    }
+}
+
+impl VmIo for VmFrameVec {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        todo!()
+    }
+
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         todo!()
     }
 }
