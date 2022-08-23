@@ -6,9 +6,6 @@ pub type Vaddr = usize;
 /// Physical addresses.
 pub type Paddr = usize;
 
-/// The size of a VM page or a page frame.
-pub const PAGE_SIZE: usize = 0x1000; // 4KB
-
 mod frame;
 mod io;
 mod pod;

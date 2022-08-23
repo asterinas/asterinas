@@ -15,3 +15,4 @@ xmas-elf = "0.8.0"
 # data-structures
 intrusive-collections = "0.9.4"
 
+spin = "0.9.4"
