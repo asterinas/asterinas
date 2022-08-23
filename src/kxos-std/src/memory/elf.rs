@@ -130,7 +130,7 @@ impl<'a> ElfLoadInfo<'a> {
         // allocate frames
         let page_number = vm_page_range.len();
         let options = VmAllocOptions::new(page_number);
-        let frames = VmFrameVec::allocate(&options)?;
+        let mut frames = VmFrameVec::allocate(&options)?;
 
         for segment in self.segments.iter().filter(|segment| segment.is_loadable()) {
             let start_address = segment.start_address();

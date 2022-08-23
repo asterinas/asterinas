@@ -1,11 +1,18 @@
 use core::fmt::Arguments;
 
+use crate::device::framebuffer::WRITER;
+
 /// Print log message
 /// This function should *NOT* be directly called.
 /// Instead, print logs with macros.
 #[doc(hidden)]
 pub fn log_print(args: Arguments) {
-    todo!()
+    use core::fmt::Write;
+    use x86_64::instructions::interrupts;
+
+    interrupts::without_interrupts(|| {
+        WRITER.lock().as_mut().unwrap().write_fmt(args).unwrap();
+    });
 }
 
 /// This macro should not be directly called.

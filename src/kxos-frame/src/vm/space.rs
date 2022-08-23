@@ -1,8 +1,12 @@
+use crate::config::PAGE_SIZE;
+use crate::{UPSafeCell, println};
 use bitflags::bitflags;
 use core::ops::Range;
 
-use crate::prelude::*;
+use crate::mm::address::{is_aligned, VirtAddr};
+use crate::mm::{MapArea, MemorySet, PTFlags};
 use crate::vm::VmFrameVec;
+use crate::{prelude::*, Error};
 
 use super::VmIo;
 
@@ -17,20 +21,50 @@ use super::VmIo;
 /// A newly-created `VmSpace` is not backed by any physical memory pages.
 /// To provide memory pages for a `VmSpace`, one can allocate and map
 /// physical memory (`VmFrames`) to the `VmSpace`.
-pub struct VmSpace {}
+pub struct VmSpace {
+    memory_set: UPSafeCell<MemorySet>,
+}
 
 impl VmSpace {
     /// Creates a new VM address space.
     pub fn new() -> Self {
-        todo!()
+        Self {
+            memory_set: unsafe { UPSafeCell::new(MemorySet::zero()) },
+        }
+    }
+
+    pub fn activate(&self) {
+        self.memory_set.exclusive_access().activate();
     }
 
     /// Maps some physical memory pages into the VM space according to the given
     /// options, returning the address where the mapping is created.
     ///
+    /// the frames in variable frames will delete after executing this function
+    ///
     /// For more information, see `VmMapOptions`.
     pub fn map(&self, frames: VmFrameVec, options: &VmMapOptions) -> Result<Vaddr> {
-        todo!()
+        let mut flags = PTFlags::PRESENT;
+        if options.perm.contains(VmPerm::W) {
+            flags.insert(PTFlags::WRITABLE);
+        }
+        if options.perm.contains(VmPerm::U) {
+            flags.insert(PTFlags::USER);
+        }
+        if options.addr.is_none() {
+            return Err(Error::InvalidArgs);
+        }
+        self.memory_set
+            .exclusive_access()
+            .pt
+            .map_area(&mut MapArea::new(
+                VirtAddr(options.addr.unwrap()),
+                frames.len()*PAGE_SIZE,
+                flags,
+                frames,
+            ));
+
+        Ok(options.addr.unwrap())
     }
 
     /// Unmaps the physical memory pages within the VM address range.
@@ -38,7 +72,18 @@ impl VmSpace {
     /// The range is allowed to contain gaps, where no physical memory pages
     /// are mapped.
     pub fn unmap(&self, range: &Range<Vaddr>) -> Result<()> {
-        todo!()
+        assert!(is_aligned(range.start) && is_aligned(range.end));
+        let mut start_va = VirtAddr(range.start);
+        let page_size = (range.end - range.start) / PAGE_SIZE;
+        let mut inner = self.memory_set.exclusive_access();
+        for i in 0..page_size {
+            let res = inner.unmap(start_va);
+            if res.is_err() {
+                return res;
+            }
+            start_va += PAGE_SIZE;
+        }
+        Ok(())
     }
 
     /// Update the VM protection permissions within the VM address range.
@@ -58,22 +103,30 @@ impl Default for VmSpace {
 
 impl VmIo for VmSpace {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        todo!()
+        self.memory_set.exclusive_access().read_bytes(offset, buf)
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        todo!()
+    fn write_bytes(&mut self, offset: usize, buf: &[u8]) -> Result<()> {
+        self.memory_set.exclusive_access().write_bytes(offset, buf)
     }
 }
 
 /// Options for mapping physical memory pages into a VM address space.
 /// See `VmSpace::map`.
-pub struct VmMapOptions {}
+pub struct VmMapOptions {
+    /// start virtual address
+    addr: Option<Vaddr>,
+    /// permission
+    perm: VmPerm,
+}
 
 impl VmMapOptions {
     /// Creates the default options.
     pub fn new() -> Self {
-        todo!()
+        Self {
+            addr: None,
+            perm: VmPerm::empty(),
+        }
     }
 
     /// Sets the alignment of the address of the mapping.
@@ -91,14 +144,19 @@ impl VmMapOptions {
     ///
     /// The default value of this option is read-only.
     pub fn perm(&mut self, perm: VmPerm) -> &mut Self {
-        todo!()
+        self.perm = perm;
+        self
     }
 
     /// Sets the address of the new mapping.
     ///
     /// The default value of this option is `None`.
     pub fn addr(&mut self, addr: Option<Vaddr>) -> &mut Self {
-        todo!()
+        if addr == None {
+            return self;
+        }
+        self.addr = Some(addr.unwrap());
+        self
     }
 
     /// Sets whether the mapping can overwrite any existing mappings.
@@ -126,6 +184,8 @@ bitflags! {
         const W = 0b00000010;
         /// Executable.
         const X = 0b00000100;
+        /// User
+        const U = 0b00001000;
         /// Readable + writable.
         const RW = Self::R.bits | Self::W.bits;
         /// Readable + execuable.

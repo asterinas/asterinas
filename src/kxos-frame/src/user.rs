@@ -1,15 +1,20 @@
 //! User space.
 
 use crate::cpu::CpuContext;
-use crate::prelude::*;
 use crate::task::Task;
 use crate::vm::VmSpace;
+use crate::{prelude::*};
 
 /// A user space.
 ///
 /// Each user space has a VM address space and allows a task to execute in
 /// user mode.
-pub struct UserSpace {}
+pub struct UserSpace {
+    /// vm space
+    vm_space: VmSpace,
+    /// cpu context before entering user space
+    cpu_ctx: CpuContext,
+}
 
 impl UserSpace {
     /// Creates a new instance.
@@ -17,12 +22,15 @@ impl UserSpace {
     /// Each instance maintains a VM address space and the CPU state to enable
     /// execution in the user space.
     pub fn new(vm_space: VmSpace, cpu_ctx: CpuContext) -> Self {
-        todo!()
+        Self {
+            vm_space: vm_space,
+            cpu_ctx: cpu_ctx,
+        }
     }
 
     /// Returns the VM address space.
     pub fn vm_space(&self) -> &VmSpace {
-        todo!()
+        &self.vm_space
     }
 
     /// Returns the user mode that is bound to the current task and user space.
@@ -34,7 +42,7 @@ impl UserSpace {
     /// This method is intended to only allow each task to have at most one
     /// instance of `UserMode` initiated. If this method is called again before
     /// the first instance for the current task is dropped, then the method
-    /// panics.
+    /// panics.      
     pub fn user_mode(&self) -> UserMode<'_> {
         todo!()
     }

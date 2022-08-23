@@ -21,3 +21,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[package.metadata.bootloader]
+map-physical-memory = true
+physical-memory-offset = "0xFFFF800000000000"
