@@ -68,7 +68,8 @@ impl FpRegs {
         //let buf = Aligned(unsafe { MaybeUninit::uninit().assume_init() });
         //let is_valid = false;
         //Self { buf, is_valid }
-        todo!("import aligned")
+        Self{is_valid:false}
+        // todo!("import aligned")
     }
 
     /// Save CPU's current floating pointer states into this instance.

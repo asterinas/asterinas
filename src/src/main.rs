@@ -2,7 +2,7 @@
 #![no_main]
 #![feature(custom_test_frameworks)]
 #![forbid(unsafe_code)]
-
+// #![feature(default_alloc_error_handler)]
 extern crate kxos_frame;
 
 use bootloader::{entry_point, BootInfo};

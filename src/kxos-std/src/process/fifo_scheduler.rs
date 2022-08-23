@@ -1,17 +1,17 @@
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc};
-use kxos_frame::sync::SpinLock;
 use kxos_frame::task::{set_scheduler, Scheduler, Task};
+use spin::mutex::SpinMutex;
 
 pub const TASK_INIT_CAPABILITY: usize = 16;
 
 pub struct FifoScheduler {
-    tasks: SpinLock<VecDeque<Arc<Task>>>,
+    tasks: SpinMutex<VecDeque<Arc<Task>>>,
 }
 
 impl FifoScheduler {
     pub fn new() -> Self {
         Self {
-            tasks: SpinLock::new(VecDeque::with_capacity(TASK_INIT_CAPABILITY)),
+            tasks: SpinMutex::new(VecDeque::with_capacity(TASK_INIT_CAPABILITY)),
         }
     }
 }

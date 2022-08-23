@@ -1,5 +1,6 @@
 //! Tasks are the unit of code execution.
 
+mod processor;
 mod scheduler;
 #[allow(clippy::module_inception)]
 mod task;
