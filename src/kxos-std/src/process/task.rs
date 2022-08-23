@@ -3,7 +3,7 @@ use kxos_frame::{
     cpu::CpuContext,
     task::Task,
     user::{UserEvent, UserSpace},
-    vm::VmSpace,
+    vm::VmSpace, println,
 };
 
 use crate::{memory::load_elf_to_vm_space, syscall::syscall_handler};
@@ -34,6 +34,8 @@ pub fn spawn_user_task_from_elf(elf_file_content: &[u8]) -> Arc<Task> {
         }
     }
 
+    // QEMU crash when entering the task spawn function.
+    println!("[kxos std]:before entering task spawn");
     // FIXME: set the correct type when task has no data
     Task::spawn(user_task_entry, None::<u8>, Some(user_space)).expect("spawn user task failed.")
 }

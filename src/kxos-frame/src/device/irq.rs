@@ -1,6 +1,5 @@
 use crate::prelude::*;
 
-use alloc::collections::{linked_list::CursorMut, LinkedList};
 use lazy_static::lazy_static;
 use spin::Mutex;
 use x86_64::{

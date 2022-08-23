@@ -8,11 +8,14 @@ edition = "2021"
 [dependencies]
 bitflags = "1.3"
 x86_64 = "0.14.2"
-spin = "0.5.2"
+spin = "0.9.4"
 volatile = {version="0.4.5", features = ["unstable"] }
 buddy_system_allocator = "0.6"
-bootloader = "0.10.12"
+linked_list_allocator = "0.9.0"
+bootloader = {version="0.10.12"}
 font8x8 = { version = "0.2.5", default-features = false, features = ["unicode"]}
+
+
 
 [dependencies.lazy_static]
 version = "1.0"

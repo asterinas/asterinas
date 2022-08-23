@@ -2,8 +2,9 @@
 use core::ops::Range;
 
 use alloc::vec;
-use kxos_frame::vm::{
-    Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace, PAGE_SIZE,
+use kxos_frame::{
+    config::PAGE_SIZE,
+    vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
 };
 
 /// A set of **CONTINUOUS** virtual pages in VmSpace
@@ -54,7 +55,7 @@ impl<'a> VmPageRange<'a> {
     /// map self to a set of zeroed frames
     pub fn map_zeroed(&mut self, vm_space: &'a VmSpace, vm_perm: VmPerm) {
         let options = VmAllocOptions::new(self.len());
-        let frames = VmFrameVec::allocate(&options).expect("allocate frame error");
+        let mut frames = VmFrameVec::allocate(&options).expect("allocate frame error");
         let buffer = vec![0u8; self.nbytes()];
         frames.write_bytes(0, &buffer).expect("write zero failed");
         self.map_to(vm_space, frames, vm_perm)

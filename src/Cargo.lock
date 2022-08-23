@@ -91,7 +91,8 @@ dependencies = [
  "buddy_system_allocator",
  "font8x8",
  "lazy_static",
- "spin 0.5.2",
+ "linked_list_allocator",
+ "spin 0.9.4",
  "volatile",
  "x86_64",
 ]
@@ -102,6 +103,7 @@ version = "0.1.0"
 dependencies = [
  "intrusive-collections",
  "kxos-frame",
+ "spin 0.9.4",
  "xmas-elf",
 ]
 
@@ -115,12 +117,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "linked_list_allocator"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "549ce1740e46b291953c4340adcd74c59bcf4308f4cac050fd33ba91b7168f4a"
+dependencies = [
+ "spinning_top",
+]
+
+[[package]]
 name = "locate-cargo-manifest"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db985b63431fe09e8d71f50aeceffcc31e720cb86be8dad2f38d084c5a328466"
 dependencies = [
  "json",
+]
+
+[[package]]
+name = "lock_api"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "327fa5b6a6940e4699ec49a9beae1ea4845c6bab9314e4f84ac68742139d8c53"
+dependencies = [
+ "autocfg",
+ "scopeguard",
 ]
 
 [[package]]
@@ -139,6 +160,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97477e48b4cf8603ad5f7aaf897467cf42ab4218a38ef76fb14c2d6773a6d6a8"
 
 [[package]]
+name = "scopeguard"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
+
+[[package]]
 name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -149,6 +176,24 @@ name = "spin"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13287b4da9d1207a4f4929ac390916d64eacfe236a487e9a9f5b3be392be5162"
+
+[[package]]
+name = "spin"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f6002a767bff9e83f8eeecf883ecb8011875a21ae8da43bffb817a57e78cc09"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spinning_top"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75adad84ee84b521fb2cca2d4fd0f1dab1d8d026bda3c5bea4ca63b5f9f9293c"
+dependencies = [
+ "lock_api",
+]
 
 [[package]]
 name = "volatile"
