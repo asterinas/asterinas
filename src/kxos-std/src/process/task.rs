@@ -16,7 +16,7 @@ pub fn spawn_user_task_from_elf(elf_file_content: &[u8]) -> Arc<Task> {
     // set entry point
     cpu_ctx.gp_regs.rip = elf_load_info.entry_point();
     // set user stack
-    cpu_ctx.gp_regs.rsp = elf_load_info.user_stack_bottom();
+    cpu_ctx.gp_regs.rsp = elf_load_info.user_stack_top();
 
     let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
 
