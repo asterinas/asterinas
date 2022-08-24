@@ -19,7 +19,7 @@ pub fn log_print(args: Arguments) {
 #[macro_export]
 macro_rules! log_print {
     ($($arg:tt)*) => {
-        (kxos_frame::log::log_print(format_args!($($arg)*)))
+        $crate::log::log_print(format_args!($($arg)*))
     };
 }
 
