@@ -61,6 +61,25 @@ impl AtomicBits {
         }
     }
 
+    /// Clear all the bits. 
+    pub fn clear(&self) {
+        todo!()
+    }
+
+    /// Are all bits ones.
+    pub fn is_full(&self) -> bool {
+        self.match_pattern(!0)
+    }
+
+    /// Are all bits zeroes.
+    pub fn is_empty(&self) -> bool {
+        self.match_pattern(0)
+    }
+
+    fn match_pattern(&self, pattern: u64) -> bool {
+        todo!()
+    }
+
     /// Get an iterator for the bits.
     pub fn iter<'a>(&'a self) -> Iter<'a> {
         Iter::new(self)
