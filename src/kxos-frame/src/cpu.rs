@@ -1,5 +1,9 @@
 //! CPU.
 
+use x86_64::registers::model_specific::FsBase;
+
+use crate::trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame};
+
 /// Defines a CPU-local variable.
 #[macro_export]
 macro_rules! cpu_local {
@@ -19,7 +23,7 @@ pub fn this_cpu() -> u32 {
 }
 
 /// Cpu context, including both general-purpose registers and floating-point registers.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Copy)]
 #[repr(C)]
 pub struct CpuContext {
     pub gp_regs: GpRegs,
@@ -51,8 +55,118 @@ pub struct GpRegs {
     pub rflag: u64,
 }
 
+impl From<SyscallFrame> for CpuContext {
+    fn from(syscall: SyscallFrame) -> Self {
+        Self {
+            gp_regs: GpRegs {
+                r8: syscall.caller.r8 as u64,
+                r9: syscall.caller.r9 as u64,
+                r10: syscall.caller.r10 as u64,
+                r11: syscall.caller.r11 as u64,
+                r12: syscall.callee.r12 as u64,
+                r13: syscall.callee.r13 as u64,
+                r14: syscall.callee.r14 as u64,
+                r15: syscall.callee.r15 as u64,
+                rdi: syscall.caller.rdi as u64,
+                rsi: syscall.caller.rsi as u64,
+                rbp: syscall.callee.rbp as u64,
+                rbx: syscall.callee.rbx as u64,
+                rdx: syscall.caller.rdx as u64,
+                rax: syscall.caller.rax as u64,
+                rcx: syscall.caller.rcx as u64,
+                rsp: syscall.callee.rsp as u64,
+                rip: 0,
+                rflag: 0,
+            },
+            fs_base: 0,
+            fp_regs: FpRegs::default(),
+        }
+    }
+}
+
+impl Into<SyscallFrame> for CpuContext {
+    fn into(self) -> SyscallFrame {
+        SyscallFrame {
+            caller: CallerRegs {
+                rax: self.gp_regs.rax as usize,
+                rcx: self.gp_regs.rcx as usize,
+                rdx: self.gp_regs.rdx as usize,
+                rsi: self.gp_regs.rsi as usize,
+                rdi: self.gp_regs.rdi as usize,
+                r8: self.gp_regs.r8 as usize,
+                r9: self.gp_regs.r9 as usize,
+                r10: self.gp_regs.r10 as usize,
+                r11: self.gp_regs.r11 as usize,
+            },
+            callee: CalleeRegs {
+                rsp: self.gp_regs.rsp as usize,
+                rbx: self.gp_regs.rbx as usize,
+                rbp: self.gp_regs.rbp as usize,
+                r12: self.gp_regs.r12 as usize,
+                r13: self.gp_regs.r13 as usize,
+                r14: self.gp_regs.r14 as usize,
+                r15: self.gp_regs.r15 as usize,
+            },
+        }
+    }
+}
+
+impl From<TrapFrame> for CpuContext {
+    fn from(trap: TrapFrame) -> Self {
+        Self {
+            gp_regs: GpRegs {
+                r8: trap.regs.r8 as u64,
+                r9: trap.regs.r9 as u64,
+                r10: trap.regs.r10 as u64,
+                r11: trap.regs.r11 as u64,
+                r12: trap.id as u64,
+                r13: trap.err as u64,
+                r14: trap.cs as u64,
+                r15: trap.ss as u64,
+                rdi: trap.regs.rdi as u64,
+                rsi: trap.regs.rsi as u64,
+                rbp: 0 as u64,
+                rbx: 0 as u64,
+                rdx: trap.regs.rdx as u64,
+                rax: trap.regs.rax as u64,
+                rcx: trap.regs.rcx as u64,
+                rsp: trap.rsp as u64,
+                rip: trap.rip as u64,
+                rflag: trap.rflags as u64,
+            },
+            fs_base: 0,
+            fp_regs: FpRegs::default(),
+        }
+    }
+}
+
+impl Into<TrapFrame> for CpuContext {
+    fn into(self) -> TrapFrame {
+        TrapFrame {
+            regs: CallerRegs {
+                rax: self.gp_regs.rax as usize,
+                rcx: self.gp_regs.rcx as usize,
+                rdx: self.gp_regs.rdx as usize,
+                rsi: self.gp_regs.rsi as usize,
+                rdi: self.gp_regs.rdi as usize,
+                r8: self.gp_regs.r8 as usize,
+                r9: self.gp_regs.r9 as usize,
+                r10: self.gp_regs.r10 as usize,
+                r11: self.gp_regs.r11 as usize,
+            },
+            id: self.gp_regs.r12 as usize,
+            err: self.gp_regs.r13 as usize,
+            rip: self.gp_regs.rip as usize,
+            cs: self.gp_regs.r14 as usize,
+            rflags: self.gp_regs.rflag as usize,
+            rsp: self.gp_regs.rsp as usize,
+            ss: self.gp_regs.r15 as usize,
+        }
+    }
+}
+
 /// The floating-point state of CPU.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct FpRegs {
     //buf: Aligned<A16, [u8; 512]>,

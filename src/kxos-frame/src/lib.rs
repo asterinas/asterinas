@@ -10,6 +10,8 @@
 #![feature(alloc_error_handler)]
 #![feature(core_intrinsics)]
 #![feature(new_uninit)]
+#![feature(link_llvm_intrinsics)]
+
 extern crate alloc;
 
 pub mod cell;
@@ -44,7 +46,6 @@ pub fn init(boot_info: &'static mut BootInfo) {
     let siz = boot_info.framebuffer.as_ref().unwrap() as *const FrameBuffer as usize;
     device::init(boot_info.framebuffer.as_mut().unwrap());
     device::framebuffer::WRITER.lock().as_mut().unwrap().clear();
-    println!("{:x}", siz);
     trap::init();
     let mut memory_init = false;
     // memory
@@ -65,17 +66,6 @@ pub fn init(boot_info: &'static mut BootInfo) {
         panic!("memory init failed");
     }
 
-    // breakpoint
-    let breakpoint_irq: Arc<&IrqLine>;
-    unsafe {
-        breakpoint_irq = IrqLine::acquire(3);
-    }
-    let a = breakpoint_irq.on_active(breakpoint_handler);
-    x86_64::instructions::interrupts::int3(); // breakpoint
-}
-
-fn breakpoint_handler(interrupt_information: TrapFrame) {
-    println!("EXCEPTION: BREAKPOINT\n{:#?}", interrupt_information);
 }
 
 #[inline(always)]

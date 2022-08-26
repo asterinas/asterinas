@@ -178,6 +178,15 @@ pub fn get_cr3_raw() -> usize {
 }
 
 #[inline(always)]
+pub fn get_return_address() -> usize {
+    let val: usize;
+    unsafe {
+        asm!("mov {}, [rsp]", out(reg) val);
+    }
+    val
+}
+
+#[inline(always)]
 pub fn set_cr3(pa: usize) {
     unsafe {
         asm!("mov cr3, {}", in(reg) pa, options(nostack, preserves_flags));

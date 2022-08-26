@@ -45,6 +45,10 @@ pub fn current_task() -> Option<Arc<Task>> {
     PROCESSOR.exclusive_access().current()
 }
 
+pub fn get_idle_task_cx_ptr() -> *mut TaskContext {
+    PROCESSOR.exclusive_access().get_idle_task_cx_ptr()
+}
+
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
 ///
 /// if current task is none, then it will use the default task context and it will not return to this function again
@@ -55,7 +59,7 @@ pub fn current_task() -> Option<Arc<Task>> {
 pub fn schedule() {
     let next_task = fetch_task().expect("no more task found");
     let current_task_option = current_task();
-    let next_task_cx_ptr = &next_task.inner_exclusive_access().ctx as *const TaskContext;
+    let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
     let current_task: Arc<Task>;
     let current_task_cx_ptr = if current_task_option.is_none() {
         PROCESSOR.exclusive_access().get_idle_task_cx_ptr()

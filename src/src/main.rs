@@ -19,7 +19,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     //     }
     // }
     kxos_frame::init(boot_info);
-    println!("finish init kxos_frame");
+    println!("[kernel] finish init kxos_frame");
 
     kxos_std::init();
     kxos_std::run_first_process();

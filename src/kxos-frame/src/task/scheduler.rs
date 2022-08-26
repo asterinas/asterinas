@@ -35,7 +35,6 @@ impl GlobalScheduler {
     /// enqueue a task using scheduler
     /// require the scheduler is not none
     pub fn enqueue(&mut self, task: Arc<Task>) {
-        println!("{:?}", self.scheduler.is_none());
         self.scheduler.unwrap().enqueue(task)
     }
 }

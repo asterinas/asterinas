@@ -1,4 +1,4 @@
-use core::cell::{RefCell, RefMut};
+use core::cell::{Ref, RefCell, RefMut};
 
 #[derive(Debug)]
 /// Wrap a static data structure inside it so that we are
@@ -27,5 +27,10 @@ impl<T> UPSafeCell<T> {
     /// Panic if the data has been borrowed.
     pub fn exclusive_access(&self) -> RefMut<'_, T> {
         self.inner.borrow_mut()
+    }
+
+    /// Panic if the data has been borrowed.
+    pub fn get_ref(&self) -> Ref<'_, T> {
+        self.inner.borrow()
     }
 }
