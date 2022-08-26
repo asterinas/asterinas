@@ -29,5 +29,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    println!("[panic]:{:?}", _info);
     loop {}
 }

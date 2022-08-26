@@ -1,10 +1,10 @@
 use core::cell::RefMut;
-use core::intrinsics::unreachable;
 use core::mem::size_of;
 
-use crate::trap::CalleeRegs;
+use crate::mm::PhysFrame;
+use crate::trap::{CalleeRegs, SyscallFrame};
 use crate::user::UserSpace;
-use crate::{prelude::*, UPSafeCell, println};
+use crate::{prelude::*, UPSafeCell};
 
 use super::processor::{current_task, schedule};
 use super::scheduler::add_task;
@@ -20,34 +20,28 @@ pub struct TaskContext {
 extern "C" {
     pub fn context_switch(cur: *mut TaskContext, nxt: *const TaskContext);
 }
-/// 8*PAGE_SIZE
-#[cfg(debug_assertions)]
-pub const TASK_SIZE: usize = 32768;
-/// 2*PAGE_SIZE
-#[cfg(not(debug_assertions))]
-pub const TASK_SIZE: usize = 8192;
 
-#[cfg(debug_assertions)]
-#[repr(align(32768))]
-struct TaskAlign;
+pub struct KernelStack {
+    frame: PhysFrame,
+}
 
-#[cfg(not(debug_assertions))]
-#[repr(C, align(8192))]
-struct TaskAlign;
-
-pub const KERNEL_STACK_SIZE: usize =
-    TASK_SIZE - size_of::<Box<dyn Fn()>>() - size_of::<Box<dyn Any + Send + Sync>>() - size_of::<Option<Arc<UserSpace>>>()
-    - size_of::<UPSafeCell<TaskInner>>() - size_of::<usize>();
+impl KernelStack {
+    pub fn new() -> Self {
+        Self {
+            frame: PhysFrame::alloc().expect("out of memory"),
+        }
+    }
+}
 
 /// A task that executes a function to the end.
 pub struct Task {
-    _align: TaskAlign,
     func: Box<dyn Fn() + Send + Sync>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
     task_inner: UPSafeCell<TaskInner>,
     exit_code: usize,
-    kstack: [u8; KERNEL_STACK_SIZE],
+    /// kernel stack, note that the top is SyscallFrame
+    kstack: KernelStack,
 }
 
 pub struct TaskInner {
@@ -90,8 +84,9 @@ impl Task {
     {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
-        fn kernel_task_entry(){
-            let current_task = current_task().expect("no current task, it should have current task in kernel task entry");
+        fn kernel_task_entry() {
+            let current_task = current_task()
+                .expect("no current task, it should have current task in kernel task entry");
             current_task.func.call(())
         }
         let result = Self {
@@ -104,17 +99,34 @@ impl Task {
                     ctx: TaskContext::default(),
                 })
             },
-            _align: TaskAlign,
-            exit_code:0,
-            kstack: [0; KERNEL_STACK_SIZE],
+            exit_code: 0,
+            kstack: KernelStack::new(),
         };
 
+        result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
         result.task_inner.exclusive_access().ctx.rip = kernel_task_entry as usize;
-        let arc_self = Arc::new(result);
+        result.task_inner.exclusive_access().ctx.regs.rsp = result.kstack.frame.end_pa().kvaddr().0
+            as usize
+            - size_of::<usize>()
+            - size_of::<SyscallFrame>();
 
+        let arc_self = Arc::new(result);
         add_task(arc_self.clone());
+
         schedule();
         Ok(arc_self)
+    }
+
+    pub fn syscall_frame(&self) -> &mut SyscallFrame {
+        unsafe {
+            &mut *(self
+                .kstack
+                .frame
+                .end_pa()
+                .kvaddr()
+                .get_mut::<SyscallFrame>() as *mut SyscallFrame)
+                .sub(1)
+        }
     }
 
     /// Returns the task status.
@@ -136,14 +148,14 @@ impl Task {
         }
     }
 
-    pub fn exit(&self)->!{
+    pub fn exit(&self) -> ! {
         self.inner_exclusive_access().task_status = TaskStatus::Exited;
         schedule();
         unreachable!()
     }
 }
 
-#[derive(Clone, Copy,PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// The status of a task.
 pub enum TaskStatus {
     /// The task is runnable.

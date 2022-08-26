@@ -1,5 +1,5 @@
 use crate::config::PAGE_SIZE;
-use crate::{UPSafeCell, println};
+use crate::{x86_64_util, UPSafeCell};
 use bitflags::bitflags;
 use core::ops::Range;
 
@@ -34,7 +34,7 @@ impl VmSpace {
     }
 
     pub fn activate(&self) {
-        self.memory_set.exclusive_access().activate();
+        x86_64_util::set_cr3(self.memory_set.exclusive_access().pt.root_pa.0);
     }
 
     /// Maps some physical memory pages into the VM space according to the given
@@ -54,15 +54,12 @@ impl VmSpace {
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
-        self.memory_set
-            .exclusive_access()
-            .pt
-            .map_area(&mut MapArea::new(
-                VirtAddr(options.addr.unwrap()),
-                frames.len()*PAGE_SIZE,
-                flags,
-                frames,
-            ));
+        self.memory_set.exclusive_access().map_area(MapArea::new(
+            VirtAddr(options.addr.unwrap()),
+            frames.len() * PAGE_SIZE,
+            flags,
+            frames,
+        ));
 
         Ok(options.addr.unwrap())
     }
@@ -192,5 +189,11 @@ bitflags! {
         const RX = Self::R.bits | Self::X.bits;
         /// Readable + writable + executable.
         const RWX = Self::R.bits | Self::W.bits | Self::X.bits;
+        /// Readable + writable + user.
+        const RWU = Self::R.bits | Self::W.bits | Self::U.bits;
+        /// Readable + execuable + user.
+        const RXU = Self::R.bits | Self::X.bits | Self::U.bits;
+        /// Readable + writable + executable + user.
+        const RWXU = Self::R.bits | Self::W.bits | Self::X.bits | Self::U.bits;
     }
 }

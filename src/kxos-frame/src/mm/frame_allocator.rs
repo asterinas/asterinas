@@ -56,6 +56,10 @@ impl PhysFrame {
         PhysAddr(self.start_pa)
     }
 
+    pub const fn end_pa(&self) -> PhysAddr {
+        PhysAddr(self.start_pa + PAGE_SIZE)
+    }
+
     pub fn alloc() -> Option<Self> {
         FRAME_ALLOCATOR
             .exclusive_access()

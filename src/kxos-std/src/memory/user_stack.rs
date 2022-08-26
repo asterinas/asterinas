@@ -38,6 +38,6 @@ impl UserStack {
     }
 
     pub const fn perm() -> VmPerm {
-        VmPerm::RW
+        VmPerm::RWU
     }
 }

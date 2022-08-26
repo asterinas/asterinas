@@ -68,7 +68,7 @@ impl FpRegs {
         //let buf = Aligned(unsafe { MaybeUninit::uninit().assume_init() });
         //let is_valid = false;
         //Self { buf, is_valid }
-        Self{is_valid:false}
+        Self { is_valid: false }
         // todo!("import aligned")
     }
 

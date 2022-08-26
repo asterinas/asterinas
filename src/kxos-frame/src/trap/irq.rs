@@ -1,20 +1,11 @@
 use crate::prelude::*;
 
+use super::TrapFrame;
 use lazy_static::lazy_static;
-use spin::Mutex;
-use x86_64::{
-    set_general_handler,
-    structures::idt::{InterruptDescriptorTable, InterruptStackFrame, InterruptStackFrameValue},
-};
+use spin::{Mutex, MutexGuard};
+
 lazy_static! {
-    static ref IDT: InterruptDescriptorTable = {
-        let mut idt = InterruptDescriptorTable::new();
-        set_general_handler!(&mut idt, my_general_hander);
-        idt
-    };
-}
-lazy_static! {
-    static ref IRQ_LIST: Vec<IrqLine> = {
+    pub static ref IRQ_LIST: Vec<IrqLine> = {
         let mut list: Vec<IrqLine> = Vec::new();
         for i in 0..256 {
             list.push(IrqLine {
@@ -28,21 +19,6 @@ lazy_static! {
 
 lazy_static! {
     static ref ID_ALLOCATOR: Mutex<RecycleAllocator> = Mutex::new(RecycleAllocator::new());
-}
-
-pub fn init() {
-    IDT.load();
-}
-
-fn my_general_hander(stack_frame: InterruptStackFrame, index: u8, error_code: Option<u64>) {
-    let irq_line = IRQ_LIST.get(index as usize).unwrap();
-    let callback_functions = irq_line.callback_list.lock();
-    for callback_function in callback_functions.iter() {
-        callback_function.function.call((InterruptInformation {
-            interrupt_stack_frame: *stack_frame,
-            error_code,
-        },));
-    }
 }
 
 struct RecycleAllocator {
@@ -78,21 +54,21 @@ impl RecycleAllocator {
     }
 }
 
-struct CallbackElement {
-    function: Box<dyn Fn(InterruptInformation) + Send + Sync + 'static>,
+pub struct CallbackElement {
+    function: Box<dyn Fn(TrapFrame) + Send + Sync + 'static>,
     id: usize,
+}
+
+impl CallbackElement {
+    pub fn call(&self, element: TrapFrame) {
+        self.function.call((element,));
+    }
 }
 
 /// An interrupt request (IRQ) line.
 pub struct IrqLine {
     irq_num: u8,
     callback_list: Mutex<Vec<CallbackElement>>,
-}
-
-#[derive(Debug)]
-pub struct InterruptInformation {
-    pub interrupt_stack_frame: InterruptStackFrameValue,
-    pub error_code: Option<u64>,
 }
 
 impl IrqLine {
@@ -111,6 +87,10 @@ impl IrqLine {
         self.irq_num
     }
 
+    pub fn callback_list(&self) -> MutexGuard<'_, alloc::vec::Vec<CallbackElement>> {
+        self.callback_list.lock()
+    }
+
     /// Register a callback that will be invoked when the IRQ is active.
     ///
     /// A handle to the callback is returned. Dropping the handle
@@ -119,7 +99,7 @@ impl IrqLine {
     /// For each IRQ line, multiple callbacks may be registered.
     pub fn on_active<F>(&self, callback: F) -> IrqCallbackHandle
     where
-        F: Fn(InterruptInformation) + Sync + Send + 'static,
+        F: Fn(TrapFrame) + Sync + Send + 'static,
     {
         let allocate_id = ID_ALLOCATOR.lock().alloc();
         self.callback_list.lock().push(CallbackElement {

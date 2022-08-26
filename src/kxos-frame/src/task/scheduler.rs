@@ -1,10 +1,7 @@
 use crate::task::Task;
-use crate::{prelude::*, UPSafeCell};
+use crate::{prelude::*, println, UPSafeCell};
 
 use lazy_static::lazy_static;
-
-use super::processor::current_task;
-use super::task::{context_switch, TaskContext};
 
 lazy_static! {
     pub static ref GLOBAL_SCHEDULER: UPSafeCell<GlobalScheduler> =
@@ -33,12 +30,13 @@ impl GlobalScheduler {
     /// dequeue a task using scheduler
     /// require the scheduler is not none
     pub fn dequeue(&mut self) -> Option<Arc<Task>> {
-        self.scheduler.take().unwrap().dequeue()
+        self.scheduler.unwrap().dequeue()
     }
     /// enqueue a task using scheduler
     /// require the scheduler is not none
     pub fn enqueue(&mut self, task: Arc<Task>) {
-        self.scheduler.take().unwrap().enqueue(task)
+        println!("{:?}", self.scheduler.is_none());
+        self.scheduler.unwrap().enqueue(task)
     }
 }
 /// Set the global task scheduler.
@@ -55,5 +53,3 @@ pub fn fetch_task() -> Option<Arc<Task>> {
 pub fn add_task(task: Arc<Task>) {
     GLOBAL_SCHEDULER.exclusive_access().enqueue(task);
 }
-
-

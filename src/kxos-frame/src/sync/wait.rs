@@ -31,7 +31,7 @@ impl WaitQueue {
         loop {
             if (cond)() {
                 self.dequeue(&waiter);
-                return;
+                break;
             }
             waiter.wait();
         }
