@@ -9,8 +9,10 @@
 #![feature(const_maybe_uninit_zeroed)]
 #![feature(alloc_error_handler)]
 #![feature(core_intrinsics)]
+#![feature(new_uninit)]
 extern crate alloc;
 
+pub mod cell;
 pub mod config;
 pub mod cpu;
 pub mod device;
@@ -25,23 +27,25 @@ pub mod trap;
 pub mod user;
 mod util;
 pub mod vm;
+pub mod x86_64_util;
 
 use core::mem;
 
 pub use self::error::Error;
 pub use self::sync::up::UPSafeCell;
-use alloc::{boxed::Box, sync::Arc};
-use bootloader::{boot_info::MemoryRegionKind, BootInfo};
-use device::{InterruptInformation, IrqLine};
+use alloc::sync::Arc;
+use bootloader::{
+    boot_info::{FrameBuffer, MemoryRegionKind},
+    BootInfo,
+};
+use trap::{IrqLine, TrapFrame};
 
 pub fn init(boot_info: &'static mut BootInfo) {
+    let siz = boot_info.framebuffer.as_ref().unwrap() as *const FrameBuffer as usize;
     device::init(boot_info.framebuffer.as_mut().unwrap());
     device::framebuffer::WRITER.lock().as_mut().unwrap().clear();
-    println!(
-        "heap_value at {:x}",
-        boot_info.physical_memory_offset.into_option().unwrap()
-    );
-
+    println!("{:x}", siz);
+    trap::init();
     let mut memory_init = false;
     // memory
     for region in boot_info.memory_regions.iter() {
@@ -68,12 +72,9 @@ pub fn init(boot_info: &'static mut BootInfo) {
     }
     let a = breakpoint_irq.on_active(breakpoint_handler);
     x86_64::instructions::interrupts::int3(); // breakpoint
-    let heap_value = Box::new(41);
-    println!("test");
-    println!("heap_value at {:p}", heap_value);
 }
 
-fn breakpoint_handler(interrupt_information: InterruptInformation) {
+fn breakpoint_handler(interrupt_information: TrapFrame) {
     println!("EXCEPTION: BREAKPOINT\n{:#?}", interrupt_information);
 }
 

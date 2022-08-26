@@ -1,9 +1,16 @@
 //! User space.
 
+use crate::println;
+
 use crate::cpu::CpuContext;
+use crate::prelude::*;
 use crate::task::Task;
+use crate::trap::SyscallFrame;
 use crate::vm::VmSpace;
-use crate::{prelude::*};
+
+extern "C" {
+    fn switch_to_user_space(cpu_context: &CpuContext, syscall_frame: &SyscallFrame);
+}
 
 /// A user space.
 ///
@@ -77,6 +84,13 @@ pub struct UserMode<'a> {
 impl<'a> !Send for UserMode<'a> {}
 
 impl<'a> UserMode<'a> {
+    pub fn new(user_space: &'a Arc<UserSpace>) -> Self {
+        Self {
+            current: Task::current(),
+            user_space,
+        }
+    }
+
     /// Starts executing in the user mode.
     ///
     /// The method returns for one of three possible reasons indicated by `UserEvent`.
@@ -87,7 +101,13 @@ impl<'a> UserMode<'a> {
     /// After handling the user event and updating the user-mode CPU context,
     /// this method can be invoked again to go back to the user space.
     pub fn execute(&mut self) -> UserEvent {
-        todo!()
+        self.user_space.vm_space().activate();
+        self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip as usize;
+        println!("{:?}", self.current.syscall_frame());
+        unsafe {
+            switch_to_user_space(&self.user_space.cpu_ctx, self.current.syscall_frame());
+        }
+        UserEvent::Syscall
     }
 
     /// Returns an immutable reference the user-mode CPU context.
@@ -101,6 +121,7 @@ impl<'a> UserMode<'a> {
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// A user event is what brings back the control of the CPU back from
 /// the user space to the kernel space.
 ///

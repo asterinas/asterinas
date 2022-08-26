@@ -1,5 +1,4 @@
-use core::{
-    cell::{RefCell, RefMut},};
+use core::cell::{RefCell, RefMut};
 
 #[derive(Debug)]
 /// Wrap a static data structure inside it so that we are

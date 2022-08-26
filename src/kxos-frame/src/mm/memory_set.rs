@@ -2,18 +2,12 @@ use super::{page_table::PageTable, *};
 use crate::prelude::*;
 use crate::{
     config::PAGE_SIZE,
-    mm::address::{is_aligned},
+    mm::address::is_aligned,
     vm::{VmFrame, VmFrameVec},
     *,
 };
-use alloc::{
-    collections::{btree_map::Entry, BTreeMap}};
+use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::fmt;
-use x86_64::registers::control::Cr3Flags;
-// use xmas_elf::{program::{SegmentData, Type}, {header, ElfFile}};
-
-pub const USTACK_SIZE: usize = 4096 * 4;
-pub const USTACK_TOP: usize = 0x8000_0000_0000;
 
 pub struct MapArea {
     /// flags
@@ -57,7 +51,7 @@ impl MapArea {
         for i in 0..page_size {
             let vm_frame = phy_frame_iter.next().unwrap();
             map_area.map_with_physical_address(current_va, vm_frame.clone());
-            current_va+=PAGE_SIZE;
+            current_va += PAGE_SIZE;
         }
 
         map_area
@@ -157,7 +151,7 @@ impl MemorySet {
         pt.map_area(&area);
 
         Self {
-            pt: PageTable::new(),
+            pt: pt,
             area: Some(area),
         }
     }
@@ -167,6 +161,11 @@ impl MemorySet {
             pt: PageTable::new(),
             area: None,
         }
+    }
+
+    pub fn map_area(&mut self, area: MapArea) {
+        self.pt.map_area(&area);
+        self.area = Some(area);
     }
 
     pub fn unmap(&mut self, va: VirtAddr) -> Result<()> {
@@ -181,18 +180,6 @@ impl MemorySet {
     pub fn clear(&mut self) {
         self.pt.unmap_area(&self.area.take().unwrap());
         self.area = None;
-    }
-
-    pub fn activate(&self) {
-        unsafe {
-            x86_64::registers::control::Cr3::write(
-                x86_64::structures::paging::PhysFrame::from_start_address(x86_64::PhysAddr::new(
-                    self.pt.root_pa.0 as u64,
-                ))
-                .unwrap(),
-                Cr3Flags::empty(),
-            );
-        }
     }
 
     pub fn write_bytes(&mut self, offset: usize, data: &[u8]) -> Result<()> {
@@ -216,6 +203,7 @@ impl MemorySet {
 
 impl Clone for MemorySet {
     fn clone(&self) -> Self {
+        println!("clone memory set");
         if self.area.is_none() {
             Self::zero()
         } else {
