@@ -36,6 +36,8 @@ __trap_entry:
   # 将栈指针当成参数传入trap_handler
   mov rdi, rsp
   call trap_handler
+__trap_return:
+  # judge whether the trap from kernel mode
   mov rax, [rsp + 96] # 96 = offsetof(TrapFrame, cs)
   and rax, 0x3
   jz __from_kernel
@@ -45,6 +47,9 @@ __from_kernel:
   restore
   add rsp, 16 # skip TrapFrame.err and id
   iretq
+
+
+
 
 .global syscall_entry
 syscall_entry:
@@ -73,7 +78,7 @@ syscall_return: # (SyscallFrame *)
   mov rsp, rdi
 __syscall_return:
   lea rax, [rsp + 128] # prepare new TSS.sp0, 128 = sizeof(SyscallFrame)
-  # 将跳到ring0要跳转的stack指针存储到4（TSS）处
+  # store the rsp in TSS
   mov [TSS + rip + 4], rax
   restore
   mov rbx, [rsp + 8]
@@ -85,12 +90,18 @@ __syscall_return:
   mov rsp, [rsp + 0]
   sysretq
 
-.global switch_to_user_space
-switch_to_user_space: # (cpu_context: *CpuContext,reg: *CallerRegs)
+.global syscall_switch_to_user_space
+syscall_switch_to_user_space: # (cpu_context: *CpuContext,reg: *SyscallFrame)
   # mov rflag, [rdi+136]
   mov rdi, rsi
   jmp syscall_return
 
+.global trap_switch_to_user_space
+trap_switch_to_user_space: # (cpu_context: *CpuContext,reg: *TrapFrame)
+  # mov rflag, [rdi+136]
+  mov rdi, rsi
+  mov rsp, rdi
+  jmp __trap_return
 
 
 

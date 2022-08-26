@@ -1,5 +1,4 @@
 use super::{memory_set::MapArea, *};
-use crate::cell::Cell;
 use crate::{
     config::{ENTRY_COUNT, KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET},
     vm::VmFrame,
@@ -8,9 +7,6 @@ use crate::{
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::fmt;
 use lazy_static::lazy_static;
-
-static KERNEL_PTE: Cell<PageTableEntry> = zero();
-static PHYS_PTE: Cell<PageTableEntry> = zero();
 
 lazy_static! {
     pub static ref ALL_MAPPED_PTE: UPSafeCell<BTreeMap<usize, PageTableEntry>> =
@@ -65,7 +61,6 @@ impl PageTable {
         for (index, pte) in map_pte.iter() {
             p4[*index] = *pte;
         }
-        println!("start_pa:{:x}", root_frame.start_pa());
         Self {
             root_pa: root_frame.start_pa(),
             tables: vec![root_frame],
@@ -81,8 +76,6 @@ impl PageTable {
                 println!("index:{:?},PTE:{:?}", i, a);
             }
         }
-        println!("kernel_pte:{:?}", p4[p4_index(VirtAddr(KERNEL_OFFSET))]);
-        println!("PHYS_PTE:{:?}", p4[p4_index(VirtAddr(PHYS_OFFSET))]);
     }
 
     pub fn map(&mut self, va: VirtAddr, pa: PhysAddr, flags: PTFlags) {
@@ -210,15 +203,8 @@ pub(crate) fn init() {
     for i in 0..512 {
         if !p4[i].flags().is_empty() {
             map_pte.insert(i, p4[i]);
-            // println!("i:{:x},{:?}",i,p4[i]);
         }
     }
-    // print how it use p4[0]
-    // *KERNEL_PTE.get() = p4[p4_index(VirtAddr(KERNEL_OFFSET))];
-    // *PHYS_PTE.get() = p4[p4_index(VirtAddr(PHYS_OFFSET))];
-    // println!("kernel_pte:{:?}", *KERNEL_PTE.get());
-    // println!("PHYS_PTE:{:?}", *PHYS_PTE.get());
-
     // Cancel mapping in lowest addresses.
     // p4[0].0 = 0;
 }

@@ -29,7 +29,7 @@ impl VmSpace {
     /// Creates a new VM address space.
     pub fn new() -> Self {
         Self {
-            memory_set: unsafe { UPSafeCell::new(MemorySet::zero()) },
+            memory_set: unsafe { UPSafeCell::new(MemorySet::new()) },
         }
     }
 
@@ -54,7 +54,7 @@ impl VmSpace {
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
-        self.memory_set.exclusive_access().map_area(MapArea::new(
+        self.memory_set.exclusive_access().map(MapArea::new(
             VirtAddr(options.addr.unwrap()),
             frames.len() * PAGE_SIZE,
             flags,
@@ -99,12 +99,12 @@ impl Default for VmSpace {
 }
 
 impl VmIo for VmSpace {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        self.memory_set.exclusive_access().read_bytes(offset, buf)
+    fn read_bytes(&self, vaddr: usize, buf: &mut [u8]) -> Result<()> {
+        self.memory_set.exclusive_access().read_bytes(vaddr, buf)
     }
 
-    fn write_bytes(&mut self, offset: usize, buf: &[u8]) -> Result<()> {
-        self.memory_set.exclusive_access().write_bytes(offset, buf)
+    fn write_bytes(&mut self, vaddr: usize, buf: &[u8]) -> Result<()> {
+        self.memory_set.exclusive_access().write_bytes(vaddr, buf)
     }
 }
 
