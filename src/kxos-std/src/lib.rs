@@ -4,7 +4,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![feature(const_btree_new)]
+#![feature(cstr_from_bytes_until_nul)]
 
+use kxos_frame::println;
 use process::Process;
 
 extern crate alloc;
@@ -16,6 +18,12 @@ mod util;
 
 pub fn init() {
     process::fifo_scheduler::init();
+}
+
+pub fn run_first_kernel_task() {
+    Process::spawn_kernel_task(|| {
+        println!("hello world from kernel");
+    });
 }
 
 pub fn run_first_process() {
