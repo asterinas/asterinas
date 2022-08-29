@@ -1,9 +1,19 @@
 //! User space.
 
+use crate::println;
+
 use crate::cpu::CpuContext;
-use crate::task::Task;
+use crate::prelude::*;
+use crate::task::{context_switch, Task, TaskContext, SWITCH_TO_USER_SPACE_TASK};
+use crate::trap::{SyscallFrame, TrapFrame};
 use crate::vm::VmSpace;
-use crate::{prelude::*};
+use crate::x86_64_util::get_return_address;
+
+extern "C" {
+    pub fn syscall_switch_to_user_space(cpu_context: &CpuContext, syscall_frame: &SyscallFrame);
+    /// cpu_context may delete in the future
+    pub fn trap_switch_to_user_space(cpu_context: &CpuContext, trap_frame: &TrapFrame);
+}
 
 /// A user space.
 ///
@@ -13,7 +23,7 @@ pub struct UserSpace {
     /// vm space
     vm_space: VmSpace,
     /// cpu context before entering user space
-    cpu_ctx: CpuContext,
+    pub cpu_ctx: CpuContext,
 }
 
 impl UserSpace {
@@ -71,13 +81,24 @@ impl UserSpace {
 pub struct UserMode<'a> {
     current: Arc<Task>,
     user_space: &'a Arc<UserSpace>,
+    context: CpuContext,
+    executed: bool,
 }
 
 // An instance of `UserMode` is bound to the current task. So it cannot be
 impl<'a> !Send for UserMode<'a> {}
 
 impl<'a> UserMode<'a> {
-    /// Starts executing in the user mode.
+    pub fn new(user_space: &'a Arc<UserSpace>) -> Self {
+        Self {
+            current: Task::current(),
+            user_space,
+            context: CpuContext::default(),
+            executed: false,
+        }
+    }
+
+    /// Starts executing in the user mode. Make sure current task is the task in `UserMode`.
     ///
     /// The method returns for one of three possible reasons indicated by `UserEvent`.
     /// 1. The user invokes a system call;
@@ -87,20 +108,51 @@ impl<'a> UserMode<'a> {
     /// After handling the user event and updating the user-mode CPU context,
     /// this method can be invoked again to go back to the user space.
     pub fn execute(&mut self) -> UserEvent {
-        todo!()
+        self.user_space.vm_space().activate();
+        if !self.executed {
+            self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip as usize;
+            self.executed = true;
+        } else {
+            if self.current.inner_exclusive_access().is_from_trap {
+                *self.current.trap_frame() = self.context.into();
+            } else {
+                *self.current.syscall_frame() = self.context.into();
+            }
+        }
+        let mut current_task_inner = self.current.inner_exclusive_access();
+        let binding = SWITCH_TO_USER_SPACE_TASK.get();
+        let next_task_inner = binding.inner_exclusive_access();
+        let current_ctx = &mut current_task_inner.ctx as *mut TaskContext;
+        let next_ctx = &next_task_inner.ctx as *const TaskContext;
+        drop(current_task_inner);
+        drop(next_task_inner);
+        drop(binding);
+        unsafe {
+            context_switch(current_ctx, next_ctx);
+            // switch_to_user_space(&self.user_space.cpu_ctx, self.current.syscall_frame());
+        }
+        if self.current.inner_exclusive_access().is_from_trap {
+            self.context = CpuContext::from(*self.current.trap_frame());
+            UserEvent::Exception
+        } else {
+            self.context = CpuContext::from(*self.current.syscall_frame());
+            println!("[kernel] syscall id:{}",self.context.gp_regs.rax);
+            UserEvent::Syscall
+        }
     }
 
     /// Returns an immutable reference the user-mode CPU context.
     pub fn context(&self) -> &CpuContext {
-        todo!()
+        &self.context
     }
 
     /// Returns a mutable reference the user-mode CPU context.
     pub fn context_mut(&mut self) -> &mut CpuContext {
-        todo!()
+        &mut self.context
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// A user event is what brings back the control of the CPU back from
 /// the user space to the kernel space.
 ///
