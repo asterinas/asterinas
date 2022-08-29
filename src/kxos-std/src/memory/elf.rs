@@ -1,9 +1,10 @@
-use core::ops::Range;
+use core::{ops::Range, cmp::Ordering};
 
 use alloc::vec::Vec;
+use alloc::vec;
 use kxos_frame::{
-    vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmPerm, VmSpace},
-    Error,
+    vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmPerm, VmSpace, VmMapOptions},
+    Error, config::PAGE_SIZE,
 };
 use xmas_elf::{
     header,
@@ -23,6 +24,7 @@ pub struct ElfSegment<'a> {
     range: Range<Vaddr>,
     data: &'a [u8],
     type_: program::Type,
+    vm_perm: VmPerm,
 }
 
 impl<'a> ElfSegment<'a> {
@@ -40,11 +42,28 @@ impl<'a> ElfSegment<'a> {
             Err(_) => return Err(ElfError::from("")),
             Ok(data) => data,
         };
+        let vm_perm = Self::parse_segment_perm(segment)?;
         Ok(Self {
             range: start..end,
             type_,
             data,
+            vm_perm,
         })
+    }
+
+    pub fn parse_segment_perm(segment: ProgramHeader<'a>) -> Result<VmPerm, ElfError> {
+        let flags = segment.flags();
+        if !flags.is_read() {
+            return Err(ElfError::UnreadableSegment);
+        }
+        let mut vm_perm = VmPerm::R;
+        if flags.is_write() {
+            vm_perm |= VmPerm::W;        
+        }
+        if flags.is_execute() {
+            vm_perm |= VmPerm::X;
+        }
+        Ok(vm_perm)
     }
 
     pub fn is_loadable(&self) -> bool {
@@ -57,6 +76,29 @@ impl<'a> ElfSegment<'a> {
 
     pub fn end_address(&self) -> Vaddr {
         self.range.end
+    }
+
+    fn copy_and_map(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
+        if !self.is_page_aligned() {
+            return Err(ElfError::SegmentNotPageAligned);
+        }
+        let vm_page_range = VmPageRange::new_range(self.start_address()..self.end_address());
+        let page_number = vm_page_range.len();
+        // allocate frames
+        let vm_alloc_options = VmAllocOptions::new(page_number);
+        let mut frames = VmFrameVec::allocate(&vm_alloc_options)?;
+        // copy segment
+        frames.write_bytes(0, self.data)?;
+        // map segment
+        let mut vm_map_options = VmMapOptions::new();
+        vm_map_options.addr(Some(self.start_address()));
+        vm_map_options.perm(self.vm_perm);
+        vm_space.map(frames, &vm_map_options)?;
+        Ok(())
+    }
+
+    fn is_page_aligned(&self) -> bool {
+        self.start_address() % PAGE_SIZE == 0
     }
 }
 
@@ -116,28 +158,11 @@ impl<'a> ElfLoadInfo<'a> {
         Ok(VmPageRange::new_range(elf_start_address..elf_end_address))
     }
 
-    pub fn map_self(&self, vm_space: &VmSpace, frames: VmFrameVec) -> Result<(), ElfError> {
-        let mut vm_page_range = self.vm_page_range()?;
-        let vm_perm = ElfLoadInfo::perm();
-        vm_page_range.map_to(vm_space, frames, vm_perm);
-        Ok(())
-    }
-
-    pub fn copy_elf(&self) -> Result<VmFrameVec, ElfError> {
-        let vm_page_range = self.vm_page_range()?;
-        // calculate offset
-        let offset = vm_page_range.start_address();
-        // allocate frames
-        let page_number = vm_page_range.len();
-        let options = VmAllocOptions::new(page_number);
-        let mut frames = VmFrameVec::allocate(&options)?;
-
-        for segment in self.segments.iter().filter(|segment| segment.is_loadable()) {
-            let start_address = segment.start_address();
-            frames.write_bytes(start_address - offset, segment.data)?;
+    pub fn copy_and_map(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
+        for segment in self.segments.iter() {
+            segment.copy_and_map(vm_space)?;
         }
-
-        Ok(frames)
+        Ok(())
     }
 
     pub fn map_and_clear_user_stack(&self, vm_space: &VmSpace) {
@@ -154,8 +179,20 @@ impl<'a> ElfLoadInfo<'a> {
         self.entry_point as u64
     }
 
-    pub fn user_stack_bottom(&self) -> u64 {
-        self.user_stack.stack_bottom as u64
+    pub fn user_stack_top(&self) -> u64 {
+        self.user_stack.stack_top() as u64
+    }
+
+    /// read content from vmspace to ensure elf data is correctly copied to user space
+    pub fn debug_check_map_result(&self, vm_space: &VmSpace) {
+        for segment in self.segments.iter() {
+            let start_address = segment.start_address();
+            let len = segment.data.len();
+            let mut read_buffer = vec![0;len];
+            vm_space.read_bytes(start_address, &mut read_buffer).expect("read bytes failed");
+            let res = segment.data.cmp(&read_buffer);
+            assert_eq!(res, Ordering::Equal);
+        }
     }
 }
 
@@ -198,6 +235,8 @@ pub enum ElfError {
     FrameError(Error),
     NoSegment,
     UnsupportedElfType,
+    SegmentNotPageAligned,
+    UnreadableSegment,
     WithInfo(&'static str),
 }
 

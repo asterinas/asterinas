@@ -1,7 +1,7 @@
 pub mod elf;
 pub mod user_stack;
 pub mod vm_page;
-use kxos_frame::vm::VmSpace;
+use kxos_frame::{vm::VmSpace, debug};
 
 use self::elf::{ElfError, ElfLoadInfo};
 
@@ -15,8 +15,9 @@ pub fn load_elf_to_vm_space<'a>(
     vm_space: &VmSpace,
 ) -> Result<ElfLoadInfo<'a>, ElfError> {
     let elf_load_info = ElfLoadInfo::parse_elf_data(elf_file_content)?;
-    let to_frames = elf_load_info.copy_elf()?;
-    elf_load_info.map_self(vm_space, to_frames)?;
+    elf_load_info.copy_and_map(vm_space)?;
+    elf_load_info.debug_check_map_result(vm_space);
+    debug!("map elf success");
     elf_load_info.map_and_clear_user_stack(vm_space);
     Ok(elf_load_info)
 }
