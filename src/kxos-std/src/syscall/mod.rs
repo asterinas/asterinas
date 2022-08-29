@@ -70,8 +70,7 @@ pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult
         let user_buffer =
             copy_bytes_from_user(user_space, user_buf_ptr as usize, user_buf_len as usize)
                 .expect("read user buffer failed");
-        let content = CString::from_vec_with_nul(user_buffer).expect("read string failed");
-        // TODO: print content
+        let content = alloc::str::from_utf8(user_buffer.as_slice()).expect("Invalid content");        // TODO: print content
         info!("Message from user mode: {:?}", content);
         SyscallResult::Return(0)
     } else {

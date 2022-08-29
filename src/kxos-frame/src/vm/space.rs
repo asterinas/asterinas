@@ -48,9 +48,9 @@ impl VmSpace {
         if options.perm.contains(VmPerm::W) {
             flags.insert(PTFlags::WRITABLE);
         }
-        if options.perm.contains(VmPerm::U) {
+        // if options.perm.contains(VmPerm::U) {
             flags.insert(PTFlags::USER);
-        }
+        // }
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
