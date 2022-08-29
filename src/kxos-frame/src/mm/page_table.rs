@@ -1,15 +1,17 @@
-use alloc::{vec, vec::Vec};
-
 use super::{memory_set::MapArea, *};
 use crate::{
     config::{ENTRY_COUNT, KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET},
     vm::VmFrame,
     *,
 };
+use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::fmt;
+use lazy_static::lazy_static;
 
-static KERNEL_PTE: UPSafeCell<PageTableEntry> = zero();
-static PHYS_PTE: UPSafeCell<PageTableEntry> = zero();
+lazy_static! {
+    pub static ref ALL_MAPPED_PTE: UPSafeCell<BTreeMap<usize, PageTableEntry>> =
+        unsafe { UPSafeCell::new(BTreeMap::new()) };
+}
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
@@ -55,11 +57,24 @@ impl PageTable {
     pub fn new() -> Self {
         let root_frame = VmFrame::alloc_zero().unwrap();
         let p4 = table_of(root_frame.start_pa());
-        p4[p4_index(VirtAddr(KERNEL_OFFSET))] = *KERNEL_PTE.exclusive_access();
-        p4[p4_index(VirtAddr(PHYS_OFFSET))] = *PHYS_PTE.exclusive_access();
+        let map_pte = ALL_MAPPED_PTE.exclusive_access();
+        for (index, pte) in map_pte.iter() {
+            p4[*index] = *pte;
+        }
         Self {
             root_pa: root_frame.start_pa(),
             tables: vec![root_frame],
+        }
+    }
+
+    pub fn print_kernel(&self) {
+        let p4 = table_of(self.root_pa);
+        for i in 0..(256) {
+            let phys = PhysAddr(i << (12 + 27));
+            let a = p4[p4_index(phys.kvaddr())];
+            if a.is_present() {
+                println!("index:{:?},PTE:{:?}", i, a);
+            }
         }
     }
 
@@ -80,7 +95,6 @@ impl PageTable {
     }
 
     pub fn map_area(&mut self, area: &MapArea) {
-        println!("frame test");
         for (va, pa) in area.mapper.iter() {
             assert!(pa.start_pa().0 < PHYS_OFFSET);
             self.map(*va, pa.start_pa(), area.flags);
@@ -179,14 +193,18 @@ fn next_table_or_create<'a>(
 }
 
 pub(crate) fn init() {
-    let (cr3, _) = x86_64::registers::control::Cr3::read();
+    let cr3 = x86_64_util::get_cr3();
 
-    let p4 = table_of(PhysAddr(cr3.start_address().as_u64() as usize));
-    *KERNEL_PTE.exclusive_access() = p4[p4_index(VirtAddr(KERNEL_OFFSET))];
-    *PHYS_PTE.exclusive_access() = p4[p4_index(VirtAddr(PHYS_OFFSET))];
-    println!("kernel_pte:{:?}", p4[p4_index(VirtAddr(KERNEL_OFFSET))]);
-    println!("PHYS_PTE:{:?}", p4[p4_index(VirtAddr(PHYS_OFFSET))]);
-
+    let p4 = table_of(PhysAddr(cr3));
+    // Cancel mapping in lowest addresses.
+    p4[0].0 = 0;
+    // there is mapping where index is 1,2,3, so user may not use these value
+    let mut map_pte = ALL_MAPPED_PTE.exclusive_access();
+    for i in 0..512 {
+        if !p4[i].flags().is_empty() {
+            map_pte.insert(i, p4[i]);
+        }
+    }
     // Cancel mapping in lowest addresses.
     // p4[0].0 = 0;
 }

@@ -172,7 +172,7 @@ impl<'a> ElfLoadInfo<'a> {
     /// return the perm of elf pages
     /// FIXME: Set the correct permission bit of user pages.
     fn perm() -> VmPerm {
-        VmPerm::RX
+        VmPerm::RXU
     }
 
     pub fn entry_point(&self) -> u64 {
