@@ -1,4 +1,3 @@
-use alloc::ffi::CString;
 use alloc::vec;
 use alloc::{sync::Arc, vec::Vec};
 use kxos_frame::cpu::CpuContext;
@@ -12,7 +11,7 @@ use crate::process::task::HandlerResult;
 const SYS_WRITE: u64 = 1;
 const SYS_EXIT: u64 = 60;
 
-pub struct SyscallFrame {
+pub struct SyscallArgument {
     syscall_number: u64,
     args: [u64; 6],
 }
@@ -22,7 +21,7 @@ pub enum SyscallResult {
     Return(i32),
 }
 
-impl SyscallFrame {
+impl SyscallArgument {
     fn new_from_context(context: &CpuContext) -> Self {
         let syscall_number = context.gp_regs.rax;
         let mut args = [0u64; 6];
@@ -40,7 +39,7 @@ impl SyscallFrame {
 }
 
 pub fn syscall_handler(context: &mut CpuContext) -> HandlerResult {
-    let syscall_frame = SyscallFrame::new_from_context(context);
+    let syscall_frame = SyscallArgument::new_from_context(context);
     let syscall_return = syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args);
 
     match syscall_return {
@@ -70,7 +69,7 @@ pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult
         let user_buffer =
             copy_bytes_from_user(user_space, user_buf_ptr as usize, user_buf_len as usize)
                 .expect("read user buffer failed");
-        let content = alloc::str::from_utf8(user_buffer.as_slice()).expect("Invalid content");        // TODO: print content
+        let content = alloc::str::from_utf8(user_buffer.as_slice()).expect("Invalid content"); // TODO: print content
         info!("Message from user mode: {:?}", content);
         SyscallResult::Return(0)
     } else {
