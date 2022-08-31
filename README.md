@@ -34,6 +34,21 @@ While there is nothing revolutionary in KxOS, it does explore some new design po
 While most code is written in Rust, the project-scope build process is governed 
 by Makefile.
 
+Before downloading source code, install and init Git LFS since the project manage binaries with Git LFS.
+```bash
+# 1. install git-lfs
+brew install git-lfs            # for mac
+apt install git-lfs             # for ubuntu
+
+# 2. init git-lfs for current user
+git lfs install --skip-repo     # for mac & ubuntu
+```
+
+Then, download source codes as normal.
+```bash
+git clone [repository url]
+```
+
 After downloading the source code, run the following command once to make sure
 all developmennt tools are installed.
 ```bash
