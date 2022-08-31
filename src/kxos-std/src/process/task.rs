@@ -1,10 +1,9 @@
 use alloc::sync::Arc;
 use kxos_frame::{
     cpu::CpuContext,
-    println,
     task::Task,
     user::{UserEvent, UserMode, UserSpace},
-    vm::VmSpace,
+    vm::VmSpace, debug,
 };
 
 use crate::{memory::load_elf_to_vm_space, syscall::syscall_handler};
@@ -27,6 +26,7 @@ pub fn spawn_user_task_from_elf(elf_file_content: &[u8]) -> Arc<Task> {
         let mut user_mode = UserMode::new(user_space);
         loop {
             let user_event = user_mode.execute();
+            debug!("return from user mode");
             let context = user_mode.context_mut();
             if let HandlerResult::Exit = handle_user_event(user_event, context) {
                 // FIXME: How to set task status? How to set exit code of process?

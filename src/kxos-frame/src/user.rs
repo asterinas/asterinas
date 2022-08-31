@@ -111,6 +111,7 @@ impl<'a> UserMode<'a> {
         self.user_space.vm_space().activate();
         if !self.executed {
             self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip as usize;
+            self.current.syscall_frame().callee.rsp = self.user_space.cpu_ctx.gp_regs.rsp as usize;
             self.executed = true;
         } else {
             if self.current.inner_exclusive_access().is_from_trap {
@@ -137,6 +138,7 @@ impl<'a> UserMode<'a> {
         } else {
             self.context = CpuContext::from(*self.current.syscall_frame());
             println!("[kernel] syscall id:{}",self.context.gp_regs.rax);
+            println!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);
             UserEvent::Syscall
         }
     }

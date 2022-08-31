@@ -1,10 +1,11 @@
-use core::{ops::Range, cmp::Ordering};
+use core::{cmp::Ordering, ops::Range};
 
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 use kxos_frame::{
-    vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmPerm, VmSpace, VmMapOptions},
-    Error, config::PAGE_SIZE,
+    config::PAGE_SIZE,
+    vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
+    Error,
 };
 use xmas_elf::{
     header,
@@ -39,7 +40,7 @@ impl<'a> ElfSegment<'a> {
             Ok(type_) => type_,
         };
         let data = match read_segment_data(segment, elf_file) {
-            Err(_) => return Err(ElfError::from("")),
+            Err(msg) => return Err(ElfError::from(msg)),
             Ok(data) => data,
         };
         let vm_perm = Self::parse_segment_perm(segment)?;
@@ -58,7 +59,7 @@ impl<'a> ElfSegment<'a> {
         }
         let mut vm_perm = VmPerm::R;
         if flags.is_write() {
-            vm_perm |= VmPerm::W;        
+            vm_perm |= VmPerm::W;
         }
         if flags.is_execute() {
             vm_perm |= VmPerm::X;
@@ -188,8 +189,10 @@ impl<'a> ElfLoadInfo<'a> {
         for segment in self.segments.iter() {
             let start_address = segment.start_address();
             let len = segment.data.len();
-            let mut read_buffer = vec![0;len];
-            vm_space.read_bytes(start_address, &mut read_buffer).expect("read bytes failed");
+            let mut read_buffer = vec![0; len];
+            vm_space
+                .read_bytes(start_address, &mut read_buffer)
+                .expect("read bytes failed");
             let res = segment.data.cmp(&read_buffer);
             assert_eq!(res, Ordering::Equal);
         }
@@ -255,14 +258,17 @@ impl From<Error> for ElfError {
 fn read_segment_data<'a>(
     segment: ProgramHeader<'a>,
     elf_file: &ElfFile<'a>,
-) -> Result<&'a [u8], ()> {
+) -> Result<&'a [u8], &'static str> {
     match segment.get_data(&elf_file) {
-        Err(_) => Err(()),
+        Err(msg) => Err(msg),
         Ok(data) => {
-            if let SegmentData::Undefined(data) = data {
-                Ok(data)
-            } else {
-                Err(())
+            match data {
+                SegmentData::Note64(_, data) | SegmentData::Undefined(data) => {
+                    Ok(data)
+                },
+                _ => {
+                    Err("Unkonwn segment data type")
+                }
             }
         }
     }
