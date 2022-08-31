@@ -1,18 +1,24 @@
-global _start
+.global _start
 
-section .text
-
+.section .text
 _start:
-  mov rax, 1        ; syswrite
-  mov rdi, 1        ; fd
-  mov rsi, msg      ; "Hello, world!\n",
-  mov rdx, msglen   ; sizeof("Hello, world!\n")
-  syscall           
-
-  mov rax, 60       ; sys_exit
-  mov rdi, 0        ; exit_code
-  syscall           
-
-section .rodata
-  msg: db "Hello, world!", 10
-  msglen: equ $ - msg
+    call print_message
+    call print_message
+    call print_message
+    mov     $60, %rax               # syscall number of exit
+    mov     $0, %rdi                 # exit code
+    syscall     
+print_message:
+    mov     $1, %rax                # syscall number of write
+    mov     $1, %rdi                # stdout
+    mov     $message, %rsi          # address of message
+    mov     $message, %r11          
+    mov     $message_end, %r12
+    sub     %r11, %r12               # calculate message len
+    mov     %r12, %rdx               # number of bytes
+    syscall
+    ret
+.section .rodata            
+message:
+    .ascii  "Hello, world\n"
+message_end:

@@ -1,7 +1,7 @@
 pub mod elf;
 pub mod user_stack;
 pub mod vm_page;
-use kxos_frame::{vm::VmSpace, debug};
+use kxos_frame::{debug, vm::VmSpace};
 
 use self::elf::{ElfError, ElfLoadInfo};
 
