@@ -3,9 +3,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![feature(negative_impls)]
-#![feature(abi_x86_interrupt)]
 #![feature(fn_traits)]
-#![feature(linked_list_cursors)]
 #![feature(const_maybe_uninit_zeroed)]
 #![feature(alloc_error_handler)]
 #![feature(core_intrinsics)]
@@ -14,33 +12,31 @@
 
 extern crate alloc;
 
-pub mod cell;
+pub(crate) mod cell;
 pub mod config;
 pub mod cpu;
 pub mod device;
 mod error;
 pub mod log;
-pub mod mm;
+pub(crate) mod mm;
 pub mod prelude;
 pub mod sync;
 pub mod task;
 pub mod timer;
-pub mod trap;
+pub(crate) mod trap;
 pub mod user;
 mod util;
 pub mod vm;
-pub mod x86_64_util;
+pub(crate) mod x86_64_util;
 
-use core::mem;
+use core::{mem, panic::PanicInfo};
 
 pub use self::error::Error;
-pub use self::sync::up::UPSafeCell;
-use alloc::sync::Arc;
+pub(crate) use self::sync::up::UPSafeCell;
 use bootloader::{
     boot_info::{FrameBuffer, MemoryRegionKind},
     BootInfo,
 };
-use trap::{IrqLine, TrapFrame};
 
 pub fn init(boot_info: &'static mut BootInfo) {
     let siz = boot_info.framebuffer.as_ref().unwrap() as *const FrameBuffer as usize;
@@ -65,10 +61,55 @@ pub fn init(boot_info: &'static mut BootInfo) {
     if !memory_init {
         panic!("memory init failed");
     }
-
 }
 
 #[inline(always)]
-pub const fn zero<T>() -> T {
+pub(crate) const fn zero<T>() -> T {
     unsafe { mem::MaybeUninit::zeroed().assume_init() }
+}
+
+pub trait Testable {
+    fn run(&self) -> ();
+}
+
+impl<T> Testable for T
+where
+    T: Fn(),
+{
+    fn run(&self) {
+        serial_print!("{}...\t", core::any::type_name::<T>());
+        self();
+        serial_println!("[ok]");
+    }
+}
+
+pub fn test_runner(tests: &[&dyn Testable]) {
+    serial_println!("Running {} tests", tests.len());
+    for test in tests {
+        test.run();
+    }
+    exit_qemu(QemuExitCode::Success);
+}
+
+pub fn test_panic_handler(info: &PanicInfo) -> ! {
+    serial_println!("[failed]");
+    serial_println!("Error: {}", info);
+    exit_qemu(QemuExitCode::Failed);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum QemuExitCode {
+    Success = 0x10,
+    Failed = 0x11,
+}
+
+pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
+    use x86_64::instructions::port::Port;
+
+    unsafe {
+        let mut port = Port::new(0xf4);
+        port.write(exit_code as u32);
+    }
+    unreachable!()
 }

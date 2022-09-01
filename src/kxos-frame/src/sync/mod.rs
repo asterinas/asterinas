@@ -1,10 +1,10 @@
+mod atomic_bits;
 mod rcu;
 mod spin;
-pub mod up;
+pub(crate) mod up;
 mod wait;
-mod atomic_bits;
 
-pub use self::atomic_bits::{AtomicBits};
+pub use self::atomic_bits::AtomicBits;
+pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
 pub use self::spin::{SpinLock, SpinLockGuard};
 pub use self::wait::WaitQueue;
-pub use self::rcu::{Rcu, RcuReadGuard, RcuReclaimer, OwnerPtr, pass_quiescent_state};

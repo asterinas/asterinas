@@ -14,7 +14,7 @@ buddy_system_allocator = "0.6"
 linked_list_allocator = "0.9.0"
 bootloader = {version="0.10.12"}
 font8x8 = { version = "0.2.5", default-features = false, features = ["unicode"]}
-
+uart_16550 = "0.2.0"
 
 
 [dependencies.lazy_static]

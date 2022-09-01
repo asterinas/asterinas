@@ -7,12 +7,14 @@ use crate::prelude::*;
 use crate::task::{context_switch, Task, TaskContext, SWITCH_TO_USER_SPACE_TASK};
 use crate::trap::{SyscallFrame, TrapFrame};
 use crate::vm::VmSpace;
-use crate::x86_64_util::get_return_address;
 
 extern "C" {
-    pub fn syscall_switch_to_user_space(cpu_context: &CpuContext, syscall_frame: &SyscallFrame);
+    pub(crate) fn syscall_switch_to_user_space(
+        cpu_context: &CpuContext,
+        syscall_frame: &SyscallFrame,
+    );
     /// cpu_context may delete in the future
-    pub fn trap_switch_to_user_space(cpu_context: &CpuContext, trap_frame: &TrapFrame);
+    pub(crate) fn trap_switch_to_user_space(cpu_context: &CpuContext, trap_frame: &TrapFrame);
 }
 
 /// A user space.
@@ -108,7 +110,9 @@ impl<'a> UserMode<'a> {
     /// After handling the user event and updating the user-mode CPU context,
     /// this method can be invoked again to go back to the user space.
     pub fn execute(&mut self) -> UserEvent {
-        self.user_space.vm_space().activate();
+        unsafe {
+            self.user_space.vm_space().activate();
+        }
         if !self.executed {
             self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip as usize;
             self.current.syscall_frame().callee.rsp = self.user_space.cpu_ctx.gp_regs.rsp as usize;
@@ -137,7 +141,7 @@ impl<'a> UserMode<'a> {
             UserEvent::Exception
         } else {
             self.context = CpuContext::from(*self.current.syscall_frame());
-            println!("[kernel] syscall id:{}",self.context.gp_regs.rax);
+            println!("[kernel] syscall id:{}", self.context.gp_regs.rax);
             println!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);
             UserEvent::Syscall
         }
