@@ -7,3 +7,5 @@ edition = "2021"
 [dependencies]
 bootloader-locator = "0.0.4" # for locating the `bootloader` dependency on disk
 locate-cargo-manifest = "0.2.0" # for locating the kernel's `Cargo.toml`
+runner-utils = "0.0.2"
+anyhow = "1.0.32"

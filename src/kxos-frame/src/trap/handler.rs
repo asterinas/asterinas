@@ -5,7 +5,7 @@ use crate::task::{
 use super::{irq::IRQ_LIST, *};
 
 #[no_mangle]
-pub extern "C" fn syscall_handler(f: &'static mut SyscallFrame) -> isize {
+pub(crate) extern "C" fn syscall_handler(f: &'static mut SyscallFrame) -> isize {
     let r = &f.caller;
     let current = Task::current();
     current.inner_exclusive_access().is_from_trap = false;
@@ -28,8 +28,8 @@ const PAGE_FAULT: usize = 14;
 const TIMER: usize = 32;
 
 #[no_mangle]
-pub extern "C" fn trap_handler(f: &'static mut TrapFrame) {
-    if !is_from_kernel(f.cs){
+pub(crate) extern "C" fn trap_handler(f: &'static mut TrapFrame) {
+    if !is_from_kernel(f.cs) {
         let current = Task::current();
         current.inner_exclusive_access().is_from_trap = true;
     }
@@ -40,11 +40,10 @@ pub extern "C" fn trap_handler(f: &'static mut TrapFrame) {
     }
 }
 
-
-fn is_from_kernel(cs:usize)->bool{
-    if cs&0x3==0{
+fn is_from_kernel(cs: usize) -> bool {
+    if cs & 0x3 == 0 {
         true
-    }else{
+    } else {
         false
     }
 }

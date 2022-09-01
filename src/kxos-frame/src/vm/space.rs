@@ -32,8 +32,8 @@ impl VmSpace {
             memory_set: unsafe { UPSafeCell::new(MemorySet::new()) },
         }
     }
-
-    pub fn activate(&self) {
+    /// Activate the page table, load root physical address to cr3 
+    pub unsafe fn activate(&self) {
         x86_64_util::set_cr3(self.memory_set.exclusive_access().pt.root_pa.0);
     }
 
@@ -49,7 +49,7 @@ impl VmSpace {
             flags.insert(PTFlags::WRITABLE);
         }
         // if options.perm.contains(VmPerm::U) {
-            flags.insert(PTFlags::USER);
+        flags.insert(PTFlags::USER);
         // }
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
