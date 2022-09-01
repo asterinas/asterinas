@@ -1,7 +1,5 @@
 //! CPU.
 
-use x86_64::registers::model_specific::FsBase;
-
 use crate::trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame};
 
 /// Defines a CPU-local variable.

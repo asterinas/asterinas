@@ -45,7 +45,7 @@ pub fn current_task() -> Option<Arc<Task>> {
     PROCESSOR.exclusive_access().current()
 }
 
-pub fn get_idle_task_cx_ptr() -> *mut TaskContext {
+pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
     PROCESSOR.exclusive_access().get_idle_task_cx_ptr()
 }
 

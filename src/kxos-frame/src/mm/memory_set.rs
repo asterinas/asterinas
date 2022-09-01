@@ -7,7 +7,6 @@ use crate::{
     *,
 };
 use alloc::collections::{btree_map::Entry, BTreeMap};
-use alloc::vec;
 use core::fmt;
 
 pub struct MapArea {
@@ -16,7 +15,7 @@ pub struct MapArea {
     /// start virtual address
     pub start_va: VirtAddr,
     /// the size of these area
-    pub size : usize,
+    pub size: usize,
     /// all the map information
     pub mapper: BTreeMap<VirtAddr, VmFrame>,
 }
@@ -24,7 +23,7 @@ pub struct MapArea {
 pub struct MemorySet {
     pub pt: PageTable,
     /// all the map area, sort by the start virtual address
-    areas: BTreeMap<VirtAddr,MapArea>,
+    areas: BTreeMap<VirtAddr, MapArea>,
 }
 
 impl MapArea {
@@ -35,12 +34,18 @@ impl MapArea {
     pub fn clone(&self) -> Self {
         let mut mapper = BTreeMap::new();
         for (&va, old) in &self.mapper {
-          let new = PhysFrame::alloc().unwrap();
-          new.as_slice().copy_from_slice(old.physical_frame.exclusive_access().as_slice());
-          mapper.insert(va, unsafe{VmFrame::new(new)});
+            let new = PhysFrame::alloc().unwrap();
+            new.as_slice()
+                .copy_from_slice(old.physical_frame.exclusive_access().as_slice());
+            mapper.insert(va, unsafe { VmFrame::new(new) });
         }
-        Self { start_va: self.start_va, size: self.size, flags: self.flags, mapper }
-      }
+        Self {
+            start_va: self.start_va,
+            size: self.size,
+            flags: self.flags,
+            mapper,
+        }
+    }
 
     /// This function will map the vitural address to the given physical frames
     pub fn new(
@@ -104,9 +109,9 @@ impl MapArea {
         let mut remain = data.len();
         let mut processed = 0;
         for (va, pa) in self.mapper.iter() {
-            if current_start_address >= va.0 && current_start_address <va.0+PAGE_SIZE{
-                let offset = current_start_address-va.0;
-                let copy_len = (va.0+PAGE_SIZE - current_start_address).min(remain);
+            if current_start_address >= va.0 && current_start_address < va.0 + PAGE_SIZE {
+                let offset = current_start_address - va.0;
+                let copy_len = (va.0 + PAGE_SIZE - current_start_address).min(remain);
                 let src = &data[processed..processed + copy_len];
                 let dst = &mut pa.start_pa().kvaddr().get_bytes_array()[offset..copy_len];
                 dst.copy_from_slice(src);
@@ -115,7 +120,7 @@ impl MapArea {
                 if remain == 0 {
                     return;
                 }
-                current_start_address = va.0+PAGE_SIZE;
+                current_start_address = va.0 + PAGE_SIZE;
             }
         }
     }
@@ -125,9 +130,9 @@ impl MapArea {
         let mut remain = data.len();
         let mut processed = 0;
         for (va, pa) in self.mapper.iter() {
-            if start >= va.0 && start <va.0+PAGE_SIZE{
-                let offset = start-va.0;
-                let copy_len = (va.0+PAGE_SIZE - start).min(remain);
+            if start >= va.0 && start < va.0 + PAGE_SIZE {
+                let offset = start - va.0;
+                let copy_len = (va.0 + PAGE_SIZE - start).min(remain);
                 let src = &mut data[processed..processed + copy_len];
                 let dst = &pa.start_pa().kvaddr().get_bytes_array()[offset..copy_len];
                 src.copy_from_slice(dst);
@@ -136,7 +141,7 @@ impl MapArea {
                 if remain == 0 {
                     return;
                 }
-                start = va.0+PAGE_SIZE;
+                start = va.0 + PAGE_SIZE;
             }
         }
     }
@@ -161,15 +166,17 @@ impl MapArea {
 // }
 
 impl MemorySet {
-
     pub fn map(&mut self, area: MapArea) {
         if area.size > 0 {
-          // TODO: check overlap
-          if let Entry::Vacant(e) = self.areas.entry(area.start_va) {
-            self.pt.map_area(e.insert(area));
-          } else {
-            panic!("MemorySet::map: MapArea starts from {:#x?} is existed!", area.start_va);
-          }
+            // TODO: check overlap
+            if let Entry::Vacant(e) = self.areas.entry(area.start_va) {
+                self.pt.map_area(e.insert(area));
+            } else {
+                panic!(
+                    "MemorySet::map: MapArea starts from {:#x?} is existed!",
+                    area.start_va
+                );
+            }
         }
     }
 
@@ -181,39 +188,38 @@ impl MemorySet {
     }
 
     pub fn unmap(&mut self, va: VirtAddr) -> Result<()> {
-        if let Some(area) = self.areas.remove(&va){
+        if let Some(area) = self.areas.remove(&va) {
             self.pt.unmap_area(&area);
             Ok(())
-        }else{
+        } else {
             Err(Error::PageFault)
         }
     }
 
     pub fn clear(&mut self) {
         for area in self.areas.values_mut() {
-          self.pt.unmap_area(area);
+            self.pt.unmap_area(area);
         }
         self.areas.clear();
-      }
-    
+    }
 
     pub fn write_bytes(&mut self, addr: usize, data: &[u8]) -> Result<()> {
         let mut current_addr = addr;
         let mut remain = data.len();
         let start_write = false;
-        for (va,area) in self.areas.iter_mut(){
-            if current_addr>=va.0&& current_addr < area.size+va.0{
-                if !area.flags.contains(PTFlags::WRITABLE){
-                    return Err(Error::PageFault)
+        for (va, area) in self.areas.iter_mut() {
+            if current_addr >= va.0 && current_addr < area.size + va.0 {
+                if !area.flags.contains(PTFlags::WRITABLE) {
+                    return Err(Error::PageFault);
                 }
                 area.write_data(current_addr, data);
-                remain -= (va.0+area.size-current_addr).min(remain);
-                if remain ==0{
-                    return Ok(())
+                remain -= (va.0 + area.size - current_addr).min(remain);
+                if remain == 0 {
+                    return Ok(());
                 }
-                current_addr = va.0+area.size;
-            }else if start_write{
-                return Err(Error::PageFault)
+                current_addr = va.0 + area.size;
+            } else if start_write {
+                return Err(Error::PageFault);
             }
         }
         Err(Error::PageFault)
@@ -223,16 +229,16 @@ impl MemorySet {
         let mut current_addr = addr;
         let mut remain = data.len();
         let start_read = false;
-        for (va,area) in self.areas.iter(){
-            if current_addr>=va.0&& current_addr < area.size+va.0{
+        for (va, area) in self.areas.iter() {
+            if current_addr >= va.0 && current_addr < area.size + va.0 {
                 area.read_data(current_addr, data);
-                remain -= (va.0+area.size-current_addr).min(remain);
-                if remain ==0{
-                    return Ok(())
+                remain -= (va.0 + area.size - current_addr).min(remain);
+                if remain == 0 {
+                    return Ok(());
                 }
-                current_addr = va.0+area.size;
-            }else if start_read{
-                return Err(Error::PageFault)
+                current_addr = va.0 + area.size;
+            } else if start_read {
+                return Err(Error::PageFault);
             }
         }
         Err(Error::PageFault)
@@ -241,11 +247,13 @@ impl MemorySet {
 
 impl Clone for MemorySet {
     fn clone(&self) -> Self {
-      let mut ms = Self::new();
-      for area in self.areas.values() { ms.map(area.clone()); }
-      ms
+        let mut ms = Self::new();
+        for area in self.areas.values() {
+            ms.map(area.clone());
+        }
+        ms
     }
-  }
+}
 impl Drop for MemorySet {
     fn drop(&mut self) {
         self.clear();

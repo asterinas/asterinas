@@ -1,6 +1,6 @@
 use super::{memory_set::MapArea, *};
 use crate::{
-    config::{ENTRY_COUNT, KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET},
+    config::{ENTRY_COUNT, PAGE_SIZE, PHYS_OFFSET},
     vm::VmFrame,
     *,
 };

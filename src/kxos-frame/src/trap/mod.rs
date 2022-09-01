@@ -64,10 +64,9 @@ extern "C" {
     /// 所有的中断向量push一个id后跳转到trao_entry
     static __vectors: [usize; 256];
     fn syscall_entry();
-    pub fn syscall_return(f: &SyscallFrame) -> !;
 }
 
-pub fn init() {
+pub(crate) fn init() {
     static mut GDT: [usize; 7] = [
         0,
         0x00209800_00000000, // KCODE, EXECUTABLE | USER_SEGMENT | PRESENT | LONG_MODE
