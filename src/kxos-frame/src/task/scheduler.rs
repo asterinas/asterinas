@@ -1,5 +1,5 @@
 use crate::task::Task;
-use crate::{prelude::*, println, UPSafeCell};
+use crate::{prelude::*, UPSafeCell};
 
 use lazy_static::lazy_static;
 

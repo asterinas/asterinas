@@ -61,7 +61,7 @@ impl AtomicBits {
         }
     }
 
-    /// Clear all the bits. 
+    /// Clear all the bits.
     pub fn clear(&self) {
         todo!()
     }

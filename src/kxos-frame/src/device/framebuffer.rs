@@ -4,7 +4,7 @@ use font8x8::UnicodeFonts;
 use spin::Mutex;
 use volatile::Volatile;
 
-pub static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
+pub(crate) static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
 
 pub fn init(framebuffer: &'static mut bootloader::boot_info::FrameBuffer) {
     let mut writer = Writer {
@@ -21,7 +21,7 @@ pub fn init(framebuffer: &'static mut bootloader::boot_info::FrameBuffer) {
     *global_writer = Some(writer);
 }
 
-pub struct Writer {
+pub(crate) struct Writer {
     buffer: Volatile<&'static mut [u8]>,
     info: bootloader::boot_info::FrameBufferInfo,
     x_pos: usize,

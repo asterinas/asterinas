@@ -9,22 +9,22 @@ use crate::trap::{CalleeRegs, SyscallFrame, TrapFrame};
 use crate::user::{syscall_switch_to_user_space, trap_switch_to_user_space, UserSpace};
 use crate::{prelude::*, UPSafeCell};
 
-use super::processor::{current_task, schedule, PROCESSOR};
+use super::processor::{current_task, schedule};
 use super::scheduler::add_task;
 
 core::arch::global_asm!(include_str!("switch.S"));
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
-pub struct TaskContext {
+pub(crate) struct TaskContext {
     pub regs: CalleeRegs,
     pub rip: usize,
 }
 
 extern "C" {
-    pub fn context_switch(cur: *mut TaskContext, nxt: *const TaskContext);
+    pub(crate) fn context_switch(cur: *mut TaskContext, nxt: *const TaskContext);
 }
 
-pub fn context_switch_to_user_space() {
+fn context_switch_to_user_space() {
     let task = Task::current();
     let switch_space_task = SWITCH_TO_USER_SPACE_TASK.get();
     if task.inner_exclusive_access().is_from_trap {
@@ -50,7 +50,7 @@ lazy_static! {
     /// This variable is mean to switch to user space and then switch back in `UserMode.execute`
     ///
     /// When context switch to this task, there is no need to set the current task
-    pub static ref SWITCH_TO_USER_SPACE_TASK : Cell<Task> = unsafe{
+    pub(crate) static ref SWITCH_TO_USER_SPACE_TASK : Cell<Task> =
         Cell::new({
         let task = Task{
             func: Box::new(context_switch_to_user_space),
@@ -73,7 +73,7 @@ lazy_static! {
             - size_of::<usize>()
             - size_of::<SyscallFrame>();
         task
-    })};
+    });
 }
 
 pub struct KernelStack {
@@ -99,7 +99,7 @@ pub struct Task {
     kstack: KernelStack,
 }
 
-pub struct TaskInner {
+pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
     /// whether the task from trap. If it is Trap, then you should use read TrapFrame instead of SyscallFrame
@@ -113,12 +113,12 @@ impl Task {
     }
 
     /// get inner
-    pub fn inner_exclusive_access(&self) -> RefMut<'_, TaskInner> {
+    pub(crate) fn inner_exclusive_access(&self) -> RefMut<'_, TaskInner> {
         self.task_inner.exclusive_access()
     }
 
     /// get inner
-    pub fn inner_ctx(&self) -> TaskContext {
+    pub(crate) fn inner_ctx(&self) -> TaskContext {
         self.task_inner.exclusive_access().ctx
     }
 
@@ -180,7 +180,7 @@ impl Task {
         Ok(arc_self)
     }
 
-    pub fn syscall_frame(&self) -> &mut SyscallFrame {
+    pub(crate) fn syscall_frame(&self) -> &mut SyscallFrame {
         unsafe {
             &mut *(self
                 .kstack
@@ -192,7 +192,7 @@ impl Task {
         }
     }
 
-    pub fn trap_frame(&self) -> &mut TrapFrame {
+    pub(crate) fn trap_frame(&self) -> &mut TrapFrame {
         unsafe {
             &mut *(self.kstack.frame.end_pa().kvaddr().get_mut::<TrapFrame>() as *mut TrapFrame)
                 .sub(1)

@@ -31,7 +31,7 @@ bitflags::bitflags! {
   }
 }
 
-pub fn init(start: u64, size: u64) {
+pub(crate) fn init(start: u64, size: u64) {
     heap_allocator::init();
     frame_allocator::init(start as usize, size as usize);
     page_table::init();
