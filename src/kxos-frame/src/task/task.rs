@@ -4,9 +4,10 @@ use core::mem::size_of;
 use lazy_static::lazy_static;
 
 use crate::cell::Cell;
-use crate::mm::PhysFrame;
+use crate::config::{PAGE_SIZE, KERNEL_STACK_SIZE};
 use crate::trap::{CalleeRegs, SyscallFrame, TrapFrame};
 use crate::user::{syscall_switch_to_user_space, trap_switch_to_user_space, UserSpace};
+use crate::vm::{VmFrameVec, VmAllocOptions};
 use crate::{prelude::*, UPSafeCell};
 
 use super::processor::{current_task, schedule};
@@ -68,7 +69,7 @@ lazy_static! {
         };
         task.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
         task.task_inner.exclusive_access().ctx.rip = context_switch_to_user_space as usize;
-        task.task_inner.exclusive_access().ctx.regs.rsp = task.kstack.frame.end_pa().kvaddr().0
+        task.task_inner.exclusive_access().ctx.regs.rsp = task.kstack.frame.end_pa().unwrap().kvaddr().0
             as usize
             - size_of::<usize>()
             - size_of::<SyscallFrame>();
@@ -77,13 +78,13 @@ lazy_static! {
 }
 
 pub struct KernelStack {
-    frame: PhysFrame,
+    frame: VmFrameVec,
 }
 
 impl KernelStack {
     pub fn new() -> Self {
         Self {
-            frame: PhysFrame::alloc().expect("out of memory"),
+            frame: VmFrameVec::allocate(&VmAllocOptions::new(KERNEL_STACK_SIZE/PAGE_SIZE)).expect("out of memory"),
         }
     }
 }
@@ -149,7 +150,8 @@ impl Task {
         fn kernel_task_entry() {
             let current_task = current_task()
                 .expect("no current task, it should have current task in kernel task entry");
-            current_task.func.call(())
+            current_task.func.call(());
+            current_task.exit();
         }
         let result = Self {
             func: Box::new(task_fn),
@@ -168,7 +170,7 @@ impl Task {
 
         result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
         result.task_inner.exclusive_access().ctx.rip = kernel_task_entry as usize;
-        result.task_inner.exclusive_access().ctx.regs.rsp = result.kstack.frame.end_pa().kvaddr().0
+        result.task_inner.exclusive_access().ctx.regs.rsp = result.kstack.frame.end_pa().unwrap().kvaddr().0
             as usize
             - size_of::<usize>()
             - size_of::<SyscallFrame>();
@@ -186,6 +188,7 @@ impl Task {
                 .kstack
                 .frame
                 .end_pa()
+                .unwrap()
                 .kvaddr()
                 .get_mut::<SyscallFrame>() as *mut SyscallFrame)
                 .sub(1)
@@ -194,7 +197,7 @@ impl Task {
 
     pub(crate) fn trap_frame(&self) -> &mut TrapFrame {
         unsafe {
-            &mut *(self.kstack.frame.end_pa().kvaddr().get_mut::<TrapFrame>() as *mut TrapFrame)
+            &mut *(self.kstack.frame.end_pa().unwrap().kvaddr().get_mut::<TrapFrame>() as *mut TrapFrame)
                 .sub(1)
         }
     }
