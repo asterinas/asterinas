@@ -15,7 +15,7 @@ run: build
 	@cd src && cargo krun
 
 test: build
-	@#cd src && cargo ktest
+	@cd src && cargo ktest
 
 docs:
 	@cd src && cargo doc 					# Build Rust docs
