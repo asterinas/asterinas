@@ -1,7 +1,7 @@
 #![allow(unused)]
 
-pub const USER_STACK_SIZE: usize = 4096 * 2;
-pub const KERNEL_STACK_SIZE: usize = 4096 * 2;
+pub const USER_STACK_SIZE: usize = PAGE_SIZE * 2;
+pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 16;
 pub const KERNEL_HEAP_SIZE: usize = 0x1_000_000;
 
 pub const KERNEL_OFFSET: usize = 0xffffff00_00000000;

@@ -43,6 +43,15 @@ impl VmFrameVec {
         self.0.push(new_frame);
     }
 
+    /// get the end pa of the collection
+    pub fn end_pa(&self) -> Option<PhysAddr>{
+        if let Some(frame) = self.0.last(){
+            Some(PhysAddr(frame.paddr()+PAGE_SIZE))
+        }else{
+            None
+        }
+    }
+
     /// Pop a frame from the collection.
     pub fn pop(&mut self) -> Option<VmFrame> {
         self.0.pop()
