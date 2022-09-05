@@ -261,15 +261,9 @@ fn read_segment_data<'a>(
 ) -> Result<&'a [u8], &'static str> {
     match segment.get_data(&elf_file) {
         Err(msg) => Err(msg),
-        Ok(data) => {
-            match data {
-                SegmentData::Note64(_, data) | SegmentData::Undefined(data) => {
-                    Ok(data)
-                },
-                _ => {
-                    Err("Unkonwn segment data type")
-                }
-            }
-        }
+        Ok(data) => match data {
+            SegmentData::Note64(_, data) | SegmentData::Undefined(data) => Ok(data),
+            _ => Err("Unkonwn segment data type"),
+        },
     }
 }

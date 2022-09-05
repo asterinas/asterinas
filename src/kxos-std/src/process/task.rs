@@ -1,9 +1,10 @@
 use alloc::sync::Arc;
 use kxos_frame::{
     cpu::CpuContext,
+    debug,
     task::Task,
     user::{UserEvent, UserMode, UserSpace},
-    vm::VmSpace, debug,
+    vm::VmSpace,
 };
 
 use crate::{memory::load_elf_to_vm_space, syscall::syscall_handler};
