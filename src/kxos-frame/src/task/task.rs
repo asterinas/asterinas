@@ -4,10 +4,10 @@ use core::mem::size_of;
 use lazy_static::lazy_static;
 
 use crate::cell::Cell;
-use crate::config::{PAGE_SIZE, KERNEL_STACK_SIZE};
+use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
 use crate::trap::{CalleeRegs, SyscallFrame, TrapFrame};
 use crate::user::{syscall_switch_to_user_space, trap_switch_to_user_space, UserSpace};
-use crate::vm::{VmFrameVec, VmAllocOptions};
+use crate::vm::{VmAllocOptions, VmFrameVec};
 use crate::{prelude::*, UPSafeCell};
 
 use super::processor::{current_task, schedule};
@@ -84,7 +84,8 @@ pub struct KernelStack {
 impl KernelStack {
     pub fn new() -> Self {
         Self {
-            frame: VmFrameVec::allocate(&VmAllocOptions::new(KERNEL_STACK_SIZE/PAGE_SIZE)).expect("out of memory"),
+            frame: VmFrameVec::allocate(&VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE))
+                .expect("out of memory"),
         }
     }
 }
@@ -170,10 +171,10 @@ impl Task {
 
         result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
         result.task_inner.exclusive_access().ctx.rip = kernel_task_entry as usize;
-        result.task_inner.exclusive_access().ctx.regs.rsp = result.kstack.frame.end_pa().unwrap().kvaddr().0
-            as usize
-            - size_of::<usize>()
-            - size_of::<SyscallFrame>();
+        result.task_inner.exclusive_access().ctx.regs.rsp =
+            result.kstack.frame.end_pa().unwrap().kvaddr().0 as usize
+                - size_of::<usize>()
+                - size_of::<SyscallFrame>();
 
         let arc_self = Arc::new(result);
         add_task(arc_self.clone());
@@ -197,7 +198,13 @@ impl Task {
 
     pub(crate) fn trap_frame(&self) -> &mut TrapFrame {
         unsafe {
-            &mut *(self.kstack.frame.end_pa().unwrap().kvaddr().get_mut::<TrapFrame>() as *mut TrapFrame)
+            &mut *(self
+                .kstack
+                .frame
+                .end_pa()
+                .unwrap()
+                .kvaddr()
+                .get_mut::<TrapFrame>() as *mut TrapFrame)
                 .sub(1)
         }
     }

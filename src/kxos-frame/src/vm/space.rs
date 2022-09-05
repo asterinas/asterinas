@@ -32,7 +32,7 @@ impl VmSpace {
             memory_set: unsafe { UPSafeCell::new(MemorySet::new()) },
         }
     }
-    /// Activate the page table, load root physical address to cr3 
+    /// Activate the page table, load root physical address to cr3
     pub unsafe fn activate(&self) {
         x86_64_util::set_cr3(self.memory_set.exclusive_access().pt.root_pa.0);
     }

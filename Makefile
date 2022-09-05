@@ -23,7 +23,6 @@ docs:
 	@cd docs && mdbook build 				# Build mdBook
 
 check:
-	@cd src && cargo check					# Check dependency errors
 	@cd src && cargo fmt --check 			# Check Rust format issues
 	@cd src && cargo clippy					# Check common programming mistakes
 

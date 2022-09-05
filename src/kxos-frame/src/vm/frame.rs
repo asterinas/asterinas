@@ -44,10 +44,10 @@ impl VmFrameVec {
     }
 
     /// get the end pa of the collection
-    pub fn end_pa(&self) -> Option<PhysAddr>{
-        if let Some(frame) = self.0.last(){
-            Some(PhysAddr(frame.paddr()+PAGE_SIZE))
-        }else{
+    pub fn end_pa(&self) -> Option<PhysAddr> {
+        if let Some(frame) = self.0.last() {
+            Some(PhysAddr(frame.paddr() + PAGE_SIZE))
+        } else {
             None
         }
     }

@@ -38,10 +38,9 @@ use bootloader::{
     boot_info::{FrameBuffer, MemoryRegionKind},
     BootInfo,
 };
-use trap::{TrapFrame, IrqLine, IrqCallbackHandle};
+use trap::{IrqCallbackHandle, IrqLine, TrapFrame};
 
-static mut IRQ_CALLBACK_LIST : Vec<IrqCallbackHandle> = Vec::new();
-
+static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
 pub fn init(boot_info: &'static mut BootInfo) {
     let siz = boot_info.framebuffer.as_ref().unwrap() as *const FrameBuffer as usize;
@@ -66,16 +65,14 @@ pub fn init(boot_info: &'static mut BootInfo) {
     if !memory_init {
         panic!("memory init failed");
     }
-    unsafe{
-        for i in 0..256{
+    unsafe {
+        for i in 0..256 {
             IRQ_CALLBACK_LIST.push(IrqLine::acquire(i as u8).on_active(general_handler))
         }
     }
-
-
 }
-fn general_handler(trap_frame: TrapFrame){
-    println!("{:?}",trap_frame);
+fn general_handler(trap_frame: TrapFrame) {
+    println!("{:?}", trap_frame);
     panic!("couldn't handler trap right now");
 }
 
