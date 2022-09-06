@@ -1,0 +1,52 @@
+.global _start
+
+.section .text
+_start:
+    call    print_hello_world
+    mov     $57, %rax                   # syscall number of fork
+    syscall
+
+    cmp     $0, %rax
+    je      _child                      # child process
+    jmp     _parent                     # parent process
+_parent: 
+    call    print_parent_message
+    call    exit
+_child: 
+    call    print_child_message
+    call    exit
+exit:
+    mov     $60, %rax                   # syscall number of exit
+    mov     $0, %rdi                    # exit code
+    syscall     
+print_hello_world:
+    mov     $message, %rsi              # address of message
+    mov     $message_end, %rdx
+    sub     %rsi, %rdx                  # calculate message len
+    jmp     _print_message
+print_parent_message:
+    mov     $message_parent, %rsi       # address of message
+    mov     $message_parent_end, %rdx
+    sub     %rsi, %rdx                  # calculate message len
+    jmp     _print_message
+print_child_message:
+    mov     $message_child, %rsi        # address of message
+    mov     $message_child_end, %rdx
+    sub     %rsi, %rdx                  # calculate message len
+    jmp     _print_message
+# never directly call _print_message
+_print_message:
+    mov     $1, %rax                    # syscall number of write
+    mov     $1, %rdi                    # stdout
+    syscall
+    ret
+.section .rodata            
+message:
+    .ascii  "Hello, world\n"
+message_end:
+message_parent:
+    .ascii "Hello world from parent\n"
+message_parent_end:
+message_child:
+    .ascii "Hello world from child\n"
+message_child_end:
