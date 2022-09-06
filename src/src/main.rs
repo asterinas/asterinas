@@ -20,8 +20,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     kxos_std::init();
     kxos_std::run_first_process();
-
-    loop {}
 }
 #[cfg(not(test))]
 #[panic_handler]
