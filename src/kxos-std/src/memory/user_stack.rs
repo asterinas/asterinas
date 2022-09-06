@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use kxos_frame::vm::{Vaddr, VmPerm, VmSpace};
 
 use super::vm_page::VmPageRange;
@@ -8,9 +7,8 @@ pub const USER_STACK_SIZE: usize = 0x1000 * 16; // 64KB
 
 pub struct UserStack {
     /// The low address of user stack
-    pub stack_base: Vaddr,
+    stack_base: Vaddr,
     stack_size: usize,
-    vm_space: Option<Arc<VmSpace>>,
 }
 
 impl UserStack {
@@ -19,7 +17,6 @@ impl UserStack {
         Self {
             stack_base,
             stack_size,
-            vm_space: None,
         }
     }
 
@@ -28,7 +25,6 @@ impl UserStack {
         Self {
             stack_base: USER_STACK_BASE,
             stack_size: USER_STACK_SIZE,
-            vm_space: None,
         }
     }
 

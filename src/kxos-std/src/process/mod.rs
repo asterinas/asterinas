@@ -2,7 +2,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use alloc::sync::Arc;
 // use kxos_frame::{sync::SpinLock, task::Task, user::UserSpace};
-use kxos_frame::{debug, task::Task};
+use kxos_frame::task::Task;
 
 use self::task::spawn_user_task_from_elf;
 
@@ -39,14 +39,17 @@ impl Process {
         F: Fn() + Send + Sync + 'static,
     {
         let pid = new_pid();
-        debug!("pid = {}", pid);
-        let task = Task::spawn(task_fn, None::<u8>, None).expect("spawn kernel task failed");
+        let task = Task::spawn(task_fn, pid, None).expect("spawn kernel task failed");
         let exit_code = 0;
         Self {
             pid,
             task,
             exit_code,
         }
+    }
+
+    pub fn pid(&self) -> usize {
+        self.pid
     }
 }
 

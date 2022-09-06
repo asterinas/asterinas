@@ -6,7 +6,7 @@
 #![feature(const_btree_new)]
 #![feature(cstr_from_bytes_until_nul)]
 
-use kxos_frame::println;
+use kxos_frame::{println, info, task::Task};
 use process::Process;
 
 extern crate alloc;
@@ -20,15 +20,26 @@ pub fn init() {
     process::fifo_scheduler::init();
 }
 
-pub fn run_first_kernel_task() {
-    Process::spawn_kernel_task(|| {
-        println!("hello world from kernel");
+pub fn init_task() {
+    println!("[kernel] Hello world from init task!");
+
+    let process = Process::spawn_kernel_task(|| {
+        println!("[kernel] Hello world from kernel!");
     });
+    info!("spawn kernel process, pid = {}", process.pid());
+
+    let elf_file_content = read_elf_content();
+    let process = Process::spawn_from_elf(elf_file_content);
+    info!("spwan user process, pid = {}", process.pid());
+    
+    loop {}
 }
 
-pub fn run_first_process() {
+/// first process never return
+pub fn run_first_process() -> ! {
     let elf_file_content = read_elf_content();
-    Process::spawn_from_elf(elf_file_content);
+    Task::spawn(init_task, None::<u8>, None).expect("Spawn first task failed");
+    unreachable!()
 }
 
 fn read_elf_content() -> &'static [u8] {
