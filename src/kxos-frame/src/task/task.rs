@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 
 use crate::cell::Cell;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
+use crate::task::processor::switch_to_task;
 use crate::trap::{CalleeRegs, SyscallFrame, TrapFrame};
 use crate::user::{syscall_switch_to_user_space, trap_switch_to_user_space, UserSpace};
 use crate::vm::{VmAllocOptions, VmFrameVec};
@@ -177,9 +178,7 @@ impl Task {
                 - size_of::<SyscallFrame>();
 
         let arc_self = Arc::new(result);
-        add_task(arc_self.clone());
-
-        schedule();
+        switch_to_task(arc_self.clone());
         Ok(arc_self)
     }
 
