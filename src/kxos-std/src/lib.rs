@@ -6,7 +6,7 @@
 #![feature(const_btree_new)]
 #![feature(cstr_from_bytes_until_nul)]
 
-use kxos_frame::{println, info, task::Task};
+use kxos_frame::{info, println, task::Task};
 use process::Process;
 
 extern crate alloc;
@@ -31,7 +31,7 @@ pub fn init_task() {
     let elf_file_content = read_elf_content();
     let process = Process::spawn_from_elf(elf_file_content);
     info!("spwan user process, pid = {}", process.pid());
-    
+
     loop {}
 }
 
