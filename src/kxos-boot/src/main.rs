@@ -4,7 +4,16 @@ use std::{
     process::{Command, ExitStatus},
     time::Duration,
 };
-const RUN_ARGS: &[&str] = &["--no-reboot", "-s"];
+const RUN_ARGS: &[&str] = &[
+    "--no-reboot",
+    "-s",
+    "-device",
+    "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-serial",
+    "stdio",
+    "-display",
+    "none",
+];
 const TEST_ARGS: &[&str] = &[
     "-device",
     "isa-debug-exit,iobase=0xf4,iosize=0x04",
