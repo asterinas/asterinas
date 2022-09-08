@@ -25,6 +25,7 @@ pub fn spawn_user_task_from_elf(elf_file_content: &[u8]) -> Arc<Task> {
         let cur = Task::current();
         let user_space = cur.user_space().expect("user task should have user space");
         let mut user_mode = UserMode::new(user_space);
+        debug!("in user task");
         loop {
             let user_event = user_mode.execute();
             debug!("return from user mode");
