@@ -44,7 +44,11 @@ impl SyscallArgument {
 
 pub fn syscall_handler(context: &mut CpuContext) -> HandlerResult {
     let syscall_frame = SyscallArgument::new_from_context(context);
-    let syscall_return = syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args, context.to_owned());
+    let syscall_return = syscall_dispatch(
+        syscall_frame.syscall_number,
+        syscall_frame.args,
+        context.to_owned(),
+    );
 
     match syscall_return {
         SyscallResult::Return(return_value) => {

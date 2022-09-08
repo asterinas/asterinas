@@ -181,7 +181,6 @@ impl Task {
         Ok(arc_self)
     }
 
-
     /// create a new task data structure without schedule it
     pub fn new<F, T>(
         task_fn: F,
