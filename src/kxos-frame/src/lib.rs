@@ -83,6 +83,7 @@ pub fn init(boot_info: &'static mut BootInfo) {
 }
 fn general_handler(trap_frame: TrapFrame) {
     println!("{:?}", trap_frame);
+    println!("rip = 0x{:x}", trap_frame.rip);
     panic!("couldn't handler trap right now");
 }
 

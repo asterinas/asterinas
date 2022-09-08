@@ -73,7 +73,7 @@ impl From<SyscallFrame> for CpuContext {
                 rax: syscall.caller.rax as u64,
                 rcx: syscall.caller.rcx as u64,
                 rsp: syscall.callee.rsp as u64,
-                rip: 0,
+                rip: syscall.caller.rcx as u64,
                 rflag: 0,
             },
             fs_base: 0,

@@ -113,7 +113,7 @@ impl MapArea {
                 let offset = current_start_address - va.0;
                 let copy_len = (va.0 + PAGE_SIZE - current_start_address).min(remain);
                 let src = &data[processed..processed + copy_len];
-                let dst = &mut pa.start_pa().kvaddr().get_bytes_array()[offset..copy_len];
+                let dst = &mut pa.start_pa().kvaddr().get_bytes_array()[offset..(offset + copy_len)];
                 dst.copy_from_slice(src);
                 processed += copy_len;
                 remain -= copy_len;
@@ -134,7 +134,7 @@ impl MapArea {
                 let offset = start - va.0;
                 let copy_len = (va.0 + PAGE_SIZE - start).min(remain);
                 let src = &mut data[processed..processed + copy_len];
-                let dst = &pa.start_pa().kvaddr().get_bytes_array()[offset..copy_len];
+                let dst = &pa.start_pa().kvaddr().get_bytes_array()[offset..(offset + copy_len)];
                 src.copy_from_slice(dst);
                 processed += copy_len;
                 remain -= copy_len;

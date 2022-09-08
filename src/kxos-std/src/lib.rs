@@ -6,8 +6,10 @@
 #![feature(const_btree_new)]
 #![feature(cstr_from_bytes_until_nul)]
 
-use kxos_frame::{info, println, task::Task};
+use kxos_frame::{info, println};
 use process::Process;
+
+use crate::process::current_pid;
 
 extern crate alloc;
 
@@ -20,28 +22,44 @@ pub fn init() {
     process::fifo_scheduler::init();
 }
 
-pub fn init_task() {
-    println!("[kernel] Hello world from init task!");
+pub fn init_process() {
+    println!("[kernel] Spawn init process!");
 
-    let process = Process::spawn_kernel_task(|| {
+    let process = Process::spawn_kernel_process(|| {
         println!("[kernel] Hello world from kernel!");
+        let pid = current_pid();
+        info!("current pid = {}", pid);
     });
-    info!("spawn kernel process, pid = {}", process.pid());
+    info!(
+        "[kxos-std/lib.rs] spawn kernel process, pid = {}",
+        process.pid()
+    );
 
-    let elf_file_content = read_elf_content();
-    let process = Process::spawn_from_elf(elf_file_content);
-    info!("spwan user process, pid = {}", process.pid());
+    let hello_world_content = read_hello_world_content();
+    let process = Process::spawn_user_process(hello_world_content);
+    info!(
+        "[kxos-std/lib.rs] spwan hello world process, pid = {}",
+        process.pid()
+    );
+
+    let fork_content = read_fork_content();
+    let process = Process::spawn_user_process(fork_content);
+    info!("spawn fork process, pid = {}", process.pid());
 
     loop {}
 }
 
 /// first process never return
 pub fn run_first_process() -> ! {
-    let elf_file_content = read_elf_content();
-    Task::spawn(init_task, None::<u8>, None).expect("Spawn first task failed");
+    let elf_file_content = read_hello_world_content();
+    Process::spawn_kernel_process(init_process);
     unreachable!()
 }
 
-fn read_elf_content() -> &'static [u8] {
+pub fn read_hello_world_content() -> &'static [u8] {
     include_bytes!("../../kxos-user/hello_world/hello_world")
+}
+
+fn read_fork_content() -> &'static [u8] {
+    include_bytes!("../../kxos-user/fork/fork")
 }
