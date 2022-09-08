@@ -127,15 +127,15 @@ impl fmt::Write for Writer {
 
 /// Like the `print!` macro in the standard library, but prints to the VGA text buffer.
 #[macro_export]
-macro_rules! print {
+macro_rules! screen_print {
     ($($arg:tt)*) => ($crate::device::framebuffer::_print(format_args!($($arg)*)));
 }
 
 /// Like the `println!` macro in the standard library, but prints to the VGA text buffer.
 #[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+macro_rules! screen_println {
+    () => ($crate::screen_print!("\n"));
+    ($($arg:tt)*) => ($crate::screen_print!("{}\n", format_args!($($arg)*)));
 }
 
 /// Prints the given formatted string to the VGA text buffer

@@ -50,14 +50,18 @@ pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
 }
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
+pub fn schedule() {
+    switch_to_task(fetch_task().expect("no more task found"));
+}
+
+/// call this function to switch to other task
 ///
 /// if current task is none, then it will use the default task context and it will not return to this function again
 ///
 /// if current task status is exit, then it will not add to the scheduler
 ///
 /// before context switch, current task will switch to the next task
-pub fn schedule() {
-    let next_task = fetch_task().expect("no more task found");
+pub fn switch_to_task(next_task: Arc<Task>) {
     let current_task_option = current_task();
     let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
     let current_task: Arc<Task>;
