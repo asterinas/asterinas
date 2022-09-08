@@ -6,7 +6,7 @@
 #![feature(const_btree_new)]
 #![feature(cstr_from_bytes_until_nul)]
 
-use kxos_frame::{info, println};
+use kxos_frame::{debug, info, println};
 use process::Process;
 
 use crate::process::current_pid;
@@ -28,7 +28,7 @@ pub fn init_process() {
     let process = Process::spawn_kernel_process(|| {
         println!("[kernel] Hello world from kernel!");
         let pid = current_pid();
-        info!("current pid = {}", pid);
+        debug!("current pid = {}", pid);
     });
     info!(
         "[kxos-std/lib.rs] spawn kernel process, pid = {}",
@@ -44,7 +44,10 @@ pub fn init_process() {
 
     let fork_content = read_fork_content();
     let process = Process::spawn_user_process(fork_content);
-    info!("spawn fork process, pid = {}", process.pid());
+    info!(
+        "[kxos-std/lib.rs] spawn fork process, pid = {}",
+        process.pid()
+    );
 
     loop {}
 }

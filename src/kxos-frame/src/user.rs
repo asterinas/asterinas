@@ -1,6 +1,6 @@
 //! User space.
 
-use crate::println;
+use crate::{debug, println};
 
 use crate::cpu::CpuContext;
 use crate::prelude::*;
