@@ -8,6 +8,10 @@ _start:
     mov     $60, %rax               # syscall number of exit
     mov     $0, %rdi                # exit code
     syscall     
+get_pid: 
+    mov     $39, %rax
+    syscall
+    ret
 print_message:
     mov     $1, %rax                # syscall number of write
     mov     $1, %rdi                # stdout

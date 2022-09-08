@@ -9,16 +9,22 @@ _start:
     cmp     $0, %rax
     je      _child                      # child process
     jmp     _parent                     # parent process
-_parent: 
+_parent:
+    call    get_pid 
     call    print_parent_message
     call    exit
 _child: 
+    call    get_pid
     call    print_child_message
     call    exit
 exit:
     mov     $60, %rax                   # syscall number of exit
     mov     $0, %rdi                    # exit code
-    syscall     
+    syscall
+get_pid:
+    mov     $39, %rax
+    syscall
+    ret     
 print_hello_world:
     mov     $message, %rsi              # address of message
     mov     $message_end, %rdx
@@ -40,9 +46,9 @@ _print_message:
     mov     $1, %rdi                    # stdout
     syscall
     ret
-.section .rodata            
+.section .rodata        
 message:
-    .ascii  "Hello, world\n"
+    .ascii  "Hello, world in fork\n"
 message_end:
 message_parent:
     .ascii "Hello world from parent\n"
