@@ -3,7 +3,7 @@ use core::fmt::Arguments;
 /// Print log message
 /// This function should *NOT* be directly called.
 /// Instead, print logs with macros.
-#[cfg(not(test))]
+#[cfg(not(feature = "serial_print"))]
 #[doc(hidden)]
 pub fn log_print(args: Arguments) {
     use crate::device::framebuffer::WRITER;
@@ -18,16 +18,18 @@ pub fn log_print(args: Arguments) {
 /// Print log message
 /// This function should *NOT* be directly called.
 /// Instead, print logs with macros.
-#[cfg(test)]
+#[cfg(feature = "serial_print")]
 #[doc(hidden)]
 pub fn log_print(args: Arguments) {
     use crate::device::serial::SERIAL;
     use core::fmt::Write;
-
-    SERIAL
-        .lock()
-        .write_fmt(args)
-        .expect("Printing to serial failed");
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        SERIAL
+            .lock()
+            .write_fmt(args)
+            .expect("Printing to serial failed");
+    });
 }
 
 /// This macro should not be directly called.

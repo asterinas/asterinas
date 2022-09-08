@@ -42,6 +42,16 @@ use trap::{IrqCallbackHandle, IrqLine, TrapFrame};
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
+#[cfg(not(feature = "serial_print"))]
+pub use crate::screen_print as print;
+#[cfg(not(feature = "serial_print"))]
+pub use crate::screen_println as println;
+
+#[cfg(feature = "serial_print")]
+pub use crate::serial_print as print;
+#[cfg(feature = "serial_print")]
+pub use crate::serial_println as println;
+
 pub fn init(boot_info: &'static mut BootInfo) {
     let siz = boot_info.framebuffer.as_ref().unwrap() as *const FrameBuffer as usize;
     device::init(boot_info.framebuffer.as_mut().unwrap());
