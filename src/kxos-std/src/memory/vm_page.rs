@@ -7,14 +7,15 @@ use kxos_frame::{
     vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
 };
 
+use super::elf::ElfError;
+
 /// A set of **CONTINUOUS** virtual pages in VmSpace
-pub struct VmPageRange<'a> {
+pub struct VmPageRange {
     start_page: VmPage,
     end_page: VmPage,
-    vm_space: Option<&'a VmSpace>,
 }
 
-impl<'a> VmPageRange<'a> {
+impl VmPageRange {
     /// create a set of pages containing virtual address range [a, b)
     pub const fn new_range(vaddr_range: Range<Vaddr>) -> Self {
         let start_page = VmPage::containing_address(vaddr_range.start);
@@ -22,7 +23,6 @@ impl<'a> VmPageRange<'a> {
         Self {
             start_page,
             end_page,
-            vm_space: None,
         }
     }
 
@@ -32,7 +32,6 @@ impl<'a> VmPageRange<'a> {
         Self {
             start_page: page,
             end_page: page,
-            vm_space: None,
         }
     }
 
@@ -46,45 +45,47 @@ impl<'a> VmPageRange<'a> {
     }
 
     /// allocate a set of physical frames and map self to frames
-    pub fn map(&mut self, vm_space: &'a VmSpace, vm_perm: VmPerm) {
+    pub fn map(&mut self, vm_space: &VmSpace, vm_perm: VmPerm) {
         let options = VmAllocOptions::new(self.len());
         let frames = VmFrameVec::allocate(&options).expect("allocate frame error");
         self.map_to(vm_space, frames, vm_perm);
     }
 
     /// map self to a set of zeroed frames
-    pub fn map_zeroed(&mut self, vm_space: &'a VmSpace, vm_perm: VmPerm) {
+    pub fn map_zeroed(&mut self, vm_space: &VmSpace, vm_perm: VmPerm) {
         let options = VmAllocOptions::new(self.len());
-        let mut frames = VmFrameVec::allocate(&options).expect("allocate frame error");
+        let frames = VmFrameVec::allocate(&options).expect("allocate frame error");
         let buffer = vec![0u8; self.nbytes()];
-        frames.write_bytes(0, &buffer).expect("write zero failed");
-        self.map_to(vm_space, frames, vm_perm)
+        self.map_to(vm_space, frames, vm_perm);
+        vm_space
+            .write_bytes(self.start_address(), &buffer)
+            .expect("write zero failed");
+        // frames.write_bytes(0, &buffer).expect("write zero failed");
     }
 
     /// map self to a set of frames
-    pub fn map_to(&mut self, vm_space: &'a VmSpace, frames: VmFrameVec, vm_perm: VmPerm) {
+    pub fn map_to(&mut self, vm_space: &VmSpace, frames: VmFrameVec, vm_perm: VmPerm) {
         assert_eq!(self.len(), frames.len());
         let mut vm_map_options = VmMapOptions::new();
         vm_map_options.addr(Some(self.start_address()));
         vm_map_options.perm(vm_perm);
         vm_space.map(frames, &vm_map_options).expect("map failed");
-        self.vm_space = Some(vm_space)
     }
 
-    pub fn unmap(&mut self) {
-        if self.is_mapped() {
-            let vm_space = self.vm_space.take().unwrap();
-            vm_space
-                .unmap(&(self.start_address()..self.end_address()))
-                .expect("unmap failed");
-        }
+    pub fn unmap(&mut self, vm_space: &VmSpace) {
+        vm_space
+            .unmap(&(self.start_address()..self.end_address()))
+            .expect("unmap failed");
     }
 
-    pub fn is_mapped(&self) -> bool {
-        if let None = self.vm_space {
-            false
-        } else {
-            true
+    pub fn is_mapped(&self, vm_space: &VmSpace) -> bool {
+        todo!()
+    }
+
+    pub fn iter(&self) -> VmPageIter<'_> {
+        VmPageIter {
+            current: self.start_page,
+            page_range: self,
         }
     }
 
@@ -98,8 +99,27 @@ impl<'a> VmPageRange<'a> {
     }
 }
 
+pub struct VmPageIter<'a> {
+    current: VmPage,
+    page_range: &'a VmPageRange,
+}
+
+impl<'a> Iterator for VmPageIter<'a> {
+    type Item = VmPage;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next_page = if self.current <= self.page_range.end_page {
+            Some(self.current)
+        } else {
+            None
+        };
+        self.current = self.current.next_page();
+        next_page
+    }
+}
+
 /// A Virtual Page
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VmPage {
     /// Virtual Page Number
     vpn: usize,
@@ -114,5 +134,26 @@ impl VmPage {
 
     const fn start_address(&self) -> Vaddr {
         self.vpn * PAGE_SIZE
+    }
+
+    const fn next_page(&self) -> VmPage {
+        VmPage { vpn: self.vpn + 1 }
+    }
+
+    /// Check whether current page is mapped
+    pub fn is_mapped(&self, vm_space: &VmSpace) -> bool {
+        vm_space.is_mapped(self.start_address())
+    }
+
+    pub fn map_page(&self, vm_space: &VmSpace, vm_perm: VmPerm) -> Result<(), ElfError> {
+        let vm_alloc_option = VmAllocOptions::new(1);
+        let vm_frame = VmFrameVec::allocate(&vm_alloc_option)?;
+
+        let mut vm_map_options = VmMapOptions::new();
+        vm_map_options.addr(Some(self.start_address()));
+        vm_map_options.perm(vm_perm);
+        vm_space.map(vm_frame, &vm_map_options)?;
+
+        Ok(())
     }
 }

@@ -49,6 +49,10 @@ pub fn init_process() {
         process.pid()
     );
 
+    let hello_c_content = read_hello_c_content();
+    let process = Process::spawn_user_process(hello_c_content);
+    info!("spawn hello_c process, pid = {}", process.pid());
+
     loop {}
 }
 
@@ -65,4 +69,8 @@ pub fn read_hello_world_content() -> &'static [u8] {
 
 fn read_fork_content() -> &'static [u8] {
     include_bytes!("../../kxos-user/fork/fork")
+}
+
+fn read_hello_c_content() -> &'static [u8] {
+    include_bytes!("../../kxos-user/hello_c/hello")
 }

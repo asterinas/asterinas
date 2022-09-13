@@ -181,6 +181,19 @@ impl MemorySet {
         }
     }
 
+    /// determine whether a virtaddr is in a mapped area
+    pub fn is_mapped(&self, vaddr: VirtAddr) -> bool {
+        for (start_address, map_area) in self.areas.iter() {
+            if *start_address > vaddr {
+                break;
+            }
+            if *start_address <= vaddr && vaddr < *start_address + map_area.mapped_size() {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn new() -> Self {
         Self {
             pt: PageTable::new(),
