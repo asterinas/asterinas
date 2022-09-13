@@ -44,7 +44,7 @@ pub trait VmIo: Send + Sync {
     /// On success, the input `buf` must be written to the VM object entirely.
     /// If, for any reason, the input data can only be written partially,
     /// then the method shall return an error.
-    fn write_bytes(&mut self, offset: usize, buf: &[u8]) -> Result<()>;
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
 
     /// Write a value of a specified type at a specified offset.
     fn write_val<T: Pod>(&mut self, offset: usize, new_val: &T) -> Result<()> {

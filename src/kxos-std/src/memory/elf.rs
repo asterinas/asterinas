@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use kxos_frame::{
     config::PAGE_SIZE,
     debug,
-    vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
+    vm::{Vaddr, VmIo, VmPerm, VmSpace},
     Error,
 };
 use xmas_elf::{
@@ -80,22 +80,32 @@ impl<'a> ElfSegment<'a> {
         self.range.end
     }
 
-    fn copy_and_map(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
-        if !self.is_page_aligned() {
-            return Err(ElfError::SegmentNotPageAligned);
-        }
+    fn copy_segment(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
+        // if !self.is_page_aligned() {
+        //     return Err(ElfError::SegmentNotPageAligned);
+        // }
+        // map page
+        debug!(
+            "map_segment: 0x{:x} - 0x{:x}",
+            self.start_address(),
+            self.end_address()
+        );
         let vm_page_range = VmPageRange::new_range(self.start_address()..self.end_address());
-        let page_number = vm_page_range.len();
-        // allocate frames
-        let vm_alloc_options = VmAllocOptions::new(page_number);
-        let mut frames = VmFrameVec::allocate(&vm_alloc_options)?;
+        for page in vm_page_range.iter() {
+            // map page if the page is not mapped
+            if !page.is_mapped(vm_space) {
+                let vm_perm = self.vm_perm | VmPerm::W;
+                page.map_page(vm_space, vm_perm)?;
+            }
+        }
+
+        debug!(
+            "copy_segment: 0x{:x} - 0x{:x}",
+            self.start_address(),
+            self.end_address()
+        );
         // copy segment
-        frames.write_bytes(0, self.data)?;
-        // map segment
-        let mut vm_map_options = VmMapOptions::new();
-        vm_map_options.addr(Some(self.start_address()));
-        vm_map_options.perm(self.vm_perm);
-        vm_space.map(frames, &vm_map_options)?;
+        vm_space.write_bytes(self.start_address(), self.data)?;
         Ok(())
     }
 
@@ -160,13 +170,9 @@ impl<'a> ElfLoadInfo<'a> {
         Ok(VmPageRange::new_range(elf_start_address..elf_end_address))
     }
 
-    pub fn copy_and_map(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
+    pub fn copy_data(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
         for segment in self.segments.iter() {
-            debug!(
-                "map segment: 0x{:x}-0x{:x}",
-                segment.range.start, segment.range.end
-            );
-            segment.copy_and_map(vm_space)?;
+            segment.copy_segment(vm_space)?;
         }
         Ok(())
     }
@@ -217,10 +223,10 @@ fn check_elf_header(elf_file: &ElfFile) -> Result<(), ElfError> {
         return Err(ElfError::UnsupportedElfType);
     }
     // system V ABI
-    debug_assert_eq!(elf_header.pt1.os_abi(), header::OsAbi::SystemV);
-    if elf_header.pt1.os_abi() != header::OsAbi::SystemV {
-        return Err(ElfError::UnsupportedElfType);
-    }
+    // debug_assert_eq!(elf_header.pt1.os_abi(), header::OsAbi::SystemV);
+    // if elf_header.pt1.os_abi() != header::OsAbi::SystemV {
+    //     return Err(ElfError::UnsupportedElfType);
+    // }
     // x86_64 architecture
     debug_assert_eq!(
         elf_header.pt2.machine().as_machine(),

@@ -15,7 +15,9 @@ pub fn load_elf_to_vm_space<'a>(
     vm_space: &VmSpace,
 ) -> Result<ElfLoadInfo<'a>, ElfError> {
     let elf_load_info = ElfLoadInfo::parse_elf_data(elf_file_content)?;
-    elf_load_info.copy_and_map(vm_space)?;
+    debug!("parse data success");
+    elf_load_info.copy_data(vm_space)?;
+    debug!("copy_data success");
     elf_load_info.debug_check_map_result(vm_space);
     debug!("map elf success");
     elf_load_info.map_and_clear_user_stack(vm_space);
