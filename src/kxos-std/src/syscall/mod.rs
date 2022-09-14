@@ -1,14 +1,18 @@
+use alloc::borrow::ToOwned;
 use alloc::vec;
 use alloc::{sync::Arc, vec::Vec};
 use kxos_frame::cpu::CpuContext;
-use kxos_frame::Error;
+use kxos_frame::{debug, Error};
 use kxos_frame::{task::Task, user::UserSpace, vm::VmIo};
 
 use kxos_frame::info;
 
 use crate::process::task::HandlerResult;
+use crate::process::{current_pid, current_process, Process};
 
 const SYS_WRITE: u64 = 1;
+const SYS_GETPID: u64 = 39;
+const SYS_FORK: u64 = 57;
 const SYS_EXIT: u64 = 60;
 
 pub struct SyscallArgument {
@@ -40,7 +44,11 @@ impl SyscallArgument {
 
 pub fn syscall_handler(context: &mut CpuContext) -> HandlerResult {
     let syscall_frame = SyscallArgument::new_from_context(context);
-    let syscall_return = syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args);
+    let syscall_return = syscall_dispatch(
+        syscall_frame.syscall_number,
+        syscall_frame.args,
+        context.to_owned(),
+    );
 
     match syscall_return {
         SyscallResult::Return(return_value) => {
@@ -52,9 +60,11 @@ pub fn syscall_handler(context: &mut CpuContext) -> HandlerResult {
     }
 }
 
-pub fn syscall_dispatch(syscall_number: u64, args: [u64; 6]) -> SyscallResult {
+pub fn syscall_dispatch(syscall_number: u64, args: [u64; 6], context: CpuContext) -> SyscallResult {
     match syscall_number {
         SYS_WRITE => sys_write(args[0], args[1], args[2]),
+        SYS_GETPID => sys_getpid(),
+        SYS_FORK => sys_fork(context),
         SYS_EXIT => sys_exit(args[0] as _),
         _ => panic!("Unsupported syscall number: {}", syscall_number),
     }
@@ -62,6 +72,7 @@ pub fn syscall_dispatch(syscall_number: u64, args: [u64; 6]) -> SyscallResult {
 
 pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult {
     // only suppprt STDOUT now.
+    debug!("[syscall][id={}][SYS_WRITE]", SYS_WRITE);
     const STDOUT: u64 = 1;
     if fd == STDOUT {
         let task = Task::current();
@@ -77,7 +88,22 @@ pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult
     }
 }
 
+pub fn sys_getpid() -> SyscallResult {
+    debug!("[syscall][id={}][SYS_GETPID]", SYS_GETPID);
+    let pid = current_pid();
+    info!("[sys_getpid]: pid = {}", pid);
+    SyscallResult::Return(pid as i32)
+}
+
+pub fn sys_fork(parent_context: CpuContext) -> SyscallResult {
+    debug!("[syscall][id={}][SYS_FORK]", SYS_FORK);
+    let child_process = Process::fork(parent_context);
+    SyscallResult::Return(child_process.pid() as i32)
+}
+
 pub fn sys_exit(exit_code: i32) -> SyscallResult {
+    debug!("[syscall][id={}][SYS_EXIT]", SYS_EXIT);
+    current_process().set_exit_code(exit_code);
     SyscallResult::Exit(exit_code)
 }
 
@@ -88,6 +114,8 @@ fn copy_bytes_from_user(
 ) -> Result<Vec<u8>, Error> {
     let vm_space = user_space.vm_space();
     let mut buffer = vec![0u8; user_buf_len];
+    debug!("user_buf_ptr: 0x{:x}", user_buf_ptr);
+    debug!("user_buf_len: {}", user_buf_len);
     vm_space.read_bytes(user_buf_ptr, &mut buffer)?;
     Ok(buffer)
 }

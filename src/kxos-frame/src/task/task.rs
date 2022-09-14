@@ -12,7 +12,6 @@ use crate::vm::{VmAllocOptions, VmFrameVec};
 use crate::{prelude::*, UPSafeCell};
 
 use super::processor::{current_task, schedule};
-use super::scheduler::add_task;
 
 core::arch::global_asm!(include_str!("switch.S"));
 #[derive(Debug, Default, Clone, Copy)]
@@ -182,6 +181,54 @@ impl Task {
         Ok(arc_self)
     }
 
+    /// create a new task data structure without schedule it
+    pub fn new<F, T>(
+        task_fn: F,
+        task_data: T,
+        user_space: Option<Arc<UserSpace>>,
+    ) -> Result<Arc<Self>>
+    where
+        F: Fn() + Send + Sync + 'static,
+        T: Any + Send + Sync,
+    {
+        /// all task will entering this function
+        /// this function is mean to executing the task_fn in Task
+        fn kernel_task_entry() {
+            let current_task = current_task()
+                .expect("no current task, it should have current task in kernel task entry");
+            current_task.func.call(());
+            current_task.exit();
+        }
+        let result = Self {
+            func: Box::new(task_fn),
+            data: Box::new(task_data),
+            user_space,
+            task_inner: unsafe {
+                UPSafeCell::new(TaskInner {
+                    task_status: TaskStatus::Runnable,
+                    ctx: TaskContext::default(),
+                    is_from_trap: false,
+                })
+            },
+            exit_code: 0,
+            kstack: KernelStack::new(),
+        };
+
+        result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
+        result.task_inner.exclusive_access().ctx.rip = kernel_task_entry as usize;
+        result.task_inner.exclusive_access().ctx.regs.rsp =
+            result.kstack.frame.end_pa().unwrap().kvaddr().0 as usize
+                - size_of::<usize>()
+                - size_of::<SyscallFrame>();
+
+        Ok(Arc::new(result))
+    }
+
+    /// send the task to schedule
+    pub fn send_to_scheduler(self: &Arc<Self>) {
+        switch_to_task(self.clone());
+    }
+
     pub(crate) fn syscall_frame(&self) -> &mut SyscallFrame {
         unsafe {
             &mut *(self
@@ -214,7 +261,7 @@ impl Task {
     }
 
     /// Returns the task data.
-    pub fn data(&self) -> &dyn Any {
+    pub fn data(&self) -> &Box<dyn Any + Send + Sync> {
         &self.data
     }
 

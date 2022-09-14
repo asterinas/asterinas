@@ -4,6 +4,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use kxos_frame::{
     config::PAGE_SIZE,
+    debug,
     vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
     Error,
 };
@@ -161,6 +162,10 @@ impl<'a> ElfLoadInfo<'a> {
 
     pub fn copy_and_map(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
         for segment in self.segments.iter() {
+            debug!(
+                "map segment: 0x{:x}-0x{:x}",
+                segment.range.start, segment.range.end
+            );
             segment.copy_and_map(vm_space)?;
         }
         Ok(())
