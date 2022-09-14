@@ -117,6 +117,11 @@ impl<'a> UserMode<'a> {
             self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip;
             self.current.syscall_frame().callee.rsp = self.user_space.cpu_ctx.gp_regs.rsp;
             self.current.syscall_frame().caller.rax = self.user_space.cpu_ctx.gp_regs.rax;
+
+            // set argument registers
+            self.current.syscall_frame().caller.rdi = self.user_space.cpu_ctx.gp_regs.rdi;
+            self.current.syscall_frame().caller.rsi = self.user_space.cpu_ctx.gp_regs.rsi;
+            self.current.syscall_frame().caller.rdx = self.user_space.cpu_ctx.gp_regs.rdx;
             self.executed = true;
         } else {
             if self.current.inner_exclusive_access().is_from_trap {

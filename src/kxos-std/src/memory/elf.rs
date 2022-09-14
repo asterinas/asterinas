@@ -1,10 +1,10 @@
 use core::{cmp::Ordering, ops::Range};
 
+use alloc::ffi::CString;
 use alloc::vec;
 use alloc::vec::Vec;
 use kxos_frame::{
     config::PAGE_SIZE,
-    debug,
     vm::{Vaddr, VmIo, VmPerm, VmSpace},
     Error,
 };
@@ -14,12 +14,12 @@ use xmas_elf::{
     ElfFile,
 };
 
-use super::{user_stack::UserStack, vm_page::VmPageRange};
+use super::{init_stack::InitStack, vm_page::VmPageRange};
 
 pub struct ElfLoadInfo<'a> {
     entry_point: Vaddr,
     segments: Vec<ElfSegment<'a>>,
-    user_stack: UserStack,
+    init_stack: InitStack,
 }
 
 pub struct ElfSegment<'a> {
@@ -85,11 +85,11 @@ impl<'a> ElfSegment<'a> {
         //     return Err(ElfError::SegmentNotPageAligned);
         // }
         // map page
-        debug!(
-            "map_segment: 0x{:x} - 0x{:x}",
-            self.start_address(),
-            self.end_address()
-        );
+        // debug!(
+        //     "map_segment: 0x{:x} - 0x{:x}",
+        //     self.start_address(),
+        //     self.end_address()
+        // );
         let vm_page_range = VmPageRange::new_range(self.start_address()..self.end_address());
         for page in vm_page_range.iter() {
             // map page if the page is not mapped
@@ -99,11 +99,11 @@ impl<'a> ElfSegment<'a> {
             }
         }
 
-        debug!(
-            "copy_segment: 0x{:x} - 0x{:x}",
-            self.start_address(),
-            self.end_address()
-        );
+        // debug!(
+        //     "copy_segment: 0x{:x} - 0x{:x}",
+        //     self.start_address(),
+        //     self.end_address()
+        // );
         // copy segment
         vm_space.write_bytes(self.start_address(), self.data)?;
         Ok(())
@@ -115,11 +115,11 @@ impl<'a> ElfSegment<'a> {
 }
 
 impl<'a> ElfLoadInfo<'a> {
-    fn with_capacity(entry_point: Vaddr, capacity: usize, user_stack: UserStack) -> Self {
+    fn with_capacity(entry_point: Vaddr, capacity: usize, init_stack: InitStack) -> Self {
         Self {
             entry_point,
             segments: Vec::with_capacity(capacity),
-            user_stack,
+            init_stack,
         }
     }
 
@@ -127,7 +127,7 @@ impl<'a> ElfLoadInfo<'a> {
         self.segments.push(elf_segment);
     }
 
-    pub fn parse_elf_data(elf_file_content: &'a [u8]) -> Result<Self, ElfError> {
+    pub fn parse_elf_data(elf_file_content: &'a [u8], filename: CString) -> Result<Self, ElfError> {
         let elf_file = match ElfFile::new(elf_file_content) {
             Err(error_msg) => return Err(ElfError::from(error_msg)),
             Ok(elf_file) => elf_file,
@@ -137,8 +137,8 @@ impl<'a> ElfLoadInfo<'a> {
         let entry_point = elf_file.header.pt2.entry_point() as Vaddr;
         // FIXME: only contains load segment?
         let segments_count = elf_file.program_iter().count();
-        let user_stack = UserStack::new_default_config();
-        let mut elf_load_info = ElfLoadInfo::with_capacity(entry_point, segments_count, user_stack);
+        let init_stack = InitStack::new_default_config(filename);
+        let mut elf_load_info = ElfLoadInfo::with_capacity(entry_point, segments_count, init_stack);
 
         // parse each segemnt
         for segment in elf_file.program_iter() {
@@ -177,8 +177,8 @@ impl<'a> ElfLoadInfo<'a> {
         Ok(())
     }
 
-    pub fn map_and_clear_user_stack(&self, vm_space: &VmSpace) {
-        self.user_stack.map_and_zeroed(vm_space);
+    pub fn init_stack(&mut self, vm_space: &VmSpace) {
+        self.init_stack.init(vm_space).expect("Init User Stack failed");
     }
 
     /// return the perm of elf pages
@@ -192,7 +192,23 @@ impl<'a> ElfLoadInfo<'a> {
     }
 
     pub fn user_stack_top(&self) -> u64 {
-        self.user_stack.stack_top() as u64
+        self.init_stack.user_stack_top() as u64
+    }
+
+    pub fn argc(&self) -> u64 {
+        self.init_stack.argc()
+    }
+
+    pub fn argv(&self) -> u64 {
+        self.init_stack.argv()
+    }
+
+    pub fn envc(&self) -> u64 {
+        self.init_stack.envc()
+    }
+
+    pub fn envp(&self) -> u64 {
+        self.init_stack.envp()
     }
 
     /// read content from vmspace to ensure elf data is correctly copied to user space
@@ -205,6 +221,17 @@ impl<'a> ElfLoadInfo<'a> {
                 .read_bytes(start_address, &mut read_buffer)
                 .expect("read bytes failed");
             let res = segment.data.cmp(&read_buffer);
+            // if res != Ordering::Equal {
+            //     debug!("segment: 0x{:x} - 0x{:x}", segment.start_address(), segment.end_address());
+            //     debug!("read buffer len: 0x{:x}", read_buffer.len());
+            //     for i in 0..segment.data.len() {
+            //         if segment.data[i] != read_buffer[i] {
+            //             debug!("i = 0x{:x}", i);
+            //             break;
+            //         }
+            //     }
+            // }
+            
             assert_eq!(res, Ordering::Equal);
         }
     }
