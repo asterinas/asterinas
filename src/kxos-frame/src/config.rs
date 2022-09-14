@@ -1,5 +1,7 @@
 #![allow(unused)]
 
+use crate::log::LogLevel;
+
 pub const USER_STACK_SIZE: usize = PAGE_SIZE * 2;
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 16;
 pub const KERNEL_HEAP_SIZE: usize = 0x1_000_000;
@@ -16,3 +18,5 @@ pub const TRAMPOLINE: usize = usize::MAX - PAGE_SIZE + 1;
 pub const TRAP_CONTEXT_BASE: usize = TRAMPOLINE - PAGE_SIZE;
 
 pub const KVA_START: usize = (usize::MAX) << PAGE_SIZE_BITS;
+
+pub const DEFAULT_LOG_LEVEL: LogLevel = LogLevel::Info;

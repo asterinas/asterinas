@@ -98,6 +98,15 @@ impl Default for VmSpace {
     }
 }
 
+impl Clone for VmSpace {
+    fn clone(&self) -> Self {
+        let memory_set = self.memory_set.exclusive_access().clone();
+        VmSpace {
+            memory_set: unsafe { UPSafeCell::new(memory_set) },
+        }
+    }
+}
+
 impl VmIo for VmSpace {
     fn read_bytes(&self, vaddr: usize, buf: &mut [u8]) -> Result<()> {
         self.memory_set.exclusive_access().read_bytes(vaddr, buf)
