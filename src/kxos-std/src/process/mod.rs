@@ -1,5 +1,6 @@
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
+use alloc::ffi::CString;
 use alloc::vec;
 use alloc::{
     sync::{Arc, Weak},
@@ -70,8 +71,8 @@ impl Process {
     }
 
     /// init a user process and send the process to scheduler
-    pub fn spawn_user_process(elf_file_content: &'static [u8]) -> Arc<Self> {
-        let process = Process::create_user_process(elf_file_content);
+    pub fn spawn_user_process(filename: CString, elf_file_content: &'static [u8]) -> Arc<Self> {
+        let process = Process::create_user_process(filename, elf_file_content);
         process.send_to_scheduler();
         process
     }
@@ -86,12 +87,12 @@ impl Process {
         process
     }
 
-    fn create_user_process(elf_file_content: &'static [u8]) -> Arc<Self> {
+    fn create_user_process(filename: CString, elf_file_content: &'static [u8]) -> Arc<Self> {
         let pid = new_pid();
 
         Arc::new_cyclic(|weak_process_ref| {
             let weak_process = weak_process_ref.clone();
-            let task = create_user_task_from_elf(elf_file_content, weak_process);
+            let task = create_user_task_from_elf(filename, elf_file_content, weak_process);
             let user_space = task.user_space().map(|user_space| user_space.clone());
 
             Process::new(pid, task, user_space)

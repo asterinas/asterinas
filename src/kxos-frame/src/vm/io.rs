@@ -47,7 +47,7 @@ pub trait VmIo: Send + Sync {
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
 
     /// Write a value of a specified type at a specified offset.
-    fn write_val<T: Pod>(&mut self, offset: usize, new_val: &T) -> Result<()> {
+    fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
         self.write_bytes(offset, new_val.as_bytes())?;
         Ok(())
     }

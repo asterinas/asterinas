@@ -221,13 +221,17 @@ impl MemorySet {
         let mut current_addr = addr;
         let mut remain = data.len();
         let start_write = false;
+        let mut offset = 0usize;
         for (va, area) in self.areas.iter_mut() {
             if current_addr >= va.0 && current_addr < area.size + va.0 {
                 if !area.flags.contains(PTFlags::WRITABLE) {
                     return Err(Error::PageFault);
                 }
-                area.write_data(current_addr, data);
-                remain -= (va.0 + area.size - current_addr).min(remain);
+                let write_len = remain.min(area.size + va.0 - current_addr);
+                area.write_data(current_addr, &data[offset..(offset + write_len)]);
+                offset += write_len;
+                remain -= write_len;
+                // remain -= (va.0 + area.size - current_addr).min(remain);
                 if remain == 0 {
                     return Ok(());
                 }
@@ -242,11 +246,15 @@ impl MemorySet {
     pub fn read_bytes(&self, addr: usize, data: &mut [u8]) -> Result<()> {
         let mut current_addr = addr;
         let mut remain = data.len();
+        let mut offset = 0usize;
         let start_read = false;
         for (va, area) in self.areas.iter() {
             if current_addr >= va.0 && current_addr < area.size + va.0 {
-                area.read_data(current_addr, data);
-                remain -= (va.0 + area.size - current_addr).min(remain);
+                let read_len = remain.min(area.size + va.0 - current_addr);
+                area.read_data(current_addr , &mut data[offset..(offset + read_len)]);
+                remain -= read_len;
+                offset += read_len;
+                // remain -= (va.0 + area.size - current_addr).min(remain);
                 if remain == 0 {
                     return Ok(());
                 }

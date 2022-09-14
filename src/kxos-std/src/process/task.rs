@@ -1,6 +1,6 @@
 use core::sync::atomic::AtomicUsize;
 
-use alloc::sync::{Arc, Weak};
+use alloc::{ffi::CString, sync::{Arc, Weak}};
 use kxos_frame::{
     cpu::CpuContext,
     debug,
@@ -19,15 +19,28 @@ use super::Process;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-pub fn create_user_task_from_elf(elf_file_content: &[u8], process: Weak<Process>) -> Arc<Task> {
+pub fn create_user_task_from_elf(filename: CString, elf_file_content: &[u8], process: Weak<Process>) -> Arc<Task> {
     let vm_space = VmSpace::new();
-    let elf_load_info = load_elf_to_vm_space(elf_file_content, &vm_space).expect("Load Elf failed");
+    let elf_load_info = load_elf_to_vm_space(filename, elf_file_content, &vm_space).expect("Load Elf failed");
     let mut cpu_ctx = CpuContext::default();
     // FIXME: correct regs?
     // set entry point
     cpu_ctx.gp_regs.rip = elf_load_info.entry_point();
+    debug!("entry point: 0x{:x}", elf_load_info.entry_point());
     // set user stack
     cpu_ctx.gp_regs.rsp = elf_load_info.user_stack_top();
+
+    // See document: https://embeddedartistry.com/blog/2019/04/08/a-general-overview-of-what-happens-before-main/
+    // set argc
+    // cpu_ctx.gp_regs.rdi = elf_load_info.argc();
+    // debug!("rdi, argc = {}", elf_load_info.argc());
+    // // set argv
+    // cpu_ctx.gp_regs.rsi = elf_load_info.argv();
+    // debug!("rsi, argv = 0x{:x}", elf_load_info.argv());
+    // // set envc
+    // cpu_ctx.gp_regs.rdx = elf_load_info.envc();
+    // // set envp
+    // cpu_ctx.gp_regs.rcx = elf_load_info.envp();
 
     let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
     fn user_task_entry() {
