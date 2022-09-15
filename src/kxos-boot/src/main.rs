@@ -1,28 +1,24 @@
 use anyhow::anyhow;
 use std::{
+    fs::OpenOptions,
     path::{Path, PathBuf},
     process::{Command, ExitStatus},
     time::Duration,
 };
-const RUN_ARGS: &[&str] = &[
+const COMMON_ARGS: &[&str] = &[
     "--no-reboot",
-    "-s",
-    "-device",
-    "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-serial",
-    "stdio",
     "-display",
     "none",
-];
-const TEST_ARGS: &[&str] = &[
     "-device",
     "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-device",
+    "virtio-blk-pci,bus=pci.0,addr=0x6,drive=x0",
     "-serial",
     "stdio",
-    "-display",
-    "none",
-    "--no-reboot",
 ];
+
+const RUN_ARGS: &[&str] = &["-s"];
+const TEST_ARGS: &[&str] = &[];
 const TEST_TIMEOUT_SECS: u64 = 10;
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1); // skip executable name
@@ -53,8 +49,13 @@ fn main() -> anyhow::Result<()> {
         .arg(format!("format=raw,file={}", bios.display()));
 
     let binary_kind = runner_utils::binary_kind(&kernel_binary_path);
+    let mut args = COMMON_ARGS.clone().to_vec();
+    args.push("-drive");
+    let binding = create_fs_image(kernel_binary_path.as_path())?;
+    args.push(binding.as_str());
     if binary_kind.is_test() {
-        run_cmd.args(TEST_ARGS);
+        args.append(&mut TEST_ARGS.to_vec());
+        run_cmd.args(args);
 
         let exit_status = run_test_command(run_cmd)?;
         match exit_status.code() {
@@ -62,7 +63,8 @@ fn main() -> anyhow::Result<()> {
             other => return Err(anyhow!("Test failed (exit code: {:?})", other)),
         }
     } else {
-        run_cmd.args(RUN_ARGS);
+        args.append(&mut RUN_ARGS.to_vec());
+        run_cmd.args(args);
 
         let exit_status = run_cmd.status()?;
         if !exit_status.success() {
@@ -70,6 +72,29 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn create_fs_image(path: &Path) -> anyhow::Result<String> {
+    let mut fs_img_path = path.parent().unwrap().to_str().unwrap().to_string();
+    fs_img_path.push_str("/fs.img");
+    let path = Path::new(fs_img_path.as_str());
+    if path.exists() {
+        return Ok(format!(
+            "file={},if=none,format=raw,id=x0",
+            fs_img_path.as_str()
+        ));
+    }
+    let f = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(fs_img_path.as_str())?;
+    // 64MiB
+    f.set_len(1 * 1024 * 1024).unwrap();
+    Ok(format!(
+        "file={},if=none,format=raw,id=x0",
+        fs_img_path.as_str()
+    ))
 }
 
 pub fn create_disk_images(kernel_binary_path: &Path) -> PathBuf {

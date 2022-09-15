@@ -69,10 +69,9 @@ lazy_static! {
         };
         task.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
         task.task_inner.exclusive_access().ctx.rip = context_switch_to_user_space as usize;
-        task.task_inner.exclusive_access().ctx.regs.rsp = task.kstack.frame.end_pa().unwrap().kvaddr().0
-            as usize
+        task.task_inner.exclusive_access().ctx.regs.rsp = (task.kstack.frame.end_pa().unwrap().kvaddr().0
             - size_of::<usize>()
-            - size_of::<SyscallFrame>();
+            - size_of::<SyscallFrame>()) as u64;
         task
     });
 }
@@ -172,16 +171,15 @@ impl Task {
         result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
         result.task_inner.exclusive_access().ctx.rip = kernel_task_entry as usize;
         result.task_inner.exclusive_access().ctx.regs.rsp =
-            result.kstack.frame.end_pa().unwrap().kvaddr().0 as usize
+            (result.kstack.frame.end_pa().unwrap().kvaddr().0
                 - size_of::<usize>()
-                - size_of::<SyscallFrame>();
+                - size_of::<SyscallFrame>()) as u64;
 
         let arc_self = Arc::new(result);
         switch_to_task(arc_self.clone());
         Ok(arc_self)
     }
 
-    /// create a new task data structure without schedule it
     pub fn new<F, T>(
         task_fn: F,
         task_data: T,
@@ -217,14 +215,13 @@ impl Task {
         result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
         result.task_inner.exclusive_access().ctx.rip = kernel_task_entry as usize;
         result.task_inner.exclusive_access().ctx.regs.rsp =
-            result.kstack.frame.end_pa().unwrap().kvaddr().0 as usize
+            (result.kstack.frame.end_pa().unwrap().kvaddr().0
                 - size_of::<usize>()
-                - size_of::<SyscallFrame>();
+                - size_of::<SyscallFrame>()) as u64;
 
         Ok(Arc::new(result))
     }
 
-    /// send the task to schedule
     pub fn send_to_scheduler(self: &Arc<Self>) {
         switch_to_task(self.clone());
     }
