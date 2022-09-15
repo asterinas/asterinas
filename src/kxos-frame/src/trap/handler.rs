@@ -40,7 +40,7 @@ pub(crate) extern "C" fn trap_handler(f: &'static mut TrapFrame) {
     }
 }
 
-fn is_from_kernel(cs: usize) -> bool {
+fn is_from_kernel(cs: u64) -> bool {
     if cs & 0x3 == 0 {
         true
     } else {
