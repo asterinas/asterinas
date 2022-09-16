@@ -212,3 +212,11 @@ bitflags! {
         const RWXU = Self::R.bits | Self::W.bits | Self::X.bits | Self::U.bits;
     }
 }
+
+impl TryFrom<u64> for VmPerm {
+    type Error = Error;
+
+    fn try_from(value: u64) -> Result<Self> {
+        VmPerm::from_bits(value as u8).ok_or_else(|| Error::InvalidVmpermBits)
+    }
+}

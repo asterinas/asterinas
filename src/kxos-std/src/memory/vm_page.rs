@@ -26,6 +26,13 @@ impl VmPageRange {
         }
     }
 
+    pub const fn new_page_range(start_page: VmPage, end_page: VmPage) -> Self {
+        Self {
+            start_page,
+            end_page,
+        }
+    }
+
     /// returns the page containing the specific vaddr
     pub const fn containing_address(vaddr: Vaddr) -> Self {
         let page = VmPage::containing_address(vaddr);
@@ -52,7 +59,7 @@ impl VmPageRange {
     }
 
     /// map self to a set of zeroed frames
-    pub fn map_zeroed(&mut self, vm_space: &VmSpace, vm_perm: VmPerm) {
+    pub fn map_zeroed(&self, vm_space: &VmSpace, vm_perm: VmPerm) {
         let options = VmAllocOptions::new(self.len());
         let frames = VmFrameVec::allocate(&options).expect("allocate frame error");
         let buffer = vec![0u8; self.nbytes()];
@@ -64,7 +71,7 @@ impl VmPageRange {
     }
 
     /// map self to a set of frames
-    pub fn map_to(&mut self, vm_space: &VmSpace, frames: VmFrameVec, vm_perm: VmPerm) {
+    pub fn map_to(&self, vm_space: &VmSpace, frames: VmFrameVec, vm_perm: VmPerm) {
         assert_eq!(self.len(), frames.len());
         let mut vm_map_options = VmMapOptions::new();
         vm_map_options.addr(Some(self.start_address()));
@@ -126,7 +133,7 @@ pub struct VmPage {
 }
 
 impl VmPage {
-    const fn containing_address(vaddr: Vaddr) -> Self {
+    pub const fn containing_address(vaddr: Vaddr) -> Self {
         Self {
             vpn: vaddr / PAGE_SIZE,
         }
@@ -136,7 +143,7 @@ impl VmPage {
         self.vpn * PAGE_SIZE
     }
 
-    const fn next_page(&self) -> VmPage {
+    pub const fn next_page(&self) -> VmPage {
         VmPage { vpn: self.vpn + 1 }
     }
 

@@ -6,4 +6,5 @@ pub enum Error {
     PageFault,
     AccessDenied,
     IoError,
+    InvalidVmpermBits,
 }

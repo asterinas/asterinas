@@ -40,6 +40,7 @@ use bootloader::{
     BootInfo,
 };
 use trap::{IrqCallbackHandle, IrqLine, TrapFrame};
+use x86_64_util::enable_common_cpu_features;
 
 pub use self::drivers::virtio::block::{read_block, write_block};
 
@@ -60,6 +61,7 @@ pub fn init(boot_info: &'static mut BootInfo) {
     device::init(boot_info.framebuffer.as_mut().unwrap());
     device::framebuffer::WRITER.lock().as_mut().unwrap().clear();
     trap::init();
+    enable_common_cpu_features();
     let mut memory_init = false;
     // memory
     for region in boot_info.memory_regions.iter() {
@@ -87,6 +89,10 @@ pub fn init(boot_info: &'static mut BootInfo) {
 }
 fn general_handler(trap_frame: TrapFrame) {
     println!("{:?}", trap_frame);
+    println!("rip = 0x{:x}", trap_frame.rip);
+    println!("rsp = 0x{:x}", trap_frame.rsp);
+    println!("cr2 = 0x{:x}", trap_frame.cr2);
+    // println!("rbx = 0x{:x}", trap_frame.)
     panic!("couldn't handler trap right now");
 }
 

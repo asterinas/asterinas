@@ -1,6 +1,10 @@
 //! util for x86_64, it will rename to x86_64 when depend x86_64 isn't necessary
 use core::arch::asm;
 
+use x86_64::registers::{control::Cr4Flags, segmentation::Segment64, xcontrol::XCr0Flags};
+
+use crate::debug;
+
 #[inline(always)]
 pub fn read_rsp() -> usize {
     let val: usize;
@@ -191,4 +195,31 @@ pub fn set_cr3(pa: usize) {
     unsafe {
         asm!("mov cr3, {}", in(reg) pa, options(nostack, preserves_flags));
     }
+}
+
+#[inline(always)]
+pub fn wrfsbase(base: u64) {
+    unsafe { asm!("wrfsbase {0}", in(reg) base, options(att_syntax)) }
+}
+
+#[inline(always)]
+pub fn rdfsbase() -> u64 {
+    let fs_base = x86_64::registers::segmentation::FS::read_base();
+    fs_base.as_u64()
+}
+
+pub fn enable_common_cpu_features() {
+    let mut cr4 = x86_64::registers::control::Cr4::read();
+    cr4 |= Cr4Flags::FSGSBASE | Cr4Flags::OSXSAVE | Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE;
+    unsafe {
+        x86_64::registers::control::Cr4::write(cr4);
+    }
+    debug!("cr4: {:?}", cr4);
+
+    let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
+    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
+    unsafe {
+        x86_64::registers::xcontrol::XCr0::write(xcr0);
+    }
+    debug!("xcr0: {:?}", xcr0);
 }

@@ -251,7 +251,7 @@ impl MemorySet {
         for (va, area) in self.areas.iter() {
             if current_addr >= va.0 && current_addr < area.size + va.0 {
                 let read_len = remain.min(area.size + va.0 - current_addr);
-                area.read_data(current_addr , &mut data[offset..(offset + read_len)]);
+                area.read_data(current_addr, &mut data[offset..(offset + read_len)]);
                 remain -= read_len;
                 offset += read_len;
                 // remain -= (va.0 + area.size - current_addr).min(remain);
