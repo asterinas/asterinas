@@ -10,13 +10,11 @@ use alloc::ffi::CString;
 use kxos_frame::{debug, info, println};
 use process::Process;
 
-use crate::process::current_pid;
-
 extern crate alloc;
 
 mod memory;
 mod process;
-mod syscall;
+pub mod syscall;
 mod util;
 
 pub fn init() {
@@ -28,7 +26,7 @@ pub fn init_process() {
 
     let process = Process::spawn_kernel_process(|| {
         println!("[kernel] Hello world from kernel!");
-        let pid = current_pid();
+        let pid = Process::current().pid();
         debug!("current pid = {}", pid);
     });
     info!(
@@ -53,7 +51,8 @@ pub fn init_process() {
     );
 
     let hello_c_content = read_hello_c_content();
-    let hello_c_filename = CString::new("hello_c").unwrap();
+    // glibc requires the filename starts as "/"
+    let hello_c_filename = CString::new("/hello_c").unwrap();
     let process = Process::spawn_user_process(hello_c_filename, hello_c_content);
     info!("spawn hello_c process, pid = {}", process.pid());
 

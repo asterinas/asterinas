@@ -1,6 +1,9 @@
 use core::sync::atomic::AtomicUsize;
 
-use alloc::{ffi::CString, sync::{Arc, Weak}};
+use alloc::{
+    ffi::CString,
+    sync::{Arc, Weak},
+};
 use kxos_frame::{
     cpu::CpuContext,
     debug,
@@ -9,19 +12,20 @@ use kxos_frame::{
     vm::VmSpace,
 };
 
-use crate::{
-    memory::load_elf_to_vm_space,
-    process::{current_pid, current_process},
-    syscall::syscall_handler,
-};
+use crate::{memory::load_elf_to_vm_space, syscall::syscall_handler};
 
 use super::Process;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-pub fn create_user_task_from_elf(filename: CString, elf_file_content: &[u8], process: Weak<Process>) -> Arc<Task> {
+pub fn create_user_task_from_elf(
+    filename: CString,
+    elf_file_content: &[u8],
+    process: Weak<Process>,
+) -> Arc<Task> {
     let vm_space = VmSpace::new();
-    let elf_load_info = load_elf_to_vm_space(filename, elf_file_content, &vm_space).expect("Load Elf failed");
+    let elf_load_info =
+        load_elf_to_vm_space(filename, elf_file_content, &vm_space).expect("Load Elf failed");
     let mut cpu_ctx = CpuContext::default();
     // FIXME: correct regs?
     // set entry point
@@ -29,18 +33,6 @@ pub fn create_user_task_from_elf(filename: CString, elf_file_content: &[u8], pro
     debug!("entry point: 0x{:x}", elf_load_info.entry_point());
     // set user stack
     cpu_ctx.gp_regs.rsp = elf_load_info.user_stack_top();
-
-    // See document: https://embeddedartistry.com/blog/2019/04/08/a-general-overview-of-what-happens-before-main/
-    // set argc
-    // cpu_ctx.gp_regs.rdi = elf_load_info.argc();
-    // debug!("rdi, argc = {}", elf_load_info.argc());
-    // // set argv
-    // cpu_ctx.gp_regs.rsi = elf_load_info.argv();
-    // debug!("rsi, argv = 0x{:x}", elf_load_info.argv());
-    // // set envc
-    // cpu_ctx.gp_regs.rdx = elf_load_info.envc();
-    // // set envp
-    // cpu_ctx.gp_regs.rcx = elf_load_info.envp();
 
     let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
     fn user_task_entry() {
@@ -51,20 +43,21 @@ pub fn create_user_task_from_elf(filename: CString, elf_file_content: &[u8], pro
         loop {
             let user_event = user_mode.execute();
             debug!("return from user mode");
-            debug!("current pid = {}", current_pid());
+            debug!("current pid = {}", Process::current().pid());
             let context = user_mode.context_mut();
             if let HandlerResult::Exit = handle_user_event(user_event, context) {
                 // FIXME: How to set task status? How to set exit code of process?
                 break;
             }
         }
-        let current_process = current_process();
+        let current_process = Process::current();
         // Work Around: We schedule all child tasks to run when current process exit.
         if current_process.has_child() {
-            debug!("*********schedule child process**********");
+            let pid = current_process.pid();
+            debug!("*********schedule child process, pid = {}**********", pid);
             let child_process = current_process.get_child_process();
             child_process.send_to_scheduler();
-            debug!("*********return to parent process*********");
+            debug!("*********return to parent process, pid = {}*********", pid);
         }
         // exit current process
         current_process.exit();
@@ -79,7 +72,7 @@ pub fn create_forked_task(userspace: Arc<UserSpace>, process: Weak<Process>) -> 
         let user_space = cur.user_space().expect("user task should have user space");
         let mut user_mode = UserMode::new(user_space);
         debug!("In forked task");
-        debug!("[forked task] pid = {}", current_pid());
+        debug!("[forked task] pid = {}", Process::current().pid());
         debug!("[forked task] rip = 0x{:x}", user_space.cpu_ctx.gp_regs.rip);
         debug!("[forked task] rsp = 0x{:x}", user_space.cpu_ctx.gp_regs.rsp);
         debug!("[forked task] rax = 0x{:x}", user_space.cpu_ctx.gp_regs.rax);

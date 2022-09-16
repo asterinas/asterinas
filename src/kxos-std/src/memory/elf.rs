@@ -1,3 +1,6 @@
+//! This module is used to parse elf file content to get elf_load_info.
+//! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
+
 use core::{cmp::Ordering, ops::Range};
 
 use alloc::ffi::CString;
@@ -81,15 +84,6 @@ impl<'a> ElfSegment<'a> {
     }
 
     fn copy_segment(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
-        // if !self.is_page_aligned() {
-        //     return Err(ElfError::SegmentNotPageAligned);
-        // }
-        // map page
-        // debug!(
-        //     "map_segment: 0x{:x} - 0x{:x}",
-        //     self.start_address(),
-        //     self.end_address()
-        // );
         let vm_page_range = VmPageRange::new_range(self.start_address()..self.end_address());
         for page in vm_page_range.iter() {
             // map page if the page is not mapped
@@ -99,11 +93,6 @@ impl<'a> ElfSegment<'a> {
             }
         }
 
-        // debug!(
-        //     "copy_segment: 0x{:x} - 0x{:x}",
-        //     self.start_address(),
-        //     self.end_address()
-        // );
         // copy segment
         vm_space.write_bytes(self.start_address(), self.data)?;
         Ok(())
@@ -178,7 +167,9 @@ impl<'a> ElfLoadInfo<'a> {
     }
 
     pub fn init_stack(&mut self, vm_space: &VmSpace) {
-        self.init_stack.init(vm_space).expect("Init User Stack failed");
+        self.init_stack
+            .init(vm_space)
+            .expect("Init User Stack failed");
     }
 
     /// return the perm of elf pages
@@ -231,7 +222,7 @@ impl<'a> ElfLoadInfo<'a> {
             //         }
             //     }
             // }
-            
+
             assert_eq!(res, Ordering::Equal);
         }
     }

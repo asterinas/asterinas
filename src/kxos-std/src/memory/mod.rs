@@ -1,9 +1,16 @@
+pub mod aux_vec;
 pub mod elf;
 pub mod init_stack;
+pub mod mmap_area;
+pub mod user_heap;
 pub mod vm_page;
-pub mod aux_vec;
 use alloc::ffi::CString;
-use kxos_frame::{debug, vm::VmSpace};
+use kxos_frame::{
+    debug,
+    vm::{Pod, Vaddr, VmIo, VmSpace},
+};
+
+use crate::process::Process;
 
 use self::elf::{ElfError, ElfLoadInfo};
 
@@ -23,4 +30,31 @@ pub fn load_elf_to_vm_space<'a>(
     debug!("map elf success");
     elf_load_info.init_stack(vm_space);
     Ok(elf_load_info)
+}
+
+/// copy bytes from user space of current process. The bytes len is the len of dest.
+pub fn copy_bytes_from_user(src: Vaddr, dest: &mut [u8]) {
+    let current = Process::current();
+    let vm_space = current
+        .vm_space()
+        .expect("[Internal error]Current should have vm space to copy bytes from user");
+    vm_space.read_bytes(src, dest).expect("read bytes failed");
+}
+
+/// copy val (Plain of Data type) from user space of current process.
+pub fn copy_val_from_user<T: Pod>(src: Vaddr) -> T {
+    let current = Process::current();
+    let vm_space = current
+        .vm_space()
+        .expect("[Internal error]Current should have vm space to copy val from user");
+    vm_space.read_val(src).expect("read val failed")
+}
+
+/// write bytes from user space of current process. The bytes len is the len of src.
+pub fn write_bytes_to_user(dest: Vaddr, src: &[u8]) {
+    let current = Process::current();
+    let vm_space = current
+        .vm_space()
+        .expect("[Internal error]Current should have vm space to write bytes to user");
+    vm_space.write_bytes(dest, src).expect("write bytes failed")
 }
