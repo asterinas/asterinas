@@ -12,27 +12,27 @@ core::arch::global_asm!(include_str!("vector.S"));
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct CallerRegs {
-    pub rax: usize,
-    pub rcx: usize,
-    pub rdx: usize,
-    pub rsi: usize,
-    pub rdi: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
+    pub rax: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub r8: u64,
+    pub r9: u64,
+    pub r10: u64,
+    pub r11: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct CalleeRegs {
-    pub rsp: usize,
-    pub rbx: usize,
-    pub rbp: usize,
-    pub r12: usize,
-    pub r13: usize,
-    pub r14: usize,
-    pub r15: usize,
+    pub rsp: u64,
+    pub rbx: u64,
+    pub rbp: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -45,15 +45,18 @@ pub struct SyscallFrame {
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct TrapFrame {
-    pub regs: CallerRegs,
-    pub id: usize,
-    pub err: usize,
+    pub cr2: u64,
+    pub caller: CallerRegs,
+    // do not use the rsp inside the callee, use another rsp instead
+    pub callee: CalleeRegs,
+    pub id: u64,
+    pub err: u64,
     // Pushed by CPU
-    pub rip: usize,
-    pub cs: usize,
-    pub rflags: usize,
-    pub rsp: usize,
-    pub ss: usize,
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub rsp: u64,
+    pub ss: u64,
 }
 
 const TSS_SIZE: usize = 104;

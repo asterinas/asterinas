@@ -16,6 +16,7 @@ pub(crate) mod cell;
 pub mod config;
 pub mod cpu;
 pub mod device;
+pub(crate) mod drivers;
 mod error;
 pub mod log;
 pub(crate) mod mm;
@@ -75,6 +76,7 @@ pub fn init(boot_info: &'static mut BootInfo) {
     if !memory_init {
         panic!("memory init failed");
     }
+    drivers::init();
     unsafe {
         for i in 0..256 {
             IRQ_CALLBACK_LIST.push(IrqLine::acquire(i as u8).on_active(general_handler))
@@ -82,9 +84,7 @@ pub fn init(boot_info: &'static mut BootInfo) {
     }
 }
 fn general_handler(trap_frame: TrapFrame) {
-    println!("{:?}", trap_frame);
-    println!("rip = 0x{:x}", trap_frame.rip);
-    panic!("couldn't handler trap right now");
+    debug!("TrapFrame:{:#x?}", trap_frame);
 }
 
 #[inline(always)]
