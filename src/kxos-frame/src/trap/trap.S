@@ -31,20 +31,40 @@ TSS:
 
 .global __trap_entry
 __trap_entry:
-  # 保存所有的调用者保存寄存器
+  # 保存寄存器
+  push r15
+  push r14
+  push r13
+  push r12
+  push rbp
+  push rbx
+  mov rdi, 0
+  push rdi
   save
+  # save cr2
+  mov rdi, cr2
+  push rdi
   # 将栈指针当成参数传入trap_handler
   mov rdi, rsp
   call trap_handler
 __trap_return:
   # judge whether the trap from kernel mode
-  mov rax, [rsp + 96] # 96 = offsetof(TrapFrame, cs)
+  mov rax, [rsp + 160] # 160 = offsetof(TrapFrame, cs)
   and rax, 0x3
   jz __from_kernel
-  lea rax, [rsp + 128] # prepare new TSS.sp0, 128 = sizeof(TrapFrame)
+  lea rax, [rsp + 192] # prepare new TSS.sp0, 192 = sizeof(TrapFrame)
   mov [TSS + rip + 4], rax
 __from_kernel:
+  add rsp, 8 # skip cr2
   restore
+  add rsp,8 # skip rsp in callee
+  pop rbx
+  pop rbp
+  pop r12
+  pop r13
+  pop r14
+  pop r15
+
   add rsp, 16 # skip TrapFrame.err and id
   iretq
 
@@ -102,6 +122,5 @@ trap_switch_to_user_space: # (cpu_context: *CpuContext,reg: *TrapFrame)
   mov rdi, rsi
   mov rsp, rdi
   jmp __trap_return
-
 
 

@@ -100,6 +100,7 @@ dependencies = [
  "font8x8",
  "lazy_static",
  "linked_list_allocator",
+ "pci",
  "spin 0.9.4",
  "uart_16550",
  "volatile",
@@ -166,6 +167,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "043175f069eda7b85febe4a74abbaeff828d9f8b448515d3151a14a3542811aa"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "pci"
+version = "0.0.1"
+source = "git+https://github.com/rcore-os/pci-rs#a4e7cea640f8a92ae4b51c6c51fee3f1f0317af2"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]
