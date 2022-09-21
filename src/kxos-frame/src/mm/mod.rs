@@ -10,6 +10,7 @@ use address::PhysAddr;
 use address::VirtAddr;
 
 pub use self::{frame_allocator::*, memory_set::*, page_table::*};
+pub(crate) use address::{phys_to_virt, virt_to_phys};
 
 bitflags::bitflags! {
   /// Possible flags for a page table entry.

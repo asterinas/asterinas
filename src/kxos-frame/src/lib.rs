@@ -41,6 +41,8 @@ use bootloader::{
 };
 use trap::{IrqCallbackHandle, IrqLine, TrapFrame};
 
+pub use self::drivers::virtio::block::{read_block, write_block};
+
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
 #[cfg(not(feature = "serial_print"))]

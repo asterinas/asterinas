@@ -1,20 +1,19 @@
-use crate::*;
+use crate::{drivers::virtio, trap::NOT_USING_IRQ_NUMBER, *};
 use pci::*;
 
-const PCI_COMMAND: u16 = 0x04;
-const PCI_CAP_PTR: u16 = 0x34;
-const PCI_INTERRUPT_LINE: u16 = 0x3c;
-const PCI_INTERRUPT_PIN: u16 = 0x3d;
+pub(crate) const PCI_COMMAND: u16 = 0x04;
+pub(crate) const PCI_BAR: u16 = 0x10;
+pub(crate) const PCI_CAP_PTR: u16 = 0x34;
+pub(crate) const PCI_INTERRUPT_LINE: u16 = 0x3c;
+pub(crate) const PCI_INTERRUPT_PIN: u16 = 0x3d;
 
-const PCI_MSI_CTRL_CAP: u16 = 0x00;
-const PCI_MSI_ADDR: u16 = 0x04;
-const PCI_MSI_UPPER_ADDR: u16 = 0x08;
-const PCI_MSI_DATA_32: u16 = 0x08;
-const PCI_MSI_DATA_64: u16 = 0x0C;
+pub(crate) const PCI_MSIX_CTRL_CAP: u16 = 0x00;
+pub(crate) const PCI_MSIX_TABLE: u16 = 0x04;
+pub(crate) const PCI_MSIX_PBA: u16 = 0x08;
 
-const PCI_CAP_ID_MSI: u8 = 0x05;
+pub(crate) const PCI_CAP_ID_MSI: u8 = 0x05;
 
-struct PortOpsImpl;
+pub(crate) struct PortOpsImpl;
 
 impl PortOps for PortOpsImpl {
     unsafe fn read8(&self, port: u16) -> u8 {
@@ -57,6 +56,7 @@ pub fn init() {
         {
             // virtio block device mass storage
             info!("found virtio pci block device");
+            virtio::block::init(dev);
         }
     }
 }
