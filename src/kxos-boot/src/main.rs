@@ -89,8 +89,8 @@ fn create_fs_image(path: &Path) -> anyhow::Result<String> {
         .write(true)
         .create(true)
         .open(fs_img_path.as_str())?;
-    // 64MiB
-    f.set_len(1 * 1024 * 1024).unwrap();
+    // 16MiB
+    f.set_len(16 * 1024 * 1024).unwrap();
     Ok(format!(
         "file={},if=none,format=raw,id=x0",
         fs_img_path.as_str()
