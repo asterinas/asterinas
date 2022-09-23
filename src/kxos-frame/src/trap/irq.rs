@@ -1,8 +1,23 @@
-use crate::prelude::*;
+use crate::{prelude::*, sync::up::UPSafeCell};
 
 use super::TrapFrame;
 use lazy_static::lazy_static;
 use spin::{Mutex, MutexGuard};
+
+lazy_static! {
+    /// The IRQ numbers which are not using
+    /// FIXME: using alloc, dealloc instead of letting user use push and pop method.
+    pub static ref NOT_USING_IRQ_NUMBER:UPSafeCell<Vec<u8>> = unsafe {UPSafeCell::new({
+        let mut vector = Vec::new();
+        for i in 31..256{
+            vector.push(i as u8);
+        }
+        for i in 22..28{
+            vector.push(i as u8);
+        }
+        vector
+    })};
+}
 
 lazy_static! {
     pub static ref IRQ_LIST: Vec<IrqLine> = {

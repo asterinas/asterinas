@@ -5,4 +5,5 @@ pub enum Error {
     NoMemory,
     PageFault,
     AccessDenied,
+    IoError,
 }

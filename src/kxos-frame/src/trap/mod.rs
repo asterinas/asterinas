@@ -1,7 +1,7 @@
 mod handler;
 mod irq;
 
-pub use self::irq::{IrqCallbackHandle, IrqLine};
+pub use self::irq::{IrqCallbackHandle, IrqLine, NOT_USING_IRQ_NUMBER};
 use core::mem::size_of_val;
 
 use crate::{x86_64_util::*, *};
