@@ -125,27 +125,28 @@ impl VmIo for VmFrameVec {
         Ok(())
     }
 
-    fn write_bytes(&mut self, offset: usize, buf: &[u8]) -> Result<()> {
-        let mut start = offset;
-        let mut remain = buf.len();
-        let mut processed = 0;
-        for pa in self.0.iter_mut() {
-            if start >= PAGE_SIZE {
-                start -= PAGE_SIZE;
-            } else {
-                let copy_len = (PAGE_SIZE - start).min(remain);
-                let src = &buf[processed..processed + copy_len];
-                let dst = &mut pa.start_pa().kvaddr().get_bytes_array()[start..src.len() + start];
-                dst.copy_from_slice(src);
-                processed += copy_len;
-                remain -= copy_len;
-                start = 0;
-                if remain == 0 {
-                    break;
-                }
-            }
-        }
-        Ok(())
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+        todo!()
+        // let mut start = offset;
+        // let mut remain = buf.len();
+        // let mut processed = 0;
+        // for pa in self.0.iter_mut() {
+        //     if start >= PAGE_SIZE {
+        //         start -= PAGE_SIZE;
+        //     } else {
+        //         let copy_len = (PAGE_SIZE - start).min(remain);
+        //         let src = &buf[processed..processed + copy_len];
+        //         let dst = &mut pa.start_pa().kvaddr().get_bytes_array()[start..src.len() + start];
+        //         dst.copy_from_slice(src);
+        //         processed += copy_len;
+        //         remain -= copy_len;
+        //         start = 0;
+        //         if remain == 0 {
+        //             break;
+        //         }
+        //     }
+        // }
+        // Ok(())
     }
 }
 

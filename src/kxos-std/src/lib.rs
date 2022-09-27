@@ -6,16 +6,15 @@
 #![feature(const_btree_new)]
 #![feature(cstr_from_bytes_until_nul)]
 
+use alloc::ffi::CString;
 use kxos_frame::{debug, info, println};
 use process::Process;
-
-use crate::process::current_pid;
 
 extern crate alloc;
 
 mod memory;
 mod process;
-mod syscall;
+pub mod syscall;
 mod util;
 
 pub fn init() {
@@ -27,7 +26,7 @@ pub fn init_process() {
 
     let process = Process::spawn_kernel_process(|| {
         println!("[kernel] Hello world from kernel!");
-        let pid = current_pid();
+        let pid = Process::current().pid();
         debug!("current pid = {}", pid);
     });
     info!(
@@ -36,18 +35,26 @@ pub fn init_process() {
     );
 
     let hello_world_content = read_hello_world_content();
-    let process = Process::spawn_user_process(hello_world_content);
+    let hello_world_filename = CString::new("hello_world").unwrap();
+    let process = Process::spawn_user_process(hello_world_filename, hello_world_content);
     info!(
         "[kxos-std/lib.rs] spwan hello world process, pid = {}",
         process.pid()
     );
 
     let fork_content = read_fork_content();
-    let process = Process::spawn_user_process(fork_content);
+    let fork_filename = CString::new("fork").unwrap();
+    let process = Process::spawn_user_process(fork_filename, fork_content);
     info!(
         "[kxos-std/lib.rs] spawn fork process, pid = {}",
         process.pid()
     );
+
+    let hello_c_content = read_hello_c_content();
+    // glibc requires the filename starts as "/"
+    let hello_c_filename = CString::new("/hello_c").unwrap();
+    let process = Process::spawn_user_process(hello_c_filename, hello_c_content);
+    info!("spawn hello_c process, pid = {}", process.pid());
 
     loop {}
 }
@@ -65,4 +72,8 @@ pub fn read_hello_world_content() -> &'static [u8] {
 
 fn read_fork_content() -> &'static [u8] {
     include_bytes!("../../kxos-user/fork/fork")
+}
+
+fn read_hello_c_content() -> &'static [u8] {
+    include_bytes!("../../kxos-user/hello_c/hello")
 }

@@ -64,6 +64,12 @@ impl VmSpace {
         Ok(options.addr.unwrap())
     }
 
+    /// determine whether a vaddr is already mapped
+    pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
+        let memory_set = self.memory_set.exclusive_access();
+        memory_set.is_mapped(VirtAddr(vaddr))
+    }
+
     /// Unmaps the physical memory pages within the VM address range.
     ///
     /// The range is allowed to contain gaps, where no physical memory pages
@@ -112,7 +118,7 @@ impl VmIo for VmSpace {
         self.memory_set.exclusive_access().read_bytes(vaddr, buf)
     }
 
-    fn write_bytes(&mut self, vaddr: usize, buf: &[u8]) -> Result<()> {
+    fn write_bytes(&self, vaddr: usize, buf: &[u8]) -> Result<()> {
         self.memory_set.exclusive_access().write_bytes(vaddr, buf)
     }
 }
@@ -204,5 +210,13 @@ bitflags! {
         const RXU = Self::R.bits | Self::X.bits | Self::U.bits;
         /// Readable + writable + executable + user.
         const RWXU = Self::R.bits | Self::W.bits | Self::X.bits | Self::U.bits;
+    }
+}
+
+impl TryFrom<u64> for VmPerm {
+    type Error = Error;
+
+    fn try_from(value: u64) -> Result<Self> {
+        VmPerm::from_bits(value as u8).ok_or_else(|| Error::InvalidVmpermBits)
     }
 }
