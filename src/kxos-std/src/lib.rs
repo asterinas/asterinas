@@ -5,6 +5,9 @@
 #![allow(unused_variables)]
 #![feature(const_btree_new)]
 #![feature(cstr_from_bytes_until_nul)]
+#![feature(half_open_range_patterns)]
+#![feature(exclusive_range_pattern)]
+#![feature(btree_drain_filter)]
 
 use alloc::ffi::CString;
 use kxos_frame::{debug, info, println};

@@ -20,7 +20,7 @@ pub fn sys_readlink(filename_ptr: u64, user_buf_ptr: u64, user_buf_len: u64) -> 
         user_buf_ptr as Vaddr,
         user_buf_len as usize,
     );
-    SyscallResult::Return(res as i32)
+    SyscallResult::Return(res as _)
 }
 
 /// do sys readlink

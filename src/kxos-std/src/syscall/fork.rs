@@ -16,7 +16,7 @@ use super::SyscallResult;
 pub fn sys_fork(parent_context: CpuContext) -> SyscallResult {
     debug!("[syscall][id={}][SYS_FORK]", SYS_FORK);
     let child_process = fork(parent_context);
-    SyscallResult::Return(child_process.pid() as i32)
+    SyscallResult::Return(child_process.pid() as _)
 }
 
 /// Fork a child process

@@ -31,7 +31,7 @@ pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Syscall
         Err(_) => SyscallResult::Return(-1),
         Ok(code) => {
             let res = do_arch_prctl(code, addr, context).unwrap();
-            SyscallResult::Return(res as i32)
+            SyscallResult::Return(res as _)
         }
     }
 }

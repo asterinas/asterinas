@@ -22,7 +22,7 @@ pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult
             info!("Error message from user mode: {:?}", content);
         }
 
-        SyscallResult::Return(user_buf_len as i32)
+        SyscallResult::Return(user_buf_len as _)
     } else {
         panic!("Unsupported fd number {}", fd);
     }

@@ -18,7 +18,7 @@ pub struct IoVec {
 pub fn sys_writev(fd: u64, io_vec_addr: u64, io_vec_count: u64) -> SyscallResult {
     debug!("[syscall][id={}][SYS_WRITEV]", SYS_WRITEV);
     let res = do_sys_writev(fd, io_vec_addr as Vaddr, io_vec_count as usize);
-    SyscallResult::Return(res as i32)
+    SyscallResult::Return(res as _)
 }
 
 pub fn do_sys_writev(fd: u64, io_vec_addr: Vaddr, io_vec_count: usize) -> usize {

@@ -55,9 +55,9 @@ pub unsafe trait Pod: Copy + Sized + Debug {
 /// FIXME: use derive instead
 #[macro_export]
 macro_rules! impl_pod_for {
-    ($($token:tt),*/* define the input */) => {
+    ($($pod_ty:ty),*/* define the input */) => {
         /* define the expansion */
-        $(unsafe impl Pod for $token {})*
+        $(unsafe impl Pod for $pod_ty {})*
     };
 }
 

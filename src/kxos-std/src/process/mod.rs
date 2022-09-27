@@ -1,38 +1,43 @@
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
+use alloc::collections::BTreeMap;
 use alloc::ffi::CString;
-use alloc::{
-    sync::{Arc, Weak},
-    vec::Vec,
-};
+use alloc::sync::{Arc, Weak};
+use kxos_frame::sync::WaitQueue;
 use kxos_frame::{debug, task::Task, user::UserSpace, vm::VmSpace};
 use spin::Mutex;
 
 use crate::memory::mmap_area::MmapArea;
 use crate::memory::user_heap::UserHeap;
 
+use self::process_filter::ProcessFilter;
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
 use self::user_vm_data::UserVm;
 
 pub mod fifo_scheduler;
+pub mod process_filter;
 pub mod status;
 pub mod task;
 pub mod user_vm_data;
+pub mod wait;
 
 static PID_ALLOCATOR: AtomicUsize = AtomicUsize::new(0);
 
-const CHILDREN_CAPACITY: usize = 16;
+pub type Pid = usize;
+pub type Pgid = usize;
+pub type ExitCode = i32;
 
 /// Process stands for a set of tasks that shares the same userspace.
 /// Currently, we only support one task inside a process.
 pub struct Process {
     // Immutable Part
-    pid: usize,
+    pid: Pid,
     task: Arc<Task>,
     filename: Option<CString>,
     user_space: Option<Arc<UserSpace>>,
     user_vm: Option<UserVm>,
+    waiting_children: WaitQueue<ProcessFilter>,
 
     // Mutable Part
     /// The exit code
@@ -42,7 +47,7 @@ pub struct Process {
     /// Parent process
     parent: Mutex<Option<Weak<Process>>>,
     /// Children processes
-    children: Mutex<Vec<Arc<Process>>>,
+    children: Mutex<BTreeMap<usize, Arc<Process>>>,
 }
 
 impl Process {
@@ -52,7 +57,7 @@ impl Process {
         let process = task
             .data()
             .downcast_ref::<Weak<Process>>()
-            .expect("[Internal Error] Task data should points to weak<process>");
+            .expect("[Internal Error] task data should points to weak<process>");
         process
             .upgrade()
             .expect("[Internal Error] current process cannot be None")
@@ -60,7 +65,7 @@ impl Process {
 
     /// create a new process(not schedule it)
     pub fn new(
-        pid: usize,
+        pid: Pid,
         task: Arc<Task>,
         exec_filename: Option<CString>,
         user_vm: Option<UserVm>,
@@ -74,18 +79,24 @@ impl Process {
             let current_process = Process::current();
             Some(Arc::downgrade(&current_process))
         };
-        let children = Vec::with_capacity(CHILDREN_CAPACITY);
+        let children = BTreeMap::new();
+        let waiting_children = WaitQueue::new();
         Self {
             pid,
             task,
             filename: exec_filename,
             user_space,
             user_vm,
+            waiting_children,
             exit_code: AtomicI32::new(0),
             status: Mutex::new(ProcessStatus::Runnable),
             parent: Mutex::new(parent),
             children: Mutex::new(children),
         }
+    }
+
+    pub fn waiting_children(&self) -> &WaitQueue<ProcessFilter> {
+        &self.waiting_children
     }
 
     /// init a user process and send the process to scheduler
@@ -130,19 +141,33 @@ impl Process {
         })
     }
 
-    /// returns the pid
-    pub fn pid(&self) -> usize {
+    /// returns the pid of the process
+    pub fn pid(&self) -> Pid {
         self.pid
+    }
+
+    /// returns the process group id of the process
+    pub fn pgid(&self) -> Pgid {
+        todo!()
     }
 
     /// add a child process
     pub fn add_child(&self, child: Arc<Process>) {
         debug!("process: {}, add child: {} ", self.pid(), child.pid());
-        self.children.lock().push(child);
+        let child_pid = child.pid();
+        self.children.lock().insert(child_pid, child);
     }
 
     fn set_parent(&self, parent: Weak<Process>) {
         let _ = self.parent.lock().insert(parent);
+    }
+
+    fn parent(&self) -> Option<Arc<Process>> {
+        self.parent
+            .lock()
+            .as_ref()
+            .map(|parent| parent.upgrade())
+            .flatten()
     }
 
     /// Set the exit code when calling exit or exit_group
@@ -153,16 +178,26 @@ impl Process {
     /// Exit current process
     /// Set the status of current process as Zombie
     /// Move all children to init process
+    /// Wake up the parent wait queue if parent is waiting for self
     pub fn exit(&self) {
         self.status.lock().set_zombie();
         // move children to the init process
         let current_process = Process::current();
         if !current_process.is_init_process() {
             let init_process = get_init_process();
-            for child in self.children.lock().drain(..) {
-                child.set_parent(Arc::downgrade(&init_process));
-                init_process.add_child(child);
+            for (_, child_process) in self.children.lock().drain_filter(|_, _| true) {
+                child_process.set_parent(Arc::downgrade(&init_process));
+                init_process.add_child(child_process);
             }
+        }
+
+        // wake up parent waiting children, if any
+        if let Some(parent) = current_process.parent() {
+            parent
+                .waiting_children()
+                .wake_all_on_condition(&current_process.pid(), |filter, pid| {
+                    filter.contains_pid(*pid)
+                });
         }
     }
 
@@ -215,6 +250,38 @@ impl Process {
         }
     }
 
+    /// Get child process with given pid
+    pub fn get_child_by_pid(&self, pid: Pid) -> Option<Arc<Process>> {
+        for (child_pid, child_process) in self.children.lock().iter() {
+            if *child_pid == pid {
+                return Some(child_process.clone());
+            }
+        }
+        None
+    }
+
+    /// free zombie child with pid, returns the exit code of child process
+    /// We current just remove the child from the children map.
+    pub fn reap_zombie_child(&self, pid: Pid) -> i32 {
+        let child_process = self.children.lock().remove(&pid).unwrap();
+        assert!(child_process.status() == ProcessStatus::Zombie);
+        child_process.exit_code()
+    }
+
+    /// Get any zombie child
+    pub fn get_zombie_child(&self) -> Option<Arc<Process>> {
+        for (_, child_process) in self.children.lock().iter() {
+            if child_process.status().is_zombie() {
+                return Some(child_process.clone());
+            }
+        }
+        None
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        self.exit_code.load(Ordering::Relaxed)
+    }
+
     /// whether the process has child process
     pub fn has_child(&self) -> bool {
         self.children.lock().len() != 0
@@ -222,6 +289,10 @@ impl Process {
 
     pub fn filename(&self) -> Option<&CString> {
         self.filename.as_ref()
+    }
+
+    pub fn status(&self) -> ProcessStatus {
+        self.status.lock().clone()
     }
 }
 
@@ -242,6 +313,6 @@ pub fn get_init_process() -> Arc<Process> {
 }
 
 /// allocate a new pid for new process
-pub fn new_pid() -> usize {
+pub fn new_pid() -> Pid {
     PID_ALLOCATOR.fetch_add(1, Ordering::Release)
 }

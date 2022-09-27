@@ -23,5 +23,5 @@ pub fn sys_brk(heap_end: u64) -> SyscallResult {
         .expect("brk should work on process with user space");
     let new_heap_end = user_heap.brk(new_heap_end, vm_space);
 
-    SyscallResult::Return(new_heap_end as i32)
+    SyscallResult::Return(new_heap_end as _)
 }

@@ -19,6 +19,8 @@ use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::readlink::sys_readlink;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
+use crate::syscall::wait4::sys_wait4;
+use crate::syscall::waitid::sys_waitid;
 use crate::syscall::write::sys_write;
 use crate::syscall::writev::sys_writev;
 
@@ -36,6 +38,8 @@ mod readlink;
 mod sched_yield;
 mod tgkill;
 mod uname;
+mod wait4;
+mod waitid;
 mod write;
 mod writev;
 
@@ -51,6 +55,7 @@ const SYS_SCHED_YIELD: u64 = 24;
 const SYS_GETPID: u64 = 39;
 const SYS_FORK: u64 = 57;
 const SYS_EXIT: u64 = 60;
+const SYS_WAIT4: u64 = 61;
 const SYS_UNAME: u64 = 63;
 const SYS_READLINK: u64 = 89;
 const SYS_GETUID: u64 = 102;
@@ -61,6 +66,7 @@ const SYS_ARCH_PRCTL: u64 = 158;
 const SYS_GETTID: u64 = 186;
 const SYS_EXIT_GROUP: u64 = 231;
 const SYS_TGKILL: u64 = 234;
+const SYS_WAITID: u64 = 247;
 
 pub struct SyscallArgument {
     syscall_number: u64,
@@ -121,6 +127,7 @@ pub fn syscall_dispatch(
         SYS_GETPID => sys_getpid(),
         SYS_FORK => sys_fork(context.to_owned()),
         SYS_EXIT => sys_exit(args[0] as _),
+        SYS_WAIT4 => sys_wait4(args[0], args[1], args[2]),
         SYS_UNAME => sys_uname(args[0]),
         SYS_READLINK => sys_readlink(args[0], args[1], args[2]),
         SYS_GETUID => sys_getuid(),
@@ -131,6 +138,7 @@ pub fn syscall_dispatch(
         SYS_GETTID => sys_gettid(),
         SYS_EXIT_GROUP => sys_exit_group(args[0]),
         SYS_TGKILL => sys_tgkill(args[0], args[1], args[2]),
+        SYS_WAITID => sys_waitid(args[0], args[1], args[2], args[3], args[4]),
         _ => panic!("Unsupported syscall number: {}", syscall_number),
     }
 }
