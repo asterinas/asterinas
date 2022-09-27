@@ -2,6 +2,9 @@
 /// `u64`, and `usize`, to provide methods to make integers aligned to a
 /// power of two.
 pub trait AlignExt {
+    /// returns whether the number is a power of two
+    fn is_power_of_two(&self) -> bool;
+
     /// Returns to the smallest number that is greater than or equal to
     /// `self` and is a multiple of the given power of two.
     ///
@@ -41,6 +44,10 @@ macro_rules! impl_align_ext {
     ($( $uint_type:ty ),+,) => {
         $(
             impl AlignExt for $uint_type {
+                fn is_power_of_two(&self) -> bool {
+                    (*self != 0) && ((*self & (*self - 1)) == 0)
+                }
+
                 fn align_up(self, align: Self) -> Self {
                     assert!(align.is_power_of_two() && align >= 2);
                     self.checked_add(align - 1).unwrap() & !(align - 1)
@@ -69,29 +76,29 @@ mod test {
 
     #[test]
     fn test_align_up() {
-        let input_ns = [0, 1, 2, 9, 15, 21, 32, 47, 50];
-        let input_as = [2, 2, 2, 2, 4, 4, 8, 8, 8];
-        let output_ns = [0, 2, 2, 10, 16, 24, 32, 48, 56];
+        let input_ns = [0usize, 1, 2, 9, 15, 21, 32, 47, 50];
+        let input_as = [2usize, 2, 2, 2, 4, 4, 8, 8, 8];
+        let output_ns = [0usize, 2, 2, 10, 16, 24, 32, 48, 56];
 
         for i in 0..input_ns.len() {
             let n = input_ns[i];
             let a = input_as[i];
             let n2 = output_ns[i];
-            assert!(align_up(n, a) == n2);
+            assert!(n.align_up(a) == n2);
         }
     }
 
     #[test]
     fn test_align_down() {
-        let input_ns = [0, 1, 2, 9, 15, 21, 32, 47, 50];
-        let input_as = [2, 2, 2, 2, 4, 4, 8, 8, 8];
-        let output_ns = [0, 0, 2, 8, 12, 20, 32, 40, 48];
+        let input_ns = [0usize, 1, 2, 9, 15, 21, 32, 47, 50];
+        let input_as = [2usize, 2, 2, 2, 4, 4, 8, 8, 8];
+        let output_ns = [0usize, 0, 2, 8, 12, 20, 32, 40, 48];
 
         for i in 0..input_ns.len() {
             let n = input_ns[i];
             let a = input_as[i];
             let n2 = output_ns[i];
-            assert!(align_down(n, a) == n2);
+            assert!(n.align_down(a) == n2);
         }
     }
 }

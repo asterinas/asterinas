@@ -7,7 +7,6 @@ use alloc::{
     vec::Vec,
 };
 use kxos_frame::cpu::CpuContext;
-use kxos_frame::vm::{Vaddr, VmPerm};
 // use kxos_frame::{sync::SpinLock, task::Task, user::UserSpace};
 use kxos_frame::{
     debug,
@@ -20,7 +19,6 @@ use spin::Mutex;
 use crate::memory::mmap_area::MmapArea;
 use crate::memory::user_heap::UserHeap;
 use crate::process::task::create_forked_task;
-use crate::syscall::mmap::MMapFlags;
 
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
@@ -140,6 +138,7 @@ impl Process {
         })
     }
 
+    /// returns the pid
     pub fn pid(&self) -> usize {
         self.pid
     }
@@ -183,10 +182,16 @@ impl Process {
         self.task.send_to_scheduler();
     }
 
+    /// yield the current process to allow other processes to run
+    pub fn yield_now() {
+        Task::yield_now();
+    }
+
     fn user_space(&self) -> Option<&Arc<UserSpace>> {
         self.user_space.as_ref()
     }
 
+    /// returns the vm space if the process does have, otherwise None
     pub fn vm_space(&self) -> Option<&VmSpace> {
         match self.user_space {
             None => None,
@@ -194,6 +199,7 @@ impl Process {
         }
     }
 
+    /// returns the user heap if the process does have, otherwise None
     pub fn user_heap(&self) -> Option<&UserHeap> {
         match self.user_vm {
             None => None,
@@ -201,6 +207,7 @@ impl Process {
         }
     }
 
+    /// returns the mmap area if the process does have, otherwise None
     pub fn mmap_area(&self) -> Option<&MmapArea> {
         match self.user_vm {
             None => None,
@@ -208,10 +215,13 @@ impl Process {
         }
     }
 
+    /// whether the process has child process
     pub fn has_child(&self) -> bool {
         self.children.lock().len() != 0
     }
 
+    /// get the first(and only) child process
+    /// FIXME: deal with multiple children processes
     pub fn get_child_process(&self) -> Arc<Process> {
         let children_lock = self.children.lock();
         let child_len = children_lock.len();
@@ -223,6 +233,7 @@ impl Process {
             .clone()
     }
 
+    /// Fork a child process
     /// WorkAround: This function only create a new process, but did not schedule the process to run
     pub fn fork(parent_context: CpuContext) -> Arc<Process> {
         let child_pid = new_pid();
@@ -271,29 +282,9 @@ impl Process {
         child
     }
 
-    pub fn mmap(&self, len: usize, vm_perm: VmPerm, flags: MMapFlags, offset: usize) -> Vaddr {
-        let mmap_area = self
-            .mmap_area()
-            .expect("mmap should work on process with mmap area");
-        let user_space = self
-            .user_space()
-            .expect("mmap should work on process with user space");
-        let vm_space = user_space.vm_space();
-        mmap_area.mmap(len, offset, vm_perm, flags, vm_space)
-    }
-
     pub fn filename(&self) -> Option<&CString> {
         self.filename.as_ref()
     }
-
-    //     pub fn copy_bytes_from_user(&self, vaddr: Vaddr, buf: &mut [u8]) {
-    //         self.user_space()
-    //             .unwrap()
-    //             .vm_space()
-    //             .read_bytes(vaddr, buf)
-    //             .unwrap();
-    //     }
-    // }
 }
 
 /// Get the init process
