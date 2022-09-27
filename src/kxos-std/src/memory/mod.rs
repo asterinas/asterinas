@@ -58,3 +58,12 @@ pub fn write_bytes_to_user(dest: Vaddr, src: &[u8]) {
         .expect("[Internal error]Current should have vm space to write bytes to user");
     vm_space.write_bytes(dest, src).expect("write bytes failed")
 }
+
+/// write val (Plain of Data type) to user space of current process.
+pub fn write_val_to_user<T: Pod>(dest: Vaddr, val: T) {
+    let current = Process::current();
+    let vm_space = current
+        .vm_space()
+        .expect("[Internal error]Current should have vm space to write val to user");
+    vm_space.write_val(dest, &val).expect("write val failed");
+}

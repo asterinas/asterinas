@@ -89,7 +89,7 @@ impl<P> Drop for RcuReclaimer<P> {
                 wq.wake_one();
             }
         });
-        wq.wait_until(|| true);
+        wq.wait_until(None::<u8>, || Some(0));
     }
 }
 
