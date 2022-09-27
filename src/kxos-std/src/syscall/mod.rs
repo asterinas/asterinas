@@ -6,11 +6,11 @@ use kxos_frame::cpu::CpuContext;
 use kxos_frame::{debug, warn};
 
 use crate::process::task::HandlerResult;
-use crate::process::Process;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
 use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
+use crate::syscall::fork::sys_fork;
 use crate::syscall::fstat::sys_fstat;
 use crate::syscall::getpid::sys_getpid;
 use crate::syscall::gettid::sys_gettid;
@@ -26,6 +26,7 @@ mod arch_prctl;
 mod brk;
 mod exit;
 mod exit_group;
+mod fork;
 mod fstat;
 mod getpid;
 mod gettid;
@@ -144,12 +145,6 @@ pub fn sys_rt_sigprocmask() -> SyscallResult {
     debug!("[syscall][id={}][SYS_RT_SIGPROCMASK]", SYS_RT_SIGPROCMASK);
     warn!("TODO: rt_sigprocmask only return a fake result");
     SyscallResult::Return(0)
-}
-
-pub fn sys_fork(parent_context: CpuContext) -> SyscallResult {
-    debug!("[syscall][id={}][SYS_FORK]", SYS_FORK);
-    let child_process = Process::fork(parent_context);
-    SyscallResult::Return(child_process.pid() as i32)
 }
 
 pub fn sys_getuid() -> SyscallResult {
