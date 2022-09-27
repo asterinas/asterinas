@@ -52,6 +52,10 @@ pub unsafe trait Pod: Copy + Sized {
     }
 }
 
+/// WorkAround. When implement macro impl_pod_for, this can be removed.
+unsafe impl Pod for u64 {}
+unsafe impl Pod for usize {}
+
 macro_rules! impl_pod_for {
     ($($token:tt)*/* define the input */) => {
         /* define the expansion */

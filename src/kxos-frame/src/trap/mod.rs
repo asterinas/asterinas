@@ -2,14 +2,14 @@ mod handler;
 mod irq;
 
 pub use self::irq::{IrqCallbackHandle, IrqLine, NOT_USING_IRQ_NUMBER};
-use core::mem::size_of_val;
+use core::{fmt::Debug, mem::size_of_val};
 
 use crate::{x86_64_util::*, *};
 
 core::arch::global_asm!(include_str!("trap.S"));
 core::arch::global_asm!(include_str!("vector.S"));
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 #[repr(C)]
 pub struct CallerRegs {
     pub rax: u64,
@@ -23,7 +23,15 @@ pub struct CallerRegs {
     pub r11: u64,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+impl Debug for CallerRegs {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("rax: 0x{:x}, rcx: 0x{:x}, rdx: 0x{:x}, rsi: 0x{:x}, rdi: 0x{:x}, r8: 0x{:x}, r9: 0x{:x}, r10: 0x{:x}, r11: 0x{:x}", 
+        self.rax, self.rcx, self.rdx, self.rsi, self.rdi, self.r8, self.r9, self.r10, self.r11))?;
+        Ok(())
+    }
+}
+
+#[derive(Default, Clone, Copy)]
 #[repr(C)]
 pub struct CalleeRegs {
     pub rsp: u64,
@@ -33,6 +41,13 @@ pub struct CalleeRegs {
     pub r13: u64,
     pub r14: u64,
     pub r15: u64,
+}
+
+impl Debug for CalleeRegs {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("rsp: 0x{:x}, rbx: 0x{:x}, rbp: 0x{:x}, r12: 0x{:x}, r13: 0x{:x}, r14: 0x{:x}, r15: 0x{:x}", self.rsp, self.rbx, self.rbp, self.r12, self.r13, self.r14, self.r15))?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]

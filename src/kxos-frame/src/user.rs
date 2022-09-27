@@ -1,6 +1,7 @@
 //! User space.
 
-use crate::{debug, println};
+use crate::x86_64_util::{rdfsbase, wrfsbase};
+use crate::{debug, println, x86_64_util};
 
 use crate::cpu::CpuContext;
 use crate::prelude::*;
@@ -117,14 +118,31 @@ impl<'a> UserMode<'a> {
             self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip;
             self.current.syscall_frame().callee.rsp = self.user_space.cpu_ctx.gp_regs.rsp;
             self.current.syscall_frame().caller.rax = self.user_space.cpu_ctx.gp_regs.rax;
+
+            // set argument registers
+            self.current.syscall_frame().caller.rdi = self.user_space.cpu_ctx.gp_regs.rdi;
+            self.current.syscall_frame().caller.rsi = self.user_space.cpu_ctx.gp_regs.rsi;
+            self.current.syscall_frame().caller.rdx = self.user_space.cpu_ctx.gp_regs.rdx;
+
+            // write fsbase
+            wrfsbase(self.user_space.cpu_ctx.fs_base);
+
             self.executed = true;
         } else {
             if self.current.inner_exclusive_access().is_from_trap {
                 *self.current.trap_frame() = self.context.into();
             } else {
+                // x86_64_util::wrfsbase(self.context.fs_base);
                 *self.current.syscall_frame() = self.context.into();
             }
         }
+
+        // write fabase
+        if rdfsbase() != self.context.fs_base {
+            debug!("write fsbase: 0x{:x}", self.context.fs_base);
+            wrfsbase(self.context.fs_base);
+        }
+
         let mut current_task_inner = self.current.inner_exclusive_access();
         let binding = SWITCH_TO_USER_SPACE_TASK.get();
         let next_task_inner = binding.inner_exclusive_access();
@@ -139,9 +157,11 @@ impl<'a> UserMode<'a> {
         }
         if self.current.inner_exclusive_access().is_from_trap {
             self.context = CpuContext::from(*self.current.trap_frame());
+            self.context.fs_base = rdfsbase();
             UserEvent::Exception
         } else {
             self.context = CpuContext::from(*self.current.syscall_frame());
+            self.context.fs_base = rdfsbase();
             debug!("[kernel] syscall id:{}", self.context.gp_regs.rax);
             debug!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);
             debug!("[kernel] rcx: 0x{:x}", self.context.gp_regs.rcx);
