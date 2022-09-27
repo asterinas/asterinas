@@ -1,24 +1,15 @@
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use alloc::ffi::CString;
-use alloc::vec;
 use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
-use kxos_frame::cpu::CpuContext;
-// use kxos_frame::{sync::SpinLock, task::Task, user::UserSpace};
-use kxos_frame::{
-    debug,
-    task::Task,
-    user::UserSpace,
-    vm::{VmIo, VmSpace},
-};
+use kxos_frame::{debug, task::Task, user::UserSpace, vm::VmSpace};
 use spin::Mutex;
 
 use crate::memory::mmap_area::MmapArea;
 use crate::memory::user_heap::UserHeap;
-use crate::process::task::create_forked_task;
 
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
@@ -67,7 +58,8 @@ impl Process {
             .expect("[Internal Error] current process cannot be None")
     }
 
-    fn new(
+    /// create a new process(not schedule it)
+    pub fn new(
         pid: usize,
         task: Arc<Task>,
         exec_filename: Option<CString>,
@@ -143,8 +135,9 @@ impl Process {
         self.pid
     }
 
-    fn add_child(&self, child: Arc<Process>) {
-        // debug!("==============Add child: {}", child.pid());
+    /// add a child process
+    pub fn add_child(&self, child: Arc<Process>) {
+        debug!("process: {}, add child: {} ", self.pid(), child.pid());
         self.children.lock().push(child);
     }
 
@@ -173,12 +166,13 @@ impl Process {
         }
     }
 
-    fn is_init_process(&self) -> bool {
+    /// if the current process is init process
+    pub fn is_init_process(&self) -> bool {
         self.pid == 0
     }
 
     /// start to run current process
-    fn send_to_scheduler(self: &Arc<Self>) {
+    pub fn send_to_scheduler(self: &Arc<Self>) {
         self.task.send_to_scheduler();
     }
 
@@ -187,7 +181,8 @@ impl Process {
         Task::yield_now();
     }
 
-    fn user_space(&self) -> Option<&Arc<UserSpace>> {
+    /// returns the userspace
+    pub fn user_space(&self) -> Option<&Arc<UserSpace>> {
         self.user_space.as_ref()
     }
 
@@ -197,6 +192,11 @@ impl Process {
             None => None,
             Some(ref user_space) => Some(user_space.vm_space()),
         }
+    }
+
+    /// returns the user_vm
+    pub fn user_vm(&self) -> Option<&UserVm> {
+        self.user_vm.as_ref()
     }
 
     /// returns the user heap if the process does have, otherwise None
@@ -220,68 +220,6 @@ impl Process {
         self.children.lock().len() != 0
     }
 
-    /// get the first(and only) child process
-    /// FIXME: deal with multiple children processes
-    pub fn get_child_process(&self) -> Arc<Process> {
-        let children_lock = self.children.lock();
-        let child_len = children_lock.len();
-        assert_eq!(1, child_len, "Process can only have one child now");
-        children_lock
-            .iter()
-            .nth(0)
-            .expect("[Internal Error]")
-            .clone()
-    }
-
-    /// Fork a child process
-    /// WorkAround: This function only create a new process, but did not schedule the process to run
-    pub fn fork(parent_context: CpuContext) -> Arc<Process> {
-        let child_pid = new_pid();
-        let current = Process::current();
-        let parent_user_space = match current.user_space() {
-            None => None,
-            Some(user_space) => Some(user_space.clone()),
-        }
-        .expect("User task should always have user space");
-
-        // child process vm space
-        // FIXME: COPY ON WRITE can be used here
-        let parent_vm_space = parent_user_space.vm_space();
-        let child_vm_space = parent_user_space.vm_space().clone();
-        check_fork_vm_space(parent_vm_space, &child_vm_space);
-
-        let child_file_name = current.filename.clone();
-
-        // child process user_vm
-        let child_user_vm = current.user_vm.clone();
-
-        // child process cpu context
-        let mut child_cpu_context = parent_context.clone();
-        debug!("parent cpu context: {:?}", child_cpu_context.gp_regs);
-        child_cpu_context.gp_regs.rax = 0; // Set return value of child process
-
-        let child_user_space = Arc::new(UserSpace::new(child_vm_space, child_cpu_context));
-        debug!("before spawn child task");
-        debug!("current pid: {}", current.pid());
-        debug!("child process pid: {}", child_pid);
-        debug!("rip = 0x{:x}", child_cpu_context.gp_regs.rip);
-
-        let child = Arc::new_cyclic(|child_process_ref| {
-            let weak_child_process = child_process_ref.clone();
-            let child_task = create_forked_task(child_user_space.clone(), weak_child_process);
-            Process::new(
-                child_pid,
-                child_task,
-                child_file_name,
-                child_user_vm,
-                Some(child_user_space),
-            )
-        });
-        Process::current().add_child(child.clone());
-        // child.send_to_scheduler();
-        child
-    }
-
     pub fn filename(&self) -> Option<&CString> {
         self.filename.as_ref()
     }
@@ -303,23 +241,7 @@ pub fn get_init_process() -> Arc<Process> {
     current_process
 }
 
-/// create a new pid for new process
-fn new_pid() -> usize {
+/// allocate a new pid for new process
+pub fn new_pid() -> usize {
     PID_ALLOCATOR.fetch_add(1, Ordering::Release)
-}
-
-/// debug use
-fn check_fork_vm_space(parent_vm_space: &VmSpace, child_vm_space: &VmSpace) {
-    let mut buffer1 = vec![0u8; 0x78];
-    let mut buffer2 = vec![0u8; 0x78];
-    parent_vm_space
-        .read_bytes(0x401000, &mut buffer1)
-        .expect("read buffer1 failed");
-    child_vm_space
-        .read_bytes(0x401000, &mut buffer2)
-        .expect("read buffer1 failed");
-    for len in 0..buffer1.len() {
-        assert_eq!(buffer1[len], buffer2[len]);
-    }
-    debug!("check fork vm space succeed.");
 }
