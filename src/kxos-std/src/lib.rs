@@ -44,6 +44,12 @@ pub fn init_process() {
         process.pid()
     );
 
+    let hello_c_content = read_hello_c_content();
+    // glibc requires the filename starts as "/"
+    let hello_c_filename = CString::new("/hello_c").unwrap();
+    let process = Process::spawn_user_process(hello_c_filename, hello_c_content);
+    info!("spawn hello_c process, pid = {}", process.pid());
+
     let fork_content = read_fork_content();
     let fork_filename = CString::new("fork").unwrap();
     let process = Process::spawn_user_process(fork_filename, fork_content);
@@ -52,13 +58,11 @@ pub fn init_process() {
         process.pid()
     );
 
-    let hello_c_content = read_hello_c_content();
-    // glibc requires the filename starts as "/"
-    let hello_c_filename = CString::new("/hello_c").unwrap();
-    let process = Process::spawn_user_process(hello_c_filename, hello_c_content);
-    info!("spawn hello_c process, pid = {}", process.pid());
-
-    loop {}
+    loop {
+        // We don't have preemptive scheduler now.
+        // The long running init process should yield its own execution to allow other tasks to go on.
+        Process::yield_now();
+    }
 }
 
 /// first process never return

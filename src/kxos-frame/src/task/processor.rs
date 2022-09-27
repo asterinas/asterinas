@@ -51,7 +51,9 @@ pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
 pub fn schedule() {
-    switch_to_task(fetch_task().expect("no more task found"));
+    if let Some(task) = fetch_task() {
+        switch_to_task(task);
+    }
 }
 
 /// call this function to switch to other task
