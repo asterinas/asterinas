@@ -12,6 +12,7 @@ use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
 use crate::syscall::fork::sys_fork;
 use crate::syscall::fstat::sys_fstat;
+use crate::syscall::futex::sys_futex;
 use crate::syscall::getpid::sys_getpid;
 use crate::syscall::gettid::sys_gettid;
 use crate::syscall::mmap::sys_mmap;
@@ -30,6 +31,7 @@ mod exit;
 mod exit_group;
 mod fork;
 mod fstat;
+mod futex;
 mod getpid;
 mod gettid;
 pub mod mmap;
@@ -64,6 +66,7 @@ const SYS_GETEUID: u64 = 107;
 const SYS_GETEGID: u64 = 108;
 const SYS_ARCH_PRCTL: u64 = 158;
 const SYS_GETTID: u64 = 186;
+const SYS_FUTEX: u64 = 202;
 const SYS_EXIT_GROUP: u64 = 231;
 const SYS_TGKILL: u64 = 234;
 const SYS_WAITID: u64 = 247;
@@ -136,6 +139,7 @@ pub fn syscall_dispatch(
         SYS_GETEGID => sys_getegid(),
         SYS_ARCH_PRCTL => sys_arch_prctl(args[0], args[1], context),
         SYS_GETTID => sys_gettid(),
+        SYS_FUTEX => sys_futex(args[0], args[1], args[2], args[3], args[4], args[5]),
         SYS_EXIT_GROUP => sys_exit_group(args[0]),
         SYS_TGKILL => sys_tgkill(args[0], args[1], args[2]),
         SYS_WAITID => sys_waitid(args[0], args[1], args[2], args[3], args[4]),
