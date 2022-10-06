@@ -2,6 +2,7 @@
 
 pub mod framebuffer;
 mod io_port;
+pub mod pci;
 pub mod serial;
 
 pub use self::io_port::IoPort;

@@ -1,4 +1,4 @@
-use core::mem::MaybeUninit;
+use core::{fmt::Debug, mem::MaybeUninit};
 
 /// A marker trait for plain old data (POD).
 ///
@@ -14,7 +14,7 @@ use core::mem::MaybeUninit;
 /// # Safety
 ///
 /// Marking a non-POD type as POD may cause undefined behaviors.
-pub unsafe trait Pod: Copy + Sized {
+pub unsafe trait Pod: Copy + Sized + Debug {
     /// Creates a new instance of Pod type that is filled with zeroes.
     fn new_zeroed() -> Self {
         // SAFETY. An all-zero value of `T: Pod` is always valid.
@@ -52,16 +52,51 @@ pub unsafe trait Pod: Copy + Sized {
     }
 }
 
-/// WorkAround. When implement macro impl_pod_for, this can be removed.
-unsafe impl Pod for u64 {}
-unsafe impl Pod for usize {}
-
+/// FIXME: use derive instead
+#[macro_export]
 macro_rules! impl_pod_for {
-    ($($token:tt)*/* define the input */) => {
+    ($($token:tt),*/* define the input */) => {
         /* define the expansion */
+        $(unsafe impl Pod for $token {})*
     };
 }
 
-impl_pod_for!(u8, u16, u32, u64, i8, i16, i32, i64,);
+impl_pod_for!(u8, u16, u32, u64, i8, i16, i32, i64, isize, usize);
 
 //unsafe impl<T: Pod, const N> [T; N] for Pod {}
+
+/// Get the offset of a field within a type as a pointer.
+///
+/// ```rust
+/// #[repr(C)]
+/// pub struct Foo {
+///     first: u8,
+///     second: u32,
+/// }
+///
+/// assert!(offset_of(Foo, first) == (0 as *const u8));
+/// assert!(offset_of(Foo, second) == (4 as *const u32));
+/// ```
+#[macro_export]
+macro_rules! offset_of {
+    ($container:ty, $($field:tt)+) => ({
+        // SAFETY. It is ok to have this uninitialized value because
+        // 1) Its memory won't be acccessed;
+        // 2) It will be forgoten rather than being dropped;
+        // 3) Before it gets forgten, the code won't return prematurely or panic.
+        let tmp: $container = unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+
+        let container_addr = &tmp as *const _;
+        let field_addr =  &tmp.$($field)* as *const _;
+
+        ::core::mem::forget(tmp);
+
+        let field_offset = (field_addr as usize - container_addr as usize) as *const _;
+
+        // Let Rust compiler infer our intended pointer type of field_offset
+        // by comparing it with another pointer.
+        let _: bool = field_offset == field_addr;
+
+        field_offset
+    });
+}

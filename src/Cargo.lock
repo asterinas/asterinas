@@ -91,11 +91,21 @@ dependencies = [
  "font8x8",
  "lazy_static",
  "linked_list_allocator",
- "pci",
  "spin 0.9.4",
  "uart_16550",
  "volatile",
  "x86_64",
+]
+
+[[package]]
+name = "kxos-pci"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "kxos-frame",
+ "kxos-util",
+ "lazy_static",
+ "spin 0.9.4",
 ]
 
 [[package]]
@@ -104,9 +114,29 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "kxos-frame",
+ "kxos-pci",
+ "kxos-virtio",
  "lazy_static",
  "spin 0.9.4",
  "xmas-elf",
+]
+
+[[package]]
+name = "kxos-util"
+version = "0.1.0"
+dependencies = [
+ "kxos-frame",
+]
+
+[[package]]
+name = "kxos-virtio"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "kxos-frame",
+ "kxos-pci",
+ "kxos-util",
+ "spin 0.9.4",
 ]
 
 [[package]]
@@ -150,14 +180,6 @@ checksum = "9f80bf5aacaf25cbfc8210d1cfb718f2bf3b11c4c54e5afe36c236853a8ec390"
 dependencies = [
  "autocfg",
  "scopeguard",
-]
-
-[[package]]
-name = "pci"
-version = "0.0.1"
-source = "git+https://github.com/rcore-os/pci-rs#a4e7cea640f8a92ae4b51c6c51fee3f1f0317af2"
-dependencies = [
- "bitflags",
 ]
 
 [[package]]

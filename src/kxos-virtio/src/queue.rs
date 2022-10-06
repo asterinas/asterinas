@@ -1,10 +1,12 @@
-//! FIXME: use Volatile
-use crate::mm::address::align_up;
-use core::mem::size_of;
-use core::slice;
-use core::sync::atomic::{fence, Ordering};
+//! Virtqueue
 
-use super::*;
+use super::VitrioPciCommonCfg;
+use alloc::vec::Vec;
+use bitflags::bitflags;
+use core::sync::atomic::{fence, Ordering};
+use kxos_frame::offset_of;
+use kxos_frame::Pod;
+use kxos_util::frame_ptr::InFramePtr;
 #[derive(Debug)]
 pub enum QueueError {
     InvalidArgs,
@@ -13,25 +15,19 @@ pub enum QueueError {
     AlreadyUsed,
 }
 
-#[derive(Debug)]
-#[repr(C)]
-pub struct QueueNotify {
-    notify: u32,
-}
-
 /// The mechanism for bulk data transport on virtio devices.
 ///
 /// Each device can have zero or more virtqueues.
 #[derive(Debug)]
-pub(crate) struct VirtQueue {
+pub struct VirtQueue {
     /// Descriptor table
-    desc: &'static mut [Descriptor],
+    descs: Vec<InFramePtr<Descriptor>>,
     /// Available ring
-    avail: &'static mut AvailRing,
+    avail: InFramePtr<AvailRing>,
     /// Used ring
-    used: &'static mut UsedRing,
+    used: InFramePtr<UsedRing>,
     /// point to notify address
-    notify: &'static mut QueueNotify,
+    notify: InFramePtr<u32>,
 
     /// The index of queue
     queue_idx: u32,
@@ -50,41 +46,56 @@ pub(crate) struct VirtQueue {
 
 impl VirtQueue {
     /// Create a new VirtQueue.
-    pub fn new(
-        cfg: &mut VitrioPciCommonCfg,
+    pub(crate) fn new(
+        cfg: &InFramePtr<VitrioPciCommonCfg>,
         idx: usize,
         size: u16,
         cap_offset: usize,
         notify_off_multiplier: u32,
+        msix_vector: u16,
     ) -> Result<Self, QueueError> {
-        if !size.is_power_of_two() || cfg.queue_size < size {
+        cfg.write_at(offset_of!(VitrioPciCommonCfg, queue_select), idx as u16);
+
+        if !size.is_power_of_two() || cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_size)) < size
+        {
             return Err(QueueError::InvalidArgs);
         }
-        let layout = VirtQueueLayout::new(size);
         // Allocate contiguous pages.
 
-        cfg.queue_select = idx as u16;
-        cfg.queue_size = size;
+        cfg.write_at(offset_of!(VitrioPciCommonCfg, queue_size), size);
+        cfg.write_at(
+            offset_of!(VitrioPciCommonCfg, queue_msix_vector),
+            msix_vector,
+        );
 
-        let desc = unsafe {
-            slice::from_raw_parts_mut(
-                mm::phys_to_virt(cfg.queue_desc as usize) as *mut Descriptor,
-                size as usize,
+        let mut descs = Vec::new();
+
+        for i in 0..size {
+            descs.push(
+                InFramePtr::new(
+                    cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_desc)) as usize
+                        + i as usize * 16,
+                )
+                .expect("can not get Inframeptr for virtio queue Descriptor"),
             )
-        };
-        let avail =
-            unsafe { &mut *(mm::phys_to_virt(cfg.queue_driver as usize) as *mut AvailRing) };
-        let used = unsafe { &mut *(mm::phys_to_virt(cfg.queue_device as usize) as *mut UsedRing) };
-        let notify = unsafe {
-            &mut *((cap_offset + notify_off_multiplier as usize * idx) as *mut QueueNotify)
-        };
-        // Link descriptors together.
-        for i in 0..(size - 1) {
-            desc[i as usize].next = i + 1;
         }
 
+        let avail =
+            InFramePtr::new(cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_driver)) as usize)
+                .expect("can not get Inframeptr for virtio queue available ring");
+        let used =
+            InFramePtr::new(cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_device)) as usize)
+                .expect("can not get Inframeptr for virtio queue used ring");
+        let notify = InFramePtr::new(cap_offset + notify_off_multiplier as usize * idx)
+            .expect("can not get Inframeptr for virtio queue notify");
+        // Link descriptors together.
+        for i in 0..(size - 1) {
+            let temp = descs.get(i as usize).unwrap();
+            temp.write_at(offset_of!(Descriptor, next), i + 1);
+        }
+        cfg.write_at(offset_of!(VitrioPciCommonCfg, queue_enable), 1 as u16);
         Ok(VirtQueue {
-            desc,
+            descs,
             avail,
             used,
             notify,
@@ -112,43 +123,51 @@ impl VirtQueue {
         let head = self.free_head;
         let mut last = self.free_head;
         for input in inputs.iter() {
-            let desc = &mut self.desc[self.free_head as usize];
-            desc.set_buf(input);
-            desc.flags = DescFlags::NEXT;
+            let desc = &self.descs[self.free_head as usize];
+            set_buf(desc, input);
+            desc.write_at(offset_of!(Descriptor, flags), DescFlags::NEXT);
             last = self.free_head;
-            self.free_head = desc.next;
+            self.free_head = desc.read_at(offset_of!(Descriptor, next));
         }
         for output in outputs.iter() {
-            let desc = &mut self.desc[self.free_head as usize];
-            desc.set_buf(output);
-            desc.flags = DescFlags::NEXT | DescFlags::WRITE;
+            let desc = &mut self.descs[self.free_head as usize];
+            set_buf(desc, output);
+            desc.write_at(
+                offset_of!(Descriptor, flags),
+                DescFlags::NEXT | DescFlags::WRITE,
+            );
             last = self.free_head;
-            self.free_head = desc.next;
+            self.free_head = desc.read_at(offset_of!(Descriptor, next));
         }
         // set last_elem.next = NULL
         {
-            let desc = &mut self.desc[last as usize];
-            let mut flags = desc.flags;
+            let desc = &mut self.descs[last as usize];
+            let mut flags: DescFlags = desc.read_at(offset_of!(Descriptor, flags));
             flags.remove(DescFlags::NEXT);
-            desc.flags = flags;
+            desc.write_at(offset_of!(Descriptor, flags), flags);
         }
         self.num_used += (inputs.len() + outputs.len()) as u16;
 
         let avail_slot = self.avail_idx & (self.queue_size - 1);
-        self.avail.ring[avail_slot as usize] = head;
+
+        self.avail.write_at(
+            (offset_of!(AvailRing, ring) as usize + avail_slot as usize * 2) as *const u16,
+            head,
+        );
 
         // write barrier
         fence(Ordering::SeqCst);
 
         // increase head of avail ring
         self.avail_idx = self.avail_idx.wrapping_add(1);
-        self.avail.idx = self.avail_idx;
+        self.avail
+            .write_at(offset_of!(AvailRing, idx), self.avail_idx);
         Ok(head)
     }
 
     /// Whether there is a used element that can pop.
     pub fn can_pop(&self) -> bool {
-        self.last_used_idx != self.used.idx
+        self.last_used_idx != self.used.read_at(offset_of!(UsedRing, idx))
     }
 
     /// The number of free descriptors.
@@ -163,13 +182,13 @@ impl VirtQueue {
         let origin_free_head = self.free_head;
         self.free_head = head;
         loop {
-            let desc = &mut self.desc[head as usize];
-            let flags = desc.flags;
+            let desc = &mut self.descs[head as usize];
+            let flags: DescFlags = desc.read_at(offset_of!(Descriptor, flags));
             self.num_used -= 1;
             if flags.contains(DescFlags::NEXT) {
-                head = desc.next;
+                head = desc.read_at(offset_of!(Descriptor, next));
             } else {
-                desc.next = origin_free_head;
+                desc.write_at(offset_of!(Descriptor, next), origin_free_head);
                 return;
             }
         }
@@ -186,8 +205,11 @@ impl VirtQueue {
         fence(Ordering::SeqCst);
 
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
-        let index = self.used.ring[last_used_slot as usize].id as u16;
-        let len = self.used.ring[last_used_slot as usize].len;
+        let last_used = self.used.read_at(
+            (offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8) as *const UsedElem,
+        );
+        let index = last_used.id as u16;
+        let len = last_used.len;
 
         self.recycle_descriptors(index);
         self.last_used_idx = self.last_used_idx.wrapping_add(1);
@@ -200,40 +222,15 @@ impl VirtQueue {
         self.queue_size
     }
 
+    /// notify that there are available rings
     pub fn notify(&mut self) {
-        self.notify.notify = 0
-    }
-}
-
-/// The inner layout of a VirtQueue.
-///
-/// Ref: 2.6.2 Legacy Interfaces: A Note on Virtqueue Layout
-struct VirtQueueLayout {
-    avail_offset: usize,
-    used_offset: usize,
-    size: usize,
-}
-
-impl VirtQueueLayout {
-    fn new(queue_size: u16) -> Self {
-        assert!(
-            queue_size.is_power_of_two(),
-            "queue size should be a power of 2"
-        );
-        let queue_size = queue_size as usize;
-        let desc = size_of::<Descriptor>() * queue_size;
-        let avail = size_of::<u16>() * (3 + queue_size);
-        let used = size_of::<u16>() * 3 + size_of::<UsedElem>() * queue_size;
-        VirtQueueLayout {
-            avail_offset: desc,
-            used_offset: align_up(desc + avail),
-            size: align_up(desc + avail) + align_up(used),
-        }
+        self.notify
+            .write_at(0 as usize as *const u32, self.queue_idx);
     }
 }
 
 #[repr(C, align(16))]
-#[derive(Debug)]
+#[derive(Debug, Default, Copy, Clone)]
 struct Descriptor {
     addr: u64,
     len: u32,
@@ -243,9 +240,17 @@ struct Descriptor {
 
 impl Descriptor {
     fn set_buf(&mut self, buf: &[u8]) {
-        self.addr = mm::virt_to_phys(buf.as_ptr() as usize) as u64;
+        self.addr = kxos_frame::virt_to_phys(buf.as_ptr() as usize) as u64;
         self.len = buf.len() as u32;
     }
+}
+
+fn set_buf(inframe_ptr: &InFramePtr<Descriptor>, buf: &[u8]) {
+    inframe_ptr.write_at(
+        offset_of!(Descriptor, addr),
+        kxos_frame::virt_to_phys(buf.as_ptr() as usize) as u64,
+    );
+    inframe_ptr.write_at(offset_of!(Descriptor, len), buf.len() as u32);
 }
 
 bitflags! {
@@ -256,12 +261,19 @@ bitflags! {
         const INDIRECT = 4;
     }
 }
+impl Default for DescFlags {
+    fn default() -> Self {
+        Self {
+            bits: Default::default(),
+        }
+    }
+}
 
 /// The driver uses the available ring to offer buffers to the device:
 /// each ring entry refers to the head of a descriptor chain.
 /// It is only written by the driver and read by the device.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default, Copy, Clone)]
 struct AvailRing {
     flags: u16,
     /// A driver MUST NOT decrement the idx.
@@ -273,7 +285,7 @@ struct AvailRing {
 /// The used ring is where the device returns buffers once it is done with them:
 /// it is only written to by the device, and read by the driver.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default, Copy, Clone)]
 struct UsedRing {
     flags: u16,
     idx: u16,
@@ -282,8 +294,10 @@ struct UsedRing {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default, Copy, Clone)]
 struct UsedElem {
     id: u32,
     len: u32,
 }
+
+kxos_frame::impl_pod_for!(UsedElem, UsedRing, AvailRing, Descriptor, DescFlags);
