@@ -9,6 +9,7 @@
     - [Case Study 2: Drivers for Virtio Devices on PCI](privilege_separation/pci_virtio_drivers.md)
 - [Everything as a Capability](capabilities/README.md)
     - [Type-Level Programming in Rust](capabilities/type_level_programming.md)
+    - [Zero-Cost Capabilities](capabilities/zero_cost_capabilities.md)
     - [CapComp: Zero-Cost Capabilities and Components](capabilities/capcomp.md)
 - [Trustworthy Containers]()
 - [TEEs as Top-Tier Targets]()

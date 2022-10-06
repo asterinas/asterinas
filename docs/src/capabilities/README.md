@@ -32,4 +32,7 @@ capabilities as a zero-cost abstraction.
 
 In the rest of this chapter, we first introduce the advanced Rust technique 
 of [type-level programming (TLP)](type_level_programming.md) and then describe how we leverage TLP as well as 
-other Rust features to [implement zero-cost capabilities](capcomp.md).
+other Rust features to [implement zero-cost capabilities](zero_cost_capabilities.md).
+
+The ideas described above was originally explored in one of our internal project
+called [CapComp](capcomp.md).
