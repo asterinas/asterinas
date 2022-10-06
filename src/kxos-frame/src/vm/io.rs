@@ -57,7 +57,7 @@ pub trait VmIo: Send + Sync {
     /// # No short write
     ///
     /// Similar to `write_bytes`.
-    fn write_slice<T: Pod>(&mut self, offset: usize, slice: &[T]) -> Result<()> {
+    fn write_slice<T: Pod>(&self, offset: usize, slice: &[T]) -> Result<()> {
         let buf = unsafe { core::mem::transmute(slice) };
         self.write_bytes(offset, buf)
     }

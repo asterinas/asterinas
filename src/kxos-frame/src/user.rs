@@ -1,7 +1,7 @@
 //! User space.
 
+use crate::debug;
 use crate::x86_64_util::{rdfsbase, wrfsbase};
-use crate::{debug, println, x86_64_util};
 
 use crate::cpu::CpuContext;
 use crate::prelude::*;

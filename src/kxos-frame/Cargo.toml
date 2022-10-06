@@ -15,7 +15,6 @@ linked_list_allocator = "0.9.0"
 bootloader = {version="0.10.12"}
 font8x8 = { version = "0.2.5", default-features = false, features = ["unicode"]}
 uart_16550 = "0.2.0"
-pci = { git = "https://github.com/rcore-os/pci-rs" }
 
 [dependencies.lazy_static]
 version = "1.0"

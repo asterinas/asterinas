@@ -9,7 +9,7 @@ use core::fmt;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    pub static ref ALL_MAPPED_PTE: UPSafeCell<BTreeMap<usize, PageTableEntry>> =
+    pub(crate) static ref ALL_MAPPED_PTE: UPSafeCell<BTreeMap<usize, PageTableEntry>> =
         unsafe { UPSafeCell::new(BTreeMap::new()) };
 }
 
