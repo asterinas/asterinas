@@ -7,4 +7,5 @@ pub enum Error {
     AccessDenied,
     IoError,
     InvalidVmpermBits,
+    NotEnoughResources,
 }

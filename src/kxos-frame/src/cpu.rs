@@ -27,7 +27,8 @@ pub struct CpuContext {
     pub gp_regs: GpRegs,
     pub fs_base: u64,
     pub fp_regs: FpRegs,
-    pub trap_information: Option<TrapInformation>,
+    /// trap information, this field is all zero when it is syscall
+    pub trap_information: TrapInformation,
 }
 #[derive(Clone, Default, Copy)]
 #[repr(C)]
@@ -88,7 +89,7 @@ impl From<SyscallFrame> for CpuContext {
             },
             fs_base: 0,
             fp_regs: FpRegs::default(),
-            trap_information: None,
+            trap_information: TrapInformation::default(),
         }
     }
 }
@@ -145,20 +146,20 @@ impl From<TrapFrame> for CpuContext {
             },
             fs_base: 0,
             fp_regs: FpRegs::default(),
-            trap_information: Some(TrapInformation {
+            trap_information: TrapInformation {
                 cr2: trap.cr2,
                 id: trap.id,
                 err: trap.err,
                 cs: trap.cs,
                 ss: trap.ss,
-            }),
+            },
         }
     }
 }
 
 impl Into<TrapFrame> for CpuContext {
     fn into(self) -> TrapFrame {
-        let trap_information = self.trap_information.unwrap();
+        let trap_information = self.trap_information;
         TrapFrame {
             caller: CallerRegs {
                 rax: self.gp_regs.rax,

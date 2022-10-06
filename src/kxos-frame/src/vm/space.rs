@@ -1,7 +1,8 @@
 use crate::config::PAGE_SIZE;
-use crate::{x86_64_util, UPSafeCell};
+use crate::x86_64_util;
 use bitflags::bitflags;
 use core::ops::Range;
+use spin::Mutex;
 
 use crate::mm::address::{is_aligned, VirtAddr};
 use crate::mm::{MapArea, MemorySet, PTFlags};
@@ -22,19 +23,19 @@ use super::VmIo;
 /// To provide memory pages for a `VmSpace`, one can allocate and map
 /// physical memory (`VmFrames`) to the `VmSpace`.
 pub struct VmSpace {
-    memory_set: UPSafeCell<MemorySet>,
+    memory_set: Mutex<MemorySet>,
 }
 
 impl VmSpace {
     /// Creates a new VM address space.
     pub fn new() -> Self {
         Self {
-            memory_set: unsafe { UPSafeCell::new(MemorySet::new()) },
+            memory_set: Mutex::new(MemorySet::new()),
         }
     }
     /// Activate the page table, load root physical address to cr3
     pub unsafe fn activate(&self) {
-        x86_64_util::set_cr3(self.memory_set.exclusive_access().pt.root_pa.0);
+        x86_64_util::set_cr3(self.memory_set.lock().pt.root_pa.0);
     }
 
     /// Maps some physical memory pages into the VM space according to the given
@@ -54,7 +55,7 @@ impl VmSpace {
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
-        self.memory_set.exclusive_access().map(MapArea::new(
+        self.memory_set.lock().map(MapArea::new(
             VirtAddr(options.addr.unwrap()),
             frames.len() * PAGE_SIZE,
             flags,
@@ -66,7 +67,7 @@ impl VmSpace {
 
     /// determine whether a vaddr is already mapped
     pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
-        let memory_set = self.memory_set.exclusive_access();
+        let memory_set = self.memory_set.lock();
         memory_set.is_mapped(VirtAddr(vaddr))
     }
 
@@ -78,7 +79,7 @@ impl VmSpace {
         assert!(is_aligned(range.start) && is_aligned(range.end));
         let mut start_va = VirtAddr(range.start);
         let page_size = (range.end - range.start) / PAGE_SIZE;
-        let mut inner = self.memory_set.exclusive_access();
+        let mut inner = self.memory_set.lock();
         for i in 0..page_size {
             let res = inner.unmap(start_va);
             if res.is_err() {
@@ -106,20 +107,20 @@ impl Default for VmSpace {
 
 impl Clone for VmSpace {
     fn clone(&self) -> Self {
-        let memory_set = self.memory_set.exclusive_access().clone();
+        let memory_set = self.memory_set.lock().clone();
         VmSpace {
-            memory_set: unsafe { UPSafeCell::new(memory_set) },
+            memory_set: Mutex::new(memory_set),
         }
     }
 }
 
 impl VmIo for VmSpace {
     fn read_bytes(&self, vaddr: usize, buf: &mut [u8]) -> Result<()> {
-        self.memory_set.exclusive_access().read_bytes(vaddr, buf)
+        self.memory_set.lock().read_bytes(vaddr, buf)
     }
 
     fn write_bytes(&self, vaddr: usize, buf: &[u8]) -> Result<()> {
-        self.memory_set.exclusive_access().write_bytes(vaddr, buf)
+        self.memory_set.lock().write_bytes(vaddr, buf)
     }
 }
 

@@ -12,18 +12,20 @@ use process::Process;
 
 extern crate alloc;
 
+pub mod driver;
 mod memory;
 mod process;
 pub mod syscall;
 mod util;
 
 pub fn init() {
+    driver::init();
     process::fifo_scheduler::init();
 }
 
 pub fn init_process() {
     println!("[kernel] Spawn init process!");
-
+    driver::pci::virtio::block::block_device_test();
     let process = Process::spawn_kernel_process(|| {
         println!("[kernel] Hello world from kernel!");
         let pid = Process::current().pid();
