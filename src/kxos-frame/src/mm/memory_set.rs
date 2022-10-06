@@ -36,7 +36,7 @@ impl MapArea {
         for (&va, old) in &self.mapper {
             let new = PhysFrame::alloc().unwrap();
             new.as_slice()
-                .copy_from_slice(old.physical_frame.exclusive_access().as_slice());
+                .copy_from_slice(old.physical_frame.as_slice());
             mapper.insert(va, unsafe { VmFrame::new(new) });
         }
         Self {
@@ -84,18 +84,17 @@ impl MapArea {
 
         match self.mapper.entry(va) {
             Entry::Occupied(e) => panic!("already mapped a input physical address"),
-            Entry::Vacant(e) => e.insert(pa).physical_frame.exclusive_access().start_pa(),
+            Entry::Vacant(e) => e.insert(pa).physical_frame.start_pa(),
         }
     }
 
     pub fn map(&mut self, va: VirtAddr) -> PhysAddr {
         assert!(va.is_aligned());
         match self.mapper.entry(va) {
-            Entry::Occupied(e) => e.get().physical_frame.exclusive_access().start_pa(),
+            Entry::Occupied(e) => e.get().physical_frame.start_pa(),
             Entry::Vacant(e) => e
                 .insert(VmFrame::alloc_zero().unwrap())
                 .physical_frame
-                .exclusive_access()
                 .start_pa(),
         }
     }

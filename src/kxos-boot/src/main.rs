@@ -11,6 +11,8 @@ const COMMON_ARGS: &[&str] = &[
     "Icelake-Server",
     "-device",
     "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-device",
+    "virtio-blk-pci,bus=pci.0,addr=0x6,drive=x0",
     "-serial",
     "stdio",
     "-display",

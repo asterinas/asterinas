@@ -1,6 +1,6 @@
 use core::iter::Iterator;
 
-use crate::{config::PAGE_SIZE, mm::address::PhysAddr, prelude::*, Error, UPSafeCell};
+use crate::{config::PAGE_SIZE, mm::address::PhysAddr, prelude::*, Error, Pod};
 
 use super::VmIo;
 
@@ -29,7 +29,11 @@ impl VmFrameVec {
         let page_size = options.page_size;
         let mut frame_list = Vec::new();
         for i in 0..page_size {
-            let vm_frame = VmFrame::alloc();
+            let vm_frame = if let Some(paddr) = options.paddr {
+                VmFrame::alloc_with_paddr(paddr)
+            } else {
+                VmFrame::alloc()
+            };
             if vm_frame.is_none() {
                 return Err(Error::NoMemory);
             }
@@ -112,7 +116,7 @@ impl VmIo for VmFrameVec {
             } else {
                 let copy_len = (PAGE_SIZE - start).min(remain);
                 let src = &mut buf[processed..processed + copy_len];
-                let dst = &mut pa.start_pa().kvaddr().get_bytes_array()[start..src.len() + start];
+                let dst = &pa.start_pa().kvaddr().get_bytes_array()[start..src.len() + start];
                 src.copy_from_slice(dst);
                 processed += copy_len;
                 remain -= copy_len;
@@ -126,27 +130,26 @@ impl VmIo for VmFrameVec {
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        todo!()
-        // let mut start = offset;
-        // let mut remain = buf.len();
-        // let mut processed = 0;
-        // for pa in self.0.iter_mut() {
-        //     if start >= PAGE_SIZE {
-        //         start -= PAGE_SIZE;
-        //     } else {
-        //         let copy_len = (PAGE_SIZE - start).min(remain);
-        //         let src = &buf[processed..processed + copy_len];
-        //         let dst = &mut pa.start_pa().kvaddr().get_bytes_array()[start..src.len() + start];
-        //         dst.copy_from_slice(src);
-        //         processed += copy_len;
-        //         remain -= copy_len;
-        //         start = 0;
-        //         if remain == 0 {
-        //             break;
-        //         }
-        //     }
-        // }
-        // Ok(())
+        let mut start = offset;
+        let mut remain = buf.len();
+        let mut processed = 0;
+        for pa in self.0.iter() {
+            if start >= PAGE_SIZE {
+                start -= PAGE_SIZE;
+            } else {
+                let copy_len = (PAGE_SIZE - start).min(remain);
+                let src = &buf[processed..processed + copy_len];
+                let dst = &mut pa.start_pa().kvaddr().get_bytes_array()[start..src.len() + start];
+                dst.copy_from_slice(src);
+                processed += copy_len;
+                remain -= copy_len;
+                start = 0;
+                if remain == 0 {
+                    break;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -178,12 +181,16 @@ impl<'a> Iterator for VmFrameVecIter<'a> {
 /// See `VmFrameVec::alloc`.
 pub struct VmAllocOptions {
     page_size: usize,
+    paddr: Option<Paddr>,
 }
 
 impl VmAllocOptions {
     /// Creates new options for allocating the specified number of frames.
     pub fn new(len: usize) -> Self {
-        Self { page_size: len }
+        Self {
+            page_size: len,
+            paddr: None,
+        }
     }
 
     /// Sets the physical address of the first frame.
@@ -193,7 +200,8 @@ impl VmAllocOptions {
     ///
     /// The default value is `None`.
     pub fn paddr(&mut self, paddr: Option<Paddr>) -> &mut Self {
-        todo!()
+        self.paddr = paddr;
+        self
     }
 
     /// Sets whether the allocated frames should be contiguous.
@@ -215,7 +223,7 @@ impl VmAllocOptions {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A handle to a page frame.
 ///
 /// An instance of `VmFrame` is a handle to a page frame (a physical memory
@@ -227,7 +235,7 @@ impl VmAllocOptions {
 /// same page frame are dropped, the page frame will be freed.
 /// Free page frames are allocated in bulk by `VmFrameVec::allocate`.
 pub struct VmFrame {
-    pub physical_frame: UPSafeCell<Arc<PhysFrame>>,
+    pub(crate) physical_frame: Arc<PhysFrame>,
 }
 
 impl VmFrame {
@@ -238,7 +246,7 @@ impl VmFrame {
     /// The given physical address must be valid for use.
     pub(crate) unsafe fn new(physical_frame: PhysFrame) -> Self {
         Self {
-            physical_frame: UPSafeCell::new(Arc::new(physical_frame)),
+            physical_frame: Arc::new(physical_frame),
         }
     }
 
@@ -249,7 +257,7 @@ impl VmFrame {
             return None;
         }
         Some(Self {
-            physical_frame: unsafe { UPSafeCell::new(Arc::new(phys.unwrap())) },
+            physical_frame: Arc::new(phys.unwrap()),
         })
     }
 
@@ -260,17 +268,27 @@ impl VmFrame {
             return None;
         }
         Some(Self {
-            physical_frame: unsafe { UPSafeCell::new(Arc::new(phys.unwrap())) },
+            physical_frame: Arc::new(phys.unwrap()),
+        })
+    }
+
+    pub(crate) fn alloc_with_paddr(paddr: Paddr) -> Option<Self> {
+        let phys = PhysFrame::alloc_with_paddr(paddr);
+        if phys.is_none() {
+            return None;
+        }
+        Some(Self {
+            physical_frame: Arc::new(phys.unwrap()),
         })
     }
 
     /// Returns the physical address of the page frame.
     pub fn paddr(&self) -> Paddr {
-        self.physical_frame.exclusive_access().start_pa().0
+        self.physical_frame.start_pa().0
     }
 
     pub fn start_pa(&self) -> PhysAddr {
-        self.physical_frame.exclusive_access().start_pa()
+        self.physical_frame.start_pa()
     }
 
     /// Returns whether the page frame is accessible by DMA.
@@ -282,18 +300,38 @@ impl VmFrame {
     }
 }
 
-impl Clone for VmFrame {
-    fn clone(&self) -> Self {
-        Self {
-            physical_frame: unsafe {
-                UPSafeCell::new(self.physical_frame.exclusive_access().clone())
-            },
+impl VmIo for VmFrame {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        if offset >= PAGE_SIZE || buf.len() + offset > PAGE_SIZE {
+            Err(Error::InvalidArgs)
+        } else {
+            let dst = &self.start_pa().kvaddr().get_bytes_array()[offset..buf.len() + offset];
+            buf.copy_from_slice(dst);
+            Ok(())
         }
     }
-}
 
-impl Drop for VmFrame {
-    fn drop(&mut self) {
-        drop(self.physical_frame.exclusive_access())
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+        if offset >= PAGE_SIZE || buf.len() + offset > PAGE_SIZE {
+            Err(Error::InvalidArgs)
+        } else {
+            let dst = &mut self.start_pa().kvaddr().get_bytes_array()[offset..buf.len() + offset];
+            dst.copy_from_slice(buf);
+            Ok(())
+        }
+    }
+
+    /// Read a value of a specified type at a specified offset.
+    fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
+        let paddr = self.paddr() + offset;
+        let val = unsafe { &mut *(crate::mm::address::phys_to_virt(paddr) as *mut T) };
+        Ok(*val)
+    }
+
+    /// Write a value of a specified type at a specified offset.
+    fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
+        let paddr = self.paddr() + offset;
+        unsafe { (crate::mm::address::phys_to_virt(paddr) as *mut T).write(*new_val) };
+        Ok(())
     }
 }

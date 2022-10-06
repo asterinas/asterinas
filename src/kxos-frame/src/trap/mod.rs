@@ -1,7 +1,8 @@
 mod handler;
 mod irq;
 
-pub use self::irq::{IrqCallbackHandle, IrqLine, NOT_USING_IRQ_NUMBER};
+pub use self::irq::{allocate_irq, IrqAllocateHandle};
+pub(crate) use self::irq::{IrqCallbackHandle, IrqLine};
 use core::{fmt::Debug, mem::size_of_val};
 
 use crate::{x86_64_util::*, *};

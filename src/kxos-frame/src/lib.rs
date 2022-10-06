@@ -16,7 +16,6 @@ pub(crate) mod cell;
 pub mod config;
 pub mod cpu;
 pub mod device;
-pub(crate) mod drivers;
 mod error;
 pub mod log;
 pub(crate) mod mm;
@@ -27,23 +26,25 @@ pub mod timer;
 pub(crate) mod trap;
 pub mod user;
 mod util;
+#[macro_use]
 pub mod vm;
 pub(crate) mod x86_64_util;
 
 use core::{mem, panic::PanicInfo};
 
 pub use self::error::Error;
+pub use self::prelude::Result;
 pub(crate) use self::sync::up::UPSafeCell;
 use alloc::vec::Vec;
 use bootloader::{
     boot_info::{FrameBuffer, MemoryRegionKind},
     BootInfo,
 };
-use trap::{IrqCallbackHandle, IrqLine, TrapFrame};
+pub use mm::address::{align_down, align_up, is_aligned, virt_to_phys};
+pub use trap::{allocate_irq, IrqAllocateHandle, TrapFrame};
+use trap::{IrqCallbackHandle, IrqLine};
+pub use vm::Pod;
 use x86_64_util::enable_common_cpu_features;
-
-pub use self::drivers::virtio::block::{read_block, write_block};
-
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
 #[cfg(not(feature = "serial_print"))]
@@ -80,7 +81,6 @@ pub fn init(boot_info: &'static mut BootInfo) {
     if !memory_init {
         panic!("memory init failed");
     }
-    drivers::init();
     unsafe {
         for i in 0..256 {
             IRQ_CALLBACK_LIST.push(IrqLine::acquire(i as u8).on_active(general_handler))
@@ -88,7 +88,7 @@ pub fn init(boot_info: &'static mut BootInfo) {
     }
 }
 fn general_handler(trap_frame: TrapFrame) {
-    println!("{:?}", trap_frame);
+    println!("{:#x?}", trap_frame);
     println!("rip = 0x{:x}", trap_frame.rip);
     println!("rsp = 0x{:x}", trap_frame.rsp);
     println!("cr2 = 0x{:x}", trap_frame.cr2);

@@ -1,13 +1,13 @@
 use alloc::vec::Vec;
 
-use crate::{config::PAGE_SIZE, UPSafeCell};
+use crate::{config::PAGE_SIZE, vm::Paddr, UPSafeCell};
 
 use super::address::PhysAddr;
 
 use lazy_static::lazy_static;
 
 lazy_static! {
-    pub static ref FRAME_ALLOCATOR: UPSafeCell<FreeListAllocator> = unsafe {
+    static ref FRAME_ALLOCATOR: UPSafeCell<FreeListAllocator> = unsafe {
         UPSafeCell::new(FreeListAllocator {
             current: 0,
             end: 0,
@@ -65,6 +65,11 @@ impl PhysFrame {
             .exclusive_access()
             .alloc()
             .map(|pa| Self { start_pa: pa })
+    }
+
+    pub fn alloc_with_paddr(paddr: Paddr) -> Option<Self> {
+        // FIXME: need to check whether the physical address is invalid or not
+        Some(Self { start_pa: paddr })
     }
 
     pub fn dealloc(pa: usize) {

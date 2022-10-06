@@ -4,7 +4,7 @@ use crate::{prelude::*, UPSafeCell};
 use lazy_static::lazy_static;
 
 lazy_static! {
-    pub static ref GLOBAL_SCHEDULER: UPSafeCell<GlobalScheduler> =
+    pub(crate) static ref GLOBAL_SCHEDULER: UPSafeCell<GlobalScheduler> =
         unsafe { UPSafeCell::new(GlobalScheduler { scheduler: None }) };
 }
 

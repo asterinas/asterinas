@@ -1,26 +1,76 @@
-use crate::{prelude::*, sync::up::UPSafeCell};
+use crate::{prelude::*, Error};
 
 use super::TrapFrame;
+use crate::util::recycle_allocator::RecycleAllocator;
+use core::fmt::Debug;
 use lazy_static::lazy_static;
 use spin::{Mutex, MutexGuard};
 
 lazy_static! {
     /// The IRQ numbers which are not using
-    /// FIXME: using alloc, dealloc instead of letting user use push and pop method.
-    pub static ref NOT_USING_IRQ_NUMBER:UPSafeCell<Vec<u8>> = unsafe {UPSafeCell::new({
-        let mut vector = Vec::new();
-        for i in 31..256{
-            vector.push(i as u8);
+    static ref NOT_USING_IRQ: Mutex<RecycleAllocator> = Mutex::new(RecycleAllocator::with_start_max(32,256));
+}
+
+pub fn allocate_irq() -> Result<IrqAllocateHandle> {
+    let irq_num = NOT_USING_IRQ.lock().alloc();
+    if irq_num == usize::MAX {
+        Err(Error::NotEnoughResources)
+    } else {
+        Ok(IrqAllocateHandle::new(irq_num as u8))
+    }
+}
+
+/// The handle to a allocate irq number between [32,256), used in std and other parts in kxos
+///
+/// When the handle is dropped, all the callback in this will be unregistered automatically.
+#[derive(Debug)]
+#[must_use]
+pub struct IrqAllocateHandle {
+    irq_num: u8,
+    irq: Arc<&'static IrqLine>,
+    callbacks: Vec<IrqCallbackHandle>,
+}
+
+impl IrqAllocateHandle {
+    fn new(irq_num: u8) -> Self {
+        Self {
+            irq_num: irq_num,
+            irq: unsafe { IrqLine::acquire(irq_num) },
+            callbacks: Vec::new(),
         }
-        for i in 22..28{
-            vector.push(i as u8);
+    }
+
+    /// Get the IRQ number.
+    pub fn num(&self) -> u8 {
+        self.irq_num
+    }
+
+    /// Register a callback that will be invoked when the IRQ is active.
+    ///
+    /// For each IRQ line, multiple callbacks may be registered.
+    pub fn on_active<F>(&mut self, callback: F)
+    where
+        F: Fn(TrapFrame) + Sync + Send + 'static,
+    {
+        self.callbacks.push(self.irq.on_active(callback))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.callbacks.is_empty()
+    }
+}
+
+impl Drop for IrqAllocateHandle {
+    fn drop(&mut self) {
+        for callback in &self.callbacks {
+            drop(callback)
         }
-        vector
-    })};
+        NOT_USING_IRQ.lock().dealloc(self.irq_num as usize);
+    }
 }
 
 lazy_static! {
-    pub static ref IRQ_LIST: Vec<IrqLine> = {
+    pub(crate) static ref IRQ_LIST: Vec<IrqLine> = {
         let mut list: Vec<IrqLine> = Vec::new();
         for i in 0..256 {
             list.push(IrqLine {
@@ -36,39 +86,6 @@ lazy_static! {
     static ref ID_ALLOCATOR: Mutex<RecycleAllocator> = Mutex::new(RecycleAllocator::new());
 }
 
-struct RecycleAllocator {
-    current: usize,
-    recycled: Vec<usize>,
-}
-
-impl RecycleAllocator {
-    pub fn new() -> Self {
-        RecycleAllocator {
-            current: 0,
-            recycled: Vec::new(),
-        }
-    }
-    #[allow(unused)]
-    pub fn alloc(&mut self) -> usize {
-        if let Some(id) = self.recycled.pop() {
-            id
-        } else {
-            self.current += 1;
-            self.current - 1
-        }
-    }
-    #[allow(unused)]
-    pub fn dealloc(&mut self, id: usize) {
-        assert!(id < self.current);
-        assert!(
-            !self.recycled.iter().any(|i| *i == id),
-            "id {} has been deallocated!",
-            id
-        );
-        self.recycled.push(id);
-    }
-}
-
 pub struct CallbackElement {
     function: Box<dyn Fn(TrapFrame) + Send + Sync + 'static>,
     id: usize,
@@ -80,8 +97,17 @@ impl CallbackElement {
     }
 }
 
+impl Debug for CallbackElement {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CallbackElement")
+            .field("id", &self.id)
+            .finish()
+    }
+}
+
 /// An interrupt request (IRQ) line.
-pub struct IrqLine {
+#[derive(Debug)]
+pub(crate) struct IrqLine {
     irq_num: u8,
     callback_list: Mutex<Vec<CallbackElement>>,
 }
@@ -132,6 +158,7 @@ impl IrqLine {
 ///
 /// When the handle is dropped, the callback will be unregistered automatically.
 #[must_use]
+#[derive(Debug)]
 pub struct IrqCallbackHandle {
     irq_num: u8,
     id: usize,
