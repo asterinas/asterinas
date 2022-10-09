@@ -33,7 +33,7 @@ pub fn load_elf_to_vm_space<'a>(
 }
 
 /// copy bytes from user space of current process. The bytes len is the len of dest.
-pub fn copy_bytes_from_user(src: Vaddr, dest: &mut [u8]) {
+pub fn read_bytes_from_user(src: Vaddr, dest: &mut [u8]) {
     let current = Process::current();
     let vm_space = current
         .vm_space()
@@ -42,7 +42,7 @@ pub fn copy_bytes_from_user(src: Vaddr, dest: &mut [u8]) {
 }
 
 /// copy val (Plain of Data type) from user space of current process.
-pub fn copy_val_from_user<T: Pod>(src: Vaddr) -> T {
+pub fn read_val_from_user<T: Pod>(src: Vaddr) -> T {
     let current = Process::current();
     let vm_space = current
         .vm_space()
@@ -60,10 +60,10 @@ pub fn write_bytes_to_user(dest: Vaddr, src: &[u8]) {
 }
 
 /// write val (Plain of Data type) to user space of current process.
-pub fn write_val_to_user<T: Pod>(dest: Vaddr, val: T) {
+pub fn write_val_to_user<T: Pod>(dest: Vaddr, val: &T) {
     let current = Process::current();
     let vm_space = current
         .vm_space()
         .expect("[Internal error]Current should have vm space to write val to user");
-    vm_space.write_val(dest, &val).expect("write val failed");
+    vm_space.write_val(dest, val).expect("write val failed");
 }

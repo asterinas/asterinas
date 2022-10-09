@@ -4,7 +4,7 @@ use alloc::ffi::CString;
 use kxos_frame::{debug, vm::Vaddr};
 
 use crate::{
-    memory::{copy_bytes_from_user, write_bytes_to_user},
+    memory::{read_bytes_from_user, write_bytes_to_user},
     process::Process,
     syscall::SYS_READLINK,
 };
@@ -32,7 +32,7 @@ pub fn do_sys_readlink(filename_ptr: Vaddr, user_buf_ptr: Vaddr, user_buf_len: u
 
     let mut filename_buffer = [0u8; MAX_FILENAME_LEN];
     let current = Process::current();
-    copy_bytes_from_user(filename_ptr, &mut filename_buffer);
+    read_bytes_from_user(filename_ptr, &mut filename_buffer);
     let filename = CStr::from_bytes_until_nul(&filename_buffer).expect("Invalid filename");
     debug!("filename = {:?}", filename);
     if filename == CString::new("/proc/self/exe").unwrap().as_c_str() {
