@@ -20,6 +20,8 @@ mod memory;
 mod process;
 pub mod syscall;
 mod util;
+#[macro_use]
+extern crate kxos_frame_pod_derive;
 
 pub fn init() {
     driver::init();

@@ -2,7 +2,7 @@ use alloc::vec;
 use kxos_frame::{debug, info, vm::Vaddr};
 
 use crate::{
-    memory::{copy_bytes_from_user, copy_val_from_user},
+    memory::{read_bytes_from_user, read_val_from_user},
     syscall::SYS_WRITEV,
 };
 
@@ -10,6 +10,8 @@ use super::SyscallResult;
 
 const IOVEC_MAX: usize = 256;
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct IoVec {
     base: Vaddr,
     len: usize,
@@ -27,12 +29,13 @@ pub fn do_sys_writev(fd: u64, io_vec_addr: Vaddr, io_vec_count: usize) -> usize 
     debug!("io_vec_counter = 0x{:x}", io_vec_count);
     let mut write_len = 0;
     for i in 0..io_vec_count {
-        let base = copy_val_from_user::<usize>(io_vec_addr + i * 8);
-        let len = copy_val_from_user::<usize>(io_vec_addr + i * 8 + 8);
+        let io_vec = read_val_from_user::<IoVec>(io_vec_addr + i * 8);
+        let base = io_vec.base;
+        let len = io_vec.len;
         debug!("base = 0x{:x}", base);
         debug!("len = {}", len);
         let mut buffer = vec![0u8; len];
-        copy_bytes_from_user(base, &mut buffer);
+        read_bytes_from_user(base, &mut buffer);
         let content = alloc::str::from_utf8(&buffer).unwrap();
         write_len += len;
         if fd == 1 {

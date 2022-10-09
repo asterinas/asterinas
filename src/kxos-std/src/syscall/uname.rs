@@ -5,9 +5,12 @@ use kxos_frame::{debug, vm::Vaddr};
 use lazy_static::lazy_static;
 
 use crate::{
-    memory::write_bytes_to_user,
+    memory::write_val_to_user,
     syscall::{SyscallResult, SYS_UNAME},
 };
+
+// The values are used to fool glibc. Since glibc will check the version and os name
+// We don't use lazy static to generate a static UTS_NAME is because lazy static will create a new struct, which does not inherent the trait.å
 
 lazy_static! {
     /// used to fool glibc
@@ -31,6 +34,7 @@ lazy_static! {
 
 const UTS_FIELD_LEN: usize = 65;
 
+#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
 struct UtsName {
     sysname: [u8; UTS_FIELD_LEN],
@@ -71,11 +75,6 @@ pub fn do_sys_uname(old_uname_addr: Vaddr) -> usize {
     debug!("uts name size: {}", core::mem::size_of::<UtsName>());
     debug!("uts name align: {}", core::mem::align_of::<UtsName>());
 
-    write_bytes_to_user(old_uname_addr, &UTS_NAME.sysname);
-    write_bytes_to_user(old_uname_addr + UTS_FIELD_LEN, &UTS_NAME.nodename);
-    write_bytes_to_user(old_uname_addr + UTS_FIELD_LEN * 2, &UTS_NAME.release);
-    write_bytes_to_user(old_uname_addr + UTS_FIELD_LEN * 3, &UTS_NAME.version);
-    write_bytes_to_user(old_uname_addr + UTS_FIELD_LEN * 4, &UTS_NAME.machine);
-    write_bytes_to_user(old_uname_addr + UTS_FIELD_LEN * 5, &UTS_NAME.domainname);
+    write_val_to_user(old_uname_addr, &*UTS_NAME);
     0
 }

@@ -1,4 +1,4 @@
-use crate::{memory::copy_val_from_user, syscall::SYS_FUTEX};
+use crate::{memory::read_val_from_user, syscall::SYS_FUTEX};
 
 use super::SyscallResult;
 use alloc::{sync::Arc, vec::Vec};
@@ -340,7 +340,7 @@ impl FutexKey {
     pub fn load_val(&self) -> i32 {
         // FIXME: how to implement a atomic load?
         warn!("implement an atomic load");
-        copy_val_from_user(self.0)
+        read_val_from_user(self.0)
     }
 
     pub fn addr(&self) -> Vaddr {
