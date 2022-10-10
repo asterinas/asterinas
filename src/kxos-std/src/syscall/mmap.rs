@@ -61,7 +61,7 @@ pub fn sys_mmap(
         fd as usize,
         offset as usize,
     );
-    SyscallResult::Return(res as i32)
+    SyscallResult::Return(res as _)
 }
 
 pub fn do_sys_mmap(

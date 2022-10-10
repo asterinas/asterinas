@@ -1,7 +1,7 @@
 use alloc::vec;
 use kxos_frame::{debug, info};
 
-use crate::{memory::copy_bytes_from_user, syscall::SYS_WRITE};
+use crate::{memory::read_bytes_from_user, syscall::SYS_WRITE};
 
 use super::SyscallResult;
 
@@ -14,7 +14,7 @@ pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult
 
     if fd == STDOUT || fd == STDERR {
         let mut buffer = vec![0u8; user_buf_len as usize];
-        copy_bytes_from_user(user_buf_ptr as usize, &mut buffer);
+        read_bytes_from_user(user_buf_ptr as usize, &mut buffer);
         let content = alloc::str::from_utf8(buffer.as_slice()).expect("Invalid content"); // TODO: print content
         if fd == STDOUT {
             info!("Message from user mode: {:?}", content);
@@ -22,7 +22,7 @@ pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult
             info!("Error message from user mode: {:?}", content);
         }
 
-        SyscallResult::Return(user_buf_len as i32)
+        SyscallResult::Return(user_buf_len as _)
     } else {
         panic!("Unsupported fd number {}", fd);
     }

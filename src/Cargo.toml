@@ -17,6 +17,7 @@ members = [
     "kxos-pci",
     "kxos-virtio",
     "kxos-util",
+    "kxos-frame-pod-derive",
 ]
 
 [package.metadata.bootloader]
