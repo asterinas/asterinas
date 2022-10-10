@@ -35,6 +35,7 @@ use core::{mem, panic::PanicInfo};
 pub use self::error::Error;
 pub use self::prelude::Result;
 pub(crate) use self::sync::up::UPSafeCell;
+
 use alloc::vec::Vec;
 use bootloader::{
     boot_info::{FrameBuffer, MemoryRegionKind},
@@ -43,8 +44,10 @@ use bootloader::{
 pub use mm::address::{align_down, align_up, is_aligned, virt_to_phys};
 pub use trap::{allocate_irq, IrqAllocateHandle, TrapFrame};
 use trap::{IrqCallbackHandle, IrqLine};
+pub use util::AlignExt;
 pub use vm::Pod;
 use x86_64_util::enable_common_cpu_features;
+
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
 #[cfg(not(feature = "serial_print"))]

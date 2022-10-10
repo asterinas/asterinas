@@ -10,6 +10,7 @@ use kxos_frame::{
     config::PAGE_SIZE,
     debug,
     vm::{Vaddr, VmIo, VmPerm, VmSpace},
+    AlignExt,
 };
 
 use super::{
@@ -252,9 +253,8 @@ impl InitStack {
     }
     /// returns the u64 start address
     fn write_u64(&mut self, val: u64, vm_space: &VmSpace) -> u64 {
-        let start_address = align_down(self.pos - 8, 8);
+        let start_address = (self.pos - 8).align_down(8);
         self.pos = start_address;
-        // debug!("start_address: 0x{:x}", start_address);
         vm_space
             .write_val(start_address, &val)
             .expect("Write u64 failed");
@@ -287,16 +287,6 @@ impl InitStack {
         let argc = vm_space.read_val::<u64>(stack_top).unwrap();
         debug!("argc = {}", argc);
     }
-}
-
-fn is_power_of_two(val: usize) -> bool {
-    (val != 0) && ((val & (val - 1)) == 0)
-}
-
-/// align should be the pow of 2
-fn align_down(vaddr: usize, align: usize) -> usize {
-    assert!(is_power_of_two(align));
-    vaddr & !(align - 1)
 }
 
 /// generate random [u8; 16].

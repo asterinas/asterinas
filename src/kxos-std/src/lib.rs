@@ -5,6 +5,9 @@
 #![allow(unused_variables)]
 #![feature(const_btree_new)]
 #![feature(cstr_from_bytes_until_nul)]
+#![feature(half_open_range_patterns)]
+#![feature(exclusive_range_pattern)]
+#![feature(btree_drain_filter)]
 
 use alloc::ffi::CString;
 use kxos_frame::{debug, info, println};
@@ -17,6 +20,8 @@ mod memory;
 mod process;
 pub mod syscall;
 mod util;
+#[macro_use]
+extern crate kxos_frame_pod_derive;
 
 pub fn init() {
     driver::init();
@@ -44,6 +49,12 @@ pub fn init_process() {
         process.pid()
     );
 
+    let hello_c_content = read_hello_c_content();
+    // glibc requires the filename starts as "/"
+    let hello_c_filename = CString::new("/hello_c").unwrap();
+    let process = Process::spawn_user_process(hello_c_filename, hello_c_content);
+    info!("spawn hello_c process, pid = {}", process.pid());
+
     let fork_content = read_fork_content();
     let fork_filename = CString::new("fork").unwrap();
     let process = Process::spawn_user_process(fork_filename, fork_content);
@@ -52,13 +63,11 @@ pub fn init_process() {
         process.pid()
     );
 
-    let hello_c_content = read_hello_c_content();
-    // glibc requires the filename starts as "/"
-    let hello_c_filename = CString::new("/hello_c").unwrap();
-    let process = Process::spawn_user_process(hello_c_filename, hello_c_content);
-    info!("spawn hello_c process, pid = {}", process.pid());
-
-    loop {}
+    loop {
+        // We don't have preemptive scheduler now.
+        // The long running init process should yield its own execution to allow other tasks to go on.
+        Process::yield_now();
+    }
 }
 
 /// first process never return

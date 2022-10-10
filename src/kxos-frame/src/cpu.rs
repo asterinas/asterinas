@@ -12,7 +12,8 @@ macro_rules! cpu_local {
 
 /// Returns the number of CPUs.
 pub fn num_cpus() -> u32 {
-    todo!()
+    // FIXME: we only start one cpu now.
+    1
 }
 
 /// Returns the ID of this CPU.

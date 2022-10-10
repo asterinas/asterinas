@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 kxos-frame = {path = "../kxos-frame"}
+kxos-frame-pod-derive = {path = "../kxos-frame-pod-derive"}
 kxos-pci = {path="../kxos-pci"}
 kxos-virtio = {path="../kxos-virtio"}
 

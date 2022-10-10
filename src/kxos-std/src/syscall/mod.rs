@@ -6,12 +6,13 @@ use kxos_frame::cpu::CpuContext;
 use kxos_frame::{debug, warn};
 
 use crate::process::task::HandlerResult;
-use crate::process::Process;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
 use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
+use crate::syscall::fork::sys_fork;
 use crate::syscall::fstat::sys_fstat;
+use crate::syscall::futex::sys_futex;
 use crate::syscall::getpid::sys_getpid;
 use crate::syscall::gettid::sys_gettid;
 use crate::syscall::mmap::sys_mmap;
@@ -19,6 +20,8 @@ use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::readlink::sys_readlink;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
+use crate::syscall::wait4::sys_wait4;
+use crate::syscall::waitid::sys_waitid;
 use crate::syscall::write::sys_write;
 use crate::syscall::writev::sys_writev;
 
@@ -26,14 +29,19 @@ mod arch_prctl;
 mod brk;
 mod exit;
 mod exit_group;
+mod fork;
 mod fstat;
+mod futex;
 mod getpid;
 mod gettid;
 pub mod mmap;
 mod mprotect;
 mod readlink;
+mod sched_yield;
 mod tgkill;
 mod uname;
+mod wait4;
+mod waitid;
 mod write;
 mod writev;
 
@@ -45,9 +53,11 @@ const SYS_BRK: u64 = 12;
 const SYS_RT_SIGACTION: u64 = 13;
 const SYS_RT_SIGPROCMASK: u64 = 14;
 const SYS_WRITEV: u64 = 20;
+const SYS_SCHED_YIELD: u64 = 24;
 const SYS_GETPID: u64 = 39;
 const SYS_FORK: u64 = 57;
 const SYS_EXIT: u64 = 60;
+const SYS_WAIT4: u64 = 61;
 const SYS_UNAME: u64 = 63;
 const SYS_READLINK: u64 = 89;
 const SYS_GETUID: u64 = 102;
@@ -56,8 +66,10 @@ const SYS_GETEUID: u64 = 107;
 const SYS_GETEGID: u64 = 108;
 const SYS_ARCH_PRCTL: u64 = 158;
 const SYS_GETTID: u64 = 186;
+const SYS_FUTEX: u64 = 202;
 const SYS_EXIT_GROUP: u64 = 231;
 const SYS_TGKILL: u64 = 234;
+const SYS_WAITID: u64 = 247;
 
 pub struct SyscallArgument {
     syscall_number: u64,
@@ -118,6 +130,7 @@ pub fn syscall_dispatch(
         SYS_GETPID => sys_getpid(),
         SYS_FORK => sys_fork(context.to_owned()),
         SYS_EXIT => sys_exit(args[0] as _),
+        SYS_WAIT4 => sys_wait4(args[0], args[1], args[2]),
         SYS_UNAME => sys_uname(args[0]),
         SYS_READLINK => sys_readlink(args[0], args[1], args[2]),
         SYS_GETUID => sys_getuid(),
@@ -126,8 +139,10 @@ pub fn syscall_dispatch(
         SYS_GETEGID => sys_getegid(),
         SYS_ARCH_PRCTL => sys_arch_prctl(args[0], args[1], context),
         SYS_GETTID => sys_gettid(),
+        SYS_FUTEX => sys_futex(args[0], args[1], args[2], args[3], args[4], args[5]),
         SYS_EXIT_GROUP => sys_exit_group(args[0]),
         SYS_TGKILL => sys_tgkill(args[0], args[1], args[2]),
+        SYS_WAITID => sys_waitid(args[0], args[1], args[2], args[3], args[4]),
         _ => panic!("Unsupported syscall number: {}", syscall_number),
     }
 }
@@ -142,12 +157,6 @@ pub fn sys_rt_sigprocmask() -> SyscallResult {
     debug!("[syscall][id={}][SYS_RT_SIGPROCMASK]", SYS_RT_SIGPROCMASK);
     warn!("TODO: rt_sigprocmask only return a fake result");
     SyscallResult::Return(0)
-}
-
-pub fn sys_fork(parent_context: CpuContext) -> SyscallResult {
-    debug!("[syscall][id={}][SYS_FORK]", SYS_FORK);
-    let child_process = Process::fork(parent_context);
-    SyscallResult::Return(child_process.pid() as i32)
 }
 
 pub fn sys_getuid() -> SyscallResult {

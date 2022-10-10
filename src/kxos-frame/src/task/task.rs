@@ -128,7 +128,7 @@ impl Task {
     /// Note that this method cannot be simply named "yield" as the name is
     /// a Rust keyword.
     pub fn yield_now() {
-        todo!()
+        schedule();
     }
 
     /// Spawns a task that executes a function.

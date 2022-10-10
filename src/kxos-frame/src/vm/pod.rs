@@ -55,15 +55,14 @@ pub unsafe trait Pod: Copy + Sized + Debug {
 /// FIXME: use derive instead
 #[macro_export]
 macro_rules! impl_pod_for {
-    ($($token:tt),*/* define the input */) => {
-        /* define the expansion */
-        $(unsafe impl Pod for $token {})*
+    ($($pod_ty:ty),*) => {
+        $(unsafe impl Pod for $pod_ty {})*
     };
 }
 
 impl_pod_for!(u8, u16, u32, u64, i8, i16, i32, i64, isize, usize);
 
-//unsafe impl<T: Pod, const N> [T; N] for Pod {}
+unsafe impl<T: Pod, const N: usize> Pod for [T; N] {}
 
 /// Get the offset of a field within a type as a pointer.
 ///

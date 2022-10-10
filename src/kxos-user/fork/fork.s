@@ -10,6 +10,7 @@ _start:
     je      _child                      # child process
     jmp     _parent                     # parent process
 _parent:
+    call    wait_child
     call    get_pid 
     call    print_parent_message
     call    exit
@@ -17,6 +18,16 @@ _child:
     call    get_pid
     call    print_child_message
     call    exit
+wait_child:
+    mov     %rax, %rdi                  # child process id
+_loop:
+    mov     $61, %rax                   # syscall number of wait4
+    mov     $0, %rsi                    # exit status address
+    mov     $1, %rdx                    # WNOHANG
+    syscall
+    cmp     %rdi, %rax                  # The return value is the pid of child 
+    jne _loop
+    ret
 exit:
     mov     $60, %rax                   # syscall number of exit
     mov     $0, %rdi                    # exit code

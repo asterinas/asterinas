@@ -98,6 +98,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kxos-frame-pod-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "kxos-pci"
 version = "0.1.0"
 dependencies = [
@@ -114,6 +123,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "kxos-frame",
+ "kxos-frame-pod-derive",
  "kxos-pci",
  "kxos-virtio",
  "lazy_static",
