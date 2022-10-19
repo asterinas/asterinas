@@ -18,6 +18,9 @@ members = [
     "kxos-virtio",
     "kxos-util",
     "kxos-frame-pod-derive",
+    "kxos-typeflags",
+    "kxos-typeflags-util",
+    "kxos-rights-proc",
 ]
 
 [package.metadata.bootloader]
