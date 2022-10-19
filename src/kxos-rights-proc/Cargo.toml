@@ -1,5 +1,5 @@
 [package]
-name = "kxos-typeflags"
+name = "kxos-rights-proc"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,5 +11,4 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = {version = "1.0.90"}
-itertools = "0.10.5"
+syn = {version = "1.0.90", features = ["full", "fold"]}
