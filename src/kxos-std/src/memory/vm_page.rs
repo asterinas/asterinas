@@ -1,11 +1,7 @@
 //! A Page in virtual address space
+use crate::prelude::*;
 use core::ops::Range;
-
-use alloc::vec;
-use kxos_frame::{
-    config::PAGE_SIZE,
-    vm::{Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
-};
+use kxos_frame::vm::{VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace};
 
 use super::elf::ElfError;
 

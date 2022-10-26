@@ -1,11 +1,8 @@
 use crate::{memory::read_val_from_user, syscall::SYS_FUTEX};
 
 use super::SyscallResult;
-use alloc::{sync::Arc, vec::Vec};
-use bitflags::bitflags;
-use kxos_frame::{cpu::num_cpus, debug, sync::WaitQueue, vm::Vaddr, warn};
-use lazy_static::lazy_static;
-use spin::Mutex;
+use crate::prelude::*;
+use kxos_frame::{cpu::num_cpus, sync::WaitQueue};
 
 type FutexBitSet = u32;
 type FutexBucketRef = Arc<Mutex<FutexBucket>>;

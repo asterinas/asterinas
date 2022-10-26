@@ -9,16 +9,20 @@
 #![feature(exclusive_range_pattern)]
 #![feature(btree_drain_filter)]
 
-use alloc::ffi::CString;
 use kxos_frame::{debug, info, println};
 use process::Process;
+
+use crate::user_apps::get_all_apps;
 
 extern crate alloc;
 
 pub mod driver;
+pub mod fs;
 mod memory;
+pub mod prelude;
 mod process;
 pub mod syscall;
+mod user_apps;
 mod util;
 #[macro_use]
 extern crate kxos_frame_pod_derive;
@@ -41,27 +45,16 @@ pub fn init_process() {
         process.pid()
     );
 
-    let hello_world_content = read_hello_world_content();
-    let hello_world_filename = CString::new("hello_world").unwrap();
-    let process = Process::spawn_user_process(hello_world_filename, hello_world_content);
-    info!(
-        "[kxos-std/lib.rs] spwan hello world process, pid = {}",
-        process.pid()
-    );
-
-    let hello_c_content = read_hello_c_content();
-    // glibc requires the filename starts as "/"
-    let hello_c_filename = CString::new("/hello_c").unwrap();
-    let process = Process::spawn_user_process(hello_c_filename, hello_c_content);
-    info!("spawn hello_c process, pid = {}", process.pid());
-
-    let fork_content = read_fork_content();
-    let fork_filename = CString::new("fork").unwrap();
-    let process = Process::spawn_user_process(fork_filename, fork_content);
-    info!(
-        "[kxos-std/lib.rs] spawn fork process, pid = {}",
-        process.pid()
-    );
+    for app in get_all_apps() {
+        let app_name = app.app_name();
+        info!("[kxos-std/lib.rs] spwan {:?} process", app.app_name());
+        let process = Process::spawn_user_process(app_name, app.app_content());
+        info!(
+            "[kxos-std/lib.rs] {:?} process exits, pid = {}",
+            app.app_name(),
+            process.pid()
+        );
+    }
 
     loop {
         // We don't have preemptive scheduler now.
@@ -72,19 +65,7 @@ pub fn init_process() {
 
 /// first process never return
 pub fn run_first_process() -> ! {
-    let elf_file_content = read_hello_world_content();
+    // let elf_file_content = read_hello_world_content();
     Process::spawn_kernel_process(init_process);
     unreachable!()
-}
-
-pub fn read_hello_world_content() -> &'static [u8] {
-    include_bytes!("../../kxos-user/hello_world/hello_world")
-}
-
-fn read_fork_content() -> &'static [u8] {
-    include_bytes!("../../kxos-user/fork/fork")
-}
-
-fn read_hello_c_content() -> &'static [u8] {
-    include_bytes!("../../kxos-user/hello_c/hello")
 }

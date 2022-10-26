@@ -1,10 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use kxos_frame::{
-    config::PAGE_SIZE,
-    debug,
-    vm::{Vaddr, VmPerm, VmSpace},
-};
+use crate::prelude::*;
+use kxos_frame::vm::{VmPerm, VmSpace};
 
 use super::{init_stack::INIT_STACK_BASE, vm_page::VmPageRange};
 use crate::syscall::mmap::MMapFlags;
@@ -51,6 +48,11 @@ impl MmapArea {
         self.current.store(current + len, Ordering::Relaxed);
         debug!("mmap area start: 0x{:x}, size: {}", current, len);
         current
+    }
+
+    /// Set mmap area to the default status. i.e., point current to base.
+    pub fn set_default(&self) {
+        self.current.store(self.base_addr, Ordering::Relaxed);
     }
 }
 

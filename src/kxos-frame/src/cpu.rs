@@ -22,7 +22,7 @@ pub fn this_cpu() -> u32 {
 }
 
 /// Cpu context, including both general-purpose registers and floating-point registers.
-#[derive(Clone, Default, Copy)]
+#[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
 pub struct CpuContext {
     pub gp_regs: GpRegs,
@@ -31,7 +31,7 @@ pub struct CpuContext {
     /// trap information, this field is all zero when it is syscall
     pub trap_information: TrapInformation,
 }
-#[derive(Clone, Default, Copy)]
+#[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
 pub struct TrapInformation {
     pub cr2: u64,
@@ -195,7 +195,7 @@ impl Into<TrapFrame> for CpuContext {
 }
 
 /// The floating-point state of CPU.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct FpRegs {
     //buf: Aligned<A16, [u8; 512]>,

@@ -3,10 +3,8 @@
 use std::marker::PhantomData;
 
 use crate::{
-    False, OrOp, True,
-    SameAs, SameAsOp,
-    And, AndOp,
     if_::{If, IfOp},
+    And, AndOp, False, OrOp, SameAs, SameAsOp, True,
 };
 
 use std::ops::BitOr as Or;

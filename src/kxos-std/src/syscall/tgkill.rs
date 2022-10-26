@@ -1,4 +1,4 @@
-use kxos_frame::{debug, warn};
+use crate::prelude::*;
 
 use crate::syscall::{SyscallResult, SYS_TGKILL};
 
