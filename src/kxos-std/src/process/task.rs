@@ -1,16 +1,13 @@
 use core::sync::atomic::AtomicUsize;
 
-use alloc::{
-    ffi::CString,
-    sync::{Arc, Weak},
-};
 use kxos_frame::{
     cpu::CpuContext,
-    debug,
     task::Task,
     user::{UserEvent, UserMode, UserSpace},
     vm::VmSpace,
 };
+
+use crate::prelude::*;
 
 use crate::{memory::load_elf_to_vm_space, syscall::syscall_handler};
 
@@ -49,12 +46,12 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
         debug!("[new task] rax = 0x{:x}", user_space.cpu_ctx.gp_regs.rax);
         loop {
             let user_event = user_mode.execute();
-            debug!("return from user mode");
             let context = user_mode.context_mut();
             if let HandlerResult::Exit = handle_user_event(user_event, context) {
                 // FIXME: How to set task status? How to set exit code of process?
                 break;
             }
+            // debug!("before return to user space: {:#x?}", context);
         }
         let current_process = Process::current();
         current_process.exit();

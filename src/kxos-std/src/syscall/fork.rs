@@ -1,13 +1,12 @@
-use alloc::{sync::Arc, vec};
+use crate::prelude::*;
 use kxos_frame::{
     cpu::CpuContext,
-    debug,
     user::UserSpace,
     vm::{VmIo, VmSpace},
 };
 
 use crate::{
-    process::{new_pid, task::create_new_task, Process},
+    process::{new_pid, table, task::create_new_task, Process},
     syscall::SYS_FORK,
 };
 
@@ -67,6 +66,7 @@ fn fork(parent_context: CpuContext) -> Arc<Process> {
         )
     });
     Process::current().add_child(child.clone());
+    table::add_process(child_pid, child.clone());
     let pid = current.pid();
     debug!("*********schedule child process, pid = {}**********", pid);
     child.send_to_scheduler();

@@ -1,10 +1,7 @@
 //! This mod defines mmap flags and the handler to syscall mmap
 
-use bitflags::bitflags;
-use kxos_frame::{
-    debug,
-    vm::{Vaddr, VmPerm},
-};
+use crate::prelude::*;
+use kxos_frame::vm::VmPerm;
 
 use crate::{process::Process, syscall::SYS_MMAP};
 

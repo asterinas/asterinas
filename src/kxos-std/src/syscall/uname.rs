@@ -1,8 +1,4 @@
-use core::ffi::CStr;
-
-use alloc::ffi::CString;
-use kxos_frame::{debug, vm::Vaddr};
-use lazy_static::lazy_static;
+use crate::prelude::*;
 
 use crate::{
     memory::write_val_to_user,

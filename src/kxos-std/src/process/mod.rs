@@ -1,11 +1,8 @@
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
-use alloc::collections::BTreeMap;
-use alloc::ffi::CString;
-use alloc::sync::{Arc, Weak};
+use crate::prelude::*;
 use kxos_frame::sync::WaitQueue;
-use kxos_frame::{debug, task::Task, user::UserSpace, vm::VmSpace};
-use spin::Mutex;
+use kxos_frame::{task::Task, user::UserSpace, vm::VmSpace};
 
 use crate::memory::mmap_area::MmapArea;
 use crate::memory::user_heap::UserHeap;
@@ -18,6 +15,7 @@ use self::user_vm_data::UserVm;
 pub mod fifo_scheduler;
 pub mod process_filter;
 pub mod status;
+pub mod table;
 pub mod task;
 pub mod user_vm_data;
 pub mod wait;
@@ -119,14 +117,16 @@ impl Process {
     fn create_user_process(filename: CString, elf_file_content: &'static [u8]) -> Arc<Self> {
         let pid = new_pid();
 
-        Arc::new_cyclic(|weak_process_ref| {
+        let user_process = Arc::new_cyclic(|weak_process_ref| {
             let weak_process = weak_process_ref.clone();
             let cloned_filename = Some(filename.clone());
             let task = create_user_task_from_elf(filename, elf_file_content, weak_process);
             let user_space = task.user_space().map(|user_space| user_space.clone());
             let user_vm = UserVm::new();
             Process::new(pid, task, cloned_filename, Some(user_vm), user_space)
-        })
+        });
+        table::add_process(pid, user_process.clone());
+        user_process
     }
 
     fn create_kernel_process<F>(task_fn: F) -> Arc<Self>
@@ -134,11 +134,13 @@ impl Process {
         F: Fn() + Send + Sync + 'static,
     {
         let pid = new_pid();
-        Arc::new_cyclic(|weak_process_ref| {
+        let kernel_process = Arc::new_cyclic(|weak_process_ref| {
             let weak_process = weak_process_ref.clone();
             let task = Task::new(task_fn, weak_process, None).expect("spawn kernel task failed");
             Process::new(pid, task, None, None, None)
-        })
+        });
+        table::add_process(pid, kernel_process.clone());
+        kernel_process
     }
 
     /// returns the pid of the process
@@ -265,6 +267,7 @@ impl Process {
     pub fn reap_zombie_child(&self, pid: Pid) -> i32 {
         let child_process = self.children.lock().remove(&pid).unwrap();
         assert!(child_process.status() == ProcessStatus::Zombie);
+        table::delete_process(child_process.pid());
         child_process.exit_code()
     }
 

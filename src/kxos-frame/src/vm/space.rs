@@ -90,6 +90,12 @@ impl VmSpace {
         Ok(())
     }
 
+    /// clear all mappings
+    pub fn clear(&self) {
+        self.memory_set.lock().clear();
+        crate::x86_64_util::flush_tlb();
+    }
+
     /// Update the VM protection permissions within the VM address range.
     ///
     /// The entire specified VM range must have been mapped with physical

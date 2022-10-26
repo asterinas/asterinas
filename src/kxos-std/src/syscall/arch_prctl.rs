@@ -1,8 +1,10 @@
-use kxos_frame::{cpu::CpuContext, debug};
+use kxos_frame::cpu::CpuContext;
 
+use crate::prelude::*;
 use crate::syscall::{SyscallResult, SYS_ARCH_PRCTL};
 
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub enum ArchPrctlCode {
     ARCH_SET_GS = 0x1001,
     ARCH_SET_FS = 0x1002,
@@ -19,7 +21,10 @@ impl TryFrom<u64> for ArchPrctlCode {
             0x1002 => Ok(ArchPrctlCode::ARCH_SET_FS),
             0x1003 => Ok(ArchPrctlCode::ARCH_GET_FS),
             0x1004 => Ok(ArchPrctlCode::ARCH_GET_GS),
-            _ => Err("Unknown code for arch_prctl"),
+            _ => {
+                debug!("value = 0x{:x}", value);
+                Err("Unknown code for arch_prctl")
+            }
         }
     }
 }
@@ -27,6 +32,7 @@ impl TryFrom<u64> for ArchPrctlCode {
 pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> SyscallResult {
     debug!("[syscall][id={}][SYS_ARCH_PRCTL]", SYS_ARCH_PRCTL);
     let arch_prctl_code = ArchPrctlCode::try_from(code);
+    debug!("arch_prctl_code: {:?}", arch_prctl_code);
     match arch_prctl_code {
         Err(_) => SyscallResult::Return(-1),
         Ok(code) => {

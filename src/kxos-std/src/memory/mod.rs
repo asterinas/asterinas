@@ -4,11 +4,8 @@ pub mod init_stack;
 pub mod mmap_area;
 pub mod user_heap;
 pub mod vm_page;
-use alloc::ffi::CString;
-use kxos_frame::{
-    debug,
-    vm::{Pod, Vaddr, VmIo, VmSpace},
-};
+use crate::prelude::*;
+use kxos_frame::vm::{Pod, VmIo, VmSpace};
 
 use crate::process::Process;
 
@@ -29,6 +26,8 @@ pub fn load_elf_to_vm_space<'a>(
     elf_load_info.debug_check_map_result(vm_space);
     debug!("map elf success");
     elf_load_info.init_stack(vm_space);
+    elf_load_info.write_elf_first_page(vm_space, elf_file_content);
+
     Ok(elf_load_info)
 }
 

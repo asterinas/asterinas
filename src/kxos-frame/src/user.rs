@@ -134,6 +134,7 @@ impl<'a> UserMode<'a> {
             } else {
                 // x86_64_util::wrfsbase(self.context.fs_base);
                 *self.current.syscall_frame() = self.context.into();
+                self.current.syscall_frame().caller.rcx = self.context.gp_regs.rip;
             }
         }
 

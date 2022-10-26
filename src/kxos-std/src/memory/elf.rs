@@ -1,19 +1,15 @@
 //! This module is used to parse elf file content to get elf_load_info.
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
 
+use crate::prelude::*;
 use core::{cmp::Ordering, ops::Range};
-
-use alloc::ffi::CString;
-use alloc::vec;
-use alloc::vec::Vec;
 use kxos_frame::{
-    config::PAGE_SIZE,
-    vm::{Vaddr, VmIo, VmPerm, VmSpace},
+    vm::{VmIo, VmPerm, VmSpace},
     Error,
 };
 use xmas_elf::{
     header,
-    program::{self, ProgramHeader, SegmentData},
+    program::{self, ProgramHeader, ProgramHeader64, SegmentData},
     ElfFile,
 };
 
@@ -23,6 +19,7 @@ pub struct ElfLoadInfo<'a> {
     entry_point: Vaddr,
     segments: Vec<ElfSegment<'a>>,
     init_stack: InitStack,
+    elf_header_info: ElfHeaderInfo,
 }
 
 pub struct ElfSegment<'a> {
@@ -30,6 +27,17 @@ pub struct ElfSegment<'a> {
     data: &'a [u8],
     type_: program::Type,
     vm_perm: VmPerm,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+/// Info parsed from elf header. Used to set aux vector.
+pub struct ElfHeaderInfo {
+    /// page header table offset
+    pub ph_off: u64,
+    /// number of program headers
+    pub ph_num: u16,
+    /// The size of a program header
+    pub ph_ent: usize,
 }
 
 impl<'a> ElfSegment<'a> {
@@ -92,9 +100,20 @@ impl<'a> ElfSegment<'a> {
                 page.map_page(vm_space, vm_perm)?;
             }
         }
-
         // copy segment
         vm_space.write_bytes(self.start_address(), self.data)?;
+
+        // The length of segment may be greater than the length of data
+        // In this case, the additional bytes should be zeroed.
+        let segment_len = self.end_address() - self.start_address();
+        let data_len = self.data.len();
+        if segment_len > data_len {
+            let zeroed_bytes = vec![0u8; segment_len - data_len];
+            let write_addr = self.start_address() + data_len;
+            vm_space
+                .write_bytes(write_addr, &zeroed_bytes)
+                .expect("Write zeroed bytes failed");
+        }
         Ok(())
     }
 
@@ -104,11 +123,17 @@ impl<'a> ElfSegment<'a> {
 }
 
 impl<'a> ElfLoadInfo<'a> {
-    fn with_capacity(entry_point: Vaddr, capacity: usize, init_stack: InitStack) -> Self {
+    fn with_capacity(
+        entry_point: Vaddr,
+        capacity: usize,
+        init_stack: InitStack,
+        elf_header_info: ElfHeaderInfo,
+    ) -> Self {
         Self {
             entry_point,
             segments: Vec::with_capacity(capacity),
             init_stack,
+            elf_header_info,
         }
     }
 
@@ -124,10 +149,12 @@ impl<'a> ElfLoadInfo<'a> {
         check_elf_header(&elf_file)?;
         // init elf load info
         let entry_point = elf_file.header.pt2.entry_point() as Vaddr;
+        let elf_header_info = ElfHeaderInfo::parse_elf_header(&elf_file);
         // FIXME: only contains load segment?
         let segments_count = elf_file.program_iter().count();
         let init_stack = InitStack::new_default_config(filename);
-        let mut elf_load_info = ElfLoadInfo::with_capacity(entry_point, segments_count, init_stack);
+        let mut elf_load_info =
+            ElfLoadInfo::with_capacity(entry_point, segments_count, init_stack, elf_header_info);
 
         // parse each segemnt
         for segment in elf_file.program_iter() {
@@ -168,8 +195,20 @@ impl<'a> ElfLoadInfo<'a> {
 
     pub fn init_stack(&mut self, vm_space: &VmSpace) {
         self.init_stack
-            .init(vm_space)
+            .init(vm_space, &self.elf_header_info)
             .expect("Init User Stack failed");
+    }
+
+    /// This function will write the first page of elf file to the initial stack top.
+    /// This function must be called after init process initial stack.
+    /// This infomation is used to set Auxv vectors.
+    pub fn write_elf_first_page(&self, vm_space: &VmSpace, file_content: &[u8]) {
+        let write_len = PAGE_SIZE.min(file_content.len());
+        let write_content = &file_content[..write_len];
+        let write_addr = self.init_stack.init_stack_top() - PAGE_SIZE;
+        vm_space
+            .write_bytes(write_addr, write_content)
+            .expect("Write elf content failed");
     }
 
     /// return the perm of elf pages
@@ -224,6 +263,19 @@ impl<'a> ElfLoadInfo<'a> {
             // }
 
             assert_eq!(res, Ordering::Equal);
+        }
+    }
+}
+
+impl ElfHeaderInfo {
+    fn parse_elf_header(elf_file: &ElfFile) -> Self {
+        let ph_off = elf_file.header.pt2.ph_offset();
+        let ph_num = elf_file.header.pt2.ph_count();
+        let ph_ent = core::mem::size_of::<ProgramHeader64>();
+        ElfHeaderInfo {
+            ph_off,
+            ph_num,
+            ph_ent,
         }
     }
 }

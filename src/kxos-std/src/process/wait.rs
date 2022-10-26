@@ -1,4 +1,4 @@
-use bitflags::bitflags;
+use crate::prelude::*;
 
 use super::{process_filter::ProcessFilter, ExitCode, Pid, Process};
 

@@ -57,4 +57,10 @@ impl UserVm {
     pub fn mmap_area(&self) -> &MmapArea {
         &self.mmap_area
     }
+
+    /// Set user vm to the init status
+    pub fn set_default(&self) {
+        self.user_heap.set_default();
+        self.mmap_area.set_default();
+    }
 }

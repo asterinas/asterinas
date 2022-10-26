@@ -1,9 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use kxos_frame::{
-    debug,
-    vm::{Vaddr, VmPerm, VmSpace},
-};
+use crate::prelude::*;
+use kxos_frame::vm::{VmPerm, VmSpace};
 
 use super::vm_page::{VmPage, VmPageRange};
 
@@ -28,7 +26,11 @@ impl UserHeap {
         match new_heap_end {
             None => return self.current_heap_end.load(Ordering::Relaxed),
             Some(new_heap_end) => {
-                let current_heap_end = self.current_heap_end.swap(new_heap_end, Ordering::Relaxed);
+                let current_heap_end = self.current_heap_end.load(Ordering::Acquire);
+                if new_heap_end < current_heap_end {
+                    return current_heap_end;
+                }
+                self.current_heap_end.store(new_heap_end, Ordering::Release);
                 let start_page = VmPage::containing_address(current_heap_end - 1).next_page();
                 let end_page = VmPage::containing_address(new_heap_end);
                 if end_page >= start_page {
@@ -49,6 +51,12 @@ impl UserHeap {
     #[inline(always)]
     const fn user_heap_perm() -> VmPerm {
         VmPerm::RWXU
+    }
+
+    /// Set heap to the default status. i.e., point the heap end to heap base.
+    pub fn set_default(&self) {
+        self.current_heap_end
+            .store(self.heap_base, Ordering::Relaxed);
     }
 }
 
