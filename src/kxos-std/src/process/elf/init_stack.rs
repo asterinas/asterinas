@@ -2,7 +2,7 @@
 //! The process initial stack, contains arguments, environmental variables and auxiliary vectors
 //! The data layout of init stack can be seen in Figure 3.9 in https://uclibc.org/docs/psABI-x86_64.pdf
 
-use crate::prelude::*;
+use crate::{memory::vm_page::VmPageRange, prelude::*};
 use core::mem;
 use kxos_frame::{
     vm::{VmIo, VmPerm, VmSpace},
@@ -13,7 +13,6 @@ use super::elf::ElfHeaderInfo;
 use super::{
     aux_vec::{AuxKey, AuxVec},
     elf::ElfError,
-    vm_page::VmPageRange,
 };
 
 pub const INIT_STACK_BASE: Vaddr = 0x0000_0000_2000_0000;

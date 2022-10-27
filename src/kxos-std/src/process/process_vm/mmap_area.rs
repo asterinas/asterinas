@@ -1,9 +1,8 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::prelude::*;
+use crate::{memory::vm_page::VmPageRange, prelude::*, process::elf::init_stack::INIT_STACK_BASE};
 use kxos_frame::vm::{VmPerm, VmSpace};
 
-use super::{init_stack::INIT_STACK_BASE, vm_page::VmPageRange};
 use crate::syscall::mmap::MMapFlags;
 
 #[derive(Debug)]

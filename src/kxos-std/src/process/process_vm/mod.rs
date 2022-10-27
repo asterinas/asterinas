@@ -4,7 +4,11 @@
 //! So we define a UserVm struct to store such infomation.
 //! Briefly, it contains the exact usage of each segment of virtual spaces.
 
-use crate::memory::{mmap_area::MmapArea, user_heap::UserHeap};
+pub mod mmap_area;
+pub mod user_heap;
+
+use mmap_area::MmapArea;
+use user_heap::UserHeap;
 
 /*
 * The user vm space layout is look like below.

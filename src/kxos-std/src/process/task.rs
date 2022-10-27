@@ -9,9 +9,9 @@ use kxos_frame::{
 
 use crate::prelude::*;
 
-use crate::{memory::load_elf_to_vm_space, syscall::syscall_handler};
+use crate::syscall::syscall_handler;
 
-use super::Process;
+use super::{elf::load_elf_to_vm_space, Process};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
