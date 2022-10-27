@@ -2,12 +2,8 @@ use kxos_frame::cpu::CpuContext;
 
 use super::constants::*;
 use super::SyscallResult;
-use crate::{
-    memory::{load_elf_to_vm_space, read_bytes_from_user},
-    prelude::*,
-    process::Process,
-    syscall::SYS_EXECVE,
-};
+use crate::process::elf::load_elf_to_vm_space;
+use crate::{memory::read_bytes_from_user, prelude::*, process::Process, syscall::SYS_EXECVE};
 
 pub fn sys_execve(
     filename_ptr: Vaddr,

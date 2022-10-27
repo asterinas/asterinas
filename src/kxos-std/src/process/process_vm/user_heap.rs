@@ -1,9 +1,10 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::prelude::*;
+use crate::{
+    memory::vm_page::{VmPage, VmPageRange},
+    prelude::*,
+};
 use kxos_frame::vm::{VmPerm, VmSpace};
-
-use super::vm_page::{VmPage, VmPageRange};
 
 pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
 

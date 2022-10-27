@@ -4,20 +4,20 @@ use crate::prelude::*;
 use kxos_frame::sync::WaitQueue;
 use kxos_frame::{task::Task, user::UserSpace, vm::VmSpace};
 
-use crate::memory::mmap_area::MmapArea;
-use crate::memory::user_heap::UserHeap;
-
 use self::process_filter::ProcessFilter;
+use self::process_vm::mmap_area::MmapArea;
+use self::process_vm::user_heap::UserHeap;
+use self::process_vm::UserVm;
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
-use self::user_vm_data::UserVm;
 
+pub mod elf;
 pub mod fifo_scheduler;
 pub mod process_filter;
+pub mod process_vm;
 pub mod status;
 pub mod table;
 pub mod task;
-pub mod user_vm_data;
 pub mod wait;
 
 static PID_ALLOCATOR: AtomicUsize = AtomicUsize::new(0);
