@@ -1,10 +1,7 @@
 //! A Page in virtual address space
 use crate::prelude::*;
 use core::ops::Range;
-use kxos_frame::{
-    vm::{VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
-    Error,
-};
+use kxos_frame::vm::{VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace};
 
 /// A set of **CONTINUOUS** virtual pages in VmSpace
 pub struct VmPageRange {
@@ -149,7 +146,7 @@ impl VmPage {
         vm_space.is_mapped(self.start_address())
     }
 
-    pub fn map_page(&self, vm_space: &VmSpace, vm_perm: VmPerm) -> Result<(), Error> {
+    pub fn map_page(&self, vm_space: &VmSpace, vm_perm: VmPerm) -> Result<()> {
         let vm_alloc_option = VmAllocOptions::new(1);
         let vm_frame = VmFrameVec::allocate(&vm_alloc_option)?;
 

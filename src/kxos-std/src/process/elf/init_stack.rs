@@ -9,11 +9,8 @@ use kxos_frame::{
     AlignExt,
 };
 
+use super::aux_vec::{AuxKey, AuxVec};
 use super::elf::ElfHeaderInfo;
-use super::{
-    aux_vec::{AuxKey, AuxVec},
-    elf::ElfError,
-};
 
 pub const INIT_STACK_BASE: Vaddr = 0x0000_0000_2000_0000;
 pub const INIT_STACK_SIZE: usize = 0x1000 * 16; // 64KB
@@ -107,11 +104,7 @@ impl InitStack {
         self.init_stack_top - self.init_stack_size
     }
 
-    pub fn init(
-        &mut self,
-        vm_space: &VmSpace,
-        elf_header_info: &ElfHeaderInfo,
-    ) -> Result<(), ElfError> {
+    pub fn init(&mut self, vm_space: &VmSpace, elf_header_info: &ElfHeaderInfo) -> Result<()> {
         self.map_and_zeroed(vm_space);
         self.write_zero_page(vm_space); // This page is used to store page header table
         self.write_stack_content(vm_space, elf_header_info);

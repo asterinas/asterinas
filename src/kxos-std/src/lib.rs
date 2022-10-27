@@ -17,6 +17,7 @@ use crate::user_apps::get_all_apps;
 extern crate alloc;
 
 pub mod driver;
+pub mod error;
 pub mod fs;
 mod memory;
 pub mod prelude;

@@ -32,10 +32,11 @@ bitflags! {
 }
 
 impl TryFrom<u64> for MMapFlags {
-    type Error = &'static str;
+    type Error = Error;
 
-    fn try_from(value: u64) -> Result<Self, Self::Error> {
-        MMapFlags::from_bits(value as u32).ok_or_else(|| "unknown mmap flags")
+    fn try_from(value: u64) -> Result<Self> {
+        MMapFlags::from_bits(value as u32)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown mmap flags"))
     }
 }
 

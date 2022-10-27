@@ -6,10 +6,7 @@ use crate::{
     prelude::*,
 };
 use core::{cmp::Ordering, ops::Range};
-use kxos_frame::{
-    vm::{VmAllocOptions, VmFrameVec, VmIo, VmPerm, VmSpace},
-    Error,
-};
+use kxos_frame::vm::{VmAllocOptions, VmFrameVec, VmIo, VmPerm, VmSpace};
 use xmas_elf::{
     header,
     program::{self, ProgramHeader, ProgramHeader64, SegmentData},
@@ -46,20 +43,14 @@ pub struct ElfHeaderInfo {
 }
 
 impl<'a> ElfSegment<'a> {
-    fn parse_elf_segment(
-        segment: ProgramHeader<'a>,
-        elf_file: &ElfFile<'a>,
-    ) -> Result<Self, ElfError> {
+    fn parse_elf_segment(segment: ProgramHeader<'a>, elf_file: &ElfFile<'a>) -> Result<Self> {
         let start = segment.virtual_addr() as Vaddr;
         let end = start + segment.mem_size() as Vaddr;
         let type_ = match segment.get_type() {
-            Err(error_msg) => return Err(ElfError::from(error_msg)),
+            Err(error_msg) => return_errno_with_message!(Errno::ENOEXEC, error_msg),
             Ok(type_) => type_,
         };
-        let data = match read_segment_data(segment, elf_file) {
-            Err(msg) => return Err(ElfError::from(msg)),
-            Ok(data) => data,
-        };
+        let data = read_segment_data(segment, elf_file)?;
         let vm_perm = Self::parse_segment_perm(segment)?;
         Ok(Self {
             range: start..end,
@@ -69,10 +60,10 @@ impl<'a> ElfSegment<'a> {
         })
     }
 
-    pub fn parse_segment_perm(segment: ProgramHeader<'a>) -> Result<VmPerm, ElfError> {
+    pub fn parse_segment_perm(segment: ProgramHeader<'a>) -> Result<VmPerm> {
         let flags = segment.flags();
         if !flags.is_read() {
-            return Err(ElfError::UnreadableSegment);
+            return_errno_with_message!(Errno::ENOEXEC, "unreadable segment");
         }
         let mut vm_perm = VmPerm::R;
         if flags.is_write() {
@@ -96,7 +87,7 @@ impl<'a> ElfSegment<'a> {
         self.range.end
     }
 
-    fn copy_and_map_segment(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
+    fn copy_and_map_segment(&self, vm_space: &VmSpace) -> Result<()> {
         let start_address = self.start_address();
         let page_mask = PAGE_SIZE - 1;
         let segment_len = self.end_address() - self.start_address();
@@ -173,9 +164,9 @@ impl<'a> ElfLoadInfo<'a> {
         self.segments.push(elf_segment);
     }
 
-    pub fn parse_elf_data(elf_file_content: &'a [u8], filename: CString) -> Result<Self, ElfError> {
+    pub fn parse_elf_data(elf_file_content: &'a [u8], filename: CString) -> Result<Self> {
         let elf_file = match ElfFile::new(elf_file_content) {
-            Err(error_msg) => return Err(ElfError::from(error_msg)),
+            Err(error_msg) => return_errno_with_message!(Errno::ENOEXEC, error_msg),
             Ok(elf_file) => elf_file,
         };
         check_elf_header(&elf_file)?;
@@ -198,7 +189,7 @@ impl<'a> ElfLoadInfo<'a> {
         Ok(elf_load_info)
     }
 
-    fn vm_page_range(&self) -> Result<VmPageRange, ElfError> {
+    fn vm_page_range(&self) -> Result<VmPageRange> {
         let elf_start_address = self
             .segments
             .iter()
@@ -218,7 +209,7 @@ impl<'a> ElfLoadInfo<'a> {
     }
 
     /// copy and map all segment
-    pub fn copy_and_map_segments(&self, vm_space: &VmSpace) -> Result<(), ElfError> {
+    pub fn copy_and_map_segments(&self, vm_space: &VmSpace) -> Result<()> {
         for segment in self.segments.iter() {
             segment.copy_and_map_segment(vm_space)?;
         }
@@ -298,22 +289,22 @@ impl ElfHeaderInfo {
     }
 }
 
-fn check_elf_header(elf_file: &ElfFile) -> Result<(), ElfError> {
+fn check_elf_header(elf_file: &ElfFile) -> Result<()> {
     let elf_header = elf_file.header;
     // 64bit
     debug_assert_eq!(elf_header.pt1.class(), header::Class::SixtyFour);
     if elf_header.pt1.class() != header::Class::SixtyFour {
-        return Err(ElfError::UnsupportedElfType);
+        return_errno!(Errno::ENOEXEC);
     }
     // little endian
     debug_assert_eq!(elf_header.pt1.data(), header::Data::LittleEndian);
     if elf_header.pt1.data() != header::Data::LittleEndian {
-        return Err(ElfError::UnsupportedElfType);
+        return_errno!(Errno::ENOEXEC);
     }
     // system V ABI
     // debug_assert_eq!(elf_header.pt1.os_abi(), header::OsAbi::SystemV);
     // if elf_header.pt1.os_abi() != header::OsAbi::SystemV {
-    //     return Err(ElfError::UnsupportedElfType);
+    //     return Error::new(Errno::ENOEXEC);
     // }
     // x86_64 architecture
     debug_assert_eq!(
@@ -321,48 +312,23 @@ fn check_elf_header(elf_file: &ElfFile) -> Result<(), ElfError> {
         header::Machine::X86_64
     );
     if elf_header.pt2.machine().as_machine() != header::Machine::X86_64 {
-        return Err(ElfError::UnsupportedElfType);
+        return_errno!(Errno::ENOEXEC);
     }
     // Executable file
     debug_assert_eq!(elf_header.pt2.type_().as_type(), header::Type::Executable);
     if elf_header.pt2.type_().as_type() != header::Type::Executable {
-        return Err(ElfError::UnsupportedElfType);
+        return_errno!(Errno::ENOEXEC);
     }
 
     Ok(())
 }
 
-#[derive(Debug)]
-pub enum ElfError {
-    FrameError(Error),
-    NoSegment,
-    UnsupportedElfType,
-    SegmentNotPageAligned,
-    UnreadableSegment,
-    WithInfo(&'static str),
-}
-
-impl From<&'static str> for ElfError {
-    fn from(error_info: &'static str) -> Self {
-        ElfError::WithInfo(error_info)
-    }
-}
-
-impl From<Error> for ElfError {
-    fn from(frame_error: Error) -> Self {
-        ElfError::FrameError(frame_error)
-    }
-}
-
-fn read_segment_data<'a>(
-    segment: ProgramHeader<'a>,
-    elf_file: &ElfFile<'a>,
-) -> Result<&'a [u8], &'static str> {
+fn read_segment_data<'a>(segment: ProgramHeader<'a>, elf_file: &ElfFile<'a>) -> Result<&'a [u8]> {
     match segment.get_data(&elf_file) {
-        Err(msg) => Err(msg),
+        Err(msg) => return_errno_with_message!(Errno::ENOEXEC, msg),
         Ok(data) => match data {
             SegmentData::Note64(_, data) | SegmentData::Undefined(data) => Ok(data),
-            _ => Err("Unkonwn segment data type"),
+            _ => return_errno_with_message!(Errno::ENOEXEC, "Unkonwn segment data type"),
         },
     }
 }
