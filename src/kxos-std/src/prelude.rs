@@ -25,4 +25,7 @@ macro_rules! current {
 }
 
 pub(crate) use crate::current;
+pub(crate) use crate::error::{Errno, Error};
 pub(crate) use lazy_static::lazy_static;
+pub(crate) type Result<T> = core::result::Result<T, Error>;
+pub(crate) use crate::{return_errno, return_errno_with_message};

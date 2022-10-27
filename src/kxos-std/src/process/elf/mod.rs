@@ -4,7 +4,7 @@ pub mod init_stack;
 
 use kxos_frame::vm::VmSpace;
 
-use self::elf::{ElfError, ElfLoadInfo};
+use self::elf::ElfLoadInfo;
 use crate::prelude::*;
 
 /// load elf to a given vm_space. this function will  
@@ -16,7 +16,7 @@ pub fn load_elf_to_vm_space<'a>(
     filename: CString,
     elf_file_content: &'a [u8],
     vm_space: &VmSpace,
-) -> Result<ElfLoadInfo<'a>, ElfError> {
+) -> Result<ElfLoadInfo<'a>> {
     let mut elf_load_info = ElfLoadInfo::parse_elf_data(elf_file_content, filename)?;
     elf_load_info.copy_and_map_segments(vm_space)?;
     elf_load_info.debug_check_map_result(vm_space);
