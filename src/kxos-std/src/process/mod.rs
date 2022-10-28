@@ -11,6 +11,7 @@ use self::process_vm::UserVm;
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
 
+pub mod clone;
 pub mod elf;
 pub mod fifo_scheduler;
 pub mod process_filter;
