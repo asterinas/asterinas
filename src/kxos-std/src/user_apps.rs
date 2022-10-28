@@ -44,6 +44,10 @@ pub fn get_all_apps() -> Vec<UserApp> {
     let app4 = UserApp::new("/execve", read_execve_content());
     res.push(app4);
 
+    // Fork new process, written in C language. (Fork in glibc uses syscall clone actually)
+    let app5 = UserApp::new("/fork", read_fork_c_content());
+    res.push(app5);
+
     res
 }
 
@@ -65,4 +69,8 @@ fn read_execve_content() -> &'static [u8] {
 
 pub fn read_execve_hello_content() -> &'static [u8] {
     include_bytes!("../../kxos-user/execve/hello")
+}
+
+fn read_fork_c_content() -> &'static [u8] {
+    include_bytes!("../../kxos-user/fork_c/fork")
 }

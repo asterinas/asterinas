@@ -5,9 +5,8 @@ use crate::{
     syscall::{SyscallResult, SYS_UNAME},
 };
 
-// The values are used to fool glibc. Since glibc will check the version and os name
-// We don't use lazy static to generate a static UTS_NAME is because lazy static will create a new struct, which does not inherent the trait.å
-
+// We don't use the real name and version of our os here. Instead, we pick up fake values witch is the same as the ones of linux.
+// The values are used to fool glibc since glibc will check the version and os name.
 lazy_static! {
     /// used to fool glibc
     static ref SYS_NAME: CString = CString::new("Linux").unwrap();

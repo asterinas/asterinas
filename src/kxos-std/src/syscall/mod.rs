@@ -2,6 +2,7 @@
 //! The each sub module contains functions that handle real syscall logic.
 
 use crate::prelude::*;
+use crate::syscall::clone::sys_clone;
 use alloc::borrow::ToOwned;
 use kxos_frame::cpu::CpuContext;
 
@@ -30,6 +31,7 @@ use crate::syscall::writev::sys_writev;
 mod access;
 mod arch_prctl;
 mod brk;
+mod clone;
 pub mod constants;
 mod execve;
 mod exit;
@@ -39,7 +41,7 @@ mod fstat;
 mod futex;
 mod getpid;
 mod gettid;
-pub mod mmap;
+mod mmap;
 mod mprotect;
 mod readlink;
 mod sched_yield;
@@ -61,6 +63,7 @@ const SYS_WRITEV: u64 = 20;
 const SYS_ACCESS: u64 = 21;
 const SYS_SCHED_YIELD: u64 = 24;
 const SYS_GETPID: u64 = 39;
+const SYS_CLONE: u64 = 56;
 const SYS_FORK: u64 = 57;
 const SYS_EXECVE: u64 = 59;
 const SYS_EXIT: u64 = 60;
@@ -138,6 +141,14 @@ pub fn syscall_dispatch(
         SYS_WRITEV => sys_writev(args[0], args[1], args[2]),
         SYS_ACCESS => sys_access(args[0] as _, args[1]),
         SYS_GETPID => sys_getpid(),
+        SYS_CLONE => sys_clone(
+            args[0],
+            args[1] as _,
+            args[2] as _,
+            args[3] as _,
+            args[4] as _,
+            context.to_owned(),
+        ),
         SYS_FORK => sys_fork(context.to_owned()),
         SYS_EXECVE => sys_execve(args[0] as _, args[1] as _, args[2] as _, context),
         SYS_EXIT => sys_exit(args[0] as _),
