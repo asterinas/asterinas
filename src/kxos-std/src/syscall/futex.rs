@@ -1,11 +1,8 @@
 use crate::{memory::read_val_from_user, syscall::SYS_FUTEX};
 
 use super::SyscallResult;
-use alloc::{sync::Arc, vec::Vec};
-use bitflags::bitflags;
-use kxos_frame::{cpu::num_cpus, debug, sync::WaitQueue, vm::Vaddr, warn};
-use lazy_static::lazy_static;
-use spin::Mutex;
+use crate::prelude::*;
+use kxos_frame::{cpu::num_cpus, sync::WaitQueue};
 
 type FutexBitSet = u32;
 type FutexBucketRef = Arc<Mutex<FutexBucket>>;
@@ -26,14 +23,14 @@ pub fn sys_futex(
     // FIXME: we current ignore futex flags
     let (futex_op, futex_flags) = futex_op_and_flags_from_u32(futex_op as _).unwrap();
 
-    let get_futex_val = |val: i32| -> Result<usize, &'static str> {
+    let get_futex_val = |val: i32| -> Result<usize> {
         if val < 0 {
-            return Err("the futex val must not be negative");
+            return_errno_with_message!(Errno::EINVAL, "the futex val must not be negative");
         }
         Ok(val as usize)
     };
 
-    let get_futex_timeout = |timeout_addr| -> Result<Option<FutexTimeout>, &'static str> {
+    let get_futex_timeout = |timeout_addr| -> Result<Option<FutexTimeout>> {
         if timeout_addr == 0 {
             return Ok(None);
         }
@@ -77,11 +74,7 @@ pub fn sys_futex(
 }
 
 /// do futex wait
-pub fn futex_wait(
-    futex_addr: u64,
-    futex_val: i32,
-    timeout: &Option<FutexTimeout>,
-) -> Result<(), &'static str> {
+pub fn futex_wait(futex_addr: u64, futex_val: i32, timeout: &Option<FutexTimeout>) -> Result<()> {
     futex_wait_bitset(futex_addr as _, futex_val, timeout, FUTEX_BITSET_MATCH_ANY)
 }
 
@@ -91,7 +84,7 @@ pub fn futex_wait_bitset(
     futex_val: i32,
     timeout: &Option<FutexTimeout>,
     bitset: FutexBitSet,
-) -> Result<(), &'static str> {
+) -> Result<()> {
     debug!(
         "futex_wait_bitset addr: {:#x}, val: {}, timeout: {:?}, bitset: {:#x}",
         futex_addr, futex_val, timeout, bitset
@@ -103,7 +96,7 @@ pub fn futex_wait_bitset(
     let futex_bucket = futex_bucket_ref.lock();
 
     if futex_key.load_val() != futex_val {
-        return Err("futex value does not match");
+        return_errno_with_message!(Errno::EINVAL, "futex value does not match");
     }
     let futex_item = FutexItem::new(futex_key, bitset);
     futex_bucket.enqueue_item(futex_item);
@@ -119,7 +112,7 @@ pub fn futex_wait_bitset(
 }
 
 /// do futex wake
-pub fn futex_wake(futex_addr: Vaddr, max_count: usize) -> Result<usize, &'static str> {
+pub fn futex_wake(futex_addr: Vaddr, max_count: usize) -> Result<usize> {
     futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY)
 }
 
@@ -128,7 +121,7 @@ pub fn futex_wake_bitset(
     futex_addr: Vaddr,
     max_count: usize,
     bitset: FutexBitSet,
-) -> Result<usize, &'static str> {
+) -> Result<usize> {
     debug!(
         "futex_wake_bitset addr: {:#x}, max_count: {}, bitset: {:#x}",
         futex_addr as usize, max_count, bitset
@@ -147,7 +140,7 @@ pub fn futex_requeue(
     max_nwakes: usize,
     max_nrequeues: usize,
     futex_new_addr: Vaddr,
-) -> Result<usize, &'static str> {
+) -> Result<usize> {
     if futex_new_addr == futex_addr {
         return futex_wake(futex_addr, max_nwakes);
     }
@@ -367,7 +360,7 @@ pub enum FutexOp {
 }
 
 impl FutexOp {
-    pub fn from_u32(bits: u32) -> Result<FutexOp, &'static str> {
+    pub fn from_u32(bits: u32) -> Result<FutexOp> {
         match bits {
             0 => Ok(FutexOp::FUTEX_WAIT),
             1 => Ok(FutexOp::FUTEX_WAKE),
@@ -380,7 +373,7 @@ impl FutexOp {
             8 => Ok(FutexOp::FUTEX_TRYLOCK_PI),
             9 => Ok(FutexOp::FUTEX_WAIT_BITSET),
             10 => Ok(FutexOp::FUTEX_WAKE_BITSET),
-            _ => Err("Unknown futex op"),
+            _ => return_errno_with_message!(Errno::EINVAL, "Unknown futex op"),
         }
     }
 }
@@ -393,12 +386,13 @@ bitflags! {
 }
 
 impl FutexFlags {
-    pub fn from_u32(bits: u32) -> Result<FutexFlags, &'static str> {
-        FutexFlags::from_bits(bits).ok_or_else(|| "unknown futex flags")
+    pub fn from_u32(bits: u32) -> Result<FutexFlags> {
+        FutexFlags::from_bits(bits)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown futex flags"))
     }
 }
 
-pub fn futex_op_and_flags_from_u32(bits: u32) -> Result<(FutexOp, FutexFlags), &'static str> {
+pub fn futex_op_and_flags_from_u32(bits: u32) -> Result<(FutexOp, FutexFlags)> {
     let op = {
         let op_bits = bits & FUTEX_OP_MASK;
         FutexOp::from_u32(op_bits)?

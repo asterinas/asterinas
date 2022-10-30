@@ -1,8 +1,6 @@
-use kxos_frame::{
-    debug,
-    vm::{Vaddr, VmPerm},
-    warn,
-};
+use kxos_frame::vm::VmPerm;
+
+use crate::prelude::*;
 
 use crate::syscall::SYS_MPROTECT;
 

@@ -115,16 +115,10 @@ impl<'a> UserMode<'a> {
             self.user_space.vm_space().activate();
         }
         if !self.executed {
+            *self.current.syscall_frame() = self.user_space.cpu_ctx.into();
             self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip;
-            self.current.syscall_frame().callee.rsp = self.user_space.cpu_ctx.gp_regs.rsp;
-            self.current.syscall_frame().caller.rax = self.user_space.cpu_ctx.gp_regs.rax;
-
-            // set argument registers
-            self.current.syscall_frame().caller.rdi = self.user_space.cpu_ctx.gp_regs.rdi;
-            self.current.syscall_frame().caller.rsi = self.user_space.cpu_ctx.gp_regs.rsi;
-            self.current.syscall_frame().caller.rdx = self.user_space.cpu_ctx.gp_regs.rdx;
-
             // write fsbase
+            debug!("write fs_fsbase: 0x{:x}", self.user_space.cpu_ctx.fs_base);
             wrfsbase(self.user_space.cpu_ctx.fs_base);
 
             self.executed = true;
@@ -134,13 +128,14 @@ impl<'a> UserMode<'a> {
             } else {
                 // x86_64_util::wrfsbase(self.context.fs_base);
                 *self.current.syscall_frame() = self.context.into();
+                self.current.syscall_frame().caller.rcx = self.context.gp_regs.rip;
             }
-        }
 
-        // write fabase
-        if rdfsbase() != self.context.fs_base {
-            debug!("write fsbase: 0x{:x}", self.context.fs_base);
-            wrfsbase(self.context.fs_base);
+            // write fsbase
+            if rdfsbase() != self.context.fs_base {
+                debug!("write fsbase: 0x{:x}", self.context.fs_base);
+                wrfsbase(self.context.fs_base);
+            }
         }
 
         let mut current_task_inner = self.current.inner_exclusive_access();

@@ -1,4 +1,4 @@
-use kxos_frame::debug;
+use crate::prelude::*;
 
 use crate::{process::Process, syscall::SYS_EXIT};
 

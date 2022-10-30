@@ -1,4 +1,4 @@
-use kxos_frame::{debug, info};
+use crate::prelude::*;
 
 use crate::{process::Process, syscall::SYS_GETPID};
 

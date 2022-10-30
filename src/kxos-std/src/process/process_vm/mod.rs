@@ -4,7 +4,11 @@
 //! So we define a UserVm struct to store such infomation.
 //! Briefly, it contains the exact usage of each segment of virtual spaces.
 
-use crate::memory::{mmap_area::MmapArea, user_heap::UserHeap};
+pub mod mmap_area;
+pub mod user_heap;
+
+use mmap_area::MmapArea;
+use user_heap::UserHeap;
 
 /*
 * The user vm space layout is look like below.
@@ -56,5 +60,11 @@ impl UserVm {
 
     pub fn mmap_area(&self) -> &MmapArea {
         &self.mmap_area
+    }
+
+    /// Set user vm to the init status
+    pub fn set_default(&self) {
+        self.user_heap.set_default();
+        self.mmap_area.set_default();
     }
 }

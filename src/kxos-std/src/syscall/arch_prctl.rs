@@ -1,8 +1,10 @@
-use kxos_frame::{cpu::CpuContext, debug};
+use kxos_frame::cpu::CpuContext;
 
+use crate::prelude::*;
 use crate::syscall::{SyscallResult, SYS_ARCH_PRCTL};
 
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub enum ArchPrctlCode {
     ARCH_SET_GS = 0x1001,
     ARCH_SET_FS = 0x1002,
@@ -11,15 +13,15 @@ pub enum ArchPrctlCode {
 }
 
 impl TryFrom<u64> for ArchPrctlCode {
-    type Error = &'static str;
+    type Error = Error;
 
-    fn try_from(value: u64) -> Result<Self, Self::Error> {
+    fn try_from(value: u64) -> Result<Self> {
         match value {
             0x1001 => Ok(ArchPrctlCode::ARCH_SET_GS),
             0x1002 => Ok(ArchPrctlCode::ARCH_SET_FS),
             0x1003 => Ok(ArchPrctlCode::ARCH_GET_FS),
             0x1004 => Ok(ArchPrctlCode::ARCH_GET_GS),
-            _ => Err("Unknown code for arch_prctl"),
+            _ => return_errno_with_message!(Errno::EINVAL, "Unknown code for arch_prctl"),
         }
     }
 }
@@ -27,6 +29,7 @@ impl TryFrom<u64> for ArchPrctlCode {
 pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> SyscallResult {
     debug!("[syscall][id={}][SYS_ARCH_PRCTL]", SYS_ARCH_PRCTL);
     let arch_prctl_code = ArchPrctlCode::try_from(code);
+    debug!("arch_prctl_code: {:?}", arch_prctl_code);
     match arch_prctl_code {
         Err(_) => SyscallResult::Return(-1),
         Ok(code) => {
@@ -36,11 +39,7 @@ pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Syscall
     }
 }
 
-pub fn do_arch_prctl(
-    code: ArchPrctlCode,
-    addr: u64,
-    context: &mut CpuContext,
-) -> Result<u64, &'static str> {
+pub fn do_arch_prctl(code: ArchPrctlCode, addr: u64, context: &mut CpuContext) -> Result<u64> {
     match code {
         ArchPrctlCode::ARCH_SET_FS => {
             debug!("set user fs: 0x{:x}", addr);
@@ -49,7 +48,7 @@ pub fn do_arch_prctl(
         }
         ArchPrctlCode::ARCH_GET_FS => Ok(context.fs_base),
         ArchPrctlCode::ARCH_GET_GS | ArchPrctlCode::ARCH_SET_GS => {
-            Err("GS cannot be accessed from the user space")
+            return_errno_with_message!(Errno::EINVAL, "GS cannot be accessed from the user space")
         }
     }
 }

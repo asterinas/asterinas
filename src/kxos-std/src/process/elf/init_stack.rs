@@ -2,22 +2,15 @@
 //! The process initial stack, contains arguments, environmental variables and auxiliary vectors
 //! The data layout of init stack can be seen in Figure 3.9 in https://uclibc.org/docs/psABI-x86_64.pdf
 
+use crate::{memory::vm_page::VmPageRange, prelude::*};
 use core::mem;
-
-use alloc::vec;
-use alloc::{ffi::CString, vec::Vec};
 use kxos_frame::{
-    config::PAGE_SIZE,
-    debug,
-    vm::{Vaddr, VmIo, VmPerm, VmSpace},
+    vm::{VmIo, VmPerm, VmSpace},
     AlignExt,
 };
 
-use super::{
-    aux_vec::{AuxKey, AuxVec},
-    elf::ElfError,
-    vm_page::VmPageRange,
-};
+use super::aux_vec::{AuxKey, AuxVec};
+use super::elf::ElfHeaderInfo;
 
 pub const INIT_STACK_BASE: Vaddr = 0x0000_0000_2000_0000;
 pub const INIT_STACK_SIZE: usize = 0x1000 * 16; // 64KB
@@ -101,7 +94,6 @@ impl InitStack {
     /// the user stack top(high address), used to setup rsp
     pub fn user_stack_top(&self) -> Vaddr {
         let stack_top = self.pos;
-        debug!("user stack top: 0x{:x}", stack_top);
         // ensure stack top is 16-bytes aligned
         debug_assert!(stack_top & !0xf == stack_top);
         stack_top
@@ -112,9 +104,10 @@ impl InitStack {
         self.init_stack_top - self.init_stack_size
     }
 
-    pub fn init(&mut self, vm_space: &VmSpace) -> Result<(), ElfError> {
+    pub fn init(&mut self, vm_space: &VmSpace, elf_header_info: &ElfHeaderInfo) -> Result<()> {
         self.map_and_zeroed(vm_space);
-        self.write_stack_content(vm_space);
+        self.write_zero_page(vm_space); // This page is used to store page header table
+        self.write_stack_content(vm_space, elf_header_info);
         self.debug_print_stack_content(vm_space);
         Ok(())
     }
@@ -146,7 +139,11 @@ impl InitStack {
         }
     }
 
-    fn write_stack_content(&mut self, vm_space: &VmSpace) {
+    fn write_zero_page(&mut self, vm_space: &VmSpace) {
+        self.pos -= PAGE_SIZE;
+    }
+
+    fn write_stack_content(&mut self, vm_space: &VmSpace, elf_header_info: &ElfHeaderInfo) {
         // write envp string
         let envp_pointers = self.write_envp_strings(vm_space);
         // write argv string
@@ -157,6 +154,21 @@ impl InitStack {
         self.aux_vec
             .set(AuxKey::AT_RANDOM, random_value_pointer)
             .expect("Set random value failed");
+        self.aux_vec
+            .set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)
+            .expect("Set Page Size failed");
+        self.aux_vec
+            .set(
+                AuxKey::AT_PHDR,
+                self.init_stack_top as u64 - PAGE_SIZE as u64 + elf_header_info.ph_off,
+            )
+            .unwrap();
+        self.aux_vec
+            .set(AuxKey::AT_PHNUM, elf_header_info.ph_num as u64)
+            .unwrap();
+        self.aux_vec
+            .set(AuxKey::AT_PHENT, elf_header_info.ph_ent as u64)
+            .unwrap();
         self.adjust_stack_alignment(vm_space, &envp_pointers, &argv_pointers);
         self.write_aux_vec(vm_space);
         self.write_envp_pointers(vm_space, envp_pointers);
@@ -251,6 +263,13 @@ impl InitStack {
     pub fn envp(&self) -> u64 {
         0
     }
+
+    /// returns the top address of init stack.
+    /// It should points to a fixed address.
+    pub const fn init_stack_top(&self) -> Vaddr {
+        self.init_stack_top
+    }
+
     /// returns the u64 start address
     fn write_u64(&mut self, val: u64, vm_space: &VmSpace) -> u64 {
         let start_address = (self.pos - 8).align_down(8);

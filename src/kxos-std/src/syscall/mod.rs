@@ -1,13 +1,16 @@
 //! Read the Cpu context content then dispatch syscall to corrsponding handler
 //! The each sub module contains functions that handle real syscall logic.
 
+use crate::prelude::*;
+use crate::syscall::clone::sys_clone;
 use alloc::borrow::ToOwned;
 use kxos_frame::cpu::CpuContext;
-use kxos_frame::{debug, warn};
 
 use crate::process::task::HandlerResult;
+use crate::syscall::access::sys_access;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
+use crate::syscall::execve::sys_execve;
 use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
 use crate::syscall::fork::sys_fork;
@@ -25,8 +28,12 @@ use crate::syscall::waitid::sys_waitid;
 use crate::syscall::write::sys_write;
 use crate::syscall::writev::sys_writev;
 
+mod access;
 mod arch_prctl;
 mod brk;
+mod clone;
+pub mod constants;
+mod execve;
 mod exit;
 mod exit_group;
 mod fork;
@@ -34,7 +41,7 @@ mod fstat;
 mod futex;
 mod getpid;
 mod gettid;
-pub mod mmap;
+mod mmap;
 mod mprotect;
 mod readlink;
 mod sched_yield;
@@ -53,9 +60,12 @@ const SYS_BRK: u64 = 12;
 const SYS_RT_SIGACTION: u64 = 13;
 const SYS_RT_SIGPROCMASK: u64 = 14;
 const SYS_WRITEV: u64 = 20;
+const SYS_ACCESS: u64 = 21;
 const SYS_SCHED_YIELD: u64 = 24;
 const SYS_GETPID: u64 = 39;
+const SYS_CLONE: u64 = 56;
 const SYS_FORK: u64 = 57;
+const SYS_EXECVE: u64 = 59;
 const SYS_EXIT: u64 = 60;
 const SYS_WAIT4: u64 = 61;
 const SYS_UNAME: u64 = 63;
@@ -79,6 +89,7 @@ pub struct SyscallArgument {
 pub enum SyscallResult {
     Exit(i32),
     Return(i32),
+    ReturnNothing, // execve return nothing
 }
 
 impl SyscallArgument {
@@ -110,6 +121,7 @@ pub fn syscall_handler(context: &mut CpuContext) -> HandlerResult {
             HandlerResult::Continue
         }
         SyscallResult::Exit(exit_code) => HandlerResult::Exit,
+        SyscallResult::ReturnNothing => HandlerResult::Continue,
     }
 }
 
@@ -120,15 +132,25 @@ pub fn syscall_dispatch(
 ) -> SyscallResult {
     match syscall_number {
         SYS_WRITE => sys_write(args[0], args[1], args[2]),
-        SYS_FSTAT => sys_fstat(args[0], args[1]),
+        SYS_FSTAT => sys_fstat(args[0], args[1] as _),
         SYS_MMAP => sys_mmap(args[0], args[1], args[2], args[3], args[4], args[5]),
         SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
         SYS_BRK => sys_brk(args[0]),
         SYS_RT_SIGACTION => sys_rt_sigaction(),
         SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(),
         SYS_WRITEV => sys_writev(args[0], args[1], args[2]),
+        SYS_ACCESS => sys_access(args[0] as _, args[1]),
         SYS_GETPID => sys_getpid(),
+        SYS_CLONE => sys_clone(
+            args[0],
+            args[1] as _,
+            args[2] as _,
+            args[3] as _,
+            args[4] as _,
+            context.to_owned(),
+        ),
         SYS_FORK => sys_fork(context.to_owned()),
+        SYS_EXECVE => sys_execve(args[0] as _, args[1] as _, args[2] as _, context),
         SYS_EXIT => sys_exit(args[0] as _),
         SYS_WAIT4 => sys_wait4(args[0], args[1], args[2]),
         SYS_UNAME => sys_uname(args[0]),

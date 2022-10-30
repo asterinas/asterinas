@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use crate::prelude::*;
 
 /// This implementation is from occlum.
 
@@ -68,9 +68,9 @@ impl AuxVec {
 }
 
 impl AuxVec {
-    pub fn set(&mut self, key: AuxKey, val: u64) -> Result<(), &'static str> {
+    pub fn set(&mut self, key: AuxKey, val: u64) -> Result<()> {
         if key == AuxKey::AT_NULL || key == AuxKey::AT_IGNORE {
-            return Err("Illegal key");
+            return_errno_with_message!(Errno::EINVAL, "Illegal key");
         }
         self.table
             .entry(key)

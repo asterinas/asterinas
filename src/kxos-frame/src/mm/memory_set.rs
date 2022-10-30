@@ -28,7 +28,7 @@ pub struct MemorySet {
 
 impl MapArea {
     pub fn mapped_size(&self) -> usize {
-        self.mapper.len()
+        self.size
     }
 
     pub fn clone(&self) -> Self {

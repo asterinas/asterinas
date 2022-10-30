@@ -5,8 +5,8 @@ use crate::{
 };
 
 use super::SyscallResult;
+use crate::prelude::*;
 use crate::process::wait::WaitOptions;
-use kxos_frame::debug;
 
 pub fn sys_wait4(wait_pid: u64, exit_status_ptr: u64, wait_options: u64) -> SyscallResult {
     debug!("[syscall][id={}][SYS_WAIT4]", SYS_WAIT4);

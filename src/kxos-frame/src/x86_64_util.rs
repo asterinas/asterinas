@@ -223,3 +223,7 @@ pub fn enable_common_cpu_features() {
     }
     debug!("xcr0: {:?}", xcr0);
 }
+
+pub fn flush_tlb() {
+    x86_64::instructions::tlb::flush_all();
+}
