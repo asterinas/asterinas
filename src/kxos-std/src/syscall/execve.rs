@@ -35,6 +35,8 @@ pub fn sys_execve(
     let elf_load_info =
         load_elf_to_vm_space(filename, elf_file_content, &vm_space).expect("load elf failed");
     debug!("load elf in execve succeeds");
+    // set signal disposition to default
+    current.sig_dispositions().lock().inherit();
     // set cpu context to default
     let defalut_content = CpuContext::default();
     context.gp_regs = defalut_content.gp_regs;

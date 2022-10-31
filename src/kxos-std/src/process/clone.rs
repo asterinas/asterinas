@@ -6,7 +6,7 @@ use kxos_frame::{
 
 use crate::{
     prelude::*,
-    process::{new_pid, table, task::create_new_task},
+    process::{new_pid, signal::sig_queues::SigQueues, table, task::create_new_task},
 };
 
 use super::Process;
@@ -127,6 +127,13 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
     debug!("child process pid: {}", child_pid);
     debug!("rip = 0x{:x}", child_cpu_context.gp_regs.rip);
 
+    // inherit parent's sig disposition
+    let child_sig_dispositions = current.sig_dispositions().lock().clone();
+    // sig queue is set empty
+    let child_sig_queues = SigQueues::new();
+    // inherit parent's sig mask
+    let child_sig_mask = current.sig_mask().lock().clone();
+
     let child = Arc::new_cyclic(|child_process_ref| {
         let weak_child_process = child_process_ref.clone();
         let child_task = create_new_task(child_user_space.clone(), weak_child_process);
@@ -136,8 +143,23 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
             child_file_name,
             child_user_vm,
             Some(child_user_space),
+            None,
+            child_sig_dispositions,
+            child_sig_queues,
+            child_sig_mask,
         )
     });
+    // Inherit parent's process group
+    let parent_process_group = current
+        .process_group()
+        .lock()
+        .as_ref()
+        .map(|ppgrp| ppgrp.upgrade())
+        .flatten()
+        .unwrap();
+    parent_process_group.add_process(child.clone());
+    child.set_process_group(Arc::downgrade(&parent_process_group));
+
     Process::current().add_child(child.clone());
     table::add_process(child_pid, child.clone());
     deal_with_clone_args(clone_args, &child)?;

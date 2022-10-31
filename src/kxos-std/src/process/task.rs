@@ -7,7 +7,7 @@ use kxos_frame::{
     vm::VmSpace,
 };
 
-use crate::prelude::*;
+use crate::{prelude::*, process::signal::handle_pending_signal};
 
 use crate::syscall::syscall_handler;
 
@@ -47,28 +47,33 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
         loop {
             let user_event = user_mode.execute();
             let context = user_mode.context_mut();
-            if let HandlerResult::Exit = handle_user_event(user_event, context) {
-                // FIXME: How to set task status? How to set exit code of process?
+            // handle user event:
+            handle_user_event(user_event, context);
+            let current = current!();
+            // should be do this comparison before handle signal?
+            if current.status().lock().is_zombie() {
                 break;
             }
-            // debug!("before return to user space: {:#x?}", context);
+            handle_pending_signal();
+            if current.status().lock().is_zombie() {
+                break;
+            }
+            // If current is suspended, wait for a signal to wake up self
+            while current.status().lock().is_suspend() {
+                Process::yield_now();
+                debug!("{} is suspended.", current.pid());
+                handle_pending_signal();
+            }
         }
-        let current_process = Process::current();
-        current_process.exit();
     }
 
     Task::new(user_task_entry, parent, Some(userspace)).expect("spawn task failed")
 }
 
-fn handle_user_event(user_event: UserEvent, context: &mut CpuContext) -> HandlerResult {
+fn handle_user_event(user_event: UserEvent, context: &mut CpuContext) {
     match user_event {
         UserEvent::Syscall => syscall_handler(context),
         UserEvent::Fault => todo!(),
         UserEvent::Exception => todo!(),
     }
-}
-
-pub enum HandlerResult {
-    Exit,
-    Continue,
 }

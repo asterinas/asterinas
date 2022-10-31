@@ -3,10 +3,10 @@
 
 use crate::prelude::*;
 use crate::syscall::clone::sys_clone;
+use crate::syscall::kill::sys_kill;
 use alloc::borrow::ToOwned;
 use kxos_frame::cpu::CpuContext;
 
-use crate::process::task::HandlerResult;
 use crate::syscall::access::sys_access;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
@@ -41,6 +41,7 @@ mod fstat;
 mod futex;
 mod getpid;
 mod gettid;
+mod kill;
 mod mmap;
 mod mprotect;
 mod readlink;
@@ -68,6 +69,7 @@ const SYS_FORK: u64 = 57;
 const SYS_EXECVE: u64 = 59;
 const SYS_EXIT: u64 = 60;
 const SYS_WAIT4: u64 = 61;
+const SYS_KILL: u64 = 62;
 const SYS_UNAME: u64 = 63;
 const SYS_READLINK: u64 = 89;
 const SYS_GETUID: u64 = 102;
@@ -87,9 +89,8 @@ pub struct SyscallArgument {
 }
 
 pub enum SyscallResult {
-    Exit(i32),
     Return(i32),
-    ReturnNothing, // execve return nothing
+    NotReturn,
 }
 
 impl SyscallArgument {
@@ -109,19 +110,14 @@ impl SyscallArgument {
     }
 }
 
-pub fn syscall_handler(context: &mut CpuContext) -> HandlerResult {
+pub fn syscall_handler(context: &mut CpuContext) {
     let syscall_frame = SyscallArgument::new_from_context(context);
     let syscall_return =
         syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args, context);
 
-    match syscall_return {
-        SyscallResult::Return(return_value) => {
-            // FIXME: set return value?
-            context.gp_regs.rax = return_value as u64;
-            HandlerResult::Continue
-        }
-        SyscallResult::Exit(exit_code) => HandlerResult::Exit,
-        SyscallResult::ReturnNothing => HandlerResult::Continue,
+    if let SyscallResult::Return(return_value) = syscall_return {
+        // FIXME: set return value?
+        context.gp_regs.rax = return_value as u64;
     }
 }
 
@@ -153,6 +149,7 @@ pub fn syscall_dispatch(
         SYS_EXECVE => sys_execve(args[0] as _, args[1] as _, args[2] as _, context),
         SYS_EXIT => sys_exit(args[0] as _),
         SYS_WAIT4 => sys_wait4(args[0], args[1], args[2]),
+        SYS_KILL => sys_kill(args[0], args[1]),
         SYS_UNAME => sys_uname(args[0]),
         SYS_READLINK => sys_readlink(args[0], args[1], args[2]),
         SYS_GETUID => sys_getuid(),
