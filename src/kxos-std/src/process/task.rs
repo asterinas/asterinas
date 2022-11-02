@@ -7,9 +7,12 @@ use kxos_frame::{
     vm::VmSpace,
 };
 
-use crate::{prelude::*, process::signal::handle_pending_signal};
+use crate::{
+    prelude::*,
+    process::{exception::handle_exception, signal::handle_pending_signal},
+};
 
-use crate::syscall::syscall_handler;
+use crate::syscall::handle_syscall;
 
 use super::{elf::load_elf_to_vm_space, Process};
 
@@ -56,6 +59,7 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
             }
             handle_pending_signal();
             if current.status().lock().is_zombie() {
+                debug!("exit due to signal");
                 break;
             }
             // If current is suspended, wait for a signal to wake up self
@@ -65,6 +69,7 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
                 handle_pending_signal();
             }
         }
+        debug!("exit user loop");
     }
 
     Task::new(user_task_entry, parent, Some(userspace)).expect("spawn task failed")
@@ -72,8 +77,8 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
 
 fn handle_user_event(user_event: UserEvent, context: &mut CpuContext) {
     match user_event {
-        UserEvent::Syscall => syscall_handler(context),
+        UserEvent::Syscall => handle_syscall(context),
         UserEvent::Fault => todo!(),
-        UserEvent::Exception => todo!(),
+        UserEvent::Exception => handle_exception(context),
     }
 }

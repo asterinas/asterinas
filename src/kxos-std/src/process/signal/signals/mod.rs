@@ -1,3 +1,5 @@
+pub mod fault;
+pub mod kernel;
 pub mod user;
 
 use core::fmt::Debug;

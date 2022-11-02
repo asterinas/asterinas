@@ -2,11 +2,9 @@ use crate::prelude::*;
 
 use crate::{process::Process, syscall::SYS_GETTID};
 
-use super::SyscallResult;
-
-pub fn sys_gettid() -> SyscallResult {
+pub fn sys_gettid() -> Result<isize> {
     debug!("[syscall][id={}][SYS_GETTID]", SYS_GETTID);
     // For single-thread process, tid is equal to pid
     let tid = Process::current().pid();
-    SyscallResult::Return(tid as _)
+    Ok(tid as _)
 }

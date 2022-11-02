@@ -40,7 +40,7 @@ impl SigMask {
         self.bits &= !unblock_sets;
     }
 
-    pub fn set(&mut self, new_set:u64) {
+    pub fn set(&mut self, new_set: u64) {
         self.bits = new_set;
     }
 

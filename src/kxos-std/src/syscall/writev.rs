@@ -5,8 +5,6 @@ use crate::{
     syscall::SYS_WRITEV,
 };
 
-use super::SyscallResult;
-
 const IOVEC_MAX: usize = 256;
 
 #[repr(C)]
@@ -16,10 +14,10 @@ pub struct IoVec {
     len: usize,
 }
 
-pub fn sys_writev(fd: u64, io_vec_ptr: u64, io_vec_count: u64) -> SyscallResult {
+pub fn sys_writev(fd: u64, io_vec_ptr: u64, io_vec_count: u64) -> Result<isize> {
     debug!("[syscall][id={}][SYS_WRITEV]", SYS_WRITEV);
     let res = do_sys_writev(fd, io_vec_ptr as Vaddr, io_vec_count as usize);
-    SyscallResult::Return(res as _)
+    Ok(res as _)
 }
 
 pub fn do_sys_writev(fd: u64, io_vec_ptr: Vaddr, io_vec_count: usize) -> usize {

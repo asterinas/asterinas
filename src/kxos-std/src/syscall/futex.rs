@@ -1,6 +1,5 @@
 use crate::{memory::read_val_from_user, syscall::SYS_FUTEX};
 
-use super::SyscallResult;
 use crate::prelude::*;
 use kxos_frame::{cpu::num_cpus, sync::WaitQueue};
 
@@ -18,7 +17,7 @@ pub fn sys_futex(
     utime_addr: u64,
     futex_new_addr: u64,
     bitset: u64,
-) -> SyscallResult {
+) -> Result<isize> {
     debug!("[syscall][id={}][SYS_FUTEX]", SYS_FUTEX);
     // FIXME: we current ignore futex flags
     let (futex_op, futex_flags) = futex_op_and_flags_from_u32(futex_op as _).unwrap();
@@ -70,7 +69,7 @@ pub fn sys_futex(
     }
     .unwrap();
 
-    SyscallResult::Return(res as _)
+    Ok(res as _)
 }
 
 /// do futex wait

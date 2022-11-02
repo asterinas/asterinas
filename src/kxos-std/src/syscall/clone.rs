@@ -1,6 +1,5 @@
 use kxos_frame::cpu::CpuContext;
 
-use super::SyscallResult;
 use crate::process::clone::{clone_child, CloneArgs, CloneFlags};
 use crate::{prelude::*, syscall::SYS_CLONE};
 
@@ -13,7 +12,7 @@ pub fn sys_clone(
     child_tidptr: Vaddr,
     tls: usize,
     parent_context: CpuContext,
-) -> SyscallResult {
+) -> Result<isize> {
     debug!("[syscall][id={}][SYS_CLONE]", SYS_CLONE);
     debug!("flags = {}", clone_flags);
     let clone_flags = CloneFlags::from(clone_flags);
@@ -29,5 +28,5 @@ pub fn sys_clone(
     debug!("*********schedule child process, pid = {}**********", pid);
     child_process.send_to_scheduler();
     debug!("*********return to parent process, pid = {}*********", pid);
-    SyscallResult::Return(child_pid as _)
+    Ok(child_pid as _)
 }

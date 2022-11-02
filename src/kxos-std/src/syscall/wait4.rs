@@ -4,11 +4,10 @@ use crate::{
     syscall::SYS_WAIT4,
 };
 
-use super::SyscallResult;
 use crate::prelude::*;
 use crate::process::wait::WaitOptions;
 
-pub fn sys_wait4(wait_pid: u64, exit_status_ptr: u64, wait_options: u64) -> SyscallResult {
+pub fn sys_wait4(wait_pid: u64, exit_status_ptr: u64, wait_options: u64) -> Result<isize> {
     debug!("[syscall][id={}][SYS_WAIT4]", SYS_WAIT4);
     let wait_options = WaitOptions::from_bits(wait_options as u32).expect("Unknown wait options");
     debug!("pid = {}", wait_pid as isize);
@@ -20,5 +19,5 @@ pub fn sys_wait4(wait_pid: u64, exit_status_ptr: u64, wait_options: u64) -> Sysc
         write_val_to_user(exit_status_ptr as _, &exit_code);
     }
 
-    SyscallResult::Return(return_pid as _)
+    Ok(return_pid as _)
 }

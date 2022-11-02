@@ -1,7 +1,7 @@
 use kxos_frame::cpu::CpuContext;
 
 use crate::prelude::*;
-use crate::syscall::{SyscallResult, SYS_ARCH_PRCTL};
+use crate::syscall::SYS_ARCH_PRCTL;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
@@ -26,17 +26,19 @@ impl TryFrom<u64> for ArchPrctlCode {
     }
 }
 
-pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> SyscallResult {
+pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Result<isize> {
     debug!("[syscall][id={}][SYS_ARCH_PRCTL]", SYS_ARCH_PRCTL);
-    let arch_prctl_code = ArchPrctlCode::try_from(code);
+    let arch_prctl_code = ArchPrctlCode::try_from(code)?;
     debug!("arch_prctl_code: {:?}", arch_prctl_code);
-    match arch_prctl_code {
-        Err(_) => SyscallResult::Return(-1),
-        Ok(code) => {
-            let res = do_arch_prctl(code, addr, context).unwrap();
-            SyscallResult::Return(res as _)
-        }
-    }
+    let res = do_arch_prctl(arch_prctl_code, addr, context).unwrap();
+    Ok(res as _)
+    // match arch_prctl_code {
+    //     Err(_) => SyscallResult::Return(-1),
+    //     Ok(code) => {
+    //         let res = do_arch_prctl(code, addr, context).unwrap();
+    //         SyscallResult::Return(res as _)
+    //     }
+    // }
 }
 
 pub fn do_arch_prctl(code: ArchPrctlCode, addr: u64, context: &mut CpuContext) -> Result<u64> {

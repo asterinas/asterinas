@@ -1,7 +1,6 @@
 use kxos_frame::cpu::CpuContext;
 
 use super::constants::*;
-use super::SyscallResult;
 use crate::process::elf::load_elf_to_vm_space;
 use crate::{memory::read_bytes_from_user, prelude::*, process::Process, syscall::SYS_EXECVE};
 
@@ -10,7 +9,7 @@ pub fn sys_execve(
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     context: &mut CpuContext,
-) -> SyscallResult {
+) -> Result<isize> {
     debug!("[syscall][id={}][SYS_EXECVE]", SYS_EXECVE);
     let mut filename_buffer = vec![0u8; MAX_FILENAME_LEN];
     read_bytes_from_user(filename_ptr, &mut filename_buffer);
@@ -47,5 +46,5 @@ pub fn sys_execve(
     // set new user stack top
     context.gp_regs.rsp = elf_load_info.user_stack_top();
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
-    SyscallResult::Return(0)
+    Ok(0)
 }

@@ -9,14 +9,17 @@ use self::process_group::ProcessGroup;
 use self::process_vm::mmap_area::MmapArea;
 use self::process_vm::user_heap::UserHeap;
 use self::process_vm::UserVm;
+use self::signal::constants::SIGCHLD;
 use self::signal::sig_disposition::SigDispositions;
 use self::signal::sig_mask::SigMask;
 use self::signal::sig_queues::SigQueues;
+use self::signal::signals::kernel::KernelSignal;
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
 
 pub mod clone;
 pub mod elf;
+pub mod exception;
 pub mod fifo_scheduler;
 pub mod process_filter;
 pub mod process_group;
@@ -272,8 +275,11 @@ impl Process {
             }
         }
 
-        // wake up parent waiting children, if any
         if let Some(parent) = current_process.parent() {
+            // set parent sig child
+            let signal = Box::new(KernelSignal::new(SIGCHLD));
+            parent.sig_queues().lock().enqueue(signal);
+            // wake up parent waiting children, if any
             parent
                 .waiting_children()
                 .wake_all_on_condition(&current_process.pid(), |filter, pid| {
@@ -341,12 +347,17 @@ impl Process {
         None
     }
 
-    /// free zombie child with pid, returns the exit code of child process
-    /// We current just remove the child from the children map.
+    /// free zombie child with pid, returns the exit code of child process.
+    /// remove process from process group.
     pub fn reap_zombie_child(&self, pid: Pid) -> i32 {
         let child_process = self.children.lock().remove(&pid).unwrap();
         assert!(child_process.status().lock().is_zombie());
         table::remove_process(child_process.pid());
+        if let Some(process_group) = child_process.process_group().lock().as_ref() {
+            if let Some(process_group) = process_group.upgrade() {
+                process_group.remove_process(child_process.pid);
+            }
+        }
         child_process.exit_code()
     }
 

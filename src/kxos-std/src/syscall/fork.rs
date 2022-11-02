@@ -6,12 +6,10 @@ use kxos_frame::cpu::CpuContext;
 
 use crate::{process::Process, syscall::SYS_FORK};
 
-use super::SyscallResult;
-
-pub fn sys_fork(parent_context: CpuContext) -> SyscallResult {
+pub fn sys_fork(parent_context: CpuContext) -> Result<isize> {
     debug!("[syscall][id={}][SYS_FORK]", SYS_FORK);
     let child_process = fork(parent_context);
-    SyscallResult::Return(child_process.pid() as _)
+    Ok(child_process.pid() as _)
 }
 
 /// Fork a child process

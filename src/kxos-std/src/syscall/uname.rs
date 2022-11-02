@@ -1,9 +1,6 @@
 use crate::prelude::*;
 
-use crate::{
-    memory::write_val_to_user,
-    syscall::{SyscallResult, SYS_UNAME},
-};
+use crate::{memory::write_val_to_user, syscall::SYS_UNAME};
 
 // We don't use the real name and version of our os here. Instead, we pick up fake values witch is the same as the ones of linux.
 // The values are used to fool glibc since glibc will check the version and os name.
@@ -59,10 +56,10 @@ fn copy_cstring_to_u8_slice(src: &CStr, dst: &mut [u8]) {
     dst[..len].copy_from_slice(&src[..len]);
 }
 
-pub fn sys_uname(old_uname_addr: u64) -> SyscallResult {
+pub fn sys_uname(old_uname_addr: u64) -> Result<isize> {
     debug!("[syscall][id={}][SYS_UNAME]", SYS_UNAME);
     do_sys_uname(old_uname_addr as Vaddr);
-    SyscallResult::Return(0)
+    Ok(0)
 }
 
 pub fn do_sys_uname(old_uname_addr: Vaddr) -> usize {

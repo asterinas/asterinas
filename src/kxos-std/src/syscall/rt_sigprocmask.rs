@@ -2,8 +2,12 @@ use kxos_frame::vm::VmIo;
 
 use crate::{prelude::*, syscall::SYS_RT_SIGPROCMASK};
 
-use super::SyscallResult;
-pub fn sys_rt_sigprocmask(how: u32, set_ptr: Vaddr, oldset_ptr: Vaddr, sigset_size: usize) -> SyscallResult {
+pub fn sys_rt_sigprocmask(
+    how: u32,
+    set_ptr: Vaddr,
+    oldset_ptr: Vaddr,
+    sigset_size: usize,
+) -> Result<isize> {
     debug!("[syscall][id={}][SYS_RT_SIGPROCMASK]", SYS_RT_SIGPROCMASK);
     let mask_op = MaskOp::try_from(how).unwrap();
     debug!("mask op = {:?}", mask_op);
@@ -14,10 +18,15 @@ pub fn sys_rt_sigprocmask(how: u32, set_ptr: Vaddr, oldset_ptr: Vaddr, sigset_si
         warn!("sigset size is not equal to 8");
     }
     do_rt_sigprocmask(mask_op, set_ptr, oldset_ptr, sigset_size).unwrap();
-    SyscallResult::Return(0)
+    Ok(0)
 }
 
-fn do_rt_sigprocmask(mask_op: MaskOp, set_ptr: Vaddr, oldset_ptr: Vaddr, sigset_size: usize) -> Result<()>{
+fn do_rt_sigprocmask(
+    mask_op: MaskOp,
+    set_ptr: Vaddr,
+    oldset_ptr: Vaddr,
+    sigset_size: usize,
+) -> Result<()> {
     let current = current!();
     let vm_space = current.vm_space().unwrap();
     let mut sig_mask = current.sig_mask().lock();
@@ -30,7 +39,7 @@ fn do_rt_sigprocmask(mask_op: MaskOp, set_ptr: Vaddr, oldset_ptr: Vaddr, sigset_
         let new_set = vm_space.read_val::<u64>(set_ptr)?;
         debug!("new set = 0x{:x}", new_set);
         match mask_op {
-            MaskOp::Block => sig_mask.block(new_set ),
+            MaskOp::Block => sig_mask.block(new_set),
             MaskOp::Unblock => sig_mask.unblock(new_set),
             MaskOp::SetMask => sig_mask.set(new_set),
         }

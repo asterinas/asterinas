@@ -46,6 +46,7 @@ mod kill;
 mod mmap;
 mod mprotect;
 mod readlink;
+mod rt_sigprocmask;
 mod sched_yield;
 mod tgkill;
 mod uname;
@@ -53,7 +54,6 @@ mod wait4;
 mod waitid;
 mod write;
 mod writev;
-mod rt_sigprocmask;
 
 const SYS_WRITE: u64 = 1;
 const SYS_FSTAT: u64 = 5;
@@ -90,11 +90,6 @@ pub struct SyscallArgument {
     args: [u64; 6],
 }
 
-pub enum SyscallResult {
-    Return(i32),
-    NotReturn,
-}
-
 impl SyscallArgument {
     fn new_from_context(context: &CpuContext) -> Self {
         let syscall_number = context.gp_regs.rax;
@@ -112,22 +107,31 @@ impl SyscallArgument {
     }
 }
 
-pub fn syscall_handler(context: &mut CpuContext) {
+pub fn handle_syscall(context: &mut CpuContext) {
     let syscall_frame = SyscallArgument::new_from_context(context);
     let syscall_return =
         syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args, context);
 
-    if let SyscallResult::Return(return_value) = syscall_return {
-        // FIXME: set return value?
-        context.gp_regs.rax = return_value as u64;
+    match syscall_return {
+        Ok(return_value) => {
+            context.gp_regs.rax = return_value as u64;
+        }
+        Err(err) => {
+            let errno = err.error() as i32;
+            context.gp_regs.rax = (-errno) as u64
+        }
     }
+    // if let Syscal(return_value) = syscall_return {
+    //     // FIXME: set return value?
+    //     context.gp_regs.rax = return_value as u64;
+    // }
 }
 
 pub fn syscall_dispatch(
     syscall_number: u64,
     args: [u64; 6],
     context: &mut CpuContext,
-) -> SyscallResult {
+) -> Result<isize> {
     match syscall_number {
         SYS_WRITE => sys_write(args[0], args[1], args[2]),
         SYS_FSTAT => sys_fstat(args[0], args[1] as _),
@@ -135,7 +139,9 @@ pub fn syscall_dispatch(
         SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
         SYS_BRK => sys_brk(args[0]),
         SYS_RT_SIGACTION => sys_rt_sigaction(),
-        SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(args[0] as _, args[1] as _, args[2] as _, args[3] as _),
+        SYS_RT_SIGPROCMASK => {
+            sys_rt_sigprocmask(args[0] as _, args[1] as _, args[2] as _, args[3] as _)
+        }
         SYS_WRITEV => sys_writev(args[0], args[1], args[2]),
         SYS_ACCESS => sys_access(args[0] as _, args[1]),
         SYS_GETPID => sys_getpid(),
@@ -168,32 +174,32 @@ pub fn syscall_dispatch(
     }
 }
 
-pub fn sys_rt_sigaction() -> SyscallResult {
+pub fn sys_rt_sigaction() -> Result<isize> {
     debug!("[syscall][id={}][SYS_RT_SIGACTION]", SYS_RT_SIGACTION);
     warn!("TODO: rt_sigaction only return a fake result");
-    SyscallResult::Return(0)
+    Ok(0)
 }
 
-pub fn sys_getuid() -> SyscallResult {
+pub fn sys_getuid() -> Result<isize> {
     debug!("[syscall][id={}][SYS_GETUID]", SYS_GETUID);
     warn!("TODO: getuid only return a fake uid now");
-    SyscallResult::Return(0)
+    Ok(0)
 }
 
-pub fn sys_getgid() -> SyscallResult {
-    debug!("[syscall][id={}][SYS_GETGID]", SYS_GETUID);
+pub fn sys_getgid() -> Result<isize> {
+    debug!("[syscall][id={}][SYS_GETGID]", SYS_GETGID);
     warn!("TODO: getgid only return a fake gid now");
-    SyscallResult::Return(0)
+    Ok(0)
 }
 
-pub fn sys_geteuid() -> SyscallResult {
+pub fn sys_geteuid() -> Result<isize> {
     debug!("[syscall][id={}][SYS_GETEUID]", SYS_GETEUID);
     warn!("TODO: geteuid only return a fake euid now");
-    SyscallResult::Return(0)
+    Ok(0)
 }
 
-pub fn sys_getegid() -> SyscallResult {
+pub fn sys_getegid() -> Result<isize> {
     debug!("[syscall][id={}][SYS_GETEGID]", SYS_GETEGID);
     warn!("TODO: getegid only return a fake egid now");
-    SyscallResult::Return(0)
+    Ok(0)
 }

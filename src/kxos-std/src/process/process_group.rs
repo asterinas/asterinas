@@ -1,4 +1,4 @@
-use super::{Pgid, Pid, Process};
+use super::{table, Pgid, Pid, Process};
 use crate::prelude::*;
 
 pub struct ProcessGroup {
@@ -44,7 +44,15 @@ impl ProcessGroup {
     }
 
     pub fn remove_process(&self, pid: Pid) {
-        self.inner.lock().processes.remove(&pid);
+        let mut inner_lock = self.inner.lock();
+        inner_lock.processes.remove(&pid);
+        let len = inner_lock.processes.len();
+        let pgid = inner_lock.pgid;
+        // if self contains no process, remove self from table
+        if len == 0 {
+            // this must be the last statement
+            table::remove_process_group(pgid);
+        }
     }
 
     pub fn pgid(&self) -> Pgid {

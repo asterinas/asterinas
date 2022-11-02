@@ -55,3 +55,49 @@ define_std_signums! {
     SIGPWR    = 30, // Power failure (System V)
     SIGSYS    = 31, // Bad system call (SVr4); see also seccomp(2)
 }
+
+pub const SI_ASYNCNL: i32 = -60;
+pub const SI_TKILL: i32 = -6;
+pub const SI_SIGIO: i32 = -5;
+pub const SI_ASYNCIO: i32 = -4;
+pub const SI_MESGQ: i32 = -3;
+pub const SI_TIMER: i32 = -2;
+pub const SI_QUEUE: i32 = -1;
+pub const SI_USER: i32 = 0;
+pub const SI_KERNEL: i32 = 128;
+
+pub const FPE_INTDIV: i32 = 1;
+pub const FPE_INTOVF: i32 = 2;
+pub const FPE_FLTDIV: i32 = 3;
+pub const FPE_FLTOVF: i32 = 4;
+pub const FPE_FLTUND: i32 = 5;
+pub const FPE_FLTRES: i32 = 6;
+pub const FPE_FLTINV: i32 = 7;
+pub const FPE_FLTSUB: i32 = 8;
+
+pub const ILL_ILLOPC: i32 = 1;
+pub const ILL_ILLOPN: i32 = 2;
+pub const ILL_ILLADR: i32 = 3;
+pub const ILL_ILLTRP: i32 = 4;
+pub const ILL_PRVOPC: i32 = 5;
+pub const ILL_PRVREG: i32 = 6;
+pub const ILL_COPROC: i32 = 7;
+pub const ILL_BADSTK: i32 = 8;
+
+pub const SEGV_MAPERR: i32 = 1;
+pub const SEGV_ACCERR: i32 = 2;
+pub const SEGV_BNDERR: i32 = 3;
+pub const SEGV_PKUERR: i32 = 4;
+
+pub const BUS_ADRALN: i32 = 1;
+pub const BUS_ADRERR: i32 = 2;
+pub const BUS_OBJERR: i32 = 3;
+pub const BUS_MCEERR_AR: i32 = 4;
+pub const BUS_MCEERR_AO: i32 = 5;
+
+pub const CLD_EXITED: i32 = 1;
+pub const CLD_KILLED: i32 = 2;
+pub const CLD_DUMPED: i32 = 3;
+pub const CLD_TRAPPED: i32 = 4;
+pub const CLD_STOPPED: i32 = 5;
+pub const CLD_CONTINUED: i32 = 6;

@@ -49,8 +49,16 @@ pub fn get_all_apps() -> Vec<UserApp> {
     res.push(app5);
 
     // Set sig procmask
-    let app6 = UserApp::new("/sig_procmask", read_sig_procmask());
+    let app6 = UserApp::new("/sig_procmask", read_sig_procmask_content());
     res.push(app6);
+
+    // divide zero
+    let app7 = UserApp::new("/divide_zero", read_divide_zero_content());
+    res.push(app7);
+
+    // sig_action
+    let app8 = UserApp::new("/sig_action", read_sig_action_content());
+    res.push(app8);
 
     res
 }
@@ -79,6 +87,14 @@ fn read_fork_c_content() -> &'static [u8] {
     include_bytes!("../../kxos-user/fork_c/fork")
 }
 
-fn read_sig_procmask() -> &'static [u8] {
+fn read_sig_procmask_content() -> &'static [u8] {
     include_bytes!("../../kxos-user/signal_c/sig_procmask")
+}
+
+fn read_divide_zero_content() -> &'static [u8] {
+    include_bytes!("../../kxos-user/signal_c/divide_zero")
+}
+
+fn read_sig_action_content() -> &'static [u8] {
+    include_bytes!("../../kxos-user/signal_c/sig_action")
 }
