@@ -5,10 +5,10 @@ use crate::prelude::*;
 
 use crate::syscall::{SyscallResult, SYS_FSTAT};
 
-pub fn sys_fstat(fd: u64, stat_buf_addr: Vaddr) -> SyscallResult {
+pub fn sys_fstat(fd: u64, stat_buf_ptr: Vaddr) -> SyscallResult {
     debug!("[syscall][id={}][SYS_FSTAT]", SYS_FSTAT);
     debug!("fd = {}", fd);
-    debug!("stat_buf_addr = 0x{:x}", stat_buf_addr);
+    debug!("stat_buf_addr = 0x{:x}", stat_buf_ptr);
 
     let current = current!();
     let vm_space = current
@@ -17,7 +17,7 @@ pub fn sys_fstat(fd: u64, stat_buf_addr: Vaddr) -> SyscallResult {
     if fd == 1 {
         let stat = Stat::stdout_stat();
         vm_space
-            .write_val(stat_buf_addr, &stat)
+            .write_val(stat_buf_ptr, &stat)
             .expect("Write value failed");
         return SyscallResult::Return(0);
     }

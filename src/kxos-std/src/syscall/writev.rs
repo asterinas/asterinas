@@ -16,19 +16,19 @@ pub struct IoVec {
     len: usize,
 }
 
-pub fn sys_writev(fd: u64, io_vec_addr: u64, io_vec_count: u64) -> SyscallResult {
+pub fn sys_writev(fd: u64, io_vec_ptr: u64, io_vec_count: u64) -> SyscallResult {
     debug!("[syscall][id={}][SYS_WRITEV]", SYS_WRITEV);
-    let res = do_sys_writev(fd, io_vec_addr as Vaddr, io_vec_count as usize);
+    let res = do_sys_writev(fd, io_vec_ptr as Vaddr, io_vec_count as usize);
     SyscallResult::Return(res as _)
 }
 
-pub fn do_sys_writev(fd: u64, io_vec_addr: Vaddr, io_vec_count: usize) -> usize {
+pub fn do_sys_writev(fd: u64, io_vec_ptr: Vaddr, io_vec_count: usize) -> usize {
     debug!("fd = {}", fd);
-    debug!("io_vec_addr = 0x{:x}", io_vec_addr);
+    debug!("io_vec_ptr = 0x{:x}", io_vec_ptr);
     debug!("io_vec_counter = 0x{:x}", io_vec_count);
     let mut write_len = 0;
     for i in 0..io_vec_count {
-        let io_vec = read_val_from_user::<IoVec>(io_vec_addr + i * 8);
+        let io_vec = read_val_from_user::<IoVec>(io_vec_ptr + i * 8);
         let base = io_vec.base;
         let len = io_vec.len;
         debug!("base = 0x{:x}", base);

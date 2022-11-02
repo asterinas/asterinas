@@ -5,17 +5,19 @@ pub struct SigMask {
     bits: u64,
 }
 
-impl SigMask {
-    pub const fn from_u64(bits: u64) -> Self {
+impl From<u64> for SigMask {
+    fn from(bits: u64) -> Self {
         SigMask { bits }
     }
+}
 
-    pub const fn new_empty() -> Self {
-        SigMask::from_u64(0)
+impl SigMask {
+    pub fn new_empty() -> Self {
+        SigMask::from(0u64)
     }
 
-    pub const fn new_full() -> Self {
-        SigMask::from_u64(!0)
+    pub fn new_full() -> Self {
+        SigMask::from(!0u64)
     }
 
     pub const fn as_u64(&self) -> u64 {
@@ -28,6 +30,18 @@ impl SigMask {
 
     pub const fn full(&self) -> bool {
         self.bits == !0
+    }
+
+    pub fn block(&mut self, block_sets: u64) {
+        self.bits |= block_sets;
+    }
+
+    pub fn unblock(&mut self, unblock_sets: u64) {
+        self.bits &= !unblock_sets;
+    }
+
+    pub fn set(&mut self, new_set:u64) {
+        self.bits = new_set;
     }
 
     pub fn count(&self) -> usize {

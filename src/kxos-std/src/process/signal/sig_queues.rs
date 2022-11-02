@@ -106,7 +106,7 @@ impl SigQueues {
         // process, they are delivered starting with the lowest-numbered
         // signal.  (I.e., low-numbered signals have highest priority.)
         for signum in MIN_RT_SIG_NUM..=MAX_RT_SIG_NUM {
-            let signum = SigNum::from_u8(signum);
+            let signum = SigNum::try_from(signum).unwrap();
             if blocked.contains(signum) {
                 continue;
             }

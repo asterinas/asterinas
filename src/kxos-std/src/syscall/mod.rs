@@ -4,6 +4,7 @@
 use crate::prelude::*;
 use crate::syscall::clone::sys_clone;
 use crate::syscall::kill::sys_kill;
+use crate::syscall::rt_sigprocmask::sys_rt_sigprocmask;
 use alloc::borrow::ToOwned;
 use kxos_frame::cpu::CpuContext;
 
@@ -52,6 +53,7 @@ mod wait4;
 mod waitid;
 mod write;
 mod writev;
+mod rt_sigprocmask;
 
 const SYS_WRITE: u64 = 1;
 const SYS_FSTAT: u64 = 5;
@@ -133,7 +135,7 @@ pub fn syscall_dispatch(
         SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
         SYS_BRK => sys_brk(args[0]),
         SYS_RT_SIGACTION => sys_rt_sigaction(),
-        SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(),
+        SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(args[0] as _, args[1] as _, args[2] as _, args[3] as _),
         SYS_WRITEV => sys_writev(args[0], args[1], args[2]),
         SYS_ACCESS => sys_access(args[0] as _, args[1]),
         SYS_GETPID => sys_getpid(),
@@ -169,12 +171,6 @@ pub fn syscall_dispatch(
 pub fn sys_rt_sigaction() -> SyscallResult {
     debug!("[syscall][id={}][SYS_RT_SIGACTION]", SYS_RT_SIGACTION);
     warn!("TODO: rt_sigaction only return a fake result");
-    SyscallResult::Return(0)
-}
-
-pub fn sys_rt_sigprocmask() -> SyscallResult {
-    debug!("[syscall][id={}][SYS_RT_SIGPROCMASK]", SYS_RT_SIGPROCMASK);
-    warn!("TODO: rt_sigprocmask only return a fake result");
     SyscallResult::Return(0)
 }
 
