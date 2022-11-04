@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use spin::mutex::Mutex;
 
-use crate::{debug, task::Task};
+use crate::task::Task;
 
 /// A wait queue.
 ///
@@ -214,7 +214,7 @@ impl<D: Clone + Eq + PartialEq> Waiter<D> {
     pub fn wait(&self) {
         while !self.is_woken_up.load(Ordering::Relaxed) {
             // yield the execution, to allow other task to contine
-            debug!("Waiter: wait");
+            // debug!("Waiter: wait");
             Task::yield_now();
         }
     }

@@ -1,4 +1,5 @@
-use super::{constants::*, sig_mask::SigMask, sig_num::SigNum};
+use super::{c_types::sigaction_t, constants::*, sig_mask::SigMask, sig_num::SigNum};
+use crate::prelude::*;
 use bitflags::bitflags;
 use kxos_frame::warn;
 
@@ -21,6 +22,58 @@ impl Default for SigAction {
     }
 }
 
+impl TryFrom<sigaction_t> for SigAction {
+    type Error = Error;
+
+    fn try_from(input: sigaction_t) -> Result<Self> {
+        let action = match input.handler_ptr {
+            SIG_DFL => SigAction::Dfl,
+            SIG_IGN => SigAction::Ign,
+            _ => {
+                let flags = SigActionFlags::from_bits_truncate(input.flags);
+                let mask = SigMask::from(input.mask);
+                SigAction::User {
+                    handler_addr: input.handler_ptr,
+                    flags,
+                    restorer_addr: input.restorer_ptr,
+                    mask,
+                }
+            }
+        };
+        Ok(action)
+    }
+}
+
+impl SigAction {
+    pub fn to_c(&self) -> sigaction_t {
+        match self {
+            SigAction::Dfl => sigaction_t {
+                handler_ptr: SIG_DFL,
+                flags: 0,
+                restorer_ptr: 0,
+                mask: 0,
+            },
+            SigAction::Ign => sigaction_t {
+                handler_ptr: SIG_IGN,
+                flags: 0,
+                restorer_ptr: 0,
+                mask: 0,
+            },
+            SigAction::User {
+                handler_addr,
+                flags,
+                restorer_addr,
+                mask,
+            } => sigaction_t {
+                handler_ptr: *handler_addr,
+                flags: flags.to_u32(),
+                restorer_ptr: *restorer_addr,
+                mask: mask.as_u64(),
+            },
+        }
+    }
+}
+
 bitflags! {
     pub struct SigActionFlags: u32 {
         const SA_NOCLDSTOP  = 1;
@@ -35,10 +88,11 @@ bitflags! {
 }
 
 impl TryFrom<u32> for SigActionFlags {
-    type Error = &'static str;
+    type Error = Error;
 
-    fn try_from(bits: u32) -> Result<Self, Self::Error> {
-        let flags = SigActionFlags::from_bits(bits).ok_or_else(|| "invalid sigaction flags")?;
+    fn try_from(bits: u32) -> Result<Self> {
+        let flags = SigActionFlags::from_bits(bits)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid sig action flag"))?;
         if flags.contains(SigActionFlags::SA_RESTART) {
             warn!("SA_RESTART is not supported");
         }

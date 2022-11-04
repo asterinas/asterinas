@@ -21,7 +21,7 @@ impl ProcessFilter {
     }
 
     // used for wait4 and kill
-    pub fn from_id(wait_pid: isize) -> Self {
+    pub fn from_id(wait_pid: i32) -> Self {
         // https://man7.org/linux/man-pages/man2/waitpid.2.html
         // https://man7.org/linux/man-pages/man2/kill.2.html
         if wait_pid < -1 {

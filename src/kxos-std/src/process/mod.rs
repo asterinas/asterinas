@@ -14,6 +14,7 @@ use self::signal::sig_disposition::SigDispositions;
 use self::signal::sig_mask::SigMask;
 use self::signal::sig_queues::SigQueues;
 use self::signal::signals::kernel::KernelSignal;
+use self::signal::SigContext;
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
 
@@ -64,6 +65,8 @@ pub struct Process {
     sig_queues: Mutex<SigQueues>,
     /// Process-level sigmask
     sig_mask: Mutex<SigMask>,
+    /// Signal handler Context
+    sig_context: Mutex<Option<SigContext>>,
 }
 
 impl Process {
@@ -116,6 +119,7 @@ impl Process {
             sig_dispositions: Mutex::new(sig_dispositions),
             sig_queues: Mutex::new(sig_queues),
             sig_mask: Mutex::new(sig_mask),
+            sig_context: Mutex::new(None),
         }
     }
 
@@ -220,6 +224,10 @@ impl Process {
 
     pub fn process_group(&self) -> &Mutex<Option<Weak<ProcessGroup>>> {
         &self.process_group
+    }
+
+    pub fn sig_context(&self) -> &Mutex<Option<SigContext>> {
+        &self.sig_context
     }
 
     /// add a child process

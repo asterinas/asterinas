@@ -57,7 +57,7 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
             if current.status().lock().is_zombie() {
                 break;
             }
-            handle_pending_signal();
+            handle_pending_signal(context);
             if current.status().lock().is_zombie() {
                 debug!("exit due to signal");
                 break;
@@ -66,7 +66,7 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
             while current.status().lock().is_suspend() {
                 Process::yield_now();
                 debug!("{} is suspended.", current.pid());
-                handle_pending_signal();
+                handle_pending_signal(context);
             }
         }
         debug!("exit user loop");

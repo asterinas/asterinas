@@ -1,13 +1,16 @@
 use kxos_frame::vm::VmIo;
 
-use crate::{prelude::*, syscall::SYS_RT_SIGPROCMASK};
+use crate::{
+    prelude::*,
+    syscall::{SyscallReturn, SYS_RT_SIGPROCMASK},
+};
 
 pub fn sys_rt_sigprocmask(
     how: u32,
     set_ptr: Vaddr,
     oldset_ptr: Vaddr,
     sigset_size: usize,
-) -> Result<isize> {
+) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_RT_SIGPROCMASK]", SYS_RT_SIGPROCMASK);
     let mask_op = MaskOp::try_from(how).unwrap();
     debug!("mask op = {:?}", mask_op);
@@ -18,7 +21,7 @@ pub fn sys_rt_sigprocmask(
         warn!("sigset size is not equal to 8");
     }
     do_rt_sigprocmask(mask_op, set_ptr, oldset_ptr, sigset_size).unwrap();
-    Ok(0)
+    Ok(SyscallReturn::Return(0))
 }
 
 fn do_rt_sigprocmask(

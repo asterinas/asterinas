@@ -2,6 +2,8 @@ use crate::prelude::*;
 
 use crate::{memory::write_val_to_user, syscall::SYS_UNAME};
 
+use super::SyscallReturn;
+
 // We don't use the real name and version of our os here. Instead, we pick up fake values witch is the same as the ones of linux.
 // The values are used to fool glibc since glibc will check the version and os name.
 lazy_static! {
@@ -56,10 +58,10 @@ fn copy_cstring_to_u8_slice(src: &CStr, dst: &mut [u8]) {
     dst[..len].copy_from_slice(&src[..len]);
 }
 
-pub fn sys_uname(old_uname_addr: u64) -> Result<isize> {
+pub fn sys_uname(old_uname_addr: u64) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_UNAME]", SYS_UNAME);
     do_sys_uname(old_uname_addr as Vaddr);
-    Ok(0)
+    Ok(SyscallReturn::Return(0))
 }
 
 pub fn do_sys_uname(old_uname_addr: Vaddr) -> usize {

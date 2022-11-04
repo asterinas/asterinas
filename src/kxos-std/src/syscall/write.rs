@@ -2,10 +2,12 @@ use crate::prelude::*;
 
 use crate::{memory::read_bytes_from_user, syscall::SYS_WRITE};
 
+use super::SyscallReturn;
+
 const STDOUT: u64 = 1;
 const STDERR: u64 = 2;
 
-pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> Result<isize> {
+pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> Result<SyscallReturn> {
     // only suppprt STDOUT now.
     debug!("[syscall][id={}][SYS_WRITE]", SYS_WRITE);
 
@@ -18,8 +20,7 @@ pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> Result<isize>
         } else {
             info!("Error message from user mode: {:?}", content);
         }
-
-        Ok(user_buf_len as _)
+        Ok(SyscallReturn::Return(user_buf_len as _))
     } else {
         panic!("Unsupported fd number {}", fd);
     }

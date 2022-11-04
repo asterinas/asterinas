@@ -8,6 +8,7 @@ pub fn handle_exception(context: &mut CpuContext) {
     let current = current!();
     let pid = current.pid();
     debug!("trap info = {:x?}", trap_info);
+    debug!("cpu context = {:x?}", context);
     let signal = Box::new(FaultSignal::new(&trap_info));
     current.sig_queues().lock().enqueue(signal);
 }

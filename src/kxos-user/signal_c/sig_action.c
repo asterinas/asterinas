@@ -7,7 +7,7 @@
 int sigchld = 0;
 
 void proc_exit() {
-    sigchld = 999;
+    sigchld = sigchld + 1;
 }
 
 int main() {

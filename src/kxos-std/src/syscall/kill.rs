@@ -7,12 +7,14 @@ use crate::{
     syscall::SYS_KILL,
 };
 
-pub fn sys_kill(process_filter: u64, sig_num: u64) -> Result<isize> {
+use super::SyscallReturn;
+
+pub fn sys_kill(process_filter: u64, sig_num: u64) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_KILL]", SYS_KILL);
     let process_filter = ProcessFilter::from_id(process_filter as _);
     let sig_num = SigNum::try_from(sig_num as u8).unwrap();
     do_sys_kill(process_filter, sig_num)?;
-    Ok(0)
+    Ok(SyscallReturn::Return(0))
 }
 
 pub fn do_sys_kill(process_filter: ProcessFilter, sig_num: SigNum) -> Result<()> {

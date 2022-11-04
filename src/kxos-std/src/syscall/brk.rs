@@ -1,9 +1,10 @@
 use crate::prelude::*;
 
+use crate::syscall::SyscallReturn;
 use crate::{process::Process, syscall::SYS_BRK};
 
 /// expand the user heap to new heap end, returns the new heap end if expansion succeeds.
-pub fn sys_brk(heap_end: u64) -> Result<isize> {
+pub fn sys_brk(heap_end: u64) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_BRK]", SYS_BRK);
     let current = Process::current();
     let new_heap_end = if heap_end == 0 {
@@ -20,5 +21,5 @@ pub fn sys_brk(heap_end: u64) -> Result<isize> {
         .expect("brk should work on process with user space");
     let new_heap_end = user_heap.brk(new_heap_end, vm_space);
 
-    Ok(new_heap_end as _)
+    Ok(SyscallReturn::Return(new_heap_end as _))
 }

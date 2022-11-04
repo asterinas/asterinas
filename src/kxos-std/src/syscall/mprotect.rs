@@ -4,11 +4,13 @@ use crate::prelude::*;
 
 use crate::syscall::SYS_MPROTECT;
 
-pub fn sys_mprotect(vaddr: u64, len: u64, perms: u64) -> Result<isize> {
+use super::SyscallReturn;
+
+pub fn sys_mprotect(vaddr: u64, len: u64, perms: u64) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_MPROTECT]", SYS_MPROTECT);
     let perms = VmPerm::try_from(perms).unwrap();
     do_sys_mprotect(vaddr as Vaddr, len as usize, perms);
-    Ok(0)
+    Ok(SyscallReturn::Return(0))
 }
 
 pub fn do_sys_mprotect(addr: Vaddr, len: usize, perms: VmPerm) -> isize {

@@ -5,9 +5,9 @@ int main() {
     printf("before fork\n");
     fflush(stdout);
     if(fork() == 0) {
-        printf("after fork: Hello from parent\n");
+        printf("after fork: Hello from child\n");
     } else {
-        printf("after fork: Hello from child\n");   
+        printf("after fork: Hello from parent\n");   
     }
     fflush(stdout);
     return 0;
