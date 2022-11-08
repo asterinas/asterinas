@@ -57,7 +57,7 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
             if current.status().lock().is_zombie() {
                 break;
             }
-            handle_pending_signal(context);
+            handle_pending_signal(context).unwrap();
             if current.status().lock().is_zombie() {
                 debug!("exit due to signal");
                 break;
@@ -66,10 +66,12 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
             while current.status().lock().is_suspend() {
                 Process::yield_now();
                 debug!("{} is suspended.", current.pid());
-                handle_pending_signal(context);
+                handle_pending_signal(context).unwrap();
             }
         }
         debug!("exit user loop");
+        // Work around: exit in kernel task entry may be not called. Why this will happen?
+        Task::current().exit();
     }
 
     Task::new(user_task_entry, parent, Some(userspace)).expect("spawn task failed")

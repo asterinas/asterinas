@@ -13,12 +13,12 @@ pub fn sys_write(fd: u64, user_buf_ptr: u64, user_buf_len: u64) -> Result<Syscal
 
     if fd == STDOUT || fd == STDERR {
         let mut buffer = vec![0u8; user_buf_len as usize];
-        read_bytes_from_user(user_buf_ptr as usize, &mut buffer);
-        let content = alloc::str::from_utf8(buffer.as_slice()).expect("Invalid content"); // TODO: print content
+        read_bytes_from_user(user_buf_ptr as usize, &mut buffer)?;
+        let content = alloc::str::from_utf8(buffer.as_slice())?; // TODO: print content
         if fd == STDOUT {
-            info!("Message from user mode: {:?}", content);
+            print!("{}", content);
         } else {
-            info!("Error message from user mode: {:?}", content);
+            print!("{}", content);
         }
         Ok(SyscallReturn::Return(user_buf_len as _))
     } else {

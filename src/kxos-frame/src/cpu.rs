@@ -1,6 +1,10 @@
 //! CPU.
 
-use crate::trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame};
+use crate::vm::Pod;
+use crate::{
+    impl_pod_for,
+    trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame},
+};
 
 /// Defines a CPU-local variable.
 #[macro_export]
@@ -64,6 +68,8 @@ pub struct GpRegs {
     pub rip: u64,
     pub rflag: u64,
 }
+
+impl_pod_for!(GpRegs, TrapInformation, CpuContext, FpRegs);
 
 impl From<SyscallFrame> for CpuContext {
     fn from(syscall: SyscallFrame) -> Self {

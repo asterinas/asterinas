@@ -12,7 +12,7 @@ pub fn sys_execve(
 ) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_EXECVE]", SYS_EXECVE);
     let mut filename_buffer = vec![0u8; MAX_FILENAME_LEN];
-    read_bytes_from_user(filename_ptr, &mut filename_buffer);
+    read_bytes_from_user(filename_ptr, &mut filename_buffer)?;
     let filename = CString::from(CStr::from_bytes_until_nul(&filename_buffer).unwrap());
     debug!("filename: {:?}", filename);
 

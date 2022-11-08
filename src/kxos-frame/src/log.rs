@@ -138,4 +138,5 @@ pub enum LogLevel {
     Info,
     Warn,
     Error,
+    Close,
 }

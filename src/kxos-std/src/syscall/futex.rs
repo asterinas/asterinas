@@ -333,7 +333,7 @@ impl FutexKey {
     pub fn load_val(&self) -> i32 {
         // FIXME: how to implement a atomic load?
         warn!("implement an atomic load");
-        read_val_from_user(self.0)
+        read_val_from_user(self.0).unwrap()
     }
 
     pub fn addr(&self) -> Vaddr {

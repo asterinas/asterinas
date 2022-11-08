@@ -27,38 +27,30 @@ pub fn get_all_apps() -> Vec<UserApp> {
     let mut res = Vec::with_capacity(16);
 
     // Most simple hello world, written in assembly
-    let app1 = UserApp::new("hello_world", read_hello_world_content());
-    res.push(app1);
+    let asm_hello_world = UserApp::new("hello_world", read_hello_world_content());
+    res.push(asm_hello_world);
 
     // Hello world, written in C language.
     // Since glibc requires the app name starts with "/", and we don't have filesystem now.
     // So we manually add a leading "/" for app written in C language.
-    let app2 = UserApp::new("/hello_c", read_hello_c_content());
-    res.push(app2);
+    let hello_c = UserApp::new("/hello_c", read_hello_c_content());
+    res.push(hello_c);
 
     // Fork process, written in assembly
-    let app3 = UserApp::new("fork", read_fork_content());
-    res.push(app3);
+    let asm_fork = UserApp::new("fork", read_fork_content());
+    res.push(asm_fork);
 
     // Execve, written in C language.
-    let app4 = UserApp::new("/execve", read_execve_content());
-    res.push(app4);
+    let execve_c = UserApp::new("/execve", read_execve_content());
+    res.push(execve_c);
 
     // Fork new process, written in C language. (Fork in glibc uses syscall clone actually)
-    let app5 = UserApp::new("/fork", read_fork_c_content());
-    res.push(app5);
+    let fork_c = UserApp::new("/fork", read_fork_c_content());
+    res.push(fork_c);
 
-    // Set sig procmask
-    let app6 = UserApp::new("/sig_procmask", read_sig_procmask_content());
-    res.push(app6);
-
-    // divide zero
-    let app7 = UserApp::new("/divide_zero", read_divide_zero_content());
-    res.push(app7);
-
-    // sig_action
-    let app8 = UserApp::new("/sig_action", read_sig_action_content());
-    res.push(app8);
+    // signal test
+    let signal_test = UserApp::new("/signal_test", read_signal_test_content());
+    res.push(signal_test);
 
     res
 }
@@ -87,14 +79,6 @@ fn read_fork_c_content() -> &'static [u8] {
     include_bytes!("../../kxos-user/fork_c/fork")
 }
 
-fn read_sig_procmask_content() -> &'static [u8] {
-    include_bytes!("../../kxos-user/signal_c/sig_procmask")
-}
-
-fn read_divide_zero_content() -> &'static [u8] {
-    include_bytes!("../../kxos-user/signal_c/divide_zero")
-}
-
-fn read_sig_action_content() -> &'static [u8] {
-    include_bytes!("../../kxos-user/signal_c/sig_action")
+fn read_signal_test_content() -> &'static [u8] {
+    include_bytes!("../../kxos-user/signal_c/signal_test")
 }

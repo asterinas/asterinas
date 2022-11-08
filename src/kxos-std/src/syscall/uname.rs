@@ -60,15 +60,15 @@ fn copy_cstring_to_u8_slice(src: &CStr, dst: &mut [u8]) {
 
 pub fn sys_uname(old_uname_addr: u64) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_UNAME]", SYS_UNAME);
-    do_sys_uname(old_uname_addr as Vaddr);
+    do_sys_uname(old_uname_addr as Vaddr)?;
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn do_sys_uname(old_uname_addr: Vaddr) -> usize {
+pub fn do_sys_uname(old_uname_addr: Vaddr) -> Result<usize> {
     debug!("old_uname_addr: 0x{:x}", old_uname_addr);
     debug!("uts name size: {}", core::mem::size_of::<UtsName>());
     debug!("uts name align: {}", core::mem::align_of::<UtsName>());
 
-    write_val_to_user(old_uname_addr, &*UTS_NAME);
-    0
+    write_val_to_user(old_uname_addr, &*UTS_NAME)?;
+    Ok(0)
 }
