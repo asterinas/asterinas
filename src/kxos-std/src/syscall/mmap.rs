@@ -6,7 +6,7 @@ use kxos_frame::vm::VmPerm;
 
 use crate::{process::Process, syscall::SYS_MMAP};
 
-use super::SyscallResult;
+use super::SyscallReturn;
 
 pub fn sys_mmap(
     addr: u64,
@@ -15,7 +15,7 @@ pub fn sys_mmap(
     flags: u64,
     fd: u64,
     offset: u64,
-) -> SyscallResult {
+) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_MMAP]", SYS_MMAP);
     let perms = VmPerm::try_from(perms).unwrap();
     let flags = MMapFlags::try_from(flags).unwrap();
@@ -27,7 +27,7 @@ pub fn sys_mmap(
         fd as usize,
         offset as usize,
     );
-    SyscallResult::Return(res as _)
+    Ok(SyscallReturn::Return(res as _))
 }
 
 pub fn do_sys_mmap(

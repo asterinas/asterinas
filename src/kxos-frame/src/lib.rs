@@ -23,7 +23,7 @@ pub mod prelude;
 pub mod sync;
 pub mod task;
 pub mod timer;
-pub(crate) mod trap;
+pub mod trap;
 pub mod user;
 mod util;
 #[macro_use]

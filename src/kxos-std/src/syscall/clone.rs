@@ -1,8 +1,9 @@
 use kxos_frame::cpu::CpuContext;
 
-use super::SyscallResult;
 use crate::process::clone::{clone_child, CloneArgs, CloneFlags};
 use crate::{prelude::*, syscall::SYS_CLONE};
+
+use super::SyscallReturn;
 
 // The order of arguments for clone differs in different architecture.
 // This order we use here is the order for x86_64. See https://man7.org/linux/man-pages/man2/clone.2.html.
@@ -13,7 +14,7 @@ pub fn sys_clone(
     child_tidptr: Vaddr,
     tls: usize,
     parent_context: CpuContext,
-) -> SyscallResult {
+) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_CLONE]", SYS_CLONE);
     debug!("flags = {}", clone_flags);
     let clone_flags = CloneFlags::from(clone_flags);
@@ -29,5 +30,5 @@ pub fn sys_clone(
     debug!("*********schedule child process, pid = {}**********", pid);
     child_process.send_to_scheduler();
     debug!("*********return to parent process, pid = {}*********", pid);
-    SyscallResult::Return(child_pid as _)
+    Ok(SyscallReturn::Return(child_pid as _))
 }

@@ -6,18 +6,22 @@ use crate::{
     syscall::SYS_READLINK,
 };
 
-use super::SyscallResult;
+use super::SyscallReturn;
 
 const MAX_FILENAME_LEN: usize = 128;
 
-pub fn sys_readlink(filename_ptr: u64, user_buf_ptr: u64, user_buf_len: u64) -> SyscallResult {
+pub fn sys_readlink(
+    filename_ptr: u64,
+    user_buf_ptr: u64,
+    user_buf_len: u64,
+) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_READLINK]", SYS_READLINK);
     let res = do_sys_readlink(
         filename_ptr as Vaddr,
         user_buf_ptr as Vaddr,
         user_buf_len as usize,
     );
-    SyscallResult::Return(res as _)
+    Ok(SyscallReturn::Return(res as _))
 }
 
 /// do sys readlink

@@ -1,7 +1,6 @@
 use kxos_frame::cpu::CpuContext;
 
-use super::constants::*;
-use super::SyscallResult;
+use super::{constants::*, SyscallReturn};
 use crate::process::elf::load_elf_to_vm_space;
 use crate::{memory::read_bytes_from_user, prelude::*, process::Process, syscall::SYS_EXECVE};
 
@@ -10,7 +9,7 @@ pub fn sys_execve(
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     context: &mut CpuContext,
-) -> SyscallResult {
+) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_EXECVE]", SYS_EXECVE);
     let mut filename_buffer = vec![0u8; MAX_FILENAME_LEN];
     read_bytes_from_user(filename_ptr, &mut filename_buffer);
@@ -35,15 +34,18 @@ pub fn sys_execve(
     let elf_load_info =
         load_elf_to_vm_space(filename, elf_file_content, &vm_space).expect("load elf failed");
     debug!("load elf in execve succeeds");
+    // set signal disposition to default
+    current.sig_dispositions().lock().inherit();
     // set cpu context to default
     let defalut_content = CpuContext::default();
     context.gp_regs = defalut_content.gp_regs;
     context.fs_base = defalut_content.fs_base;
+    context.fp_regs = defalut_content.fp_regs;
     // set new entry point
     context.gp_regs.rip = elf_load_info.entry_point();
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
     // set new user stack top
     context.gp_regs.rsp = elf_load_info.user_stack_top();
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
-    SyscallResult::Return(0)
+    Ok(SyscallReturn::NoReturn)
 }

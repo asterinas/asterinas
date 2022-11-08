@@ -1,11 +1,9 @@
 use crate::prelude::*;
 
-use crate::{process::Process, syscall::SYS_EXIT};
+use crate::syscall::{SyscallReturn, SYS_EXIT};
 
-use super::SyscallResult;
-
-pub fn sys_exit(exit_code: i32) -> SyscallResult {
+pub fn sys_exit(exit_code: i32) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_EXIT]", SYS_EXIT);
-    Process::current().set_exit_code(exit_code);
-    SyscallResult::Exit(exit_code)
+    current!().exit(exit_code);
+    Ok(SyscallReturn::Return(0))
 }

@@ -1,32 +1,38 @@
 //! Read the Cpu context content then dispatch syscall to corrsponding handler
 //! The each sub module contains functions that handle real syscall logic.
-
 use crate::prelude::*;
-use crate::syscall::clone::sys_clone;
-use alloc::borrow::ToOwned;
-use kxos_frame::cpu::CpuContext;
-
-use crate::process::task::HandlerResult;
 use crate::syscall::access::sys_access;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
+use crate::syscall::clone::sys_clone;
 use crate::syscall::execve::sys_execve;
 use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
 use crate::syscall::fork::sys_fork;
 use crate::syscall::fstat::sys_fstat;
 use crate::syscall::futex::sys_futex;
+use crate::syscall::getegid::sys_getegid;
+use crate::syscall::geteuid::sys_geteuid;
+use crate::syscall::getgid::sys_getgid;
 use crate::syscall::getpid::sys_getpid;
 use crate::syscall::gettid::sys_gettid;
+use crate::syscall::getuid::sys_getuid;
+use crate::syscall::kill::sys_kill;
 use crate::syscall::mmap::sys_mmap;
 use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::readlink::sys_readlink;
+use crate::syscall::rt_sigaction::sys_rt_sigaction;
+use crate::syscall::rt_sigprocmask::sys_rt_sigprocmask;
+use crate::syscall::rt_sigreturn::sys_rt_sigreturn;
+use crate::syscall::sched_yield::sys_sched_yield;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
 use crate::syscall::wait4::sys_wait4;
 use crate::syscall::waitid::sys_waitid;
 use crate::syscall::write::sys_write;
 use crate::syscall::writev::sys_writev;
+use crate::{define_syscall_nums, syscall_handler};
+use kxos_frame::cpu::CpuContext;
 
 mod access;
 mod arch_prctl;
@@ -39,11 +45,19 @@ mod exit_group;
 mod fork;
 mod fstat;
 mod futex;
+mod getegid;
+mod geteuid;
+mod getgid;
 mod getpid;
 mod gettid;
+mod getuid;
+mod kill;
 mod mmap;
 mod mprotect;
 mod readlink;
+mod rt_sigaction;
+mod rt_sigprocmask;
+mod rt_sigreturn;
 mod sched_yield;
 mod tgkill;
 mod uname;
@@ -52,44 +66,56 @@ mod waitid;
 mod write;
 mod writev;
 
-const SYS_WRITE: u64 = 1;
-const SYS_FSTAT: u64 = 5;
-const SYS_MMAP: u64 = 9;
-const SYS_MPROTECT: u64 = 10;
-const SYS_BRK: u64 = 12;
-const SYS_RT_SIGACTION: u64 = 13;
-const SYS_RT_SIGPROCMASK: u64 = 14;
-const SYS_WRITEV: u64 = 20;
-const SYS_ACCESS: u64 = 21;
-const SYS_SCHED_YIELD: u64 = 24;
-const SYS_GETPID: u64 = 39;
-const SYS_CLONE: u64 = 56;
-const SYS_FORK: u64 = 57;
-const SYS_EXECVE: u64 = 59;
-const SYS_EXIT: u64 = 60;
-const SYS_WAIT4: u64 = 61;
-const SYS_UNAME: u64 = 63;
-const SYS_READLINK: u64 = 89;
-const SYS_GETUID: u64 = 102;
-const SYS_GETGID: u64 = 104;
-const SYS_GETEUID: u64 = 107;
-const SYS_GETEGID: u64 = 108;
-const SYS_ARCH_PRCTL: u64 = 158;
-const SYS_GETTID: u64 = 186;
-const SYS_FUTEX: u64 = 202;
-const SYS_EXIT_GROUP: u64 = 231;
-const SYS_TGKILL: u64 = 234;
-const SYS_WAITID: u64 = 247;
+define_syscall_nums!(
+    SYS_WRITE = 1,
+    SYS_FSTAT = 5,
+    SYS_MMAP = 9,
+    SYS_MPROTECT = 10,
+    SYS_BRK = 12,
+    SYS_RT_SIGACTION = 13,
+    SYS_RT_SIGPROCMASK = 14,
+    SYS_RT_SIGRETRUN = 15,
+    SYS_WRITEV = 20,
+    SYS_ACCESS = 21,
+    SYS_SCHED_YIELD = 24,
+    SYS_IOCTL = 29,
+    SYS_GETPID = 39,
+    SYS_CLONE = 56,
+    SYS_FORK = 57,
+    SYS_EXECVE = 59,
+    SYS_EXIT = 60,
+    SYS_WAIT4 = 61,
+    SYS_KILL = 62,
+    SYS_UNAME = 63,
+    SYS_GETPPID = 64,
+    SYS_FCNTL = 72,
+    SYS_READLINK = 89,
+    SYS_GETUID = 102,
+    SYS_GETGID = 104,
+    SYS_GETEUID = 107,
+    SYS_GETEGID = 108,
+    SYS_GETPGRP = 111,
+    SYS_PRCTL = 157,
+    SYS_ARCH_PRCTL = 158,
+    SYS_GETCWD = 183,
+    SYS_GETTID = 186,
+    SYS_FUTEX = 202,
+    SYS_EXIT_GROUP = 231,
+    SYS_TGKILL = 234,
+    SYS_WAITID = 247
+);
 
 pub struct SyscallArgument {
     syscall_number: u64,
     args: [u64; 6],
 }
 
-pub enum SyscallResult {
-    Exit(i32),
-    Return(i32),
-    ReturnNothing, // execve return nothing
+/// Syscall return
+pub enum SyscallReturn {
+    /// return isize, this value will be used to set rax
+    Return(isize),
+    /// does not need to set rax
+    NoReturn,
 }
 
 impl SyscallArgument {
@@ -109,19 +135,21 @@ impl SyscallArgument {
     }
 }
 
-pub fn syscall_handler(context: &mut CpuContext) -> HandlerResult {
+pub fn handle_syscall(context: &mut CpuContext) {
     let syscall_frame = SyscallArgument::new_from_context(context);
     let syscall_return =
         syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args, context);
 
     match syscall_return {
-        SyscallResult::Return(return_value) => {
-            // FIXME: set return value?
-            context.gp_regs.rax = return_value as u64;
-            HandlerResult::Continue
+        Ok(return_value) => {
+            if let SyscallReturn::Return(return_value) = return_value {
+                context.gp_regs.rax = return_value as u64;
+            }
         }
-        SyscallResult::Exit(exit_code) => HandlerResult::Exit,
-        SyscallResult::ReturnNothing => HandlerResult::Continue,
+        Err(err) => {
+            let errno = err.error() as i32;
+            context.gp_regs.rax = (-errno) as u64
+        }
     }
 }
 
@@ -129,78 +157,76 @@ pub fn syscall_dispatch(
     syscall_number: u64,
     args: [u64; 6],
     context: &mut CpuContext,
-) -> SyscallResult {
+) -> Result<SyscallReturn> {
     match syscall_number {
-        SYS_WRITE => sys_write(args[0], args[1], args[2]),
-        SYS_FSTAT => sys_fstat(args[0], args[1] as _),
-        SYS_MMAP => sys_mmap(args[0], args[1], args[2], args[3], args[4], args[5]),
-        SYS_MPROTECT => sys_mprotect(args[0], args[1], args[2]),
-        SYS_BRK => sys_brk(args[0]),
-        SYS_RT_SIGACTION => sys_rt_sigaction(),
-        SYS_RT_SIGPROCMASK => sys_rt_sigprocmask(),
-        SYS_WRITEV => sys_writev(args[0], args[1], args[2]),
-        SYS_ACCESS => sys_access(args[0] as _, args[1]),
-        SYS_GETPID => sys_getpid(),
-        SYS_CLONE => sys_clone(
-            args[0],
-            args[1] as _,
-            args[2] as _,
-            args[3] as _,
-            args[4] as _,
-            context.to_owned(),
-        ),
-        SYS_FORK => sys_fork(context.to_owned()),
-        SYS_EXECVE => sys_execve(args[0] as _, args[1] as _, args[2] as _, context),
-        SYS_EXIT => sys_exit(args[0] as _),
-        SYS_WAIT4 => sys_wait4(args[0], args[1], args[2]),
-        SYS_UNAME => sys_uname(args[0]),
-        SYS_READLINK => sys_readlink(args[0], args[1], args[2]),
-        SYS_GETUID => sys_getuid(),
-        SYS_GETGID => sys_getgid(),
-        SYS_GETEUID => sys_geteuid(),
-        SYS_GETEGID => sys_getegid(),
-        SYS_ARCH_PRCTL => sys_arch_prctl(args[0], args[1], context),
-        SYS_GETTID => sys_gettid(),
-        SYS_FUTEX => sys_futex(args[0], args[1], args[2], args[3], args[4], args[5]),
-        SYS_EXIT_GROUP => sys_exit_group(args[0]),
-        SYS_TGKILL => sys_tgkill(args[0], args[1], args[2]),
-        SYS_WAITID => sys_waitid(args[0], args[1], args[2], args[3], args[4]),
+        SYS_WRITE => syscall_handler!(3, sys_write, args),
+        SYS_FSTAT => syscall_handler!(2, sys_fstat, args),
+        SYS_MMAP => syscall_handler!(6, sys_mmap, args),
+        SYS_MPROTECT => syscall_handler!(3, sys_mprotect, args),
+        SYS_BRK => syscall_handler!(1, sys_brk, args),
+        SYS_RT_SIGACTION => syscall_handler!(4, sys_rt_sigaction, args),
+        SYS_RT_SIGPROCMASK => syscall_handler!(4, sys_rt_sigprocmask, args),
+        SYS_RT_SIGRETRUN => syscall_handler!(0, sys_rt_sigreturn, context),
+        SYS_WRITEV => syscall_handler!(3, sys_writev, args),
+        SYS_ACCESS => syscall_handler!(2, sys_access, args),
+        SYS_SCHED_YIELD => syscall_handler!(0, sys_sched_yield),
+        SYS_IOCTL => todo!(),
+        SYS_GETPID => syscall_handler!(0, sys_getpid),
+        SYS_CLONE => syscall_handler!(5, sys_clone, args, context.clone()),
+        SYS_FORK => syscall_handler!(0, sys_fork, context.clone()),
+        SYS_EXECVE => syscall_handler!(3, sys_execve, args, context),
+        SYS_EXIT => syscall_handler!(1, sys_exit, args),
+        SYS_WAIT4 => syscall_handler!(3, sys_wait4, args),
+        SYS_KILL => syscall_handler!(2, sys_kill, args),
+        SYS_UNAME => syscall_handler!(1, sys_uname, args),
+        SYS_GETPPID => todo!(),
+        SYS_FCNTL => todo!(),
+        SYS_READLINK => syscall_handler!(3, sys_readlink, args),
+        SYS_GETUID => syscall_handler!(0, sys_getuid),
+        SYS_GETGID => syscall_handler!(0, sys_getgid),
+        SYS_GETEUID => syscall_handler!(0, sys_geteuid),
+        SYS_GETEGID => syscall_handler!(0, sys_getegid),
+        SYS_GETPGRP => todo!(),
+        SYS_PRCTL => todo!(),
+        SYS_ARCH_PRCTL => syscall_handler!(2, sys_arch_prctl, args, context),
+        SYS_GETCWD => todo!(),
+        SYS_GETTID => syscall_handler!(0, sys_gettid),
+        SYS_FUTEX => syscall_handler!(6, sys_futex, args),
+        SYS_EXIT_GROUP => syscall_handler!(1, sys_exit_group, args),
+        SYS_TGKILL => syscall_handler!(3, sys_tgkill, args),
+        SYS_WAITID => syscall_handler!(5, sys_waitid, args),
         _ => panic!("Unsupported syscall number: {}", syscall_number),
     }
 }
 
-pub fn sys_rt_sigaction() -> SyscallResult {
-    debug!("[syscall][id={}][SYS_RT_SIGACTION]", SYS_RT_SIGACTION);
-    warn!("TODO: rt_sigaction only return a fake result");
-    SyscallResult::Return(0)
+/// This macro is used to define syscall handler.
+/// The first param is ths number of parameters,
+/// The second param is the function name of syscall handler,
+/// The third is optional, means the args(if parameter number > 0),
+/// The third is optional, means if cpu context is required.
+#[macro_export]
+macro_rules! syscall_handler {
+    (0, $fn_name: ident) => { $fn_name() };
+    (0, $fn_name: ident, $context: expr) => { $fn_name($context) };
+    (1, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _) };
+    (1, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $context) };
+    (2, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _)};
+    (2, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $context)};
+    (3, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _)};
+    (3, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $context)};
+    (4, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _)};
+    (4, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _), $context};
+    (5, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _, $args[4] as _)};
+    (5, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _, $args[4] as _, $context)};
+    (6, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _, $args[4] as _, $args[5] as _)};
+    (6, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _, $args[4] as _, $args[5] as _, $context)};
 }
 
-pub fn sys_rt_sigprocmask() -> SyscallResult {
-    debug!("[syscall][id={}][SYS_RT_SIGPROCMASK]", SYS_RT_SIGPROCMASK);
-    warn!("TODO: rt_sigprocmask only return a fake result");
-    SyscallResult::Return(0)
-}
-
-pub fn sys_getuid() -> SyscallResult {
-    debug!("[syscall][id={}][SYS_GETUID]", SYS_GETUID);
-    warn!("TODO: getuid only return a fake uid now");
-    SyscallResult::Return(0)
-}
-
-pub fn sys_getgid() -> SyscallResult {
-    debug!("[syscall][id={}][SYS_GETGID]", SYS_GETUID);
-    warn!("TODO: getgid only return a fake gid now");
-    SyscallResult::Return(0)
-}
-
-pub fn sys_geteuid() -> SyscallResult {
-    debug!("[syscall][id={}][SYS_GETEUID]", SYS_GETEUID);
-    warn!("TODO: geteuid only return a fake euid now");
-    SyscallResult::Return(0)
-}
-
-pub fn sys_getegid() -> SyscallResult {
-    debug!("[syscall][id={}][SYS_GETEGID]", SYS_GETEGID);
-    warn!("TODO: getegid only return a fake egid now");
-    SyscallResult::Return(0)
+#[macro_export]
+macro_rules! define_syscall_nums {
+    ( $( $name: ident = $num: expr ),+ ) => {
+        $(
+            const $name: u64  = $num;
+        )*
+    }
 }

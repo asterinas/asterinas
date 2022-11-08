@@ -3,12 +3,12 @@ use kxos_frame::vm::VmIo;
 use crate::fs::stat::Stat;
 use crate::prelude::*;
 
-use crate::syscall::{SyscallResult, SYS_FSTAT};
+use crate::syscall::{SyscallReturn, SYS_FSTAT};
 
-pub fn sys_fstat(fd: u64, stat_buf_addr: Vaddr) -> SyscallResult {
+pub fn sys_fstat(fd: u64, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_FSTAT]", SYS_FSTAT);
     debug!("fd = {}", fd);
-    debug!("stat_buf_addr = 0x{:x}", stat_buf_addr);
+    debug!("stat_buf_addr = 0x{:x}", stat_buf_ptr);
 
     let current = current!();
     let vm_space = current
@@ -17,10 +17,10 @@ pub fn sys_fstat(fd: u64, stat_buf_addr: Vaddr) -> SyscallResult {
     if fd == 1 {
         let stat = Stat::stdout_stat();
         vm_space
-            .write_val(stat_buf_addr, &stat)
+            .write_val(stat_buf_ptr, &stat)
             .expect("Write value failed");
-        return SyscallResult::Return(0);
+        return Ok(SyscallReturn::Return(0));
     }
     warn!("TODO: fstat only returns fake result now.");
-    SyscallResult::Return(0)
+    Ok(SyscallReturn::Return(0))
 }
