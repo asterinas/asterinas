@@ -11,6 +11,7 @@ spin = "0.9.4"
 kxos-frame = {path = "../kxos-frame"}
 kxos-pci = {path="../kxos-pci"}
 kxos-util = {path="../kxos-util"}
+kxos-frame-pod-derive= {path="../kxos-frame-pod-derive"}
 
 [features]
 

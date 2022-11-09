@@ -26,7 +26,6 @@ pub mod timer;
 pub mod trap;
 pub mod user;
 mod util;
-#[macro_use]
 pub mod vm;
 pub(crate) mod x86_64_util;
 

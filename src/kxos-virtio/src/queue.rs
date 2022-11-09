@@ -7,6 +7,7 @@ use core::sync::atomic::{fence, Ordering};
 use kxos_frame::offset_of;
 use kxos_frame::Pod;
 use kxos_util::frame_ptr::InFramePtr;
+use kxos_frame_pod_derive::Pod;
 #[derive(Debug)]
 pub enum QueueError {
     InvalidArgs,
@@ -230,7 +231,7 @@ impl VirtQueue {
 }
 
 #[repr(C, align(16))]
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone,Pod)]
 struct Descriptor {
     addr: u64,
     len: u32,
@@ -252,9 +253,9 @@ fn set_buf(inframe_ptr: &InFramePtr<Descriptor>, buf: &[u8]) {
     );
     inframe_ptr.write_at(offset_of!(Descriptor, len), buf.len() as u32);
 }
-
 bitflags! {
     /// Descriptor flags
+    #[derive(Pod)]
     struct DescFlags: u16 {
         const NEXT = 1;
         const WRITE = 2;
@@ -273,7 +274,7 @@ impl Default for DescFlags {
 /// each ring entry refers to the head of a descriptor chain.
 /// It is only written by the driver and read by the device.
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone,Pod)]
 struct AvailRing {
     flags: u16,
     /// A driver MUST NOT decrement the idx.
@@ -285,7 +286,7 @@ struct AvailRing {
 /// The used ring is where the device returns buffers once it is done with them:
 /// it is only written to by the device, and read by the driver.
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone,Pod)]
 struct UsedRing {
     flags: u16,
     idx: u16,
@@ -294,10 +295,8 @@ struct UsedRing {
 }
 
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone,Pod)]
 struct UsedElem {
     id: u32,
     len: u32,
 }
-
-kxos_frame::impl_pod_for!(UsedElem, UsedRing, AvailRing, Descriptor, DescFlags);

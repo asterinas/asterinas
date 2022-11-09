@@ -127,6 +127,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "kxos-frame",
+ "kxos-frame-pod-derive",
  "kxos-util",
  "lazy_static",
  "spin 0.9.4",
@@ -182,6 +183,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags",
  "kxos-frame",
+ "kxos-frame-pod-derive",
  "kxos-pci",
  "kxos-util",
  "spin 0.9.4",

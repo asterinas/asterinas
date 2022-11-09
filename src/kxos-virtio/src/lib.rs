@@ -9,7 +9,10 @@ use bitflags::bitflags;
 use kxos_frame::{info, offset_of, TrapFrame};
 use kxos_pci::util::{PCIDevice, BAR};
 use kxos_util::frame_ptr::InFramePtr;
+use kxos_frame_pod_derive::Pod;
+
 use spin::{mutex::Mutex, MutexGuard};
+
 
 use self::{block::VirtioBLKConfig, queue::VirtQueue};
 
@@ -54,7 +57,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone,Pod)]
 #[repr(C)]
 pub struct VitrioPciCommonCfg {
     device_feature_select: u32,
@@ -75,8 +78,6 @@ pub struct VitrioPciCommonCfg {
     queue_driver: u64,
     queue_device: u64,
 }
-
-kxos_frame::impl_pod_for!(VitrioPciCommonCfg);
 
 impl VitrioPciCommonCfg {
     pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> InFramePtr<Self> {
