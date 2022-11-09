@@ -272,7 +272,7 @@ impl PCIVirtioDevice {
     /// register the queue interrupt functions, this function should call only once
     pub fn register_queue_interrupt_functions<F>(&mut self, functions: &mut Vec<F>)
     where
-        F: Fn(TrapFrame) + Send + Sync + 'static,
+        F: Fn(&TrapFrame) + Send + Sync + 'static,
     {
         let len = functions.len();
         if len

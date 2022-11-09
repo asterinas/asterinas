@@ -5,7 +5,7 @@ use crate::task::{
 use super::{irq::IRQ_LIST, *};
 
 #[no_mangle]
-pub(crate) extern "C" fn syscall_handler(f: &'static mut SyscallFrame) -> isize {
+pub(crate) extern "C" fn syscall_handler(f: &mut SyscallFrame) -> isize {
     let r = &f.caller;
     let current = Task::current();
     current.inner_exclusive_access().is_from_trap = false;
@@ -20,7 +20,7 @@ pub(crate) extern "C" fn syscall_handler(f: &'static mut SyscallFrame) -> isize 
 }
 
 #[no_mangle]
-pub(crate) extern "C" fn trap_handler(f: &'static mut TrapFrame) {
+pub(crate) extern "C" fn trap_handler(f: &mut TrapFrame) {
     if !is_from_kernel(f.cs) {
         let current = Task::current();
         current.inner_exclusive_access().is_from_trap = true;
@@ -37,11 +37,18 @@ pub(crate) extern "C" fn trap_handler(f: &'static mut TrapFrame) {
             let irq_line = IRQ_LIST.get(f.id as usize).unwrap();
             let callback_functions = irq_line.callback_list();
             for callback_function in callback_functions.iter() {
-                callback_function.call(f.clone());
+                callback_function.call(f);
             }
         }
     } else {
-        panic!("cannot handle kernel exception now");
+        if is_cpu_fault(f){
+            panic!("cannot handle kernel cpu fault now");
+        }
+        let irq_line = IRQ_LIST.get(f.id as usize).unwrap();
+        let callback_functions = irq_line.callback_list();
+        for callback_function in callback_functions.iter() {
+            callback_function.call(f);
+        }
     }
 }
 

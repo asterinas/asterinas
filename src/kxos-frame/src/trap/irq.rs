@@ -20,6 +20,14 @@ pub fn allocate_irq() -> Result<IrqAllocateHandle> {
     }
 }
 
+pub(crate) fn allocate_target_irq(target_irq: u8) -> Result<IrqAllocateHandle> {
+    if NOT_USING_IRQ.lock().get_target(target_irq as usize) {
+        Ok(IrqAllocateHandle::new(target_irq))
+    } else {
+        Err(Error::NotEnoughResources)
+    }
+}
+
 /// The handle to a allocate irq number between [32,256), used in std and other parts in kxos
 ///
 /// When the handle is dropped, all the callback in this will be unregistered automatically.
@@ -50,7 +58,7 @@ impl IrqAllocateHandle {
     /// For each IRQ line, multiple callbacks may be registered.
     pub fn on_active<F>(&mut self, callback: F)
     where
-        F: Fn(TrapFrame) + Sync + Send + 'static,
+        F: Fn(&TrapFrame) + Sync + Send + 'static,
     {
         self.callbacks.push(self.irq.on_active(callback))
     }
@@ -87,12 +95,12 @@ lazy_static! {
 }
 
 pub struct CallbackElement {
-    function: Box<dyn Fn(TrapFrame) + Send + Sync + 'static>,
+    function: Box<dyn Fn(&TrapFrame) + Send + Sync + 'static>,
     id: usize,
 }
 
 impl CallbackElement {
-    pub fn call(&self, element: TrapFrame) {
+    pub fn call(&self, element: &TrapFrame) {
         self.function.call((element,));
     }
 }
@@ -140,7 +148,7 @@ impl IrqLine {
     /// For each IRQ line, multiple callbacks may be registered.
     pub fn on_active<F>(&self, callback: F) -> IrqCallbackHandle
     where
-        F: Fn(TrapFrame) + Sync + Send + 'static,
+        F: Fn(&TrapFrame) + Sync + Send + 'static,
     {
         let allocate_id = ID_ALLOCATOR.lock().alloc();
         self.callback_list.lock().push(CallbackElement {

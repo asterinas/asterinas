@@ -77,6 +77,13 @@ pub fn enable_interrupts_and_hlt() {
     }
 }
 
+#[inline]
+pub fn enable_interrupts() {
+    unsafe {
+        asm!("sti", options(nomem, nostack));
+    }
+}
+
 pub const RING0: u16 = 0;
 pub const RING3: u16 = 3;
 

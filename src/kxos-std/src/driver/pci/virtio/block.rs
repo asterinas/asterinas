@@ -124,7 +124,7 @@ impl BlockDevice for VirtioBlockDevice {
 
 impl VirtioBlockDevice {
     fn new(mut virtio_device: PCIVirtioDevice) -> Self {
-        fn handle_block_device(frame: TrapFrame) {
+        fn handle_block_device(frame: &TrapFrame) {
             info!("pci block device queue interrupt");
             BLOCK_DEVICE.lock().as_ref().unwrap().handle_irq()
         }
