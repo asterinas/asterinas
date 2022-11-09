@@ -12,10 +12,8 @@ use super::SyscallReturn;
 /// and tgid as its process group id.
 pub fn sys_tgkill(tgid: Pgid, pid: Pid, sig_num: u8) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_TGKILL]", SYS_TGKILL);
-    debug!("tgid = {}", tgid);
-    debug!("pid = {}", pid);
     let sig_num = SigNum::from_u8(sig_num);
-    debug!("sig_num = {:?}", sig_num);
+    debug!("tgid = {}, pid = {}, sig_num = {:?}", tgid, pid, sig_num);
     let target_process =
         table::pid_to_process(pid).ok_or(Error::with_message(Errno::EINVAL, "Invalid pid"))?;
     let pgid = target_process.pgid();

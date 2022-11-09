@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::ops::Deref;
 use core::sync::atomic::{
     AtomicPtr,
-    Ordering::{AcqRel, Acquire, Release},
+    Ordering::{AcqRel, Acquire},
 };
 
 use self::monitor::RcuMonitor;
@@ -89,7 +89,7 @@ impl<P> Drop for RcuReclaimer<P> {
                 wq.wake_one();
             }
         });
-        wq.wait_until(None::<u8>, || Some(0));
+        wq.wait_until(|| Ok(Some(0u8))).unwrap();
     }
 }
 

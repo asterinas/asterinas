@@ -2,7 +2,6 @@ use crate::prelude::*;
 
 use crate::{
     memory::{read_bytes_from_user, write_bytes_to_user},
-    process::Process,
     syscall::SYS_READLINK,
 };
 
@@ -31,12 +30,13 @@ pub fn do_sys_readlink(
     user_buf_ptr: Vaddr,
     user_buf_len: usize,
 ) -> Result<usize> {
-    debug!("filename ptr = 0x{:x}", filename_ptr);
-    debug!("user_buf_ptr = 0x{:x}", user_buf_ptr);
-    debug!("user_buf_len = 0x{:x}", user_buf_len);
+    debug!(
+        "filename ptr = 0x{:x}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}",
+        filename_ptr, user_buf_ptr, user_buf_len
+    );
 
     let mut filename_buffer = [0u8; MAX_FILENAME_LEN];
-    let current = Process::current();
+    let current = current!();
     read_bytes_from_user(filename_ptr, &mut filename_buffer)?;
     let filename = CStr::from_bytes_until_nul(&filename_buffer).expect("Invalid filename");
     debug!("filename = {:?}", filename);

@@ -4,6 +4,6 @@ use super::SyscallReturn;
 
 pub fn sys_getuid() -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_GETUID]", SYS_GETUID);
-    warn!("TODO: getuid only return a fake uid now");
+    // TODO: getuid only return a fake uid now");
     Ok(SyscallReturn::Return(0))
 }

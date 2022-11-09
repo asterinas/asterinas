@@ -188,6 +188,7 @@ impl From<kxos_frame::Error> for Error {
             kxos_frame::Error::NotEnoughResources => Error::new(Errno::EBUSY),
             kxos_frame::Error::PageFault => Error::new(Errno::EFAULT),
             kxos_frame::Error::InvalidVmpermBits => Error::new(Errno::EINVAL),
+            kxos_frame::Error::NoChild => Error::new(Errno::ECHILD),
         }
     }
 }
@@ -195,6 +196,12 @@ impl From<kxos_frame::Error> for Error {
 impl From<core::str::Utf8Error> for Error {
     fn from(_: core::str::Utf8Error) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid utf-8 string")
+    }
+}
+
+impl From<core::ffi::FromBytesUntilNulError> for Error {
+    fn from(_: core::ffi::FromBytesUntilNulError) -> Self {
+        Error::with_message(Errno::E2BIG, "Cannot find null in cstring")
     }
 }
 

@@ -118,7 +118,6 @@ impl<'a> UserMode<'a> {
             *self.current.syscall_frame() = self.user_space.cpu_ctx.into();
             self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip;
             // write fsbase
-            debug!("write fs_fsbase: 0x{:x}", self.user_space.cpu_ctx.fs_base);
             wrfsbase(self.user_space.cpu_ctx.fs_base);
 
             self.executed = true;
@@ -157,10 +156,10 @@ impl<'a> UserMode<'a> {
         } else {
             self.context = CpuContext::from(*self.current.syscall_frame());
             self.context.fs_base = rdfsbase();
-            debug!("[kernel] syscall id:{}", self.context.gp_regs.rax);
-            debug!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);
-            debug!("[kernel] rcx: 0x{:x}", self.context.gp_regs.rcx);
-            debug!("[kernel] rip: 0x{:x}", self.context.gp_regs.rip);
+            // debug!("[kernel] syscall id:{}", self.context.gp_regs.rax);
+            // debug!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);
+            // debug!("[kernel] rcx: 0x{:x}", self.context.gp_regs.rcx);
+            // debug!("[kernel] rip: 0x{:x}", self.context.gp_regs.rip);
             UserEvent::Syscall
         }
     }

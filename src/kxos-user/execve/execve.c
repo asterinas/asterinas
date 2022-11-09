@@ -2,8 +2,8 @@
 #include <unistd.h>
 
 int main() {
-    char* argv[] = { NULL };
-    char* envp[] = { NULL };
+    char* argv[] = { "argv1", "argv2", NULL };
+    char* envp[] = { "home=/", "version=1.1", NULL };
     printf("Execve a new file ./hello:\n");
     // flush the stdout content to ensure the content print to console
     fflush(stdout);

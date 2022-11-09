@@ -31,7 +31,10 @@ impl TryFrom<u64> for ArchPrctlCode {
 pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_ARCH_PRCTL]", SYS_ARCH_PRCTL);
     let arch_prctl_code = ArchPrctlCode::try_from(code)?;
-    debug!("arch_prctl_code: {:?}", arch_prctl_code);
+    debug!(
+        "arch_prctl_code: {:?}, addr = 0x{:x}",
+        arch_prctl_code, addr
+    );
     let res = do_arch_prctl(arch_prctl_code, addr, context).unwrap();
     Ok(SyscallReturn::Return(res as _))
 }
@@ -39,7 +42,6 @@ pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Result<
 pub fn do_arch_prctl(code: ArchPrctlCode, addr: u64, context: &mut CpuContext) -> Result<u64> {
     match code {
         ArchPrctlCode::ARCH_SET_FS => {
-            debug!("set user fs: 0x{:x}", addr);
             context.fs_base = addr;
             Ok(0)
         }

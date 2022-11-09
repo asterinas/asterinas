@@ -10,10 +10,17 @@
 #![feature(btree_drain_filter)]
 #![feature(const_option)]
 
-use kxos_frame::{debug, info, println};
+use crate::prelude::*;
+use kxos_frame::{info, println};
 use process::Process;
 
-use crate::user_apps::get_all_apps;
+use crate::{
+    process::{
+        process_filter::ProcessFilter,
+        wait::{wait_child_exit, WaitOptions},
+    },
+    user_apps::get_all_apps,
+};
 
 extern crate alloc;
 
@@ -37,12 +44,15 @@ pub fn init() {
 }
 
 pub fn init_process() {
-    println!("[kernel] Spawn init process!");
+    println!("[kernel] Spawn init process!, pid = {}", current!().pid());
     driver::pci::virtio::block::block_device_test();
     let process = Process::spawn_kernel_process(|| {
         println!("[kernel] Hello world from kernel!");
-        let pid = Process::current().pid();
-        debug!("current pid = {}", pid);
+        let current = current!();
+        let pid = current.pid();
+        info!("current pid = {}", pid);
+        let ppid = current.parent().unwrap().pid();
+        info!("current ppid = {}", ppid);
     });
     info!(
         "[kxos-std/lib.rs] spawn kernel process, pid = {}",
@@ -52,7 +62,8 @@ pub fn init_process() {
     for app in get_all_apps() {
         let app_name = app.app_name();
         info!("[kxos-std/lib.rs] spwan {:?} process", app.app_name());
-        let process = Process::spawn_user_process(app_name, app.app_content());
+        let argv = vec![app_name.clone()];
+        let process = Process::spawn_user_process(app_name, app.app_content(), argv, Vec::new());
         info!(
             "[kxos-std/lib.rs] {:?} process exits, pid = {}",
             app.app_name(),
@@ -63,7 +74,8 @@ pub fn init_process() {
     loop {
         // We don't have preemptive scheduler now.
         // The long running init process should yield its own execution to allow other tasks to go on.
-        Process::yield_now();
+        // The init process should wait and reap all children.
+        let _ = wait_child_exit(ProcessFilter::Any, WaitOptions::empty());
     }
 }
 

@@ -22,10 +22,12 @@ pub fn create_user_task_from_elf(
     filename: CString,
     elf_file_content: &[u8],
     parent: Weak<Process>,
+    argv: Vec<CString>,
+    envp: Vec<CString>,
 ) -> Arc<Task> {
     let vm_space = VmSpace::new();
-    let elf_load_info =
-        load_elf_to_vm_space(filename, elf_file_content, &vm_space).expect("Load Elf failed");
+    let elf_load_info = load_elf_to_vm_space(filename, elf_file_content, &vm_space, argv, envp)
+        .expect("Load Elf failed");
     let mut cpu_ctx = CpuContext::default();
     // set entry point
     cpu_ctx.gp_regs.rip = elf_load_info.entry_point();
@@ -43,7 +45,7 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
         let user_space = cur.user_space().expect("user task should have user space");
         let mut user_mode = UserMode::new(user_space);
         debug!("In new task");
-        debug!("[new task] pid = {}", Process::current().pid());
+        debug!("[new task] pid = {}", current!().pid());
         debug!("[new task] rip = 0x{:x}", user_space.cpu_ctx.gp_regs.rip);
         debug!("[new task] rsp = 0x{:x}", user_space.cpu_ctx.gp_regs.rsp);
         debug!("[new task] rax = 0x{:x}", user_space.cpu_ctx.gp_regs.rax);

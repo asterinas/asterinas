@@ -13,12 +13,12 @@ pub fn sys_rt_sigprocmask(
 ) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_RT_SIGPROCMASK]", SYS_RT_SIGPROCMASK);
     let mask_op = MaskOp::try_from(how).unwrap();
-    debug!("mask op = {:?}", mask_op);
-    debug!("set_ptr = 0x{:x}", set_ptr);
-    debug!("oldset_ptr = 0x{:x}", oldset_ptr);
-    debug!("sigset_size = {}", sigset_size);
+    debug!(
+        "mask op = {:?}, set_ptr = 0x{:x}, oldset_ptr = 0x{:x}, sigset_size = {}",
+        mask_op, set_ptr, oldset_ptr, sigset_size
+    );
     if sigset_size != 8 {
-        warn!("sigset size is not equal to 8");
+        error!("sigset size is not equal to 8");
     }
     do_rt_sigprocmask(mask_op, set_ptr, oldset_ptr, sigset_size).unwrap();
     Ok(SyscallReturn::Return(0))
