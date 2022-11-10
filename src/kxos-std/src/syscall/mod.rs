@@ -14,17 +14,21 @@ use crate::syscall::futex::sys_futex;
 use crate::syscall::getegid::sys_getegid;
 use crate::syscall::geteuid::sys_geteuid;
 use crate::syscall::getgid::sys_getgid;
+use crate::syscall::getpgrp::sys_getpgrp;
 use crate::syscall::getpid::sys_getpid;
+use crate::syscall::getppid::sys_getppid;
 use crate::syscall::gettid::sys_gettid;
 use crate::syscall::getuid::sys_getuid;
 use crate::syscall::kill::sys_kill;
 use crate::syscall::mmap::sys_mmap;
 use crate::syscall::mprotect::sys_mprotect;
+use crate::syscall::prctl::sys_prctl;
 use crate::syscall::readlink::sys_readlink;
 use crate::syscall::rt_sigaction::sys_rt_sigaction;
 use crate::syscall::rt_sigprocmask::sys_rt_sigprocmask;
 use crate::syscall::rt_sigreturn::sys_rt_sigreturn;
 use crate::syscall::sched_yield::sys_sched_yield;
+use crate::syscall::setpgid::sys_setpgid;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
 use crate::syscall::wait4::sys_wait4;
@@ -38,7 +42,7 @@ mod access;
 mod arch_prctl;
 mod brk;
 mod clone;
-pub mod constants;
+mod constants;
 mod execve;
 mod exit;
 mod exit_group;
@@ -48,17 +52,21 @@ mod futex;
 mod getegid;
 mod geteuid;
 mod getgid;
+mod getpgrp;
 mod getpid;
+mod getppid;
 mod gettid;
 mod getuid;
 mod kill;
 mod mmap;
 mod mprotect;
+mod prctl;
 mod readlink;
 mod rt_sigaction;
 mod rt_sigprocmask;
 mod rt_sigreturn;
 mod sched_yield;
+mod setpgid;
 mod tgkill;
 mod uname;
 mod wait4;
@@ -87,13 +95,14 @@ define_syscall_nums!(
     SYS_WAIT4 = 61,
     SYS_KILL = 62,
     SYS_UNAME = 63,
-    SYS_GETPPID = 64,
     SYS_FCNTL = 72,
     SYS_READLINK = 89,
     SYS_GETUID = 102,
     SYS_GETGID = 104,
     SYS_GETEUID = 107,
     SYS_GETEGID = 108,
+    SYS_SETPGID = 109,
+    SYS_GETPPID = 110,
     SYS_GETPGRP = 111,
     SYS_PRCTL = 157,
     SYS_ARCH_PRCTL = 158,
@@ -179,15 +188,16 @@ pub fn syscall_dispatch(
         SYS_WAIT4 => syscall_handler!(3, sys_wait4, args),
         SYS_KILL => syscall_handler!(2, sys_kill, args),
         SYS_UNAME => syscall_handler!(1, sys_uname, args),
-        SYS_GETPPID => todo!(),
         SYS_FCNTL => todo!(),
         SYS_READLINK => syscall_handler!(3, sys_readlink, args),
         SYS_GETUID => syscall_handler!(0, sys_getuid),
         SYS_GETGID => syscall_handler!(0, sys_getgid),
         SYS_GETEUID => syscall_handler!(0, sys_geteuid),
         SYS_GETEGID => syscall_handler!(0, sys_getegid),
-        SYS_GETPGRP => todo!(),
-        SYS_PRCTL => todo!(),
+        SYS_SETPGID => syscall_handler!(2, sys_setpgid, args),
+        SYS_GETPPID => syscall_handler!(0, sys_getppid),
+        SYS_GETPGRP => syscall_handler!(0, sys_getpgrp),
+        SYS_PRCTL => syscall_handler!(5, sys_prctl, args),
         SYS_ARCH_PRCTL => syscall_handler!(2, sys_arch_prctl, args, context),
         SYS_GETCWD => todo!(),
         SYS_GETTID => syscall_handler!(0, sys_gettid),

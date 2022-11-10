@@ -89,6 +89,7 @@ pub struct mcontext_t {
 }
 
 #[derive(Debug, Clone, Copy, Pod, Default)]
+#[repr(C)]
 pub struct SignalCpuContext {
     pub gp_regs: GpRegs,
     pub fpregs_on_heap: u64,

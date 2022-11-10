@@ -5,7 +5,6 @@ use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::sync::atomic::{fence, Ordering};
 use kxos_frame::offset_of;
-use kxos_frame::Pod;
 use kxos_util::frame_ptr::InFramePtr;
 #[derive(Debug)]
 pub enum QueueError {
@@ -255,6 +254,7 @@ fn set_buf(inframe_ptr: &InFramePtr<Descriptor>, buf: &[u8]) {
 bitflags! {
     /// Descriptor flags
     #[derive(Pod)]
+    #[repr(C)]
     struct DescFlags: u16 {
         const NEXT = 1;
         const WRITE = 2;

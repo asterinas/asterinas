@@ -1,5 +1,6 @@
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
+use self::name::ProcessName;
 use self::process_group::ProcessGroup;
 use self::process_vm::mmap_area::MmapArea;
 use self::process_vm::user_heap::UserHeap;
@@ -19,6 +20,7 @@ pub mod clone;
 pub mod elf;
 pub mod exception;
 pub mod fifo_scheduler;
+pub mod name;
 pub mod process_filter;
 pub mod process_group;
 pub mod process_vm;
@@ -56,6 +58,8 @@ pub struct Process {
     children: Mutex<BTreeMap<usize, Arc<Process>>>,
     /// Process group
     process_group: Mutex<Option<Weak<ProcessGroup>>>,
+    /// Process name
+    process_name: Mutex<Option<ProcessName>>,
 
     // Signal
     sig_dispositions: Mutex<SigDispositions>,
@@ -101,6 +105,11 @@ impl Process {
         };
         let children = BTreeMap::new();
         let waiting_children = WaitQueue::new();
+        let process_name = exec_filename.as_ref().map(|filename| {
+            let mut process_name = ProcessName::new();
+            process_name.set_name(filename).unwrap();
+            process_name
+        });
         Self {
             pid,
             task,
@@ -113,6 +122,7 @@ impl Process {
             parent: Mutex::new(parent),
             children: Mutex::new(children),
             process_group: Mutex::new(process_group),
+            process_name: Mutex::new(process_name),
             sig_dispositions: Mutex::new(sig_dispositions),
             sig_queues: Mutex::new(sig_queues),
             sig_mask: Mutex::new(sig_mask),
@@ -182,7 +192,7 @@ impl Process {
         });
         // Set process group
         user_process.create_and_set_process_group();
-        table::add_process(pid, user_process.clone());
+        table::add_process(user_process.clone());
         let parent = user_process
             .parent()
             .expect("[Internel error] User process should always have parent");
@@ -214,7 +224,7 @@ impl Process {
             )
         });
         kernel_process.create_and_set_process_group();
-        table::add_process(pid, kernel_process.clone());
+        table::add_process(kernel_process.clone());
         if let Some(parent) = kernel_process.parent() {
             parent.add_child(kernel_process.clone());
         }
@@ -241,6 +251,10 @@ impl Process {
         }
     }
 
+    pub fn process_name(&self) -> &Mutex<Option<ProcessName>> {
+        &self.process_name
+    }
+
     pub fn process_group(&self) -> &Mutex<Option<Weak<ProcessGroup>>> {
         &self.process_group
     }
@@ -259,12 +273,14 @@ impl Process {
         let _ = self.parent.lock().insert(parent);
     }
 
+    /// Set process group for current process. If old process group exists,
+    /// remove current process from old process group.
     pub fn set_process_group(&self, process_group: Weak<ProcessGroup>) {
-        if self.process_group.lock().is_none() {
-            let _ = self.process_group.lock().insert(process_group);
-        } else {
-            todo!("We should do something with old group")
+        if let Some(old_process_group) = &*self.process_group().lock() {
+            let old_process_group = old_process_group.upgrade().unwrap();
+            old_process_group.remove_process(self.pid());
         }
+        let _ = self.process_group.lock().insert(process_group);
     }
 
     /// create a new process group for the process and add it to globle table.
@@ -273,7 +289,7 @@ impl Process {
         let process_group = Arc::new(ProcessGroup::new(self.clone()));
         let pgid = process_group.pgid();
         self.set_process_group(Arc::downgrade(&process_group));
-        table::add_process_group(pgid, process_group);
+        table::add_process_group(process_group);
     }
 
     pub fn parent(&self) -> Option<Arc<Process>> {

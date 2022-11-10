@@ -7,7 +7,6 @@ pub mod msix;
 pub mod util;
 extern crate alloc;
 use kxos_frame::info;
-#[macro_use]
 extern crate kxos_frame_pod_derive;
 
 use alloc::{sync::Arc, vec::Vec};

@@ -43,6 +43,8 @@ impl ProcessGroup {
         self.inner.lock().processes.insert(process.pid(), process);
     }
 
+    /// remove a process from this process group.
+    /// If this group contains no processes now, the group itself will be deleted from global table.
     pub fn remove_process(&self, pid: Pid) {
         let mut inner_lock = self.inner.lock();
         inner_lock.processes.remove(&pid);

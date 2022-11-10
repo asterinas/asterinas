@@ -4,7 +4,6 @@ use crate::process::Process;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use kxos_frame::info;
-use kxos_frame_pod_derive::Pod;
 use kxos_pci::PCIDevice;
 use kxos_virtio::PCIVirtioDevice;
 use lazy_static::lazy_static;

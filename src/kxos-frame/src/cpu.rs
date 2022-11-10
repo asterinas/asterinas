@@ -1,10 +1,12 @@
 //! CPU.
 
+use core::arch::x86_64::{_fxrstor, _fxsave};
+use core::fmt::Debug;
+use core::mem::MaybeUninit;
+
+use crate::debug;
+use crate::trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame};
 use crate::vm::Pod;
-use crate::{
-    impl_pod_for,
-    trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame},
-};
 
 /// Defines a CPU-local variable.
 #[macro_export]
@@ -29,9 +31,9 @@ pub fn this_cpu() -> u32 {
 #[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
 pub struct CpuContext {
+    pub fp_regs: FpRegs,
     pub gp_regs: GpRegs,
     pub fs_base: u64,
-    pub fp_regs: FpRegs,
     /// trap information, this field is all zero when it is syscall
     pub trap_information: TrapInformation,
 }
@@ -69,7 +71,10 @@ pub struct GpRegs {
     pub rflag: u64,
 }
 
-impl_pod_for!(GpRegs, TrapInformation, CpuContext, FpRegs);
+unsafe impl Pod for GpRegs {}
+unsafe impl Pod for TrapInformation {}
+unsafe impl Pod for CpuContext {}
+unsafe impl Pod for FpRegs {}
 
 impl From<SyscallFrame> for CpuContext {
     fn from(syscall: SyscallFrame) -> Self {
@@ -204,7 +209,7 @@ impl Into<TrapFrame> for CpuContext {
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct FpRegs {
-    //buf: Aligned<A16, [u8; 512]>,
+    buf: FxsaveArea,
     is_valid: bool,
 }
 
@@ -214,18 +219,25 @@ impl FpRegs {
     /// Note that a newly-created instance's floating point state is not
     /// initialized, thus considered invalid (i.e., `self.is_valid() == false`).
     pub fn new() -> Self {
-        //let buf = Aligned(unsafe { MaybeUninit::uninit().assume_init() });
-        //let is_valid = false;
-        //Self { buf, is_valid }
-        Self { is_valid: false }
-        // todo!("import aligned")
+        // The buffer address requires 16bytes alignment.
+        Self {
+            buf: unsafe { MaybeUninit::uninit().assume_init() },
+            is_valid: false,
+        }
     }
 
     /// Save CPU's current floating pointer states into this instance.
     pub fn save(&mut self) {
-        // unsafe {
-        //     _fxsave(self.buf.as_mut_ptr() as *mut u8);
-        // }
+        debug!("save fpregs");
+        debug!("write addr = 0x{:x}", (&mut self.buf) as *mut _ as usize);
+        let layout = alloc::alloc::Layout::for_value(&self.buf);
+        debug!("layout: {:?}", layout);
+        let ptr = unsafe { alloc::alloc::alloc(layout) } as usize;
+        debug!("ptr = 0x{:x}", ptr);
+        unsafe {
+            _fxsave((&mut self.buf.data).as_mut_ptr() as *mut u8);
+        }
+        debug!("save fpregs success");
         self.is_valid = true;
     }
 
@@ -238,8 +250,8 @@ impl FpRegs {
     /// It is the caller's responsibility to ensure that the source slice contains
     /// data that is in xsave/xrstor format. The slice must have a length of 512 bytes.
     pub unsafe fn save_from_slice(&mut self, src: &[u8]) {
-        //(&mut self.buf).copy_from_slice(src);
-        //self.is_valid = true;
+        (&mut self.buf.data).copy_from_slice(src);
+        self.is_valid = true;
     }
 
     /// Returns whether the instance can contains data in valid xsave/xrstor format.
@@ -259,16 +271,17 @@ impl FpRegs {
     ///
     /// Panic. If the current state is invalid, the method will panic.
     pub fn restore(&self) {
+        debug!("restore fpregs");
         assert!(self.is_valid);
-        //unsafe { _fxrstor(self.buf.as_ptr()) };
+        unsafe { _fxrstor((&self.buf.data).as_ptr()) };
+        debug!("restore fpregs success");
     }
 
     /// Returns the floating point state as a slice.
     ///
     /// Note that the slice may contain garbage if `self.is_valid() == false`.
     pub fn as_slice(&self) -> &[u8] {
-        //&*self.buf
-        todo!()
+        &self.buf.data
     }
 }
 
@@ -276,4 +289,10 @@ impl Default for FpRegs {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[repr(C, align(16))]
+#[derive(Debug, Clone, Copy)]
+struct FxsaveArea {
+    data: [u8; 512], // 512 bytes
 }

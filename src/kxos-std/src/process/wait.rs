@@ -41,7 +41,7 @@ pub fn wait_child_exit(
         drop(children_lock);
 
         if unwaited_children.len() == 0 {
-            return Err(kxos_frame::Error::NoChild);
+            return Some(Err(kxos_frame::Error::NoChild));
         }
 
         // return immediately if we find a zombie child
@@ -54,19 +54,19 @@ pub fn wait_child_exit(
             let exit_code = zombie_child.exit_code();
             if wait_options.contains(WaitOptions::WNOWAIT) {
                 // does not reap child, directly return
-                return Ok(Some((zombie_pid, exit_code)));
+                return Some(Ok((zombie_pid, exit_code)));
             } else {
                 let exit_code = current.reap_zombie_child(zombie_pid);
-                return Ok(Some((zombie_pid, exit_code)));
+                return Some(Ok((zombie_pid, exit_code)));
             }
         }
 
         if wait_options.contains(WaitOptions::WNOHANG) {
-            return Ok(Some((0, 0)));
+            return Some(Ok((0, 0)));
         }
 
         // wait
-        Ok(None)
+        None
     })?;
 
     Ok((pid, exit_code))

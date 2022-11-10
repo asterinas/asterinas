@@ -19,6 +19,7 @@ pub const S_IFLNK: u32 = 0o120000;
 
 /// File Stat
 #[derive(Debug, Clone, Copy, Pod, Default)]
+#[repr(C)]
 pub struct Stat {
     /// ID of device containing file
     st_dev: dev_t,
