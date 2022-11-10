@@ -4,6 +4,16 @@ mod static_cap;
 mod dyn_cap;
 mod options;
 
+use core::ops::Range;
+use kxos_frame::vm::VmSpace;
+use kxos_frame::vm::Vaddr;
+use spin::Mutex;
+use alloc::sync::Arc;
+use kxos_frame::prelude::Result;
+use kxos_frame::Error;
+use crate::rights::Rights;
+use bitflags::bitflags;
+
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
 /// user address spaces.
 /// 
@@ -79,32 +89,32 @@ impl<R> Vmar<R> {
     /// 
     /// The base address of a root VMAR is zero.
     pub fn base(&self) -> Vaddr {
-        self.base
+        self.0.base
     }
 
-    fn check_rights(&self, rights: Rights) -> Result<()> {
-        if self.rights.contains(rights) {
-            Ok(())
-        } else {
-            Err(EACCESS)
-        }
-    }
+
 }
 
 bitflags! {
     /// The memory access permissions of memory mappings.
     pub struct VmPerms: u32 {
         /// Readable.
-        const READ: u32     = 1 << 0;
+        const READ    = 1 << 0;
         /// Writable.
-        const WRITE: u32    = 1 << 1;
+        const WRITE   = 1 << 1;
         /// Executable.
-        const EXEC: u32     = 1 << 2;
+        const EXEC   = 1 << 2;
     }
 }
 
 impl From<Rights> for VmPerms {
-    fn from(perms: VmPerms) -> Rights {
+    fn from(rights: Rights) -> VmPerms {
+        todo!()
+    }
+}
+
+impl From<VmPerms> for Rights {
+    fn from(vm_perms: VmPerms) -> Rights {
         todo!()
     }
 }

@@ -1,3 +1,6 @@
+use kxos_frame::vm::VmFrame;
+use kxos_frame::prelude::Result;
+
 /// Pagers provide frame to a VMO.
 ///
 /// A `Pager` object can be attached to a VMO. Whenever the 

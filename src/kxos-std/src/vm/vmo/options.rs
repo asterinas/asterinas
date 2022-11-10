@@ -1,5 +1,17 @@
 //! Options for allocating root and child VMOs.
 
+use core::marker::PhantomData;
+use core::ops::Range;
+
+use alloc::sync::Arc;
+use kxos_frame::vm::Paddr;
+use kxos_frame::prelude::Result;
+use kxos_rights_proc::require;
+
+use crate::rights::{Dup,TRights,Rights};
+
+use super::{Vmo, VmoFlags, Pager};
+
 /// Options for allocating a root VMO.
 /// 
 /// # Examples
@@ -38,7 +50,8 @@ pub struct VmoOptions<R = Rights> {
     size: usize,
     paddr: Option<Paddr>,
     flags: VmoFlags,
-    supplier: Option<Arc<dyn FrameSupplier>>,
+    rights: R,
+    // supplier: Option<Arc<dyn FrameSupplier>>,
 }
 
 impl<R> VmoOptions<R> {
@@ -81,7 +94,7 @@ impl VmoOptions<Rights> {
     /// # Access rights
     /// 
     /// The VMO is initially assigned full access rights. 
-    pub fn alloc(mut self) -> Result<Vmo<R>> {
+    pub fn alloc(mut self) -> Result<Vmo<Rights>> {
         todo!()
     }
 }
@@ -185,10 +198,10 @@ pub struct VmoChildOptions<R, C> {
     range: Range<usize>,
     flags: VmoFlags,
     // Specifies whether the child is a slice or a COW
-    child_marker: PhantomData<C>,
+    marker: PhantomData<C>,
 }
 
-impl<R> VmoChildOptions<R, VmoSliceChild> {
+impl<R:TRights> VmoChildOptions<R, VmoSliceChild> {
     /// Creates a default set of options for creating a slice VMO child.
     /// 
     /// A slice child of a VMO, which has direct access to a range of memory
@@ -199,9 +212,30 @@ impl<R> VmoChildOptions<R, VmoSliceChild> {
     #[require(R > Dup)]
     pub fn new_slice(parent: Vmo<R>, range: Range<usize>) -> Self {
         Self {
+            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
             parent,
             range,
-            flags: parent.flags & Self::PARENT_FLAGS_MASK,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl VmoChildOptions<Rights, VmoSliceChild> {
+    /// Creates a default set of options for creating a slice VMO child.
+    /// 
+    /// User should ensure parent have dup rights, otherwise this function will panic
+    /// 
+    /// A slice child of a VMO, which has direct access to a range of memory
+    /// pages in the parent VMO. In other words, any updates of the parent will
+    /// reflect on the child, and vice versa.
+    /// 
+    /// The range of a child must be within that of the parent.
+    pub fn new_slice_rights(parent: Vmo<Rights>, range: Range<usize>) -> Self {
+        parent.check_rights(Rights::DUP).expect("function new_slice_rights should called with rights Dup");
+        Self {
+            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
+            parent,
+            range,
             marker: PhantomData,
         }
     }
@@ -219,9 +253,9 @@ impl<R> VmoChildOptions<R, VmoCowChild> {
     /// Any pages that are beyond the parent's range are initially all zeros. 
     pub fn new_cow(parent: Vmo<R>, range: Range<usize>) -> Self {
         Self {
+            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
             parent,
             range,
-            flags: parent.flags & Self::PARENT_FLAGS_MASK,
             marker: PhantomData, 
         }
     }
@@ -229,10 +263,9 @@ impl<R> VmoChildOptions<R, VmoCowChild> {
 
 impl<R, C> VmoChildOptions<R, C> {
     /// Flags that a VMO child inherits from its parent.
-    pub const PARENT_FLAGS_MASK: VmoFlags = VmoFlags::CONTIGUOUS.bits |
-                                            VmoFlags::DMA.bits;
+    pub const PARENT_FLAGS_MASK: VmoFlags = VmoFlags::from_bits(VmoFlags::CONTIGUOUS.bits | VmoFlags::DMA.bits).unwrap();
     /// Flags that a VMO child may differ from its parent.
-    pub const CHILD_FLAGS_MASK: VmoFlags = VmoFlags::RESIZABLE.bits;
+    pub const CHILD_FLAGS_MASK: VmoFlags = VmoFlags::RESIZABLE;
 
     /// Sets the VMO flags.
     /// 
@@ -248,7 +281,7 @@ impl<R, C> VmoChildOptions<R, C> {
     }
 }
 
-impl<'a, C> VmoChildOptions<'a, Rights, C> {
+impl<C> VmoChildOptions<Rights, C> {
     /// Allocates the child VMO.
     /// 
     /// # Access rights
@@ -259,7 +292,7 @@ impl<'a, C> VmoChildOptions<'a, Rights, C> {
     }
 }
 
-impl<'a, R: TRights> VmoChildOptions<'a, R, VmoSliceChild> {
+impl<R: TRights> VmoChildOptions<R, VmoSliceChild> {
     /// Allocates the child VMO.
     /// 
     /// # Access rights
@@ -270,23 +303,35 @@ impl<'a, R: TRights> VmoChildOptions<'a, R, VmoSliceChild> {
     }
 }
 
-impl<'a, R: TRights> VmoChildOptions<'a, R, VmoCowChild> {
+impl<R: TRights> VmoChildOptions<R, VmoCowChild> {
     /// Allocates the child VMO.
     /// 
     /// # Access rights
     ///
     /// The child VMO is initially assigned all the parent's access rights
     /// plus the Write right.
-    pub fn alloc<R1>(mut self) -> Result<Vmo<R1>>
+    pub fn alloc<TRights>(mut self) -> Result<Vmo<TRights>>
     where 
         // TODO: R1 must contain the Write right. To do so at the type level,
         // we need to implement a type-level operator
         // (say, `TRightsExtend(L, F)`)
         // that may extend a list (`L`) of type-level flags with an extra flag `F`.
-        R1: R // TRightsExtend<R, Write>
+        // TRightsExtend<R, Write>
     {
         todo!()
     }
+
+    // original:
+    // pub fn alloc<R1>(mut self) -> Result<Vmo<R1>>
+    // where 
+    //     // TODO: R1 must contain the Write right. To do so at the type level,
+    //     // we need to implement a type-level operator
+    //     // (say, `TRightsExtend(L, F)`)
+    //     // that may extend a list (`L`) of type-level flags with an extra flag `F`.
+    //     R1: R // TRightsExtend<R, Write>
+    // {
+    //     todo!()
+    // }
 }
 
 /// A type to specify the "type" of a child, which is either a slice or a COW.
@@ -295,9 +340,9 @@ pub trait VmoChildType {}
 /// A type to mark a child is slice.
 #[derive(Copy, Clone, Debug)]
 pub struct VmoSliceChild;
-impl VmoChildType for VmoSliceChild {};
+impl VmoChildType for VmoSliceChild {}
 
 /// A type to mark a child is COW.
 #[derive(Copy, Clone, Debug)]
 pub struct VmoCowChild;
-impl VmoChildType for VmoCowChild {};
+impl VmoChildType for VmoCowChild {}

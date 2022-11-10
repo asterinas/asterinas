@@ -2,7 +2,7 @@
 //! This crate defines common type level operations, like SameAsOp, and Bool type operations.
 //! Besides, this crate defines operations to deal with type sets, like SetContain and SetInclude.
 //! When use kxos-typeflags or kxos-rights-poc, this crate should also be added as a dependency.
-
+#![no_std]
 pub mod assert;
 pub mod bool;
 pub mod if_;

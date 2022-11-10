@@ -1,3 +1,12 @@
+use core::ops::Range;
+
+use kxos_frame::{vm::VmIo, Error};
+use kxos_frame::prelude::Result;
+
+use crate::rights::{Rights, TRights};
+
+use super::{VmoChildOptions, options::{VmoSliceChild, VmoCowChild}, Vmo};
+
 impl Vmo<Rights> {
     /// Creates a new slice VMO through a set of VMO child options.
     /// 
@@ -18,9 +27,9 @@ impl Vmo<Rights> {
     /// 
     /// The new VMO child will be of the same capability flavor as the parent;
     /// so are the access rights.
-    pub fn new_slice_child(&self, range: Range<usize>) -> VmoChildOptions<'_, Rights, VmoSliceChild> {
+    pub fn new_slice_child(&self, range: Range<usize>) -> Result<VmoChildOptions<Rights, VmoSliceChild>> {
         let dup_self = self.dup()?;
-        VmoChildOptions::new_slice(dup_self, range)
+        Ok(VmoChildOptions::new_slice_rights(dup_self, range))
     }
 
     /// Creates a new COW VMO through a set of VMO child options.
@@ -43,9 +52,9 @@ impl Vmo<Rights> {
     /// The new VMO child will be of the same capability flavor as the parent.
     /// The child will be given the access rights of the parent
     /// plus the Write right.
-    pub fn new_cow_child(&self, range: Range<usize>) -> VmoChildOptions<'_, Rights, VmoCowChild> {
+    pub fn new_cow_child(&self, range: Range<usize>) -> Result<VmoChildOptions<Rights, VmoCowChild>> {
         let dup_self = self.dup()?;
-        VmoChildOptions::new_cow(dup_self, range)
+        Ok(VmoChildOptions::new_cow(dup_self, range))
     }
 
     /// Commits the pages specified in the range (in bytes).
@@ -117,7 +126,7 @@ impl Vmo<Rights> {
 
     /// Converts to a static capability.
     pub fn to_static<R1: TRights>(self) -> Result<Vmo<R1>> {
-        self.check_rights(R1::BITS)?;
+        self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::InvalidArgs)?)?;
         todo!()
     }
 
@@ -125,16 +134,24 @@ impl Vmo<Rights> {
     pub fn rights(&self) -> Rights {
         self.1
     }
+
+    pub fn check_rights(&self, rights: Rights) -> Result<()> {
+        if self.rights().contains(rights) {
+            Ok(())        
+        } else {
+            Err(Error::AccessDenied)
+        }
+    }
 }
 
 impl VmIo for Vmo<Rights> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         self.check_rights(Rights::READ)?;
-        self.0.read(offset, buf)
+        self.0.read_bytes(offset, buf)
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         self.check_rights(Rights::WRITE)?;
-        self.0.write(offset, buf)
+        self.0.write_bytes(offset, buf)
     }
 }

@@ -1,8 +1,9 @@
 //! Type level bools
 
-pub use std::ops::BitAnd as And;
-pub use std::ops::BitOr as Or;
-pub use std::ops::Not;
+pub use core::ops::BitAnd as And;
+pub use core::ops::BitOr as Or;
+pub use core::ops::Not;
+use core::unimplemented;
 
 pub trait Bool {}
 

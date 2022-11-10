@@ -1,5 +1,12 @@
 //! Options for allocating child VMARs and creating mappings.
 
+use kxos_frame::{config::PAGE_SIZE, vm::Vaddr};
+use kxos_frame::prelude::Result;
+
+use crate::vm::vmo::Vmo;
+
+use super::{Vmar, VmPerms};
+
 /// Options for allocating a child VMAR, which must not overlap with any
 /// existing mappings or child VMARs.
 /// 
@@ -39,6 +46,7 @@ pub struct VmarChildOptions<R> {
     parent: Vmar<R>,
     size: usize,
     offset: usize,
+    align:usize,
 }
 
 impl<R> VmarChildOptions<R> {
@@ -94,9 +102,9 @@ impl<R> VmarChildOptions<R> {
 /// Options for creating a new mapping. The mapping is not allowed to overlap 
 /// with any child VMARs. And unless specified otherwise, it is not allowed 
 /// to overlap with any existing mapping, either.
-pub struct VmarMapOptions<R> {
-    parent: Vmar<R>,
-    vmo: Vmo,
+pub struct VmarMapOptions<R1,R2> {
+    parent: Vmar<R1>,
+    vmo: Vmo<R2>,
     perms: VmPerms,
     vmo_offset: usize,
     size: usize,
@@ -105,20 +113,21 @@ pub struct VmarMapOptions<R> {
     can_overwrite: bool,
 }
 
-impl<R> VmarMapOptions<'a, R> {
+impl<R1,R2> VmarMapOptions<R1,R2> {
     /// Creates a default set of options with the VMO and the memory access 
     /// permissions. 
     /// 
     /// The VMO must have access rights that correspond to the memory
     /// access permissions. For example, if `perms` contains `VmPerm::Write`,
     /// then `vmo.rights()` should contain `Rights::WRITE`.
-    pub fn new(parent: Vmar<R>, vmo: Vmo, perms: VmPerms) -> Self {
+    pub fn new(parent: Vmar<R1>, vmo: Vmo<R2>, perms: VmPerms) -> Self {
+        let size = vmo.size();
         Self {
             parent,
             vmo,
             perms,
             vmo_offset: 0,
-            size: vmo.size(),
+            size,
             offset: None,
             align: PAGE_SIZE,
             can_overwrite: false,
@@ -176,7 +185,7 @@ impl<R> VmarMapOptions<'a, R> {
     /// 
     /// If not set, the system will choose an offset automatically.
     pub fn offset(mut self, offset: usize) -> Self {
-        self.offset = offset;
+        self.offset = Some(offset);
         self
     }
 

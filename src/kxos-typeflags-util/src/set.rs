@@ -1,13 +1,13 @@
 //! Common types and traits to deal with type-level sets
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use crate::{
     if_::{If, IfOp},
     And, AndOp, False, OrOp, SameAs, SameAsOp, True,
 };
 
-use std::ops::BitOr as Or;
+use core::ops::BitOr as Or;
 
 /// A marker trait for type-level sets.
 pub trait Set {}

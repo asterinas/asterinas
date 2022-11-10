@@ -1,7 +1,17 @@
+use core::ops::Range;
+
+use alloc::sync::Arc;
+use kxos_frame::{vm::VmIo, Error};
+use kxos_frame::prelude::Result;
+
+use crate::{rights::Rights, vm::vmo::Vmo};
+
+use super::{Vmar, VmPerms, options::{VmarChildOptions, VmarMapOptions}, Vmar_};
+
 impl Vmar<Rights> {
     /// Creates a root VMAR.
     pub fn new() -> Result<Self> {
-        let inner = Arc::new(Vmar_::new());
+        let inner = Arc::new(Vmar_::new()?);
         let rights = Rights::all();
         let new_self = Self(inner, rights);
         Ok(new_self)
@@ -42,9 +52,9 @@ impl Vmar<Rights> {
     /// Memory permissions may be changed through the `protect` method,
     /// which ensures that any updated memory permissions do not go beyond
     /// the access rights of the underlying VMOs.
-    pub fn new_map(&self, vmo: Vmo, perms: VmPerms) -> VmarMapOptions<'_, Rights> {
+    pub fn new_map(&self, vmo: Vmo<Rights>, perms: VmPerms) -> Result<VmarMapOptions<Rights,Rights>> {
         let dup_self = self.dup()?;
-        VmarMapOptions::new(dup_self, vmo, perms)
+        Ok(VmarMapOptions::new(dup_self, vmo, perms))
     }
 
     /// Creates a new child VMAR through a set of VMAR child options.
@@ -66,9 +76,9 @@ impl Vmar<Rights> {
     /// 
     /// The new VMAR child will be of the same capability class and 
     /// access rights as the parent.
-    pub fn new_child(&self, size: usize) -> VmarChildOptions<'a, Rights> {
+    pub fn new_child(&self, size: usize) -> Result<VmarChildOptions<Rights>> {
         let dup_self = self.dup()?;
-        VmarChildOptions::new(dup_self, size)
+        Ok(VmarChildOptions::new(dup_self, size))
     }
 
     /// Change the permissions of the memory mappings in the specified range.
@@ -107,24 +117,43 @@ impl Vmar<Rights> {
     /// As for children VMARs, they must be fully within the range.
     /// All children VMARs that fall within the range get their `destroy` methods
     /// called.
-    pub fn destroy(&self, range: &Range<usize>) -> Result<()> {
+    pub fn destroy(&self, range: Range<usize>) -> Result<()> {
         self.0.destroy(range)
+    }
+
+    /// Duplicates the capability.
+    /// 
+    /// # Access rights
+    ///
+    /// The method requires the Dup right. 
+    pub fn dup(&self) -> Result<Self> {
+        self.check_rights(Rights::DUP)?;
+        todo!()
     }
 
     /// Returns the access rights.
     pub fn rights(&self) -> Rights {
         self.1
     }
+
+    fn check_rights(&self, rights: Rights) -> Result<()> {
+        if self.1.contains(rights) {
+            Ok(())
+        } else {
+            Err(Error::AccessDenied)
+        }
+    }
+
 }
 
-impl<R> VmIo for Vmar<Rights> {
+impl VmIo for Vmar<Rights> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        self.check_rights!(Rights::READ)?;
+        self.check_rights(Rights::READ)?;
         self.0.read(offset, buf)
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        self.check_rights!(Rights::WRITE)?;
+        self.check_rights(Rights::WRITE)?;
         self.0.write(offset, buf)
     }
 }

@@ -1,8 +1,11 @@
 //! Virtual Memory Objects (VMOs).
 
-use kx_frame::vm::VmIo;
+use core::ops::Range;
 
-use crate::rights::{Rights, TRights};
+use kxos_frame::{prelude::Result, vm::Paddr, Error};
+use crate::rights::Rights;
+use alloc::sync::Arc;
+use bitflags::bitflags;
 
 mod static_cap;
 mod dyn_cap;
@@ -11,6 +14,9 @@ mod pager;
 
 pub use options::{VmoOptions, VmoChildOptions};
 pub use pager::Pager;
+use spin::Mutex;
+
+
 
 /// Virtual Memory Objects (VMOs) are a type of capability that represents a 
 /// range of memory pages.
@@ -73,16 +79,16 @@ bitflags! {
     /// VMO flags.
     pub struct VmoFlags: u32 {
         /// Set this flag if a VMO is resizable.
-        const RESIZABLE: u32  = 1 << 0;
+        const RESIZABLE  = 1 << 0;
         /// Set this flags if a VMO is backed by physically contiguous memory 
         /// pages.
         /// 
         /// To ensure the memory pages to be contiguous, these pages
         /// are allocated upon the creation of the VMO, rather than on demands. 
-        const CONTIGUOUS: u32 = 1 << 1;
+        const CONTIGUOUS = 1 << 1;
         /// Set this flag if a VMO is backed by memory pages that supports 
         /// Direct Memory Access (DMA) by devices.
-        const DMA: u32        = 1 << 2;
+        const DMA        = 1 << 2;
     }
 }
 
@@ -126,7 +132,7 @@ impl Vmo_ {
     }
 
     pub fn size(&self) -> usize {
-        self.0.size()
+        todo!()
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
@@ -160,11 +166,4 @@ impl<R> Vmo<R> {
         self.0.flags()
     }
 
-    fn check_rights(&self, rights: Rights) -> Result<()> {
-        if self.rights().contains(rights) {
-            Ok(())        
-        } else {
-            Err(Error::AccessDenied)
-        }
-    }
 }

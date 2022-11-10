@@ -1,4 +1,4 @@
-use typeflags::typeflags;
+use kxos_typeflags::type_flags;
 use bitflags::bitflags;
 
 bitflags! {
@@ -10,38 +10,46 @@ bitflags! {
     /// Here, we give some sensible semantics for each access right.
     pub struct Rights: u32 {
         /// Allows duplicating a capability.
-        const DUP: u32      = 1 << 0;
+        const DUP    = 1 << 0;
         /// Allows reading data from a data source (files, VM objects, etc.) or
         /// creating readable memory mappings.
-        const READ: u32     = 1 << 1;
+        const READ     = 1 << 1;
         /// Allows writing data to a data sink (files, VM objects, etc.) or
         /// creating writable memory mappings.
-        const WRITE: u32    = 1 << 2;
+        const WRITE    = 1 << 2;
         /// Allows creating executable memory mappings.
-        const EXEC: u32     = 1 << 3;
+        const EXEC    = 1 << 3;
         /// Allows sending notifications or signals.
-        const SIGNAL: u32   = 1 << 7;
+        const SIGNAL   = 1 << 7;
     }
 }
-
-typeflags! {
-    /// Type-based access rights.
-    /// 
-    /// Similar to value-based access rights (`Rights`), but represented in
-    /// types.
+/// Type-based access rights.
+/// 
+/// Similar to value-based access rights (`Rights`), but represented in
+/// types.
+/// 
+/// pub trait TRights: u32 {
+///     /// Allows duplicating a capability.
+///     struct Dup: u32      = Rights::DUP;
+///     /// Allows reading data from a data source (files, VM objects, etc.) or
+///     /// creating readable memory mappings.
+///     struct Read: u32     = Rights::READ;
+///     /// Allows writing data to a data sink (files, VM objects, etc.) or
+///     /// creating writable memory mappings.
+///     struct Write: u32    = Rights::WRITE;
+///     /// Allows creating executable memory mappings.
+///     struct Exec: u32     = Rights::EXEC;
+///     /// Allows sending notifications or signals.
+///     struct Signal: u32   = Rights::SIGNAL;
+/// }
+/// 
+type_flags! {
     pub trait TRights: u32 {
-        /// Allows duplicating a capability.
-        struct Dup: u32      = Rights::DUP;
-        /// Allows reading data from a data source (files, VM objects, etc.) or
-        /// creating readable memory mappings.
-        struct Read: u32     = Rights::READ;
-        /// Allows writing data to a data sink (files, VM objects, etc.) or
-        /// creating writable memory mappings.
-        struct Write: u32    = Rights::WRITE;
-        /// Allows creating executable memory mappings.
-        struct Exec: u32     = Rights::EXEC;
-        /// Allows sending notifications or signals.
-        struct Signal: u32   = Rights::SIGNAL;
+        pub struct Dup    = 1 <<0;
+        pub struct Read     = 1 <<1;
+        pub struct Write    = 1 <<2;
+        pub struct Exec     = 1 <<3;
+        pub struct Signal   = 1 <<7;
     }
 }
 
@@ -51,5 +59,5 @@ pub type Full = TRights![
     Read,
     Write,
     Exec,
-    Signal,
+    Signal
 ];

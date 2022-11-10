@@ -8,6 +8,7 @@
 #![feature(half_open_range_patterns)]
 #![feature(exclusive_range_pattern)]
 #![feature(btree_drain_filter)]
+#![feature(const_option)]
 
 use kxos_frame::{debug, info, println};
 use process::Process;
@@ -25,6 +26,8 @@ mod process;
 pub mod syscall;
 mod user_apps;
 mod util;
+pub mod vm;
+pub mod rights;
 #[macro_use]
 extern crate kxos_frame_pod_derive;
 

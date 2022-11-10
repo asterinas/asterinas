@@ -2,7 +2,7 @@
 //! 
 //! There are two primary VM abstractions:
 //! * Virtual Memory Address Regions (VMARs) a type of capability that manages
-/// user address spaces.
+//! user address spaces.
 //! * Virtual Memory Objects (VMOs) are are a type of capability that 
 //! represents a set of memory pages.
 //! 
