@@ -1,12 +1,12 @@
 use kxos_frame::Pod;
+use kxos_frame_pod_derive::Pod;
 use kxos_pci::capability::vendor::virtio::CapabilityVirtioData;
 use kxos_pci::util::BAR;
 use kxos_util::frame_ptr::InFramePtr;
-use kxos_frame_pod_derive::Pod;
 
 pub const BLK_SIZE: usize = 512;
 
-#[derive(Debug, Copy, Clone,Pod)]
+#[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
 pub struct VirtioBLKConfig {
     capacity: u64,
@@ -25,7 +25,7 @@ pub struct VirtioBLKConfig {
     unused1: [u8; 3],
 }
 
-#[derive(Debug, Copy, Clone,Pod)]
+#[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
 pub struct VirtioBLKGeometry {
     cylinders: u16,
@@ -33,7 +33,7 @@ pub struct VirtioBLKGeometry {
     sectors: u8,
 }
 
-#[derive(Debug, Copy, Clone,Pod)]
+#[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
 pub struct VirtioBLKTopology {
     physical_block_exp: u8,

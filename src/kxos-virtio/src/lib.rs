@@ -7,12 +7,11 @@ extern crate alloc;
 use alloc::{sync::Arc, vec::Vec};
 use bitflags::bitflags;
 use kxos_frame::{info, offset_of, TrapFrame};
+use kxos_frame_pod_derive::Pod;
 use kxos_pci::util::{PCIDevice, BAR};
 use kxos_util::frame_ptr::InFramePtr;
-use kxos_frame_pod_derive::Pod;
 
 use spin::{mutex::Mutex, MutexGuard};
-
 
 use self::{block::VirtioBLKConfig, queue::VirtQueue};
 
@@ -57,7 +56,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone,Pod)]
+#[derive(Debug, Default, Copy, Clone, Pod)]
 #[repr(C)]
 pub struct VitrioPciCommonCfg {
     device_feature_select: u32,

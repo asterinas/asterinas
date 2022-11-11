@@ -78,7 +78,7 @@ fn timer_callback(trap_frame: &TrapFrame) {
         TICK += 1;
     }
     let timeout_list = TIMEOUT_LIST.get();
-    let mut callbacks : Vec<Arc<TimerCallback>>= Vec::new();
+    let mut callbacks: Vec<Arc<TimerCallback>> = Vec::new();
     while let Some(t) = timeout_list.peek() {
         if t.expire_ms <= current_ms {
             callbacks.push(timeout_list.pop().unwrap());
@@ -86,8 +86,8 @@ fn timer_callback(trap_frame: &TrapFrame) {
             break;
         }
     }
-    for callback in callbacks{
-        if callback.is_enable(){
+    for callback in callbacks {
+        if callback.is_enable() {
             callback.callback.call((&callback,));
         }
     }
@@ -95,7 +95,7 @@ fn timer_callback(trap_frame: &TrapFrame) {
 }
 
 lazy_static! {
-    static ref TIMEOUT_LIST: Cell<BinaryHeap<Arc<TimerCallback>>> = Cell::new(BinaryHeap::new()) ;
+    static ref TIMEOUT_LIST: Cell<BinaryHeap<Arc<TimerCallback>>> = Cell::new(BinaryHeap::new());
 }
 
 pub struct TimerCallback {
@@ -115,7 +115,7 @@ impl TimerCallback {
             expire_ms: timeout_ms,
             data,
             callback,
-            enable:Cell::new(true),
+            enable: Cell::new(true),
         }
     }
 
@@ -124,19 +124,18 @@ impl TimerCallback {
     }
 
     /// disable this timeout
-    pub fn disable(&self){
+    pub fn disable(&self) {
         *self.enable.get() = false;
     }
 
     /// enable this timeout
-    pub fn enable(&self){
+    pub fn enable(&self) {
         *self.enable.get() = true;
     }
 
-    pub fn is_enable(&self) -> bool{
+    pub fn is_enable(&self) -> bool {
         *self.enable
     }
-
 }
 
 impl PartialEq for TimerCallback {
@@ -166,15 +165,10 @@ impl Ord for TimerCallback {
 pub fn add_timeout_list<F, T>(timeout: u64, data: T, callback: F) -> Arc<TimerCallback>
 where
     F: Fn(&TimerCallback) + Send + Sync + 'static,
-    T: Any + Send + Sync, 
-
+    T: Any + Send + Sync,
 {
     unsafe {
-        let timer_callback = TimerCallback::new(
-            TICK + timeout,
-            Arc::new(data),
-            Box::new(callback),
-        );
+        let timer_callback = TimerCallback::new(TICK + timeout, Arc::new(data), Box::new(callback));
         let arc = Arc::new(timer_callback);
         TIMEOUT_LIST.get().push(arc.clone());
         arc

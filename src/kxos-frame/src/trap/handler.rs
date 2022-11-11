@@ -41,7 +41,7 @@ pub(crate) extern "C" fn trap_handler(f: &mut TrapFrame) {
             }
         }
     } else {
-        if is_cpu_fault(f){
+        if is_cpu_fault(f) {
             panic!("cannot handle kernel cpu fault now");
         }
         let irq_line = IRQ_LIST.get(f.id as usize).unwrap();

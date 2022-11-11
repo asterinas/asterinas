@@ -4,9 +4,9 @@ use crate::process::Process;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use kxos_frame::info;
+use kxos_frame_pod_derive::Pod;
 use kxos_pci::PCIDevice;
 use kxos_virtio::PCIVirtioDevice;
-use kxos_frame_pod_derive::Pod;
 use lazy_static::lazy_static;
 use spin::mutex::Mutex;
 
@@ -19,7 +19,7 @@ pub struct VirtioBlockDevice {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone,Pod)]
+#[derive(Debug, Copy, Clone, Pod)]
 pub struct BlkReq {
     pub type_: ReqType,
     pub reserved: u32,
@@ -28,13 +28,13 @@ pub struct BlkReq {
 
 /// Response of a VirtIOBlk request.
 #[repr(C)]
-#[derive(Debug, Copy, Clone,Pod)]
+#[derive(Debug, Copy, Clone, Pod)]
 pub struct BlkResp {
     pub status: RespStatus,
 }
 
 #[repr(u32)]
-#[derive(Debug, Copy, Clone,Pod)]
+#[derive(Debug, Copy, Clone, Pod)]
 pub enum ReqType {
     In = 0,
     Out = 1,
@@ -44,7 +44,7 @@ pub enum ReqType {
 }
 
 #[repr(u8)]
-#[derive(Debug, Eq, PartialEq, Copy, Clone,Pod)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Pod)]
 pub enum RespStatus {
     /// Ok.
     Ok = 0,

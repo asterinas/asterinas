@@ -23,11 +23,11 @@ pub mod fs;
 mod memory;
 pub mod prelude;
 mod process;
+pub mod rights;
 pub mod syscall;
 mod user_apps;
 mod util;
 pub mod vm;
-pub mod rights;
 #[macro_use]
 extern crate kxos_frame_pod_derive;
 

@@ -7,8 +7,8 @@ use bootloader::{entry_point, BootInfo};
 use kxos_frame::timer::Timer;
 extern crate alloc;
 use alloc::sync::Arc;
-use core::time::Duration;
 use core::panic::PanicInfo;
+use core::time::Duration;
 use kxos_frame::println;
 
 static mut TICK: usize = 0;
@@ -28,7 +28,9 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[test_case]
 fn test_timer() {
-    println!("If you want to pass this test, you may need to enable the interrupt in kxos_frame/lib.rs");
+    println!(
+        "If you want to pass this test, you may need to enable the interrupt in kxos_frame/lib.rs"
+    );
     println!("make sure the Timer irq number 32 handler won't panic");
     unsafe {
         let timer = Timer::new(timer_callback).unwrap();
@@ -39,8 +41,8 @@ fn test_timer() {
 
 pub fn timer_callback(timer: Arc<Timer>) {
     unsafe {
-        TICK+=1;
-        println!("TICK:{}",TICK);
+        TICK += 1;
+        println!("TICK:{}", TICK);
         timer.set(Duration::from_secs(1));
     }
 }

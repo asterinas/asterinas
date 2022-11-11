@@ -1,8 +1,11 @@
 //! Timer.
 
-use crate::{prelude::*, device::{TimerCallback, TICK,TIMER_FREQ}};
-use spin::Mutex;
+use crate::{
+    device::{TimerCallback, TICK, TIMER_FREQ},
+    prelude::*,
+};
 use core::time::Duration;
+use spin::Mutex;
 
 /// A timer invokes a callback function after a specified span of time elapsed.
 ///
@@ -13,57 +16,67 @@ use core::time::Duration;
 /// Timers are one-shot. If the time is out, one has to set the timer again
 /// in order to trigger the callback again.
 pub struct Timer {
-    function: Arc<dyn Fn(Arc<Self>)+Send+Sync>,
+    function: Arc<dyn Fn(Arc<Self>) + Send + Sync>,
     inner: Mutex<TimerInner>,
 }
 #[derive(Default)]
-struct TimerInner{
+struct TimerInner {
     start_tick: u64,
-    timeout_tick:u64,
-    timer_callback:Option<Arc<TimerCallback>>,
+    timeout_tick: u64,
+    timer_callback: Option<Arc<TimerCallback>>,
 }
 
-fn timer_callback(callback:&TimerCallback){
+fn timer_callback(callback: &TimerCallback) {
     let data = callback.data();
-    if data.is::<Arc<Timer>>(){
+    if data.is::<Arc<Timer>>() {
         let timer = data.downcast_ref::<Arc<Timer>>().unwrap();
         timer.function.call((timer.clone(),));
-    }else{
+    } else {
         panic!("the timer callback is not Timer structure");
     }
 }
 
-const NANOS_DIVIDE : u64 = 1_000_000_000/TIMER_FREQ;
+const NANOS_DIVIDE: u64 = 1_000_000_000 / TIMER_FREQ;
 
 impl Timer {
     /// Creates a new instance, given a callback function.
     pub fn new<F>(f: F) -> Result<Arc<Self>>
     where
-        F: Fn(Arc<Timer>) +Send+Sync+'static,
+        F: Fn(Arc<Timer>) + Send + Sync + 'static,
     {
-        Ok(Arc::new(Self { function: Arc::new(f),inner:Mutex::new(TimerInner::default()) }))
+        Ok(Arc::new(Self {
+            function: Arc::new(f),
+            inner: Mutex::new(TimerInner::default()),
+        }))
     }
 
     /// Set a timeout value.
     ///
     /// If a timeout value is already set, the timeout value will be refreshed.
-    /// 
-    pub fn set(self : Arc<Self>, timeout: Duration) {
+    ///
+    pub fn set(self: Arc<Self>, timeout: Duration) {
         let mut lock = self.inner.lock();
-        match &lock.timer_callback{
+        match &lock.timer_callback {
             Some(callback) => {
                 callback.disable();
-            },
-            None => {},
+            }
+            None => {}
         }
-        let tick_count = timeout.as_secs()*TIMER_FREQ 
-        +  if timeout.subsec_nanos() !=0{(timeout.subsec_nanos() as u64 - 1)/NANOS_DIVIDE + 1} else {0};
-        unsafe{
+        let tick_count = timeout.as_secs() * TIMER_FREQ
+            + if timeout.subsec_nanos() != 0 {
+                (timeout.subsec_nanos() as u64 - 1) / NANOS_DIVIDE + 1
+            } else {
+                0
+            };
+        unsafe {
             lock.start_tick = TICK;
-            lock.timeout_tick = TICK+tick_count;
+            lock.timeout_tick = TICK + tick_count;
         }
-        lock.timer_callback = Some(crate::device::add_timeout_list(tick_count, self.clone(), timer_callback));
-
+        lock.timer_callback = Some(crate::device::add_timeout_list(
+            tick_count,
+            self.clone(),
+            timer_callback,
+        ));
     }
 
     /// Returns the remaining timeout value.
@@ -72,22 +85,22 @@ impl Timer {
     pub fn remain(&self) -> Duration {
         let lock = self.inner.lock();
         let tick_remain;
-        unsafe{
-            tick_remain = lock.timeout_tick as i64-TICK as i64;
+        unsafe {
+            tick_remain = lock.timeout_tick as i64 - TICK as i64;
         }
-        if tick_remain<=0{
-            Duration::new(0,0)
-        }else{
-            let second_count = tick_remain as u64/TIMER_FREQ;
+        if tick_remain <= 0 {
+            Duration::new(0, 0)
+        } else {
+            let second_count = tick_remain as u64 / TIMER_FREQ;
             let remain_count = tick_remain as u64 % TIMER_FREQ;
-            Duration::new(second_count,(remain_count * NANOS_DIVIDE) as u32)
+            Duration::new(second_count, (remain_count * NANOS_DIVIDE) as u32)
         }
     }
 
     /// Clear the timeout value.
     pub fn clear(&self) {
         let mut lock = self.inner.lock();
-        if let Some(callback) = &lock.timer_callback{
+        if let Some(callback) = &lock.timer_callback {
             callback.disable();
         }
         lock.timeout_tick = 0;

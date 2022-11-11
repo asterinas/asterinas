@@ -22,7 +22,7 @@ pub struct MSIXEntry {
     pub irq_handle: IrqAllocateHandle,
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq,Pod)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Pod)]
 #[repr(C)]
 pub struct MSIXTableEntry {
     pub msg_addr: u32,

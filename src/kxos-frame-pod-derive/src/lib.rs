@@ -1,6 +1,9 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields, DataEnum, punctuated::Punctuated, token::Comma, Field};
+use syn::{
+    parse_macro_input, punctuated::Punctuated, token::Comma, Data, DataEnum, DataStruct,
+    DeriveInput, Field, Fields,
+};
 
 #[proc_macro_derive(Pod)]
 pub fn derive_pod(input_token: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -16,9 +19,9 @@ fn expand_derive_pod(input: DeriveInput) -> TokenStream {
             Fields::Unnamed(fields_unnamed) => fields_unnamed.unnamed,
             Fields::Unit => Punctuated::new(),
         },
-        Data::Enum(DataEnum{variants,..})=>{
-            let mut fields : Punctuated<Field,Comma> = Punctuated::new();
-            for var in variants{
+        Data::Enum(DataEnum { variants, .. }) => {
+            let mut fields: Punctuated<Field, Comma> = Punctuated::new();
+            for var in variants {
                 fields.extend(match var.fields {
                     Fields::Named(fields_named) => fields_named.named,
                     Fields::Unnamed(fields_unnamed) => fields_unnamed.unnamed,

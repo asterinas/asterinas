@@ -1,11 +1,11 @@
-use kxos_typeflags::type_flags;
 use bitflags::bitflags;
+use kxos_typeflags::type_flags;
 
 bitflags! {
     /// Value-based access rights.
-    /// 
+    ///
     /// These access rights are provided to cover a wide range of use cases.
-    /// The access rights' semantics and how they would restrict the behaviors 
+    /// The access rights' semantics and how they would restrict the behaviors
     /// of a capability are decided by the capability's designer.
     /// Here, we give some sensible semantics for each access right.
     pub struct Rights: u32 {
@@ -24,10 +24,10 @@ bitflags! {
     }
 }
 /// Type-based access rights.
-/// 
+///
 /// Similar to value-based access rights (`Rights`), but represented in
 /// types.
-/// 
+///
 /// pub trait TRights: u32 {
 ///     /// Allows duplicating a capability.
 ///     struct Dup: u32      = Rights::DUP;
@@ -42,7 +42,7 @@ bitflags! {
 ///     /// Allows sending notifications or signals.
 ///     struct Signal: u32   = Rights::SIGNAL;
 /// }
-/// 
+///
 type_flags! {
     pub trait TRights: u32 {
         pub struct Dup    = 1 <<0;
@@ -54,10 +54,4 @@ type_flags! {
 }
 
 /// The full set of access rights.
-pub type Full = TRights![
-    Dup,
-    Read,
-    Write,
-    Exec,
-    Signal
-];
+pub type Full = TRights![Dup, Read, Write, Exec, Signal];
