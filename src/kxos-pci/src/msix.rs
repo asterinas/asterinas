@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::util::{CSpaceAccessMethod, Location, BAR};
+use kxos_frame_pod_derive::Pod;
 
 use super::capability::msix::CapabilityMSIXData;
 
@@ -21,7 +22,7 @@ pub struct MSIXEntry {
     pub irq_handle: IrqAllocateHandle,
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Pod)]
 #[repr(C)]
 pub struct MSIXTableEntry {
     pub msg_addr: u32,
@@ -29,8 +30,6 @@ pub struct MSIXTableEntry {
     pub msg_data: u32,
     pub vector_control: u32,
 }
-
-kxos_frame::impl_pod_for!(MSIXTableEntry);
 
 impl MSIX {
     /// create a MSIX instance, it allocate the irq number automatically.

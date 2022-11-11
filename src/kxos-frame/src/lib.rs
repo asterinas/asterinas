@@ -26,7 +26,6 @@ pub mod timer;
 pub mod trap;
 pub mod user;
 mod util;
-#[macro_use]
 pub mod vm;
 pub(crate) mod x86_64_util;
 
@@ -62,10 +61,6 @@ pub use crate::serial_println as println;
 
 pub fn init(boot_info: &'static mut BootInfo) {
     let siz = boot_info.framebuffer.as_ref().unwrap() as *const FrameBuffer as usize;
-    device::init(boot_info.framebuffer.as_mut().unwrap());
-    device::framebuffer::WRITER.lock().as_mut().unwrap().clear();
-    trap::init();
-    enable_common_cpu_features();
     let mut memory_init = false;
     // memory
     for region in boot_info.memory_regions.iter() {
@@ -84,13 +79,19 @@ pub fn init(boot_info: &'static mut BootInfo) {
     if !memory_init {
         panic!("memory init failed");
     }
+    device::init(boot_info.framebuffer.as_mut().unwrap());
+    device::framebuffer::WRITER.lock().as_mut().unwrap().clear();
+    trap::init();
+    enable_common_cpu_features();
     unsafe {
         for i in 0..256 {
             IRQ_CALLBACK_LIST.push(IrqLine::acquire(i as u8).on_active(general_handler))
         }
     }
+    // uncomment below code to enable timer interrupt
+    // x86_64_util::enable_interrupts_and_hlt();
 }
-fn general_handler(trap_frame: TrapFrame) {
+fn general_handler(trap_frame: &TrapFrame) {
     println!("{:#x?}", trap_frame);
     println!("rip = 0x{:x}", trap_frame.rip);
     println!("rsp = 0x{:x}", trap_frame.rsp);
@@ -113,7 +114,7 @@ where
     T: Fn(),
 {
     fn run(&self) {
-        serial_print!("{}...\t", core::any::type_name::<T>());
+        serial_print!("{}...\n", core::any::type_name::<T>());
         self();
         serial_println!("[ok]");
     }

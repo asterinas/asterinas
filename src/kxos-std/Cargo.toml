@@ -10,6 +10,9 @@ kxos-frame = {path = "../kxos-frame"}
 kxos-frame-pod-derive = {path = "../kxos-frame-pod-derive"}
 kxos-pci = {path="../kxos-pci"}
 kxos-virtio = {path="../kxos-virtio"}
+kxos-typeflags = {path="../kxos-typeflags"}
+kxos-typeflags-util = {path="../kxos-typeflags-util"}
+kxos-rights-proc = {path="../kxos-rights-proc"}
 
 # parse elf file
 xmas-elf = "0.8.0"

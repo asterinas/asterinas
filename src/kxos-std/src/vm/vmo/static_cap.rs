@@ -1,117 +1,128 @@
+use core::ops::Range;
+
+use kxos_frame::prelude::Result;
+use kxos_frame::{vm::VmIo, Error};
+use kxos_rights_proc::require;
+
+use crate::rights::*;
+
+use super::{
+    options::{VmoCowChild, VmoSliceChild},
+    Vmo, VmoChildOptions,
+};
+
 impl<R: TRights> Vmo<R> {
     /// Creates a new slice VMO through a set of VMO child options.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```
     /// let parent = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
     /// let child_size = parent.size();
     /// let child = parent.new_slice_child(0..child_size).alloc().unwrap();
     /// assert!(child.size() == child_size);
-    /// ``` 
-    /// 
+    /// ```
+    ///
     /// For more details on the available options, see `VmoChildOptions`.
-    /// 
+    ///
     /// # Access rights
-    /// 
+    ///
     /// This method requires the Dup right.
-    /// 
+    ///
     /// The new VMO child will be of the same capability flavor as the parent;
     /// so are the access rights.
     #[require(R > Dup)]
-    pub fn new_slice_child(&self, range: Range<usize>) -> VmoChildOptions<'_, R, VmoSliceChild> {
-        let dup_self = self.dup();
-        VmoChildOptions::new_slice(dup_self, range)
+    pub fn new_slice_child(
+        &self,
+        range: Range<usize>,
+    ) -> Result<VmoChildOptions<R, VmoSliceChild>> {
+        let dup_self = self.dup()?;
+        Ok(VmoChildOptions::new_slice(dup_self, range))
     }
 
     /// Creates a new COW VMO through a set of VMO child options.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```
     /// let parent = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
     /// let child_size = 2 * parent.size();
     /// let child = parent.new_cow_child(0..child_size).alloc().unwrap();
     /// assert!(child.size() == child_size);
-    /// ``` 
-    /// 
+    /// ```
+    ///
     /// For more details on the available options, see `VmoChildOptions`.
-    /// 
+    ///
     /// # Access rights
-    /// 
+    ///
     /// This method requires the Dup right.
-    /// 
+    ///
     /// The new VMO child will be of the same capability flavor as the parent.
     /// The child will be given the access rights of the parent
     /// plus the Write right.
     #[require(R > Dup)]
-    pub fn new_cow_child(&self, range: Range<usize>) -> VmoChildOptions<'_, R, VmoCowChild> {
-        let dup_self = self.dup();
-        VmoChildOptions::new_cow(dup_self, range)
+    pub fn new_cow_child(&self, range: Range<usize>) -> Result<VmoChildOptions<R, VmoCowChild>> {
+        let dup_self = self.dup()?;
+        Ok(VmoChildOptions::new_cow(dup_self, range))
     }
 
     /// Commit the pages specified in the range (in bytes).
-    /// 
+    ///
     /// The range must be within the size of the VMO.
-    /// 
+    ///
     /// The start and end addresses will be rounded down and up to page boundaries.
-    /// 
+    ///
     /// # Access rights
     ///
-    /// The method requires the Write right. 
+    /// The method requires the Write right.
     #[require(R > Write)]
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
         self.0.commit(range)
     }
 
     /// Decommit the pages specified in the range (in bytes).
-    /// 
+    ///
     /// The range must be within the size of the VMO.
-    /// 
+    ///
     /// The start and end addresses will be rounded down and up to page boundaries.
-    /// 
+    ///
     /// # Access rights
     ///
-    /// The method requires the Write right. 
+    /// The method requires the Write right.
     #[require(R > Write)]
     pub fn decommit(&self, range: Range<usize>) -> Result<()> {
         self.0.decommit(range)
     }
 
     /// Resize the VMO by giving a new size.
-    /// 
+    ///
     /// The VMO must be resizable.
-    /// 
+    ///
     /// The new size will be rounded up to page boundaries.
-    /// 
+    ///
     /// # Access rights
     ///
-    /// The method requires the Write right. 
+    /// The method requires the Write right.
     #[require(R > Write)]
     pub fn resize(&self, new_size: usize) -> Result<()> {
         self.0.resize(new_size)
     }
 
-    /// Clear the specified range by writing zeros. 
-    /// 
+    /// Clear the specified range by writing zeros.
+    ///
     /// # Access rights
     ///
-    /// The method requires the Write right. 
+    /// The method requires the Write right.
     #[require(R > Write)]
     pub fn clear(&self, range: Range<usize>) -> Result<()> {
-        self.0.clear(range) 
-    }
-
-    /// Returns the size of the VMO in bytes.
-    pub fn size(&self) -> usize {
-        self.0.size()
+        self.0.clear(range)
     }
 
     /// Duplicate the capability.
-    /// 
+    ///
     /// # Access rights
     ///
-    /// The method requires the Dup right. 
+    /// The method requires the Dup right.
     #[require(R > Dup)]
     pub fn dup(&self) -> Result<Self> {
         todo!()
@@ -124,13 +135,21 @@ impl<R: TRights> Vmo<R> {
     }
 
     /// Converts to a dynamic capability.
-    pub fn to_dyn(self) -> Vmo {
+    pub fn to_dyn(self) -> Vmo<Rights> {
         todo!()
     }
 
     /// Returns the access rights.
     pub const fn rights(&self) -> Rights {
-        R::BITS
+        Rights::from_bits(R::BITS).unwrap()
+    }
+
+    fn check_rights(&self, rights: Rights) -> Result<()> {
+        if self.rights().contains(rights) {
+            Ok(())
+        } else {
+            Err(Error::AccessDenied)
+        }
     }
 }
 

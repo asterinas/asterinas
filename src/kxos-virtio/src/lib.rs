@@ -7,8 +7,10 @@ extern crate alloc;
 use alloc::{sync::Arc, vec::Vec};
 use bitflags::bitflags;
 use kxos_frame::{info, offset_of, TrapFrame};
+use kxos_frame_pod_derive::Pod;
 use kxos_pci::util::{PCIDevice, BAR};
 use kxos_util::frame_ptr::InFramePtr;
+
 use spin::{mutex::Mutex, MutexGuard};
 
 use self::{block::VirtioBLKConfig, queue::VirtQueue};
@@ -54,7 +56,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone, Pod)]
 #[repr(C)]
 pub struct VitrioPciCommonCfg {
     device_feature_select: u32,
@@ -75,8 +77,6 @@ pub struct VitrioPciCommonCfg {
     queue_driver: u64,
     queue_device: u64,
 }
-
-kxos_frame::impl_pod_for!(VitrioPciCommonCfg);
 
 impl VitrioPciCommonCfg {
     pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> InFramePtr<Self> {
@@ -272,7 +272,7 @@ impl PCIVirtioDevice {
     /// register the queue interrupt functions, this function should call only once
     pub fn register_queue_interrupt_functions<F>(&mut self, functions: &mut Vec<F>)
     where
-        F: Fn(TrapFrame) + Send + Sync + 'static,
+        F: Fn(&TrapFrame) + Send + Sync + 'static,
     {
         let len = functions.len();
         if len

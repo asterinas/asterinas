@@ -1,6 +1,9 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields};
+use syn::{
+    parse_macro_input, punctuated::Punctuated, token::Comma, Data, DataEnum, DataStruct,
+    DeriveInput, Field, Fields,
+};
 
 #[proc_macro_derive(Pod)]
 pub fn derive_pod(input_token: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -14,11 +17,22 @@ fn expand_derive_pod(input: DeriveInput) -> TokenStream {
         Data::Struct(DataStruct { fields, .. }) => match fields {
             Fields::Named(fields_named) => fields_named.named,
             Fields::Unnamed(fields_unnamed) => fields_unnamed.unnamed,
-            Fields::Unit => panic!("derive pod does not work for struct with unit field"),
+            Fields::Unit => Punctuated::new(),
         },
+        Data::Enum(DataEnum { variants, .. }) => {
+            let mut fields: Punctuated<Field, Comma> = Punctuated::new();
+            for var in variants {
+                fields.extend(match var.fields {
+                    Fields::Named(fields_named) => fields_named.named,
+                    Fields::Unnamed(fields_unnamed) => fields_unnamed.unnamed,
+                    Fields::Unit => Punctuated::new(),
+                })
+            }
+            fields
+        }
         // Panic on compilation time if one tries to derive pod for enum or union.
         // It may not be a good idea, but works now.
-        _ => panic!("derive pod only works for struct now."),
+        _ => panic!("derive pod only works for struct and enum now."),
     };
 
     // deal with generics

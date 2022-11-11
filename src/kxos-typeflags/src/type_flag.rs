@@ -65,11 +65,12 @@ impl TypeFlagDef {
         let ident = self.ident.clone();
         let type_ = self.type_.clone();
         quote!(
-            #vis trait #ident {
+            #vis trait #ident : Sync + Send{
                 const BITS: #type_;
 
                 fn new() -> Self;
             }
+
         )
     }
 

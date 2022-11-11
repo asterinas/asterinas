@@ -52,8 +52,6 @@ pub unsafe trait Pod: Copy + Sized + Debug {
     }
 }
 
-/// FIXME: use derive instead
-#[macro_export]
 macro_rules! impl_pod_for {
     ($($pod_ty:ty),*) => {
         $(unsafe impl Pod for $pod_ty {})*

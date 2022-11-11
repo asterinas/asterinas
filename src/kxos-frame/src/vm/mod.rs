@@ -8,7 +8,6 @@ pub type Paddr = usize;
 
 mod frame;
 mod io;
-#[macro_use]
 mod pod;
 mod space;
 

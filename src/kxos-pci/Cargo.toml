@@ -10,6 +10,7 @@ bitflags = "1.3"
 spin = "0.9.4"
 kxos-frame = {path = "../kxos-frame"}
 kxos-util = {path="../kxos-util"}
+kxos-frame-pod-derive= {path="../kxos-frame-pod-derive"}
 
 [dependencies.lazy_static]
 version = "1.0"
