@@ -13,7 +13,7 @@ pub(crate) use bitflags::bitflags;
 pub(crate) use core::ffi::CStr;
 pub(crate) use kxos_frame::config::PAGE_SIZE;
 pub(crate) use kxos_frame::vm::Vaddr;
-pub(crate) use kxos_frame::{debug, error, info, trace, warn};
+pub(crate) use kxos_frame::{debug, error, info, print, println, trace, warn};
 pub(crate) use spin::Mutex;
 
 #[macro_export]

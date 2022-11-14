@@ -164,7 +164,12 @@ impl<'a> ElfLoadInfo<'a> {
         self.segments.push(elf_segment);
     }
 
-    pub fn parse_elf_data(elf_file_content: &'a [u8], filename: CString) -> Result<Self> {
+    pub fn parse_elf_data(
+        elf_file_content: &'a [u8],
+        filename: CString,
+        argv: Vec<CString>,
+        envp: Vec<CString>,
+    ) -> Result<Self> {
         let elf_file = match ElfFile::new(elf_file_content) {
             Err(error_msg) => return_errno_with_message!(Errno::ENOEXEC, error_msg),
             Ok(elf_file) => elf_file,
@@ -174,7 +179,7 @@ impl<'a> ElfLoadInfo<'a> {
         let elf_header_info = ElfHeaderInfo::parse_elf_header(&elf_file);
         // FIXME: only contains load segment?
         let segments_count = elf_file.program_iter().count();
-        let init_stack = InitStack::new_default_config(filename);
+        let init_stack = InitStack::new_default_config(filename, argv, envp);
         let mut elf_load_info =
             ElfLoadInfo::with_capacity(segments_count, init_stack, elf_header_info);
 

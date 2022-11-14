@@ -5,7 +5,7 @@ use kxos_frame_pod_derive::Pod;
 
 use super::capability::msix::CapabilityMSIXData;
 
-use kxos_frame::{offset_of, vm::Pod, IrqAllocateHandle};
+use kxos_frame::{offset_of, IrqAllocateHandle};
 use kxos_util::frame_ptr::InFramePtr;
 
 #[derive(Debug, Default)]

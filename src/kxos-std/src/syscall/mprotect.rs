@@ -14,9 +14,10 @@ pub fn sys_mprotect(vaddr: u64, len: u64, perms: u64) -> Result<SyscallReturn> {
 }
 
 pub fn do_sys_mprotect(addr: Vaddr, len: usize, perms: VmPerm) -> isize {
-    debug!("addr = 0x{:x}", addr);
-    debug!("len = 0x{:x}", len);
-    debug!("perms = {:?}", perms);
-    warn!("TODO: mprotect do nothing now");
+    debug!(
+        "addr = 0x{:x}, len = 0x{:x}, perms = {:?}",
+        addr, len, perms
+    );
+    // TODO: mprotect do nothing now
     0
 }

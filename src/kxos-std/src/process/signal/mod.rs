@@ -7,11 +7,16 @@ pub mod sig_num;
 pub mod sig_queues;
 pub mod signals;
 
+use core::mem;
+
+use kxos_frame::AlignExt;
 use kxos_frame::{cpu::CpuContext, task::Task};
 
+use self::c_types::siginfo_t;
 use self::sig_mask::SigMask;
 use self::sig_num::SigNum;
 use crate::memory::{write_bytes_to_user, write_val_to_user};
+use crate::process::signal::c_types::ucontext_t;
 use crate::process::signal::sig_action::SigActionFlags;
 use crate::{
     prelude::*,
@@ -19,7 +24,7 @@ use crate::{
 };
 
 /// Handle pending signal for current process
-pub fn handle_pending_signal(context: &mut CpuContext) {
+pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
     let current = current!();
     let pid = current.pid();
     let process_name = current.filename().unwrap();
@@ -47,7 +52,8 @@ pub fn handle_pending_signal(context: &mut CpuContext) {
                 restorer_addr,
                 mask,
                 context,
-            ),
+                signal.to_info(),
+            )?,
             SigAction::Dfl => {
                 let sig_default_action = SigDefaultAction::from_signum(sig_num);
                 debug!("sig_default_action: {:?}", sig_default_action);
@@ -86,6 +92,7 @@ pub fn handle_pending_signal(context: &mut CpuContext) {
             }
         }
     }
+    Ok(())
 }
 
 pub fn handle_user_signal_handler(
@@ -93,32 +100,54 @@ pub fn handle_user_signal_handler(
     handler_addr: Vaddr,
     flags: SigActionFlags,
     restorer_addr: Vaddr,
-    mask: SigMask,
+    mut mask: SigMask,
     context: &mut CpuContext,
-) {
+    sig_info: siginfo_t,
+) -> Result<()> {
     debug!("sig_num = {:?}", sig_num);
     debug!("handler_addr = 0x{:x}", handler_addr);
     debug!("flags = {:?}", flags);
     debug!("restorer_addr = 0x{:x}", restorer_addr);
-    // FIXME: How to respect flags
-    if flags.intersects(!(SigActionFlags::SA_RESTART | SigActionFlags::SA_RESTORER)) {
+    // FIXME: How to respect flags?
+    if flags.contains_unsupported_flag() {
         panic!("Unsupported Signal flags");
+    }
+    if !flags.contains(SigActionFlags::SA_NODEFER) {
+        // add current signal to mask
+        let current_mask = SigMask::from(sig_num);
+        mask.block(current_mask.as_u64());
     }
     let current = current!();
     // block signals in sigmask when running signal handler
     current.sig_mask().lock().block(mask.as_u64());
-    // store context in current process
-    let sig_context = SigContext::new(context.clone(), mask);
-    *(current.sig_context().lock()) = Some(sig_context);
-    // set up signal stack in user stack
+
+    // set up signal stack in user stack. // avoid corrupt user stack, we minus 128 first.
     let mut user_rsp = context.gp_regs.rsp;
-    // avoid corrupt user stack, we minus 128 first.
     user_rsp = user_rsp - 128;
-    // Copy the trampoline code.
+
+    // 1. write siginfo_t
+    user_rsp = user_rsp - mem::size_of::<siginfo_t>() as u64;
+    write_val_to_user(user_rsp as _, &sig_info)?;
+    let siginfo_addr = user_rsp;
+    debug!("siginfo_addr = 0x{:x}", siginfo_addr);
+
+    // 2. write ucontext_t.
+    user_rsp = alloc_aligned_in_user_stack(user_rsp, mem::size_of::<ucontext_t>(), 16)?;
+    let mut ucontext = ucontext_t::default();
+    ucontext.uc_sigmask = mask.as_u64();
+    ucontext.uc_mcontext.inner.gp_regs = context.gp_regs;
+    // TODO: store fp regs in ucontext
+    write_val_to_user(user_rsp as _, &ucontext)?;
+    let ucontext_addr = user_rsp;
+    debug!("ucontext addr = 0x{:x}", ucontext_addr);
+    // Store the ucontext addr in sig context of current process.
+    current.sig_context().lock().push_back(ucontext_addr as _);
+
+    // 3. Set the address of the trampoline code.
     if flags.contains(SigActionFlags::SA_RESTORER) {
         // If contains SA_RESTORER flag, trampoline code is provided by libc in restorer_addr.
         // We just store restorer_addr on user stack to allow user code just to trampoline code.
-        user_rsp = write_u64_to_user_stack(user_rsp, restorer_addr as u64);
+        user_rsp = write_u64_to_user_stack(user_rsp, restorer_addr as u64)?;
     } else {
         // Otherwise we create
         const TRAMPOLINE: &[u8] = &[
@@ -128,44 +157,36 @@ pub fn handle_user_signal_handler(
         ];
         user_rsp = user_rsp - TRAMPOLINE.len() as u64;
         let trampoline_rip = user_rsp;
-        write_bytes_to_user(user_rsp as Vaddr, TRAMPOLINE);
-        user_rsp = write_u64_to_user_stack(user_rsp, trampoline_rip);
+        write_bytes_to_user(user_rsp as Vaddr, TRAMPOLINE)?;
+        user_rsp = write_u64_to_user_stack(user_rsp, trampoline_rip)?;
     }
+    // 4. Set correct register values
     context.gp_regs.rip = handler_addr as _;
     context.gp_regs.rsp = user_rsp;
     // parameters of signal handler
     context.gp_regs.rdi = sig_num.as_u8() as u64; // signal number
-    context.gp_regs.rsi = 0; // siginfo_t* siginfo
-    context.gp_regs.rdx = 0; // void* ctx
+    if flags.contains(SigActionFlags::SA_SIGINFO) {
+        context.gp_regs.rsi = siginfo_addr; // siginfo_t* siginfo
+        context.gp_regs.rdx = ucontext_addr; // void* ctx
+    } else {
+        context.gp_regs.rsi = 0;
+        context.gp_regs.rdx = 0;
+    }
+
+    Ok(())
 }
 
-fn write_u64_to_user_stack(rsp: u64, value: u64) -> u64 {
+fn write_u64_to_user_stack(rsp: u64, value: u64) -> Result<u64> {
     let rsp = rsp - 8;
-    write_val_to_user(rsp as Vaddr, &value);
-    rsp
+    write_val_to_user(rsp as Vaddr, &value)?;
+    Ok(rsp)
 }
 
-/// Used to store process context before running signal handler.
-/// In rt_sigreturn, this context is used to restore process context.
-#[derive(Debug, Clone, Copy)]
-pub struct SigContext {
-    cpu_context: CpuContext,
-    sig_mask: SigMask,
-}
-
-impl SigContext {
-    pub const fn new(cpu_context: CpuContext, sig_mask: SigMask) -> SigContext {
-        Self {
-            cpu_context,
-            sig_mask,
-        }
+/// alloc memory of size on user stack, the return address should respect the align argument.
+fn alloc_aligned_in_user_stack(rsp: u64, size: usize, align: usize) -> Result<u64> {
+    if !align.is_power_of_two() {
+        return_errno_with_message!(Errno::EINVAL, "align must be power of two");
     }
-
-    pub fn cpu_context(&self) -> &CpuContext {
-        &self.cpu_context
-    }
-
-    pub fn sig_mask(&self) -> &SigMask {
-        &self.sig_mask
-    }
+    let start = (rsp - size as u64).align_down(align as u64);
+    Ok(start)
 }

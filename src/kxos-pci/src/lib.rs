@@ -7,6 +7,7 @@ pub mod msix;
 pub mod util;
 extern crate alloc;
 use kxos_frame::info;
+extern crate kxos_frame_pod_derive;
 
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::lazy_static;

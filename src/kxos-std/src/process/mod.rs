@@ -1,10 +1,6 @@
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
-use crate::prelude::*;
-use kxos_frame::sync::WaitQueue;
-use kxos_frame::{task::Task, user::UserSpace, vm::VmSpace};
-
-use self::process_filter::ProcessFilter;
+use self::name::ProcessName;
 use self::process_group::ProcessGroup;
 use self::process_vm::mmap_area::MmapArea;
 use self::process_vm::user_heap::UserHeap;
@@ -14,14 +10,17 @@ use self::signal::sig_disposition::SigDispositions;
 use self::signal::sig_mask::SigMask;
 use self::signal::sig_queues::SigQueues;
 use self::signal::signals::kernel::KernelSignal;
-use self::signal::SigContext;
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
+use crate::prelude::*;
+use kxos_frame::sync::WaitQueue;
+use kxos_frame::{task::Task, user::UserSpace, vm::VmSpace};
 
 pub mod clone;
 pub mod elf;
 pub mod exception;
 pub mod fifo_scheduler;
+pub mod name;
 pub mod process_filter;
 pub mod process_group;
 pub mod process_vm;
@@ -46,7 +45,7 @@ pub struct Process {
     filename: Option<CString>,
     user_space: Option<Arc<UserSpace>>,
     user_vm: Option<UserVm>,
-    waiting_children: WaitQueue<ProcessFilter>,
+    waiting_children: WaitQueue,
 
     // Mutable Part
     /// The exit code
@@ -59,14 +58,16 @@ pub struct Process {
     children: Mutex<BTreeMap<usize, Arc<Process>>>,
     /// Process group
     process_group: Mutex<Option<Weak<ProcessGroup>>>,
+    /// Process name
+    process_name: Mutex<Option<ProcessName>>,
 
     // Signal
     sig_dispositions: Mutex<SigDispositions>,
     sig_queues: Mutex<SigQueues>,
     /// Process-level sigmask
     sig_mask: Mutex<SigMask>,
-    /// Signal handler Context
-    sig_context: Mutex<Option<SigContext>>,
+    /// Signal handler ucontext address
+    sig_context: Mutex<VecDeque<Vaddr>>,
 }
 
 impl Process {
@@ -99,11 +100,16 @@ impl Process {
             None
         } else {
             debug!("All process except init should have parent");
-            let current_process = Process::current();
+            let current_process = current!();
             Some(Arc::downgrade(&current_process))
         };
         let children = BTreeMap::new();
         let waiting_children = WaitQueue::new();
+        let process_name = exec_filename.as_ref().map(|filename| {
+            let mut process_name = ProcessName::new();
+            process_name.set_name(filename).unwrap();
+            process_name
+        });
         Self {
             pid,
             task,
@@ -116,20 +122,26 @@ impl Process {
             parent: Mutex::new(parent),
             children: Mutex::new(children),
             process_group: Mutex::new(process_group),
+            process_name: Mutex::new(process_name),
             sig_dispositions: Mutex::new(sig_dispositions),
             sig_queues: Mutex::new(sig_queues),
             sig_mask: Mutex::new(sig_mask),
-            sig_context: Mutex::new(None),
+            sig_context: Mutex::new(VecDeque::new()),
         }
     }
 
-    pub fn waiting_children(&self) -> &WaitQueue<ProcessFilter> {
+    pub fn waiting_children(&self) -> &WaitQueue {
         &self.waiting_children
     }
 
     /// init a user process and send the process to scheduler
-    pub fn spawn_user_process(filename: CString, elf_file_content: &'static [u8]) -> Arc<Self> {
-        let process = Process::create_user_process(filename, elf_file_content);
+    pub fn spawn_user_process(
+        filename: CString,
+        elf_file_content: &'static [u8],
+        argv: Vec<CString>,
+        envp: Vec<CString>,
+    ) -> Arc<Self> {
+        let process = Process::create_user_process(filename, elf_file_content, argv, envp);
         process.send_to_scheduler();
         process
     }
@@ -139,18 +151,28 @@ impl Process {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        let process = Process::create_kernel_process(task_fn);
+        let process_fn = move || {
+            task_fn();
+            current!().exit(0);
+        };
+        let process = Process::create_kernel_process(process_fn);
         process.send_to_scheduler();
         process
     }
 
-    fn create_user_process(filename: CString, elf_file_content: &'static [u8]) -> Arc<Self> {
+    fn create_user_process(
+        filename: CString,
+        elf_file_content: &'static [u8],
+        argv: Vec<CString>,
+        envp: Vec<CString>,
+    ) -> Arc<Self> {
         let pid = new_pid();
 
         let user_process = Arc::new_cyclic(|weak_process_ref| {
             let weak_process = weak_process_ref.clone();
             let cloned_filename = Some(filename.clone());
-            let task = create_user_task_from_elf(filename, elf_file_content, weak_process);
+            let task =
+                create_user_task_from_elf(filename, elf_file_content, weak_process, argv, envp);
             let user_space = task.user_space().map(|user_space| user_space.clone());
             let user_vm = UserVm::new();
             let sig_dispositions = SigDispositions::new();
@@ -170,7 +192,11 @@ impl Process {
         });
         // Set process group
         user_process.create_and_set_process_group();
-        table::add_process(pid, user_process.clone());
+        table::add_process(user_process.clone());
+        let parent = user_process
+            .parent()
+            .expect("[Internel error] User process should always have parent");
+        parent.add_child(user_process.clone());
         user_process
     }
 
@@ -198,7 +224,10 @@ impl Process {
             )
         });
         kernel_process.create_and_set_process_group();
-        table::add_process(pid, kernel_process.clone());
+        table::add_process(kernel_process.clone());
+        if let Some(parent) = kernel_process.parent() {
+            parent.add_child(kernel_process.clone());
+        }
         kernel_process
     }
 
@@ -222,17 +251,20 @@ impl Process {
         }
     }
 
+    pub fn process_name(&self) -> &Mutex<Option<ProcessName>> {
+        &self.process_name
+    }
+
     pub fn process_group(&self) -> &Mutex<Option<Weak<ProcessGroup>>> {
         &self.process_group
     }
 
-    pub fn sig_context(&self) -> &Mutex<Option<SigContext>> {
+    pub fn sig_context(&self) -> &Mutex<VecDeque<Vaddr>> {
         &self.sig_context
     }
 
     /// add a child process
     pub fn add_child(&self, child: Arc<Process>) {
-        debug!("process: {}, add child: {} ", self.pid(), child.pid());
         let child_pid = child.pid();
         self.children.lock().insert(child_pid, child);
     }
@@ -241,12 +273,14 @@ impl Process {
         let _ = self.parent.lock().insert(parent);
     }
 
+    /// Set process group for current process. If old process group exists,
+    /// remove current process from old process group.
     pub fn set_process_group(&self, process_group: Weak<ProcessGroup>) {
-        if self.process_group.lock().is_none() {
-            let _ = self.process_group.lock().insert(process_group);
-        } else {
-            todo!("We should do something with old group")
+        if let Some(old_process_group) = &*self.process_group().lock() {
+            let old_process_group = old_process_group.upgrade().unwrap();
+            old_process_group.remove_process(self.pid());
         }
+        let _ = self.process_group.lock().insert(process_group);
     }
 
     /// create a new process group for the process and add it to globle table.
@@ -255,10 +289,10 @@ impl Process {
         let process_group = Arc::new(ProcessGroup::new(self.clone()));
         let pgid = process_group.pgid();
         self.set_process_group(Arc::downgrade(&process_group));
-        table::add_process_group(pgid, process_group);
+        table::add_process_group(process_group);
     }
 
-    fn parent(&self) -> Option<Arc<Process>> {
+    pub fn parent(&self) -> Option<Arc<Process>> {
         self.parent
             .lock()
             .as_ref()
@@ -266,16 +300,15 @@ impl Process {
             .flatten()
     }
 
-    /// Exit current process.
-    /// Set the status of current process as Zombie and set exit code.
+    /// Exit process.
+    /// Set the status of the process as Zombie and set exit code.
     /// Move all children to init process.
     /// Wake up the parent wait queue if parent is waiting for self.
     pub fn exit(&self, exit_code: i32) {
         self.status.lock().set_zombie();
         self.exit_code.store(exit_code, Ordering::Relaxed);
         // move children to the init process
-        let current_process = Process::current();
-        if !current_process.is_init_process() {
+        if !self.is_init_process() {
             let init_process = get_init_process();
             for (_, child_process) in self.children.lock().drain_filter(|_, _| true) {
                 child_process.set_parent(Arc::downgrade(&init_process));
@@ -283,16 +316,12 @@ impl Process {
             }
         }
 
-        if let Some(parent) = current_process.parent() {
+        if let Some(parent) = self.parent() {
             // set parent sig child
             let signal = Box::new(KernelSignal::new(SIGCHLD));
             parent.sig_queues().lock().enqueue(signal);
             // wake up parent waiting children, if any
-            parent
-                .waiting_children()
-                .wake_all_on_condition(&current_process.pid(), |filter, pid| {
-                    filter.contains_pid(*pid)
-                });
+            parent.waiting_children().wake_all();
         }
     }
 
@@ -345,16 +374,6 @@ impl Process {
         }
     }
 
-    /// Get child process with given pid
-    pub fn get_child_by_pid(&self, pid: Pid) -> Option<Arc<Process>> {
-        for (child_pid, child_process) in self.children.lock().iter() {
-            if *child_pid == pid {
-                return Some(child_process.clone());
-            }
-        }
-        None
-    }
-
     /// free zombie child with pid, returns the exit code of child process.
     /// remove process from process group.
     pub fn reap_zombie_child(&self, pid: Pid) -> i32 {
@@ -369,14 +388,8 @@ impl Process {
         child_process.exit_code()
     }
 
-    /// Get any zombie child
-    pub fn get_zombie_child(&self) -> Option<Arc<Process>> {
-        for (_, child_process) in self.children.lock().iter() {
-            if child_process.status().lock().is_zombie() {
-                return Some(child_process.clone());
-            }
-        }
-        None
+    pub fn children(&self) -> &Mutex<BTreeMap<usize, Arc<Process>>> {
+        &self.children
     }
 
     pub fn exit_code(&self) -> i32 {
@@ -411,7 +424,7 @@ impl Process {
 
 /// Get the init process
 pub fn get_init_process() -> Arc<Process> {
-    let mut current_process = Process::current();
+    let mut current_process = current!();
     while current_process.pid() != 0 {
         let process = current_process
             .parent

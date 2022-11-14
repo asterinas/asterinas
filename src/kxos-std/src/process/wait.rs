@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-use super::{process_filter::ProcessFilter, ExitCode, Pid, Process};
+use super::{process_filter::ProcessFilter, ExitCode, Pid};
 
 // The definition of WaitOptions is from Occlum
 bitflags! {
@@ -22,37 +22,52 @@ impl WaitOptions {
 }
 
 pub fn wait_child_exit(
-    process_filter: ProcessFilter,
+    child_filter: ProcessFilter,
     wait_options: WaitOptions,
-) -> (Pid, ExitCode) {
-    let current = Process::current();
+) -> Result<(Pid, ExitCode)> {
+    let current = current!();
+    let (pid, exit_code) = current.waiting_children().wait_until(|| {
+        let children_lock = current.children().lock();
+        let unwaited_children = children_lock
+            .iter()
+            .filter(|(pid, child)| match child_filter {
+                ProcessFilter::Any => true,
+                ProcessFilter::WithPid(pid) => child.pid() == pid,
+                ProcessFilter::WithPgid(pgid) => child.pgid() == pgid,
+            })
+            .map(|(_, child)| child.clone())
+            .collect::<Vec<_>>();
+        // we need to drop the lock here, since reap child process need to acquire this lock again
+        drop(children_lock);
 
-    let (pid, exit_code) = current.waiting_children().wait_until(process_filter, || {
-        let waited_child_process = match process_filter {
-            ProcessFilter::Any => current.get_zombie_child(),
-            ProcessFilter::WithPid(pid) => current.get_child_by_pid(pid as Pid),
-            ProcessFilter::WithPgid(pgid) => todo!(),
-        };
+        if unwaited_children.len() == 0 {
+            return Some(Err(kxos_frame::Error::NoChild));
+        }
 
-        // some child process is exited
-        if let Some(waited_child_process) = waited_child_process {
-            let wait_pid = waited_child_process.pid();
-            let exit_code = waited_child_process.exit_code();
+        // return immediately if we find a zombie child
+        let zombie_child = unwaited_children
+            .iter()
+            .find(|child| child.status().lock().is_zombie());
+
+        if let Some(zombie_child) = zombie_child {
+            let zombie_pid = zombie_child.pid();
+            let exit_code = zombie_child.exit_code();
             if wait_options.contains(WaitOptions::WNOWAIT) {
                 // does not reap child, directly return
-                return Some((wait_pid, exit_code));
+                return Some(Ok((zombie_pid, exit_code)));
             } else {
-                let exit_code = current.reap_zombie_child(wait_pid);
-                return Some((wait_pid, exit_code));
+                let exit_code = current.reap_zombie_child(zombie_pid);
+                return Some(Ok((zombie_pid, exit_code)));
             }
         }
 
         if wait_options.contains(WaitOptions::WNOHANG) {
-            return Some((0, 0));
+            return Some(Ok((0, 0)));
         }
 
+        // wait
         None
-    });
+    })?;
 
-    (pid, exit_code)
+    Ok((pid, exit_code))
 }

@@ -2,7 +2,6 @@ use crate::prelude::*;
 
 use crate::{
     memory::{read_bytes_from_user, write_bytes_to_user},
-    process::Process,
     syscall::SYS_READLINK,
 };
 
@@ -20,20 +19,25 @@ pub fn sys_readlink(
         filename_ptr as Vaddr,
         user_buf_ptr as Vaddr,
         user_buf_len as usize,
-    );
+    )?;
     Ok(SyscallReturn::Return(res as _))
 }
 
 /// do sys readlink
 /// write the content to user buffer, returns the actual write len
-pub fn do_sys_readlink(filename_ptr: Vaddr, user_buf_ptr: Vaddr, user_buf_len: usize) -> usize {
-    debug!("filename ptr = 0x{:x}", filename_ptr);
-    debug!("user_buf_ptr = 0x{:x}", user_buf_ptr);
-    debug!("user_buf_len = 0x{:x}", user_buf_len);
+pub fn do_sys_readlink(
+    filename_ptr: Vaddr,
+    user_buf_ptr: Vaddr,
+    user_buf_len: usize,
+) -> Result<usize> {
+    debug!(
+        "filename ptr = 0x{:x}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}",
+        filename_ptr, user_buf_ptr, user_buf_len
+    );
 
     let mut filename_buffer = [0u8; MAX_FILENAME_LEN];
-    let current = Process::current();
-    read_bytes_from_user(filename_ptr, &mut filename_buffer);
+    let current = current!();
+    read_bytes_from_user(filename_ptr, &mut filename_buffer)?;
     let filename = CStr::from_bytes_until_nul(&filename_buffer).expect("Invalid filename");
     debug!("filename = {:?}", filename);
     if filename == CString::new("/proc/self/exe").unwrap().as_c_str() {
@@ -44,8 +48,8 @@ pub fn do_sys_readlink(filename_ptr: Vaddr, user_buf_ptr: Vaddr, user_buf_len: u
         let bytes_len = bytes.len();
         let write_len = bytes_len.min(user_buf_len);
 
-        write_bytes_to_user(user_buf_ptr, &bytes[..write_len]);
-        return write_len;
+        write_bytes_to_user(user_buf_ptr, &bytes[..write_len])?;
+        return Ok(write_len);
     }
 
     panic!("does not support linkname other than /proc/self/exe")

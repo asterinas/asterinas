@@ -14,9 +14,9 @@ use kxos_util::frame_ptr::InFramePtr;
 use spin::{mutex::Mutex, MutexGuard};
 
 use self::{block::VirtioBLKConfig, queue::VirtQueue};
-
-use kxos_frame::Pod;
 use kxos_pci::{capability::vendor::virtio::CapabilityVirtioData, msix::MSIX};
+#[macro_use]
+extern crate kxos_frame_pod_derive;
 
 pub mod block;
 pub mod queue;

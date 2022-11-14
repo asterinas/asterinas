@@ -13,6 +13,10 @@ pub fn sys_kill(process_filter: u64, sig_num: u64) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_KILL]", SYS_KILL);
     let process_filter = ProcessFilter::from_id(process_filter as _);
     let sig_num = SigNum::try_from(sig_num as u8).unwrap();
+    debug!(
+        "process_filter = {:?}, sig_num = {:?}",
+        process_filter, sig_num
+    );
     do_sys_kill(process_filter, sig_num)?;
     Ok(SyscallReturn::Return(0))
 }

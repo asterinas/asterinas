@@ -13,7 +13,8 @@ lazy_static! {
 }
 
 /// add a process to global table
-pub fn add_process(pid: Pid, process: Arc<Process>) {
+pub fn add_process(process: Arc<Process>) {
+    let pid = process.pid();
     PROCESS_TABLE.lock().insert(pid, process);
 }
 
@@ -40,7 +41,8 @@ pub fn get_all_processes() -> Vec<Arc<Process>> {
 }
 
 /// add process group to global table
-pub fn add_process_group(pgid: Pgid, process_group: Arc<ProcessGroup>) {
+pub fn add_process_group(process_group: Arc<ProcessGroup>) {
+    let pgid = process_group.pgid();
     PROCESS_GROUP_TABLE.lock().insert(pgid, process_group);
 }
 

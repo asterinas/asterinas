@@ -15,14 +15,12 @@ pub fn sys_rt_sigaction(
 ) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_RT_SIGACTION]", SYS_RT_SIGACTION);
     let sig_num = SigNum::try_from(sig_num)?;
-    debug!("sig_num = {}", sig_num.sig_name());
-    debug!("sig_action_ptr = 0x{:x}", sig_action_ptr);
-    debug!("old_sig_action_ptr = 0x{:x}", old_sig_action_ptr);
-    debug!("sigset_size = {}", sigset_size);
-    let sig_action_c = read_val_from_user::<sigaction_t>(sig_action_ptr);
-    debug!("sig_action_c = {:?}", sig_action_c);
+    let sig_action_c = read_val_from_user::<sigaction_t>(sig_action_ptr)?;
     let sig_action = SigAction::try_from(sig_action_c).unwrap();
-    debug!("sig_action = {:x?}", sig_action);
+    debug!(
+        "sig_num = {:?}, sig_action = {:x?}, old_sig_action_ptr = 0x{:x}, sigset_size = {}",
+        sig_num, sig_action, old_sig_action_ptr, sigset_size
+    );
 
     let current = current!();
     let mut sig_dispositions = current.sig_dispositions().lock();
@@ -31,6 +29,8 @@ pub fn sys_rt_sigaction(
     let old_action_c = old_action.to_c();
     debug!("old_action_c = {:x?}", old_action_c);
     sig_dispositions.set(sig_num, sig_action);
-    write_val_to_user(old_sig_action_ptr, &old_action_c);
+    if old_sig_action_ptr != 0 {
+        write_val_to_user(old_sig_action_ptr, &old_action_c)?;
+    }
     Ok(SyscallReturn::Return(0))
 }

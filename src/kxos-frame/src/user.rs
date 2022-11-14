@@ -118,15 +118,16 @@ impl<'a> UserMode<'a> {
             *self.current.syscall_frame() = self.user_space.cpu_ctx.into();
             self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip;
             // write fsbase
-            debug!("write fs_fsbase: 0x{:x}", self.user_space.cpu_ctx.fs_base);
             wrfsbase(self.user_space.cpu_ctx.fs_base);
-
+            let fp_regs = self.user_space.cpu_ctx.fp_regs;
+            if fp_regs.is_valid() {
+                fp_regs.restore();
+            }
             self.executed = true;
         } else {
             if self.current.inner_exclusive_access().is_from_trap {
                 *self.current.trap_frame() = self.context.into();
             } else {
-                // x86_64_util::wrfsbase(self.context.fs_base);
                 *self.current.syscall_frame() = self.context.into();
                 self.current.syscall_frame().caller.rcx = self.context.gp_regs.rip;
             }
@@ -136,6 +137,12 @@ impl<'a> UserMode<'a> {
                 debug!("write fsbase: 0x{:x}", self.context.fs_base);
                 wrfsbase(self.context.fs_base);
             }
+
+            // write fp_regs
+            // let fp_regs = self.context.fp_regs;
+            // if fp_regs.is_valid() {
+            //     fp_regs.restore();
+            // }
         }
 
         let mut current_task_inner = self.current.inner_exclusive_access();
@@ -153,14 +160,16 @@ impl<'a> UserMode<'a> {
         if self.current.inner_exclusive_access().is_from_trap {
             self.context = CpuContext::from(*self.current.trap_frame());
             self.context.fs_base = rdfsbase();
+            // self.context.fp_regs.save();
             UserEvent::Exception
         } else {
             self.context = CpuContext::from(*self.current.syscall_frame());
             self.context.fs_base = rdfsbase();
-            debug!("[kernel] syscall id:{}", self.context.gp_regs.rax);
-            debug!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);
-            debug!("[kernel] rcx: 0x{:x}", self.context.gp_regs.rcx);
-            debug!("[kernel] rip: 0x{:x}", self.context.gp_regs.rip);
+            // self.context.fp_regs.save();
+            // debug!("[kernel] syscall id:{}", self.context.gp_regs.rax);
+            // debug!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);
+            // debug!("[kernel] rcx: 0x{:x}", self.context.gp_regs.rcx);
+            // debug!("[kernel] rip: 0x{:x}", self.context.gp_regs.rip);
             UserEvent::Syscall
         }
     }

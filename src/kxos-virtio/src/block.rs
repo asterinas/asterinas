@@ -1,5 +1,3 @@
-use kxos_frame::Pod;
-use kxos_frame_pod_derive::Pod;
 use kxos_pci::capability::vendor::virtio::CapabilityVirtioData;
 use kxos_pci::util::BAR;
 use kxos_util::frame_ptr::InFramePtr;

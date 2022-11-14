@@ -8,4 +8,5 @@ pub enum Error {
     IoError,
     InvalidVmpermBits,
     NotEnoughResources,
+    NoChild,
 }

@@ -160,8 +160,8 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
     parent_process_group.add_process(child.clone());
     child.set_process_group(Arc::downgrade(&parent_process_group));
 
-    Process::current().add_child(child.clone());
-    table::add_process(child_pid, child.clone());
+    current!().add_child(child.clone());
+    table::add_process(child.clone());
     deal_with_clone_args(clone_args, &child)?;
     Ok(child)
 }
@@ -181,7 +181,7 @@ fn deal_with_clone_args(clone_args: CloneArgs, child_process: &Arc<Process>) -> 
 }
 
 fn clone_child_clear_tid(child_process: &Arc<Process>) -> Result<()> {
-    warn!("clone_child_clear_tid does nothing now");
+    // TODO: clone_child_clear_tid does nothing now
     Ok(())
 }
 

@@ -3,8 +3,6 @@ use core::arch::asm;
 
 use x86_64::registers::{control::Cr4Flags, segmentation::Segment64, xcontrol::XCr0Flags};
 
-use crate::debug;
-
 #[inline(always)]
 pub fn read_rsp() -> usize {
     let val: usize;
@@ -221,14 +219,12 @@ pub fn enable_common_cpu_features() {
     unsafe {
         x86_64::registers::control::Cr4::write(cr4);
     }
-    debug!("cr4: {:?}", cr4);
 
     let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
     xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
     unsafe {
         x86_64::registers::xcontrol::XCr0::write(xcr0);
     }
-    debug!("xcr0: {:?}", xcr0);
 }
 
 pub fn flush_tlb() {

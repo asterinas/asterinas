@@ -16,8 +16,10 @@ pub fn load_elf_to_vm_space<'a>(
     filename: CString,
     elf_file_content: &'a [u8],
     vm_space: &VmSpace,
+    argv: Vec<CString>,
+    envp: Vec<CString>,
 ) -> Result<ElfLoadInfo<'a>> {
-    let mut elf_load_info = ElfLoadInfo::parse_elf_data(elf_file_content, filename)?;
+    let mut elf_load_info = ElfLoadInfo::parse_elf_data(elf_file_content, filename, argv, envp)?;
     elf_load_info.copy_and_map_segments(vm_space)?;
     elf_load_info.debug_check_map_result(vm_space);
     elf_load_info.init_stack(vm_space);

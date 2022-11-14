@@ -16,13 +16,8 @@ pub fn sys_clone(
     parent_context: CpuContext,
 ) -> Result<SyscallReturn> {
     debug!("[syscall][id={}][SYS_CLONE]", SYS_CLONE);
-    debug!("flags = {}", clone_flags);
     let clone_flags = CloneFlags::from(clone_flags);
-    debug!("flags = {:?}", clone_flags);
-    debug!("child_stack_ptr = 0x{:x}", new_sp);
-    debug!("parent_tid_ptr = 0x{:x}", parent_tidptr);
-    debug!("child tid ptr = 0x{:x}", child_tidptr);
-    debug!("tls = 0x{:x}", tls);
+    debug!("flags = {:?}, child_stack_ptr = 0x{:x}, parent_tid_ptr = 0x{:x}, child tid ptr = 0x{:x}, tls = 0x{:x}", clone_flags, new_sp, parent_tidptr, child_tidptr, tls);
     let clone_args = CloneArgs::new(new_sp, parent_tidptr, child_tidptr, tls, clone_flags);
     let child_process = clone_child(parent_context, clone_args).unwrap();
     let child_pid = child_process.pid();

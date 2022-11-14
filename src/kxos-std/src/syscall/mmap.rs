@@ -4,7 +4,7 @@ use crate::prelude::*;
 use crate::process::process_vm::mmap_area::MMapFlags;
 use kxos_frame::vm::VmPerm;
 
-use crate::{process::Process, syscall::SYS_MMAP};
+use crate::syscall::SYS_MMAP;
 
 use super::SyscallReturn;
 
@@ -38,12 +38,10 @@ pub fn do_sys_mmap(
     fd: usize,
     offset: usize,
 ) -> Vaddr {
-    debug!("addr = 0x{:x}", addr);
-    debug!("len = {}", len);
-    debug!("perms = {:?}", vm_perm);
-    debug!("flags = {:?}", flags);
-    debug!("fd = 0x{:x}", fd);
-    debug!("offset = 0x{:x}", offset);
+    debug!(
+        "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, flags = {:?}, fd = {}, offset = 0x{:x}",
+        addr, len, vm_perm, flags, fd, offset
+    );
 
     if flags.contains(MMapFlags::MAP_ANONYMOUS) & !flags.contains(MMapFlags::MAP_FIXED) {
         // only support map anonymous areas on **NOT** fixed addr now
@@ -51,7 +49,7 @@ pub fn do_sys_mmap(
         panic!("Unsupported mmap flags: {:?}", flags);
     }
 
-    let current = Process::current();
+    let current = current!();
     let mmap_area = current
         .mmap_area()
         .expect("mmap should work on process with mmap area");

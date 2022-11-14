@@ -104,6 +104,15 @@ impl SigActionFlags {
     pub fn to_u32(&self) -> u32 {
         self.bits()
     }
+
+    pub fn contains_unsupported_flag(&self) -> bool {
+        self.intersects(
+            SigActionFlags::SA_NOCLDSTOP
+                | SigActionFlags::SA_NOCLDWAIT
+                | SigActionFlags::SA_ONSTACK
+                | SigActionFlags::SA_RESETHAND,
+        )
+    }
 }
 
 /// The default action to signals

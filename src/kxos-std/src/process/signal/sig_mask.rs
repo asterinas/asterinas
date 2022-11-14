@@ -11,6 +11,14 @@ impl From<u64> for SigMask {
     }
 }
 
+impl From<SigNum> for SigMask {
+    fn from(sig_num: SigNum) -> Self {
+        let idx = SigMask::num_to_idx(sig_num);
+        let bits = 1u64 << idx;
+        SigMask { bits }
+    }
+}
+
 impl SigMask {
     pub fn new_empty() -> Self {
         SigMask::from(0u64)
