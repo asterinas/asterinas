@@ -10,7 +10,7 @@
 #![feature(btree_drain_filter)]
 #![feature(const_option)]
 
-use crate::prelude::*;
+use crate::{prelude::*, user_apps::UserApp};
 use kxos_frame::{info, println};
 use process::Process;
 
@@ -59,16 +59,15 @@ pub fn init_process() {
         process.pid()
     );
 
-    for app in get_all_apps() {
-        let app_name = app.app_name();
-        info!("[kxos-std/lib.rs] spwan {:?} process", app.app_name());
-        let argv = vec![app_name.clone()];
-        let process = Process::spawn_user_process(app_name, app.app_content(), argv, Vec::new());
-        info!(
-            "[kxos-std/lib.rs] {:?} process exits, pid = {}",
-            app.app_name(),
-            process.pid()
-        );
+    for app in get_all_apps().into_iter().last() {
+        let UserApp {
+            app_name,
+            app_content,
+            argv,
+            envp,
+        } = app;
+        info!("[kxos-std/lib.rs] spwan {:?} process", app_name);
+        Process::spawn_user_process(app_name.clone(), app_content, argv, Vec::new());
     }
 
     loop {

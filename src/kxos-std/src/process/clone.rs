@@ -127,6 +127,8 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
     debug!("child process pid: {}", child_pid);
     debug!("rip = 0x{:x}", child_cpu_context.gp_regs.rip);
 
+    let child_file_table = current.file_table.lock().clone();
+
     // inherit parent's sig disposition
     let child_sig_dispositions = current.sig_dispositions().lock().clone();
     // sig queue is set empty
@@ -144,6 +146,7 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
             child_user_vm,
             Some(child_user_space),
             None,
+            child_file_table,
             child_sig_dispositions,
             child_sig_queues,
             child_sig_mask,

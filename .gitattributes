@@ -5,3 +5,4 @@ src/kxos-user/execve/execve filter=lfs diff=lfs merge=lfs -text
 src/kxos-user/execve/hello filter=lfs diff=lfs merge=lfs -text
 src/kxos-user/fork_c/fork filter=lfs diff=lfs merge=lfs -text
 src/kxos-user/signal_c/signal_test filter=lfs diff=lfs merge=lfs -text
+src/kxos-user/busybox/busybox filter=lfs diff=lfs merge=lfs -text

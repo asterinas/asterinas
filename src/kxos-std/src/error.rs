@@ -211,6 +211,12 @@ impl From<core::ffi::FromBytesWithNulError> for Error {
     }
 }
 
+impl From<alloc::ffi::NulError> for Error {
+    fn from(_: alloc::ffi::NulError) -> Self {
+        Error::with_message(Errno::E2BIG, "Cannot find null in cstring")
+    }
+}
+
 #[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {

@@ -58,4 +58,13 @@ impl Stat {
         stat.st_blksize = 1024;
         stat
     }
+
+    /// Fake stat for a dir
+    pub fn fake_dir_stat() -> Self {
+        let mut stat = Stat::default();
+        stat.st_mode = S_IFDIR | 0o755;
+        stat.st_nlink = 20;
+        stat.st_blksize = 4096;
+        stat
+    }
 }

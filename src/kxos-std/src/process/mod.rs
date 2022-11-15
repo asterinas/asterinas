@@ -12,6 +12,7 @@ use self::signal::sig_queues::SigQueues;
 use self::signal::signals::kernel::KernelSignal;
 use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
+use crate::fs::file_table::FileTable;
 use crate::prelude::*;
 use kxos_frame::sync::WaitQueue;
 use kxos_frame::{task::Task, user::UserSpace, vm::VmSpace};
@@ -30,10 +31,10 @@ pub mod table;
 pub mod task;
 pub mod wait;
 
-static PID_ALLOCATOR: AtomicUsize = AtomicUsize::new(0);
+static PID_ALLOCATOR: AtomicI32 = AtomicI32::new(0);
 
-pub type Pid = usize;
-pub type Pgid = usize;
+pub type Pid = i32;
+pub type Pgid = i32;
 pub type ExitCode = i32;
 
 /// Process stands for a set of tasks that shares the same userspace.
@@ -45,7 +46,10 @@ pub struct Process {
     filename: Option<CString>,
     user_space: Option<Arc<UserSpace>>,
     user_vm: Option<UserVm>,
+    /// wait for child status changed
     waiting_children: WaitQueue,
+    /// wait for io events
+    poll_queue: WaitQueue,
 
     // Mutable Part
     /// The exit code
@@ -55,11 +59,13 @@ pub struct Process {
     /// Parent process
     parent: Mutex<Option<Weak<Process>>>,
     /// Children processes
-    children: Mutex<BTreeMap<usize, Arc<Process>>>,
+    children: Mutex<BTreeMap<Pid, Arc<Process>>>,
     /// Process group
     process_group: Mutex<Option<Weak<ProcessGroup>>>,
     /// Process name
     process_name: Mutex<Option<ProcessName>>,
+    /// File table
+    file_table: Mutex<FileTable>,
 
     // Signal
     sig_dispositions: Mutex<SigDispositions>,
@@ -91,6 +97,7 @@ impl Process {
         user_vm: Option<UserVm>,
         user_space: Option<Arc<UserSpace>>,
         process_group: Option<Weak<ProcessGroup>>,
+        file_table: FileTable,
         sig_dispositions: SigDispositions,
         sig_queues: SigQueues,
         sig_mask: SigMask,
@@ -105,6 +112,7 @@ impl Process {
         };
         let children = BTreeMap::new();
         let waiting_children = WaitQueue::new();
+        let poll_queue = WaitQueue::new();
         let process_name = exec_filename.as_ref().map(|filename| {
             let mut process_name = ProcessName::new();
             process_name.set_name(filename).unwrap();
@@ -117,12 +125,14 @@ impl Process {
             user_space,
             user_vm,
             waiting_children,
+            poll_queue,
             exit_code: AtomicI32::new(0),
             status: Mutex::new(ProcessStatus::Runnable),
             parent: Mutex::new(parent),
             children: Mutex::new(children),
             process_group: Mutex::new(process_group),
             process_name: Mutex::new(process_name),
+            file_table: Mutex::new(file_table),
             sig_dispositions: Mutex::new(sig_dispositions),
             sig_queues: Mutex::new(sig_queues),
             sig_mask: Mutex::new(sig_mask),
@@ -132,6 +142,10 @@ impl Process {
 
     pub fn waiting_children(&self) -> &WaitQueue {
         &self.waiting_children
+    }
+
+    pub fn poll_queue(&self) -> &WaitQueue {
+        &self.poll_queue
     }
 
     /// init a user process and send the process to scheduler
@@ -175,6 +189,7 @@ impl Process {
                 create_user_task_from_elf(filename, elf_file_content, weak_process, argv, envp);
             let user_space = task.user_space().map(|user_space| user_space.clone());
             let user_vm = UserVm::new();
+            let file_table = FileTable::new_with_stdio();
             let sig_dispositions = SigDispositions::new();
             let sig_queues = SigQueues::new();
             let sig_mask = SigMask::new_empty();
@@ -185,6 +200,7 @@ impl Process {
                 Some(user_vm),
                 user_space,
                 None,
+                file_table,
                 sig_dispositions,
                 sig_queues,
                 sig_mask,
@@ -208,6 +224,7 @@ impl Process {
         let kernel_process = Arc::new_cyclic(|weak_process_ref| {
             let weak_process = weak_process_ref.clone();
             let task = Task::new(task_fn, weak_process, None).expect("spawn kernel task failed");
+            let file_table = FileTable::new();
             let sig_dispositions = SigDispositions::new();
             let sig_queues = SigQueues::new();
             let sig_mask = SigMask::new_empty();
@@ -218,6 +235,7 @@ impl Process {
                 None,
                 None,
                 None,
+                file_table,
                 sig_dispositions,
                 sig_queues,
                 sig_mask,
@@ -281,6 +299,10 @@ impl Process {
             old_process_group.remove_process(self.pid());
         }
         let _ = self.process_group.lock().insert(process_group);
+    }
+
+    pub fn file_table(&self) -> &Mutex<FileTable> {
+        &self.file_table
     }
 
     /// create a new process group for the process and add it to globle table.
@@ -388,7 +410,7 @@ impl Process {
         child_process.exit_code()
     }
 
-    pub fn children(&self) -> &Mutex<BTreeMap<usize, Arc<Process>>> {
+    pub fn children(&self) -> &Mutex<BTreeMap<Pid, Arc<Process>>> {
         &self.children
     }
 
