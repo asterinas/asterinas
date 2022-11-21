@@ -9,6 +9,7 @@
 #![feature(exclusive_range_pattern)]
 #![feature(btree_drain_filter)]
 #![feature(const_option)]
+#![feature(extend_one)]
 
 use crate::{prelude::*, user_apps::UserApp};
 use kxos_frame::{info, println};
@@ -32,6 +33,7 @@ pub mod prelude;
 mod process;
 pub mod rights;
 pub mod syscall;
+pub mod tty;
 mod user_apps;
 mod util;
 pub mod vm;
@@ -67,6 +69,8 @@ pub fn init_process() {
             envp,
         } = app;
         info!("[kxos-std/lib.rs] spwan {:?} process", app_name);
+        print!("\n");
+        print!("BusyBox v1.35.0 built-in shell (ash)\n\n");
         Process::spawn_user_process(app_name.clone(), app_content, argv, Vec::new());
     }
 

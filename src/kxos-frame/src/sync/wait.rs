@@ -1,6 +1,5 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::prelude::*;
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
 use spin::mutex::Mutex;

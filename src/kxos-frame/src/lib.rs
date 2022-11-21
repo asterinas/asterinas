@@ -40,6 +40,7 @@ use bootloader::{
     boot_info::{FrameBuffer, MemoryRegionKind},
     BootInfo,
 };
+pub use device::serial::receive_char;
 pub use mm::address::{align_down, align_up, is_aligned, virt_to_phys};
 pub use trap::{allocate_irq, IrqAllocateHandle, TrapFrame};
 use trap::{IrqCallbackHandle, IrqLine};

@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI32, Ordering};
 
 use self::name::ProcessName;
 use self::process_group::ProcessGroup;
@@ -14,6 +14,7 @@ use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
 use crate::fs::file_table::FileTable;
 use crate::prelude::*;
+use crate::tty::get_console;
 use kxos_frame::sync::WaitQueue;
 use kxos_frame::{task::Task, user::UserSpace, vm::VmSpace};
 
@@ -156,6 +157,9 @@ impl Process {
         envp: Vec<CString>,
     ) -> Arc<Self> {
         let process = Process::create_user_process(filename, elf_file_content, argv, envp);
+        // FIXME: How to determine the fg process group?
+        let pgid = process.pgid();
+        get_console().set_fg(pgid);
         process.send_to_scheduler();
         process
     }
@@ -295,8 +299,9 @@ impl Process {
     /// remove current process from old process group.
     pub fn set_process_group(&self, process_group: Weak<ProcessGroup>) {
         if let Some(old_process_group) = &*self.process_group().lock() {
-            let old_process_group = old_process_group.upgrade().unwrap();
-            old_process_group.remove_process(self.pid());
+            if let Some(old_process_group) = old_process_group.upgrade() {
+                old_process_group.remove_process(self.pid());
+            }
         }
         let _ = self.process_group.lock().insert(process_group);
     }

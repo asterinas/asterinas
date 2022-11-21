@@ -18,8 +18,11 @@ pub fn sys_rt_sigaction(
     let sig_action_c = read_val_from_user::<sigaction_t>(sig_action_ptr)?;
     let sig_action = SigAction::try_from(sig_action_c).unwrap();
     debug!(
-        "sig_num = {:?}, sig_action = {:x?}, old_sig_action_ptr = 0x{:x}, sigset_size = {}",
-        sig_num, sig_action, old_sig_action_ptr, sigset_size
+        "sig_num = {}, sig_action = {:x?}, old_sig_action_ptr = 0x{:x}, sigset_size = {}",
+        sig_num.sig_name(),
+        sig_action,
+        old_sig_action_ptr,
+        sigset_size
     );
 
     let current = current!();

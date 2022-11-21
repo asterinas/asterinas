@@ -1,15 +1,5 @@
 use crate::prelude::*;
 
-use crate::define_fcntl_cmd;
-
-define_fcntl_cmd! {
-    F_DUPFD = 0,
-    F_GETFD = 1,
-    F_SETFD = 2,
-    F_DUPFD_CLOEXEC = 1030
-}
-
-#[macro_export]
 macro_rules! define_fcntl_cmd {
     ($($name: ident = $value: expr),*) => {
         #[repr(i32)]
@@ -33,4 +23,11 @@ macro_rules! define_fcntl_cmd {
             }
         }
     }
+}
+
+define_fcntl_cmd! {
+    F_DUPFD = 0,
+    F_GETFD = 1,
+    F_SETFD = 2,
+    F_DUPFD_CLOEXEC = 1030
 }

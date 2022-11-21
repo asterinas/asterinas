@@ -1,5 +1,6 @@
 use crate::prelude::*;
-use core::{any::Any, fmt::Debug};
+use crate::tty::get_console;
+use core::any::Any;
 
 use super::events::IoEvents;
 use super::ioctl::IoctlCmd;
@@ -7,7 +8,7 @@ use super::ioctl::IoctlCmd;
 pub type FileDescripter = i32;
 
 /// The basic operations defined on a file
-pub trait File: Send + Sync + Debug + Any {
+pub trait File: Send + Sync + Any {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         panic!("read unsupported");
     }
@@ -16,8 +17,15 @@ pub trait File: Send + Sync + Debug + Any {
         panic!("write unsupported");
     }
 
-    fn ioctl(&self, cmd: &mut IoctlCmd) -> Result<i32> {
-        panic!("ioctl unsupported");
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        match cmd {
+            IoctlCmd::TCGETS => {
+                // FIXME: only a work around
+                let tty = get_console();
+                tty.ioctl(cmd, arg)
+            }
+            _ => panic!("Ioctl unsupported"),
+        }
     }
 
     fn poll(&self) -> IoEvents {
