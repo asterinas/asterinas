@@ -313,12 +313,13 @@ impl<R: TRights> VmoChildOptions<R, VmoCowChild> {
     ///
     /// The child VMO is initially assigned all the parent's access rights
     /// plus the Write right.
-    pub fn alloc<TRights>(mut self) -> Result<Vmo<TRights>>
-// TODO: R1 must contain the Write right. To do so at the type level,
-        // we need to implement a type-level operator
-        // (say, `TRightsExtend(L, F)`)
-        // that may extend a list (`L`) of type-level flags with an extra flag `F`.
-        // TRightsExtend<R, Write>
+    pub fn alloc<R1>(mut self) -> Result<Vmo<R1>>
+    where
+        R1: TRights, // TODO: R1 must contain the Write right. To do so at the type level,
+                     // we need to implement a type-level operator
+                     // (say, `TRightsExtend(L, F)`)
+                     // that may extend a list (`L`) of type-level flags with an extra flag `F`.
+                     // TRightsExtend<R, Write>
     {
         todo!()
     }
