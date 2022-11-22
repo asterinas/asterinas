@@ -1,0 +1,30 @@
+[package]
+name = "jinux-std"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+jinux-frame = {path = "../../../framework/jinux-frame"}
+pod = {path = "../../../framework/pod"}
+pod-derive = {path = "../../../framework/pod-derive"}
+jinux-pci = {path="../../comps/jinux-pci"}
+jinux-virtio = {path="../../comps/jinux-virtio"}
+typeflags = {path="../typeflags"}
+typeflags-util = {path="../typeflags-util"}
+jinux-rights-proc = {path="../jinux-rights-proc"}
+
+# parse elf file
+xmas-elf = "0.8.0"
+# goblin = {version= "0.5.3", default-features = false, features = ["elf64"]}
+# data-structures
+bitflags = "1.3"
+ringbuffer = "0.10.0"
+
+spin = "0.9.4"
+vte = "0.10"
+
+[dependencies.lazy_static]
+version = "1.0"
+features = ["spin_no_std"]

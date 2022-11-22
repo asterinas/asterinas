@@ -1,6 +1,6 @@
 # Zero-Cost Capabilities
 
-To strengthen the security of KxOS, we aim to implement all kinds of OS resources
+To strengthen the security of Jinux, we aim to implement all kinds of OS resources
 as capabilities. As the capabilities are going to be used throughout the OS,
 it is highly desirable to minimize their costs. For this purpose,
 we want to implement capabilities as a _zero-cost abstraction_.
@@ -351,7 +351,7 @@ mod test {
 
 ### Implement access rights with typeflags
 
-The `kxos-rights/lib.rs` file implements access rights.
+The `Jinux-rights/lib.rs` file implements access rights.
 
 ```rust
 //! Access rights.
@@ -376,7 +376,7 @@ typeflags! {
 }
 ```
 
-The `kxos-rights-proc/lib.rs` file implements the `require` procedural macro.
+The `Jinux-rights-proc/lib.rs` file implements the `require` procedural macro.
 See the channel capability example later for how `require` is used.
 
 ```rust

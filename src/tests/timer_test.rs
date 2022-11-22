@@ -1,35 +1,35 @@
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
-#![test_runner(kxos_frame::test_runner)]
+#![test_runner(jinux_frame::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 use bootloader::{entry_point, BootInfo};
-use kxos_frame::timer::Timer;
+use jinux_frame::timer::Timer;
 extern crate alloc;
 use alloc::sync::Arc;
 use core::panic::PanicInfo;
 use core::time::Duration;
-use kxos_frame::println;
+use jinux_frame::println;
 
 static mut TICK: usize = 0;
 
 entry_point!(kernel_test_main);
 
 fn kernel_test_main(boot_info: &'static mut BootInfo) -> ! {
-    kxos_frame::init(boot_info);
+    jinux_frame::init(boot_info);
     test_main();
     loop {}
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    kxos_frame::test_panic_handler(info)
+    jinux_frame::test_panic_handler(info)
 }
 
 #[test_case]
 fn test_timer() {
     println!(
-        "If you want to pass this test, you may need to enable the interrupt in kxos_frame/lib.rs"
+        "If you want to pass this test, you may need to enable the interrupt in jinux_frame/lib.rs"
     );
     println!("make sure the Timer irq number 32 handler won't panic");
     unsafe {

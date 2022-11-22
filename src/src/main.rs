@@ -2,24 +2,24 @@
 #![no_main]
 #![feature(custom_test_frameworks)]
 #![forbid(unsafe_code)]
-#![test_runner(kxos_frame::test_runner)]
+#![test_runner(jinux_frame::test_runner)]
 #![reexport_test_harness_main = "test_main"]
-extern crate kxos_frame;
+extern crate jinux_frame;
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
-use kxos_frame::println;
+use jinux_frame::println;
 
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     #[cfg(test)]
     test_main();
-    kxos_frame::init(boot_info);
-    println!("[kernel] finish init kxos_frame");
+    jinux_frame::init(boot_info);
+    println!("[kernel] finish init jinux_frame");
 
-    kxos_std::init();
-    kxos_std::run_first_process();
+    jinux_std::init();
+    jinux_std::run_first_process();
 }
 #[cfg(not(test))]
 #[panic_handler]
@@ -31,7 +31,7 @@ fn panic(info: &PanicInfo) -> ! {
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    kxos_frame::test_panic_handler(info);
+    jinux_frame::test_panic_handler(info);
 }
 
 #[test_case]

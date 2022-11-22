@@ -1,26 +1,27 @@
 [package]
-name = "kxos"
+name = "jinux"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 bootloader = {version="0.10.12"}
-kxos-frame = {path = "kxos-frame"}
-kxos-std = {path = "kxos-std"}
+jinux-frame = {path = "framework/jinux-frame"}
+jinux-std = {path = "services/libs/jinux-std"}
 
 [workspace]
 
 members = [
-    "kxos-frame",
-    "kxos-std",
-    "kxos-boot",
-    "kxos-pci",
-    "kxos-virtio",
-    "kxos-util",
-    "kxos-frame-pod-derive",
-    "kxos-typeflags",
-    "kxos-typeflags-util",
-    "kxos-rights-proc",
+    "jinux-boot",
+    "framework/jinux-frame",
+    "framework/pod",
+    "framework/pod-derive",
+    "services/comps/jinux-pci",
+    "services/comps/jinux-virtio",
+    "services/libs/jinux-std",
+    "services/libs/jinux-rights-proc",
+    "services/libs/typeflags",
+    "services/libs/typeflags-util",
+    "services/libs/jinux-util",
 ]
 
 [package.metadata.bootloader]

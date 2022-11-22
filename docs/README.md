@@ -1,4 +1,4 @@
-# KxOS Documentation
+# Jinux Documentation
 
 The documentation is rendered as a book with [mdBook](https://rust-lang.github.io/mdBook/),
 which can be installed with `cargo`.
