@@ -18,7 +18,7 @@ use super::{Pager, Vmo, VmoFlags};
 ///
 /// Creating a VMO as a _dynamic_ capability with full access rights:
 /// ```
-/// use kxo_std::vm::{PAGE_SIZE, VmoOptions};
+/// use jinux_std::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -28,7 +28,7 @@ use super::{Pager, Vmo, VmoFlags};
 /// Creating a VMO as a _static_ capability with all access rights:
 /// ```
 /// use jinux_std::prelude::*;
-/// use kxo_std::vm::{PAGE_SIZE, VmoOptions};
+/// use jinux_std::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let vmo = VmoOptions::<Full>::new(PAGE_SIZE)
 ///     .alloc()
@@ -118,7 +118,7 @@ impl<R: TRights> VmoOptions<R> {
 /// A child VMO created from a parent VMO of _dynamic_ capability is also a
 /// _dynamic_ capability.
 /// ```
-/// use kxo_std::vm::{PAGE_SIZE, VmoOptions};
+/// use jinux_std::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -150,7 +150,7 @@ impl<R: TRights> VmoOptions<R> {
 /// right regardless of whether the parent is writable or not.
 ///
 /// ```
-/// use kxo_std::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
+/// use jinux_std::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
 ///
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -181,7 +181,7 @@ impl<R: TRights> VmoOptions<R> {
 /// Note that a slice VMO child and its parent cannot not be resizable.
 ///
 /// ```rust
-/// use kxo_std::vm::{PAGE_SIZE, VmoOptions};
+/// use _std::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()

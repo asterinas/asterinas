@@ -14,6 +14,7 @@ jinux-virtio = {path="../../comps/jinux-virtio"}
 typeflags = {path="../typeflags"}
 typeflags-util = {path="../typeflags-util"}
 jinux-rights-proc = {path="../jinux-rights-proc"}
+jinux-util = {path="../jinux-util"}
 
 # parse elf file
 xmas-elf = "0.8.0"

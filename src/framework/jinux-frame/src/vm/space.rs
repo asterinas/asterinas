@@ -81,10 +81,7 @@ impl VmSpace {
         let page_size = (range.end - range.start) / PAGE_SIZE;
         let mut inner = self.memory_set.lock();
         for i in 0..page_size {
-            let res = inner.unmap(start_va);
-            if res.is_err() {
-                return res;
-            }
+            inner.unmap(start_va)?;
             start_va += PAGE_SIZE;
         }
         Ok(())
@@ -224,6 +221,6 @@ impl TryFrom<u64> for VmPerm {
     type Error = Error;
 
     fn try_from(value: u64) -> Result<Self> {
-        VmPerm::from_bits(value as u8).ok_or_else(|| Error::InvalidVmpermBits)
+        VmPerm::from_bits(value as u8).ok_or(Error::InvalidVmpermBits)
     }
 }

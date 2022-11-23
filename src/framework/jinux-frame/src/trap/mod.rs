@@ -176,9 +176,7 @@ pub(crate) fn init() {
         // set gate type to 1110: 64 bit Interrupt Gate, Present bit to 1, DPL to Ring 0
         let p_low = (((p >> 16) & 0xFFFF) << 48) | (p & 0xFFFF);
         let trap_entry_option: usize = 0b1000_1110_0000_0000;
-        let low = (trap_entry_option << 32)
-            | ((kcs.0 as usize) << 16)
-            | p_low;
+        let low = (trap_entry_option << 32) | ((kcs.0 as usize) << 16) | p_low;
         let high = p >> 32;
         unsafe {
             IDT.entries[i] = [low, high];

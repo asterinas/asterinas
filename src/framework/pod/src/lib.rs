@@ -1,6 +1,6 @@
 #![no_std]
 
-use core::{fmt::Debug, mem::MaybeUninit};
+use core::mem::MaybeUninit;
 
 /// A marker trait for plain old data (POD).
 ///
@@ -16,7 +16,7 @@ use core::{fmt::Debug, mem::MaybeUninit};
 /// # Safety
 ///
 /// Marking a non-POD type as POD may cause undefined behaviors.
-pub unsafe trait Pod: Copy + Sized + Debug {
+pub unsafe trait Pod: Copy + Sized {
     /// Creates a new instance of Pod type that is filled with zeroes.
     fn new_zeroed() -> Self {
         // SAFETY. An all-zero value of `T: Pod` is always valid.
@@ -35,7 +35,8 @@ pub unsafe trait Pod: Copy + Sized + Debug {
     /// Creates a new instance from the given bytes.
     fn from_bytes(bytes: &[u8]) -> Self {
         let mut new_self = Self::new_uninit();
-        new_self.as_bytes_mut().copy_from_slice(bytes);
+        let copy_len = new_self.as_bytes().len();
+        new_self.as_bytes_mut().copy_from_slice(&bytes[..copy_len]);
         new_self
     }
 

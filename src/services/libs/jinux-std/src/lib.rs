@@ -11,7 +11,10 @@
 #![feature(const_option)]
 #![feature(extend_one)]
 
-use crate::{prelude::*, user_apps::UserApp};
+use crate::{
+    prelude::*,
+    user_apps::{get_busybox_app, UserApp},
+};
 use jinux_frame::{info, println};
 use process::Process;
 
@@ -61,7 +64,12 @@ pub fn init_process() {
         process.pid()
     );
 
-    for app in get_all_apps().into_iter().last() {
+    // FIXME: should be running this apps before we running shell?
+    println!("");
+    println!("[kernel] Running test programs");
+    println!("");
+    // Run test apps
+    for app in get_all_apps().into_iter() {
         let UserApp {
             app_name,
             app_content,
@@ -69,10 +77,19 @@ pub fn init_process() {
             envp,
         } = app;
         info!("[jinux-std/lib.rs] spwan {:?} process", app_name);
-        print!("\n");
-        print!("BusyBox v1.35.0 built-in shell (ash)\n\n");
         Process::spawn_user_process(app_name.clone(), app_content, argv, Vec::new());
     }
+
+    // Run busybox ash
+    let UserApp {
+        app_name,
+        app_content,
+        argv,
+        envp,
+    } = get_busybox_app();
+    println!("");
+    println!("BusyBox v1.35.0 built-in shell (ash)\n");
+    Process::spawn_user_process(app_name.clone(), app_content, argv, Vec::new());
 
     loop {
         // We don't have preemptive scheduler now.
@@ -84,7 +101,6 @@ pub fn init_process() {
 
 /// first process never return
 pub fn run_first_process() -> ! {
-    // let elf_file_content = read_hello_world_content();
     Process::spawn_kernel_process(init_process);
     unreachable!()
 }

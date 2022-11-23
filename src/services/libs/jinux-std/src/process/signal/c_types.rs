@@ -1,13 +1,16 @@
 #![allow(non_camel_case_types)]
 use core::mem;
 
-use jinux_frame::cpu::GpRegs;
+use jinux_frame::{cpu::GpRegs, offset_of};
+use jinux_util::{read_union_fields, union_read_ptr::UnionReadPtr};
 
-use crate::prelude::*;
+use crate::{prelude::*, process::Pid};
 
-use super::sig_num::SigNum;
+use super::{sig_num::SigNum, signals::user::Uid};
 
 pub type sigset_t = u64;
+// FIXME: this type should be put at suitable place
+pub type clock_t = i64;
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
@@ -18,7 +21,7 @@ pub struct sigaction_t {
     pub mask: sigset_t,
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod)]
 #[repr(C)]
 pub struct siginfo_t {
     pub si_signo: i32,
@@ -27,20 +30,116 @@ pub struct siginfo_t {
     _padding: i32,
     /// siginfo_fields should be a union type ( See occlum definition ). But union type have unsafe interfaces.
     /// Here we use a simple byte array.
-    pub siginfo_fields: [u8; 128 - mem::size_of::<i32>() * 4],
+    siginfo_fields: siginfo_fields_t,
 }
 
 impl siginfo_t {
     pub fn new(num: SigNum, code: i32) -> Self {
-        let zero_fields = [0u8; 128 - mem::size_of::<i32>() * 4];
         siginfo_t {
             si_signo: num.as_u8() as i32,
             si_errno: 0,
             si_code: code,
             _padding: 0,
-            siginfo_fields: zero_fields,
+            siginfo_fields: siginfo_fields_t::zero_fields(),
         }
     }
+
+    pub fn set_si_addr(&mut self, si_addr: Vaddr) {
+        self.siginfo_fields.sigfault.addr = si_addr;
+    }
+
+    pub fn si_addr(&self) -> Vaddr {
+        // let siginfo = *self;
+        read_union_fields!(self.siginfo_fields.sigfault.addr)
+    }
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+union siginfo_fields_t {
+    bytes: [u8; 128 - mem::size_of::<i32>() * 4],
+    common: siginfo_common_t,
+    sigfault: siginfo_sigfault_t,
+}
+
+impl siginfo_fields_t {
+    fn zero_fields() -> Self {
+        Self {
+            bytes: [0; 128 - mem::size_of::<i32>() * 4],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+union siginfo_common_t {
+    first: siginfo_common_first_t,
+    second: siginfo_common_second_t,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+union siginfo_common_first_t {
+    piduid: siginfo_piduid_t,
+    timer: siginfo_timer_t,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+struct siginfo_piduid_t {
+    pid: Pid,
+    uid: Uid,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+struct siginfo_timer_t {
+    timerid: i32,
+    overrun: i32,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+union siginfo_common_second_t {
+    value: sigval_t,
+    sigchild: siginfo_sigchild_t,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+pub union sigval_t {
+    sigval_int: i32,
+    sigval_ptr: Vaddr, //*mut c_void
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+union siginfo_sigchild_t {
+    status: i32,
+    utime: clock_t,
+    stime: clock_t,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+struct siginfo_sigfault_t {
+    addr: Vaddr, //*const c_void
+    addr_lsb: i16,
+    first: siginfo_sigfault_first_t,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+union siginfo_sigfault_first_t {
+    addr_bnd: siginfo_addr_bnd_t,
+    pkey: u32,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+union siginfo_addr_bnd_t {
+    lower: Vaddr, // *const c_void
+    upper: Vaddr, // *const c_void,
 }
 
 #[derive(Clone, Copy, Debug, Pod)]

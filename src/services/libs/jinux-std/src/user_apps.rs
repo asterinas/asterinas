@@ -56,6 +56,10 @@ pub fn get_all_apps() -> Vec<UserApp> {
     let signal_test = UserApp::new("/signal_test", read_signal_test_content());
     res.push(signal_test);
 
+    res
+}
+
+pub fn get_busybox_app() -> UserApp {
     // busybox
     let mut busybox = UserApp::new("/busybox", read_busybox_content());
     // -l option means the busybox is running as logging shell
@@ -74,9 +78,7 @@ pub fn get_all_apps() -> Vec<UserApp> {
     let envp = to_vec_cstring(&envp).unwrap();
     busybox.set_argv(argv);
     busybox.set_envp(envp);
-    res.push(busybox);
-
-    res
+    busybox
 }
 
 fn read_hello_world_content() -> &'static [u8] {

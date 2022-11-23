@@ -7,7 +7,10 @@
 
 use proc_macro2::{Ident, TokenStream};
 use quote::quote;
-use syn::{parse_macro_input, Attribute, Data, DataStruct, DeriveInput, Fields, Generics};
+use syn::{
+    parse_macro_input, Attribute, Data, DataEnum, DataStruct, DataUnion, DeriveInput, Fields,
+    Generics,
+};
 
 #[proc_macro_derive(Pod)]
 pub fn derive_pod(input_token: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -15,8 +18,8 @@ pub fn derive_pod(input_token: proc_macro::TokenStream) -> proc_macro::TokenStre
     expand_derive_pod(input).into()
 }
 
-const ALLOWED_REPRS: [&'static str; 13] = [
-    "C", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize", "isize", "u128", "i128",
+const ALLOWED_REPRS: [&'static str; 11] = [
+    "C", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize", "isize",
 ];
 
 fn expand_derive_pod(input: DeriveInput) -> TokenStream {
@@ -25,7 +28,8 @@ fn expand_derive_pod(input: DeriveInput) -> TokenStream {
     let generics = input.generics;
     match input.data {
         Data::Struct(data_struct) => impl_pod_for_struct(data_struct, generics, ident, attrs),
-        Data::Enum(..) | Data::Union(..) => impl_pod_for_enum_or_union(attrs, generics, ident),
+        Data::Union(data_union) => impl_pod_for_union(data_union, generics, ident, attrs),
+        Data::Enum(data_enum) => impl_pod_for_enum(data_enum, attrs, generics, ident),
     }
 }
 
@@ -72,7 +76,45 @@ fn impl_pod_for_struct(
     }
 }
 
-fn impl_pod_for_enum_or_union(
+fn impl_pod_for_union(
+    data_union: DataUnion,
+    generics: Generics,
+    ident: Ident,
+    attrs: Vec<Attribute>,
+) -> TokenStream {
+    if !has_valid_repr(attrs) {
+        panic!("{} has invalid repr to implement Pod", ident.to_string());
+    }
+    let fields = data_union.fields.named;
+    // deal with generics
+    let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
+
+    let pod_where_predicates = fields
+        .into_iter()
+        .map(|field| {
+            let field_ty = field.ty;
+            quote! {
+                #field_ty: ::pod::Pod
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // if where_clause is none, we should add a `where` word manually.
+    if where_clause.is_none() {
+        quote! {
+            #[automatically_derived]
+            unsafe impl #impl_generics ::pod::Pod #type_generics for #ident where #(#pod_where_predicates),* {}
+        }
+    } else {
+        quote! {
+            #[automatically_derived]
+            unsafe impl #impl_generics ::pod::Pod #type_generics for #ident #where_clause, #(#pod_where_predicates),* {}
+        }
+    }
+}
+
+fn impl_pod_for_enum(
+    data_enum: DataEnum,
     attrs: Vec<Attribute>,
     generics: Generics,
     ident: Ident,
@@ -82,6 +124,13 @@ fn impl_pod_for_enum_or_union(
             "{} does not have invalid repr to implement Pod.",
             ident.to_string()
         );
+    }
+
+    // check variant
+    for variant in data_enum.variants {
+        if None == variant.discriminant {
+            panic!("Enum can only have fields like Variant=1");
+        }
     }
 
     // deal with generics
