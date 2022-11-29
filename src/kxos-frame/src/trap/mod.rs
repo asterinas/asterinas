@@ -1,6 +1,16 @@
 mod handler;
 mod irq;
 
+use crate::cell::Cell;
+use lazy_static::lazy_static;
+use x86_64::{
+    registers::{
+        model_specific::{self, EferFlags},
+        rflags::RFlags,
+    },
+    structures::{gdt::*, tss::TaskStateSegment},
+};
+
 pub use self::irq::{allocate_irq, IrqAllocateHandle};
 pub(crate) use self::irq::{allocate_target_irq, IrqCallbackHandle, IrqLine};
 use core::{fmt::Debug, mem::size_of_val};
@@ -85,53 +95,90 @@ extern "C" {
     fn syscall_entry();
 }
 
+lazy_static! {
+    static ref GDT: Cell<GlobalDescriptorTable> = Cell::new(GlobalDescriptorTable::new());
+}
+
+#[repr(C, align(16))]
+struct IDT {
+    /**
+     * The structure of all entries in IDT are shown below:
+     * related link: https://wiki.osdev.org/IDT#Structure_on_x86-64
+     * Low 64 bits of entry:
+     * |0-------------------------------------15|16------------------------------31|
+     * |     Low 16 bits of target address      |         Segment Selector         |
+     * |32-34|35------39|40-------43|44|45-46|47|48------------------------------63|
+     * | IST | Reserved | Gate Type | 0| DPL |P | Middle 16 bits of target address |
+     * |---------------------------------------------------------------------------|
+     * High 64 bits of entry:
+     * |64-----------------------------------------------------------------------95|
+     * |                       High 32 bits of target address                      |
+     * |96----------------------------------------------------------------------127|
+     * |                                 Reserved                                  |
+     * |---------------------------------------------------------------------------|
+     */
+    entries: [[usize; 2]; 256],
+}
+
+impl IDT {
+    const fn default() -> Self {
+        Self {
+            entries: [[0; 2]; 256],
+        }
+    }
+}
+
+static mut IDT: IDT = IDT::default();
+
 pub(crate) fn init() {
-    static mut GDT: [usize; 7] = [
-        0,
-        0x00209800_00000000, // KCODE, EXECUTABLE | USER_SEGMENT | PRESENT | LONG_MODE
-        0x00009200_00000000, // KDATA, DATA_WRITABLE | USER_SEGMENT | PRESENT
-        0x0000F200_00000000, // UDATA, DATA_WRITABLE | USER_SEGMENT | USER_MODE | PRESENT
-        0x0020F800_00000000, // UCODE, EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT | LONG_MODE
-        0,
-        0, // TSS, filled in runtime
-    ];
-    let ptr = unsafe { TSS.as_ptr() as usize };
-    let low = (1 << 47)
-        | 0b1001 << 40
-        | (TSS_SIZE - 1)
-        | ((ptr & ((1 << 24) - 1)) << 16)
-        | (((ptr >> 24) & ((1 << 8) - 1)) << 56);
-    let high = ptr >> 32;
+    // FIXME: use GDT in x86_64 crate in
+
+    let tss = unsafe { &*(TSS.as_ptr() as *const TaskStateSegment) };
+
+    let gdt = GDT.get();
+    let kcs = gdt.add_entry(Descriptor::kernel_code_segment());
+    let kss = gdt.add_entry(Descriptor::kernel_data_segment());
+    let uss = gdt.add_entry(Descriptor::user_data_segment());
+    let ucs = gdt.add_entry(Descriptor::user_code_segment());
+    let tss_load = gdt.add_entry(Descriptor::tss_segment(tss));
+
+    gdt.load();
+
+    x86_64_util::set_cs(kcs.0);
+    x86_64_util::set_ss(kss.0);
+
+    load_tss(tss_load.0);
+
     unsafe {
-        GDT[5] = low;
-        GDT[6] = high;
-        lgdt(&DescriptorTablePointer {
-            limit: size_of_val(&GDT) as u16 - 1,
-            base: GDT.as_ptr() as _,
+        // enable syscall extensions
+        model_specific::Efer::update(|efer_flags| {
+            efer_flags.insert(EferFlags::SYSTEM_CALL_EXTENSIONS);
         });
     }
 
-    x86_64_util::set_cs((1 << 3) | x86_64_util::RING0);
-    x86_64_util::set_ss((2 << 3) | x86_64_util::RING0);
+    model_specific::Star::write(ucs, uss, kcs, kss)
+        .expect("error when configure star msr register");
+    // set the syscall entry
+    model_specific::LStar::write(x86_64::VirtAddr::new(syscall_entry as u64));
+    model_specific::SFMask::write(
+        RFlags::TRAP_FLAG
+            | RFlags::DIRECTION_FLAG
+            | RFlags::INTERRUPT_FLAG
+            | RFlags::IOPL_LOW
+            | RFlags::IOPL_HIGH
+            | RFlags::NESTED_TASK
+            | RFlags::ALIGNMENT_CHECK,
+    );
 
-    load_tss((5 << 3) | RING0);
-    set_msr(EFER_MSR, get_msr(EFER_MSR) | 1); // enable system call extensions
-    set_msr(STAR_MSR, (2 << 3 << 48) | (1 << 3 << 32));
-    set_msr(LSTAR_MSR, syscall_entry as _);
-    set_msr(SFMASK_MSR, 0x47700); // TF|DF|IF|IOPL|AC|NT
-
-    #[repr(C, align(16))]
-    struct IDT {
-        entries: [[usize; 2]; 256],
-    }
-    static mut IDT: IDT = zero();
-    let cs = (1 << 3) | x86_64_util::RING0 as usize;
+    // initialize the trap entry for all irq number
     for i in 0..256 {
         let p = unsafe { __vectors[i] };
-        let low = (((p >> 16) & 0xFFFF) << 48)
-            | (0b1000_1110_0000_0000 << 32)
-            | (cs << 16)
-            | (p & 0xFFFF);
+        // set gate type to 1110: 64 bit Interrupt Gate, Present bit to 1, DPL to Ring 0
+        let p_low = (((p >> 16) & 0xFFFF) << 48) | (p & 0xFFFF);
+        let trap_entry_option: usize = 0b1000_1110_0000_0000;
+        let low = (trap_entry_option << 32)
+            | ((kcs.0 as usize) << 16)
+            | p_low;
         let high = p >> 32;
         unsafe {
             IDT.entries[i] = [low, high];

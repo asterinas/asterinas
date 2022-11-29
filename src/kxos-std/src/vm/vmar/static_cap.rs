@@ -5,7 +5,10 @@ use kxos_frame::prelude::Result;
 use kxos_frame::{vm::VmIo, Error};
 use kxos_rights_proc::require;
 
-use crate::{rights::*, vm::vmo::Vmo};
+use crate::{
+    rights::{Dup, Read, Rights, TRights},
+    vm::vmo::Vmo,
+};
 
 use super::{
     options::{VmarChildOptions, VmarMapOptions},
@@ -163,12 +166,12 @@ impl<R: TRights> Vmar<R> {
 
 impl<R: TRights> VmIo for Vmar<R> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        // self.check_rights!(Rights::READ)?;
+        self.check_rights(Rights::READ)?;
         self.0.read(offset, buf)
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        // self.check_rights!(Rights::WRITE)?;
+        self.check_rights(Rights::WRITE)?;
         self.0.write(offset, buf)
     }
 }

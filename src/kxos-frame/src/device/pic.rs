@@ -36,10 +36,12 @@ pub fn init() {
     out8(SLAVE_CMD, 0x11);
 
     // Set offsets
+    // map master PIC vector 0x00~0x07 to 0x20~0x27 IRQ number
     out8(MASTER_DATA, 0x20);
+    // map slave PIC vector 0x00~0x07 to 0x28~0x2f IRQ number
     out8(SLAVE_DATA, 0x28);
 
-    // Set up cascade
+    // Set up cascade, there is slave at IRQ2
     out8(MASTER_DATA, 4);
     out8(SLAVE_DATA, 2);
 
@@ -47,9 +49,9 @@ pub fn init() {
     out8(MASTER_DATA, 1);
     out8(SLAVE_DATA, 1);
 
-    // Unmask interrupts
-    out8(MASTER_DATA, 0);
-    out8(SLAVE_DATA, 0);
+    // Unmask timer interrupt
+    out8(MASTER_DATA, 0xFE);
+    out8(SLAVE_DATA, 0xFF);
 
     // Ack remaining interrupts
     out8(MASTER_CMD, 0x20);
