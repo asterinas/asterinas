@@ -3,7 +3,7 @@ authors = ["Tate, Hongliang Tian"]
 language = "en"
 multilingual = false
 src = "src"
-title = "KxOS: A Secure, Fast, and Modern OS in Rust"
+title = "Jinux: A Secure, Fast, and Modern OS in Rust"
 
 [rust]
 edition = "2021"

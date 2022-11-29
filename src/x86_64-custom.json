@@ -11,7 +11,7 @@
     "linker": "rust-lld",
     "pre-link-args": {
       "ld.lld": [
-        "-Tkxos-frame/src/linker.ld"
+        "-Tframework/jinux-frame/src/linker.ld"
       ]
     },
     "panic-strategy": "abort",

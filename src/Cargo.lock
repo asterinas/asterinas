@@ -9,6 +9,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b602bfe940d21c130f3895acd65221e8a61270debe89d628b9cb4e3ccb8569b"
 
 [[package]]
+name = "arrayvec"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -28,9 +34,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bootloader"
-version = "0.10.12"
+version = "0.10.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2d9b14b92a825ecc3b24e4c163a578af473fbba5f190bfaf48092b29b604504"
+checksum = "24e13520aa8580a2850fc9f5390dc6753f1062fb66f90e5a61bd5c72b55df731"
 
 [[package]]
 name = "bootloader-locator"
@@ -72,22 +78,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "json"
-version = "0.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "078e285eafdfb6c4b434e0d31e8cfcb5115b651496faca5749b88fafd4f23bfd"
-
-[[package]]
-name = "kxos"
+name = "jinux"
 version = "0.1.0"
 dependencies = [
  "bootloader",
- "kxos-frame",
- "kxos-std",
+ "jinux-frame",
+ "jinux-std",
 ]
 
 [[package]]
-name = "kxos-boot"
+name = "jinux-boot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -97,7 +97,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kxos-frame"
+name = "jinux-frame"
 version = "0.1.0"
 dependencies = [
  "bitflags",
@@ -106,6 +106,8 @@ dependencies = [
  "font8x8",
  "lazy_static",
  "linked_list_allocator",
+ "pod",
+ "pod-derive",
  "spin 0.9.4",
  "uart_16550",
  "volatile",
@@ -113,7 +115,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "kxos-frame-pod-derive"
+name = "jinux-pci"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "jinux-frame",
+ "jinux-util",
+ "lazy_static",
+ "pod",
+ "pod-derive",
+ "spin 0.9.4",
+]
+
+[[package]]
+name = "jinux-rights-proc"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
@@ -122,75 +137,53 @@ dependencies = [
 ]
 
 [[package]]
-name = "kxos-pci"
+name = "jinux-std"
 version = "0.1.0"
 dependencies = [
  "bitflags",
- "kxos-frame",
- "kxos-frame-pod-derive",
- "kxos-util",
+ "jinux-frame",
+ "jinux-pci",
+ "jinux-rights-proc",
+ "jinux-util",
+ "jinux-virtio",
  "lazy_static",
+ "pod",
+ "pod-derive",
+ "ringbuffer",
  "spin 0.9.4",
-]
-
-[[package]]
-name = "kxos-rights-proc"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "kxos-std"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "kxos-frame",
- "kxos-frame-pod-derive",
- "kxos-pci",
- "kxos-rights-proc",
- "kxos-typeflags",
- "kxos-typeflags-util",
- "kxos-virtio",
- "lazy_static",
- "spin 0.9.4",
+ "typeflags",
+ "typeflags-util",
+ "vte",
  "xmas-elf",
 ]
 
 [[package]]
-name = "kxos-typeflags"
+name = "jinux-util"
 version = "0.1.0"
 dependencies = [
- "itertools",
- "proc-macro2",
- "quote",
- "syn",
+ "jinux-frame",
+ "pod",
+ "pod-derive",
 ]
 
 [[package]]
-name = "kxos-typeflags-util"
-version = "0.1.0"
-
-[[package]]
-name = "kxos-util"
-version = "0.1.0"
-dependencies = [
- "kxos-frame",
-]
-
-[[package]]
-name = "kxos-virtio"
+name = "jinux-virtio"
 version = "0.1.0"
 dependencies = [
  "bitflags",
- "kxos-frame",
- "kxos-frame-pod-derive",
- "kxos-pci",
- "kxos-util",
+ "jinux-frame",
+ "jinux-pci",
+ "jinux-util",
+ "pod",
+ "pod-derive",
  "spin 0.9.4",
 ]
+
+[[package]]
+name = "json"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "078e285eafdfb6c4b434e0d31e8cfcb5115b651496faca5749b88fafd4f23bfd"
 
 [[package]]
 name = "lazy_static"
@@ -203,9 +196,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.132"
+version = "0.2.137"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8371e4e5341c3a96db127eb2465ac681ced4c433e01dd0e938adbef26ba93ba5"
+checksum = "fc7fcc620a3bff7cdd7a365be3376c97191aeaccc2a603e600951e452615bf89"
 
 [[package]]
 name = "linked_list_allocator"
@@ -227,19 +220,32 @@ dependencies = [
 
 [[package]]
 name = "lock_api"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f80bf5aacaf25cbfc8210d1cfb718f2bf3b11c4c54e5afe36c236853a8ec390"
+checksum = "435011366fe56583b16cf956f9df0095b405b82d76425bc8981c0e22e60ec4df"
 dependencies = [
  "autocfg",
  "scopeguard",
 ]
 
 [[package]]
+name = "pod"
+version = "0.1.0"
+
+[[package]]
+name = "pod-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "proc-macro2"
-version = "1.0.43"
+version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a2ca2c61bc9f3d74d2886294ab7b9853abd9c1ad903a3ac7815c58989bb7bab"
+checksum = "5ea3d908b0e36316caf9e9e2c4625cdde190a7e6f440d794667ed17a1855e725"
 dependencies = [
  "unicode-ident",
 ]
@@ -252,6 +258,12 @@ checksum = "bbe448f377a7d6961e30f5955f9b8d106c3f5e449d493ee1b125c1d43c2b5179"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "ringbuffer"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "310a2514cb46bb500a2f2ad70c79c51c5a475cc23faa245d2c675faabe889370"
 
 [[package]]
 name = "runner-utils"
@@ -307,9 +319,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.99"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58dbef6ec655055e20b86b15a8cc6d439cca19b667537ac6a1369572d151ab13"
+checksum = "a864042229133ada95abf3b54fdc62ef5ccabe9515b64717bcb9a1919e59445d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -318,23 +330,37 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.33"
+version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d0a539a918745651435ac7db7a18761589a94cd7e94cd56999f828bf73c8a57"
+checksum = "10deb33631e3c9018b9baf9dcbbc4f737320d2b576bac10f6aefa048fa407e3e"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.33"
+version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c251e90f708e16c49a16f4917dc2131e75222b72edfa9cb7f7c58ae56aae0c09"
+checksum = "982d17546b47146b28f7c22e3d08465f6b8903d0ea13c1660d9d84a6e7adcdbb"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "typeflags"
+version = "0.1.0"
+dependencies = [
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "typeflags-util"
+version = "0.1.0"
 
 [[package]]
 name = "uart_16550"
@@ -349,15 +375,42 @@ dependencies = [
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.3"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4f5b37a154999a8f3f98cc23a628d850e154479cd94decf3414696e12e31aaf"
+checksum = "6ceab39d59e4c9499d4e5a8ee0e2735b891bb7308ac83dfb4e80cad195c9f6f3"
+
+[[package]]
+name = "utf8parse"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
 
 [[package]]
 name = "volatile"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3ca98349dda8a60ae74e04fd90c7fb4d6a4fbe01e6d3be095478aa0b76f6c0c"
+
+[[package]]
+name = "vte"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cbce692ab4ca2f1f3047fcf732430249c0e971bfdd2b234cf2c47ad93af5983"
+dependencies = [
+ "arrayvec",
+ "utf8parse",
+ "vte_generate_state_changes",
+]
+
+[[package]]
+name = "vte_generate_state_changes"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d257817081c7dffcdbab24b9e62d2def62e2ff7d00b1c20062551e6cccc145ff"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
 
 [[package]]
 name = "wait-timeout"

@@ -138,7 +138,7 @@ impl<T, P: Write> UserPtr<T, P> {
 }
 ```
 
-The examples reveal two important considerations in designing KxOS:
+The examples reveal two important considerations in designing Jinux:
 1. Exposing _truly_ safe APIs. The privileged OS core must expose _truly safe_ APIs: however buggy or silly the unprivileged OS components may be written, they must _not_ cause undefined behaviors.
 2. Handling _arbitrary_ pointers safely. The safe API of the OS core must provide a safe way to deal with arbitrary pointers.
 
@@ -146,15 +146,15 @@ With the two points in mind, let's get back to our main goal of privilege separa
 
 ## Code organization with privilege separation
 
-Our first step is to separate privileged and unprivileged code in the codebase of KxOS. For our purpose of demonstrating a syscall handling framework, a minimal codebase may look like the following.
+Our first step is to separate privileged and unprivileged code in the codebase of Jinux. For our purpose of demonstrating a syscall handling framework, a minimal codebase may look like the following.
 
 ```text
 .
-├── kxos
+├── jinux
 │   ├── src
 │   │   └── main.rs
 │   └── Cargo.toml
-├── kxos-core
+├── jinux-core
 │   ├── src
 │   │   ├── lib.rs
 │   │   ├── syscall_handler.rs
@@ -162,7 +162,7 @@ Our first step is to separate privileged and unprivileged code in the codebase o
 │   │       ├── vmo.rs
 │   │       └── vmar.rs
 │   └── Cargo.toml
-├── kxos-core-libs
+├── jinux-core-libs
 │   ├── linux-abi-types
 │   │   ├── src
 │   │   │   └── lib.rs
@@ -171,34 +171,34 @@ Our first step is to separate privileged and unprivileged code in the codebase o
 │       ├── src
 │       │   └── lib.rs
 │       └── Cargo.toml
-├── kxos-comps
+├── jinux-comps
 │   └── linux-syscall
 │       ├── src
 │       │   └── lib.rs
 │       └── Cargo.toml
-└── kxos-comp-libs
+└── jinux-comp-libs
     └── linux-abi
         ├── src
         │   └── lib.rs
         └── Cargo.toml 
 ```
 
-The ultimate build target of the codebase is the `kxos` crate, which is an OS kernel that consists of a privileged OS core (crate `kxos-core`) and multiple OS components (the crates under `kxos-comps/`).
+The ultimate build target of the codebase is the `jinux` crate, which is an OS kernel that consists of a privileged OS core (crate `jinux-core`) and multiple OS components (the crates under `jinux-comps/`).
 
-For the sake of privilege separation, only crate `kxos` and `kxos-core` along with the crates under `kxos-core-libs` are allowed to use the `unsafe` keyword. To the contrary, the crates under `kxos-comps/` along with their dependent crates under `kxos-comp-libs/` are not allowed to use `unsafe` directly; they may only borrow the superpower of `unsafe` by using the safe API exposed by `kxos-core` or the crates under `kxos-core-libs`. To summarize, the memory safety of the OS only relies on a small and well-defined TCB that constitutes the `kxos` and `kxos-core` crate plus the crates under `kxos-core-libs/`.
+For the sake of privilege separation, only crate `jinux` and `jinux-core` along with the crates under `jinux-core-libs` are allowed to use the `unsafe` keyword. To the contrary, the crates under `jinux-comps/` along with their dependent crates under `jinux-comp-libs/` are not allowed to use `unsafe` directly; they may only borrow the superpower of `unsafe` by using the safe API exposed by `jinux-core` or the crates under `jinux-core-libs`. To summarize, the memory safety of the OS only relies on a small and well-defined TCB that constitutes the `jinux` and `jinux-core` crate plus the crates under `jinux-core-libs/`.
 
-Under this setting, all implementation of system calls goes to the `linux-syscall` crate. We are about to show that the _safe_ API provided by `kxos-core` is powerful enough to enable the _safe_ implementation of `linux-syscall`.
+Under this setting, all implementation of system calls goes to the `linux-syscall` crate. We are about to show that the _safe_ API provided by `jinux-core` is powerful enough to enable the _safe_ implementation of `linux-syscall`.
 
-## Crate `kxos-core`
+## Crate `jinux-core`
 
-For our purposes here, the two most relevant APIs provided by `kxos-core` is the abstraction for syscall handlers and virtual memory (VM).
+For our purposes here, the two most relevant APIs provided by `jinux-core` is the abstraction for syscall handlers and virtual memory (VM).
 
 ### Syscall handlers
 
 The `SyscallHandler` abstraction enables the OS core to hide the low-level, architectural-dependent aspects of syscall handling workflow (e.g., user-kernel switching and CPU register manipulation) and allow the unprivileged OS components to implement system calls.
 
 ```rust
-// file: kxos-core/src/syscall_handler.rs
+// file: jinux-core/src/syscall_handler.rs
 
 pub trait SyscallHandler {
     fn handle_syscall(&self, ctx: &mut SyscallContext);
@@ -243,8 +243,8 @@ an important concept that we will elaborate on later. Basically, they are capabi
 Here we demonstrate how to leverage the APIs of `ksos-core` to implement system calls with safe Rust code in crate `linux-syscall`.
 
 ```rust
-// file: kxos-comps/linux-syscall/src/lib.rs
-use kxos_core::{SyscallContext, SyscallHandler, Vmar};
+// file: jinux-comps/linux-syscall/src/lib.rs
+use jinux_core::{SyscallContext, SyscallHandler, Vmar};
 use linux_abi::{SyscallNum::*, UserPtr, RawFd, RawTimeVal, RawTimeZone};
 
 pub struct SampleHandler;
@@ -315,7 +315,7 @@ impl SampleHandler {
 This crate defines a marker trait `Pod`, which represents plain-old data.
 
 ```rust
-/// file: kxos-core-libs/pod/src/lib.rs
+/// file: jinux-core-libs/pod/src/lib.rs
 
 /// A marker trait for plain old data (POD).
 ///
@@ -388,7 +388,7 @@ unsafe impl<T: Pod, const N> [T; N] for Pod {}
 ## Crate `linux-abi-type`
 
 ```rust
-// file: kxos-core-libs/linux-abi-types
+// file: jinux-core-libs/linux-abi-types
 use pod::Pod;
 
 pub type RawFd = i32;
@@ -404,7 +404,7 @@ unsafe impl Pod for RawTimeVal {}
 ## Crate `linux-abi`
 
 ```rust
-// file: kxos-comp-libs/linux-abi
+// file: jinux-comp-libs/linux-abi
 pub use linux_abi_types::*;
 
 pub enum SyscallNum {
