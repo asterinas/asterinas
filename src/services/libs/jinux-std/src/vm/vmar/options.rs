@@ -1,7 +1,7 @@
 //! Options for allocating child VMARs and creating mappings.
 
-use jinux_frame::prelude::Result;
 use jinux_frame::{config::PAGE_SIZE, vm::Vaddr};
+use jinux_frame::{Error, Result};
 
 use crate::vm::vmo::Vmo;
 
@@ -27,7 +27,7 @@ use super::{VmPerms, Vmar};
 /// assert!(child_vmar.size() == child_size);
 /// ```
 ///
-/// A child VMO created from a parent VMO of _static_ capability is also a
+/// A child VMAR created from a parent VMAR of _static_ capability is also a
 /// _static_ capability.
 /// ```
 /// use jinux_std::prelude::*;
@@ -45,8 +45,8 @@ use super::{VmPerms, Vmar};
 pub struct VmarChildOptions<R> {
     parent: Vmar<R>,
     size: usize,
-    offset: usize,
-    align: usize,
+    offset: Option<usize>,
+    align: Option<usize>,
 }
 
 impl<R> VmarChildOptions<R> {
@@ -58,8 +58,8 @@ impl<R> VmarChildOptions<R> {
         Self {
             parent,
             size,
-            offset: 0,
-            align: PAGE_SIZE,
+            offset: None,
+            align: None,
         }
     }
 
@@ -69,7 +69,8 @@ impl<R> VmarChildOptions<R> {
     ///
     /// The alignment must be a power of two and a multiple of the page size.
     pub fn align(mut self, align: usize) -> Self {
-        todo!()
+        self.align = Some(align);
+        self
     }
 
     /// Sets the offset of the child VMAR.
@@ -84,7 +85,8 @@ impl<R> VmarChildOptions<R> {
     ///
     /// The offset must be page-aligned.
     pub fn offset(mut self, offset: usize) -> Self {
-        todo!()
+        self.offset = Some(offset);
+        self
     }
 
     /// Allocates the child VMAR according to the specified options.
@@ -94,8 +96,39 @@ impl<R> VmarChildOptions<R> {
     /// # Access rights
     ///
     /// The child VMAR is initially assigned all the parent's access rights.
-    pub fn alloc(mut self) -> Result<Vmar<R>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmar<R>> {
+        // check align
+        let align = if let Some(align) = self.align {
+            if align % PAGE_SIZE != 0 || !align.is_power_of_two() {
+                return Err(Error::InvalidArgs);
+            }
+            align
+        } else {
+            PAGE_SIZE
+        };
+        // check size
+        if self.size % align != 0 {
+            return Err(Error::InvalidArgs);
+        }
+        // check offset
+        let root_vmar_offset = if let Some(offset) = self.offset {
+            if offset % PAGE_SIZE != 0 {
+                return Err(Error::InvalidArgs);
+            }
+            let root_vmar_offset = offset + self.parent.base();
+            if root_vmar_offset % align != 0 {
+                return Err(Error::InvalidArgs);
+            }
+            Some(root_vmar_offset)
+        } else {
+            None
+        };
+        let child_vmar_ = self
+            .parent
+            .0
+            .alloc_child_vmar(root_vmar_offset, self.size, align)?;
+        let child_vmar = Vmar(child_vmar_, self.parent.1);
+        Ok(child_vmar)
     }
 }
 

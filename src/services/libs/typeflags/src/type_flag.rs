@@ -77,7 +77,7 @@ impl TypeFlagDef {
         let type_ = self.type_.clone();
         quote!(
             #(#attributes)*
-            #vis trait #ident : Sync + Send{
+            #vis trait #ident : Sync + Send + Copy + Clone{
                 const BITS: #type_;
 
                 fn new() -> Self;
@@ -128,6 +128,7 @@ impl TypeFlagItem {
         let ident = self.ident.clone();
         quote!(
             #(#attributes)*
+            #[derive(Copy, Clone, Debug)]
             #vis struct #ident {}
         )
     }

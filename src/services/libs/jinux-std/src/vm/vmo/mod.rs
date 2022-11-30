@@ -71,7 +71,7 @@ use spin::Mutex;
 /// `Vmo` is easier to use (by offering more powerful APIs) and
 /// harder to misuse (thanks to its nature of being capability).
 ///
-pub struct Vmo<R>(Arc<Vmo_>, R);
+pub struct Vmo<R = Rights>(Arc<Vmo_>, R);
 
 bitflags! {
     /// VMO flags.

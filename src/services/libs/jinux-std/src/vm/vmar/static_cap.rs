@@ -1,8 +1,7 @@
 use core::ops::Range;
 
 use alloc::sync::Arc;
-use jinux_frame::prelude::Result;
-use jinux_frame::{vm::VmIo, Error};
+use jinux_frame::{vm::VmIo, Error, Result};
 use jinux_rights_proc::require;
 
 use crate::{
@@ -21,8 +20,8 @@ impl<R: TRights> Vmar<R> {
     /// # Access rights
     ///
     /// A root VMAR is initially given full access rights.
-    pub fn new() -> Result<Self> {
-        let inner = Arc::new(Vmar_::new()?);
+    pub fn new_root() -> Result<Self> {
+        let inner = Arc::new(Vmar_::new_root()?);
         let rights = R::new();
         let new_self = Self(inner, rights);
         Ok(new_self)
@@ -141,13 +140,13 @@ impl<R: TRights> Vmar<R> {
     /// The method requires the Dup right.
     #[require(R > Dup)]
     pub fn dup(&self) -> Result<Self> {
-        todo!()
+        Ok(Vmar(self.0.clone(), self.1))
     }
 
     /// Strict the access rights.
     #[require(R > R1)]
-    pub fn restrict<R1>(mut self) -> Vmo<R1> {
-        todo!()
+    pub fn restrict<R1: TRights>(self) -> Vmar<R1> {
+        Vmar(self.0, R1::new())
     }
 
     /// Returns the access rights.

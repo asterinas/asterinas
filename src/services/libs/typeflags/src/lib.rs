@@ -43,6 +43,10 @@
 //! assert_type_same!(SetIncludeOp<R, W>, False);
 //! assert_type_same!(SetIncludeOp<W, O>, True);
 //! assert_type_same!(SetIncludeOp<O, R>, False);
+//! assert_type_same!(SetExtendOp<O, Read>, R);
+//! assert_type_same!(SetExtendOp<R, Write>, RW);
+//! assert_type_same!(SetExtendOp<R, Read>, R);
+//! assert_type_same!(SetExtendOp<W, Read>, RW);
 //! ```
 
 #![feature(proc_macro_diagnostic)]

@@ -3,12 +3,12 @@
 use core::marker::PhantomData;
 use core::ops::Range;
 
-use alloc::sync::Arc;
-use jinux_frame::prelude::Result;
+use crate::prelude::*;
 use jinux_frame::vm::Paddr;
 use jinux_rights_proc::require;
+use typeflags_util::{SetExtend, SetExtendOp};
 
-use crate::rights::{Dup, Rights, TRights};
+use crate::rights::{Dup, Rights, TRights, Write};
 
 use super::{Pager, Vmo, VmoFlags};
 
@@ -50,8 +50,8 @@ pub struct VmoOptions<R = Rights> {
     size: usize,
     paddr: Option<Paddr>,
     flags: VmoFlags,
-    rights: R,
-    // supplier: Option<Arc<dyn FrameSupplier>>,
+    rights: Option<R>,
+    pager: Option<Arc<dyn Pager>>,
 }
 
 impl<R> VmoOptions<R> {
@@ -60,7 +60,13 @@ impl<R> VmoOptions<R> {
     ///
     /// The size of the VMO will be rounded up to align with the page size.
     pub fn new(size: usize) -> Self {
-        todo!()
+        Self {
+            size,
+            paddr: None,
+            flags: VmoFlags::empty(),
+            rights: None,
+            pager: None,
+        }
     }
 
     /// Sets the starting physical address of the VMO.
@@ -70,7 +76,9 @@ impl<R> VmoOptions<R> {
     /// If this option is set, then the underlying pages of VMO must be contiguous.
     /// So `VmoFlags::IS_CONTIGUOUS` will be set automatically.
     pub fn paddr(mut self, paddr: Paddr) -> Self {
-        todo!()
+        self.paddr = Some(paddr);
+        self.flags |= VmoFlags::CONTIGUOUS;
+        self
     }
 
     /// Sets the VMO flags.
@@ -79,12 +87,14 @@ impl<R> VmoOptions<R> {
     ///
     /// For more information about the flags, see `VmoFlags`.
     pub fn flags(mut self, flags: VmoFlags) -> Self {
-        todo!()
+        self.flags = flags;
+        self
     }
 
     /// Sets the pager of the VMO.
     pub fn pager(mut self, pager: Arc<dyn Pager>) -> Self {
-        todo!()
+        self.pager = Some(pager);
+        self
     }
 }
 
@@ -181,7 +191,7 @@ impl<R: TRights> VmoOptions<R> {
 /// Note that a slice VMO child and its parent cannot not be resizable.
 ///
 /// ```rust
-/// use _std::vm::{PAGE_SIZE, VmoOptions};
+/// use jinux_std::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -313,28 +323,12 @@ impl<R: TRights> VmoChildOptions<R, VmoCowChild> {
     ///
     /// The child VMO is initially assigned all the parent's access rights
     /// plus the Write right.
-    pub fn alloc<R1>(mut self) -> Result<Vmo<R1>>
+    pub fn alloc(mut self) -> Result<Vmo<SetExtendOp<R, Write>>>
     where
-        R1: TRights, // TODO: R1 must contain the Write right. To do so at the type level,
-                     // we need to implement a type-level operator
-                     // (say, `TRightsExtend(L, F)`)
-                     // that may extend a list (`L`) of type-level flags with an extra flag `F`.
-                     // TRightsExtend<R, Write>
+        R: SetExtend<Write>,
     {
         todo!()
     }
-
-    // original:
-    // pub fn alloc<R1>(mut self) -> Result<Vmo<R1>>
-    // where
-    //     // TODO: R1 must contain the Write right. To do so at the type level,
-    //     // we need to implement a type-level operator
-    //     // (say, `TRightsExtend(L, F)`)
-    //     // that may extend a list (`L`) of type-level flags with an extra flag `F`.
-    //     R1: R // TRightsExtend<R, Write>
-    // {
-    //     todo!()
-    // }
 }
 
 /// A type to specify the "type" of a child, which is either a slice or a COW.

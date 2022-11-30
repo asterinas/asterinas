@@ -11,6 +11,7 @@ const SET_NAME: &'static str = "::typeflags_util::Cons";
 /// A flagSet represent the combination of differnt flag item.
 /// e.g. [Read, Write], [Read], [] are all flag sets.
 /// The order of flagItem does not matters. So flag sets with same sets of items should be viewed as the same set.
+#[derive(Debug)]
 pub struct FlagSet {
     items: Vec<FlagItem>,
 }
@@ -107,6 +108,23 @@ impl FlagSet {
         }
     }
 
+    pub fn contains_type(&self, type_ident: &Ident) -> bool {
+        let type_name = type_ident.to_string();
+        self.items
+            .iter()
+            .position(|item| item.ident.to_string() == type_name)
+            .is_some()
+    }
+
+    pub fn contains_set(&self, other_set: &FlagSet) -> bool {
+        for item in &other_set.items {
+            if !self.contains_type(&item.ident) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /// The token stream inside macro definition. We will generate a token stream for each permutation of items
     /// since the user may use arbitrary order of items in macro.
     pub fn macro_item_tokens(&self) -> Vec<TokenStream> {
@@ -133,6 +151,14 @@ pub struct FlagItem {
     ident: Ident,
     /// the user-provided val
     val: Expr,
+}
+
+impl core::fmt::Debug for FlagItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FlagItem")
+            .field("ident", &self.ident.to_string())
+            .finish()
+    }
 }
 
 /// generate all possible flag sets
