@@ -4,6 +4,7 @@ use crate::{config::PAGE_SIZE, mm::address::PhysAddr, prelude::*, Error};
 use pod::Pod;
 
 use super::VmIo;
+use alloc::vec;
 
 use crate::mm::PhysFrame;
 
@@ -31,7 +32,7 @@ impl VmFrameVec {
         let mut frame_list = Vec::new();
         for i in 0..page_size {
             let vm_frame = if let Some(paddr) = options.paddr {
-                VmFrame::alloc_with_paddr(paddr)
+                VmFrame::alloc_with_paddr(paddr + i * PAGE_SIZE)
             } else {
                 VmFrame::alloc()
             };
@@ -88,6 +89,11 @@ impl VmFrameVec {
         self.0.iter()
     }
 
+    /// Return IntoIterator for internal frames
+    pub fn into_iter(self) -> alloc::vec::IntoIter<VmFrame> {
+        self.0.into_iter()
+    }
+
     /// Returns the number of frames.
     pub fn len(&self) -> usize {
         self.0.len()
@@ -103,6 +109,10 @@ impl VmFrameVec {
     /// This method is equivalent to `self.len() * PAGE_SIZE`.
     pub fn nbytes(&self) -> usize {
         self.0.len() * PAGE_SIZE
+    }
+
+    pub fn from_one_frame(frame: VmFrame) -> Self {
+        Self(vec![frame])
     }
 }
 
@@ -286,6 +296,11 @@ impl VmFrame {
     /// Returns the physical address of the page frame.
     pub fn paddr(&self) -> Paddr {
         self.physical_frame.start_pa().0
+    }
+
+    /// fill the frame with zero
+    pub fn zero(&self) {
+        unsafe { core::ptr::write_bytes(self.start_pa().kvaddr().as_ptr(), 0, PAGE_SIZE) }
     }
 
     pub fn start_pa(&self) -> PhysAddr {

@@ -2,7 +2,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{quote, TokenStreamExt};
 
 use crate::{
-    flag_set::{self, generate_flag_sets, FlagSet},
+    flag_set::{generate_flag_sets, FlagSet},
     type_flag::TypeFlagDef,
 };
 

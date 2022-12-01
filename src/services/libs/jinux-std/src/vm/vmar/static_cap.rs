@@ -5,7 +5,7 @@ use jinux_frame::{vm::VmIo, Error, Result};
 use jinux_rights_proc::require;
 
 use crate::{
-    rights::{Dup, Read, Rights, TRights},
+    rights::{Dup, Rights, TRights},
     vm::vmo::Vmo,
 };
 

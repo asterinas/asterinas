@@ -125,18 +125,19 @@ impl Vmo<Rights> {
     /// The method requires the Dup right.
     pub fn dup(&self) -> Result<Self> {
         self.check_rights(Rights::DUP)?;
-        todo!()
+        Ok(Self(self.0.clone(), self.1.clone()))
     }
 
     /// Restricts the access rights given the mask.
     pub fn restrict(mut self, mask: Rights) -> Self {
-        todo!()
+        self.1 |= mask;
+        self
     }
 
     /// Converts to a static capability.
     pub fn to_static<R1: TRights>(self) -> Result<Vmo<R1>> {
         self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::InvalidArgs)?)?;
-        todo!()
+        Ok(Vmo(self.0, R1::new()))
     }
 
     /// Returns the access rights.

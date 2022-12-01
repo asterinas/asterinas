@@ -54,6 +54,12 @@ pub struct Vmar<R = Rights>(Arc<Vmar_>, R);
 
 // TODO: how page faults can be delivered to and handled by the current VMAR.
 
+impl Vmar {
+    pub(super) fn vm_space(&self) -> Arc<VmSpace> {
+        self.0.vm_space.clone()
+    }
+}
+
 struct Vmar_ {
     /// vmar inner
     inner: Mutex<VmarInner>,

@@ -10,7 +10,7 @@ use jinux_frame::vm::VmFrame;
 /// notify the attached pager that the frame has been updated.
 /// Finally, when a frame is no longer needed (i.e., on decommits),
 /// the frame pager will also be notified.
-pub trait Pager {
+pub trait Pager: Send + Sync {
     /// Ask the pager to provide a frame at a specified offset (in bytes).
     ///
     /// After a page of a VMO is committed, the VMO shall not call this method

@@ -3,12 +3,20 @@
 use core::marker::PhantomData;
 use core::ops::Range;
 
-use crate::prelude::*;
-use jinux_frame::vm::Paddr;
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
+use alloc::sync::Weak;
+use jinux_frame::config::PAGE_SIZE;
+use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrame, VmFrameVec};
+use jinux_frame::{Error, Result};
 use jinux_rights_proc::require;
+use spin::Mutex;
 use typeflags_util::{SetExtend, SetExtendOp};
 
 use crate::rights::{Dup, Rights, TRights, Write};
+use crate::vm::vmo::VmoType;
+use crate::vm::vmo::{VmoInner, Vmo_};
 
 use super::{Pager, Vmo, VmoFlags};
 
@@ -104,8 +112,16 @@ impl VmoOptions<Rights> {
     /// # Access rights
     ///
     /// The VMO is initially assigned full access rights.
-    pub fn alloc(mut self) -> Result<Vmo<Rights>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmo<Rights>> {
+        let VmoOptions {
+            size,
+            paddr,
+            flags,
+            pager,
+            ..
+        } = self;
+        let vmo_ = alloc_vmo_(size, paddr, flags, pager)?;
+        Ok(Vmo(Arc::new(vmo_), Rights::all()))
     }
 }
 
@@ -116,8 +132,71 @@ impl<R: TRights> VmoOptions<R> {
     ///
     /// The VMO is initially assigned the access rights represented
     /// by `R: TRights`.
-    pub fn alloc(mut self) -> Result<Vmo<R>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmo<R>> {
+        let VmoOptions {
+            size,
+            paddr,
+            flags,
+            rights,
+            pager,
+        } = self;
+        let vmo_ = alloc_vmo_(size, paddr, flags, pager)?;
+        Ok(Vmo(Arc::new(vmo_), R::new()))
+    }
+}
+
+fn alloc_vmo_(
+    size: usize,
+    paddr: Option<Paddr>,
+    flags: VmoFlags,
+    pager: Option<Arc<dyn Pager>>,
+) -> Result<Vmo_> {
+    debug_assert!(size % PAGE_SIZE == 0);
+    if size % PAGE_SIZE != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    let committed_pages = committed_pages_if_continuous(flags, size, paddr)?;
+    // FIXME: can the pager be None when allocate vmo?
+    let vmo_inner = VmoInner {
+        pager,
+        size,
+        mapped_to_vmar: Weak::new(),
+        mapped_to_addr: 0,
+        mapped_pages: BTreeSet::new(),
+        page_perms: BTreeMap::new(),
+        unmapped_pages: committed_pages,
+        inherited_pages: BTreeMap::new(),
+        // pages_should_fill_zeros: BTreeSet::new(),
+    };
+    Ok(Vmo_ {
+        flags,
+        inner: Mutex::new(vmo_inner),
+        parent: Weak::new(),
+        paddr,
+        vmo_type: VmoType::NotChild,
+    })
+}
+
+fn committed_pages_if_continuous(
+    flags: VmoFlags,
+    size: usize,
+    paddr: Option<Paddr>,
+) -> Result<BTreeMap<usize, VmFrameVec>> {
+    if flags.contains(VmoFlags::CONTIGUOUS) {
+        // if the vmo is continuous, we need to allocate frames for the vmo
+        let frames_num = size / PAGE_SIZE;
+        let mut vm_alloc_option = VmAllocOptions::new(frames_num);
+        vm_alloc_option.is_contiguous(true);
+        vm_alloc_option.paddr(paddr);
+        let frames = VmFrameVec::allocate(&vm_alloc_option)?;
+        let mut committed_pages = BTreeMap::new();
+        for (idx, frame) in frames.into_iter().enumerate() {
+            committed_pages.insert(idx * PAGE_SIZE, VmFrameVec::from_one_frame(frame));
+        }
+        Ok(committed_pages)
+    } else {
+        // otherwise, we wait for the page is read or write
+        Ok(BTreeMap::new())
     }
 }
 
@@ -294,14 +373,41 @@ impl<R, C> VmoChildOptions<R, C> {
     }
 }
 
-impl<C> VmoChildOptions<Rights, C> {
+impl VmoChildOptions<Rights, VmoSliceChild> {
     /// Allocates the child VMO.
     ///
     /// # Access rights
     ///
     /// The child VMO is initially assigned all the parent's access rights.
-    pub fn alloc(mut self) -> Result<Vmo<Rights>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmo<Rights>> {
+        let VmoChildOptions {
+            parent,
+            range,
+            flags,
+            ..
+        } = self;
+        let Vmo(parent_vmo_, parent_rights) = parent;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Slice)?;
+        Ok(Vmo(Arc::new(child_vmo_), parent_rights))
+    }
+}
+
+impl VmoChildOptions<Rights, VmoCowChild> {
+    /// Allocates the child VMO.
+    ///
+    /// # Access rights
+    ///
+    /// The child VMO is initially assigned all the parent's access rights.
+    pub fn alloc(self) -> Result<Vmo<Rights>> {
+        let VmoChildOptions {
+            parent,
+            range,
+            flags,
+            ..
+        } = self;
+        let Vmo(parent_vmo_, parent_rights) = parent;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Cow)?;
+        Ok(Vmo(Arc::new(child_vmo_), parent_rights))
     }
 }
 
@@ -311,8 +417,16 @@ impl<R: TRights> VmoChildOptions<R, VmoSliceChild> {
     /// # Access rights
     ///
     /// The child VMO is initially assigned all the parent's access rights.
-    pub fn alloc(mut self) -> Result<Vmo<R>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmo<R>> {
+        let VmoChildOptions {
+            parent,
+            range,
+            flags,
+            ..
+        } = self;
+        let Vmo(parent_vmo_, parent_rights) = parent;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Slice)?;
+        Ok(Vmo(Arc::new(child_vmo_), parent_rights))
     }
 }
 
@@ -323,12 +437,104 @@ impl<R: TRights> VmoChildOptions<R, VmoCowChild> {
     ///
     /// The child VMO is initially assigned all the parent's access rights
     /// plus the Write right.
-    pub fn alloc(mut self) -> Result<Vmo<SetExtendOp<R, Write>>>
+    pub fn alloc(self) -> Result<Vmo<SetExtendOp<R, Write>>>
     where
         R: SetExtend<Write>,
+        SetExtendOp<R, Write>: TRights,
     {
-        todo!()
+        let VmoChildOptions {
+            parent,
+            range,
+            flags,
+            ..
+        } = self;
+        let Vmo(parent_vmo_, _) = parent;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Cow)?;
+        let right = SetExtendOp::<R, Write>::new();
+        Ok(Vmo(Arc::new(child_vmo_), right))
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ChildType {
+    Cow,
+    Slice,
+}
+
+fn alloc_child_vmo_(
+    parent_vmo_: Arc<Vmo_>,
+    range: Range<usize>,
+    child_flags: VmoFlags,
+    child_type: ChildType,
+) -> Result<Vmo_> {
+    let child_vmo_start = range.start;
+    let child_vmo_end = range.end;
+    debug_assert!(child_vmo_start % PAGE_SIZE == 0);
+    debug_assert!(child_vmo_end % PAGE_SIZE == 0);
+    if child_vmo_start % PAGE_SIZE != 0 || child_vmo_end % PAGE_SIZE != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    let parent_vmo_inner = parent_vmo_.inner.lock();
+    match child_type {
+        ChildType::Slice => {
+            // A slice child should be inside parent vmo's range
+            debug_assert!(child_vmo_end <= parent_vmo_inner.size);
+            if child_vmo_end > parent_vmo_inner.size {
+                return Err(Error::InvalidArgs);
+            }
+        }
+        ChildType::Cow => {
+            // A copy on Write child should intersect with parent vmo
+            debug_assert!(range.start < parent_vmo_inner.size);
+            if range.start >= parent_vmo_inner.size {
+                return Err(Error::InvalidArgs);
+            }
+        }
+    }
+    // FIXME: Should inherit parent VMO's pager and vmar?
+    let child_pager = parent_vmo_inner.pager.clone();
+    let child_mapped_to_vmar = parent_vmo_inner.mapped_to_vmar.clone();
+    // Set pages inherited from parent vmo and pages should fill zeros
+    let parent_end_page = parent_vmo_inner.size / PAGE_SIZE;
+    let mut inherited_pages = BTreeMap::new();
+    // let mut pages_should_fill_zeros = BTreeSet::new();
+    let child_start_page = child_vmo_start / PAGE_SIZE;
+    let child_end_page = child_vmo_end / PAGE_SIZE;
+    for page_idx in child_start_page..child_end_page {
+        if page_idx <= parent_end_page {
+            // If the page is in range of parent VMO
+            inherited_pages.insert(page_idx, page_idx + child_start_page);
+        } else {
+            // If the page is out of range of parent
+            // pages_should_fill_zeros.insert(page_idx);
+            break;
+        }
+    }
+    let vmo_inner = VmoInner {
+        pager: child_pager,
+        size: child_vmo_end - child_vmo_start,
+        mapped_to_vmar: child_mapped_to_vmar,
+        mapped_to_addr: 0,
+        mapped_pages: BTreeSet::new(),
+        page_perms: BTreeMap::new(),
+        unmapped_pages: BTreeMap::new(),
+        inherited_pages,
+        // pages_should_fill_zeros,
+    };
+    let child_paddr = parent_vmo_
+        .paddr()
+        .map(|parent_paddr| parent_paddr + child_vmo_start);
+    let vmo_type = match child_type {
+        ChildType::Cow => VmoType::CopyOnWriteChild,
+        ChildType::Slice => VmoType::SliceChild,
+    };
+    Ok(Vmo_ {
+        flags: child_flags,
+        inner: Mutex::new(vmo_inner),
+        parent: Arc::downgrade(&parent_vmo_),
+        paddr: child_paddr,
+        vmo_type,
+    })
 }
 
 /// A type to specify the "type" of a child, which is either a slice or a COW.

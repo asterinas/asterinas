@@ -125,18 +125,19 @@ impl<R: TRights> Vmo<R> {
     /// The method requires the Dup right.
     #[require(R > Dup)]
     pub fn dup(&self) -> Result<Self> {
-        todo!()
+        Ok(Vmo(self.0.clone(), self.1.clone()))
     }
 
     /// Strict the access rights.
     #[require(R > R1)]
-    pub fn restrict<R1>(mut self) -> Vmo<R1> {
-        todo!()
+    pub fn restrict<R1: TRights>(self) -> Vmo<R1> {
+        Vmo(self.0, R1::new())
     }
 
     /// Converts to a dynamic capability.
     pub fn to_dyn(self) -> Vmo<Rights> {
-        todo!()
+        let rights = self.rights();
+        Vmo(self.0, rights)
     }
 
     /// Returns the access rights.
