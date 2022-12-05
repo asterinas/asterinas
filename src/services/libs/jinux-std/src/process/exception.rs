@@ -22,7 +22,7 @@ fn handle_page_fault(trap_info: &TrapInformation) {
     const PAGE_NOT_PRESENT_ERROR_MASK: u64 = 0x1 << 0;
     if trap_info.err & PAGE_NOT_PRESENT_ERROR_MASK == 0 {
         // If page is not present, we should ask the vmar try to commit this page
-        todo!()
+        generate_fault_signal(trap_info)
     } else {
         // Otherwise, the page fault is caused by page protection error.
         generate_fault_signal(trap_info)

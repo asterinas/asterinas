@@ -10,6 +10,10 @@
 #![feature(btree_drain_filter)]
 #![feature(const_option)]
 #![feature(extend_one)]
+// FIXME: This feature is used to support vm capbility now as a work around.
+// Since this is an incomplete feature, use this feature is unsafe.
+// We should find a proper method to replace this feature with min_specialization, which is a sound feature.
+#![feature(specialization)]
 
 use crate::{
     prelude::*,

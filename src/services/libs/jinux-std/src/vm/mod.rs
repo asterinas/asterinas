@@ -14,5 +14,6 @@
 //! In Jinux, VMARs and VMOs, as well as other capabilities, are implemented
 //! as zero-cost capabilities.
 
+mod perms;
 mod vmar;
 mod vmo;

@@ -15,6 +15,7 @@ use crate::mm::PhysFrame;
 /// type to represent a series of page frames is convenient because,
 /// more often than not, one needs to operate on a batch of frames rather
 /// a single frame.
+#[derive(Debug, Clone)]
 pub struct VmFrameVec(Vec<VmFrame>);
 
 impl VmFrameVec {
@@ -42,6 +43,11 @@ impl VmFrameVec {
             frame_list.push(vm_frame.unwrap());
         }
         Ok(Self(frame_list))
+    }
+
+    /// returns an empty vmframe vec
+    pub fn empty() -> Self {
+        Self(Vec::new())
     }
 
     /// Pushs a new frame to the collection.
@@ -72,6 +78,11 @@ impl VmFrameVec {
     pub fn append(&mut self, more: &mut VmFrameVec) -> Result<()> {
         self.0.append(&mut more.0);
         Ok(())
+    }
+
+    /// zero all internal vm frames
+    pub fn zero(&self) {
+        self.0.iter().for_each(|vm_frame| vm_frame.zero())
     }
 
     /// Truncate some frames.

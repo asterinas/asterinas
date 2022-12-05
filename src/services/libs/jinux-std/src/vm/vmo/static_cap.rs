@@ -1,11 +1,12 @@
 use core::ops::Range;
 
 use jinux_frame::prelude::Result;
-use jinux_frame::{vm::VmIo, Error};
+use jinux_frame::vm::VmIo;
 use jinux_rights_proc::require;
 
 use crate::rights::*;
 
+use super::VmoRights;
 use super::{
     options::{VmoCowChild, VmoSliceChild},
     Vmo, VmoChildOptions,
@@ -139,19 +140,6 @@ impl<R: TRights> Vmo<R> {
         let rights = self.rights();
         Vmo(self.0, rights)
     }
-
-    /// Returns the access rights.
-    pub const fn rights(&self) -> Rights {
-        Rights::from_bits(R::BITS).unwrap()
-    }
-
-    fn check_rights(&self, rights: Rights) -> Result<()> {
-        if self.rights().contains(rights) {
-            Ok(())
-        } else {
-            Err(Error::AccessDenied)
-        }
-    }
 }
 
 impl<R: TRights> VmIo for Vmo<R> {
@@ -163,5 +151,11 @@ impl<R: TRights> VmIo for Vmo<R> {
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         self.check_rights(Rights::WRITE)?;
         self.0.write_bytes(offset, buf)
+    }
+}
+
+impl<R: TRights> VmoRights for Vmo<R> {
+    fn rights(&self) -> Rights {
+        Rights::from_bits(R::BITS).unwrap()
     }
 }

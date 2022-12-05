@@ -5,6 +5,7 @@ use jinux_frame::{vm::VmIo, Error};
 
 use crate::rights::{Rights, TRights};
 
+use super::VmoRights;
 use super::{
     options::{VmoCowChild, VmoSliceChild},
     Vmo, VmoChildOptions,
@@ -139,18 +140,11 @@ impl Vmo<Rights> {
         self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::InvalidArgs)?)?;
         Ok(Vmo(self.0, R1::new()))
     }
+}
 
-    /// Returns the access rights.
-    pub fn rights(&self) -> Rights {
+impl VmoRights for Vmo<Rights> {
+    fn rights(&self) -> Rights {
         self.1
-    }
-
-    pub fn check_rights(&self, rights: Rights) -> Result<()> {
-        if self.rights().contains(rights) {
-            Ok(())
-        } else {
-            Err(Error::AccessDenied)
-        }
     }
 }
 

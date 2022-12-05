@@ -3,16 +3,13 @@
 use core::ops::Range;
 
 use crate::rights::Rights;
-use alloc::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-    sync::Weak,
-};
+use alloc::vec;
+use alloc::{collections::BTreeMap, sync::Arc, sync::Weak, vec::Vec};
 use bitflags::bitflags;
 use jinux_frame::{
     config::PAGE_SIZE,
     prelude::Result,
-    vm::{Paddr, Vaddr, VmAllocOptions, VmFrame, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
+    vm::{Paddr, Vaddr, VmAllocOptions, VmFrameVec, VmIo, VmMapOptions, VmSpace},
     Error,
 };
 
@@ -25,7 +22,7 @@ pub use options::{VmoChildOptions, VmoOptions};
 pub use pager::Pager;
 use spin::Mutex;
 
-use super::vmar::Vmar;
+use super::vmar::vm_mapping::{self, VmMapping};
 
 /// Virtual Memory Objects (VMOs) are a type of capability that represents a
 /// range of memory pages.
@@ -82,7 +79,30 @@ use super::vmar::Vmar;
 /// `Vmo` is easier to use (by offering more powerful APIs) and
 /// harder to misuse (thanks to its nature of being capability).
 ///
-pub struct Vmo<R = Rights>(Arc<Vmo_>, R);
+pub struct Vmo<R = Rights>(pub(super) Arc<Vmo_>, R);
+
+/// Functions exist both for static capbility and dynamic capibility
+pub trait VmoRights {
+    /// Returns the access rights.
+    fn rights(&self) -> Rights;
+
+    /// Check whether rights is included in self
+    fn check_rights(&self, rights: Rights) -> Result<()> {
+        if self.rights().contains(rights) {
+            Ok(())
+        } else {
+            Err(Error::AccessDenied)
+        }
+    }
+}
+
+// We implement this trait for Vmo, so we can use functions on type like Vmo<R> without trait bounds.
+// FIXME: This requires the imcomplete feature specialization, which should be fixed further.
+impl<R> VmoRights for Vmo<R> {
+    default fn rights(&self) -> Rights {
+        unimplemented!()
+    }
+}
 
 bitflags! {
     /// VMO flags.
@@ -110,7 +130,7 @@ pub enum VmoType {
     NotChild,
 }
 
-struct Vmo_ {
+pub(super) struct Vmo_ {
     /// Flags
     flags: VmoFlags,
     /// VmoInner
@@ -128,38 +148,64 @@ struct VmoInner {
     pager: Option<Arc<dyn Pager>>,
     /// size, in bytes
     size: usize,
-    /// The mapped to vmar if mapped
-    mapped_to_vmar: Weak<Vmar>,
-    /// The base addr in vmspace if self is mapped. Otherwise this field is useless
-    mapped_to_addr: Vaddr,
-    /// The pages already mapped. The key is the page index.
-    mapped_pages: BTreeSet<usize>,
-    /// The perm of each page. This map is filled when first time map vmo to vmar
-    page_perms: BTreeMap<usize, VmPerm>,
-    /// The pages committed but not mapped to Vmar. The key is the page index, the value is the backup frame.
-    unmapped_pages: BTreeMap<usize, VmFrameVec>,
-    /// The pages from the parent that current vmo can access. The pages can only be inserted when create childs vmo.
-    /// The key is the page index in current vmo, and the value is the page index in parent vmo.
-    inherited_pages: BTreeMap<usize, usize>,
+    /// The pages committed. The key is the page index, the value is the backup frame.
+    committed_pages: BTreeMap<usize, VmFrameVec>,
+    /// The pages from the parent that current vmo can access. The pages can only be inherited when create childs vmo.
+    /// We store the page index range
+    inherited_pages: InheritedPages,
+    /// The current mapping on this vmo. The vmo can be mapped to multiple vmars.
+    mappings: Vec<Weak<VmMapping>>,
     // Pages should be filled with zeros when committed. When create COW child, the pages exceed the range of parent vmo
     // should be in this set. According to the on demand requirement, when read or write these pages for the first time,
     // we should commit these pages and zeroed these pages.
     // pages_should_fill_zeros: BTreeSet<usize>,
 }
 
+/// Pages inherited from parent
+struct InheritedPages {
+    /// The page index range in child vmo. The pages inside these range are initially inherited from parent vmo.
+    /// The range includes the start page, but not including the end page
+    page_range: Range<usize>,
+    /// The page index offset in parent vmo. That is to say, the page with index `idx` in child vmo corrsponds to
+    /// page with index `idx + parent_page_idx_offset` in parent vmo
+    parent_page_idx_offset: usize,
+}
+
+impl InheritedPages {
+    pub fn new_empty() -> Self {
+        Self {
+            page_range: 0..0,
+            parent_page_idx_offset: 0,
+        }
+    }
+
+    pub fn new(page_range: Range<usize>, parent_page_idx_offset: usize) -> Self {
+        Self {
+            page_range,
+            parent_page_idx_offset,
+        }
+    }
+
+    fn contains_page(&self, page_idx: usize) -> bool {
+        self.page_range.start <= page_idx && page_idx < self.page_range.end
+    }
+
+    fn parent_page_idx(&self, child_page_idx: usize) -> Option<usize> {
+        if self.contains_page(child_page_idx) {
+            Some(child_page_idx + self.parent_page_idx_offset)
+        } else {
+            None
+        }
+    }
+}
+
 impl Vmo_ {
     pub fn commit_page(&self, offset: usize) -> Result<()> {
         // assert!(offset % PAGE_SIZE == 0);
         let page_idx = offset / PAGE_SIZE;
-        let is_mapped = self.is_mapped();
         let mut inner = self.inner.lock();
-        if is_mapped {
-            if inner.mapped_pages.contains(&page_idx) {
-                return Ok(());
-            }
-        }
 
-        if !inner.unmapped_pages.contains_key(&offset) {
+        if !inner.committed_pages.contains_key(&page_idx) {
             let frames = match &inner.pager {
                 None => {
                     let vm_alloc_option = VmAllocOptions::new(1);
@@ -172,17 +218,13 @@ impl Vmo_ {
                     VmFrameVec::from_one_frame(frame)
                 }
             };
-            if is_mapped {
-                // We hold the lock inside inner, so we cannot call vm_space function here
-                let vm_space = inner.mapped_to_vmar.upgrade().unwrap().vm_space();
-                let mapped_to_addr = inner.mapped_to_addr + page_idx * PAGE_SIZE;
-                let mut vm_map_options = VmMapOptions::new();
-                let vm_perm = inner.page_perms.get(&page_idx).unwrap().clone();
-                vm_map_options.perm(vm_perm).addr(Some(mapped_to_addr));
-                vm_space.map(frames, &vm_map_options)?;
-            } else {
-                inner.unmapped_pages.insert(page_idx, frames);
+            // Update Mapping
+            for vm_mapping in &inner.mappings {
+                if let Some(vm_mapping) = vm_mapping.upgrade() {
+                    vm_mapping.map_one_page(page_idx, frames.clone())?;
+                }
             }
+            inner.committed_pages.insert(page_idx, frames);
         }
         Ok(())
     }
@@ -191,19 +233,16 @@ impl Vmo_ {
         // assert!(offset % PAGE_SIZE == 0);
         let page_idx = offset / PAGE_SIZE;
         let mut inner = self.inner.lock();
-        if inner.mapped_pages.contains(&page_idx) {
-            // We hold the lock inside inner, so we cannot call vm_space function here
-            let vm_space = inner.mapped_to_vmar.upgrade().unwrap().vm_space();
-            let mapped_addr = inner.mapped_to_addr + page_idx * PAGE_SIZE;
-            vm_space.unmap(&(mapped_addr..mapped_addr + PAGE_SIZE))?;
-            inner.mapped_pages.remove(&page_idx);
+        if inner.committed_pages.contains_key(&page_idx) {
+            inner.committed_pages.remove(&page_idx);
             if let Some(pager) = &inner.pager {
                 pager.decommit_page(offset)?;
             }
-        } else if inner.unmapped_pages.contains_key(&page_idx) {
-            inner.unmapped_pages.remove(&page_idx);
-            if let Some(pager) = &inner.pager {
-                pager.decommit_page(offset)?;
+            // Update mappings
+            for vm_mapping in &inner.mappings {
+                if let Some(vm_mapping) = vm_mapping.upgrade() {
+                    vm_mapping.unmap_one_page(page_idx)?;
+                }
             }
         }
         Ok(())
@@ -213,8 +252,8 @@ impl Vmo_ {
         assert!(range.start % PAGE_SIZE == 0);
         assert!(range.end % PAGE_SIZE == 0);
         let start_page_idx = range.start / PAGE_SIZE;
-        let end_page_idx = range.end / PAGE_SIZE;
-        for page_idx in start_page_idx..end_page_idx {
+        let end_page_idx = (range.end - 1) / PAGE_SIZE;
+        for page_idx in start_page_idx..=end_page_idx {
             let offset = page_idx * PAGE_SIZE;
             self.commit_page(offset)?;
         }
@@ -226,12 +265,42 @@ impl Vmo_ {
         // assert!(range.start % PAGE_SIZE == 0);
         // assert!(range.end % PAGE_SIZE == 0);
         let start_page_idx = range.start / PAGE_SIZE;
-        let end_page_idx = range.end / PAGE_SIZE;
-        for page_idx in start_page_idx..end_page_idx {
+        let end_page_idx = (range.end - 1) / PAGE_SIZE;
+        for page_idx in start_page_idx..=end_page_idx {
             let offset = page_idx * PAGE_SIZE;
             self.decommit_page(offset)?;
         }
         Ok(())
+    }
+
+    /// determine whether a page is commited
+    pub fn page_commited(&self, page_idx: usize) -> bool {
+        self.inner.lock().committed_pages.contains_key(&page_idx)
+    }
+
+    /// Map a page to vm space. The page is ensured to be committed before call this function.
+    pub fn map_page(
+        &self,
+        page_idx: usize,
+        vm_space: &VmSpace,
+        options: VmMapOptions,
+    ) -> Result<Vaddr> {
+        debug_assert!(self.page_commited(page_idx));
+        if !self.page_commited(page_idx) {
+            return Err(Error::AccessDenied);
+        }
+        let frames = self
+            .inner
+            .lock()
+            .committed_pages
+            .get(&page_idx)
+            .unwrap()
+            .clone();
+        vm_space.map(frames, &options)
+    }
+
+    pub fn add_mapping(&self, mapping: Weak<VmMapping>) {
+        self.inner.lock().mappings.push(mapping);
     }
 
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
@@ -240,64 +309,83 @@ impl Vmo_ {
         if offset + read_len > self.size() {
             return Err(Error::InvalidArgs);
         }
-
-        let first_page_idx = offset / PAGE_SIZE;
-        let last_page_idx = (offset + read_len - 1) / PAGE_SIZE;
-        let mut buf_read_offset = 0;
-        // read one page at a time
-        for page_idx in first_page_idx..=last_page_idx {
-            let page_offset = if page_idx == first_page_idx {
-                offset - first_page_idx * PAGE_SIZE
-            } else {
-                0
-            };
-            let page_remain_len = PAGE_SIZE - page_offset;
-            let buf_remain_len = read_len - buf_read_offset;
-            let read_len_in_page = page_remain_len.min(buf_remain_len);
-            if read_len_in_page == 0 {
-                break;
-            }
-            let read_buf = &mut buf[buf_read_offset..(buf_read_offset + read_len_in_page)];
-            buf_read_offset += read_len_in_page;
-            self.read_bytes_in_page(page_idx, page_offset, read_buf)?;
-        }
-        Ok(())
+        let read_range = offset..(offset + read_len);
+        let frames = self.ensure_all_pages_exist(read_range, false)?;
+        let read_offset = offset % PAGE_SIZE;
+        frames.read_bytes(read_offset, buf)
     }
 
-    /// read bytes to buf. The read content are ensured on same page. if the page is not committed or mapped,
-    /// this func will commit or map this page
-    fn read_bytes_in_page(&self, page_idx: usize, offset: usize, buf: &mut [u8]) -> Result<()> {
-        // First read from pages in parent
-        if let Some(parent_page_idx) = self.inner.lock().inherited_pages.get(&page_idx) {
-            let parent_vmo = self.parent.upgrade().unwrap();
-            let parent_read_offset = *parent_page_idx * PAGE_SIZE + offset;
-            return parent_vmo.read_bytes(parent_read_offset, buf);
+    /// Ensure all pages inside range are backed up vm frames, returns the frames.
+    fn ensure_all_pages_exist(&self, range: Range<usize>, write_page: bool) -> Result<VmFrameVec> {
+        let start_page_idx = range.start / PAGE_SIZE;
+        let end_page_idx = (range.end - 1) / PAGE_SIZE; // The end addr is not included
+        let mut frames = VmFrameVec::empty();
+        for page_idx in start_page_idx..=end_page_idx {
+            let mut page_frame = self.ensure_page_exists(page_idx, write_page)?;
+            frames.append(&mut page_frame)?;
         }
-        self.ensure_page_exists(page_idx)?;
-        if self.is_mapped() {
-            let page_map_addr = page_idx * PAGE_SIZE + self.mapped_to_addr();
-            let vm_space = self.vm_space();
-            vm_space.read_bytes(page_map_addr, buf)?;
-        } else {
-            let inner = self.inner.lock();
-            let page_frame = inner.unmapped_pages.get(&page_idx).unwrap();
-            page_frame.read_bytes(offset, buf)?;
-        }
-
-        Ok(())
+        Ok(frames)
     }
 
-    /// commit (and map) page if page not exist
-    fn ensure_page_exists(&self, page_idx: usize) -> Result<()> {
-        self.commit_page(page_idx * PAGE_SIZE)?;
-        let is_mapped = self.is_mapped();
+    /// Ensure one page is backed up by a vmframe, then returns the vmframe.
+    fn ensure_page_exists(&self, page_idx: usize, write_page: bool) -> Result<VmFrameVec> {
         let inner = self.inner.lock();
-        if is_mapped {
-            debug_assert!(inner.mapped_pages.contains(&page_idx));
-        } else {
-            debug_assert!(inner.unmapped_pages.contains_key(&page_idx));
+        // if the page is already commit, return the committed page.
+        if inner.committed_pages.contains_key(&page_idx) {
+            let frames = inner.committed_pages.get(&page_idx).unwrap().clone();
+            return Ok(frames);
         }
-        Ok(())
+        match self.vmo_type {
+            // if the vmo is not child, then commit new page
+            VmoType::NotChild => {
+                self.commit_page(page_idx * PAGE_SIZE)?;
+                let frames = inner.committed_pages.get(&page_idx).unwrap().clone();
+                return Ok(frames);
+            }
+            // if the vmo is slice child, we will request the frame from parent
+            VmoType::SliceChild => {
+                debug_assert!(inner.inherited_pages.contains_page(page_idx));
+                if !inner.inherited_pages.contains_page(page_idx) {
+                    return Err(Error::AccessDenied);
+                }
+                let parent = self.parent.upgrade().unwrap();
+                let parent_page_idx = inner.inherited_pages.parent_page_idx(page_idx).unwrap();
+                return parent.ensure_page_exists(parent_page_idx, write_page);
+            }
+            // If the vmo is copy on write
+            VmoType::CopyOnWriteChild => {
+                if write_page {
+                    // write
+                    // commit a new page
+                    self.commit_page(page_idx * PAGE_SIZE)?;
+                    let frames = inner.committed_pages.get(&page_idx).unwrap().clone();
+                    if let Some(parent_page_idx) = inner.inherited_pages.parent_page_idx(page_idx) {
+                        // copy contents of parent to the frame
+                        let mut tmp_buffer = [0u8; PAGE_SIZE];
+                        let parent = self.parent.upgrade().unwrap();
+                        parent.read_bytes(parent_page_idx * PAGE_SIZE, &mut tmp_buffer)?;
+                        frames.write_bytes(0, &tmp_buffer)?;
+                    } else {
+                        frames.zero();
+                    }
+                    return Ok(frames);
+                } else {
+                    // read
+                    if let Some(parent_page_idx) = inner.inherited_pages.parent_page_idx(page_idx) {
+                        // If it's inherited from parent, we request the page from parent
+                        let parent = self.parent.upgrade().unwrap();
+                        return parent.ensure_page_exists(parent_page_idx, write_page);
+                    } else {
+                        // Otherwise, we commit a new page
+                        self.commit_page(page_idx * PAGE_SIZE)?;
+                        let frames = inner.committed_pages.get(&page_idx).unwrap().clone();
+                        // FIXME: should we zero the frames here?
+                        frames.zero();
+                        return Ok(frames);
+                    }
+                }
+            }
+        }
     }
 
     pub fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
@@ -307,75 +395,16 @@ impl Vmo_ {
             return Err(Error::InvalidArgs);
         }
 
-        let first_page_idx = offset / PAGE_SIZE;
-        let last_page_idx = (offset + write_len - 1) / PAGE_SIZE;
-        let mut buf_write_offset = 0;
-        for page_idx in first_page_idx..=last_page_idx {
-            let page_offset = if page_idx == first_page_idx {
-                offset - first_page_idx * PAGE_SIZE
-            } else {
-                0
-            };
-            let page_remain_len = PAGE_SIZE - page_offset;
-            let buf_remain_len = write_len - buf_write_offset;
-            let write_len_in_page = page_remain_len.min(buf_remain_len);
-            if write_len_in_page == 0 {
-                break;
-            }
-            let write_buf = &buf[buf_write_offset..(buf_write_offset + write_len_in_page)];
-            buf_write_offset += write_len_in_page;
-            self.write_bytes_in_page(page_idx, page_offset, write_buf)?;
-        }
-        Ok(())
-    }
-
-    fn write_bytes_in_page(&self, page_idx: usize, offset: usize, buf: &[u8]) -> Result<()> {
-        // First check if pages in parent
-        if let Some(parent_page_idx) = self.inner.lock().inherited_pages.get(&page_idx) {
-            match self.vmo_type {
-                VmoType::NotChild | VmoType::SliceChild => {
-                    let parent_vmo = self.parent.upgrade().unwrap();
-                    let parent_read_offset = *parent_page_idx * PAGE_SIZE + offset;
-                    return parent_vmo.write_bytes(parent_read_offset, buf);
-                }
-                VmoType::CopyOnWriteChild => {
-                    // Commit a new page for write
-                    self.commit_page(page_idx * offset)?;
-                    let is_mapped = self.is_mapped();
-                    let inner = self.inner.lock();
-                    // Copy the content of parent page
-                    let mut buffer = [0u8; PAGE_SIZE];
-                    let parent_page_idx = inner.inherited_pages.get(&page_idx).unwrap().clone();
-                    self.parent
-                        .upgrade()
-                        .unwrap()
-                        .read_bytes(parent_page_idx * PAGE_SIZE, &mut buffer)?;
-                    if is_mapped {
-                        let mapped_to_addr = inner.mapped_to_addr + page_idx * PAGE_SIZE;
-                        let vm_space = inner.mapped_to_vmar.upgrade().unwrap();
-                        vm_space.write_bytes(mapped_to_addr, &buffer)?;
-                    } else {
-                        let frame = inner.unmapped_pages.get(&page_idx).unwrap();
-                        frame.write_bytes(0, &buffer)?;
-                    }
-                }
-            }
-        }
-        self.ensure_page_exists(page_idx)?;
-        if self.is_mapped() {
-            let page_map_addr = page_idx * PAGE_SIZE + self.mapped_to_addr();
-            let vm_space = self.vm_space();
-            vm_space.write_bytes(page_map_addr, buf)?;
-        } else {
-            let inner = self.inner.lock();
-            let page_frame = inner.unmapped_pages.get(&page_idx).unwrap();
-            page_frame.write_bytes(offset, buf)?;
-        }
+        let write_range = offset..(offset + write_len);
+        let frames = self.ensure_all_pages_exist(write_range, true)?;
+        let write_offset = offset % PAGE_SIZE;
+        frames.write_bytes(write_offset, buf)?;
         Ok(())
     }
 
     pub fn clear(&self, range: Range<usize>) -> Result<()> {
-        todo!()
+        let buffer = vec![0u8; range.end - range.start];
+        self.write_bytes(range.start, &buffer)
     }
 
     pub fn size(&self) -> usize {
@@ -392,24 +421,6 @@ impl Vmo_ {
 
     pub fn flags(&self) -> VmoFlags {
         self.flags.clone()
-    }
-
-    fn is_mapped(&self) -> bool {
-        if self.inner.lock().mapped_to_vmar.strong_count() == 0 {
-            true
-        } else {
-            false
-        }
-    }
-
-    /// The mapped to vmspace. This function can only be called after self is mapped.
-    fn vm_space(&self) -> Arc<VmSpace> {
-        let mapped_to_vmar = self.inner.lock().mapped_to_vmar.upgrade().unwrap();
-        mapped_to_vmar.vm_space()
-    }
-
-    fn mapped_to_addr(&self) -> Vaddr {
-        self.inner.lock().mapped_to_addr
     }
 }
 

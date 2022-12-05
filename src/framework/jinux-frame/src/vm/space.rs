@@ -129,6 +129,7 @@ impl VmIo for VmSpace {
 
 /// Options for mapping physical memory pages into a VM address space.
 /// See `VmSpace::map`.
+#[derive(Clone)]
 pub struct VmMapOptions {
     /// start virtual address
     addr: Option<Vaddr>,

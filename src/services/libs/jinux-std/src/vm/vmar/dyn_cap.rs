@@ -4,10 +4,7 @@ use jinux_frame::{vm::VmIo, Error, Result};
 
 use crate::{rights::Rights, vm::vmo::Vmo};
 
-use super::{
-    options::{VmarChildOptions, VmarMapOptions},
-    VmPerms, Vmar, Vmar_,
-};
+use super::{options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, Vmar_};
 
 impl Vmar<Rights> {
     /// Creates a root VMAR.

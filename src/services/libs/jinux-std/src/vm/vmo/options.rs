@@ -4,20 +4,22 @@ use core::marker::PhantomData;
 use core::ops::Range;
 
 use alloc::collections::BTreeMap;
-use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::sync::Weak;
+use alloc::vec::Vec;
 use jinux_frame::config::PAGE_SIZE;
-use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrame, VmFrameVec};
+use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrameVec};
 use jinux_frame::{Error, Result};
 use jinux_rights_proc::require;
 use spin::Mutex;
 use typeflags_util::{SetExtend, SetExtendOp};
 
 use crate::rights::{Dup, Rights, TRights, Write};
+use crate::vm::vmo::InheritedPages;
 use crate::vm::vmo::VmoType;
 use crate::vm::vmo::{VmoInner, Vmo_};
 
+use super::VmoRights;
 use super::{Pager, Vmo, VmoFlags};
 
 /// Options for allocating a root VMO.
@@ -160,12 +162,9 @@ fn alloc_vmo_(
     let vmo_inner = VmoInner {
         pager,
         size,
-        mapped_to_vmar: Weak::new(),
-        mapped_to_addr: 0,
-        mapped_pages: BTreeSet::new(),
-        page_perms: BTreeMap::new(),
-        unmapped_pages: committed_pages,
-        inherited_pages: BTreeMap::new(),
+        committed_pages,
+        inherited_pages: InheritedPages::new_empty(),
+        mappings: Vec::new(),
         // pages_should_fill_zeros: BTreeSet::new(),
     };
     Ok(Vmo_ {
@@ -491,35 +490,16 @@ fn alloc_child_vmo_(
             }
         }
     }
-    // FIXME: Should inherit parent VMO's pager and vmar?
-    let child_pager = parent_vmo_inner.pager.clone();
-    let child_mapped_to_vmar = parent_vmo_inner.mapped_to_vmar.clone();
-    // Set pages inherited from parent vmo and pages should fill zeros
-    let parent_end_page = parent_vmo_inner.size / PAGE_SIZE;
-    let mut inherited_pages = BTreeMap::new();
-    // let mut pages_should_fill_zeros = BTreeSet::new();
-    let child_start_page = child_vmo_start / PAGE_SIZE;
-    let child_end_page = child_vmo_end / PAGE_SIZE;
-    for page_idx in child_start_page..child_end_page {
-        if page_idx <= parent_end_page {
-            // If the page is in range of parent VMO
-            inherited_pages.insert(page_idx, page_idx + child_start_page);
-        } else {
-            // If the page is out of range of parent
-            // pages_should_fill_zeros.insert(page_idx);
-            break;
-        }
-    }
+    let parent_page_idx_offset = range.start / PAGE_SIZE;
+    let inherited_end = range.end.min(parent_vmo_.size());
+    let inherited_end_page_idx = inherited_end / PAGE_SIZE + 1;
+    let inherited_pages = InheritedPages::new(0..inherited_end_page_idx, parent_page_idx_offset);
     let vmo_inner = VmoInner {
-        pager: child_pager,
+        pager: None,
         size: child_vmo_end - child_vmo_start,
-        mapped_to_vmar: child_mapped_to_vmar,
-        mapped_to_addr: 0,
-        mapped_pages: BTreeSet::new(),
-        page_perms: BTreeMap::new(),
-        unmapped_pages: BTreeMap::new(),
+        committed_pages: BTreeMap::new(),
+        mappings: Vec::new(),
         inherited_pages,
-        // pages_should_fill_zeros,
     };
     let child_paddr = parent_vmo_
         .paddr()

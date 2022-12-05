@@ -9,10 +9,7 @@ use crate::{
     vm::vmo::Vmo,
 };
 
-use super::{
-    options::{VmarChildOptions, VmarMapOptions},
-    VmPerms, Vmar, Vmar_,
-};
+use super::{options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, Vmar_};
 
 impl<R: TRights> Vmar<R> {
     /// Creates a root VMAR.
