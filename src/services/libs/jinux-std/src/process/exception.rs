@@ -20,8 +20,9 @@ pub fn handle_exception(context: &mut CpuContext) {
 
 fn handle_page_fault(trap_info: &TrapInformation) {
     const PAGE_NOT_PRESENT_ERROR_MASK: u64 = 0x1 << 0;
+    const WRITE_ACCESS_MASK: u64 = 0x1 << 1;
     if trap_info.err & PAGE_NOT_PRESENT_ERROR_MASK == 0 {
-        // If page is not present, we should ask the vmar try to commit this page
+        // TODO: If page is not present, we should ask the vmar try to commit this page
         generate_fault_signal(trap_info)
     } else {
         // Otherwise, the page fault is caused by page protection error.

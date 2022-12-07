@@ -6,7 +6,7 @@ use jinux_rights_proc::require;
 
 use crate::rights::*;
 
-use super::VmoRights;
+use super::VmoRightsOp;
 use super::{
     options::{VmoCowChild, VmoSliceChild},
     Vmo, VmoChildOptions,
@@ -134,12 +134,6 @@ impl<R: TRights> Vmo<R> {
     pub fn restrict<R1: TRights>(self) -> Vmo<R1> {
         Vmo(self.0, R1::new())
     }
-
-    /// Converts to a dynamic capability.
-    pub fn to_dyn(self) -> Vmo<Rights> {
-        let rights = self.rights();
-        Vmo(self.0, rights)
-    }
 }
 
 impl<R: TRights> VmIo for Vmo<R> {
@@ -154,8 +148,14 @@ impl<R: TRights> VmIo for Vmo<R> {
     }
 }
 
-impl<R: TRights> VmoRights for Vmo<R> {
+impl<R: TRights> VmoRightsOp for Vmo<R> {
     fn rights(&self) -> Rights {
         Rights::from_bits(R::BITS).unwrap()
+    }
+
+    /// Converts to a dynamic capability.
+    fn to_dyn(self) -> Vmo<Rights> {
+        let rights = self.rights();
+        Vmo(self.0, rights)
     }
 }

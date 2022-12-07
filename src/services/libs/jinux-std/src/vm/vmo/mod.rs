@@ -22,7 +22,8 @@ pub use options::{VmoChildOptions, VmoOptions};
 pub use pager::Pager;
 use spin::Mutex;
 
-use super::vmar::vm_mapping::{self, VmMapping};
+use super::page_fault_handler::PageFaultHandler;
+use super::vmar::vm_mapping::VmMapping;
 
 /// Virtual Memory Objects (VMOs) are a type of capability that represents a
 /// range of memory pages.
@@ -82,7 +83,7 @@ use super::vmar::vm_mapping::{self, VmMapping};
 pub struct Vmo<R = Rights>(pub(super) Arc<Vmo_>, R);
 
 /// Functions exist both for static capbility and dynamic capibility
-pub trait VmoRights {
+pub trait VmoRightsOp {
     /// Returns the access rights.
     fn rights(&self) -> Rights;
 
@@ -94,13 +95,36 @@ pub trait VmoRights {
             Err(Error::AccessDenied)
         }
     }
+
+    /// Converts to a dynamic capability.
+    fn to_dyn(self) -> Vmo<Rights>
+    where
+        Self: Sized;
 }
 
 // We implement this trait for Vmo, so we can use functions on type like Vmo<R> without trait bounds.
 // FIXME: This requires the imcomplete feature specialization, which should be fixed further.
-impl<R> VmoRights for Vmo<R> {
+impl<R> VmoRightsOp for Vmo<R> {
     default fn rights(&self) -> Rights {
         unimplemented!()
+    }
+
+    default fn to_dyn(self) -> Vmo<Rights>
+    where
+        Self: Sized,
+    {
+        unimplemented!()
+    }
+}
+
+impl<R> PageFaultHandler for Vmo<R> {
+    default fn handle_page_fault(&self, page_fault_addr: Vaddr, write: bool) -> Result<()> {
+        if write {
+            self.check_rights(Rights::WRITE)?;
+        } else {
+            self.check_rights(Rights::READ)?;
+        }
+        self.0.handle_page_fault(page_fault_addr, write)
     }
 }
 
@@ -155,10 +179,6 @@ struct VmoInner {
     inherited_pages: InheritedPages,
     /// The current mapping on this vmo. The vmo can be mapped to multiple vmars.
     mappings: Vec<Weak<VmMapping>>,
-    // Pages should be filled with zeros when committed. When create COW child, the pages exceed the range of parent vmo
-    // should be in this set. According to the on demand requirement, when read or write these pages for the first time,
-    // we should commit these pages and zeroed these pages.
-    // pages_should_fill_zeros: BTreeSet<usize>,
 }
 
 /// Pages inherited from parent
@@ -273,6 +293,16 @@ impl Vmo_ {
         Ok(())
     }
 
+    /// Handle page fault.
+    pub fn handle_page_fault(&self, offset: usize, write: bool) -> Result<()> {
+        if offset >= self.size() {
+            return Err(Error::AccessDenied);
+        }
+        let page_idx = offset / PAGE_SIZE;
+        self.ensure_page_exists(page_idx, write)?;
+        Ok(())
+    }
+
     /// determine whether a page is commited
     pub fn page_commited(&self, page_idx: usize) -> bool {
         self.inner.lock().committed_pages.contains_key(&page_idx)
@@ -283,7 +313,7 @@ impl Vmo_ {
         &self,
         page_idx: usize,
         vm_space: &VmSpace,
-        options: VmMapOptions,
+        map_options: VmMapOptions,
     ) -> Result<Vaddr> {
         debug_assert!(self.page_commited(page_idx));
         if !self.page_commited(page_idx) {
@@ -296,7 +326,7 @@ impl Vmo_ {
             .get(&page_idx)
             .unwrap()
             .clone();
-        vm_space.map(frames, &options)
+        vm_space.map(frames, &map_options)
     }
 
     pub fn add_mapping(&self, mapping: Weak<VmMapping>) {
@@ -439,5 +469,20 @@ impl<R> Vmo<R> {
     /// Returns the flags of a VMO.
     pub fn flags(&self) -> VmoFlags {
         self.0.flags()
+    }
+
+    /// return whether a page is already committed
+    pub fn page_commited(&self, page_idx: usize) -> bool {
+        self.0.page_commited(page_idx)
+    }
+
+    /// map a committed page, returns the map address
+    pub fn map_page(
+        &self,
+        page_idx: usize,
+        vm_space: &VmSpace,
+        map_options: VmMapOptions,
+    ) -> Result<Vaddr> {
+        self.0.map_page(page_idx, vm_space, map_options)
     }
 }

@@ -4,18 +4,18 @@ use alloc::{
 };
 use jinux_frame::{
     config::PAGE_SIZE,
-    vm::{Vaddr, VmFrameVec, VmPerm},
+    vm::{Vaddr, VmFrameVec, VmIo, VmPerm},
     Error,
 };
 use jinux_frame::{vm::VmMapOptions, Result};
 use spin::Mutex;
 
-use crate::vm::vmo::{Pager, Vmo, Vmo_};
+use crate::vm::{page_fault_handler::PageFaultHandler, vmo::Vmo};
 
 use super::{Vmar, Vmar_};
 use crate::vm::perms::VmPerms;
 use crate::vm::vmar::Rights;
-use crate::vm::vmo::VmoRights;
+use crate::vm::vmo::VmoRightsOp;
 
 /// A VmMapping represents mapping a vmo into a vmar.
 /// A vmar can has multiple VmMappings, which means multiple vmos are mapped to a vmar.
@@ -24,8 +24,8 @@ use crate::vm::vmo::VmoRights;
 pub struct VmMapping {
     /// The parent vmar. The parent should always point to a valid vmar.
     parent: Weak<Vmar_>,
-    /// The mapped vmo.
-    vmo: Arc<Vmo_>,
+    /// The mapped vmo. The mapped vmo is with dynamic capability.
+    vmo: Vmo<Rights>,
     /// The mao offset of the vmo, in bytes.
     vmo_offset: usize,
     /// The size of mapping, in bytes. The map size can even be larger than the size of backup vmo.
@@ -54,8 +54,8 @@ impl VmMapping {
             can_overwrite,
         } = option;
         let Vmar(parent_vmar, _) = parent;
-        let vmo_ = vmo.0;
-        let vmo_size = vmo_.size();
+        let vmo = vmo.to_dyn();
+        let vmo_size = vmo.size();
         let map_to_addr = parent_vmar.allocate_free_region_for_vmo(
             vmo_size,
             size,
@@ -79,8 +79,8 @@ impl VmMapping {
             vm_map_options.perm(perm);
             vm_map_options.can_overwrite(can_overwrite);
             vm_map_options.align(align);
-            if vmo_.page_commited(page_idx) {
-                vmo_.map_page(page_idx, &vm_space, vm_map_options)?;
+            if vmo.page_commited(page_idx) {
+                vmo.map_page(page_idx, &vm_space, vm_map_options)?;
                 mapped_pages.insert(page_idx);
             } else {
                 // The page is not committed. We simple record the map options for further mapping.
@@ -89,7 +89,7 @@ impl VmMapping {
         }
         Ok(Self {
             parent: Arc::downgrade(&parent_vmar),
-            vmo: vmo_,
+            vmo,
             vmo_offset,
             map_size: size,
             map_to_addr,
@@ -136,6 +136,11 @@ impl VmMapping {
     pub fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         let vmo_write_offset = self.vmo_offset + offset;
         self.vmo.write_bytes(vmo_write_offset, buf)
+    }
+
+    pub fn handle_page_fault(&self, page_fault_addr: Vaddr, write: bool) -> Result<()> {
+        let vmo_offset = self.vmo_offset + page_fault_addr - self.map_to_addr;
+        self.vmo.handle_page_fault(vmo_offset, write)
     }
 }
 

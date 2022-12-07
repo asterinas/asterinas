@@ -19,7 +19,7 @@ use crate::vm::vmo::InheritedPages;
 use crate::vm::vmo::VmoType;
 use crate::vm::vmo::{VmoInner, Vmo_};
 
-use super::VmoRights;
+use super::VmoRightsOp;
 use super::{Pager, Vmo, VmoFlags};
 
 /// Options for allocating a root VMO.

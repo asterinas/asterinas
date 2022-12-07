@@ -1,12 +1,15 @@
 use core::ops::Range;
 
 use alloc::sync::Arc;
-use jinux_frame::{vm::VmIo, Error, Result};
+use jinux_frame::{
+    vm::{Vaddr, VmIo},
+    Error, Result,
+};
 use jinux_rights_proc::require;
 
 use crate::{
     rights::{Dup, Rights, TRights},
-    vm::vmo::Vmo,
+    vm::{page_fault_handler::PageFaultHandler, vmo::Vmo},
 };
 
 use super::{options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, Vmar_};
@@ -169,5 +172,16 @@ impl<R: TRights> VmIo for Vmar<R> {
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         self.check_rights(Rights::WRITE)?;
         self.0.write(offset, buf)
+    }
+}
+
+impl<R: TRights> PageFaultHandler for Vmar<R> {
+    fn handle_page_fault(&self, page_fault_addr: Vaddr, write: bool) -> Result<()> {
+        if write {
+            self.check_rights(Rights::WRITE)?;
+        } else {
+            self.check_rights(Rights::READ)?;
+        }
+        self.0.handle_page_fault(page_fault_addr, write)
     }
 }

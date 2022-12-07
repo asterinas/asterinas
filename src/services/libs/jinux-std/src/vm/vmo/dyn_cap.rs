@@ -5,7 +5,7 @@ use jinux_frame::{vm::VmIo, Error};
 
 use crate::rights::{Rights, TRights};
 
-use super::VmoRights;
+use super::VmoRightsOp;
 use super::{
     options::{VmoCowChild, VmoSliceChild},
     Vmo, VmoChildOptions,
@@ -142,12 +142,6 @@ impl Vmo<Rights> {
     }
 }
 
-impl VmoRights for Vmo<Rights> {
-    fn rights(&self) -> Rights {
-        self.1
-    }
-}
-
 impl VmIo for Vmo<Rights> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         self.check_rights(Rights::READ)?;
@@ -157,5 +151,17 @@ impl VmIo for Vmo<Rights> {
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         self.check_rights(Rights::WRITE)?;
         self.0.write_bytes(offset, buf)
+    }
+}
+
+impl VmoRightsOp for Vmo<Rights> {
+    fn rights(&self) -> Rights {
+        self.1
+    }
+
+    /// Converts to a dynamic capability.
+    fn to_dyn(self) -> Vmo<Rights> {
+        let rights = self.rights();
+        Vmo(self.0, rights)
     }
 }

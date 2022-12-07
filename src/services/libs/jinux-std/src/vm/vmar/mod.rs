@@ -21,6 +21,8 @@ use spin::Mutex;
 
 use self::vm_mapping::VmMapping;
 
+use super::page_fault_handler::PageFaultHandler;
+
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
 /// user address spaces.
 ///
@@ -51,6 +53,11 @@ use self::vm_mapping::VmMapping;
 pub struct Vmar<R = Rights>(Arc<Vmar_>, R);
 
 // TODO: how page faults can be delivered to and handled by the current VMAR.
+impl<R> PageFaultHandler for Vmar<R> {
+    default fn handle_page_fault(&self, page_fault_addr: Vaddr, write: bool) -> Result<()> {
+        unimplemented!()
+    }
+}
 
 pub(super) struct Vmar_ {
     /// vmar inner
@@ -77,12 +84,16 @@ struct VmarInner {
     free_regions: BTreeMap<Vaddr, FreeRegion>,
 }
 
+// FIXME: How to set the correct root vmar range?
+// We should not include addr 0 here(is this right?), since the 0 addr means the null pointer.
+// We should include addr 0x0040_0000, since non-pie executables typically are put on 0x0040_0000.
+pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x0010_0000;
 pub const ROOT_VMAR_HIGHEST_ADDR: Vaddr = 0x1000_0000_0000;
 
 impl Vmar_ {
     pub fn new_root() -> Result<Self> {
         let mut free_regions = BTreeMap::new();
-        let root_region = FreeRegion::new(0..ROOT_VMAR_HIGHEST_ADDR);
+        let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_HIGHEST_ADDR);
         free_regions.insert(root_region.start(), root_region);
         let vmar_inner = VmarInner {
             is_destroyed: false,
@@ -156,6 +167,34 @@ impl Vmar_ {
 
         Ok(())
     }
+
+    /// Handle user space page fault, if the page fault is successfully handled ,return Ok(()).
+    pub fn handle_page_fault(&self, page_fault_addr: Vaddr, write: bool) -> Result<()> {
+        if page_fault_addr < self.base || page_fault_addr >= self.base + self.size {
+            return Err(Error::AccessDenied);
+        }
+
+        let inner = self.inner.lock();
+        for (child_vmar_base, child_vmar) in &inner.child_vmar_s {
+            if *child_vmar_base <= page_fault_addr
+                && page_fault_addr < *child_vmar_base + child_vmar.size
+            {
+                return child_vmar.handle_page_fault(page_fault_addr, write);
+            }
+        }
+
+        // FIXME: If multiple vmos are mapped to the addr, should we allow all vmos to handle page fault?
+        for (vm_mapping_base, vm_mapping) in &inner.mapped_vmos {
+            if *vm_mapping_base <= page_fault_addr
+                && page_fault_addr <= *vm_mapping_base + vm_mapping.size()
+            {
+                return vm_mapping.handle_page_fault(page_fault_addr, write);
+            }
+        }
+
+        return Err(Error::AccessDenied);
+    }
+
     pub fn destroy_all(&self) -> Result<()> {
         todo!()
     }
