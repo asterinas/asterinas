@@ -6,6 +6,7 @@ use core::mem::MaybeUninit;
 
 use crate::debug;
 use crate::trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame};
+use crate::x86_64_util::rdfsbase;
 use pod::Pod;
 
 /// Defines a CPU-local variable.
@@ -156,7 +157,7 @@ impl From<TrapFrame> for CpuContext {
                 rip: trap.rip,
                 rflag: trap.rflags,
             },
-            fs_base: 0,
+            fs_base: rdfsbase(),
             fp_regs: FpRegs::default(),
             trap_information: TrapInformation {
                 cr2: trap.cr2,

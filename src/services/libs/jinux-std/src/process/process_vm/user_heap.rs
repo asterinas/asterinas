@@ -1,12 +1,15 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::vm::perms::VmPerms;
 use crate::{
-    memory::vm_page::{VmPage, VmPageRange},
     prelude::*,
+    rights::Rights,
+    vm::vmo::{VmoFlags, VmoOptions},
 };
-use jinux_frame::vm::{VmPerm, VmSpace};
+use jinux_frame::AlignExt;
 
 pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
+pub const USER_HEAP_SIZE_LIMIT: usize = PAGE_SIZE * 1000;
 
 #[derive(Debug)]
 pub struct UserHeap {
@@ -23,35 +26,36 @@ impl UserHeap {
         }
     }
 
-    pub fn brk(&self, new_heap_end: Option<Vaddr>, vm_space: &VmSpace) -> Vaddr {
+    pub fn brk(&self, new_heap_end: Option<Vaddr>) -> Result<Vaddr> {
+        let current = current!();
+        let root_vmar = current.root_vmar().unwrap();
         match new_heap_end {
-            None => return self.current_heap_end.load(Ordering::Relaxed),
+            None => {
+                // create a heap vmo for current process
+                let perms = VmPerms::READ | VmPerms::WRITE;
+                let vmo_options = VmoOptions::<Rights>::new(0).flags(VmoFlags::RESIZABLE);
+                let heap_vmo = vmo_options.alloc().unwrap();
+                let vmar_map_options = root_vmar
+                    .new_map(heap_vmo, perms)
+                    .unwrap()
+                    .offset(USER_HEAP_BASE)
+                    .size(USER_HEAP_SIZE_LIMIT);
+                vmar_map_options.build().unwrap();
+                return Ok(self.current_heap_end.load(Ordering::Relaxed));
+            }
             Some(new_heap_end) => {
                 let current_heap_end = self.current_heap_end.load(Ordering::Acquire);
                 if new_heap_end < current_heap_end {
-                    return current_heap_end;
+                    // FIXME: should we allow shrink current user heap?
+                    return Ok(current_heap_end);
                 }
+                let new_size = (new_heap_end - self.heap_base).align_up(PAGE_SIZE);
+                let heap_vmo = root_vmar.get_mapped_vmo(USER_HEAP_BASE)?;
+                heap_vmo.resize(new_size)?;
                 self.current_heap_end.store(new_heap_end, Ordering::Release);
-                let start_page = VmPage::containing_address(current_heap_end - 1).next_page();
-                let end_page = VmPage::containing_address(new_heap_end);
-                if end_page >= start_page {
-                    let vm_pages = VmPageRange::new_page_range(start_page, end_page);
-                    let vm_perm = UserHeap::user_heap_perm();
-                    vm_pages.map_zeroed(vm_space, vm_perm);
-                    debug!(
-                        "map address: 0x{:x} - 0x{:x}",
-                        vm_pages.start_address(),
-                        vm_pages.end_address()
-                    );
-                }
-                return new_heap_end;
+                return Ok(new_heap_end);
             }
         }
-    }
-
-    #[inline(always)]
-    const fn user_heap_perm() -> VmPerm {
-        VmPerm::RWXU
     }
 
     /// Set heap to the default status. i.e., point the heap end to heap base.

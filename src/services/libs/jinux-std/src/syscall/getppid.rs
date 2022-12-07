@@ -1,10 +1,11 @@
+use crate::log_syscall_entry;
 use crate::prelude::*;
 
 use super::SyscallReturn;
 use super::SYS_GETPPID;
 
 pub fn sys_getppid() -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_GETPPID]", SYS_GETPPID);
+    log_syscall_entry!(SYS_GETPPID);
     let current = current!();
     let parent = current.parent();
     match parent {

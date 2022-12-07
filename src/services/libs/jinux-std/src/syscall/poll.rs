@@ -1,14 +1,15 @@
 use core::time::Duration;
 
 use crate::fs::poll::{c_pollfd, PollFd};
-use crate::memory::{read_val_from_user, write_val_to_user};
+use crate::log_syscall_entry;
+use crate::util::{read_val_from_user, write_val_to_user};
 use crate::{fs::poll::c_nfds, prelude::*};
 
 use super::SyscallReturn;
 use super::SYS_POLL;
 
 pub fn sys_poll(fds: Vaddr, nfds: c_nfds, timeout: i32) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_POLL]", SYS_POLL);
+    log_syscall_entry!(SYS_POLL);
 
     let mut read_addr = fds;
     let mut pollfds = Vec::with_capacity(nfds as _);
@@ -36,8 +37,8 @@ pub fn sys_poll(fds: Vaddr, nfds: c_nfds, timeout: i32) -> Result<SyscallReturn>
             let file_table = current.file_table().lock();
             let file = file_table.get_file(pollfd.fd);
             match file {
-                None => return Some(Err(Error::new(Errno::EBADF))),
-                Some(file) => {
+                Err(_) => return Some(Err(Error::new(Errno::EBADF))),
+                Ok(file) => {
                     let file_events = file.poll();
                     let polled_events = pollfd.events.intersection(file_events);
                     if !polled_events.is_empty() {

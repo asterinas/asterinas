@@ -1,5 +1,6 @@
 use jinux_frame::cpu::CpuContext;
 
+use crate::log_syscall_entry;
 use crate::process::clone::{clone_child, CloneArgs, CloneFlags};
 use crate::{prelude::*, syscall::SYS_CLONE};
 
@@ -15,11 +16,12 @@ pub fn sys_clone(
     tls: usize,
     parent_context: CpuContext,
 ) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_CLONE]", SYS_CLONE);
+    log_syscall_entry!(SYS_CLONE);
     let clone_flags = CloneFlags::from(clone_flags);
     debug!("flags = {:?}, child_stack_ptr = 0x{:x}, parent_tid_ptr = 0x{:x}, child tid ptr = 0x{:x}, tls = 0x{:x}", clone_flags, new_sp, parent_tidptr, child_tidptr, tls);
     let clone_args = CloneArgs::new(new_sp, parent_tidptr, child_tidptr, tls, clone_flags);
     let child_process = clone_child(parent_context, clone_args).unwrap();
+
     let child_pid = child_process.pid();
     let pid = current!().pid();
     debug!("*********schedule child process, pid = {}**********", pid);

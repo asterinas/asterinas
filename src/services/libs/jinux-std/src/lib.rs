@@ -35,7 +35,6 @@ extern crate alloc;
 pub mod driver;
 pub mod error;
 pub mod fs;
-mod memory;
 pub mod prelude;
 mod process;
 pub mod rights;

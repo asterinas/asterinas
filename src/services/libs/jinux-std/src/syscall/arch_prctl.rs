@@ -1,7 +1,7 @@
 use jinux_frame::cpu::CpuContext;
 
-use crate::prelude::*;
 use crate::syscall::SYS_ARCH_PRCTL;
+use crate::{log_syscall_entry, prelude::*};
 
 use super::SyscallReturn;
 
@@ -29,7 +29,7 @@ impl TryFrom<u64> for ArchPrctlCode {
 }
 
 pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_ARCH_PRCTL]", SYS_ARCH_PRCTL);
+    log_syscall_entry!(SYS_ARCH_PRCTL);
     let arch_prctl_code = ArchPrctlCode::try_from(code)?;
     debug!(
         "arch_prctl_code: {:?}, addr = 0x{:x}",

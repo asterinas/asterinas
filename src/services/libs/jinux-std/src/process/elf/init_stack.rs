@@ -2,15 +2,21 @@
 //! The process initial stack, contains arguments, environmental variables and auxiliary vectors
 //! The data layout of init stack can be seen in Figure 3.9 in https://uclibc.org/docs/psABI-x86_64.pdf
 
-use crate::{memory::vm_page::VmPageRange, prelude::*};
+use crate::rights::Rights;
+use crate::vm::perms::VmPerms;
+use crate::{
+    prelude::*,
+    rights::Full,
+    vm::{vmar::Vmar, vmo::VmoOptions},
+};
 use core::mem;
 use jinux_frame::{
-    vm::{VmIo, VmPerm, VmSpace},
+    vm::{VmIo, VmPerm},
     AlignExt,
 };
 
 use super::aux_vec::{AuxKey, AuxVec};
-use super::elf::ElfHeaderInfo;
+use super::load_elf::ElfHeaderInfo;
 
 pub const INIT_STACK_BASE: Vaddr = 0x0000_0000_2000_0000;
 pub const INIT_STACK_SIZE: usize = 0x1000 * 16; // 64KB
@@ -90,10 +96,9 @@ impl InitStack {
     }
 
     /// This function only work for first process
-    pub fn new_default_config(filename: CString, argv: Vec<CString>, envp: Vec<CString>) -> Self {
+    pub fn new_default_config(argv: Vec<CString>, envp: Vec<CString>) -> Self {
         let init_stack_top = INIT_STACK_BASE - PAGE_SIZE;
         let init_stack_size = INIT_STACK_SIZE;
-        // InitStack::new(filename, init_stack_top, init_stack_size, argv, envp)
         InitStack::new(init_stack_top, init_stack_size, argv, envp)
     }
 
@@ -110,18 +115,28 @@ impl InitStack {
         self.init_stack_top - self.init_stack_size
     }
 
-    pub fn init(&mut self, vm_space: &VmSpace, elf_header_info: &ElfHeaderInfo) -> Result<()> {
-        self.map_and_zeroed(vm_space);
-        self.write_zero_page(vm_space); // This page is used to store page header table
-        self.write_stack_content(vm_space, elf_header_info)?;
-        self.debug_print_stack_content(vm_space);
+    pub fn init(
+        &mut self,
+        root_vmar: &Vmar<Full>,
+        elf_header_info: &ElfHeaderInfo,
+        ph_addr: Vaddr,
+    ) -> Result<()> {
+        self.map_and_zeroed(root_vmar)?;
+        self.write_stack_content(root_vmar, elf_header_info, ph_addr)?;
+        self.debug_print_stack_content(root_vmar);
         Ok(())
     }
 
-    fn map_and_zeroed(&self, vm_space: &VmSpace) {
-        let vm_page_range = VmPageRange::new_range(self.user_stack_bottom()..self.user_stack_top());
-        let vm_perm = InitStack::perm();
-        vm_page_range.map_zeroed(vm_space, vm_perm);
+    fn map_and_zeroed(&self, root_vmar: &Vmar<Full>) -> Result<()> {
+        let vmo_options = VmoOptions::<Rights>::new(self.init_stack_size);
+        let vmo = vmo_options.alloc()?;
+        vmo.clear(0..vmo.size())?;
+        let perms = VmPerms::READ | VmPerms::WRITE;
+        let vmar_map_options = root_vmar
+            .new_map(vmo, perms)?
+            .offset(self.user_stack_bottom());
+        vmar_map_options.build().unwrap();
+        Ok(())
     }
 
     /// Libc ABI requires 16-byte alignment of the stack entrypoint.
@@ -129,60 +144,54 @@ impl InitStack {
     /// to meet the requirement if necessary.
     fn adjust_stack_alignment(
         &mut self,
-        vm_space: &VmSpace,
+        root_vmar: &Vmar<Full>,
         envp_pointers: &Vec<u64>,
         argv_pointers: &Vec<u64>,
     ) -> Result<()> {
         // ensure 8-byte alignment
-        self.write_u64(0, vm_space)?;
+        self.write_u64(0, root_vmar)?;
         let auxvec_size = (self.aux_vec.table().len() + 1) * (mem::size_of::<u64>() * 2);
         let envp_pointers_size = (envp_pointers.len() + 1) * mem::size_of::<u64>();
         let argv_pointers_size = (argv_pointers.len() + 1) * mem::size_of::<u64>();
         let argc_size = mem::size_of::<u64>();
         let to_write_size = auxvec_size + envp_pointers_size + argv_pointers_size + argc_size;
         if (self.pos - to_write_size) % 16 != 0 {
-            self.write_u64(0, vm_space)?;
+            self.write_u64(0, root_vmar)?;
         }
         Ok(())
     }
 
-    fn write_zero_page(&mut self, vm_space: &VmSpace) {
-        self.pos -= PAGE_SIZE;
-    }
-
     fn write_stack_content(
         &mut self,
-        vm_space: &VmSpace,
+        root_vmar: &Vmar<Full>,
         elf_header_info: &ElfHeaderInfo,
+        ph_addr: Vaddr,
     ) -> Result<()> {
         // write envp string
-        let envp_pointers = self.write_envp_strings(vm_space)?;
+        let envp_pointers = self.write_envp_strings(root_vmar)?;
         // write argv string
-        let argv_pointers = self.write_argv_strings(vm_space)?;
+        let argv_pointers = self.write_argv_strings(root_vmar)?;
         // write random value
         let random_value = generate_random_for_aux_vec();
-        let random_value_pointer = self.write_bytes(&random_value, vm_space)?;
+        let random_value_pointer = self.write_bytes(&random_value, root_vmar)?;
         self.aux_vec.set(AuxKey::AT_RANDOM, random_value_pointer)?;
         self.aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
-        self.aux_vec.set(
-            AuxKey::AT_PHDR,
-            self.init_stack_top as u64 - PAGE_SIZE as u64 + elf_header_info.ph_off,
-        )?;
+        self.aux_vec.set(AuxKey::AT_PHDR, ph_addr as u64)?;
         self.aux_vec
             .set(AuxKey::AT_PHNUM, elf_header_info.ph_num as u64)?;
         self.aux_vec
             .set(AuxKey::AT_PHENT, elf_header_info.ph_ent as u64)?;
-        self.adjust_stack_alignment(vm_space, &envp_pointers, &argv_pointers)?;
-        self.write_aux_vec(vm_space)?;
-        self.write_envp_pointers(vm_space, envp_pointers)?;
-        self.write_argv_pointers(vm_space, argv_pointers)?;
+        self.adjust_stack_alignment(root_vmar, &envp_pointers, &argv_pointers)?;
+        self.write_aux_vec(root_vmar)?;
+        self.write_envp_pointers(root_vmar, envp_pointers)?;
+        self.write_argv_pointers(root_vmar, argv_pointers)?;
         // write argc
         let argc = self.argc();
-        self.write_u64(argc, vm_space)?;
+        self.write_u64(argc, root_vmar)?;
         Ok(())
     }
 
-    fn write_envp_strings(&mut self, vm_space: &VmSpace) -> Result<Vec<u64>> {
+    fn write_envp_strings(&mut self, root_vmar: &Vmar<Full>) -> Result<Vec<u64>> {
         let envp = self
             .envp
             .iter()
@@ -190,13 +199,13 @@ impl InitStack {
             .collect::<Vec<_>>();
         let mut envp_pointers = Vec::with_capacity(envp.len());
         for envp in envp.iter() {
-            let pointer = self.write_cstring(envp, vm_space)?;
+            let pointer = self.write_cstring(envp, root_vmar)?;
             envp_pointers.push(pointer);
         }
         Ok(envp_pointers)
     }
 
-    fn write_argv_strings(&mut self, vm_space: &VmSpace) -> Result<Vec<u64>> {
+    fn write_argv_strings(&mut self, root_vmar: &Vmar<Full>) -> Result<Vec<u64>> {
         let argv = self
             .argv
             .iter()
@@ -204,17 +213,17 @@ impl InitStack {
             .collect::<Vec<_>>();
         let mut argv_pointers = Vec::with_capacity(argv.len());
         for argv in argv.iter().rev() {
-            let pointer = self.write_cstring(argv, vm_space)?;
+            let pointer = self.write_cstring(argv, root_vmar)?;
             argv_pointers.push(pointer);
         }
         argv_pointers.reverse();
         Ok(argv_pointers)
     }
 
-    fn write_aux_vec(&mut self, vm_space: &VmSpace) -> Result<()> {
+    fn write_aux_vec(&mut self, root_vmar: &Vmar<Full>) -> Result<()> {
         // Write NULL auxilary
-        self.write_u64(0, vm_space)?;
-        self.write_u64(AuxKey::AT_NULL as u64, vm_space)?;
+        self.write_u64(0, root_vmar)?;
+        self.write_u64(AuxKey::AT_NULL as u64, root_vmar)?;
         // Write Auxiliary vectors
         let aux_vec: Vec<_> = self
             .aux_vec
@@ -223,38 +232,38 @@ impl InitStack {
             .map(|(aux_key, aux_value)| (*aux_key, *aux_value))
             .collect();
         for (aux_key, aux_value) in aux_vec.iter() {
-            self.write_u64(*aux_value, vm_space)?;
-            self.write_u64(*aux_key as u64, vm_space)?;
+            self.write_u64(*aux_value, root_vmar)?;
+            self.write_u64(*aux_key as u64, root_vmar)?;
         }
         Ok(())
     }
 
     fn write_envp_pointers(
         &mut self,
-        vm_space: &VmSpace,
+        root_vmar: &Vmar<Full>,
         mut envp_pointers: Vec<u64>,
     ) -> Result<()> {
         // write NULL pointer
-        self.write_u64(0, vm_space)?;
+        self.write_u64(0, root_vmar)?;
         // write envp pointers
         envp_pointers.reverse();
         for envp_pointer in envp_pointers {
-            self.write_u64(envp_pointer, vm_space)?;
+            self.write_u64(envp_pointer, root_vmar)?;
         }
         Ok(())
     }
 
     fn write_argv_pointers(
         &mut self,
-        vm_space: &VmSpace,
+        root_vmar: &Vmar<Full>,
         mut argv_pointers: Vec<u64>,
     ) -> Result<()> {
         // write 0
-        self.write_u64(0, vm_space)?;
+        self.write_u64(0, root_vmar)?;
         // write argv pointers
         argv_pointers.reverse();
         for argv_pointer in argv_pointers {
-            self.write_u64(argv_pointer, vm_space)?;
+            self.write_u64(argv_pointer, root_vmar)?;
         }
         Ok(())
     }
@@ -286,35 +295,35 @@ impl InitStack {
     }
 
     /// returns the u64 start address
-    fn write_u64(&mut self, val: u64, vm_space: &VmSpace) -> Result<u64> {
+    fn write_u64(&mut self, val: u64, root_vmar: &Vmar<Full>) -> Result<u64> {
         let start_address = (self.pos - 8).align_down(8);
         self.pos = start_address;
-        vm_space.write_val(start_address, &val)?;
+        root_vmar.write_val(start_address, &val)?;
         Ok(self.pos as u64)
     }
 
-    fn write_bytes(&mut self, bytes: &[u8], vm_space: &VmSpace) -> Result<u64> {
+    fn write_bytes(&mut self, bytes: &[u8], root_vmar: &Vmar<Full>) -> Result<u64> {
         let len = bytes.len();
         self.pos -= len;
-        vm_space.write_bytes(self.pos, bytes)?;
+        root_vmar.write_bytes(self.pos, bytes)?;
         Ok(self.pos as u64)
     }
 
     /// returns the string start address
     /// cstring will with end null byte.
-    fn write_cstring(&mut self, val: &CString, vm_space: &VmSpace) -> Result<u64> {
+    fn write_cstring(&mut self, val: &CString, root_vmar: &Vmar<Full>) -> Result<u64> {
         let bytes = val.as_bytes_with_nul();
-        self.write_bytes(bytes, vm_space)
+        self.write_bytes(bytes, root_vmar)
     }
 
     pub const fn perm() -> VmPerm {
         VmPerm::RWU
     }
 
-    fn debug_print_stack_content(&self, vm_space: &VmSpace) {
+    fn debug_print_stack_content(&self, root_vmar: &Vmar<Full>) {
         debug!("print stack content:");
         let stack_top = self.user_stack_top();
-        let argc = vm_space.read_val::<u64>(stack_top).unwrap();
+        let argc = root_vmar.read_val::<u64>(stack_top).unwrap();
         debug!("argc = {}", argc);
     }
 }

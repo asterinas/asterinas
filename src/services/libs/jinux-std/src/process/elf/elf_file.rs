@@ -1,0 +1,141 @@
+/// A wrapper of xmas_elf's elf parsing
+use xmas_elf::{
+    header::{self, Header, HeaderPt1, HeaderPt2, HeaderPt2_, Machine_, Type_},
+    program::ProgramHeader64,
+};
+
+use crate::prelude::*;
+pub struct Elf {
+    pub elf_header: ElfHeader,
+    pub program_headers: Vec<ProgramHeader64>,
+}
+
+impl Elf {
+    pub fn parse_elf(input: &[u8]) -> Result<Self> {
+        // first parse elf header
+        // The elf header is usually 64 bytes. pt1 is 16bytes and pt2 is 48 bytes.
+        // We require 128 bytes here is to keep consistency with linux implementations.
+        debug_assert!(input.len() >= 128);
+        let header =
+            xmas_elf::header::parse_header(input).map_err(|_| Error::new(Errno::ENOEXEC))?;
+        let elf_header = ElfHeader::parse_elf_header(header)?;
+        check_elf_header(&elf_header)?;
+        // than parse the program headers table
+        // FIXME: we should acquire enough pages before parse
+        let ph_offset = elf_header.pt2.ph_offset;
+        let ph_count = elf_header.pt2.ph_count;
+        let ph_entry_size = elf_header.pt2.ph_entry_size;
+        debug_assert!(
+            input.len() >= ph_offset as usize + ph_count as usize * ph_entry_size as usize
+        );
+        let mut program_headers = Vec::with_capacity(ph_count as usize);
+        for index in 0..ph_count {
+            let program_header = xmas_elf::program::parse_program_header(input, header, index)
+                .map_err(|_| Error::new(Errno::ENOEXEC))?;
+            let ph64 = match program_header {
+                xmas_elf::program::ProgramHeader::Ph64(ph64) => ph64.clone(),
+                xmas_elf::program::ProgramHeader::Ph32(_) => {
+                    return_errno_with_message!(Errno::ENOEXEC, "Not 64 byte executable")
+                }
+            };
+            program_headers.push(ph64);
+        }
+        Ok(Self {
+            elf_header,
+            program_headers,
+        })
+    }
+}
+
+pub struct ElfHeader {
+    pub pt1: HeaderPt1,
+    pub pt2: HeaderPt2_64,
+}
+
+impl ElfHeader {
+    fn parse_elf_header(header: Header) -> Result<Self> {
+        let pt1 = header.pt1.clone();
+        let pt2 = match header.pt2 {
+            HeaderPt2::Header64(header_pt2) => {
+                let HeaderPt2_ {
+                    type_,
+                    machine,
+                    version,
+                    entry_point,
+                    ph_offset,
+                    sh_offset,
+                    flags,
+                    header_size,
+                    ph_entry_size,
+                    ph_count,
+                    sh_entry_size,
+                    sh_count,
+                    sh_str_index,
+                } = header_pt2;
+                HeaderPt2_64 {
+                    type_: *type_,
+                    machine: *machine,
+                    version: *version,
+                    entry_point: *entry_point,
+                    ph_offset: *ph_offset,
+                    sh_offset: *sh_offset,
+                    flags: *flags,
+                    header_size: *header_size,
+                    ph_entry_size: *ph_entry_size,
+                    ph_count: *ph_count,
+                    sh_entry_size: *sh_entry_size,
+                    sh_count: *sh_count,
+                    sh_str_index: *sh_str_index,
+                }
+            }
+            _ => return_errno_with_message!(Errno::ENOEXEC, "parse elf header failed"),
+        };
+        Ok(ElfHeader { pt1, pt2 })
+    }
+}
+
+pub struct HeaderPt2_64 {
+    pub type_: Type_,
+    pub machine: Machine_,
+    pub version: u32,
+    pub entry_point: u64,
+    pub ph_offset: u64,
+    pub sh_offset: u64,
+    pub flags: u32,
+    pub header_size: u16,
+    pub ph_entry_size: u16,
+    pub ph_count: u16,
+    pub sh_entry_size: u16,
+    pub sh_count: u16,
+    pub sh_str_index: u16,
+}
+
+fn check_elf_header(elf_header: &ElfHeader) -> Result<()> {
+    // 64bit
+    debug_assert_eq!(elf_header.pt1.class(), header::Class::SixtyFour);
+    if elf_header.pt1.class() != header::Class::SixtyFour {
+        return_errno_with_message!(Errno::ENOEXEC, "Not 64 byte executable");
+    }
+    // little endian
+    debug_assert_eq!(elf_header.pt1.data(), header::Data::LittleEndian);
+    if elf_header.pt1.data() != header::Data::LittleEndian {
+        return_errno_with_message!(Errno::ENOEXEC, "Not little endian executable");
+    }
+    // system V ABI
+    // debug_assert_eq!(elf_header.pt1.os_abi(), header::OsAbi::SystemV);
+    // if elf_header.pt1.os_abi() != header::OsAbi::SystemV {
+    //     return Error::new(Errno::ENOEXEC);
+    // }
+    // x86_64 architecture
+    debug_assert_eq!(elf_header.pt2.machine.as_machine(), header::Machine::X86_64);
+    if elf_header.pt2.machine.as_machine() != header::Machine::X86_64 {
+        return_errno_with_message!(Errno::ENOEXEC, "Not x86_64 executable");
+    }
+    // Executable file
+    debug_assert_eq!(elf_header.pt2.type_.as_type(), header::Type::Executable);
+    if elf_header.pt2.type_.as_type() != header::Type::Executable {
+        return_errno_with_message!(Errno::ENOEXEC, "Not executable file");
+    }
+
+    Ok(())
+}

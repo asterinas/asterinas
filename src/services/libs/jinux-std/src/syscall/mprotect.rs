@@ -1,13 +1,13 @@
 use jinux_frame::vm::VmPerm;
 
-use crate::prelude::*;
+use crate::{log_syscall_entry, prelude::*};
 
 use crate::syscall::SYS_MPROTECT;
 
 use super::SyscallReturn;
 
 pub fn sys_mprotect(vaddr: u64, len: u64, perms: u64) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_MPROTECT]", SYS_MPROTECT);
+    log_syscall_entry!(SYS_MPROTECT);
     let perms = VmPerm::try_from(perms).unwrap();
     do_sys_mprotect(vaddr as Vaddr, len as usize, perms);
     Ok(SyscallReturn::Return(0))

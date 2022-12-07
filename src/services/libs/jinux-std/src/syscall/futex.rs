@@ -2,9 +2,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::process::{Pid, Process};
 use crate::syscall::SyscallReturn;
-use crate::{memory::read_val_from_user, syscall::SYS_FUTEX};
+use crate::syscall::SYS_FUTEX;
+use crate::util::read_val_from_user;
 
-use crate::prelude::*;
+use crate::{log_syscall_entry, prelude::*};
 use jinux_frame::cpu::num_cpus;
 
 type FutexBitSet = u32;
@@ -22,7 +23,7 @@ pub fn sys_futex(
     futex_new_addr: u64,
     bitset: u64,
 ) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_FUTEX]", SYS_FUTEX);
+    log_syscall_entry!(SYS_FUTEX);
     // FIXME: we current ignore futex flags
     let (futex_op, futex_flags) = futex_op_and_flags_from_u32(futex_op as _).unwrap();
 

@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{log_syscall_entry, prelude::*};
 
 use crate::process::signal::sig_num::SigNum;
 use crate::process::signal::signals::user::{UserSignal, UserSignalKind};
@@ -11,7 +11,7 @@ use super::SyscallReturn;
 /// Since jinuxx only supports one-thread process now, tgkill will send signal to process with pid as its process id,
 /// and tgid as its process group id.
 pub fn sys_tgkill(tgid: Pgid, pid: Pid, sig_num: u8) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_TGKILL]", SYS_TGKILL);
+    log_syscall_entry!(SYS_TGKILL);
     let sig_num = SigNum::from_u8(sig_num);
     debug!("tgid = {}, pid = {}, sig_num = {:?}", tgid, pid, sig_num);
     let target_process =

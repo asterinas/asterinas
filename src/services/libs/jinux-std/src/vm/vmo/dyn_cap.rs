@@ -1,7 +1,8 @@
 use core::ops::Range;
 
-use jinux_frame::prelude::Result;
-use jinux_frame::{vm::VmIo, Error};
+use crate::prelude::*;
+
+use jinux_frame::vm::VmIo;
 
 use crate::rights::{Rights, TRights};
 
@@ -65,6 +66,12 @@ impl Vmo<Rights> {
     ) -> Result<VmoChildOptions<Rights, VmoCowChild>> {
         let dup_self = self.dup()?;
         Ok(VmoChildOptions::new_cow(dup_self, range))
+    }
+
+    /// commit a page at specific offset
+    pub fn commit_page(&self, offset: usize) -> Result<()> {
+        self.check_rights(Rights::WRITE)?;
+        self.0.commit_page(offset)
     }
 
     /// Commits the pages specified in the range (in bytes).
@@ -137,20 +144,28 @@ impl Vmo<Rights> {
 
     /// Converts to a static capability.
     pub fn to_static<R1: TRights>(self) -> Result<Vmo<R1>> {
-        self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::InvalidArgs)?)?;
+        self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::new(Errno::EINVAL))?)?;
         Ok(Vmo(self.0, R1::new()))
     }
 }
 
+impl Clone for Vmo<Rights> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone())
+    }
+}
+
 impl VmIo for Vmo<Rights> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
-        self.0.read_bytes(offset, buf)
+        self.0.read_bytes(offset, buf)?;
+        Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::WRITE)?;
-        self.0.write_bytes(offset, buf)
+        self.0.write_bytes(offset, buf)?;
+        Ok(())
     }
 }
 

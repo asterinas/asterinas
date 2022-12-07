@@ -14,7 +14,7 @@
 //! In Jinux, VMARs and VMOs, as well as other capabilities, are implemented
 //! as zero-cost capabilities.
 
-mod page_fault_handler;
-mod perms;
-mod vmar;
-mod vmo;
+pub mod page_fault_handler;
+pub mod perms;
+pub mod vmar;
+pub mod vmo;

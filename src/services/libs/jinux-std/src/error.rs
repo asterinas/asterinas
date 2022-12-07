@@ -211,6 +211,20 @@ impl From<core::ffi::FromBytesWithNulError> for Error {
     }
 }
 
+impl From<Error> for jinux_frame::Error {
+    fn from(error: Error) -> Self {
+        match error.errno {
+            Errno::EACCES => jinux_frame::Error::AccessDenied,
+            Errno::EIO => jinux_frame::Error::IoError,
+            Errno::ENOMEM => jinux_frame::Error::NoMemory,
+            Errno::EFAULT => jinux_frame::Error::PageFault,
+            Errno::EINVAL => jinux_frame::Error::InvalidArgs,
+            Errno::EBUSY => jinux_frame::Error::NotEnoughResources,
+            _ => jinux_frame::Error::InvalidArgs,
+        }
+    }
+}
+
 impl From<alloc::ffi::NulError> for Error {
     fn from(_: alloc::ffi::NulError) -> Self {
         Error::with_message(Errno::E2BIG, "Cannot find null in cstring")

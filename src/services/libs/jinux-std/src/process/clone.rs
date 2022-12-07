@@ -96,18 +96,9 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
     let child_pid = new_pid();
     let current = Process::current();
 
-    // child process vm space
-    // FIXME: COPY ON WRITE can be used here
-    let parent_vm_space = current
-        .vm_space()
-        .expect("User task should always have vm space");
-    let child_vm_space = parent_vm_space.clone();
-    debug_check_clone_vm_space(parent_vm_space, &child_vm_space);
-
-    let child_file_name = match current.filename() {
-        None => None,
-        Some(filename) => Some(filename.clone()),
-    };
+    // child process vmar
+    let parent_root_vmar = current.root_vmar().unwrap();
+    let child_root_vmar = current.root_vmar().unwrap().fork_vmar()?;
 
     // child process user_vm
     let child_user_vm = match current.user_vm() {
@@ -115,18 +106,16 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
         Some(user_vm) => Some(user_vm.clone()),
     };
 
-    // child process cpu context
+    // child process user space
     let mut child_cpu_context = parent_context.clone();
-    debug!("parent context: {:x?}", parent_context);
-    debug!("parent gp_regs: {:x?}", child_cpu_context.gp_regs);
     child_cpu_context.gp_regs.rax = 0; // Set return value of child process
-
+    let child_vm_space = child_root_vmar.vm_space().clone();
     let child_user_space = Arc::new(UserSpace::new(child_vm_space, child_cpu_context));
-    debug!("before spawn child task");
-    debug!("current pid: {}", current.pid());
-    debug!("child process pid: {}", child_pid);
-    debug!("rip = 0x{:x}", child_cpu_context.gp_regs.rip);
 
+    let child_file_name = match current.filename() {
+        None => None,
+        Some(filename) => Some(filename.clone()),
+    };
     let child_file_table = current.file_table.lock().clone();
 
     // inherit parent's sig disposition
@@ -145,6 +134,7 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
             child_file_name,
             child_user_vm,
             Some(child_user_space),
+            Some(child_root_vmar),
             None,
             child_file_table,
             child_sig_dispositions,
@@ -189,12 +179,11 @@ fn clone_child_clear_tid(child_process: &Arc<Process>) -> Result<()> {
 }
 
 fn clone_child_set_tid(child_process: &Arc<Process>, clone_args: CloneArgs) -> Result<()> {
-    debug!("clone child set tid");
     let child_pid = child_process.pid();
-    let child_vm = child_process
-        .vm_space()
+    let child_vmar = child_process
+        .root_vmar()
         .ok_or_else(|| Error::new(Errno::ECHILD))?;
-    child_vm.write_val(clone_args.child_tidptr, &child_pid)?;
+    child_vmar.write_val(clone_args.child_tidptr, &child_pid)?;
     Ok(())
 }
 

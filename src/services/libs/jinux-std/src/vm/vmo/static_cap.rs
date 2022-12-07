@@ -1,6 +1,5 @@
+use crate::prelude::*;
 use core::ops::Range;
-
-use jinux_frame::prelude::Result;
 use jinux_frame::vm::VmIo;
 use jinux_rights_proc::require;
 
@@ -65,6 +64,12 @@ impl<R: TRights> Vmo<R> {
     pub fn new_cow_child(&self, range: Range<usize>) -> Result<VmoChildOptions<R, VmoCowChild>> {
         let dup_self = self.dup()?;
         Ok(VmoChildOptions::new_cow(dup_self, range))
+    }
+
+    /// commit a page at specific offset
+    pub fn commit_page(&self, offset: usize) -> Result<()> {
+        self.check_rights(Rights::WRITE)?;
+        self.0.commit_page(offset)
     }
 
     /// Commit the pages specified in the range (in bytes).
@@ -137,14 +142,16 @@ impl<R: TRights> Vmo<R> {
 }
 
 impl<R: TRights> VmIo for Vmo<R> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
-        self.0.read_bytes(offset, buf)
+        self.0.read_bytes(offset, buf)?;
+        Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::WRITE)?;
-        self.0.write_bytes(offset, buf)
+        self.0.write_bytes(offset, buf)?;
+        Ok(())
     }
 }
 

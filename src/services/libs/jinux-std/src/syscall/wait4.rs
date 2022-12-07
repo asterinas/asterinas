@@ -1,7 +1,8 @@
 use crate::{
-    memory::write_val_to_user,
+    log_syscall_entry,
     process::{process_filter::ProcessFilter, wait::wait_child_exit},
     syscall::SYS_WAIT4,
+    util::write_val_to_user,
 };
 
 use crate::prelude::*;
@@ -10,7 +11,7 @@ use crate::process::wait::WaitOptions;
 use super::SyscallReturn;
 
 pub fn sys_wait4(wait_pid: u64, exit_status_ptr: u64, wait_options: u32) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_WAIT4]", SYS_WAIT4);
+    log_syscall_entry!(SYS_WAIT4);
     let wait_options = WaitOptions::from_bits(wait_options).expect("Unknown wait options");
     debug!(
         "pid = {}, exit_status_ptr = {}, wait_options: {:?}",

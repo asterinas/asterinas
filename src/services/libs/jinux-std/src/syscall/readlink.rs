@@ -1,9 +1,7 @@
-use crate::prelude::*;
+use crate::{log_syscall_entry, prelude::*};
 
-use crate::{
-    memory::{read_bytes_from_user, write_bytes_to_user},
-    syscall::SYS_READLINK,
-};
+use crate::syscall::SYS_READLINK;
+use crate::util::{read_bytes_from_user, write_bytes_to_user};
 
 use super::SyscallReturn;
 
@@ -14,7 +12,7 @@ pub fn sys_readlink(
     user_buf_ptr: u64,
     user_buf_len: u64,
 ) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_READLINK]", SYS_READLINK);
+    log_syscall_entry!(SYS_READLINK);
     let res = do_sys_readlink(
         filename_ptr as Vaddr,
         user_buf_ptr as Vaddr,

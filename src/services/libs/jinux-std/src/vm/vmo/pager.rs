@@ -1,4 +1,4 @@
-use jinux_frame::prelude::Result;
+use crate::prelude::*;
 use jinux_frame::vm::VmFrame;
 
 /// Pagers provide frame to a VMO.

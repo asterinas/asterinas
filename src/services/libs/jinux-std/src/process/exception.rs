@@ -1,14 +1,19 @@
 use jinux_frame::{
     cpu::{CpuContext, TrapInformation},
-    trap::PAGE_FAULT,
+    trap::*,
+    vm::VmIo,
 };
 
+use crate::vm::page_fault_handler::PageFaultHandler;
 use crate::{prelude::*, process::signal::signals::fault::FaultSignal};
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(context: &mut CpuContext) {
     let trap_info = context.trap_information.clone();
-    debug!("trap info = {:x?}", trap_info);
+    log_trap_info(&trap_info);
+    let current = current!();
+    let root_vmar = current.root_vmar().unwrap();
+
     match trap_info.id {
         PAGE_FAULT => handle_page_fault(&trap_info),
         _ => {
@@ -21,12 +26,28 @@ pub fn handle_exception(context: &mut CpuContext) {
 fn handle_page_fault(trap_info: &TrapInformation) {
     const PAGE_NOT_PRESENT_ERROR_MASK: u64 = 0x1 << 0;
     const WRITE_ACCESS_MASK: u64 = 0x1 << 1;
-    if trap_info.err & PAGE_NOT_PRESENT_ERROR_MASK == 0 {
-        // TODO: If page is not present, we should ask the vmar try to commit this page
-        generate_fault_signal(trap_info)
+    let not_present = trap_info.err & PAGE_NOT_PRESENT_ERROR_MASK == 0;
+    let write = trap_info.err & WRITE_ACCESS_MASK != 0;
+    if not_present || write {
+        // If page is not present or due to write access, we should ask the vmar try to commit this page
+        let current = current!();
+        let root_vmar = current.root_vmar().unwrap();
+        let page_fault_addr = trap_info.cr2 as Vaddr;
+        debug!(
+            "Page fault address: 0x{:x}, write access: {}",
+            page_fault_addr, write
+        );
+        if let Err(_) = root_vmar.handle_page_fault(page_fault_addr, not_present, write) {
+            generate_fault_signal(trap_info);
+        } else {
+            // ensure page fault is successfully handled
+            // FIXME: this check can be removed
+            let vm_space = root_vmar.vm_space();
+            let _: u8 = vm_space.read_val(page_fault_addr).unwrap();
+        }
     } else {
-        // Otherwise, the page fault is caused by page protection error.
-        generate_fault_signal(trap_info)
+        // Otherwise, the page fault cannot be handled
+        generate_fault_signal(trap_info);
     }
 }
 
@@ -35,4 +56,59 @@ fn generate_fault_signal(trap_info: &TrapInformation) {
     let current = current!();
     let signal = Box::new(FaultSignal::new(trap_info));
     current.sig_queues().lock().enqueue(signal);
+}
+
+macro_rules! log_trap_common {
+    ($exception_name: ident, $trap_info: ident) => {
+        debug!(
+            "[Trap][{}][err = {}]",
+            stringify!($exception_name),
+            $trap_info.err
+        )
+    };
+}
+
+fn log_trap_info(trap_info: &TrapInformation) {
+    match trap_info.id {
+        DIVIDE_BY_ZERO => log_trap_common!(DIVIDE_BY_ZERO, trap_info),
+        DEBUG => log_trap_common!(DEBUG, trap_info),
+        NON_MASKABLE_INTERRUPT => log_trap_common!(NON_MASKABLE_INTERRUPT, trap_info),
+        BREAKPOINT => log_trap_common!(BREAKPOINT, trap_info),
+        OVERFLOW => log_trap_common!(OVERFLOW, trap_info),
+        BOUND_RANGE_EXCEEDED => log_trap_common!(BOUND_RANGE_EXCEEDED, trap_info),
+        INVALID_OPCODE => log_trap_common!(INVALID_OPCODE, trap_info),
+        DEVICE_NOT_AVAILABLE => log_trap_common!(DEVICE_NOT_AVAILABLE, trap_info),
+        DOUBLE_FAULT => log_trap_common!(DOUBLE_FAULT, trap_info),
+        COPROCESSOR_SEGMENT_OVERRUN => log_trap_common!(COPROCESSOR_SEGMENT_OVERRUN, trap_info),
+        INVAILD_TSS => log_trap_common!(INVAILD_TSS, trap_info),
+        SEGMENT_NOT_PRESENT => log_trap_common!(SEGMENT_NOT_PRESENT, trap_info),
+        STACK_SEGMENT_FAULT => log_trap_common!(STACK_SEGMENT_FAULT, trap_info),
+        GENERAL_PROTECTION_FAULT => log_trap_common!(GENERAL_PROTECTION_FAULT, trap_info),
+        PAGE_FAULT => {
+            debug!(
+                "[Trap][{}][page fault addr = 0x{:x}, err = {}]",
+                stringify!(PAGE_FAULT),
+                trap_info.cr2,
+                trap_info.err
+            );
+        }
+        // 15 reserved
+        X87_FLOATING_POINT_EXCEPTION => log_trap_common!(X87_FLOATING_POINT_EXCEPTION, trap_info),
+        ALIGNMENT_CHECK => log_trap_common!(ALIGNMENT_CHECK, trap_info),
+        MACHINE_CHECK => log_trap_common!(MACHINE_CHECK, trap_info),
+        SIMD_FLOATING_POINT_EXCEPTION => log_trap_common!(SIMD_FLOATING_POINT_EXCEPTION, trap_info),
+        VIRTUALIZATION_EXCEPTION => log_trap_common!(VIRTUALIZATION_EXCEPTION, trap_info),
+        CONTROL_PROTECTION_EXCEPTION => log_trap_common!(CONTROL_PROTECTION_EXCEPTION, trap_info),
+        HYPERVISOR_INJECTION_EXCEPTION => {
+            log_trap_common!(HYPERVISOR_INJECTION_EXCEPTION, trap_info)
+        }
+        VMM_COMMUNICATION_EXCEPTION => log_trap_common!(VMM_COMMUNICATION_EXCEPTION, trap_info),
+        SECURITY_EXCEPTION => log_trap_common!(SECURITY_EXCEPTION, trap_info),
+        _ => {
+            info!(
+                "[Trap][Unknown trap type][id = {}, err = {}]",
+                trap_info.id, trap_info.err
+            );
+        }
+    }
 }

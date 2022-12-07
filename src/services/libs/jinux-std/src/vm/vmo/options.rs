@@ -3,16 +3,12 @@
 use core::marker::PhantomData;
 use core::ops::Range;
 
-use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
-use alloc::sync::Weak;
-use alloc::vec::Vec;
-use jinux_frame::config::PAGE_SIZE;
 use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrameVec};
-use jinux_frame::{Error, Result};
+use jinux_frame::AlignExt;
 use jinux_rights_proc::require;
-use spin::Mutex;
 use typeflags_util::{SetExtend, SetExtendOp};
+
+use crate::prelude::*;
 
 use crate::rights::{Dup, Rights, TRights, Write};
 use crate::vm::vmo::InheritedPages;
@@ -153,19 +149,13 @@ fn alloc_vmo_(
     flags: VmoFlags,
     pager: Option<Arc<dyn Pager>>,
 ) -> Result<Vmo_> {
-    debug_assert!(size % PAGE_SIZE == 0);
-    if size % PAGE_SIZE != 0 {
-        return Err(Error::InvalidArgs);
-    }
+    let size = size.align_up(PAGE_SIZE);
     let committed_pages = committed_pages_if_continuous(flags, size, paddr)?;
-    // FIXME: can the pager be None when allocate vmo?
     let vmo_inner = VmoInner {
         pager,
         size,
         committed_pages,
         inherited_pages: InheritedPages::new_empty(),
-        mappings: Vec::new(),
-        // pages_should_fill_zeros: BTreeSet::new(),
     };
     Ok(Vmo_ {
         flags,
@@ -471,34 +461,37 @@ fn alloc_child_vmo_(
     debug_assert!(child_vmo_start % PAGE_SIZE == 0);
     debug_assert!(child_vmo_end % PAGE_SIZE == 0);
     if child_vmo_start % PAGE_SIZE != 0 || child_vmo_end % PAGE_SIZE != 0 {
-        return Err(Error::InvalidArgs);
+        return_errno_with_message!(Errno::EINVAL, "vmo range does not aligned with PAGE_SIZE");
     }
+    let parent_vmo_size = parent_vmo_.size();
     let parent_vmo_inner = parent_vmo_.inner.lock();
     match child_type {
         ChildType::Slice => {
             // A slice child should be inside parent vmo's range
             debug_assert!(child_vmo_end <= parent_vmo_inner.size);
             if child_vmo_end > parent_vmo_inner.size {
-                return Err(Error::InvalidArgs);
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "slice child vmo cannot exceed parent vmo's size"
+                );
             }
         }
         ChildType::Cow => {
             // A copy on Write child should intersect with parent vmo
             debug_assert!(range.start < parent_vmo_inner.size);
             if range.start >= parent_vmo_inner.size {
-                return Err(Error::InvalidArgs);
+                return_errno_with_message!(Errno::EINVAL, "COW vmo should overlap with its parent");
             }
         }
     }
     let parent_page_idx_offset = range.start / PAGE_SIZE;
-    let inherited_end = range.end.min(parent_vmo_.size());
+    let inherited_end = range.end.min(parent_vmo_size);
     let inherited_end_page_idx = inherited_end / PAGE_SIZE + 1;
     let inherited_pages = InheritedPages::new(0..inherited_end_page_idx, parent_page_idx_offset);
     let vmo_inner = VmoInner {
         pager: None,
         size: child_vmo_end - child_vmo_start,
         committed_pages: BTreeMap::new(),
-        mappings: Vec::new(),
         inherited_pages,
     };
     let child_paddr = parent_vmo_

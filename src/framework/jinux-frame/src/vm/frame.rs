@@ -245,7 +245,7 @@ impl VmAllocOptions {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 /// A handle to a page frame.
 ///
 /// An instance of `VmFrame` is a handle to a page frame (a physical memory
@@ -258,6 +258,14 @@ impl VmAllocOptions {
 /// Free page frames are allocated in bulk by `VmFrameVec::allocate`.
 pub struct VmFrame {
     pub(crate) physical_frame: Arc<PhysFrame>,
+}
+
+impl Clone for VmFrame {
+    fn clone(&self) -> Self {
+        Self {
+            physical_frame: self.physical_frame.clone(),
+        }
+    }
 }
 
 impl VmFrame {

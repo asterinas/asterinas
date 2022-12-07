@@ -1,9 +1,10 @@
 use super::{SyscallReturn, SYS_FCNTL};
 use crate::fs::fcntl::FcntlCmd;
+use crate::log_syscall_entry;
 use crate::{fs::file::FileDescripter, prelude::*};
 
 pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_FCNTL]", SYS_FCNTL);
+    log_syscall_entry!(SYS_FCNTL);
     let fcntl_cmd = FcntlCmd::try_from(cmd)?;
     debug!("fd = {}, cmd = {:?}, arg = {}", fd, fcntl_cmd, arg);
     match fcntl_cmd {
