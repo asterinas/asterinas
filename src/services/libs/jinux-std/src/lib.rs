@@ -21,7 +21,6 @@ use crate::{
     prelude::*,
     user_apps::{get_busybox_app, UserApp},
 };
-use jinux_frame::{info, println};
 use process::Process;
 
 use crate::{
@@ -42,6 +41,7 @@ pub mod prelude;
 mod process;
 pub mod rights;
 pub mod syscall;
+pub mod thread;
 pub mod tty;
 mod user_apps;
 mod util;
@@ -63,9 +63,9 @@ pub fn init_process() {
         println!("[kernel] Hello world from kernel!");
         let current = current!();
         let pid = current.pid();
-        info!("current pid = {}", pid);
+        debug!("current pid = {}", pid);
         let ppid = current.parent().unwrap().pid();
-        info!("current ppid = {}", ppid);
+        debug!("current ppid = {}", ppid);
     });
     info!(
         "[jinux-std/lib.rs] spawn kernel process, pid = {}",

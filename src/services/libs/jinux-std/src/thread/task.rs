@@ -1,5 +1,3 @@
-use core::sync::atomic::AtomicUsize;
-
 use jinux_frame::{
     cpu::CpuContext,
     task::Task,
@@ -9,46 +7,20 @@ use jinux_frame::{
 use crate::{
     prelude::*,
     process::{exception::handle_exception, signal::handle_pending_signal},
-    rights::Full,
-    vm::vmar::Vmar,
+    syscall::handle_syscall,
 };
 
-use crate::syscall::handle_syscall;
-
-use super::{elf::load_elf_to_root_vmar, Process};
-
-static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-pub fn create_user_task_from_elf(
-    root_vmar: &Vmar<Full>,
-    filename: CString,
-    elf_file_content: &'static [u8],
-    parent: Weak<Process>,
-    argv: Vec<CString>,
-    envp: Vec<CString>,
-) -> Arc<Task> {
-    let elf_load_info = load_elf_to_root_vmar(filename, elf_file_content, &root_vmar, argv, envp)
-        .expect("Load Elf failed");
-    let vm_space = root_vmar.vm_space().clone();
-    let mut cpu_ctx = CpuContext::default();
-    // set entry point
-    cpu_ctx.gp_regs.rip = elf_load_info.entry_point();
-    // set user stack
-    cpu_ctx.gp_regs.rsp = elf_load_info.user_stack_top();
-    let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
-    create_new_task(user_space, parent)
-}
+use super::Thread;
 
 /// create new task with userspace and parent process
-pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<Task> {
+pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>) -> Arc<Task> {
     fn user_task_entry() {
         let cur = Task::current();
         let user_space = cur.user_space().expect("user task should have user space");
         let mut user_mode = UserMode::new(user_space);
-        debug!("In user task entry:");
-        debug!("[new task] rip = 0x{:x}", user_space.cpu_ctx.gp_regs.rip);
-        debug!("[new task] rsp = 0x{:x}", user_space.cpu_ctx.gp_regs.rsp);
-        debug!("[new task] rax = 0x{:x}", user_space.cpu_ctx.gp_regs.rax);
+        debug!("[Task entry] rip = 0x{:x}", user_space.cpu_ctx.gp_regs.rip);
+        debug!("[Task entry] rsp = 0x{:x}", user_space.cpu_ctx.gp_regs.rsp);
+        debug!("[Task entry] rax = 0x{:x}", user_space.cpu_ctx.gp_regs.rax);
         loop {
             let user_event = user_mode.execute();
             let context = user_mode.context_mut();
@@ -66,7 +38,7 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
             }
             // If current is suspended, wait for a signal to wake up self
             while current.status().lock().is_suspend() {
-                Process::yield_now();
+                Thread::yield_now();
                 debug!("{} is suspended.", current.pid());
                 handle_pending_signal(context).unwrap();
             }
@@ -76,7 +48,7 @@ pub fn create_new_task(userspace: Arc<UserSpace>, parent: Weak<Process>) -> Arc<
         Task::current().exit();
     }
 
-    Task::new(user_task_entry, parent, Some(userspace)).expect("spawn task failed")
+    Task::new(user_task_entry, thread_ref, Some(user_space)).expect("spawn task failed")
 }
 
 fn handle_user_event(user_event: UserEvent, context: &mut CpuContext) {

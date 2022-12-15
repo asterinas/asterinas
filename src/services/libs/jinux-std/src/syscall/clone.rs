@@ -25,7 +25,7 @@ pub fn sys_clone(
     let child_pid = child_process.pid();
     let pid = current!().pid();
     debug!("*********schedule child process, pid = {}**********", pid);
-    child_process.send_to_scheduler();
+    child_process.run();
     debug!("*********return to parent process, pid = {}*********", pid);
     Ok(SyscallReturn::Return(child_pid as _))
 }

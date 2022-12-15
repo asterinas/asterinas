@@ -45,7 +45,7 @@ pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
                 flags,
                 restorer_addr,
                 mask,
-            } => handle_user_signal_handler(
+            } => handle_user_signal(
                 sig_num,
                 handler_addr,
                 flags,
@@ -95,7 +95,7 @@ pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_user_signal_handler(
+pub fn handle_user_signal(
     sig_num: SigNum,
     handler_addr: Vaddr,
     flags: SigActionFlags,

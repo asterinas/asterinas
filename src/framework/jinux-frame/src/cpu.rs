@@ -38,6 +38,21 @@ pub struct CpuContext {
     /// trap information, this field is all zero when it is syscall
     pub trap_information: TrapInformation,
 }
+
+impl CpuContext {
+    pub fn set_rax(&mut self, rax: u64) {
+        self.gp_regs.rax = rax;
+    }
+
+    pub fn set_rsp(&mut self, rsp: u64) {
+        self.gp_regs.rsp = rsp;
+    }
+
+    pub fn set_rip(&mut self, rip: u64) {
+        self.gp_regs.rip = rip;
+    }
+}
+
 #[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
 pub struct TrapInformation {

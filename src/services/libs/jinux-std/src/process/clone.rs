@@ -6,7 +6,8 @@ use jinux_frame::{
 
 use crate::{
     prelude::*,
-    process::{new_pid, signal::sig_queues::SigQueues, table, task::create_new_task},
+    process::{new_pid, signal::sig_queues::SigQueues, table},
+    thread::Thread,
 };
 
 use super::Process;
@@ -127,15 +128,17 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
 
     let child = Arc::new_cyclic(|child_process_ref| {
         let weak_child_process = child_process_ref.clone();
-        let child_task = create_new_task(child_user_space.clone(), weak_child_process);
+        let tid = child_pid;
+        let child_thread =
+            Thread::new_user_thread(tid, child_user_space.clone(), weak_child_process);
         Process::new(
             child_pid,
-            child_task,
+            vec![child_thread],
             child_file_name,
             child_user_vm,
-            Some(child_user_space),
+            // Some(child_user_space),
             Some(child_root_vmar),
-            None,
+            Weak::new(),
             child_file_table,
             child_sig_dispositions,
             child_sig_queues,
@@ -143,13 +146,7 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
         )
     });
     // Inherit parent's process group
-    let parent_process_group = current
-        .process_group()
-        .lock()
-        .as_ref()
-        .map(|ppgrp| ppgrp.upgrade())
-        .flatten()
-        .unwrap();
+    let parent_process_group = current.process_group().lock().upgrade().unwrap();
     parent_process_group.add_process(child.clone());
     child.set_process_group(Arc::downgrade(&parent_process_group));
 

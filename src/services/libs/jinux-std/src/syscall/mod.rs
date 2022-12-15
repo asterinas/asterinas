@@ -210,13 +210,13 @@ pub fn handle_syscall(context: &mut CpuContext) {
         Ok(return_value) => {
             debug!("syscall return: {:?}", return_value);
             if let SyscallReturn::Return(return_value) = return_value {
-                context.gp_regs.rax = return_value as u64;
+                context.set_rax(return_value as u64);
             }
         }
         Err(err) => {
             debug!("syscall return error: {:?}", err);
             let errno = err.error() as i32;
-            context.gp_regs.rax = (-errno) as u64
+            context.set_rax((-errno) as u64)
         }
     }
 }

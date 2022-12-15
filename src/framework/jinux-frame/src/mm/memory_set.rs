@@ -1,6 +1,5 @@
 use super::{page_table::PageTable, *};
 use crate::prelude::*;
-use crate::vm::VmIo;
 use crate::{
     config::PAGE_SIZE,
     mm::address::is_aligned,

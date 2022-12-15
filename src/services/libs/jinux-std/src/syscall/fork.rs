@@ -23,7 +23,7 @@ fn fork(parent_context: CpuContext) -> Arc<Process> {
     let child = clone_child(parent_context, clone_args).unwrap();
     let pid = current.pid();
     debug!("*********schedule child process, pid = {}**********", pid);
-    child.send_to_scheduler();
+    child.run();
     debug!("*********return to parent process, pid = {}*********", pid);
     child
 }

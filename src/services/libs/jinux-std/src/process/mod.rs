@@ -10,14 +10,14 @@ use self::signal::sig_mask::SigMask;
 use self::signal::sig_queues::SigQueues;
 use self::signal::signals::kernel::KernelSignal;
 use self::status::ProcessStatus;
-use self::task::create_user_task_from_elf;
 use crate::fs::file_table::FileTable;
 use crate::prelude::*;
 use crate::rights::Full;
+use crate::thread::Thread;
 use crate::tty::get_console;
 use crate::vm::vmar::Vmar;
 use jinux_frame::sync::WaitQueue;
-use jinux_frame::{task::Task, user::UserSpace};
+use jinux_frame::task::Task;
 
 pub mod clone;
 pub mod elf;
@@ -30,7 +30,6 @@ pub mod process_vm;
 pub mod signal;
 pub mod status;
 pub mod table;
-pub mod task;
 pub mod wait;
 
 static PID_ALLOCATOR: AtomicI32 = AtomicI32::new(0);
@@ -44,9 +43,9 @@ pub type ExitCode = i32;
 pub struct Process {
     // Immutable Part
     pid: Pid,
-    task: Arc<Task>,
+    threads: Vec<Arc<Thread>>,
     filename: Option<CString>,
-    user_space: Option<Arc<UserSpace>>,
+    // user_space: Option<Arc<UserSpace>>,
     user_vm: Option<UserVm>,
     root_vmar: Option<Vmar<Full>>,
     /// wait for child status changed
@@ -60,11 +59,11 @@ pub struct Process {
     /// Process status
     status: Mutex<ProcessStatus>,
     /// Parent process
-    parent: Mutex<Option<Weak<Process>>>,
+    parent: Mutex<Weak<Process>>,
     /// Children processes
     children: Mutex<BTreeMap<Pid, Arc<Process>>>,
     /// Process group
-    process_group: Mutex<Option<Weak<ProcessGroup>>>,
+    process_group: Mutex<Weak<ProcessGroup>>,
     /// Process name
     process_name: Mutex<Option<ProcessName>>,
     /// File table
@@ -82,35 +81,28 @@ pub struct Process {
 impl Process {
     /// returns the current process
     pub fn current() -> Arc<Process> {
-        let task = Task::current();
-        let process = task
-            .data()
-            .downcast_ref::<Weak<Process>>()
-            .expect("[Internal Error] task data should points to weak<process>");
-        process
-            .upgrade()
-            .expect("[Internal Error] current process cannot be None")
+        let current_thread = Thread::current();
+        current_thread.process()
     }
 
     /// create a new process(not schedule it)
     pub fn new(
         pid: Pid,
-        task: Arc<Task>,
+        threads: Vec<Arc<Thread>>,
         exec_filename: Option<CString>,
         user_vm: Option<UserVm>,
-        user_space: Option<Arc<UserSpace>>,
         root_vmar: Option<Vmar<Full>>,
-        process_group: Option<Weak<ProcessGroup>>,
+        process_group: Weak<ProcessGroup>,
         file_table: FileTable,
         sig_dispositions: SigDispositions,
         sig_queues: SigQueues,
         sig_mask: SigMask,
     ) -> Self {
         let parent = if pid == 0 {
-            None
+            Weak::new()
         } else {
             let current_process = current!();
-            Some(Arc::downgrade(&current_process))
+            Arc::downgrade(&current_process)
         };
         let children = BTreeMap::new();
         let waiting_children = WaitQueue::new();
@@ -122,9 +114,8 @@ impl Process {
         });
         Self {
             pid,
-            task,
+            threads,
             filename: exec_filename,
-            user_space,
             user_vm,
             root_vmar,
             waiting_children,
@@ -162,7 +153,7 @@ impl Process {
         // FIXME: How to determine the fg process group?
         let pgid = process.pgid();
         get_console().set_fg(pgid);
-        process.send_to_scheduler();
+        process.run();
         process
     }
 
@@ -176,7 +167,7 @@ impl Process {
             current!().exit(0);
         };
         let process = Process::create_kernel_process(process_fn);
-        process.send_to_scheduler();
+        process.run();
         process
     }
 
@@ -192,15 +183,16 @@ impl Process {
             let weak_process = weak_process_ref.clone();
             let cloned_filename = Some(filename.clone());
             let root_vmar = Vmar::<Full>::new_root().unwrap();
-            let task = create_user_task_from_elf(
+            let tid = pid;
+            let thread = Thread::new_user_thread_from_elf(
                 &root_vmar,
                 filename,
                 elf_file_content,
                 weak_process,
+                tid,
                 argv,
                 envp,
             );
-            let user_space = task.user_space().map(|user_space| user_space.clone());
             let user_vm = UserVm::new();
             let file_table = FileTable::new_with_stdio();
             let sig_dispositions = SigDispositions::new();
@@ -208,12 +200,11 @@ impl Process {
             let sig_mask = SigMask::new_empty();
             Process::new(
                 pid,
-                task,
+                vec![thread],
                 cloned_filename,
                 Some(user_vm),
-                user_space,
                 Some(root_vmar),
-                None,
+                Weak::new(),
                 file_table,
                 sig_dispositions,
                 sig_queues,
@@ -237,19 +228,19 @@ impl Process {
         let pid = new_pid();
         let kernel_process = Arc::new_cyclic(|weak_process_ref| {
             let weak_process = weak_process_ref.clone();
-            let task = Task::new(task_fn, weak_process, None).expect("spawn kernel task failed");
+            let tid = pid;
+            let thread = Thread::new_kernel_thread(tid, task_fn, weak_process);
             let file_table = FileTable::new();
             let sig_dispositions = SigDispositions::new();
             let sig_queues = SigQueues::new();
             let sig_mask = SigMask::new_empty();
             Process::new(
                 pid,
-                task,
+                vec![thread],
                 None,
                 None,
                 None,
-                None,
-                None,
+                Weak::new(),
                 file_table,
                 sig_dispositions,
                 sig_queues,
@@ -271,13 +262,7 @@ impl Process {
 
     /// returns the process group id of the process
     pub fn pgid(&self) -> Pgid {
-        if let Some(process_group) = self
-            .process_group
-            .lock()
-            .as_ref()
-            .map(|process_group| process_group.upgrade())
-            .flatten()
-        {
+        if let Some(process_group) = self.process_group.lock().upgrade() {
             process_group.pgid()
         } else {
             0
@@ -288,7 +273,7 @@ impl Process {
         &self.process_name
     }
 
-    pub fn process_group(&self) -> &Mutex<Option<Weak<ProcessGroup>>> {
+    pub fn process_group(&self) -> &Mutex<Weak<ProcessGroup>> {
         &self.process_group
     }
 
@@ -303,18 +288,16 @@ impl Process {
     }
 
     fn set_parent(&self, parent: Weak<Process>) {
-        let _ = self.parent.lock().insert(parent);
+        *self.parent.lock() = parent;
     }
 
     /// Set process group for current process. If old process group exists,
     /// remove current process from old process group.
     pub fn set_process_group(&self, process_group: Weak<ProcessGroup>) {
-        if let Some(old_process_group) = &*self.process_group().lock() {
-            if let Some(old_process_group) = old_process_group.upgrade() {
-                old_process_group.remove_process(self.pid());
-            }
+        if let Some(old_process_group) = self.process_group.lock().upgrade() {
+            old_process_group.remove_process(self.pid());
         }
-        let _ = self.process_group.lock().insert(process_group);
+        *self.process_group.lock() = process_group;
     }
 
     pub fn file_table(&self) -> &Mutex<FileTable> {
@@ -331,11 +314,7 @@ impl Process {
     }
 
     pub fn parent(&self) -> Option<Arc<Process>> {
-        self.parent
-            .lock()
-            .as_ref()
-            .map(|parent| parent.upgrade())
-            .flatten()
+        self.parent.lock().upgrade()
     }
 
     /// Exit process.
@@ -369,18 +348,15 @@ impl Process {
     }
 
     /// start to run current process
-    pub fn send_to_scheduler(self: &Arc<Self>) {
-        self.task.send_to_scheduler();
+    pub fn run(&self) {
+        for thread in &self.threads {
+            thread.run()
+        }
     }
 
     /// yield the current process to allow other processes to run
     pub fn yield_now() {
         Task::yield_now();
-    }
-
-    /// returns the userspace
-    pub fn user_space(&self) -> Option<&Arc<UserSpace>> {
-        self.user_space.as_ref()
     }
 
     /// returns the user_vm
@@ -407,10 +383,8 @@ impl Process {
         let child_process = self.children.lock().remove(&pid).unwrap();
         assert!(child_process.status().lock().is_zombie());
         table::remove_process(child_process.pid());
-        if let Some(process_group) = child_process.process_group().lock().as_ref() {
-            if let Some(process_group) = process_group.upgrade() {
-                process_group.remove_process(child_process.pid);
-            }
+        if let Some(process_group) = child_process.process_group().lock().upgrade() {
+            process_group.remove_process(child_process.pid);
         }
         child_process.exit_code()
     }
@@ -456,9 +430,7 @@ pub fn get_init_process() -> Arc<Process> {
         let process = current_process
             .parent
             .lock()
-            .as_ref()
-            .map(|current| current.upgrade())
-            .flatten()
+            .upgrade()
             .expect("[Internal Error] init process cannot be None");
         current_process = process;
     }
