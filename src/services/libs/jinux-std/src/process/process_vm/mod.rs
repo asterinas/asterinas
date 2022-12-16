@@ -4,10 +4,9 @@
 //! So we define a UserVm struct to store such infomation.
 //! Briefly, it contains the exact usage of each segment of virtual spaces.
 
-pub mod mmap_area;
+pub mod mmap_flags;
 pub mod user_heap;
 
-use mmap_area::MmapArea;
 use user_heap::UserHeap;
 
 /*
@@ -41,30 +40,20 @@ use user_heap::UserHeap;
 #[derive(Debug, Clone)]
 pub struct UserVm {
     user_heap: UserHeap,
-    mmap_area: MmapArea,
 }
 
 impl UserVm {
     pub const fn new() -> Self {
         let user_heap = UserHeap::new();
-        let mmap_area = MmapArea::new();
-        UserVm {
-            user_heap,
-            mmap_area,
-        }
+        UserVm { user_heap }
     }
 
     pub fn user_heap(&self) -> &UserHeap {
         &self.user_heap
     }
 
-    pub fn mmap_area(&self) -> &MmapArea {
-        &self.mmap_area
-    }
-
     /// Set user vm to the init status
     pub fn set_default(&self) {
         self.user_heap.set_default();
-        self.mmap_area.set_default();
     }
 }

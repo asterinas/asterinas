@@ -1,10 +1,12 @@
 use core::ops::Range;
 
-use jinux_frame::prelude::Result;
-use jinux_frame::{vm::VmIo, Error};
+use crate::prelude::*;
+
+use jinux_frame::vm::VmIo;
 
 use crate::rights::{Rights, TRights};
 
+use super::VmoRightsOp;
 use super::{
     options::{VmoCowChild, VmoSliceChild},
     Vmo, VmoChildOptions,
@@ -66,6 +68,12 @@ impl Vmo<Rights> {
         Ok(VmoChildOptions::new_cow(dup_self, range))
     }
 
+    /// commit a page at specific offset
+    pub fn commit_page(&self, offset: usize) -> Result<()> {
+        self.check_rights(Rights::WRITE)?;
+        self.0.commit_page(offset)
+    }
+
     /// Commits the pages specified in the range (in bytes).
     ///
     /// The range must be within the size of the VMO.
@@ -125,42 +133,50 @@ impl Vmo<Rights> {
     /// The method requires the Dup right.
     pub fn dup(&self) -> Result<Self> {
         self.check_rights(Rights::DUP)?;
-        todo!()
+        Ok(Self(self.0.clone(), self.1.clone()))
     }
 
     /// Restricts the access rights given the mask.
     pub fn restrict(mut self, mask: Rights) -> Self {
-        todo!()
+        self.1 |= mask;
+        self
     }
 
     /// Converts to a static capability.
     pub fn to_static<R1: TRights>(self) -> Result<Vmo<R1>> {
-        self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::InvalidArgs)?)?;
-        todo!()
+        self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::new(Errno::EINVAL))?)?;
+        Ok(Vmo(self.0, R1::new()))
     }
+}
 
-    /// Returns the access rights.
-    pub fn rights(&self) -> Rights {
-        self.1
-    }
-
-    pub fn check_rights(&self, rights: Rights) -> Result<()> {
-        if self.rights().contains(rights) {
-            Ok(())
-        } else {
-            Err(Error::AccessDenied)
-        }
+impl Clone for Vmo<Rights> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone())
     }
 }
 
 impl VmIo for Vmo<Rights> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
-        self.0.read_bytes(offset, buf)
+        self.0.read_bytes(offset, buf)?;
+        Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::WRITE)?;
-        self.0.write_bytes(offset, buf)
+        self.0.write_bytes(offset, buf)?;
+        Ok(())
+    }
+}
+
+impl VmoRightsOp for Vmo<Rights> {
+    fn rights(&self) -> Rights {
+        self.1
+    }
+
+    /// Converts to a dynamic capability.
+    fn to_dyn(self) -> Vmo<Rights> {
+        let rights = self.rights();
+        Vmo(self.0, rights)
     }
 }

@@ -3,9 +3,10 @@
 use core::ops::Range;
 
 use crate::rights::Rights;
-use alloc::sync::Arc;
-use bitflags::bitflags;
-use jinux_frame::{prelude::Result, vm::Paddr, Error};
+use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrameVec, VmIo};
+use jinux_frame::AlignExt;
+
+use crate::prelude::*;
 
 mod dyn_cap;
 mod options;
@@ -71,7 +72,42 @@ use spin::Mutex;
 /// `Vmo` is easier to use (by offering more powerful APIs) and
 /// harder to misuse (thanks to its nature of being capability).
 ///
-pub struct Vmo<R>(Arc<Vmo_>, R);
+pub struct Vmo<R = Rights>(pub(super) Arc<Vmo_>, R);
+
+/// Functions exist both for static capbility and dynamic capibility
+pub trait VmoRightsOp {
+    /// Returns the access rights.
+    fn rights(&self) -> Rights;
+
+    /// Check whether rights is included in self
+    fn check_rights(&self, rights: Rights) -> Result<()> {
+        if self.rights().contains(rights) {
+            Ok(())
+        } else {
+            return_errno_with_message!(Errno::EINVAL, "vmo rights check failed");
+        }
+    }
+
+    /// Converts to a dynamic capability.
+    fn to_dyn(self) -> Vmo<Rights>
+    where
+        Self: Sized;
+}
+
+// We implement this trait for Vmo, so we can use functions on type like Vmo<R> without trait bounds.
+// FIXME: This requires the imcomplete feature specialization, which should be fixed further.
+impl<R> VmoRightsOp for Vmo<R> {
+    default fn rights(&self) -> Rights {
+        unimplemented!()
+    }
+
+    default fn to_dyn(self) -> Vmo<Rights>
+    where
+        Self: Sized,
+    {
+        unimplemented!()
+    }
+}
 
 bitflags! {
     /// VMO flags.
@@ -90,59 +126,302 @@ bitflags! {
     }
 }
 
-struct Vmo_ {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VmoType {
+    /// This vmo_ is created as a copy on write child
+    CopyOnWriteChild,
+    /// This vmo_ is created as a slice child
+    SliceChild,
+    /// This vmo_ is not created as a child of a parent vmo
+    NotChild,
+}
+
+pub(super) struct Vmo_ {
+    /// Flags
     flags: VmoFlags,
+    /// VmoInner
     inner: Mutex<VmoInner>,
-    parent: Option<Arc<Vmo_>>,
+    /// Parent Vmo
+    parent: Weak<Vmo_>,
+    /// paddr
+    paddr: Option<Paddr>,
+    /// vmo type
+    vmo_type: VmoType,
 }
 
 struct VmoInner {
-    //...
+    /// The backup pager
+    pager: Option<Arc<dyn Pager>>,
+    /// size, in bytes
+    size: usize,
+    /// The pages committed. The key is the page index, the value is the backup frame.
+    committed_pages: BTreeMap<usize, VmFrameVec>,
+    /// The pages from the parent that current vmo can access. The pages can only be inherited when create childs vmo.
+    /// We store the page index range
+    inherited_pages: InheritedPages,
+}
+
+/// Pages inherited from parent
+struct InheritedPages {
+    /// The page index range in child vmo. The pages inside these range are initially inherited from parent vmo.
+    /// The range includes the start page, but not including the end page
+    page_range: Range<usize>,
+    /// The page index offset in parent vmo. That is to say, the page with index `idx` in child vmo corrsponds to
+    /// page with index `idx + parent_page_idx_offset` in parent vmo
+    parent_page_idx_offset: usize,
+}
+
+impl InheritedPages {
+    pub fn new_empty() -> Self {
+        Self {
+            page_range: 0..0,
+            parent_page_idx_offset: 0,
+        }
+    }
+
+    pub fn new(page_range: Range<usize>, parent_page_idx_offset: usize) -> Self {
+        Self {
+            page_range,
+            parent_page_idx_offset,
+        }
+    }
+
+    fn contains_page(&self, page_idx: usize) -> bool {
+        self.page_range.start <= page_idx && page_idx < self.page_range.end
+    }
+
+    fn parent_page_idx(&self, child_page_idx: usize) -> Option<usize> {
+        if self.contains_page(child_page_idx) {
+            Some(child_page_idx + self.parent_page_idx_offset)
+        } else {
+            None
+        }
+    }
 }
 
 impl Vmo_ {
     pub fn commit_page(&self, offset: usize) -> Result<()> {
-        todo!()
+        let page_idx = offset / PAGE_SIZE;
+        let mut inner = self.inner.lock();
+
+        if !inner.committed_pages.contains_key(&page_idx) {
+            let frames = match &inner.pager {
+                None => {
+                    let vm_alloc_option = VmAllocOptions::new(1);
+                    let frames = VmFrameVec::allocate(&vm_alloc_option)?;
+                    frames.iter().for_each(|frame| frame.zero());
+                    frames
+                }
+                Some(pager) => {
+                    let frame = pager.commit_page(offset)?;
+                    VmFrameVec::from_one_frame(frame)
+                }
+            };
+            inner.committed_pages.insert(page_idx, frames);
+        }
+        Ok(())
     }
 
     pub fn decommit_page(&self, offset: usize) -> Result<()> {
-        todo!()
+        let page_idx = offset / PAGE_SIZE;
+        let mut inner = self.inner.lock();
+        if inner.committed_pages.contains_key(&page_idx) {
+            inner.committed_pages.remove(&page_idx);
+            if let Some(pager) = &inner.pager {
+                pager.decommit_page(offset)?;
+            }
+        }
+        Ok(())
     }
 
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
-        todo!()
+        let page_idx_range = get_page_idx_range(&range);
+        for page_idx in page_idx_range {
+            let offset = page_idx * PAGE_SIZE;
+            self.commit_page(offset)?;
+        }
+
+        Ok(())
     }
 
     pub fn decommit(&self, range: Range<usize>) -> Result<()> {
-        todo!()
+        let page_idx_range = get_page_idx_range(&range);
+        for page_idx in page_idx_range {
+            let offset = page_idx * PAGE_SIZE;
+            self.decommit_page(offset)?;
+        }
+        Ok(())
+    }
+
+    /// determine whether a page is commited
+    pub fn page_commited(&self, page_idx: usize) -> bool {
+        self.inner.lock().committed_pages.contains_key(&page_idx)
     }
 
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        todo!()
+        let read_len = buf.len();
+        debug_assert!(offset + read_len <= self.size());
+        if offset + read_len > self.size() {
+            return_errno_with_message!(Errno::EINVAL, "read range exceeds vmo size");
+        }
+        let read_range = offset..(offset + read_len);
+        let frames = self.ensure_all_pages_exist(read_range, false)?;
+        let read_offset = offset % PAGE_SIZE;
+        Ok(frames.read_bytes(read_offset, buf)?)
+    }
+
+    /// Ensure all pages inside range are backed up vm frames, returns the frames.
+    fn ensure_all_pages_exist(&self, range: Range<usize>, write_page: bool) -> Result<VmFrameVec> {
+        let page_idx_range = get_page_idx_range(&range);
+        let mut frames = VmFrameVec::empty();
+        for page_idx in page_idx_range {
+            let mut page_frame = self.get_backup_frame(page_idx, write_page, true)?;
+            frames.append(&mut page_frame)?;
+        }
+        Ok(frames)
+    }
+
+    /// Get the backup frame for a page. If commit_if_none is set, we will commit a new page for the page
+    /// if the page does not have a backup frame.
+    fn get_backup_frame(
+        &self,
+        page_idx: usize,
+        write_page: bool,
+        commit_if_none: bool,
+    ) -> Result<VmFrameVec> {
+        // if the page is already commit, return the committed page.
+        if let Some(frames) = self.inner.lock().committed_pages.get(&page_idx) {
+            return Ok(frames.clone());
+        }
+
+        match self.vmo_type {
+            // if the vmo is not child, then commit new page
+            VmoType::NotChild => {
+                if commit_if_none {
+                    self.commit_page(page_idx * PAGE_SIZE)?;
+                    let frames = self
+                        .inner
+                        .lock()
+                        .committed_pages
+                        .get(&page_idx)
+                        .unwrap()
+                        .clone();
+                    return Ok(frames);
+                } else {
+                    return_errno_with_message!(Errno::EINVAL, "backup frame does not exist");
+                }
+            }
+            // if the vmo is slice child, we will request the frame from parent
+            VmoType::SliceChild => {
+                let inner = self.inner.lock();
+                debug_assert!(inner.inherited_pages.contains_page(page_idx));
+                if !inner.inherited_pages.contains_page(page_idx) {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "page does not inherited from parent"
+                    );
+                }
+                let parent = self.parent.upgrade().unwrap();
+                let parent_page_idx = inner.inherited_pages.parent_page_idx(page_idx).unwrap();
+                return parent.get_backup_frame(parent_page_idx, write_page, commit_if_none);
+            }
+            // If the vmo is copy on write
+            VmoType::CopyOnWriteChild => {
+                if write_page {
+                    // write
+                    // commit a new page
+                    self.commit_page(page_idx * PAGE_SIZE)?;
+                    let inner = self.inner.lock();
+                    let frames = inner.committed_pages.get(&page_idx).unwrap().clone();
+                    if let Some(parent_page_idx) = inner.inherited_pages.parent_page_idx(page_idx) {
+                        // copy contents of parent to the frame
+                        let mut tmp_buffer = [0u8; PAGE_SIZE];
+                        let parent = self.parent.upgrade().unwrap();
+                        parent.read_bytes(parent_page_idx * PAGE_SIZE, &mut tmp_buffer)?;
+                        frames.write_bytes(0, &tmp_buffer)?;
+                    } else {
+                        frames.zero();
+                    }
+                    return Ok(frames);
+                } else {
+                    // read
+                    if let Some(parent_page_idx) =
+                        self.inner.lock().inherited_pages.parent_page_idx(page_idx)
+                    {
+                        // If it's inherited from parent, we request the page from parent
+                        let parent = self.parent.upgrade().unwrap();
+                        return parent.get_backup_frame(
+                            parent_page_idx,
+                            write_page,
+                            commit_if_none,
+                        );
+                    } else {
+                        // Otherwise, we commit a new page
+                        self.commit_page(page_idx * PAGE_SIZE)?;
+                        let frames = self
+                            .inner
+                            .lock()
+                            .committed_pages
+                            .get(&page_idx)
+                            .unwrap()
+                            .clone();
+                        // FIXME: should we zero the frames here?
+                        frames.zero();
+                        return Ok(frames);
+                    }
+                }
+            }
+        }
     }
 
     pub fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        todo!()
+        let write_len = buf.len();
+        debug_assert!(offset + write_len <= self.size());
+        if offset + write_len > self.size() {
+            return_errno_with_message!(Errno::EINVAL, "write range exceeds the vmo size");
+        }
+
+        let write_range = offset..(offset + write_len);
+        let frames = self.ensure_all_pages_exist(write_range, true)?;
+        let write_offset = offset % PAGE_SIZE;
+        frames.write_bytes(write_offset, buf)?;
+        Ok(())
     }
 
     pub fn clear(&self, range: Range<usize>) -> Result<()> {
-        todo!()
+        let buffer = vec![0u8; range.end - range.start];
+        self.write_bytes(range.start, &buffer)
     }
 
     pub fn size(&self) -> usize {
-        todo!()
+        self.inner.lock().size
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
-        todo!()
+        assert!(self.flags.contains(VmoFlags::RESIZABLE));
+        let new_size = new_size.align_up(PAGE_SIZE);
+        let old_size = self.size();
+        if new_size == old_size {
+            return Ok(());
+        }
+
+        if new_size < old_size {
+            self.decommit(new_size..old_size)?;
+            self.inner.lock().size = new_size;
+        } else {
+            self.commit(old_size..new_size)?;
+            self.inner.lock().size = new_size;
+        }
+
+        Ok(())
     }
 
     pub fn paddr(&self) -> Option<Paddr> {
-        todo!()
+        self.paddr
     }
 
     pub fn flags(&self) -> VmoFlags {
-        todo!()
+        self.flags.clone()
     }
 }
 
@@ -162,4 +441,34 @@ impl<R> Vmo<R> {
     pub fn flags(&self) -> VmoFlags {
         self.0.flags()
     }
+
+    /// return whether a page is already committed
+    pub fn has_backup_frame(&self, page_idx: usize) -> bool {
+        if let Ok(_) = self.0.get_backup_frame(page_idx, false, false) {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn get_backup_frame(
+        &self,
+        page_idx: usize,
+        write_page: bool,
+        commit_if_none: bool,
+    ) -> Result<VmFrameVec> {
+        self.0
+            .get_backup_frame(page_idx, write_page, commit_if_none)
+    }
+
+    pub fn is_cow_child(&self) -> bool {
+        self.0.vmo_type == VmoType::CopyOnWriteChild
+    }
+}
+
+/// get the page index range that contains the offset range of vmo
+pub fn get_page_idx_range(vmo_offset_range: &Range<usize>) -> Range<usize> {
+    let start = vmo_offset_range.start.align_down(PAGE_SIZE);
+    let end = vmo_offset_range.end.align_up(PAGE_SIZE);
+    (start / PAGE_SIZE)..(end / PAGE_SIZE)
 }

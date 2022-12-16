@@ -60,7 +60,9 @@ impl FileTable {
         self.table.remove(&fd);
     }
 
-    pub fn get_file(&self, fd: FileDescripter) -> Option<&Arc<dyn File>> {
-        self.table.get(&fd)
+    pub fn get_file(&self, fd: FileDescripter) -> Result<&Arc<dyn File>> {
+        self.table
+            .get(&fd)
+            .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 }

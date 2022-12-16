@@ -7,5 +7,6 @@ pub(crate) use alloc::sync::Arc;
 pub(crate) use alloc::vec::Vec;
 pub(crate) use core::any::Any;
 
+pub use crate::debug;
 pub(crate) use crate::util::AlignExt;
 pub use crate::vm::{Paddr, Vaddr};

@@ -4,6 +4,7 @@ use crate::{config::PAGE_SIZE, mm::address::PhysAddr, prelude::*, Error};
 use pod::Pod;
 
 use super::VmIo;
+use alloc::vec;
 
 use crate::mm::PhysFrame;
 
@@ -14,6 +15,7 @@ use crate::mm::PhysFrame;
 /// type to represent a series of page frames is convenient because,
 /// more often than not, one needs to operate on a batch of frames rather
 /// a single frame.
+#[derive(Debug, Clone)]
 pub struct VmFrameVec(Vec<VmFrame>);
 
 impl VmFrameVec {
@@ -31,7 +33,7 @@ impl VmFrameVec {
         let mut frame_list = Vec::new();
         for i in 0..page_size {
             let vm_frame = if let Some(paddr) = options.paddr {
-                VmFrame::alloc_with_paddr(paddr)
+                VmFrame::alloc_with_paddr(paddr + i * PAGE_SIZE)
             } else {
                 VmFrame::alloc()
             };
@@ -41,6 +43,11 @@ impl VmFrameVec {
             frame_list.push(vm_frame.unwrap());
         }
         Ok(Self(frame_list))
+    }
+
+    /// returns an empty vmframe vec
+    pub fn empty() -> Self {
+        Self(Vec::new())
     }
 
     /// Pushs a new frame to the collection.
@@ -73,6 +80,11 @@ impl VmFrameVec {
         Ok(())
     }
 
+    /// zero all internal vm frames
+    pub fn zero(&self) {
+        self.0.iter().for_each(|vm_frame| vm_frame.zero())
+    }
+
     /// Truncate some frames.
     ///
     /// If `new_len >= self.len()`, then this method has no effect.
@@ -86,6 +98,11 @@ impl VmFrameVec {
     /// Returns an iterator
     pub fn iter(&self) -> core::slice::Iter<'_, VmFrame> {
         self.0.iter()
+    }
+
+    /// Return IntoIterator for internal frames
+    pub fn into_iter(self) -> alloc::vec::IntoIter<VmFrame> {
+        self.0.into_iter()
     }
 
     /// Returns the number of frames.
@@ -103,6 +120,10 @@ impl VmFrameVec {
     /// This method is equivalent to `self.len() * PAGE_SIZE`.
     pub fn nbytes(&self) -> usize {
         self.0.len() * PAGE_SIZE
+    }
+
+    pub fn from_one_frame(frame: VmFrame) -> Self {
+        Self(vec![frame])
     }
 }
 
@@ -224,7 +245,7 @@ impl VmAllocOptions {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 /// A handle to a page frame.
 ///
 /// An instance of `VmFrame` is a handle to a page frame (a physical memory
@@ -237,6 +258,14 @@ impl VmAllocOptions {
 /// Free page frames are allocated in bulk by `VmFrameVec::allocate`.
 pub struct VmFrame {
     pub(crate) physical_frame: Arc<PhysFrame>,
+}
+
+impl Clone for VmFrame {
+    fn clone(&self) -> Self {
+        Self {
+            physical_frame: self.physical_frame.clone(),
+        }
+    }
 }
 
 impl VmFrame {
@@ -286,6 +315,11 @@ impl VmFrame {
     /// Returns the physical address of the page frame.
     pub fn paddr(&self) -> Paddr {
         self.physical_frame.start_pa().0
+    }
+
+    /// fill the frame with zero
+    pub fn zero(&self) {
+        unsafe { core::ptr::write_bytes(self.start_pa().kvaddr().as_ptr(), 0, PAGE_SIZE) }
     }
 
     pub fn start_pa(&self) -> PhysAddr {

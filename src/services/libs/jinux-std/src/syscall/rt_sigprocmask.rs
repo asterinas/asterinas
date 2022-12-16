@@ -1,6 +1,7 @@
 use jinux_frame::vm::VmIo;
 
 use crate::{
+    log_syscall_entry,
     prelude::*,
     syscall::{SyscallReturn, SYS_RT_SIGPROCMASK},
 };
@@ -11,7 +12,7 @@ pub fn sys_rt_sigprocmask(
     oldset_ptr: Vaddr,
     sigset_size: usize,
 ) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_RT_SIGPROCMASK]", SYS_RT_SIGPROCMASK);
+    log_syscall_entry!(SYS_RT_SIGPROCMASK);
     let mask_op = MaskOp::try_from(how).unwrap();
     debug!(
         "mask op = {:?}, set_ptr = 0x{:x}, oldset_ptr = 0x{:x}, sigset_size = {}",
@@ -31,15 +32,15 @@ fn do_rt_sigprocmask(
     sigset_size: usize,
 ) -> Result<()> {
     let current = current!();
-    let vm_space = current.vm_space().unwrap();
+    let root_vmar = current.root_vmar().unwrap();
     let mut sig_mask = current.sig_mask().lock();
     let old_sig_mask_value = sig_mask.as_u64();
     debug!("old sig mask value: 0x{:x}", old_sig_mask_value);
     if oldset_ptr != 0 {
-        vm_space.write_val(oldset_ptr, &old_sig_mask_value)?;
+        root_vmar.write_val(oldset_ptr, &old_sig_mask_value)?;
     }
     if set_ptr != 0 {
-        let new_set = vm_space.read_val::<u64>(set_ptr)?;
+        let new_set = root_vmar.read_val::<u64>(set_ptr)?;
         debug!("new set = 0x{:x}", new_set);
         match mask_op {
             MaskOp::Block => sig_mask.block(new_set),

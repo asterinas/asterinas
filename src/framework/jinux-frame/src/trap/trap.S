@@ -38,7 +38,7 @@ __trap_entry:
   push r12
   push rbp
   push rbx
-  mov rdi, 0
+  # mov rdi, 0
   push rdi
   save
   # save cr2

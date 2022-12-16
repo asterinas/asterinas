@@ -2,7 +2,6 @@ use core::sync::atomic::{AtomicI32, Ordering};
 
 use self::name::ProcessName;
 use self::process_group::ProcessGroup;
-use self::process_vm::mmap_area::MmapArea;
 use self::process_vm::user_heap::UserHeap;
 use self::process_vm::UserVm;
 use self::signal::constants::SIGCHLD;
@@ -14,9 +13,11 @@ use self::status::ProcessStatus;
 use self::task::create_user_task_from_elf;
 use crate::fs::file_table::FileTable;
 use crate::prelude::*;
+use crate::rights::Full;
 use crate::tty::get_console;
+use crate::vm::vmar::Vmar;
 use jinux_frame::sync::WaitQueue;
-use jinux_frame::{task::Task, user::UserSpace, vm::VmSpace};
+use jinux_frame::{task::Task, user::UserSpace};
 
 pub mod clone;
 pub mod elf;
@@ -47,6 +48,7 @@ pub struct Process {
     filename: Option<CString>,
     user_space: Option<Arc<UserSpace>>,
     user_vm: Option<UserVm>,
+    root_vmar: Option<Vmar<Full>>,
     /// wait for child status changed
     waiting_children: WaitQueue,
     /// wait for io events
@@ -97,6 +99,7 @@ impl Process {
         exec_filename: Option<CString>,
         user_vm: Option<UserVm>,
         user_space: Option<Arc<UserSpace>>,
+        root_vmar: Option<Vmar<Full>>,
         process_group: Option<Weak<ProcessGroup>>,
         file_table: FileTable,
         sig_dispositions: SigDispositions,
@@ -104,10 +107,8 @@ impl Process {
         sig_mask: SigMask,
     ) -> Self {
         let parent = if pid == 0 {
-            debug!("Init process does not has parent");
             None
         } else {
-            debug!("All process except init should have parent");
             let current_process = current!();
             Some(Arc::downgrade(&current_process))
         };
@@ -125,6 +126,7 @@ impl Process {
             filename: exec_filename,
             user_space,
             user_vm,
+            root_vmar,
             waiting_children,
             poll_queue,
             exit_code: AtomicI32::new(0),
@@ -189,8 +191,15 @@ impl Process {
         let user_process = Arc::new_cyclic(|weak_process_ref| {
             let weak_process = weak_process_ref.clone();
             let cloned_filename = Some(filename.clone());
-            let task =
-                create_user_task_from_elf(filename, elf_file_content, weak_process, argv, envp);
+            let root_vmar = Vmar::<Full>::new_root().unwrap();
+            let task = create_user_task_from_elf(
+                &root_vmar,
+                filename,
+                elf_file_content,
+                weak_process,
+                argv,
+                envp,
+            );
             let user_space = task.user_space().map(|user_space| user_space.clone());
             let user_vm = UserVm::new();
             let file_table = FileTable::new_with_stdio();
@@ -203,6 +212,7 @@ impl Process {
                 cloned_filename,
                 Some(user_vm),
                 user_space,
+                Some(root_vmar),
                 None,
                 file_table,
                 sig_dispositions,
@@ -235,6 +245,7 @@ impl Process {
             Process::new(
                 pid,
                 task,
+                None,
                 None,
                 None,
                 None,
@@ -372,17 +383,14 @@ impl Process {
         self.user_space.as_ref()
     }
 
-    /// returns the vm space if the process does have, otherwise None
-    pub fn vm_space(&self) -> Option<&VmSpace> {
-        match self.user_space {
-            None => None,
-            Some(ref user_space) => Some(user_space.vm_space()),
-        }
-    }
-
     /// returns the user_vm
     pub fn user_vm(&self) -> Option<&UserVm> {
         self.user_vm.as_ref()
+    }
+
+    /// returns the root vmar
+    pub fn root_vmar(&self) -> Option<&Vmar<Full>> {
+        self.root_vmar.as_ref()
     }
 
     /// returns the user heap if the process does have, otherwise None
@@ -390,14 +398,6 @@ impl Process {
         match self.user_vm {
             None => None,
             Some(ref user_vm) => Some(user_vm.user_heap()),
-        }
-    }
-
-    /// returns the mmap area if the process does have, otherwise None
-    pub fn mmap_area(&self) -> Option<&MmapArea> {
-        match self.user_vm {
-            None => None,
-            Some(ref user_vm) => Some(user_vm.mmap_area()),
         }
     }
 

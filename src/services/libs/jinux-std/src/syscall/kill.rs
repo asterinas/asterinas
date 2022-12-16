@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{log_syscall_entry, prelude::*};
 
 use crate::process::signal::signals::user::{UserSignal, UserSignalKind};
 use crate::process::{table, Process};
@@ -10,7 +10,7 @@ use crate::{
 use super::SyscallReturn;
 
 pub fn sys_kill(process_filter: u64, sig_num: u64) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_KILL]", SYS_KILL);
+    log_syscall_entry!(SYS_KILL);
     let process_filter = ProcessFilter::from_id(process_filter as _);
     let sig_num = SigNum::try_from(sig_num as u8).unwrap();
     debug!(
@@ -49,7 +49,9 @@ fn get_processes(filter: &ProcessFilter) -> Result<Vec<Arc<Process>>> {
         ProcessFilter::WithPid(pid) => {
             let process = table::pid_to_process(*pid);
             match process {
-                None => return_errno!(Errno::ESRCH),
+                None => {
+                    return_errno_with_message!(Errno::ESRCH, "No such process in process table")
+                }
                 Some(process) => vec![process],
             }
         }

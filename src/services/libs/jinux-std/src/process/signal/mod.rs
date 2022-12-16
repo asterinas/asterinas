@@ -15,9 +15,9 @@ use jinux_frame::{cpu::CpuContext, task::Task};
 use self::c_types::siginfo_t;
 use self::sig_mask::SigMask;
 use self::sig_num::SigNum;
-use crate::memory::{write_bytes_to_user, write_val_to_user};
 use crate::process::signal::c_types::ucontext_t;
 use crate::process::signal::sig_action::SigActionFlags;
+use crate::util::{write_bytes_to_user, write_val_to_user};
 use crate::{
     prelude::*,
     process::signal::sig_action::{SigAction, SigDefaultAction},

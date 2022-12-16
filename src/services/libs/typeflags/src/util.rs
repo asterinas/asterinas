@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, TokenStream};
 use quote::{quote, TokenStreamExt};
 
 use crate::{
@@ -22,6 +22,9 @@ pub fn expand_type_flag(type_flags_def: &TypeFlagDef) -> TokenStream {
         let impl_main_trait_tokens = flag_set.impl_main_trait_tokens(type_flags_def);
         all_tokens.append_all(impl_main_trait_tokens);
     });
+
+    let impl_set_entend_tokens = impl_set_extend(type_flags_def, &flag_sets);
+    all_tokens.append_all(impl_set_entend_tokens);
 
     let export_declarive_macro_tokens = export_declarive_macro(type_flags_def, &flag_sets);
     all_tokens.append_all(export_declarive_macro_tokens);
@@ -71,6 +74,56 @@ pub fn impl_same_as(type_flags_def: &TypeFlagDef) -> TokenStream {
         }
     }
     all_tokens
+}
+
+pub fn impl_set_extend(type_flags_def: &TypeFlagDef, flag_sets: &[FlagSet]) -> TokenStream {
+    let mut all_tokens = TokenStream::new();
+    let type_idents: Vec<_> = type_flags_def
+        .items_iter()
+        .map(|type_flag_item| type_flag_item.ident())
+        .collect();
+
+    for flag_set in flag_sets {
+        // We don't need to impl set extend trait for Nil
+        if flag_set.len() == 0 {
+            continue;
+        }
+        for type_ident in &type_idents {
+            let type_ident = type_ident.clone();
+            let flag_set_tokens = flag_set.type_name_tokens();
+            if flag_set.contains_type(&type_ident) {
+                // the flagset contains the type
+                let impl_extend_tokens = quote!(
+                    impl ::typeflags_util::SetExtend<#type_ident> for #flag_set_tokens {
+                        type Output = #flag_set_tokens;
+                    }
+                );
+                all_tokens.append_all(impl_extend_tokens)
+            } else {
+                // the flagset does not contains the type
+                let output_set = extent_one_type(&type_ident, flag_set, flag_sets).unwrap();
+                let output_set_tokens = output_set.type_name_tokens();
+                let impl_extend_tokens = quote!(
+                    impl ::typeflags_util::SetExtend<#type_ident> for #flag_set_tokens {
+                        type Output = #output_set_tokens;
+                    }
+                );
+                all_tokens.append_all(impl_extend_tokens);
+            }
+        }
+    }
+
+    all_tokens
+}
+
+fn extent_one_type<'a>(
+    type_ident: &Ident,
+    flag_set: &'a FlagSet,
+    sets: &'a [FlagSet],
+) -> Option<&'a FlagSet> {
+    sets.iter().find(|bigger_set| {
+        bigger_set.contains_type(type_ident) && bigger_set.contains_set(flag_set)
+    })
 }
 
 /// export the declarive macro

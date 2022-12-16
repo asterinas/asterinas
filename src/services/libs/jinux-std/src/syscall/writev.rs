@@ -1,9 +1,7 @@
-use crate::prelude::*;
+use crate::{log_syscall_entry, prelude::*};
 
-use crate::{
-    memory::{read_bytes_from_user, read_val_from_user},
-    syscall::SYS_WRITEV,
-};
+use crate::syscall::SYS_WRITEV;
+use crate::util::{read_bytes_from_user, read_val_from_user};
 
 use super::SyscallReturn;
 
@@ -17,7 +15,7 @@ pub struct IoVec {
 }
 
 pub fn sys_writev(fd: u64, io_vec_ptr: u64, io_vec_count: u64) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_WRITEV]", SYS_WRITEV);
+    log_syscall_entry!(SYS_WRITEV);
     let res = do_sys_writev(fd, io_vec_ptr as Vaddr, io_vec_count as usize)?;
     Ok(SyscallReturn::Return(res as _))
 }

@@ -1,20 +1,21 @@
 use core::ops::Range;
+use jinux_frame::vm::{Vaddr, VmIo};
 
-use alloc::sync::Arc;
-use jinux_frame::prelude::Result;
-use jinux_frame::{vm::VmIo, Error};
+use crate::prelude::*;
 
-use crate::{rights::Rights, vm::vmo::Vmo};
+use crate::{
+    rights::Rights,
+    vm::{page_fault_handler::PageFaultHandler, vmo::Vmo},
+};
 
 use super::{
-    options::{VmarChildOptions, VmarMapOptions},
-    VmPerms, Vmar, Vmar_,
+    options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_,
 };
 
 impl Vmar<Rights> {
     /// Creates a root VMAR.
-    pub fn new() -> Result<Self> {
-        let inner = Arc::new(Vmar_::new()?);
+    pub fn new_root() -> Result<Self> {
+        let inner = Arc::new(Vmar_::new_root()?);
         let rights = Rights::all();
         let new_self = Self(inner, rights);
         Ok(new_self)
@@ -106,6 +107,12 @@ impl Vmar<Rights> {
         self.0.protect(perms, range)
     }
 
+    /// clear all mappings and children vmars.
+    /// After being cleared, this vmar will become an empty vmar
+    pub fn clear(&self) -> Result<()> {
+        self.0.clear_root_vmar()
+    }
+
     /// Destroy a VMAR, including all its mappings and children VMARs.
     ///
     /// After being destroyed, the VMAR becomes useless and returns errors
@@ -135,31 +142,43 @@ impl Vmar<Rights> {
     /// The method requires the Dup right.
     pub fn dup(&self) -> Result<Self> {
         self.check_rights(Rights::DUP)?;
-        todo!()
-    }
-
-    /// Returns the access rights.
-    pub fn rights(&self) -> Rights {
-        self.1
-    }
-
-    fn check_rights(&self, rights: Rights) -> Result<()> {
-        if self.1.contains(rights) {
-            Ok(())
-        } else {
-            Err(Error::AccessDenied)
-        }
+        Ok(Vmar(self.0.clone(), self.1.clone()))
     }
 }
 
 impl VmIo for Vmar<Rights> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
-        self.0.read(offset, buf)
+        self.0.read(offset, buf)?;
+        Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::WRITE)?;
-        self.0.write(offset, buf)
+        self.0.write(offset, buf)?;
+        Ok(())
+    }
+}
+
+impl PageFaultHandler for Vmar<Rights> {
+    fn handle_page_fault(
+        &self,
+        page_fault_addr: Vaddr,
+        not_present: bool,
+        write: bool,
+    ) -> Result<()> {
+        if write {
+            self.check_rights(Rights::WRITE)?;
+        } else {
+            self.check_rights(Rights::READ)?;
+        }
+        self.0
+            .handle_page_fault(page_fault_addr, not_present, write)
+    }
+}
+
+impl VmarRightsOp for Vmar<Rights> {
+    fn rights(&self) -> Rights {
+        self.1
     }
 }

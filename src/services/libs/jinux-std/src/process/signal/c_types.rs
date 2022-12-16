@@ -1,7 +1,7 @@
 #![allow(non_camel_case_types)]
 use core::mem;
 
-use jinux_frame::{cpu::GpRegs, offset_of};
+use jinux_frame::cpu::GpRegs;
 use jinux_util::{read_union_fields, union_read_ptr::UnionReadPtr};
 
 use crate::{prelude::*, process::Pid};

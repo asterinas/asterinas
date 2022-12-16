@@ -18,7 +18,7 @@ macro_rules! define_fcntl_cmd {
             fn try_from(value: i32) -> Result<Self> {
                 match value {
                     $($name => Ok(FcntlCmd::$name),)*
-                    _ => return_errno!(Errno::EINVAL),
+                    _ => return_errno_with_message!(Errno::EINVAL, "Unknown fcntl cmd"),
                 }
             }
         }

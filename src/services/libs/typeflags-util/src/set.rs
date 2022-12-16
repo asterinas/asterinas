@@ -13,6 +13,7 @@ use core::ops::BitOr as Or;
 pub trait Set {}
 
 /// An non-empty type-level set.
+#[derive(Debug, Clone, Copy)]
 pub struct Cons<T, S: Set>(PhantomData<(T, S)>);
 
 impl<T, S: Set> Cons<T, S> {
@@ -22,6 +23,7 @@ impl<T, S: Set> Cons<T, S> {
 }
 
 /// An empty type-level set.
+#[derive(Debug, Clone, Copy)]
 pub struct Nil;
 
 impl<T, S: Set> Set for Cons<T, S> {}

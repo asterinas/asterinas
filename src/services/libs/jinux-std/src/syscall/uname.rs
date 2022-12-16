@@ -1,6 +1,7 @@
-use crate::prelude::*;
+use crate::{log_syscall_entry, prelude::*};
 
-use crate::{memory::write_val_to_user, syscall::SYS_UNAME};
+use crate::syscall::SYS_UNAME;
+use crate::util::write_val_to_user;
 
 use super::SyscallReturn;
 
@@ -59,7 +60,7 @@ fn copy_cstring_to_u8_slice(src: &CStr, dst: &mut [u8]) {
 }
 
 pub fn sys_uname(old_uname_addr: Vaddr) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_UNAME]", SYS_UNAME);
+    log_syscall_entry!(SYS_UNAME);
     debug!("old uname addr = 0x{:x}", old_uname_addr);
     write_val_to_user(old_uname_addr, &*UTS_NAME)?;
     Ok(SyscallReturn::Return(0))

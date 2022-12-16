@@ -274,3 +274,11 @@ pub fn syscall_dispatch(
         _ => panic!("Unsupported syscall number: {}", syscall_number),
     }
 }
+
+#[macro_export]
+macro_rules! log_syscall_entry {
+    ($syscall_name: tt) => {
+        let syscall_name_str = stringify!($syscall_name);
+        info!("[SYSCALL][id={}][{}]", $syscall_name, syscall_name_str);
+    };
+}

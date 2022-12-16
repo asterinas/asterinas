@@ -1,29 +1,26 @@
 pub mod aux_vec;
-pub mod elf;
+pub mod elf_file;
+pub mod elf_segment_pager;
 pub mod init_stack;
+pub mod load_elf;
 
-use jinux_frame::vm::VmSpace;
+use self::load_elf::ElfLoadInfo;
+use crate::{prelude::*, rights::Full, vm::vmar::Vmar};
 
-use self::elf::ElfLoadInfo;
-use crate::prelude::*;
-
-/// load elf to a given vm_space. this function will  
+/// load elf to the root vmar. this function will  
 /// 1. read the vaddr of each segment to get all elf pages.  
-/// 2. allocate physical frames and copy elf data to these frames
-/// 3. map frames to the correct vaddr
-/// 4. (allocate frams and) map the user stack
-pub fn load_elf_to_vm_space<'a>(
+/// 2. create a vmo for each elf segment, create a backup pager for each segment. Then map the vmo to the root vmar.
+/// 3. write proper content to the init stack.
+pub fn load_elf_to_root_vmar(
     filename: CString,
-    elf_file_content: &'a [u8],
-    vm_space: &VmSpace,
+    elf_file_content: &'static [u8],
+    root_vmar: &Vmar<Full>,
     argv: Vec<CString>,
     envp: Vec<CString>,
-) -> Result<ElfLoadInfo<'a>> {
-    let mut elf_load_info = ElfLoadInfo::parse_elf_data(elf_file_content, filename, argv, envp)?;
-    elf_load_info.copy_and_map_segments(vm_space)?;
-    elf_load_info.debug_check_map_result(vm_space);
-    elf_load_info.init_stack(vm_space);
-    elf_load_info.write_program_header_table(vm_space, elf_file_content);
+) -> Result<ElfLoadInfo> {
+    let mut elf_load_info = ElfLoadInfo::parse_elf_data(elf_file_content, argv, envp)?;
+    elf_load_info.map_segment_vmos(root_vmar, elf_file_content)?;
+    elf_load_info.init_stack(root_vmar, elf_file_content)?;
     debug!("load elf succeeds.");
 
     Ok(elf_load_info)

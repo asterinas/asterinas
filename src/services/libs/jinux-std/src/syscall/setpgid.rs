@@ -1,4 +1,5 @@
 use crate::{
+    log_syscall_entry,
     prelude::*,
     process::{process_group::ProcessGroup, table, Pgid, Pid},
 };
@@ -6,7 +7,7 @@ use crate::{
 use super::{SyscallReturn, SYS_SETPGID};
 
 pub fn sys_setpgid(pid: Pid, pgid: Pgid) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_SETPGID]", SYS_SETPGID);
+    log_syscall_entry!(SYS_SETPGID);
     let current = current!();
     // if pid is 0, pid should be the pid of current process
     let pid = if pid == 0 { current.pid() } else { pid };

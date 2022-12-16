@@ -1,8 +1,9 @@
 use jinux_frame::cpu::CpuContext;
 
 use super::{constants::*, SyscallReturn};
-use crate::memory::{read_cstring_from_user, read_val_from_user};
-use crate::process::elf::load_elf_to_vm_space;
+use crate::log_syscall_entry;
+use crate::process::elf::load_elf_to_root_vmar;
+use crate::util::{read_cstring_from_user, read_val_from_user};
 use crate::{prelude::*, syscall::SYS_EXECVE};
 
 pub fn sys_execve(
@@ -11,7 +12,7 @@ pub fn sys_execve(
     envp_ptr_ptr: Vaddr,
     context: &mut CpuContext,
 ) -> Result<SyscallReturn> {
-    debug!("[syscall][id={}][SYS_EXECVE]", SYS_EXECVE);
+    log_syscall_entry!(SYS_EXECVE);
     let filename = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;
@@ -25,17 +26,17 @@ pub fn sys_execve(
 
     let elf_file_content = crate::user_apps::read_execve_hello_content();
     let current = current!();
-    // Set process vm space to default
-    let vm_space = current
-        .vm_space()
+    // destroy root vmars
+    let root_vmar = current
+        .root_vmar()
         .expect("[Internal Error] User process should have vm space");
-    vm_space.clear();
+    root_vmar.clear()?;
     let user_vm = current
         .user_vm()
         .expect("[Internal Error] User process should have user vm");
     user_vm.set_default();
     // load elf content to new vm space
-    let elf_load_info = load_elf_to_vm_space(filename, elf_file_content, &vm_space, argv, envp)
+    let elf_load_info = load_elf_to_root_vmar(filename, elf_file_content, root_vmar, argv, envp)
         .expect("load elf failed");
     debug!("load elf in execve succeeds");
     // set signal disposition to default
@@ -74,7 +75,7 @@ fn read_cstring_vec(
         res.push(cstring);
     }
     if !find_null {
-        return_errno!(Errno::E2BIG);
+        return_errno_with_message!(Errno::E2BIG, "Cannot find null pointer in vector");
     }
     Ok(res)
 }

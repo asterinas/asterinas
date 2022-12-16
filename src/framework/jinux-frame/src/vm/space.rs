@@ -22,15 +22,17 @@ use super::VmIo;
 /// A newly-created `VmSpace` is not backed by any physical memory pages.
 /// To provide memory pages for a `VmSpace`, one can allocate and map
 /// physical memory (`VmFrames`) to the `VmSpace`.
+
+#[derive(Debug, Clone)]
 pub struct VmSpace {
-    memory_set: Mutex<MemorySet>,
+    memory_set: Arc<Mutex<MemorySet>>,
 }
 
 impl VmSpace {
     /// Creates a new VM address space.
     pub fn new() -> Self {
         Self {
-            memory_set: Mutex::new(MemorySet::new()),
+            memory_set: Arc::new(Mutex::new(MemorySet::new())),
         }
     }
     /// Activate the page table, load root physical address to cr3
@@ -55,6 +57,7 @@ impl VmSpace {
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
+        // debug!("map to vm space: 0x{:x}", options.addr.unwrap());
         self.memory_set.lock().map(MapArea::new(
             VirtAddr(options.addr.unwrap()),
             frames.len() * PAGE_SIZE,
@@ -108,15 +111,6 @@ impl Default for VmSpace {
     }
 }
 
-impl Clone for VmSpace {
-    fn clone(&self) -> Self {
-        let memory_set = self.memory_set.lock().clone();
-        VmSpace {
-            memory_set: Mutex::new(memory_set),
-        }
-    }
-}
-
 impl VmIo for VmSpace {
     fn read_bytes(&self, vaddr: usize, buf: &mut [u8]) -> Result<()> {
         self.memory_set.lock().read_bytes(vaddr, buf)
@@ -129,11 +123,16 @@ impl VmIo for VmSpace {
 
 /// Options for mapping physical memory pages into a VM address space.
 /// See `VmSpace::map`.
+#[derive(Clone)]
 pub struct VmMapOptions {
     /// start virtual address
     addr: Option<Vaddr>,
+    /// map align
+    align: usize,
     /// permission
     perm: VmPerm,
+    /// can overwrite
+    can_overwrite: bool,
 }
 
 impl VmMapOptions {
@@ -141,7 +140,9 @@ impl VmMapOptions {
     pub fn new() -> Self {
         Self {
             addr: None,
+            align: PAGE_SIZE,
             perm: VmPerm::empty(),
+            can_overwrite: false,
         }
     }
 
@@ -152,7 +153,8 @@ impl VmMapOptions {
     ///
     /// The default value of this option is the page size.
     pub fn align(&mut self, align: usize) -> &mut Self {
-        todo!()
+        self.align = align;
+        self
     }
 
     /// Sets the permissions of the mapping, which affects whether
@@ -181,7 +183,8 @@ impl VmMapOptions {
     ///
     /// The default value of this option is `false`.
     pub fn can_overwrite(&mut self, can_overwrite: bool) -> &mut Self {
-        todo!()
+        self.can_overwrite = can_overwrite;
+        self
     }
 }
 

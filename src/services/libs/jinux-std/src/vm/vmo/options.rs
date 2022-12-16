@@ -3,13 +3,19 @@
 use core::marker::PhantomData;
 use core::ops::Range;
 
-use alloc::sync::Arc;
-use jinux_frame::prelude::Result;
-use jinux_frame::vm::Paddr;
+use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrameVec};
+use jinux_frame::AlignExt;
 use jinux_rights_proc::require;
+use typeflags_util::{SetExtend, SetExtendOp};
 
-use crate::rights::{Dup, Rights, TRights};
+use crate::prelude::*;
 
+use crate::rights::{Dup, Rights, TRights, Write};
+use crate::vm::vmo::InheritedPages;
+use crate::vm::vmo::VmoType;
+use crate::vm::vmo::{VmoInner, Vmo_};
+
+use super::VmoRightsOp;
 use super::{Pager, Vmo, VmoFlags};
 
 /// Options for allocating a root VMO.
@@ -50,8 +56,8 @@ pub struct VmoOptions<R = Rights> {
     size: usize,
     paddr: Option<Paddr>,
     flags: VmoFlags,
-    rights: R,
-    // supplier: Option<Arc<dyn FrameSupplier>>,
+    rights: Option<R>,
+    pager: Option<Arc<dyn Pager>>,
 }
 
 impl<R> VmoOptions<R> {
@@ -60,7 +66,13 @@ impl<R> VmoOptions<R> {
     ///
     /// The size of the VMO will be rounded up to align with the page size.
     pub fn new(size: usize) -> Self {
-        todo!()
+        Self {
+            size,
+            paddr: None,
+            flags: VmoFlags::empty(),
+            rights: None,
+            pager: None,
+        }
     }
 
     /// Sets the starting physical address of the VMO.
@@ -70,7 +82,9 @@ impl<R> VmoOptions<R> {
     /// If this option is set, then the underlying pages of VMO must be contiguous.
     /// So `VmoFlags::IS_CONTIGUOUS` will be set automatically.
     pub fn paddr(mut self, paddr: Paddr) -> Self {
-        todo!()
+        self.paddr = Some(paddr);
+        self.flags |= VmoFlags::CONTIGUOUS;
+        self
     }
 
     /// Sets the VMO flags.
@@ -79,12 +93,14 @@ impl<R> VmoOptions<R> {
     ///
     /// For more information about the flags, see `VmoFlags`.
     pub fn flags(mut self, flags: VmoFlags) -> Self {
-        todo!()
+        self.flags = flags;
+        self
     }
 
     /// Sets the pager of the VMO.
     pub fn pager(mut self, pager: Arc<dyn Pager>) -> Self {
-        todo!()
+        self.pager = Some(pager);
+        self
     }
 }
 
@@ -94,8 +110,16 @@ impl VmoOptions<Rights> {
     /// # Access rights
     ///
     /// The VMO is initially assigned full access rights.
-    pub fn alloc(mut self) -> Result<Vmo<Rights>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmo<Rights>> {
+        let VmoOptions {
+            size,
+            paddr,
+            flags,
+            pager,
+            ..
+        } = self;
+        let vmo_ = alloc_vmo_(size, paddr, flags, pager)?;
+        Ok(Vmo(Arc::new(vmo_), Rights::all()))
     }
 }
 
@@ -106,8 +130,62 @@ impl<R: TRights> VmoOptions<R> {
     ///
     /// The VMO is initially assigned the access rights represented
     /// by `R: TRights`.
-    pub fn alloc(mut self) -> Result<Vmo<R>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmo<R>> {
+        let VmoOptions {
+            size,
+            paddr,
+            flags,
+            rights,
+            pager,
+        } = self;
+        let vmo_ = alloc_vmo_(size, paddr, flags, pager)?;
+        Ok(Vmo(Arc::new(vmo_), R::new()))
+    }
+}
+
+fn alloc_vmo_(
+    size: usize,
+    paddr: Option<Paddr>,
+    flags: VmoFlags,
+    pager: Option<Arc<dyn Pager>>,
+) -> Result<Vmo_> {
+    let size = size.align_up(PAGE_SIZE);
+    let committed_pages = committed_pages_if_continuous(flags, size, paddr)?;
+    let vmo_inner = VmoInner {
+        pager,
+        size,
+        committed_pages,
+        inherited_pages: InheritedPages::new_empty(),
+    };
+    Ok(Vmo_ {
+        flags,
+        inner: Mutex::new(vmo_inner),
+        parent: Weak::new(),
+        paddr,
+        vmo_type: VmoType::NotChild,
+    })
+}
+
+fn committed_pages_if_continuous(
+    flags: VmoFlags,
+    size: usize,
+    paddr: Option<Paddr>,
+) -> Result<BTreeMap<usize, VmFrameVec>> {
+    if flags.contains(VmoFlags::CONTIGUOUS) {
+        // if the vmo is continuous, we need to allocate frames for the vmo
+        let frames_num = size / PAGE_SIZE;
+        let mut vm_alloc_option = VmAllocOptions::new(frames_num);
+        vm_alloc_option.is_contiguous(true);
+        vm_alloc_option.paddr(paddr);
+        let frames = VmFrameVec::allocate(&vm_alloc_option)?;
+        let mut committed_pages = BTreeMap::new();
+        for (idx, frame) in frames.into_iter().enumerate() {
+            committed_pages.insert(idx * PAGE_SIZE, VmFrameVec::from_one_frame(frame));
+        }
+        Ok(committed_pages)
+    } else {
+        // otherwise, we wait for the page is read or write
+        Ok(BTreeMap::new())
     }
 }
 
@@ -181,7 +259,7 @@ impl<R: TRights> VmoOptions<R> {
 /// Note that a slice VMO child and its parent cannot not be resizable.
 ///
 /// ```rust
-/// use _std::vm::{PAGE_SIZE, VmoOptions};
+/// use jinux_std::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -284,14 +362,41 @@ impl<R, C> VmoChildOptions<R, C> {
     }
 }
 
-impl<C> VmoChildOptions<Rights, C> {
+impl VmoChildOptions<Rights, VmoSliceChild> {
     /// Allocates the child VMO.
     ///
     /// # Access rights
     ///
     /// The child VMO is initially assigned all the parent's access rights.
-    pub fn alloc(mut self) -> Result<Vmo<Rights>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmo<Rights>> {
+        let VmoChildOptions {
+            parent,
+            range,
+            flags,
+            ..
+        } = self;
+        let Vmo(parent_vmo_, parent_rights) = parent;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Slice)?;
+        Ok(Vmo(Arc::new(child_vmo_), parent_rights))
+    }
+}
+
+impl VmoChildOptions<Rights, VmoCowChild> {
+    /// Allocates the child VMO.
+    ///
+    /// # Access rights
+    ///
+    /// The child VMO is initially assigned all the parent's access rights.
+    pub fn alloc(self) -> Result<Vmo<Rights>> {
+        let VmoChildOptions {
+            parent,
+            range,
+            flags,
+            ..
+        } = self;
+        let Vmo(parent_vmo_, parent_rights) = parent;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Cow)?;
+        Ok(Vmo(Arc::new(child_vmo_), parent_rights))
     }
 }
 
@@ -301,8 +406,16 @@ impl<R: TRights> VmoChildOptions<R, VmoSliceChild> {
     /// # Access rights
     ///
     /// The child VMO is initially assigned all the parent's access rights.
-    pub fn alloc(mut self) -> Result<Vmo<R>> {
-        todo!()
+    pub fn alloc(self) -> Result<Vmo<R>> {
+        let VmoChildOptions {
+            parent,
+            range,
+            flags,
+            ..
+        } = self;
+        let Vmo(parent_vmo_, parent_rights) = parent;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Slice)?;
+        Ok(Vmo(Arc::new(child_vmo_), parent_rights))
     }
 }
 
@@ -313,28 +426,88 @@ impl<R: TRights> VmoChildOptions<R, VmoCowChild> {
     ///
     /// The child VMO is initially assigned all the parent's access rights
     /// plus the Write right.
-    pub fn alloc<R1>(mut self) -> Result<Vmo<R1>>
+    pub fn alloc(self) -> Result<Vmo<SetExtendOp<R, Write>>>
     where
-        R1: TRights, // TODO: R1 must contain the Write right. To do so at the type level,
-                     // we need to implement a type-level operator
-                     // (say, `TRightsExtend(L, F)`)
-                     // that may extend a list (`L`) of type-level flags with an extra flag `F`.
-                     // TRightsExtend<R, Write>
+        R: SetExtend<Write>,
+        SetExtendOp<R, Write>: TRights,
     {
-        todo!()
+        let VmoChildOptions {
+            parent,
+            range,
+            flags,
+            ..
+        } = self;
+        let Vmo(parent_vmo_, _) = parent;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Cow)?;
+        let right = SetExtendOp::<R, Write>::new();
+        Ok(Vmo(Arc::new(child_vmo_), right))
     }
+}
 
-    // original:
-    // pub fn alloc<R1>(mut self) -> Result<Vmo<R1>>
-    // where
-    //     // TODO: R1 must contain the Write right. To do so at the type level,
-    //     // we need to implement a type-level operator
-    //     // (say, `TRightsExtend(L, F)`)
-    //     // that may extend a list (`L`) of type-level flags with an extra flag `F`.
-    //     R1: R // TRightsExtend<R, Write>
-    // {
-    //     todo!()
-    // }
+#[derive(Debug, Clone, Copy)]
+enum ChildType {
+    Cow,
+    Slice,
+}
+
+fn alloc_child_vmo_(
+    parent_vmo_: Arc<Vmo_>,
+    range: Range<usize>,
+    child_flags: VmoFlags,
+    child_type: ChildType,
+) -> Result<Vmo_> {
+    let child_vmo_start = range.start;
+    let child_vmo_end = range.end;
+    debug_assert!(child_vmo_start % PAGE_SIZE == 0);
+    debug_assert!(child_vmo_end % PAGE_SIZE == 0);
+    if child_vmo_start % PAGE_SIZE != 0 || child_vmo_end % PAGE_SIZE != 0 {
+        return_errno_with_message!(Errno::EINVAL, "vmo range does not aligned with PAGE_SIZE");
+    }
+    let parent_vmo_size = parent_vmo_.size();
+    let parent_vmo_inner = parent_vmo_.inner.lock();
+    match child_type {
+        ChildType::Slice => {
+            // A slice child should be inside parent vmo's range
+            debug_assert!(child_vmo_end <= parent_vmo_inner.size);
+            if child_vmo_end > parent_vmo_inner.size {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "slice child vmo cannot exceed parent vmo's size"
+                );
+            }
+        }
+        ChildType::Cow => {
+            // A copy on Write child should intersect with parent vmo
+            debug_assert!(range.start < parent_vmo_inner.size);
+            if range.start >= parent_vmo_inner.size {
+                return_errno_with_message!(Errno::EINVAL, "COW vmo should overlap with its parent");
+            }
+        }
+    }
+    let parent_page_idx_offset = range.start / PAGE_SIZE;
+    let inherited_end = range.end.min(parent_vmo_size);
+    let inherited_end_page_idx = inherited_end / PAGE_SIZE + 1;
+    let inherited_pages = InheritedPages::new(0..inherited_end_page_idx, parent_page_idx_offset);
+    let vmo_inner = VmoInner {
+        pager: None,
+        size: child_vmo_end - child_vmo_start,
+        committed_pages: BTreeMap::new(),
+        inherited_pages,
+    };
+    let child_paddr = parent_vmo_
+        .paddr()
+        .map(|parent_paddr| parent_paddr + child_vmo_start);
+    let vmo_type = match child_type {
+        ChildType::Cow => VmoType::CopyOnWriteChild,
+        ChildType::Slice => VmoType::SliceChild,
+    };
+    Ok(Vmo_ {
+        flags: child_flags,
+        inner: Mutex::new(vmo_inner),
+        parent: Arc::downgrade(&parent_vmo_),
+        paddr: child_paddr,
+        vmo_type,
+    })
 }
 
 /// A type to specify the "type" of a child, which is either a slice or a COW.

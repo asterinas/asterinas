@@ -2,6 +2,7 @@
 
 pub(crate) use alloc::boxed::Box;
 pub(crate) use alloc::collections::BTreeMap;
+pub(crate) use alloc::collections::BTreeSet;
 pub(crate) use alloc::collections::LinkedList;
 pub(crate) use alloc::collections::VecDeque;
 pub(crate) use alloc::ffi::CString;
