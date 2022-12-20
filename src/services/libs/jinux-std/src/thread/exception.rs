@@ -12,7 +12,7 @@ pub fn handle_exception(context: &mut CpuContext) {
     let trap_info = context.trap_information.clone();
     log_trap_info(&trap_info);
     let current = current!();
-    let root_vmar = current.root_vmar().unwrap();
+    let root_vmar = current.root_vmar();
 
     match trap_info.id {
         PAGE_FAULT => handle_page_fault(&trap_info),
@@ -31,13 +31,18 @@ fn handle_page_fault(trap_info: &TrapInformation) {
     if not_present || write {
         // If page is not present or due to write access, we should ask the vmar try to commit this page
         let current = current!();
-        let root_vmar = current.root_vmar().unwrap();
+        let root_vmar = current.root_vmar();
         let page_fault_addr = trap_info.cr2 as Vaddr;
-        debug!(
+        trace!(
             "Page fault address: 0x{:x}, write access: {}",
-            page_fault_addr, write
+            page_fault_addr,
+            write
         );
-        if let Err(_) = root_vmar.handle_page_fault(page_fault_addr, not_present, write) {
+        if let Err(e) = root_vmar.handle_page_fault(page_fault_addr, not_present, write) {
+            error!(
+                "page fault handler failed: addr: 0x{:x}, err: {:?}",
+                page_fault_addr, e
+            );
             generate_fault_signal(trap_info);
         } else {
             // ensure page fault is successfully handled
@@ -60,7 +65,7 @@ fn generate_fault_signal(trap_info: &TrapInformation) {
 
 macro_rules! log_trap_common {
     ($exception_name: ident, $trap_info: ident) => {
-        debug!(
+        trace!(
             "[Trap][{}][err = {}]",
             stringify!($exception_name),
             $trap_info.err
@@ -85,7 +90,7 @@ fn log_trap_info(trap_info: &TrapInformation) {
         STACK_SEGMENT_FAULT => log_trap_common!(STACK_SEGMENT_FAULT, trap_info),
         GENERAL_PROTECTION_FAULT => log_trap_common!(GENERAL_PROTECTION_FAULT, trap_info),
         PAGE_FAULT => {
-            debug!(
+            trace!(
                 "[Trap][{}][page fault addr = 0x{:x}, err = {}]",
                 stringify!(PAGE_FAULT),
                 trap_info.cr2,

@@ -34,6 +34,8 @@ bitflags::bitflags! {
     /// Indicates that the mapping is present in all address spaces, so it isn't flushed from
     /// the TLB on an address space switch.
     const GLOBAL =          1 << 8;
+    /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
+    const NO_EXECUTE = 1 << 63;
   }
 }
 

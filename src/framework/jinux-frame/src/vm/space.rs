@@ -47,13 +47,7 @@ impl VmSpace {
     ///
     /// For more information, see `VmMapOptions`.
     pub fn map(&self, frames: VmFrameVec, options: &VmMapOptions) -> Result<Vaddr> {
-        let mut flags = PTFlags::PRESENT;
-        if options.perm.contains(VmPerm::W) {
-            flags.insert(PTFlags::WRITABLE);
-        }
-        // if options.perm.contains(VmPerm::U) {
-        flags.insert(PTFlags::USER);
-        // }
+        let flags = PTFlags::from(options.perm);
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
@@ -101,7 +95,16 @@ impl VmSpace {
     /// The entire specified VM range must have been mapped with physical
     /// memory pages.
     pub fn protect(&self, range: &Range<Vaddr>, perm: VmPerm) -> Result<()> {
-        todo!()
+        debug_assert!(range.start % PAGE_SIZE == 0);
+        debug_assert!(range.end % PAGE_SIZE == 0);
+        let start_page = range.start / PAGE_SIZE;
+        let end_page = range.end / PAGE_SIZE;
+        let flags = PTFlags::from(perm);
+        for page_idx in start_page..end_page {
+            let addr = page_idx * PAGE_SIZE;
+            self.memory_set.lock().protect(addr, flags)
+        }
+        Ok(())
     }
 }
 
@@ -225,5 +228,19 @@ impl TryFrom<u64> for VmPerm {
 
     fn try_from(value: u64) -> Result<Self> {
         VmPerm::from_bits(value as u8).ok_or(Error::InvalidVmpermBits)
+    }
+}
+
+impl From<VmPerm> for PTFlags {
+    fn from(vm_perm: VmPerm) -> Self {
+        let mut flags = PTFlags::PRESENT | PTFlags::USER;
+        if vm_perm.contains(VmPerm::W) {
+            flags |= PTFlags::WRITABLE;
+        }
+        // FIXME: how to respect executable flags?
+        if !vm_perm.contains(VmPerm::X) {
+            flags |= PTFlags::NO_EXECUTE;
+        }
+        flags
     }
 }

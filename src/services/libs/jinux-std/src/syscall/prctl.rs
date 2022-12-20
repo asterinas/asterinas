@@ -1,6 +1,7 @@
 use crate::log_syscall_entry;
 use crate::prelude::*;
-use crate::process::name::MAX_PROCESS_NAME_LEN;
+use crate::process::posix_thread::name::MAX_THREAD_NAME_LEN;
+use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
 use crate::util::read_cstring_from_user;
 use crate::util::write_bytes_to_user;
 
@@ -10,21 +11,22 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
     log_syscall_entry!(SYS_PRCTL);
     let prctl_cmd = PrctlCmd::from_args(option, arg2, arg3, arg4, arg5)?;
     debug!("prctl cmd = {:?}", prctl_cmd);
-    let current = current!();
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.posix_thread();
     match prctl_cmd {
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
-            let process_name = current.process_name().lock();
-            if let Some(process_name) = &*process_name {
-                if let Some(process_name) = process_name.get_name()? {
-                    write_bytes_to_user(write_to_addr, process_name.to_bytes_with_nul())?;
+            let thread_name = posix_thread.thread_name().lock();
+            if let Some(thread_name) = &*thread_name {
+                if let Some(thread_name) = thread_name.get_name()? {
+                    write_bytes_to_user(write_to_addr, thread_name.to_bytes_with_nul())?;
                 }
             }
         }
         PrctlCmd::PR_SET_NAME(read_addr) => {
-            let mut process_name = current.process_name().lock();
-            if let Some(process_name) = &mut *process_name {
-                let new_process_name = read_cstring_from_user(read_addr, MAX_PROCESS_NAME_LEN)?;
-                process_name.set_name(&new_process_name)?;
+            let mut thread_name = posix_thread.thread_name().lock();
+            if let Some(thread_name) = &mut *thread_name {
+                let new_thread_name = read_cstring_from_user(read_addr, MAX_THREAD_NAME_LEN)?;
+                thread_name.set_name(&new_thread_name)?;
             }
         }
         _ => todo!(),

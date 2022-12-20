@@ -100,7 +100,7 @@ fn inner_block_device_test() {
 }
 #[allow(unused)]
 pub fn block_device_test() {
-    let test_process = Process::spawn_kernel_process(|| {
-        // inner_block_device_test();
+    let _ = Process::spawn_kernel_process(|| {
+        inner_block_device_test();
     });
 }

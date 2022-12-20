@@ -12,7 +12,6 @@
 #include <string.h>
 #include <spawn.h>
 #include <assert.h>
-#include <string.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <pthread.h>

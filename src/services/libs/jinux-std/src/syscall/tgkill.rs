@@ -1,8 +1,10 @@
+use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
+use crate::thread::{thread_table, Tid};
 use crate::{log_syscall_entry, prelude::*};
 
 use crate::process::signal::sig_num::SigNum;
 use crate::process::signal::signals::user::{UserSignal, UserSignalKind};
-use crate::process::{table, Pgid, Pid};
+use crate::process::Pid;
 use crate::syscall::SYS_TGKILL;
 
 use super::SyscallReturn;
@@ -10,20 +12,21 @@ use super::SyscallReturn;
 /// tgkill send a signal to a thread with pid as its thread id, and tgid as its thread group id.
 /// Since jinuxx only supports one-thread process now, tgkill will send signal to process with pid as its process id,
 /// and tgid as its process group id.
-pub fn sys_tgkill(tgid: Pgid, pid: Pid, sig_num: u8) -> Result<SyscallReturn> {
+pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_TGKILL);
     let sig_num = SigNum::from_u8(sig_num);
-    debug!("tgid = {}, pid = {}, sig_num = {:?}", tgid, pid, sig_num);
-    let target_process =
-        table::pid_to_process(pid).ok_or(Error::with_message(Errno::EINVAL, "Invalid pid"))?;
-    let pgid = target_process.pgid();
-    if pgid != tgid {
+    info!("tgid = {}, pid = {}, sig_num = {:?}", tgid, tid, sig_num);
+    let target_thread = thread_table::tid_to_thread(tid)
+        .ok_or(Error::with_message(Errno::EINVAL, "Invalid pid"))?;
+    let posix_thread = target_thread.posix_thread();
+    let pid = posix_thread.process().pid();
+    if pid != tgid {
         return_errno_with_message!(
             Errno::EINVAL,
             "the combination of tgid and pid is not valid"
         );
     }
-    if target_process.status().lock().is_zombie() {
+    if target_thread.status().lock().is_exited() {
         return Ok(SyscallReturn::Return(0));
     }
     let signal = {
@@ -36,7 +39,7 @@ pub fn sys_tgkill(tgid: Pgid, pid: Pid, sig_num: u8) -> Result<SyscallReturn> {
             src_uid,
         ))
     };
-    let mut sig_queue = target_process.sig_queues().lock();
+    let mut sig_queue = posix_thread.sig_queues().lock();
     sig_queue.enqueue(signal);
     Ok(SyscallReturn::Return(0))
 }

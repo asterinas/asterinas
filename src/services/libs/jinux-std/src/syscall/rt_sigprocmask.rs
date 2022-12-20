@@ -1,8 +1,11 @@
 use jinux_frame::vm::VmIo;
 
+use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
+use crate::process::signal::constants::{SIGKILL, SIGSTOP};
 use crate::{
     log_syscall_entry,
     prelude::*,
+    process::signal::sig_mask::SigMask,
     syscall::{SyscallReturn, SYS_RT_SIGPROCMASK},
 };
 
@@ -32,8 +35,10 @@ fn do_rt_sigprocmask(
     sigset_size: usize,
 ) -> Result<()> {
     let current = current!();
-    let root_vmar = current.root_vmar().unwrap();
-    let mut sig_mask = current.sig_mask().lock();
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.posix_thread();
+    let root_vmar = current.root_vmar();
+    let mut sig_mask = posix_thread.sig_mask().lock();
     let old_sig_mask_value = sig_mask.as_u64();
     debug!("old sig mask value: 0x{:x}", old_sig_mask_value);
     if oldset_ptr != 0 {
@@ -41,9 +46,15 @@ fn do_rt_sigprocmask(
     }
     if set_ptr != 0 {
         let new_set = root_vmar.read_val::<u64>(set_ptr)?;
-        debug!("new set = 0x{:x}", new_set);
         match mask_op {
-            MaskOp::Block => sig_mask.block(new_set),
+            MaskOp::Block => {
+                let mut new_sig_mask = SigMask::from(new_set);
+                // According to man pages, "it is not possible to block SIGKILL or SIGSTOP.
+                // Attempts to do so are silently ignored."
+                new_sig_mask.remove_signal(SIGKILL);
+                new_sig_mask.remove_signal(SIGSTOP);
+                sig_mask.block(new_sig_mask.as_u64());
+            }
             MaskOp::Unblock => sig_mask.unblock(new_set),
             MaskOp::SetMask => sig_mask.set(new_set),
         }

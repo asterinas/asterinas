@@ -1,7 +1,7 @@
 use crate::{
     log_syscall_entry,
     prelude::*,
-    process::{process_group::ProcessGroup, table, Pgid, Pid},
+    process::{process_group::ProcessGroup, process_table, Pgid, Pid},
 };
 
 use super::{SyscallReturn, SYS_SETPGID};
@@ -23,18 +23,18 @@ pub fn sys_setpgid(pid: Pid, pgid: Pgid) -> Result<SyscallReturn> {
     }
 
     // only can move process to an existing group or self
-    if pgid != pid && table::pgid_to_process_group(pgid).is_none() {
+    if pgid != pid && process_table::pgid_to_process_group(pgid).is_none() {
         return_errno_with_message!(Errno::EPERM, "process group must exist");
     }
 
-    if let Some(new_process_group) = table::pgid_to_process_group(pgid) {
+    if let Some(new_process_group) = process_table::pgid_to_process_group(pgid) {
         new_process_group.add_process(current.clone());
         current.set_process_group(Arc::downgrade(&new_process_group));
     } else {
         let new_process_group = Arc::new(ProcessGroup::new(current.clone()));
         new_process_group.add_process(current.clone());
         current.set_process_group(Arc::downgrade(&new_process_group));
-        table::add_process_group(new_process_group);
+        process_table::add_process_group(new_process_group);
     }
 
     Ok(SyscallReturn::Return(0))

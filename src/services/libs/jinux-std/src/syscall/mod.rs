@@ -4,6 +4,7 @@ use crate::prelude::*;
 use crate::syscall::access::sys_access;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
+use crate::syscall::clock_nanosleep::sys_clock_nanosleep;
 use crate::syscall::clone::sys_clone;
 use crate::syscall::close::sys_close;
 use crate::syscall::execve::sys_execve;
@@ -26,18 +27,22 @@ use crate::syscall::ioctl::sys_ioctl;
 use crate::syscall::kill::sys_kill;
 use crate::syscall::lseek::sys_lseek;
 use crate::syscall::lstat::sys_lstat;
+use crate::syscall::madvise::sys_madvise;
 use crate::syscall::mmap::sys_mmap;
 use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::munmap::sys_munmap;
 use crate::syscall::openat::sys_openat;
 use crate::syscall::poll::sys_poll;
 use crate::syscall::prctl::sys_prctl;
+use crate::syscall::prlimit64::sys_prlimit64;
 use crate::syscall::read::sys_read;
 use crate::syscall::readlink::sys_readlink;
 use crate::syscall::rt_sigaction::sys_rt_sigaction;
 use crate::syscall::rt_sigprocmask::sys_rt_sigprocmask;
 use crate::syscall::rt_sigreturn::sys_rt_sigreturn;
 use crate::syscall::sched_yield::sys_sched_yield;
+use crate::syscall::set_robust_list::sys_set_robust_list;
+use crate::syscall::set_tid_address::sys_set_tid_address;
 use crate::syscall::setpgid::sys_setpgid;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
@@ -50,6 +55,7 @@ use jinux_frame::cpu::CpuContext;
 mod access;
 mod arch_prctl;
 mod brk;
+mod clock_nanosleep;
 mod clone;
 mod close;
 mod constants;
@@ -73,18 +79,22 @@ mod ioctl;
 mod kill;
 mod lseek;
 mod lstat;
+mod madvise;
 mod mmap;
 mod mprotect;
 mod munmap;
 mod openat;
 mod poll;
 mod prctl;
+mod prlimit64;
 mod read;
 mod readlink;
 mod rt_sigaction;
 mod rt_sigprocmask;
 mod rt_sigreturn;
 mod sched_yield;
+mod set_robust_list;
+mod set_tid_address;
 mod setpgid;
 mod tgkill;
 mod uname;
@@ -142,6 +152,7 @@ define_syscall_nums!(
     SYS_WRITEV = 20,
     SYS_ACCESS = 21,
     SYS_SCHED_YIELD = 24,
+    SYS_MADVISE = 28,
     SYS_GETPID = 39,
     SYS_CLONE = 56,
     SYS_FORK = 57,
@@ -164,10 +175,14 @@ define_syscall_nums!(
     SYS_ARCH_PRCTL = 158,
     SYS_GETTID = 186,
     SYS_FUTEX = 202,
+    SYS_SET_TID_ADDRESS = 218,
+    SYS_CLOCK_NANOSLEEP = 230,
     SYS_EXIT_GROUP = 231,
     SYS_TGKILL = 234,
     SYS_WAITID = 247,
-    SYS_OPENAT = 257
+    SYS_OPENAT = 257,
+    SYS_SET_ROBUST_LIST = 273,
+    SYS_PRLIMIT64 = 302
 );
 
 pub struct SyscallArgument {
@@ -208,7 +223,6 @@ pub fn handle_syscall(context: &mut CpuContext) {
 
     match syscall_return {
         Ok(return_value) => {
-            debug!("syscall return: {:?}", return_value);
             if let SyscallReturn::Return(return_value) = return_value {
                 context.set_rax(return_value as u64);
             }
@@ -245,6 +259,7 @@ pub fn syscall_dispatch(
         SYS_WRITEV => syscall_handler!(3, sys_writev, args),
         SYS_ACCESS => syscall_handler!(2, sys_access, args),
         SYS_SCHED_YIELD => syscall_handler!(0, sys_sched_yield),
+        SYS_MADVISE => syscall_handler!(3, sys_madvise, args),
         SYS_GETPID => syscall_handler!(0, sys_getpid),
         SYS_CLONE => syscall_handler!(5, sys_clone, args, context.clone()),
         SYS_FORK => syscall_handler!(0, sys_fork, context.clone()),
@@ -267,11 +282,15 @@ pub fn syscall_dispatch(
         SYS_ARCH_PRCTL => syscall_handler!(2, sys_arch_prctl, args, context),
         SYS_GETTID => syscall_handler!(0, sys_gettid),
         SYS_FUTEX => syscall_handler!(6, sys_futex, args),
+        SYS_SET_TID_ADDRESS => syscall_handler!(1, sys_set_tid_address, args),
+        SYS_CLOCK_NANOSLEEP => syscall_handler!(4, sys_clock_nanosleep, args),
         SYS_EXIT_GROUP => syscall_handler!(1, sys_exit_group, args),
         SYS_TGKILL => syscall_handler!(3, sys_tgkill, args),
         SYS_WAITID => syscall_handler!(5, sys_waitid, args),
         SYS_OPENAT => syscall_handler!(4, sys_openat, args),
-        _ => panic!("Unsupported syscall number: {}, args:{:x?}", syscall_number,args),
+        SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
+        SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
+        _ => panic!("Unsupported syscall number: {}", syscall_number),
     }
 }
 

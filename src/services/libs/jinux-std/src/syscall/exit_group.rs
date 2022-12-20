@@ -5,6 +5,7 @@ use crate::syscall::{SyscallReturn, SYS_EXIT_GROUP};
 /// Exit all thread in a process.
 pub fn sys_exit_group(exit_code: u64) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_EXIT_GROUP);
-    current!().exit(exit_code as _);
+    // Exit all thread in current process
+    current!().exit_group(exit_code as _);
     Ok(SyscallReturn::Return(0))
 }

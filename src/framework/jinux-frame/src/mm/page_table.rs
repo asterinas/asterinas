@@ -5,7 +5,7 @@ use crate::{
     *,
 };
 use alloc::{collections::BTreeMap, vec, vec::Vec};
-use core::fmt;
+use core::{fmt, panic};
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -92,6 +92,18 @@ impl PageTable {
             panic!("{:#x?} is invalid before unmapping", va);
         }
         entry.0 = 0;
+    }
+
+    pub fn protect(&mut self, va: VirtAddr, flags: PTFlags) {
+        let entry = self.get_entry_or_create(va).unwrap();
+        if entry.is_unused() || !entry.is_present() {
+            panic!("{:#x?} is invalid before protect", va);
+        }
+        // clear old mask
+        let clear_flags_mask = !PTFlags::all().bits;
+        entry.0 &= clear_flags_mask;
+        // set new mask
+        entry.0 |= flags.bits;
     }
 
     pub fn map_area(&mut self, area: &MapArea) {

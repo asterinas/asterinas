@@ -1,17 +1,17 @@
 use crate::prelude::*;
 
 pub struct UserApp {
-    pub app_name: CString,
+    pub elf_path: CString,
     pub app_content: &'static [u8],
     pub argv: Vec<CString>,
     pub envp: Vec<CString>,
 }
 
 impl UserApp {
-    pub fn new(app_name: &str, app_content: &'static [u8]) -> Self {
-        let app_name = CString::new(app_name).unwrap();
+    pub fn new(elf_path: &str, app_content: &'static [u8]) -> Self {
+        let app_name = CString::new(elf_path).unwrap();
         UserApp {
-            app_name,
+            elf_path: app_name,
             app_content,
             argv: Vec::new(),
             envp: Vec::new(),
@@ -35,7 +35,7 @@ pub fn get_all_apps() -> Vec<UserApp> {
     res.push(asm_hello_world);
 
     // Hello world, written in C language.
-    // Since glibc requires the app name starts with "/", and we don't have filesystem now.
+    // Since glibc requires the elf path starts with "/", and we don't have filesystem now.
     // So we manually add a leading "/" for app written in C language.
     let hello_c = UserApp::new("/hello_c", read_hello_c_content());
     res.push(hello_c);
@@ -55,6 +55,10 @@ pub fn get_all_apps() -> Vec<UserApp> {
     // signal test
     let signal_test = UserApp::new("/signal_test", read_signal_test_content());
     res.push(signal_test);
+
+    // pthread test
+    let pthread_test = UserApp::new("/pthread_test", read_pthread_test_content());
+    res.push(pthread_test);
 
     res
 }
@@ -107,6 +111,10 @@ fn read_fork_c_content() -> &'static [u8] {
 
 fn read_signal_test_content() -> &'static [u8] {
     include_bytes!("../../../../apps/signal_c/signal_test")
+}
+
+fn read_pthread_test_content() -> &'static [u8] {
+    include_bytes!("../../../../apps/pthread/pthread_test")
 }
 
 fn read_busybox_content() -> &'static [u8] {

@@ -28,7 +28,7 @@ impl UserHeap {
 
     pub fn brk(&self, new_heap_end: Option<Vaddr>) -> Result<Vaddr> {
         let current = current!();
-        let root_vmar = current.root_vmar().unwrap();
+        let root_vmar = current.root_vmar();
         match new_heap_end {
             None => {
                 // create a heap vmo for current process
@@ -50,7 +50,8 @@ impl UserHeap {
                     return Ok(current_heap_end);
                 }
                 let new_size = (new_heap_end - self.heap_base).align_up(PAGE_SIZE);
-                let heap_vmo = root_vmar.get_mapped_vmo(USER_HEAP_BASE)?;
+                let heap_mapping = root_vmar.get_vm_mapping(USER_HEAP_BASE)?;
+                let heap_vmo = heap_mapping.vmo();
                 heap_vmo.resize(new_size)?;
                 self.current_heap_end.store(new_heap_end, Ordering::Release);
                 return Ok(new_heap_end);

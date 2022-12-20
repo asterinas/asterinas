@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::{
     config::PAGE_SIZE,
     mm::address::is_aligned,
-    vm::{VmFrame, VmFrameVec},
+    vm::{VmFrame, VmFrameVec, VmPerm},
     *,
 };
 use alloc::collections::{btree_map::Entry, BTreeMap};
@@ -263,6 +263,11 @@ impl MemorySet {
             }
         }
         Err(Error::PageFault)
+    }
+
+    pub fn protect(&mut self, addr: Vaddr, flags: PTFlags) {
+        let va = VirtAddr(addr);
+        self.pt.protect(va, flags)
     }
 }
 

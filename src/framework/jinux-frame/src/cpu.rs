@@ -51,6 +51,10 @@ impl CpuContext {
     pub fn set_rip(&mut self, rip: u64) {
         self.gp_regs.rip = rip;
     }
+
+    pub fn set_fsbase(&mut self, fs_base: u64) {
+        self.fs_base = fs_base;
+    }
 }
 
 #[derive(Clone, Default, Copy, Debug)]

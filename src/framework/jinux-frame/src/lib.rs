@@ -146,7 +146,7 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
 }
 
 pub fn panic_handler() {
-    println!("[panic]: cr3:{:x}", x86_64_util::get_cr3());
+    // println!("[panic]: cr3:{:x}", x86_64_util::get_cr3());
     // let mut fp: usize;
     // let stop = unsafe{
     //     Task::current().kstack.get_top()

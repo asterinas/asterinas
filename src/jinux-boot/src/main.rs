@@ -93,8 +93,8 @@ fn create_fs_image(path: &Path) -> anyhow::Result<String> {
         .write(true)
         .create(true)
         .open(fs_img_path.as_str())?;
-    // 16MiB
-    f.set_len(16 * 1024 * 1024).unwrap();
+    // 32MiB
+    f.set_len(64 * 1024 * 1024).unwrap();
     Ok(format!(
         "file={},if=none,format=raw,id=x0",
         fs_img_path.as_str()
@@ -120,6 +120,9 @@ pub fn create_disk_images(kernel_binary_path: &Path) -> PathBuf {
         .arg(kernel_binary_path.parent().unwrap());
     build_cmd.arg("--quiet");
 
+    // println!("current dir = {:?}", build_cmd.get_current_dir());
+    // println!("args = {:?}", build_cmd.get_args());
+
     if !build_cmd.status().unwrap().success() {
         panic!("build failed");
     }
@@ -142,3 +145,4 @@ fn run_test_command(mut cmd: Command) -> anyhow::Result<ExitStatus> {
     let status = runner_utils::run_with_timeout(&mut cmd, Duration::from_secs(TEST_TIMEOUT_SECS))?;
     Ok(status)
 }
+

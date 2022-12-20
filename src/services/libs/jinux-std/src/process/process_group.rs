@@ -1,4 +1,4 @@
-use super::{table, Pgid, Pid, Process};
+use super::{process_table, Pgid, Pid, Process};
 use crate::prelude::*;
 
 pub struct ProcessGroup {
@@ -53,11 +53,19 @@ impl ProcessGroup {
         // if self contains no process, remove self from table
         if len == 0 {
             // this must be the last statement
-            table::remove_process_group(pgid);
+            process_table::remove_process_group(pgid);
         }
     }
 
     pub fn pgid(&self) -> Pgid {
         self.inner.lock().pgid
+    }
+
+    /// Wake up all processes waiting on polling queue
+    pub fn wake_all_polling_procs(&self) {
+        let inner = self.inner.lock();
+        for (_, process) in &inner.processes {
+            process.poll_queue().wake_all();
+        }
     }
 }

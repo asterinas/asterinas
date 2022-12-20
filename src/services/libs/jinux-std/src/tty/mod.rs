@@ -3,7 +3,7 @@ use self::line_discipline::LineDiscipline;
 use crate::driver::console::receive_console_char;
 use crate::fs::events::IoEvents;
 use crate::fs::ioctl::IoctlCmd;
-use crate::process::Pgid;
+use crate::process::{process_table, Pgid};
 use crate::util::{read_val_from_user, write_val_to_user};
 use crate::{fs::file::File, prelude::*};
 
@@ -32,8 +32,20 @@ impl Tty {
         }
     }
 
+    /// Set foreground process group
     pub fn set_fg(&self, pgid: Pgid) {
         self.ldisc.lock().set_fg(pgid);
+    }
+
+    /// Wake up foreground process group that wait on IO events.
+    /// This function should be called when the interrupt handler of IO events is called.
+    pub fn wake_fg_proc_grp(&self) {
+        let ldisc = self.ldisc.lock();
+        if let Some(fg_pgid) = ldisc.get_fg() {
+            if let Some(fg_proc_grp) = process_table::pgid_to_process_group(*fg_pgid) {
+                fg_proc_grp.wake_all_polling_procs();
+            }
+        }
     }
 }
 
@@ -108,6 +120,7 @@ impl File for Tty {
     }
 }
 
+/// FIXME: should we maintain a static console?
 pub fn get_console() -> &'static Arc<Tty> {
     &N_TTY
 }
