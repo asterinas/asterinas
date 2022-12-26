@@ -3,6 +3,34 @@ use crate::capability::Capability;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 
+pub enum PCIDeviceCommonCfgOffset {
+    VendorId = 0x00,
+    DeviceId = 0x02,
+    Command = 0x04,
+    Status = 0x06,
+    RevisionId = 0x08,
+    ClassCode = 0x09,
+    CacheLineSize = 0x0C,
+    LatencyTimer = 0x0D,
+    HeaderType = 0x0E,
+    BIST = 0x0F,
+    BAR0 = 0x10,
+    BAR1 = 0x14,
+    BAR2 = 0x18,
+    BAR3 = 0x1C,
+    BAR4 = 0x20,
+    BAR5 = 0x24,
+    CardbusCisPtr = 0x28,
+    SubsystemVendorId = 0x2C,
+    SubsystemId = 0x2E,
+    XROMBAR = 0x30,
+    CapabilitiesPointer = 0x34,
+    InterruptLine = 0x3C,
+    InterruptPin = 0x3D,
+    MinGrant = 0x3E,
+    MaxLatency = 0x3F,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CSpaceAccessMethod {
     // The legacy, deprecated (as of PCI 2.0) IO-range method.
@@ -48,18 +76,26 @@ impl CSpaceAccessMethod {
     }
 
     pub fn write8(self, loc: Location, offset: u16, val: u8) {
-        let old = self.read32(loc, offset);
+        let old = self.read32(loc, offset & (0xFFFC));
         let dest = offset as usize & 0b11 << 3;
         let mask = (0xFF << dest) as u32;
-        self.write32(loc, offset, ((val as u32) << dest | (old & !mask)).to_le());
+        self.write32(
+            loc,
+            offset & (0xFFFC),
+            ((val as u32) << dest | (old & !mask)).to_le(),
+        );
     }
 
     /// Converts val to little endian before writing.
     pub fn write16(self, loc: Location, offset: u16, val: u16) {
-        let old = self.read32(loc, offset);
+        let old = self.read32(loc, offset & (0xFFFC));
         let dest = offset as usize & 0b10 << 3;
         let mask = (0xFFFF << dest) as u32;
-        self.write32(loc, offset, ((val as u32) << dest | (old & !mask)).to_le());
+        self.write32(
+            loc,
+            offset & (0xFFFC),
+            ((val as u32) << dest | (old & !mask)).to_le(),
+        );
     }
 
     /// Takes a value in native endian, converts it to little-endian, and writes it to the PCI
@@ -73,7 +109,7 @@ impl CSpaceAccessMethod {
             CSpaceAccessMethod::IO => {
                 jinux_frame::device::pci::PCI_ADDRESS_PORT
                     .write_u32(loc.encode() | (offset as u32 & 0b11111100));
-                jinux_frame::device::pci::PCI_ADDRESS_PORT.write_u32(val.to_le())
+                jinux_frame::device::pci::PCI_DATA_PORT.write_u32(val.to_le())
             } //MemoryMapped(ptr) => {
               //    // FIXME: Clarify whether the rules for GEP/GEPi forbid using regular .offset() here.
               //    ::core::intrinsics::volatile_load(::core::intrinsics::arith_offset(ptr, offset as usize))
@@ -112,64 +148,64 @@ pub struct Identifier {
 
 bitflags! {
     pub struct Command: u16 {
-        const IO_SPACE                  = 0x0001;
-        const MEMORY_SPACE              = 0x0002;
-        const BUS_MASTER                = 0x0004;
-        const SPECIAL_CYCLES            = 0x0008;
-        const MWI_ENABLE                = 0x0010;
-        const VGA_PALETTE_SNOOP         = 0x0020;
-        const PARITY_ERROR_RESPONSE     = 0x0040;
-        const STEPPING_CONTROL          = 0x0080;
-        const SERR_ENABLE               = 0x0100;
-        const FAST_BACK_TO_BACK_ENABLE  = 0x0200;
-        const INTERRUPT_DISABLE         = 0x0400;
-        const RESERVED_11               = 0x0800;
-        const RESERVED_12               = 0x1000;
-        const RESERVED_13               = 0x2000;
-        const RESERVED_14               = 0x4000;
-        const RESERVED_15               = 0x8000;
+        const IO_SPACE                  =  1 << 0;
+        const MEMORY_SPACE              =  1 << 1;
+        const BUS_MASTER                =  1 << 2;
+        const SPECIAL_CYCLES            =  1 << 3;
+        const MWI_ENABLE                =  1 << 4;
+        const VGA_PALETTE_SNOOP         =  1 << 5;
+        const PARITY_ERROR_RESPONSE     =  1 << 6;
+        const STEPPING_CONTROL          =  1 << 7;
+        const SERR_ENABLE               =  1 << 8;
+        const FAST_BACK_TO_BACK_ENABLE  =  1 << 9;
+        const INTERRUPT_DISABLE         =  1 << 10;
+        const RESERVED_11               =  1 << 11;
+        const RESERVED_12               =  1 << 12;
+        const RESERVED_13               =  1 << 13;
+        const RESERVED_14               =  1 << 14;
+        const RESERVED_15               =  1 << 15;
     }
 }
 
 bitflags! {
     pub struct Status: u16 {
-        const RESERVED_0                = 0x0001;
-        const RESERVED_1                = 0x0002;
-        const RESERVED_2                = 0x0004;
-        const INTERRUPT_STATUS          = 0x0008;
-        const CAPABILITIES_LIST         = 0x0010;
-        const MHZ66_CAPABLE             = 0x0020;
-        const RESERVED_6                = 0x0040;
-        const FAST_BACK_TO_BACK_CAPABLE = 0x0080;
-        const MASTER_DATA_PARITY_ERROR  = 0x0100;
-        const DEVSEL_MEDIUM_TIMING      = 0x0200;
-        const DEVSEL_SLOW_TIMING        = 0x0400;
-        const SIGNALED_TARGET_ABORT     = 0x0800;
-        const RECEIVED_TARGET_ABORT     = 0x1000;
-        const RECEIVED_MASTER_ABORT     = 0x2000;
-        const SIGNALED_SYSTEM_ERROR     = 0x4000;
-        const DETECTED_PARITY_ERROR     = 0x8000;
+        const RESERVED_0                = 1 << 0;
+        const RESERVED_1                = 1 << 1;
+        const RESERVED_2                = 1 << 2;
+        const INTERRUPT_STATUS          = 1 << 3;
+        const CAPABILITIES_LIST         = 1 << 4;
+        const MHZ66_CAPABLE             = 1 << 5;
+        const RESERVED_6                = 1 << 6;
+        const FAST_BACK_TO_BACK_CAPABLE = 1 << 7;
+        const MASTER_DATA_PARITY_ERROR  = 1 << 8;
+        const DEVSEL_MEDIUM_TIMING      = 1 << 9;
+        const DEVSEL_SLOW_TIMING        = 1 << 10;
+        const SIGNALED_TARGET_ABORT     = 1 << 11;
+        const RECEIVED_TARGET_ABORT     = 1 << 12;
+        const RECEIVED_MASTER_ABORT     = 1 << 13;
+        const SIGNALED_SYSTEM_ERROR     = 1 << 14;
+        const DETECTED_PARITY_ERROR     = 1 << 15;
     }
 }
 
 bitflags! {
     pub struct BridgeControl: u16 {
-        const PARITY_ERROR_RESPONSE_ENABLE = 0x0001;
-        const SERR_ENABLE               = 0x0002;
-        const ISA_ENABLE                = 0x0004;
-        const VGA_ENABLE                = 0x0008;
-        const RESERVED_4                = 0x0010;
-        const MASTER_ABORT_MODE         = 0x0020;
-        const SECONDARY_BUS_RESET       = 0x0040;
-        const FAST_BACK_TO_BACK_ENABLE  = 0x0080;
-        const PRIMARY_DISCARD_TIMER     = 0x0100;
-        const SECONDARY_DISCARD_TIMER   = 0x0200;
-        const DISCARD_TIMER_STATUS      = 0x0400;
-        const DISCARD_TIMER_SERR_ENABLED = 0x0800;
-        const RESERVED_12               = 0x1000;
-        const RESERVED_13               = 0x2000;
-        const RESERVED_14               = 0x4000;
-        const RESERVED_15               = 0x8000;
+        const PARITY_ERROR_RESPONSE_ENABLE  = 1 << 0;
+        const SERR_ENABLE                   = 1 << 1;
+        const ISA_ENABLE                    = 1 << 2;
+        const VGA_ENABLE                    = 1 << 3;
+        const RESERVED_4                    = 1 << 4;
+        const MASTER_ABORT_MODE             = 1 << 5;
+        const SECONDARY_BUS_RESET           = 1 << 6;
+        const FAST_BACK_TO_BACK_ENABLE      = 1 << 7;
+        const PRIMARY_DISCARD_TIMER         = 1 << 8;
+        const SECONDARY_DISCARD_TIMER       = 1 << 9;
+        const DISCARD_TIMER_STATUS          = 1 << 10;
+        const DISCARD_TIMER_SERR_ENABLED    = 1 << 11;
+        const RESERVED_12                   = 1 << 12;
+        const RESERVED_13                   = 1 << 13;
+        const RESERVED_14                   = 1 << 14;
+        const RESERVED_15                   = 1 << 15;
     }
 }
 
@@ -192,6 +228,15 @@ pub struct PCIDevice {
     pub interrupt_pin: Option<InterruptPin>,
     pub cspace_access_method: CSpaceAccessMethod,
     pub capabilities: Vec<Capability>,
+}
+
+impl PCIDevice {
+    /// set the status bits
+    pub fn set_status_bits(&self, status: Status) {
+        let am = CSpaceAccessMethod::IO;
+        let status = am.read16(self.loc, 0x06) | status.bits;
+        am.write16(self.loc, 0x06, status)
+    }
 }
 
 pub enum PCIScanError {}
@@ -276,6 +321,7 @@ pub enum InterruptPin {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum BAR {
     Memory(u64, u32, Prefetchable, Type),
+    /// first element is address, second element is size
     IO(u32, u32),
 }
 

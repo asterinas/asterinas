@@ -25,6 +25,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("[panic]:{:?}", info);
+    jinux_frame::panic_handler();
     loop {}
 }
 

@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 
+#[derive(Debug)]
 pub struct RecycleAllocator {
     current: usize,
     recycled: Vec<usize>,

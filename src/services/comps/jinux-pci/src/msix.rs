@@ -1,10 +1,11 @@
 use alloc::vec::Vec;
+use pod_derive::Pod;
 
 use crate::util::{CSpaceAccessMethod, Location, BAR};
 
 use super::capability::msix::CapabilityMSIXData;
 
-use jinux_frame::{offset_of, IrqAllocateHandle};
+use jinux_frame::{debug, offset_of, IrqAllocateHandle};
 use jinux_util::frame_ptr::InFramePtr;
 
 #[derive(Debug, Default)]
@@ -40,7 +41,7 @@ impl MSIX {
     ) -> Self {
         let table_info = cap.table_info;
         let pba_info = cap.pba_info;
-        let table_size = table_info & (0b11_1111_1111);
+        let table_size = (table_info & (0b11_1111_1111)) + 1;
         let table_bar_address;
         let pba_bar_address;
         match bars[(pba_info & 0b111) as usize].expect("MSIX cfg:table bar is none") {
@@ -59,17 +60,35 @@ impl MSIX {
                 panic!("MSIX cfg:table bar is IO type")
             }
         }
+        // let pba_base_address = (pba_info >> 3 ) as u64 + pba_bar_address;
+        // let table_base_address = (table_info >>3 ) as u64 + table_bar_address;
+        let pba_base_address = (pba_info & (!(0b111 as u32))) as u64 + pba_bar_address;
+        let table_base_address = (table_info & (!(0b111 as u32))) as u64 + table_bar_address;
+        debug!("MSIX table size:{}, pba_info:{:x}, table_info:{:x}, pba_address:{:x}, table_address:{:x}",
+            table_size,pba_info,table_info,pba_base_address,table_base_address);
         let mut cap = Self {
             table_size: table_size as u16,
             table: Vec::new(),
-            pba_paddr: (pba_info / 8) as u64 + pba_bar_address,
+            pba_paddr: pba_base_address,
         };
-        let mut table_paddr = (table_info / 8) as u64 + table_bar_address;
-        for _ in 0..table_size {
+        // enable MSI-X disable INTx
+        let am = CSpaceAccessMethod::IO;
+        debug!("command before:{:x}", am.read16(loc, crate::PCI_COMMAND));
+        am.write16(
+            loc,
+            crate::PCI_COMMAND,
+            am.read16(loc, crate::PCI_COMMAND) | 0x40f,
+        );
+        debug!("command after:{:x}", am.read16(loc, crate::PCI_COMMAND));
+        let message_control = am.read16(loc, cap_ptr + 2) | 0x8000;
+        am.write16(loc, cap_ptr + 2, message_control);
+        for i in 0..table_size {
             let value: InFramePtr<MSIXTableEntry> =
-                InFramePtr::new(table_paddr as usize).expect("can not get in frame ptr for msix");
-            // let mut value = MSIXTableEntry::default();
+                InFramePtr::new(table_base_address as usize + 16 * i as usize)
+                    .expect("can not get in frame ptr for msix");
+            // local APIC address: 0xFEE0_0000
             value.write_at(offset_of!(MSIXTableEntry, msg_addr), 0xFEE0_0000 as u32);
+            value.write_at(offset_of!(MSIXTableEntry, msg_upper_addr), 0 as u32);
             // allocate irq number
             let handle = jinux_frame::allocate_irq().expect("not enough irq");
             value.write_at(offset_of!(MSIXTableEntry, msg_data), handle.num() as u32);
@@ -78,11 +97,7 @@ impl MSIX {
                 table_entry: value,
                 irq_handle: handle,
             });
-            table_paddr += 16;
         }
-        // enable MSI-X
-        let am = CSpaceAccessMethod::IO;
-        am.write8(loc, cap_ptr, 0b1000_0000);
         cap
     }
 }

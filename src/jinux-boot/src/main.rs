@@ -13,6 +13,8 @@ const COMMON_ARGS: &[&str] = &[
     "isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-device",
     "virtio-blk-pci,bus=pci.0,addr=0x6,drive=x0",
+    "-device",
+    "virtio-keyboard-pci",
     "-serial",
     "stdio",
     "-display",

@@ -33,22 +33,20 @@ pub(crate) extern "C" fn trap_handler(f: &mut TrapFrame) {
                     &Task::current().inner_ctx() as *const TaskContext,
                 )
             }
-        } else {
-            let irq_line = IRQ_LIST.get(f.id as usize).unwrap();
-            let callback_functions = irq_line.callback_list();
-            for callback_function in callback_functions.iter() {
-                callback_function.call(f);
-            }
         }
     } else {
         if is_cpu_fault(f) {
-            panic!("cannot handle kernel cpu fault now");
+            panic!("cannot handle kernel cpu fault now, information:{:#x?}", f);
         }
-        let irq_line = IRQ_LIST.get(f.id as usize).unwrap();
-        let callback_functions = irq_line.callback_list();
-        for callback_function in callback_functions.iter() {
-            callback_function.call(f);
-        }
+    }
+    let irq_line = IRQ_LIST.get(f.id as usize).unwrap();
+    let callback_functions = irq_line.callback_list();
+    for callback_function in callback_functions.iter() {
+        callback_function.call(f);
+    }
+    if f.id >= 0x20 {
+        crate::driver::apic::ack();
+        crate::driver::pic::ack();
     }
 }
 

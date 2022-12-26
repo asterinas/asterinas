@@ -4,27 +4,23 @@
 #![allow(dead_code)]
 
 extern crate alloc;
+
 use alloc::{sync::Arc, vec::Vec};
 use bitflags::bitflags;
-use jinux_frame::{info, offset_of, TrapFrame};
+use device::VirtioDevice;
+use jinux_frame::{debug, info, offset_of, TrapFrame};
 use jinux_pci::util::{PCIDevice, BAR};
 use jinux_util::frame_ptr::InFramePtr;
+use pod_derive::Pod;
 
-use spin::{mutex::Mutex, MutexGuard};
-
-use self::{block::VirtioBLKConfig, queue::VirtQueue};
+use crate::device::VirtioInfo;
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, msix::MSIX};
 #[macro_use]
 extern crate pod_derive;
 
-pub mod block;
-pub mod queue;
+pub mod device;
 
-pub(crate) const PCI_VIRTIO_CAP_COMMON_CFG: u8 = 1;
-pub(crate) const PCI_VIRTIO_CAP_NOTIFY_CFG: u8 = 2;
-pub(crate) const PCI_VIRTIO_CAP_ISR_CFG: u8 = 3;
-pub(crate) const PCI_VIRTIO_CAP_DEVICE_CFG: u8 = 4;
-pub(crate) const PCI_VIRTIO_CAP_PCI_CFG: u8 = 5;
+pub mod queue;
 
 bitflags! {
     /// The device status field.
@@ -55,6 +51,30 @@ bitflags! {
     }
 }
 
+bitflags! {
+    /// all device features, bits 0~23 are sepecified by device
+    /// if using this struct to translate u64, use from_bits_truncate function instead of from_bits
+    ///
+    struct Feature: u64 {
+
+        // device independent
+        const NOTIFY_ON_EMPTY       = 1 << 24; // legacy
+        const ANY_LAYOUT            = 1 << 27; // legacy
+        const RING_INDIRECT_DESC    = 1 << 28;
+        const RING_EVENT_IDX        = 1 << 29;
+        const UNUSED                = 1 << 30; // legacy
+        const VERSION_1             = 1 << 32; // detect legacy
+
+        // since virtio v1.1
+        const ACCESS_PLATFORM       = 1 << 33;
+        const RING_PACKED           = 1 << 34;
+        const IN_ORDER              = 1 << 35;
+        const ORDER_PLATFORM        = 1 << 36;
+        const SR_IOV                = 1 << 37;
+        const NOTIFICATION_DATA     = 1 << 38;
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone, Pod)]
 #[repr(C)]
 pub struct VitrioPciCommonCfg {
@@ -62,14 +82,14 @@ pub struct VitrioPciCommonCfg {
     device_feature: u32,
     driver_feature_select: u32,
     driver_feature: u32,
-    config_msix_vector: u16,
+    pub config_msix_vector: u16,
     num_queues: u16,
-    device_status: u8,
+    pub device_status: u8,
     config_generation: u8,
 
     queue_select: u16,
     queue_size: u16,
-    queue_msix_vector: u16,
+    pub queue_msix_vector: u16,
     queue_enable: u16,
     queue_notify_off: u16,
     queue_desc: u64,
@@ -83,19 +103,22 @@ impl VitrioPciCommonCfg {
         let offset = cap.offset;
         match bars[bar as usize].expect("Virtio pci common cfg:bar is none") {
             BAR::Memory(address, _, _, _) => {
-                info!("common_cfg addr:{:x}", (address as usize + offset as usize));
+                debug!("common_cfg addr:{:x}", (address as usize + offset as usize));
                 InFramePtr::new(address as usize + offset as usize)
                     .expect("cannot get InFramePtr in VitioPciCommonCfg")
             }
-            BAR::IO(_, _) => {
-                panic!("Virtio pci common cfg:bar is IO type")
+            BAR::IO(first, second) => {
+                panic!(
+                    "Virtio pci common cfg:bar is IO type, value:{:x}, {:x}",
+                    first, second
+                )
             }
         }
     }
 }
 
-#[derive(Debug)]
-enum VirtioDeviceType {
+#[derive(Debug, Clone, Copy)]
+pub enum VirtioDeviceType {
     Network,
     Block,
     Console,
@@ -107,34 +130,17 @@ enum VirtioDeviceType {
     Crypto,
     Socket,
 }
-#[derive(Debug)]
-enum VirtioDevice {
-    Network,
-    Block(InFramePtr<VirtioBLKConfig>),
-    Console,
-    Entropy,
-    TraditionalMemoryBalloon,
-    ScsiHost,
-    GPU,
-    Input,
-    Crypto,
-    Socket,
-    Unknown,
-}
-
 pub struct PCIVirtioDevice {
     /// common config of one device
-    common_cfg: InFramePtr<VitrioPciCommonCfg>,
-    device: VirtioDevice,
-    queues: Vec<Arc<Mutex<VirtQueue>>>,
-    msix: MSIX,
+    pub common_cfg: InFramePtr<VitrioPciCommonCfg>,
+    pub device: VirtioDevice,
+    pub msix: MSIX,
 }
 
 impl PCIVirtioDevice {
+    /// create a new PCI Virtio Device, note that this function will stop with device status features ok
     pub fn new(dev: Arc<PCIDevice>) -> Self {
-        if dev.id.vendor_id != 0x1af4 {
-            panic!("initialize PCIDevice failed, wrong PCI vendor id");
-        }
+        assert_eq!(dev.id.vendor_id, 0x1af4);
         let device_type = match dev.id.device_id {
             0x1000 | 0x1041 => VirtioDeviceType::Network,
             0x1001 | 0x1042 => VirtioDeviceType::Block,
@@ -143,58 +149,21 @@ impl PCIVirtioDevice {
             0x1004 | 0x1045 => VirtioDeviceType::ScsiHost,
             0x1005 | 0x1046 => VirtioDeviceType::Entropy,
             // 0x1009 | 0x104a => VirtioDeviceType::,
+            0x1011 | 0x1052 => VirtioDeviceType::Input,
             _ => {
                 panic!("initialize PCIDevice failed, unrecognized Virtio Device Type")
             }
         };
+        info!("PCI device:{:?}", device_type);
         let bars = dev.bars;
         let loc = dev.loc;
-        let mut notify_base_address = 0;
-        let mut notify_off_multiplier = 0;
-        let mut device = VirtioDevice::Unknown;
         let mut msix = MSIX::default();
-        let mut common_cfg_frame_ptr_some = None;
+        let mut virtio_cap_list = Vec::new();
         for cap in dev.capabilities.iter() {
             match &cap.data {
-                jinux_pci::capability::CapabilityData::VNDR(vndr_data) => match vndr_data {
-                    jinux_pci::capability::vendor::CapabilityVNDRData::VIRTIO(cap_data) => {
-                        match cap_data.cfg_type {
-                            PCI_VIRTIO_CAP_COMMON_CFG => {
-                                common_cfg_frame_ptr_some =
-                                    Some(VitrioPciCommonCfg::new(cap_data, bars));
-                            }
-                            PCI_VIRTIO_CAP_NOTIFY_CFG => {
-                                notify_off_multiplier = cap_data.option.unwrap();
-                                match bars[cap_data.bar as usize]
-                                    .expect("initialize PCIDevice failed, notify bar is None")
-                                {
-                                    BAR::Memory(address, _, _, _) => {
-                                        notify_base_address = address + cap_data.offset as u64;
-                                    }
-                                    BAR::IO(_, _) => {
-                                        panic!("initialize PCIDevice failed, notify bar is IO Type")
-                                    }
-                                };
-                            }
-                            PCI_VIRTIO_CAP_ISR_CFG => {}
-                            PCI_VIRTIO_CAP_DEVICE_CFG => {
-                                device = match device_type {
-                                    VirtioDeviceType::Block => {
-                                        VirtioDevice::Block(VirtioBLKConfig::new(&cap_data, bars))
-                                    }
-                                    _ => {
-                                        panic!(
-                                                "initialize PCIDevice failed, unsupport Virtio Device Type"
-                                            )
-                                    }
-                                }
-                            }
-                            PCI_VIRTIO_CAP_PCI_CFG => {}
-                            _ => panic!("unsupport cfg, cfg_type:{}", cap_data.cfg_type),
-                        };
-                    }
-                },
-
+                jinux_pci::capability::CapabilityData::VNDR(_) => {
+                    virtio_cap_list.push(cap);
+                }
                 jinux_pci::capability::CapabilityData::MSIX(cap_data) => {
                     msix = MSIX::new(&cap_data, bars, loc, cap.cap_ptr);
                 }
@@ -206,106 +175,91 @@ impl PCIVirtioDevice {
                 }
             }
         }
-        let common_cfg_frame_ptr = if common_cfg_frame_ptr_some.is_none() {
-            panic!("Vitio Common cfg is None")
-        } else {
-            common_cfg_frame_ptr_some.unwrap()
-        };
-        info!(
-            "common_cfg_num_queues:{:x}",
-            common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, num_queues))
-        );
-        // let b : InFramePtr<u8> = InFramePtr::new(common_cfg_frame_ptr.paddr()+19).expect("test");
-        // info!("test_Aaaaaa:{:#x?}",b.read());
-        if msix.table_size
-            != common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, num_queues)) as u16
-        {
-            panic!("the msix table size is not match with the number of queues");
-        }
-        let mut queues = Vec::new();
+        // create device
+        let virtio_info = VirtioInfo::new(device_type, bars, virtio_cap_list).unwrap();
+        let mut msix_vector_list: Vec<u16> = (0..msix.table_size).collect();
+        let config_msix_vector = msix_vector_list.pop().unwrap();
+        let common_cfg_frame_ptr = &virtio_info.common_cfg_frame_ptr;
+        let num_queues: u16 =
+            common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, num_queues));
+        debug!("num_queues:{:x}", num_queues);
+        // the table size of msix should be equal to n+1 or 2 where n is the virtqueue amount
+        assert!(msix.table_size == 2 || msix.table_size == (num_queues + 1));
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, device_status),
-            DeviceStatus::ACKNOWLEDGE.bits(),
+            offset_of!(VitrioPciCommonCfg, config_msix_vector),
+            config_msix_vector,
         );
         common_cfg_frame_ptr.write_at(
             offset_of!(VitrioPciCommonCfg, device_status),
-            DeviceStatus::DRIVER.bits(),
+            (DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER).bits(),
         );
+        // negotiate features
+        // get the value of device features
+        common_cfg_frame_ptr.write_at(
+            offset_of!(VitrioPciCommonCfg, device_feature_select),
+            0 as u32,
+        );
+        let mut low: u32 =
+            common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, device_feature));
+        common_cfg_frame_ptr.write_at(
+            offset_of!(VitrioPciCommonCfg, device_feature_select),
+            1 as u32,
+        );
+        let mut high: u32 =
+            common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, device_feature));
+        let mut feature = (high as u64) << 32;
+        feature |= low as u64;
+        // let the device to negotiate Features
+        let driver_features = VirtioDevice::negotiate_features(feature, device_type);
+        debug!("support_features:{:x}", driver_features);
+        // write features back
+        low = driver_features as u32;
+        high = (driver_features >> 32) as u32;
+        common_cfg_frame_ptr.write_at(
+            offset_of!(VitrioPciCommonCfg, driver_feature_select),
+            0 as u32,
+        );
+        common_cfg_frame_ptr.write_at(offset_of!(VitrioPciCommonCfg, driver_feature), low);
+        common_cfg_frame_ptr.write_at(
+            offset_of!(VitrioPciCommonCfg, driver_feature_select),
+            1 as u32,
+        );
+        common_cfg_frame_ptr.write_at(offset_of!(VitrioPciCommonCfg, driver_feature), high);
+
+        // change to features ok status
         common_cfg_frame_ptr.write_at(
             offset_of!(VitrioPciCommonCfg, device_status),
-            DeviceStatus::FEATURES_OK.bits(),
+            (DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::FEATURES_OK).bits(),
         );
-        for i in 0..common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, num_queues)) as u16
-        {
-            queues.push(Arc::new(Mutex::new(
-                VirtQueue::new(
-                    &common_cfg_frame_ptr,
-                    i as usize,
-                    16,
-                    notify_base_address as usize,
-                    notify_off_multiplier,
-                    i,
-                )
-                .expect("create virtqueue failed"),
-            )));
-        }
+        let device = VirtioDevice::new(&virtio_info, bars, msix_vector_list).unwrap();
+
+        // change to driver ok status
         common_cfg_frame_ptr.write_at(
             offset_of!(VitrioPciCommonCfg, device_status),
-            DeviceStatus::DRIVER_OK.bits(),
+            (DeviceStatus::ACKNOWLEDGE
+                | DeviceStatus::DRIVER
+                | DeviceStatus::FEATURES_OK
+                | DeviceStatus::DRIVER_OK)
+                .bits(),
         );
         Self {
-            common_cfg: common_cfg_frame_ptr,
+            common_cfg: virtio_info.common_cfg_frame_ptr,
             device,
-            queues,
             msix,
         }
     }
 
-    pub fn get_queue(&self, queue_index: u16) -> MutexGuard<VirtQueue> {
-        self.queues
-            .get(queue_index as usize)
-            .expect("index out of range")
-            .lock()
-    }
-
-    /// register the queue interrupt functions, this function should call only once
-    pub fn register_queue_interrupt_functions<F>(&mut self, functions: &mut Vec<F>)
+    /// register all the interrupt functions except the config change, this function should call only once
+    pub fn register_interrupt_functions<F>(&mut self, function: &'static F)
     where
         F: Fn(&TrapFrame) + Send + Sync + 'static,
     {
-        let len = functions.len();
-        if len
-            != self
-                .common_cfg
-                .read_at(offset_of!(VitrioPciCommonCfg, num_queues)) as usize
-        {
-            panic!("the size of queue interrupt functions not equal to the number of queues, functions amount:{}, queues amount:{}",len,
-            self.common_cfg.read_at(offset_of!(VitrioPciCommonCfg,num_queues)));
-        }
-
-        functions.reverse();
-        for i in 0..len {
-            let function = functions.pop().unwrap();
+        for i in 0..self.msix.table_size as usize {
             let msix = self.msix.table.get_mut(i).unwrap();
             if !msix.irq_handle.is_empty() {
                 panic!("function `register_queue_interrupt_functions` called more than one time");
             }
             msix.irq_handle.on_active(function);
-        }
-    }
-
-    fn check_subset(smaller: u32, bigger: u32) -> bool {
-        let mut temp: u32 = 1;
-        for _ in 0..31 {
-            if (smaller & temp) > (bigger & temp) {
-                return false;
-            }
-            temp <<= 1;
-        }
-        if (smaller & temp) > (bigger & temp) {
-            false
-        } else {
-            true
         }
     }
 }

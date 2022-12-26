@@ -1,8 +1,75 @@
+pub mod device;
+
+use bitflags::bitflags;
 use jinux_pci::capability::vendor::virtio::CapabilityVirtioData;
 use jinux_pci::util::BAR;
 use jinux_util::frame_ptr::InFramePtr;
 
 pub const BLK_SIZE: usize = 512;
+
+bitflags! {
+    /// features for virtio block device
+    pub(crate) struct BLKFeatures : u64{
+        const SIZE_MAX      = 1 << 1;
+        const SEG_MAX       = 1 << 2;
+        const GEOMETRY      = 1 << 4;
+        const RO            = 1 << 5;
+        const BLK_SIZE      = 1 << 6;
+        const FLUSH         = 1 << 9;
+        const TOPOLOGY      = 1 << 10;
+        const CONFIG_WCE    = 1 << 11;
+        const DISCARD       = 1 << 13;
+        const WRITE_ZEROES  = 1 << 14;
+
+    }
+
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Pod)]
+pub struct BlkReq {
+    pub type_: ReqType,
+    pub reserved: u32,
+    pub sector: u64,
+}
+
+/// Response of a VirtIOBlk request.
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Pod)]
+pub struct BlkResp {
+    pub status: RespStatus,
+}
+
+impl Default for BlkResp {
+    fn default() -> Self {
+        BlkResp {
+            status: RespStatus::_NotReady,
+        }
+    }
+}
+
+#[repr(u32)]
+#[derive(Debug, Copy, Clone, Pod)]
+pub enum ReqType {
+    In = 0,
+    Out = 1,
+    Flush = 4,
+    Discard = 11,
+    WriteZeroes = 13,
+}
+
+#[repr(u8)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Pod)]
+pub enum RespStatus {
+    /// Ok.
+    Ok = 0,
+    /// IoErr.
+    IoErr = 1,
+    /// Unsupported yet.
+    Unsupported = 2,
+    /// Not ready.
+    _NotReady = 3,
+}
 
 #[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]

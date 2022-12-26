@@ -4,19 +4,18 @@
 #![test_runner(jinux_frame::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 use bootloader::{entry_point, BootInfo};
-use jinux_frame::timer::Timer;
 extern crate alloc;
 use alloc::sync::Arc;
 use core::panic::PanicInfo;
-use core::time::Duration;
 use jinux_frame::println;
 
-static mut TICK: usize = 0;
+static mut INPUT_VALUE: u8 = 0;
 
 entry_point!(kernel_test_main);
 
 fn kernel_test_main(boot_info: &'static mut BootInfo) -> ! {
     jinux_frame::init(boot_info);
+    jinux_std::driver::console::init();
     test_main();
     loop {}
 }
@@ -27,19 +26,20 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 #[test_case]
-fn test_timer() {
+fn test_input() {
     jinux_frame::enable_interrupts();
+    println!("please input value into console to pass this test");
+    jinux_std::driver::console::register_console_callback(Arc::new(input_callback));
     unsafe {
-        let timer = Timer::new(timer_callback).unwrap();
-        timer.set(Duration::from_secs(1));
-        while TICK < 5 {}
+        while INPUT_VALUE == 0 {
+            jinux_frame::hlt();
+        }
+        println!("input value:{}", INPUT_VALUE);
     }
 }
 
-pub fn timer_callback(timer: Arc<Timer>) {
+pub fn input_callback(input: u8) {
     unsafe {
-        TICK += 1;
-        println!("TICK:{}", TICK);
-        timer.set(Duration::from_secs(1));
+        INPUT_VALUE = input;
     }
 }

@@ -1,7 +1,8 @@
 //! Timer.
 
 use crate::{
-    device::{TimerCallback, TICK, TIMER_FREQ},
+    config::TIMER_FREQ,
+    driver::{TimerCallback, TICK},
     prelude::*,
 };
 use core::time::Duration;
@@ -62,17 +63,13 @@ impl Timer {
             }
             None => {}
         }
-        let tick_count = timeout.as_secs() * TIMER_FREQ
-            + if timeout.subsec_nanos() != 0 {
-                (timeout.subsec_nanos() as u64 - 1) / NANOS_DIVIDE + 1
-            } else {
-                0
-            };
+        let tick_count =
+            timeout.as_secs() * TIMER_FREQ + timeout.subsec_nanos() as u64 / NANOS_DIVIDE;
         unsafe {
             lock.start_tick = TICK;
             lock.timeout_tick = TICK + tick_count;
         }
-        lock.timer_callback = Some(crate::device::add_timeout_list(
+        lock.timer_callback = Some(crate::driver::add_timeout_list(
             tick_count,
             self.clone(),
             timer_callback,

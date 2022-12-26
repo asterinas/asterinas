@@ -1,5 +1,5 @@
 //! util for x86_64, it will rename to x86_64 when depend x86_64 isn't necessary
-use core::arch::asm;
+use core::arch::{asm, x86_64::CpuidResult};
 
 use x86_64::registers::{control::Cr4Flags, segmentation::Segment64, xcontrol::XCr0Flags};
 
@@ -58,6 +58,18 @@ pub fn out16(port: u16, val: u16) {
 pub fn out32(port: u16, val: u32) {
     unsafe {
         asm!("out dx, eax", in("dx") port, in("eax") val, options(nomem, nostack, preserves_flags));
+    }
+}
+
+#[inline(always)]
+pub unsafe fn cpuid(leaf: u32) -> CpuidResult {
+    core::arch::x86_64::__cpuid(leaf)
+}
+
+#[inline(always)]
+pub fn hlt() {
+    unsafe {
+        asm!("hlt", options(nomem, nostack));
     }
 }
 
