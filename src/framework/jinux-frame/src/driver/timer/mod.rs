@@ -1,27 +1,16 @@
-use crate::cell::Cell;
-use crate::x86_64_util::out8;
-use crate::{IrqAllocateHandle, TrapFrame};
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use alloc::{boxed::Box, collections::BinaryHeap};
+pub mod apic;
+pub mod hpet;
+pub mod pit;
+
 use core::any::Any;
+
+use alloc::{boxed::Box, collections::BinaryHeap, sync::Arc, vec::Vec};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
-const MASTER_CMD: u16 = 0x20;
-const MASTER_DATA: u16 = MASTER_CMD + 1;
-const SLAVE_CMD: u16 = 0xA0;
-const SLAVE_DATA: u16 = SLAVE_CMD + 1;
+use crate::{cell::Cell, IrqAllocateHandle, TrapFrame};
 
-const TIMER_RATE: u32 = 1193182;
-/// This value represent the base timer frequency in Hz
-pub const TIMER_FREQ: u64 = 100;
-const TIMER_PERIOD_IO_PORT: u16 = 0x40;
-const TIMER_MODE_IO_PORT: u16 = 0x43;
-const TIMER_SQUARE_WAVE: u8 = 0x36;
-
-const TIMER_IRQ_NUM: u8 = 32;
-
+pub(crate) const TIMER_IRQ_NUM: u8 = 32;
 pub static mut TICK: u64 = 0;
 
 lazy_static! {
@@ -31,49 +20,16 @@ lazy_static! {
 }
 
 pub fn init() {
-    // Start initialization
-    out8(MASTER_CMD, 0x11);
-    out8(SLAVE_CMD, 0x11);
+    if super::apic::has_apic() {
+        apic::init();
+    } else {
+        pit::init();
+    }
 
-    // Set offsets
-    // map master PIC vector 0x00~0x07 to 0x20~0x27 IRQ number
-    out8(MASTER_DATA, 0x20);
-    // map slave PIC vector 0x00~0x07 to 0x28~0x2f IRQ number
-    out8(SLAVE_DATA, 0x28);
-
-    // Set up cascade, there is slave at IRQ2
-    out8(MASTER_DATA, 4);
-    out8(SLAVE_DATA, 2);
-
-    // Set up interrupt mode (1 is 8086/88 mode, 2 is auto EOI)
-    out8(MASTER_DATA, 1);
-    out8(SLAVE_DATA, 1);
-
-    // Unmask timer interrupt
-    out8(MASTER_DATA, 0xFE);
-    out8(SLAVE_DATA, 0xFF);
-
-    // Ack remaining interrupts
-    out8(MASTER_CMD, 0x20);
-    out8(SLAVE_CMD, 0x20);
-
-    // Initialize timer.
-    let cycle = TIMER_RATE / TIMER_FREQ as u32; // 1ms per interrupt.
-    out8(TIMER_MODE_IO_PORT, TIMER_SQUARE_WAVE);
-    out8(TIMER_PERIOD_IO_PORT, (cycle & 0xFF) as _);
-    out8(TIMER_PERIOD_IO_PORT, (cycle >> 8) as _);
     TIMER_IRQ.lock().on_active(timer_callback);
 }
 
-#[inline(always)]
-fn ack() {
-    out8(MASTER_CMD, 0x20);
-}
-
 fn timer_callback(trap_frame: &TrapFrame) {
-    // FIXME: disable and enable interupt will cause infinity loop
-    // x86_64_util::disable_interrupts();
-    ack();
     let current_ms;
     unsafe {
         current_ms = TICK;
@@ -82,18 +38,16 @@ fn timer_callback(trap_frame: &TrapFrame) {
     let timeout_list = TIMEOUT_LIST.get();
     let mut callbacks: Vec<Arc<TimerCallback>> = Vec::new();
     while let Some(t) = timeout_list.peek() {
-        if t.expire_ms <= current_ms {
+        if t.expire_ms <= current_ms && t.is_enable() {
             callbacks.push(timeout_list.pop().unwrap());
         } else {
             break;
         }
     }
     for callback in callbacks {
-        if callback.is_enable() {
-            callback.callback.call((&callback,));
-        }
+        callback.callback.call((&callback,));
     }
-    // x86_64_util::enable_interrupts();
+    // crate::interrupt_ack();
 }
 
 lazy_static! {

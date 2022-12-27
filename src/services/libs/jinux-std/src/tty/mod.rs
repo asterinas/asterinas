@@ -60,8 +60,6 @@ impl File for Tty {
             if let Some(byte) = receive_char() {
                 self.ldisc.lock().push_char(byte);
                 return IoEvents::POLLIN;
-            } else {
-                return IoEvents::empty();
             }
         }
     }

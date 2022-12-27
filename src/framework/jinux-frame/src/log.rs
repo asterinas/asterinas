@@ -23,15 +23,7 @@ pub fn log_print(args: Arguments) {
 #[cfg(feature = "serial_print")]
 #[doc(hidden)]
 pub fn log_print(args: Arguments) {
-    use crate::device::serial::SERIAL;
-    use core::fmt::Write;
-    use x86_64::instructions::interrupts;
-    interrupts::without_interrupts(|| {
-        SERIAL
-            .lock()
-            .write_fmt(args)
-            .expect("Printing to serial failed");
-    });
+    crate::device::console::print(args);
 }
 
 /// This macro should not be directly called.

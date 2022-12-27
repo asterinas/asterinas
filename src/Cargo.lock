@@ -3,6 +3,17 @@
 version = 3
 
 [[package]]
+name = "acpi"
+version = "4.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "654f48ab3178632ea535be1765073b990895cb62f70a7e5671975d7150c26d15"
+dependencies = [
+ "bit_field",
+ "log",
+ "rsdp",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -57,6 +68,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfg-if"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
+
+[[package]]
 name = "either"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -100,6 +117,7 @@ dependencies = [
 name = "jinux-frame"
 version = "0.1.0"
 dependencies = [
+ "acpi",
  "bitflags",
  "bootloader",
  "buddy_system_allocator",
@@ -153,6 +171,7 @@ dependencies = [
  "spin 0.9.4",
  "typeflags",
  "typeflags-util",
+ "virtio-input-decoder",
  "vte",
  "xmas-elf",
 ]
@@ -229,6 +248,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "log"
+version = "0.4.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "pod"
 version = "0.1.0"
 
@@ -264,6 +292,15 @@ name = "ringbuffer"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "310a2514cb46bb500a2f2ad70c79c51c5a475cc23faa245d2c675faabe889370"
+
+[[package]]
+name = "rsdp"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66d3add2fc55ef37511bcf81a08ee7a09eff07b23aae38b06a29024a38c604b1"
+dependencies = [
+ "log",
+]
 
 [[package]]
 name = "runner-utils"
@@ -384,6 +421,12 @@ name = "utf8parse"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
+
+[[package]]
+name = "virtio-input-decoder"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7292fc7f4de1afc0ded2e9b6e6c557d9cd594fca27a2217eb97a89d34cf5c6f5"
 
 [[package]]
 name = "volatile"

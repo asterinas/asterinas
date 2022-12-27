@@ -2,6 +2,7 @@
 
 use crate::debug;
 use crate::x86_64_util::{rdfsbase, wrfsbase};
+use x86_64::registers::rflags::RFlags;
 
 use crate::cpu::CpuContext;
 use crate::prelude::*;
@@ -116,6 +117,10 @@ impl<'a> UserMode<'a> {
         }
         if !self.executed {
             *self.current.syscall_frame() = self.user_space.cpu_ctx.into();
+            if self.context.gp_regs.rflag == 0 {
+                self.context.gp_regs.rflag = (RFlags::INTERRUPT_FLAG | RFlags::ID).bits();
+            }
+            self.current.syscall_frame().caller.r11 = self.context.gp_regs.rflag;
             self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip;
             // write fsbase
             wrfsbase(self.user_space.cpu_ctx.fs_base);
@@ -129,6 +134,8 @@ impl<'a> UserMode<'a> {
                 *self.current.trap_frame() = self.context.into();
             } else {
                 *self.current.syscall_frame() = self.context.into();
+                self.context.gp_regs.rflag |= RFlags::INTERRUPT_FLAG.bits();
+                self.current.syscall_frame().caller.r11 = self.context.gp_regs.rflag;
                 self.current.syscall_frame().caller.rcx = self.context.gp_regs.rip;
             }
 

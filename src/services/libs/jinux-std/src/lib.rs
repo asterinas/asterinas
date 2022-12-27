@@ -14,6 +14,7 @@
 // Since this is an incomplete feature, use this feature is unsafe.
 // We should find a proper method to replace this feature with min_specialization, which is a sound feature.
 #![feature(specialization)]
+#![feature(fn_traits)]
 
 use crate::{
     prelude::*,
@@ -47,8 +48,10 @@ pub mod vm;
 extern crate pod_derive;
 
 pub fn init() {
+    jinux_frame::disable_interrupts();
     driver::init();
     process::fifo_scheduler::init();
+    jinux_frame::enable_interrupts();
 }
 
 pub fn init_process() {

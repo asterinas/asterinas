@@ -4,12 +4,18 @@ pub mod address;
 mod frame_allocator;
 mod heap_allocator;
 mod memory_set;
-mod page_table;
+pub(crate) mod page_table;
+
+use core::sync::atomic::AtomicUsize;
 
 use address::PhysAddr;
 use address::VirtAddr;
 
+use crate::x86_64_util;
+
 pub use self::{frame_allocator::*, memory_set::*, page_table::*};
+
+pub(crate) static ORIGINAL_CR3: AtomicUsize = AtomicUsize::new(0);
 
 bitflags::bitflags! {
   /// Possible flags for a page table entry.
@@ -35,4 +41,8 @@ pub(crate) fn init(start: u64, size: u64) {
     heap_allocator::init();
     frame_allocator::init(start as usize, size as usize);
     page_table::init();
+    ORIGINAL_CR3.store(
+        x86_64_util::get_cr3_raw(),
+        core::sync::atomic::Ordering::Relaxed,
+    )
 }

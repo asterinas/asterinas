@@ -7,7 +7,6 @@ pub mod msix;
 pub mod util;
 extern crate alloc;
 use jinux_frame::info;
-#[macro_use]
 extern crate pod_derive;
 
 use alloc::{sync::Arc, vec::Vec};
@@ -39,7 +38,7 @@ pub fn init() {
     let mut devices = PCI_DEVICES.lock();
     for dev in util::scan_bus(CSpaceAccessMethod::IO) {
         info!(
-            "pci: {:02x}:{:02x}.{} {:#x} {:#x} ({} {}) irq: {}:{:?}",
+            "pci: {:02x}:{:02x}.{} {:#x} {:#x} ({} {}) command: {:?} status: {:?} irq: {}:{:?}",
             dev.loc.bus,
             dev.loc.device,
             dev.loc.function,
@@ -47,6 +46,8 @@ pub fn init() {
             dev.id.device_id,
             dev.id.class,
             dev.id.subclass,
+            dev.command,
+            dev.status,
             dev.pic_interrupt_line,
             dev.interrupt_pin
         );
