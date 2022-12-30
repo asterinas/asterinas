@@ -15,7 +15,7 @@ pub(crate) use core::ffi::CStr;
 pub(crate) use jinux_frame::config::PAGE_SIZE;
 pub(crate) use jinux_frame::vm::Vaddr;
 pub(crate) use jinux_frame::{debug, error, info, print, println, trace, warn};
-pub(crate) use spin::Mutex;
+pub(crate) use spin::{Mutex, RwLock};
 
 #[macro_export]
 macro_rules! current {

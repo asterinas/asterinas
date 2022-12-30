@@ -47,3 +47,5 @@ typeflags! {
 
 /// The full set of access rights.
 pub type Full = TRights![Dup, Read, Write, Exec, Signal];
+pub type ReadOp = TRights![Read];
+pub type WriteOp = TRights![Write];

@@ -1,13 +1,14 @@
 use crate::prelude::*;
 
 use super::{
-    file::{File, FileDescripter},
+    file::FileDescripter,
+    file_handle::FileHandle,
     stdio::{Stderr, Stdin, Stdout, FD_STDERR, FD_STDIN, FD_STDOUT},
 };
 
 #[derive(Clone)]
 pub struct FileTable {
-    table: BTreeMap<FileDescripter, Arc<dyn File>>,
+    table: BTreeMap<FileDescripter, FileHandle>,
 }
 
 impl FileTable {
@@ -22,9 +23,9 @@ impl FileTable {
         let stdin = Stdin::new_with_default_console();
         let stdout = Stdout::new_with_default_console();
         let stderr = Stderr::new_with_default_console();
-        table.insert(FD_STDIN, Arc::new(stdin) as Arc<dyn File>);
-        table.insert(FD_STDOUT, Arc::new(stdout) as Arc<dyn File>);
-        table.insert(FD_STDERR, Arc::new(stderr) as Arc<dyn File>);
+        table.insert(FD_STDIN, FileHandle::new_file(Arc::new(stdin)));
+        table.insert(FD_STDOUT, FileHandle::new_file(Arc::new(stdout)));
+        table.insert(FD_STDERR, FileHandle::new_file(Arc::new(stderr)));
         Self { table }
     }
 
@@ -50,7 +51,7 @@ impl FileTable {
         self.table.iter().map(|(fd, _)| fd.clone()).max().unwrap()
     }
 
-    pub fn insert(&mut self, item: Arc<dyn File>) -> FileDescripter {
+    pub fn insert(&mut self, item: FileHandle) -> FileDescripter {
         let fd = self.max_fd() + 1;
         self.table.insert(fd, item);
         fd
@@ -60,7 +61,7 @@ impl FileTable {
         self.table.remove(&fd);
     }
 
-    pub fn get_file(&self, fd: FileDescripter) -> Result<&Arc<dyn File>> {
+    pub fn get_file(&self, fd: FileDescripter) -> Result<&FileHandle> {
         self.table
             .get(&fd)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))

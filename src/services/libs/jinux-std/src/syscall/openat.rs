@@ -1,5 +1,6 @@
 use crate::fs::file::File;
 use crate::fs::file::FileDescripter;
+use crate::fs::file_handle::FileHandle;
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::syscall::constants::MAX_FILENAME_LEN;
@@ -41,7 +42,7 @@ pub fn sys_openat(
     }
 
     if dirfd == AT_FDCWD && pathname == CString::new("/dev/tty")? {
-        let tty_file = get_console().clone() as Arc<dyn File>;
+        let tty_file = FileHandle::new_file(get_console().clone() as Arc<dyn File>);
         let current = current!();
         let mut file_table = current.file_table().lock();
         let fd = file_table.insert(tty_file);

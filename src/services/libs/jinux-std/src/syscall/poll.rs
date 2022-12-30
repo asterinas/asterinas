@@ -39,7 +39,7 @@ pub fn sys_poll(fds: Vaddr, nfds: c_nfds, timeout: i32) -> Result<SyscallReturn>
             match file {
                 Err(_) => return Some(Err(Error::new(Errno::EBADF))),
                 Ok(file) => {
-                    let file_events = file.poll();
+                    let file_events = file.as_file().unwrap().poll();
                     let polled_events = pollfd.events.intersection(file_events);
                     if !polled_events.is_empty() {
                         ready_files += 1;
