@@ -1,0 +1,137 @@
+use alloc::string::String;
+use alloc::sync::Arc;
+use bitflags::bitflags;
+use core::any::Any;
+
+use super::{DirentWriterContext, FileSystem};
+use crate::fs::ioctl::IoctlCmd;
+use crate::prelude::*;
+
+#[repr(u32)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum InodeType {
+    File = 1,
+    Dir = 2,
+    SymLink = 3,
+    CharDevice = 4,
+    BlockDevice = 5,
+}
+
+bitflags! {
+    pub struct InodeMode: u16 {
+        /// set-user-ID
+        const S_ISUID = 0o4000;
+        /// set-group-ID
+        const S_ISGID = 0o2000;
+        /// sticky bit
+        const S_ISVTX = 0o1000;
+        /// read by owner
+        const S_IRUSR = 0o0400;
+        /// write by owner
+        const S_IWUSR = 0o0200;
+        /// execute/search by owner
+        const S_IXUSR = 0o0100;
+        /// read by group
+        const S_IRGRP = 0o0040;
+        /// write by group
+        const S_IWGRP = 0o0020;
+        /// execute/search by group
+        const S_IXGRP = 0o0010;
+        /// read by others
+        const S_IROTH = 0o0004;
+        /// write by others
+        const S_IWOTH = 0o0002;
+        /// execute/search by others
+        const S_IXOTH = 0o0001;
+    }
+}
+
+impl InodeMode {
+    pub fn is_readable(&self) -> bool {
+        self.contains(Self::S_IRUSR)
+    }
+
+    pub fn is_writable(&self) -> bool {
+        self.contains(Self::S_IWUSR)
+    }
+
+    pub fn is_executable(&self) -> bool {
+        self.contains(Self::S_IXUSR)
+    }
+
+    pub fn has_sticky_bit(&self) -> bool {
+        self.contains(Self::S_ISVTX)
+    }
+
+    pub fn has_set_uid(&self) -> bool {
+        self.contains(Self::S_ISUID)
+    }
+
+    pub fn has_set_gid(&self) -> bool {
+        self.contains(Self::S_ISGID)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Metadata {
+    pub dev: usize,
+    pub ino: usize,
+    pub size: usize,
+    pub blk_size: usize,
+    pub blocks: usize,
+    pub atime: Timespec,
+    pub mtime: Timespec,
+    pub ctime: Timespec,
+    pub type_: InodeType,
+    pub mode: InodeMode,
+    pub nlinks: usize,
+    pub uid: usize,
+    pub gid: usize,
+    pub rdev: usize,
+}
+
+#[derive(Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct Timespec {
+    pub sec: i64,
+    pub nsec: i64,
+}
+
+pub trait Inode: Any + Sync + Send {
+    fn resize(&self, new_size: usize) -> Result<()>;
+
+    fn metadata(&self) -> Metadata;
+
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize>;
+
+    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize>;
+
+    fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
+
+    fn readdir(&self, ctx: &mut DirentWriterContext) -> Result<usize>;
+
+    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
+
+    fn unlink(&self, name: &str) -> Result<()>;
+
+    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>>;
+
+    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()>;
+
+    fn read_link(&self) -> Result<String>;
+
+    fn write_link(&self, target: &str) -> Result<()>;
+
+    fn ioctl(&self, cmd: &IoctlCmd) -> Result<()>;
+
+    fn sync(&self) -> Result<()>;
+
+    fn fs(&self) -> Arc<dyn FileSystem>;
+
+    fn as_any_ref(&self) -> &dyn Any;
+}
+
+impl dyn Inode {
+    pub fn downcast_ref<T: Inode>(&self) -> Option<&T> {
+        self.as_any_ref().downcast_ref::<T>()
+    }
+}
