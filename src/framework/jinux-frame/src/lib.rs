@@ -29,6 +29,7 @@ pub mod user;
 mod util;
 pub mod vm;
 pub(crate) mod x86_64_util;
+pub mod time;
 
 use core::{mem, panic::PanicInfo};
 pub use driver::ack as apic_ack;

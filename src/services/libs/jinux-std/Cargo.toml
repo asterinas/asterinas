@@ -16,6 +16,7 @@ typeflags-util = {path="../typeflags-util"}
 jinux-rights-proc = {path="../jinux-rights-proc"}
 jinux-util = {path="../jinux-util"}
 virtio-input-decoder = "0.1.4"
+ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 
 # parse elf file
 xmas-elf = "0.8.0"
