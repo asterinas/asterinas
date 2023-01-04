@@ -265,14 +265,14 @@ impl Vmo_ {
             return_errno_with_message!(Errno::EINVAL, "read range exceeds vmo size");
         }
         let read_range = offset..(offset + read_len);
-        let frames = self.ensure_all_pages_exist(read_range, false)?;
+        let frames = self.ensure_all_pages_exist(&read_range, false)?;
         let read_offset = offset % PAGE_SIZE;
         Ok(frames.read_bytes(read_offset, buf)?)
     }
 
     /// Ensure all pages inside range are backed up vm frames, returns the frames.
-    fn ensure_all_pages_exist(&self, range: Range<usize>, write_page: bool) -> Result<VmFrameVec> {
-        let page_idx_range = get_page_idx_range(&range);
+    fn ensure_all_pages_exist(&self, range: &Range<usize>, write_page: bool) -> Result<VmFrameVec> {
+        let page_idx_range = get_page_idx_range(range);
         let mut frames = VmFrameVec::empty();
         for page_idx in page_idx_range {
             let mut page_frame = self.get_backup_frame(page_idx, write_page, true)?;
@@ -382,9 +382,15 @@ impl Vmo_ {
         }
 
         let write_range = offset..(offset + write_len);
-        let frames = self.ensure_all_pages_exist(write_range, true)?;
+        let frames = self.ensure_all_pages_exist(&write_range, true)?;
         let write_offset = offset % PAGE_SIZE;
         frames.write_bytes(write_offset, buf)?;
+        if let Some(pager) = &self.inner.lock().pager {
+            let page_idx_range = get_page_idx_range(&write_range);
+            for page_idx in page_idx_range {
+                pager.update_page(page_idx * PAGE_SIZE)?;
+            }
+        }
         Ok(())
     }
 

@@ -9,3 +9,4 @@ pub mod poll;
 pub mod stat;
 pub mod stdio;
 pub mod utils;
+pub mod vfs_inode;

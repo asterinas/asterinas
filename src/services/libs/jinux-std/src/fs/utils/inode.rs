@@ -2,6 +2,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use bitflags::bitflags;
 use core::any::Any;
+use jinux_frame::vm::VmFrame;
 
 use super::{DirentWriterContext, FileSystem};
 use crate::fs::ioctl::IoctlCmd;
@@ -100,6 +101,10 @@ pub trait Inode: Any + Sync + Send {
     fn resize(&self, new_size: usize) -> Result<()>;
 
     fn metadata(&self) -> Metadata;
+
+    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
+
+    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize>;
 

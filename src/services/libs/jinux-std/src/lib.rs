@@ -32,6 +32,7 @@ use crate::{
 };
 
 extern crate alloc;
+extern crate lru;
 
 pub mod driver;
 pub mod error;

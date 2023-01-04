@@ -6,11 +6,11 @@ use super::*;
 
 impl InodeHandle<Rights> {
     pub fn new(
-        inode: Arc<dyn Inode>,
+        inode: VfsInode,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
-        let inode_info = inode.metadata();
+        let inode_info = inode.raw_inode().metadata();
         if access_mode.is_readable() && !inode_info.mode.is_readable() {
             return_errno_with_message!(Errno::EACCES, "File is not readable");
         }
