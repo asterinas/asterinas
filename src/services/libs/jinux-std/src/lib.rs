@@ -15,6 +15,7 @@
 // We should find a proper method to replace this feature with min_specialization, which is a sound feature.
 #![feature(specialization)]
 #![feature(fn_traits)]
+#![feature(linked_list_remove)]
 
 use crate::{
     prelude::*,

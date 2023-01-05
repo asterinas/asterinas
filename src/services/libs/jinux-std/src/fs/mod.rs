@@ -6,6 +6,7 @@ pub mod file_table;
 pub mod inode_handle;
 pub mod ioctl;
 pub mod poll;
+pub mod ramfs;
 pub mod stat;
 pub mod stdio;
 pub mod utils;

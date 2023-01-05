@@ -91,6 +91,65 @@ pub struct Metadata {
     pub rdev: usize,
 }
 
+impl Metadata {
+    pub fn new_dir(ino: usize, mode: InodeMode) -> Self {
+        Self {
+            dev: 0,
+            ino,
+            size: 2,
+            blk_size: 0,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: InodeType::Dir,
+            mode,
+            nlinks: 2,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
+    }
+
+    pub fn new_file(ino: usize, mode: InodeMode) -> Self {
+        Self {
+            dev: 0,
+            ino,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: InodeType::File,
+            mode,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
+    }
+
+    pub fn new_synlink(ino: usize, mode: InodeMode) -> Self {
+        Self {
+            dev: 0,
+            ino,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: InodeType::SymLink,
+            mode,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
+    }
+}
+
 #[derive(Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Timespec {
     pub sec: i64,
