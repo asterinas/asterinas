@@ -67,4 +67,14 @@ impl Stat {
         stat.st_blksize = 4096;
         stat
     }
+
+    // Fake stat for /bin/stty
+    pub fn fake_stty_stat() -> Self {
+        let mut stat = Stat::default();
+        stat.st_mode = S_IFREG | 0o755;
+        stat.st_nlink = 1;
+        stat.st_blksize = 4096;
+        stat.st_size = 84344;
+        stat
+    }
 }

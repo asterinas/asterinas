@@ -23,7 +23,7 @@ pub fn log_print(args: Arguments) {
 #[cfg(feature = "serial_print")]
 #[doc(hidden)]
 pub fn log_print(args: Arguments) {
-    crate::device::console::print(args);
+    crate::device::serial::print(args);
 }
 
 /// This macro should not be directly called.

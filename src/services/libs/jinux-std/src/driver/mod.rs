@@ -1,7 +1,7 @@
-pub mod console;
 pub mod pci;
+pub mod tty;
 
 pub fn init() {
     pci::init();
-    console::init();
+    tty::init();
 }

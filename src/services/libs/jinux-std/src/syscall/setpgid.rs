@@ -27,6 +27,11 @@ pub fn sys_setpgid(pid: Pid, pgid: Pgid) -> Result<SyscallReturn> {
         return_errno_with_message!(Errno::EPERM, "process group must exist");
     }
 
+    // if the process already belongs to the process group
+    if current.pgid() == pgid {
+        return Ok(SyscallReturn::Return(0));
+    }
+
     if let Some(new_process_group) = process_table::pgid_to_process_group(pgid) {
         new_process_group.add_process(current.clone());
         current.set_process_group(Arc::downgrade(&new_process_group));

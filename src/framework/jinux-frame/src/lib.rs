@@ -23,13 +23,13 @@ pub(crate) mod mm;
 pub mod prelude;
 pub mod sync;
 pub mod task;
+pub mod time;
 pub mod timer;
 pub mod trap;
 pub mod user;
 mod util;
 pub mod vm;
 pub(crate) mod x86_64_util;
-pub mod time;
 
 use core::{mem, panic::PanicInfo};
 pub use driver::ack as apic_ack;
@@ -45,7 +45,7 @@ use bootloader::{
     boot_info::{FrameBuffer, MemoryRegionKind},
     BootInfo,
 };
-pub use device::console::receive_char;
+pub use device::serial::receive_char;
 pub use mm::address::{align_down, align_up, is_aligned, virt_to_phys};
 pub use mm::page_table::translate_not_offset_virtual_address;
 pub use trap::{allocate_irq, IrqAllocateHandle, TrapFrame};

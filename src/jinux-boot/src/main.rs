@@ -145,4 +145,3 @@ fn run_test_command(mut cmd: Command) -> anyhow::Result<ExitStatus> {
     let status = runner_utils::run_with_timeout(&mut cmd, Duration::from_secs(TEST_TIMEOUT_SECS))?;
     Ok(status)
 }
-

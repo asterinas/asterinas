@@ -15,7 +15,7 @@ use crate::prelude::*;
 use crate::rights::Full;
 use crate::thread::kernel_thread::KernelThreadExt;
 use crate::thread::{thread_table, Thread};
-use crate::tty::get_console;
+use crate::tty::get_n_tty;
 use crate::vm::vmar::Vmar;
 use jinux_frame::sync::WaitQueue;
 use jinux_frame::task::Task;
@@ -149,7 +149,9 @@ impl Process {
         let process = Process::create_user_process(filename, elf_file_content, argv, envp);
         // FIXME: How to determine the fg process group?
         let pgid = process.pgid();
-        get_console().set_fg(pgid);
+        // FIXME: tty should be a parameter?
+        let tty = get_n_tty();
+        tty.set_fg(pgid);
         process.run();
         process
     }

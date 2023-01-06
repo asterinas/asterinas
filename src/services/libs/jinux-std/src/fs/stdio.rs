@@ -1,6 +1,6 @@
 use super::events::IoEvents;
 use crate::prelude::*;
-use crate::tty::{get_console, Tty};
+use crate::tty::{get_n_tty, Tty};
 
 use super::file::{File, FileDescripter};
 
@@ -10,23 +10,19 @@ pub const FD_STDERR: FileDescripter = 2;
 
 pub struct Stdin {
     console: Option<Arc<Tty>>,
-    bind_to_console: bool,
 }
 
 pub struct Stdout {
     console: Option<Arc<Tty>>,
-    bind_to_console: bool,
 }
 
 pub struct Stderr {
     console: Option<Arc<Tty>>,
-    bind_to_console: bool,
 }
 
 impl File for Stdin {
     fn poll(&self) -> IoEvents {
-        if self.bind_to_console {
-            let console = self.console.as_ref().unwrap();
+        if let Some(console) = self.console.as_ref() {
             console.poll()
         } else {
             todo!()
@@ -34,8 +30,7 @@ impl File for Stdin {
     }
 
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        if self.bind_to_console {
-            let console = self.console.as_ref().unwrap();
+        if let Some(console) = self.console.as_ref() {
             console.read(buf)
         } else {
             todo!()
@@ -43,8 +38,7 @@ impl File for Stdin {
     }
 
     fn ioctl(&self, cmd: super::ioctl::IoctlCmd, arg: usize) -> Result<i32> {
-        if self.bind_to_console {
-            let console = self.console.as_ref().unwrap();
+        if let Some(console) = self.console.as_ref() {
             console.ioctl(cmd, arg)
         } else {
             todo!()
@@ -53,8 +47,7 @@ impl File for Stdin {
 }
 impl File for Stdout {
     fn ioctl(&self, cmd: super::ioctl::IoctlCmd, arg: usize) -> Result<i32> {
-        if self.bind_to_console {
-            let console = self.console.as_ref().unwrap();
+        if let Some(console) = self.console.as_ref() {
             console.ioctl(cmd, arg)
         } else {
             todo!()
@@ -62,8 +55,7 @@ impl File for Stdout {
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        if self.bind_to_console {
-            let console = self.console.as_ref().unwrap();
+        if let Some(console) = self.console.as_ref() {
             console.write(buf)
         } else {
             todo!()
@@ -73,8 +65,7 @@ impl File for Stdout {
 
 impl File for Stderr {
     fn ioctl(&self, cmd: super::ioctl::IoctlCmd, arg: usize) -> Result<i32> {
-        if self.bind_to_console {
-            let console = self.console.as_ref().unwrap();
+        if let Some(console) = self.console.as_ref() {
             console.ioctl(cmd, arg)
         } else {
             todo!()
@@ -82,8 +73,7 @@ impl File for Stderr {
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        if self.bind_to_console {
-            let console = self.console.as_ref().unwrap();
+        if let Some(console) = self.console.as_ref() {
             console.write(buf)
         } else {
             todo!()
@@ -95,10 +85,9 @@ impl Stdin {
     /// FIXME: console should be file under devfs.
     /// reimplement the function when devfs is enabled.
     pub fn new_with_default_console() -> Self {
-        let console = get_console();
+        let console = get_n_tty();
         Self {
             console: Some(console.clone()),
-            bind_to_console: true,
         }
     }
 }
@@ -107,10 +96,9 @@ impl Stdout {
     /// FIXME: console should be file under devfs.
     /// reimplement the function when devfs is enabled.
     pub fn new_with_default_console() -> Self {
-        let console = get_console();
+        let console = get_n_tty();
         Self {
             console: Some(console.clone()),
-            bind_to_console: true,
         }
     }
 }
@@ -119,10 +107,9 @@ impl Stderr {
     /// FIXME: console should be file under devfs.
     /// reimplement the function when devfs is enabled.
     pub fn new_with_default_console() -> Self {
-        let console = get_console();
+        let console = get_n_tty();
         Self {
             console: Some(console.clone()),
-            bind_to_console: true,
         }
     }
 }

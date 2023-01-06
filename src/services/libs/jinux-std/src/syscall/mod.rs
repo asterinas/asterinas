@@ -44,6 +44,7 @@ use crate::syscall::sched_yield::sys_sched_yield;
 use crate::syscall::set_robust_list::sys_set_robust_list;
 use crate::syscall::set_tid_address::sys_set_tid_address;
 use crate::syscall::setpgid::sys_setpgid;
+use crate::syscall::stat::sys_stat;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
 use crate::syscall::wait4::sys_wait4;
@@ -96,6 +97,7 @@ mod sched_yield;
 mod set_robust_list;
 mod set_tid_address;
 mod setpgid;
+mod stat;
 mod tgkill;
 mod uname;
 mod wait4;
@@ -137,6 +139,7 @@ define_syscall_nums!(
     SYS_READ = 0,
     SYS_WRITE = 1,
     SYS_CLOSE = 3,
+    SYS_STAT = 4,
     SYS_FSTAT = 5,
     SYS_LSTAT = 6,
     SYS_POLL = 7,
@@ -244,6 +247,7 @@ pub fn syscall_dispatch(
         SYS_READ => syscall_handler!(3, sys_read, args),
         SYS_WRITE => syscall_handler!(3, sys_write, args),
         SYS_CLOSE => syscall_handler!(1, sys_close, args),
+        SYS_STAT => syscall_handler!(2, sys_stat, args),
         SYS_FSTAT => syscall_handler!(2, sys_fstat, args),
         SYS_LSTAT => syscall_handler!(2, sys_lstat, args),
         SYS_POLL => syscall_handler!(3, sys_poll, args),
@@ -290,7 +294,10 @@ pub fn syscall_dispatch(
         SYS_OPENAT => syscall_handler!(4, sys_openat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
-        _ => panic!("Unsupported syscall number: {}", syscall_number),
+        _ => {
+            error!("Unimplemented syscall number: {}", syscall_number);
+            return_errno_with_message!(Errno::ENOSYS, "Syscall was unimplemented");
+        }
     }
 }
 
