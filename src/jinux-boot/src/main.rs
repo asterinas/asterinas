@@ -16,7 +16,7 @@ const COMMON_ARGS: &[&str] = &[
     "-device",
     "virtio-keyboard-pci",
     "-serial",
-    "stdio",
+    "mon:stdio",
     "-display",
     "none",
 ];

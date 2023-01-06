@@ -271,7 +271,7 @@ pub fn syscall_dispatch(
         SYS_TGKILL => syscall_handler!(3, sys_tgkill, args),
         SYS_WAITID => syscall_handler!(5, sys_waitid, args),
         SYS_OPENAT => syscall_handler!(4, sys_openat, args),
-        _ => panic!("Unsupported syscall number: {}", syscall_number),
+        _ => panic!("Unsupported syscall number: {}, args:{:x?}", syscall_number,args),
     }
 }
 

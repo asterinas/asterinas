@@ -1,6 +1,6 @@
-use jinux_frame::receive_char;
 
 use self::line_discipline::LineDiscipline;
+use crate::driver::console::receive_console_char;
 use crate::fs::events::IoEvents;
 use crate::fs::ioctl::IoctlCmd;
 use crate::process::Pgid;
@@ -55,13 +55,10 @@ impl File for Tty {
         if !self.ldisc.lock().is_empty() {
             return IoEvents::POLLIN;
         }
-        loop {
-            // receive keyboard input
-            if let Some(byte) = receive_char() {
-                self.ldisc.lock().push_char(byte);
-                return IoEvents::POLLIN;
-            }
-        }
+        // receive keyboard input
+        let byte = receive_console_char();
+        self.ldisc.lock().push_char(byte);
+        return IoEvents::POLLIN;
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

@@ -7,6 +7,7 @@ pub mod apic;
 pub mod ioapic;
 pub mod pic;
 pub mod timer;
+pub mod rtc;
 
 pub use apic::ack;
 pub use timer::TimerCallback;
@@ -27,4 +28,5 @@ pub(crate) fn init(rsdp: Option<u64>) {
         }
     }
     pic::init();
+    rtc::init();
 }
