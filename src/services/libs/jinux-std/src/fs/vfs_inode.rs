@@ -4,6 +4,7 @@ use super::utils::{Inode, PageCacheManager};
 use crate::rights::Rights;
 use crate::vm::vmo::{Vmo, VmoFlags, VmoOptions};
 
+#[derive(Clone)]
 pub struct VfsInode {
     raw_inode: Arc<dyn Inode>,
     pages: Vmo,

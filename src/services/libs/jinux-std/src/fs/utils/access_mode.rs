@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::rights::Rights;
 
 #[allow(non_camel_case_types)]
@@ -25,6 +26,21 @@ impl AccessMode {
             AccessMode::O_WRONLY | AccessMode::O_RDWR => true,
             _ => false,
         }
+    }
+}
+
+impl AccessMode {
+    pub fn from_u32(flags: u32) -> Result<Self> {
+        let bits = (flags & 0b11) as u8;
+        if bits > Self::O_RDWR as u8 {
+            return_errno_with_message!(Errno::EINVAL, "invalid bits for access mode");
+        }
+        Ok(match bits {
+            0 => Self::O_RDONLY,
+            1 => Self::O_WRONLY,
+            2 => Self::O_RDWR,
+            _ => unreachable!(),
+        })
     }
 }
 

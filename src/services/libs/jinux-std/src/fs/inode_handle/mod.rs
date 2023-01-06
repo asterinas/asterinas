@@ -4,9 +4,8 @@ mod dyn_cap;
 mod static_cap;
 
 use super::utils::{
-    AccessMode, DirentWriter, DirentWriterContext, InodeType, SeekFrom, StatusFlags,
+    AccessMode, Dentry, DirentWriter, DirentWriterContext, InodeType, SeekFrom, StatusFlags,
 };
-use super::vfs_inode::VfsInode;
 use crate::prelude::*;
 use crate::rights::Rights;
 use alloc::sync::Arc;
@@ -15,7 +14,7 @@ use jinux_frame::vm::VmIo;
 pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
 
 struct InodeHandle_ {
-    inode: VfsInode,
+    dentry: Arc<Dentry>,
     offset: Mutex<usize>,
     access_mode: AccessMode,
     status_flags: Mutex<StatusFlags>,
@@ -24,15 +23,17 @@ struct InodeHandle_ {
 impl InodeHandle_ {
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
         let mut offset = self.offset.lock();
-        let file_size = self.inode.raw_inode().metadata().size;
+        let file_size = self.dentry.inode().raw_inode().metadata().size;
         let start = file_size.min(*offset);
         let end = file_size.min(*offset + buf.len());
         let len = if self.status_flags.lock().contains(StatusFlags::O_DIRECT) {
-            self.inode
+            self.dentry
+                .inode()
                 .raw_inode()
                 .read_at(start, &mut buf[0..end - start])?
         } else {
-            self.inode
+            self.dentry
+                .inode()
                 .pages()
                 .read_bytes(start, &mut buf[0..end - start])?;
             end - start
@@ -44,21 +45,24 @@ impl InodeHandle_ {
 
     pub fn write(&self, buf: &[u8]) -> Result<usize> {
         let mut offset = self.offset.lock();
-        let file_size = self.inode.raw_inode().metadata().size;
+        let file_size = self.dentry.inode().raw_inode().metadata().size;
         if self.status_flags.lock().contains(StatusFlags::O_APPEND) {
             *offset = file_size;
         }
         let len = if self.status_flags.lock().contains(StatusFlags::O_DIRECT) {
-            self.inode.raw_inode().write_at(*offset, buf)?
+            self.dentry.inode().raw_inode().write_at(*offset, buf)?
         } else {
-            let pages = self.inode.pages();
+            let pages = self.dentry.inode().pages();
             let should_expand_size = *offset + buf.len() > file_size;
             if should_expand_size {
                 pages.resize(*offset + buf.len())?;
             }
             pages.write_bytes(*offset, buf)?;
             if should_expand_size {
-                self.inode.raw_inode().resize(*offset + buf.len())?;
+                self.dentry
+                    .inode()
+                    .raw_inode()
+                    .resize(*offset + buf.len())?;
             }
             buf.len()
         };
@@ -77,7 +81,7 @@ impl InodeHandle_ {
                 off as i64
             }
             SeekFrom::End(off /* as i64 */) => {
-                let file_size = self.inode.raw_inode().metadata().size as i64;
+                let file_size = self.dentry.inode().raw_inode().metadata().size as i64;
                 assert!(file_size >= 0);
                 file_size
                     .checked_add(off)
@@ -124,7 +128,11 @@ impl InodeHandle_ {
     pub fn readdir(&self, writer: &mut dyn DirentWriter) -> Result<usize> {
         let mut offset = self.offset.lock();
         let mut dir_writer_ctx = DirentWriterContext::new(*offset, writer);
-        let written_size = self.inode.raw_inode().readdir(&mut dir_writer_ctx)?;
+        let written_size = self
+            .dentry
+            .inode()
+            .raw_inode()
+            .readdir(&mut dir_writer_ctx)?;
         *offset = dir_writer_ctx.pos();
         Ok(written_size)
     }
@@ -150,5 +158,9 @@ impl<R> InodeHandle<R> {
 
     pub fn set_status_flags(&self, new_status_flags: StatusFlags) {
         self.0.set_status_flags(new_status_flags)
+    }
+
+    pub fn dentry(&self) -> &Arc<Dentry> {
+        &self.0.dentry
     }
 }
