@@ -2,6 +2,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use bitflags::bitflags;
 use core::any::Any;
+use jinux_frame::vm::VmFrame;
 
 use super::{DirentWriterContext, FileSystem};
 use crate::fs::ioctl::IoctlCmd;
@@ -90,6 +91,65 @@ pub struct Metadata {
     pub rdev: usize,
 }
 
+impl Metadata {
+    pub fn new_dir(ino: usize, mode: InodeMode) -> Self {
+        Self {
+            dev: 0,
+            ino,
+            size: 2,
+            blk_size: 0,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: InodeType::Dir,
+            mode,
+            nlinks: 2,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
+    }
+
+    pub fn new_file(ino: usize, mode: InodeMode) -> Self {
+        Self {
+            dev: 0,
+            ino,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: InodeType::File,
+            mode,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
+    }
+
+    pub fn new_synlink(ino: usize, mode: InodeMode) -> Self {
+        Self {
+            dev: 0,
+            ino,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: InodeType::SymLink,
+            mode,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
+    }
+}
+
 #[derive(Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Timespec {
     pub sec: i64,
@@ -100,6 +160,10 @@ pub trait Inode: Any + Sync + Send {
     fn resize(&self, new_size: usize) -> Result<()>;
 
     fn metadata(&self) -> Metadata;
+
+    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
+
+    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize>;
 

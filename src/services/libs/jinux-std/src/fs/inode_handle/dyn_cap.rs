@@ -6,11 +6,11 @@ use super::*;
 
 impl InodeHandle<Rights> {
     pub fn new(
-        inode: Arc<dyn Inode>,
+        dentry: Arc<Dentry>,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
-        let inode_info = inode.metadata();
+        let inode_info = dentry.inode().raw_inode().metadata();
         if access_mode.is_readable() && !inode_info.mode.is_readable() {
             return_errno_with_message!(Errno::EACCES, "File is not readable");
         }
@@ -21,7 +21,7 @@ impl InodeHandle<Rights> {
             return_errno_with_message!(Errno::EISDIR, "Directory cannot open to write");
         }
         let inner = Arc::new(InodeHandle_ {
-            inode,
+            dentry,
             offset: Mutex::new(0),
             access_mode,
             status_flags: Mutex::new(status_flags),

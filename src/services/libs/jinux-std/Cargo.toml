@@ -27,6 +27,7 @@ ringbuffer = "0.10.0"
 
 spin = "0.9.4"
 vte = "0.10"
+lru = "0.9.0"
 
 [dependencies.lazy_static]
 version = "1.0"
