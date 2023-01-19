@@ -26,5 +26,5 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[test_case]
 fn test_rtc() {
-    println!("real time:{:?}",jinux_frame::time::get_real_time());
+    println!("real time:{:?}", jinux_frame::time::get_real_time());
 }

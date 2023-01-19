@@ -6,8 +6,8 @@ pub mod acpi;
 pub mod apic;
 pub mod ioapic;
 pub mod pic;
-pub mod timer;
 pub mod rtc;
+pub mod timer;
 
 pub use apic::ack;
 pub use timer::TimerCallback;

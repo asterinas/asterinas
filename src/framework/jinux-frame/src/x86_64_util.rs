@@ -1,7 +1,9 @@
 //! util for x86_64, it will rename to x86_64 when depend x86_64 isn't necessary
 use core::arch::{asm, x86_64::CpuidResult};
 
-use x86_64::registers::{control::Cr4Flags, segmentation::Segment64, xcontrol::XCr0Flags};
+use x86_64::registers::{
+    control::Cr4Flags, model_specific::EferFlags, segmentation::Segment64, xcontrol::XCr0Flags,
+};
 
 #[inline(always)]
 pub fn read_rsp() -> usize {
@@ -236,6 +238,13 @@ pub fn enable_common_cpu_features() {
     xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
     unsafe {
         x86_64::registers::xcontrol::XCr0::write(xcr0);
+    }
+
+    unsafe {
+        // enable non-executable page protection
+        x86_64::registers::model_specific::Efer::update(|efer| {
+            *efer |= EferFlags::NO_EXECUTE_ENABLE;
+        });
     }
 }
 

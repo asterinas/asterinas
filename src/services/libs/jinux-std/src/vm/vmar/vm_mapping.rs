@@ -106,7 +106,7 @@ impl VmMapping {
         })
     }
 
-    pub(super) fn vmo(&self) -> &Vmo<Rights> {
+    pub fn vmo(&self) -> &Vmo<Rights> {
         &self.vmo
     }
 
@@ -143,11 +143,11 @@ impl VmMapping {
     }
 
     /// the mapping's start address
-    pub(super) fn map_to_addr(&self) -> Vaddr {
+    pub fn map_to_addr(&self) -> Vaddr {
         self.map_to_addr
     }
 
-    pub(super) fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.map_size
     }
 
@@ -173,6 +173,13 @@ impl VmMapping {
         if destroy && range == self.range() {
             self.inner.lock().is_destroyed = false;
         }
+        Ok(())
+    }
+
+    pub fn unmap_and_decommit(&self, range: Range<usize>) -> Result<()> {
+        let vmo_range = (range.start - self.map_to_addr)..(range.end - self.map_to_addr);
+        self.unmap(range, false)?;
+        self.vmo.decommit(vmo_range)?;
         Ok(())
     }
 
@@ -206,11 +213,25 @@ impl VmMapping {
     pub(super) fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         let rights = Rights::from(perms);
         self.vmo().check_rights(rights)?;
-        // FIXME: should we commit and map these pages before protect vmspace?
+        debug_assert!(range.start % PAGE_SIZE == 0);
+        debug_assert!(range.end % PAGE_SIZE == 0);
+        let start_page = (range.start - self.map_to_addr) / PAGE_SIZE;
+        let end_page = (range.end - self.map_to_addr) / PAGE_SIZE;
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
         let perm = VmPerm::from(perms);
-        vm_space.protect(&range, perm)?;
+        let mut inner = self.inner.lock();
+        for page_idx in start_page..end_page {
+            inner.page_perms.insert(page_idx, perm);
+            let page_addr = page_idx * PAGE_SIZE + self.map_to_addr;
+            if vm_space.is_mapped(page_addr) {
+                // if the page is already mapped, we will modify page table
+                let perm = VmPerm::from(perms);
+                let page_range = page_addr..(page_addr + PAGE_SIZE);
+                vm_space.protect(&page_range, perm)?;
+            }
+        }
+
         Ok(())
     }
 

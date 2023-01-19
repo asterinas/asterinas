@@ -222,7 +222,7 @@ impl Task {
         Ok(Arc::new(result))
     }
 
-    pub fn send_to_scheduler(self: &Arc<Self>) {
+    pub fn run(self: &Arc<Self>) {
         switch_to_task(self.clone());
     }
 

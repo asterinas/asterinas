@@ -10,7 +10,7 @@ pub fn sys_fstat(fd: u64, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
     let current = current!();
-    let root_vmar = current.root_vmar().unwrap();
+    let root_vmar = current.root_vmar();
     if fd == 1 {
         let stat = Stat::stdout_stat();
         root_vmar.write_val(stat_buf_ptr, &stat)?;

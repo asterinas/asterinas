@@ -1,6 +1,8 @@
+use alloc::{sync::Arc, vec::Vec};
 use lazy_static::lazy_static;
+use spin::Mutex;
 
-use crate::{cell::Cell, driver::pic, x86_64_util::*, IrqAllocateHandle, TrapFrame};
+use crate::{cell::Cell, debug, driver::pic, x86_64_util::*, IrqAllocateHandle, TrapFrame};
 use core::fmt::{self, Write};
 
 bitflags::bitflags! {
@@ -18,8 +20,13 @@ const SERIAL_LINE_CTRL: u16 = SERIAL_DATA + 3;
 const SERIAL_MODEM_CTRL: u16 = SERIAL_DATA + 4;
 const SERIAL_LINE_STS: u16 = SERIAL_DATA + 5;
 lazy_static! {
-    static ref CONSOLE_IRQ_CALLBACK: Cell<IrqAllocateHandle> =
-        Cell::new(pic::allocate_irq(4).unwrap());
+    static ref CONSOLE_IRQ_CALLBACK: Cell<IrqAllocateHandle> = {
+        let irq = Cell::new(pic::allocate_irq(4).unwrap());
+        irq.get().on_active(handle_serial_input);
+        irq
+    };
+    pub static ref SERIAL_INPUT_CALLBACKS: Mutex<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
+        Mutex::new(Vec::new());
 }
 
 /// Initializes the serial port.
@@ -43,11 +50,24 @@ pub(crate) fn init() {
     out8(SERIAL_INT_EN, 0x01);
 }
 
-pub fn register_console_input_callback<F>(callback: F)
+pub(crate) fn register_serial_input_irq_handler<F>(callback: F)
 where
     F: Fn(&TrapFrame) + Sync + Send + 'static,
 {
     CONSOLE_IRQ_CALLBACK.get().on_active(callback);
+}
+
+fn handle_serial_input(trap_frame: &TrapFrame) {
+    // debug!("keyboard interrupt was met");
+    if SERIAL_INPUT_CALLBACKS.is_locked() {
+        return;
+    }
+    let lock = SERIAL_INPUT_CALLBACKS.lock();
+    let received_char = receive_char().unwrap();
+    debug!("receive char = {:?}", received_char);
+    for callback in lock.iter() {
+        callback(received_char);
+    }
 }
 
 fn line_sts() -> LineSts {
@@ -99,13 +119,13 @@ pub fn print(args: fmt::Arguments) {
 #[macro_export]
 macro_rules! console_print {
   ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::device::console::print(format_args!($fmt $(, $($arg)+)?))
+    $crate::device::serial::print(format_args!($fmt $(, $($arg)+)?))
   }
 }
 
 #[macro_export]
 macro_rules! console_println {
   ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::device::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
+    $crate::device::serial::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
   }
 }

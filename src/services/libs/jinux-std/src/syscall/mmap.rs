@@ -1,5 +1,6 @@
 //! This mod defines mmap flags and the handler to syscall mmap
 
+use crate::fs::file::FileDescripter;
 use crate::process::process_vm::mmap_flags::MMapFlags;
 use crate::rights::Rights;
 use crate::vm::perms::VmPerms;
@@ -27,7 +28,7 @@ pub fn sys_mmap(
         len as usize,
         perms,
         flags,
-        fd as usize,
+        fd as _,
         offset as usize,
     )?;
     Ok(SyscallReturn::Return(res as _))
@@ -38,10 +39,10 @@ pub fn do_sys_mmap(
     len: usize,
     vm_perm: VmPerm,
     flags: MMapFlags,
-    fd: usize,
+    fd: FileDescripter,
     offset: usize,
 ) -> Result<Vaddr> {
-    info!(
+    debug!(
         "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, flags = {:?}, fd = {}, offset = 0x{:x}",
         addr, len, vm_perm, flags, fd, offset
     );
@@ -76,7 +77,7 @@ pub fn mmap_anonymous_vmo(
     let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
     let vmo = vmo_options.alloc()?;
     let current = current!();
-    let root_vmar = current.root_vmar().unwrap();
+    let root_vmar = current.root_vmar();
     let perms = VmPerms::from(vm_perm);
     let mut vmar_map_options = root_vmar.new_map(vmo, perms)?;
     if flags.contains(MMapFlags::MAP_FIXED) {

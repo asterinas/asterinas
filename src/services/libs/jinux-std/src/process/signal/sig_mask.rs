@@ -64,4 +64,14 @@ impl SigMask {
     fn num_to_idx(num: SigNum) -> usize {
         (num.as_u8() - MIN_STD_SIG_NUM) as usize
     }
+
+    pub fn remove_signal(&mut self, signum: SigNum) {
+        let idx = Self::num_to_idx(signum);
+        self.bits &= !(1_u64 << idx);
+    }
+
+    pub fn add_signal(&mut self, signum: SigNum) {
+        let idx = Self::num_to_idx(signum);
+        self.bits |= 1_u64 << idx;
+    }
 }

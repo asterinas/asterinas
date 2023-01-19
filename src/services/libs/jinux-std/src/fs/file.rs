@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::tty::get_console;
+use crate::tty::get_n_tty;
 use core::any::Any;
 
 use super::events::IoEvents;
@@ -21,7 +21,7 @@ pub trait File: Send + Sync + Any {
         match cmd {
             IoctlCmd::TCGETS => {
                 // FIXME: only a work around
-                let tty = get_console();
+                let tty = get_n_tty();
                 tty.ioctl(cmd, arg)
             }
             _ => panic!("Ioctl unsupported"),

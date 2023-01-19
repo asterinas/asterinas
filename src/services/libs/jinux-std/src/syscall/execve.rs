@@ -3,6 +3,8 @@ use jinux_frame::cpu::CpuContext;
 use super::{constants::*, SyscallReturn};
 use crate::log_syscall_entry;
 use crate::process::elf::load_elf_to_root_vmar;
+use crate::process::posix_thread::name::ThreadName;
+use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
 use crate::util::{read_cstring_from_user, read_val_from_user};
 use crate::{prelude::*, syscall::SYS_EXECVE};
 
@@ -13,31 +15,35 @@ pub fn sys_execve(
     context: &mut CpuContext,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_EXECVE);
-    let filename = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
+    let elf_path = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;
     debug!(
         "filename: {:?}, argv = {:?}, envp = {:?}",
-        filename, argv, envp
+        elf_path, argv, envp
     );
-    if filename != CString::new("./hello").unwrap() {
+    if elf_path != CString::new("./hello").unwrap() {
         panic!("Unknown filename.");
     }
+    // FIXME: should we set thread name in execve?
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.posix_thread();
+    let mut thread_name = posix_thread.thread_name().lock();
+    let new_thread_name = ThreadName::new_from_elf_path(&elf_path)?;
+    *thread_name = Some(new_thread_name);
 
     let elf_file_content = crate::user_apps::read_execve_hello_content();
     let current = current!();
     // destroy root vmars
-    let root_vmar = current
-        .root_vmar()
-        .expect("[Internal Error] User process should have vm space");
+    let root_vmar = current.root_vmar();
     root_vmar.clear()?;
     let user_vm = current
         .user_vm()
         .expect("[Internal Error] User process should have user vm");
     user_vm.set_default();
     // load elf content to new vm space
-    let elf_load_info = load_elf_to_root_vmar(filename, elf_file_content, root_vmar, argv, envp)
-        .expect("load elf failed");
+    let elf_load_info =
+        load_elf_to_root_vmar(elf_file_content, root_vmar, argv, envp).expect("load elf failed");
     debug!("load elf in execve succeeds");
     // set signal disposition to default
     current.sig_dispositions().lock().inherit();

@@ -5,11 +5,22 @@ use jinux_frame::{
 };
 
 use crate::{
+    current_thread,
+    fs::file_table::FileTable,
     prelude::*,
-    process::{new_pid, signal::sig_queues::SigQueues, table, task::create_new_task},
+    process::{
+        posix_thread::{
+            builder::PosixThreadBuilder, name::ThreadName, posix_thread_ext::PosixThreadExt,
+        },
+        process_table,
+    },
+    rights::Full,
+    thread::{allocate_tid, thread_table, Thread, Tid},
+    util::write_val_to_user,
+    vm::vmar::Vmar,
 };
 
-use super::Process;
+use super::{posix_thread::PosixThread, signal::sig_disposition::SigDispositions, Process};
 
 bitflags! {
     pub struct CloneFlags: u32 {
@@ -42,10 +53,10 @@ bitflags! {
 
 #[derive(Debug, Clone, Copy)]
 pub struct CloneArgs {
-    new_sp: Vaddr,
+    new_sp: u64,
     parent_tidptr: Vaddr,
     child_tidptr: Vaddr,
-    tls: usize,
+    tls: u64,
     clone_flags: CloneFlags,
 }
 
@@ -61,10 +72,10 @@ impl CloneArgs {
     }
 
     pub const fn new(
-        new_sp: Vaddr,
+        new_sp: u64,
         parent_tidptr: Vaddr,
         child_tidptr: Vaddr,
-        tls: usize,
+        tls: u64,
         clone_flags: CloneFlags,
     ) -> Self {
         CloneArgs {
@@ -86,104 +97,283 @@ impl From<u64> for CloneFlags {
 }
 
 impl CloneFlags {
-    fn contains_unsupported_flags(&self) -> bool {
-        self.intersects(!(CloneFlags::CLONE_CHILD_SETTID | CloneFlags::CLONE_CHILD_CLEARTID))
+    fn check_unsupported_flags(&self) -> Result<()> {
+        let supported_flags = CloneFlags::CLONE_VM
+            | CloneFlags::CLONE_FS
+            | CloneFlags::CLONE_FILES
+            | CloneFlags::CLONE_SIGHAND
+            | CloneFlags::CLONE_THREAD
+            | CloneFlags::CLONE_SYSVSEM
+            | CloneFlags::CLONE_SETTLS
+            | CloneFlags::CLONE_PARENT_SETTID
+            | CloneFlags::CLONE_CHILD_SETTID
+            | CloneFlags::CLONE_CHILD_CLEARTID;
+        let unsupported_flags = *self - supported_flags;
+        if !unsupported_flags.is_empty() {
+            panic!("contains unsupported clone flags: {:?}", unsupported_flags);
+        }
+        Ok(())
     }
 }
 
-/// Clone a child process. Without schedule it to run.
-pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<Arc<Process>> {
-    let child_pid = new_pid();
-    let current = Process::current();
+/// Clone a child thread. Without schedule it to run.
+pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<Tid> {
+    clone_args.clone_flags.check_unsupported_flags()?;
+    if clone_args.clone_flags.contains(CloneFlags::CLONE_THREAD) {
+        let child_thread = clone_child_thread(parent_context, clone_args)?;
+        let child_tid = child_thread.tid();
+        debug!(
+            "*********schedule child thread, child pid = {}**********",
+            child_tid
+        );
+        child_thread.run();
+        debug!(
+            "*********return to parent thread, child pid = {}*********",
+            child_tid
+        );
+        Ok(child_tid)
+    } else {
+        let child_process = clone_child_process(parent_context, clone_args)?;
+        let child_pid = child_process.pid();
+        debug!(
+            "*********schedule child process, child pid = {}**********",
+            child_pid
+        );
+        child_process.run();
+        debug!(
+            "*********return to parent process, child pid = {}*********",
+            child_pid
+        );
+        Ok(child_pid)
+    }
+}
 
-    // child process vmar
-    let parent_root_vmar = current.root_vmar().unwrap();
-    let child_root_vmar = current.root_vmar().unwrap().fork_vmar()?;
+fn clone_child_thread(parent_context: CpuContext, clone_args: CloneArgs) -> Result<Arc<Thread>> {
+    let clone_flags = clone_args.clone_flags;
+    let current = current!();
+    debug_assert!(clone_flags.contains(CloneFlags::CLONE_VM));
+    debug_assert!(clone_flags.contains(CloneFlags::CLONE_FILES));
+    debug_assert!(clone_flags.contains(CloneFlags::CLONE_SIGHAND));
+    let child_root_vmar = current.root_vmar();
+    let child_vm_space = child_root_vmar.vm_space().clone();
+    let child_cpu_context = clone_cpu_context(
+        parent_context,
+        clone_args.new_sp,
+        clone_args.tls,
+        clone_flags,
+    );
+    let child_user_space = Arc::new(UserSpace::new(child_vm_space, child_cpu_context));
+    clone_sysvsem(clone_flags)?;
 
-    // child process user_vm
-    let child_user_vm = match current.user_vm() {
-        None => None,
-        Some(user_vm) => Some(user_vm.clone()),
-    };
+    let child_tid = allocate_tid();
+    // inherit sigmask from current thread
+    let current_thread = current_thread!();
+    let current_posix_thread = current_thread.posix_thread();
+    let sig_mask = current_posix_thread.sig_mask().lock().clone();
+    let is_main_thread = child_tid == current.pid();
+    let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
+        .process(Arc::downgrade(&current))
+        .is_main_thread(is_main_thread);
+    let child_thread = thread_builder.build();
+    current.threads.lock().push(child_thread.clone());
+    let child_posix_thread = child_thread.posix_thread();
+    clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
+    clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
+    clone_child_settid(
+        child_root_vmar,
+        child_tid,
+        clone_args.child_tidptr,
+        clone_flags,
+    )?;
+    Ok(child_thread)
+}
 
-    // child process user space
-    let mut child_cpu_context = parent_context.clone();
-    child_cpu_context.gp_regs.rax = 0; // Set return value of child process
+fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Result<Arc<Process>> {
+    let current = current!();
+    let clone_flags = clone_args.clone_flags;
+
+    // clone vm
+    let parent_root_vmar = current.root_vmar();
+    let child_root_vmar = clone_vm(parent_root_vmar, clone_flags)?;
+    let child_user_vm = Some(current.user_vm().unwrap().clone());
+
+    // clone user space
+    let child_cpu_context = clone_cpu_context(
+        parent_context,
+        clone_args.new_sp,
+        clone_args.tls,
+        clone_flags,
+    );
     let child_vm_space = child_root_vmar.vm_space().clone();
     let child_user_space = Arc::new(UserSpace::new(child_vm_space, child_cpu_context));
 
-    let child_file_name = match current.filename() {
-        None => None,
-        Some(filename) => Some(filename.clone()),
-    };
-    let child_file_table = current.file_table.lock().clone();
+    // clone file table
+    let child_file_table = clone_files(current.file_table(), clone_flags);
+    // clone sig dispositions
+    let child_sig_dispositions = clone_sighand(current.sig_dispositions(), clone_flags);
+    // clone system V semaphore
+    clone_sysvsem(clone_flags)?;
 
-    // inherit parent's sig disposition
-    let child_sig_dispositions = current.sig_dispositions().lock().clone();
-    // sig queue is set empty
-    let child_sig_queues = SigQueues::new();
+    let child_elf_path = current.filename().unwrap().clone();
+    let child_thread_name = ThreadName::new_from_elf_path(&child_elf_path)?;
+
     // inherit parent's sig mask
-    let child_sig_mask = current.sig_mask().lock().clone();
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.posix_thread();
+    let child_sig_mask = posix_thread.sig_mask().lock().clone();
+
+    let child_tid = allocate_tid();
+    let mut child_thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
+        .thread_name(Some(child_thread_name))
+        .sig_mask(child_sig_mask);
 
     let child = Arc::new_cyclic(|child_process_ref| {
         let weak_child_process = child_process_ref.clone();
-        let child_task = create_new_task(child_user_space.clone(), weak_child_process);
+        let child_pid = child_tid;
+        child_thread_builder = child_thread_builder.process(weak_child_process);
+        let child_thread = child_thread_builder.build();
         Process::new(
             child_pid,
-            child_task,
-            child_file_name,
+            vec![child_thread],
+            Some(child_elf_path),
             child_user_vm,
-            Some(child_user_space),
-            Some(child_root_vmar),
-            None,
+            child_root_vmar.clone(),
+            Weak::new(),
             child_file_table,
             child_sig_dispositions,
-            child_sig_queues,
-            child_sig_mask,
         )
     });
     // Inherit parent's process group
-    let parent_process_group = current
-        .process_group()
-        .lock()
-        .as_ref()
-        .map(|ppgrp| ppgrp.upgrade())
-        .flatten()
-        .unwrap();
+    let parent_process_group = current.process_group().lock().upgrade().unwrap();
     parent_process_group.add_process(child.clone());
     child.set_process_group(Arc::downgrade(&parent_process_group));
 
     current!().add_child(child.clone());
-    table::add_process(child.clone());
-    deal_with_clone_args(clone_args, &child)?;
+    process_table::add_process(child.clone());
+
+    let child_thread = thread_table::tid_to_thread(child_tid).unwrap();
+    let child_posix_thread = child_thread.posix_thread();
+    clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
+    clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
+    clone_child_settid(
+        &child_root_vmar,
+        child_tid,
+        clone_args.child_tidptr,
+        clone_flags,
+    )?;
     Ok(child)
 }
 
-fn deal_with_clone_args(clone_args: CloneArgs, child_process: &Arc<Process>) -> Result<()> {
-    let clone_flags = clone_args.clone_flags;
-    if clone_flags.contains_unsupported_flags() {
-        panic!("Found unsupported clone flags: {:?}", clone_flags);
-    }
+fn clone_child_cleartid(
+    child_posix_thread: &PosixThread,
+    child_tidptr: Vaddr,
+    clone_flags: CloneFlags,
+) -> Result<()> {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) {
-        clone_child_clear_tid(child_process)?;
+        let mut clear_tid = child_posix_thread.clear_child_tid().lock();
+        *clear_tid = child_tidptr;
     }
+    Ok(())
+}
+
+fn clone_child_settid(
+    child_root_vmar: &Vmar<Full>,
+    child_tid: Tid,
+    child_tidptr: Vaddr,
+    clone_flags: CloneFlags,
+) -> Result<()> {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
-        clone_child_set_tid(child_process, clone_args)?;
+        child_root_vmar.write_val(child_tidptr, &child_tid)?;
     }
     Ok(())
 }
 
-fn clone_child_clear_tid(child_process: &Arc<Process>) -> Result<()> {
-    // TODO: clone_child_clear_tid does nothing now
+fn clone_parent_settid(
+    child_tid: Tid,
+    parent_tidptr: Vaddr,
+    clone_flags: CloneFlags,
+) -> Result<()> {
+    if clone_flags.contains(CloneFlags::CLONE_PARENT_SETTID) {
+        write_val_to_user(parent_tidptr, &child_tid)?;
+    }
     Ok(())
 }
 
-fn clone_child_set_tid(child_process: &Arc<Process>, clone_args: CloneArgs) -> Result<()> {
-    let child_pid = child_process.pid();
-    let child_vmar = child_process
-        .root_vmar()
-        .ok_or_else(|| Error::new(Errno::ECHILD))?;
-    child_vmar.write_val(clone_args.child_tidptr, &child_pid)?;
+/// clone child vmar. If CLONE_VM is set, both threads share the same root vmar.
+/// Otherwise, fork a new copy-on-write vmar.
+fn clone_vm(
+    parent_root_vmar: &Arc<Vmar<Full>>,
+    clone_flags: CloneFlags,
+) -> Result<Arc<Vmar<Full>>> {
+    if clone_flags.contains(CloneFlags::CLONE_VM) {
+        Ok(parent_root_vmar.clone())
+    } else {
+        Ok(Arc::new(parent_root_vmar.fork_vmar()?))
+    }
+}
+
+fn clone_cpu_context(
+    parent_context: CpuContext,
+    new_sp: u64,
+    tls: u64,
+    clone_flags: CloneFlags,
+) -> CpuContext {
+    let mut child_context = parent_context.clone();
+    // The return value of child thread is zero
+    child_context.set_rax(0);
+
+    if clone_flags.contains(CloneFlags::CLONE_VM) {
+        // if parent and child shares the same address space, a new stack must be specified.
+        debug_assert!(new_sp != 0);
+    }
+    if new_sp != 0 {
+        child_context.set_rsp(new_sp as u64);
+    }
+    if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
+        // x86_64 specific: TLS is the fsbase register
+        child_context.set_fsbase(tls as u64);
+    }
+
+    child_context
+}
+
+fn clone_fs(clone_flags: CloneFlags) -> Result<()> {
+    if clone_flags.contains(CloneFlags::CLONE_FS) {
+        warn!("CLONE_FS is not supported now")
+    }
+    Ok(())
+}
+
+fn clone_files(
+    parent_file_table: &Arc<Mutex<FileTable>>,
+    clone_flags: CloneFlags,
+) -> Arc<Mutex<FileTable>> {
+    // if CLONE_FILES is set, the child and parent shares the same file table
+    // Otherwise, the child will deep copy a new file table.
+    // FIXME: the clone may not be deep copy.
+    if clone_flags.contains(CloneFlags::CLONE_FILES) {
+        parent_file_table.clone()
+    } else {
+        Arc::new(Mutex::new(parent_file_table.lock().clone()))
+    }
+}
+
+fn clone_sighand(
+    parent_sig_dispositions: &Arc<Mutex<SigDispositions>>,
+    clone_flags: CloneFlags,
+) -> Arc<Mutex<SigDispositions>> {
+    // similer to CLONE_FILES
+    if clone_flags.contains(CloneFlags::CLONE_SIGHAND) {
+        parent_sig_dispositions.clone()
+    } else {
+        Arc::new(Mutex::new(parent_sig_dispositions.lock().clone()))
+    }
+}
+
+fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
+    if clone_flags.contains(CloneFlags::CLONE_SYSVSEM) {
+        warn!("CLONE_SYSVSEM is not supported now");
+    }
     Ok(())
 }
 

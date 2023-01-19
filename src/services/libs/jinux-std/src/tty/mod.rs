@@ -1,9 +1,9 @@
-
 use self::line_discipline::LineDiscipline;
-use crate::driver::console::receive_console_char;
+use crate::driver::tty::TtyDriver;
 use crate::fs::events::IoEvents;
+
 use crate::fs::ioctl::IoctlCmd;
-use crate::process::Pgid;
+use crate::process::{process_table, Pgid};
 use crate::util::{read_val_from_user, write_val_to_user};
 use crate::{fs::file::File, prelude::*};
 
@@ -22,6 +22,8 @@ pub struct Tty {
     name: CString,
     /// line discipline
     ldisc: Mutex<LineDiscipline>,
+    /// driver
+    driver: Mutex<Weak<TtyDriver>>,
 }
 
 impl Tty {
@@ -29,11 +31,33 @@ impl Tty {
         Tty {
             name,
             ldisc: Mutex::new(LineDiscipline::new()),
+            driver: Mutex::new(Weak::new()),
         }
     }
 
+    /// Set foreground process group
     pub fn set_fg(&self, pgid: Pgid) {
         self.ldisc.lock().set_fg(pgid);
+    }
+
+    pub fn set_driver(&self, driver: Weak<TtyDriver>) {
+        *self.driver.lock() = driver;
+    }
+
+    /// Wake up foreground process group that wait on IO events.
+    /// This function should be called when the interrupt handler of IO events is called.
+    fn wake_fg_proc_grp(&self) {
+        let ldisc = self.ldisc.lock();
+        if let Some(fg_pgid) = ldisc.get_fg() {
+            if let Some(fg_proc_grp) = process_table::pgid_to_process_group(*fg_pgid) {
+                fg_proc_grp.wake_all_polling_procs();
+            }
+        }
+    }
+
+    pub fn receive_char(&self, item: u8) {
+        self.ldisc.lock().push_char(item);
+        self.wake_fg_proc_grp();
     }
 }
 
@@ -52,13 +76,7 @@ impl File for Tty {
     }
 
     fn poll(&self) -> IoEvents {
-        if !self.ldisc.lock().is_empty() {
-            return IoEvents::POLLIN;
-        }
-        // receive keyboard input
-        let byte = receive_console_char();
-        self.ldisc.lock().push_char(byte);
-        return IoEvents::POLLIN;
+        self.ldisc.lock().poll()
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
@@ -108,6 +126,7 @@ impl File for Tty {
     }
 }
 
-pub fn get_console() -> &'static Arc<Tty> {
+/// FIXME: should we maintain a static console?
+pub fn get_n_tty() -> &'static Arc<Tty> {
     &N_TTY
 }

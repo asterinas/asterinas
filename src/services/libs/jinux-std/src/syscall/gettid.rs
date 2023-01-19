@@ -6,7 +6,7 @@ use super::SyscallReturn;
 
 pub fn sys_gettid() -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_GETTID);
-    // For single-thread process, tid is equal to pid
-    let tid = current!().pid();
+    let current_thread = current_thread!();
+    let tid = current_thread.tid();
     Ok(SyscallReturn::Return(tid as _))
 }

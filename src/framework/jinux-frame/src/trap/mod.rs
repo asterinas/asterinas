@@ -172,7 +172,7 @@ pub(crate) fn init() {
     model_specific::SFMask::write(
         RFlags::TRAP_FLAG
             | RFlags::DIRECTION_FLAG
-            | RFlags::INTERRUPT_FLAG
+            // | RFlags::INTERRUPT_FLAG
             | RFlags::IOPL_LOW
             | RFlags::IOPL_HIGH
             | RFlags::NESTED_TASK

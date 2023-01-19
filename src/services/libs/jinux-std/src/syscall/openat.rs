@@ -4,7 +4,7 @@ use crate::fs::file_handle::FileHandle;
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::syscall::constants::MAX_FILENAME_LEN;
-use crate::tty::get_console;
+use crate::tty::get_n_tty;
 use crate::util::read_cstring_from_user;
 
 use super::SyscallReturn;
@@ -38,15 +38,30 @@ pub fn sys_openat(
     }
 
     if dirfd == AT_FDCWD && pathname == CString::new("./trace")? {
-        return_errno_with_message!(Errno::ENOENT, "No such file");
+        // Debug use: This file is used for output busybox log
+        let trace_file = FileHandle::new_file(Arc::new(BusyBoxTraceFile) as Arc<dyn File>);
+        let current = current!();
+        let mut file_table = current.file_table().lock();
+        let fd = file_table.insert(trace_file);
+        return Ok(SyscallReturn::Return(fd as _));
     }
 
     if dirfd == AT_FDCWD && pathname == CString::new("/dev/tty")? {
-        let tty_file = FileHandle::new_file(get_console().clone() as Arc<dyn File>);
+        let tty_file = FileHandle::new_file(get_n_tty().clone() as Arc<dyn File>);
         let current = current!();
         let mut file_table = current.file_table().lock();
         let fd = file_table.insert(tty_file);
         return Ok(SyscallReturn::Return(fd as _));
     }
     todo!()
+}
+
+/// File for output busybox ash log.
+struct BusyBoxTraceFile;
+
+impl File for BusyBoxTraceFile {
+    fn write(&self, buf: &[u8]) -> Result<usize> {
+        debug!("ASH TRACE: {}", core::str::from_utf8(buf)?);
+        Ok(buf.len())
+    }
 }

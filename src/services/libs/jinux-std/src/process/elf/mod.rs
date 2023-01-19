@@ -12,7 +12,6 @@ use crate::{prelude::*, rights::Full, vm::vmar::Vmar};
 /// 2. create a vmo for each elf segment, create a backup pager for each segment. Then map the vmo to the root vmar.
 /// 3. write proper content to the init stack.
 pub fn load_elf_to_root_vmar(
-    filename: CString,
     elf_file_content: &'static [u8],
     root_vmar: &Vmar<Full>,
     argv: Vec<CString>,

@@ -19,17 +19,13 @@
 
 use crate::{
     prelude::*,
-    user_apps::{get_busybox_app, UserApp},
+    user_apps::{get_all_apps, get_busybox_app, UserApp},
 };
-use jinux_frame::{info, println};
 use process::Process;
 
-use crate::{
-    process::{
-        process_filter::ProcessFilter,
-        wait::{wait_child_exit, WaitOptions},
-    },
-    user_apps::get_all_apps,
+use crate::process::{
+    process_filter::ProcessFilter,
+    wait::{wait_child_exit, WaitOptions},
 };
 
 extern crate alloc;
@@ -42,6 +38,8 @@ pub mod prelude;
 mod process;
 pub mod rights;
 pub mod syscall;
+pub mod thread;
+pub mod time;
 pub mod tty;
 mod user_apps;
 mod util;
@@ -56,19 +54,20 @@ pub fn init() {
     jinux_frame::enable_interrupts();
 }
 
-pub fn init_process() {
-    println!("[kernel] Spawn init process!, pid = {}", current!().pid());
-    driver::pci::virtio::block::block_device_test();
+pub fn init_thread() {
+    println!(
+        "[kernel] Spawn init thread, tid = {}",
+        current_thread!().tid()
+    );
+    // driver::pci::virtio::block::block_device_test();
     let process = Process::spawn_kernel_process(|| {
         println!("[kernel] Hello world from kernel!");
-        let current = current!();
-        let pid = current.pid();
-        info!("current pid = {}", pid);
-        let ppid = current.parent().unwrap().pid();
-        info!("current ppid = {}", ppid);
+        let current = current_thread!();
+        let pid = current.tid();
+        debug!("current pid = {}", pid);
     });
     info!(
-        "[jinux-std/lib.rs] spawn kernel process, pid = {}",
+        "[jinux-std/lib.rs] spawn kernel thread, tid = {}",
         process.pid()
     );
 
@@ -79,18 +78,18 @@ pub fn init_process() {
     // Run test apps
     for app in get_all_apps().into_iter() {
         let UserApp {
-            app_name,
+            elf_path: app_name,
             app_content,
             argv,
             envp,
         } = app;
-        info!("[jinux-std/lib.rs] spwan {:?} process", app_name);
+        println!("[jinux-std/lib.rs] spwan {:?} process", app_name);
         Process::spawn_user_process(app_name.clone(), app_content, argv, Vec::new());
     }
 
     // Run busybox ash
     let UserApp {
-        app_name,
+        elf_path: app_name,
         app_content,
         argv,
         envp,
@@ -102,13 +101,12 @@ pub fn init_process() {
     loop {
         // We don't have preemptive scheduler now.
         // The long running init process should yield its own execution to allow other tasks to go on.
-        // The init process should wait and reap all children.
         let _ = wait_child_exit(ProcessFilter::Any, WaitOptions::empty());
     }
 }
 
 /// first process never return
 pub fn run_first_process() -> ! {
-    Process::spawn_kernel_process(init_process);
+    Process::spawn_kernel_process(init_thread);
     unreachable!()
 }

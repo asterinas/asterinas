@@ -1,7 +1,7 @@
 use crate::{log_syscall_entry, prelude::*};
 
 use crate::process::signal::signals::user::{UserSignal, UserSignalKind};
-use crate::process::{table, Process};
+use crate::process::{process_table, Process};
 use crate::{
     process::{process_filter::ProcessFilter, signal::sig_num::SigNum},
     syscall::SYS_KILL,
@@ -42,12 +42,12 @@ pub fn do_sys_kill(process_filter: ProcessFilter, sig_num: SigNum) -> Result<()>
 fn get_processes(filter: &ProcessFilter) -> Result<Vec<Arc<Process>>> {
     let processes = match filter {
         ProcessFilter::Any => {
-            let mut processes = table::get_all_processes();
+            let mut processes = process_table::get_all_processes();
             processes.retain(|process| process.pid() != 0);
             processes
         }
         ProcessFilter::WithPid(pid) => {
-            let process = table::pid_to_process(*pid);
+            let process = process_table::pid_to_process(*pid);
             match process {
                 None => {
                     return_errno_with_message!(Errno::ESRCH, "No such process in process table")

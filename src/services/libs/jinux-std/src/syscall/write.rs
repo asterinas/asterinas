@@ -12,7 +12,7 @@ const STDERR: u64 = 2;
 pub fn sys_write(
     fd: FileDescripter,
     user_buf_ptr: Vaddr,
-    user_buf_len: u64,
+    user_buf_len: usize,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_WRITE);
     debug!(
@@ -23,8 +23,9 @@ pub fn sys_write(
     let current = current!();
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;
-    let mut buffer = vec![0u8; user_buf_len as usize];
+    let mut buffer = vec![0u8; user_buf_len];
     read_bytes_from_user(user_buf_ptr as usize, &mut buffer)?;
+    debug!("write content = {:?}", buffer);
     let write_len = file.write(&buffer)?;
     Ok(SyscallReturn::Return(write_len as _))
 }

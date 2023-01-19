@@ -140,6 +140,7 @@ fn set_contain_where_clause(
     }
 }
 
+/// generate a where clause to constraint the type set with another type set
 fn set_include_where_clause(
     require_attr: &RequireAttr,
     required_type_set: Ident,

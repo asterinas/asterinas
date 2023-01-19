@@ -20,7 +20,6 @@ use jinux_frame::AlignExt;
 use self::vm_mapping::VmMapping;
 
 use super::page_fault_handler::PageFaultHandler;
-use super::vmo::Vmo;
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
 /// user address spaces.
@@ -228,7 +227,7 @@ impl Vmar_ {
         // FIXME: If multiple vmos are mapped to the addr, should we allow all vmos to handle page fault?
         for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
             if *vm_mapping_base <= page_fault_addr
-                && page_fault_addr <= *vm_mapping_base + vm_mapping.size()
+                && page_fault_addr < *vm_mapping_base + vm_mapping.size()
             {
                 return vm_mapping.handle_page_fault(page_fault_addr, not_present, write);
             }
@@ -639,10 +638,10 @@ impl Vmar_ {
     }
 
     /// get mapped vmo at given offset
-    pub fn get_mapped_vmo(&self, offset: Vaddr) -> Result<Vmo<Rights>> {
+    pub fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
         for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
             if *vm_mapping_base <= offset && offset < *vm_mapping_base + vm_mapping.size() {
-                return Ok(vm_mapping.vmo().dup()?);
+                return Ok(vm_mapping.clone());
             }
         }
         return_errno_with_message!(Errno::EACCES, "No mapped vmo at this offset");
@@ -671,10 +670,10 @@ impl<R> Vmar<R> {
     }
 
     /// get a mapped vmo
-    pub fn get_mapped_vmo(&self, offset: Vaddr) -> Result<Vmo<Rights>> {
+    pub fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
         let rights = Rights::all();
         self.check_rights(rights)?;
-        self.0.get_mapped_vmo(offset)
+        self.0.get_vm_mapping(offset)
     }
 }
 

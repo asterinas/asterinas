@@ -17,6 +17,7 @@ pub(crate) use jinux_frame::vm::Vaddr;
 pub(crate) use jinux_frame::{debug, error, info, print, println, trace, warn};
 pub(crate) use spin::{Mutex, RwLock};
 
+/// return current process
 #[macro_export]
 macro_rules! current {
     () => {
@@ -24,7 +25,16 @@ macro_rules! current {
     };
 }
 
+/// return current thread
+#[macro_export]
+macro_rules! current_thread {
+    () => {
+        crate::thread::Thread::current()
+    };
+}
+
 pub(crate) use crate::current;
+pub(crate) use crate::current_thread;
 pub(crate) use crate::error::{Errno, Error};
 pub(crate) use lazy_static::lazy_static;
 pub(crate) type Result<T> = core::result::Result<T, Error>;

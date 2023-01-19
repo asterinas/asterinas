@@ -5,7 +5,8 @@ mod scheduler;
 #[allow(clippy::module_inception)]
 mod task;
 
-pub(crate) use self::processor::{get_idle_task_cx_ptr, schedule};
+pub(crate) use self::processor::get_idle_task_cx_ptr;
+pub use self::processor::schedule;
 pub use self::scheduler::{set_scheduler, Scheduler};
 pub(crate) use self::task::context_switch;
 pub(crate) use self::task::TaskContext;

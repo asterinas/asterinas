@@ -29,7 +29,7 @@ fn panic(info: &PanicInfo) -> ! {
 fn test_input() {
     jinux_frame::enable_interrupts();
     println!("please input value into console to pass this test");
-    jinux_std::driver::console::register_console_callback(Arc::new(input_callback));
+    jinux_std::driver::console::register_serial_input_callback(Arc::new(input_callback));
     unsafe {
         while INPUT_VALUE == 0 {
             jinux_frame::hlt();
