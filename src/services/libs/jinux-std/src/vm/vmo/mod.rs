@@ -415,7 +415,6 @@ impl Vmo_ {
             self.decommit(new_size..old_size)?;
             self.inner.lock().size = new_size;
         } else {
-            self.commit(old_size..new_size)?;
             self.inner.lock().size = new_size;
         }
 

@@ -11,6 +11,7 @@ pod = {path = "../../../framework/pod"}
 pod-derive = {path = "../../../framework/pod-derive"}
 jinux-pci = {path="../../comps/jinux-pci"}
 jinux-virtio = {path="../../comps/jinux-virtio"}
+controlled = { path = "../../comp-sys/controlled" }
 typeflags = {path="../typeflags"}
 typeflags-util = {path="../typeflags-util"}
 jinux-rights-proc = {path="../jinux-rights-proc"}
