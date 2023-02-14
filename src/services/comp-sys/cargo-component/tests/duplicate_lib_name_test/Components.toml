@@ -1,0 +1,5 @@
+[components]
+foo = { name = "foo" }
+bar = { name = "foo" }
+
+[whitelist]

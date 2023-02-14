@@ -55,6 +55,16 @@ all developmennt tools are installed.
 make setup
 ```
 
+Then, install some standalone tools (e.g., `cargo-component`) under the project directory.
+``` bash
+make tools
+```
+
+Set environmental variables to enable `cargo` find installed tools.
+```bash
+export PATH=`pwd`/src/target/bin:${PATH}
+```
+
 Then, we can build and test the project.
 ```bash
 make

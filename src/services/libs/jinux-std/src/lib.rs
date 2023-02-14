@@ -2,10 +2,9 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![allow(dead_code)]
+#![allow(incomplete_features)]
 #![allow(unused_variables)]
-#![feature(const_btree_new)]
 #![feature(cstr_from_bytes_until_nul)]
-#![feature(half_open_range_patterns)]
 #![feature(exclusive_range_pattern)]
 #![feature(btree_drain_filter)]
 #![feature(const_option)]
@@ -16,6 +15,8 @@
 #![feature(specialization)]
 #![feature(fn_traits)]
 #![feature(linked_list_remove)]
+#![feature(register_tool)]
+#![register_tool(component_access_control)]
 
 use crate::{
     prelude::*,
@@ -30,6 +31,8 @@ use crate::process::{
 
 extern crate alloc;
 extern crate lru;
+#[macro_use]
+extern crate controlled;
 
 pub mod driver;
 pub mod error;
@@ -106,6 +109,7 @@ pub fn init_thread() {
 }
 
 /// first process never return
+#[controlled]
 pub fn run_first_process() -> ! {
     Process::spawn_kernel_process(init_thread);
     unreachable!()

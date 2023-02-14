@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::{
     config::PAGE_SIZE,
     mm::address::is_aligned,
-    vm::{VmFrame, VmFrameVec, VmPerm},
+    vm::{VmFrame, VmFrameVec},
     *,
 };
 use alloc::collections::{btree_map::Entry, BTreeMap};
