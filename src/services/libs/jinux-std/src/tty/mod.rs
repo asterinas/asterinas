@@ -1,11 +1,12 @@
 use self::line_discipline::LineDiscipline;
 use crate::driver::tty::TtyDriver;
-use crate::fs::events::IoEvents;
-
-use crate::fs::ioctl::IoctlCmd;
+use crate::fs::{
+    file_handle::File,
+    utils::{IoEvents, IoctlCmd},
+};
+use crate::prelude::*;
 use crate::process::{process_table, Pgid};
 use crate::util::{read_val_from_user, write_val_to_user};
-use crate::{fs::file::File, prelude::*};
 
 pub mod line_discipline;
 pub mod termio;

@@ -2,14 +2,13 @@ use crate::prelude::*;
 use alloc::str;
 use alloc::string::String;
 
-use super::file::FileDescripter;
-use super::inode_handle::InodeHandle;
+use super::file_handle::InodeHandle;
+use super::file_table::FileDescripter;
 use super::ramfs::RamFS;
 use super::utils::{
-    AccessMode, CreationFlags, Dentry, FileSystem, InodeMode, InodeType, StatusFlags, PATH_MAX,
-    SYMLINKS_MAX,
+    AccessMode, CreationFlags, Dentry, FileSystem, InodeMode, InodeType, StatusFlags, Vnode,
+    PATH_MAX, SYMLINKS_MAX,
 };
-use super::vfs_inode::VfsInode;
 
 lazy_static! {
     static ref ROOT_FS: Arc<dyn FileSystem> = RamFS::new();
@@ -32,8 +31,8 @@ impl Clone for FsResolver {
 impl FsResolver {
     pub fn new() -> Result<Self> {
         let root = {
-            let root_inode = VfsInode::new(ROOT_FS.root_inode())?;
-            Dentry::new_root(root_inode)
+            let root_vnode = Vnode::new(ROOT_FS.root_inode())?;
+            Dentry::new_root(root_vnode)
         };
         Ok(Self {
             root: root.clone(),
@@ -64,9 +63,9 @@ impl FsResolver {
         let inode_mode = InodeMode::from_bits_truncate(mode);
 
         let follow_tail_link = !creation_flags.contains(CreationFlags::O_NOFOLLOW);
-        let dentry = match self.lookup(path, follow_tail_link) {
+        let dentry = match self.lookup_inner(path, follow_tail_link) {
             Ok(dentry) => {
-                let inode = dentry.inode().raw_inode();
+                let inode = dentry.vnode().inode();
                 if inode.metadata().type_ == InodeType::SymLink
                     && !status_flags.contains(StatusFlags::O_PATH)
                 {
@@ -94,15 +93,15 @@ impl FsResolver {
                 if creation_flags.contains(CreationFlags::O_DIRECTORY) {
                     return_errno_with_message!(Errno::ENOTDIR, "cannot create directory");
                 }
-                let (dir_dentry, file_name) = self.lookup_dir_and_base_name(path)?;
+                let (dir_dentry, file_name) =
+                    self.lookup_dir_and_base_name_inner(path, follow_tail_link)?;
                 if file_name.ends_with("/") {
                     return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
                 }
-                if !dir_dentry.inode().raw_inode().metadata().mode.is_writable() {
+                if !dir_dentry.vnode().inode().metadata().mode.is_writable() {
                     return_errno_with_message!(Errno::EPERM, "file cannot be created");
                 }
-                let new_dentry =
-                    dir_dentry.create_child(&file_name, InodeType::File, inode_mode)?;
+                let new_dentry = dir_dentry.create(&file_name, InodeType::File, inode_mode)?;
                 new_dentry
             }
             Err(e) => return Err(e),
@@ -112,8 +111,17 @@ impl FsResolver {
         Ok(inode_handle)
     }
 
-    /// Lookup dentry according to FsPath
-    pub fn lookup(&self, path: &FsPath, follow_tail_link: bool) -> Result<Arc<Dentry>> {
+    /// Lookup dentry according to FsPath, always follow symlinks
+    pub fn lookup(&self, path: &FsPath) -> Result<Arc<Dentry>> {
+        self.lookup_inner(path, true)
+    }
+
+    /// Lookup dentry according to FsPath, do not follow it if last component is a symlink
+    pub fn lookup_no_follow(&self, path: &FsPath) -> Result<Arc<Dentry>> {
+        self.lookup_inner(path, false)
+    }
+
+    fn lookup_inner(&self, path: &FsPath, follow_tail_link: bool) -> Result<Arc<Dentry>> {
         let dentry = match path.inner {
             FsPathInner::Absolute(path) => {
                 self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
@@ -123,73 +131,13 @@ impl FsResolver {
             }
             FsPathInner::Cwd => self.cwd.clone(),
             FsPathInner::FdRelative(fd, path) => {
-                let parent = self.lookup_dentry_from_fd(fd)?;
+                let parent = self.lookup_from_fd(fd)?;
                 self.lookup_from_parent(&parent, path, follow_tail_link)?
             }
-            FsPathInner::Fd(fd) => self.lookup_dentry_from_fd(fd)?,
+            FsPathInner::Fd(fd) => self.lookup_from_fd(fd)?,
         };
 
         Ok(dentry)
-    }
-
-    /// Lookup the dir dentry and base file name of the giving path.
-    ///
-    /// If encounters symlinks, should deference them.
-    fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Arc<Dentry>, String)> {
-        let (mut dir_dentry, mut base_name) = match path.inner {
-            FsPathInner::Absolute(path) => {
-                let (dir, file_name) = split_path(path);
-                (
-                    self.lookup_from_parent(&self.root, dir.trim_start_matches('/'), true)?,
-                    String::from(file_name),
-                )
-            }
-            FsPathInner::CwdRelative(path) => {
-                let (dir, file_name) = split_path(path);
-                (
-                    self.lookup_from_parent(&self.cwd, path, true)?,
-                    String::from(file_name),
-                )
-            }
-            FsPathInner::FdRelative(fd, path) => {
-                let (dir, file_name) = split_path(path);
-                let parent = self.lookup_dentry_from_fd(fd)?;
-                (
-                    self.lookup_from_parent(&parent, path, true)?,
-                    String::from(file_name),
-                )
-            }
-            _ => return_errno!(Errno::ENOENT),
-        };
-
-        loop {
-            match dir_dentry.get(&base_name.trim_end_matches('/')) {
-                Ok(dentry) if dentry.inode().raw_inode().metadata().type_ == InodeType::SymLink => {
-                    let link = {
-                        let mut link = dentry.inode().raw_inode().read_link()?;
-                        if link.is_empty() {
-                            return_errno_with_message!(Errno::ENOENT, "invalid symlink");
-                        }
-                        if base_name.ends_with("/") && !link.ends_with("/") {
-                            link += "/";
-                        }
-                        link
-                    };
-                    let (dir, file_name) = split_path(&link);
-                    if dir.starts_with("/") {
-                        dir_dentry =
-                            self.lookup_from_parent(&self.root, dir.trim_start_matches('/'), true)?;
-                        base_name = String::from(file_name);
-                    } else {
-                        dir_dentry = self.lookup_from_parent(&dir_dentry, dir, true)?;
-                        base_name = String::from(file_name);
-                    }
-                }
-                _ => break,
-            }
-        }
-
-        Ok((dir_dentry, base_name))
     }
 
     /// Lookup dentry from parent
@@ -232,8 +180,8 @@ impl FsResolver {
                 };
 
             // Iterate next dentry
-            let next_dentry = dentry.get(next_name)?;
-            let next_type = next_dentry.inode().raw_inode().metadata().type_;
+            let next_dentry = dentry.lookup(next_name)?;
+            let next_type = next_dentry.vnode().inode().metadata().type_;
             let next_is_tail = path_remain.is_empty();
 
             // If next inode is a symlink, follow symlinks at most `SYMLINKS_MAX` times.
@@ -242,7 +190,7 @@ impl FsResolver {
                     return_errno_with_message!(Errno::ELOOP, "too many symlinks");
                 }
                 let link_path_remain = {
-                    let mut tmp_link_path = next_dentry.inode().raw_inode().read_link()?;
+                    let mut tmp_link_path = next_dentry.vnode().inode().read_link()?;
                     if tmp_link_path.is_empty() {
                         return_errno_with_message!(Errno::ENOENT, "empty symlink");
                     }
@@ -277,7 +225,7 @@ impl FsResolver {
     }
 
     /// Lookup dentry from the giving fd
-    fn lookup_dentry_from_fd(&self, fd: FileDescripter) -> Result<Arc<Dentry>> {
+    fn lookup_from_fd(&self, fd: FileDescripter) -> Result<Arc<Dentry>> {
         let current = current!();
         let file_table = current.file_table().lock();
         let inode_handle = file_table
@@ -285,6 +233,78 @@ impl FsResolver {
             .as_inode_handle()
             .ok_or(Error::with_message(Errno::EBADE, "not inode"))?;
         Ok(inode_handle.dentry().clone())
+    }
+
+    /// Lookup the dir dentry and base file name of the giving path.
+    ///
+    /// If the last component is a symlink, do not deference it
+    pub fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Arc<Dentry>, String)> {
+        self.lookup_dir_and_base_name_inner(path, false)
+    }
+
+    fn lookup_dir_and_base_name_inner(
+        &self,
+        path: &FsPath,
+        follow_tail_link: bool,
+    ) -> Result<(Arc<Dentry>, String)> {
+        let (mut dir_dentry, mut base_name) = match path.inner {
+            FsPathInner::Absolute(path) => {
+                let (dir, file_name) = split_path(path);
+                (
+                    self.lookup_from_parent(&self.root, dir.trim_start_matches('/'), true)?,
+                    String::from(file_name),
+                )
+            }
+            FsPathInner::CwdRelative(path) => {
+                let (dir, file_name) = split_path(path);
+                (
+                    self.lookup_from_parent(&self.cwd, path, true)?,
+                    String::from(file_name),
+                )
+            }
+            FsPathInner::FdRelative(fd, path) => {
+                let (dir, file_name) = split_path(path);
+                let parent = self.lookup_from_fd(fd)?;
+                (
+                    self.lookup_from_parent(&parent, path, true)?,
+                    String::from(file_name),
+                )
+            }
+            _ => return_errno!(Errno::ENOENT),
+        };
+        if !follow_tail_link {
+            return Ok((dir_dentry, base_name));
+        }
+
+        // Dereference the tail symlinks if needed
+        loop {
+            match dir_dentry.lookup(&base_name.trim_end_matches('/')) {
+                Ok(dentry) if dentry.vnode().inode().metadata().type_ == InodeType::SymLink => {
+                    let link = {
+                        let mut link = dentry.vnode().inode().read_link()?;
+                        if link.is_empty() {
+                            return_errno_with_message!(Errno::ENOENT, "invalid symlink");
+                        }
+                        if base_name.ends_with("/") && !link.ends_with("/") {
+                            link += "/";
+                        }
+                        link
+                    };
+                    let (dir, file_name) = split_path(&link);
+                    if dir.starts_with("/") {
+                        dir_dentry =
+                            self.lookup_from_parent(&self.root, dir.trim_start_matches('/'), true)?;
+                        base_name = String::from(file_name);
+                    } else {
+                        dir_dentry = self.lookup_from_parent(&dir_dentry, dir, true)?;
+                        base_name = String::from(file_name);
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        Ok((dir_dentry, base_name))
     }
 }
 

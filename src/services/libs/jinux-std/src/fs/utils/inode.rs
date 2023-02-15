@@ -4,8 +4,7 @@ use bitflags::bitflags;
 use core::any::Any;
 use jinux_frame::vm::VmFrame;
 
-use super::{DirentWriterContext, FileSystem};
-use crate::fs::ioctl::IoctlCmd;
+use super::{DirentWriterContext, FileSystem, IoctlCmd};
 use crate::prelude::*;
 
 #[repr(u32)]

@@ -1,4 +1,4 @@
-use crate::fs::events::IoEvents;
+use crate::fs::utils::IoEvents;
 use crate::process::signal::constants::{SIGINT, SIGQUIT};
 use crate::{
     prelude::*,

@@ -7,6 +7,7 @@ use jinux_frame::{
 use crate::{
     current_thread,
     fs::file_table::FileTable,
+    fs::fs_resolver::FsResolver,
     prelude::*,
     process::{
         posix_thread::{
@@ -209,6 +210,8 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
 
     // clone file table
     let child_file_table = clone_files(current.file_table(), clone_flags);
+    // clone fs
+    let child_fs = clone_fs(current.fs(), clone_flags);
     // clone sig dispositions
     let child_sig_dispositions = clone_sighand(current.sig_dispositions(), clone_flags);
     // clone system V semaphore
@@ -240,6 +243,7 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
             child_root_vmar.clone(),
             Weak::new(),
             child_file_table,
+            child_fs,
             child_sig_dispositions,
         )
     });
@@ -337,11 +341,15 @@ fn clone_cpu_context(
     child_context
 }
 
-fn clone_fs(clone_flags: CloneFlags) -> Result<()> {
+fn clone_fs(
+    parent_fs: &Arc<RwLock<FsResolver>>,
+    clone_flags: CloneFlags,
+) -> Arc<RwLock<FsResolver>> {
     if clone_flags.contains(CloneFlags::CLONE_FS) {
-        warn!("CLONE_FS is not supported now")
+        parent_fs.clone()
+    } else {
+        Arc::new(RwLock::new(parent_fs.read().clone()))
     }
-    Ok(())
 }
 
 fn clone_files(

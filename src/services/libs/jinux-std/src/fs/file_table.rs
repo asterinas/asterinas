@@ -1,10 +1,11 @@
 use crate::prelude::*;
 
 use super::{
-    file::FileDescripter,
     file_handle::FileHandle,
     stdio::{Stderr, Stdin, Stdout, FD_STDERR, FD_STDIN, FD_STDOUT},
 };
+
+pub type FileDescripter = i32;
 
 #[derive(Clone)]
 pub struct FileTable {

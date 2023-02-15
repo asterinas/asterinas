@@ -1,4 +1,4 @@
-use crate::fs::file::FileDescripter;
+use crate::fs::file_table::FileDescripter;
 use crate::{log_syscall_entry, prelude::*};
 
 use crate::syscall::SYS_WRITE;

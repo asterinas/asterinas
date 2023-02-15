@@ -1,5 +1,5 @@
-use crate::fs::file::FileDescripter;
-use crate::fs::ioctl::IoctlCmd;
+use crate::fs::file_table::FileDescripter;
+use crate::fs::utils::IoctlCmd;
 use crate::log_syscall_entry;
 use crate::prelude::*;
 

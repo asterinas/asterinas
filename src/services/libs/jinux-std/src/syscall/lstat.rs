@@ -1,4 +1,4 @@
-use crate::fs::stat::Stat;
+use crate::fs::utils::Stat;
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::syscall::constants::MAX_FILENAME_LEN;

@@ -1,7 +1,7 @@
 use super::{SyscallReturn, SYS_FCNTL};
-use crate::fs::fcntl::FcntlCmd;
+use crate::fs::utils::FcntlCmd;
 use crate::log_syscall_entry;
-use crate::{fs::file::FileDescripter, prelude::*};
+use crate::{fs::file_table::FileDescripter, prelude::*};
 
 pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FCNTL);

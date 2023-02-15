@@ -11,6 +11,7 @@ use self::signal::sig_queues::SigQueues;
 use self::signal::signals::kernel::KernelSignal;
 use self::status::ProcessStatus;
 use crate::fs::file_table::FileTable;
+use crate::fs::fs_resolver::FsResolver;
 use crate::prelude::*;
 use crate::rights::Full;
 use crate::thread::kernel_thread::KernelThreadExt;
@@ -65,6 +66,8 @@ pub struct Process {
     process_group: Mutex<Weak<ProcessGroup>>,
     /// File table
     file_table: Arc<Mutex<FileTable>>,
+    /// FsResolver
+    fs: Arc<RwLock<FsResolver>>,
     /// resource limits
     resource_limits: Mutex<ResourceLimits>,
 
@@ -99,6 +102,7 @@ impl Process {
         root_vmar: Arc<Vmar<Full>>,
         process_group: Weak<ProcessGroup>,
         file_table: Arc<Mutex<FileTable>>,
+        fs: Arc<RwLock<FsResolver>>,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
     ) -> Self {
         let parent = if pid == 0 {
@@ -125,6 +129,7 @@ impl Process {
             children: Mutex::new(children),
             process_group: Mutex::new(process_group),
             file_table,
+            fs,
             sig_dispositions,
             sig_queues: Mutex::new(SigQueues::new()),
             resource_limits: Mutex::new(resource_limits),
@@ -191,6 +196,7 @@ impl Process {
             let pid = thread.tid();
             let user_vm = UserVm::new();
             let file_table = FileTable::new_with_stdio();
+            let fs = FsResolver::new().unwrap();
             let sig_dispositions = SigDispositions::new();
 
             let process = Process::new(
@@ -201,6 +207,7 @@ impl Process {
                 Arc::new(root_vmar),
                 Weak::new(),
                 Arc::new(Mutex::new(file_table)),
+                Arc::new(RwLock::new(fs)),
                 Arc::new(Mutex::new(sig_dispositions)),
             );
             process
@@ -224,6 +231,7 @@ impl Process {
             let thread = Thread::new_kernel_thread(task_fn, weak_process_ref.clone());
             let pid = thread.tid();
             let file_table = FileTable::new();
+            let fs = FsResolver::new().unwrap();
             let sig_dispositions = SigDispositions::new();
             // FIXME: kernel process does not need root vmar
             let root_vmar = Vmar::<Full>::new_root().unwrap();
@@ -235,6 +243,7 @@ impl Process {
                 Arc::new(root_vmar),
                 Weak::new(),
                 Arc::new(Mutex::new(file_table)),
+                Arc::new(RwLock::new(fs)),
                 Arc::new(Mutex::new(sig_dispositions)),
             )
         });
@@ -285,6 +294,10 @@ impl Process {
 
     pub fn file_table(&self) -> &Arc<Mutex<FileTable>> {
         &self.file_table
+    }
+
+    pub fn fs(&self) -> &Arc<RwLock<FsResolver>> {
+        &self.fs
     }
 
     /// create a new process group for the process and add it to globle table.

@@ -1,6 +1,8 @@
-use crate::fs::file::File;
-use crate::fs::file::FileDescripter;
-use crate::fs::file_handle::FileHandle;
+use crate::fs::{
+    file_handle::{File, FileHandle},
+    file_table::FileDescripter,
+    fs_resolver::{FsPath, AT_FDCWD},
+};
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::syscall::constants::MAX_FILENAME_LEN;
@@ -10,12 +12,10 @@ use crate::util::read_cstring_from_user;
 use super::SyscallReturn;
 use super::SYS_OPENAT;
 
-const AT_FDCWD: FileDescripter = -100;
-
 pub fn sys_openat(
     dirfd: FileDescripter,
     pathname_addr: Vaddr,
-    flags: i32,
+    flags: u32,
     mode: u16,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_OPENAT);
@@ -53,7 +53,18 @@ pub fn sys_openat(
         let fd = file_table.insert(tty_file);
         return Ok(SyscallReturn::Return(fd as _));
     }
-    todo!()
+
+    // The common path
+    let current = current!();
+    let file_handle = {
+        let pathname = pathname.to_string_lossy();
+        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        let inode_handle = current.fs().read().open(&fs_path, flags, mode)?;
+        FileHandle::new_inode_handle(inode_handle)
+    };
+    let mut file_table = current.file_table().lock();
+    let fd = file_table.insert(file_handle);
+    Ok(SyscallReturn::Return(fd as _))
 }
 
 /// File for output busybox ash log.

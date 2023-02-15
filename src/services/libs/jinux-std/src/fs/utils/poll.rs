@@ -1,7 +1,7 @@
 #![allow(non_camel_case_types)]
 
-use super::events::IoEvents;
-use super::file::FileDescripter;
+use super::IoEvents;
+use crate::fs::file_table::FileDescripter;
 pub type c_nfds = u64;
 
 // https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/poll.h
