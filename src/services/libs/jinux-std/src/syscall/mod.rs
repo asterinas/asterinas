@@ -25,9 +25,11 @@ use crate::syscall::gettid::sys_gettid;
 use crate::syscall::getuid::sys_getuid;
 use crate::syscall::ioctl::sys_ioctl;
 use crate::syscall::kill::sys_kill;
+use crate::syscall::link::{sys_link, sys_linkat};
 use crate::syscall::lseek::sys_lseek;
 use crate::syscall::lstat::sys_lstat;
 use crate::syscall::madvise::sys_madvise;
+use crate::syscall::mkdir::{sys_mkdir, sys_mkdirat};
 use crate::syscall::mmap::sys_mmap;
 use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::munmap::sys_munmap;
@@ -37,6 +39,7 @@ use crate::syscall::prctl::sys_prctl;
 use crate::syscall::prlimit64::sys_prlimit64;
 use crate::syscall::read::sys_read;
 use crate::syscall::readlink::sys_readlink;
+use crate::syscall::rmdir::sys_rmdir;
 use crate::syscall::rt_sigaction::sys_rt_sigaction;
 use crate::syscall::rt_sigprocmask::sys_rt_sigprocmask;
 use crate::syscall::rt_sigreturn::sys_rt_sigreturn;
@@ -47,6 +50,7 @@ use crate::syscall::setpgid::sys_setpgid;
 use crate::syscall::stat::sys_stat;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
+use crate::syscall::unlink::{sys_unlink, sys_unlinkat};
 use crate::syscall::wait4::sys_wait4;
 use crate::syscall::waitid::sys_waitid;
 use crate::syscall::write::sys_write;
@@ -78,9 +82,11 @@ mod gettid;
 mod getuid;
 mod ioctl;
 mod kill;
+mod link;
 mod lseek;
 mod lstat;
 mod madvise;
+mod mkdir;
 mod mmap;
 mod mprotect;
 mod munmap;
@@ -90,6 +96,7 @@ mod prctl;
 mod prlimit64;
 mod read;
 mod readlink;
+mod rmdir;
 mod rt_sigaction;
 mod rt_sigprocmask;
 mod rt_sigreturn;
@@ -100,6 +107,7 @@ mod setpgid;
 mod stat;
 mod tgkill;
 mod uname;
+mod unlink;
 mod wait4;
 mod waitid;
 mod write;
@@ -167,6 +175,10 @@ define_syscall_nums!(
     SYS_UNAME = 63,
     SYS_FCNTL = 72,
     SYS_GETCWD = 79,
+    SYS_MKDIR = 83,
+    SYS_RMDIR = 84,
+    SYS_LINK = 86,
+    SYS_UNLINK = 87,
     SYS_READLINK = 89,
     SYS_GETUID = 102,
     SYS_GETGID = 104,
@@ -185,6 +197,9 @@ define_syscall_nums!(
     SYS_TGKILL = 234,
     SYS_WAITID = 247,
     SYS_OPENAT = 257,
+    SYS_MKDIRAT = 258,
+    SYS_UNLINKAT = 263,
+    SYS_LINKAT = 265,
     SYS_SET_ROBUST_LIST = 273,
     SYS_PRLIMIT64 = 302
 );
@@ -276,6 +291,10 @@ pub fn syscall_dispatch(
         SYS_UNAME => syscall_handler!(1, sys_uname, args),
         SYS_FCNTL => syscall_handler!(3, sys_fcntl, args),
         SYS_GETCWD => syscall_handler!(2, sys_getcwd, args),
+        SYS_MKDIR => syscall_handler!(2, sys_mkdir, args),
+        SYS_RMDIR => syscall_handler!(1, sys_rmdir, args),
+        SYS_LINK => syscall_handler!(2, sys_link, args),
+        SYS_UNLINK => syscall_handler!(1, sys_unlink, args),
         SYS_READLINK => syscall_handler!(3, sys_readlink, args),
         SYS_GETUID => syscall_handler!(0, sys_getuid),
         SYS_GETGID => syscall_handler!(0, sys_getgid),
@@ -294,6 +313,9 @@ pub fn syscall_dispatch(
         SYS_TGKILL => syscall_handler!(3, sys_tgkill, args),
         SYS_WAITID => syscall_handler!(5, sys_waitid, args),
         SYS_OPENAT => syscall_handler!(4, sys_openat, args),
+        SYS_MKDIRAT => syscall_handler!(3, sys_mkdirat, args),
+        SYS_UNLINKAT => syscall_handler!(3, sys_unlinkat, args),
+        SYS_LINKAT => syscall_handler!(5, sys_linkat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
         _ => {

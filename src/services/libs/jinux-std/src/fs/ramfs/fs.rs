@@ -404,9 +404,28 @@ impl Inode for RamInode {
         let self_dir = self_inode.inner.as_direntry_mut().unwrap();
         let (idx, other) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
         let other_inode = other.0.read();
-        if other_inode.metadata.type_ == InodeType::Dir
-            && !other_inode.inner.as_direntry().unwrap().is_empty_children()
-        {
+        if other_inode.metadata.type_ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "unlink on dir");
+        }
+        self_dir.remove_entry(idx);
+        Ok(())
+    }
+
+    fn rmdir(&self, name: &str) -> Result<()> {
+        if self.0.read().metadata.type_ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
+        }
+        if name == "." || name == ".." {
+            return_errno_with_message!(Errno::EISDIR, "rmdir on . or ..");
+        }
+        let mut self_inode = self.0.write();
+        let self_dir = self_inode.inner.as_direntry_mut().unwrap();
+        let (idx, other) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
+        let other_inode = other.0.read();
+        if other_inode.metadata.type_ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
+        }
+        if other_inode.inner.as_direntry().unwrap().is_empty_children() {
             return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
         }
         self_dir.remove_entry(idx);
