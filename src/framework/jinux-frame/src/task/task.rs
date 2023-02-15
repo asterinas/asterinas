@@ -11,6 +11,9 @@ use crate::user::{syscall_switch_to_user_space, trap_switch_to_user_space, UserS
 use crate::vm::{VmAllocOptions, VmFrameVec};
 use crate::{prelude::*, UPSafeCell};
 
+use intrusive_collections::intrusive_adapter;
+use intrusive_collections::LinkedListAtomicLink;
+
 use super::processor::{current_task, schedule};
 
 core::arch::global_asm!(include_str!("switch.S"));
@@ -66,6 +69,7 @@ lazy_static! {
             },
             exit_code: usize::MAX,
             kstack: KernelStack::new(),
+            link: LinkedListAtomicLink::new(),
         };
         task.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
         task.task_inner.exclusive_access().ctx.rip = context_switch_to_user_space as usize;
@@ -98,7 +102,11 @@ pub struct Task {
     exit_code: usize,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
+    link: LinkedListAtomicLink,
 }
+
+// TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
+intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
@@ -166,6 +174,7 @@ impl Task {
             },
             exit_code: 0,
             kstack: KernelStack::new(),
+            link: LinkedListAtomicLink::new(),
         };
 
         result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
@@ -210,6 +219,7 @@ impl Task {
             },
             exit_code: 0,
             kstack: KernelStack::new(),
+            link: LinkedListAtomicLink::new(),
         };
 
         result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;

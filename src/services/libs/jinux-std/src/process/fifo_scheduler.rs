@@ -1,16 +1,16 @@
 use crate::prelude::*;
-use jinux_frame::task::{set_scheduler, Scheduler, Task};
+use jinux_frame::task::{set_scheduler, Scheduler, Task, TaskAdapter};
 
-pub const TASK_INIT_CAPABILITY: usize = 16;
+use intrusive_collections::LinkedList;
 
 pub struct FifoScheduler {
-    tasks: Mutex<VecDeque<Arc<Task>>>,
+    tasks: Mutex<LinkedList<TaskAdapter>>,
 }
 
 impl FifoScheduler {
     pub fn new() -> Self {
         Self {
-            tasks: Mutex::new(VecDeque::with_capacity(TASK_INIT_CAPABILITY)),
+            tasks: Mutex::new(LinkedList::new(TaskAdapter::new())),
         }
     }
 }

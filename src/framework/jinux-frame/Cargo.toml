@@ -18,6 +18,7 @@ uart_16550 = "0.2.0"
 pod = {path = "../pod"}
 pod-derive = {path = "../pod-derive"}
 acpi= "4.1.1"
+intrusive-collections = "0.9.5"
 
 [dependencies.lazy_static]
 version = "1.0"
