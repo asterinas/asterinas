@@ -6,6 +6,7 @@ mod inode_handle;
 use crate::prelude::*;
 use crate::rights::{ReadOp, WriteOp};
 use alloc::sync::Arc;
+use core::ops::Range;
 
 pub use self::file::File;
 pub use self::inode_handle::InodeHandle;
@@ -64,5 +65,21 @@ impl FileHandle {
                 static_handle.write(buf)
             }
         }
+    }
+
+    pub fn clean_for_close(&self) -> Result<()> {
+        match &self.inner {
+            Inner::Inode(inode_handle) => {
+                let dentry = inode_handle.dentry();
+                let ref_count = Arc::strong_count(dentry);
+                // The dentry is held by dentry cache and self
+                if ref_count == 2 {
+                    let page_cache_size = dentry.vnode().pages().size();
+                    dentry.vnode().pages().decommit(0..page_cache_size)?;
+                }
+            }
+            Inner::File(file) => file.flush()?,
+        }
+        Ok(())
     }
 }

@@ -9,6 +9,7 @@ pub fn sys_close(fd: FileDescripter) -> Result<SyscallReturn> {
     let current = current!();
     let mut file_table = current.file_table().lock();
     let _ = file_table.get_file(fd)?;
-    file_table.close_file(fd);
+    let file = file_table.close_file(fd).unwrap();
+    file.clean_for_close()?;
     Ok(SyscallReturn::Return(0))
 }
