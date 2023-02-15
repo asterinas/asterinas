@@ -11,4 +11,4 @@ pub use self::scheduler::{set_scheduler, Scheduler};
 pub(crate) use self::task::context_switch;
 pub(crate) use self::task::TaskContext;
 pub(crate) use self::task::SWITCH_TO_USER_SPACE_TASK;
-pub use self::task::{Task, TaskStatus};
+pub use self::task::{Task, TaskStatus, TaskAdapter};
