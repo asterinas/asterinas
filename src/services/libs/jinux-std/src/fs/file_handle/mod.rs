@@ -1,9 +1,14 @@
+//! Opend File Handle
+
+mod file;
+mod inode_handle;
+
 use crate::prelude::*;
 use crate::rights::{ReadOp, WriteOp};
 use alloc::sync::Arc;
 
-use super::file::File;
-use super::inode_handle::InodeHandle;
+pub use self::file::File;
+pub use self::inode_handle::InodeHandle;
 
 #[derive(Clone)]
 pub struct FileHandle {

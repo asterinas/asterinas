@@ -1,12 +1,11 @@
 use crate::prelude::*;
 use alloc::string::String;
 
-use super::{InodeMode, InodeType, NAME_MAX};
-use crate::fs::vfs_inode::VfsInode;
+use super::{InodeMode, InodeType, Vnode, NAME_MAX};
 
 pub struct Dentry {
     inner: RwLock<Dentry_>,
-    inode: VfsInode,
+    vnode: Vnode,
 }
 
 struct Dentry_ {
@@ -29,16 +28,16 @@ impl Dentry_ {
 
 impl Dentry {
     /// Create a new dentry cache with root inode
-    pub fn new_root(inode: VfsInode) -> Arc<Self> {
-        let root = Self::new("/", inode, None);
+    pub fn new_root(root_vnode: Vnode) -> Arc<Self> {
+        let root = Self::new("/", root_vnode, None);
         root
     }
 
     /// Internal constructor
-    fn new(name: &str, inode: VfsInode, parent: Option<Weak<Dentry>>) -> Arc<Self> {
+    fn new(name: &str, vnode: Vnode, parent: Option<Weak<Dentry>>) -> Arc<Self> {
         let dentry = {
             let inner = RwLock::new(Dentry_::new(name, parent));
-            Arc::new(Self { inner, inode })
+            Arc::new(Self { inner, vnode })
         };
         dentry.inner.write().this = Arc::downgrade(&dentry);
         dentry
@@ -46,20 +45,6 @@ impl Dentry {
 
     fn name(&self) -> String {
         self.inner.read().name.clone()
-    }
-
-    pub fn inode(&self) -> &VfsInode {
-        &self.inode
-    }
-
-    pub fn create_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
-        let mut inner = self.inner.write();
-        let child = {
-            let inode = VfsInode::new(self.inode().raw_inode().mknod(name, type_, mode)?)?;
-            Dentry::new(name, inode, Some(inner.this.clone()))
-        };
-        inner.children.insert(String::from(name), child.clone());
-        Ok(child)
     }
 
     fn this(&self) -> Arc<Dentry> {
@@ -74,8 +59,22 @@ impl Dentry {
             .map(|p| p.upgrade().unwrap())
     }
 
-    pub fn get(&self, name: &str) -> Result<Arc<Dentry>> {
-        if self.inode.raw_inode().metadata().type_ != InodeType::Dir {
+    pub fn vnode(&self) -> &Vnode {
+        &self.vnode
+    }
+
+    pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
+        let mut inner = self.inner.write();
+        let child = {
+            let vnode = Vnode::new(self.vnode.inode().mknod(name, type_, mode)?)?;
+            Dentry::new(name, vnode, Some(inner.this.clone()))
+        };
+        inner.children.insert(String::from(name), child.clone());
+        Ok(child)
+    }
+
+    pub fn lookup(&self, name: &str) -> Result<Arc<Dentry>> {
+        if self.vnode.inode().metadata().type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if name.len() > NAME_MAX {
@@ -90,8 +89,8 @@ impl Dentry {
                 if let Some(dentry) = inner.children.get(name) {
                     dentry.clone()
                 } else {
-                    let inode = VfsInode::new(self.inode.raw_inode().lookup(name)?)?;
-                    let dentry = Dentry::new(name, inode, Some(inner.this.clone()));
+                    let vnode = Vnode::new(self.vnode.inode().lookup(name)?)?;
+                    let dentry = Dentry::new(name, vnode, Some(inner.this.clone()));
                     inner.children.insert(String::from(name), dentry.clone());
                     dentry
                 }

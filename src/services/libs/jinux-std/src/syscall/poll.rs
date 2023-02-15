@@ -1,9 +1,9 @@
 use core::time::Duration;
 
-use crate::fs::poll::{c_pollfd, PollFd};
+use crate::fs::utils::{c_pollfd, PollFd};
 use crate::log_syscall_entry;
 use crate::util::{read_val_from_user, write_val_to_user};
-use crate::{fs::poll::c_nfds, prelude::*};
+use crate::{fs::utils::c_nfds, prelude::*};
 
 use super::SyscallReturn;
 use super::SYS_POLL;

@@ -2,10 +2,7 @@ use crate::prelude::*;
 use crate::tty::get_n_tty;
 use core::any::Any;
 
-use super::events::IoEvents;
-use super::ioctl::IoctlCmd;
-
-pub type FileDescripter = i32;
+use crate::fs::utils::{IoEvents, IoctlCmd};
 
 /// The basic operations defined on a file
 pub trait File: Send + Sync + Any {

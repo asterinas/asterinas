@@ -1,6 +1,6 @@
 //! This mod defines mmap flags and the handler to syscall mmap
 
-use crate::fs::file::FileDescripter;
+use crate::fs::file_table::FileDescripter;
 use crate::process::process_vm::mmap_flags::MMapFlags;
 use crate::rights::Rights;
 use crate::vm::perms::VmPerms;

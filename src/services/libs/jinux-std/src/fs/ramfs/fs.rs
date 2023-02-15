@@ -7,9 +7,8 @@ use jinux_frame::vm::VmFrame;
 use spin::{RwLock, RwLockWriteGuard};
 
 use super::*;
-use crate::fs::ioctl::IoctlCmd;
 use crate::fs::utils::{
-    DirentWriterContext, FileSystem, Inode, InodeMode, InodeType, Metadata, SuperBlock,
+    DirentWriterContext, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
 };
 
 pub struct RamFS {

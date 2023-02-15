@@ -1,5 +1,5 @@
 use crate::log_syscall_entry;
-use crate::{fs::file::FileDescripter, prelude::*};
+use crate::{fs::file_table::FileDescripter, prelude::*};
 
 use super::SyscallReturn;
 use super::SYS_LSEEK;

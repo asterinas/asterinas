@@ -1,8 +1,9 @@
-use super::events::IoEvents;
 use crate::prelude::*;
 use crate::tty::{get_n_tty, Tty};
 
-use super::file::{File, FileDescripter};
+use super::file_handle::File;
+use super::file_table::FileDescripter;
+use super::utils::IoEvents;
 
 pub const FD_STDIN: FileDescripter = 0;
 pub const FD_STDOUT: FileDescripter = 1;
@@ -37,7 +38,7 @@ impl File for Stdin {
         }
     }
 
-    fn ioctl(&self, cmd: super::ioctl::IoctlCmd, arg: usize) -> Result<i32> {
+    fn ioctl(&self, cmd: super::utils::IoctlCmd, arg: usize) -> Result<i32> {
         if let Some(console) = self.console.as_ref() {
             console.ioctl(cmd, arg)
         } else {
@@ -46,7 +47,7 @@ impl File for Stdin {
     }
 }
 impl File for Stdout {
-    fn ioctl(&self, cmd: super::ioctl::IoctlCmd, arg: usize) -> Result<i32> {
+    fn ioctl(&self, cmd: super::utils::IoctlCmd, arg: usize) -> Result<i32> {
         if let Some(console) = self.console.as_ref() {
             console.ioctl(cmd, arg)
         } else {
@@ -64,7 +65,7 @@ impl File for Stdout {
 }
 
 impl File for Stderr {
-    fn ioctl(&self, cmd: super::ioctl::IoctlCmd, arg: usize) -> Result<i32> {
+    fn ioctl(&self, cmd: super::utils::IoctlCmd, arg: usize) -> Result<i32> {
         if let Some(console) = self.console.as_ref() {
             console.ioctl(cmd, arg)
         } else {

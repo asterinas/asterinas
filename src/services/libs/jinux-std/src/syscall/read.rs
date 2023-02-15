@@ -1,6 +1,6 @@
 use crate::log_syscall_entry;
 use crate::util::write_bytes_to_user;
-use crate::{fs::file::FileDescripter, prelude::*};
+use crate::{fs::file_table::FileDescripter, prelude::*};
 
 use super::SyscallReturn;
 use super::SYS_READ;

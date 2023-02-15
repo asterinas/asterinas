@@ -1,5 +1,4 @@
 use crate::prelude::*;
-
 use crate::rights::{Rights, TRights};
 
 use super::*;
@@ -10,7 +9,7 @@ impl InodeHandle<Rights> {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
-        let inode_info = dentry.inode().raw_inode().metadata();
+        let inode_info = dentry.vnode().inode().metadata();
         if access_mode.is_readable() && !inode_info.mode.is_readable() {
             return_errno_with_message!(Errno::EACCES, "File is not readable");
         }

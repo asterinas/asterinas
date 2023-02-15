@@ -1,6 +1,6 @@
 use jinux_frame::vm::VmIo;
 
-use crate::fs::stat::Stat;
+use crate::fs::utils::Stat;
 use crate::{log_syscall_entry, prelude::*};
 
 use crate::syscall::{SyscallReturn, SYS_FSTAT};
