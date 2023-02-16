@@ -31,7 +31,7 @@ use crate::syscall::madvise::sys_madvise;
 use crate::syscall::mmap::sys_mmap;
 use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::munmap::sys_munmap;
-use crate::syscall::openat::sys_openat;
+use crate::syscall::open::{sys_open, sys_openat};
 use crate::syscall::poll::sys_poll;
 use crate::syscall::prctl::sys_prctl;
 use crate::syscall::prlimit64::sys_prlimit64;
@@ -84,7 +84,7 @@ mod madvise;
 mod mmap;
 mod mprotect;
 mod munmap;
-mod openat;
+mod open;
 mod poll;
 mod prctl;
 mod prlimit64;
@@ -138,6 +138,7 @@ macro_rules! syscall_handler {
 define_syscall_nums!(
     SYS_READ = 0,
     SYS_WRITE = 1,
+    SYS_OPEN = 2,
     SYS_CLOSE = 3,
     SYS_STAT = 4,
     SYS_FSTAT = 5,
@@ -246,6 +247,7 @@ pub fn syscall_dispatch(
     match syscall_number {
         SYS_READ => syscall_handler!(3, sys_read, args),
         SYS_WRITE => syscall_handler!(3, sys_write, args),
+        SYS_OPEN => syscall_handler!(3, sys_open, args),
         SYS_CLOSE => syscall_handler!(1, sys_close, args),
         SYS_STAT => syscall_handler!(2, sys_stat, args),
         SYS_FSTAT => syscall_handler!(2, sys_fstat, args),

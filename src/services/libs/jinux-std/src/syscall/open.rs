@@ -67,6 +67,10 @@ pub fn sys_openat(
     Ok(SyscallReturn::Return(fd as _))
 }
 
+pub fn sys_open(pathname_addr: Vaddr, flags: u32, mode: u16) -> Result<SyscallReturn> {
+    self::sys_openat(AT_FDCWD, pathname_addr, flags, mode)
+}
+
 /// File for output busybox ash log.
 struct BusyBoxTraceFile;
 
