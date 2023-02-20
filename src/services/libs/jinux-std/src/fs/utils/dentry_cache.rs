@@ -65,6 +65,9 @@ impl Dentry {
 
     pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
         let mut inner = self.inner.write();
+        if inner.children.get(name).is_some() {
+            return_errno!(Errno::EEXIST);
+        }
         let child = {
             let vnode = Vnode::new(self.vnode.inode().mknod(name, type_, mode)?)?;
             Dentry::new(name, vnode, Some(inner.this.clone()))
@@ -73,7 +76,7 @@ impl Dentry {
         Ok(child)
     }
 
-    pub fn lookup(&self, name: &str) -> Result<Arc<Dentry>> {
+    pub fn lookup(&self, name: &str) -> Result<Arc<Self>> {
         if self.vnode.inode().metadata().type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -97,6 +100,41 @@ impl Dentry {
             }
         };
         Ok(dentry)
+    }
+
+    pub fn link(&self, old: &Arc<Self>, name: &str) -> Result<()> {
+        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+            return_errno!(Errno::ENOTDIR);
+        }
+        let mut inner = self.inner.write();
+        if inner.children.get(name).is_some() {
+            return_errno!(Errno::EEXIST);
+        }
+        let target_vnode = old.vnode();
+        self.vnode.inode().link(target_vnode.inode(), name)?;
+        let new_dentry = Self::new(name, target_vnode.clone(), Some(inner.this.clone()));
+        inner.children.insert(String::from(name), new_dentry);
+        Ok(())
+    }
+
+    pub fn unlink(&self, name: &str) -> Result<()> {
+        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+            return_errno!(Errno::ENOTDIR);
+        }
+        let mut inner = self.inner.write();
+        self.vnode.inode().unlink(name)?;
+        inner.children.remove(name);
+        Ok(())
+    }
+
+    pub fn rmdir(&self, name: &str) -> Result<()> {
+        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+            return_errno!(Errno::ENOTDIR);
+        }
+        let mut inner = self.inner.write();
+        self.vnode.inode().rmdir(name)?;
+        inner.children.remove(name);
+        Ok(())
     }
 
     pub fn abs_path(&self) -> String {

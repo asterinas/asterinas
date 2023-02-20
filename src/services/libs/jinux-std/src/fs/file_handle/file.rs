@@ -28,4 +28,8 @@ pub trait File: Send + Sync + Any {
     fn poll(&self) -> IoEvents {
         IoEvents::empty()
     }
+
+    fn flush(&self) -> Result<()> {
+        Ok(())
+    }
 }

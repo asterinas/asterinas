@@ -176,6 +176,8 @@ pub trait Inode: Any + Sync + Send {
 
     fn unlink(&self, name: &str) -> Result<()>;
 
+    fn rmdir(&self, name: &str) -> Result<()>;
+
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>>;
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()>;

@@ -58,8 +58,8 @@ impl FileTable {
         fd
     }
 
-    pub fn close_file(&mut self, fd: FileDescripter) {
-        self.table.remove(&fd);
+    pub fn close_file(&mut self, fd: FileDescripter) -> Option<FileHandle> {
+        self.table.remove(&fd)
     }
 
     pub fn get_file(&self, fd: FileDescripter) -> Result<&FileHandle> {
