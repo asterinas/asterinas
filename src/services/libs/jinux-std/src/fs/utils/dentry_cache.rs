@@ -64,6 +64,9 @@ impl Dentry {
     }
 
     pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
+        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+            return_errno!(Errno::ENOTDIR);
+        }
         let mut inner = self.inner.write();
         if inner.children.get(name).is_some() {
             return_errno!(Errno::EEXIST);
