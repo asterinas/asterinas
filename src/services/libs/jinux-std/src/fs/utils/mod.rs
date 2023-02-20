@@ -32,9 +32,9 @@ mod vnode;
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum SeekFrom {
-    Start(u64),
-    End(i64),
-    Current(i64),
+    Start(usize),
+    End(isize),
+    Current(isize),
 }
 
 /// Maximum bytes in a path

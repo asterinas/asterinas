@@ -3,7 +3,7 @@ use crate::tty::{get_n_tty, Tty};
 
 use super::file_handle::File;
 use super::file_table::FileDescripter;
-use super::utils::{InodeMode, InodeType, IoEvents, Metadata};
+use super::utils::{InodeMode, InodeType, IoEvents, Metadata, SeekFrom};
 
 pub const FD_STDIN: FileDescripter = 0;
 pub const FD_STDOUT: FileDescripter = 1;
@@ -46,6 +46,11 @@ impl File for Stdin {
         }
     }
 
+    fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
+        // TODO: do real seek
+        Ok(0)
+    }
+
     fn metadata(&self) -> Metadata {
         Metadata {
             dev: 0,
@@ -80,6 +85,11 @@ impl File for Stdout {
         } else {
             todo!()
         }
+    }
+
+    fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
+        // TODO: do real seek
+        Ok(0)
     }
 
     fn metadata(&self) -> Metadata {
@@ -117,6 +127,11 @@ impl File for Stderr {
         } else {
             todo!()
         }
+    }
+
+    fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
+        // TODO: do real seek
+        Ok(0)
     }
 
     fn metadata(&self) -> Metadata {

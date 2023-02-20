@@ -70,28 +70,28 @@ impl InodeHandle_ {
 
     pub fn seek(&self, pos: SeekFrom) -> Result<usize> {
         let mut offset = self.offset.lock();
-        let new_offset: i64 = match pos {
-            SeekFrom::Start(off /* as u64 */) => {
-                if off > i64::max_value() as u64 {
+        let new_offset: isize = match pos {
+            SeekFrom::Start(off /* as usize */) => {
+                if off > isize::max_value() as usize {
                     return_errno_with_message!(Errno::EINVAL, "file offset is too large");
                 }
-                off as i64
+                off as isize
             }
-            SeekFrom::End(off /* as i64 */) => {
-                let file_size = self.dentry.vnode().inode().metadata().size as i64;
+            SeekFrom::End(off /* as isize */) => {
+                let file_size = self.dentry.vnode().inode().metadata().size as isize;
                 assert!(file_size >= 0);
                 file_size
                     .checked_add(off)
                     .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "file offset overflow"))?
             }
-            SeekFrom::Current(off /* as i64 */) => (*offset as i64)
+            SeekFrom::Current(off /* as isize */) => (*offset as isize)
                 .checked_add(off)
                 .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "file offset overflow"))?,
         };
         if new_offset < 0 {
             return_errno_with_message!(Errno::EINVAL, "file offset must not be negative");
         }
-        // Invariant: 0 <= new_offset <= i64::max_value()
+        // Invariant: 0 <= new_offset <= isize::max_value()
         let new_offset = new_offset as usize;
         *offset = new_offset;
         Ok(new_offset)
