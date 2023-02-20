@@ -1,54 +1,60 @@
-use crate::{log_syscall_entry, prelude::*};
-
-use crate::syscall::SYS_READLINK;
-use crate::util::{read_bytes_from_user, write_bytes_to_user};
+use crate::fs::{
+    file_table::FileDescripter,
+    fs_resolver::{FsPath, AT_FDCWD},
+};
+use crate::log_syscall_entry;
+use crate::prelude::*;
+use crate::syscall::constants::MAX_FILENAME_LEN;
+use crate::util::{read_cstring_from_user, write_bytes_to_user};
 
 use super::SyscallReturn;
+use super::SYS_READLINKAT;
 
-const MAX_FILENAME_LEN: usize = 128;
-
-pub fn sys_readlink(
-    filename_ptr: u64,
-    user_buf_ptr: u64,
-    user_buf_len: u64,
+pub fn sys_readlinkat(
+    dirfd: FileDescripter,
+    pathname_addr: Vaddr,
+    usr_buf_addr: Vaddr,
+    usr_buf_len: usize,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_READLINK);
-    let res = do_sys_readlink(
-        filename_ptr as Vaddr,
-        user_buf_ptr as Vaddr,
-        user_buf_len as usize,
-    )?;
-    Ok(SyscallReturn::Return(res as _))
-}
-
-/// do sys readlink
-/// write the content to user buffer, returns the actual write len
-pub fn do_sys_readlink(
-    filename_ptr: Vaddr,
-    user_buf_ptr: Vaddr,
-    user_buf_len: usize,
-) -> Result<usize> {
+    log_syscall_entry!(SYS_READLINKAT);
+    let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
     debug!(
-        "filename ptr = 0x{:x}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}",
-        filename_ptr, user_buf_ptr, user_buf_len
+        "dirfd = {}, pathname = {:?}, usr_buf_addr = 0x{:x}, usr_buf_len = 0x{:x}",
+        dirfd, pathname, usr_buf_addr, usr_buf_len
     );
 
-    let mut filename_buffer = [0u8; MAX_FILENAME_LEN];
     let current = current!();
-    read_bytes_from_user(filename_ptr, &mut filename_buffer)?;
-    let filename = CStr::from_bytes_until_nul(&filename_buffer).expect("Invalid filename");
-    debug!("filename = {:?}", filename);
-    if filename == CString::new("/proc/self/exe").unwrap().as_c_str() {
+    if pathname == CString::new("/proc/self/exe")? {
         // "proc/self/exe" is used to read the filename of current executable
         let process_file_name = current.filename().unwrap();
         debug!("process exec filename= {:?}", process_file_name);
-        let bytes = process_file_name.as_bytes_with_nul();
-        let bytes_len = bytes.len();
-        let write_len = bytes_len.min(user_buf_len);
-
-        write_bytes_to_user(user_buf_ptr, &bytes[..write_len])?;
-        return Ok(write_len);
+        // readlink does not append a terminating null byte to buf
+        let bytes = process_file_name.as_bytes();
+        let write_len = bytes.len().min(usr_buf_len);
+        write_bytes_to_user(usr_buf_addr, &bytes[..write_len])?;
+        return Ok(SyscallReturn::Return(write_len as _));
     }
 
-    panic!("does not support linkname other than /proc/self/exe")
+    // The common path
+    let dentry = {
+        let pathname = pathname.to_string_lossy();
+        if pathname.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "path is empty");
+        }
+        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        current.fs().read().lookup_no_follow(&fs_path)?
+    };
+    let linkpath = dentry.vnode().inode().read_link()?;
+    let bytes = linkpath.as_bytes();
+    let write_len = bytes.len().min(usr_buf_len);
+    write_bytes_to_user(usr_buf_addr, &bytes[..write_len])?;
+    Ok(SyscallReturn::Return(write_len as _))
+}
+
+pub fn sys_readlink(
+    pathname_addr: Vaddr,
+    usr_buf_addr: Vaddr,
+    usr_buf_len: usize,
+) -> Result<SyscallReturn> {
+    self::sys_readlinkat(AT_FDCWD, pathname_addr, usr_buf_addr, usr_buf_len)
 }

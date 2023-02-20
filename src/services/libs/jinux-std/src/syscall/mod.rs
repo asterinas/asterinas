@@ -36,7 +36,7 @@ use crate::syscall::poll::sys_poll;
 use crate::syscall::prctl::sys_prctl;
 use crate::syscall::prlimit64::sys_prlimit64;
 use crate::syscall::read::sys_read;
-use crate::syscall::readlink::sys_readlink;
+use crate::syscall::readlink::{sys_readlink, sys_readlinkat};
 use crate::syscall::rmdir::sys_rmdir;
 use crate::syscall::rt_sigaction::sys_rt_sigaction;
 use crate::syscall::rt_sigprocmask::sys_rt_sigprocmask;
@@ -46,6 +46,7 @@ use crate::syscall::set_robust_list::sys_set_robust_list;
 use crate::syscall::set_tid_address::sys_set_tid_address;
 use crate::syscall::setpgid::sys_setpgid;
 use crate::syscall::stat::{sys_fstat, sys_fstatat, sys_lstat, sys_stat};
+use crate::syscall::symlink::{sys_symlink, sys_symlinkat};
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
 use crate::syscall::unlink::{sys_unlink, sys_unlinkat};
@@ -101,6 +102,7 @@ mod set_robust_list;
 mod set_tid_address;
 mod setpgid;
 mod stat;
+mod symlink;
 mod tgkill;
 mod uname;
 mod unlink;
@@ -175,6 +177,7 @@ define_syscall_nums!(
     SYS_RMDIR = 84,
     SYS_LINK = 86,
     SYS_UNLINK = 87,
+    SYS_SYMLINK = 88,
     SYS_READLINK = 89,
     SYS_GETUID = 102,
     SYS_GETGID = 104,
@@ -197,6 +200,8 @@ define_syscall_nums!(
     SYS_FSTATAT = 262,
     SYS_UNLINKAT = 263,
     SYS_LINKAT = 265,
+    SYS_SYMLINKAT = 266,
+    SYS_READLINKAT = 267,
     SYS_SET_ROBUST_LIST = 273,
     SYS_PRLIMIT64 = 302
 );
@@ -292,6 +297,7 @@ pub fn syscall_dispatch(
         SYS_RMDIR => syscall_handler!(1, sys_rmdir, args),
         SYS_LINK => syscall_handler!(2, sys_link, args),
         SYS_UNLINK => syscall_handler!(1, sys_unlink, args),
+        SYS_SYMLINK => syscall_handler!(2, sys_symlink, args),
         SYS_READLINK => syscall_handler!(3, sys_readlink, args),
         SYS_GETUID => syscall_handler!(0, sys_getuid),
         SYS_GETGID => syscall_handler!(0, sys_getgid),
@@ -314,6 +320,8 @@ pub fn syscall_dispatch(
         SYS_FSTATAT => syscall_handler!(4, sys_fstatat, args),
         SYS_UNLINKAT => syscall_handler!(3, sys_unlinkat, args),
         SYS_LINKAT => syscall_handler!(5, sys_linkat, args),
+        SYS_SYMLINKAT => syscall_handler!(3, sys_symlinkat, args),
+        SYS_READLINKAT => syscall_handler!(4, sys_readlinkat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
         _ => {
