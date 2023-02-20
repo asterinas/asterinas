@@ -4,17 +4,19 @@ use bitflags::bitflags;
 use core::any::Any;
 use jinux_frame::vm::VmFrame;
 
-use super::{DirentWriterContext, FileSystem, IoctlCmd};
+use super::{DirentWriterContext, FileSystem, IoctlCmd, SuperBlock};
 use crate::prelude::*;
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum InodeType {
-    File = 1,
-    Dir = 2,
-    SymLink = 3,
-    CharDevice = 4,
-    BlockDevice = 5,
+    NamedPipe = 0o010000,
+    CharDevice = 0o020000,
+    Dir = 0o040000,
+    BlockDevice = 0o060000,
+    File = 0o100000,
+    SymLink = 0o120000,
+    Socket = 0o140000,
 }
 
 bitflags! {
@@ -91,12 +93,12 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new_dir(ino: usize, mode: InodeMode) -> Self {
+    pub fn new_dir(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
             dev: 0,
             ino,
             size: 2,
-            blk_size: 0,
+            blk_size: sb.bsize,
             blocks: 0,
             atime: Timespec { sec: 0, nsec: 0 },
             mtime: Timespec { sec: 0, nsec: 0 },
@@ -110,12 +112,12 @@ impl Metadata {
         }
     }
 
-    pub fn new_file(ino: usize, mode: InodeMode) -> Self {
+    pub fn new_file(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
             dev: 0,
             ino,
             size: 0,
-            blk_size: 0,
+            blk_size: sb.bsize,
             blocks: 0,
             atime: Timespec { sec: 0, nsec: 0 },
             mtime: Timespec { sec: 0, nsec: 0 },
@@ -129,12 +131,12 @@ impl Metadata {
         }
     }
 
-    pub fn new_synlink(ino: usize, mode: InodeMode) -> Self {
+    pub fn new_symlink(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
             dev: 0,
             ino,
             size: 0,
-            blk_size: 0,
+            blk_size: sb.bsize,
             blocks: 0,
             atime: Timespec { sec: 0, nsec: 0 },
             mtime: Timespec { sec: 0, nsec: 0 },
@@ -149,7 +151,8 @@ impl Metadata {
     }
 }
 
-#[derive(Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Default, Copy, Clone, Pod, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[repr(C)]
 pub struct Timespec {
     pub sec: i64,
     pub nsec: i64,

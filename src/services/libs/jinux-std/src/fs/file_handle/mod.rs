@@ -3,10 +3,10 @@
 mod file;
 mod inode_handle;
 
+use crate::fs::utils::Metadata;
 use crate::prelude::*;
 use crate::rights::{ReadOp, WriteOp};
 use alloc::sync::Arc;
-use core::ops::Range;
 
 pub use self::file::File;
 pub use self::inode_handle::InodeHandle;
@@ -64,6 +64,13 @@ impl FileHandle {
                 let static_handle = inode_handle.clone().to_static::<WriteOp>()?;
                 static_handle.write(buf)
             }
+        }
+    }
+
+    pub fn metadata(&self) -> Metadata {
+        match &self.inner {
+            Inner::File(file) => file.metadata(),
+            Inner::Inode(inode_handle) => inode_handle.dentry().vnode().inode().metadata(),
         }
     }
 
