@@ -3,7 +3,7 @@
 mod file;
 mod inode_handle;
 
-use crate::fs::utils::Metadata;
+use crate::fs::utils::{Metadata, SeekFrom};
 use crate::prelude::*;
 use crate::rights::{ReadOp, WriteOp};
 use alloc::sync::Arc;
@@ -71,6 +71,13 @@ impl FileHandle {
         match &self.inner {
             Inner::File(file) => file.metadata(),
             Inner::Inode(inode_handle) => inode_handle.dentry().vnode().inode().metadata(),
+        }
+    }
+
+    pub fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
+        match &self.inner {
+            Inner::File(file) => file.seek(seek_from),
+            Inner::Inode(inode_handle) => inode_handle.seek(seek_from),
         }
     }
 

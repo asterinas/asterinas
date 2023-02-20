@@ -2,7 +2,7 @@ use crate::prelude::*;
 use crate::tty::get_n_tty;
 use core::any::Any;
 
-use crate::fs::utils::{IoEvents, IoctlCmd, Metadata};
+use crate::fs::utils::{IoEvents, IoctlCmd, Metadata, SeekFrom};
 
 /// The basic operations defined on a file
 pub trait File: Send + Sync + Any {
@@ -35,5 +35,9 @@ pub trait File: Send + Sync + Any {
 
     fn metadata(&self) -> Metadata {
         panic!("metadata unsupported");
+    }
+
+    fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
+        panic!("seek unsupported");
     }
 }
