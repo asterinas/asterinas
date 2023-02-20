@@ -3,7 +3,7 @@ use crate::tty::{get_n_tty, Tty};
 
 use super::file_handle::File;
 use super::file_table::FileDescripter;
-use super::utils::IoEvents;
+use super::utils::{InodeMode, InodeType, IoEvents, Metadata};
 
 pub const FD_STDIN: FileDescripter = 0;
 pub const FD_STDOUT: FileDescripter = 1;
@@ -45,6 +45,25 @@ impl File for Stdin {
             todo!()
         }
     }
+
+    fn metadata(&self) -> Metadata {
+        Metadata {
+            dev: 0,
+            ino: 0,
+            size: 0,
+            blk_size: 1024,
+            blocks: 0,
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
+            type_: InodeType::CharDevice,
+            mode: InodeMode::from_bits_truncate(0o620),
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
+    }
 }
 impl File for Stdout {
     fn ioctl(&self, cmd: super::utils::IoctlCmd, arg: usize) -> Result<i32> {
@@ -60,6 +79,25 @@ impl File for Stdout {
             console.write(buf)
         } else {
             todo!()
+        }
+    }
+
+    fn metadata(&self) -> Metadata {
+        Metadata {
+            dev: 0,
+            ino: 0,
+            size: 0,
+            blk_size: 1024,
+            blocks: 0,
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
+            type_: InodeType::CharDevice,
+            mode: InodeMode::from_bits_truncate(0o620),
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
         }
     }
 }
@@ -78,6 +116,25 @@ impl File for Stderr {
             console.write(buf)
         } else {
             todo!()
+        }
+    }
+
+    fn metadata(&self) -> Metadata {
+        Metadata {
+            dev: 0,
+            ino: 0,
+            size: 0,
+            blk_size: 1024,
+            blocks: 0,
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
+            type_: InodeType::CharDevice,
+            mode: InodeMode::from_bits_truncate(0o620),
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
         }
     }
 }

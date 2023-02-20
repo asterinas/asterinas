@@ -19,12 +19,14 @@ pub struct RamFS {
 
 impl RamFS {
     pub fn new() -> Arc<Self> {
+        let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX);
         let root = Arc::new(RamInode(RwLock::new(Inode_::new_dir(
             ROOT_INO,
             InodeMode::from_bits_truncate(0o755),
+            &sb,
         ))));
         let ramfs = Arc::new(Self {
-            metadata: RwLock::new(SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX)),
+            metadata: RwLock::new(sb),
             root,
             inode_allocator: AtomicUsize::new(ROOT_INO + 1),
         });
@@ -71,28 +73,28 @@ struct Inode_ {
 }
 
 impl Inode_ {
-    pub fn new_dir(ino: usize, mode: InodeMode) -> Self {
+    pub fn new_dir(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
             inner: Inner::Dir(DirEntry::new()),
-            metadata: Metadata::new_dir(ino, mode),
+            metadata: Metadata::new_dir(ino, mode, sb),
             this: Weak::default(),
             fs: Weak::default(),
         }
     }
 
-    pub fn new_file(ino: usize, mode: InodeMode) -> Self {
+    pub fn new_file(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
             inner: Inner::File,
-            metadata: Metadata::new_file(ino, mode),
+            metadata: Metadata::new_file(ino, mode, sb),
             this: Weak::default(),
             fs: Weak::default(),
         }
     }
 
-    pub fn new_symlink(ino: usize, mode: InodeMode) -> Self {
+    pub fn new_symlink(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
             inner: Inner::SymLink(Str256::from("")),
-            metadata: Metadata::new_synlink(ino, mode),
+            metadata: Metadata::new_symlink(ino, mode, sb),
             this: Weak::default(),
             fs: Weak::default(),
         }
@@ -315,19 +317,22 @@ impl Inode for RamInode {
         if self_inode.inner.as_direntry().unwrap().contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
+        let fs = self_inode.fs.upgrade().unwrap();
         let new_inode = match type_ {
             InodeType::File => {
                 let file_inode = Arc::new(RamInode(RwLock::new(Inode_::new_file(
-                    self_inode.fs.upgrade().unwrap().alloc_id(),
+                    fs.alloc_id(),
                     mode,
+                    &fs.sb(),
                 ))));
                 file_inode.0.write().fs = self_inode.fs.clone();
                 file_inode
             }
             InodeType::Dir => {
                 let dir_inode = Arc::new(RamInode(RwLock::new(Inode_::new_dir(
-                    self_inode.fs.upgrade().unwrap().alloc_id(),
+                    fs.alloc_id(),
                     mode,
+                    &fs.sb(),
                 ))));
                 dir_inode.0.write().fs = self_inode.fs.clone();
                 dir_inode.0.write().inner.as_direntry_mut().unwrap().init(
@@ -338,8 +343,9 @@ impl Inode for RamInode {
             }
             InodeType::SymLink => {
                 let sym_inode = Arc::new(RamInode(RwLock::new(Inode_::new_symlink(
-                    self_inode.fs.upgrade().unwrap().alloc_id(),
+                    fs.alloc_id(),
                     mode,
+                    &fs.sb(),
                 ))));
                 sym_inode.0.write().fs = self_inode.fs.clone();
                 sym_inode

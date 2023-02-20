@@ -12,7 +12,6 @@ use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
 use crate::syscall::fcntl::sys_fcntl;
 use crate::syscall::fork::sys_fork;
-use crate::syscall::fstat::sys_fstat;
 use crate::syscall::futex::sys_futex;
 use crate::syscall::getcwd::sys_getcwd;
 use crate::syscall::getegid::sys_getegid;
@@ -27,7 +26,6 @@ use crate::syscall::ioctl::sys_ioctl;
 use crate::syscall::kill::sys_kill;
 use crate::syscall::link::{sys_link, sys_linkat};
 use crate::syscall::lseek::sys_lseek;
-use crate::syscall::lstat::sys_lstat;
 use crate::syscall::madvise::sys_madvise;
 use crate::syscall::mkdir::{sys_mkdir, sys_mkdirat};
 use crate::syscall::mmap::sys_mmap;
@@ -47,7 +45,7 @@ use crate::syscall::sched_yield::sys_sched_yield;
 use crate::syscall::set_robust_list::sys_set_robust_list;
 use crate::syscall::set_tid_address::sys_set_tid_address;
 use crate::syscall::setpgid::sys_setpgid;
-use crate::syscall::stat::sys_stat;
+use crate::syscall::stat::{sys_fstat, sys_fstatat, sys_lstat, sys_stat};
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
 use crate::syscall::unlink::{sys_unlink, sys_unlinkat};
@@ -69,7 +67,6 @@ mod exit;
 mod exit_group;
 mod fcntl;
 mod fork;
-mod fstat;
 mod futex;
 mod getcwd;
 mod getegid;
@@ -84,7 +81,6 @@ mod ioctl;
 mod kill;
 mod link;
 mod lseek;
-mod lstat;
 mod madvise;
 mod mkdir;
 mod mmap;
@@ -198,6 +194,7 @@ define_syscall_nums!(
     SYS_WAITID = 247,
     SYS_OPENAT = 257,
     SYS_MKDIRAT = 258,
+    SYS_FSTATAT = 262,
     SYS_UNLINKAT = 263,
     SYS_LINKAT = 265,
     SYS_SET_ROBUST_LIST = 273,
@@ -314,6 +311,7 @@ pub fn syscall_dispatch(
         SYS_WAITID => syscall_handler!(5, sys_waitid, args),
         SYS_OPENAT => syscall_handler!(4, sys_openat, args),
         SYS_MKDIRAT => syscall_handler!(3, sys_mkdirat, args),
+        SYS_FSTATAT => syscall_handler!(4, sys_fstatat, args),
         SYS_UNLINKAT => syscall_handler!(3, sys_unlinkat, args),
         SYS_LINKAT => syscall_handler!(5, sys_linkat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
