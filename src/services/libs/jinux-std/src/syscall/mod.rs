@@ -37,6 +37,7 @@ use crate::syscall::prctl::sys_prctl;
 use crate::syscall::prlimit64::sys_prlimit64;
 use crate::syscall::read::sys_read;
 use crate::syscall::readlink::{sys_readlink, sys_readlinkat};
+use crate::syscall::rename::{sys_rename, sys_renameat};
 use crate::syscall::rmdir::sys_rmdir;
 use crate::syscall::rt_sigaction::sys_rt_sigaction;
 use crate::syscall::rt_sigprocmask::sys_rt_sigprocmask;
@@ -93,6 +94,7 @@ mod prctl;
 mod prlimit64;
 mod read;
 mod readlink;
+mod rename;
 mod rmdir;
 mod rt_sigaction;
 mod rt_sigprocmask;
@@ -173,6 +175,7 @@ define_syscall_nums!(
     SYS_UNAME = 63,
     SYS_FCNTL = 72,
     SYS_GETCWD = 79,
+    SYS_RENAME = 82,
     SYS_MKDIR = 83,
     SYS_RMDIR = 84,
     SYS_LINK = 86,
@@ -199,6 +202,7 @@ define_syscall_nums!(
     SYS_MKDIRAT = 258,
     SYS_FSTATAT = 262,
     SYS_UNLINKAT = 263,
+    SYS_RENAMEAT = 264,
     SYS_LINKAT = 265,
     SYS_SYMLINKAT = 266,
     SYS_READLINKAT = 267,
@@ -293,6 +297,7 @@ pub fn syscall_dispatch(
         SYS_UNAME => syscall_handler!(1, sys_uname, args),
         SYS_FCNTL => syscall_handler!(3, sys_fcntl, args),
         SYS_GETCWD => syscall_handler!(2, sys_getcwd, args),
+        SYS_RENAME => syscall_handler!(2, sys_rename, args),
         SYS_MKDIR => syscall_handler!(2, sys_mkdir, args),
         SYS_RMDIR => syscall_handler!(1, sys_rmdir, args),
         SYS_LINK => syscall_handler!(2, sys_link, args),
@@ -319,6 +324,7 @@ pub fn syscall_dispatch(
         SYS_MKDIRAT => syscall_handler!(3, sys_mkdirat, args),
         SYS_FSTATAT => syscall_handler!(4, sys_fstatat, args),
         SYS_UNLINKAT => syscall_handler!(3, sys_unlinkat, args),
+        SYS_RENAMEAT => syscall_handler!(4, sys_renameat, args),
         SYS_LINKAT => syscall_handler!(5, sys_linkat, args),
         SYS_SYMLINKAT => syscall_handler!(3, sys_symlinkat, args),
         SYS_READLINKAT => syscall_handler!(4, sys_readlinkat, args),
