@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use alloc::string::String;
+use spin::RwLockWriteGuard;
 
 use super::{InodeMode, InodeType, Vnode, NAME_MAX};
 
@@ -43,20 +44,28 @@ impl Dentry {
         dentry
     }
 
-    fn name(&self) -> String {
+    pub fn name(&self) -> String {
         self.inner.read().name.clone()
+    }
+
+    fn set_name(&self, name: &str) {
+        self.inner.write().name = String::from(name);
     }
 
     fn this(&self) -> Arc<Dentry> {
         self.inner.read().this.upgrade().unwrap()
     }
 
-    fn parent(&self) -> Option<Arc<Dentry>> {
+    pub fn parent(&self) -> Option<Arc<Dentry>> {
         self.inner
             .read()
             .parent
             .as_ref()
             .map(|p| p.upgrade().unwrap())
+    }
+
+    fn set_parent(&self, parent: &Arc<Dentry>) {
+        self.inner.write().parent = Some(Arc::downgrade(parent));
     }
 
     pub fn vnode(&self) -> &Vnode {
@@ -140,6 +149,56 @@ impl Dentry {
         Ok(())
     }
 
+    pub fn rename(&self, old_name: &str, new_dir: &Arc<Self>, new_name: &str) -> Result<()> {
+        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+            return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
+        }
+        if self.vnode.inode().metadata().type_ != InodeType::Dir
+            || new_dir.vnode.inode().metadata().type_ != InodeType::Dir
+        {
+            return_errno!(Errno::ENOTDIR);
+        }
+
+        // Self and new_dir are same Dentry, just modify name
+        if Arc::ptr_eq(&self.this(), new_dir) {
+            if old_name == new_name {
+                return Ok(());
+            }
+            let mut inner = self.inner.write();
+            let dentry = if let Some(dentry) = inner.children.get(old_name) {
+                dentry.clone()
+            } else {
+                let vnode = Vnode::new(self.vnode.inode().lookup(old_name)?)?;
+                Dentry::new(old_name, vnode, Some(inner.this.clone()))
+            };
+            self.vnode
+                .inode()
+                .rename(old_name, self.vnode.inode(), new_name)?;
+            inner.children.remove(old_name);
+            dentry.set_name(new_name);
+            inner.children.insert(String::from(new_name), dentry);
+        } else {
+            // Self and new_dir are different Dentry
+            let (mut self_inner, mut new_dir_inner) = write_lock_two_dentries(&self, &new_dir);
+            let dentry = if let Some(dentry) = self_inner.children.get(old_name) {
+                dentry.clone()
+            } else {
+                let vnode = Vnode::new(self.vnode.inode().lookup(old_name)?)?;
+                Dentry::new(old_name, vnode, Some(self_inner.this.clone()))
+            };
+            self.vnode
+                .inode()
+                .rename(old_name, new_dir.vnode.inode(), new_name)?;
+            self_inner.children.remove(old_name);
+            dentry.set_name(new_name);
+            dentry.set_parent(&new_dir.this());
+            new_dir_inner
+                .children
+                .insert(String::from(new_name), dentry);
+        }
+        Ok(())
+    }
+
     pub fn abs_path(&self) -> String {
         let mut path = self.name();
         let mut dentry = self.this();
@@ -163,5 +222,22 @@ impl Dentry {
 
         debug_assert!(path.starts_with("/"));
         path
+    }
+}
+
+fn write_lock_two_dentries<'a>(
+    this: &'a Dentry,
+    other: &'a Dentry,
+) -> (RwLockWriteGuard<'a, Dentry_>, RwLockWriteGuard<'a, Dentry_>) {
+    let this_ptr = Arc::as_ptr(&this.this());
+    let other_ptr = Arc::as_ptr(&other.this());
+    if this_ptr < other_ptr {
+        let this = this.inner.write();
+        let other = other.inner.write();
+        (this, other)
+    } else {
+        let other = other.inner.write();
+        let this = this.inner.write();
+        (this, other)
     }
 }
