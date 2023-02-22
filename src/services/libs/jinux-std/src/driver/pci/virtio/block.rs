@@ -1,6 +1,5 @@
 use crate::process::Process;
 use alloc::sync::Arc;
-use jinux_frame::info;
 use jinux_pci::msix::MSIX;
 use jinux_pci::PCIDevice;
 use jinux_util::frame_ptr::InFramePtr;
@@ -9,6 +8,7 @@ use jinux_virtio::device::block::BlkResp;
 use jinux_virtio::PCIVirtioDevice;
 use jinux_virtio::VitrioPciCommonCfg;
 use lazy_static::lazy_static;
+use log::info;
 use spin::mutex::Mutex;
 
 use super::BlockDevice;

@@ -1,7 +1,7 @@
 //! User space.
 
-use crate::debug;
 use crate::x86_64_util::{rdfsbase, wrfsbase};
+use log::debug;
 use x86_64::registers::rflags::RFlags;
 
 use crate::cpu::CpuContext;

@@ -4,9 +4,9 @@ use core::arch::x86_64::{_fxrstor, _fxsave};
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
 
-use crate::debug;
 use crate::trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame};
 use crate::x86_64_util::rdfsbase;
+use log::debug;
 use pod::Pod;
 
 /// Defines a CPU-local variable.

@@ -6,11 +6,11 @@ pub mod capability;
 pub mod msix;
 pub mod util;
 extern crate alloc;
-use jinux_frame::info;
 extern crate pod_derive;
 
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::lazy_static;
+use log::info;
 use spin::mutex::Mutex;
 use util::CSpaceAccessMethod;
 

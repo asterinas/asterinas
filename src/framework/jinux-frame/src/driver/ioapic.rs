@@ -1,8 +1,8 @@
 use acpi::PlatformInfo;
+use log::debug;
 
 use super::acpi::ACPI_TABLES;
 use crate::cell::Cell;
-use crate::debug;
 use crate::mm::address::phys_to_virt;
 use crate::util::recycle_allocator::RecycleAllocator;
 use lazy_static::lazy_static;

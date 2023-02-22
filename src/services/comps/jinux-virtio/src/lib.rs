@@ -8,9 +8,10 @@ extern crate alloc;
 use alloc::{sync::Arc, vec::Vec};
 use bitflags::bitflags;
 use device::VirtioDevice;
-use jinux_frame::{debug, info, offset_of, TrapFrame};
+use jinux_frame::{offset_of, TrapFrame};
 use jinux_pci::util::{PCIDevice, BAR};
 use jinux_util::frame_ptr::InFramePtr;
+use log::{debug, info};
 use pod_derive::Pod;
 
 use crate::device::VirtioInfo;

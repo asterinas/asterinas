@@ -1,4 +1,4 @@
-use crate::{info, trap::allocate_target_irq, x86_64_util::out8, IrqAllocateHandle};
+use crate::{trap::allocate_target_irq, x86_64_util::out8, IrqAllocateHandle};
 use core::sync::atomic::Ordering::Relaxed;
 use core::sync::atomic::{AtomicBool, AtomicU8};
 
@@ -12,6 +12,7 @@ const TIMER_IRQ_NUM: u8 = 32;
 
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
+use log::info;
 use spin::Mutex;
 
 lazy_static! {

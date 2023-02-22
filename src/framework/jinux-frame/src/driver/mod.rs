@@ -10,10 +10,9 @@ pub mod rtc;
 pub mod timer;
 
 pub use apic::ack;
+use log::info;
 pub use timer::TimerCallback;
 pub(crate) use timer::{add_timeout_list, TICK};
-
-use crate::info;
 
 pub(crate) fn init(rsdp: Option<u64>) {
     acpi::init(rsdp.unwrap());

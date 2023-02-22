@@ -18,7 +18,7 @@ pub mod cpu;
 pub mod device;
 mod driver;
 mod error;
-pub mod log;
+pub mod logger;
 pub(crate) mod mm;
 pub mod prelude;
 pub mod sync;
@@ -56,8 +56,7 @@ pub use x86_64::registers::rflags::RFlags;
 use x86_64_util::enable_common_cpu_features;
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
-// TODO: serial中断
-// 讨论syscall的中断启用
+
 #[cfg(not(feature = "serial_print"))]
 pub use crate::screen_print as print;
 #[cfg(not(feature = "serial_print"))]
@@ -69,6 +68,7 @@ pub use crate::console_print as print;
 pub use crate::console_println as println;
 
 pub fn init(boot_info: &'static mut BootInfo) {
+    logger::init();
     let siz = boot_info.framebuffer.as_ref().unwrap() as *const FrameBuffer as usize;
     let mut memory_init = false;
     // memory

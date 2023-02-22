@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use crate::log::LogLevel;
+use log::Level;
 
 pub const USER_STACK_SIZE: usize = PAGE_SIZE * 4;
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
@@ -15,6 +15,6 @@ pub const PAGE_SIZE_BITS: usize = 0xc;
 
 pub const KVA_START: usize = (usize::MAX) << PAGE_SIZE_BITS;
 
-pub const DEFAULT_LOG_LEVEL: LogLevel = LogLevel::Error;
+pub const DEFAULT_LOG_LEVEL: Level = Level::Error;
 /// This value represent the base timer frequency in Hz
 pub const TIMER_FREQ: u64 = 100;

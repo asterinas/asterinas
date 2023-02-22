@@ -4,6 +4,7 @@ use crate::{
     vm::VmFrame,
     *,
 };
+use ::log::info;
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::{fmt, panic};
 use lazy_static::lazy_static;

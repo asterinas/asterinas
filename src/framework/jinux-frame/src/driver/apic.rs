@@ -1,5 +1,6 @@
-use crate::{cell::Cell, debug, x86_64_util};
+use crate::{cell::Cell, x86_64_util};
 use lazy_static::lazy_static;
+use log::debug;
 use volatile::{
     access::{ReadOnly, ReadWrite, WriteOnly},
     Volatile,

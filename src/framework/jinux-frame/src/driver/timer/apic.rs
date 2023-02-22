@@ -1,7 +1,9 @@
+use log::info;
+
 use crate::{
     config,
     driver::{apic::APIC_INSTANCE, pic, timer},
-    info, x86_64_util, TrapFrame,
+    x86_64_util, TrapFrame,
 };
 
 pub fn init() {
