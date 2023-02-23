@@ -13,6 +13,7 @@ jinux-pci = {path="../jinux-pci"}
 jinux-util = {path="../../libs/jinux-util"}
 pod = {path = "../../../framework/pod"}
 pod-derive = {path = "../../../framework/pod-derive"}
+log= "0.4"
 
 
 [features]

@@ -1,11 +1,12 @@
 use alloc::vec::Vec;
+use log::debug;
 use pod_derive::Pod;
 
 use crate::util::{CSpaceAccessMethod, Location, BAR};
 
 use super::capability::msix::CapabilityMSIXData;
 
-use jinux_frame::{debug, offset_of, IrqAllocateHandle};
+use jinux_frame::{offset_of, IrqAllocateHandle};
 use jinux_util::frame_ptr::InFramePtr;
 
 #[derive(Debug, Default)]

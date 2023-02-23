@@ -1,5 +1,6 @@
+use log::info;
+
 pub mod virtio;
-use jinux_frame::info;
 
 pub fn init() {
     jinux_pci::init();

@@ -3,7 +3,7 @@ use core::sync::atomic::AtomicBool;
 
 use alloc::collections::BTreeMap;
 use alloc::{string::String, sync::Arc, vec::Vec};
-use jinux_frame::{debug, info, offset_of, TrapFrame};
+use jinux_frame::{offset_of, TrapFrame};
 use jinux_pci::{msix::MSIX, PCIDevice};
 use jinux_util::frame_ptr::InFramePtr;
 use jinux_virtio::device::input::device::InputProp;
@@ -13,6 +13,7 @@ use jinux_virtio::{
     PCIVirtioDevice,
 };
 use lazy_static::lazy_static;
+use log::{debug, info};
 use spin::Mutex;
 use virtio_input_decoder::{DecodeType, Decoder};
 

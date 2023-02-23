@@ -19,6 +19,7 @@ pod = {path = "../pod"}
 pod-derive = {path = "../pod-derive"}
 acpi= "4.1.1"
 intrusive-collections = "0.9.5"
+log= "0.4"
 
 [dependencies.lazy_static]
 version = "1.0"

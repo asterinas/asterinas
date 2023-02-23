@@ -1,8 +1,9 @@
 use alloc::{sync::Arc, vec::Vec};
 use lazy_static::lazy_static;
+use log::debug;
 use spin::Mutex;
 
-use crate::{cell::Cell, debug, driver::pic, x86_64_util::*, IrqAllocateHandle, TrapFrame};
+use crate::{cell::Cell, driver::pic, x86_64_util::*, IrqAllocateHandle, TrapFrame};
 use core::fmt::{self, Write};
 
 bitflags::bitflags! {

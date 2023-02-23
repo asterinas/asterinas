@@ -1,7 +1,6 @@
 use super::{c_types::sigaction_t, constants::*, sig_mask::SigMask, sig_num::SigNum};
 use crate::prelude::*;
 use bitflags::bitflags;
-use jinux_frame::warn;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SigAction {

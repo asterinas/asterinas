@@ -1,8 +1,9 @@
 use core::ptr::NonNull;
 
-use crate::{info, mm::address::phys_to_virt};
+use crate::mm::address::phys_to_virt;
 use acpi::{AcpiHandler, AcpiTables};
 use lazy_static::lazy_static;
+use log::info;
 use spin::Mutex;
 
 lazy_static! {

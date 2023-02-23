@@ -12,6 +12,7 @@ jinux-frame = {path = "../../../framework/jinux-frame"}
 jinux-util = {path="../../libs/jinux-util"}
 pod = {path = "../../../framework/pod"}
 pod-derive = {path = "../../../framework/pod-derive"}
+log= "0.4"
 
 [dependencies.lazy_static]
 version = "1.0"
