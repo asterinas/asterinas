@@ -1,5 +1,5 @@
 [package]
-name = "foo"
+name = "first-init"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,9 +7,4 @@ edition = "2021"
 
 [dependencies]
 component = {path="../../../../component"}
-bar = {path = "../bar"}
-log = "0.4"
-
-[dev-dependencies]
-simple_logger = "4.0.0"
 

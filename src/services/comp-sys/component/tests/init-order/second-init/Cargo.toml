@@ -1,5 +1,5 @@
 [package]
-name = "bar"
+name = "second-init"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,4 +7,9 @@ edition = "2021"
 
 [dependencies]
 component = {path="../../../../component"}
+first-init = {path = "../first-init"}
+log = "0.4"
+
+[dev-dependencies]
+simple_logger = "4.0.0"
 
