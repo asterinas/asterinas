@@ -22,6 +22,7 @@ members = [
     "services/libs/typeflags",
     "services/libs/typeflags-util",
     "services/libs/jinux-util",
+    "services/libs/cpio-decoder",
 ]
 
 exclude = [

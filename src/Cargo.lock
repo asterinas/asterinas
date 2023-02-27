@@ -100,6 +100,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cpio-decoder"
+version = "0.1.0"
+
+[[package]]
 name = "either"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -118,6 +122,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33ff8ae62cd3a9102e5637afc8452c55acf3844001bd5374e0b0bd7b6616c038"
 dependencies = [
  "ahash",
+]
+
+[[package]]
+name = "intrusive-collections"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f4f90afb01281fdeffb0f8e082d230cbe4f888f837cc90759696b858db1a700"
+dependencies = [
+ "memoffset",
 ]
 
 [[package]]
@@ -157,6 +170,7 @@ dependencies = [
  "bootloader",
  "buddy_system_allocator",
  "font8x8",
+ "intrusive-collections",
  "lazy_static",
  "linked_list_allocator",
  "pod",
@@ -196,6 +210,7 @@ dependencies = [
  "ascii",
  "bitflags",
  "controlled",
+ "intrusive-collections",
  "jinux-frame",
  "jinux-pci",
  "jinux-rights-proc",
@@ -301,6 +316,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71e7d46de488603ffdd5f30afbc64fbba2378214a2c3a2fb83abf3d33126df17"
 dependencies = [
  "hashbrown",
+]
+
+[[package]]
+name = "memoffset"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d61c719bcfbcf5d62b3a09efa6088de8c54bc0bfcd3ea7ae39fcc186108b8de1"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]
