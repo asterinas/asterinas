@@ -57,17 +57,19 @@ pub fn init_component(_: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 }
 
 /// Automatically generate all component information required by the component system.
+/// 
+/// It mainly uses the output of the command `cargo metadata` to automatically generate information about all components, and also checks whether `Components.toml` contains all the components.
 ///
-/// It is often used with `component::init`.
+/// It is often used with `component::init_all`.
 ///
 /// Example:
 ///
 /// ```rust
-///     component::init(component::component_generate!());
+///     component::init_all(component::parse_metadata!());
 /// ```
 ///
 #[proc_macro]
-pub fn generate_information(_: TokenStream) -> proc_macro::TokenStream {
+pub fn parse_metadata(_: TokenStream) -> proc_macro::TokenStream {
     let out = priority::component_generate();
     let path = priority::get_component_toml_path();
     quote! {

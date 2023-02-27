@@ -102,13 +102,13 @@ pub enum ComponentSystemInitError {
 
 /// Component system initialization. It will collect invoke all functions that are marked by init_component based on dependencies between crates.
 ///
-/// The collection of ComponentInfo usually generate by `component_generate` macro.
+/// The collection of ComponentInfo usually generate by `parse_metadata` macro.
 ///
 /// ```rust
-///     component::init(component::component_generate!());
+///     component::init_all(component::parse_metadata!());
 /// ```
 ///
-pub fn init(components: Vec<ComponentInfo>) -> Result<(), ComponentSystemInitError> {
+pub fn init_all(components: Vec<ComponentInfo>) -> Result<(), ComponentSystemInitError> {
     let components_info = parse_input(components);
     match_and_call(components_info)?;
     Ok(())

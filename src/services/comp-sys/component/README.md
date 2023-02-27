@@ -11,7 +11,7 @@ Registering a crate as component by marking a function in the lib.rs with `#[ini
 
 ### Component initialization
 
-Component system need to be initialized by calling `componet::init` function and it needs  information about all components. Usually it is used with the `component::generate_information` macro.
+Component system need to be initialized by calling `componet::init_all` function and it needs  information about all components. Usually it is used with the `component::parse_metadata` macro.
 
 ## Example
 
@@ -45,13 +45,13 @@ fn init() -> Result<(), component::ComponentInitError> {
 }
 
 fn main(){
-    component::init(component::generate_information!()).unwrap();
+    component::init_all(component::parse_metadata!()).unwrap();
     assert_eq!(INIT_COUNT.load(Relaxed),2);
 }
 ```
 
 ## Notes
 
-- Currently, initialization requires the presence of a `Components.toml` file, which stores some information about components and access control. The [tests](tests/kernel/Components.toml) provides a sample file of it. If the components declared inside `Components.toml` is inconsistent with the component found by `generate_information` macro (i.e. A crate depends on the component library but is not declared in `Components.toml`), then a compilation error will occur.
+- Currently, initialization requires the presence of a `Components.toml` file, which stores some information about components and access control. The [tests](tests/kernel/Components.toml) provides a sample file of it. If the components declared inside `Components.toml` is inconsistent with the component found by `parse_metadata` macro (i.e. A crate depends on the component library but is not declared in `Components.toml`), then a compilation error will occur.
 
-- The `generate_information` macro will generate the information of all components. But ultimately which functions are called still depends on which `#[init_component]` macros are extended. If you want to test a component. Then, other components with a lower priority than it or other unused high-priority components will not be initialized at runtime.
+- The `parse_metadata` macro will generate the information of all components. But ultimately which functions are called still depends on which `#[init_component]` macros are extended. If you want to test a component. Then, other components with a lower priority than it or other unused high-priority components will not be initialized at runtime.

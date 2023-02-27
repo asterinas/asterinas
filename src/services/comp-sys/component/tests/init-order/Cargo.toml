@@ -1,5 +1,5 @@
 [package]
-name = "kernel"
+name = "init-order"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,11 +7,14 @@ edition = "2021"
 
 [dependencies]
 component = {path="../../../component"}
-foo = {path="foo"}
-bar = {path="bar"}
+first-init = {path="first-init"}
+second-init = {path="second-init"}
 simple_logger = "4.0.0"
 log = "0.4"
 
 [workspace]
-foo = {path="foo"}
-bar = {path="bar"}
+members = [
+    "first-init",
+    "second-init"
+]
+
