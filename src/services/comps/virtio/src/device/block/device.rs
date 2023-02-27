@@ -9,7 +9,7 @@ use pod::Pod;
 use crate::{
     device::block::{BlkReq, BlkResp, ReqType, RespStatus, BLK_SIZE},
     device::VirtioDeviceError,
-    queue::VirtQueue,
+    queue::{QueueError, VirtQueue},
     VitrioPciCommonCfg,
 };
 
@@ -65,14 +65,17 @@ impl BLKDevice {
             sector: block_id as u64,
         };
         let mut resp = BlkResp::default();
-        self.queue
+        let token = self
+            .queue
             .add(&[req.as_bytes()], &[buf, resp.as_bytes_mut()])
             .expect("add queue failed");
         self.queue.notify();
         while !self.queue.can_pop() {
             spin_loop();
         }
-        self.queue.pop_used().expect("pop used failed");
+        self.queue
+            .pop_used_with_token(token)
+            .expect("pop used failed");
         match resp.status {
             RespStatus::Ok => {}
             _ => panic!("io error in block device"),
@@ -87,15 +90,17 @@ impl BLKDevice {
             sector: block_id as u64,
         };
         let mut resp = BlkResp::default();
-        self.queue
+        let token = self
+            .queue
             .add(&[req.as_bytes(), buf], &[resp.as_bytes_mut()])
             .expect("add queue failed");
         self.queue.notify();
-
         while !self.queue.can_pop() {
             spin_loop();
         }
-        self.queue.pop_used().expect("pop used failed");
+        self.queue
+            .pop_used_with_token(token)
+            .expect("pop used failed");
         let st = resp.status;
         match st {
             RespStatus::Ok => {}
@@ -103,16 +108,57 @@ impl BLKDevice {
         };
     }
 
-    pub fn read_block_nb(&mut self, block_id: usize, buf: &mut [u8], resp: &mut BlkResp) {
+    pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
+        self.queue.pop_used()
+    }
+
+    pub fn pop_used_with_token(&mut self, token: u16) -> Result<u32, QueueError> {
+        self.queue.pop_used_with_token(token)
+    }
+
+    /// read data from block device, this function is non-blocking
+    /// return value is token
+    pub fn read_block_non_blocking(
+        &mut self,
+        block_id: usize,
+        buf: &mut [u8],
+        req: &mut BlkReq,
+        resp: &mut BlkResp,
+    ) -> u16 {
         assert_eq!(buf.len(), BLK_SIZE);
-        let req = BlkReq {
+        *req = BlkReq {
             type_: ReqType::In,
             reserved: 0,
             sector: block_id as u64,
         };
-        self.queue
+        let token = self
+            .queue
             .add(&[req.as_bytes()], &[buf, resp.as_bytes_mut()])
             .unwrap();
         self.queue.notify();
+        token
+    }
+
+    /// write data to block device, this function is non-blocking
+    /// return value is token
+    pub fn write_block_non_blocking(
+        &mut self,
+        block_id: usize,
+        buf: &[u8],
+        req: &mut BlkReq,
+        resp: &mut BlkResp,
+    ) -> u16 {
+        assert_eq!(buf.len(), BLK_SIZE);
+        *req = BlkReq {
+            type_: ReqType::Out,
+            reserved: 0,
+            sector: block_id as u64,
+        };
+        let token = self
+            .queue
+            .add(&[req.as_bytes(), buf], &[resp.as_bytes_mut()])
+            .expect("add queue failed");
+        self.queue.notify();
+        token
     }
 }

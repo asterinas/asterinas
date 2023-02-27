@@ -17,7 +17,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     test_main();
     jinux_frame::init(boot_info);
     println!("[kernel] finish init jinux_frame");
-
+    component::init(component::generate_information!()).unwrap();
     jinux_std::init();
     jinux_std::run_first_process();
 }

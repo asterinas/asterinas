@@ -1,0 +1,5 @@
+# template
+[components]
+kernel = {name = "kernel"}
+foo = {name = "foo"}
+bar = {name = "bar"}

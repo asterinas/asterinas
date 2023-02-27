@@ -90,7 +90,7 @@ impl<'a> Iterator for FutexIter<'a> {
             return None;
         }
 
-        while self.entry_ptr != &self.robust_list.list as *const _ as _ {
+        while self.entry_ptr != &self.robust_list.list as *const _ as usize {
             if self.count == ROBUST_LIST_LIMIT {
                 break;
             }

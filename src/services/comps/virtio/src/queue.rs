@@ -9,12 +9,14 @@ use jinux_frame::{
     vm::{VmAllocOptions, VmFrame, VmFrameVec},
 };
 use jinux_util::frame_ptr::InFramePtr;
+use log::debug;
 #[derive(Debug)]
 pub enum QueueError {
     InvalidArgs,
     BufferTooSmall,
     NotReady,
     AlreadyUsed,
+    WrongToken,
 }
 
 /// The mechanism for bulk data transport on virtio devices.
@@ -94,6 +96,7 @@ impl VirtQueue {
                 offset_of!(VitrioPciCommonCfg, queue_desc),
                 frame.paddr() as u64,
             );
+            debug!("queue_desc vm frame:{:x?}", frame);
             frame_vec.push(frame);
         }
 
@@ -105,6 +108,7 @@ impl VirtQueue {
                 offset_of!(VitrioPciCommonCfg, queue_driver),
                 frame.paddr() as u64,
             );
+            debug!("queue_driver vm frame:{:x?}", frame);
             frame_vec.push(frame);
         }
 
@@ -116,6 +120,7 @@ impl VirtQueue {
                 offset_of!(VitrioPciCommonCfg, queue_device),
                 frame.paddr() as u64,
             );
+            debug!("queue_device vm frame:{:x?}", frame);
             frame_vec.push(frame);
         }
 
@@ -278,6 +283,35 @@ impl VirtQueue {
         Ok((index, len))
     }
 
+    /// If the given token is next on the device used queue, pops it and returns the total buffer
+    /// length which was used (written) by the device.
+    ///
+    /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
+    pub fn pop_used_with_token(&mut self, token: u16) -> Result<u32, QueueError> {
+        if !self.can_pop() {
+            return Err(QueueError::NotReady);
+        }
+        // read barrier
+        fence(Ordering::SeqCst);
+
+        let last_used_slot = self.last_used_idx & (self.queue_size - 1);
+        let index = self.used.read_at(
+            (offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8) as *const u32,
+        ) as u16;
+        let len = self.used.read_at(
+            (offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8 + 4) as *const u32,
+        );
+
+        if index != token {
+            return Err(QueueError::WrongToken);
+        }
+
+        self.recycle_descriptors(index);
+        self.last_used_idx = self.last_used_idx.wrapping_add(1);
+
+        Ok(len)
+    }
+
     /// Return size of the queue.
     pub fn size(&self) -> u16 {
         self.queue_size
@@ -308,10 +342,16 @@ impl Descriptor {
 }
 
 fn set_buf(inframe_ptr: &InFramePtr<Descriptor>, buf: &[u8]) {
-    inframe_ptr.write_at(
-        offset_of!(Descriptor, addr),
-        jinux_frame::translate_not_offset_virtual_address(buf.as_ptr() as usize) as u64,
-    );
+    let va = buf.as_ptr() as usize;
+    let pa = if va >= jinux_frame::config::PHYS_OFFSET && va <= jinux_frame::config::KERNEL_OFFSET {
+        // can use offset
+        jinux_frame::virt_to_phys(va)
+    } else {
+        jinux_frame::translate_not_offset_virtual_address(buf.as_ptr() as usize)
+    };
+    debug!("set buf write virt address:{:x}", va);
+    debug!("set buf write phys address:{:x}", pa);
+    inframe_ptr.write_at(offset_of!(Descriptor, addr), pa as u64);
     inframe_ptr.write_at(offset_of!(Descriptor, len), buf.len() as u32);
 }
 bitflags! {
