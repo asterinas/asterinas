@@ -46,7 +46,9 @@ fn main() -> anyhow::Result<()> {
         println!("Created disk image at `{}`", bios.display());
         return Ok(());
     }
-
+    #[cfg(windows)]
+    let mut run_cmd = Command::new("qemu-system-x86_64.exe");
+    #[cfg(not(windows))]
     let mut run_cmd = Command::new("qemu-system-x86_64");
     run_cmd
         .arg("-drive")
@@ -80,6 +82,9 @@ fn main() -> anyhow::Result<()> {
 
 fn create_fs_image(path: &Path) -> anyhow::Result<String> {
     let mut fs_img_path = path.parent().unwrap().to_str().unwrap().to_string();
+    #[cfg(windows)]
+    fs_img_path.push_str("\\fs.img");
+    #[cfg(not(windows))]
     fs_img_path.push_str("/fs.img");
     let path = Path::new(fs_img_path.as_str());
     if path.exists() {

@@ -9,6 +9,17 @@ SECTIONS {
     *(.rodata .rodata.*)
   }
 
+  .got ALIGN(4K):{
+    *(.got .got.*)
+  }
+
+  . = ALIGN(4K);
+  sinit_array = .;
+  .init_array : {
+    *(.init_array .init_array.*)
+  }
+  einit_array = .;
+
   .text ALIGN(4K): {
     *(.text .text.*)
   }

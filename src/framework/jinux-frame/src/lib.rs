@@ -100,7 +100,24 @@ pub fn init(boot_info: &'static mut BootInfo) {
         }
         let value = x86_64_util::cpuid(1);
     }
+    invoke_c_init_funcs();
 }
+
+fn invoke_c_init_funcs() {
+    extern "C" {
+        fn sinit_array();
+        fn einit_array();
+    }
+    let call_len = (einit_array as u64 - sinit_array as u64) / 8;
+    for i in 0..call_len {
+        unsafe {
+            let address = (sinit_array as u64 + 8 * i) as *const u64;
+            let function = address as *const fn();
+            (*function)();
+        }
+    }
+}
+
 fn general_handler(trap_frame: &TrapFrame) {
     // info!("general handler");
     // println!("{:#x?}", trap_frame);

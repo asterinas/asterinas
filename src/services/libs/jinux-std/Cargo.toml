@@ -9,8 +9,8 @@ edition = "2021"
 jinux-frame = {path = "../../../framework/jinux-frame"}
 pod = {path = "../../../framework/pod"}
 pod-derive = {path = "../../../framework/pod-derive"}
-jinux-pci = {path="../../comps/jinux-pci"}
-jinux-virtio = {path="../../comps/jinux-virtio"}
+jinux-input = {path="../../comps/input"}
+jinux-block = {path="../../comps/block"}
 controlled = { path = "../../comp-sys/controlled" }
 typeflags = {path="../typeflags"}
 typeflags-util = {path="../typeflags-util"}

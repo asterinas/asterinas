@@ -5,14 +5,19 @@
 
 extern crate alloc;
 
-use alloc::{sync::Arc, vec::Vec};
+use component::init_component;
+use core::str::FromStr;
+
+use alloc::{collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use bitflags::bitflags;
+use component::ComponentInitError;
 use device::VirtioDevice;
 use jinux_frame::{offset_of, TrapFrame};
 use jinux_pci::util::{PCIDevice, BAR};
 use jinux_util::frame_ptr::InFramePtr;
 use log::{debug, info};
 use pod_derive::Pod;
+use spin::{Mutex, Once};
 
 use crate::device::VirtioInfo;
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, msix::MSIX};
@@ -20,8 +25,71 @@ use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, msix::MSIX};
 extern crate pod_derive;
 
 pub mod device;
-
 pub mod queue;
+
+pub static VIRTIO_COMPONENT: Once<VIRTIOComponent> = Once::new();
+
+#[init_component]
+fn virtio_component_init() -> Result<(), ComponentInitError> {
+    let a = VIRTIOComponent::init()?;
+    VIRTIO_COMPONENT.call_once(|| a);
+    Ok(())
+}
+
+pub struct VIRTIOComponent {
+    virtio_devices: Mutex<VecDeque<PCIVirtioDevice>>,
+}
+
+impl VIRTIOComponent {
+    pub fn init() -> Result<Self, ComponentInitError> {
+        let pci_devices =
+            jinux_pci::PCI_COMPONENT
+                .get()
+                .ok_or(ComponentInitError::UninitializedDependencies(
+                    String::from_str("PCI").unwrap(),
+                ))?;
+        let mut virtio_devices = VecDeque::new();
+        for index in 0..pci_devices.device_amount() {
+            let pci_device = pci_devices.get_pci_devices(index).unwrap();
+            if pci_device.id.vendor_id == 0x1af4 {
+                virtio_devices.push_back(PCIVirtioDevice::new(pci_device));
+            }
+        }
+        Ok(Self {
+            virtio_devices: Mutex::new(virtio_devices),
+        })
+    }
+
+    pub const fn name() -> &'static str {
+        "Virtio"
+    }
+    // 0~65535
+    pub const fn priority() -> u16 {
+        256
+    }
+}
+
+impl VIRTIOComponent {
+    pub fn pop(self: &Self) -> Option<PCIVirtioDevice> {
+        self.virtio_devices.lock().pop_front()
+    }
+
+    pub fn get_device(self: &Self, device_type: VirtioDeviceType) -> Vec<PCIVirtioDevice> {
+        let mut devices = Vec::new();
+        let mut lock = self.virtio_devices.lock();
+        let len = lock.len();
+        for i in 0..len {
+            let device = lock.pop_front().unwrap();
+            let d_type = VirtioDeviceType::from_virtio_device(&device.device);
+            if d_type == device_type {
+                devices.push(device);
+            } else {
+                lock.push_back(device);
+            }
+        }
+        devices
+    }
+}
 
 bitflags! {
     /// The device status field.
@@ -118,7 +186,7 @@ impl VitrioPciCommonCfg {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VirtioDeviceType {
     Network,
     Block,
@@ -130,7 +198,27 @@ pub enum VirtioDeviceType {
     Input,
     Crypto,
     Socket,
+    Unknown,
 }
+
+impl VirtioDeviceType {
+    pub fn from_virtio_device(device: &VirtioDevice) -> Self {
+        match device {
+            VirtioDevice::Network => VirtioDeviceType::Network,
+            VirtioDevice::Block(_) => VirtioDeviceType::Block,
+            VirtioDevice::Console => VirtioDeviceType::Console,
+            VirtioDevice::Entropy => VirtioDeviceType::Entropy,
+            VirtioDevice::TraditionalMemoryBalloon => VirtioDeviceType::TraditionalMemoryBalloon,
+            VirtioDevice::ScsiHost => VirtioDeviceType::ScsiHost,
+            VirtioDevice::GPU => VirtioDeviceType::GPU,
+            VirtioDevice::Input(_) => VirtioDeviceType::Input,
+            VirtioDevice::Crypto => VirtioDeviceType::Crypto,
+            VirtioDevice::Socket => VirtioDeviceType::Socket,
+            VirtioDevice::Unknown => VirtioDeviceType::Unknown,
+        }
+    }
+}
+
 pub struct PCIVirtioDevice {
     /// common config of one device
     pub common_cfg: InFramePtr<VitrioPciCommonCfg>,
@@ -250,17 +338,28 @@ impl PCIVirtioDevice {
         }
     }
 
-    /// register all the interrupt functions except the config change, this function should call only once
-    pub fn register_interrupt_functions<F>(&mut self, function: &'static F)
-    where
+    /// register all the interrupt functions, this function should call only once
+    pub fn register_interrupt_functions<F, T>(
+        &mut self,
+        config_change_function: &'static F,
+        other_function: &'static T,
+    ) where
         F: Fn(&TrapFrame) + Send + Sync + 'static,
+        T: Fn(&TrapFrame) + Send + Sync + 'static,
     {
+        let config_msix_vector =
+            self.common_cfg
+                .read_at(offset_of!(VitrioPciCommonCfg, config_msix_vector)) as usize;
         for i in 0..self.msix.table_size as usize {
             let msix = self.msix.table.get_mut(i).unwrap();
             if !msix.irq_handle.is_empty() {
                 panic!("function `register_queue_interrupt_functions` called more than one time");
             }
-            msix.irq_handle.on_active(function);
+            if config_msix_vector == i {
+                msix.irq_handle.on_active(config_change_function);
+            } else {
+                msix.irq_handle.on_active(other_function);
+            }
         }
     }
 }

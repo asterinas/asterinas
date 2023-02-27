@@ -152,6 +152,7 @@ impl VirtioDevice {
             VirtioDeviceType::Input => InputDevice::negotiate_features(device_specified_features),
             VirtioDeviceType::Crypto => todo!(),
             VirtioDeviceType::Socket => todo!(),
+            VirtioDeviceType::Unknown => todo!(),
         };
         let support_feature = Feature::from_bits_truncate(features);
         // support_feature.remove(Feature::RING_EVENT_IDX);
