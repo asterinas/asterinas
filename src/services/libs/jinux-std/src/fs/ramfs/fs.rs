@@ -298,7 +298,7 @@ impl Inode for RamInode {
     }
 
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "direct read is not supported");
+        return_errno_with_message!(Errno::EOPNOTSUPP, "direct write is not supported");
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -339,6 +339,7 @@ impl Inode for RamInode {
                     Arc::downgrade(&dir_inode),
                     self_inode.inner.as_direntry().unwrap().this.clone(),
                 );
+                self_inode.metadata.nlinks += 1;
                 dir_inode
             }
             InodeType::SymLink => {
@@ -360,6 +361,7 @@ impl Inode for RamInode {
             .as_direntry_mut()
             .unwrap()
             .append_entry(name, new_inode.clone());
+        self_inode.metadata.size += 1;
         Ok(new_inode)
     }
 
@@ -396,6 +398,9 @@ impl Inode for RamInode {
             .as_direntry_mut()
             .unwrap()
             .append_entry(name, old.0.read().this.upgrade().unwrap());
+        self_inode.metadata.size += 1;
+        drop(self_inode);
+        old.0.write().metadata.nlinks += 1;
         Ok(())
     }
 
@@ -408,12 +413,14 @@ impl Inode for RamInode {
         }
         let mut self_inode = self.0.write();
         let self_dir = self_inode.inner.as_direntry_mut().unwrap();
-        let (idx, other) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
-        let other_inode = other.0.read();
-        if other_inode.metadata.type_ == InodeType::Dir {
+        let (idx, target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
+        if target.0.read().metadata.type_ == InodeType::Dir {
             return_errno_with_message!(Errno::EISDIR, "unlink on dir");
         }
         self_dir.remove_entry(idx);
+        self_inode.metadata.size -= 1;
+        drop(self_inode);
+        target.0.write().metadata.nlinks -= 1;
         Ok(())
     }
 
@@ -426,15 +433,25 @@ impl Inode for RamInode {
         }
         let mut self_inode = self.0.write();
         let self_dir = self_inode.inner.as_direntry_mut().unwrap();
-        let (idx, other) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
-        let other_inode = other.0.read();
-        if other_inode.metadata.type_ != InodeType::Dir {
+        let (idx, target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
+        if target.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
         }
-        if other_inode.inner.as_direntry().unwrap().is_empty_children() {
+        if target
+            .0
+            .read()
+            .inner
+            .as_direntry()
+            .unwrap()
+            .is_empty_children()
+        {
             return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
         }
         self_dir.remove_entry(idx);
+        self_inode.metadata.size -= 1;
+        self_inode.metadata.nlinks -= 1;
+        drop(self_inode);
+        target.0.write().metadata.nlinks -= 2;
         Ok(())
     }
 
@@ -520,9 +537,15 @@ impl Inode for RamInode {
                 .as_direntry_mut()
                 .unwrap()
                 .append_entry(new_name, src_inode.clone());
+            self_inode.metadata.size -= 1;
+            target_inode.metadata.size += 1;
+            if src_inode.0.read().metadata.type_ == InodeType::Dir {
+                self_inode.metadata.nlinks -= 1;
+                target_inode.metadata.nlinks += 1;
+            }
             drop(self_inode);
             drop(target_inode);
-            if src_inode.metadata().type_ == InodeType::Dir {
+            if src_inode.0.read().metadata.type_ == InodeType::Dir {
                 src_inode
                     .0
                     .write()
@@ -551,6 +574,7 @@ impl Inode for RamInode {
         let mut self_inode = self.0.write();
         let link = self_inode.inner.as_symlink_mut().unwrap();
         *link = Str256::from(target);
+        self_inode.metadata.size = target.len();
         Ok(())
     }
 
