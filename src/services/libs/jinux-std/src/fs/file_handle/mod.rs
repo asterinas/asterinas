@@ -83,14 +83,8 @@ impl FileHandle {
 
     pub fn clean_for_close(&self) -> Result<()> {
         match &self.inner {
-            Inner::Inode(inode_handle) => {
-                let dentry = inode_handle.dentry();
-                let ref_count = Arc::strong_count(dentry);
-                // The dentry is held by dentry cache and self
-                if ref_count == 2 {
-                    let page_cache_size = dentry.vnode().pages().size();
-                    dentry.vnode().pages().decommit(0..page_cache_size)?;
-                }
+            Inner::Inode(_) => {
+                // Close does not guarantee that the data has been successfully saved to disk.
             }
             Inner::File(file) => file.flush()?,
         }
