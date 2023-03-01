@@ -232,7 +232,6 @@ dependencies = [
  "lazy_static",
  "log",
  "pod",
- "pod-derive",
  "spin 0.9.4",
 ]
 
@@ -260,7 +259,6 @@ dependencies = [
  "linked_list_allocator",
  "log",
  "pod",
- "pod-derive",
  "spin 0.9.4",
  "uart_16550",
  "volatile",
@@ -280,7 +278,6 @@ dependencies = [
  "lazy_static",
  "log",
  "pod",
- "pod-derive",
  "spin 0.9.4",
  "virtio-input-decoder",
 ]
@@ -296,7 +293,6 @@ dependencies = [
  "lazy_static",
  "log",
  "pod",
- "pod-derive",
  "spin 0.9.4",
 ]
 
@@ -327,7 +323,6 @@ dependencies = [
  "log",
  "lru",
  "pod",
- "pod-derive",
  "ringbuffer",
  "spin 0.9.4",
  "typeflags",
@@ -343,7 +338,6 @@ version = "0.1.0"
 dependencies = [
  "jinux-frame",
  "pod",
- "pod-derive",
 ]
 
 [[package]]
@@ -357,7 +351,6 @@ dependencies = [
  "jinux-util",
  "log",
  "pod",
- "pod-derive",
  "spin 0.9.4",
 ]
 
@@ -452,6 +445,9 @@ checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 [[package]]
 name = "pod"
 version = "0.1.0"
+dependencies = [
+ "pod-derive",
+]
 
 [[package]]
 name = "pod-derive"

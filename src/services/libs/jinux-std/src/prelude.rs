@@ -16,6 +16,7 @@ pub(crate) use jinux_frame::config::PAGE_SIZE;
 pub(crate) use jinux_frame::vm::Vaddr;
 pub(crate) use jinux_frame::{print, println};
 pub(crate) use log::{debug, error, info, trace, warn};
+pub(crate) use pod::Pod;
 pub(crate) use spin::{Mutex, RwLock};
 
 /// return current process

@@ -1,6 +1,7 @@
 pub mod device;
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
 use jinux_util::frame_ptr::InFramePtr;
+use pod::Pod;
 
 /// Select value used for [`VirtIOInput::query_config_select()`].
 #[repr(u8)]
