@@ -244,7 +244,7 @@ impl VmMapping {
             map_size,
             map_to_addr,
         } = self;
-        let parent_vmo = vmo.clone();
+        let parent_vmo = vmo.dup().unwrap();
         let vmo_size = parent_vmo.size();
         let child_vmo = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?;
         let parent_vmar = new_parent.upgrade().unwrap();

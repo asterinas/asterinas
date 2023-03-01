@@ -149,12 +149,6 @@ impl Vmo<Rights> {
     }
 }
 
-impl Clone for Vmo<Rights> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone())
-    }
-}
-
 impl VmIo for Vmo<Rights> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;

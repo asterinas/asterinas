@@ -316,6 +316,7 @@ dependencies = [
  "ascii",
  "bitflags",
  "controlled",
+ "cpio-decoder",
  "intrusive-collections",
  "jinux-block",
  "jinux-frame",
