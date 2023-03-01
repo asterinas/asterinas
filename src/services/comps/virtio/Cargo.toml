@@ -12,7 +12,6 @@ jinux-frame = {path = "../../../framework/jinux-frame"}
 jinux-pci = {path="../pci"}
 jinux-util = {path="../../libs/jinux-util"}
 pod = {path = "../../../framework/pod"}
-pod-derive = {path = "../../../framework/pod-derive"}
 component = {path="../../comp-sys/component"}
 log = "0.4"
 

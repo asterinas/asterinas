@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use jinux_frame::vm::VmIo;
-use pod::Pod;
 
 /// copy bytes from user space of current process. The bytes len is the len of dest.
 pub fn read_bytes_from_user(src: Vaddr, dest: &mut [u8]) -> Result<()> {

@@ -9,7 +9,6 @@ extern crate alloc;
 
 use component::init_component;
 use component::ComponentInitError;
-extern crate pod_derive;
 
 use alloc::{sync::Arc, vec::Vec};
 use spin::{mutex::Mutex, Once};

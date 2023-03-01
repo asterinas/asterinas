@@ -16,7 +16,6 @@ bootloader = {version="0.10.12"}
 font8x8 = { version = "0.2.5", default-features = false, features = ["unicode"]}
 uart_16550 = "0.2.0"
 pod = {path = "../pod"}
-pod-derive = {path = "../pod-derive"}
 acpi= "4.1.1"
 intrusive-collections = "0.9.5"
 log= "0.4"

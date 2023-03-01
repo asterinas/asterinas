@@ -47,8 +47,6 @@ pub mod tty;
 mod user_apps;
 mod util;
 pub mod vm;
-#[macro_use]
-extern crate pod_derive;
 
 pub fn init() {
     jinux_frame::disable_interrupts();
