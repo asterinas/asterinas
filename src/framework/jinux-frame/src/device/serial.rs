@@ -26,7 +26,7 @@ lazy_static! {
         irq.get().on_active(handle_serial_input);
         irq
     };
-    pub static ref SERIAL_INPUT_CALLBACKS: Mutex<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
+    static ref SERIAL_INPUT_CALLBACKS: Mutex<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
         Mutex::new(Vec::new());
 }
 
@@ -49,6 +49,10 @@ pub(crate) fn init() {
     out8(SERIAL_MODEM_CTRL, 0x0B);
     // Enable interrupts
     out8(SERIAL_INT_EN, 0x01);
+}
+
+pub fn register_serial_input_callback(f: impl Fn(u8) + Send + Sync + 'static) {
+    SERIAL_INPUT_CALLBACKS.lock().push(Arc::new(f));
 }
 
 pub(crate) fn register_serial_input_irq_handler<F>(callback: F)

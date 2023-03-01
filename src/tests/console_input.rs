@@ -15,7 +15,7 @@ entry_point!(kernel_test_main);
 
 fn kernel_test_main(boot_info: &'static mut BootInfo) -> ! {
     jinux_frame::init(boot_info);
-    jinux_std::driver::console::init();
+    jinux_std::driver::tty::init();
     test_main();
     loop {}
 }
@@ -29,7 +29,7 @@ fn panic(info: &PanicInfo) -> ! {
 fn test_input() {
     jinux_frame::enable_interrupts();
     println!("please input value into console to pass this test");
-    jinux_std::driver::console::register_serial_input_callback(Arc::new(input_callback));
+    jinux_std::driver::tty::register_serial_input_callback(input_callback);
     unsafe {
         while INPUT_VALUE == 0 {
             jinux_frame::hlt();
