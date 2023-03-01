@@ -2,12 +2,12 @@
 //!
 //! # Example
 //!
-//! ```rust,should_panic
+//! ```rust
 //! use cpio_decoder::CpioDecoder;
 //!
 //! let decoder = CpioDecoder::new(&[]);
-//! for entry in decoder.entries() {
-//!     println!("{:?}", entry);
+//! for entry_result in decoder.decode_entries() {
+//!     println!("The entry_result is: {:?}", entry_result);
 //! }
 //! ```
 
@@ -41,18 +41,19 @@ impl<'a> CpioDecoder<'a> {
         Self { buffer }
     }
 
-    /// Return an iterator for all entries in the CPIO.
-    ///
-    /// It will panic if fails to decode some entries.
-    pub fn entries(&'a self) -> CpioEntryIter<'a> {
+    /// Return an iterator trying to decode the entries in the CPIO.
+    pub fn decode_entries(&'a self) -> CpioEntryIter<'a> {
         CpioEntryIter::new(self)
     }
 }
 
-/// A file entry iterator.
+/// An iterator over the results of CPIO entries.
+///
+/// It stops if reaches to the trailer entry or encounters an error.
 pub struct CpioEntryIter<'a> {
     buffer: &'a [u8],
     offset: usize,
+    is_error: bool,
 }
 
 impl<'a> CpioEntryIter<'a> {
@@ -60,20 +61,38 @@ impl<'a> CpioEntryIter<'a> {
         Self {
             buffer: decoder.buffer,
             offset: 0,
+            is_error: false,
         }
     }
 }
 
 impl<'a> Iterator for CpioEntryIter<'a> {
-    type Item = CpioEntry<'a>;
+    type Item = Result<CpioEntry<'a>>;
 
-    fn next(&mut self) -> Option<CpioEntry<'a>> {
-        let entry = CpioEntry::new(&self.buffer[self.offset..]).unwrap();
-        if entry.is_trailer() {
+    fn next(&mut self) -> Option<Result<CpioEntry<'a>>> {
+        // Stop to iterate entries if encounters an error.
+        if self.is_error {
             return None;
         }
-        self.offset += entry.archive_offset();
-        Some(entry)
+
+        let entry_result = if self.offset >= self.buffer.len() {
+            Err(Error::BufferShortError)
+        } else {
+            CpioEntry::new(&self.buffer[self.offset..])
+        };
+        match &entry_result {
+            Ok(entry) => {
+                // A correct CPIO buffer must end with a trailer.
+                if entry.is_trailer() {
+                    return None;
+                }
+                self.offset += entry.archive_offset();
+            }
+            Err(_) => {
+                self.is_error = true;
+            }
+        }
+        Some(entry_result)
     }
 }
 
