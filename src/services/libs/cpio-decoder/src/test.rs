@@ -1,3 +1,4 @@
+use super::error::*;
 use super::{CpioDecoder, FileType};
 
 #[test]
@@ -24,8 +25,10 @@ fn test_decoder() {
     };
 
     let decoder = CpioDecoder::new(&buffer);
-    assert!(decoder.entries().count() > 3);
-    for (idx, entry) in decoder.entries().enumerate() {
+    assert!(decoder.decode_entries().count() > 3);
+    for (idx, entry_result) in decoder.decode_entries().enumerate() {
+        assert!(entry_result.is_ok());
+        let entry = entry_result.unwrap();
         if idx == 0 {
             assert!(entry.name() == ".");
             assert!(entry.metadata().file_type() == FileType::Dir);
@@ -41,5 +44,24 @@ fn test_decoder() {
             assert!(entry.metadata().file_type() == FileType::File);
             assert!(entry.metadata().ino() > 0);
         }
+    }
+}
+
+#[test]
+fn test_short_buffer() {
+    let decoder = CpioDecoder::new(&[]);
+    for entry_result in decoder.decode_entries() {
+        assert!(entry_result.is_err());
+        assert!(entry_result.err() == Some(Error::BufferShortError));
+    }
+}
+
+#[test]
+fn test_invalid_buffer() {
+    let buffer: &[u8] = b"invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic";
+    let decoder = CpioDecoder::new(buffer);
+    for entry_result in decoder.decode_entries() {
+        assert!(entry_result.is_err());
+        assert!(entry_result.err() == Some(Error::MagicError));
     }
 }
