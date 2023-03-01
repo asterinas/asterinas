@@ -1,4 +1,4 @@
-use jinux_frame::device::serial::SERIAL_INPUT_CALLBACKS;
+pub use jinux_frame::device::serial::register_serial_input_callback;
 
 use crate::{
     prelude::*,
@@ -74,7 +74,5 @@ fn get_tty_driver() -> &'static TtyDriver {
 }
 
 pub fn init() {
-    SERIAL_INPUT_CALLBACKS
-        .lock()
-        .push(Arc::new(serial_input_callback));
+    register_serial_input_callback(serial_input_callback);
 }
