@@ -5,7 +5,6 @@ use crate::rights::Rights;
 use crate::vm::vmo::{Vmo, VmoFlags, VmoOptions};
 
 /// VFS-level representation of an inode
-#[derive(Clone)]
 pub struct Vnode {
     inode: Arc<dyn Inode>,
     pages: Vmo,
@@ -19,6 +18,14 @@ impl Vnode {
             .pager(page_cache_manager)
             .alloc()?;
         Ok(Self { inode, pages })
+    }
+
+    pub fn dup(&self) -> Result<Self> {
+        let pages = self.pages.dup()?;
+        Ok(Self {
+            inode: self.inode.clone(),
+            pages,
+        })
     }
 
     pub fn pages(&self) -> &Vmo {

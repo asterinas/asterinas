@@ -131,3 +131,86 @@ impl<R> VmarChildOptions<R> {
         Ok(child_vmar)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::vm::page_fault_handler::PageFaultHandler;
+    use crate::vm::perms::VmPerms;
+    use crate::vm::vmo::VmoRightsOp;
+    use crate::{
+        rights::Full,
+        vm::{vmar::ROOT_VMAR_HIGHEST_ADDR, vmo::VmoOptions},
+    };
+    use jinux_frame::vm::VmIo;
+
+    #[test]
+    fn root_vmar() {
+        let vmar = Vmar::<Full>::new_root().unwrap();
+        assert!(vmar.size() == ROOT_VMAR_HIGHEST_ADDR);
+    }
+
+    #[test]
+    fn child_vmar() {
+        let root_vmar = Vmar::<Full>::new_root().unwrap();
+        let root_vmar_dup = root_vmar.dup().unwrap();
+        let child_vmar = VmarChildOptions::new(root_vmar_dup, 10 * PAGE_SIZE)
+            .alloc()
+            .unwrap();
+        assert!(child_vmar.size() == 10 * PAGE_SIZE);
+        let root_vmar_dup = root_vmar.dup().unwrap();
+        let second_child = VmarChildOptions::new(root_vmar_dup, 9 * PAGE_SIZE)
+            .alloc()
+            .unwrap();
+        let root_vmar_dup = root_vmar.dup().unwrap();
+        assert!(VmarChildOptions::new(root_vmar_dup, 9 * PAGE_SIZE)
+            .offset(11 * PAGE_SIZE)
+            .alloc()
+            .is_err());
+    }
+
+    #[test]
+    fn map_vmo() {
+        let root_vmar = Vmar::<Full>::new_root().unwrap();
+        let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap().to_dyn();
+        let perms = VmPerms::READ | VmPerms::WRITE;
+        let map_offset = 0x1000_0000;
+        let vmo_dup = vmo.dup().unwrap();
+        root_vmar
+            .new_map(vmo_dup, perms)
+            .unwrap()
+            .offset(map_offset)
+            .build()
+            .unwrap();
+        root_vmar.write_val(map_offset, &100u8).unwrap();
+        assert!(root_vmar.read_val::<u8>(map_offset).unwrap() == 100);
+        let another_map_offset = 0x1100_0000;
+        let vmo_dup = vmo.dup().unwrap();
+        root_vmar
+            .new_map(vmo_dup, perms)
+            .unwrap()
+            .offset(another_map_offset)
+            .build()
+            .unwrap();
+        assert!(root_vmar.read_val::<u8>(another_map_offset).unwrap() == 100);
+    }
+
+    #[test]
+    fn handle_page_fault() {
+        const OFFSET: usize = 0x1000_0000;
+        let root_vmar = Vmar::<Full>::new_root().unwrap();
+        // the page is not mapped by a vmo
+        assert!(root_vmar.handle_page_fault(OFFSET, true, true).is_err());
+        // the page is mapped READ
+        let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap().to_dyn();
+        let perms = VmPerms::READ;
+        let vmo_dup = vmo.dup().unwrap();
+        root_vmar
+            .new_map(vmo_dup, perms)
+            .unwrap()
+            .offset(OFFSET)
+            .build()
+            .unwrap();
+        root_vmar.handle_page_fault(OFFSET, true, false).unwrap();
+    }
+}

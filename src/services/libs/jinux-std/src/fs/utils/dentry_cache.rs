@@ -124,7 +124,7 @@ impl Dentry {
         }
         let target_vnode = old.vnode();
         self.vnode.inode().link(target_vnode.inode(), name)?;
-        let new_dentry = Self::new(name, target_vnode.clone(), Some(inner.this.clone()));
+        let new_dentry = Self::new(name, target_vnode.dup()?, Some(inner.this.clone()));
         inner.children.insert(String::from(name), new_dentry);
         Ok(())
     }
