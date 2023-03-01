@@ -522,3 +522,99 @@ impl VmoChildType for VmoSliceChild {}
 #[derive(Copy, Clone, Debug)]
 pub struct VmoCowChild;
 impl VmoChildType for VmoCowChild {}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::rights::Full;
+    use jinux_frame::vm::VmIo;
+
+    #[test]
+    fn alloc_vmo() {
+        let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
+        assert!(vmo.size() == PAGE_SIZE);
+        // the vmo is zeroed once allocated
+        assert!(vmo.read_val::<usize>(0).unwrap() == 0);
+    }
+
+    #[test]
+    #[should_panic]
+    /// FIXME: alloc continuous frames is not supported now
+    fn alloc_continuous_vmo() {
+        let vmo = VmoOptions::<Full>::new(10 * PAGE_SIZE)
+            .flags(VmoFlags::CONTIGUOUS)
+            .alloc()
+            .unwrap();
+        assert!(vmo.size() == 10 * PAGE_SIZE);
+    }
+
+    #[test]
+    fn write_and_read() {
+        let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
+        let val = 42u8;
+        // write val
+        vmo.write_val(111, &val).unwrap();
+        let read_val: u8 = vmo.read_val(111).unwrap();
+        assert!(val == read_val);
+        // bit endian
+        vmo.write_bytes(222, &[0x12, 0x34, 0x56, 0x78]).unwrap();
+        let read_val: u32 = vmo.read_val(222).unwrap();
+        assert!(read_val == 0x78563412)
+    }
+
+    #[test]
+    fn slice_child() {
+        let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
+        let parent_dup = parent.dup().unwrap();
+        let slice_child = VmoChildOptions::new_slice(parent_dup, 0..PAGE_SIZE)
+            .alloc()
+            .unwrap();
+        // write parent, read child
+        parent.write_val(1, &42u8).unwrap();
+        assert!(slice_child.read_val::<u8>(1).unwrap() == 42);
+        // write child, read parent
+        slice_child.write_val(99, &0x1234u32).unwrap();
+        assert!(parent.read_val::<u32>(99).unwrap() == 0x1234);
+    }
+
+    #[test]
+    fn cow_child() {
+        let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
+        let parent_dup = parent.dup().unwrap();
+        let cow_child = VmoChildOptions::new_cow(parent_dup, 0..10 * PAGE_SIZE)
+            .alloc()
+            .unwrap();
+        // write parent, read child
+        parent.write_val(1, &42u8).unwrap();
+        assert!(cow_child.read_val::<u8>(1).unwrap() == 42);
+        // write child to trigger copy on write, read child and parent
+        cow_child.write_val(99, &0x1234u32).unwrap();
+        assert!(cow_child.read_val::<u32>(99).unwrap() == 0x1234);
+        assert!(cow_child.read_val::<u32>(1).unwrap() == 42);
+        assert!(parent.read_val::<u32>(99).unwrap() == 0);
+        assert!(parent.read_val::<u32>(1).unwrap() == 42);
+        // write parent on already-copied page
+        parent.write_val(10, &123u8).unwrap();
+        assert!(parent.read_val::<u32>(10).unwrap() == 123);
+        assert!(cow_child.read_val::<u32>(10).unwrap() == 0);
+        // write parent on not-copied page
+        parent.write_val(PAGE_SIZE + 10, &12345u32).unwrap();
+        assert!(parent.read_val::<u32>(PAGE_SIZE + 10).unwrap() == 12345);
+        assert!(cow_child.read_val::<u32>(PAGE_SIZE + 10).unwrap() == 12345);
+    }
+
+    #[test]
+    fn resize() {
+        let vmo = VmoOptions::<Full>::new(PAGE_SIZE)
+            .flags(VmoFlags::RESIZABLE)
+            .alloc()
+            .unwrap();
+        vmo.write_val(10, &42u8).unwrap();
+        vmo.resize(2 * PAGE_SIZE).unwrap();
+        assert!(vmo.size() == 2 * PAGE_SIZE);
+        assert!(vmo.read_val::<u8>(10).unwrap() == 42);
+        vmo.write_val(PAGE_SIZE + 20, &123u8).unwrap();
+        vmo.resize(PAGE_SIZE).unwrap();
+        assert!(vmo.read_val::<u8>(10).unwrap() == 42);
+    }
+}

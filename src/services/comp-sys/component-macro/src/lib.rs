@@ -57,7 +57,7 @@ pub fn init_component(_: TokenStream, input: TokenStream) -> proc_macro::TokenSt
 }
 
 /// Automatically generate all component information required by the component system.
-/// 
+///
 /// It mainly uses the output of the command `cargo metadata` to automatically generate information about all components, and also checks whether `Components.toml` contains all the components.
 ///
 /// It is often used with `component::init_all`.
