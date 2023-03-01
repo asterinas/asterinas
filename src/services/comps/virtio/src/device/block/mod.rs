@@ -4,6 +4,7 @@ use bitflags::bitflags;
 use jinux_pci::capability::vendor::virtio::CapabilityVirtioData;
 use jinux_pci::util::BAR;
 use jinux_util::frame_ptr::InFramePtr;
+use pod::Pod;
 
 pub const BLK_SIZE: usize = 512;
 

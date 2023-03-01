@@ -1,6 +1,7 @@
 #![allow(non_camel_case_types)]
 
 use super::{Metadata, Timespec};
+use crate::prelude::*;
 
 pub const S_IFMT: u32 = 0o170000;
 pub const S_IFCHR: u32 = 0o020000;

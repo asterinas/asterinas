@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 use log::debug;
-use pod_derive::Pod;
+use pod::Pod;
 
 use crate::util::{CSpaceAccessMethod, Location, BAR};
 

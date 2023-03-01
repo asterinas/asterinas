@@ -13,7 +13,6 @@ jinux-pci = {path="../pci"}
 jinux-virtio = {path="../virtio"}
 jinux-util = {path="../../libs/jinux-util"}
 pod = {path = "../../../framework/pod"}
-pod-derive = {path = "../../../framework/pod-derive"}
 component = {path="../../comp-sys/component"}
 virtio-input-decoder = "0.1.4"
 log = "0.4"

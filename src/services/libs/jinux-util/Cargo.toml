@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 jinux-frame = {path = "../../../framework/jinux-frame"}
-pod-derive = {path = "../../../framework/pod-derive"}
 pod = {path = "../../../framework/pod"}
 
 [features]

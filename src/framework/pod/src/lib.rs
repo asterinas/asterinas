@@ -64,3 +64,6 @@ macro_rules! impl_pod_for {
 impl_pod_for!(u8, u16, u32, u64, i8, i16, i32, i64, isize, usize);
 // impl Pod for array
 unsafe impl<T: Pod, const N: usize> Pod for [T; N] {}
+
+#[cfg(feature = "derive")]
+pub use pod_derive::*;

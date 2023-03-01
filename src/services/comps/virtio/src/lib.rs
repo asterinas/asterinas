@@ -16,13 +16,11 @@ use jinux_frame::{offset_of, TrapFrame};
 use jinux_pci::util::{PCIDevice, BAR};
 use jinux_util::frame_ptr::InFramePtr;
 use log::{debug, info};
-use pod_derive::Pod;
+use pod::Pod;
 use spin::{Mutex, Once};
 
 use crate::device::VirtioInfo;
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, msix::MSIX};
-#[macro_use]
-extern crate pod_derive;
 
 pub mod device;
 pub mod queue;
