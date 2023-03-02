@@ -42,9 +42,7 @@ pub fn sys_renameat(
         if new_pathname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "newpath is empty");
         }
-        if new_pathname.ends_with("/")
-            && old_dentry.vnode().inode().metadata().type_ != InodeType::Dir
-        {
+        if new_pathname.ends_with("/") && old_dentry.inode_type() != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "oldpath is not dir");
         }
         let new_fs_path = FsPath::new(new_dirfd, new_pathname.as_ref().trim_end_matches('/'))?;

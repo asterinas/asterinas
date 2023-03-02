@@ -196,7 +196,7 @@ impl Process {
             let pid = thread.tid();
             let user_vm = UserVm::new();
             let file_table = FileTable::new_with_stdio();
-            let fs = FsResolver::new().unwrap();
+            let fs = FsResolver::new();
             let sig_dispositions = SigDispositions::new();
 
             let process = Process::new(
@@ -231,7 +231,7 @@ impl Process {
             let thread = Thread::new_kernel_thread(task_fn, weak_process_ref.clone());
             let pid = thread.tid();
             let file_table = FileTable::new();
-            let fs = FsResolver::new().unwrap();
+            let fs = FsResolver::new();
             let sig_dispositions = SigDispositions::new();
             // FIXME: kernel process does not need root vmar
             let root_vmar = Vmar::<Full>::new_root().unwrap();
