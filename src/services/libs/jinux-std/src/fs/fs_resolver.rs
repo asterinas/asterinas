@@ -258,7 +258,7 @@ impl FsResolver {
             FsPathInner::CwdRelative(path) => {
                 let (dir, file_name) = split_path(path);
                 (
-                    self.lookup_from_parent(&self.cwd, path, true)?,
+                    self.lookup_from_parent(&self.cwd, dir, true)?,
                     String::from(file_name),
                 )
             }
@@ -266,7 +266,7 @@ impl FsResolver {
                 let (dir, file_name) = split_path(path);
                 let parent = self.lookup_from_fd(fd)?;
                 (
-                    self.lookup_from_parent(&parent, path, true)?,
+                    self.lookup_from_parent(&parent, dir, true)?,
                     String::from(file_name),
                 )
             }
