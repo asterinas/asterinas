@@ -301,12 +301,12 @@ impl Inode for RamInode {
         return_errno_with_message!(Errno::EOPNOTSUPP, "direct write is not supported");
     }
 
-    fn resize(&self, new_size: usize) -> Result<()> {
-        if self.0.read().metadata.type_ != InodeType::File {
-            return_errno_with_message!(Errno::EISDIR, "self is not file");
-        }
+    fn len(&self) -> usize {
+        self.0.read().metadata.size
+    }
+
+    fn resize(&self, new_size: usize) {
         self.0.write().metadata.size = new_size;
-        Ok(())
     }
 
     fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {

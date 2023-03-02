@@ -70,7 +70,7 @@ impl FileHandle {
     pub fn metadata(&self) -> Metadata {
         match &self.inner {
             Inner::File(file) => file.metadata(),
-            Inner::Inode(inode_handle) => inode_handle.dentry().vnode().inode().metadata(),
+            Inner::Inode(inode_handle) => inode_handle.dentry().vnode().metadata(),
         }
     }
 

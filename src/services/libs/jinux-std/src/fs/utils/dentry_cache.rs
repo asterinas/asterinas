@@ -2,7 +2,7 @@ use crate::prelude::*;
 use alloc::string::String;
 use spin::RwLockWriteGuard;
 
-use super::{InodeMode, InodeType, Vnode, NAME_MAX};
+use super::{InodeMode, InodeType, Metadata, Vnode, NAME_MAX};
 
 pub struct Dentry {
     inner: RwLock<Dentry_>,
@@ -68,12 +68,12 @@ impl Dentry {
         self.inner.write().parent = Some(Arc::downgrade(parent));
     }
 
-    pub fn vnode(&self) -> &Vnode {
+    pub(in crate::fs) fn vnode(&self) -> &Vnode {
         &self.vnode
     }
 
     pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
-        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+        if self.vnode.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut inner = self.inner.write();
@@ -81,7 +81,7 @@ impl Dentry {
             return_errno!(Errno::EEXIST);
         }
         let child = {
-            let vnode = Vnode::new(self.vnode.inode().mknod(name, type_, mode)?)?;
+            let vnode = self.vnode.mknod(name, type_, mode)?;
             Dentry::new(name, vnode, Some(inner.this.clone()))
         };
         inner.children.insert(String::from(name), child.clone());
@@ -89,7 +89,7 @@ impl Dentry {
     }
 
     pub fn lookup(&self, name: &str) -> Result<Arc<Self>> {
-        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+        if self.vnode.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if name.len() > NAME_MAX {
@@ -104,7 +104,7 @@ impl Dentry {
                 if let Some(dentry) = inner.children.get(name) {
                     dentry.clone()
                 } else {
-                    let vnode = Vnode::new(self.vnode.inode().lookup(name)?)?;
+                    let vnode = self.vnode.lookup(name)?;
                     let dentry = Dentry::new(name, vnode, Some(inner.this.clone()));
                     inner.children.insert(String::from(name), dentry.clone());
                     dentry
@@ -115,7 +115,7 @@ impl Dentry {
     }
 
     pub fn link(&self, old: &Arc<Self>, name: &str) -> Result<()> {
-        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+        if self.vnode.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut inner = self.inner.write();
@@ -123,38 +123,51 @@ impl Dentry {
             return_errno!(Errno::EEXIST);
         }
         let target_vnode = old.vnode();
-        self.vnode.inode().link(target_vnode.inode(), name)?;
+        self.vnode.link(target_vnode, name)?;
         let new_dentry = Self::new(name, target_vnode.clone(), Some(inner.this.clone()));
         inner.children.insert(String::from(name), new_dentry);
         Ok(())
     }
 
     pub fn unlink(&self, name: &str) -> Result<()> {
-        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+        if self.vnode.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut inner = self.inner.write();
-        self.vnode.inode().unlink(name)?;
+        self.vnode.unlink(name)?;
         inner.children.remove(name);
         Ok(())
     }
 
     pub fn rmdir(&self, name: &str) -> Result<()> {
-        if self.vnode.inode().metadata().type_ != InodeType::Dir {
+        if self.vnode.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut inner = self.inner.write();
-        self.vnode.inode().rmdir(name)?;
+        self.vnode.rmdir(name)?;
         inner.children.remove(name);
         Ok(())
+    }
+
+    pub fn read_link(&self) -> Result<String> {
+        if self.vnode.inode_type() != InodeType::SymLink {
+            return_errno!(Errno::EINVAL);
+        }
+        self.vnode.read_link()
+    }
+
+    pub fn write_link(&self, target: &str) -> Result<()> {
+        if self.vnode.inode_type() != InodeType::SymLink {
+            return_errno!(Errno::EINVAL);
+        }
+        self.vnode.write_link(target)
     }
 
     pub fn rename(&self, old_name: &str, new_dir: &Arc<Self>, new_name: &str) -> Result<()> {
         if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
             return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
         }
-        if self.vnode.inode().metadata().type_ != InodeType::Dir
-            || new_dir.vnode.inode().metadata().type_ != InodeType::Dir
+        if self.vnode.inode_type() != InodeType::Dir || new_dir.vnode.inode_type() != InodeType::Dir
         {
             return_errno!(Errno::ENOTDIR);
         }
@@ -168,12 +181,10 @@ impl Dentry {
             let dentry = if let Some(dentry) = inner.children.get(old_name) {
                 dentry.clone()
             } else {
-                let vnode = Vnode::new(self.vnode.inode().lookup(old_name)?)?;
+                let vnode = self.vnode.lookup(old_name)?;
                 Dentry::new(old_name, vnode, Some(inner.this.clone()))
             };
-            self.vnode
-                .inode()
-                .rename(old_name, self.vnode.inode(), new_name)?;
+            self.vnode.rename(old_name, &self.vnode, new_name)?;
             inner.children.remove(old_name);
             dentry.set_name(new_name);
             inner.children.insert(String::from(new_name), dentry);
@@ -183,12 +194,10 @@ impl Dentry {
             let dentry = if let Some(dentry) = self_inner.children.get(old_name) {
                 dentry.clone()
             } else {
-                let vnode = Vnode::new(self.vnode.inode().lookup(old_name)?)?;
+                let vnode = self.vnode.lookup(old_name)?;
                 Dentry::new(old_name, vnode, Some(self_inner.this.clone()))
             };
-            self.vnode
-                .inode()
-                .rename(old_name, new_dir.vnode.inode(), new_name)?;
+            self.vnode.rename(old_name, &new_dir.vnode, new_name)?;
             self_inner.children.remove(old_name);
             dentry.set_name(new_name);
             dentry.set_parent(&new_dir.this());
@@ -197,6 +206,22 @@ impl Dentry {
                 .insert(String::from(new_name), dentry);
         }
         Ok(())
+    }
+
+    pub fn inode_metadata(&self) -> Metadata {
+        self.vnode.metadata()
+    }
+
+    pub fn inode_type(&self) -> InodeType {
+        self.vnode.inode_type()
+    }
+
+    pub fn inode_mode(&self) -> InodeMode {
+        self.vnode.inode_mode()
+    }
+
+    pub fn inode_len(&self) -> usize {
+        self.vnode.len()
     }
 
     pub fn abs_path(&self) -> String {

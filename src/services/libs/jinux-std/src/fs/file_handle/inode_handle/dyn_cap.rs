@@ -9,14 +9,14 @@ impl InodeHandle<Rights> {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
-        let inode_info = dentry.vnode().inode().metadata();
-        if access_mode.is_readable() && !inode_info.mode.is_readable() {
+        let vnode = dentry.vnode();
+        if access_mode.is_readable() && !vnode.inode_mode().is_readable() {
             return_errno_with_message!(Errno::EACCES, "File is not readable");
         }
-        if access_mode.is_writable() && !inode_info.mode.is_writable() {
+        if access_mode.is_writable() && !vnode.inode_mode().is_writable() {
             return_errno_with_message!(Errno::EACCES, "File is not writable");
         }
-        if access_mode.is_writable() && inode_info.type_ == InodeType::Dir {
+        if access_mode.is_writable() && vnode.inode_type() == InodeType::Dir {
             return_errno_with_message!(Errno::EISDIR, "Directory cannot open to write");
         }
         let inner = Arc::new(InodeHandle_ {
@@ -41,6 +41,13 @@ impl InodeHandle<Rights> {
             return_errno_with_message!(Errno::EBADF, "File is not readable");
         }
         self.0.read(buf)
+    }
+
+    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
+        if !self.1.contains(Rights::READ) {
+            return_errno_with_message!(Errno::EBADF, "File is not readable");
+        }
+        self.0.read_to_end(buf)
     }
 
     pub fn write(&self, buf: &[u8]) -> Result<usize> {

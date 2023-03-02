@@ -159,7 +159,9 @@ pub struct Timespec {
 }
 
 pub trait Inode: Any + Sync + Send {
-    fn resize(&self, new_size: usize) -> Result<()>;
+    fn len(&self) -> usize;
+
+    fn resize(&self, new_size: usize);
 
     fn metadata(&self) -> Metadata;
 
