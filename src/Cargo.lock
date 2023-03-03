@@ -61,21 +61,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
-name = "bootloader"
-version = "0.10.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24e13520aa8580a2850fc9f5390dc6753f1062fb66f90e5a61bd5c72b55df731"
-
-[[package]]
-name = "bootloader-locator"
-version = "0.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaaa9db3339d32c2622f2e5d0731eb82a468d3439797c9d4fe426744fe2bd551"
-dependencies = [
- "json",
-]
-
-[[package]]
 name = "buddy_system_allocator"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -213,10 +198,10 @@ dependencies = [
 name = "jinux"
 version = "0.1.0"
 dependencies = [
- "bootloader",
  "component",
  "jinux-frame",
  "jinux-std",
+ "limine",
 ]
 
 [[package]]
@@ -240,8 +225,6 @@ name = "jinux-boot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bootloader-locator",
- "locate-cargo-manifest",
  "runner-utils",
 ]
 
@@ -251,11 +234,11 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "bitflags",
- "bootloader",
  "buddy_system_allocator",
  "font8x8",
  "intrusive-collections",
  "lazy_static",
+ "limine",
  "linked_list_allocator",
  "log",
  "pod",
@@ -376,21 +359,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7fcc620a3bff7cdd7a365be3376c97191aeaccc2a603e600951e452615bf89"
 
 [[package]]
+name = "limine"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e9d0c951056ac044f0e6b09448b9d702f8fb1001db89cffd2bc467bd1c25307"
+dependencies = [
+ "uuid",
+]
+
+[[package]]
 name = "linked_list_allocator"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "549ce1740e46b291953c4340adcd74c59bcf4308f4cac050fd33ba91b7168f4a"
 dependencies = [
  "spinning_top",
-]
-
-[[package]]
-name = "locate-cargo-manifest"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db985b63431fe09e8d71f50aeceffcc31e720cb86be8dad2f38d084c5a328466"
-dependencies = [
- "json",
 ]
 
 [[package]]
@@ -659,6 +642,12 @@ name = "utf8parse"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
+
+[[package]]
+name = "uuid"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1674845326ee10d37ca60470760d4288a6f80f304007d92e5c53bab78c9cfd79"
 
 [[package]]
 name = "version_check"
