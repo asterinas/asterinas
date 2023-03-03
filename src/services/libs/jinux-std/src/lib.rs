@@ -55,6 +55,7 @@ pub fn init() {
     driver::init();
     process::fifo_scheduler::init();
     jinux_frame::enable_interrupts();
+    fs::initramfs::init(read_ramdisk_content()).unwrap();
 }
 
 pub fn init_thread() {
@@ -79,15 +80,16 @@ pub fn init_thread() {
     println!("[kernel] Running test programs");
     println!("");
     // Run test apps
-    for app in get_all_apps().into_iter() {
+    for app in get_all_apps().unwrap().into_iter() {
         let UserApp {
             elf_path: app_name,
             app_content,
             argv,
             envp,
         } = app;
+        let app_content = app_content.into_boxed_slice();
         println!("[jinux-std/lib.rs] spwan {:?} process", app_name);
-        Process::spawn_user_process(app_name.clone(), app_content, argv, Vec::new());
+        Process::spawn_user_process(app_name.clone(), Box::leak(app_content), argv, Vec::new());
     }
 
     // Run busybox ash
@@ -96,16 +98,21 @@ pub fn init_thread() {
         app_content,
         argv,
         envp,
-    } = get_busybox_app();
+    } = get_busybox_app().unwrap();
+    let app_content = app_content.into_boxed_slice();
     println!("");
     println!("BusyBox v1.35.0 built-in shell (ash)\n");
-    Process::spawn_user_process(app_name.clone(), app_content, argv, Vec::new());
+    Process::spawn_user_process(app_name.clone(), Box::leak(app_content), argv, Vec::new());
 
     loop {
         // We don't have preemptive scheduler now.
         // The long running init process should yield its own execution to allow other tasks to go on.
         let _ = wait_child_exit(ProcessFilter::Any, WaitOptions::empty());
     }
+}
+
+fn read_ramdisk_content() -> &'static [u8] {
+    include_bytes!("../../../../ramdisk/build/ramdisk.cpio")
 }
 
 /// first process never return

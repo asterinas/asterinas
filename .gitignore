@@ -11,3 +11,7 @@ target/
 **/*.rs.bk
 
 **/.DS_Store
+
+# Ramdisk file
+src/ramdisk/initramfs/
+src/ramdisk/build/
