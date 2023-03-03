@@ -20,7 +20,8 @@ use rustc_middle::mir::{
     Constant, InlineAsmOperand, LocalDecl, Operand, Rvalue, Statement, StatementKind, Terminator,
     TerminatorKind,
 };
-use rustc_middle::ty::{InstanceDef, TyCtxt, TyKind, WithOptConstParam};
+use rustc_middle::query::Key;
+use rustc_middle::ty::{ImplSubject, InstanceDef, TyCtxt, TyKind, WithOptConstParam};
 use rustc_span::def_id::{DefId, LocalDefId, LOCAL_CRATE};
 use rustc_span::Span;
 
@@ -221,7 +222,7 @@ fn def_path_if_invalid_access(def_id: DefId, tcx: TyCtxt<'_>) -> Option<String> 
 fn def_path_if_not_in_whitelist(def_id: DefId, tcx: TyCtxt<'_>) -> Option<String> {
     let crate_symbol = tcx.crate_name(LOCAL_CRATE);
     let crate_name = crate_symbol.as_str();
-    let def_path_str = def_path_str(def_id, tcx);
+    let def_path_str = def_path_for_def_id(tcx, def_id);
     if conf::CONFIG
         .get()
         .unwrap()
@@ -231,15 +232,6 @@ fn def_path_if_not_in_whitelist(def_id: DefId, tcx: TyCtxt<'_>) -> Option<String
     } else {
         Some(def_path_str)
     }
-}
-
-fn def_path_str(def_id: DefId, tcx: TyCtxt<'_>) -> String {
-    // The def_path_str of TyCtxt will panic the compiler,
-    // while the def_path_debug_str contains noisy info.
-    // This function is like def_path_debug_str.
-    let def_path = tcx.def_path(def_id);
-    let crate_name = tcx.crate_name(def_path.krate);
-    format!("{}{}", crate_name, def_path.to_string_no_crate_verbose())
 }
 
 /// if the def_id has attribute component_access_control::controlled, return true, else return false
@@ -260,6 +252,34 @@ fn contains_controlled_attr(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
         }
     }
     false
+}
+
+fn def_path_for_def_id(tcx: TyCtxt<'_>, def_id: DefId) -> String {
+    match tcx.impl_of_method(def_id) {
+        None => common_def_path_str(tcx, def_id),
+        Some(impl_def_id) => def_path_str_for_impl(tcx, def_id, impl_def_id),
+    }
+}
+
+/// def path for function, type, static variables and trait methods
+fn common_def_path_str(tcx: TyCtxt<'_>, def_id: DefId) -> String {
+    // This function is like def_path_debug_str without noisy info
+    let def_path = tcx.def_path(def_id);
+    let crate_name = tcx.crate_name(def_path.krate);
+    format!("{}{}", crate_name, def_path.to_string_no_crate_verbose())
+}
+
+/// def path for impl, if the impl is not for trait.
+fn def_path_str_for_impl(tcx: TyCtxt<'_>, def_id: DefId, impl_def_id: DefId) -> String {
+    let item_name = tcx.item_name(def_id).to_string();
+    let impl_subject = tcx.impl_subject(impl_def_id);
+    if let ImplSubject::Inherent(impl_ty) = impl_subject {
+        let impl_ty_def_id = impl_ty.ty_adt_id().expect("Method should impl an adt type");
+        let impl_ty_name = common_def_path_str(tcx, impl_ty_def_id);
+        return format!("{impl_ty_name}::{item_name}");
+    }
+    // impl trait goes here, which is impossible
+    unreachable!()
 }
 
 fn emit_note(tcx: TyCtxt<'_>, span: Span, crate_name: &str, def_paths: Vec<String>) {
