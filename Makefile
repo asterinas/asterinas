@@ -9,6 +9,7 @@ setup:
 	@cargo install mdbook
 
 build:
+	@make --no-print-directory -C src/ramdisk
 	@cd src && cargo kbuild
 	@cd src && cargo kimage
 
@@ -33,3 +34,4 @@ check:
 clean:
 	@cd src && cargo clean
 	@cd docs && mdbook clean
+	@make --no-print-directory -C src/ramdisk clean

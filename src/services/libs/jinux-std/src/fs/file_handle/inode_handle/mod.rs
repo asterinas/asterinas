@@ -89,6 +89,10 @@ impl InodeHandle_ {
         *offset
     }
 
+    pub fn len(&self) -> usize {
+        self.dentry.vnode().len()
+    }
+
     pub fn access_mode(&self) -> AccessMode {
         self.access_mode
     }
@@ -126,6 +130,10 @@ impl<R> InodeHandle<R> {
 
     pub fn offset(&self) -> usize {
         self.0.offset()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     pub fn access_mode(&self) -> AccessMode {

@@ -1,21 +1,35 @@
+use crate::fs::{
+    fs_resolver::{FsPath, FsResolver},
+    utils::AccessMode,
+};
 use crate::prelude::*;
 
 pub struct UserApp {
     pub elf_path: CString,
-    pub app_content: &'static [u8],
+    pub app_content: Vec<u8>,
     pub argv: Vec<CString>,
     pub envp: Vec<CString>,
 }
 
 impl UserApp {
-    pub fn new(elf_path: &str, app_content: &'static [u8]) -> Self {
+    pub fn new(elf_path: &str) -> Result<Self> {
         let app_name = CString::new(elf_path).unwrap();
-        UserApp {
+        let app_content = {
+            let fs = FsResolver::new();
+            let file = fs.open(&FsPath::try_from(elf_path)?, AccessMode::O_RDONLY as u32, 0)?;
+            let mut content = Vec::new();
+            let len = file.read_to_end(&mut content)?;
+            if len != file.len() {
+                return_errno_with_message!(Errno::EINVAL, "read len is not equal to file size");
+            }
+            content
+        };
+        Ok(UserApp {
             elf_path: app_name,
             app_content,
             argv: Vec::new(),
             envp: Vec::new(),
-        }
+        })
     }
 
     pub fn set_argv(&mut self, argv: Vec<CString>) {
@@ -27,45 +41,45 @@ impl UserApp {
     }
 }
 
-pub fn get_all_apps() -> Vec<UserApp> {
+pub fn get_all_apps() -> Result<Vec<UserApp>> {
     let mut res = Vec::with_capacity(16);
 
     // Most simple hello world, written in assembly
-    let asm_hello_world = UserApp::new("hello_world", read_hello_world_content());
+    let asm_hello_world = UserApp::new("hello_world/hello_world")?;
     res.push(asm_hello_world);
 
     // Hello world, written in C language.
     // Since glibc requires the elf path starts with "/", and we don't have filesystem now.
     // So we manually add a leading "/" for app written in C language.
-    let hello_c = UserApp::new("/hello_c", read_hello_c_content());
+    let hello_c = UserApp::new("/hello_c/hello")?;
     res.push(hello_c);
 
     // Fork process, written in assembly
-    let asm_fork = UserApp::new("fork", read_fork_content());
+    let asm_fork = UserApp::new("fork/fork")?;
     res.push(asm_fork);
 
     // Execve, written in C language.
-    let execve_c = UserApp::new("/execve", read_execve_content());
+    let execve_c = UserApp::new("/execve/execve")?;
     res.push(execve_c);
 
     // Fork new process, written in C language. (Fork in glibc uses syscall clone actually)
-    let fork_c = UserApp::new("/fork", read_fork_c_content());
+    let fork_c = UserApp::new("/fork_c/fork")?;
     res.push(fork_c);
 
     // signal test
-    let signal_test = UserApp::new("/signal_test", read_signal_test_content());
+    let signal_test = UserApp::new("/signal_c/signal_test")?;
     res.push(signal_test);
 
     // pthread test
-    let pthread_test = UserApp::new("/pthread_test", read_pthread_test_content());
+    let pthread_test = UserApp::new("/pthread/pthread_test")?;
     res.push(pthread_test);
 
-    res
+    Ok(res)
 }
 
-pub fn get_busybox_app() -> UserApp {
+pub fn get_busybox_app() -> Result<UserApp> {
     // busybox
-    let mut busybox = UserApp::new("/busybox", read_busybox_content());
+    let mut busybox = UserApp::new("/busybox/busybox")?;
     // -l option means the busybox is running as logging shell
     let argv = ["/busybox", "sh", "-l"];
     let envp = [
@@ -78,23 +92,11 @@ pub fn get_busybox_app() -> UserApp {
         "OLDPWD=/",
     ];
 
-    let argv = to_vec_cstring(&argv).unwrap();
-    let envp = to_vec_cstring(&envp).unwrap();
+    let argv = to_vec_cstring(&argv)?;
+    let envp = to_vec_cstring(&envp)?;
     busybox.set_argv(argv);
     busybox.set_envp(envp);
-    busybox
-}
-
-fn read_hello_world_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/hello_world/hello_world")
-}
-
-fn read_hello_c_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/hello_c/hello")
-}
-
-fn read_fork_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/fork/fork")
+    Ok(busybox)
 }
 
 fn read_execve_content() -> &'static [u8] {
@@ -103,22 +105,6 @@ fn read_execve_content() -> &'static [u8] {
 
 pub fn read_execve_hello_content() -> &'static [u8] {
     include_bytes!("../../../../apps/execve/hello")
-}
-
-fn read_fork_c_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/fork_c/fork")
-}
-
-fn read_signal_test_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/signal_c/signal_test")
-}
-
-fn read_pthread_test_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/pthread/pthread_test")
-}
-
-fn read_busybox_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/busybox/busybox")
 }
 
 fn to_vec_cstring(raw_strs: &[&str]) -> Result<Vec<CString>> {

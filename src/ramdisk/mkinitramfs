@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+if [ $# -ne 2 ]; then
+    echo "Usage: mkinitramfs <dir> <cpio>"
+    exit 1
+fi
+
+if [ -d "$1" ]; then
+    echo "Creating $2 from $1"
+    (cd "$1"; find . | cpio -o -H newc) > "$2"
+else
+    echo "The first argument must be a directory"
+    exit 1
+fi

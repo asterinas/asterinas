@@ -211,6 +211,31 @@ impl From<core::ffi::FromBytesWithNulError> for Error {
     }
 }
 
+impl From<cpio_decoder::error::Error> for Error {
+    fn from(cpio_error: cpio_decoder::error::Error) -> Self {
+        match cpio_error {
+            cpio_decoder::error::Error::MagicError => {
+                Error::with_message(Errno::EINVAL, "CPIO invalid magic number")
+            }
+            cpio_decoder::error::Error::Utf8Error => {
+                Error::with_message(Errno::EINVAL, "CPIO invalid utf-8 string")
+            }
+            cpio_decoder::error::Error::ParseIntError => {
+                Error::with_message(Errno::EINVAL, "CPIO parse int error")
+            }
+            cpio_decoder::error::Error::FileTypeError => {
+                Error::with_message(Errno::EINVAL, "CPIO invalid file type")
+            }
+            cpio_decoder::error::Error::FileNameError => {
+                Error::with_message(Errno::EINVAL, "CPIO invalid file name")
+            }
+            cpio_decoder::error::Error::BufferShortError => {
+                Error::with_message(Errno::EINVAL, "CPIO buffer is too short")
+            }
+        }
+    }
+}
+
 impl From<Error> for jinux_frame::Error {
     fn from(error: Error) -> Self {
         match error.errno {
