@@ -31,6 +31,7 @@ pub fn cargo_component(cwd: &PathBuf, target_dir: &PathBuf) -> Output {
 }
 
 pub fn clean_after_test(cwd: &PathBuf) {
+    Command::new("cargo").arg("clean").current_dir(cwd).status().unwrap();
     let cargo_lock = cwd.join("Cargo.lock");
     std::fs::remove_file(cargo_lock);
 }

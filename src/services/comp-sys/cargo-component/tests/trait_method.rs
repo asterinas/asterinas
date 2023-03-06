@@ -17,7 +17,7 @@ fn trait_method() {
     let output = cargo_component(&cwd, &target_dir);
     let stderr = String::from_utf8_lossy(&output.stderr);
     println!("stderr: {stderr}");
-    
+
     assert!(output.status.success());
     assert!(stderr.contains("access controlled entry point is disallowed"));
     assert!(stderr.contains("access foo::Foo::method in bar"));
