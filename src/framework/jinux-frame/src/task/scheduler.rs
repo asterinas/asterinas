@@ -1,11 +1,12 @@
+use crate::prelude::*;
 use crate::task::Task;
-use crate::{prelude::*, UPSafeCell};
 
 use lazy_static::lazy_static;
+use spin::Mutex;
 
 lazy_static! {
-    pub(crate) static ref GLOBAL_SCHEDULER: UPSafeCell<GlobalScheduler> =
-        unsafe { UPSafeCell::new(GlobalScheduler { scheduler: None }) };
+    pub(crate) static ref GLOBAL_SCHEDULER: Mutex<GlobalScheduler> =
+        Mutex::new(GlobalScheduler { scheduler: None });
 }
 
 /// A scheduler for tasks.
@@ -42,13 +43,13 @@ impl GlobalScheduler {
 ///
 /// This must be called before invoking `Task::spawn`.
 pub fn set_scheduler(scheduler: &'static dyn Scheduler) {
-    GLOBAL_SCHEDULER.exclusive_access().scheduler = Some(scheduler);
+    GLOBAL_SCHEDULER.lock().scheduler = Some(scheduler);
 }
 
 pub fn fetch_task() -> Option<Arc<Task>> {
-    GLOBAL_SCHEDULER.exclusive_access().dequeue()
+    GLOBAL_SCHEDULER.lock().dequeue()
 }
 
 pub fn add_task(task: Arc<Task>) {
-    GLOBAL_SCHEDULER.exclusive_access().enqueue(task);
+    GLOBAL_SCHEDULER.lock().enqueue(task);
 }

@@ -35,7 +35,6 @@ pub(crate) mod x86_64_util;
 
 pub use self::error::Error;
 pub use self::prelude::Result;
-pub(crate) use self::sync::up::UPSafeCell;
 use alloc::vec::Vec;
 use core::{mem, panic::PanicInfo};
 pub use device::serial::receive_char;

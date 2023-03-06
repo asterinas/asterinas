@@ -1,17 +1,23 @@
-use super::{memory_set::MapArea, *};
+use super::{
+    address::{PhysAddr, VirtAddr},
+    memory_set::MapArea,
+    PTFlags,
+};
 use crate::{
     config::{ENTRY_COUNT, PAGE_SIZE, PHYS_OFFSET},
+    println,
     vm::VmFrame,
-    *,
+    x86_64_util,
 };
 use ::log::info;
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::{fmt, panic};
 use lazy_static::lazy_static;
+use spin::Mutex;
 
 lazy_static! {
-    pub(crate) static ref ALL_MAPPED_PTE: UPSafeCell<BTreeMap<usize, PageTableEntry>> =
-        unsafe { UPSafeCell::new(BTreeMap::new()) };
+    pub(crate) static ref ALL_MAPPED_PTE: Mutex<BTreeMap<usize, PageTableEntry>> =
+        Mutex::new(BTreeMap::new());
 }
 
 #[derive(Clone, Copy)]
@@ -58,7 +64,7 @@ impl PageTable {
     pub fn new() -> Self {
         let root_frame = VmFrame::alloc_zero().unwrap();
         let p4 = table_of(root_frame.start_pa());
-        let map_pte = ALL_MAPPED_PTE.exclusive_access();
+        let map_pte = ALL_MAPPED_PTE.lock();
         for (index, pte) in map_pte.iter() {
             p4[*index] = *pte;
         }
@@ -262,7 +268,7 @@ pub(crate) fn init() {
     // Cancel mapping in lowest addresses.
     p4[0].0 = 0;
     // there is mapping where index is 1,2,3, so user may not use these value
-    let mut map_pte = ALL_MAPPED_PTE.exclusive_access();
+    let mut map_pte = ALL_MAPPED_PTE.lock();
     for i in 0..512 {
         if p4[i].flags().contains(PTFlags::PRESENT) {
             map_pte.insert(i, p4[i]);

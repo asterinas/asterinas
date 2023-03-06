@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use std::{
     fs::OpenOptions,
+    ops::Add,
     path::{Path, PathBuf},
     process::{Command, ExitStatus},
     time::Duration,
@@ -23,7 +24,7 @@ const COMMON_ARGS: &[&str] = &[
 
 const RUN_ARGS: &[&str] = &["-s"];
 const TEST_ARGS: &[&str] = &[];
-const TEST_TIMEOUT_SECS: u64 = 10;
+const TEST_TIMEOUT_SECS: u64 = 30;
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     let kernel_binary_path = {
@@ -46,9 +47,14 @@ fn main() -> anyhow::Result<()> {
 
     let kernel_iso_path = {
         let a = kernel_binary_path.parent().unwrap();
-        a.join("jinux.iso")
+        let str = kernel_binary_path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        a.join(str.add(".iso"))
     };
-    // let bios = create_disk_images(&kernel_binary_path);
 
     if no_boot {
         println!("Created disk image at `{}`", kernel_iso_path.display());
@@ -68,6 +74,7 @@ fn main() -> anyhow::Result<()> {
     if binary_kind.is_test() {
         args.append(&mut TEST_ARGS.to_vec());
         run_cmd.args(args);
+        println!("running:{:?}", run_cmd);
 
         let exit_status = run_test_command(run_cmd)?;
         match exit_status.code() {
@@ -77,6 +84,7 @@ fn main() -> anyhow::Result<()> {
     } else {
         args.append(&mut RUN_ARGS.to_vec());
         run_cmd.args(args);
+        println!("running:{:?}", run_cmd);
 
         let exit_status = run_cmd.status()?;
         if !exit_status.success() {
