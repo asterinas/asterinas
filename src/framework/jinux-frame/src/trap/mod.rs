@@ -120,15 +120,6 @@ struct IDT {
     entries: [[usize; 2]; 256],
 }
 
-#[inline]
-pub fn interrupt_ack() {
-    if crate::driver::apic::has_apic() {
-        crate::driver::apic::ack();
-    } else {
-        crate::driver::pic::ack();
-    }
-}
-
 impl IDT {
     const fn default() -> Self {
         Self {

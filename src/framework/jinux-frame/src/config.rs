@@ -6,7 +6,8 @@ pub const USER_STACK_SIZE: usize = PAGE_SIZE * 4;
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
 pub const KERNEL_HEAP_SIZE: usize = 0x2_000_000;
 
-pub const KERNEL_OFFSET: usize = 0xffffff00_00000000;
+pub const KERNEL_OFFSET: usize = 0xffffffff80000000;
+
 pub const PHYS_OFFSET: usize = 0xFFFF800000000000;
 pub const ENTRY_COUNT: usize = 512;
 
