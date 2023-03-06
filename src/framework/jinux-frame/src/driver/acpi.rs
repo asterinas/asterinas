@@ -1,8 +1,9 @@
 use core::ptr::NonNull;
 
-use crate::mm::address::phys_to_virt;
+use crate::{config, mm::address::phys_to_virt};
 use acpi::{AcpiHandler, AcpiTables};
 use lazy_static::lazy_static;
+use limine::LimineRsdpRequest;
 use log::info;
 use spin::Mutex;
 
@@ -34,12 +35,19 @@ impl AcpiHandler for AcpiMemoryHandler {
     fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
 }
 
-pub fn init(rsdp: u64) {
-    let a = unsafe { AcpiTables::from_rsdp(AcpiMemoryHandler {}, rsdp as usize).unwrap() };
-    *ACPI_TABLES.lock() = a;
+static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
 
-    let c = ACPI_TABLES.lock();
-    for (signature, sdt) in c.sdts.iter() {
+pub fn init() {
+    let response = RSDP_REQUEST
+        .get_response()
+        .get()
+        .expect("Need RSDP address");
+    let rsdp = response.address.as_ptr().unwrap().addr() - config::PHYS_OFFSET;
+    *ACPI_TABLES.lock() =
+        unsafe { AcpiTables::from_rsdp(AcpiMemoryHandler {}, rsdp as usize).unwrap() };
+
+    let lock = ACPI_TABLES.lock();
+    for (signature, sdt) in lock.sdts.iter() {
         info!("ACPI found signature:{:?}", signature);
     }
     info!("acpi init complete");

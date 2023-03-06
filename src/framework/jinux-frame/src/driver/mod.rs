@@ -14,8 +14,8 @@ use log::info;
 pub use timer::TimerCallback;
 pub(crate) use timer::{add_timeout_list, TICK};
 
-pub(crate) fn init(rsdp: Option<u64>) {
-    acpi::init(rsdp.unwrap());
+pub(crate) fn init() {
+    acpi::init();
     timer::init();
     if apic::has_apic() {
         ioapic::init();

@@ -9,9 +9,11 @@
 #![feature(core_intrinsics)]
 #![feature(new_uninit)]
 #![feature(link_llvm_intrinsics)]
+#![feature(strict_provenance)]
 
 extern crate alloc;
 
+mod boot;
 pub(crate) mod cell;
 pub mod config;
 pub mod cpu;
@@ -31,21 +33,13 @@ mod util;
 pub mod vm;
 pub(crate) mod x86_64_util;
 
-use core::{mem, panic::PanicInfo};
-pub use driver::ack as apic_ack;
-
 pub use self::error::Error;
 pub use self::prelude::Result;
 pub(crate) use self::sync::up::UPSafeCell;
-pub use trap::interrupt_ack;
-pub use x86_64_util::{disable_interrupts, enable_interrupts, hlt};
-
 use alloc::vec::Vec;
-use bootloader::{
-    boot_info::{FrameBuffer, MemoryRegionKind},
-    BootInfo,
-};
+use core::{mem, panic::PanicInfo};
 pub use device::serial::receive_char;
+pub use limine::LimineModuleRequest;
 pub use mm::address::{align_down, align_up, is_aligned, virt_to_phys};
 pub use mm::page_table::translate_not_offset_virtual_address;
 pub use trap::{allocate_irq, IrqAllocateHandle, TrapFrame};
@@ -54,6 +48,7 @@ pub use util::AlignExt;
 pub use x86_64::registers::rflags::read as get_rflags;
 pub use x86_64::registers::rflags::RFlags;
 use x86_64_util::enable_common_cpu_features;
+pub use x86_64_util::{disable_interrupts, enable_interrupts, hlt};
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
@@ -67,40 +62,26 @@ pub use crate::console_print as print;
 #[cfg(feature = "serial_print")]
 pub use crate::console_println as println;
 
-pub fn init(boot_info: &'static mut BootInfo) {
+pub fn init() {
+    device::serial::init();
     logger::init();
-    let siz = boot_info.framebuffer.as_ref().unwrap() as *const FrameBuffer as usize;
-    let mut memory_init = false;
-    // memory
-    device::first_init(boot_info.framebuffer.as_mut().unwrap());
-    device::framebuffer::WRITER.lock().as_mut().unwrap().clear();
-    for region in boot_info.memory_regions.iter() {
-        if region.kind == MemoryRegionKind::Usable {
-            let start: u64 = region.start;
-            let size: u64 = region.end - region.start;
-            println!(
-                "[kernel] physical frames start = {:x}, size = {:x}",
-                start, size
-            );
-            mm::init(start, size);
-            memory_init = true;
-            break;
-        }
-    }
-    if !memory_init {
-        panic!("memory init failed");
-    }
+    boot::init();
+    mm::init();
     trap::init();
-    device::second_init();
-    driver::init(boot_info.rsdp_addr.into_option());
+    device::init();
+    driver::init();
     enable_common_cpu_features();
+    register_irq_common_callback();
+    invoke_c_init_funcs();
+}
+
+fn register_irq_common_callback() {
     unsafe {
         for i in 0..256 {
             IRQ_CALLBACK_LIST.push(IrqLine::acquire(i as u8).on_active(general_handler))
         }
         let value = x86_64_util::cpuid(1);
     }
-    invoke_c_init_funcs();
 }
 
 fn invoke_c_init_funcs() {

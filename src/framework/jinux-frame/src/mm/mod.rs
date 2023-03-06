@@ -6,16 +6,18 @@ mod heap_allocator;
 mod memory_set;
 pub(crate) mod page_table;
 
-use core::sync::atomic::AtomicUsize;
+pub use self::{
+    frame_allocator::PhysFrame,
+    memory_set::{MapArea, MemorySet},
+    page_table::PageTable,
+};
 
 use address::PhysAddr;
 use address::VirtAddr;
-
-use crate::x86_64_util;
-
-pub use self::{frame_allocator::*, memory_set::*, page_table::*};
-
-pub(crate) static ORIGINAL_CR3: AtomicUsize = AtomicUsize::new(0);
+use alloc::vec::Vec;
+use limine::LimineMemmapRequest;
+use log::debug;
+use spin::Once;
 
 bitflags::bitflags! {
   /// Possible flags for a page table entry.
@@ -39,12 +41,36 @@ bitflags::bitflags! {
   }
 }
 
-pub(crate) fn init(start: u64, size: u64) {
+/// Only available inside jinux-frame
+pub(crate) static MEMORY_REGIONS: Once<Vec<&limine::LimineMemmapEntry>> = Once::new();
+static MEMMAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
+
+pub(crate) fn init() {
     heap_allocator::init();
-    frame_allocator::init(start as usize, size as usize);
+    let mut memory_regions = Vec::new();
+    let response = MEMMAP_REQUEST
+        .get_response()
+        .get()
+        .expect("Not found memory region information");
+    for i in response.memmap() {
+        debug!("Found memory region:{:x?}", **i);
+        memory_regions.push(&**i);
+    }
+    let mut biggest_region_size = 0;
+    let mut biggest_region_start = 0;
+    for i in memory_regions.iter() {
+        if i.len > biggest_region_size {
+            biggest_region_size = i.len;
+            biggest_region_start = i.base;
+        }
+    }
+    if biggest_region_size == 0 {
+        panic!("Cannot find usable memory region");
+    }
+
+    // TODO: pass the memory regions to the frame allocator. The frame allocator should use multiple usable area
+    frame_allocator::init(biggest_region_start as usize, biggest_region_size as usize);
     page_table::init();
-    ORIGINAL_CR3.store(
-        x86_64_util::get_cr3_raw(),
-        core::sync::atomic::Ordering::Relaxed,
-    )
+
+    MEMORY_REGIONS.call_once(|| memory_regions);
 }

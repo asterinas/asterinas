@@ -1,17 +1,45 @@
-use bootloader::boot_info::PixelFormat;
+use alloc::slice;
 use core::fmt;
 use font8x8::UnicodeFonts;
+use limine::{LimineFramebufferRequest, LimineMemoryMapEntryType};
 use spin::Mutex;
 use volatile::Volatile;
 
-pub(crate) static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
+use crate::mm;
 
-pub fn init(framebuffer: &'static mut bootloader::boot_info::FrameBuffer) {
-    let mut writer = Writer {
-        info: framebuffer.info(),
-        buffer: Volatile::new(framebuffer.buffer_mut()),
-        x_pos: 0,
-        y_pos: 0,
+pub(crate) static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
+static FRAMEBUFFER_REUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
+
+pub(crate) fn init() {
+    let mut writer = {
+        let response = FRAMEBUFFER_REUEST
+            .get_response()
+            .get()
+            .expect("Not found framebuffer");
+        assert_eq!(response.framebuffer_count, 1);
+        let mut writer = None;
+        let mut size = 0;
+        for i in mm::MEMORY_REGIONS.get().unwrap().iter() {
+            if i.typ == LimineMemoryMapEntryType::Framebuffer {
+                size = i.len as usize;
+            }
+        }
+        for i in response.framebuffers() {
+            let buffer_mut = unsafe {
+                let start = i.address.as_ptr().unwrap().addr();
+                slice::from_raw_parts_mut(start as *mut u8, size)
+            };
+
+            writer = Some(Writer {
+                buffer: Volatile::new(buffer_mut),
+                x_pos: 0,
+                y_pos: 0,
+                bytes_per_pixel: i.bpp as usize,
+                width: i.width as usize,
+                height: i.height as usize,
+            })
+        }
+        writer.unwrap()
     };
     writer.clear();
 
@@ -23,7 +51,11 @@ pub fn init(framebuffer: &'static mut bootloader::boot_info::FrameBuffer) {
 
 pub(crate) struct Writer {
     buffer: Volatile<&'static mut [u8]>,
-    info: bootloader::boot_info::FrameBufferInfo,
+
+    bytes_per_pixel: usize,
+    width: usize,
+    height: usize,
+
     x_pos: usize,
     y_pos: usize,
 }
@@ -46,17 +78,17 @@ impl Writer {
     }
 
     fn shift_lines_up(&mut self) {
-        let offset = self.info.stride * self.info.bytes_per_pixel * 8;
+        let offset = self.bytes_per_pixel * 8;
         self.buffer.copy_within(offset.., 0);
         self.y_pos -= 8;
     }
 
     fn width(&self) -> usize {
-        self.info.horizontal_resolution
+        self.width
     }
 
     fn height(&self) -> usize {
-        self.info.vertical_resolution
+        self.height
     }
 
     fn write_char(&mut self, c: char) {
@@ -89,17 +121,13 @@ impl Writer {
     }
 
     fn write_pixel(&mut self, x: usize, y: usize, on: bool) {
-        let pixel_offset = y * self.info.stride + x;
+        let pixel_offset = y + x;
         let color = if on {
-            match self.info.pixel_format {
-                PixelFormat::RGB => [0x33, 0xff, 0x66, 0],
-                PixelFormat::BGR => [0x66, 0xff, 0x33, 0],
-                _other => [0xff, 0xff, 0xff, 0],
-            }
+            [0x33, 0xff, 0x66, 0]
         } else {
             [0, 0, 0, 0]
         };
-        let bytes_per_pixel = self.info.bytes_per_pixel;
+        let bytes_per_pixel = self.bytes_per_pixel;
         let byte_offset = pixel_offset * bytes_per_pixel;
         self.buffer
             .index_mut(byte_offset..(byte_offset + bytes_per_pixel))

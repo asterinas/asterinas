@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bootloader = {version="0.10.12"}
-jinux-frame = {path = "framework/jinux-frame"}
-jinux-std = {path = "services/libs/jinux-std"}
-component = {path = "services/comp-sys/component"}
+limine = "0.1.10"
+jinux-frame = { path = "framework/jinux-frame" }
+jinux-std = { path = "services/libs/jinux-std" }
+component = { path = "services/comp-sys/component" }
 
 [workspace]
 
 members = [
-    "jinux-boot",
+    "boot",
     "framework/jinux-frame",
     "framework/pod",
     "framework/pod-derive",
@@ -28,11 +28,5 @@ members = [
     "services/libs/cpio-decoder",
 ]
 
-exclude = [
-    "services/comp-sys/controlled",
-    "services/comp-sys/cargo-component",
-]
+exclude = ["services/comp-sys/controlled", "services/comp-sys/cargo-component"]
 
-[package.metadata.bootloader]
-map-physical-memory = true
-physical-memory-offset = "0xFFFF800000000000"
