@@ -106,7 +106,7 @@ pub struct CpioEntry<'a> {
 
 impl<'a> CpioEntry<'a> {
     fn new(bytes: &'a [u8]) -> Result<Self> {
-        let (metadata, name, data_offset) = {
+        let (metadata, name, data) = {
             let header = Header::new(bytes)?;
             let name = {
                 let bytes_remain = &bytes[HEADER_LEN..];
@@ -123,15 +123,21 @@ impl<'a> CpioEntry<'a> {
             } else {
                 FileMetadata::new(header)?
             };
+            let data = {
+                let data_size = metadata.size as usize;
+                if data_size == 0 {
+                    &[]
+                } else {
+                    let data_offset = align_up(HEADER_LEN + name.len() + 1, 4);
+                    if data_offset + data_size > bytes.len() {
+                        return Err(Error::BufferShortError);
+                    }
+                    &bytes[data_offset..data_offset + data_size]
+                }
+            };
 
-            (metadata, name, align_up(HEADER_LEN + name.len() + 1, 4))
+            (metadata, name, data)
         };
-        let data_size = metadata.size as usize;
-        let bytes_remain = &bytes[data_offset..];
-        if bytes_remain.len() < data_size {
-            return Err(Error::BufferShortError);
-        }
-        let data = &bytes_remain[..data_size];
         Ok(Self {
             metadata,
             name,
@@ -159,7 +165,7 @@ impl<'a> CpioEntry<'a> {
     }
 
     fn archive_offset(&self) -> usize {
-        align_up(HEADER_LEN + self.name.len() + 1, 4) + align_up(self.metadata.size as usize, 4)
+        align_up(HEADER_LEN + self.name.len() + 1, 4) + align_up(self.data.len(), 4)
     }
 }
 
