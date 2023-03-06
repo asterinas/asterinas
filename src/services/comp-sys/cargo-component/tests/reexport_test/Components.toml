@@ -1,0 +1,20 @@
+[components]
+foo = { name = "foo" }
+bar = { name = "bar" }
+baz = { name = "baz" }
+
+[whitelist]
+[whitelist.foo.f1]
+baz = true
+
+[whitelist.foo.Foo.new]
+baz = true
+
+[whitelist.foo.Foo.get]
+baz = true
+
+[whitelist.foo.FooTrait.t_new]
+baz = true
+
+[whitelist.foo.FooTrait.t_get]
+baz = true
