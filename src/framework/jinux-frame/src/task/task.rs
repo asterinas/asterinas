@@ -1,15 +1,15 @@
-use core::cell::RefMut;
 use core::mem::size_of;
 
 use lazy_static::lazy_static;
+use spin::{Mutex, MutexGuard};
 
 use crate::cell::Cell;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
+use crate::prelude::*;
 use crate::task::processor::switch_to_task;
 use crate::trap::{CalleeRegs, SyscallFrame, TrapFrame};
 use crate::user::{syscall_switch_to_user_space, trap_switch_to_user_space, UserSpace};
 use crate::vm::{VmAllocOptions, VmFrameVec};
-use crate::{prelude::*, UPSafeCell};
 
 use intrusive_collections::intrusive_adapter;
 use intrusive_collections::LinkedListAtomicLink;
@@ -60,20 +60,18 @@ lazy_static! {
             func: Box::new(context_switch_to_user_space),
             data: Box::new(None::<u8>),
             user_space: None,
-            task_inner: unsafe {
-                UPSafeCell::new(TaskInner {
+            task_inner: Mutex::new(TaskInner {
                     task_status: TaskStatus::Runnable,
                     ctx: TaskContext::default(),
                     is_from_trap:false,
-                })
-            },
+                }),
             exit_code: usize::MAX,
             kstack: KernelStack::new(),
             link: LinkedListAtomicLink::new(),
         };
-        task.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
-        task.task_inner.exclusive_access().ctx.rip = context_switch_to_user_space as usize;
-        task.task_inner.exclusive_access().ctx.regs.rsp = (task.kstack.frame.end_pa().unwrap().kvaddr().0
+        task.task_inner.lock().task_status = TaskStatus::Runnable;
+        task.task_inner.lock().ctx.rip = context_switch_to_user_space as usize;
+        task.task_inner.lock().ctx.regs.rsp = (task.kstack.frame.end_pa().unwrap().kvaddr().0
             - size_of::<usize>()
             - size_of::<SyscallFrame>()) as u64;
         task
@@ -98,7 +96,7 @@ pub struct Task {
     func: Box<dyn Fn() + Send + Sync>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
-    task_inner: UPSafeCell<TaskInner>,
+    task_inner: Mutex<TaskInner>,
     exit_code: usize,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
@@ -122,13 +120,13 @@ impl Task {
     }
 
     /// get inner
-    pub(crate) fn inner_exclusive_access(&self) -> RefMut<'_, TaskInner> {
-        self.task_inner.exclusive_access()
+    pub(crate) fn inner_exclusive_access(&self) -> MutexGuard<'_, TaskInner> {
+        self.task_inner.lock()
     }
 
     /// get inner
     pub(crate) fn inner_ctx(&self) -> TaskContext {
-        self.task_inner.exclusive_access().ctx
+        self.task_inner.lock().ctx
     }
 
     /// Yields execution so that another task may be scheduled.
@@ -165,24 +163,21 @@ impl Task {
             func: Box::new(task_fn),
             data: Box::new(task_data),
             user_space,
-            task_inner: unsafe {
-                UPSafeCell::new(TaskInner {
-                    task_status: TaskStatus::Runnable,
-                    ctx: TaskContext::default(),
-                    is_from_trap: false,
-                })
-            },
+            task_inner: Mutex::new(TaskInner {
+                task_status: TaskStatus::Runnable,
+                ctx: TaskContext::default(),
+                is_from_trap: false,
+            }),
             exit_code: 0,
             kstack: KernelStack::new(),
             link: LinkedListAtomicLink::new(),
         };
 
-        result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
-        result.task_inner.exclusive_access().ctx.rip = kernel_task_entry as usize;
-        result.task_inner.exclusive_access().ctx.regs.rsp =
-            (result.kstack.frame.end_pa().unwrap().kvaddr().0
-                - size_of::<usize>()
-                - size_of::<SyscallFrame>()) as u64;
+        result.task_inner.lock().task_status = TaskStatus::Runnable;
+        result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        result.task_inner.lock().ctx.regs.rsp = (result.kstack.frame.end_pa().unwrap().kvaddr().0
+            - size_of::<usize>()
+            - size_of::<SyscallFrame>()) as u64;
 
         let arc_self = Arc::new(result);
         switch_to_task(arc_self.clone());
@@ -210,24 +205,21 @@ impl Task {
             func: Box::new(task_fn),
             data: Box::new(task_data),
             user_space,
-            task_inner: unsafe {
-                UPSafeCell::new(TaskInner {
-                    task_status: TaskStatus::Runnable,
-                    ctx: TaskContext::default(),
-                    is_from_trap: false,
-                })
-            },
+            task_inner: Mutex::new(TaskInner {
+                task_status: TaskStatus::Runnable,
+                ctx: TaskContext::default(),
+                is_from_trap: false,
+            }),
             exit_code: 0,
             kstack: KernelStack::new(),
             link: LinkedListAtomicLink::new(),
         };
 
-        result.task_inner.exclusive_access().task_status = TaskStatus::Runnable;
-        result.task_inner.exclusive_access().ctx.rip = kernel_task_entry as usize;
-        result.task_inner.exclusive_access().ctx.regs.rsp =
-            (result.kstack.frame.end_pa().unwrap().kvaddr().0
-                - size_of::<usize>()
-                - size_of::<SyscallFrame>()) as u64;
+        result.task_inner.lock().task_status = TaskStatus::Runnable;
+        result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        result.task_inner.lock().ctx.regs.rsp = (result.kstack.frame.end_pa().unwrap().kvaddr().0
+            - size_of::<usize>()
+            - size_of::<SyscallFrame>()) as u64;
 
         Ok(Arc::new(result))
     }
@@ -264,7 +256,7 @@ impl Task {
 
     /// Returns the task status.
     pub fn status(&self) -> TaskStatus {
-        self.task_inner.exclusive_access().task_status
+        self.task_inner.lock().task_status
     }
 
     /// Returns the task data.

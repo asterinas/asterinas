@@ -3,9 +3,9 @@ use super::{
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::UPSafeCell;
 use alloc::sync::Arc;
-use lazy_static::*;
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -34,19 +34,19 @@ impl Processor {
 }
 
 lazy_static! {
-    static ref PROCESSOR: UPSafeCell<Processor> = unsafe { UPSafeCell::new(Processor::new()) };
+    static ref PROCESSOR: Mutex<Processor> = Mutex::new(Processor::new());
 }
 
 pub fn take_current_task() -> Option<Arc<Task>> {
-    PROCESSOR.exclusive_access().take_current()
+    PROCESSOR.lock().take_current()
 }
 
 pub fn current_task() -> Option<Arc<Task>> {
-    PROCESSOR.exclusive_access().current()
+    PROCESSOR.lock().current()
 }
 
 pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
-    PROCESSOR.exclusive_access().get_idle_task_cx_ptr()
+    PROCESSOR.lock().get_idle_task_cx_ptr()
 }
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
@@ -68,19 +68,17 @@ pub fn switch_to_task(next_task: Arc<Task>) {
     let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
     let current_task: Arc<Task>;
     let current_task_cx_ptr = if current_task_option.is_none() {
-        PROCESSOR.exclusive_access().get_idle_task_cx_ptr()
+        PROCESSOR.lock().get_idle_task_cx_ptr()
     } else {
         current_task = current_task_option.unwrap();
         if current_task.status() != TaskStatus::Exited {
-            GLOBAL_SCHEDULER
-                .exclusive_access()
-                .enqueue(current_task.clone());
+            GLOBAL_SCHEDULER.lock().enqueue(current_task.clone());
         }
         &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
     };
     // change the current task to the next task
 
-    PROCESSOR.exclusive_access().current = Some(next_task.clone());
+    PROCESSOR.lock().current = Some(next_task.clone());
     unsafe {
         context_switch(current_task_cx_ptr, next_task_cx_ptr);
     }

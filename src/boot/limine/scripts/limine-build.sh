@@ -18,7 +18,8 @@ cd -
 
 # Copy the needed files into an ISO image.
 mkdir -p target/iso_root
-cp $KERNEL boot/limine/conf/limine.cfg target/iso_root
+cp $KERNEL target/iso_root/jinux
+cp boot/limine/conf/limine.cfg target/iso_root
 cp target/limine/limine.sys target/iso_root
 cp target/limine/limine-cd.bin target/iso_root
 cp target/limine/limine-cd-efi.bin target/iso_root

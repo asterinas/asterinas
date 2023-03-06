@@ -1,7 +1,6 @@
 mod atomic_bits;
 mod rcu;
 mod spin;
-pub(crate) mod up;
 mod wait;
 
 pub use self::atomic_bits::AtomicBits;

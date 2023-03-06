@@ -3,7 +3,6 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(jinux_frame::test_runner)]
 #![reexport_test_harness_main = "test_main"]
-use bootloader::{entry_point, BootInfo};
 use jinux_frame::timer::Timer;
 extern crate alloc;
 use alloc::sync::Arc;
@@ -13,10 +12,9 @@ use jinux_frame::println;
 
 static mut TICK: usize = 0;
 
-entry_point!(kernel_test_main);
-
-fn kernel_test_main(boot_info: &'static mut BootInfo) -> ! {
-    jinux_frame::init(boot_info);
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    jinux_frame::init();
     test_main();
     loop {}
 }

@@ -1,19 +1,18 @@
 use alloc::vec::Vec;
+use spin::Mutex;
 
-use crate::{config::PAGE_SIZE, vm::Paddr, UPSafeCell};
+use crate::{config::PAGE_SIZE, vm::Paddr};
 
 use super::address::PhysAddr;
 
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref FRAME_ALLOCATOR: UPSafeCell<FreeListAllocator> = unsafe {
-        UPSafeCell::new(FreeListAllocator {
-            current: 0,
-            end: 0,
-            free_list: Vec::new(),
-        })
-    };
+    static ref FRAME_ALLOCATOR: Mutex<FreeListAllocator> = Mutex::new(FreeListAllocator {
+        current: 0,
+        end: 0,
+        free_list: Vec::new(),
+    });
 }
 
 trait FrameAllocator {
@@ -62,7 +61,7 @@ impl PhysFrame {
 
     pub fn alloc() -> Option<Self> {
         FRAME_ALLOCATOR
-            .exclusive_access()
+            .lock()
             .alloc()
             .map(|pa| Self { start_pa: pa })
     }
@@ -73,7 +72,7 @@ impl PhysFrame {
     }
 
     pub fn dealloc(pa: usize) {
-        FRAME_ALLOCATOR.exclusive_access().dealloc(pa)
+        FRAME_ALLOCATOR.lock().dealloc(pa)
     }
 
     pub fn alloc_zero() -> Option<Self> {
@@ -93,11 +92,11 @@ impl PhysFrame {
 
 impl Drop for PhysFrame {
     fn drop(&mut self) {
-        FRAME_ALLOCATOR.exclusive_access().dealloc(self.start_pa);
+        FRAME_ALLOCATOR.lock().dealloc(self.start_pa);
     }
 }
 
 pub(crate) fn init(start: usize, size: usize) {
-    FRAME_ALLOCATOR.exclusive_access().current = start;
-    FRAME_ALLOCATOR.exclusive_access().end = start + size;
+    FRAME_ALLOCATOR.lock().current = start;
+    FRAME_ALLOCATOR.lock().end = start + size;
 }
