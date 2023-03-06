@@ -1,5 +1,5 @@
-use crate::prelude::*;
 use super::{DirentWriterContext, Inode, InodeMode, InodeType, Metadata, PageCacheManager};
+use crate::prelude::*;
 use crate::rights::Rights;
 use crate::vm::vmo::{Vmo, VmoFlags, VmoOptions};
 use alloc::string::String;
@@ -21,7 +21,7 @@ struct Inner {
 impl Vnode {
     pub fn new(inode: Arc<dyn Inode>) -> Result<Self> {
         let page_cache_manager = Arc::new(PageCacheManager::new(&Arc::downgrade(&inode)));
-        let page_cache = VmoOptions::<Rights>::new(inode.metadata().size)
+        let page_cache = VmoOptions::<Rights>::new(inode.len())
             .flags(VmoFlags::RESIZABLE)
             .pager(page_cache_manager.clone())
             .alloc()?;

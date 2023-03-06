@@ -4,6 +4,7 @@ use crate::prelude::*;
 use crate::syscall::access::sys_access;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
+use crate::syscall::chdir::{sys_chdir, sys_fchdir};
 use crate::syscall::clock_nanosleep::sys_clock_nanosleep;
 use crate::syscall::clone::sys_clone;
 use crate::syscall::close::sys_close;
@@ -60,6 +61,7 @@ use jinux_frame::cpu::CpuContext;
 mod access;
 mod arch_prctl;
 mod brk;
+mod chdir;
 mod clock_nanosleep;
 mod clone;
 mod close;
@@ -175,6 +177,8 @@ define_syscall_nums!(
     SYS_UNAME = 63,
     SYS_FCNTL = 72,
     SYS_GETCWD = 79,
+    SYS_CHDIR = 80,
+    SYS_FCHDIR = 81,
     SYS_RENAME = 82,
     SYS_MKDIR = 83,
     SYS_RMDIR = 84,
@@ -297,6 +301,8 @@ pub fn syscall_dispatch(
         SYS_UNAME => syscall_handler!(1, sys_uname, args),
         SYS_FCNTL => syscall_handler!(3, sys_fcntl, args),
         SYS_GETCWD => syscall_handler!(2, sys_getcwd, args),
+        SYS_CHDIR => syscall_handler!(1, sys_chdir, args),
+        SYS_FCHDIR => syscall_handler!(1, sys_fchdir, args),
         SYS_RENAME => syscall_handler!(2, sys_rename, args),
         SYS_MKDIR => syscall_handler!(2, sys_mkdir, args),
         SYS_RMDIR => syscall_handler!(1, sys_rmdir, args),
