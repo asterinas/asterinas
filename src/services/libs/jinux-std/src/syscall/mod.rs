@@ -8,6 +8,7 @@ use crate::syscall::chdir::{sys_chdir, sys_fchdir};
 use crate::syscall::clock_nanosleep::sys_clock_nanosleep;
 use crate::syscall::clone::sys_clone;
 use crate::syscall::close::sys_close;
+use crate::syscall::dup::{sys_dup, sys_dup2};
 use crate::syscall::execve::sys_execve;
 use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
@@ -66,6 +67,7 @@ mod clock_nanosleep;
 mod clone;
 mod close;
 mod constants;
+mod dup;
 mod execve;
 mod exit;
 mod exit_group;
@@ -167,6 +169,8 @@ define_syscall_nums!(
     SYS_ACCESS = 21,
     SYS_SCHED_YIELD = 24,
     SYS_MADVISE = 28,
+    SYS_DUP = 32,
+    SYS_DUP2 = 33,
     SYS_GETPID = 39,
     SYS_CLONE = 56,
     SYS_FORK = 57,
@@ -291,6 +295,8 @@ pub fn syscall_dispatch(
         SYS_ACCESS => syscall_handler!(2, sys_access, args),
         SYS_SCHED_YIELD => syscall_handler!(0, sys_sched_yield),
         SYS_MADVISE => syscall_handler!(3, sys_madvise, args),
+        SYS_DUP => syscall_handler!(1, sys_dup, args),
+        SYS_DUP2 => syscall_handler!(2, sys_dup2, args),
         SYS_GETPID => syscall_handler!(0, sys_getpid),
         SYS_CLONE => syscall_handler!(5, sys_clone, args, context.clone()),
         SYS_FORK => syscall_handler!(0, sys_fork, context.clone()),

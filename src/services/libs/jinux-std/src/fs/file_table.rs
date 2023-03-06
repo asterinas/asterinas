@@ -58,6 +58,10 @@ impl FileTable {
         fd
     }
 
+    pub fn insert_at(&mut self, fd: FileDescripter, item: FileHandle) -> Option<FileHandle> {
+        self.table.insert(fd, item)
+    }
+
     pub fn close_file(&mut self, fd: FileDescripter) -> Option<FileHandle> {
         self.table.remove(&fd)
     }
