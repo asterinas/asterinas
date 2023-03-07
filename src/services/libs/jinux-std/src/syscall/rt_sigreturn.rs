@@ -11,7 +11,7 @@ use super::{SyscallReturn, SYS_RT_SIGRETRUN};
 pub fn sys_rt_sigreturn(context: &mut CpuContext) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_RT_SIGRETRUN);
     let current_thread = current_thread!();
-    let posix_thread = current_thread.posix_thread();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     let mut sig_context = posix_thread.sig_context().lock();
     if None == *sig_context {
         return_errno_with_message!(Errno::EINVAL, "sigretrun should not been called");

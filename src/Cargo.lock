@@ -245,6 +245,7 @@ dependencies = [
  "spin 0.9.4",
  "uart_16550",
  "volatile",
+ "x86",
  "x86_64",
 ]
 
@@ -457,6 +458,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbe448f377a7d6961e30f5955f9b8d106c3f5e449d493ee1b125c1d43c2b5179"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "raw-cpuid"
+version = "10.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c297679cb867470fa8c9f67dbba74a78d78e3e98d7cf2b08d6d71540f797332"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]
@@ -704,6 +714,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf09497b8f8b5ac5d3bb4d05c0a99be20f26fd3d5f2db7b0716e946d5103658"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "x86"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2781db97787217ad2a2845c396a5efe286f87467a5810836db6d74926e94a385"
+dependencies = [
+ "bit_field",
+ "bitflags",
+ "raw-cpuid",
 ]
 
 [[package]]

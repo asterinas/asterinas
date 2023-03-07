@@ -36,7 +36,7 @@ fn do_rt_sigprocmask(
 ) -> Result<()> {
     let current = current!();
     let current_thread = current_thread!();
-    let posix_thread = current_thread.posix_thread();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     let root_vmar = current.root_vmar();
     let mut sig_mask = posix_thread.sig_mask().lock();
     let old_sig_mask_value = sig_mask.as_u64();

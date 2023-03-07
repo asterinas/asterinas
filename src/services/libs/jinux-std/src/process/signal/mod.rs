@@ -29,7 +29,7 @@ use crate::{
 pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
     let current = current!();
     let current_thread = current_thread!();
-    let posix_thread = current_thread.posix_thread();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     let pid = current.pid();
     let process_name = current.filename().unwrap();
     let sig_mask = posix_thread.sig_mask().lock().clone();
@@ -130,7 +130,7 @@ pub fn handle_user_signal(
         mask.block(current_mask.as_u64());
     }
     let current_thread = current_thread!();
-    let posix_thread = current_thread.posix_thread();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     // block signals in sigmask when running signal handler
     posix_thread.sig_mask().lock().block(mask.as_u64());
 

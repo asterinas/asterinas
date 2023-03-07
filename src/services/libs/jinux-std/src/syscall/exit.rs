@@ -11,7 +11,7 @@ pub fn sys_exit(exit_code: i32) -> Result<SyscallReturn> {
     let current = current!();
     let pid = current.pid();
     debug!("tid = {}, pid = {}", tid, pid);
-    let posix_thread = current_thread.posix_thread();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     current_thread.exit();
     posix_thread.exit(tid, exit_code)?;
 

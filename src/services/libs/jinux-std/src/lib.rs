@@ -20,6 +20,7 @@
 
 use crate::{
     prelude::*,
+    thread::{kernel_thread::KernelThreadExt, Thread},
     user_apps::{get_all_apps, get_busybox_app, UserApp},
 };
 use process::Process;
@@ -60,34 +61,18 @@ pub fn init_thread() {
         current_thread!().tid()
     );
     // driver::pci::virtio::block::block_device_test();
-    let process = Process::spawn_kernel_process(|| {
+    let thread = Thread::spawn_kernel_thread(|| {
         println!("[kernel] Hello world from kernel!");
         let current = current_thread!();
-        let pid = current.tid();
-        debug!("current pid = {}", pid);
+        let tid = current.tid();
+        debug!("current tid = {}", tid);
     });
+    thread.join();
     info!(
         "[jinux-std/lib.rs] spawn kernel thread, tid = {}",
-        process.pid()
+        thread.tid()
     );
-
-    // FIXME: should be running this apps before we running shell?
-    println!("");
-    println!("[kernel] Running test programs");
-    println!("");
-    // Run test apps
-    for app in get_all_apps().unwrap().into_iter() {
-        let UserApp {
-            elf_path: app_name,
-            app_content,
-            argv,
-            envp,
-        } = app;
-        let app_content = app_content.into_boxed_slice();
-        println!("[jinux-std/lib.rs] spwan {:?} process", app_name);
-        Process::spawn_user_process(app_name.clone(), Box::leak(app_content), argv, Vec::new());
-    }
-
+    
     // Run busybox ash
     let UserApp {
         elf_path: app_name,
@@ -102,8 +87,8 @@ pub fn init_thread() {
 
     loop {
         // We don't have preemptive scheduler now.
-        // The long running init process should yield its own execution to allow other tasks to go on.
-        let _ = wait_child_exit(ProcessFilter::Any, WaitOptions::empty());
+        // The long running init thread should yield its own execution to allow other tasks to go on.
+        Thread::yield_now();
     }
 }
 
@@ -114,6 +99,6 @@ fn read_ramdisk_content() -> &'static [u8] {
 /// first process never return
 #[controlled]
 pub fn run_first_process() -> ! {
-    Process::spawn_kernel_process(init_thread);
+    Thread::spawn_kernel_thread(init_thread);
     unreachable!()
 }

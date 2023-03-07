@@ -14,7 +14,6 @@ use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
 use crate::prelude::*;
 use crate::rights::Full;
-use crate::thread::kernel_thread::KernelThreadExt;
 use crate::thread::{thread_table, Thread};
 use crate::tty::get_n_tty;
 use crate::vm::vmar::Vmar;
@@ -37,6 +36,8 @@ pub mod wait;
 pub type Pid = i32;
 pub type Pgid = i32;
 pub type ExitCode = i32;
+
+const INIT_PROCESS_PID: Pid = 1;
 
 /// Process stands for a set of threads that shares the same userspace.
 /// Currently, we only support one thread inside a process.
@@ -82,20 +83,17 @@ impl Process {
     /// returns the current process
     pub fn current() -> Arc<Process> {
         let current_thread = Thread::current();
-        if current_thread.is_posix_thread() {
-            let posix_thread = current_thread.posix_thread();
+        if let Some(posix_thread) = current_thread.as_posix_thread() {
             posix_thread.process()
-        } else if current_thread.is_kernel_thread() {
-            let kernel_thread = current_thread.kernel_thread();
-            kernel_thread.process()
         } else {
-            panic!("[Internal error]The process is neither kernel process or user process");
+            panic!("[Internal error]The current thread does not belong to a process");
         }
     }
 
     /// create a new process(not schedule it)
     pub fn new(
         pid: Pid,
+        parent: Weak<Process>,
         threads: Vec<Arc<Thread>>,
         elf_path: Option<CString>,
         user_vm: Option<UserVm>,
@@ -105,12 +103,6 @@ impl Process {
         fs: Arc<RwLock<FsResolver>>,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
     ) -> Self {
-        let parent = if pid == 0 {
-            Weak::new()
-        } else {
-            let current_process = current!();
-            Arc::downgrade(&current_process)
-        };
         let children = BTreeMap::new();
         let waiting_children = WaitQueue::new();
         let poll_queue = WaitQueue::new();
@@ -161,20 +153,6 @@ impl Process {
         process
     }
 
-    /// init a kernel process and run the process
-    pub fn spawn_kernel_process<F>(task_fn: F) -> Arc<Self>
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        let process_fn = move || {
-            task_fn();
-            current!().exit_group(0);
-        };
-        let process = Process::create_kernel_process(process_fn);
-        process.run();
-        process
-    }
-
     fn create_user_process(
         elf_path: CString,
         elf_file_content: &'static [u8],
@@ -185,7 +163,12 @@ impl Process {
             let weak_process = weak_process_ref.clone();
             let cloned_filename = Some(elf_path.clone());
             let root_vmar = Vmar::<Full>::new_root().unwrap();
+<<<<<<< HEAD
             let thread = Thread::new_posix_thread_from_elf(
+=======
+            let fs = FsResolver::new();
+            let thread = Thread::new_posix_thread_from_executable(
+>>>>>>> 0255134... fix
                 &root_vmar,
                 elf_path,
                 elf_file_content,
@@ -194,6 +177,8 @@ impl Process {
                 envp,
             );
             let pid = thread.tid();
+            // spawn process will be called in a kernel thread, so the parent process is always none.
+            let parent = Weak::new();
             let user_vm = UserVm::new();
             let file_table = FileTable::new_with_stdio();
             let fs = FsResolver::new();
@@ -201,6 +186,7 @@ impl Process {
 
             let process = Process::new(
                 pid,
+                parent,
                 vec![thread],
                 cloned_filename,
                 Some(user_vm),
@@ -215,44 +201,10 @@ impl Process {
         // Set process group
         user_process.create_and_set_process_group();
         process_table::add_process(user_process.clone());
-        let parent = user_process
-            .parent()
-            .expect("[Internel error] User process should always have parent");
-        parent.add_child(user_process.clone());
-        user_process
-    }
-
-    fn create_kernel_process<F>(task_fn: F) -> Arc<Self>
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        let kernel_process = Arc::new_cyclic(|weak_process_ref| {
-            let weak_process = weak_process_ref.clone();
-            let thread = Thread::new_kernel_thread(task_fn, weak_process_ref.clone());
-            let pid = thread.tid();
-            let file_table = FileTable::new();
-            let fs = FsResolver::new();
-            let sig_dispositions = SigDispositions::new();
-            // FIXME: kernel process does not need root vmar
-            let root_vmar = Vmar::<Full>::new_root().unwrap();
-            Process::new(
-                pid,
-                vec![thread],
-                None,
-                None,
-                Arc::new(root_vmar),
-                Weak::new(),
-                Arc::new(Mutex::new(file_table)),
-                Arc::new(RwLock::new(fs)),
-                Arc::new(Mutex::new(sig_dispositions)),
-            )
-        });
-        kernel_process.create_and_set_process_group();
-        process_table::add_process(kernel_process.clone());
-        if let Some(parent) = kernel_process.parent() {
-            parent.add_child(kernel_process.clone());
+        if let Some(parent) = user_process.parent() {
+            parent.add_child(user_process.clone());
         }
-        kernel_process
+        user_process
     }
 
     /// returns the pid of the process
@@ -326,10 +278,11 @@ impl Process {
         }
         // move children to the init process
         if !self.is_init_process() {
-            let init_process = get_init_process();
-            for (_, child_process) in self.children.lock().drain_filter(|_, _| true) {
-                child_process.set_parent(Arc::downgrade(&init_process));
-                init_process.add_child(child_process);
+            if let Some(init_process) = get_init_process() {
+                for (_, child_process) in self.children.lock().drain_filter(|_, _| true) {
+                    child_process.set_parent(Arc::downgrade(&init_process));
+                    init_process.add_child(child_process);
+                }
             }
         }
 
@@ -360,11 +313,6 @@ impl Process {
 
     pub fn threads(&self) -> &Mutex<Vec<Arc<Thread>>> {
         &self.threads
-    }
-
-    /// yield the current process to allow other processes to run
-    pub fn yield_now() {
-        Task::yield_now();
     }
 
     /// returns the user_vm
@@ -435,15 +383,6 @@ impl Process {
 }
 
 /// Get the init process
-pub fn get_init_process() -> Arc<Process> {
-    let mut current_process = current!();
-    while current_process.pid() != 0 {
-        let process = current_process
-            .parent
-            .lock()
-            .upgrade()
-            .expect("[Internal Error] init process cannot be None");
-        current_process = process;
-    }
-    current_process
+pub fn get_init_process() -> Option<Arc<Process>> {
+    process_table::pid_to_process(INIT_PROCESS_PID)
 }
