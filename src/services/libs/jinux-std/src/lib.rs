@@ -25,11 +25,6 @@ use crate::{
 };
 use process::Process;
 
-use crate::process::{
-    process_filter::ProcessFilter,
-    wait::{wait_child_exit, WaitOptions},
-};
-
 extern crate alloc;
 extern crate lru;
 #[macro_use]

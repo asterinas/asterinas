@@ -4,14 +4,12 @@ use crate::prelude::*;
 
 use super::{allocate_tid, status::ThreadStatus, thread_table, Thread};
 
-/// This struct is used to mark a thread is a kernel thread
+/// The inner data of a kernel thread
 pub struct KernelThread;
 
 pub trait KernelThreadExt {
-    /// whether the thread is a kernel thread
-    fn is_kernel_thread(&self) -> bool;
     /// get the kernel_thread structure
-    fn kernel_thread(&self) -> &KernelThread;
+    fn as_kernel_thread(&self) -> Option<&KernelThread>;
     /// create a new kernel thread structure, **NOT** run the thread.
     fn new_kernel_thread<F>(task_fn: F) -> Arc<Thread>
     where
@@ -30,12 +28,8 @@ pub trait KernelThreadExt {
 }
 
 impl KernelThreadExt for Thread {
-    fn is_kernel_thread(&self) -> bool {
-        self.data().downcast_ref::<KernelThread>().is_some()
-    }
-
-    fn kernel_thread(&self) -> &KernelThread {
-        self.data().downcast_ref::<KernelThread>().unwrap()
+    fn as_kernel_thread(&self) -> Option<&KernelThread> {
+        self.data().downcast_ref::<KernelThread>()
     }
 
     fn new_kernel_thread<F>(task_fn: F) -> Arc<Self>
