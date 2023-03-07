@@ -169,7 +169,7 @@ fn clone_child_thread(parent_context: CpuContext, clone_args: CloneArgs) -> Resu
     let child_tid = allocate_tid();
     // inherit sigmask from current thread
     let current_thread = current_thread!();
-    let current_posix_thread = current_thread.posix_thread();
+    let current_posix_thread = current_thread.as_posix_thread().unwrap();
     let sig_mask = current_posix_thread.sig_mask().lock().clone();
     let is_main_thread = child_tid == current.pid();
     let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
@@ -177,7 +177,7 @@ fn clone_child_thread(parent_context: CpuContext, clone_args: CloneArgs) -> Resu
         .is_main_thread(is_main_thread);
     let child_thread = thread_builder.build();
     current.threads.lock().push(child_thread.clone());
-    let child_posix_thread = child_thread.posix_thread();
+    let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
     clone_child_settid(
@@ -191,6 +191,7 @@ fn clone_child_thread(parent_context: CpuContext, clone_args: CloneArgs) -> Resu
 
 fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Result<Arc<Process>> {
     let current = current!();
+    let parent = Arc::downgrade(&current);
     let clone_flags = clone_args.clone_flags;
 
     // clone vm
@@ -222,7 +223,7 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
 
     // inherit parent's sig mask
     let current_thread = current_thread!();
-    let posix_thread = current_thread.posix_thread();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     let child_sig_mask = posix_thread.sig_mask().lock().clone();
 
     let child_tid = allocate_tid();
@@ -237,6 +238,7 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
         let child_thread = child_thread_builder.build();
         Process::new(
             child_pid,
+            parent,
             vec![child_thread],
             Some(child_elf_path),
             child_user_vm,
@@ -256,7 +258,7 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
     process_table::add_process(child.clone());
 
     let child_thread = thread_table::tid_to_thread(child_tid).unwrap();
-    let child_posix_thread = child_thread.posix_thread();
+    let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
     clone_child_settid(

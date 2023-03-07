@@ -1,28 +1,32 @@
 use jinux_frame::task::Task;
 
-use crate::{prelude::*, process::Process};
+use crate::prelude::*;
 
 use super::{allocate_tid, status::ThreadStatus, thread_table, Thread};
-pub struct KernelThread {
-    process: Weak<Process>,
-}
 
-impl KernelThread {
-    pub fn new(process: Weak<Process>) -> Self {
-        Self { process }
-    }
-
-    pub fn process(&self) -> Arc<Process> {
-        self.process.upgrade().unwrap()
-    }
-}
+/// This struct is used to mark a thread is a kernel thread
+pub struct KernelThread;
 
 pub trait KernelThreadExt {
+    /// whether the thread is a kernel thread
     fn is_kernel_thread(&self) -> bool;
+    /// get the kernel_thread structure
     fn kernel_thread(&self) -> &KernelThread;
-    fn new_kernel_thread<F>(task_fn: F, process: Weak<Process>) -> Arc<Self>
+    /// create a new kernel thread structure, **NOT** run the thread.
+    fn new_kernel_thread<F>(task_fn: F) -> Arc<Thread>
     where
         F: Fn() + Send + Sync + 'static;
+    /// create a new kernel thread structure, and then run the thread.
+    fn spawn_kernel_thread<F>(task_fn: F) -> Arc<Thread>
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let thread = Self::new_kernel_thread(task_fn);
+        thread.run();
+        thread
+    }
+    /// join a kernel thread
+    fn join(&self);
 }
 
 impl KernelThreadExt for Thread {
@@ -34,19 +38,38 @@ impl KernelThreadExt for Thread {
         self.data().downcast_ref::<KernelThread>().unwrap()
     }
 
-    fn new_kernel_thread<F>(task_fn: F, process: Weak<Process>) -> Arc<Self>
+    fn new_kernel_thread<F>(task_fn: F) -> Arc<Self>
     where
         F: Fn() + Send + Sync + 'static,
     {
+
+        let thread_fn = move || {
+            task_fn();
+            let current_thread = current_thread!();
+            // ensure the thread is exit
+            current_thread.exit();
+        };
         let tid = allocate_tid();
         let thread = Arc::new_cyclic(|thread_ref| {
             let weal_thread = thread_ref.clone();
-            let task = Task::new(task_fn, weal_thread, None).unwrap();
+            let task = Task::new(thread_fn, weal_thread, None).unwrap();
             let status = ThreadStatus::Init;
-            let kernel_thread = KernelThread::new(process);
+            let kernel_thread = KernelThread;
             Thread::new(tid, task, kernel_thread, status)
         });
         thread_table::add_thread(thread.clone());
         thread
+    }
+
+    fn join(&self) {
+        loop {
+            let status = self.status.lock();
+            if status.is_exited() {
+                return;
+            } else {
+                drop(status);
+                Thread::yield_now();
+            }
+        }
     }
 }

@@ -21,7 +21,7 @@ pub fn sys_set_robust_list(robust_list_head_ptr: Vaddr, len: usize) -> Result<Sy
     let robust_list_head: RobustListHead = read_val_from_user(robust_list_head_ptr)?;
     debug!("{:x?}", robust_list_head);
     let current_thread = current_thread!();
-    let posix_thread = current_thread.posix_thread();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     let mut robust_list = posix_thread.robust_list().lock();
     *robust_list = Some(robust_list_head);
     Ok(SyscallReturn::Return(0))

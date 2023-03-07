@@ -27,7 +27,7 @@ pub fn sys_execve(
     }
     // FIXME: should we set thread name in execve?
     let current_thread = current_thread!();
-    let posix_thread = current_thread.posix_thread();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     let mut thread_name = posix_thread.thread_name().lock();
     let new_thread_name = ThreadName::new_from_elf_path(&elf_path)?;
     *thread_name = Some(new_thread_name);

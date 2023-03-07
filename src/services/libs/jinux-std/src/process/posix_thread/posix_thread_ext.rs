@@ -10,9 +10,8 @@ use crate::{
 
 use super::{builder::PosixThreadBuilder, name::ThreadName, PosixThread};
 pub trait PosixThreadExt {
-    fn is_posix_thread(&self) -> bool;
-    fn posix_thread(&self) -> &PosixThread;
-    fn new_posix_thread_from_elf(
+    fn as_posix_thread(&self) -> Option<&PosixThread>;
+    fn new_posix_thread_from_executable(
         root_vmar: &Vmar<Full>,
         elf_path: CString,
         elf_file_content: &'static [u8],
@@ -24,7 +23,7 @@ pub trait PosixThreadExt {
 
 impl PosixThreadExt for Thread {
     /// This function should only be called when launch shell()
-    fn new_posix_thread_from_elf(
+    fn new_posix_thread_from_executable(
         root_vmar: &Vmar<Full>,
         elf_path: CString,
         elf_file_content: &'static [u8],
@@ -47,11 +46,7 @@ impl PosixThreadExt for Thread {
         thread_builder.build()
     }
 
-    fn is_posix_thread(&self) -> bool {
-        self.data().downcast_ref::<PosixThread>().is_some()
-    }
-
-    fn posix_thread(&self) -> &PosixThread {
-        self.data().downcast_ref::<PosixThread>().unwrap()
+    fn as_posix_thread(&self) -> Option<&PosixThread> {
+        self.data().downcast_ref::<PosixThread>()
     }
 }
