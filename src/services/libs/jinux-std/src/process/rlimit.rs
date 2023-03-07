@@ -4,7 +4,7 @@
 
 use crate::prelude::*;
 
-use super::{elf::init_stack::INIT_STACK_SIZE, process_vm::user_heap::USER_HEAP_SIZE_LIMIT};
+use super::{elf::INIT_STACK_SIZE, process_vm::user_heap::USER_HEAP_SIZE_LIMIT};
 
 pub struct ResourceLimits {
     rlimits: [RLimit64; RLIMIT_COUNT],

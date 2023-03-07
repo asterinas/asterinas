@@ -16,7 +16,7 @@ use jinux_frame::{
 };
 
 use super::aux_vec::{AuxKey, AuxVec};
-use super::load_elf::ElfHeaderInfo;
+use super::elf_file::Elf;
 
 pub const INIT_STACK_BASE: Vaddr = 0x0000_0000_2000_0000;
 pub const INIT_STACK_SIZE: usize = 0x1000 * 16; // 64KB
@@ -79,7 +79,6 @@ pub struct InitStack {
 impl InitStack {
     /// initialize user stack on base addr
     pub fn new(
-        // filename: CString,
         init_stack_top: Vaddr,
         init_stack_size: usize,
         argv: Vec<CString>,
@@ -115,14 +114,9 @@ impl InitStack {
         self.init_stack_top - self.init_stack_size
     }
 
-    pub fn init(
-        &mut self,
-        root_vmar: &Vmar<Full>,
-        elf_header_info: &ElfHeaderInfo,
-        ph_addr: Vaddr,
-    ) -> Result<()> {
+    pub fn init(&mut self, root_vmar: &Vmar<Full>, elf: &Elf) -> Result<()> {
         self.map_and_zeroed(root_vmar)?;
-        self.write_stack_content(root_vmar, elf_header_info, ph_addr)?;
+        self.write_stack_content(root_vmar, elf)?;
         self.debug_print_stack_content(root_vmar);
         Ok(())
     }
@@ -161,12 +155,7 @@ impl InitStack {
         Ok(())
     }
 
-    fn write_stack_content(
-        &mut self,
-        root_vmar: &Vmar<Full>,
-        elf_header_info: &ElfHeaderInfo,
-        ph_addr: Vaddr,
-    ) -> Result<()> {
+    fn write_stack_content(&mut self, root_vmar: &Vmar<Full>, elf: &Elf) -> Result<()> {
         // write envp string
         let envp_pointers = self.write_envp_strings(root_vmar)?;
         // write argv string
@@ -176,11 +165,9 @@ impl InitStack {
         let random_value_pointer = self.write_bytes(&random_value, root_vmar)?;
         self.aux_vec.set(AuxKey::AT_RANDOM, random_value_pointer)?;
         self.aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
-        self.aux_vec.set(AuxKey::AT_PHDR, ph_addr as u64)?;
-        self.aux_vec
-            .set(AuxKey::AT_PHNUM, elf_header_info.ph_num as u64)?;
-        self.aux_vec
-            .set(AuxKey::AT_PHENT, elf_header_info.ph_ent as u64)?;
+        self.aux_vec.set(AuxKey::AT_PHDR, elf.ph_addr()? as u64)?;
+        self.aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64)?;
+        self.aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64)?;
         self.adjust_stack_alignment(root_vmar, &envp_pointers, &argv_pointers)?;
         self.write_aux_vec(root_vmar)?;
         self.write_envp_pointers(root_vmar, envp_pointers)?;

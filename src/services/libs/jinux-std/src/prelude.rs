@@ -6,6 +6,8 @@ pub(crate) use alloc::collections::BTreeSet;
 pub(crate) use alloc::collections::LinkedList;
 pub(crate) use alloc::collections::VecDeque;
 pub(crate) use alloc::ffi::CString;
+pub(crate) use alloc::string::String;
+pub(crate) use alloc::string::ToString;
 pub(crate) use alloc::sync::Arc;
 pub(crate) use alloc::sync::Weak;
 pub(crate) use alloc::vec;

@@ -218,8 +218,8 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
     // clone system V semaphore
     clone_sysvsem(clone_flags)?;
 
-    let child_elf_path = current.filename().unwrap().clone();
-    let child_thread_name = ThreadName::new_from_elf_path(&child_elf_path)?;
+    let child_elf_path = current.executable_path().unwrap().clone();
+    let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
 
     // inherit parent's sig mask
     let current_thread = current_thread!();

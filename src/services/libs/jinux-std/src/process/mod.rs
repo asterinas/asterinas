@@ -1,5 +1,6 @@
 use core::sync::atomic::{AtomicI32, Ordering};
 
+use self::elf::{ElfLoadInfo, load_elf_to_root_vmar};
 use self::posix_thread::posix_thread_ext::PosixThreadExt;
 use self::process_group::ProcessGroup;
 use self::process_vm::user_heap::UserHeap;
@@ -10,16 +11,18 @@ use self::signal::sig_disposition::SigDispositions;
 use self::signal::sig_queues::SigQueues;
 use self::signal::signals::kernel::KernelSignal;
 use self::status::ProcessStatus;
+use crate::fs::file_handle::FileHandle;
 use crate::fs::file_table::FileTable;
+use crate::fs::fs_resolver::AT_FDCWD;
 use crate::fs::fs_resolver::{FsPath, FsResolver};
-use crate::fs::utils::AccessMode;
+use crate::fs::utils::{AccessMode, SeekFrom};
 use crate::prelude::*;
 use crate::rights::Full;
 use crate::thread::{thread_table, Thread};
 use crate::tty::get_n_tty;
 use crate::vm::vmar::Vmar;
-use alloc::string::String;
 use jinux_frame::sync::WaitQueue;
+use jinux_frame::task::Task;
 
 pub mod clone;
 pub mod elf;
@@ -45,7 +48,7 @@ const INIT_PROCESS_PID: Pid = 1;
 pub struct Process {
     // Immutable Part
     pid: Pid,
-    elf_path: Option<CString>,
+    executable_path: Option<String>,
     user_vm: Option<UserVm>,
     root_vmar: Arc<Vmar<Full>>,
     /// wait for child status changed
@@ -96,7 +99,7 @@ impl Process {
         pid: Pid,
         parent: Weak<Process>,
         threads: Vec<Arc<Thread>>,
-        elf_path: Option<CString>,
+        executable_path: Option<String>,
         user_vm: Option<UserVm>,
         root_vmar: Arc<Vmar<Full>>,
         process_group: Weak<ProcessGroup>,
@@ -111,7 +114,7 @@ impl Process {
         Self {
             pid,
             threads: Mutex::new(threads),
-            elf_path,
+            executable_path,
             user_vm,
             root_vmar,
             waiting_children,
@@ -139,12 +142,11 @@ impl Process {
 
     /// init a user process and run the process
     pub fn spawn_user_process(
-        filename: CString,
-        elf_file_content: &'static [u8],
+        filename: String,
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Arc<Self> {
-        let process = Process::create_user_process(filename, elf_file_content, argv, envp);
+        let process = Process::create_user_process(filename, argv, envp);
         // FIXME: How to determine the fg process group?
         let pgid = process.pgid();
         // FIXME: tty should be a parameter?
@@ -155,24 +157,19 @@ impl Process {
     }
 
     fn create_user_process(
-        elf_path: CString,
-        elf_file_content: &'static [u8],
+        executable_path: String,
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Arc<Self> {
         let user_process = Arc::new_cyclic(|weak_process_ref| {
             let weak_process = weak_process_ref.clone();
-            let cloned_filename = Some(elf_path.clone());
+            let cloned_filename = Some(executable_path.clone());
             let root_vmar = Vmar::<Full>::new_root().unwrap();
-<<<<<<< HEAD
-            let thread = Thread::new_posix_thread_from_elf(
-=======
             let fs = FsResolver::new();
             let thread = Thread::new_posix_thread_from_executable(
->>>>>>> 0255134... fix
                 &root_vmar,
-                elf_path,
-                elf_file_content,
+                &fs,
+                executable_path,
                 weak_process,
                 argv,
                 envp,
@@ -362,8 +359,8 @@ impl Process {
         self.children.lock().len() != 0
     }
 
-    pub fn filename(&self) -> Option<&CString> {
-        self.elf_path.as_ref()
+    pub fn executable_path(&self) -> Option<&String> {
+        self.executable_path.as_ref()
     }
 
     pub fn status(&self) -> &Mutex<ProcessStatus> {
@@ -386,78 +383,4 @@ impl Process {
 /// Get the init process
 pub fn get_init_process() -> Option<Arc<Process>> {
     process_table::pid_to_process(INIT_PROCESS_PID)
-}
-
-/// Set up root vmar for an executable.
-/// About recursion_limit: recursion limit is used to limit th recursion depth of shebang executables.
-/// If the interpreter program(the program behind !#) of shebang executable is also a shebang,
-/// then it will trigger recursion. We will try to setup root vmar for the interpreter program.
-/// I guess for most cases, setting the recursion_limit as 1 should be enough.
-/// because the interpreter game is usually an elf binary(e.g., /bin/bash)
-pub fn setup_root_vmar(
-    executable_path: String,
-    argv: Vec<CString>,
-    envp: Vec<CString>,
-    fs_resolver: &FsResolver,
-    root_vmar: Vmar<Full>,
-    recursion_limit: usize,
-) -> Result<()> {
-    use crate::fs::fs_resolver::AT_FDCWD;
-    let fs_path = FsPath::new(AT_FDCWD, &executable_path)?;
-    let file = fs_resolver.open(&fs_path, AccessMode::O_RDONLY as u32, 0)?;
-    // read the first page of file header
-    let mut file_header_buffer = [0u8; PAGE_SIZE];
-    file.read(&mut file_header_buffer)?;
-    if recursion_limit > 0
-        && file_header_buffer.starts_with(b"!#")
-        && file_header_buffer.contains(&b'\n')
-    {
-        return set_up_root_vmar_for_shebang(
-            argv,
-            envp,
-            &file_header_buffer,
-            fs_resolver,
-            root_vmar,
-            recursion_limit,
-        );
-    }
-
-    todo!()
-}
-
-fn set_up_root_vmar_for_shebang(
-    argv: Vec<CString>,
-    envp: Vec<CString>,
-    file_header_buffer: &[u8],
-    fs_resolver: &FsResolver,
-    root_vmar: Vmar<Full>,
-    recursion_limit: usize,
-) -> Result<()> {
-    let first_line_len = file_header_buffer.iter().position(|&c| c == b'\n').unwrap();
-    // skip !#
-    let shebang_header = &file_header_buffer[2..first_line_len];
-    let mut shebang_argv = Vec::new();
-    for arg in shebang_header.split(|&c| c == b' ') {
-        let arg = CString::new(arg)?;
-        shebang_argv.push(arg);
-    }
-    if shebang_argv.len() != 1 {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "One and only one intpreter program should be specified"
-        );
-    }
-    for origin_arg in argv.into_iter() {
-        shebang_argv.push(origin_arg);
-    }
-    use alloc::string::ToString;
-    let shebang_path = shebang_argv[0].to_str()?.to_string();
-    setup_root_vmar(
-        shebang_path,
-        shebang_argv,
-        envp,
-        fs_resolver,
-        root_vmar,
-        recursion_limit - 1,
-    )
 }

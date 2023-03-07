@@ -31,7 +31,7 @@ pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let pid = current.pid();
-    let process_name = current.filename().unwrap();
+    let process_name = current.executable_path().unwrap();
     let sig_mask = posix_thread.sig_mask().lock().clone();
     let mut thread_sig_queues = posix_thread.sig_queues().lock();
     let mut proc_sig_queues = current.sig_queues().lock();
