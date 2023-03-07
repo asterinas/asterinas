@@ -67,18 +67,31 @@ pub fn init_thread() {
         "[jinux-std/lib.rs] spawn kernel thread, tid = {}",
         thread.tid()
     );
-    
+
+    // FIXME: should be running this apps before we running shell?
+    println!("");
+    println!("[kernel] Running test programs");
+    println!("");
+    // Run test apps
+    for app in get_all_apps().unwrap().into_iter() {
+        let UserApp {
+            executable_path: app_name,
+            argv,
+            envp,
+        } = app;
+        println!("[jinux-std/lib.rs] spwan {:?} process", app_name);
+        Process::spawn_user_process(app_name.clone(), argv, Vec::new());
+    }
+
     // Run busybox ash
     let UserApp {
-        elf_path: app_name,
-        app_content,
+        executable_path: app_name,
         argv,
         envp,
     } = get_busybox_app().unwrap();
-    let app_content = app_content.into_boxed_slice();
     println!("");
     println!("BusyBox v1.35.0 built-in shell (ash)\n");
-    Process::spawn_user_process(app_name.clone(), Box::leak(app_content), argv, Vec::new());
+    Process::spawn_user_process(app_name.clone(), argv, Vec::new());
 
     loop {
         // We don't have preemptive scheduler now.

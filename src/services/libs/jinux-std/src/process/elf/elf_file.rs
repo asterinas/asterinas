@@ -45,6 +45,42 @@ impl Elf {
             program_headers,
         })
     }
+
+    // The following info is used to setup init stack
+    /// the entry point of the elf
+    pub fn entry_point(&self) -> Vaddr {
+        self.elf_header.pt2.entry_point as Vaddr
+    }
+    /// page header table offset
+    pub fn ph_off(&self) -> u64 {
+        self.elf_header.pt2.ph_offset
+    }
+    /// number of program headers
+    pub fn ph_count(&self) -> u16 {
+        self.elf_header.pt2.ph_count
+    }
+    /// The size of a program header
+    pub fn ph_ent(&self) -> u16 {
+        self.elf_header.pt2.ph_entry_size
+    }
+
+    /// The virtual addr of program headers table address
+    pub fn ph_addr(&self) -> Result<Vaddr> {
+        let ph_offset = self.ph_off();
+        for program_header in &self.program_headers {
+            if program_header.offset <= ph_offset
+                && ph_offset < program_header.offset + program_header.file_size
+            {
+                return Ok(
+                    (ph_offset - program_header.offset + program_header.virtual_addr) as Vaddr,
+                );
+            }
+        }
+        return_errno_with_message!(
+            Errno::ENOEXEC,
+            "can not find program header table address in elf"
+        );
+    }
 }
 
 pub struct ElfHeader {

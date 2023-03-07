@@ -1,43 +1,20 @@
-use crate::fs::{
-    fs_resolver::{FsPath, FsResolver},
-    utils::AccessMode,
-};
 use crate::prelude::*;
 
 pub struct UserApp {
-    pub elf_path: CString,
-    pub app_content: Vec<u8>,
+    pub executable_path: String,
     pub argv: Vec<CString>,
     pub envp: Vec<CString>,
 }
 
 impl UserApp {
-    pub fn new(elf_path: &str) -> Result<Self> {
-        let app_name = CString::new(elf_path).unwrap();
-        let app_content = {
-            let fs = FsResolver::new();
-            let file = fs.open(&FsPath::try_from(elf_path)?, AccessMode::O_RDONLY as u32, 0)?;
-            let mut content = Vec::new();
-            let len = file.read_to_end(&mut content)?;
-            if len != file.len() {
-                return_errno_with_message!(Errno::EINVAL, "read len is not equal to file size");
-            }
-            content
-        };
+    pub fn new(executable_path: &str) -> Result<Self> {
+        let app_name = String::from(executable_path);
+        let arg0 = CString::new(executable_path)?;
         Ok(UserApp {
-            elf_path: app_name,
-            app_content,
-            argv: Vec::new(),
+            executable_path: app_name,
+            argv: vec![arg0],
             envp: Vec::new(),
         })
-    }
-
-    pub fn set_argv(&mut self, argv: Vec<CString>) {
-        self.argv = argv;
-    }
-
-    pub fn set_envp(&mut self, envp: Vec<CString>) {
-        self.envp = envp;
     }
 }
 
@@ -81,7 +58,7 @@ pub fn get_busybox_app() -> Result<UserApp> {
     // busybox
     let mut busybox = UserApp::new("/busybox/busybox")?;
     // -l option means the busybox is running as logging shell
-    let argv = ["/busybox", "sh", "-l"];
+    let argv = ["sh", "-l"];
     let envp = [
         "SHELL=/bin/sh",
         "PWD=/",
@@ -92,19 +69,11 @@ pub fn get_busybox_app() -> Result<UserApp> {
         "OLDPWD=/",
     ];
 
-    let argv = to_vec_cstring(&argv)?;
-    let envp = to_vec_cstring(&envp)?;
-    busybox.set_argv(argv);
-    busybox.set_envp(envp);
+    let mut argv = to_vec_cstring(&argv)?;
+    let mut envp = to_vec_cstring(&envp)?;
+    busybox.argv.append(&mut argv);
+    busybox.envp.append(&mut envp);
     Ok(busybox)
-}
-
-fn read_execve_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/execve/execve")
-}
-
-pub fn read_execve_hello_content() -> &'static [u8] {
-    include_bytes!("../../../../apps/execve/hello")
 }
 
 fn to_vec_cstring(raw_strs: &[&str]) -> Result<Vec<CString>> {

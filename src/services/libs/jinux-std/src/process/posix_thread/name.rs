@@ -14,10 +14,9 @@ impl ThreadName {
         }
     }
 
-    pub fn new_from_elf_path(elf_path: &CStr) -> Result<Self> {
+    pub fn new_from_executable_path(elf_path: &str) -> Result<Self> {
         let mut thread_name = ThreadName::new();
         let elf_file_name = elf_path
-            .to_str()?
             .split('/')
             .last()
             .ok_or(Error::with_message(Errno::EINVAL, "invalid elf path"))?;

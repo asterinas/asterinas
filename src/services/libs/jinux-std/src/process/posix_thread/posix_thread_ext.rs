@@ -1,8 +1,10 @@
+use alloc::string::String;
 use jinux_frame::{cpu::CpuContext, user::UserSpace};
 
 use crate::{
+    fs::fs_resolver::FsResolver,
     prelude::*,
-    process::{elf::load_elf_to_root_vmar, Process},
+    process::{setup_root_vmar, Process},
     rights::Full,
     thread::{allocate_tid, Thread},
     vm::vmar::Vmar,
@@ -13,8 +15,8 @@ pub trait PosixThreadExt {
     fn as_posix_thread(&self) -> Option<&PosixThread>;
     fn new_posix_thread_from_executable(
         root_vmar: &Vmar<Full>,
-        elf_path: CString,
-        elf_file_content: &'static [u8],
+        fs_resolver: &FsResolver,
+        executable_path: String,
         process: Weak<Process>,
         argv: Vec<CString>,
         envp: Vec<CString>,
@@ -25,20 +27,28 @@ impl PosixThreadExt for Thread {
     /// This function should only be called when launch shell()
     fn new_posix_thread_from_executable(
         root_vmar: &Vmar<Full>,
-        elf_path: CString,
-        elf_file_content: &'static [u8],
+        fs_resolver: &FsResolver,
+        executable_path: String,
         process: Weak<Process>,
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Arc<Self> {
-        let elf_load_info = load_elf_to_root_vmar(elf_file_content, &root_vmar, argv, envp)
-            .expect("Load Elf failed");
+        let elf_load_info = setup_root_vmar(
+            executable_path.clone(),
+            argv,
+            envp,
+            fs_resolver,
+            root_vmar,
+            1,
+        )
+        .unwrap();
+
         let vm_space = root_vmar.vm_space().clone();
         let mut cpu_ctx = CpuContext::default();
-        cpu_ctx.set_rip(elf_load_info.entry_point());
-        cpu_ctx.set_rsp(elf_load_info.user_stack_top());
+        cpu_ctx.set_rip(elf_load_info.entry_point() as _);
+        cpu_ctx.set_rsp(elf_load_info.user_stack_top() as _);
         let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
-        let thread_name = Some(ThreadName::new_from_elf_path(&elf_path).unwrap());
+        let thread_name = Some(ThreadName::new_from_executable_path(&executable_path).unwrap());
         let tid = allocate_tid();
         let thread_builder = PosixThreadBuilder::new(tid, user_space)
             .thread_name(thread_name)

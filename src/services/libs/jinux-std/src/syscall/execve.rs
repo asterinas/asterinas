@@ -2,9 +2,9 @@ use jinux_frame::cpu::CpuContext;
 
 use super::{constants::*, SyscallReturn};
 use crate::log_syscall_entry;
-use crate::process::elf::load_elf_to_root_vmar;
 use crate::process::posix_thread::name::ThreadName;
 use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
+use crate::process::setup_root_vmar;
 use crate::util::{read_cstring_from_user, read_val_from_user};
 use crate::{prelude::*, syscall::SYS_EXECVE};
 
@@ -15,24 +15,22 @@ pub fn sys_execve(
     context: &mut CpuContext,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_EXECVE);
-    let elf_path = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
+    let executable_path = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
+    let executable_path = executable_path.into_string().unwrap();
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;
     debug!(
         "filename: {:?}, argv = {:?}, envp = {:?}",
-        elf_path, argv, envp
+        executable_path, argv, envp
     );
-    if elf_path != CString::new("./hello").unwrap() {
-        panic!("Unknown filename.");
-    }
     // FIXME: should we set thread name in execve?
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let mut thread_name = posix_thread.thread_name().lock();
-    let new_thread_name = ThreadName::new_from_elf_path(&elf_path)?;
+    let new_thread_name = ThreadName::new_from_executable_path(&executable_path)?;
     *thread_name = Some(new_thread_name);
 
-    let elf_file_content = crate::user_apps::read_execve_hello_content();
+    // let elf_file_content = crate::user_apps::read_execve_hello_content();
     let current = current!();
     // destroy root vmars
     let root_vmar = current.root_vmar();
@@ -42,8 +40,8 @@ pub fn sys_execve(
         .expect("[Internal Error] User process should have user vm");
     user_vm.set_default();
     // load elf content to new vm space
-    let elf_load_info =
-        load_elf_to_root_vmar(elf_file_content, root_vmar, argv, envp).expect("load elf failed");
+    let fs_resolver = &*current.fs().read();
+    let elf_load_info = setup_root_vmar(executable_path, argv, envp, fs_resolver, root_vmar, 1)?;
     debug!("load elf in execve succeeds");
     // set signal disposition to default
     current.sig_dispositions().lock().inherit();
@@ -53,10 +51,10 @@ pub fn sys_execve(
     context.fs_base = defalut_content.fs_base;
     context.fp_regs = defalut_content.fp_regs;
     // set new entry point
-    context.gp_regs.rip = elf_load_info.entry_point();
+    context.gp_regs.rip = elf_load_info.entry_point() as _;
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
     // set new user stack top
-    context.gp_regs.rsp = elf_load_info.user_stack_top();
+    context.gp_regs.rsp = elf_load_info.user_stack_top() as _;
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
     Ok(SyscallReturn::NoReturn)
 }
