@@ -5,7 +5,7 @@ use core::any::Any;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 
-use super::{DirentWriterContext, FileSystem, IoctlCmd, SuperBlock};
+use super::{DirentVisitor, FileSystem, IoctlCmd, SuperBlock};
 use crate::prelude::*;
 
 #[repr(u32)]
@@ -177,7 +177,7 @@ pub trait Inode: Any + Sync + Send {
 
     fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
 
-    fn readdir(&self, ctx: &mut DirentWriterContext) -> Result<usize>;
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize>;
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
 

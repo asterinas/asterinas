@@ -3,9 +3,7 @@
 mod dyn_cap;
 mod static_cap;
 
-use crate::fs::utils::{
-    AccessMode, Dentry, DirentWriter, DirentWriterContext, InodeType, SeekFrom, StatusFlags,
-};
+use crate::fs::utils::{AccessMode, Dentry, DirentVisitor, InodeType, SeekFrom, StatusFlags};
 use crate::prelude::*;
 use crate::rights::Rights;
 
@@ -113,12 +111,11 @@ impl InodeHandle_ {
         status_flags.insert(new_status_flags & valid_flags_mask);
     }
 
-    pub fn readdir(&self, writer: &mut dyn DirentWriter) -> Result<usize> {
+    pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let mut offset = self.offset.lock();
-        let mut dir_writer_ctx = DirentWriterContext::new(*offset, writer);
-        let written_size = self.dentry.vnode().readdir(&mut dir_writer_ctx)?;
-        *offset = dir_writer_ctx.pos();
-        Ok(written_size)
+        let read_cnt = self.dentry.vnode().readdir_at(*offset, visitor)?;
+        *offset += read_cnt;
+        Ok(read_cnt)
     }
 }
 

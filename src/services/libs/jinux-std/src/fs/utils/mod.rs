@@ -3,7 +3,7 @@
 pub use access_mode::AccessMode;
 pub use creation_flags::CreationFlags;
 pub use dentry_cache::Dentry;
-pub use dirent_writer::{DirentWriter, DirentWriterContext};
+pub use dirent_visitor::DirentVisitor;
 pub use events::IoEvents;
 pub use fcntl::FcntlCmd;
 pub use file_creation_mask::FileCreationMask;
@@ -18,7 +18,7 @@ pub use vnode::Vnode;
 mod access_mode;
 mod creation_flags;
 mod dentry_cache;
-mod dirent_writer;
+mod dirent_visitor;
 mod events;
 mod fcntl;
 mod file_creation_mask;

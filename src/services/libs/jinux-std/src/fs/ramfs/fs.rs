@@ -9,7 +9,7 @@ use spin::{RwLock, RwLockWriteGuard};
 
 use super::*;
 use crate::fs::utils::{
-    DirentWriterContext, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
+    DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
 };
 
 pub struct RamFS {
@@ -144,32 +144,6 @@ struct DirEntry {
     parent: Weak<RamInode>,
 }
 
-macro_rules! write_inode_entry {
-    ($ctx:expr, $name:expr, $inode:expr, $total_written:expr) => {
-        let ctx = $ctx;
-        let name = $name;
-        let inode = $inode;
-        let total_written = $total_written;
-
-        match ctx.write_entry(
-            name.as_ref(),
-            inode.metadata().ino as u64,
-            inode.metadata().type_,
-        ) {
-            Ok(written_len) => {
-                *total_written += written_len;
-            }
-            Err(e) => {
-                if *total_written == 0 {
-                    return Err(e);
-                } else {
-                    return Ok(*total_written);
-                }
-            }
-        }
-    };
-}
-
 impl DirEntry {
     fn new() -> Self {
         Self {
@@ -228,24 +202,47 @@ impl DirEntry {
         *name = Str256::from(new_name);
     }
 
-    fn iterate_entries(&self, mut ctx: &mut DirentWriterContext) -> Result<usize> {
-        let mut total_written_len = 0;
-        let idx = ctx.pos();
-        // Write the two special entries
-        if idx == 0 {
-            let this_inode = self.this.upgrade().unwrap();
-            write_inode_entry!(&mut ctx, ".", &this_inode, &mut total_written_len);
+    fn visit_entry(&self, mut idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        let try_visit = |idx: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
+            // Read the two special entries("." and "..").
+            if *idx == 0 {
+                let this_inode = self.this.upgrade().unwrap();
+                visitor.visit(
+                    ".",
+                    this_inode.metadata().ino as u64,
+                    this_inode.metadata().type_,
+                    *idx,
+                )?;
+                *idx += 1;
+            }
+            if *idx == 1 {
+                let parent_inode = self.parent.upgrade().unwrap();
+                visitor.visit(
+                    "..",
+                    parent_inode.metadata().ino as u64,
+                    parent_inode.metadata().type_,
+                    *idx,
+                )?;
+                *idx += 1;
+            }
+            // Read the normal child entries.
+            for (name, child) in self.children.iter().skip(*idx - 2) {
+                visitor.visit(
+                    name.as_ref(),
+                    child.metadata().ino as u64,
+                    child.metadata().type_,
+                    *idx,
+                )?;
+                *idx += 1;
+            }
+            Ok(())
+        };
+
+        let initial_idx = idx;
+        match try_visit(&mut idx, visitor) {
+            Err(e) if idx == initial_idx => Err(e),
+            _ => Ok(idx - initial_idx),
         }
-        if idx <= 1 {
-            let parent_inode = self.parent.upgrade().unwrap();
-            write_inode_entry!(&mut ctx, "..", &parent_inode, &mut total_written_len);
-        }
-        // Write the normal entries
-        let skipped_children = if idx < 2 { 0 } else { idx - 2 };
-        for (name, child) in self.children.iter().skip(skipped_children) {
-            write_inode_entry!(&mut ctx, name, child, &mut total_written_len);
-        }
-        Ok(total_written_len)
     }
 
     fn is_empty_children(&self) -> bool {
@@ -382,17 +379,17 @@ impl Inode for RamInode {
         Ok(new_inode)
     }
 
-    fn readdir(&self, ctx: &mut DirentWriterContext) -> Result<usize> {
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
         let self_inode = self.0.read();
-        let total_written_len = self_inode
+        let cnt = self_inode
             .inner
             .as_direntry()
             .unwrap()
-            .iterate_entries(ctx)?;
-        Ok(total_written_len)
+            .visit_entry(offset, visitor)?;
+        Ok(cnt)
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
