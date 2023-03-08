@@ -1,23 +1,13 @@
 use acpi::{AcpiError, HpetInfo};
 use alloc::vec::Vec;
+use spin::Once;
 use volatile::{
     access::{ReadOnly, ReadWrite},
     Volatile,
 };
 
-use crate::{
-    cell::Cell,
-    driver::{
-        acpi::ACPI_TABLES,
-        ioapic::{self, IoApicEntryHandle},
-    },
-};
-use lazy_static::lazy_static;
-
-lazy_static! {
-    static ref HPET_INSTANCE: Cell<HPET> =
-        unsafe { Cell::new(core::mem::MaybeUninit::zeroed().assume_init()) };
-}
+use crate::driver::{acpi::ACPI_TABLES, ioapic};
+static HPET_INSTANCE: Once<HPET> = Once::new();
 
 const OFFSET_ID_REGISTER: usize = 0x000;
 const OFFSET_CONFIGURATION_REGISTER: usize = 0x010;
@@ -35,7 +25,6 @@ struct HPETTimerRegister {
 }
 
 struct HPET {
-    io_apic_entry: IoApicEntryHandle,
     information_register: Volatile<&'static u32, ReadOnly>,
     general_configuration_register: Volatile<&'static mut u32, ReadWrite>,
     general_interrupt_status_register: Volatile<&'static mut u32, ReadWrite>,
@@ -75,16 +64,17 @@ impl HPET {
             comparators.push(comp);
         }
 
-        let mut io_apic_entry = ioapic::IO_APIC.get().allocate_entry().unwrap();
         let vector = super::TIMER_IRQ_NUM;
         // 0 for now
         let destination_apic_id: u8 = 0;
-        let write_value = (destination_apic_id as u64) << 56 | vector as u64;
 
-        io_apic_entry.write(write_value);
+        ioapic::IO_APIC
+            .get()
+            .unwrap()
+            .lock()
+            .enable(vector, destination_apic_id);
 
         HPET {
-            io_apic_entry,
             information_register,
             general_configuration_register,
             general_interrupt_status_register,
@@ -121,6 +111,6 @@ pub fn init() -> Result<(), AcpiError> {
 
     // config IO APIC entry
     let hpet = HPET::new(hpet_info.base_address);
-    *HPET_INSTANCE.get() = hpet;
+    HPET_INSTANCE.call_once(|| hpet);
     Ok(())
 }

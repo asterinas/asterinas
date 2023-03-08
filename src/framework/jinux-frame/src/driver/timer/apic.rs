@@ -2,17 +2,18 @@ use log::info;
 
 use crate::{
     config,
-    driver::{apic::APIC_INSTANCE, pic, timer},
+    driver::{pic, timer, xapic::XAPIC_INSTANCE},
     x86_64_util, TrapFrame,
 };
+use x86::apic::xapic;
 
 pub fn init() {
-    let apic_lock = APIC_INSTANCE.get();
+    let mut apic_lock = XAPIC_INSTANCE.get().unwrap().lock();
     let handle = unsafe { crate::trap::IrqLine::acquire(timer::TIMER_IRQ_NUM) };
     let a = handle.on_active(init_function);
     // divide by 64
-    apic_lock.divide_configuration_register.write(0b1001);
-    apic_lock.initial_count_register.write(0xFFFF_FFFF);
+    apic_lock.write(xapic::XAPIC_TIMER_DIV_CONF, 0b1001);
+    apic_lock.write(xapic::XAPIC_TIMER_INIT_COUNT, 0xFFFF_FFFF);
     // apic_lock.lvt_timer_register.write(timer::TIMER_IRQ_NUM as u32);
     drop(apic_lock);
 
@@ -39,8 +40,8 @@ pub fn init() {
             if IS_FINISH || IN_TIME == 0 {
                 // drop the first entry, since it may not be the time we want
                 IN_TIME += 1;
-                let apic_lock = APIC_INSTANCE.get();
-                let remain_ticks = apic_lock.current_count_register.read();
+                let apic_lock = XAPIC_INSTANCE.get().unwrap().lock();
+                let remain_ticks = apic_lock.read(xapic::XAPIC_TIMER_CURRENT_COUNT);
                 FIRST_TIME_COUNT = 0xFFFF_FFFF - remain_ticks;
                 pic::ack();
                 return;
@@ -48,16 +49,17 @@ pub fn init() {
         }
         pic::disable_temp();
         // stop APIC Timer, get the number of tick we need
-        let apic_lock = APIC_INSTANCE.get();
-        let remain_ticks = apic_lock.current_count_register.read();
-        apic_lock.initial_count_register.write(0);
+        let mut apic_lock = XAPIC_INSTANCE.get().unwrap().lock();
+        let remain_ticks = apic_lock.read(xapic::XAPIC_TIMER_CURRENT_COUNT);
+        apic_lock.write(xapic::XAPIC_TIMER_INIT_COUNT, 0);
         let ticks = unsafe { 0xFFFF_FFFF - remain_ticks - FIRST_TIME_COUNT };
         // periodic mode, divide 64, freq: TIMER_FREQ Hz
-        apic_lock.initial_count_register.write(ticks as u32);
-        apic_lock
-            .lvt_timer_register
-            .write(timer::TIMER_IRQ_NUM as u32 | (1 << 17));
-        apic_lock.divide_configuration_register.write(0b1001);
+        apic_lock.write(xapic::XAPIC_TIMER_INIT_COUNT, ticks as u32);
+        apic_lock.write(
+            xapic::XAPIC_LVT_TIMER,
+            timer::TIMER_IRQ_NUM as u32 | (1 << 17),
+        );
+        apic_lock.write(xapic::XAPIC_TIMER_DIV_CONF, 0b1001);
 
         info!(
             "APIC Timer ticks count:{:x}, remain ticks: {:x},Timer Freq:{} Hz",
