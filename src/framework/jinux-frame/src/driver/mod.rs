@@ -2,30 +2,31 @@
 //! This module should inaccessible by other crate such as std, virtio etc.
 //!
 
-pub mod acpi;
-pub mod apic;
-pub mod ioapic;
-pub mod pic;
-pub mod rtc;
-pub mod timer;
+mod acpi;
+mod ioapic;
+mod pic;
+pub(crate) mod rtc;
+mod timer;
+mod xapic;
 
-pub use apic::ack;
+pub(crate) use self::pic::ack as pic_ack;
+pub(crate) use self::pic::allocate_irq as pic_allocate_irq;
+pub(crate) use self::xapic::ack as xapic_ack;
 use log::info;
-pub use timer::TimerCallback;
-pub(crate) use timer::{add_timeout_list, TICK};
+pub(crate) use timer::{add_timeout_list, TimerCallback, TICK};
 
 pub(crate) fn init() {
     acpi::init();
-    timer::init();
-    if apic::has_apic() {
+    if xapic::has_apic() {
         ioapic::init();
-        apic::init();
+        xapic::init();
     } else {
         info!("No apic exists, using pic instead");
         unsafe {
             pic::enable();
         }
     }
+    timer::init();
     pic::init();
     rtc::init();
 }

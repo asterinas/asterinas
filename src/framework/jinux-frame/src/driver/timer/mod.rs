@@ -5,28 +5,26 @@ pub mod pit;
 use core::any::Any;
 
 use alloc::{boxed::Box, collections::BinaryHeap, sync::Arc, vec::Vec};
-use lazy_static::lazy_static;
-use spin::Mutex;
+use spin::{Mutex, Once};
 
-use crate::{cell::Cell, IrqAllocateHandle, TrapFrame};
+use crate::{IrqAllocateHandle, TrapFrame};
 
 pub(crate) const TIMER_IRQ_NUM: u8 = 32;
 pub static mut TICK: u64 = 0;
 
-lazy_static! {
-    static ref TIMER_IRQ: Mutex<IrqAllocateHandle> = Mutex::new(
-        crate::trap::allocate_target_irq(TIMER_IRQ_NUM).expect("Timer irq Allocate error")
-    );
-}
+static TIMER_IRQ: Once<IrqAllocateHandle> = Once::new();
 
 pub fn init() {
-    if super::apic::has_apic() {
+    TIMEOUT_LIST.call_once(|| Mutex::new(BinaryHeap::new()));
+    if super::xapic::has_apic() {
         apic::init();
     } else {
         pit::init();
     }
-
-    TIMER_IRQ.lock().on_active(timer_callback);
+    let mut timer_irq =
+        crate::trap::allocate_target_irq(TIMER_IRQ_NUM).expect("Timer irq Allocate error");
+    timer_irq.on_active(timer_callback);
+    TIMER_IRQ.call_once(|| timer_irq);
 }
 
 fn timer_callback(trap_frame: &TrapFrame) {
@@ -35,7 +33,7 @@ fn timer_callback(trap_frame: &TrapFrame) {
         current_ms = TICK;
         TICK += 1;
     }
-    let timeout_list = TIMEOUT_LIST.get();
+    let mut timeout_list = TIMEOUT_LIST.get().unwrap().lock();
     let mut callbacks: Vec<Arc<TimerCallback>> = Vec::new();
     while let Some(t) = timeout_list.peek() {
         if t.expire_ms <= current_ms && t.is_enable() {
@@ -44,21 +42,20 @@ fn timer_callback(trap_frame: &TrapFrame) {
             break;
         }
     }
+    drop(timeout_list);
     for callback in callbacks {
         callback.callback.call((&callback,));
     }
     // crate::interrupt_ack();
 }
 
-lazy_static! {
-    static ref TIMEOUT_LIST: Cell<BinaryHeap<Arc<TimerCallback>>> = Cell::new(BinaryHeap::new());
-}
+static TIMEOUT_LIST: Once<Mutex<BinaryHeap<Arc<TimerCallback>>>> = Once::new();
 
 pub struct TimerCallback {
     expire_ms: u64,
     data: Arc<dyn Any + Send + Sync>,
     callback: Box<dyn Fn(&TimerCallback) + Send + Sync>,
-    enable: Cell<bool>,
+    enable: Mutex<bool>,
 }
 
 impl TimerCallback {
@@ -71,7 +68,7 @@ impl TimerCallback {
             expire_ms: timeout_ms,
             data,
             callback,
-            enable: Cell::new(true),
+            enable: Mutex::new(true),
         }
     }
 
@@ -81,16 +78,16 @@ impl TimerCallback {
 
     /// disable this timeout
     pub fn disable(&self) {
-        *self.enable.get() = false;
+        *self.enable.lock() = false;
     }
 
     /// enable this timeout
     pub fn enable(&self) {
-        *self.enable.get() = true;
+        *self.enable.lock() = true;
     }
 
     pub fn is_enable(&self) -> bool {
-        *self.enable
+        *self.enable.lock()
     }
 }
 
@@ -126,7 +123,7 @@ where
     unsafe {
         let timer_callback = TimerCallback::new(TICK + timeout, Arc::new(data), Box::new(callback));
         let arc = Arc::new(timer_callback);
-        TIMEOUT_LIST.get().push(arc.clone());
+        TIMEOUT_LIST.get().unwrap().lock().push(arc.clone());
         arc
     }
 }

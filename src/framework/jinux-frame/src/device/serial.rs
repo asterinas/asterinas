@@ -1,9 +1,8 @@
 use alloc::{sync::Arc, vec::Vec};
-use lazy_static::lazy_static;
 use log::debug;
-use spin::Mutex;
+use spin::{Mutex, Once};
 
-use crate::{cell::Cell, driver::pic, x86_64_util::*, IrqAllocateHandle, TrapFrame};
+use crate::{driver::pic_allocate_irq, x86_64_util::*, IrqAllocateHandle, TrapFrame};
 use core::fmt::{self, Write};
 
 bitflags::bitflags! {
@@ -20,15 +19,10 @@ const SERIAL_FIFO_CTRL: u16 = SERIAL_DATA + 2;
 const SERIAL_LINE_CTRL: u16 = SERIAL_DATA + 3;
 const SERIAL_MODEM_CTRL: u16 = SERIAL_DATA + 4;
 const SERIAL_LINE_STS: u16 = SERIAL_DATA + 5;
-lazy_static! {
-    static ref CONSOLE_IRQ_CALLBACK: Cell<IrqAllocateHandle> = {
-        let irq = Cell::new(pic::allocate_irq(4).unwrap());
-        irq.get().on_active(handle_serial_input);
-        irq
-    };
-    static ref SERIAL_INPUT_CALLBACKS: Mutex<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
-        Mutex::new(Vec::new());
-}
+
+static CONSOLE_IRQ_CALLBACK: Once<Mutex<IrqAllocateHandle>> = Once::new();
+static SERIAL_INPUT_CALLBACKS: Mutex<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
+    Mutex::new(Vec::new());
 
 /// Initializes the serial port.
 pub(crate) fn init() {
@@ -55,11 +49,21 @@ pub fn register_serial_input_callback(f: impl Fn(u8) + Send + Sync + 'static) {
     SERIAL_INPUT_CALLBACKS.lock().push(Arc::new(f));
 }
 
+pub(crate) fn callback_init() {
+    let mut irq = pic_allocate_irq(4).unwrap();
+    irq.on_active(handle_serial_input);
+    CONSOLE_IRQ_CALLBACK.call_once(|| Mutex::new(irq));
+}
+
 pub(crate) fn register_serial_input_irq_handler<F>(callback: F)
 where
     F: Fn(&TrapFrame) + Sync + Send + 'static,
 {
-    CONSOLE_IRQ_CALLBACK.get().on_active(callback);
+    CONSOLE_IRQ_CALLBACK
+        .get()
+        .unwrap()
+        .lock()
+        .on_active(callback);
 }
 
 fn handle_serial_input(trap_frame: &TrapFrame) {

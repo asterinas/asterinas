@@ -10,5 +10,5 @@ pub use self::io_port::IoPort;
 /// Call after the memory allocator init
 pub(crate) fn init() {
     framebuffer::init();
-    serial::register_serial_input_irq_handler(|trap| {});
+    serial::callback_init();
 }

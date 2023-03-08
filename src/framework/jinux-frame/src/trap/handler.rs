@@ -45,8 +45,8 @@ pub(crate) extern "C" fn trap_handler(f: &mut TrapFrame) {
         callback_function.call(f);
     }
     if f.id >= 0x20 {
-        crate::driver::apic::ack();
-        crate::driver::pic::ack();
+        crate::driver::xapic_ack();
+        crate::driver::pic_ack();
     }
 }
 
