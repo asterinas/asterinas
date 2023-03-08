@@ -11,8 +11,7 @@ x86_64 = "0.14.2"
 x86 = "0.52.0"
 spin = "0.9.4"
 volatile = { version = "0.4.5", features = ["unstable"] }
-buddy_system_allocator = "0.6"
-linked_list_allocator = "0.9.0"
+buddy_system_allocator = "0.9.0"
 font8x8 = { version = "0.2.5", default-features = false, features = [
     "unicode",
 ] }
