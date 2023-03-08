@@ -56,20 +56,8 @@ pub(crate) fn init() {
         debug!("Found memory region:{:x?}", **i);
         memory_regions.push(&**i);
     }
-    let mut biggest_region_size = 0;
-    let mut biggest_region_start = 0;
-    for i in memory_regions.iter() {
-        if i.len > biggest_region_size {
-            biggest_region_size = i.len;
-            biggest_region_start = i.base;
-        }
-    }
-    if biggest_region_size == 0 {
-        panic!("Cannot find usable memory region");
-    }
 
-    // TODO: pass the memory regions to the frame allocator. The frame allocator should use multiple usable area
-    frame_allocator::init(biggest_region_start as usize, biggest_region_size as usize);
+    frame_allocator::init(&memory_regions);
     page_table::init();
 
     MEMORY_REGIONS.call_once(|| memory_regions);

@@ -1,78 +1,58 @@
 use alloc::vec::Vec;
-use spin::Mutex;
+use buddy_system_allocator::FrameAllocator;
+use limine::{LimineMemmapEntry, LimineMemoryMapEntryType};
+use log::info;
+use spin::{Mutex, Once};
 
 use crate::{config::PAGE_SIZE, vm::Paddr};
 
 use super::address::PhysAddr;
 
-use lazy_static::lazy_static;
+static  FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
 
-lazy_static! {
-    static ref FRAME_ALLOCATOR: Mutex<FreeListAllocator> = Mutex::new(FreeListAllocator {
-        current: 0,
-        end: 0,
-        free_list: Vec::new(),
-    });
-}
-
-trait FrameAllocator {
-    fn alloc(&mut self) -> Option<usize>;
-    fn dealloc(&mut self, value: usize);
-}
-
-pub struct FreeListAllocator {
-    current: usize,
-    end: usize,
-    free_list: Vec<usize>,
-}
-
-impl FreeListAllocator {
-    fn alloc(&mut self) -> Option<usize> {
-        let mut ret = 0;
-        if let Some(x) = self.free_list.pop() {
-            ret = x;
-        } else if self.current < self.end {
-            ret = self.current;
-            self.current += PAGE_SIZE;
-        };
-        Some(ret)
-    }
-
-    fn dealloc(&mut self, value: usize) {
-        assert!(!self.free_list.contains(&value));
-        self.free_list.push(value);
-    }
-}
 
 #[derive(Debug, Clone)]
 // #[repr(transparent)]
 pub struct PhysFrame {
-    start_pa: usize,
+    frame_index: usize,
+    need_dealloc: bool,
 }
 
 impl PhysFrame {
     pub const fn start_pa(&self) -> PhysAddr {
-        PhysAddr(self.start_pa)
+        PhysAddr(self.frame_index * PAGE_SIZE)
     }
 
     pub const fn end_pa(&self) -> PhysAddr {
-        PhysAddr(self.start_pa + PAGE_SIZE)
+        PhysAddr((self.frame_index + 1) * PAGE_SIZE)
     }
 
     pub fn alloc() -> Option<Self> {
-        FRAME_ALLOCATOR
-            .lock()
-            .alloc()
-            .map(|pa| Self { start_pa: pa })
+        FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|pa| Self {
+            frame_index: pa,
+            need_dealloc: true,
+        })
+    }
+
+    pub fn alloc_continuous_range(frame_count: usize) -> Option<Vec<Self>> {
+        FRAME_ALLOCATOR.get().unwrap().lock().alloc(frame_count).map(|start| {
+            let mut vector = Vec::new();
+            for i in 0..frame_count {
+                vector.push(Self {
+                    frame_index: start + i,
+                    need_dealloc: true,
+                })
+            }
+            vector
+        })
     }
 
     pub fn alloc_with_paddr(paddr: Paddr) -> Option<Self> {
         // FIXME: need to check whether the physical address is invalid or not
-        Some(Self { start_pa: paddr })
-    }
-
-    pub fn dealloc(pa: usize) {
-        FRAME_ALLOCATOR.lock().dealloc(pa)
+        Some(Self {
+            frame_index: paddr / PAGE_SIZE,
+            need_dealloc: false,
+        })
     }
 
     pub fn alloc_zero() -> Option<Self> {
@@ -92,11 +72,27 @@ impl PhysFrame {
 
 impl Drop for PhysFrame {
     fn drop(&mut self) {
-        FRAME_ALLOCATOR.lock().dealloc(self.start_pa);
+        if self.need_dealloc {
+            FRAME_ALLOCATOR.get().unwrap().lock().dealloc(self.frame_index, 1);
+        }
     }
 }
 
-pub(crate) fn init(start: usize, size: usize) {
-    FRAME_ALLOCATOR.lock().current = start;
-    FRAME_ALLOCATOR.lock().end = start + size;
+pub(crate) fn init(regions: &Vec<&LimineMemmapEntry>) {
+    let mut allocator = FrameAllocator::<32>::new();
+    for region in regions.iter() {
+        if region.typ == LimineMemoryMapEntryType::Usable {
+            assert_eq!(region.base % PAGE_SIZE as u64, 0);
+            assert_eq!(region.len % PAGE_SIZE as u64, 0);
+            let start = region.base as usize / PAGE_SIZE;
+            let end = start + region.len as usize / PAGE_SIZE;
+            allocator.add_frame(start, end);
+            info!(
+                "Found usable region, start:{:x}, end:{:x}",
+                region.base,
+                region.base + region.len
+            );
+        }
+    }
+    FRAME_ALLOCATOR.call_once(||Mutex::new(allocator));
 }
