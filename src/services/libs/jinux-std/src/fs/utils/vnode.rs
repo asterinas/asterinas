@@ -1,4 +1,4 @@
-use super::{DirentWriterContext, Inode, InodeMode, InodeType, Metadata, PageCacheManager};
+use super::{DirentVisitor, Inode, InodeMode, InodeType, Metadata, PageCacheManager};
 use crate::prelude::*;
 use crate::rights::Rights;
 use crate::vm::vmo::{Vmo, VmoFlags, VmoOptions};
@@ -164,8 +164,8 @@ impl Vnode {
         self.inner.write().inode.write_link(target)
     }
 
-    pub fn readdir(&self, ctx: &mut DirentWriterContext) -> Result<usize> {
-        self.inner.read().inode.readdir(ctx)
+    pub fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        self.inner.read().inode.readdir_at(offset, visitor)
     }
 
     pub fn metadata(&self) -> Metadata {

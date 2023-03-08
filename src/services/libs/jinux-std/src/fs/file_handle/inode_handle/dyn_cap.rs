@@ -57,11 +57,11 @@ impl InodeHandle<Rights> {
         self.0.write(buf)
     }
 
-    pub fn readdir(&self, writer: &mut dyn DirentWriter) -> Result<usize> {
+    pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "File is not readable");
         }
-        self.0.readdir(writer)
+        self.0.readdir(visitor)
     }
 }
 

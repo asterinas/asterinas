@@ -16,6 +16,7 @@ use crate::syscall::fcntl::sys_fcntl;
 use crate::syscall::fork::sys_fork;
 use crate::syscall::futex::sys_futex;
 use crate::syscall::getcwd::sys_getcwd;
+use crate::syscall::getdents64::sys_getdents64;
 use crate::syscall::getegid::sys_getegid;
 use crate::syscall::geteuid::sys_geteuid;
 use crate::syscall::getgid::sys_getgid;
@@ -79,6 +80,7 @@ mod fcntl;
 mod fork;
 mod futex;
 mod getcwd;
+mod getdents64;
 mod getegid;
 mod geteuid;
 mod getgid;
@@ -212,6 +214,7 @@ define_syscall_nums!(
     SYS_GETTID = 186,
     SYS_TIME = 201,
     SYS_FUTEX = 202,
+    SYS_GETDENTS64 = 217,
     SYS_SET_TID_ADDRESS = 218,
     SYS_CLOCK_NANOSLEEP = 230,
     SYS_EXIT_GROUP = 231,
@@ -342,6 +345,7 @@ pub fn syscall_dispatch(
         SYS_GETTID => syscall_handler!(0, sys_gettid),
         SYS_TIME => syscall_handler!(1, sys_time, args),
         SYS_FUTEX => syscall_handler!(6, sys_futex, args),
+        SYS_GETDENTS64 => syscall_handler!(3, sys_getdents64, args),
         SYS_SET_TID_ADDRESS => syscall_handler!(1, sys_set_tid_address, args),
         SYS_CLOCK_NANOSLEEP => syscall_handler!(4, sys_clock_nanosleep, args),
         SYS_EXIT_GROUP => syscall_handler!(1, sys_exit_group, args),

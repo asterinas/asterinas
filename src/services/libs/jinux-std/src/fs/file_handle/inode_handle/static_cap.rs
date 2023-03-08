@@ -21,7 +21,7 @@ impl<R: TRights> InodeHandle<R> {
     }
 
     #[require(R > Read)]
-    pub fn readdir(&self, writer: &mut dyn DirentWriter) -> Result<usize> {
-        self.0.readdir(writer)
+    pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        self.0.readdir(visitor)
     }
 }
