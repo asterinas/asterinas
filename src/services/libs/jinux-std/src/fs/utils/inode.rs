@@ -2,6 +2,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use bitflags::bitflags;
 use core::any::Any;
+use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 
 use super::{DirentWriterContext, FileSystem, IoctlCmd, SuperBlock};
@@ -81,9 +82,9 @@ pub struct Metadata {
     pub size: usize,
     pub blk_size: usize,
     pub blocks: usize,
-    pub atime: Timespec,
-    pub mtime: Timespec,
-    pub ctime: Timespec,
+    pub atime: Duration,
+    pub mtime: Duration,
+    pub ctime: Duration,
     pub type_: InodeType,
     pub mode: InodeMode,
     pub nlinks: usize,
@@ -100,9 +101,9 @@ impl Metadata {
             size: 2,
             blk_size: sb.bsize,
             blocks: 0,
-            atime: Timespec { sec: 0, nsec: 0 },
-            mtime: Timespec { sec: 0, nsec: 0 },
-            ctime: Timespec { sec: 0, nsec: 0 },
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
             type_: InodeType::Dir,
             mode,
             nlinks: 2,
@@ -119,9 +120,9 @@ impl Metadata {
             size: 0,
             blk_size: sb.bsize,
             blocks: 0,
-            atime: Timespec { sec: 0, nsec: 0 },
-            mtime: Timespec { sec: 0, nsec: 0 },
-            ctime: Timespec { sec: 0, nsec: 0 },
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
             type_: InodeType::File,
             mode,
             nlinks: 1,
@@ -138,9 +139,9 @@ impl Metadata {
             size: 0,
             blk_size: sb.bsize,
             blocks: 0,
-            atime: Timespec { sec: 0, nsec: 0 },
-            mtime: Timespec { sec: 0, nsec: 0 },
-            ctime: Timespec { sec: 0, nsec: 0 },
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
             type_: InodeType::SymLink,
             mode,
             nlinks: 1,
@@ -151,19 +152,20 @@ impl Metadata {
     }
 }
 
-#[derive(Default, Copy, Clone, Pod, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-#[repr(C)]
-pub struct Timespec {
-    pub sec: i64,
-    pub nsec: i64,
-}
-
 pub trait Inode: Any + Sync + Send {
     fn len(&self) -> usize;
 
     fn resize(&self, new_size: usize);
 
     fn metadata(&self) -> Metadata;
+
+    fn atime(&self) -> Duration;
+
+    fn set_atime(&self, time: Duration);
+
+    fn mtime(&self) -> Duration;
+
+    fn set_mtime(&self, time: Duration);
 
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
 
