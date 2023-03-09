@@ -1,3 +1,5 @@
+use core::ops::{BitAnd, BitOr, Not};
+
 use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;
 use limine::{LimineMemmapEntry, LimineMemoryMapEntryType};
@@ -10,20 +12,25 @@ use super::address::PhysAddr;
 
 static FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
 
+bitflags::bitflags! {
+    struct PhysFrameFlags : usize{
+        const NEED_DEALLOC = 1<<63;
+    }
+}
+
 #[derive(Debug, Clone)]
 // #[repr(transparent)]
 pub struct PhysFrame {
     frame_index: usize,
-    need_dealloc: bool,
 }
 
 impl PhysFrame {
     pub const fn start_pa(&self) -> PhysAddr {
-        PhysAddr(self.frame_index * PAGE_SIZE)
+        PhysAddr(self.frame_index() * PAGE_SIZE)
     }
 
     pub const fn end_pa(&self) -> PhysAddr {
-        PhysAddr((self.frame_index + 1) * PAGE_SIZE)
+        PhysAddr((self.frame_index() + 1) * PAGE_SIZE)
     }
 
     pub fn alloc() -> Option<Self> {
@@ -33,8 +40,7 @@ impl PhysFrame {
             .lock()
             .alloc(1)
             .map(|pa| Self {
-                frame_index: pa,
-                need_dealloc: true,
+                frame_index: pa.bitor(PhysFrameFlags::NEED_DEALLOC.bits()),
             })
     }
 
@@ -48,8 +54,7 @@ impl PhysFrame {
                 let mut vector = Vec::new();
                 for i in 0..frame_count {
                     vector.push(Self {
-                        frame_index: start + i,
-                        need_dealloc: true,
+                        frame_index: (start + i).bitor(PhysFrameFlags::NEED_DEALLOC.bits()),
                     })
                 }
                 vector
@@ -60,7 +65,6 @@ impl PhysFrame {
         // FIXME: need to check whether the physical address is invalid or not
         Some(Self {
             frame_index: paddr / PAGE_SIZE,
-            need_dealloc: false,
         })
     }
 
@@ -77,11 +81,19 @@ impl PhysFrame {
     pub fn as_slice(&self) -> &mut [u8] {
         unsafe { core::slice::from_raw_parts_mut(self.start_pa().kvaddr().as_ptr(), PAGE_SIZE) }
     }
+
+    const fn need_dealloc(&self) -> bool {
+        (self.frame_index & PhysFrameFlags::NEED_DEALLOC.bits()) != 0
+    }
+
+    const fn frame_index(&self) -> usize {
+        self.frame_index.bitand(PhysFrameFlags::all().bits().not())
+    }
 }
 
 impl Drop for PhysFrame {
     fn drop(&mut self) {
-        if self.need_dealloc {
+        if self.need_dealloc() {
             FRAME_ALLOCATOR
                 .get()
                 .unwrap()
