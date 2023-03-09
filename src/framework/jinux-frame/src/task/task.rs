@@ -1,14 +1,9 @@
-use core::mem::size_of;
-
-use lazy_static::lazy_static;
 use spin::{Mutex, MutexGuard};
 
-use crate::cell::Cell;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
 use crate::prelude::*;
 use crate::task::processor::switch_to_task;
-use crate::trap::{CalleeRegs, SyscallFrame, TrapFrame};
-use crate::user::{syscall_switch_to_user_space, trap_switch_to_user_space, UserSpace};
+use crate::user::UserSpace;
 use crate::vm::{VmAllocOptions, VmFrameVec};
 
 use intrusive_collections::intrusive_adapter;
@@ -17,6 +12,19 @@ use intrusive_collections::LinkedListAtomicLink;
 use super::processor::{current_task, schedule};
 
 core::arch::global_asm!(include_str!("switch.S"));
+
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct CalleeRegs {
+    pub rsp: u64,
+    pub rbx: u64,
+    pub rbp: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub(crate) struct TaskContext {
@@ -28,56 +36,6 @@ extern "C" {
     pub(crate) fn context_switch(cur: *mut TaskContext, nxt: *const TaskContext);
 }
 
-fn context_switch_to_user_space() {
-    let task = Task::current();
-    let switch_space_task = SWITCH_TO_USER_SPACE_TASK.get();
-    if task.inner_exclusive_access().is_from_trap {
-        *switch_space_task.trap_frame() = *task.trap_frame();
-        unsafe {
-            trap_switch_to_user_space(
-                &task.user_space.as_ref().unwrap().cpu_ctx,
-                switch_space_task.trap_frame(),
-            );
-        }
-    } else {
-        *switch_space_task.syscall_frame() = *task.syscall_frame();
-        unsafe {
-            syscall_switch_to_user_space(
-                &task.user_space.as_ref().unwrap().cpu_ctx,
-                switch_space_task.syscall_frame(),
-            );
-        }
-    }
-}
-
-lazy_static! {
-    /// This variable is mean to switch to user space and then switch back in `UserMode.execute`
-    ///
-    /// When context switch to this task, there is no need to set the current task
-    pub(crate) static ref SWITCH_TO_USER_SPACE_TASK : Cell<Task> =
-        Cell::new({
-        let task = Task{
-            func: Box::new(context_switch_to_user_space),
-            data: Box::new(None::<u8>),
-            user_space: None,
-            task_inner: Mutex::new(TaskInner {
-                    task_status: TaskStatus::Runnable,
-                    ctx: TaskContext::default(),
-                    is_from_trap:false,
-                }),
-            exit_code: usize::MAX,
-            kstack: KernelStack::new(),
-            link: LinkedListAtomicLink::new(),
-        };
-        task.task_inner.lock().task_status = TaskStatus::Runnable;
-        task.task_inner.lock().ctx.rip = context_switch_to_user_space as usize;
-        task.task_inner.lock().ctx.regs.rsp = (task.kstack.frame.end_pa().unwrap().kvaddr().0
-            - size_of::<usize>()
-            - size_of::<SyscallFrame>()) as u64;
-        task
-    });
-}
-
 pub struct KernelStack {
     frame: VmFrameVec,
 }
@@ -85,8 +43,10 @@ pub struct KernelStack {
 impl KernelStack {
     pub fn new() -> Self {
         Self {
-            frame: VmFrameVec::allocate(&VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE))
-                .expect("out of memory"),
+            frame: VmFrameVec::allocate(
+                &VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).is_contiguous(true),
+            )
+            .expect("out of memory"),
         }
     }
 }
@@ -109,8 +69,6 @@ intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLin
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
-    /// whether the task from trap. If it is Trap, then you should use read TrapFrame instead of SyscallFrame
-    pub is_from_trap: bool,
 }
 
 impl Task {
@@ -166,7 +124,6 @@ impl Task {
             task_inner: Mutex::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
-                is_from_trap: false,
             }),
             exit_code: 0,
             kstack: KernelStack::new(),
@@ -175,9 +132,8 @@ impl Task {
 
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
-        result.task_inner.lock().ctx.regs.rsp = (result.kstack.frame.end_pa().unwrap().kvaddr().0
-            - size_of::<usize>()
-            - size_of::<SyscallFrame>()) as u64;
+        result.task_inner.lock().ctx.regs.rsp =
+            (result.kstack.frame.end_pa().unwrap().kvaddr().0) as u64;
 
         let arc_self = Arc::new(result);
         switch_to_task(arc_self.clone());
@@ -208,7 +164,6 @@ impl Task {
             task_inner: Mutex::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
-                is_from_trap: false,
             }),
             exit_code: 0,
             kstack: KernelStack::new(),
@@ -217,41 +172,14 @@ impl Task {
 
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
-        result.task_inner.lock().ctx.regs.rsp = (result.kstack.frame.end_pa().unwrap().kvaddr().0
-            - size_of::<usize>()
-            - size_of::<SyscallFrame>()) as u64;
+        result.task_inner.lock().ctx.regs.rsp =
+            (result.kstack.frame.end_pa().unwrap().kvaddr().0) as u64;
 
         Ok(Arc::new(result))
     }
 
     pub fn run(self: &Arc<Self>) {
         switch_to_task(self.clone());
-    }
-
-    pub(crate) fn syscall_frame(&self) -> &mut SyscallFrame {
-        unsafe {
-            &mut *(self
-                .kstack
-                .frame
-                .end_pa()
-                .unwrap()
-                .kvaddr()
-                .get_mut::<SyscallFrame>() as *mut SyscallFrame)
-                .sub(1)
-        }
-    }
-
-    pub(crate) fn trap_frame(&self) -> &mut TrapFrame {
-        unsafe {
-            &mut *(self
-                .kstack
-                .frame
-                .end_pa()
-                .unwrap()
-                .kvaddr()
-                .get_mut::<TrapFrame>() as *mut TrapFrame)
-                .sub(1)
-        }
     }
 
     /// Returns the task status.

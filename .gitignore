@@ -15,3 +15,6 @@ target/
 # Ramdisk file
 src/ramdisk/initramfs/
 src/ramdisk/build/
+
+# qemu log file
+qemu.log

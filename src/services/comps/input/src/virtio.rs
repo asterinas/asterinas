@@ -46,7 +46,7 @@ impl VirtioInputDevice {
         fn handle_input(frame: &TrapFrame) {
             debug!("in handle input");
             let input_component = crate::INPUT_COMPONENT.get().unwrap();
-            input_component.call(frame.id as u8);
+            input_component.call(frame.trap_num as u8);
         }
         fn config_space_change(_: &TrapFrame) {
             debug!("input device config space change");
