@@ -19,6 +19,7 @@ cpio-decoder = {path="../cpio-decoder"}
 virtio-input-decoder = "0.1.4"
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 intrusive-collections = "0.9.5"
+time = { version = "0.3", default-features = false, features = ["alloc"] }
 
 # parse elf file
 xmas-elf = "0.8.0"
