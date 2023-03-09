@@ -1,60 +1,24 @@
-use crate::task::{
-    context_switch, get_idle_task_cx_ptr, Task, TaskContext, SWITCH_TO_USER_SPACE_TASK,
-};
-
 use super::{irq::IRQ_LIST, *};
+use trapframe::TrapFrame;
 
+/// Only from kernel
 #[no_mangle]
-pub(crate) extern "C" fn syscall_handler(f: &mut SyscallFrame) -> isize {
-    let r = &f.caller;
-    let current = Task::current();
-    current.inner_exclusive_access().is_from_trap = false;
-    *current.syscall_frame() = *SWITCH_TO_USER_SPACE_TASK.get().syscall_frame();
-    unsafe {
-        context_switch(
-            get_idle_task_cx_ptr() as *mut TaskContext,
-            &Task::current().inner_ctx() as *const TaskContext,
-        )
+extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
+    if is_cpu_fault(f) {
+        panic!("cannot handle kernel cpu fault now, information:{:#x?}", f);
     }
-    -1
+    call_irq_callback_functions(f);
 }
 
-#[no_mangle]
-pub(crate) extern "C" fn trap_handler(f: &mut TrapFrame) {
-    if !is_from_kernel(f.cs) {
-        let current = Task::current();
-        current.inner_exclusive_access().is_from_trap = true;
-        *current.trap_frame() = *SWITCH_TO_USER_SPACE_TASK.trap_frame();
-        if is_cpu_fault(current.trap_frame()) {
-            // if is cpu fault, we will pass control to trap handler in jinux std
-            unsafe {
-                context_switch(
-                    get_idle_task_cx_ptr() as *mut TaskContext,
-                    &Task::current().inner_ctx() as *const TaskContext,
-                )
-            }
-        }
-    } else {
-        if is_cpu_fault(f) {
-            panic!("cannot handle kernel cpu fault now, information:{:#x?}", f);
-        }
-    }
-    let irq_line = IRQ_LIST.get(f.id as usize).unwrap();
+pub(crate) fn call_irq_callback_functions(f: &mut TrapFrame) {
+    let irq_line = IRQ_LIST.get(f.trap_num as usize).unwrap();
     let callback_functions = irq_line.callback_list();
     for callback_function in callback_functions.iter() {
         callback_function.call(f);
     }
-    if f.id >= 0x20 {
+    if f.trap_num >= 0x20 {
         crate::driver::xapic_ack();
         crate::driver::pic_ack();
-    }
-}
-
-fn is_from_kernel(cs: u64) -> bool {
-    if cs & 0x3 == 0 {
-        true
-    } else {
-        false
     }
 }
 
@@ -68,7 +32,7 @@ fn is_from_kernel(cs: u64) -> bool {
 /// This function will determine a trap is a CPU faults.
 /// We will pass control to jinux-std if the trap is **faults**.
 pub fn is_cpu_fault(trap_frame: &TrapFrame) -> bool {
-    match trap_frame.id {
+    match trap_frame.trap_num as u64 {
         DIVIDE_BY_ZERO
         | DEBUG
         | BOUND_RANGE_EXCEEDED

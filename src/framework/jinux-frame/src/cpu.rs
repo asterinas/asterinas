@@ -4,8 +4,8 @@ use core::arch::x86_64::{_fxrstor, _fxsave};
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
 
-use crate::trap::{CalleeRegs, CallerRegs, SyscallFrame, TrapFrame};
-use crate::x86_64_util::rdfsbase;
+use trapframe::{GeneralRegs, UserContext};
+
 use log::debug;
 use pod::Pod;
 
@@ -35,6 +35,7 @@ pub struct CpuContext {
     pub fp_regs: FpRegs,
     pub gp_regs: GpRegs,
     pub fs_base: u64,
+    pub gs_base: u64,
     /// trap information, this field is all zero when it is syscall
     pub trap_information: TrapInformation,
 }
@@ -63,8 +64,6 @@ pub struct TrapInformation {
     pub cr2: u64,
     pub id: u64,
     pub err: u64,
-    pub cs: u64,
-    pub ss: u64,
 }
 
 /// The general-purpose registers of CPU.
@@ -96,131 +95,68 @@ unsafe impl Pod for TrapInformation {}
 unsafe impl Pod for CpuContext {}
 unsafe impl Pod for FpRegs {}
 
-impl From<SyscallFrame> for CpuContext {
-    fn from(syscall: SyscallFrame) -> Self {
+impl From<UserContext> for CpuContext {
+    fn from(value: UserContext) -> Self {
         Self {
             gp_regs: GpRegs {
-                r8: syscall.caller.r8,
-                r9: syscall.caller.r9,
-                r10: syscall.caller.r10,
-                r11: syscall.caller.r11,
-                r12: syscall.callee.r12,
-                r13: syscall.callee.r13,
-                r14: syscall.callee.r14,
-                r15: syscall.callee.r15,
-                rdi: syscall.caller.rdi,
-                rsi: syscall.caller.rsi,
-                rbp: syscall.callee.rbp,
-                rbx: syscall.callee.rbx,
-                rdx: syscall.caller.rdx,
-                rax: syscall.caller.rax,
-                rcx: syscall.caller.rcx,
-                rsp: syscall.callee.rsp,
-                rip: syscall.caller.rcx,
-                rflag: 0,
+                r8: value.general.r8 as u64,
+                r9: value.general.r9 as u64,
+                r10: value.general.r10 as u64,
+                r11: value.general.r11 as u64,
+                r12: value.general.r12 as u64,
+                r13: value.general.r13 as u64,
+                r14: value.general.r14 as u64,
+                r15: value.general.r15 as u64,
+                rdi: value.general.rdi as u64,
+                rsi: value.general.rsi as u64,
+                rbp: value.general.rbp as u64,
+                rbx: value.general.rbx as u64,
+                rdx: value.general.rdx as u64,
+                rax: value.general.rax as u64,
+                rcx: value.general.rcx as u64,
+                rsp: value.general.rsp as u64,
+                rip: value.general.rip as u64,
+                rflag: value.general.rflags as u64,
             },
-            fs_base: 0,
-            fp_regs: FpRegs::default(),
-            trap_information: TrapInformation::default(),
-        }
-    }
-}
-
-impl Into<SyscallFrame> for CpuContext {
-    fn into(self) -> SyscallFrame {
-        SyscallFrame {
-            caller: CallerRegs {
-                rax: self.gp_regs.rax,
-                rcx: self.gp_regs.rcx,
-                rdx: self.gp_regs.rdx,
-                rsi: self.gp_regs.rsi,
-                rdi: self.gp_regs.rdi,
-                r8: self.gp_regs.r8,
-                r9: self.gp_regs.r9,
-                r10: self.gp_regs.r10,
-                r11: self.gp_regs.r11,
-            },
-            callee: CalleeRegs {
-                rsp: self.gp_regs.rsp,
-                rbx: self.gp_regs.rbx,
-                rbp: self.gp_regs.rbp,
-                r12: self.gp_regs.r12,
-                r13: self.gp_regs.r13,
-                r14: self.gp_regs.r14,
-                r15: self.gp_regs.r15,
-            },
-        }
-    }
-}
-
-impl From<TrapFrame> for CpuContext {
-    fn from(trap: TrapFrame) -> Self {
-        Self {
-            gp_regs: GpRegs {
-                r8: trap.caller.r8,
-                r9: trap.caller.r9,
-                r10: trap.caller.r10,
-                r11: trap.caller.r11,
-                r12: trap.callee.r12,
-                r13: trap.callee.r13,
-                r14: trap.callee.r14,
-                r15: trap.callee.r15,
-                rdi: trap.caller.rdi,
-                rsi: trap.caller.rsi,
-                rbp: trap.callee.rbp,
-                rbx: trap.callee.rbx,
-                rdx: trap.caller.rdx,
-                rax: trap.caller.rax,
-                rcx: trap.caller.rcx,
-                rsp: trap.rsp,
-                rip: trap.rip,
-                rflag: trap.rflags,
-            },
-            fs_base: rdfsbase(),
+            fs_base: value.general.fsbase as u64,
             fp_regs: FpRegs::default(),
             trap_information: TrapInformation {
-                cr2: trap.cr2,
-                id: trap.id,
-                err: trap.err,
-                cs: trap.cs,
-                ss: trap.ss,
+                cr2: x86_64::registers::control::Cr2::read_raw(),
+                id: value.trap_num as u64,
+                err: value.error_code as u64,
             },
+            gs_base: value.general.gsbase as u64,
         }
     }
 }
 
-impl Into<TrapFrame> for CpuContext {
-    fn into(self) -> TrapFrame {
-        let trap_information = self.trap_information;
-        TrapFrame {
-            caller: CallerRegs {
-                rax: self.gp_regs.rax,
-                rcx: self.gp_regs.rcx,
-                rdx: self.gp_regs.rdx,
-                rsi: self.gp_regs.rsi,
-                rdi: self.gp_regs.rdi,
-                r8: self.gp_regs.r8,
-                r9: self.gp_regs.r9,
-                r10: self.gp_regs.r10,
-                r11: self.gp_regs.r11,
+impl Into<UserContext> for CpuContext {
+    fn into(self) -> UserContext {
+        UserContext {
+            trap_num: self.trap_information.id as usize,
+            error_code: self.trap_information.err as usize,
+            general: GeneralRegs {
+                rax: self.gp_regs.rax as usize,
+                rbx: self.gp_regs.rbx as usize,
+                rcx: self.gp_regs.rcx as usize,
+                rdx: self.gp_regs.rdx as usize,
+                rsi: self.gp_regs.rsi as usize,
+                rdi: self.gp_regs.rdi as usize,
+                rbp: self.gp_regs.rbp as usize,
+                rsp: self.gp_regs.rsp as usize,
+                r8: self.gp_regs.r8 as usize,
+                r9: self.gp_regs.r9 as usize,
+                r10: self.gp_regs.r10 as usize,
+                r11: self.gp_regs.r11 as usize,
+                r12: self.gp_regs.r12 as usize,
+                r13: self.gp_regs.r13 as usize,
+                r14: self.gp_regs.r14 as usize,
+                r15: self.gp_regs.r15 as usize,
+                rip: self.gp_regs.rip as usize,
+                rflags: self.gp_regs.rflag as usize,
+                fsbase: self.fs_base as usize,
+                gsbase: self.gs_base as usize,
             },
-            callee: CalleeRegs {
-                rsp: self.gp_regs.rsp,
-                rbx: self.gp_regs.rbx,
-                rbp: self.gp_regs.rbp,
-                r12: self.gp_regs.r12,
-                r13: self.gp_regs.r13,
-                r14: self.gp_regs.r14,
-                r15: self.gp_regs.r15,
-            },
-            id: trap_information.id,
-            err: trap_information.err,
-            cr2: trap_information.cr2,
-            rip: self.gp_regs.rip,
-            cs: trap_information.cs,
-            rflags: self.gp_regs.rflag,
-            rsp: self.gp_regs.rsp,
-            ss: trap_information.ss,
         }
     }
 }

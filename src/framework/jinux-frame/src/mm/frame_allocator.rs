@@ -8,8 +8,7 @@ use crate::{config::PAGE_SIZE, vm::Paddr};
 
 use super::address::PhysAddr;
 
-static  FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
-
+static FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
 
 #[derive(Debug, Clone)]
 // #[repr(transparent)]
@@ -28,23 +27,33 @@ impl PhysFrame {
     }
 
     pub fn alloc() -> Option<Self> {
-        FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|pa| Self {
-            frame_index: pa,
-            need_dealloc: true,
-        })
+        FRAME_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc(1)
+            .map(|pa| Self {
+                frame_index: pa,
+                need_dealloc: true,
+            })
     }
 
     pub fn alloc_continuous_range(frame_count: usize) -> Option<Vec<Self>> {
-        FRAME_ALLOCATOR.get().unwrap().lock().alloc(frame_count).map(|start| {
-            let mut vector = Vec::new();
-            for i in 0..frame_count {
-                vector.push(Self {
-                    frame_index: start + i,
-                    need_dealloc: true,
-                })
-            }
-            vector
-        })
+        FRAME_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc(frame_count)
+            .map(|start| {
+                let mut vector = Vec::new();
+                for i in 0..frame_count {
+                    vector.push(Self {
+                        frame_index: start + i,
+                        need_dealloc: true,
+                    })
+                }
+                vector
+            })
     }
 
     pub fn alloc_with_paddr(paddr: Paddr) -> Option<Self> {
@@ -73,7 +82,11 @@ impl PhysFrame {
 impl Drop for PhysFrame {
     fn drop(&mut self) {
         if self.need_dealloc {
-            FRAME_ALLOCATOR.get().unwrap().lock().dealloc(self.frame_index, 1);
+            FRAME_ALLOCATOR
+                .get()
+                .unwrap()
+                .lock()
+                .dealloc(self.frame_index, 1);
         }
     }
 }
@@ -94,5 +107,5 @@ pub(crate) fn init(regions: &Vec<&LimineMemmapEntry>) {
             );
         }
     }
-    FRAME_ALLOCATOR.call_once(||Mutex::new(allocator));
+    FRAME_ALLOCATOR.call_once(|| Mutex::new(allocator));
 }

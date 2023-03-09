@@ -1,10 +1,10 @@
 use crate::{prelude::*, Error};
 
-use super::TrapFrame;
 use crate::util::recycle_allocator::RecycleAllocator;
 use core::fmt::Debug;
 use lazy_static::lazy_static;
 use spin::{Mutex, MutexGuard};
+use trapframe::TrapFrame;
 
 lazy_static! {
     /// The IRQ numbers which are not using

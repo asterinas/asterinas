@@ -1,23 +1,15 @@
 //! User space.
 
-use crate::x86_64_util::{rdfsbase, wrfsbase};
+use crate::trap::call_irq_callback_functions;
+use crate::x86_64_util::{self, rdfsbase, wrfsbase};
 use log::debug;
+use trapframe::{TrapFrame, UserContext};
 use x86_64::registers::rflags::RFlags;
 
 use crate::cpu::CpuContext;
 use crate::prelude::*;
-use crate::task::{context_switch, Task, TaskContext, SWITCH_TO_USER_SPACE_TASK};
-use crate::trap::{SyscallFrame, TrapFrame};
+use crate::task::Task;
 use crate::vm::VmSpace;
-
-extern "C" {
-    pub(crate) fn syscall_switch_to_user_space(
-        cpu_context: &CpuContext,
-        syscall_frame: &SyscallFrame,
-    );
-    /// cpu_context may delete in the future
-    pub(crate) fn trap_switch_to_user_space(cpu_context: &CpuContext, trap_frame: &TrapFrame);
-}
 
 /// A user space.
 ///
@@ -86,6 +78,7 @@ pub struct UserMode<'a> {
     current: Arc<Task>,
     user_space: &'a Arc<UserSpace>,
     context: CpuContext,
+    user_context: UserContext,
     executed: bool,
 }
 
@@ -99,6 +92,7 @@ impl<'a> UserMode<'a> {
             user_space,
             context: CpuContext::default(),
             executed: false,
+            user_context: UserContext::default(),
         }
     }
 
@@ -116,12 +110,10 @@ impl<'a> UserMode<'a> {
             self.user_space.vm_space().activate();
         }
         if !self.executed {
-            *self.current.syscall_frame() = self.user_space.cpu_ctx.into();
+            self.context = self.user_space.cpu_ctx;
             if self.context.gp_regs.rflag == 0 {
-                self.context.gp_regs.rflag = (RFlags::INTERRUPT_FLAG | RFlags::ID).bits();
+                self.context.gp_regs.rflag = (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() | 0x2;
             }
-            self.current.syscall_frame().caller.r11 = self.context.gp_regs.rflag;
-            self.current.syscall_frame().caller.rcx = self.user_space.cpu_ctx.gp_regs.rip;
             // write fsbase
             wrfsbase(self.user_space.cpu_ctx.fs_base);
             let fp_regs = self.user_space.cpu_ctx.fp_regs;
@@ -130,15 +122,6 @@ impl<'a> UserMode<'a> {
             }
             self.executed = true;
         } else {
-            if self.current.inner_exclusive_access().is_from_trap {
-                *self.current.trap_frame() = self.context.into();
-            } else {
-                *self.current.syscall_frame() = self.context.into();
-                self.context.gp_regs.rflag |= RFlags::INTERRUPT_FLAG.bits();
-                self.current.syscall_frame().caller.r11 = self.context.gp_regs.rflag;
-                self.current.syscall_frame().caller.rcx = self.context.gp_regs.rip;
-            }
-
             // write fsbase
             if rdfsbase() != self.context.fs_base {
                 debug!("write fsbase: 0x{:x}", self.context.fs_base);
@@ -151,26 +134,44 @@ impl<'a> UserMode<'a> {
             //     fp_regs.restore();
             // }
         }
-
-        let mut current_task_inner = self.current.inner_exclusive_access();
-        let binding = SWITCH_TO_USER_SPACE_TASK.get();
-        let next_task_inner = binding.inner_exclusive_access();
-        let current_ctx = &mut current_task_inner.ctx as *mut TaskContext;
-        let next_ctx = &next_task_inner.ctx as *const TaskContext;
-        drop(current_task_inner);
-        drop(next_task_inner);
-        drop(binding);
-        unsafe {
-            context_switch(current_ctx, next_ctx);
-            // switch_to_user_space(&self.user_space.cpu_ctx, self.current.syscall_frame());
+        self.user_context = self.context.into();
+        self.user_context.run();
+        let mut trap_frame;
+        while self.user_context.trap_num >= 0x20 && self.user_context.trap_num < 0x100 {
+            trap_frame = TrapFrame {
+                rax: self.user_context.general.rax,
+                rbx: self.user_context.general.rbx,
+                rcx: self.user_context.general.rcx,
+                rdx: self.user_context.general.rdx,
+                rsi: self.user_context.general.rsi,
+                rdi: self.user_context.general.rdi,
+                rbp: self.user_context.general.rbp,
+                rsp: self.user_context.general.rsp,
+                r8: self.user_context.general.r8,
+                r9: self.user_context.general.r9,
+                r10: self.user_context.general.r10,
+                r11: self.user_context.general.r11,
+                r12: self.user_context.general.r12,
+                r13: self.user_context.general.r13,
+                r14: self.user_context.general.r14,
+                r15: self.user_context.general.r15,
+                _pad: 0,
+                trap_num: self.user_context.trap_num,
+                error_code: self.user_context.error_code,
+                rip: self.user_context.general.rip,
+                cs: 0,
+                rflags: self.user_context.general.rflags,
+            };
+            call_irq_callback_functions(&mut trap_frame);
+            self.user_context.run();
         }
-        if self.current.inner_exclusive_access().is_from_trap {
-            self.context = CpuContext::from(*self.current.trap_frame());
+        x86_64::instructions::interrupts::enable();
+        self.context = CpuContext::from(self.user_context);
+        if self.user_context.trap_num != 0x100 {
             self.context.fs_base = rdfsbase();
             // self.context.fp_regs.save();
             UserEvent::Exception
         } else {
-            self.context = CpuContext::from(*self.current.syscall_frame());
             self.context.fs_base = rdfsbase();
             // self.context.fp_regs.save();
             // debug!("[kernel] syscall id:{}", self.context.gp_regs.rax);

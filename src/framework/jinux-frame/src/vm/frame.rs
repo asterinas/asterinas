@@ -31,6 +31,16 @@ impl VmFrameVec {
     pub fn allocate(options: &VmAllocOptions) -> Result<Self> {
         let page_size = options.page_size;
         let mut frame_list = Vec::new();
+        if options.is_contiguous {
+            if options.paddr.is_some() {
+                panic!("not support contiguous paddr");
+            }
+            let frames = VmFrame::alloc_continuous(options.page_size);
+            if frames.is_none() {
+                return Err(Error::NoMemory);
+            }
+            return Ok(Self(frames.unwrap()));
+        }
         for i in 0..page_size {
             let vm_frame = if let Some(paddr) = options.paddr {
                 VmFrame::alloc_with_paddr(paddr + i * PAGE_SIZE)
@@ -204,6 +214,7 @@ impl<'a> Iterator for VmFrameVecIter<'a> {
 pub struct VmAllocOptions {
     page_size: usize,
     paddr: Option<Paddr>,
+    is_contiguous: bool,
 }
 
 impl VmAllocOptions {
@@ -212,6 +223,7 @@ impl VmAllocOptions {
         Self {
             page_size: len,
             paddr: None,
+            is_contiguous: false,
         }
     }
 
@@ -232,7 +244,8 @@ impl VmAllocOptions {
     ///
     /// The default value is `false`.
     pub fn is_contiguous(&mut self, is_contiguous: bool) -> &mut Self {
-        todo!()
+        self.is_contiguous = is_contiguous;
+        self
     }
 
     /// Sets whether the pages can be accessed by devices through
@@ -289,6 +302,21 @@ impl VmFrame {
         Some(Self {
             physical_frame: Arc::new(phys.unwrap()),
         })
+    }
+
+    /// Allocate contiguous VmFrame
+    pub(crate) fn alloc_continuous(frame_count: usize) -> Option<Vec<Self>> {
+        let phys = PhysFrame::alloc_continuous_range(frame_count);
+        if phys.is_none() {
+            return None;
+        }
+        let mut res = Vec::new();
+        for i in phys.unwrap() {
+            res.push(Self {
+                physical_frame: Arc::new(i),
+            })
+        }
+        Some(res)
     }
 
     /// Allocate a new VmFrame filled with zero
