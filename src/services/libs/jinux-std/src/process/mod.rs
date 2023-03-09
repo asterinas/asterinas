@@ -12,6 +12,7 @@ use self::signal::signals::kernel::KernelSignal;
 use self::status::ProcessStatus;
 use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
+use crate::fs::utils::FileCreationMask;
 use crate::prelude::*;
 use crate::rights::Full;
 use crate::thread::{allocate_tid, thread_table, Thread};
@@ -68,6 +69,8 @@ pub struct Process {
     file_table: Arc<Mutex<FileTable>>,
     /// FsResolver
     fs: Arc<RwLock<FsResolver>>,
+    /// umask
+    umask: Arc<RwLock<FileCreationMask>>,
     /// resource limits
     resource_limits: Mutex<ResourceLimits>,
 
@@ -100,6 +103,7 @@ impl Process {
         process_group: Weak<ProcessGroup>,
         file_table: Arc<Mutex<FileTable>>,
         fs: Arc<RwLock<FsResolver>>,
+        umask: Arc<RwLock<FileCreationMask>>,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
     ) -> Self {
         let children = BTreeMap::new();
@@ -121,6 +125,7 @@ impl Process {
             process_group: Mutex::new(process_group),
             file_table,
             fs,
+            umask,
             sig_dispositions,
             sig_queues: Mutex::new(SigQueues::new()),
             resource_limits: Mutex::new(resource_limits),
@@ -158,6 +163,7 @@ impl Process {
     ) -> Result<Arc<Self>> {
         let root_vmar = Vmar::<Full>::new_root()?;
         let fs = FsResolver::new();
+        let umask = FileCreationMask::default();
         let pid = allocate_tid();
         let parent = Weak::new();
         let process_group = Weak::new();
@@ -174,6 +180,7 @@ impl Process {
             process_group,
             Arc::new(Mutex::new(file_table)),
             Arc::new(RwLock::new(fs)),
+            Arc::new(RwLock::new(umask)),
             Arc::new(Mutex::new(sig_dispositions)),
         ));
 
@@ -237,6 +244,10 @@ impl Process {
 
     pub fn fs(&self) -> &Arc<RwLock<FsResolver>> {
         &self.fs
+    }
+
+    pub fn umask(&self) -> &Arc<RwLock<FileCreationMask>> {
+        &self.umask
     }
 
     /// create a new process group for the process and add it to globle table.

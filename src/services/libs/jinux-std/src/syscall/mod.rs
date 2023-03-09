@@ -51,6 +51,8 @@ use crate::syscall::setpgid::sys_setpgid;
 use crate::syscall::stat::{sys_fstat, sys_fstatat, sys_lstat, sys_stat};
 use crate::syscall::symlink::{sys_symlink, sys_symlinkat};
 use crate::syscall::tgkill::sys_tgkill;
+use crate::syscall::time::sys_time;
+use crate::syscall::umask::sys_umask;
 use crate::syscall::uname::sys_uname;
 use crate::syscall::unlink::{sys_unlink, sys_unlinkat};
 use crate::syscall::utimens::sys_utimensat;
@@ -111,6 +113,8 @@ mod setpgid;
 mod stat;
 mod symlink;
 mod tgkill;
+mod time;
+mod umask;
 mod uname;
 mod unlink;
 mod utimens;
@@ -192,6 +196,7 @@ define_syscall_nums!(
     SYS_UNLINK = 87,
     SYS_SYMLINK = 88,
     SYS_READLINK = 89,
+    SYS_UMASK = 95,
     SYS_GETUID = 102,
     SYS_GETGID = 104,
     SYS_GETEUID = 107,
@@ -319,6 +324,7 @@ pub fn syscall_dispatch(
         SYS_UNLINK => syscall_handler!(1, sys_unlink, args),
         SYS_SYMLINK => syscall_handler!(2, sys_symlink, args),
         SYS_READLINK => syscall_handler!(3, sys_readlink, args),
+        SYS_UMASK => syscall_handler!(1, sys_umask, args),
         SYS_GETUID => syscall_handler!(0, sys_getuid),
         SYS_GETGID => syscall_handler!(0, sys_getgid),
         SYS_GETEUID => syscall_handler!(0, sys_geteuid),

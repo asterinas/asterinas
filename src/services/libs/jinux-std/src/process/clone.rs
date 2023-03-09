@@ -7,7 +7,7 @@ use jinux_frame::{
 use crate::{
     current_thread,
     fs::file_table::FileTable,
-    fs::fs_resolver::FsResolver,
+    fs::{fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     process::{
         posix_thread::{
@@ -213,6 +213,9 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
     let child_file_table = clone_files(current.file_table(), clone_flags);
     // clone fs
     let child_fs = clone_fs(current.fs(), clone_flags);
+    // clone umask
+    let parent_umask = current.umask.read().get();
+    let child_umask = Arc::new(RwLock::new(FileCreationMask::new(parent_umask)));
     // clone sig dispositions
     let child_sig_dispositions = clone_sighand(current.sig_dispositions(), clone_flags);
     // clone system V semaphore
@@ -246,6 +249,7 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
             Weak::new(),
             child_file_table,
             child_fs,
+            child_umask,
             child_sig_dispositions,
         )
     });
