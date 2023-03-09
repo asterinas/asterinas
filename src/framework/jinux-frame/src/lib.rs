@@ -10,6 +10,8 @@
 #![feature(new_uninit)]
 #![feature(link_llvm_intrinsics)]
 #![feature(strict_provenance)]
+#![feature(const_trait_impl)]
+#![feature(const_ops)]
 
 extern crate alloc;
 
