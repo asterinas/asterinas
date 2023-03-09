@@ -16,30 +16,24 @@ const COMMON_ARGS: &[&str] = &[
     "virtio-blk-pci,bus=pci.0,addr=0x6,drive=x0",
     "-device",
     "virtio-keyboard-pci",
+    "-monitor",
+    "vc",
     "-serial",
     "mon:stdio",
     "-display",
     "none",
 ];
 
-const RUN_ARGS: &[&str] = &["-s"];
+const RUN_ARGS: &[&str] = &[];
 const TEST_ARGS: &[&str] = &[];
 const TEST_TIMEOUT_SECS: u64 = 30;
 fn main() -> anyhow::Result<()> {
-    let mut args = std::env::args().skip(1);
+    let mut run_args = std::env::args().skip(1);
     let kernel_binary_path = {
-        let path = PathBuf::from(args.next().unwrap());
+        let path = PathBuf::from(run_args.next().unwrap());
         path.canonicalize().unwrap()
     };
 
-    let no_boot = if let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--no-run" => true,
-            other => panic!("unexpected argument `{}`", other),
-        }
-    } else {
-        false
-    };
 
     #[cfg(feature = "limine")]
     call_limine_build_script(&kernel_binary_path).unwrap();
@@ -56,10 +50,6 @@ fn main() -> anyhow::Result<()> {
         a.join(str.add(".iso"))
     };
 
-    if no_boot {
-        println!("Created disk image at `{}`", kernel_iso_path.display());
-        return Ok(());
-    }
     #[cfg(windows)]
     let mut run_cmd = Command::new("qemu-system-x86_64.exe");
     #[cfg(not(windows))]
@@ -74,7 +64,8 @@ fn main() -> anyhow::Result<()> {
     if binary_kind.is_test() {
         args.append(&mut TEST_ARGS.to_vec());
         run_cmd.args(args);
-        println!("running:{:?}", run_cmd);
+        run_cmd.args(run_args);
+        println!("testing:{:?}", run_cmd);
 
         let exit_status = run_test_command(run_cmd)?;
         match exit_status.code() {
@@ -84,6 +75,7 @@ fn main() -> anyhow::Result<()> {
     } else {
         args.append(&mut RUN_ARGS.to_vec());
         run_cmd.args(args);
+        run_cmd.args(run_args);
         println!("running:{:?}", run_cmd);
 
         let exit_status = run_cmd.status()?;

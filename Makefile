@@ -11,7 +11,6 @@ setup:
 build:
 	@make --no-print-directory -C src/ramdisk
 	@cd src && cargo kbuild
-	@cd src && cargo kimage
 
 tools:
 	@cd src/services/comp-sys && cargo install --path cargo-component
