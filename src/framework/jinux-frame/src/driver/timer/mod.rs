@@ -6,8 +6,9 @@ use core::any::Any;
 
 use alloc::{boxed::Box, collections::BinaryHeap, sync::Arc, vec::Vec};
 use spin::{Mutex, Once};
+use trapframe::TrapFrame;
 
-use crate::{IrqAllocateHandle, TrapFrame};
+use crate::trap::IrqAllocateHandle;
 
 pub(crate) const TIMER_IRQ_NUM: u8 = 32;
 pub static mut TICK: u64 = 0;

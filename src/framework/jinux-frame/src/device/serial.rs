@@ -1,8 +1,9 @@
 use alloc::{sync::Arc, vec::Vec};
 use log::debug;
 use spin::{Mutex, Once};
+use trapframe::TrapFrame;
 
-use crate::{driver::pic_allocate_irq, x86_64_util::*, IrqAllocateHandle, TrapFrame};
+use crate::{driver::pic_allocate_irq, trap::IrqAllocateHandle, x86_64_util::*};
 use core::fmt::{self, Write};
 
 bitflags::bitflags! {

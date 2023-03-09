@@ -6,7 +6,7 @@ use crate::util::{CSpaceAccessMethod, Location, BAR};
 
 use super::capability::msix::CapabilityMSIXData;
 
-use jinux_frame::{offset_of, IrqAllocateHandle};
+use jinux_frame::{offset_of, trap::IrqAllocateHandle};
 use jinux_util::frame_ptr::InFramePtr;
 
 #[derive(Debug, Default)]
@@ -91,7 +91,7 @@ impl MSIX {
             value.write_at(offset_of!(MSIXTableEntry, msg_addr), 0xFEE0_0000 as u32);
             value.write_at(offset_of!(MSIXTableEntry, msg_upper_addr), 0 as u32);
             // allocate irq number
-            let handle = jinux_frame::allocate_irq().expect("not enough irq");
+            let handle = jinux_frame::trap::allocate_irq().expect("not enough irq");
             value.write_at(offset_of!(MSIXTableEntry, msg_data), handle.num() as u32);
             value.write_at(offset_of!(MSIXTableEntry, vector_control), 0 as u32);
             cap.table.push(MSIXEntry {

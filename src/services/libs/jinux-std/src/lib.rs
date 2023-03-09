@@ -49,10 +49,8 @@ mod util;
 pub mod vm;
 
 pub fn init() {
-    jinux_frame::disable_interrupts();
     driver::init();
     process::fifo_scheduler::init();
-    jinux_frame::enable_interrupts();
     fs::initramfs::init(read_ramdisk_content()).unwrap();
 }
 

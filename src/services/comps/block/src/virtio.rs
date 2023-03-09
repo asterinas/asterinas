@@ -1,6 +1,6 @@
 //! Block device based on Virtio
 
-use jinux_frame::TrapFrame;
+use jinux_frame::trap::TrapFrame;
 use jinux_pci::msix::MSIX;
 use jinux_util::frame_ptr::InFramePtr;
 use jinux_virtio::{device::block::device::BLKDevice, PCIVirtioDevice, VitrioPciCommonCfg};

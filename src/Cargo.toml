@@ -9,6 +9,9 @@ jinux-frame = { path = "framework/jinux-frame" }
 jinux-std = { path = "services/libs/jinux-std" }
 component = { path = "services/comp-sys/component" }
 
+[dev-dependencies]
+x86_64 = "0.14.2"
+
 [workspace]
 
 members = [

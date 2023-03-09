@@ -1,7 +1,8 @@
 //! Input device based on Virtio
 
 use alloc::{string::String, sync::Arc, vec::Vec};
-use jinux_frame::{offset_of, TrapFrame};
+use jinux_frame::offset_of;
+use jinux_frame::trap::TrapFrame;
 use jinux_pci::msix::MSIX;
 use jinux_util::frame_ptr::InFramePtr;
 use jinux_virtio::device::input::device::InputProp;

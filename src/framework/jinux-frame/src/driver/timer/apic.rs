@@ -1,9 +1,10 @@
 use log::info;
+use trapframe::TrapFrame;
 
 use crate::{
     config,
     driver::{pic, timer, xapic::XAPIC_INSTANCE},
-    x86_64_util, TrapFrame,
+    x86_64_util,
 };
 use x86::apic::xapic;
 

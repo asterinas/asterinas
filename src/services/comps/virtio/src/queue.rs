@@ -337,7 +337,8 @@ struct Descriptor {
 
 impl Descriptor {
     fn set_buf(&mut self, buf: &[u8]) {
-        self.addr = jinux_frame::translate_not_offset_virtual_address(buf.as_ptr() as usize) as u64;
+        self.addr =
+            jinux_frame::mm::translate_not_offset_virtual_address(buf.as_ptr() as usize) as u64;
 
         self.len = buf.len() as u32;
     }
@@ -347,9 +348,9 @@ fn set_buf(inframe_ptr: &InFramePtr<Descriptor>, buf: &[u8]) {
     let va = buf.as_ptr() as usize;
     let pa = if va >= jinux_frame::config::PHYS_OFFSET && va <= jinux_frame::config::KERNEL_OFFSET {
         // can use offset
-        jinux_frame::virt_to_phys(va)
+        jinux_frame::mm::address::virt_to_phys(va)
     } else {
-        jinux_frame::translate_not_offset_virtual_address(buf.as_ptr() as usize)
+        jinux_frame::mm::translate_not_offset_virtual_address(buf.as_ptr() as usize)
     };
     debug!("set buf write virt address:{:x}", va);
     debug!("set buf write phys address:{:x}", pa);

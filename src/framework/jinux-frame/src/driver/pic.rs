@@ -1,4 +1,5 @@
-use crate::{trap::allocate_target_irq, x86_64_util::out8, IrqAllocateHandle};
+use crate::trap::IrqAllocateHandle;
+use crate::{trap::allocate_target_irq, x86_64_util::out8};
 use core::sync::atomic::Ordering::Relaxed;
 use core::sync::atomic::{AtomicBool, AtomicU8};
 
