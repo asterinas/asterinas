@@ -16,7 +16,6 @@
 extern crate alloc;
 
 mod boot;
-pub(crate) mod cell;
 pub mod config;
 pub mod cpu;
 pub mod device;
