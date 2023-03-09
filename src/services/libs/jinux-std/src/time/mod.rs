@@ -41,10 +41,9 @@ impl TryFrom<clockid_t> for ClockID {
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
-
 pub struct timespec_t {
-    sec: time_t,
-    nsec: i64,
+    pub sec: time_t,
+    pub nsec: i64,
 }
 
 impl From<Duration> for timespec_t {

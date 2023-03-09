@@ -3,6 +3,7 @@ use alloc::str;
 use alloc::string::String;
 use core::any::Any;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 use spin::{RwLock, RwLockWriteGuard};
 
@@ -307,6 +308,22 @@ impl Inode for RamInode {
 
     fn resize(&self, new_size: usize) {
         self.0.write().metadata.size = new_size;
+    }
+
+    fn atime(&self) -> Duration {
+        self.0.read().metadata.atime
+    }
+
+    fn set_atime(&self, time: Duration) {
+        self.0.write().metadata.atime = time;
+    }
+
+    fn mtime(&self) -> Duration {
+        self.0.read().metadata.mtime
+    }
+
+    fn set_mtime(&self, time: Duration) {
+        self.0.write().metadata.mtime = time;
     }
 
     fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {

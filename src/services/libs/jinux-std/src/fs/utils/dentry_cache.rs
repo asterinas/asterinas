@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use alloc::string::String;
+use core::time::Duration;
 use spin::RwLockWriteGuard;
 
 use super::{InodeMode, InodeType, Metadata, Vnode, NAME_MAX};
@@ -222,6 +223,22 @@ impl Dentry {
 
     pub fn inode_len(&self) -> usize {
         self.vnode.len()
+    }
+
+    pub fn atime(&self) -> Duration {
+        self.vnode.atime()
+    }
+
+    pub fn set_atime(&self, time: Duration) {
+        self.vnode.set_atime(time)
+    }
+
+    pub fn mtime(&self) -> Duration {
+        self.vnode.mtime()
+    }
+
+    pub fn set_mtime(&self, time: Duration) {
+        self.vnode.set_mtime(time)
     }
 
     pub fn abs_path(&self) -> String {

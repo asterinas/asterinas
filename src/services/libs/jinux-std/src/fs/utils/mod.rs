@@ -7,11 +7,10 @@ pub use dirent_writer::{DirentWriter, DirentWriterContext};
 pub use events::IoEvents;
 pub use fcntl::FcntlCmd;
 pub use fs::{FileSystem, SuperBlock};
-pub use inode::{Inode, InodeMode, InodeType, Metadata, Timespec};
+pub use inode::{Inode, InodeMode, InodeType, Metadata};
 pub use ioctl::IoctlCmd;
 pub use page_cache::PageCacheManager;
 pub use poll::{c_nfds, c_pollfd, PollFd};
-pub use stat::Stat;
 pub use status_flags::StatusFlags;
 pub use vnode::Vnode;
 
@@ -26,7 +25,6 @@ mod inode;
 mod ioctl;
 mod page_cache;
 mod poll;
-mod stat;
 mod status_flags;
 mod vnode;
 

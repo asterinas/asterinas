@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::rights::Rights;
 use crate::vm::vmo::{Vmo, VmoFlags, VmoOptions};
 use alloc::string::String;
+use core::time::Duration;
 use jinux_frame::vm::VmIo;
 
 /// VFS-level representation of an inode
@@ -181,5 +182,21 @@ impl Vnode {
 
     pub fn len(&self) -> usize {
         self.inner.read().inode.len()
+    }
+
+    pub fn atime(&self) -> Duration {
+        self.inner.read().inode.atime()
+    }
+
+    pub fn set_atime(&self, time: Duration) {
+        self.inner.read().inode.set_atime(time)
+    }
+
+    pub fn mtime(&self) -> Duration {
+        self.inner.read().inode.mtime()
+    }
+
+    pub fn set_mtime(&self, time: Duration) {
+        self.inner.read().inode.set_mtime(time)
     }
 }

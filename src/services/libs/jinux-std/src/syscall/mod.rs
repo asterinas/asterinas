@@ -53,6 +53,7 @@ use crate::syscall::symlink::{sys_symlink, sys_symlinkat};
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::uname::sys_uname;
 use crate::syscall::unlink::{sys_unlink, sys_unlinkat};
+use crate::syscall::utimens::sys_utimensat;
 use crate::syscall::wait4::sys_wait4;
 use crate::syscall::waitid::sys_waitid;
 use crate::syscall::write::sys_write;
@@ -112,6 +113,7 @@ mod symlink;
 mod tgkill;
 mod uname;
 mod unlink;
+mod utimens;
 mod wait4;
 mod waitid;
 mod write;
@@ -215,6 +217,7 @@ define_syscall_nums!(
     SYS_SYMLINKAT = 266,
     SYS_READLINKAT = 267,
     SYS_SET_ROBUST_LIST = 273,
+    SYS_UTIMENSAT = 280,
     SYS_PRLIMIT64 = 302
 );
 
@@ -341,6 +344,7 @@ pub fn syscall_dispatch(
         SYS_SYMLINKAT => syscall_handler!(3, sys_symlinkat, args),
         SYS_READLINKAT => syscall_handler!(4, sys_readlinkat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
+        SYS_UTIMENSAT => syscall_handler!(4, sys_utimensat, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
         _ => {
             error!("Unimplemented syscall number: {}", syscall_number);
