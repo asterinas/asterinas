@@ -12,7 +12,7 @@ use alloc::{collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use bitflags::bitflags;
 use component::ComponentInitError;
 use device::VirtioDevice;
-use jinux_frame::{offset_of, TrapFrame};
+use jinux_frame::{offset_of, trap::TrapFrame};
 use jinux_pci::util::{PCIDevice, BAR};
 use jinux_util::frame_ptr::InFramePtr;
 use log::{debug, info};

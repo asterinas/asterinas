@@ -34,7 +34,6 @@ fn main() -> anyhow::Result<()> {
         path.canonicalize().unwrap()
     };
 
-
     #[cfg(feature = "limine")]
     call_limine_build_script(&kernel_binary_path).unwrap();
     // add .iso

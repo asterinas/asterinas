@@ -23,7 +23,7 @@ pub mod device;
 mod driver;
 mod error;
 pub mod logger;
-pub(crate) mod mm;
+pub mod mm;
 pub mod prelude;
 pub mod sync;
 pub mod task;
@@ -39,18 +39,11 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use core::{mem, panic::PanicInfo};
-pub use device::serial::receive_char;
 pub use limine::LimineModuleRequest;
-pub use mm::address::{align_down, align_up, is_aligned, virt_to_phys};
-pub use mm::page_table::translate_not_offset_virtual_address;
-pub use trap::{allocate_irq, IrqAllocateHandle};
 use trap::{IrqCallbackHandle, IrqLine};
-pub use trapframe::TrapFrame;
+use trapframe::TrapFrame;
 pub use util::AlignExt;
-pub use x86_64::registers::rflags::read as get_rflags;
-pub use x86_64::registers::rflags::RFlags;
 use x86_64_util::enable_common_cpu_features;
-pub use x86_64_util::{disable_interrupts, enable_interrupts, hlt};
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 

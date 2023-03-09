@@ -28,7 +28,7 @@ fn test_input() {
     jinux_std::driver::tty::register_serial_input_callback(input_callback);
     unsafe {
         while INPUT_VALUE == 0 {
-            jinux_frame::hlt();
+            x86_64::instructions::hlt();
         }
         // println!("input value:{}", INPUT_VALUE);
     }

@@ -9,7 +9,7 @@ pub(crate) mod page_table;
 pub use self::{
     frame_allocator::PhysFrame,
     memory_set::{MapArea, MemorySet},
-    page_table::PageTable,
+    page_table::{translate_not_offset_virtual_address, PageTable},
 };
 
 use address::PhysAddr;
