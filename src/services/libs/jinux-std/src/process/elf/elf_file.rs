@@ -51,7 +51,7 @@ impl Elf {
     pub fn entry_point(&self) -> Vaddr {
         self.elf_header.pt2.entry_point as Vaddr
     }
-    /// page header table offset
+    /// program header table offset
     pub fn ph_off(&self) -> u64 {
         self.elf_header.pt2.ph_offset
     }

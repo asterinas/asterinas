@@ -117,11 +117,16 @@ impl PosixThread {
         // If clear_ctid !=0 ,do a futex wake and write zero to the clear_ctid addr.
         debug!("wake up ctid");
         if *clear_ctid != 0 {
+            debug!("futex wake");
             futex_wake(*clear_ctid, 1)?;
+            debug!("write ctid");
             // FIXME: the correct write length?
-            write_val_to_user(*clear_ctid, &0i32)?;
+            debug!("ctid = 0x{:x}", *clear_ctid);
+            write_val_to_user(*clear_ctid, &0u32).unwrap();
+            debug!("clear ctid");
             *clear_ctid = 0;
         }
+        debug!("wake up ctid succeeds");
         // exit the robust list: walk the robust list; mark futex words as dead and do futex wake
         self.wake_robust_list(tid);
 

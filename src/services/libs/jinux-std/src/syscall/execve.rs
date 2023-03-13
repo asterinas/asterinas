@@ -29,6 +29,9 @@ pub fn sys_execve(
     let mut thread_name = posix_thread.thread_name().lock();
     let new_thread_name = ThreadName::new_from_executable_path(&executable_path)?;
     *thread_name = Some(new_thread_name);
+    // clear ctid
+    // FIXME: should we clear ctid when execve?
+    *posix_thread.clear_child_tid().lock() = 0;
 
     // let elf_file_content = crate::user_apps::read_execve_hello_content();
     let current = current!();
