@@ -19,7 +19,7 @@ pub fn sys_mkdirat(
     log_syscall_entry!(SYS_MKDIRAT);
     let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
     debug!(
-        "dirfd = {}, pathname = {:?}, mode = {}",
+        "dirfd = {}, pathname = {:?}, mode = 0o{:o}",
         dirfd, pathname, mode
     );
 
@@ -33,7 +33,12 @@ pub fn sys_mkdirat(
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
     let inode_mode = InodeMode::from_bits_truncate(mode);
-    let _ = dir_dentry.create(&name.trim_end_matches('/'), InodeType::Dir, inode_mode)?;
+    let _ = dir_dentry.mknod(
+        &name.trim_end_matches('/'),
+        InodeType::Dir,
+        inode_mode,
+        None,
+    )?;
     Ok(SyscallReturn::Return(0))
 }
 

@@ -104,7 +104,7 @@ impl FsResolver {
                 if !dir_dentry.vnode().inode_mode().is_writable() {
                     return_errno_with_message!(Errno::EPERM, "file cannot be created");
                 }
-                let new_dentry = dir_dentry.create(&file_name, InodeType::File, inode_mode)?;
+                let new_dentry = dir_dentry.mknod(&file_name, InodeType::File, inode_mode, None)?;
                 new_dentry
             }
             Err(e) => return Err(e),

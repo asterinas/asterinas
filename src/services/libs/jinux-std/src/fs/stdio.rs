@@ -53,7 +53,7 @@ impl File for Stdin {
 
     fn metadata(&self) -> Metadata {
         Metadata {
-            dev: 0,
+            dev: Default::default(),
             ino: 0,
             size: 0,
             blk_size: 1024,
@@ -94,7 +94,7 @@ impl File for Stdout {
 
     fn metadata(&self) -> Metadata {
         Metadata {
-            dev: 0,
+            dev: Default::default(),
             ino: 0,
             size: 0,
             blk_size: 1024,
@@ -136,7 +136,7 @@ impl File for Stderr {
 
     fn metadata(&self) -> Metadata {
         Metadata {
-            dev: 0,
+            dev: Default::default(),
             ino: 0,
             size: 0,
             blk_size: 1024,

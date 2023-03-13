@@ -1,4 +1,6 @@
-use super::{DirentWriterContext, Inode, InodeMode, InodeType, Metadata, PageCacheManager};
+use super::{
+    DeviceId, DirentWriterContext, Inode, InodeMode, InodeType, Metadata, PageCacheManager,
+};
 use crate::prelude::*;
 use crate::rights::Rights;
 use crate::vm::vmo::{Vmo, VmoFlags, VmoOptions};
@@ -126,8 +128,14 @@ impl Vnode {
         Ok(len)
     }
 
-    pub fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
-        let inode = self.inner.read().inode.mknod(name, type_, mode)?;
+    pub fn mknod(
+        &self,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+        dev: Option<DeviceId>,
+    ) -> Result<Self> {
+        let inode = self.inner.read().inode.mknod(name, type_, mode, dev)?;
         Self::new(inode)
     }
 

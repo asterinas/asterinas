@@ -74,9 +74,49 @@ impl InodeMode {
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Default, Debug, Eq, PartialEq)]
+pub struct DeviceId(usize);
+
+impl DeviceId {
+    /// Combines major and minor device IDs to produce a device ID.
+    fn make_dev(major: u32, minor: u32) -> Self {
+        let major = major as usize;
+        let minor = minor as usize;
+        Self(
+            ((major & 0xffff_f000) << 32)
+                | ((major & 0x0000_0fff) << 8)
+                | ((minor & 0xffff_ff00) << 12)
+                | (minor & 0x0000_00ff),
+        )
+    }
+
+    /// Get the device major ID.
+    fn major(&self) -> u32 {
+        (((self.0 >> 32 >> 1) & 0xffff_f000) | ((self.0 >> 8) & 0x0000_0fff)) as u32
+    }
+
+    /// Get the device minor ID.
+    fn minor(&self) -> u32 {
+        (((self.0 >> 12) & 0xffff_ff00) | (self.0 & 0x0000_00ff)) as u32
+    }
+}
+
+impl From<usize> for DeviceId {
+    fn from(dev: usize) -> Self {
+        Self(dev)
+    }
+}
+
+impl Into<usize> for DeviceId {
+    fn into(self) -> usize {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Metadata {
-    pub dev: usize,
+    pub dev: DeviceId,
     pub ino: usize,
     pub size: usize,
     pub blk_size: usize,
@@ -95,7 +135,7 @@ pub struct Metadata {
 impl Metadata {
     pub fn new_dir(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
-            dev: 0,
+            dev: Default::default(),
             ino,
             size: 2,
             blk_size: sb.bsize,
@@ -114,7 +154,7 @@ impl Metadata {
 
     pub fn new_file(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
-            dev: 0,
+            dev: Default::default(),
             ino,
             size: 0,
             blk_size: sb.bsize,
@@ -133,7 +173,7 @@ impl Metadata {
 
     pub fn new_symlink(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
-            dev: 0,
+            dev: Default::default(),
             ino,
             size: 0,
             blk_size: sb.bsize,
@@ -173,7 +213,13 @@ pub trait Inode: Any + Sync + Send {
 
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize>;
 
-    fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
+    fn mknod(
+        &self,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+        dev: Option<DeviceId>,
+    ) -> Result<Arc<dyn Inode>>;
 
     fn readdir(&self, ctx: &mut DirentWriterContext) -> Result<usize>;
 

@@ -7,7 +7,7 @@ pub use dirent_writer::{DirentWriter, DirentWriterContext};
 pub use events::IoEvents;
 pub use fcntl::FcntlCmd;
 pub use fs::{FileSystem, SuperBlock};
-pub use inode::{Inode, InodeMode, InodeType, Metadata, Timespec};
+pub use inode::{DeviceId, Inode, InodeMode, InodeType, Metadata, Timespec};
 pub use ioctl::IoctlCmd;
 pub use page_cache::PageCacheManager;
 pub use poll::{c_nfds, c_pollfd, PollFd};

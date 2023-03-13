@@ -8,7 +8,8 @@ use spin::{RwLock, RwLockWriteGuard};
 
 use super::*;
 use crate::fs::utils::{
-    DirentWriterContext, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
+    DeviceId, DirentWriterContext, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+    SuperBlock,
 };
 
 pub struct RamFS {
@@ -309,7 +310,13 @@ impl Inode for RamInode {
         self.0.write().metadata.size = new_size;
     }
 
-    fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn mknod(
+        &self,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+        dev: Option<DeviceId>,
+    ) -> Result<Arc<dyn Inode>> {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }

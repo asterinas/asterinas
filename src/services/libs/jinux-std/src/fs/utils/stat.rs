@@ -48,7 +48,7 @@ pub struct Stat {
 impl From<Metadata> for Stat {
     fn from(info: Metadata) -> Self {
         Self {
-            st_dev: info.dev,
+            st_dev: info.dev.into(),
             st_ino: info.ino,
             st_nlink: info.nlinks,
             st_mode: info.type_ as u32 | info.mode.bits() as u32,

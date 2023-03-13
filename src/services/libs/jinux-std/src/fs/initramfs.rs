@@ -34,14 +34,14 @@ pub fn init(ramdisk_buf: &[u8]) -> Result<()> {
         let mode = InodeMode::from_bits_truncate(metadata.permission_mode());
         match metadata.file_type() {
             FileType::File => {
-                let dentry = parent.create(name, InodeType::File, mode)?;
+                let dentry = parent.mknod(name, InodeType::File, mode, None)?;
                 dentry.vnode().write_at(0, entry.data())?;
             }
             FileType::Dir => {
-                let _ = parent.create(name, InodeType::Dir, mode)?;
+                let _ = parent.mknod(name, InodeType::Dir, mode, None)?;
             }
             FileType::Link => {
-                let dentry = parent.create(name, InodeType::SymLink, mode)?;
+                let dentry = parent.mknod(name, InodeType::SymLink, mode, None)?;
                 let link_content = core::str::from_utf8(entry.data())?;
                 dentry.vnode().write_link(link_content)?;
             }

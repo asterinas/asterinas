@@ -21,7 +21,7 @@ pub fn sys_openat(
     log_syscall_entry!(SYS_OPENAT);
     let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
     debug!(
-        "dirfd = {}, pathname = {:?}, flags = {}, mode = {}",
+        "dirfd = {}, pathname = {:?}, flags = {}, mode = 0o{:o}",
         dirfd, pathname, flags, mode
     );
 

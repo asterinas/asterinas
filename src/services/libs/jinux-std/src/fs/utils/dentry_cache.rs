@@ -2,7 +2,7 @@ use crate::prelude::*;
 use alloc::string::String;
 use spin::RwLockWriteGuard;
 
-use super::{InodeMode, InodeType, Metadata, Vnode, NAME_MAX};
+use super::{DeviceId, InodeMode, InodeType, Metadata, Vnode, NAME_MAX};
 
 pub struct Dentry {
     inner: RwLock<Dentry_>,
@@ -72,7 +72,13 @@ impl Dentry {
         &self.vnode
     }
 
-    pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
+    pub fn mknod(
+        &self,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+        dev: Option<DeviceId>,
+    ) -> Result<Arc<Self>> {
         if self.vnode.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -81,7 +87,7 @@ impl Dentry {
             return_errno!(Errno::EEXIST);
         }
         let child = {
-            let vnode = self.vnode.mknod(name, type_, mode)?;
+            let vnode = self.vnode.mknod(name, type_, mode, dev)?;
             Dentry::new(name, vnode, Some(inner.this.clone()))
         };
         inner.children.insert(String::from(name), child.clone());

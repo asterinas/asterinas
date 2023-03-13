@@ -30,6 +30,7 @@ use crate::syscall::link::{sys_link, sys_linkat};
 use crate::syscall::lseek::sys_lseek;
 use crate::syscall::madvise::sys_madvise;
 use crate::syscall::mkdir::{sys_mkdir, sys_mkdirat};
+use crate::syscall::mknod::{sys_mknod, sys_mknodat};
 use crate::syscall::mmap::sys_mmap;
 use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::munmap::sys_munmap;
@@ -89,6 +90,7 @@ mod link;
 mod lseek;
 mod madvise;
 mod mkdir;
+mod mknod;
 mod mmap;
 mod mprotect;
 mod munmap;
@@ -197,6 +199,7 @@ define_syscall_nums!(
     SYS_SETPGID = 109,
     SYS_GETPPID = 110,
     SYS_GETPGRP = 111,
+    SYS_MKNOD = 133,
     SYS_PRCTL = 157,
     SYS_ARCH_PRCTL = 158,
     SYS_GETTID = 186,
@@ -208,6 +211,7 @@ define_syscall_nums!(
     SYS_WAITID = 247,
     SYS_OPENAT = 257,
     SYS_MKDIRAT = 258,
+    SYS_MKNODAT = 259,
     SYS_FSTATAT = 262,
     SYS_UNLINKAT = 263,
     SYS_RENAMEAT = 264,
@@ -323,6 +327,7 @@ pub fn syscall_dispatch(
         SYS_SETPGID => syscall_handler!(2, sys_setpgid, args),
         SYS_GETPPID => syscall_handler!(0, sys_getppid),
         SYS_GETPGRP => syscall_handler!(0, sys_getpgrp),
+        SYS_MKNOD => syscall_handler!(3, sys_mknod, args),
         SYS_PRCTL => syscall_handler!(5, sys_prctl, args),
         SYS_ARCH_PRCTL => syscall_handler!(2, sys_arch_prctl, args, context),
         SYS_GETTID => syscall_handler!(0, sys_gettid),
@@ -334,6 +339,7 @@ pub fn syscall_dispatch(
         SYS_WAITID => syscall_handler!(5, sys_waitid, args),
         SYS_OPENAT => syscall_handler!(4, sys_openat, args),
         SYS_MKDIRAT => syscall_handler!(3, sys_mkdirat, args),
+        SYS_MKNODAT => syscall_handler!(4, sys_mknodat, args),
         SYS_FSTATAT => syscall_handler!(4, sys_fstatat, args),
         SYS_UNLINKAT => syscall_handler!(3, sys_unlinkat, args),
         SYS_RENAMEAT => syscall_handler!(4, sys_renameat, args),

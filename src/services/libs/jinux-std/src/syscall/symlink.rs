@@ -41,10 +41,11 @@ pub fn sys_symlinkat(
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
 
-    let new_dentry = dir_dentry.create(
+    let new_dentry = dir_dentry.mknod(
         &link_name,
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),
+        None,
     )?;
     new_dentry.write_link(&target)?;
     Ok(SyscallReturn::Return(0))
