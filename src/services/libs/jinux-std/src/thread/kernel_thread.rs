@@ -23,7 +23,7 @@ pub trait KernelThreadExt {
         thread.run();
         thread
     }
-    /// join a kernel thread
+    /// join a kernel thread, returns if the kernel thread exit
     fn join(&self);
 }
 
@@ -36,7 +36,6 @@ impl KernelThreadExt for Thread {
     where
         F: Fn() + Send + Sync + 'static,
     {
-
         let thread_fn = move || {
             task_fn();
             let current_thread = current_thread!();

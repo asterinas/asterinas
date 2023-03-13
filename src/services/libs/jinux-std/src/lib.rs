@@ -21,7 +21,7 @@
 use crate::{
     prelude::*,
     thread::{kernel_thread::KernelThreadExt, Thread},
-    user_apps::{get_all_apps, get_busybox_app, UserApp},
+    user_apps::{get_busybox_app, UserApp},
 };
 use process::Process;
 
@@ -67,21 +67,6 @@ pub fn init_thread() {
         "[jinux-std/lib.rs] spawn kernel thread, tid = {}",
         thread.tid()
     );
-
-    // FIXME: should be running this apps before we running shell?
-    println!("");
-    println!("[kernel] Running test programs");
-    println!("");
-    // Run test apps
-    for app in get_all_apps().unwrap().into_iter() {
-        let UserApp {
-            executable_path: app_name,
-            argv,
-            envp,
-        } = app;
-        println!("[jinux-std/lib.rs] spwan {:?} process", app_name);
-        Process::spawn_user_process(app_name.clone(), argv, Vec::new());
-    }
 
     // Run busybox ash
     let UserApp {

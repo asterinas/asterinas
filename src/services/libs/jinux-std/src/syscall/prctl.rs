@@ -10,14 +10,14 @@ use super::SYS_PRCTL;
 pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_PRCTL);
     let prctl_cmd = PrctlCmd::from_args(option, arg2, arg3, arg4, arg5)?;
-    debug!("prctl cmd = {:?}", prctl_cmd);
+    debug!("prctl cmd = {:x?}", prctl_cmd);
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     match prctl_cmd {
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
             let thread_name = posix_thread.thread_name().lock();
             if let Some(thread_name) = &*thread_name {
-                if let Some(thread_name) = thread_name.get_name()? {
+                if let Some(thread_name) = thread_name.name()? {
                     write_bytes_to_user(write_to_addr, thread_name.to_bytes_with_nul())?;
                 }
             }

@@ -156,6 +156,14 @@ impl InitStack {
     }
 
     fn write_stack_content(&mut self, root_vmar: &Vmar<Full>, elf: &Elf) -> Result<()> {
+        // write a zero page. When a user program tries to read a cstring(like argv) from init stack,
+        // it will typically read 4096 bytes and then find the first '\0' in the buffer
+        // (we now read 128 bytes, which is set by MAX_FILENAME_LEN).
+        // If we don't have this zero page, the read may go into guard page,
+        // which will cause unrecoverable page fault(The guard page is not backed up by any vmo).
+        // So we add a zero page here, to ensure the read will not go into guard page.
+        // FIXME: Some other OSes put the first page of excutable file here.
+        self.write_bytes(&[0u8; PAGE_SIZE], root_vmar)?;
         // write envp string
         let envp_pointers = self.write_envp_strings(root_vmar)?;
         // write argv string
@@ -201,6 +209,7 @@ impl InitStack {
         let mut argv_pointers = Vec::with_capacity(argv.len());
         for argv in argv.iter().rev() {
             let pointer = self.write_cstring(argv, root_vmar)?;
+            debug!("argv address = 0x{:x}", pointer);
             argv_pointers.push(pointer);
         }
         argv_pointers.reverse();

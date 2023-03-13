@@ -1,6 +1,8 @@
 use crate::prelude::*;
 
 pub const MAX_THREAD_NAME_LEN: usize = 16;
+
+#[derive(Debug)]
 pub struct ThreadName {
     inner: [u8; MAX_THREAD_NAME_LEN],
     count: usize,
@@ -14,13 +16,13 @@ impl ThreadName {
         }
     }
 
-    pub fn new_from_executable_path(elf_path: &str) -> Result<Self> {
+    pub fn new_from_executable_path(executable_path: &str) -> Result<Self> {
         let mut thread_name = ThreadName::new();
-        let elf_file_name = elf_path
+        let executable_file_name = executable_path
             .split('/')
             .last()
             .ok_or(Error::with_message(Errno::EINVAL, "invalid elf path"))?;
-        let name = CString::new(elf_file_name)?;
+        let name = CString::new(executable_file_name)?;
         thread_name.set_name(&name)?;
         Ok(thread_name)
     }
@@ -40,7 +42,7 @@ impl ThreadName {
         Ok(())
     }
 
-    pub fn get_name(&self) -> Result<Option<&CStr>> {
-        Ok(Some(&(CStr::from_bytes_with_nul(&self.inner)?)))
+    pub fn name(&self) -> Result<Option<&CStr>> {
+        Ok(Some(&(CStr::from_bytes_until_nul(&self.inner)?)))
     }
 }

@@ -1,5 +1,3 @@
-use core::ops::Range;
-
 use crate::fs::file_handle::FileHandle;
 use crate::fs::utils::SeekFrom;
 use crate::prelude::*;
