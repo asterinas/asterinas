@@ -86,7 +86,7 @@ pub fn run_first_process() -> ! {
     unreachable!()
 }
 
-fn run_busybox() -> Result<()> {
+fn run_busybox() -> Result<Arc<Process>> {
     let executable_path = "/busybox/busybox";
     let argv = ["sh", "-l"];
     let envp = [
@@ -108,6 +108,5 @@ fn run_busybox() -> Result<()> {
         .collect();
     println!("");
     println!("BusyBox v1.35.0 built-in shell (ash)\n");
-    Process::spawn_user_process(executable_path, argv, envp);
-    Ok(())
+    Process::spawn_user_process(executable_path, argv, envp)
 }

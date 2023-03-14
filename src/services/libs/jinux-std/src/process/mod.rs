@@ -14,7 +14,7 @@ use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
 use crate::prelude::*;
 use crate::rights::Full;
-use crate::thread::{thread_table, Thread};
+use crate::thread::{allocate_tid, thread_table, Thread};
 use crate::tty::get_n_tty;
 use crate::vm::vmar::Vmar;
 use jinux_frame::sync::WaitQueue;
@@ -140,63 +140,58 @@ impl Process {
         executable_path: &str,
         argv: Vec<CString>,
         envp: Vec<CString>,
-    ) -> Arc<Self> {
-        let process = Process::create_user_process(executable_path, argv, envp);
+    ) -> Result<Arc<Self>> {
+        let process = Process::create_user_process(executable_path, argv, envp)?;
         // FIXME: How to determine the fg process group?
         let pgid = process.pgid();
         // FIXME: tty should be a parameter?
         let tty = get_n_tty();
         tty.set_fg(pgid);
         process.run();
-        process
+        Ok(process)
     }
 
     fn create_user_process(
         executable_path: &str,
         argv: Vec<CString>,
         envp: Vec<CString>,
-    ) -> Arc<Self> {
-        let user_process = Arc::new_cyclic(|weak_process_ref| {
-            let weak_process = weak_process_ref.clone();
-            let root_vmar = Vmar::<Full>::new_root().unwrap();
-            let fs = FsResolver::new();
-            let thread = Thread::new_posix_thread_from_executable(
-                &root_vmar,
-                &fs,
-                executable_path,
-                weak_process,
-                argv,
-                envp,
-            );
-            let pid = thread.tid();
-            // spawn process will be called in a kernel thread, so the parent process is always none.
-            let parent = Weak::new();
-            let user_vm = UserVm::new();
-            let file_table = FileTable::new_with_stdio();
-            let fs = FsResolver::new();
-            let sig_dispositions = SigDispositions::new();
+    ) -> Result<Arc<Self>> {
+        let root_vmar = Vmar::<Full>::new_root()?;
+        let fs = FsResolver::new();
+        let pid = allocate_tid();
+        let parent = Weak::new();
+        let process_group = Weak::new();
+        let user_vm = UserVm::new();
+        let file_table = FileTable::new_with_stdio();
+        let sig_dispositions = SigDispositions::new();
+        let user_process = Arc::new(Process::new(
+            pid,
+            parent,
+            vec![],
+            Some(executable_path.to_string()),
+            Some(user_vm),
+            Arc::new(root_vmar),
+            process_group,
+            Arc::new(Mutex::new(file_table)),
+            Arc::new(RwLock::new(fs)),
+            Arc::new(Mutex::new(sig_dispositions)),
+        ));
 
-            let process = Process::new(
-                pid,
-                parent,
-                vec![thread],
-                Some(executable_path.to_string()),
-                Some(user_vm),
-                Arc::new(root_vmar),
-                Weak::new(),
-                Arc::new(Mutex::new(file_table)),
-                Arc::new(RwLock::new(fs)),
-                Arc::new(Mutex::new(sig_dispositions)),
-            );
-            process
-        });
+        let thread = Thread::new_posix_thread_from_executable(
+            pid,
+            &user_process.root_vmar(),
+            &user_process.fs().read(),
+            executable_path,
+            Arc::downgrade(&user_process),
+            argv,
+            envp,
+        )?;
+        user_process.threads().lock().push(thread);
+
         // Set process group
         user_process.create_and_set_process_group();
         process_table::add_process(user_process.clone());
-        if let Some(parent) = user_process.parent() {
-            parent.add_child(user_process.clone());
-        }
-        user_process
+        Ok(user_process)
     }
 
     /// returns the pid of the process
