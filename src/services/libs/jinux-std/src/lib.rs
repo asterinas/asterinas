@@ -21,7 +21,6 @@
 use crate::{
     prelude::*,
     thread::{kernel_thread::KernelThreadExt, Thread},
-    user_apps::{get_busybox_app, UserApp},
 };
 use process::Process;
 
@@ -40,7 +39,6 @@ pub mod syscall;
 pub mod thread;
 pub mod time;
 pub mod tty;
-mod user_apps;
 mod util;
 pub mod vm;
 
@@ -50,7 +48,7 @@ pub fn init() {
     fs::initramfs::init(read_ramdisk_content()).unwrap();
 }
 
-pub fn init_thread() {
+fn init_thread() {
     println!(
         "[kernel] Spawn init thread, tid = {}",
         current_thread!().tid()
@@ -68,15 +66,7 @@ pub fn init_thread() {
         thread.tid()
     );
 
-    // Run busybox ash
-    let UserApp {
-        executable_path: app_name,
-        argv,
-        envp,
-    } = get_busybox_app().unwrap();
-    println!("");
-    println!("BusyBox v1.35.0 built-in shell (ash)\n");
-    Process::spawn_user_process(app_name.clone(), argv, Vec::new());
+    run_busybox().expect("run busybox fails");
 
     loop {
         // We don't have preemptive scheduler now.
@@ -94,4 +84,30 @@ fn read_ramdisk_content() -> &'static [u8] {
 pub fn run_first_process() -> ! {
     Thread::spawn_kernel_thread(init_thread);
     unreachable!()
+}
+
+fn run_busybox() -> Result<()> {
+    let executable_path = "/busybox/busybox";
+    let argv = ["sh", "-l"];
+    let envp = [
+        "SHELL=/bin/sh",
+        "PWD=/",
+        "LOGNAME=root",
+        "HOME=/",
+        "USER=root",
+        "PATH=/bin",
+        "OLDPWD=/",
+    ];
+    let argv = argv
+        .into_iter()
+        .map(|arg| CString::new(arg).unwrap())
+        .collect();
+    let envp = envp
+        .into_iter()
+        .map(|env| CString::new(env).unwrap())
+        .collect();
+    println!("");
+    println!("BusyBox v1.35.0 built-in shell (ash)\n");
+    Process::spawn_user_process(executable_path, argv, envp);
+    Ok(())
 }
