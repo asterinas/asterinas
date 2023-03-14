@@ -1,10 +1,9 @@
-use alloc::string::String;
 use jinux_frame::{cpu::CpuContext, user::UserSpace};
 
 use crate::{
     fs::fs_resolver::FsResolver,
     prelude::*,
-    process::{setup_root_vmar, Process},
+    process::{program_loader::load_program_to_root_vmar, Process},
     rights::Full,
     thread::{allocate_tid, Thread},
     vm::vmar::Vmar,
@@ -16,7 +15,7 @@ pub trait PosixThreadExt {
     fn new_posix_thread_from_executable(
         root_vmar: &Vmar<Full>,
         fs_resolver: &FsResolver,
-        executable_path: String,
+        executable_path: &str,
         process: Weak<Process>,
         argv: Vec<CString>,
         envp: Vec<CString>,
@@ -28,17 +27,17 @@ impl PosixThreadExt for Thread {
     fn new_posix_thread_from_executable(
         root_vmar: &Vmar<Full>,
         fs_resolver: &FsResolver,
-        executable_path: String,
+        executable_path: &str,
         process: Weak<Process>,
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Arc<Self> {
-        let elf_load_info = setup_root_vmar(
-            executable_path.clone(),
+        let elf_load_info = load_program_to_root_vmar(
+            root_vmar,
+            executable_path.to_string(),
             argv,
             envp,
             fs_resolver,
-            root_vmar,
             1,
         )
         .unwrap();
@@ -48,7 +47,7 @@ impl PosixThreadExt for Thread {
         cpu_ctx.set_rip(elf_load_info.entry_point() as _);
         cpu_ctx.set_rsp(elf_load_info.user_stack_top() as _);
         let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
-        let thread_name = Some(ThreadName::new_from_executable_path(&executable_path).unwrap());
+        let thread_name = Some(ThreadName::new_from_executable_path(executable_path).unwrap());
         let tid = allocate_tid();
         let thread_builder = PosixThreadBuilder::new(tid, user_space)
             .thread_name(thread_name)

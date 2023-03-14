@@ -4,7 +4,7 @@ use super::{constants::*, SyscallReturn};
 use crate::log_syscall_entry;
 use crate::process::posix_thread::name::ThreadName;
 use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
-use crate::process::setup_root_vmar;
+use crate::process::program_loader::load_program_to_root_vmar;
 use crate::util::{read_cstring_from_user, read_val_from_user};
 use crate::{prelude::*, syscall::SYS_EXECVE};
 
@@ -44,7 +44,8 @@ pub fn sys_execve(
     user_vm.set_default();
     // load elf content to new vm space
     let fs_resolver = &*current.fs().read();
-    let elf_load_info = setup_root_vmar(executable_path, argv, envp, fs_resolver, root_vmar, 1)?;
+    let elf_load_info =
+        load_program_to_root_vmar(root_vmar, executable_path, argv, envp, fs_resolver, 1)?;
     debug!("load elf in execve succeeds");
     // set signal disposition to default
     current.sig_dispositions().lock().inherit();

@@ -2,7 +2,7 @@
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
 
 use crate::fs::file_handle::FileHandle;
-use crate::process::elf::init_stack::InitStack;
+use crate::process::program_loader::elf::init_stack::InitStack;
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::VmoRightsOp;
 use crate::{
@@ -25,9 +25,9 @@ use super::elf_segment_pager::ElfSegmentPager;
 /// 2. create a vmo for each elf segment, create a backup pager for each segment. Then map the vmo to the root vmar.
 /// 3. write proper content to the init stack.
 pub fn load_elf_to_root_vmar(
+    root_vmar: &Vmar<Full>,
     file_header: &[u8],
     elf_file: Arc<FileHandle>,
-    root_vmar: &Vmar<Full>,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<ElfLoadInfo> {
