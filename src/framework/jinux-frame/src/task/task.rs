@@ -41,13 +41,12 @@ pub struct KernelStack {
 }
 
 impl KernelStack {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             frame: VmFrameVec::allocate(
                 &VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).is_contiguous(true),
-            )
-            .expect("out of memory"),
-        }
+            )?,
+        })
     }
 }
 
@@ -126,7 +125,7 @@ impl Task {
                 ctx: TaskContext::default(),
             }),
             exit_code: 0,
-            kstack: KernelStack::new(),
+            kstack: KernelStack::new()?,
             link: LinkedListAtomicLink::new(),
         };
 
@@ -166,7 +165,7 @@ impl Task {
                 ctx: TaskContext::default(),
             }),
             exit_code: 0,
-            kstack: KernelStack::new(),
+            kstack: KernelStack::new()?,
             link: LinkedListAtomicLink::new(),
         };
 
