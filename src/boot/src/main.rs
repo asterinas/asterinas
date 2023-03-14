@@ -6,6 +6,7 @@ use std::{
     process::{Command, ExitStatus},
     time::Duration,
 };
+
 const COMMON_ARGS: &[&str] = &[
     "--no-reboot",
     "-cpu",
@@ -27,10 +28,11 @@ const COMMON_ARGS: &[&str] = &[
 const RUN_ARGS: &[&str] = &[];
 const TEST_ARGS: &[&str] = &[];
 const TEST_TIMEOUT_SECS: u64 = 30;
+
 fn main() -> anyhow::Result<()> {
-    let mut run_args = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1);
     let kernel_binary_path = {
-        let path = PathBuf::from(run_args.next().unwrap());
+        let path = PathBuf::from(args.next().unwrap());
         path.canonicalize().unwrap()
     };
 
@@ -50,34 +52,34 @@ fn main() -> anyhow::Result<()> {
     };
 
     #[cfg(windows)]
-    let mut run_cmd = Command::new("qemu-system-x86_64.exe");
+    let mut qemu_cmd = Command::new("qemu-system-x86_64.exe");
     #[cfg(not(windows))]
-    let mut run_cmd = Command::new("qemu-system-x86_64");
+    let mut qemu_cmd = Command::new("qemu-system-x86_64");
 
     let binary_kind = runner_utils::binary_kind(&kernel_binary_path);
-    let mut args = COMMON_ARGS.clone().to_vec();
-    args.push("-drive");
+    let mut qemu_args = COMMON_ARGS.clone().to_vec();
+    qemu_args.push("-drive");
     let binding = create_fs_image(kernel_binary_path.as_path())?;
-    args.push(binding.as_str());
-    run_cmd.arg(kernel_iso_path.to_str().unwrap());
+    qemu_args.push(binding.as_str());
+    qemu_cmd.arg(kernel_iso_path.to_str().unwrap());
     if binary_kind.is_test() {
-        args.append(&mut TEST_ARGS.to_vec());
-        run_cmd.args(args);
-        run_cmd.args(run_args);
-        println!("testing:{:?}", run_cmd);
+        qemu_args.append(&mut TEST_ARGS.to_vec());
+        qemu_cmd.args(qemu_args);
+        qemu_cmd.args(args);
+        println!("testing:{:?}", qemu_cmd);
 
-        let exit_status = run_test_command(run_cmd)?;
+        let exit_status = run_test_command(qemu_cmd)?;
         match exit_status.code() {
             Some(33) => {} // success
             other => return Err(anyhow!("Test failed (exit code: {:?})", other)),
         }
     } else {
-        args.append(&mut RUN_ARGS.to_vec());
-        run_cmd.args(args);
-        run_cmd.args(run_args);
-        println!("running:{:?}", run_cmd);
+        qemu_args.append(&mut RUN_ARGS.to_vec());
+        qemu_cmd.args(qemu_args);
+        qemu_cmd.args(args);
+        println!("running:{:?}", qemu_cmd);
 
-        let exit_status = run_cmd.status()?;
+        let exit_status = qemu_cmd.status()?;
         if !exit_status.success() {
             std::process::exit(exit_status.code().unwrap_or(1));
         }
