@@ -596,9 +596,9 @@ dependencies = [
 [[package]]
 name = "trapframe"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f287ee70169f5bfddba441baf901b620e3655f16fa7815f48a7e100ec6d86a8f"
+source = "git+https://github.com/sdww0/trapframe-rs?rev=13e1065#13e106595d3cde9988e101e6b51e8fb9da38053d"
 dependencies = [
+ "log",
  "raw-cpuid",
  "x86_64",
 ]

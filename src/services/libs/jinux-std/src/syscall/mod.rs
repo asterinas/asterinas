@@ -34,6 +34,7 @@ use crate::syscall::mmap::sys_mmap;
 use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::munmap::sys_munmap;
 use crate::syscall::open::{sys_open, sys_openat};
+use crate::syscall::pause::sys_pause;
 use crate::syscall::poll::sys_poll;
 use crate::syscall::prctl::sys_prctl;
 use crate::syscall::prlimit64::sys_prlimit64;
@@ -94,6 +95,7 @@ mod mmap;
 mod mprotect;
 mod munmap;
 mod open;
+mod pause;
 mod poll;
 mod prctl;
 mod prlimit64;
@@ -173,6 +175,7 @@ define_syscall_nums!(
     SYS_MADVISE = 28,
     SYS_DUP = 32,
     SYS_DUP2 = 33,
+    SYS_PAUSE = 34,
     SYS_GETPID = 39,
     SYS_CLONE = 56,
     SYS_FORK = 57,
@@ -300,6 +303,7 @@ pub fn syscall_dispatch(
         SYS_MADVISE => syscall_handler!(3, sys_madvise, args),
         SYS_DUP => syscall_handler!(1, sys_dup, args),
         SYS_DUP2 => syscall_handler!(2, sys_dup2, args),
+        SYS_PAUSE => syscall_handler!(0, sys_pause),
         SYS_GETPID => syscall_handler!(0, sys_getpid),
         SYS_CLONE => syscall_handler!(5, sys_clone, args, context.clone()),
         SYS_FORK => syscall_handler!(0, sys_fork, context.clone()),
