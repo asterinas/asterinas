@@ -1,10 +1,11 @@
 //! User space.
 
 use crate::trap::call_irq_callback_functions;
-use crate::x86_64_util::{self, rdfsbase, wrfsbase};
 use log::debug;
 use trapframe::{TrapFrame, UserContext};
 use x86_64::registers::rflags::RFlags;
+use x86_64::registers::segmentation::Segment64;
+use x86_64::registers::segmentation::FS;
 
 use crate::cpu::CpuContext;
 use crate::prelude::*;
@@ -115,7 +116,9 @@ impl<'a> UserMode<'a> {
                 self.context.gp_regs.rflag = (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() | 0x2;
             }
             // write fsbase
-            wrfsbase(self.user_space.cpu_ctx.fs_base);
+            unsafe {
+                FS::write_base(x86_64::VirtAddr::new(self.user_space.cpu_ctx.fs_base));
+            }
             let fp_regs = self.user_space.cpu_ctx.fp_regs;
             if fp_regs.is_valid() {
                 fp_regs.restore();
@@ -123,9 +126,11 @@ impl<'a> UserMode<'a> {
             self.executed = true;
         } else {
             // write fsbase
-            if rdfsbase() != self.context.fs_base {
+            if FS::read_base().as_u64() != self.context.fs_base {
                 debug!("write fsbase: 0x{:x}", self.context.fs_base);
-                wrfsbase(self.context.fs_base);
+                unsafe {
+                    FS::write_base(x86_64::VirtAddr::new(self.context.fs_base));
+                }
             }
 
             // write fp_regs
@@ -167,12 +172,11 @@ impl<'a> UserMode<'a> {
         }
         x86_64::instructions::interrupts::enable();
         self.context = CpuContext::from(self.user_context);
+        self.context.fs_base = FS::read_base().as_u64();
         if self.user_context.trap_num != 0x100 {
-            self.context.fs_base = rdfsbase();
             // self.context.fp_regs.save();
             UserEvent::Exception
         } else {
-            self.context.fs_base = rdfsbase();
             // self.context.fp_regs.save();
             // debug!("[kernel] syscall id:{}", self.context.gp_regs.rax);
             // debug!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);

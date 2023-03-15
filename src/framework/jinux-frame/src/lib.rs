@@ -32,7 +32,6 @@ pub mod trap;
 pub mod user;
 mod util;
 pub mod vm;
-pub(crate) mod x86_64_util;
 
 pub use self::error::Error;
 pub use self::prelude::Result;
@@ -42,7 +41,6 @@ pub use limine::LimineModuleRequest;
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
 pub use util::AlignExt;
-use x86_64_util::enable_common_cpu_features;
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
@@ -74,7 +72,6 @@ fn register_irq_common_callback() {
         for i in 0..256 {
             IRQ_CALLBACK_LIST.push(IrqLine::acquire(i as u8).on_active(general_handler))
         }
-        let value = x86_64_util::cpuid(1);
     }
 }
 
@@ -93,6 +90,27 @@ fn invoke_c_init_funcs() {
     }
 }
 
+fn enable_common_cpu_features() {
+    use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
+    let mut cr4 = x86_64::registers::control::Cr4::read();
+    cr4 |= Cr4Flags::FSGSBASE | Cr4Flags::OSXSAVE | Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE;
+    unsafe {
+        x86_64::registers::control::Cr4::write(cr4);
+    }
+
+    let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
+    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
+    unsafe {
+        x86_64::registers::xcontrol::XCr0::write(xcr0);
+    }
+
+    unsafe {
+        // enable non-executable page protection
+        x86_64::registers::model_specific::Efer::update(|efer| {
+            *efer |= EferFlags::NO_EXECUTE_ENABLE;
+        });
+    }
+}
 fn general_handler(trap_frame: &TrapFrame) {
     // info!("general handler");
     // println!("{:#x?}", trap_frame);
@@ -138,7 +156,6 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
 }
 
 pub fn panic_handler() {
-    // println!("[panic]: cr3:{:x}", x86_64_util::get_cr3());
     // let mut fp: usize;
     // let stop = unsafe{
     //     Task::current().kstack.get_top()

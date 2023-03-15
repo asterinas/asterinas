@@ -4,16 +4,15 @@ use core::sync::atomic::Ordering::Relaxed;
 use acpi::{fadt::Fadt, sdt::Signature};
 use lazy_static::lazy_static;
 use spin::Mutex;
+use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
 
-use crate::{
-    time::Time,
-    x86_64_util::{in8, out8},
-};
+use crate::time::Time;
 
 use super::acpi::ACPI_TABLES;
 
-const CMOS_ADDRESS: u16 = 0x70;
-const CMOS_DATA: u16 = 0x71;
+static CMOS_ADDRESS: Mutex<PortWriteOnly<u8>> = Mutex::new(PortWriteOnly::new(0x70));
+static CMOS_DATA: Mutex<PortReadOnly<u8>> = Mutex::new(PortReadOnly::new(0x71));
+
 pub(crate) static CENTURY_REGISTER: AtomicU8 = AtomicU8::new(0);
 
 lazy_static! {
@@ -33,13 +32,17 @@ pub fn init() {
 }
 
 pub fn get_cmos(reg: u8) -> u8 {
-    out8(CMOS_ADDRESS, reg as u8);
-    in8(CMOS_DATA)
+    unsafe {
+        CMOS_ADDRESS.lock().write(reg);
+        CMOS_DATA.lock().read()
+    }
 }
 
 pub fn is_updating() -> bool {
-    out8(CMOS_ADDRESS, 0x0A);
-    in8(CMOS_DATA) & 0x80 != 0
+    unsafe {
+        CMOS_ADDRESS.lock().write(0x0A);
+        CMOS_DATA.lock().read() & 0x80 != 0
+    }
 }
 
 pub fn read() -> Time {

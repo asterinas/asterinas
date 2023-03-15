@@ -1,12 +1,13 @@
+use crate::trap::allocate_target_irq;
 use crate::trap::IrqAllocateHandle;
-use crate::{trap::allocate_target_irq, x86_64_util::out8};
 use core::sync::atomic::Ordering::Relaxed;
 use core::sync::atomic::{AtomicBool, AtomicU8};
 
-const MASTER_CMD: u16 = 0x20;
-const MASTER_DATA: u16 = MASTER_CMD + 1;
-const SLAVE_CMD: u16 = 0xA0;
-const SLAVE_DATA: u16 = SLAVE_CMD + 1;
+static MASTER_CMD: Mutex<PortWriteOnly<u8>> = Mutex::new(PortWriteOnly::new(0x20));
+static MASTER_DATA: Mutex<PortWriteOnly<u8>> = Mutex::new(PortWriteOnly::new(0x21));
+static SLAVE_CMD: Mutex<PortWriteOnly<u8>> = Mutex::new(PortWriteOnly::new(0xA0));
+static SLAVE_DATA: Mutex<PortWriteOnly<u8>> = Mutex::new(PortWriteOnly::new(0xA1));
+
 const IRQ_OFFSET: u8 = 0x20;
 
 const TIMER_IRQ_NUM: u8 = 32;
@@ -15,6 +16,7 @@ use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use log::info;
 use spin::Mutex;
+use x86_64::instructions::port::PortWriteOnly;
 
 lazy_static! {
     /// store the irq, although we have APIC for manage interrupts
@@ -96,30 +98,36 @@ pub(crate) fn disable_temp() {
 
 #[inline(always)]
 pub(crate) unsafe fn set_mask(master_mask: u8, slave_mask: u8) {
-    // Start initialization
-    out8(MASTER_CMD, 0x11);
-    out8(SLAVE_CMD, 0x11);
+    let mut master_data_lock = MASTER_DATA.lock();
+    let mut slave_data_lock = SLAVE_DATA.lock();
+    unsafe {
+        // Start initialization
+        MASTER_CMD.lock().write(0x11);
+        SLAVE_CMD.lock().write(0x11);
 
-    // Set offsets
-    // map master PIC vector 0x00~0x07 to 0x20~0x27 IRQ number
-    out8(MASTER_DATA, IRQ_OFFSET);
-    // map slave PIC vector 0x00~0x07 to 0x28~0x2f IRQ number
-    out8(SLAVE_DATA, IRQ_OFFSET + 0x08);
+        // Set offsets
+        // map master PIC vector 0x00~0x07 to 0x20~0x27 IRQ number
+        master_data_lock.write(IRQ_OFFSET);
+        // map slave PIC vector 0x00~0x07 to 0x28~0x2f IRQ number
+        slave_data_lock.write(IRQ_OFFSET + 0x08);
 
-    // Set up cascade, there is slave at IRQ2
-    out8(MASTER_DATA, 4);
-    out8(SLAVE_DATA, 2);
+        // Set up cascade, there is slave at IRQ2
+        master_data_lock.write(4);
+        slave_data_lock.write(2);
 
-    // Set up interrupt mode (1 is 8086/88 mode, 2 is auto EOI)
-    out8(MASTER_DATA, 1);
-    out8(SLAVE_DATA, 1);
+        // Set up interrupt mode (1 is 8086/88 mode, 2 is auto EOI)
+        master_data_lock.write(1);
+        slave_data_lock.write(1);
 
-    // mask interrupts
-    out8(MASTER_DATA, master_mask);
-    out8(SLAVE_DATA, slave_mask);
+        // mask interrupts
+        master_data_lock.write(master_mask);
+        slave_data_lock.write(slave_mask);
+    }
 }
 
 #[inline(always)]
 pub(crate) fn ack() {
-    out8(MASTER_CMD, 0x20);
+    unsafe {
+        MASTER_CMD.lock().write(0x20);
+    }
 }

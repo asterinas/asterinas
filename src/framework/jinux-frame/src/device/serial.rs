@@ -1,9 +1,11 @@
+//! A port-mapped UART. Copied from uart_16550.
 use alloc::{sync::Arc, vec::Vec};
 use log::debug;
 use spin::{Mutex, Once};
 use trapframe::TrapFrame;
+use x86_64::instructions::port::{Port, PortWriteOnly};
 
-use crate::{driver::pic_allocate_irq, trap::IrqAllocateHandle, x86_64_util::*};
+use crate::{driver::pic_allocate_irq, trap::IrqAllocateHandle};
 use core::fmt::{self, Write};
 
 bitflags::bitflags! {
@@ -13,13 +15,18 @@ bitflags::bitflags! {
   }
 }
 
-/// A port-mapped UART. Copied from uart_16550.
-const SERIAL_DATA: u16 = 0x3F8;
-const SERIAL_INT_EN: u16 = SERIAL_DATA + 1;
-const SERIAL_FIFO_CTRL: u16 = SERIAL_DATA + 2;
-const SERIAL_LINE_CTRL: u16 = SERIAL_DATA + 3;
-const SERIAL_MODEM_CTRL: u16 = SERIAL_DATA + 4;
-const SERIAL_LINE_STS: u16 = SERIAL_DATA + 5;
+const SERIAL_DATA_PORT: u16 = 0x3F8;
+
+static SERIAL_DATA: Mutex<Port<u8>> = Mutex::new(Port::new(SERIAL_DATA_PORT));
+static SERIAL_INT_EN: Mutex<PortWriteOnly<u8>> =
+    Mutex::new(PortWriteOnly::new(SERIAL_DATA_PORT + 1));
+static SERIAL_FIFO_CTRL: Mutex<PortWriteOnly<u8>> =
+    Mutex::new(PortWriteOnly::new(SERIAL_DATA_PORT + 2));
+static SERIAL_LINE_CTRL: Mutex<PortWriteOnly<u8>> =
+    Mutex::new(PortWriteOnly::new(SERIAL_DATA_PORT + 3));
+static SERIAL_MODEM_CTRL: Mutex<PortWriteOnly<u8>> =
+    Mutex::new(PortWriteOnly::new(SERIAL_DATA_PORT + 4));
+static SERIAL_LINE_STS: Mutex<Port<u8>> = Mutex::new(Port::new(SERIAL_DATA_PORT + 5));
 
 static CONSOLE_IRQ_CALLBACK: Once<Mutex<IrqAllocateHandle>> = Once::new();
 static SERIAL_INPUT_CALLBACKS: Mutex<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
@@ -27,23 +34,30 @@ static SERIAL_INPUT_CALLBACKS: Mutex<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>
 
 /// Initializes the serial port.
 pub(crate) fn init() {
-    // Disable interrupts
-    out8(SERIAL_INT_EN, 0x00);
-    // Enable DLAB
-    out8(SERIAL_LINE_CTRL, 0x80);
-    // Set maximum speed to 38400 bps by configuring DLL and DLM
-    out8(SERIAL_DATA, 0x03);
-    out8(SERIAL_INT_EN, 0x00);
-    // Disable DLAB and set data word length to 8 bits
-    out8(SERIAL_LINE_CTRL, 0x03);
-    // Enable FIFO, clear TX/RX queues and
-    // set interrupt watermark at 14 bytes
-    out8(SERIAL_FIFO_CTRL, 0xC7);
-    // Mark data terminal ready, signal request to send
-    // and enable auxilliary output #2 (used as interrupt line for CPU)
-    out8(SERIAL_MODEM_CTRL, 0x0B);
-    // Enable interrupts
-    out8(SERIAL_INT_EN, 0x01);
+    let mut serial_line_ctrl_lock = SERIAL_LINE_CTRL.lock();
+    let mut serial_int_en_lock = SERIAL_INT_EN.lock();
+    let mut serial_data_lock = SERIAL_DATA.lock();
+    let mut serial_fifo_ctrl_lock = SERIAL_FIFO_CTRL.lock();
+    let mut serial_modem_ctrl_lock = SERIAL_MODEM_CTRL.lock();
+    unsafe {
+        // Disable interrupts
+        serial_int_en_lock.write(0x00);
+        // Enable DLAB
+        serial_line_ctrl_lock.write(0x80);
+        // Set maximum speed to 38400 bps by configuring DLL and DLM
+        serial_data_lock.write(0x03);
+        serial_int_en_lock.write(0x00);
+        // Disable DLAB and set data word length to 8 bits
+        serial_line_ctrl_lock.write(0x03);
+        // Enable FIFO, clear TX/RX queues and
+        // set interrupt watermark at 14 bytes
+        serial_fifo_ctrl_lock.write(0xC7);
+        // Mark data terminal ready, signal request to send
+        // and enable auxilliary output #2 (used as interrupt line for CPU)
+        serial_modem_ctrl_lock.write(0x0B);
+        // Enable interrupts
+        serial_int_en_lock.write(0x01);
+    }
 }
 
 pub fn register_serial_input_callback(f: impl Fn(u8) + Send + Sync + 'static) {
@@ -81,23 +95,26 @@ fn handle_serial_input(trap_frame: &TrapFrame) {
 }
 
 fn line_sts() -> LineSts {
-    LineSts::from_bits_truncate(in8(SERIAL_LINE_STS))
+    LineSts::from_bits_truncate(unsafe { SERIAL_LINE_STS.lock().read() })
 }
 
 /// Sends a byte on the serial port.
 pub fn send(data: u8) {
-    match data {
-        8 | 0x7F => {
-            while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            out8(SERIAL_DATA, 8);
-            while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            out8(SERIAL_DATA, b' ');
-            while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            out8(SERIAL_DATA, 8)
-        }
-        _ => {
-            while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            out8(SERIAL_DATA, data);
+    let mut lock = SERIAL_DATA.lock();
+    unsafe {
+        match data {
+            8 | 0x7F => {
+                while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
+                lock.write(8);
+                while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
+                lock.write(b' ');
+                while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
+                lock.write(8);
+            }
+            _ => {
+                while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
+                lock.write(data);
+            }
         }
     }
 }
@@ -105,7 +122,7 @@ pub fn send(data: u8) {
 /// Receives a byte on the serial port. non-blocking
 pub fn receive_char() -> Option<u8> {
     if line_sts().contains(LineSts::INPUT_FULL) {
-        Some(in8(SERIAL_DATA))
+        unsafe { Some(SERIAL_DATA.lock().read()) }
     } else {
         None
     }

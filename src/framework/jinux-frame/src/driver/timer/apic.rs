@@ -4,7 +4,6 @@ use trapframe::TrapFrame;
 use crate::{
     config,
     driver::{pic, timer, xapic::XAPIC_INSTANCE},
-    x86_64_util,
 };
 use x86::apic::xapic;
 
@@ -24,13 +23,13 @@ pub fn init() {
 
     static mut IS_FINISH: bool = false;
     // wait until it is finish
-    x86_64_util::enable_interrupts();
+    x86_64::instructions::interrupts::enable();
     unsafe {
         while !IS_FINISH {
-            x86_64_util::hlt();
+            x86_64::instructions::hlt();
         }
     }
-    x86_64_util::disable_interrupts();
+    x86_64::instructions::interrupts::disable();
     drop(a);
     drop(handle);
 

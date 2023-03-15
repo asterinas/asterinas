@@ -1,8 +1,8 @@
 use crate::config::PAGE_SIZE;
-use crate::x86_64_util;
 use bitflags::bitflags;
 use core::ops::Range;
 use spin::Mutex;
+use x86_64::structures::paging::PhysFrame;
 
 use crate::mm::address::{is_aligned, VirtAddr};
 use crate::mm::{MapArea, MemorySet, PTFlags};
@@ -37,7 +37,13 @@ impl VmSpace {
     }
     /// Activate the page table, load root physical address to cr3
     pub unsafe fn activate(&self) {
-        x86_64_util::set_cr3(self.memory_set.lock().pt.root_pa.0);
+        x86_64::registers::control::Cr3::write(
+            PhysFrame::from_start_address(x86_64::PhysAddr::new(
+                self.memory_set.lock().pt.root_pa.0 as u64,
+            ))
+            .unwrap(),
+            x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
+        );
     }
 
     /// Maps some physical memory pages into the VM space according to the given
@@ -87,7 +93,7 @@ impl VmSpace {
     /// clear all mappings
     pub fn clear(&self) {
         self.memory_set.lock().clear();
-        crate::x86_64_util::flush_tlb();
+        x86_64::instructions::tlb::flush_all();
     }
 
     /// Update the VM protection permissions within the VM address range.
