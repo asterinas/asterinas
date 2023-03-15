@@ -7,9 +7,7 @@ use crate::{
     config::{ENTRY_COUNT, PAGE_SIZE, PHYS_OFFSET},
     println,
     vm::VmFrame,
-    x86_64_util,
 };
-use ::log::info;
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::{fmt, panic};
 use lazy_static::lazy_static;
@@ -213,56 +211,30 @@ fn next_table_or_create<'a>(
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
 /// Note: this may not useful for accessing usermode data, use offset first
-pub fn translate_not_offset_virtual_address(va: usize) -> usize {
-    let cr3 = x86_64_util::get_cr3();
+pub fn translate_not_offset_virtual_address(address: usize) -> usize {
+    let (cr3, _) = x86_64::registers::control::Cr3::read();
+    let cr3 = cr3.start_address().as_u64() as usize;
 
     let p4 = table_of(PhysAddr(cr3));
 
-    let a = VirtAddr(va);
+    let virtual_address = VirtAddr(address);
 
-    let pte = p4[p4_index(a)];
+    let pte = p4[p4_index(virtual_address)];
     let p3 = table_of(pte.pa());
 
-    let pte = p3[p3_index(a)];
+    let pte = p3[p3_index(virtual_address)];
     let p2 = table_of(pte.pa());
 
-    let pte = p2[p2_index(a)];
+    let pte = p2[p2_index(virtual_address)];
     let p1 = table_of(pte.pa());
 
-    let pte = p1[p1_index(a)];
-    (pte.pa().0 & ((1 << 48) - 1)) + (va & ((1 << 12) - 1))
-}
-
-pub fn print_virtual_address_translate_information(va: usize) {
-    let cr3 = x86_64_util::get_cr3();
-
-    let p4 = table_of(PhysAddr(cr3));
-
-    let a = VirtAddr(va);
-    info!("p4 index:{:x}", p4_index(a));
-    let pte = p4[p4_index(a)];
-    info!("p4 pte:{:x}", pte.0);
-
-    let p3 = table_of(pte.pa());
-    info!("p3 index:{:x}", p3_index(a));
-    let pte = p3[p3_index(a)];
-    info!("p3 pte:{:x}", pte.0);
-
-    let p2 = table_of(pte.pa());
-
-    info!("p2 index:{:x}", p2_index(a));
-    let pte = p2[p2_index(a)];
-    info!("p2 pte:{:x}", pte.0);
-
-    let p1 = table_of(pte.pa());
-
-    info!("p1 index:{:x}", p1_index(a));
-    let pte = p1[p1_index(a)];
-    info!("p1 pte:{:x}", pte.0);
+    let pte = p1[p1_index(virtual_address)];
+    (pte.pa().0 & ((1 << 48) - 1)) + (address & ((1 << 12) - 1))
 }
 
 pub(crate) fn init() {
-    let cr3 = x86_64_util::get_cr3();
+    let (cr3, _) = x86_64::registers::control::Cr3::read();
+    let cr3 = cr3.start_address().as_u64() as usize;
 
     let p4 = table_of(PhysAddr(cr3));
     // Cancel mapping in lowest addresses.

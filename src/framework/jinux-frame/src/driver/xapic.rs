@@ -1,11 +1,11 @@
-use crate::{mm, x86_64_util};
+use crate::mm;
 use log::debug;
 use spin::{Mutex, Once};
 use x86::apic::xapic;
 
 pub(crate) const IA32_APIC_BASE_MSR: u32 = 0x1B;
 pub(crate) const IA32_APIC_BASE_MSR_BSP: u32 = 0x100; // Processor is a BSP
-pub(crate) const IA32_APIC_BASE_MSR_ENABLE: u32 = 0x800;
+pub(crate) const IA32_APIC_BASE_MSR_ENABLE: u64 = 0x800;
 
 const APIC_LVT_MASK_BITS: u32 = 1 << 16;
 
@@ -40,7 +40,7 @@ impl XAPIC {
 }
 
 pub(crate) fn has_apic() -> bool {
-    let value = unsafe { x86_64_util::cpuid(1) };
+    let value = unsafe { core::arch::x86_64::__cpuid(1) };
     value.edx & 0x100 != 0
 }
 
@@ -79,13 +79,16 @@ pub fn ack() {
 
 /// set APIC base address and enable it
 fn set_apic_base_address(address: usize) {
-    x86_64_util::set_msr(
-        IA32_APIC_BASE_MSR,
-        address | IA32_APIC_BASE_MSR_ENABLE as usize,
-    )
+    unsafe {
+        x86_64::registers::model_specific::Msr::new(IA32_APIC_BASE_MSR)
+            .write(address as u64 | IA32_APIC_BASE_MSR_ENABLE);
+    }
 }
 
 /// get APIC base address
 fn get_apic_base_address() -> usize {
-    x86_64_util::get_msr(IA32_APIC_BASE_MSR) & 0xf_ffff_f000
+    unsafe {
+        (x86_64::registers::model_specific::Msr::new(IA32_APIC_BASE_MSR).read() & 0xf_ffff_f000)
+            as usize
+    }
 }
