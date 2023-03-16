@@ -26,6 +26,13 @@ pub fn load_program_to_root_vmar(
     fs_resolver: &FsResolver,
     recursion_limit: usize,
 ) -> Result<ElfLoadInfo> {
+    // Temporary use because fs_resolver cannot deal with procfs now.
+    // FIXME: removes this when procfs is ready.
+    let executable_path = if &executable_path == "/proc/self/exe" {
+        current!().executable_path().unwrap().clone()
+    } else {
+        executable_path
+    };
     let fs_path = FsPath::new(AT_FDCWD, &executable_path)?;
     let file = fs_resolver.open(&fs_path, AccessMode::O_RDONLY as u32, 0)?;
     let file_header = {
