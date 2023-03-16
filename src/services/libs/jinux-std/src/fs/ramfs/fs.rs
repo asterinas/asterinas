@@ -454,7 +454,7 @@ impl Inode for RamInode {
         if target.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
         }
-        if target
+        if !target
             .0
             .read()
             .inner
