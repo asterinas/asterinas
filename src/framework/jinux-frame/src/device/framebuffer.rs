@@ -5,8 +5,6 @@ use limine::{LimineFramebufferRequest, LimineMemoryMapEntryType};
 use spin::Mutex;
 use volatile::Volatile;
 
-use crate::mm;
-
 pub(crate) static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
 static FRAMEBUFFER_REUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
 
@@ -19,7 +17,7 @@ pub(crate) fn init() {
         assert_eq!(response.framebuffer_count, 1);
         let mut writer = None;
         let mut size = 0;
-        for i in mm::MEMORY_REGIONS.get().unwrap().iter() {
+        for i in crate::vm::MEMORY_REGIONS.get().unwrap().iter() {
             if i.typ == LimineMemoryMapEntryType::Framebuffer {
                 size = i.len as usize;
             }

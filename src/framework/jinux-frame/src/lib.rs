@@ -22,7 +22,6 @@ pub mod device;
 mod driver;
 mod error;
 pub mod logger;
-pub mod mm;
 pub mod prelude;
 pub mod sync;
 pub mod task;
@@ -58,7 +57,7 @@ pub fn init() {
     device::serial::init();
     logger::init();
     boot::init();
-    mm::init();
+    vm::init();
     trap::init();
     device::init();
     driver::init();

@@ -1,12 +1,13 @@
 use crate::config::PAGE_SIZE;
+use crate::vm::page_table::PTFlags;
 use bitflags::bitflags;
 use core::ops::Range;
 use spin::Mutex;
 use x86_64::structures::paging::PhysFrame;
 
-use crate::mm::address::{is_aligned, VirtAddr};
-use crate::mm::{MapArea, MemorySet, PTFlags};
-use crate::vm::VmFrameVec;
+use super::VmFrameVec;
+use super::{is_aligned, Vaddr};
+use super::{MapArea, MemorySet};
 use crate::{prelude::*, Error};
 
 use super::VmIo;
@@ -39,7 +40,7 @@ impl VmSpace {
     pub unsafe fn activate(&self) {
         x86_64::registers::control::Cr3::write(
             PhysFrame::from_start_address(x86_64::PhysAddr::new(
-                self.memory_set.lock().pt.root_pa.0 as u64,
+                self.memory_set.lock().pt.root_pa as u64,
             ))
             .unwrap(),
             x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
@@ -59,7 +60,7 @@ impl VmSpace {
         }
         // debug!("map to vm space: 0x{:x}", options.addr.unwrap());
         self.memory_set.lock().map(MapArea::new(
-            VirtAddr(options.addr.unwrap()),
+            options.addr.unwrap(),
             frames.len() * PAGE_SIZE,
             flags,
             frames,
@@ -71,7 +72,7 @@ impl VmSpace {
     /// determine whether a vaddr is already mapped
     pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
         let memory_set = self.memory_set.lock();
-        memory_set.is_mapped(VirtAddr(vaddr))
+        memory_set.is_mapped(vaddr)
     }
 
     /// Unmaps the physical memory pages within the VM address range.
@@ -80,7 +81,7 @@ impl VmSpace {
     /// are mapped.
     pub fn unmap(&self, range: &Range<Vaddr>) -> Result<()> {
         assert!(is_aligned(range.start) && is_aligned(range.end));
-        let mut start_va = VirtAddr(range.start);
+        let mut start_va = range.start;
         let page_size = (range.end - range.start) / PAGE_SIZE;
         let mut inner = self.memory_set.lock();
         for i in 0..page_size {
