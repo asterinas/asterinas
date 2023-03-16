@@ -1,4 +1,4 @@
-use crate::mm;
+use crate::vm;
 use log::debug;
 use spin::{Mutex, Once};
 use x86::apic::xapic;
@@ -47,7 +47,7 @@ pub(crate) fn has_apic() -> bool {
 pub(crate) fn init() {
     super::pic::disable_temp();
 
-    let mut apic = XAPIC::new(mm::address::phys_to_virt(get_apic_base_address()));
+    let mut apic = XAPIC::new(vm::phys_to_virt(get_apic_base_address()));
     // enable apic
     set_apic_base_address(get_apic_base_address());
 

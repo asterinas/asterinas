@@ -132,7 +132,7 @@ impl Task {
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
         result.task_inner.lock().ctx.regs.rsp =
-            (result.kstack.frame.end_pa().unwrap().kvaddr().0) as u64;
+            (crate::vm::phys_to_virt(result.kstack.frame.end_pa().unwrap())) as u64;
 
         let arc_self = Arc::new(result);
         switch_to_task(arc_self.clone());
@@ -172,7 +172,7 @@ impl Task {
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
         result.task_inner.lock().ctx.regs.rsp =
-            (result.kstack.frame.end_pa().unwrap().kvaddr().0) as u64;
+            (crate::vm::phys_to_virt(result.kstack.frame.end_pa().unwrap())) as u64;
 
         Ok(Arc::new(result))
     }

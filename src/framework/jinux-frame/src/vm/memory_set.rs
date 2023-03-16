@@ -1,29 +1,24 @@
-use super::{page_table::PageTable, *};
-use crate::prelude::*;
+use super::page_table::{PTFlags, PageTable};
 use crate::{
     config::PAGE_SIZE,
-    mm::address::is_aligned,
+    vm::is_aligned,
     vm::{VmFrame, VmFrameVec},
-    *,
 };
+use crate::{prelude::*, Error};
 use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::fmt;
 
 pub struct MapArea {
-    /// flags
     pub flags: PTFlags,
-    /// start virtual address
-    pub start_va: VirtAddr,
-    /// the size of these area
+    pub start_va: Vaddr,
     pub size: usize,
-    /// all the map information
-    pub mapper: BTreeMap<VirtAddr, VmFrame>,
+    pub mapper: BTreeMap<Vaddr, VmFrame>,
 }
 
 pub struct MemorySet {
     pub pt: PageTable,
     /// all the map area, sort by the start virtual address
-    areas: BTreeMap<VirtAddr, MapArea>,
+    areas: BTreeMap<Vaddr, MapArea>,
 }
 
 impl MapArea {
@@ -34,10 +29,11 @@ impl MapArea {
     pub fn clone(&self) -> Self {
         let mut mapper = BTreeMap::new();
         for (&va, old) in &self.mapper {
-            let new = PhysFrame::alloc().unwrap();
-            new.as_slice()
-                .copy_from_slice(old.physical_frame.as_slice());
-            mapper.insert(va, unsafe { VmFrame::new(new) });
+            let new = VmFrame::alloc().unwrap();
+            unsafe {
+                new.as_slice().copy_from_slice(old.as_slice());
+            }
+            mapper.insert(va, new.clone());
         }
         Self {
             start_va: self.start_va,
@@ -48,16 +44,9 @@ impl MapArea {
     }
 
     /// This function will map the vitural address to the given physical frames
-    pub fn new(
-        start_va: VirtAddr,
-        size: usize,
-        flags: PTFlags,
-        physical_frames: VmFrameVec,
-    ) -> Self {
+    pub fn new(start_va: Vaddr, size: usize, flags: PTFlags, physical_frames: VmFrameVec) -> Self {
         assert!(
-            start_va.is_aligned()
-                && is_aligned(size)
-                && physical_frames.len() == (size / PAGE_SIZE)
+            is_aligned(start_va) && is_aligned(size) && physical_frames.len() == (size / PAGE_SIZE)
         );
 
         let mut map_area = Self {
@@ -79,8 +68,8 @@ impl MapArea {
         map_area
     }
 
-    pub fn map_with_physical_address(&mut self, va: VirtAddr, pa: VmFrame) -> PhysAddr {
-        assert!(va.is_aligned());
+    pub fn map_with_physical_address(&mut self, va: Vaddr, pa: VmFrame) -> Paddr {
+        assert!(is_aligned(va));
 
         match self.mapper.entry(va) {
             Entry::Occupied(e) => panic!("already mapped a input physical address"),
@@ -88,8 +77,9 @@ impl MapArea {
         }
     }
 
-    pub fn map(&mut self, va: VirtAddr) -> PhysAddr {
-        assert!(va.is_aligned());
+    pub fn map(&mut self, va: Vaddr) -> Paddr {
+        assert!(is_aligned(va));
+
         match self.mapper.entry(va) {
             Entry::Occupied(e) => e.get().physical_frame.start_pa(),
             Entry::Vacant(e) => e
@@ -99,7 +89,7 @@ impl MapArea {
         }
     }
 
-    pub fn unmap(&mut self, va: VirtAddr) -> Option<VmFrame> {
+    pub fn unmap(&mut self, va: Vaddr) -> Option<VmFrame> {
         self.mapper.remove(&va)
     }
 
@@ -108,19 +98,18 @@ impl MapArea {
         let mut remain = data.len();
         let mut processed = 0;
         for (va, pa) in self.mapper.iter() {
-            if current_start_address >= va.0 && current_start_address < va.0 + PAGE_SIZE {
-                let offset = current_start_address - va.0;
-                let copy_len = (va.0 + PAGE_SIZE - current_start_address).min(remain);
+            if current_start_address >= *va && current_start_address < va + PAGE_SIZE {
+                let offset = current_start_address - va;
+                let copy_len = (va + PAGE_SIZE - current_start_address).min(remain);
                 let src = &data[processed..processed + copy_len];
-                let dst =
-                    &mut pa.start_pa().kvaddr().get_bytes_array()[offset..(offset + copy_len)];
+                let dst = unsafe { &mut pa.as_slice()[offset..(offset + copy_len)] };
                 dst.copy_from_slice(src);
                 processed += copy_len;
                 remain -= copy_len;
                 if remain == 0 {
                     return;
                 }
-                current_start_address = va.0 + PAGE_SIZE;
+                current_start_address = va + PAGE_SIZE;
             }
         }
     }
@@ -130,40 +119,22 @@ impl MapArea {
         let mut remain = data.len();
         let mut processed = 0;
         for (va, pa) in self.mapper.iter() {
-            if start >= va.0 && start < va.0 + PAGE_SIZE {
-                let offset = start - va.0;
-                let copy_len = (va.0 + PAGE_SIZE - start).min(remain);
+            if start >= *va && start < va + PAGE_SIZE {
+                let offset = start - va;
+                let copy_len = (va + PAGE_SIZE - start).min(remain);
                 let src = &mut data[processed..processed + copy_len];
-                let dst = &pa.start_pa().kvaddr().get_bytes_array()[offset..(offset + copy_len)];
+                let dst = unsafe { &pa.as_slice()[offset..(offset + copy_len)] };
                 src.copy_from_slice(dst);
                 processed += copy_len;
                 remain -= copy_len;
                 if remain == 0 {
                     return;
                 }
-                start = va.0 + PAGE_SIZE;
+                start = va + PAGE_SIZE;
             }
         }
     }
 }
-
-// impl Clone for MapArea {
-//     fn clone(&self) -> Self {
-//         let mut mapper = BTreeMap::new();
-//         for (&va, old) in &self.mapper {
-//             let new = VmFrame::alloc().unwrap();
-//             new.physical_frame
-//                 .exclusive_access()
-//                 .as_slice()
-//                 .copy_from_slice(old.physical_frame.exclusive_access().as_slice());
-//             mapper.insert(va, new);
-//         }
-//         Self {
-//             flags: self.flags,
-//             mapper,
-//         }
-//     }
-// }
 
 impl MemorySet {
     pub fn map(&mut self, area: MapArea) {
@@ -180,8 +151,8 @@ impl MemorySet {
         }
     }
 
-    /// determine whether a virtaddr is in a mapped area
-    pub fn is_mapped(&self, vaddr: VirtAddr) -> bool {
+    /// determine whether a Vaddr is in a mapped area
+    pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
         for (start_address, map_area) in self.areas.iter() {
             if *start_address > vaddr {
                 break;
@@ -200,7 +171,7 @@ impl MemorySet {
         }
     }
 
-    pub fn unmap(&mut self, va: VirtAddr) -> Result<()> {
+    pub fn unmap(&mut self, va: Vaddr) -> Result<()> {
         if let Some(area) = self.areas.remove(&va) {
             self.pt.unmap_area(&area);
             Ok(())
@@ -222,11 +193,11 @@ impl MemorySet {
         let start_write = false;
         let mut offset = 0usize;
         for (va, area) in self.areas.iter_mut() {
-            if current_addr >= va.0 && current_addr < area.size + va.0 {
+            if current_addr >= *va && current_addr < area.size + va {
                 if !area.flags.contains(PTFlags::WRITABLE) {
                     return Err(Error::PageFault);
                 }
-                let write_len = remain.min(area.size + va.0 - current_addr);
+                let write_len = remain.min(area.size + va - current_addr);
                 area.write_data(current_addr, &data[offset..(offset + write_len)]);
                 offset += write_len;
                 remain -= write_len;
@@ -234,7 +205,7 @@ impl MemorySet {
                 if remain == 0 {
                     return Ok(());
                 }
-                current_addr = va.0 + area.size;
+                current_addr = va + area.size;
             } else if start_write {
                 return Err(Error::PageFault);
             }
@@ -248,8 +219,8 @@ impl MemorySet {
         let mut offset = 0usize;
         let start_read = false;
         for (va, area) in self.areas.iter() {
-            if current_addr >= va.0 && current_addr < area.size + va.0 {
-                let read_len = remain.min(area.size + va.0 - current_addr);
+            if current_addr >= *va && current_addr < area.size + va {
+                let read_len = remain.min(area.size + va - current_addr);
                 area.read_data(current_addr, &mut data[offset..(offset + read_len)]);
                 remain -= read_len;
                 offset += read_len;
@@ -257,7 +228,7 @@ impl MemorySet {
                 if remain == 0 {
                     return Ok(());
                 }
-                current_addr = va.0 + area.size;
+                current_addr = va + area.size;
             } else if start_read {
                 return Err(Error::PageFault);
             }
@@ -266,7 +237,7 @@ impl MemorySet {
     }
 
     pub fn protect(&mut self, addr: Vaddr, flags: PTFlags) {
-        let va = VirtAddr(addr);
+        let va = addr;
         self.pt.protect(va, flags)
     }
 }
@@ -303,35 +274,3 @@ impl fmt::Debug for MemorySet {
             .finish()
     }
 }
-
-// pub fn load_app(elf_data: &[u8]) -> (usize, MemorySet) {
-//   let elf = ElfFile::new(elf_data).expect("invalid ELF file");
-//   assert_eq!(elf.header.pt1.class(), header::Class::SixtyFour, "64-bit ELF required");
-//   assert_eq!(elf.header.pt2.type_().as_type(), header::Type::Executable, "ELF is not an executable object");
-//   assert_eq!(elf.header.pt2.machine().as_machine(), header::Machine::X86_64, "invalid ELF arch");
-//   let mut ms = MemorySet::new();
-//   for ph in elf.program_iter() {
-//     if ph.get_type() != Ok(Type::Load) {
-//       continue;
-//     }
-//     let va = VirtAddr(ph.virtual_addr() as _);
-//     let offset = va.page_offset();
-//     let area_start = va.align_down();
-//     let area_end = VirtAddr((ph.virtual_addr() + ph.mem_size()) as _).align_up();
-//     let data = match ph.get_data(&elf).unwrap() {
-//       SegmentData::Undefined(data) => data,
-//       _ => panic!("failed to get ELF segment data"),
-//     };
-
-//     let mut flags = PTFlags::PRESENT | PTFlags::USER;
-//     if ph.flags().is_write() {
-//       flags |= PTFlags::WRITABLE;
-//     }
-//     let mut area = MapArea::new(area_start, area_end.0 - area_start.0, flags);
-//     area.write_data(offset, data);
-//     ms.insert(area);
-//   }
-//   ms.insert(MapArea::new(VirtAddr(USTACK_TOP - USTACK_SIZE), USTACK_SIZE,
-//     PTFlags::PRESENT | PTFlags::WRITABLE | PTFlags::USER));
-//   (elf.header.pt2.entry_point() as usize, ms)
-// }

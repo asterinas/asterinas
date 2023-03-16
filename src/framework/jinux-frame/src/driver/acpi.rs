@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use crate::{config, mm::address::phys_to_virt};
+use crate::{config, vm::phys_to_virt};
 use acpi::{AcpiHandler, AcpiTables};
 use lazy_static::lazy_static;
 use limine::LimineRsdpRequest;

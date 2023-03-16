@@ -1,3 +1,4 @@
+use crate::vm::phys_to_virt;
 use acpi::{AcpiError, HpetInfo};
 use alloc::vec::Vec;
 use spin::Once;
@@ -35,16 +36,15 @@ struct HPET {
 impl HPET {
     fn new(base_address: usize) -> HPET {
         let information_register_ref = unsafe {
-            &*(crate::mm::address::phys_to_virt(base_address + OFFSET_ID_REGISTER) as *mut usize
-                as *mut u32)
+            &*(phys_to_virt(base_address + OFFSET_ID_REGISTER) as *mut usize as *mut u32)
         };
         let general_configuration_register_ref = unsafe {
-            &mut *(crate::mm::address::phys_to_virt(base_address + OFFSET_CONFIGURATION_REGISTER)
-                as *mut usize as *mut u32)
+            &mut *(phys_to_virt(base_address + OFFSET_CONFIGURATION_REGISTER) as *mut usize
+                as *mut u32)
         };
         let general_interrupt_status_register_ref = unsafe {
-            &mut *(crate::mm::address::phys_to_virt(base_address + OFFSET_INTERRUPT_STATUS_REGISTER)
-                as *mut usize as *mut u32)
+            &mut *(phys_to_virt(base_address + OFFSET_INTERRUPT_STATUS_REGISTER) as *mut usize
+                as *mut u32)
         };
 
         let information_register = Volatile::new_read_only(information_register_ref);
@@ -58,8 +58,8 @@ impl HPET {
 
         for i in 0..num_comparator {
             let comp = Volatile::new(unsafe {
-                &mut *(crate::mm::address::phys_to_virt(base_address + 0x100 + i as usize * 0x20)
-                    as *mut usize as *mut HPETTimerRegister)
+                &mut *(phys_to_virt(base_address + 0x100 + i as usize * 0x20) as *mut usize
+                    as *mut HPETTimerRegister)
             });
             comparators.push(comp);
         }

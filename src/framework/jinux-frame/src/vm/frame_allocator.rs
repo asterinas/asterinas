@@ -8,8 +8,6 @@ use spin::{Mutex, Once};
 
 use crate::{config::PAGE_SIZE, vm::Paddr};
 
-use super::address::PhysAddr;
-
 static FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
 
 bitflags::bitflags! {
@@ -25,12 +23,12 @@ pub struct PhysFrame {
 }
 
 impl PhysFrame {
-    pub const fn start_pa(&self) -> PhysAddr {
-        PhysAddr(self.frame_index() * PAGE_SIZE)
+    pub const fn start_pa(&self) -> Paddr {
+        self.frame_index() * PAGE_SIZE
     }
 
-    pub const fn end_pa(&self) -> PhysAddr {
-        PhysAddr((self.frame_index() + 1) * PAGE_SIZE)
+    pub const fn end_pa(&self) -> Paddr {
+        (self.frame_index() + 1) * PAGE_SIZE
     }
 
     pub fn alloc() -> Option<Self> {
@@ -66,20 +64,6 @@ impl PhysFrame {
         Some(Self {
             frame_index: paddr / PAGE_SIZE,
         })
-    }
-
-    pub fn alloc_zero() -> Option<Self> {
-        let mut f = Self::alloc()?;
-        f.zero();
-        Some(f)
-    }
-
-    pub fn zero(&mut self) {
-        unsafe { core::ptr::write_bytes(self.start_pa().kvaddr().as_ptr(), 0, PAGE_SIZE) }
-    }
-
-    pub fn as_slice(&self) -> &mut [u8] {
-        unsafe { core::slice::from_raw_parts_mut(self.start_pa().kvaddr().as_ptr(), PAGE_SIZE) }
     }
 
     const fn need_dealloc(&self) -> bool {
