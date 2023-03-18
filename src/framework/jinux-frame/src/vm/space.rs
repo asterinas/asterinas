@@ -6,7 +6,7 @@ use spin::Mutex;
 use x86_64::structures::paging::PhysFrame;
 
 use super::VmFrameVec;
-use super::{is_aligned, Vaddr};
+use super::{is_page_aligned, Vaddr};
 use super::{MapArea, MemorySet};
 use crate::{prelude::*, Error};
 
@@ -80,7 +80,7 @@ impl VmSpace {
     /// The range is allowed to contain gaps, where no physical memory pages
     /// are mapped.
     pub fn unmap(&self, range: &Range<Vaddr>) -> Result<()> {
-        assert!(is_aligned(range.start) && is_aligned(range.end));
+        assert!(is_page_aligned(range.start) && is_page_aligned(range.end));
         let mut start_va = range.start;
         let page_size = (range.end - range.start) / PAGE_SIZE;
         let mut inner = self.memory_set.lock();

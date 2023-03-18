@@ -1,12 +1,14 @@
 use super::page_table::{PTFlags, PageTable};
 use crate::{
     config::PAGE_SIZE,
-    vm::is_aligned,
+    vm::is_page_aligned,
     vm::{VmFrame, VmFrameVec},
 };
 use crate::{prelude::*, Error};
 use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::fmt;
+
+use super::frame_allocator;
 
 pub struct MapArea {
     pub flags: PTFlags,
@@ -29,7 +31,7 @@ impl MapArea {
     pub fn clone(&self) -> Self {
         let mut mapper = BTreeMap::new();
         for (&va, old) in &self.mapper {
-            let new = VmFrame::alloc().unwrap();
+            let new = frame_allocator::alloc().unwrap();
             unsafe {
                 new.as_slice().copy_from_slice(old.as_slice());
             }
@@ -46,7 +48,7 @@ impl MapArea {
     /// This function will map the vitural address to the given physical frames
     pub fn new(start_va: Vaddr, size: usize, flags: PTFlags, physical_frames: VmFrameVec) -> Self {
         assert!(
-            is_aligned(start_va) && is_aligned(size) && physical_frames.len() == (size / PAGE_SIZE)
+            is_page_aligned(start_va) && is_page_aligned(size) && physical_frames.len() == (size / PAGE_SIZE)
         );
 
         let mut map_area = Self {
@@ -69,23 +71,20 @@ impl MapArea {
     }
 
     pub fn map_with_physical_address(&mut self, va: Vaddr, pa: VmFrame) -> Paddr {
-        assert!(is_aligned(va));
+        assert!(is_page_aligned(va));
 
         match self.mapper.entry(va) {
             Entry::Occupied(e) => panic!("already mapped a input physical address"),
-            Entry::Vacant(e) => e.insert(pa).physical_frame.start_pa(),
+            Entry::Vacant(e) => e.insert(pa).start_pa(),
         }
     }
 
     pub fn map(&mut self, va: Vaddr) -> Paddr {
-        assert!(is_aligned(va));
+        assert!(is_page_aligned(va));
 
         match self.mapper.entry(va) {
-            Entry::Occupied(e) => e.get().physical_frame.start_pa(),
-            Entry::Vacant(e) => e
-                .insert(VmFrame::alloc_zero().unwrap())
-                .physical_frame
-                .start_pa(),
+            Entry::Occupied(e) => e.get().start_pa(),
+            Entry::Vacant(e) => e.insert(frame_allocator::alloc_zero().unwrap()).start_pa(),
         }
     }
 

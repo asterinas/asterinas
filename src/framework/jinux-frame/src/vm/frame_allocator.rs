@@ -1,90 +1,68 @@
-use core::ops::{BitAnd, BitOr, Not};
-
 use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;
 use limine::{LimineMemmapEntry, LimineMemoryMapEntryType};
 use log::info;
 use spin::{Mutex, Once};
 
-use crate::{config::PAGE_SIZE, vm::Paddr};
+use crate::{config::PAGE_SIZE, vm::Paddr, AlignExt};
+
+use super::{frame::VmFrameFlags, VmFrame};
 
 static FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
 
-bitflags::bitflags! {
-    struct PhysFrameFlags : usize{
-        const NEED_DEALLOC = 1<<63;
-    }
+pub fn alloc() -> Option<VmFrame> {
+    FRAME_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .alloc(1)
+        .map(|pa| unsafe { VmFrame::new(pa * PAGE_SIZE, VmFrameFlags::NEED_DEALLOC) })
 }
 
-#[derive(Debug, Clone)]
-// #[repr(transparent)]
-pub struct PhysFrame {
-    frame_index: usize,
-}
-
-impl PhysFrame {
-    pub const fn start_pa(&self) -> Paddr {
-        self.frame_index() * PAGE_SIZE
-    }
-
-    pub const fn end_pa(&self) -> Paddr {
-        (self.frame_index() + 1) * PAGE_SIZE
-    }
-
-    pub fn alloc() -> Option<Self> {
-        FRAME_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .alloc(1)
-            .map(|pa| Self {
-                frame_index: pa.bitor(PhysFrameFlags::NEED_DEALLOC.bits()),
-            })
-    }
-
-    pub fn alloc_continuous_range(frame_count: usize) -> Option<Vec<Self>> {
-        FRAME_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .alloc(frame_count)
-            .map(|start| {
-                let mut vector = Vec::new();
+pub fn alloc_continuous(frame_count: usize) -> Option<Vec<VmFrame>> {
+    FRAME_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .alloc(frame_count)
+        .map(|start| {
+            let mut vector = Vec::new();
+            unsafe {
                 for i in 0..frame_count {
-                    vector.push(Self {
-                        frame_index: (start + i).bitor(PhysFrameFlags::NEED_DEALLOC.bits()),
-                    })
+                    vector.push(VmFrame::new(
+                        (start + i) * PAGE_SIZE,
+                        VmFrameFlags::NEED_DEALLOC,
+                    ))
                 }
-                vector
-            })
-    }
-
-    pub fn alloc_with_paddr(paddr: Paddr) -> Option<Self> {
-        // FIXME: need to check whether the physical address is invalid or not
-        Some(Self {
-            frame_index: paddr / PAGE_SIZE,
+            }
+            vector
         })
-    }
+}
 
-    const fn need_dealloc(&self) -> bool {
-        (self.frame_index & PhysFrameFlags::NEED_DEALLOC.bits()) != 0
-    }
-
-    const fn frame_index(&self) -> usize {
-        self.frame_index.bitand(PhysFrameFlags::all().bits().not())
+pub fn alloc_with_paddr(paddr: Paddr) -> Option<VmFrame> {
+    // FIXME: need to check whether the physical address is invalid or not
+    unsafe {
+        Some(VmFrame::new(
+            paddr.align_down(PAGE_SIZE),
+            VmFrameFlags::empty(),
+        ))
     }
 }
 
-impl Drop for PhysFrame {
-    fn drop(&mut self) {
-        if self.need_dealloc() {
-            FRAME_ALLOCATOR
-                .get()
-                .unwrap()
-                .lock()
-                .dealloc(self.frame_index, 1);
-        }
-    }
+pub(crate) fn alloc_zero() -> Option<VmFrame> {
+    let frame = alloc()?;
+    frame.zero();
+    Some(frame)
+}
+
+/// Dealloc a frame.
+///
+/// # Safety
+///
+/// User should ensure the index is valid
+///
+pub(crate) unsafe fn dealloc(index: usize) {
+    FRAME_ALLOCATOR.get().unwrap().lock().dealloc(index, 1);
 }
 
 pub(crate) fn init(regions: &Vec<&LimineMemmapEntry>) {

@@ -1,11 +1,11 @@
 use super::{
-    align_down,
+    frame_allocator,
     memory_set::MapArea,
     {Paddr, Vaddr},
 };
 use crate::{
     config::{ENTRY_COUNT, PAGE_SIZE, PHYS_OFFSET},
-    vm::VmFrame,
+    vm::VmFrame, AlignExt,
 };
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::{fmt, panic};
@@ -81,7 +81,7 @@ pub struct PageTable {
 
 impl PageTable {
     pub fn new() -> Self {
-        let root_frame = VmFrame::alloc_zero().unwrap();
+        let root_frame = frame_allocator::alloc_zero().unwrap();
         let p4 = table_of(root_frame.start_pa());
         let map_pte = ALL_MAPPED_PTE.lock();
         for (index, pte) in map_pte.iter() {
@@ -98,7 +98,7 @@ impl PageTable {
         if !entry.is_unused() {
             panic!("{:#x?} is mapped before mapping", va);
         }
-        *entry = PageTableEntry::new_page(align_down(pa), flags);
+        *entry = PageTableEntry::new_page(pa.align_down(PAGE_SIZE), flags);
     }
 
     pub fn unmap(&mut self, va: Vaddr) {
@@ -137,7 +137,7 @@ impl PageTable {
 
 impl PageTable {
     fn alloc_table(&mut self) -> Paddr {
-        let frame = VmFrame::alloc_zero().unwrap();
+        let frame = frame_allocator::alloc_zero().unwrap();
         let pa = frame.start_pa();
         self.tables.push(frame);
         pa

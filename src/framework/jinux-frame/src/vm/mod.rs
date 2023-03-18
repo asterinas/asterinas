@@ -39,20 +39,8 @@ pub const fn virt_to_phys(va: usize) -> usize {
     va - PHYS_OFFSET
 }
 
-pub const fn align_down(p: usize) -> usize {
-    p & !(PAGE_SIZE - 1)
-}
-
-pub const fn align_up(p: usize) -> usize {
-    (p + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)
-}
-
-pub const fn page_offset(p: usize) -> usize {
-    p & (PAGE_SIZE - 1)
-}
-
-pub const fn is_aligned(p: usize) -> bool {
-    page_offset(p) == 0
+pub const fn is_page_aligned(p: usize) -> bool {
+    (p & (PAGE_SIZE - 1)) == 0
 }
 
 /// Only available inside jinux-frame
