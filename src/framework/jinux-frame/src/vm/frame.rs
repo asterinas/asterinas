@@ -1,4 +1,7 @@
-use core::iter::Iterator;
+use core::{
+    iter::Iterator,
+    ops::{BitAnd, BitOr, Not},
+};
 
 use crate::{config::PAGE_SIZE, prelude::*, Error};
 use pod::Pod;
@@ -6,7 +9,7 @@ use pod::Pod;
 use super::{Paddr, VmIo};
 use alloc::vec;
 
-use super::frame_allocator::PhysFrame;
+use super::frame_allocator;
 
 /// A collection of page frames (physical memory pages).
 ///
@@ -35,7 +38,7 @@ impl VmFrameVec {
             if options.paddr.is_some() {
                 panic!("not support contiguous paddr");
             }
-            let frames = VmFrame::alloc_continuous(options.page_size);
+            let frames = frame_allocator::alloc_continuous(options.page_size);
             if frames.is_none() {
                 return Err(Error::NoMemory);
             }
@@ -43,9 +46,9 @@ impl VmFrameVec {
         }
         for i in 0..page_size {
             let vm_frame = if let Some(paddr) = options.paddr {
-                VmFrame::alloc_with_paddr(paddr + i * PAGE_SIZE)
+                frame_allocator::alloc_with_paddr(paddr + i * PAGE_SIZE)
             } else {
-                VmFrame::alloc()
+                frame_allocator::alloc()
             };
             if vm_frame.is_none() {
                 return Err(Error::NoMemory);
@@ -68,7 +71,7 @@ impl VmFrameVec {
     /// get the end pa of the collection
     pub fn end_pa(&self) -> Option<Paddr> {
         if let Some(frame) = self.0.last() {
-            Some(frame.paddr() + PAGE_SIZE)
+            Some(frame.start_pa() + PAGE_SIZE)
         } else {
             None
         }
@@ -258,6 +261,12 @@ impl VmAllocOptions {
     }
 }
 
+bitflags::bitflags! {
+    pub(crate) struct VmFrameFlags : usize{
+        const NEED_DEALLOC = 1<<63;
+    }
+}
+
 #[derive(Debug)]
 /// A handle to a page frame.
 ///
@@ -270,13 +279,13 @@ impl VmAllocOptions {
 /// same page frame are dropped, the page frame will be freed.
 /// Free page frames are allocated in bulk by `VmFrameVec::allocate`.
 pub struct VmFrame {
-    pub(crate) physical_frame: Arc<PhysFrame>,
+    pub(crate) frame_index: Arc<Paddr>,
 }
 
 impl Clone for VmFrame {
     fn clone(&self) -> Self {
         Self {
-            physical_frame: self.physical_frame.clone(),
+            frame_index: self.frame_index.clone(),
         }
     }
 }
@@ -287,69 +296,20 @@ impl VmFrame {
     /// # Safety
     ///
     /// The given physical address must be valid for use.
-    pub(crate) unsafe fn new(physical_frame: PhysFrame) -> Self {
+    pub(crate) unsafe fn new(paddr: Paddr, flags: VmFrameFlags) -> Self {
+        assert_eq!(paddr % PAGE_SIZE, 0);
         Self {
-            physical_frame: Arc::new(physical_frame),
+            frame_index: Arc::new((paddr / PAGE_SIZE).bitor(flags.bits)),
         }
-    }
-
-    /// Allocate a new VmFrame
-    pub(crate) fn alloc() -> Option<Self> {
-        let phys = PhysFrame::alloc();
-        if phys.is_none() {
-            return None;
-        }
-        Some(Self {
-            physical_frame: Arc::new(phys.unwrap()),
-        })
-    }
-
-    /// Allocate contiguous VmFrame
-    pub(crate) fn alloc_continuous(frame_count: usize) -> Option<Vec<Self>> {
-        let phys = PhysFrame::alloc_continuous_range(frame_count);
-        if phys.is_none() {
-            return None;
-        }
-        let mut res = Vec::new();
-        for i in phys.unwrap() {
-            res.push(Self {
-                physical_frame: Arc::new(i),
-            })
-        }
-        Some(res)
-    }
-
-    /// Allocate a new VmFrame filled with zero
-    pub(crate) fn alloc_zero() -> Option<Self> {
-        let phys = PhysFrame::alloc();
-        if phys.is_none() {
-            return None;
-        }
-        unsafe {
-            core::ptr::write_bytes(
-                super::phys_to_virt(phys.as_ref().unwrap().start_pa()) as *mut u8,
-                0,
-                PAGE_SIZE,
-            )
-        };
-        Some(Self {
-            physical_frame: Arc::new(phys.unwrap()),
-        })
-    }
-
-    pub(crate) fn alloc_with_paddr(paddr: Paddr) -> Option<Self> {
-        let phys = PhysFrame::alloc_with_paddr(paddr);
-        if phys.is_none() {
-            return None;
-        }
-        Some(Self {
-            physical_frame: Arc::new(phys.unwrap()),
-        })
     }
 
     /// Returns the physical address of the page frame.
-    pub fn paddr(&self) -> Paddr {
-        self.physical_frame.start_pa()
+    pub fn start_pa(&self) -> Paddr {
+        self.frame_index() * PAGE_SIZE
+    }
+
+    pub fn end_pa(&self) -> Paddr {
+        (self.frame_index() + 1) * PAGE_SIZE
     }
 
     /// fill the frame with zero
@@ -363,20 +323,20 @@ impl VmFrame {
         }
     }
 
-    pub fn start_pa(&self) -> Paddr {
-        self.physical_frame.start_pa()
-    }
-
-    pub fn end_pa(&self) -> Paddr {
-        self.physical_frame.end_pa()
-    }
-
     /// Returns whether the page frame is accessible by DMA.
     ///
     /// In a TEE environment, DMAable pages are untrusted pages shared with
     /// the VMM.
     pub fn can_dma(&self) -> bool {
         todo!()
+    }
+
+    fn need_dealloc(&self) -> bool {
+        (*self.frame_index & VmFrameFlags::NEED_DEALLOC.bits()) != 0
+    }
+
+    fn frame_index(&self) -> usize {
+        (*self.frame_index).bitand(VmFrameFlags::all().bits().not())
     }
 
     pub unsafe fn as_slice(&self) -> &mut [u8] {
@@ -407,15 +367,25 @@ impl VmIo for VmFrame {
 
     /// Read a value of a specified type at a specified offset.
     fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
-        let paddr = self.paddr() + offset;
+        let paddr = self.start_pa() + offset;
         let val = unsafe { &mut *(super::phys_to_virt(paddr) as *mut T) };
         Ok(*val)
     }
 
     /// Write a value of a specified type at a specified offset.
     fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
-        let paddr = self.paddr() + offset;
+        let paddr = self.start_pa() + offset;
         unsafe { (super::phys_to_virt(paddr) as *mut T).write(*new_val) };
         Ok(())
+    }
+}
+
+impl Drop for VmFrame {
+    fn drop(&mut self) {
+        if self.need_dealloc() && Arc::strong_count(&self.frame_index) == 1 {
+            unsafe {
+                frame_allocator::dealloc(self.frame_index());
+            }
+        }
     }
 }

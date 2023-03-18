@@ -96,7 +96,7 @@ impl VirtQueue {
                 .remove(0);
             cfg.write_at(
                 offset_of!(VitrioPciCommonCfg, queue_desc),
-                frame.paddr() as u64,
+                frame.start_pa() as u64,
             );
             debug!("queue_desc vm frame:{:x?}", frame);
             frame_vec.push(frame);
@@ -108,7 +108,7 @@ impl VirtQueue {
                 .remove(0);
             cfg.write_at(
                 offset_of!(VitrioPciCommonCfg, queue_driver),
-                frame.paddr() as u64,
+                frame.start_pa() as u64,
             );
             debug!("queue_driver vm frame:{:x?}", frame);
             frame_vec.push(frame);
@@ -120,7 +120,7 @@ impl VirtQueue {
                 .remove(0);
             cfg.write_at(
                 offset_of!(VitrioPciCommonCfg, queue_device),
-                frame.paddr() as u64,
+                frame.start_pa() as u64,
             );
             debug!("queue_device vm frame:{:x?}", frame);
             frame_vec.push(frame);
