@@ -56,6 +56,12 @@ Set environmental variables to enable `cargo` find installed tools.
 export PATH=`pwd`/src/target/bin:${PATH}
 ```
 
+Build ltp and ltp tests will be copied into initramfs when built ramdisk.
+(This step is Optional)
+```bash
+make ltp
+```
+
 Then, we can build and test the project.
 ```bash
 make

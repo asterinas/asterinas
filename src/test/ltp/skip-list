@@ -1,0 +1,4 @@
+getegid 
+geteuid
+getgid
+getuid

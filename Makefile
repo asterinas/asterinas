@@ -8,6 +8,9 @@ setup:
 	@rustup component add llvm-tools-preview
 	@cargo install mdbook
 
+ltp:
+	@make --no-print-directory -C src/test/ltp
+
 build:
 	@make --no-print-directory -C src/ramdisk
 	@cd src && cargo kbuild

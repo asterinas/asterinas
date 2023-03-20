@@ -16,5 +16,9 @@ target/
 src/ramdisk/initramfs/
 src/ramdisk/build/
 
+# ltp file
+src/test/ltp/ltp
+src/test/ltp/ltp_test
+
 # qemu log file
 qemu.log
