@@ -3,7 +3,10 @@
 set -e
 set -x
 
-cd scripts
+# FIXME: hardcode script directory here since we do not have pipe
+SCRIPT_DIR=/test/scripts
+# SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+cd ${SCRIPT_DIR}
 
 touch hello.txt
 mv hello.txt hello_world.txt
@@ -33,4 +36,4 @@ rmdir foo
 echo "Hello world from jinux" > hello.txt
 rm hello.txt
 
-cd ..
+cd -

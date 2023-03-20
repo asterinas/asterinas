@@ -87,7 +87,7 @@ pub fn run_first_process() -> ! {
 }
 
 fn run_busybox() -> Result<Arc<Process>> {
-    let executable_path = "/busybox/busybox";
+    let executable_path = "/bin/busybox";
     let argv = ["sh", "-l"];
     let envp = [
         "SHELL=/bin/sh",

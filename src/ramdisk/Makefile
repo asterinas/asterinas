@@ -1,5 +1,5 @@
 MAKEFLAGS += --no-builtin-rules # Prevent the implicit rules from compiling ".c" or ".s" files automatically.
-APPS := ../apps
+APPS := ../test/apps
 BUILD_DIR := ./build
 INITRAMFS := ./initramfs
 RAMDISK := $(BUILD_DIR)/ramdisk.cpio
@@ -22,7 +22,11 @@ all: $(RAMDISK)
 
 $(INITRAMFS): $(APPS) $(APPS_DIRS) $(APPS_FILES)
 	@rm -rf $@ && mkdir -p $@
-	@cp -a $(APPS)/* $@
+	@mkdir -p $@/test
+	@mkdir -p $@/bin
+	@ln -sf /bin/busybox $@/bin/sh
+	@cp -a $(APPS)/busybox/busybox $@/bin/busybox
+	@cp -a $(APPS)/* $@/test
 	@cd $@ && find . \( -name "*.s" -o -name "*.c" -o -name "Makefile" -o -name "README.md" \) -delete
 
 $(RAMDISK): $(INITRAMFS) $(INITRAMFS_DIRS) $(INITRAMFS_FILES)
