@@ -9,14 +9,14 @@ pub(crate) const IA32_APIC_BASE_MSR_ENABLE: u64 = 0x800;
 
 const APIC_LVT_MASK_BITS: u32 = 1 << 16;
 
-pub(crate) static XAPIC_INSTANCE: Once<Mutex<XAPIC>> = Once::new();
+pub(crate) static XAPIC_INSTANCE: Once<Mutex<Xapic>> = Once::new();
 
 #[derive(Debug)]
-pub struct XAPIC {
+pub struct Xapic {
     mmio_region: &'static mut [u32],
 }
 
-impl XAPIC {
+impl Xapic {
     pub fn new(address: usize) -> Self {
         let region: &'static mut [u32] = unsafe { &mut *(address as *mut [u32; 256]) };
         Self {
@@ -47,7 +47,7 @@ pub(crate) fn has_apic() -> bool {
 pub(crate) fn init() {
     super::pic::disable_temp();
 
-    let mut apic = XAPIC::new(vm::phys_to_virt(get_apic_base_address()));
+    let mut apic = Xapic::new(vm::phys_to_virt(get_apic_base_address()));
     // enable apic
     set_apic_base_address(get_apic_base_address());
 

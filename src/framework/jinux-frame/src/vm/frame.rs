@@ -263,7 +263,7 @@ impl VmAllocOptions {
 
 bitflags::bitflags! {
     pub(crate) struct VmFrameFlags : usize{
-        const NEED_DEALLOC = 1<<63;
+        const NEED_DEALLOC =    1 << 63;
     }
 }
 

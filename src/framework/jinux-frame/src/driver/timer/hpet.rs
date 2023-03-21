@@ -8,7 +8,7 @@ use volatile::{
 };
 
 use crate::driver::{acpi::ACPI_TABLES, ioapic};
-static HPET_INSTANCE: Once<HPET> = Once::new();
+static HPET_INSTANCE: Once<Hpet> = Once::new();
 
 const OFFSET_ID_REGISTER: usize = 0x000;
 const OFFSET_CONFIGURATION_REGISTER: usize = 0x010;
@@ -19,22 +19,22 @@ const HPET_FREQ: usize = 1_000_000_000_000_000;
 
 #[derive(Debug)]
 #[repr(C)]
-struct HPETTimerRegister {
+struct HpetTimerRegister {
     configuration_and_capabilities_register: u32,
     timer_compartor_value_register: u32,
     fsb_interrupt_route_register: u32,
 }
 
-struct HPET {
+struct Hpet {
     information_register: Volatile<&'static u32, ReadOnly>,
     general_configuration_register: Volatile<&'static mut u32, ReadWrite>,
     general_interrupt_status_register: Volatile<&'static mut u32, ReadWrite>,
 
-    timer_registers: Vec<Volatile<&'static mut HPETTimerRegister, ReadWrite>>,
+    timer_registers: Vec<Volatile<&'static mut HpetTimerRegister, ReadWrite>>,
 }
 
-impl HPET {
-    fn new(base_address: usize) -> HPET {
+impl Hpet {
+    fn new(base_address: usize) -> Hpet {
         let information_register_ref = unsafe {
             &*(phys_to_virt(base_address + OFFSET_ID_REGISTER) as *mut usize as *mut u32)
         };
@@ -59,7 +59,7 @@ impl HPET {
         for i in 0..num_comparator {
             let comp = Volatile::new(unsafe {
                 &mut *(phys_to_virt(base_address + 0x100 + i as usize * 0x20) as *mut usize
-                    as *mut HPETTimerRegister)
+                    as *mut HpetTimerRegister)
             });
             comparators.push(comp);
         }
@@ -74,7 +74,7 @@ impl HPET {
             .lock()
             .enable(vector, destination_apic_id);
 
-        HPET {
+        Hpet {
             information_register,
             general_configuration_register,
             general_interrupt_status_register,
@@ -110,7 +110,7 @@ pub fn init() -> Result<(), AcpiError> {
     let hpet_info = HpetInfo::new(&*c)?;
 
     // config IO APIC entry
-    let hpet = HPET::new(hpet_info.base_address);
+    let hpet = Hpet::new(hpet_info.base_address);
     HPET_INSTANCE.call_once(|| hpet);
     Ok(())
 }

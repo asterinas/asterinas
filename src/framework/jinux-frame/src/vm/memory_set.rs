@@ -1,4 +1,4 @@
-use super::page_table::{PTFlags, PageTable};
+use super::page_table::{PageTable, PageTableFlags};
 use crate::{
     config::PAGE_SIZE,
     vm::is_page_aligned,
@@ -11,7 +11,7 @@ use core::fmt;
 use super::frame_allocator;
 
 pub struct MapArea {
-    pub flags: PTFlags,
+    pub flags: PageTableFlags,
     pub start_va: Vaddr,
     pub size: usize,
     pub mapper: BTreeMap<Vaddr, VmFrame>,
@@ -46,9 +46,16 @@ impl MapArea {
     }
 
     /// This function will map the vitural address to the given physical frames
-    pub fn new(start_va: Vaddr, size: usize, flags: PTFlags, physical_frames: VmFrameVec) -> Self {
+    pub fn new(
+        start_va: Vaddr,
+        size: usize,
+        flags: PageTableFlags,
+        physical_frames: VmFrameVec,
+    ) -> Self {
         assert!(
-            is_page_aligned(start_va) && is_page_aligned(size) && physical_frames.len() == (size / PAGE_SIZE)
+            is_page_aligned(start_va)
+                && is_page_aligned(size)
+                && physical_frames.len() == (size / PAGE_SIZE)
         );
 
         let mut map_area = Self {
@@ -193,7 +200,7 @@ impl MemorySet {
         let mut offset = 0usize;
         for (va, area) in self.areas.iter_mut() {
             if current_addr >= *va && current_addr < area.size + va {
-                if !area.flags.contains(PTFlags::WRITABLE) {
+                if !area.flags.contains(PageTableFlags::WRITABLE) {
                     return Err(Error::PageFault);
                 }
                 let write_len = remain.min(area.size + va - current_addr);
@@ -235,7 +242,7 @@ impl MemorySet {
         Err(Error::PageFault)
     }
 
-    pub fn protect(&mut self, addr: Vaddr, flags: PTFlags) {
+    pub fn protect(&mut self, addr: Vaddr, flags: PageTableFlags) {
         let va = addr;
         self.pt.protect(va, flags)
     }
