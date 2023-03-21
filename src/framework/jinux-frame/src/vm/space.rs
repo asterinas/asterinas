@@ -1,5 +1,5 @@
 use crate::config::PAGE_SIZE;
-use crate::vm::page_table::PTFlags;
+use crate::vm::page_table::PageTableFlags;
 use bitflags::bitflags;
 use core::ops::Range;
 use spin::Mutex;
@@ -54,7 +54,7 @@ impl VmSpace {
     ///
     /// For more information, see `VmMapOptions`.
     pub fn map(&self, frames: VmFrameVec, options: &VmMapOptions) -> Result<Vaddr> {
-        let flags = PTFlags::from(options.perm);
+        let flags = PageTableFlags::from(options.perm);
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
@@ -106,7 +106,7 @@ impl VmSpace {
         debug_assert!(range.end % PAGE_SIZE == 0);
         let start_page = range.start / PAGE_SIZE;
         let end_page = range.end / PAGE_SIZE;
-        let flags = PTFlags::from(perm);
+        let flags = PageTableFlags::from(perm);
         for page_idx in start_page..end_page {
             let addr = page_idx * PAGE_SIZE;
             self.memory_set.lock().protect(addr, flags)
@@ -238,15 +238,15 @@ impl TryFrom<u64> for VmPerm {
     }
 }
 
-impl From<VmPerm> for PTFlags {
+impl From<VmPerm> for PageTableFlags {
     fn from(vm_perm: VmPerm) -> Self {
-        let mut flags = PTFlags::PRESENT | PTFlags::USER;
+        let mut flags = PageTableFlags::PRESENT | PageTableFlags::USER;
         if vm_perm.contains(VmPerm::W) {
-            flags |= PTFlags::WRITABLE;
+            flags |= PageTableFlags::WRITABLE;
         }
         // FIXME: how to respect executable flags?
         if !vm_perm.contains(VmPerm::X) {
-            flags |= PTFlags::NO_EXECUTE;
+            flags |= PageTableFlags::NO_EXECUTE;
         }
         flags
     }

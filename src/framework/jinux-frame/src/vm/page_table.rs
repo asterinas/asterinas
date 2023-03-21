@@ -5,7 +5,8 @@ use super::{
 };
 use crate::{
     config::{ENTRY_COUNT, PAGE_SIZE, PHYS_OFFSET},
-    vm::VmFrame, AlignExt,
+    vm::VmFrame,
+    AlignExt,
 };
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::{fmt, panic};
@@ -19,13 +20,13 @@ lazy_static! {
 
 bitflags::bitflags! {
   /// Possible flags for a page table entry.
-  pub struct PTFlags: usize {
+  pub struct PageTableFlags: usize {
     /// Specifies whether the mapped frame or page table is loaded in memory.
-    const PRESENT =         1;
+    const PRESENT =         1 << 0;
     /// Controls whether writes to the mapped frames are allowed.
     const WRITABLE =        1 << 1;
     /// Controls whether accesses from userspace (i.e. ring 3) are permitted.
-    const USER = 1 << 2;
+    const USER =            1 << 2;
     /// If this bit is set, a “write-through” policy is used for the cache, else a “write-back”
     /// policy is used.
     const WRITE_THROUGH =   1 << 3;
@@ -35,7 +36,7 @@ bitflags::bitflags! {
     /// the TLB on an address space switch.
     const GLOBAL =          1 << 8;
     /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
-    const NO_EXECUTE = 1 << 63;
+    const NO_EXECUTE =      1 << 63;
   }
 }
 
@@ -46,20 +47,20 @@ pub struct PageTableEntry(usize);
 impl PageTableEntry {
     const PHYS_ADDR_MASK: usize = !(PAGE_SIZE - 1);
 
-    pub const fn new_page(pa: Paddr, flags: PTFlags) -> Self {
+    pub const fn new_page(pa: Paddr, flags: PageTableFlags) -> Self {
         Self((pa & Self::PHYS_ADDR_MASK) | flags.bits)
     }
     const fn pa(self) -> Paddr {
         self.0 as usize & Self::PHYS_ADDR_MASK
     }
-    const fn flags(self) -> PTFlags {
-        PTFlags::from_bits_truncate(self.0)
+    const fn flags(self) -> PageTableFlags {
+        PageTableFlags::from_bits_truncate(self.0)
     }
     const fn is_unused(self) -> bool {
         self.0 == 0
     }
     const fn is_present(self) -> bool {
-        (self.0 & PTFlags::PRESENT.bits) != 0
+        (self.0 & PageTableFlags::PRESENT.bits) != 0
     }
 }
 
@@ -93,7 +94,7 @@ impl PageTable {
         }
     }
 
-    pub fn map(&mut self, va: Vaddr, pa: Paddr, flags: PTFlags) {
+    pub fn map(&mut self, va: Vaddr, pa: Paddr, flags: PageTableFlags) {
         let entry = self.get_entry_or_create(va).unwrap();
         if !entry.is_unused() {
             panic!("{:#x?} is mapped before mapping", va);
@@ -109,13 +110,13 @@ impl PageTable {
         entry.0 = 0;
     }
 
-    pub fn protect(&mut self, va: Vaddr, flags: PTFlags) {
+    pub fn protect(&mut self, va: Vaddr, flags: PageTableFlags) {
         let entry = self.get_entry_or_create(va).unwrap();
         if entry.is_unused() || !entry.is_present() {
             panic!("{:#x?} is invalid before protect", va);
         }
         // clear old mask
-        let clear_flags_mask = !PTFlags::all().bits;
+        let clear_flags_mask = !PageTableFlags::all().bits;
         entry.0 &= clear_flags_mask;
         // set new mask
         entry.0 |= flags.bits;
@@ -203,7 +204,10 @@ fn next_table_or_create<'a>(
 ) -> Option<&'a mut [PageTableEntry]> {
     if entry.is_unused() {
         let pa = alloc();
-        *entry = PageTableEntry::new_page(pa, PTFlags::PRESENT | PTFlags::WRITABLE | PTFlags::USER);
+        *entry = PageTableEntry::new_page(
+            pa,
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER,
+        );
         Some(table_of(pa))
     } else {
         next_table(entry)
@@ -242,7 +246,7 @@ pub(crate) fn init() {
     p4[0].0 = 0;
     let mut map_pte = ALL_MAPPED_PTE.lock();
     for i in 0..512 {
-        if p4[i].flags().contains(PTFlags::PRESENT) {
+        if p4[i].flags().contains(PageTableFlags::PRESENT) {
             map_pte.insert(i, p4[i]);
         }
     }
