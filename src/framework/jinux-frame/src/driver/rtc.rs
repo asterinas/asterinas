@@ -2,20 +2,19 @@ use core::sync::atomic::AtomicU8;
 use core::sync::atomic::Ordering::Relaxed;
 
 use acpi::{fadt::Fadt, sdt::Signature};
-use lazy_static::lazy_static;
 use spin::Mutex;
-use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
 
+use crate::device::io_port::{IoPort, ReadOnlyAccess, WriteOnlyAccess};
 use crate::time::Time;
 
 use super::acpi::ACPI_TABLES;
 
-static CMOS_ADDRESS: Mutex<PortWriteOnly<u8>> = Mutex::new(PortWriteOnly::new(0x70));
-static CMOS_DATA: Mutex<PortReadOnly<u8>> = Mutex::new(PortReadOnly::new(0x71));
+static CMOS_ADDRESS: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x70) };
+static CMOS_DATA: IoPort<u8, ReadOnlyAccess> = unsafe { IoPort::new(0x71) };
 
 pub(crate) static CENTURY_REGISTER: AtomicU8 = AtomicU8::new(0);
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref READ_TIME: Mutex<Time> = Mutex::new(Time::default());
 }
 
@@ -32,17 +31,13 @@ pub fn init() {
 }
 
 pub fn get_cmos(reg: u8) -> u8 {
-    unsafe {
-        CMOS_ADDRESS.lock().write(reg);
-        CMOS_DATA.lock().read()
-    }
+    CMOS_ADDRESS.write(reg);
+    CMOS_DATA.read()
 }
 
 pub fn is_updating() -> bool {
-    unsafe {
-        CMOS_ADDRESS.lock().write(0x0A);
-        CMOS_DATA.lock().read() & 0x80 != 0
-    }
+    CMOS_ADDRESS.write(0x0A);
+    CMOS_DATA.read() & 0x80 != 0
 }
 
 pub fn read() -> Time {
