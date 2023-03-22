@@ -100,6 +100,22 @@ impl Inode_ {
             fs: Weak::default(),
         }
     }
+
+    pub fn inc_size(&mut self) {
+        self.metadata.size += 1;
+        self.metadata.blocks = (self.metadata.size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    }
+
+    pub fn dec_size(&mut self) {
+        debug_assert!(self.metadata.size > 0);
+        self.metadata.size -= 1;
+        self.metadata.blocks = (self.metadata.size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    }
+
+    pub fn resize(&mut self, new_size: usize) {
+        self.metadata.size = new_size;
+        self.metadata.blocks = (new_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    }
 }
 
 enum Inner {
@@ -304,7 +320,7 @@ impl Inode for RamInode {
     }
 
     fn resize(&self, new_size: usize) {
-        self.0.write().metadata.size = new_size;
+        self.0.write().resize(new_size)
     }
 
     fn atime(&self) -> Duration {
@@ -375,7 +391,7 @@ impl Inode for RamInode {
             .as_direntry_mut()
             .unwrap()
             .append_entry(name, new_inode.clone());
-        self_inode.metadata.size += 1;
+        self_inode.inc_size();
         Ok(new_inode)
     }
 
@@ -412,7 +428,7 @@ impl Inode for RamInode {
             .as_direntry_mut()
             .unwrap()
             .append_entry(name, old.0.read().this.upgrade().unwrap());
-        self_inode.metadata.size += 1;
+        self_inode.inc_size();
         drop(self_inode);
         old.0.write().metadata.nlinks += 1;
         Ok(())
@@ -432,7 +448,7 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EISDIR, "unlink on dir");
         }
         self_dir.remove_entry(idx);
-        self_inode.metadata.size -= 1;
+        self_inode.dec_size();
         drop(self_inode);
         target.0.write().metadata.nlinks -= 1;
         Ok(())
@@ -462,7 +478,7 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
         }
         self_dir.remove_entry(idx);
-        self_inode.metadata.size -= 1;
+        self_inode.dec_size();
         self_inode.metadata.nlinks -= 1;
         drop(self_inode);
         target.0.write().metadata.nlinks -= 2;
@@ -551,8 +567,8 @@ impl Inode for RamInode {
                 .as_direntry_mut()
                 .unwrap()
                 .append_entry(new_name, src_inode.clone());
-            self_inode.metadata.size -= 1;
-            target_inode.metadata.size += 1;
+            self_inode.dec_size();
+            target_inode.inc_size();
             if src_inode.0.read().metadata.type_ == InodeType::Dir {
                 self_inode.metadata.nlinks -= 1;
                 target_inode.metadata.nlinks += 1;
@@ -588,6 +604,7 @@ impl Inode for RamInode {
         let mut self_inode = self.0.write();
         let link = self_inode.inner.as_symlink_mut().unwrap();
         *link = Str256::from(target);
+        // Symlink's metadata.blocks should be 0, so just set the size.
         self_inode.metadata.size = target.len();
         Ok(())
     }
