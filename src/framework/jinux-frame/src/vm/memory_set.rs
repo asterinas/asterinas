@@ -82,7 +82,7 @@ impl MapArea {
 
         match self.mapper.entry(va) {
             Entry::Occupied(e) => panic!("already mapped a input physical address"),
-            Entry::Vacant(e) => e.insert(pa).start_pa(),
+            Entry::Vacant(e) => e.insert(pa).start_paddr(),
         }
     }
 
@@ -90,8 +90,10 @@ impl MapArea {
         assert!(is_page_aligned(va));
 
         match self.mapper.entry(va) {
-            Entry::Occupied(e) => e.get().start_pa(),
-            Entry::Vacant(e) => e.insert(frame_allocator::alloc_zero().unwrap()).start_pa(),
+            Entry::Occupied(e) => e.get().start_paddr(),
+            Entry::Vacant(e) => e
+                .insert(frame_allocator::alloc_zero().unwrap())
+                .start_paddr(),
         }
     }
 

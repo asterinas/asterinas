@@ -60,7 +60,7 @@ pub fn init() {
             panic!("Unknown interrupt model")
         }
     };
-    let mut io_apic = unsafe { IoApic::new(crate::vm::phys_to_virt(ioapic_address as usize)) };
+    let mut io_apic = unsafe { IoApic::new(crate::vm::paddr_to_vaddr(ioapic_address as usize)) };
 
     let id = io_apic.id();
     let version = io_apic.version();

@@ -47,7 +47,7 @@ pub(crate) fn has_apic() -> bool {
 pub(crate) fn init() {
     super::pic::disable_temp();
 
-    let mut apic = Xapic::new(vm::phys_to_virt(get_apic_base_address()));
+    let mut apic = Xapic::new(vm::paddr_to_vaddr(get_apic_base_address()));
     // enable apic
     set_apic_base_address(get_apic_base_address());
 

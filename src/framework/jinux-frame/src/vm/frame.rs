@@ -1,15 +1,15 @@
+use alloc::vec;
 use core::{
     iter::Iterator,
     ops::{BitAnd, BitOr, Not},
 };
 
 use crate::{config::PAGE_SIZE, prelude::*, Error};
-use pod::Pod;
-
-use super::{Paddr, VmIo};
-use alloc::vec;
 
 use super::frame_allocator;
+use super::{Paddr, VmIo};
+
+use pod::Pod;
 
 /// A collection of page frames (physical memory pages).
 ///
@@ -58,6 +58,10 @@ impl VmFrameVec {
         Ok(Self(frame_list))
     }
 
+    pub fn get(&self, index: usize) -> Option<&VmFrame> {
+        self.0.get(index)
+    }
+
     /// returns an empty vmframe vec
     pub fn empty() -> Self {
         Self(Vec::new())
@@ -66,15 +70,6 @@ impl VmFrameVec {
     /// Pushs a new frame to the collection.
     pub fn push(&mut self, new_frame: VmFrame) {
         self.0.push(new_frame);
-    }
-
-    /// get the end pa of the collection
-    pub fn end_pa(&self) -> Option<Paddr> {
-        if let Some(frame) = self.0.last() {
-            Some(frame.start_pa() + PAGE_SIZE)
-        } else {
-            None
-        }
     }
 
     /// Pop a frame from the collection.
@@ -304,11 +299,11 @@ impl VmFrame {
     }
 
     /// Returns the physical address of the page frame.
-    pub fn start_pa(&self) -> Paddr {
+    pub fn start_paddr(&self) -> Paddr {
         self.frame_index() * PAGE_SIZE
     }
 
-    pub fn end_pa(&self) -> Paddr {
+    pub fn end_paddr(&self) -> Paddr {
         (self.frame_index() + 1) * PAGE_SIZE
     }
 
@@ -316,7 +311,7 @@ impl VmFrame {
     pub fn zero(&self) {
         unsafe {
             core::ptr::write_bytes(
-                super::phys_to_virt(self.start_pa()) as *mut u8,
+                super::paddr_to_vaddr(self.start_paddr()) as *mut u8,
                 0,
                 PAGE_SIZE,
             )
@@ -340,7 +335,10 @@ impl VmFrame {
     }
 
     pub unsafe fn as_slice(&self) -> &mut [u8] {
-        core::slice::from_raw_parts_mut(super::phys_to_virt(self.start_pa()) as *mut u8, PAGE_SIZE)
+        core::slice::from_raw_parts_mut(
+            super::paddr_to_vaddr(self.start_paddr()) as *mut u8,
+            PAGE_SIZE,
+        )
     }
 }
 
@@ -367,15 +365,15 @@ impl VmIo for VmFrame {
 
     /// Read a value of a specified type at a specified offset.
     fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
-        let paddr = self.start_pa() + offset;
-        let val = unsafe { &mut *(super::phys_to_virt(paddr) as *mut T) };
+        let paddr = self.start_paddr() + offset;
+        let val = unsafe { &mut *(super::paddr_to_vaddr(paddr) as *mut T) };
         Ok(*val)
     }
 
     /// Write a value of a specified type at a specified offset.
     fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
-        let paddr = self.start_pa() + offset;
-        unsafe { (super::phys_to_virt(paddr) as *mut T).write(*new_val) };
+        let paddr = self.start_paddr() + offset;
+        unsafe { (super::paddr_to_vaddr(paddr) as *mut T).write(*new_val) };
         Ok(())
     }
 }

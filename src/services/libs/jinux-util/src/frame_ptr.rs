@@ -24,7 +24,7 @@ impl<T: Pod> InFramePtr<T> {
             options.paddr(Some(page_paddr));
             VmFrameVec::allocate(&options)?.remove(0)
         };
-        let offset = paddr - frame.start_pa();
+        let offset = paddr - frame.start_paddr();
         Ok(Self {
             frame,
             offset,
@@ -49,6 +49,6 @@ impl<T: Pod> InFramePtr<T> {
     }
 
     pub fn paddr(&self) -> usize {
-        self.offset + self.frame.start_pa()
+        self.offset + self.frame.start_paddr()
     }
 }

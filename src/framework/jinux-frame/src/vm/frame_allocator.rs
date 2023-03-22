@@ -1,7 +1,9 @@
+use core::ops::Range;
+
 use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;
 use limine::{LimineMemmapEntry, LimineMemoryMapEntryType};
-use log::info;
+use log::{debug, info};
 use spin::{Mutex, Once};
 
 use crate::{config::PAGE_SIZE, vm::Paddr, AlignExt};
@@ -40,13 +42,39 @@ pub fn alloc_continuous(frame_count: usize) -> Option<Vec<VmFrame>> {
 }
 
 pub fn alloc_with_paddr(paddr: Paddr) -> Option<VmFrame> {
-    // FIXME: need to check whether the physical address is invalid or not
+    if !is_paddr_valid(paddr..paddr + PAGE_SIZE) {
+        debug!("not a valid paddr:{:x}", paddr);
+        return None;
+    }
     unsafe {
         Some(VmFrame::new(
             paddr.align_down(PAGE_SIZE),
             VmFrameFlags::empty(),
         ))
     }
+}
+
+/// Check if the physical address in range is valid
+fn is_paddr_valid(range: Range<usize>) -> bool {
+    // special area in x86
+    if range.start >= 0xFE00_0000 && range.end <= 0xFFFF_FFFF {
+        return true;
+    }
+
+    for i in super::MEMORY_REGIONS.get().unwrap().iter() {
+        match i.typ {
+            LimineMemoryMapEntryType::Usable => {}
+            LimineMemoryMapEntryType::Reserved => {}
+            LimineMemoryMapEntryType::Framebuffer => {}
+            _ => {
+                continue;
+            }
+        }
+        if range.start as u64 >= i.base && (range.end as u64) <= i.base + i.len {
+            return true;
+        }
+    }
+    false
 }
 
 pub(crate) fn alloc_zero() -> Option<VmFrame> {

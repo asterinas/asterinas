@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 
-use crate::{config, vm::phys_to_virt};
+use crate::{config, vm::paddr_to_vaddr};
 use acpi::{AcpiHandler, AcpiTables};
 use lazy_static::lazy_static;
 use limine::LimineRsdpRequest;
@@ -25,7 +25,7 @@ impl AcpiHandler for AcpiMemoryHandler {
     ) -> acpi::PhysicalMapping<Self, T> {
         acpi::PhysicalMapping::new(
             physical_address,
-            NonNull::new(phys_to_virt(physical_address) as *mut T).unwrap(),
+            NonNull::new(paddr_to_vaddr(physical_address) as *mut T).unwrap(),
             size,
             size,
             self.clone(),
