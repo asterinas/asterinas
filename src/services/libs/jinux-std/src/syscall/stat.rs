@@ -125,7 +125,7 @@ impl From<Metadata> for Stat {
             st_rdev: 0,
             st_size: info.size as isize,
             st_blksize: info.blk_size as isize,
-            st_blocks: info.blocks as isize,
+            st_blocks: (info.blocks * (info.blk_size / 512)) as isize, // Number of 512B blocks
             st_atime: info.atime.into(),
             st_mtime: info.mtime.into(),
             st_ctime: info.ctime.into(),

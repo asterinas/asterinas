@@ -100,7 +100,7 @@ impl Metadata {
             ino,
             size: 2,
             blk_size: sb.bsize,
-            blocks: 0,
+            blocks: 1,
             atime: Default::default(),
             mtime: Default::default(),
             ctime: Default::default(),
