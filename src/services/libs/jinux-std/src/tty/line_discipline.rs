@@ -16,13 +16,13 @@ const BUFFER_CAPACITY: usize = 4096;
 
 pub struct LineDiscipline {
     /// current line
-    current_line: CurrentLine,
+    current_line: RwLock<CurrentLine>,
     /// The read buffer
     read_buffer: Mutex<ConstGenericRingBuffer<u8, BUFFER_CAPACITY>>,
     /// The foreground process group
-    foreground: Option<Pgid>,
+    foreground: RwLock<Option<Pgid>>,
     /// termios
-    termios: KernelTermios,
+    termios: RwLock<KernelTermios>,
     /// wait until self is readable
     read_wait_queue: WaitQueue,
 }
@@ -67,59 +67,62 @@ impl LineDiscipline {
     /// create a new line discipline
     pub fn new() -> Self {
         Self {
-            current_line: CurrentLine::new(),
+            current_line: RwLock::new(CurrentLine::new()),
             read_buffer: Mutex::new(ConstGenericRingBuffer::new()),
-            foreground: None,
-            termios: KernelTermios::default(),
+            foreground: RwLock::new(None),
+            termios: RwLock::new(KernelTermios::default()),
             read_wait_queue: WaitQueue::new(),
         }
     }
 
     /// push char to line discipline. This function should be called in input interrupt handler.
-    pub fn push_char(&mut self, mut item: u8) {
-        if self.termios.contains_icrnl() {
+    pub fn push_char(&self, mut item: u8) {
+        let termios = self.termios.read();
+        if termios.contains_icrnl() {
             if item == b'\r' {
                 item = b'\n'
             }
         }
-        if self.termios.is_canonical_mode() {
-            if item == *self.termios.get_special_char(CC_C_CHAR::VINTR) {
+        if termios.is_canonical_mode() {
+            if item == *termios.get_special_char(CC_C_CHAR::VINTR) {
                 // type Ctrl + C, signal SIGINT
-                if self.termios.contains_isig() {
-                    if let Some(fg) = self.foreground {
+                if termios.contains_isig() {
+                    if let Some(fg) = *self.foreground.read() {
                         let kernel_signal = KernelSignal::new(SIGINT);
                         let fg_group = process_table::pgid_to_process_group(fg).unwrap();
                         fg_group.kernel_signal(kernel_signal);
                     }
                 }
-            } else if item == *self.termios.get_special_char(CC_C_CHAR::VQUIT) {
+            } else if item == *termios.get_special_char(CC_C_CHAR::VQUIT) {
                 // type Ctrl + \, signal SIGQUIT
-                if self.termios.contains_isig() {
-                    if let Some(fg) = self.foreground {
+                if termios.contains_isig() {
+                    if let Some(fg) = *self.foreground.read() {
                         let kernel_signal = KernelSignal::new(SIGQUIT);
                         let fg_group = process_table::pgid_to_process_group(fg).unwrap();
                         fg_group.kernel_signal(kernel_signal);
                     }
                 }
-            } else if item == *self.termios.get_special_char(CC_C_CHAR::VKILL) {
+            } else if item == *termios.get_special_char(CC_C_CHAR::VKILL) {
                 // erase current line
-                self.current_line.drain();
-            } else if item == *self.termios.get_special_char(CC_C_CHAR::VERASE) {
+                self.current_line.write().drain();
+            } else if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
                 // type backspace
-                if !self.current_line.is_empty() {
-                    self.current_line.backspace();
+                let mut current_line = self.current_line.write();
+                if !current_line.is_empty() {
+                    current_line.backspace();
                 }
             } else if meet_new_line(item, &self.get_termios()) {
                 // a new line was met. We currently add the item to buffer.
                 // when we read content, the item should be skipped if it's EOF.
-                self.current_line.push_char(item);
-                let current_line_chars = self.current_line.drain();
+                let mut current_line = self.current_line.write();
+                current_line.push_char(item);
+                let current_line_chars = current_line.drain();
                 for char in current_line_chars {
                     self.read_buffer.lock().push(char);
                 }
             } else if item >= 0x20 && item < 0x7f {
                 // printable character
-                self.current_line.push_char(item);
+                self.current_line.write().push_char(item);
             }
         } else {
             // raw mode
@@ -127,7 +130,7 @@ impl LineDiscipline {
             // debug!("push char: {}", char::from(item))
         }
 
-        if self.termios.contain_echo() {
+        if termios.contain_echo() {
             self.output_char(item);
         }
 
@@ -147,13 +150,14 @@ impl LineDiscipline {
             let ch = char::from(item);
             print!("{}", ch);
         }
-        if item == *self.termios.get_special_char(CC_C_CHAR::VERASE) {
+        let termios = self.termios.read();
+        if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
             // write a space to overwrite current character
             let bytes: [u8; 3] = [b'\x08', b' ', b'\x08'];
             let backspace = core::str::from_utf8(&bytes).unwrap();
             print!("{}", backspace);
         }
-        if self.termios.contains_echo_ctl() {
+        if termios.contains_echo_ctl() {
             // The unprintable chars between 1-31 are mapped to ctrl characters between 65-95.
             // e.g., 0x3 is mapped to 0x43, which is C. So, we will print ^C when 0x3 is met.
             if 0 < item && item < 0x20 {
@@ -165,9 +169,11 @@ impl LineDiscipline {
     }
 
     /// read all bytes buffered to dst, return the actual read length.
-    pub fn read(&mut self, dst: &mut [u8]) -> Result<usize> {
-        let vmin = *self.termios.get_special_char(CC_C_CHAR::VMIN);
-        let vtime = *self.termios.get_special_char(CC_C_CHAR::VTIME);
+    pub fn read(&self, dst: &mut [u8]) -> Result<usize> {
+        let termios = self.termios.read();
+        let vmin = *termios.get_special_char(CC_C_CHAR::VMIN);
+        let vtime = *termios.get_special_char(CC_C_CHAR::VTIME);
+        drop(termios);
         let read_len: usize = self.read_wait_queue.wait_until(|| {
             // if current process does not belong to foreground process group,
             // block until current process become foreground.
@@ -216,10 +222,10 @@ impl LineDiscipline {
         let mut read_len = 0;
         for i in 0..max_read_len {
             if let Some(next_char) = buffer.dequeue() {
-                if self.termios.is_canonical_mode() {
+                if self.termios.read().is_canonical_mode() {
                     // canonical mode, read until meet new line
-                    if meet_new_line(next_char, self.get_termios()) {
-                        if !should_not_be_read(next_char, self.get_termios()) {
+                    if meet_new_line(next_char, &self.termios.read()) {
+                        if !should_not_be_read(next_char, &self.termios.read()) {
                             dst[i] = next_char;
                             read_len += 1;
                         }
@@ -261,7 +267,7 @@ impl LineDiscipline {
     /// whether the current process belongs to foreground process group
     fn current_belongs_to_foreground(&self) -> bool {
         let current = current!();
-        if let Some(fg_pgid) = self.foreground {
+        if let Some(fg_pgid) = *self.foreground.read() {
             if let Some(process_group) = process_table::pgid_to_process_group(fg_pgid) {
                 if process_group.contains_process(current.pid()) {
                     return true;
@@ -273,8 +279,8 @@ impl LineDiscipline {
     }
 
     /// set foreground process group
-    pub fn set_fg(&mut self, fg_pgid: Pgid) {
-        self.foreground = Some(fg_pgid);
+    pub fn set_fg(&self, fg_pgid: Pgid) {
+        *self.foreground.write() = Some(fg_pgid);
         // Some background processes may be waiting on the wait queue, when set_fg, the background processes may be able to read.
         if self.is_readable() {
             self.read_wait_queue.wake_all();
@@ -282,8 +288,8 @@ impl LineDiscipline {
     }
 
     /// get foreground process group id
-    pub fn get_fg(&self) -> Option<&Pgid> {
-        self.foreground.as_ref()
+    pub fn get_fg(&self) -> Option<Pgid> {
+        *self.foreground.read()
     }
 
     /// whether there is buffered data
@@ -291,12 +297,12 @@ impl LineDiscipline {
         self.read_buffer.lock().len() == 0
     }
 
-    pub fn get_termios(&self) -> &KernelTermios {
-        &self.termios
+    pub fn get_termios(&self) -> KernelTermios {
+        *self.termios.read()
     }
 
-    pub fn set_termios(&mut self, termios: KernelTermios) {
-        self.termios = termios;
+    pub fn set_termios(&self, termios: KernelTermios) {
+        *self.termios.write() = termios;
     }
 }
 
