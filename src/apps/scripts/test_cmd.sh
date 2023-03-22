@@ -3,7 +3,8 @@
 set -e
 set -x
 
-cd scripts
+SCRIPT_DIR=/scripts
+cd ${SCRIPT_DIR}
 
 touch hello.txt
 mv hello.txt hello_world.txt

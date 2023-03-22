@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-pub const MAX_THREAD_NAME_LEN: usize = 16;
+pub const MAX_THREAD_NAME_LEN: usize = 256;
 
 #[derive(Debug)]
 pub struct ThreadName {
@@ -34,7 +34,7 @@ impl ThreadName {
             // if len > MAX_THREAD_NAME_LEN, truncate it.
             self.count = MAX_THREAD_NAME_LEN;
             self.inner[..MAX_THREAD_NAME_LEN].clone_from_slice(&bytes[..MAX_THREAD_NAME_LEN]);
-            self.inner[MAX_THREAD_NAME_LEN] = 0;
+            self.inner[MAX_THREAD_NAME_LEN - 1] = 0;
             return Ok(());
         }
         self.count = bytes_len;
