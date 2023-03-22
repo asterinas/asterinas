@@ -48,6 +48,10 @@ impl KernelStack {
             )?,
         })
     }
+
+    pub fn end_paddr(&self) -> Paddr {
+        self.frame.get(self.frame.len() - 1).unwrap().end_paddr()
+    }
 }
 
 /// A task that executes a function to the end.
@@ -132,7 +136,7 @@ impl Task {
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
         result.task_inner.lock().ctx.regs.rsp =
-            (crate::vm::phys_to_virt(result.kstack.frame.end_pa().unwrap())) as u64;
+            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
 
         let arc_self = Arc::new(result);
         switch_to_task(arc_self.clone());
@@ -172,7 +176,7 @@ impl Task {
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
         result.task_inner.lock().ctx.regs.rsp =
-            (crate::vm::phys_to_virt(result.kstack.frame.end_pa().unwrap())) as u64;
+            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
 
         Ok(Arc::new(result))
     }

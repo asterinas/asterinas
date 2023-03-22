@@ -50,7 +50,7 @@ impl PageTableEntry {
     pub const fn new_page(pa: Paddr, flags: PageTableFlags) -> Self {
         Self((pa & Self::PHYS_ADDR_MASK) | flags.bits)
     }
-    const fn pa(self) -> Paddr {
+    const fn paddr(self) -> Paddr {
         self.0 as usize & Self::PHYS_ADDR_MASK
     }
     const fn flags(self) -> PageTableFlags {
@@ -68,7 +68,7 @@ impl fmt::Debug for PageTableEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut f = f.debug_struct("PageTableEntry");
         f.field("raw", &self.0)
-            .field("pa", &self.pa())
+            .field("paddr", &self.paddr())
             .field("flags", &self.flags())
             .finish()
     }
@@ -83,13 +83,13 @@ pub struct PageTable {
 impl PageTable {
     pub fn new() -> Self {
         let root_frame = frame_allocator::alloc_zero().unwrap();
-        let p4 = table_of(root_frame.start_pa());
+        let p4 = table_of(root_frame.start_paddr()).unwrap();
         let map_pte = ALL_MAPPED_PTE.lock();
         for (index, pte) in map_pte.iter() {
             p4[*index] = *pte;
         }
         Self {
-            root_pa: root_frame.start_pa(),
+            root_pa: root_frame.start_paddr(),
             tables: vec![root_frame],
         }
     }
@@ -124,8 +124,8 @@ impl PageTable {
 
     pub fn map_area(&mut self, area: &MapArea) {
         for (va, pa) in area.mapper.iter() {
-            assert!(pa.start_pa() < PHYS_OFFSET);
-            self.map(*va, pa.start_pa(), area.flags);
+            assert!(pa.start_paddr() < PHYS_OFFSET);
+            self.map(*va, pa.start_paddr(), area.flags);
         }
     }
 
@@ -139,13 +139,13 @@ impl PageTable {
 impl PageTable {
     fn alloc_table(&mut self) -> Paddr {
         let frame = frame_allocator::alloc_zero().unwrap();
-        let pa = frame.start_pa();
+        let pa = frame.start_paddr();
         self.tables.push(frame);
         pa
     }
 
     fn get_entry_or_create(&mut self, va: Vaddr) -> Option<&mut PageTableEntry> {
-        let p4 = table_of(self.root_pa);
+        let p4 = table_of(self.root_pa).unwrap();
         let p4e = &mut p4[p4_index(va)];
         let p3 = next_table_or_create(p4e, || self.alloc_table())?;
         let p3e = &mut p3[p3_index(va)];
@@ -174,7 +174,7 @@ const fn p1_index(va: Vaddr) -> usize {
 }
 
 fn get_entry(root_pa: Paddr, va: Vaddr) -> Option<&'static mut PageTableEntry> {
-    let p4 = table_of(root_pa);
+    let p4 = table_of(root_pa).unwrap();
     let p4e = &mut p4[p4_index(va)];
     let p3 = next_table(p4e)?;
     let p3e = &mut p3[p3_index(va)];
@@ -185,14 +185,17 @@ fn get_entry(root_pa: Paddr, va: Vaddr) -> Option<&'static mut PageTableEntry> {
     Some(p1e)
 }
 
-fn table_of<'a>(pa: Paddr) -> &'a mut [PageTableEntry] {
-    let ptr = super::phys_to_virt(pa) as *mut _;
-    unsafe { core::slice::from_raw_parts_mut(ptr, ENTRY_COUNT) }
+fn table_of<'a>(pa: Paddr) -> Option<&'a mut [PageTableEntry]> {
+    if pa == 0 {
+        return None;
+    }
+    let ptr = super::paddr_to_vaddr(pa) as *mut _;
+    unsafe { Some(core::slice::from_raw_parts_mut(ptr, ENTRY_COUNT)) }
 }
 
 fn next_table<'a>(entry: &PageTableEntry) -> Option<&'a mut [PageTableEntry]> {
     if entry.is_present() {
-        Some(table_of(entry.pa()))
+        Some(table_of(entry.paddr()).unwrap())
     } else {
         None
     }
@@ -208,40 +211,37 @@ fn next_table_or_create<'a>(
             pa,
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER,
         );
-        Some(table_of(pa))
+        Some(table_of(pa).unwrap())
     } else {
         next_table(entry)
     }
 }
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
-/// Note: this may not useful for accessing usermode data, use offset first
-pub fn translate_not_offset_virtual_address(address: usize) -> usize {
+pub fn vaddr_to_paddr(virtual_address: Vaddr) -> Option<Paddr> {
     let (cr3, _) = x86_64::registers::control::Cr3::read();
     let cr3 = cr3.start_address().as_u64() as usize;
 
-    let p4 = table_of(cr3);
-
-    let virtual_address = address;
+    let p4 = table_of(cr3)?;
 
     let pte = p4[p4_index(virtual_address)];
-    let p3 = table_of(pte.pa());
+    let p3 = table_of(pte.paddr())?;
 
     let pte = p3[p3_index(virtual_address)];
-    let p2 = table_of(pte.pa());
+    let p2 = table_of(pte.paddr())?;
 
     let pte = p2[p2_index(virtual_address)];
-    let p1 = table_of(pte.pa());
+    let p1 = table_of(pte.paddr())?;
 
     let pte = p1[p1_index(virtual_address)];
-    (pte.pa() & ((1 << 48) - 1)) + (address & ((1 << 12) - 1))
+    Some((pte.paddr() & ((1 << 48) - 1)) + (virtual_address & ((1 << 12) - 1)))
 }
 
 pub(crate) fn init() {
     let (cr3, _) = x86_64::registers::control::Cr3::read();
     let cr3 = cr3.start_address().as_u64() as usize;
 
-    let p4 = table_of(cr3);
+    let p4 = table_of(cr3).unwrap();
     // Cancel mapping in lowest addresses.
     p4[0].0 = 0;
     let mut map_pte = ALL_MAPPED_PTE.lock();

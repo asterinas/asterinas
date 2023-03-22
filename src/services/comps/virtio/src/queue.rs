@@ -96,7 +96,7 @@ impl VirtQueue {
                 .remove(0);
             cfg.write_at(
                 offset_of!(VitrioPciCommonCfg, queue_desc),
-                frame.start_pa() as u64,
+                frame.start_paddr() as u64,
             );
             debug!("queue_desc vm frame:{:x?}", frame);
             frame_vec.push(frame);
@@ -108,7 +108,7 @@ impl VirtQueue {
                 .remove(0);
             cfg.write_at(
                 offset_of!(VitrioPciCommonCfg, queue_driver),
-                frame.start_pa() as u64,
+                frame.start_paddr() as u64,
             );
             debug!("queue_driver vm frame:{:x?}", frame);
             frame_vec.push(frame);
@@ -120,7 +120,7 @@ impl VirtQueue {
                 .remove(0);
             cfg.write_at(
                 offset_of!(VitrioPciCommonCfg, queue_device),
-                frame.start_pa() as u64,
+                frame.start_paddr() as u64,
             );
             debug!("queue_device vm frame:{:x?}", frame);
             frame_vec.push(frame);
@@ -337,8 +337,7 @@ struct Descriptor {
 
 impl Descriptor {
     fn set_buf(&mut self, buf: &[u8]) {
-        self.addr =
-            jinux_frame::vm::translate_not_offset_virtual_address(buf.as_ptr() as usize) as u64;
+        self.addr = jinux_frame::vm::vaddr_to_paddr(buf.as_ptr() as usize).unwrap() as u64;
 
         self.len = buf.len() as u32;
     }
@@ -346,12 +345,7 @@ impl Descriptor {
 
 fn set_buf(inframe_ptr: &InFramePtr<Descriptor>, buf: &[u8]) {
     let va = buf.as_ptr() as usize;
-    let pa = if va >= jinux_frame::config::PHYS_OFFSET && va <= jinux_frame::config::KERNEL_OFFSET {
-        // can use offset
-        jinux_frame::vm::virt_to_phys(va)
-    } else {
-        jinux_frame::vm::translate_not_offset_virtual_address(buf.as_ptr() as usize)
-    };
+    let pa = jinux_frame::vm::vaddr_to_paddr(va).unwrap();
     debug!("set buf write virt address:{:x}", va);
     debug!("set buf write phys address:{:x}", pa);
     inframe_ptr.write_at(offset_of!(Descriptor, addr), pa as u64);

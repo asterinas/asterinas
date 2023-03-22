@@ -23,7 +23,7 @@ pub use self::space::{VmMapOptions, VmPerm, VmSpace};
 
 pub use self::{
     memory_set::{MapArea, MemorySet},
-    page_table::{translate_not_offset_virtual_address, PageTable},
+    page_table::PageTable,
 };
 
 use alloc::vec::Vec;
@@ -31,12 +31,18 @@ use limine::LimineMemmapRequest;
 use log::debug;
 use spin::Once;
 
-pub const fn phys_to_virt(pa: usize) -> usize {
+/// Convert physical address to virtual address using offset, only available inside jinux-frame
+pub(crate) fn paddr_to_vaddr(pa: usize) -> usize {
     pa + PHYS_OFFSET
 }
 
-pub const fn virt_to_phys(va: usize) -> usize {
-    va - PHYS_OFFSET
+pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
+    if va >= crate::config::PHYS_OFFSET && va <= crate::config::KERNEL_OFFSET {
+        // can use offset to get the physical address
+        Some(va - PHYS_OFFSET)
+    } else {
+        page_table::vaddr_to_paddr(va)
+    }
 }
 
 pub const fn is_page_aligned(p: usize) -> bool {
