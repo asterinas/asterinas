@@ -16,8 +16,8 @@ impl Elf {
         // The elf header is usually 64 bytes. pt1 is 16bytes and pt2 is 48 bytes.
         // We require 128 bytes here is to keep consistency with linux implementations.
         debug_assert!(input.len() >= 128);
-        let header =
-            xmas_elf::header::parse_header(input).map_err(|_| Error::new(Errno::ENOEXEC))?;
+        let header = xmas_elf::header::parse_header(input)
+            .map_err(|_| Error::with_message(Errno::ENOEXEC, "parse elf header fails"))?;
         let elf_header = ElfHeader::parse_elf_header(header)?;
         check_elf_header(&elf_header)?;
         // than parse the program headers table
@@ -31,7 +31,7 @@ impl Elf {
         let mut program_headers = Vec::with_capacity(ph_count as usize);
         for index in 0..ph_count {
             let program_header = xmas_elf::program::parse_program_header(input, header, index)
-                .map_err(|_| Error::new(Errno::ENOEXEC))?;
+                .map_err(|_| Error::with_message(Errno::ENOEXEC, "parse program header fails"))?;
             let ph64 = match program_header {
                 xmas_elf::program::ProgramHeader::Ph64(ph64) => ph64.clone(),
                 xmas_elf::program::ProgramHeader::Ph32(_) => {
@@ -80,6 +80,11 @@ impl Elf {
             Errno::ENOEXEC,
             "can not find program header table address in elf"
         );
+    }
+
+    /// whether the elf is a shared object
+    pub fn is_shared_object(&self) -> bool {
+        self.elf_header.pt2.type_.as_type() == header::Type::SharedObject
     }
 }
 
@@ -167,9 +172,10 @@ fn check_elf_header(elf_header: &ElfHeader) -> Result<()> {
     if elf_header.pt2.machine.as_machine() != header::Machine::X86_64 {
         return_errno_with_message!(Errno::ENOEXEC, "Not x86_64 executable");
     }
-    // Executable file
-    debug_assert_eq!(elf_header.pt2.type_.as_type(), header::Type::Executable);
-    if elf_header.pt2.type_.as_type() != header::Type::Executable {
+    // Executable file or shared object
+    let elf_type = elf_header.pt2.type_.as_type();
+    debug_assert!(elf_type == header::Type::Executable || elf_type == header::Type::SharedObject);
+    if elf_type != header::Type::Executable && elf_type != header::Type::SharedObject {
         return_errno_with_message!(Errno::ENOEXEC, "Not executable file");
     }
 
