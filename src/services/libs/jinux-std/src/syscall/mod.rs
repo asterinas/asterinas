@@ -64,6 +64,8 @@ use crate::syscall::write::sys_write;
 use crate::syscall::writev::sys_writev;
 use jinux_frame::cpu::UserContext;
 
+use self::pread64::sys_pread64;
+
 mod access;
 mod arch_prctl;
 mod brk;
@@ -102,6 +104,7 @@ mod open;
 mod pause;
 mod poll;
 mod prctl;
+mod pread64;
 mod prlimit64;
 mod read;
 mod readlink;
@@ -175,6 +178,7 @@ define_syscall_nums!(
     SYS_RT_SIGPROCMASK = 14,
     SYS_RT_SIGRETRUN = 15,
     SYS_IOCTL = 16,
+    SYS_PREAD64 = 17,
     SYS_WRITEV = 20,
     SYS_ACCESS = 21,
     SYS_SCHED_YIELD = 24,
@@ -306,6 +310,7 @@ pub fn syscall_dispatch(
         SYS_RT_SIGPROCMASK => syscall_handler!(4, sys_rt_sigprocmask, args),
         SYS_RT_SIGRETRUN => syscall_handler!(0, sys_rt_sigreturn, context),
         SYS_IOCTL => syscall_handler!(3, sys_ioctl, args),
+        SYS_PREAD64 => syscall_handler!(4, sys_pread64, args),
         SYS_WRITEV => syscall_handler!(3, sys_writev, args),
         SYS_ACCESS => syscall_handler!(2, sys_access, args),
         SYS_SCHED_YIELD => syscall_handler!(0, sys_sched_yield),
