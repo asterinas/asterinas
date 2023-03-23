@@ -16,7 +16,7 @@ ifneq (, $(wildcard $(INITRAMFS)/. ))
 endif
 
 
-.PHONY: all clean
+.PHONY: all clean prepare_libs
 
 all: $(RAMDISK)
 
@@ -25,7 +25,13 @@ $(INITRAMFS): $(APPS) $(APPS_DIRS) $(APPS_FILES)
 	@cp -a $(APPS)/* $@
 	@cd $@ && find . \( -name "*.s" -o -name "*.c" -o -name "Makefile" -o -name "README.md" \) -delete
 
-$(RAMDISK): $(INITRAMFS) $(INITRAMFS_DIRS) $(INITRAMFS_FILES)
+prepare_libs: $(INITRAMFS)
+	@mkdir -p $(INITRAMFS)/lib64
+	@cp -L /lib64/ld-linux-x86-64.so.2 $(INITRAMFS)/lib64
+	@mkdir -p $(INITRAMFS)/lib/x86_64-linux-gnu
+	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $(INITRAMFS)/lib/x86_64-linux-gnu
+
+$(RAMDISK): $(INITRAMFS) $(INITRAMFS_DIRS) $(INITRAMFS_FILES) prepare_libs
 	@echo "Generating the ramdisk image..."
 	@rm -rf $(BUILD_DIR) && mkdir -p $(BUILD_DIR)
 	@./mkinitramfs $(INITRAMFS) $@

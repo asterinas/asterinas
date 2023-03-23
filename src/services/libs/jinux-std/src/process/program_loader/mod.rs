@@ -59,6 +59,6 @@ pub fn load_program_to_root_vmar(
     }
 
     let elf_file = Arc::new(FileHandle::new_inode_handle(file));
-    let elf_load_info = load_elf_to_root_vmar(root_vmar, &file_header, elf_file, argv, envp)?;
-    Ok((abs_path, elf_load_info))
+    debug!("load executable,  path = {}", executable_path);
+    load_elf_to_root_vmar(root_vmar, &file_header, elf_file, argv, envp)
 }

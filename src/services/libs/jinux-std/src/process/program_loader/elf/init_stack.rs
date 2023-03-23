@@ -70,8 +70,6 @@ pub struct InitStack {
     argv: Vec<CString>,
     /// Environmental variables
     envp: Vec<CString>,
-    /// Auxiliary Vector
-    aux_vec: AuxVec,
 }
 
 impl InitStack {
@@ -88,7 +86,6 @@ impl InitStack {
             pos: init_stack_top,
             argv,
             envp,
-            aux_vec: AuxVec::new(),
         }
     }
 
@@ -112,9 +109,9 @@ impl InitStack {
         self.init_stack_top - self.init_stack_size
     }
 
-    pub fn init(&mut self, root_vmar: &Vmar<Full>, elf: &Elf) -> Result<()> {
+    pub fn init(&mut self, root_vmar: &Vmar<Full>, elf: &Elf, aux_vec: &mut AuxVec) -> Result<()> {
         self.map_and_zeroed(root_vmar)?;
-        self.write_stack_content(root_vmar, elf)?;
+        self.write_stack_content(root_vmar, elf, aux_vec)?;
         self.debug_print_stack_content(root_vmar);
         Ok(())
     }
@@ -139,10 +136,11 @@ impl InitStack {
         root_vmar: &Vmar<Full>,
         envp_pointers: &Vec<u64>,
         argv_pointers: &Vec<u64>,
+        aux_vec: &AuxVec,
     ) -> Result<()> {
         // ensure 8-byte alignment
         self.write_u64(0, root_vmar)?;
-        let auxvec_size = (self.aux_vec.table().len() + 1) * (mem::size_of::<u64>() * 2);
+        let auxvec_size = (aux_vec.table().len() + 1) * (mem::size_of::<u64>() * 2);
         let envp_pointers_size = (envp_pointers.len() + 1) * mem::size_of::<u64>();
         let argv_pointers_size = (argv_pointers.len() + 1) * mem::size_of::<u64>();
         let argc_size = mem::size_of::<u64>();
@@ -153,7 +151,12 @@ impl InitStack {
         Ok(())
     }
 
-    fn write_stack_content(&mut self, root_vmar: &Vmar<Full>, elf: &Elf) -> Result<()> {
+    fn write_stack_content(
+        &mut self,
+        root_vmar: &Vmar<Full>,
+        elf: &Elf,
+        aux_vec: &mut AuxVec,
+    ) -> Result<()> {
         // write a zero page. When a user program tries to read a cstring(like argv) from init stack,
         // it will typically read 4096 bytes and then find the first '\0' in the buffer
         // (we now read 128 bytes, which is set by MAX_FILENAME_LEN).
@@ -169,13 +172,9 @@ impl InitStack {
         // write random value
         let random_value = generate_random_for_aux_vec();
         let random_value_pointer = self.write_bytes(&random_value, root_vmar)?;
-        self.aux_vec.set(AuxKey::AT_RANDOM, random_value_pointer)?;
-        self.aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
-        self.aux_vec.set(AuxKey::AT_PHDR, elf.ph_addr()? as u64)?;
-        self.aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64)?;
-        self.aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64)?;
-        self.adjust_stack_alignment(root_vmar, &envp_pointers, &argv_pointers)?;
-        self.write_aux_vec(root_vmar)?;
+        aux_vec.set(AuxKey::AT_RANDOM, random_value_pointer)?;
+        self.adjust_stack_alignment(root_vmar, &envp_pointers, &argv_pointers, &aux_vec)?;
+        self.write_aux_vec(root_vmar, aux_vec)?;
         self.write_envp_pointers(root_vmar, envp_pointers)?;
         self.write_argv_pointers(root_vmar, argv_pointers)?;
         // write argc
@@ -214,13 +213,12 @@ impl InitStack {
         Ok(argv_pointers)
     }
 
-    fn write_aux_vec(&mut self, root_vmar: &Vmar<Full>) -> Result<()> {
+    fn write_aux_vec(&mut self, root_vmar: &Vmar<Full>, aux_vec: &mut AuxVec) -> Result<()> {
         // Write NULL auxilary
         self.write_u64(0, root_vmar)?;
         self.write_u64(AuxKey::AT_NULL as u64, root_vmar)?;
         // Write Auxiliary vectors
-        let aux_vec: Vec<_> = self
-            .aux_vec
+        let aux_vec: Vec<_> = aux_vec
             .table()
             .iter()
             .map(|(aux_key, aux_value)| (*aux_key, *aux_value))
@@ -320,6 +318,20 @@ impl InitStack {
         let argc = root_vmar.read_val::<u64>(stack_top).unwrap();
         debug!("argc = {}", argc);
     }
+}
+
+pub fn init_aux_vec(elf: &Elf, elf_map_addr: Option<Vaddr>) -> Result<AuxVec> {
+    let mut aux_vec = AuxVec::new();
+    aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
+    let ph_addr = if elf.is_shared_object() {
+        elf.ph_addr()? + elf_map_addr.unwrap()
+    } else {
+        elf.ph_addr()?
+    };
+    aux_vec.set(AuxKey::AT_PHDR, ph_addr as u64)?;
+    aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64)?;
+    aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64)?;
+    Ok(aux_vec)
 }
 
 /// generate random [u8; 16].
