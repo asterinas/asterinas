@@ -9,7 +9,8 @@ use spin::{RwLock, RwLockWriteGuard};
 
 use super::*;
 use crate::fs::utils::{
-    DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
+    DirEntryList, DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+    SuperBlock,
 };
 
 pub struct RamFS {
@@ -139,7 +140,7 @@ impl Inner {
 }
 
 struct DirEntry {
-    children: LinkedList<(Str256, Arc<RamInode>)>,
+    children: DirEntryList<(Str256, Arc<RamInode>)>,
     this: Weak<RamInode>,
     parent: Weak<RamInode>,
 }
@@ -147,7 +148,7 @@ struct DirEntry {
 impl DirEntry {
     fn new() -> Self {
         Self {
-            children: LinkedList::new(),
+            children: DirEntryList::new(),
             this: Weak::default(),
             parent: Weak::default(),
         }
@@ -167,8 +168,8 @@ impl DirEntry {
             true
         } else {
             self.children
-                .iter()
-                .find(|(child, _)| child == &Str256::from(name))
+                .enumerate()
+                .find(|(_, (child, _))| child == &Str256::from(name))
                 .is_some()
         }
     }
@@ -180,26 +181,28 @@ impl DirEntry {
             Some((1, self.parent.upgrade().unwrap()))
         } else {
             self.children
-                .iter()
                 .enumerate()
-                .find(|(idx, (child, inode))| child == &Str256::from(name))
+                .find(|(_, (child, _))| child == &Str256::from(name))
                 .map(|(idx, (_, inode))| (idx + 2, inode.clone()))
         }
     }
 
     fn append_entry(&mut self, name: &str, inode: Arc<RamInode>) {
-        self.children.push_back((Str256::from(name), inode))
+        self.children.append((Str256::from(name), inode))
     }
 
-    fn remove_entry(&mut self, idx: usize) -> (Str256, Arc<RamInode>) {
+    fn remove_entry(&mut self, idx: usize) -> Option<(Str256, Arc<RamInode>)> {
         assert!(idx >= 2);
         self.children.remove(idx - 2)
     }
 
-    fn modify_entry(&mut self, idx: usize, new_name: &str) {
+    fn substitute_entry(
+        &mut self,
+        idx: usize,
+        new_entry: (Str256, Arc<RamInode>),
+    ) -> Option<(Str256, Arc<RamInode>)> {
         assert!(idx >= 2);
-        let (name, _) = self.children.iter_mut().nth(idx - 2).unwrap();
-        *name = Str256::from(new_name);
+        self.children.substitute(idx - 2, new_entry)
     }
 
     fn visit_entry(&self, mut idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -226,14 +229,21 @@ impl DirEntry {
                 *idx += 1;
             }
             // Read the normal child entries.
-            for (name, child) in self.children.iter().skip(*idx - 2) {
+            for (offset, (name, child)) in self
+                .children
+                .enumerate()
+                .map(|(idx, (name, child))| (idx + 2, (name, child)))
+            {
+                if offset < *idx {
+                    continue;
+                }
                 visitor.visit(
                     name.as_ref(),
                     child.metadata().ino as u64,
                     child.metadata().type_,
-                    *idx,
+                    offset,
                 )?;
-                *idx += 1;
+                *idx = offset + 1;
             }
             Ok(())
         };
@@ -535,10 +545,10 @@ impl Inode for RamInode {
         if self.metadata().ino == target.metadata().ino {
             let mut self_inode = self.0.write();
             let self_dir = self_inode.inner.as_direntry_mut().unwrap();
-            let (idx, _) = self_dir
+            let (idx, inode) = self_dir
                 .get_entry(old_name)
                 .ok_or(Error::new(Errno::ENOENT))?;
-            self_dir.modify_entry(idx, new_name);
+            self_dir.substitute_entry(idx, (Str256::from(new_name), inode));
         } else {
             let (mut self_inode, mut target_inode) = write_lock_two_inodes(self, target);
             let self_dir = self_inode.inner.as_direntry_mut().unwrap();
