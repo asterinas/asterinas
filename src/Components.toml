@@ -6,6 +6,7 @@ virtio = { name = "jinux-virtio" }
 input = { name = "jinux-input" }
 block = { name = "jinux-block" }
 time = { name = "jinux-time" }
+framebuffer = { name = "jinux-framebuffer" }
 main = { name = "jinux" }
 
 [whitelist]

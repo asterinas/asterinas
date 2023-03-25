@@ -1,11 +1,31 @@
-use alloc::slice;
-use core::fmt;
-use font8x8::UnicodeFonts;
-use limine::{LimineFramebufferRequest, LimineMemoryMapEntryType};
-use spin::Mutex;
-use volatile::Volatile;
+//! The frambuffer of jinux
+#![no_std]
+#![forbid(unsafe_code)]
+#![feature(strict_provenance)]
 
-pub(crate) static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
+extern crate alloc;
+
+use alloc::vec::Vec;
+use component::{init_component, ComponentInitError};
+use core::{
+    fmt,
+    ops::{Index, IndexMut},
+};
+use font8x8::UnicodeFonts;
+use jinux_frame::{
+    config::PAGE_SIZE,
+    vm::{VmAllocOptions, VmFrameVec, VmIo},
+    LimineFramebufferRequest,
+};
+use spin::{Mutex, Once};
+
+#[init_component]
+fn framebuffer_init() -> Result<(), ComponentInitError> {
+    init();
+    Ok(())
+}
+
+pub(crate) static WRITER: Once<Mutex<Writer>> = Once::new();
 static FRAMEBUFFER_REUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
 
 pub(crate) fn init() {
@@ -17,38 +37,44 @@ pub(crate) fn init() {
         assert_eq!(response.framebuffer_count, 1);
         let mut writer = None;
         let mut size = 0;
-        for i in crate::vm::MEMORY_REGIONS.get().unwrap().iter() {
-            if i.typ == LimineMemoryMapEntryType::Framebuffer {
-                size = i.len as usize;
-            }
+        for i in jinux_frame::vm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
+            size = i.len as usize;
         }
         for i in response.framebuffers() {
-            let buffer_mut = unsafe {
-                let start = i.address.as_ptr().unwrap().addr();
-                slice::from_raw_parts_mut(start as *mut u8, size)
-            };
+            let page_size = size / PAGE_SIZE;
+
+            let frame_vec = VmFrameVec::allocate(VmAllocOptions::new(page_size).paddr(
+                jinux_frame::vm::vaddr_to_paddr(i.address.as_ptr().unwrap().addr()),
+            ))
+            .unwrap();
+
+            let mut buffer: Vec<u8> = Vec::with_capacity(size);
+            for _ in 0..size {
+                buffer.push(0);
+            }
+            log::debug!("Found framebuffer:{:?}", *i);
 
             writer = Some(Writer {
-                buffer: Volatile::new(buffer_mut),
+                frame_vec,
                 x_pos: 0,
                 y_pos: 0,
-                bytes_per_pixel: i.bpp as usize,
+                bytes_per_pixel: (i.bpp / 8) as usize,
                 width: i.width as usize,
                 height: i.height as usize,
+                buffer: buffer.leak(),
             })
         }
         writer.unwrap()
     };
     writer.clear();
 
-    // global writer should not be locked here
-    let mut global_writer = WRITER.try_lock().unwrap();
-    assert!(global_writer.is_none(), "Global writer already initialized");
-    *global_writer = Some(writer);
+    WRITER.call_once(|| Mutex::new(writer));
 }
 
 pub(crate) struct Writer {
-    buffer: Volatile<&'static mut [u8]>,
+    frame_vec: VmFrameVec,
+    /// FIXME: remove buffer. The meaning of buffer is to facilitate the various operations of framebuffer
+    buffer: &'static mut [u8],
 
     bytes_per_pixel: usize,
     width: usize,
@@ -73,11 +99,14 @@ impl Writer {
         self.x_pos = 0;
         self.y_pos = 0;
         self.buffer.fill(0);
+        self.frame_vec.write_bytes(0, self.buffer).unwrap();
     }
 
+    /// Everything moves up one letter in size
     fn shift_lines_up(&mut self) {
         let offset = self.bytes_per_pixel * 8;
         self.buffer.copy_within(offset.., 0);
+        self.frame_vec.write_bytes(0, self.buffer).unwrap();
         self.y_pos -= 8;
     }
 
@@ -119,7 +148,7 @@ impl Writer {
     }
 
     fn write_pixel(&mut self, x: usize, y: usize, on: bool) {
-        let pixel_offset = y + x;
+        let pixel_offset = y * self.width + x;
         let color = if on {
             [0x33, 0xff, 0x66, 0]
         } else {
@@ -130,6 +159,13 @@ impl Writer {
         self.buffer
             .index_mut(byte_offset..(byte_offset + bytes_per_pixel))
             .copy_from_slice(&color[..bytes_per_pixel]);
+        self.frame_vec
+            .write_bytes(
+                byte_offset,
+                self.buffer
+                    .index(byte_offset..(byte_offset + bytes_per_pixel)),
+            )
+            .unwrap();
     }
 
     /// Writes the given ASCII string to the buffer.
@@ -153,15 +189,15 @@ impl fmt::Write for Writer {
 
 /// Like the `print!` macro in the standard library, but prints to the VGA text buffer.
 #[macro_export]
-macro_rules! screen_print {
-    ($($arg:tt)*) => ($crate::device::framebuffer::_print(format_args!($($arg)*)));
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::_print(format_args!($($arg)*)));
 }
 
 /// Like the `println!` macro in the standard library, but prints to the VGA text buffer.
 #[macro_export]
-macro_rules! screen_println {
-    () => ($crate::screen_print!("\n"));
-    ($($arg:tt)*) => ($crate::screen_print!("{}\n", format_args!($($arg)*)));
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
 /// Prints the given formatted string to the VGA text buffer
@@ -169,9 +205,6 @@ macro_rules! screen_println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    use x86_64::instructions::interrupts;
 
-    interrupts::without_interrupts(|| {
-        WRITER.lock().as_mut().unwrap().write_fmt(args).unwrap();
-    });
+    WRITER.get().unwrap().lock().write_fmt(args).unwrap();
 }

@@ -12,10 +12,6 @@ x86 = "0.52.0"
 spin = "0.9.4"
 volatile = { version = "0.4.5", features = ["unstable"] }
 buddy_system_allocator = "0.9.0"
-font8x8 = { version = "0.2.5", default-features = false, features = [
-    "unicode",
-] }
-uart_16550 = "0.2.0"
 pod = { path = "../pod" }
 acpi = "4.1.1"
 intrusive-collections = "0.9.5"
@@ -25,5 +21,3 @@ lazy_static = { version = "1.0", features = ["spin_no_std"] }
 trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "13e1065" }
 
 [features]
-default = ["serial_print"]
-serial_print = []

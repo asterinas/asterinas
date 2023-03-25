@@ -12,6 +12,7 @@ component = { path = "services/comp-sys/component" }
 [dev-dependencies]
 x86_64 = "0.14.2"
 jinux-time = { path = "services/comps/time" }
+jinux-framebuffer = { path = "services/comps/framebuffer" }
 
 [workspace]
 
@@ -24,6 +25,7 @@ members = [
     "services/comps/virtio",
     "services/comps/input",
     "services/comps/block",
+    "services/comps/framebuffer",
     "services/comps/time",
     "services/libs/jinux-std",
     "services/libs/jinux-rights-proc",

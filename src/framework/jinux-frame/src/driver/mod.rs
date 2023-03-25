@@ -7,11 +7,11 @@ mod pic;
 mod timer;
 mod xapic;
 
+pub(crate) use self::acpi::ACPI_TABLES;
 pub(crate) use self::pic::ack as pic_ack;
 pub(crate) use self::pic::allocate_irq as pic_allocate_irq;
 pub(crate) use self::xapic::ack as xapic_ack;
 pub(crate) use timer::{add_timeout_list, TimerCallback, TICK};
-pub(crate) use self::acpi::ACPI_TABLES;
 
 use log::info;
 
