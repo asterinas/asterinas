@@ -23,7 +23,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[test_case]
 fn test_input() {
-    jinux_frame::enable_interrupts();
+    x86_64::instructions::interrupts::enable();
     println!("please input value into console to pass this test");
     jinux_std::driver::tty::register_serial_input_callback(input_callback);
     unsafe {

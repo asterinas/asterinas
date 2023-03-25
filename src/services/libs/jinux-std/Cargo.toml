@@ -6,16 +6,17 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-jinux-frame = {path = "../../../framework/jinux-frame"}
-pod = {path = "../../../framework/pod"}
-jinux-input = {path="../../comps/input"}
-jinux-block = {path="../../comps/block"}
+jinux-frame = { path = "../../../framework/jinux-frame" }
+pod = { path = "../../../framework/pod" }
+jinux-input = { path = "../../comps/input" }
+jinux-block = { path = "../../comps/block" }
+jinux-time = { path = "../../comps/time" }
 controlled = { path = "../../comp-sys/controlled" }
-typeflags = {path="../typeflags"}
-typeflags-util = {path="../typeflags-util"}
-jinux-rights-proc = {path="../jinux-rights-proc"}
-jinux-util = {path="../jinux-util"}
-cpio-decoder = {path="../cpio-decoder"}
+typeflags = { path = "../typeflags" }
+typeflags-util = { path = "../typeflags-util" }
+jinux-rights-proc = { path = "../jinux-rights-proc" }
+jinux-util = { path = "../jinux-util" }
+cpio-decoder = { path = "../cpio-decoder" }
 virtio-input-decoder = "0.1.4"
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 intrusive-collections = "0.9.5"
@@ -31,7 +32,7 @@ ringbuffer = "0.10.0"
 spin = "0.9.4"
 vte = "0.10"
 lru = "0.9.0"
-log= "0.4"
+log = "0.4"
 
 [dependencies.lazy_static]
 version = "1.0"

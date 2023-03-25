@@ -105,9 +105,9 @@ impl Hpet {
 
 /// HPET init, need to init IOAPIC before init this function
 pub fn init() -> Result<(), AcpiError> {
-    let c = ACPI_TABLES.lock();
+    let lock = ACPI_TABLES.get().unwrap().lock();
 
-    let hpet_info = HpetInfo::new(&*c)?;
+    let hpet_info = HpetInfo::new(&*lock)?;
 
     // config IO APIC entry
     let hpet = Hpet::new(hpet_info.base_address);

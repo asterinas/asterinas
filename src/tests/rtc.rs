@@ -7,11 +7,10 @@ extern crate alloc;
 use core::panic::PanicInfo;
 use jinux_frame::println;
 
-static mut INPUT_VALUE: u8 = 0;
-
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     jinux_frame::init();
+    component::init_all(component::parse_metadata!()).unwrap();
     test_main();
     loop {}
 }
@@ -23,5 +22,5 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[test_case]
 fn test_rtc() {
-    println!("real time:{:?}", jinux_frame::time::get_real_time());
+    println!("real time:{:?}", jinux_time::get_real_time());
 }

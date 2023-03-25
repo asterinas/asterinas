@@ -1,7 +1,6 @@
 use core::time::Duration;
 
 use crate::prelude::*;
-use jinux_frame::time::get_real_time;
 use time::{Date, Month, PrimitiveDateTime, Time};
 
 /// This struct corresponds to `SystemTime` in Rust std.
@@ -21,7 +20,7 @@ impl SystemTime {
 
     /// Returns the current system time
     pub fn now() -> Self {
-        let system_time = get_real_time();
+        let system_time = jinux_time::get_real_time();
         // The get real time result should always be valid
         convert_system_time(system_time).unwrap()
     }
@@ -60,7 +59,7 @@ impl SystemTime {
 }
 
 /// convert jinux_frame::time::Time to System time
-fn convert_system_time(system_time: jinux_frame::time::Time) -> Result<SystemTime> {
+fn convert_system_time(system_time: jinux_time::SystemTime) -> Result<SystemTime> {
     let month = match Month::try_from(system_time.month) {
         Ok(month) => month,
         Err(_) => return_errno_with_message!(Errno::EINVAL, "unknown month in system time"),

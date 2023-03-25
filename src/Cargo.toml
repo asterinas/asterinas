@@ -11,6 +11,7 @@ component = { path = "services/comp-sys/component" }
 
 [dev-dependencies]
 x86_64 = "0.14.2"
+jinux-time = { path = "services/comps/time" }
 
 [workspace]
 
@@ -23,6 +24,7 @@ members = [
     "services/comps/virtio",
     "services/comps/input",
     "services/comps/block",
+    "services/comps/time",
     "services/libs/jinux-std",
     "services/libs/jinux-rights-proc",
     "services/libs/typeflags",
@@ -32,4 +34,3 @@ members = [
 ]
 
 exclude = ["services/comp-sys/controlled", "services/comp-sys/cargo-component"]
-
