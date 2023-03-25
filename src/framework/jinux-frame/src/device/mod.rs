@@ -1,5 +1,6 @@
 //! Device-related APIs.
 
+pub mod cmos;
 pub mod framebuffer;
 pub mod io_port;
 pub mod pci;

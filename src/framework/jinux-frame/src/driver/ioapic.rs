@@ -43,7 +43,7 @@ unsafe impl Sync for IoApicWrapper {}
 pub(crate) static IO_APIC: Once<Mutex<IoApicWrapper>> = Once::new();
 
 pub fn init() {
-    let c = ACPI_TABLES.lock();
+    let c = ACPI_TABLES.get().unwrap().lock();
 
     let platform_info = PlatformInfo::new(&*c).unwrap();
 

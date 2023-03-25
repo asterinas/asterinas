@@ -2,17 +2,12 @@ use core::ptr::NonNull;
 
 use crate::{config, vm::paddr_to_vaddr};
 use acpi::{AcpiHandler, AcpiTables};
-use lazy_static::lazy_static;
 use limine::LimineRsdpRequest;
 use log::info;
-use spin::Mutex;
+use spin::{Mutex, Once};
 
-lazy_static! {
-    /// RSDP information, key is the signature, value is the virtual address of the signature
-    pub(crate) static ref ACPI_TABLES : Mutex<AcpiTables<AcpiMemoryHandler>> = unsafe{
-        Mutex::new(core::mem::MaybeUninit::zeroed().assume_init())
-    };
-}
+/// RSDP information, key is the signature, value is the virtual address of the signature
+pub static ACPI_TABLES: Once<Mutex<AcpiTables<AcpiMemoryHandler>>> = Once::new();
 
 #[derive(Debug, Clone)]
 pub struct AcpiMemoryHandler {}
@@ -43,12 +38,13 @@ pub fn init() {
         .get()
         .expect("Need RSDP address");
     let rsdp = response.address.as_ptr().unwrap().addr() - config::PHYS_OFFSET;
-    *ACPI_TABLES.lock() =
+    let acpi_tables =
         unsafe { AcpiTables::from_rsdp(AcpiMemoryHandler {}, rsdp as usize).unwrap() };
 
-    let lock = ACPI_TABLES.lock();
-    for (signature, sdt) in lock.sdts.iter() {
+    for (signature, sdt) in acpi_tables.sdts.iter() {
         info!("ACPI found signature:{:?}", signature);
     }
+    ACPI_TABLES.call_once(|| Mutex::new(acpi_tables));
+
     info!("acpi init complete");
 }

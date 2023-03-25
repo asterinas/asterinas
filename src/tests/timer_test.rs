@@ -26,7 +26,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[test_case]
 fn test_timer() {
-    jinux_frame::enable_interrupts();
+    x86_64::instructions::interrupts::enable();
     unsafe {
         let timer = Timer::new(timer_callback).unwrap();
         timer.set(Duration::from_secs(1));

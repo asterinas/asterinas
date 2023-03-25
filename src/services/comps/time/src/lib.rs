@@ -1,8 +1,21 @@
-use crate::driver::rtc::{get_cmos, is_updating, read, CENTURY_REGISTER};
-use core::sync::atomic::Ordering::Relaxed;
+//! The frambuffer of jinux
+#![no_std]
+#![forbid(unsafe_code)]
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Time {
+use component::{init_component, ComponentInitError};
+use core::sync::atomic::Ordering::Relaxed;
+use rtc::{get_cmos, is_updating, read, CENTURY_REGISTER};
+
+mod rtc;
+
+#[init_component]
+fn time_init() -> Result<(), ComponentInitError> {
+    rtc::init();
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SystemTime {
     century: u8,
     pub year: u16,
     pub month: u8,
@@ -12,7 +25,19 @@ pub struct Time {
     pub second: u8,
 }
 
-impl Time {
+impl SystemTime {
+    pub(crate) const fn zero() -> Self {
+        Self {
+            century: 0,
+            year: 0,
+            month: 0,
+            day: 0,
+            hour: 0,
+            minute: 0,
+            second: 0,
+        }
+    }
+
     pub(crate) fn update_from_rtc(&mut self) {
         while is_updating() {}
         self.second = get_cmos(0x00);
@@ -67,6 +92,6 @@ impl Time {
 }
 
 /// get real time
-pub fn get_real_time() -> Time {
+pub fn get_real_time() -> SystemTime {
     read()
 }

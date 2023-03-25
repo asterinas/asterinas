@@ -25,7 +25,6 @@ pub mod logger;
 pub mod prelude;
 pub mod sync;
 pub mod task;
-pub mod time;
 pub mod timer;
 pub mod trap;
 pub mod user;
