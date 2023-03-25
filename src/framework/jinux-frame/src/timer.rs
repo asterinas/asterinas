@@ -1,10 +1,8 @@
 //! Timer.
 
-use crate::{
-    config::TIMER_FREQ,
-    driver::{TimerCallback, TICK},
-    prelude::*,
-};
+#[cfg(feature = "x86_64")]
+use crate::arch::x86::timer::{add_timeout_list, TimerCallback, TICK};
+use crate::{config::TIMER_FREQ, prelude::*};
 use core::time::Duration;
 use spin::Mutex;
 
@@ -69,11 +67,7 @@ impl Timer {
             lock.start_tick = TICK;
             lock.timeout_tick = TICK + tick_count;
         }
-        lock.timer_callback = Some(crate::driver::add_timeout_list(
-            tick_count,
-            self.clone(),
-            timer_callback,
-        ));
+        lock.timer_callback = Some(add_timeout_list(tick_count, self.clone(), timer_callback));
     }
 
     /// Returns the remaining timeout value.

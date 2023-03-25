@@ -1,15 +1,14 @@
 use log::info;
 use trapframe::TrapFrame;
 
-use crate::{
-    config,
-    driver::{pic, timer, xapic::XAPIC_INSTANCE},
-};
+use crate::arch::x86::kernel::{pic, xapic::XAPIC_INSTANCE};
+use crate::config;
+
 use x86::apic::xapic;
 
 pub fn init() {
     let mut apic_lock = XAPIC_INSTANCE.get().unwrap().lock();
-    let handle = unsafe { crate::trap::IrqLine::acquire(timer::TIMER_IRQ_NUM) };
+    let handle = unsafe { crate::trap::IrqLine::acquire(super::TIMER_IRQ_NUM) };
     let a = handle.on_active(init_function);
     // divide by 64
     apic_lock.write(xapic::XAPIC_TIMER_DIV_CONF, 0b1001);
@@ -19,7 +18,7 @@ pub fn init() {
 
     // init pic for now, disable it after the APIC Timer init is done
     pic::enable_temp();
-    timer::pit::init();
+    super::pit::init();
 
     static mut IS_FINISH: bool = false;
     // wait until it is finish
@@ -57,7 +56,7 @@ pub fn init() {
         apic_lock.write(xapic::XAPIC_TIMER_INIT_COUNT, ticks as u32);
         apic_lock.write(
             xapic::XAPIC_LVT_TIMER,
-            timer::TIMER_IRQ_NUM as u32 | (1 << 17),
+            super::TIMER_IRQ_NUM as u32 | (1 << 17),
         );
         apic_lock.write(xapic::XAPIC_TIMER_DIV_CONF, 0b1001);
 

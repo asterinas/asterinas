@@ -5,7 +5,7 @@ use spin::Mutex;
 
 use crate::SystemTime;
 
-use jinux_frame::device::cmos::{get_century, CMOS_ADDRESS, CMOS_DATA};
+use jinux_frame::arch::x86::device::cmos::{get_century, CMOS_ADDRESS, CMOS_DATA};
 
 pub(crate) static CENTURY_REGISTER: AtomicU8 = AtomicU8::new(0);
 

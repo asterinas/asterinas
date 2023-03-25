@@ -1,7 +1,7 @@
 use jinux_frame::{
     cpu::CpuContext,
     task::Task,
-    user::{UserEvent, UserMode, UserSpace},
+    user::{UserEvent, UserMode, UserModeExecute, UserSpace},
 };
 
 use crate::{

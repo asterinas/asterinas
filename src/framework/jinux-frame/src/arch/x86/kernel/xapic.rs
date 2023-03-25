@@ -3,13 +3,13 @@ use log::debug;
 use spin::{Mutex, Once};
 use x86::apic::xapic;
 
-pub(crate) const IA32_APIC_BASE_MSR: u32 = 0x1B;
-pub(crate) const IA32_APIC_BASE_MSR_BSP: u32 = 0x100; // Processor is a BSP
-pub(crate) const IA32_APIC_BASE_MSR_ENABLE: u64 = 0x800;
+const IA32_APIC_BASE_MSR: u32 = 0x1B;
+const IA32_APIC_BASE_MSR_BSP: u32 = 0x100; // Processor is a BSP
+const IA32_APIC_BASE_MSR_ENABLE: u64 = 0x800;
 
 const APIC_LVT_MASK_BITS: u32 = 1 << 16;
 
-pub(crate) static XAPIC_INSTANCE: Once<Mutex<Xapic>> = Once::new();
+pub static XAPIC_INSTANCE: Once<Mutex<Xapic>> = Once::new();
 
 #[derive(Debug)]
 pub struct Xapic {
@@ -25,26 +25,26 @@ impl Xapic {
     }
 
     /// Read a register from the MMIO region.
-    pub(crate) fn read(&self, offset: u32) -> u32 {
+    pub fn read(&self, offset: u32) -> u32 {
         assert!(offset as usize % 4 == 0);
         let index = offset as usize / 4;
         unsafe { core::ptr::read_volatile(&self.mmio_region[index]) }
     }
 
     /// write a register in the MMIO region.
-    pub(crate) fn write(&mut self, offset: u32, val: u32) {
+    pub fn write(&mut self, offset: u32, val: u32) {
         assert!(offset as usize % 4 == 0);
         let index = offset as usize / 4;
         unsafe { core::ptr::write_volatile(&mut self.mmio_region[index], val) }
     }
 }
 
-pub(crate) fn has_apic() -> bool {
+pub fn has_apic() -> bool {
     let value = unsafe { core::arch::x86_64::__cpuid(1) };
     value.edx & 0x100 != 0
 }
 
-pub(crate) fn init() {
+pub fn init() {
     super::pic::disable_temp();
 
     let mut apic = Xapic::new(vm::paddr_to_vaddr(get_apic_base_address()));

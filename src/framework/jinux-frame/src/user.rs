@@ -1,13 +1,13 @@
 //! User space.
 
-use crate::trap::call_irq_callback_functions;
-use log::debug;
-use trapframe::{TrapFrame, UserContext};
-use x86_64::registers::rflags::RFlags;
-use x86_64::registers::segmentation::Segment64;
-use x86_64::registers::segmentation::FS;
+use trapframe::UserContext;
 
-use crate::cpu::CpuContext;
+cfg_if::cfg_if! {
+    if #[cfg(feature="x86_64")]{
+        use crate::arch::x86::cpu::CpuContext;
+    }
+}
+
 use crate::prelude::*;
 use crate::task::Task;
 use crate::vm::VmSpace;
@@ -55,6 +55,20 @@ impl UserSpace {
     }
 }
 
+/// Specific architectures need to implement this trait so that UserMode tasks can be executed
+pub trait UserModeExecute {
+    /// Starts executing in the user mode. Make sure current task is the task in `UserMode`.
+    ///
+    /// The method returns for one of three possible reasons indicated by `UserEvent`.
+    /// 1. The user invokes a system call;
+    /// 2. The user triggers an exception;
+    /// 3. The user triggers a fault.
+    ///
+    /// After handling the user event and updating the user-mode CPU context,
+    /// this method can be invoked again to go back to the user space.
+    fn execute(&mut self) -> UserEvent;
+}
+
 /// Code execution in the user mode.
 ///
 /// This type enables executing the code in user space from a task in the kernel
@@ -77,10 +91,10 @@ impl UserSpace {
 /// ```
 pub struct UserMode<'a> {
     current: Arc<Task>,
-    user_space: &'a Arc<UserSpace>,
-    context: CpuContext,
-    user_context: UserContext,
-    executed: bool,
+    pub(crate) user_space: &'a Arc<UserSpace>,
+    pub(crate) context: CpuContext,
+    pub(crate) user_context: UserContext,
+    pub(crate) executed: bool,
 }
 
 // An instance of `UserMode` is bound to the current task. So it cannot be
@@ -94,95 +108,6 @@ impl<'a> UserMode<'a> {
             context: CpuContext::default(),
             executed: false,
             user_context: UserContext::default(),
-        }
-    }
-
-    /// Starts executing in the user mode. Make sure current task is the task in `UserMode`.
-    ///
-    /// The method returns for one of three possible reasons indicated by `UserEvent`.
-    /// 1. The user invokes a system call;
-    /// 2. The user triggers an exception;
-    /// 3. The user triggers a fault.
-    ///
-    /// After handling the user event and updating the user-mode CPU context,
-    /// this method can be invoked again to go back to the user space.
-    pub fn execute(&mut self) -> UserEvent {
-        unsafe {
-            self.user_space.vm_space().activate();
-        }
-        if !self.executed {
-            self.context = self.user_space.cpu_ctx;
-            if self.context.gp_regs.rflag == 0 {
-                self.context.gp_regs.rflag = (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() | 0x2;
-            }
-            // write fsbase
-            unsafe {
-                FS::write_base(x86_64::VirtAddr::new(self.user_space.cpu_ctx.fs_base));
-            }
-            let fp_regs = self.user_space.cpu_ctx.fp_regs;
-            if fp_regs.is_valid() {
-                fp_regs.restore();
-            }
-            self.executed = true;
-        } else {
-            // write fsbase
-            if FS::read_base().as_u64() != self.context.fs_base {
-                debug!("write fsbase: 0x{:x}", self.context.fs_base);
-                unsafe {
-                    FS::write_base(x86_64::VirtAddr::new(self.context.fs_base));
-                }
-            }
-
-            // write fp_regs
-            // let fp_regs = self.context.fp_regs;
-            // if fp_regs.is_valid() {
-            //     fp_regs.restore();
-            // }
-        }
-        self.user_context = self.context.into();
-        self.user_context.run();
-        let mut trap_frame;
-        while self.user_context.trap_num >= 0x20 && self.user_context.trap_num < 0x100 {
-            trap_frame = TrapFrame {
-                rax: self.user_context.general.rax,
-                rbx: self.user_context.general.rbx,
-                rcx: self.user_context.general.rcx,
-                rdx: self.user_context.general.rdx,
-                rsi: self.user_context.general.rsi,
-                rdi: self.user_context.general.rdi,
-                rbp: self.user_context.general.rbp,
-                rsp: self.user_context.general.rsp,
-                r8: self.user_context.general.r8,
-                r9: self.user_context.general.r9,
-                r10: self.user_context.general.r10,
-                r11: self.user_context.general.r11,
-                r12: self.user_context.general.r12,
-                r13: self.user_context.general.r13,
-                r14: self.user_context.general.r14,
-                r15: self.user_context.general.r15,
-                _pad: 0,
-                trap_num: self.user_context.trap_num,
-                error_code: self.user_context.error_code,
-                rip: self.user_context.general.rip,
-                cs: 0,
-                rflags: self.user_context.general.rflags,
-            };
-            call_irq_callback_functions(&mut trap_frame);
-            self.user_context.run();
-        }
-        x86_64::instructions::interrupts::enable();
-        self.context = CpuContext::from(self.user_context);
-        self.context.fs_base = FS::read_base().as_u64();
-        if self.user_context.trap_num != 0x100 {
-            // self.context.fp_regs.save();
-            UserEvent::Exception
-        } else {
-            // self.context.fp_regs.save();
-            // debug!("[kernel] syscall id:{}", self.context.gp_regs.rax);
-            // debug!("[kernel] rsp: 0x{:x}", self.context.gp_regs.rsp);
-            // debug!("[kernel] rcx: 0x{:x}", self.context.gp_regs.rcx);
-            // debug!("[kernel] rip: 0x{:x}", self.context.gp_regs.rip);
-            UserEvent::Syscall
         }
     }
 

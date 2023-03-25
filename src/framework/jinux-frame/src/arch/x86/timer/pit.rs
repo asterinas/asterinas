@@ -2,7 +2,7 @@
 
 use crate::config::TIMER_FREQ;
 
-use crate::device::io_port::{IoPort, WriteOnlyAccess};
+use crate::arch::x86::device::io_port::{IoPort, WriteOnlyAccess};
 
 const TIMER_RATE: u32 = 1193182;
 

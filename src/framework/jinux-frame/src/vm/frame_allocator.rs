@@ -2,13 +2,12 @@ use core::ops::Range;
 
 use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;
-use limine::{LimineMemmapEntry, LimineMemoryMapEntryType};
 use log::{debug, info};
 use spin::{Mutex, Once};
 
 use crate::{config::PAGE_SIZE, vm::Paddr, AlignExt};
 
-use super::{frame::VmFrameFlags, VmFrame};
+use super::{frame::VmFrameFlags, MemoryRegions, MemoryRegionsType, VmFrame};
 
 static FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
 
@@ -57,15 +56,16 @@ pub fn alloc_with_paddr(paddr: Paddr) -> Option<VmFrame> {
 /// Check if the physical address in range is valid
 fn is_paddr_valid(range: Range<usize>) -> bool {
     // special area in x86
+    #[cfg(feature = "x86_64")]
     if range.start >= 0xFE00_0000 && range.end <= 0xFFFF_FFFF {
         return true;
     }
 
     for i in super::MEMORY_REGIONS.get().unwrap().iter() {
         match i.typ {
-            LimineMemoryMapEntryType::Usable => {}
-            LimineMemoryMapEntryType::Reserved => {}
-            LimineMemoryMapEntryType::Framebuffer => {}
+            MemoryRegionsType::Usable => {}
+            MemoryRegionsType::Reserved => {}
+            MemoryRegionsType::Framebuffer => {}
             _ => {
                 continue;
             }
@@ -93,10 +93,10 @@ pub(crate) unsafe fn dealloc(index: usize) {
     FRAME_ALLOCATOR.get().unwrap().lock().dealloc(index, 1);
 }
 
-pub(crate) fn init(regions: &Vec<&LimineMemmapEntry>) {
+pub(crate) fn init(regions: &Vec<MemoryRegions>) {
     let mut allocator = FrameAllocator::<32>::new();
     for region in regions.iter() {
-        if region.typ == LimineMemoryMapEntryType::Usable {
+        if region.typ == MemoryRegionsType::Usable {
             assert_eq!(region.base % PAGE_SIZE as u64, 0);
             assert_eq!(region.len % PAGE_SIZE as u64, 0);
             let start = region.base as usize / PAGE_SIZE;

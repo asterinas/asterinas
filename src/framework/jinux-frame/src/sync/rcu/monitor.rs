@@ -4,7 +4,8 @@ use core::sync::atomic::{
     Ordering::{Acquire, Relaxed, Release},
 };
 
-use crate::cpu;
+#[cfg(feature = "x86_64")]
+use crate::arch::x86::cpu;
 use crate::prelude::*;
 use crate::sync::AtomicBits;
 use crate::sync::SpinLock;

@@ -8,16 +8,17 @@ use alloc::{boxed::Box, collections::BinaryHeap, sync::Arc, vec::Vec};
 use spin::{Mutex, Once};
 use trapframe::TrapFrame;
 
+use crate::arch::x86::kernel;
 use crate::trap::IrqAllocateHandle;
 
-pub(crate) const TIMER_IRQ_NUM: u8 = 32;
+pub const TIMER_IRQ_NUM: u8 = 32;
 pub static mut TICK: u64 = 0;
 
 static TIMER_IRQ: Once<IrqAllocateHandle> = Once::new();
 
 pub fn init() {
     TIMEOUT_LIST.call_once(|| Mutex::new(BinaryHeap::new()));
-    if super::xapic::has_apic() {
+    if kernel::xapic::has_apic() {
         apic::init();
     } else {
         pit::init();
@@ -47,7 +48,6 @@ fn timer_callback(trap_frame: &TrapFrame) {
     for callback in callbacks {
         callback.callback.call((&callback,));
     }
-    // crate::interrupt_ack();
 }
 
 static TIMEOUT_LIST: Once<Mutex<BinaryHeap<Arc<TimerCallback>>>> = Once::new();
