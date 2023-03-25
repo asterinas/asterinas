@@ -2,7 +2,7 @@ use crate::config::{self, PAGE_SIZE};
 use limine::{LimineBootInfoRequest, LimineHhdmRequest, LimineStackSizeRequest};
 use log::info;
 
-pub(crate) fn init() {
+pub fn init() {
     if let Some(bootinfo) = BOOTLOADER_INFO_REQUEST.get_response().get() {
         info!(
             "booted by {} v{}",

@@ -219,10 +219,11 @@ fn next_table_or_create<'a>(
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
 pub fn vaddr_to_paddr(virtual_address: Vaddr) -> Option<Paddr> {
-    let (cr3, _) = x86_64::registers::control::Cr3::read();
-    let cr3 = cr3.start_address().as_u64() as usize;
+    #[cfg(feature = "x86_64")]
+    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
 
-    let p4 = table_of(cr3)?;
+    let page_directory_base = page_directory_base.start_address().as_u64() as usize;
+    let p4 = table_of(page_directory_base)?;
 
     let pte = p4[p4_index(virtual_address)];
     let p3 = table_of(pte.paddr())?;
@@ -238,10 +239,11 @@ pub fn vaddr_to_paddr(virtual_address: Vaddr) -> Option<Paddr> {
 }
 
 pub(crate) fn init() {
-    let (cr3, _) = x86_64::registers::control::Cr3::read();
-    let cr3 = cr3.start_address().as_u64() as usize;
+    #[cfg(feature = "x86_64")]
+    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
+    let page_directory_base = page_directory_base.start_address().as_u64() as usize;
 
-    let p4 = table_of(cr3).unwrap();
+    let p4 = table_of(page_directory_base).unwrap();
     // Cancel mapping in lowest addresses.
     p4[0].0 = 0;
     let mut map_pte = ALL_MAPPED_PTE.lock();

@@ -1,4 +1,4 @@
-pub use jinux_frame::device::serial::register_serial_input_callback;
+pub use jinux_frame::arch::x86::device::serial::register_serial_input_callback;
 
 use crate::{
     prelude::*,

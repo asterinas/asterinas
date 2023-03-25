@@ -17,8 +17,7 @@ pub(crate) fn call_irq_callback_functions(f: &mut TrapFrame) {
         callback_function.call(f);
     }
     if f.trap_num >= 0x20 {
-        crate::driver::xapic_ack();
-        crate::driver::pic_ack();
+        crate::arch::interrupts_ack();
     }
 }
 

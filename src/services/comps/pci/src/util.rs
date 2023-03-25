@@ -65,9 +65,11 @@ impl CSpaceAccessMethod {
         );
         match self {
             CSpaceAccessMethod::IO => {
-                jinux_frame::device::pci::PCI_ADDRESS_PORT
+                jinux_frame::arch::x86::device::pci::PCI_ADDRESS_PORT
                     .write(loc.encode() | ((offset as u32) & 0b11111100));
-                jinux_frame::device::pci::PCI_DATA_PORT.read().to_le()
+                jinux_frame::arch::x86::device::pci::PCI_DATA_PORT
+                    .read()
+                    .to_le()
             } //MemoryMapped(ptr) => {
               //    // FIXME: Clarify whether the rules for GEP/GEPi forbid using regular .offset() here.
               //    ::core::intrinsics::volatile_load(::core::intrinsics::arith_offset(ptr, offset as usize))
@@ -107,9 +109,9 @@ impl CSpaceAccessMethod {
         );
         match self {
             CSpaceAccessMethod::IO => {
-                jinux_frame::device::pci::PCI_ADDRESS_PORT
+                jinux_frame::arch::x86::device::pci::PCI_ADDRESS_PORT
                     .write(loc.encode() | (offset as u32 & 0b11111100));
-                jinux_frame::device::pci::PCI_DATA_PORT.write(val.to_le())
+                jinux_frame::arch::x86::device::pci::PCI_DATA_PORT.write(val.to_le())
             } //MemoryMapped(ptr) => {
               //    // FIXME: Clarify whether the rules for GEP/GEPi forbid using regular .offset() here.
               //    ::core::intrinsics::volatile_load(::core::intrinsics::arith_offset(ptr, offset as usize))

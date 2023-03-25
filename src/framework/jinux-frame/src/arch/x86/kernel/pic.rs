@@ -1,4 +1,4 @@
-use crate::device::io_port::{IoPort, WriteOnlyAccess};
+use crate::arch::x86::device::io_port::{IoPort, WriteOnlyAccess};
 use crate::trap::allocate_target_irq;
 use crate::trap::IrqAllocateHandle;
 
@@ -32,7 +32,7 @@ static MASK_SLAVE: AtomicU8 = AtomicU8::new(0x00);
 static CHANGE_LOCK: AtomicBool = AtomicBool::new(false);
 
 /// init the PIC device
-pub(crate) fn init() {
+pub fn init() {
     if CHANGE_LOCK.load(Relaxed) {
         return;
     }
@@ -42,13 +42,11 @@ pub(crate) fn init() {
         "PIC init, master mask:{:x} slave_mask:{:x}",
         master_mask, slave_mask
     );
-    unsafe {
-        set_mask(master_mask, slave_mask);
-    }
+    set_mask(master_mask, slave_mask);
 }
 
 /// allocate irq, for example, if timer need IRQ0, it will return IrqAllocateHandle with irq num: IRQ_OFFSET+0
-pub(crate) fn allocate_irq(index: u8) -> Option<IrqAllocateHandle> {
+pub fn allocate_irq(index: u8) -> Option<IrqAllocateHandle> {
     if index >= 16 {
         return None;
     }
@@ -66,7 +64,7 @@ pub(crate) fn allocate_irq(index: u8) -> Option<IrqAllocateHandle> {
 
 /// enable the PIC device, this function will permanent enable all the interrupts
 #[inline]
-pub(crate) unsafe fn enable() {
+pub fn enable() {
     CHANGE_LOCK.store(true, Relaxed);
     set_mask(0, 0);
 }
@@ -74,7 +72,7 @@ pub(crate) unsafe fn enable() {
 /// disable the PIC device, this function will permanent disable all the interrupts
 /// the interrupts mask may not exists after calling init function
 #[inline]
-pub(crate) unsafe fn disable() {
+pub fn disable() {
     CHANGE_LOCK.store(true, Relaxed);
     set_mask(0xFF, 0xFF);
 }
@@ -82,23 +80,19 @@ pub(crate) unsafe fn disable() {
 /// enable the PIC device, this function will allow all the interrupts
 /// the interrupts mask may not exists after calling init function
 #[inline]
-pub(crate) fn enable_temp() {
-    unsafe {
-        set_mask(0, 0);
-    }
+pub fn enable_temp() {
+    set_mask(0, 0);
 }
 
 /// disable the PIC device, this function will disable all the interrupts
 /// the interrupts mask may not exists after calling init function
 #[inline]
-pub(crate) fn disable_temp() {
-    unsafe {
-        set_mask(0xFF, 0xFF);
-    }
+pub fn disable_temp() {
+    set_mask(0xFF, 0xFF);
 }
 
 #[inline(always)]
-pub(crate) unsafe fn set_mask(master_mask: u8, slave_mask: u8) {
+pub fn set_mask(master_mask: u8, slave_mask: u8) {
     // Start initialization
     MASTER_CMD.write(0x11);
     SLAVE_CMD.write(0x11);

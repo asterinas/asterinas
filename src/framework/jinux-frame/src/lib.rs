@@ -15,11 +15,9 @@
 
 extern crate alloc;
 
-mod boot;
+pub mod arch;
 pub mod config;
 pub mod cpu;
-pub mod device;
-pub mod driver;
 mod error;
 pub mod logger;
 pub mod prelude;
@@ -35,6 +33,7 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use core::{mem, panic::PanicInfo};
+#[cfg(feature = "x86_64")]
 pub use limine::{LimineFramebufferRequest, LimineModuleRequest};
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
@@ -42,18 +41,12 @@ pub use util::AlignExt;
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
-pub use crate::console_print as print;
-pub use crate::console_println as println;
-
 pub fn init() {
-    device::serial::init();
+    arch::before_all_init();
     logger::init();
-    boot::init();
     vm::init();
     trap::init();
-    device::init();
-    driver::init();
-    enable_common_cpu_features();
+    arch::after_all_init();
     register_irq_common_callback();
     invoke_c_init_funcs();
 }
@@ -81,27 +74,6 @@ fn invoke_c_init_funcs() {
     }
 }
 
-fn enable_common_cpu_features() {
-    use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
-    let mut cr4 = x86_64::registers::control::Cr4::read();
-    cr4 |= Cr4Flags::FSGSBASE | Cr4Flags::OSXSAVE | Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE;
-    unsafe {
-        x86_64::registers::control::Cr4::write(cr4);
-    }
-
-    let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
-    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
-    unsafe {
-        x86_64::registers::xcontrol::XCr0::write(xcr0);
-    }
-
-    unsafe {
-        // enable non-executable page protection
-        x86_64::registers::model_specific::Efer::update(|efer| {
-            *efer |= EferFlags::NO_EXECUTE_ENABLE;
-        });
-    }
-}
 fn general_handler(trap_frame: &TrapFrame) {
     // info!("general handler");
     // println!("{:#x?}", trap_frame);
@@ -126,14 +98,14 @@ where
     T: Fn(),
 {
     fn run(&self) {
-        console_print!("{}...\n", core::any::type_name::<T>());
+        print!("{}...\n", core::any::type_name::<T>());
         self();
-        console_println!("[ok]");
+        println!("[ok]");
     }
 }
 
 pub fn test_runner(tests: &[&dyn Testable]) {
-    console_println!("Running {} tests", tests.len());
+    println!("Running {} tests", tests.len());
     for test in tests {
         test.run();
     }
@@ -141,8 +113,8 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 }
 
 pub fn test_panic_handler(info: &PanicInfo) -> ! {
-    console_println!("[failed]");
-    console_println!("Error: {}", info);
+    println!("[failed]");
+    println!("Error: {}", info);
     exit_qemu(QemuExitCode::Failed);
 }
 

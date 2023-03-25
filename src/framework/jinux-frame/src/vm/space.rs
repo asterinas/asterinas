@@ -3,7 +3,6 @@ use crate::vm::page_table::PageTableFlags;
 use bitflags::bitflags;
 use core::ops::Range;
 use spin::Mutex;
-use x86_64::structures::paging::PhysFrame;
 
 use super::VmFrameVec;
 use super::{is_page_aligned, Vaddr};
@@ -38,11 +37,9 @@ impl VmSpace {
     }
     /// Activate the page table, load root physical address to cr3
     pub unsafe fn activate(&self) {
-        x86_64::registers::control::Cr3::write(
-            PhysFrame::from_start_address(x86_64::PhysAddr::new(
-                self.memory_set.lock().pt.root_pa as u64,
-            ))
-            .unwrap(),
+        #[cfg(feature = "x86_64")]
+        crate::arch::x86::mm::activate_page_table(
+            self.memory_set.lock().pt.root_pa,
             x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
         );
     }
@@ -94,6 +91,7 @@ impl VmSpace {
     /// clear all mappings
     pub fn clear(&self) {
         self.memory_set.lock().clear();
+        #[cfg(feature = "x86_64")]
         x86_64::instructions::tlb::flush_all();
     }
 

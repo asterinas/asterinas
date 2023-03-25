@@ -1,7 +1,7 @@
 use acpi::{fadt::Fadt, sdt::Signature};
 use x86_64::instructions::port::{ReadOnlyAccess, WriteOnlyAccess};
 
-use crate::driver::ACPI_TABLES;
+use crate::arch::x86::kernel::acpi::ACPI_TABLES;
 
 use super::io_port::IoPort;
 

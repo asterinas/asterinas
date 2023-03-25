@@ -5,7 +5,7 @@ use x86::apic::ioapic::IoApic;
 
 use super::acpi::ACPI_TABLES;
 
-pub(crate) struct IoApicWrapper {
+pub struct IoApicWrapper {
     io_apic: IoApic,
 }
 
@@ -14,23 +14,23 @@ impl IoApicWrapper {
         Self { io_apic }
     }
 
-    pub(crate) fn disable_all(&mut self) {
+    pub fn disable_all(&mut self) {
         self.io_apic.disable_all()
     }
 
-    pub(crate) fn enable(&mut self, irq: u8, cpunum: u8) {
+    pub fn enable(&mut self, irq: u8, cpunum: u8) {
         self.io_apic.enable(irq, cpunum);
     }
 
-    pub(crate) fn id(&mut self) -> u8 {
+    pub fn id(&mut self) -> u8 {
         self.io_apic.id()
     }
 
-    pub(crate) fn version(&mut self) -> u8 {
+    pub fn version(&mut self) -> u8 {
         self.io_apic.version()
     }
 
-    pub(crate) fn supported_interrupts(&mut self) -> u8 {
+    pub fn supported_interrupts(&mut self) -> u8 {
         self.io_apic.supported_interrupts()
     }
 }
@@ -40,7 +40,7 @@ unsafe impl Send for IoApicWrapper {}
 /// # Safety: The pointer inside the IoApic will not change
 unsafe impl Sync for IoApicWrapper {}
 
-pub(crate) static IO_APIC: Once<Mutex<IoApicWrapper>> = Once::new();
+pub static IO_APIC: Once<Mutex<IoApicWrapper>> = Once::new();
 
 pub fn init() {
     let c = ACPI_TABLES.get().unwrap().lock();

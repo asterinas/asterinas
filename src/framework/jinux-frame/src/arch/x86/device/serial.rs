@@ -1,12 +1,10 @@
 //! A port-mapped UART. Copied from uart_16550.
 
-use super::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
+use crate::arch::x86::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
+use crate::trap::IrqAllocateHandle;
 use alloc::{sync::Arc, vec::Vec};
-use core::fmt::{self, Write};
 use log::debug;
 use spin::{Mutex, Once};
-
-use crate::{driver::pic_allocate_irq, trap::IrqAllocateHandle};
 use trapframe::TrapFrame;
 
 bitflags::bitflags! {
@@ -56,7 +54,7 @@ pub fn register_serial_input_callback(f: impl Fn(u8) + Send + Sync + 'static) {
 }
 
 pub(crate) fn callback_init() {
-    let mut irq = pic_allocate_irq(4).unwrap();
+    let mut irq = crate::arch::x86::kernel::pic::allocate_irq(4).unwrap();
     irq.on_active(handle_serial_input);
     CONSOLE_IRQ_CALLBACK.call_once(|| Mutex::new(irq));
 }
@@ -114,33 +112,4 @@ pub fn receive_char() -> Option<u8> {
     } else {
         None
     }
-}
-
-struct Stdout;
-
-impl Write for Stdout {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for &c in s.as_bytes() {
-            send(c);
-        }
-        Ok(())
-    }
-}
-
-pub fn print(args: fmt::Arguments) {
-    Stdout.write_fmt(args).unwrap();
-}
-
-#[macro_export]
-macro_rules! console_print {
-  ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::device::serial::print(format_args!($fmt $(, $($arg)+)?))
-  }
-}
-
-#[macro_export]
-macro_rules! console_println {
-  ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::device::serial::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
-  }
 }
