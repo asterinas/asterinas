@@ -27,7 +27,7 @@ pub use self::{
 };
 
 use alloc::vec::Vec;
-use limine::LimineMemmapRequest;
+use limine::{LimineMemmapRequest, LimineMemoryMapEntryType};
 use log::debug;
 use spin::Once;
 
@@ -53,9 +53,12 @@ pub const fn is_page_aligned(p: usize) -> bool {
 pub(crate) static MEMORY_REGIONS: Once<Vec<&limine::LimineMemmapEntry>> = Once::new();
 static MEMMAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
 
+pub static FRAMEBUFFER_REGIONS: Once<Vec<&limine::LimineMemmapEntry>> = Once::new();
+
 pub(crate) fn init() {
     heap_allocator::init();
     let mut memory_regions = Vec::new();
+    let mut framebuffer_regions = Vec::new();
     let response = MEMMAP_REQUEST
         .get_response()
         .get()
@@ -63,10 +66,14 @@ pub(crate) fn init() {
     for i in response.memmap() {
         debug!("Found memory region:{:x?}", **i);
         memory_regions.push(&**i);
+        if i.typ == LimineMemoryMapEntryType::Framebuffer {
+            framebuffer_regions.push(&**i);
+        }
     }
 
     frame_allocator::init(&memory_regions);
     page_table::init();
 
     MEMORY_REGIONS.call_once(|| memory_regions);
+    FRAMEBUFFER_REGIONS.call_once(|| framebuffer_regions);
 }

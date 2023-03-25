@@ -1,4 +1,4 @@
-use std::{env, error::Error};
+use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     limine_build_script()?;

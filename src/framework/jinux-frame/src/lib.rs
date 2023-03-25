@@ -19,7 +19,7 @@ mod boot;
 pub mod config;
 pub mod cpu;
 pub mod device;
-mod driver;
+pub mod driver;
 mod error;
 pub mod logger;
 pub mod prelude;
@@ -35,21 +35,14 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use core::{mem, panic::PanicInfo};
-pub use limine::LimineModuleRequest;
+pub use limine::{LimineFramebufferRequest, LimineModuleRequest};
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
 pub use util::AlignExt;
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
-#[cfg(not(feature = "serial_print"))]
-pub use crate::screen_print as print;
-#[cfg(not(feature = "serial_print"))]
-pub use crate::screen_println as println;
-
-#[cfg(feature = "serial_print")]
 pub use crate::console_print as print;
-#[cfg(feature = "serial_print")]
 pub use crate::console_println as println;
 
 pub fn init() {
