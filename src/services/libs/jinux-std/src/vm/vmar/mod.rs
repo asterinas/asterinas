@@ -9,13 +9,13 @@ use crate::prelude::*;
 use crate::rights::Full;
 use crate::rights::Rights;
 use crate::vm::perms::VmPerms;
+use align_ext::AlignExt;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::sync::Weak;
 use alloc::vec::Vec;
 use core::ops::Range;
 use jinux_frame::vm::VmSpace;
-use jinux_frame::AlignExt;
 
 use self::vm_mapping::VmMapping;
 

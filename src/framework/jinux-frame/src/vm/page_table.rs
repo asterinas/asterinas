@@ -6,8 +6,8 @@ use super::{
 use crate::{
     config::{ENTRY_COUNT, PAGE_SIZE, PHYS_OFFSET},
     vm::VmFrame,
-    AlignExt,
 };
+use align_ext::AlignExt;
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 use core::{fmt, panic};
 use lazy_static::lazy_static;

@@ -1,3 +1,5 @@
+#![no_std]
+
 /// An extension trait for Rust integer types, including `u8`, `u16`, `u32`,
 /// `u64`, and `usize`, to provide methods to make integers aligned to a
 /// power of two.
@@ -44,15 +46,18 @@ macro_rules! impl_align_ext {
     ($( $uint_type:ty ),+,) => {
         $(
             impl AlignExt for $uint_type {
+                #[inline]
                 fn is_power_of_two(&self) -> bool {
                     (*self != 0) && ((*self & (*self - 1)) == 0)
                 }
 
+                #[inline]
                 fn align_up(self, align: Self) -> Self {
                     assert!(align.is_power_of_two() && align >= 2);
                     self.checked_add(align - 1).unwrap() & !(align - 1)
                 }
 
+                #[inline]
                 fn align_down(self, align: Self) -> Self {
                     assert!(align.is_power_of_two() && align >= 2);
                     self & !(align - 1)

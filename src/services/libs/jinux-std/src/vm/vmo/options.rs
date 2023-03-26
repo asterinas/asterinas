@@ -3,8 +3,8 @@
 use core::marker::PhantomData;
 use core::ops::Range;
 
+use align_ext::AlignExt;
 use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrameVec};
-use jinux_frame::AlignExt;
 use jinux_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 

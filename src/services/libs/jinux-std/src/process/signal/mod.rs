@@ -9,7 +9,7 @@ pub mod signals;
 
 use core::mem;
 
-use jinux_frame::AlignExt;
+use align_ext::AlignExt;
 use jinux_frame::{cpu::CpuContext, task::Task};
 
 use self::c_types::siginfo_t;
