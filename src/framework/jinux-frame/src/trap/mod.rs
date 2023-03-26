@@ -15,7 +15,7 @@ pub(crate) fn init() {
 macro_rules! define_cpu_exception {
     ( $( $name: ident = $exception_num: expr ),* ) => {
         $(
-            pub const $name : u64 = $exception_num;
+            pub const $name : usize = $exception_num;
         )*
     }
 }

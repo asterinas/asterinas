@@ -20,7 +20,7 @@ pub fn sys_rt_sigreturn(context: &mut CpuContext) -> Result<SyscallReturn> {
     // FIXME: This assertion is not always true, if RESTORER flag is not presented.
     // In this case, we will put restorer code on user stack, then the assertion will fail.
     // However, for most glibc applications, the restorer codes is provided by glibc and RESTORER flag is set.
-    debug_assert!(sig_context_addr == context.gp_regs.rsp as Vaddr);
+    debug_assert!(sig_context_addr == context.rsp() as Vaddr);
 
     let ucontext = read_val_from_user::<ucontext_t>(sig_context_addr)?;
     // Set previous ucontext address
@@ -29,7 +29,7 @@ pub fn sys_rt_sigreturn(context: &mut CpuContext) -> Result<SyscallReturn> {
     } else {
         *sig_context = Some(ucontext.uc_link);
     };
-    context.gp_regs = ucontext.uc_mcontext.inner.gp_regs;
+    context.set_general_regs(ucontext.uc_mcontext.inner.gp_regs);
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;
     posix_thread.sig_mask().lock().unblock(sig_mask);

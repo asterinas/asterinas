@@ -31,7 +31,7 @@ pub(crate) fn call_irq_callback_functions(f: &mut TrapFrame) {
 /// This function will determine a trap is a CPU faults.
 /// We will pass control to jinux-std if the trap is **faults**.
 pub fn is_cpu_fault(trap_frame: &TrapFrame) -> bool {
-    match trap_frame.trap_num as u64 {
+    match trap_frame.trap_num {
         DIVIDE_BY_ZERO
         | DEBUG
         | BOUND_RANGE_EXCEEDED

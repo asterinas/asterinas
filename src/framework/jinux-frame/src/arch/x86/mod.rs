@@ -5,8 +5,8 @@ mod kernel;
 pub(crate) mod mm;
 pub(crate) mod timer;
 
-use core::fmt::Write;
 use alloc::fmt;
+use core::fmt::Write;
 use log::{debug, info};
 use trapframe::TrapFrame;
 use x86_64::registers::{
@@ -19,7 +19,7 @@ use crate::{
     user::{UserEvent, UserMode, UserModeExecute},
 };
 
-use self::cpu::CpuContext;
+use self::cpu::TrapInformation;
 
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
@@ -54,62 +54,76 @@ impl<'a> UserModeExecute for UserMode<'a> {
         }
         if !self.executed {
             self.context = self.user_space.cpu_ctx;
-            if self.context.gp_regs.rflag == 0 {
-                self.context.gp_regs.rflag = (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() | 0x2;
+            if self.context.user_context.general.rflags == 0 {
+                self.context.user_context.general.rflags =
+                    ((RFlags::INTERRUPT_FLAG | RFlags::ID).bits() | 0x2) as usize;
             }
             // write fsbase
             unsafe {
-                FS::write_base(x86_64::VirtAddr::new(self.user_space.cpu_ctx.fs_base));
+                FS::write_base(x86_64::VirtAddr::new(
+                    self.context.user_context.general.fsbase as u64,
+                ));
             }
-            let fp_regs = self.user_space.cpu_ctx.fp_regs;
+            let fp_regs = self.context.fp_regs;
             if fp_regs.is_valid() {
                 fp_regs.restore();
             }
             self.executed = true;
         } else {
             // write fsbase
-            if FS::read_base().as_u64() != self.context.fs_base {
-                debug!("write fsbase: 0x{:x}", self.context.fs_base);
+            if FS::read_base().as_u64() != self.context.user_context.general.fsbase as u64 {
+                debug!(
+                    "write fsbase: 0x{:x}",
+                    self.context.user_context.general.fsbase
+                );
                 unsafe {
-                    FS::write_base(x86_64::VirtAddr::new(self.context.fs_base));
+                    FS::write_base(x86_64::VirtAddr::new(
+                        self.context.user_context.general.fsbase as u64,
+                    ));
                 }
             }
         }
-        self.user_context = self.context.into();
-        self.user_context.run();
+        self.context.user_context.run();
         let mut trap_frame;
-        while self.user_context.trap_num >= 0x20 && self.user_context.trap_num < 0x100 {
+        while self.context.user_context.trap_num >= 0x20
+            && self.context.user_context.trap_num < 0x100
+        {
             trap_frame = TrapFrame {
-                rax: self.user_context.general.rax,
-                rbx: self.user_context.general.rbx,
-                rcx: self.user_context.general.rcx,
-                rdx: self.user_context.general.rdx,
-                rsi: self.user_context.general.rsi,
-                rdi: self.user_context.general.rdi,
-                rbp: self.user_context.general.rbp,
-                rsp: self.user_context.general.rsp,
-                r8: self.user_context.general.r8,
-                r9: self.user_context.general.r9,
-                r10: self.user_context.general.r10,
-                r11: self.user_context.general.r11,
-                r12: self.user_context.general.r12,
-                r13: self.user_context.general.r13,
-                r14: self.user_context.general.r14,
-                r15: self.user_context.general.r15,
+                rax: self.context.user_context.general.rax,
+                rbx: self.context.user_context.general.rbx,
+                rcx: self.context.user_context.general.rcx,
+                rdx: self.context.user_context.general.rdx,
+                rsi: self.context.user_context.general.rsi,
+                rdi: self.context.user_context.general.rdi,
+                rbp: self.context.user_context.general.rbp,
+                rsp: self.context.user_context.general.rsp,
+                r8: self.context.user_context.general.r8,
+                r9: self.context.user_context.general.r9,
+                r10: self.context.user_context.general.r10,
+                r11: self.context.user_context.general.r11,
+                r12: self.context.user_context.general.r12,
+                r13: self.context.user_context.general.r13,
+                r14: self.context.user_context.general.r14,
+                r15: self.context.user_context.general.r15,
                 _pad: 0,
-                trap_num: self.user_context.trap_num,
-                error_code: self.user_context.error_code,
-                rip: self.user_context.general.rip,
+                trap_num: self.context.user_context.trap_num,
+                error_code: self.context.user_context.error_code,
+                rip: self.context.user_context.general.rip,
                 cs: 0,
-                rflags: self.user_context.general.rflags,
+                rflags: self.context.user_context.general.rflags,
             };
             call_irq_callback_functions(&mut trap_frame);
-            self.user_context.run();
+            self.context.user_context.run();
         }
+        // only syscall and irq < 32 will go back
         x86_64::instructions::interrupts::enable();
-        self.context = CpuContext::from(self.user_context);
-        self.context.fs_base = FS::read_base().as_u64();
-        if self.user_context.trap_num != 0x100 {
+        self.context.user_context.general.fsbase = FS::read_base().as_u64() as usize;
+        if self.context.user_context.trap_num != 0x100 {
+            self.context.trap_information = TrapInformation {
+                cr2: unsafe { x86::controlregs::cr2() },
+                id: self.context.user_context.trap_num,
+                err: self.context.user_context.error_code,
+            };
             UserEvent::Exception
         } else {
             UserEvent::Syscall

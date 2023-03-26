@@ -341,11 +341,11 @@ fn clone_cpu_context(
         debug_assert!(new_sp != 0);
     }
     if new_sp != 0 {
-        child_context.set_rsp(new_sp as u64);
+        child_context.set_rsp(new_sp as usize);
     }
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
         // x86_64 specific: TLS is the fsbase register
-        child_context.set_fsbase(tls as u64);
+        child_context.set_fsbase(tls as usize);
     }
 
     child_context

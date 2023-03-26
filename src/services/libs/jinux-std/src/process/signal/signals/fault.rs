@@ -30,13 +30,13 @@ impl FaultSignal {
             INVALID_OPCODE => (SIGILL, ILL_ILLOPC, None),
             GENERAL_PROTECTION_FAULT => (SIGBUS, BUS_ADRERR, None),
             PAGE_FAULT => {
-                const PF_ERR_FLAG_PRESENT: u64 = 1u64 << 0;
+                const PF_ERR_FLAG_PRESENT: usize = 1usize << 0;
                 let code = if trap_info.err & PF_ERR_FLAG_PRESENT != 0 {
                     SEGV_ACCERR
                 } else {
                     SEGV_MAPERR
                 };
-                let addr = Some(trap_info.cr2);
+                let addr = Some(trap_info.cr2 as u64);
                 (SIGSEGV, code, addr)
             }
             _ => panic!("Exception cannnot be a signal"),

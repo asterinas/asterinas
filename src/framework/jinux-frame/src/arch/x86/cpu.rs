@@ -32,134 +32,74 @@ pub fn this_cpu() -> u32 {
 #[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
 pub struct CpuContext {
+    pub(crate) user_context: UserContext,
     pub fp_regs: FpRegs,
-    pub gp_regs: GpRegs,
-    pub fs_base: u64,
-    pub gs_base: u64,
     /// trap information, this field is all zero when it is syscall
     pub trap_information: TrapInformation,
-}
-
-impl CpuContext {
-    pub fn set_rax(&mut self, rax: u64) {
-        self.gp_regs.rax = rax;
-    }
-
-    pub fn set_rsp(&mut self, rsp: u64) {
-        self.gp_regs.rsp = rsp;
-    }
-
-    pub fn set_rip(&mut self, rip: u64) {
-        self.gp_regs.rip = rip;
-    }
-
-    pub fn set_fsbase(&mut self, fs_base: u64) {
-        self.fs_base = fs_base;
-    }
 }
 
 #[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
 pub struct TrapInformation {
-    pub cr2: u64,
-    pub id: u64,
-    pub err: u64,
+    pub cr2: usize,
+    pub id: usize,
+    pub err: usize,
 }
 
-/// The general-purpose registers of CPU.
-#[derive(Clone, Copy, Debug, Default)]
-#[repr(C)]
-pub struct GpRegs {
-    pub r8: u64,
-    pub r9: u64,
-    pub r10: u64,
-    pub r11: u64,
-    pub r12: u64,
-    pub r13: u64,
-    pub r14: u64,
-    pub r15: u64,
-    pub rdi: u64,
-    pub rsi: u64,
-    pub rbp: u64,
-    pub rbx: u64,
-    pub rdx: u64,
-    pub rax: u64,
-    pub rcx: u64,
-    pub rsp: u64,
-    pub rip: u64,
-    pub rflag: u64,
+impl CpuContext {
+    pub fn general_regs(&self) -> GeneralRegs {
+        self.user_context.general
+    }
+
+    pub fn set_general_regs(&mut self, general_register: GeneralRegs) {
+        self.user_context.general = general_register;
+    }
 }
 
-unsafe impl Pod for GpRegs {}
-unsafe impl Pod for TrapInformation {}
+macro_rules! cpu_context_impl_getter_setter {
+    ( $( [ $field: ident, $setter_name: ident] ),*) => {
+        impl CpuContext {
+            $(
+                #[inline(always)]
+                pub fn $field(&self) -> usize {
+                    self.user_context.general.$field
+                }
+
+                #[inline(always)]
+                pub fn $setter_name(&mut self, $field: usize) {
+                    self.user_context.general.$field = $field;
+                }
+            )*
+        }
+    };
+}
+
+cpu_context_impl_getter_setter!(
+    [rax, set_rax],
+    [rbx, set_rbx],
+    [rcx, set_rcx],
+    [rdx, set_rdx],
+    [rsi, set_rsi],
+    [rdi, set_rdi],
+    [rbp, set_rbp],
+    [rsp, set_rsp],
+    [r8, set_r8],
+    [r9, set_r9],
+    [r10, set_r10],
+    [r11, set_r11],
+    [r12, set_r12],
+    [r13, set_r13],
+    [r14, set_r14],
+    [r15, set_r15],
+    [rip, set_rip],
+    [rflags, set_rflags],
+    [fsbase, set_fsbase],
+    [gsbase, set_gsbase]
+);
+
 unsafe impl Pod for CpuContext {}
+unsafe impl Pod for TrapInformation {}
 unsafe impl Pod for FpRegs {}
-
-impl From<UserContext> for CpuContext {
-    fn from(value: UserContext) -> Self {
-        Self {
-            gp_regs: GpRegs {
-                r8: value.general.r8 as u64,
-                r9: value.general.r9 as u64,
-                r10: value.general.r10 as u64,
-                r11: value.general.r11 as u64,
-                r12: value.general.r12 as u64,
-                r13: value.general.r13 as u64,
-                r14: value.general.r14 as u64,
-                r15: value.general.r15 as u64,
-                rdi: value.general.rdi as u64,
-                rsi: value.general.rsi as u64,
-                rbp: value.general.rbp as u64,
-                rbx: value.general.rbx as u64,
-                rdx: value.general.rdx as u64,
-                rax: value.general.rax as u64,
-                rcx: value.general.rcx as u64,
-                rsp: value.general.rsp as u64,
-                rip: value.general.rip as u64,
-                rflag: value.general.rflags as u64,
-            },
-            fs_base: value.general.fsbase as u64,
-            fp_regs: FpRegs::default(),
-            trap_information: TrapInformation {
-                cr2: x86_64::registers::control::Cr2::read_raw(),
-                id: value.trap_num as u64,
-                err: value.error_code as u64,
-            },
-            gs_base: value.general.gsbase as u64,
-        }
-    }
-}
-
-impl Into<UserContext> for CpuContext {
-    fn into(self) -> UserContext {
-        UserContext {
-            trap_num: self.trap_information.id as usize,
-            error_code: self.trap_information.err as usize,
-            general: GeneralRegs {
-                rax: self.gp_regs.rax as usize,
-                rbx: self.gp_regs.rbx as usize,
-                rcx: self.gp_regs.rcx as usize,
-                rdx: self.gp_regs.rdx as usize,
-                rsi: self.gp_regs.rsi as usize,
-                rdi: self.gp_regs.rdi as usize,
-                rbp: self.gp_regs.rbp as usize,
-                rsp: self.gp_regs.rsp as usize,
-                r8: self.gp_regs.r8 as usize,
-                r9: self.gp_regs.r9 as usize,
-                r10: self.gp_regs.r10 as usize,
-                r11: self.gp_regs.r11 as usize,
-                r12: self.gp_regs.r12 as usize,
-                r13: self.gp_regs.r13 as usize,
-                r14: self.gp_regs.r14 as usize,
-                r15: self.gp_regs.r15 as usize,
-                rip: self.gp_regs.rip as usize,
-                rflags: self.gp_regs.rflag as usize,
-                fsbase: self.fs_base as usize,
-                gsbase: self.gs_base as usize,
-            },
-        }
-    }
-}
 
 /// The floating-point state of CPU.
 #[derive(Clone, Copy, Debug)]
