@@ -249,14 +249,14 @@ pub enum SyscallReturn {
 
 impl SyscallArgument {
     fn new_from_context(context: &CpuContext) -> Self {
-        let syscall_number = context.gp_regs.rax;
+        let syscall_number = context.rax() as u64;
         let mut args = [0u64; 6];
-        args[0] = context.gp_regs.rdi;
-        args[1] = context.gp_regs.rsi;
-        args[2] = context.gp_regs.rdx;
-        args[3] = context.gp_regs.r10;
-        args[4] = context.gp_regs.r8;
-        args[5] = context.gp_regs.r9;
+        args[0] = context.rdi() as u64;
+        args[1] = context.rsi() as u64;
+        args[2] = context.rdx() as u64;
+        args[3] = context.r10() as u64;
+        args[4] = context.r8() as u64;
+        args[5] = context.r9() as u64;
         Self {
             syscall_number,
             args,
@@ -272,13 +272,13 @@ pub fn handle_syscall(context: &mut CpuContext) {
     match syscall_return {
         Ok(return_value) => {
             if let SyscallReturn::Return(return_value) = return_value {
-                context.set_rax(return_value as u64);
+                context.set_rax(return_value as usize);
             }
         }
         Err(err) => {
             debug!("syscall return error: {:?}", err);
             let errno = err.error() as i32;
-            context.set_rax((-errno) as u64)
+            context.set_rax((-errno) as usize)
         }
     }
 }

@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 jinux-frame = { path = "../../../framework/jinux-frame" }
-pod = { path = "../../../framework/pod" }
+pod = { git = "https://github.com/sdww0/POD", rev = "7fa2ed2" }
 jinux-input = { path = "../../comps/input" }
 jinux-block = { path = "../../comps/block" }
 jinux-time = { path = "../../comps/time" }

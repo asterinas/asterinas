@@ -131,7 +131,7 @@ pub fn handle_user_signal(
 
     // Set up signal stack in user stack,
     // to avoid corrupting user stack, we minus 128 first.
-    let mut user_rsp = context.gp_regs.rsp;
+    let mut user_rsp = context.gp_regs.rsp() as u64;
     user_rsp = user_rsp - 128;
 
     // 1. write siginfo_t
@@ -144,7 +144,7 @@ pub fn handle_user_signal(
     user_rsp = alloc_aligned_in_user_stack(user_rsp, mem::size_of::<ucontext_t>(), 16)?;
     let mut ucontext = ucontext_t::default();
     ucontext.uc_sigmask = mask.as_u64();
-    ucontext.uc_mcontext.inner.gp_regs = context.gp_regs;
+    ucontext.uc_mcontext.inner.gp_regs = context.general_regs();
     let mut sig_context = posix_thread.sig_context().lock();
     if let Some(sig_context_addr) = *sig_context {
         ucontext.uc_link = sig_context_addr;
@@ -178,16 +178,16 @@ pub fn handle_user_signal(
         user_rsp = write_u64_to_user_stack(user_rsp, trampoline_rip)?;
     }
     // 4. Set correct register values
-    context.gp_regs.rip = handler_addr as _;
-    context.gp_regs.rsp = user_rsp;
+    context.set_rip(handler_addr as _);
+    context.set_rsp(user_rsp as usize);
     // parameters of signal handler
-    context.gp_regs.rdi = sig_num.as_u8() as u64; // signal number
+    context.set_rdi(sig_num.as_u8() as usize); // signal number
     if flags.contains(SigActionFlags::SA_SIGINFO) {
-        context.gp_regs.rsi = siginfo_addr; // siginfo_t* siginfo
-        context.gp_regs.rdx = ucontext_addr; // void* ctx
+        context.set_rsi(siginfo_addr as usize); // siginfo_t* siginfo
+        context.set_rdx(ucontext_addr as usize); // void* ctx
     } else {
-        context.gp_regs.rsi = 0;
-        context.gp_regs.rdx = 0;
+        context.set_rsi(0);
+        context.set_rdx(0);
     }
 
     Ok(())

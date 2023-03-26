@@ -93,7 +93,6 @@ pub struct UserMode<'a> {
     current: Arc<Task>,
     pub(crate) user_space: &'a Arc<UserSpace>,
     pub(crate) context: CpuContext,
-    pub(crate) user_context: UserContext,
     pub(crate) executed: bool,
 }
 
@@ -107,7 +106,6 @@ impl<'a> UserMode<'a> {
             user_space,
             context: CpuContext::default(),
             executed: false,
-            user_context: UserContext::default(),
         }
     }
 

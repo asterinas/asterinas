@@ -51,14 +51,14 @@ pub fn sys_execve(
     current.sig_dispositions().lock().inherit();
     // set cpu context to default
     let defalut_content = CpuContext::default();
-    context.gp_regs = defalut_content.gp_regs;
-    context.fs_base = defalut_content.fs_base;
+    context.set_general_regs(defalut_content.general_regs());
+    context.set_fsbase(defalut_content.fsbase());
     context.fp_regs = defalut_content.fp_regs;
     // set new entry point
-    context.gp_regs.rip = elf_load_info.entry_point() as _;
+    context.set_rip(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
     // set new user stack top
-    context.gp_regs.rsp = elf_load_info.user_stack_top() as _;
+    context.set_rsp(elf_load_info.user_stack_top() as _);
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
     Ok(SyscallReturn::NoReturn)
 }

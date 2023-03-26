@@ -24,8 +24,8 @@ pub fn handle_exception(context: &mut CpuContext) {
 }
 
 fn handle_page_fault(trap_info: &TrapInformation) {
-    const PAGE_NOT_PRESENT_ERROR_MASK: u64 = 0x1 << 0;
-    const WRITE_ACCESS_MASK: u64 = 0x1 << 1;
+    const PAGE_NOT_PRESENT_ERROR_MASK: usize = 0x1 << 0;
+    const WRITE_ACCESS_MASK: usize = 0x1 << 1;
     let not_present = trap_info.err & PAGE_NOT_PRESENT_ERROR_MASK == 0;
     let write = trap_info.err & WRITE_ACCESS_MASK != 0;
     if not_present || write {

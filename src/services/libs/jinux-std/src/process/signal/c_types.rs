@@ -1,7 +1,7 @@
 #![allow(non_camel_case_types)]
 use core::mem;
 
-use jinux_frame::cpu::GpRegs;
+use jinux_frame::cpu::GeneralRegs;
 use jinux_util::{read_union_fields, union_read_ptr::UnionReadPtr};
 
 use crate::{prelude::*, process::Pid};
@@ -190,7 +190,7 @@ pub struct mcontext_t {
 #[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
 pub struct SignalCpuContext {
-    pub gp_regs: GpRegs,
+    pub gp_regs: GeneralRegs,
     pub fpregs_on_heap: u64,
     pub fpregs: Vaddr, // *mut FpRegs,
 }

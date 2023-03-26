@@ -42,10 +42,10 @@ pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Result<
 pub fn do_arch_prctl(code: ArchPrctlCode, addr: u64, context: &mut CpuContext) -> Result<u64> {
     match code {
         ArchPrctlCode::ARCH_SET_FS => {
-            context.fs_base = addr;
+            context.set_fsbase(addr as usize);
             Ok(0)
         }
-        ArchPrctlCode::ARCH_GET_FS => Ok(context.fs_base),
+        ArchPrctlCode::ARCH_GET_FS => Ok(context.fsbase() as u64),
         ArchPrctlCode::ARCH_GET_GS | ArchPrctlCode::ARCH_SET_GS => {
             return_errno_with_message!(Errno::EINVAL, "GS cannot be accessed from the user space")
         }
