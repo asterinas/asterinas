@@ -13,8 +13,8 @@ use crate::{
         vmo::{Pager, Vmo, VmoOptions},
     },
 };
+use align_ext::AlignExt;
 use jinux_frame::vm::VmPerm;
-use jinux_frame::AlignExt;
 use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::Elf;

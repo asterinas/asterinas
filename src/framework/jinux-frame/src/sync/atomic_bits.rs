@@ -1,6 +1,8 @@
 use core::fmt::{self};
 use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
+use align_ext::AlignExt;
+
 use crate::prelude::*;
 
 /// A fixed number of bits taht can be safely shared between threads.

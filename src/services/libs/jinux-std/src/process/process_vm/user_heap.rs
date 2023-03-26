@@ -6,7 +6,7 @@ use crate::{
     rights::Rights,
     vm::vmo::{VmoFlags, VmoOptions},
 };
-use jinux_frame::AlignExt;
+use align_ext::AlignExt;
 
 pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
 pub const USER_HEAP_SIZE_LIMIT: usize = PAGE_SIZE * 1000;

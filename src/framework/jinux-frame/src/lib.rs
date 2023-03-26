@@ -37,7 +37,6 @@ use core::{mem, panic::PanicInfo};
 pub use limine::{LimineFramebufferRequest, LimineModuleRequest};
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
-pub use util::AlignExt;
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
