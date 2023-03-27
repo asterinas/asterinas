@@ -21,9 +21,11 @@ pub fn sys_getdents64(
         fd, buf_addr, buf_len
     );
 
-    let current = current!();
-    let file_table = current.file_table().lock();
-    let file = file_table.get_file(fd)?;
+    let file = {
+        let current = current!();
+        let file_table = current.file_table().lock();
+        file_table.get_file(fd)?.clone()
+    };
     let inode_handle = file
         .as_inode_handle()
         .ok_or(Error::with_message(Errno::EBADE, "not inode"))?;

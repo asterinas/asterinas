@@ -67,6 +67,10 @@ impl FileSystem for RamFS {
     fn flags(&self) -> FsFlags {
         FsFlags::DENTRY_UNEVICTABLE
     }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
 }
 
 struct RamInode(RwLock<Inode_>);

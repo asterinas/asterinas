@@ -292,8 +292,10 @@ impl Children {
     }
 
     pub fn insert_dentry(&mut self, dentry: &Arc<Dentry>) {
-        DCACHE.lock().insert(dentry.key(), dentry.clone());
-        self.inner.insert(dentry.name(), Arc::downgrade(&dentry));
+        if dentry.vnode().is_dentry_cacheable() {
+            DCACHE.lock().insert(dentry.key(), dentry.clone());
+        }
+        self.inner.insert(dentry.name(), Arc::downgrade(dentry));
     }
 
     pub fn delete_dentry(&mut self, name: &str) -> Option<Arc<Dentry>> {

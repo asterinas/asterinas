@@ -1,5 +1,6 @@
 use alloc::sync::Arc;
 use bitflags::bitflags;
+use core::any::Any;
 
 use super::Inode;
 use crate::prelude::*;
@@ -46,7 +47,7 @@ bitflags! {
     }
 }
 
-pub trait FileSystem: Sync + Send {
+pub trait FileSystem: Any + Sync + Send {
     fn sync(&self) -> Result<()>;
 
     fn root_inode(&self) -> Arc<dyn Inode>;
@@ -54,4 +55,12 @@ pub trait FileSystem: Sync + Send {
     fn sb(&self) -> SuperBlock;
 
     fn flags(&self) -> FsFlags;
+
+    fn as_any_ref(&self) -> &dyn Any;
+}
+
+impl dyn FileSystem {
+    pub fn downcast_ref<T: FileSystem>(&self) -> Option<&T> {
+        self.as_any_ref().downcast_ref::<T>()
+    }
 }

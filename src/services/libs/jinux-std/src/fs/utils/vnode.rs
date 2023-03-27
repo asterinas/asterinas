@@ -206,4 +206,8 @@ impl Vnode {
     pub fn set_mtime(&self, time: Duration) {
         self.inner.read().inode.set_mtime(time)
     }
+
+    pub fn is_dentry_cacheable(&self) -> bool {
+        self.inner.read().inode.is_dentry_cacheable()
+    }
 }

@@ -4,7 +4,7 @@ pub use access_mode::AccessMode;
 pub use creation_flags::CreationFlags;
 pub use dentry_cache::Dentry;
 pub use dirent_visitor::DirentVisitor;
-pub use direntry_vec::DirEntryVec;
+pub use direntry_vec::{DirEntryVec, DirEntryVecExt};
 pub use fcntl::FcntlCmd;
 pub use file_creation_mask::FileCreationMask;
 pub use fs::{FileSystem, FsFlags, SuperBlock};
