@@ -9,7 +9,7 @@ use spin::{RwLock, RwLockWriteGuard};
 
 use super::*;
 use crate::fs::utils::{
-    DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
+    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
 };
 
 pub struct RamFS {
@@ -61,6 +61,10 @@ impl FileSystem for RamFS {
 
     fn sb(&self) -> SuperBlock {
         self.metadata.read().clone()
+    }
+
+    fn flags(&self) -> FsFlags {
+        FsFlags::DENTRY_UNEVICTABLE
     }
 }
 

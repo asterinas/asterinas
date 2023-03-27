@@ -1,19 +1,49 @@
 use super::Inode;
 use crate::prelude::*;
-use crate::vm::vmo::Pager;
+use crate::rights::Rights;
+use crate::vm::vmo::{Pager, Vmo, VmoFlags, VmoOptions};
+
+use core::ops::Range;
 use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};
 use lru::LruCache;
 
-pub struct PageCacheManager {
+pub struct PageCache {
+    pages: Vmo,
+    manager: Arc<PageCacheManager>,
+}
+
+impl PageCache {
+    pub fn new(inode: &Arc<dyn Inode>) -> Result<Self> {
+        let manager = Arc::new(PageCacheManager::new(Arc::downgrade(inode)));
+        let pages = VmoOptions::<Rights>::new(inode.len())
+            .flags(VmoFlags::RESIZABLE)
+            .pager(manager.clone())
+            .alloc()?;
+        Ok(Self { pages, manager })
+    }
+
+    pub fn pages(&self) -> &Vmo {
+        &self.pages
+    }
+
+    /// Evict the data within a specified range from the page cache and persist
+    /// them to the disk.
+    pub fn evict_range(&self, range: Range<usize>) {
+        // TODO: Implement this method.
+        warn!("pagecache: evict_range is not implemented");
+    }
+}
+
+struct PageCacheManager {
     pages: Mutex<LruCache<usize, Page>>,
     backed_inode: Weak<dyn Inode>,
 }
 
 impl PageCacheManager {
-    pub fn new(inode: &Weak<dyn Inode>) -> Self {
+    pub fn new(inode: Weak<dyn Inode>) -> Self {
         Self {
             pages: Mutex::new(LruCache::unbounded()),
-            backed_inode: inode.clone(),
+            backed_inode: inode,
         }
     }
 }
