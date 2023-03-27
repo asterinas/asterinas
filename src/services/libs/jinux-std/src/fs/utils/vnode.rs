@@ -1,7 +1,6 @@
-use super::{DirentVisitor, Inode, InodeMode, InodeType, Metadata, PageCacheManager};
+use super::{DirentVisitor, FsFlags, Inode, InodeMode, InodeType, Metadata, PageCache};
 use crate::prelude::*;
-use crate::rights::Rights;
-use crate::vm::vmo::{Vmo, VmoFlags, VmoOptions};
+
 use alloc::string::String;
 use core::time::Duration;
 use jinux_frame::vm::VmIo;
@@ -15,23 +14,18 @@ pub struct Vnode {
 
 struct Inner {
     inode: Arc<dyn Inode>,
-    page_cache: Vmo,
-    page_cache_manager: Arc<PageCacheManager>,
+    page_cache: Option<PageCache>,
 }
 
 impl Vnode {
     pub fn new(inode: Arc<dyn Inode>) -> Result<Self> {
-        let page_cache_manager = Arc::new(PageCacheManager::new(&Arc::downgrade(&inode)));
-        let page_cache = VmoOptions::<Rights>::new(inode.len())
-            .flags(VmoFlags::RESIZABLE)
-            .pager(page_cache_manager.clone())
-            .alloc()?;
+        let page_cache = if inode.fs().flags().contains(FsFlags::NO_PAGECACHE) {
+            None
+        } else {
+            Some(PageCache::new(&inode)?)
+        };
         Ok(Self {
-            inner: Arc::new(RwLock::new(Inner {
-                inode,
-                page_cache,
-                page_cache_manager,
-            })),
+            inner: Arc::new(RwLock::new(Inner { inode, page_cache })),
         })
     }
 
@@ -41,16 +35,21 @@ impl Vnode {
             return_errno!(Errno::EINVAL);
         }
         let inner = self.inner.write();
-        let file_len = inner.inode.len();
-        let should_expand_len = offset + buf.len() > file_len;
-        if should_expand_len {
-            inner.page_cache.resize(offset + buf.len())?;
+        match &inner.page_cache {
+            None => inner.inode.write_at(offset, buf),
+            Some(page_cache) => {
+                let file_len = inner.inode.len();
+                let should_expand_len = offset + buf.len() > file_len;
+                if should_expand_len {
+                    page_cache.pages().resize(offset + buf.len())?;
+                }
+                page_cache.pages().write_bytes(offset, buf)?;
+                if should_expand_len {
+                    inner.inode.resize(offset + buf.len());
+                }
+                Ok(buf.len())
+            }
         }
-        inner.page_cache.write_bytes(offset, buf)?;
-        if should_expand_len {
-            inner.inode.resize(offset + buf.len());
-        }
-        Ok(buf.len())
     }
 
     pub fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
@@ -59,14 +58,9 @@ impl Vnode {
             return_errno!(Errno::EINVAL);
         }
         let inner = self.inner.write();
-        let file_len = inner.inode.len();
-        if offset + buf.len() > file_len {
-            inner.page_cache.resize(offset + buf.len())?;
+        if let Some(page_cache) = &inner.page_cache {
+            page_cache.evict_range(offset..offset + buf.len());
         }
-        // Flush the dirty pages if necessary.
-        // inner.page_cache_manager.flush(offset..offset + buf.len())?;
-        // TODO: Update the related page state to invalid to reload the content from inode
-        //       for upcoming read or write.
         inner.inode.write_at(offset, buf)
     }
 
@@ -76,14 +70,21 @@ impl Vnode {
             return_errno!(Errno::EISDIR);
         }
         let inner = self.inner.read();
-        let (offset, read_len) = {
-            let file_len = inner.inode.len();
-            let start = file_len.min(offset);
-            let end = file_len.min(offset + buf.len());
-            (start, end - start)
-        };
-        inner.page_cache.read_bytes(offset, &mut buf[..read_len])?;
-        Ok(read_len)
+        match &inner.page_cache {
+            None => inner.inode.read_at(offset, buf),
+            Some(page_cache) => {
+                let (offset, read_len) = {
+                    let file_len = inner.inode.len();
+                    let start = file_len.min(offset);
+                    let end = file_len.min(offset + buf.len());
+                    (start, end - start)
+                };
+                page_cache
+                    .pages()
+                    .read_bytes(offset, &mut buf[..read_len])?;
+                Ok(read_len)
+            }
+        }
     }
 
     pub fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
@@ -92,8 +93,9 @@ impl Vnode {
             return_errno!(Errno::EISDIR);
         }
         let inner = self.inner.read();
-        // Flush the dirty pages if necessary.
-        // inner.page_cache_manager.flush(offset..offset + buf.len())?;
+        if let Some(page_cache) = &inner.page_cache {
+            page_cache.evict_range(offset..offset + buf.len());
+        }
         inner.inode.read_at(offset, buf)
     }
 
@@ -107,8 +109,13 @@ impl Vnode {
         if buf.len() < file_len {
             buf.resize(file_len, 0);
         }
-        inner.page_cache.read_bytes(0, &mut buf[..file_len])?;
-        Ok(file_len)
+        match &inner.page_cache {
+            None => inner.inode.read_at(0, &mut buf[..file_len]),
+            Some(page_cache) => {
+                page_cache.pages().read_bytes(0, &mut buf[..file_len])?;
+                Ok(file_len)
+            }
+        }
     }
 
     pub fn read_direct_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
@@ -121,10 +128,10 @@ impl Vnode {
         if buf.len() < file_len {
             buf.resize(file_len, 0);
         }
-        // Flush the dirty pages if necessary.
-        // inner.page_cache_manager.flush(..file_size)?;
-        let len = inner.inode.read_at(0, &mut buf[..file_len])?;
-        Ok(len)
+        if let Some(page_cache) = &inner.page_cache {
+            page_cache.evict_range(0..file_len);
+        }
+        inner.inode.read_at(0, &mut buf[..file_len])
     }
 
     pub fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {

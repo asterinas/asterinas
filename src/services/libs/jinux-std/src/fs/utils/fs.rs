@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use bitflags::bitflags;
 
 use super::Inode;
 use crate::prelude::*;
@@ -36,10 +37,21 @@ impl SuperBlock {
     }
 }
 
+bitflags! {
+    pub struct FsFlags: u32 {
+        /// Disable page cache.
+        const NO_PAGECACHE = 1 << 0;
+        /// Dentry cannot be evicted.
+        const DENTRY_UNEVICTABLE = 1 << 1;
+    }
+}
+
 pub trait FileSystem: Sync + Send {
     fn sync(&self) -> Result<()>;
 
     fn root_inode(&self) -> Arc<dyn Inode>;
 
     fn sb(&self) -> SuperBlock;
+
+    fn flags(&self) -> FsFlags;
 }
