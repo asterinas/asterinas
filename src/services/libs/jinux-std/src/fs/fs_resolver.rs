@@ -4,6 +4,7 @@ use alloc::string::String;
 
 use super::file_handle::InodeHandle;
 use super::file_table::FileDescripter;
+use super::procfs::ProcFS;
 use super::ramfs::RamFS;
 use super::utils::{
     AccessMode, CreationFlags, Dentry, FileSystem, InodeMode, InodeType, StatusFlags, Vnode,
@@ -18,6 +19,11 @@ lazy_static! {
             Ok(Dentry::new_root(root_vnode))
         }
         init().unwrap()
+    };
+    static ref PROC_FS: Arc<dyn FileSystem> = ProcFS::new();
+    static ref PROC_DENTRY: Arc<Dentry> = {
+        let vnode = Vnode::new(PROC_FS.root_inode()).unwrap();
+        Dentry::new_root(vnode)
     };
 }
 
@@ -127,7 +133,21 @@ impl FsResolver {
     fn lookup_inner(&self, path: &FsPath, follow_tail_link: bool) -> Result<Arc<Dentry>> {
         let dentry = match path.inner {
             FsPathInner::Absolute(path) => {
-                self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
+                // TODO: Mount procfs at "/proc" if mount feature is ready
+                if path.starts_with("/proc") {
+                    let path = path.strip_prefix("/proc").unwrap();
+                    self.lookup_from_parent(
+                        &PROC_DENTRY,
+                        path.trim_start_matches('/'),
+                        follow_tail_link,
+                    )?
+                } else {
+                    self.lookup_from_parent(
+                        &self.root,
+                        path.trim_start_matches('/'),
+                        follow_tail_link,
+                    )?
+                }
             }
             FsPathInner::CwdRelative(path) => {
                 self.lookup_from_parent(&self.cwd, path, follow_tail_link)?

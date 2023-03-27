@@ -200,6 +200,26 @@ pub trait Inode: Any + Sync + Send {
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn as_any_ref(&self) -> &dyn Any;
+
+    /// Returns whether a VFS dentry for this inode should be put into the dentry cache.
+    ///
+    /// The dentry cache in the VFS layer can accelerate the lookup of inodes. So usually,
+    /// it is preferable to use the dentry cache. And thus, the default return value of this method
+    /// is `true`.
+    ///
+    /// But this caching can raise consistency issues in certain use cases. Specifically, the dentry
+    /// cache works on the assumption that all FS operations go through the dentry layer first.
+    /// This is why the dentry cache can reflect the up-to-date FS state. Yet, this assumption
+    /// may be broken. For example, an inode in procfs (say, `/proc/1/fd/2`) can "disappear" without
+    /// notice from the perspective of the dentry cache. So for such inodes, they are incompatible
+    /// with the dentry cache. And this method returns `false`.
+    ///
+    /// Note that if any ancestor directory of an inode has this method returns `false`, then
+    /// this inode would not be cached by the dentry cache, even when the method of this
+    /// inode returns `true`.
+    fn is_dentry_cacheable(&self) -> bool {
+        true
+    }
 }
 
 impl dyn Inode {
