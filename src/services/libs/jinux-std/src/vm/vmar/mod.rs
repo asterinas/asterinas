@@ -159,7 +159,7 @@ impl Vmar_ {
     // do real protect. The protected range is ensured to be mapped.
     fn do_protect_inner(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
-            let vm_mapping_range = *vm_mapping_base..(*vm_mapping_base + vm_mapping.size());
+            let vm_mapping_range = *vm_mapping_base..(*vm_mapping_base + vm_mapping.map_size());
             if is_intersected(&range, &vm_mapping_range) {
                 let intersected_range = get_intersected_range(&range, &vm_mapping_range);
                 vm_mapping.protect(perms, intersected_range)?;
@@ -227,7 +227,7 @@ impl Vmar_ {
         // FIXME: If multiple vmos are mapped to the addr, should we allow all vmos to handle page fault?
         for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
             if *vm_mapping_base <= page_fault_addr
-                && page_fault_addr < *vm_mapping_base + vm_mapping.size()
+                && page_fault_addr < *vm_mapping_base + vm_mapping.map_size()
             {
                 return vm_mapping.handle_page_fault(page_fault_addr, not_present, write);
             }
@@ -295,14 +295,27 @@ impl Vmar_ {
             .child_vmar_s
             .retain(|_, child_vmar_| !child_vmar_.is_destroyed());
 
+        let mut mappings_to_remove = BTreeSet::new();
+        let mut mappings_to_append = BTreeMap::new();
         for (_, vm_mapping) in &inner.vm_mappings {
             let vm_mapping_range = vm_mapping.range();
             if is_intersected(&vm_mapping_range, &range) {
                 let intersected_range = get_intersected_range(&vm_mapping_range, &range);
-                vm_mapping.unmap(intersected_range.clone(), true)?;
+                vm_mapping.trim_mapping(
+                    &intersected_range,
+                    &mut mappings_to_remove,
+                    &mut mappings_to_append,
+                )?;
                 let free_region = FreeRegion::new(intersected_range);
                 free_regions.insert(free_region.start(), free_region);
             }
+        }
+
+        for mapping in mappings_to_remove {
+            inner.vm_mappings.remove(&mapping);
+        }
+        for (map_to_addr, mapping) in mappings_to_append {
+            inner.vm_mappings.insert(map_to_addr, mapping);
         }
 
         inner
@@ -373,7 +386,7 @@ impl Vmar_ {
         }
         // if the read range is in mapped vmo
         for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
-            let vm_mapping_end = *vm_mapping_base + vm_mapping.size();
+            let vm_mapping_end = *vm_mapping_base + vm_mapping.map_size();
             if *vm_mapping_base <= read_start && read_end <= vm_mapping_end {
                 let vm_mapping_offset = read_start - *vm_mapping_base;
                 return vm_mapping.read_bytes(vm_mapping_offset, buf);
@@ -397,7 +410,7 @@ impl Vmar_ {
         }
         // if the write range is in mapped vmo
         for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
-            let vm_mapping_end = *vm_mapping_base + vm_mapping.size();
+            let vm_mapping_end = *vm_mapping_base + vm_mapping.map_size();
             if *vm_mapping_base <= write_start && write_end <= vm_mapping_end {
                 let vm_mapping_offset = write_start - *vm_mapping_base;
                 return vm_mapping.write_bytes(vm_mapping_offset, buf);
@@ -500,7 +513,7 @@ impl Vmar_ {
 
         if !can_overwrite {
             for (child_vmo_base, child_vmo) in &inner.vm_mappings {
-                let child_vmo_range = *child_vmo_base..*child_vmo_base + child_vmo.size();
+                let child_vmo_range = *child_vmo_base..*child_vmo_base + child_vmo.map_size();
                 if is_intersected(&vmo_range, &child_vmo_range) {
                     return_errno_with_message!(
                         Errno::EACCES,
@@ -534,37 +547,43 @@ impl Vmar_ {
         align: usize,
         can_overwrite: bool,
     ) -> Result<Vaddr> {
-        let allocate_size = size.max(vmo_size);
+        trace!("allocate free region, vmo_size = 0x{:x}, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_ovewrite = {}", vmo_size, size, offset, align, can_overwrite);
+        let map_size = size.max(vmo_size);
 
         if can_overwrite {
             let mut inner = self.inner.lock();
             // if can_overwrite, the offset is ensured not to be None
-            let offset = offset.unwrap();
-            let vmo_range = offset..(offset + allocate_size);
+            let offset = offset.ok_or(Error::with_message(
+                Errno::EINVAL,
+                "offset cannot be None since can overwrite is set",
+            ))?;
+            let map_range = offset..(offset + map_size);
             // If can overwrite, the vmo can cross multiple free regions. We will split each free regions that intersect with the vmo
             let mut split_regions = Vec::new();
             for (free_region_base, free_region) in &inner.free_regions {
                 let free_region_range = free_region.range();
-                if is_intersected(free_region_range, &vmo_range) {
+                if is_intersected(free_region_range, &map_range) {
                     split_regions.push(*free_region_base);
                 }
             }
             for region_base in split_regions {
                 let free_region = inner.free_regions.remove(&region_base).unwrap();
-                let intersected_range = get_intersected_range(free_region.range(), &vmo_range);
+                let intersected_range = get_intersected_range(free_region.range(), &map_range);
                 let regions_after_split = free_region.allocate_range(intersected_range);
                 regions_after_split.into_iter().for_each(|region| {
                     inner.free_regions.insert(region.start(), region);
                 });
             }
+            drop(inner);
+            self.trim_existing_mappings(map_range)?;
             return Ok(offset);
         } else {
             // Otherwise, the vmo in a single region
             let (free_region_base, offset) =
-                self.find_free_region_for_child(offset, allocate_size, align)?;
+                self.find_free_region_for_child(offset, map_size, align)?;
             let mut inner = self.inner.lock();
             let free_region = inner.free_regions.remove(&free_region_base).unwrap();
-            let vmo_range = offset..(offset + allocate_size);
+            let vmo_range = offset..(offset + map_size);
             let intersected_range = get_intersected_range(free_region.range(), &vmo_range);
             let regions_after_split = free_region.allocate_range(intersected_range);
             regions_after_split.into_iter().for_each(|region| {
@@ -572,6 +591,27 @@ impl Vmar_ {
             });
             return Ok(offset);
         }
+    }
+
+    fn trim_existing_mappings(&self, trim_range: Range<usize>) -> Result<()> {
+        let mut inner = self.inner.lock();
+        let mut mappings_to_remove = BTreeSet::new();
+        let mut mappings_to_append = BTreeMap::new();
+        for (_, vm_mapping) in &inner.vm_mappings {
+            vm_mapping.trim_mapping(
+                &trim_range,
+                &mut mappings_to_remove,
+                &mut mappings_to_append,
+            )?;
+        }
+
+        for map_addr in mappings_to_remove {
+            inner.vm_mappings.remove(&map_addr);
+        }
+        for (map_addr, mapping) in mappings_to_append {
+            inner.vm_mappings.insert(map_addr, mapping);
+        }
+        Ok(())
     }
 
     /// fork vmar for child process
@@ -639,8 +679,9 @@ impl Vmar_ {
 
     /// get mapped vmo at given offset
     pub fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
+        debug!("get vm mapping, offset = 0x{:x}", offset);
         for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
-            if *vm_mapping_base <= offset && offset < *vm_mapping_base + vm_mapping.size() {
+            if *vm_mapping_base <= offset && offset < *vm_mapping_base + vm_mapping.map_size() {
                 return Ok(vm_mapping.clone());
             }
         }

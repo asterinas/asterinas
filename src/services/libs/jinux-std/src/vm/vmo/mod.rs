@@ -203,7 +203,6 @@ impl Vmo_ {
     pub fn commit_page(&self, offset: usize) -> Result<()> {
         let page_idx = offset / PAGE_SIZE;
         let mut inner = self.inner.lock();
-
         if !inner.committed_pages.contains_key(&page_idx) {
             let frames = match &inner.pager {
                 None => {
@@ -345,9 +344,9 @@ impl Vmo_ {
                     return Ok(frames);
                 } else {
                     // read
-                    if let Some(parent_page_idx) =
-                        self.inner.lock().inherited_pages.parent_page_idx(page_idx)
-                    {
+                    let parent_page_idx =
+                        self.inner.lock().inherited_pages.parent_page_idx(page_idx);
+                    if let Some(parent_page_idx) = parent_page_idx {
                         // If it's inherited from parent, we request the page from parent
                         let parent = self.parent.upgrade().unwrap();
                         return parent.get_backup_frame(

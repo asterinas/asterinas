@@ -171,7 +171,7 @@ impl Process {
         let pid = allocate_tid();
         let parent = Weak::new();
         let process_group = Weak::new();
-        let user_vm = UserVm::new();
+        let user_vm = UserVm::new(&root_vmar)?;
         let file_table = FileTable::new_with_stdio();
         let sig_dispositions = SigDispositions::new();
         let user_process = Arc::new(Process::new(

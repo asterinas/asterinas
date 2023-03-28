@@ -7,7 +7,10 @@
 pub mod mmap_flags;
 pub mod user_heap;
 
+use crate::prelude::*;
 use user_heap::UserHeap;
+
+use crate::{rights::Full, vm::vmar::Vmar};
 
 /*
 * The user vm space layout is look like below.
@@ -43,9 +46,10 @@ pub struct UserVm {
 }
 
 impl UserVm {
-    pub const fn new() -> Self {
+    pub fn new(root_vmar: &Vmar<Full>) -> Result<Self> {
         let user_heap = UserHeap::new();
-        UserVm { user_heap }
+        user_heap.init(root_vmar).unwrap();
+        Ok(UserVm { user_heap })
     }
 
     pub fn user_heap(&self) -> &UserHeap {
@@ -53,7 +57,7 @@ impl UserVm {
     }
 
     /// Set user vm to the init status
-    pub fn set_default(&self) {
-        self.user_heap.set_default();
+    pub fn set_default(&self) -> Result<()> {
+        self.user_heap.set_default()
     }
 }
