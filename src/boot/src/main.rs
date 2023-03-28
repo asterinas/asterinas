@@ -9,6 +9,8 @@ use std::{
 
 const COMMON_ARGS: &[&str] = &[
     "--no-reboot",
+    "-m",
+    "2G",
     "-cpu",
     "Icelake-Server",
     "-m",

@@ -55,13 +55,23 @@ impl VmSpace {
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
+
+        // if can overwrite, the old mapping should be unmapped.
+        if options.can_overwrite {
+            let addr = options.addr.unwrap();
+            let size = frames.nbytes();
+            let _ = self.unmap(&(addr..addr + size));
+        }
         // debug!("map to vm space: 0x{:x}", options.addr.unwrap());
-        self.memory_set.lock().map(MapArea::new(
-            options.addr.unwrap(),
-            frames.len() * PAGE_SIZE,
-            flags,
-            frames,
-        ));
+
+        let mut memory_set = self.memory_set.lock();
+        // FIXME: This is only a hack here. The interface of MapArea cannot simply deal with unmap part of memory,
+        // so we only map MapArea of page size now.
+        for (idx, frame) in frames.into_iter().enumerate() {
+            let addr = options.addr.unwrap() + idx * PAGE_SIZE;
+            let frames = VmFrameVec::from_one_frame(frame);
+            memory_set.map(MapArea::new(addr, PAGE_SIZE, flags, frames));
+        }
 
         Ok(options.addr.unwrap())
     }
@@ -131,7 +141,7 @@ impl VmIo for VmSpace {
 
 /// Options for mapping physical memory pages into a VM address space.
 /// See `VmSpace::map`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VmMapOptions {
     /// start virtual address
     addr: Option<Vaddr>,

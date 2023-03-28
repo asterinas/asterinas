@@ -33,7 +33,7 @@ fn madv_dontneed(start: Vaddr, len: usize) -> Result<()> {
     let vm_mapping = root_vmar.get_vm_mapping(start)?;
     // ensure the range is totally in the mapping
     debug_assert!(vm_mapping.map_to_addr() <= start);
-    debug_assert!(start + len <= vm_mapping.map_to_addr() + vm_mapping.size());
+    debug_assert!(start + len <= vm_mapping.map_to_addr() + vm_mapping.map_size());
     vm_mapping.unmap_and_decommit(start..(start + len))
 }
 

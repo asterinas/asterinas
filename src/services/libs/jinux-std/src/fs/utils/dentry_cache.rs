@@ -62,7 +62,7 @@ impl Dentry {
         DentryKey::new(&self.name_and_parent.read().0, &parent)
     }
 
-    pub(in crate::fs) fn vnode(&self) -> &Vnode {
+    pub fn vnode(&self) -> &Vnode {
         &self.vnode
     }
 

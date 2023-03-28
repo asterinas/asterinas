@@ -248,7 +248,7 @@ impl FsResolver {
     }
 
     /// Lookup dentry from the giving fd
-    fn lookup_from_fd(&self, fd: FileDescripter) -> Result<Arc<Dentry>> {
+    pub fn lookup_from_fd(&self, fd: FileDescripter) -> Result<Arc<Dentry>> {
         let current = current!();
         let file_table = current.file_table().lock();
         let inode_handle = file_table

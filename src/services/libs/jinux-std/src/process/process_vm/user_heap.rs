@@ -1,6 +1,8 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::rights::Full;
 use crate::vm::perms::VmPerms;
+use crate::vm::vmar::Vmar;
 use crate::{
     prelude::*,
     rights::Rights,
@@ -15,6 +17,8 @@ pub const USER_HEAP_SIZE_LIMIT: usize = PAGE_SIZE * 1000;
 pub struct UserHeap {
     /// the low address of user heap
     heap_base: Vaddr,
+    /// the max heap size
+    heap_size_limit: usize,
     current_heap_end: AtomicUsize,
 }
 
@@ -22,8 +26,22 @@ impl UserHeap {
     pub const fn new() -> Self {
         UserHeap {
             heap_base: USER_HEAP_BASE,
+            heap_size_limit: USER_HEAP_SIZE_LIMIT,
             current_heap_end: AtomicUsize::new(USER_HEAP_BASE),
         }
+    }
+
+    pub fn init(&self, root_vmar: &Vmar<Full>) -> Result<Vaddr> {
+        let perms = VmPerms::READ | VmPerms::WRITE;
+        let vmo_options = VmoOptions::<Rights>::new(0).flags(VmoFlags::RESIZABLE);
+        let heap_vmo = vmo_options.alloc().unwrap();
+        let vmar_map_options = root_vmar
+            .new_map(heap_vmo, perms)
+            .unwrap()
+            .offset(self.heap_base)
+            .size(self.heap_size_limit);
+        vmar_map_options.build().unwrap();
+        return Ok(self.current_heap_end.load(Ordering::Relaxed));
     }
 
     pub fn brk(&self, new_heap_end: Option<Vaddr>) -> Result<Vaddr> {
@@ -31,19 +49,12 @@ impl UserHeap {
         let root_vmar = current.root_vmar();
         match new_heap_end {
             None => {
-                // create a heap vmo for current process
-                let perms = VmPerms::READ | VmPerms::WRITE;
-                let vmo_options = VmoOptions::<Rights>::new(0).flags(VmoFlags::RESIZABLE);
-                let heap_vmo = vmo_options.alloc().unwrap();
-                let vmar_map_options = root_vmar
-                    .new_map(heap_vmo, perms)
-                    .unwrap()
-                    .offset(USER_HEAP_BASE)
-                    .size(USER_HEAP_SIZE_LIMIT);
-                vmar_map_options.build().unwrap();
                 return Ok(self.current_heap_end.load(Ordering::Relaxed));
             }
             Some(new_heap_end) => {
+                if new_heap_end > self.heap_base + self.heap_size_limit {
+                    return_errno_with_message!(Errno::ENOMEM, "heap size limit was met.");
+                }
                 let current_heap_end = self.current_heap_end.load(Ordering::Acquire);
                 if new_heap_end < current_heap_end {
                     // FIXME: should we allow shrink current user heap?
@@ -60,9 +71,13 @@ impl UserHeap {
     }
 
     /// Set heap to the default status. i.e., point the heap end to heap base.
-    pub fn set_default(&self) {
+    /// This function will we called in execve.
+    pub fn set_default(&self) -> Result<()> {
         self.current_heap_end
             .store(self.heap_base, Ordering::Relaxed);
+        let current = current!();
+        self.init(current.root_vmar())?;
+        Ok(())
     }
 }
 
@@ -71,6 +86,7 @@ impl Clone for UserHeap {
         let current_heap_end = self.current_heap_end.load(Ordering::Relaxed);
         Self {
             heap_base: self.heap_base.clone(),
+            heap_size_limit: self.heap_size_limit.clone(),
             current_heap_end: AtomicUsize::new(current_heap_end),
         }
     }
