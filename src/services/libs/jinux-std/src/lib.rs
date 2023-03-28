@@ -31,6 +31,7 @@ extern crate controlled;
 
 pub mod driver;
 pub mod error;
+pub mod events;
 pub mod fs;
 pub mod prelude;
 mod process;
