@@ -1,8 +1,8 @@
+use crate::fs::utils::{IoEvents, IoctlCmd, Metadata, SeekFrom};
 use crate::prelude::*;
 use crate::tty::get_n_tty;
-use core::any::Any;
 
-use crate::fs::utils::{IoEvents, IoctlCmd, Metadata, SeekFrom};
+use core::any::Any;
 
 /// The basic operations defined on a file
 pub trait File: Send + Sync + Any {

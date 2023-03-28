@@ -1,10 +1,7 @@
 use self::line_discipline::LineDiscipline;
 use crate::driver::tty::TtyDriver;
-use crate::fs::utils::{InodeMode, InodeType, Metadata};
-use crate::fs::{
-    file_handle::File,
-    utils::{IoEvents, IoctlCmd},
-};
+use crate::fs::utils::{InodeMode, InodeType, IoEvents, Metadata};
+use crate::fs::{file_handle::File, utils::IoctlCmd};
 use crate::prelude::*;
 use crate::process::{process_table, Pgid};
 use crate::util::{read_val_from_user, write_val_to_user};

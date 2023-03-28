@@ -1,6 +1,4 @@
-use crate::prelude::*;
-
-bitflags! {
+crate::bitflags! {
     pub struct IoEvents: u32 {
         const POLLIN    = 0x0001;
         const POLLPRI   = 0x0002;
