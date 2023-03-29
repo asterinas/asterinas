@@ -56,7 +56,7 @@ impl Pager for PageCacheManager {
             page.frame()
         } else {
             let page = if offset < self.backed_inode.upgrade().unwrap().metadata().size {
-                let mut page = Page::alloc()?;
+                let mut page = Page::alloc_zero()?;
                 self.backed_inode
                     .upgrade()
                     .unwrap()

@@ -94,21 +94,7 @@ impl VmMapping {
         }
 
         let vm_space = parent_vmar.vm_space();
-        let mut mapped_pages = BTreeSet::new();
-        let mapped_page_idx_range = get_page_idx_range(&(vmo_offset..vmo_offset + real_map_size));
-        let start_page_idx = mapped_page_idx_range.start;
-        for page_idx in mapped_page_idx_range {
-            let mut vm_map_options = VmMapOptions::new();
-            let page_map_addr = map_to_addr + (page_idx - start_page_idx) * PAGE_SIZE;
-            vm_map_options.addr(Some(page_map_addr));
-            vm_map_options.perm(perm.clone());
-            vm_map_options.can_overwrite(can_overwrite);
-            vm_map_options.align(align);
-            if let Ok(frames) = vmo.get_backup_frame(page_idx, false, false) {
-                vm_space.map(frames, &vm_map_options)?;
-                mapped_pages.insert(page_idx);
-            }
-        }
+        let mapped_pages = BTreeSet::new();
 
         let vm_mapping_inner = VmMappingInner {
             vmo_offset,
@@ -131,11 +117,20 @@ impl VmMapping {
 
     /// Add a new committed page and map it to vmspace. If copy on write is set, it's allowed to unmap the page at the same address.
     /// FIXME: This implementation based on the truth that we map one page at a time. If multiple pages are mapped together, this implementation may have problems
-    pub(super) fn map_one_page(&self, page_idx: usize, frames: VmFrameVec) -> Result<()> {
+    pub(super) fn map_one_page(
+        &self,
+        page_idx: usize,
+        frames: VmFrameVec,
+        forbid_write_access: bool,
+    ) -> Result<()> {
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
         let map_addr = page_idx * PAGE_SIZE + self.map_to_addr();
-        let vm_perm = self.inner.lock().page_perms.get(&page_idx).unwrap().clone();
+        let mut vm_perm = self.inner.lock().page_perms.get(&page_idx).unwrap().clone();
+        if forbid_write_access {
+            debug_assert!(self.vmo.is_cow_child());
+            vm_perm -= VmPerm::W;
+        }
         let mut vm_map_options = VmMapOptions::new();
         vm_map_options.addr(Some(map_addr));
         vm_map_options.perm(vm_perm.clone());
@@ -234,7 +229,13 @@ impl VmMapping {
         // get the backup frame for page
         let frames = self.vmo.get_backup_frame(page_idx, write, true)?;
         // map the page
-        self.map_one_page(page_idx, frames)
+        if self.vmo.is_cow_child() && !write {
+            // Since the read access triggers page fault, the child vmo does not commit a new frame ever.
+            // Note the frame is from parent, so the map must forbid write access.
+            self.map_one_page(page_idx, frames, true)
+        } else {
+            self.map_one_page(page_idx, frames, false)
+        }
     }
 
     pub(super) fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
@@ -267,14 +268,17 @@ impl VmMapping {
         let VmMapping { inner, parent, vmo } = self;
         let parent_vmo = vmo.dup().unwrap();
         let vmo_size = parent_vmo.size();
-        debug!("fork vmo in forkmapping, parent size = 0x{:x}", vmo_size);
-        let child_vmo = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?;
-        let parent_vmar = new_parent.upgrade().unwrap();
-        let vm_space = parent_vmar.vm_space();
-
         let vmo_offset = self.vmo_offset();
         let map_to_addr = self.map_to_addr();
         let map_size = self.map_size();
+
+        debug!(
+            "fork vmo, parent size = 0x{:x}, map_to_addr = 0x{:x}",
+            vmo_size, map_to_addr
+        );
+        let child_vmo = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?;
+        let parent_vmar = new_parent.upgrade().unwrap();
+        let vm_space = parent_vmar.vm_space();
 
         let real_map_size = self.map_size().min(child_vmo.size());
         let page_idx_range = get_page_idx_range(&(vmo_offset..vmo_offset + real_map_size));
@@ -340,6 +344,7 @@ impl VmMapping {
             // fast path: the whole mapping was trimed
             self.unmap(trim_range, true)?;
             mappings_to_remove.insert(map_to_addr);
+            return Ok(());
         }
         let vm_mapping_left = range.start;
         let vm_mapping_right = range.end;
