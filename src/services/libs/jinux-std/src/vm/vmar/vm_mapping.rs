@@ -79,8 +79,8 @@ impl VmMapping {
             align,
             can_overwrite,
         )?;
-        debug!(
-            "build mapping, map_to_addr = 0x{:x}- 0x{:x}",
+        trace!(
+            "build mapping, map_range = 0x{:x}- 0x{:x}",
             map_to_addr,
             map_to_addr + size
         );
@@ -188,14 +188,14 @@ impl VmMapping {
     }
 
     /// Unmap pages in the range
-    pub fn unmap(&self, range: Range<usize>, destroy: bool) -> Result<()> {
+    pub fn unmap(&self, range: &Range<usize>, destroy: bool) -> Result<()> {
         let map_to_addr = self.map_to_addr();
         let vmo_map_range = (range.start - map_to_addr)..(range.end - map_to_addr);
         let page_idx_range = get_page_idx_range(&vmo_map_range);
         for page_idx in page_idx_range {
             self.unmap_one_page(page_idx)?;
         }
-        if destroy && range == self.range() {
+        if destroy && *range == self.range() {
             self.inner.lock().is_destroyed = false;
         }
         Ok(())
@@ -204,7 +204,7 @@ impl VmMapping {
     pub fn unmap_and_decommit(&self, range: Range<usize>) -> Result<()> {
         let map_to_addr = self.map_to_addr();
         let vmo_range = (range.start - map_to_addr)..(range.end - map_to_addr);
-        self.unmap(range, false)?;
+        self.unmap(&range, false)?;
         self.vmo.decommit(vmo_range)?;
         Ok(())
     }
@@ -267,6 +267,7 @@ impl VmMapping {
         let VmMapping { inner, parent, vmo } = self;
         let parent_vmo = vmo.dup().unwrap();
         let vmo_size = parent_vmo.size();
+        debug!("fork vmo in forkmapping, parent size = 0x{:x}", vmo_size);
         let child_vmo = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?;
         let parent_vmar = new_parent.upgrade().unwrap();
         let vm_space = parent_vmar.vm_space();
@@ -334,6 +335,11 @@ impl VmMapping {
         let range = self.range();
         if !is_intersected(&range, &trim_range) {
             return Ok(());
+        }
+        if trim_range.start == map_to_addr && trim_range.end == map_to_addr + map_size {
+            // fast path: the whole mapping was trimed
+            self.unmap(trim_range, true)?;
+            mappings_to_remove.insert(map_to_addr);
         }
         let vm_mapping_left = range.start;
         let vm_mapping_right = range.end;

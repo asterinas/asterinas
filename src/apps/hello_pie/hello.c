@@ -1,6 +1,6 @@
 #include <stdio.h>
 
 int main() {
-    printf("hello world from hello_c!\n");
+    printf("hello world from hello_pie!\n");
     return 0;
 }

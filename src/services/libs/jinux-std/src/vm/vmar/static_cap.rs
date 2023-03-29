@@ -5,7 +5,7 @@ use jinux_frame::vm::VmIo;
 use jinux_rights_proc::require;
 
 use crate::{
-    rights::{Dup, Rights, TRights},
+    rights::{Dup, Read, Rights, TRights},
     vm::{page_fault_handler::PageFaultHandler, vmo::Vmo},
 };
 
@@ -146,6 +146,12 @@ impl<R: TRights> Vmar<R> {
     #[require(R > Dup)]
     pub fn dup(&self) -> Result<Self> {
         Ok(Vmar(self.0.clone(), self.1))
+    }
+
+    /// Given a map size, returns the possible map address without doing actual allocation.
+    #[require(R > Read)]
+    pub fn hint_map_addr(&self, map_size: usize) -> Result<Vaddr> {
+        self.0.hint_map_addr(map_size)
     }
 
     /// Strict the access rights.

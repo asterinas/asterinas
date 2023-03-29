@@ -465,6 +465,7 @@ fn alloc_child_vmo_(
     }
     let parent_vmo_size = parent_vmo_.size();
     let parent_vmo_inner = parent_vmo_.inner.lock();
+
     match child_type {
         ChildType::Slice => {
             // A slice child should be inside parent vmo's range
@@ -478,8 +479,8 @@ fn alloc_child_vmo_(
         }
         ChildType::Cow => {
             // A copy on Write child should intersect with parent vmo
-            debug_assert!(range.start < parent_vmo_inner.size);
-            if range.start >= parent_vmo_inner.size {
+            debug_assert!(range.start <= parent_vmo_inner.size);
+            if range.start > parent_vmo_inner.size {
                 return_errno_with_message!(Errno::EINVAL, "COW vmo should overlap with its parent");
             }
         }
