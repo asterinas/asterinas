@@ -124,6 +124,6 @@ fn mmap_filebacked_vmo(
         vm_map_options = vm_map_options.offset(addr).can_overwrite(true);
     }
     let map_addr = vm_map_options.build()?;
-    debug!("map addr = 0x{:x}", map_addr);
+    trace!("map range = 0x{:x} - 0x{:x}", map_addr, map_addr + len);
     Ok(map_addr)
 }

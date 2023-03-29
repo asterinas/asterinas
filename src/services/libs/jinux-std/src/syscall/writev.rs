@@ -27,7 +27,7 @@ pub fn do_sys_writev(fd: u64, io_vec_ptr: Vaddr, io_vec_count: usize) -> Result<
     );
     let mut write_len = 0;
     for i in 0..io_vec_count {
-        let io_vec = read_val_from_user::<IoVec>(io_vec_ptr + i * 8)?;
+        let io_vec = read_val_from_user::<IoVec>(io_vec_ptr + i * 16)?;
         let base = io_vec.base;
         let len = io_vec.len;
         let mut buffer = vec![0u8; len];

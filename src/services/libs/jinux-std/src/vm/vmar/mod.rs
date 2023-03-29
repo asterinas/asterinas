@@ -322,6 +322,7 @@ impl Vmar_ {
             .vm_mappings
             .retain(|_, vm_mapping| !vm_mapping.is_destroyed());
         inner.free_regions.append(&mut free_regions);
+        drop(inner);
         self.merge_continuous_regions();
         Ok(())
     }
@@ -691,7 +692,6 @@ impl Vmar_ {
 
     /// get mapped vmo at given offset
     pub fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
-        debug!("get vm mapping, offset = 0x{:x}", offset);
         for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
             if *vm_mapping_base <= offset && offset < *vm_mapping_base + vm_mapping.map_size() {
                 return Ok(vm_mapping.clone());
