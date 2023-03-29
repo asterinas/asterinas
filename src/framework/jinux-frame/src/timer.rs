@@ -1,6 +1,6 @@
 //! Timer.
 
-#[cfg(feature = "x86_64")]
+#[cfg(target_arch = "x86_64")]
 use crate::arch::x86::timer::{add_timeout_list, TimerCallback, TICK};
 use crate::{config::TIMER_FREQ, prelude::*};
 use core::time::Duration;

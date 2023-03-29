@@ -82,7 +82,7 @@ pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegions>> = Once::new();
 
 pub(crate) fn init() {
     heap_allocator::init();
-    #[cfg(feature = "x86_64")]
+    #[cfg(target_arch = "x86_64")]
     let memory_regions = crate::arch::x86::mm::get_memory_regions();
 
     let mut framebuffer_regions = Vec::new();

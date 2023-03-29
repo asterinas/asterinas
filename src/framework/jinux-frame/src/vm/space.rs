@@ -37,7 +37,7 @@ impl VmSpace {
     }
     /// Activate the page table, load root physical address to cr3
     pub unsafe fn activate(&self) {
-        #[cfg(feature = "x86_64")]
+        #[cfg(target_arch = "x86_64")]
         crate::arch::x86::mm::activate_page_table(
             self.memory_set.lock().pt.root_pa,
             x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
@@ -91,7 +91,7 @@ impl VmSpace {
     /// clear all mappings
     pub fn clear(&self) {
         self.memory_set.lock().clear();
-        #[cfg(feature = "x86_64")]
+        #[cfg(target_arch = "x86_64")]
         x86_64::instructions::tlb::flush_all();
     }
 

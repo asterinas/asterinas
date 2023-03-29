@@ -1,7 +1,7 @@
 //! CPU.
 
 cfg_if::cfg_if! {
-    if #[cfg(feature="x86_64")]{
+    if #[cfg(target_arch = "x86_64")]{
         pub use crate::arch::x86::cpu::CpuContext;
         pub use crate::arch::x86::cpu::FpRegs;
         pub use crate::arch::x86::cpu::TrapInformation;
