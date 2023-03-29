@@ -1,7 +1,7 @@
 /// A wrapper of xmas_elf's elf parsing
 use xmas_elf::{
     header::{self, Header, HeaderPt1, HeaderPt2, HeaderPt2_, Machine_, Type_},
-    program::ProgramHeader64,
+    program::{self, ProgramHeader64},
 };
 
 use crate::prelude::*;
@@ -85,6 +85,34 @@ impl Elf {
     /// whether the elf is a shared object
     pub fn is_shared_object(&self) -> bool {
         self.elf_header.pt2.type_.as_type() == header::Type::SharedObject
+    }
+
+    /// read the ldso path from the elf interpret section
+    pub fn ldso_path(&self, file_header_buf: &[u8]) -> Result<String> {
+        for program_header in &self.program_headers {
+            let type_ = program_header.get_type().map_err(|_| {
+                Error::with_message(Errno::ENOEXEC, "parse program header type fails")
+            })?;
+            if type_ == program::Type::Interp {
+                let file_size = program_header.file_size as usize;
+                let file_offset = program_header.offset as usize;
+                debug_assert!(file_offset + file_size <= file_header_buf.len());
+                let ldso = CStr::from_bytes_with_nul(
+                    &file_header_buf[file_offset..file_offset + file_size],
+                )?;
+                return Ok(ldso.to_string_lossy().to_string());
+            }
+        }
+        return_errno_with_message!(
+            Errno::ENOEXEC,
+            "cannot find interpreter section in dyn-link program"
+        )
+    }
+
+    // An offset to be subtracted from ELF vaddr for PIE
+    pub fn base_load_address_offset(&self) -> u64 {
+        let phdr = self.program_headers.iter().nth(0).unwrap();
+        phdr.virtual_addr - phdr.offset
     }
 }
 

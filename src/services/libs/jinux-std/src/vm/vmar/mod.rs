@@ -265,7 +265,7 @@ impl Vmar_ {
         inner.free_regions.append(&mut free_regions);
 
         for (_, vm_mapping) in &inner.vm_mappings {
-            vm_mapping.unmap(vm_mapping.range(), true)?;
+            vm_mapping.unmap(&vm_mapping.range(), true)?;
             let free_region = FreeRegion::new(vm_mapping.range());
             free_regions.insert(free_region.start(), free_region);
         }
@@ -515,6 +515,8 @@ impl Vmar_ {
             for (child_vmo_base, child_vmo) in &inner.vm_mappings {
                 let child_vmo_range = *child_vmo_base..*child_vmo_base + child_vmo.map_size();
                 if is_intersected(&vmo_range, &child_vmo_range) {
+                    debug!("vmo_range = {:x?}", vmo_range);
+                    debug!("child_vmo_range = {:x?}", child_vmo_range);
                     return_errno_with_message!(
                         Errno::EACCES,
                         "vmo range overlapped with another vmo"
@@ -591,6 +593,16 @@ impl Vmar_ {
             });
             return Ok(offset);
         }
+    }
+
+    fn hint_map_addr(&self, size: usize) -> Result<Vaddr> {
+        let inner = self.inner.lock();
+        for (free_region_base, free_region) in &inner.free_regions {
+            if free_region.size() >= size {
+                return Ok(*free_region_base);
+            }
+        }
+        return_errno_with_message!(Errno::ENOMEM, "cannot find a suitale free region");
     }
 
     fn trim_existing_mappings(&self, trim_range: Range<usize>) -> Result<()> {

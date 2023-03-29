@@ -38,11 +38,11 @@ pub fn load_program_to_root_vmar(
     let file = fs_resolver.open(&fs_path, AccessMode::O_RDONLY as u32, 0)?;
     let file_header = {
         // read the first page of file header
-        let mut file_header_buffer = [0u8; PAGE_SIZE];
-        file.read(&mut file_header_buffer)?;
+        let mut file_header_buffer = Box::new([0u8; PAGE_SIZE]);
+        file.read(&mut *file_header_buffer)?;
         file_header_buffer
     };
-    if let Some(mut new_argv) = parse_shebang_line(&file_header)? {
+    if let Some(mut new_argv) = parse_shebang_line(&*file_header)? {
         if recursion_limit == 0 {
             return_errno_with_message!(Errno::EINVAL, "the recursieve limit is reached");
         }
@@ -60,5 +60,5 @@ pub fn load_program_to_root_vmar(
 
     let elf_file = Arc::new(FileHandle::new_inode_handle(file));
     debug!("load executable,  path = {}", executable_path);
-    load_elf_to_root_vmar(root_vmar, &file_header, elf_file, argv, envp)
+    load_elf_to_root_vmar(root_vmar, &*file_header, elf_file, fs_resolver, argv, envp)
 }

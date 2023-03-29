@@ -25,6 +25,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "align_ext"
+version = "0.1.0"
+
+[[package]]
+name = "aml"
+version = "0.16.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dcf92e2afd8d6607e435cdc1d8ea76260fa467f6cf821f6af40e88dca15d183"
+dependencies = [
+ "bit_field",
+ "bitvec",
+ "byteorder",
+ "log",
+ "spinning_top",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -61,6 +78,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "bitvec"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
+dependencies = [
+ "funty",
+ "radium",
+ "tap",
+ "wyz",
+]
+
+[[package]]
 name = "buddy_system_allocator"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -68,6 +97,12 @@ checksum = "43f9365b6b0c9e1663ca4ca9440c00eda46bc85a3407070be8b5e0d8d1f29629"
 dependencies = [
  "spin 0.9.4",
 ]
+
+[[package]]
+name = "byteorder"
+version = "1.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "cfg-if"
@@ -132,6 +167,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e63201c624b8c8883921b1a1accc8916c4fa9dbfb15d122b26e4dde945b86bbf"
 
 [[package]]
+name = "funty"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
+
+[[package]]
 name = "ghost"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -179,7 +220,7 @@ dependencies = [
 [[package]]
 name = "inventory"
 version = "0.3.3"
-source = "git+https://github.com/sdww0/inventory#6356dc79fb15ae4e72ddb6fe826a3ea76d9046a5"
+source = "git+https://github.com/sdww0/inventory?rev=6356dc7#6356dc79fb15ae4e72ddb6fe826a3ea76d9046a5"
 dependencies = [
  "ctor",
  "ghost",
@@ -200,7 +241,9 @@ version = "0.1.0"
 dependencies = [
  "component",
  "jinux-frame",
+ "jinux-framebuffer",
  "jinux-std",
+ "jinux-time",
  "limine",
  "x86_64",
 ]
@@ -217,7 +260,6 @@ dependencies = [
  "jinux-virtio",
  "lazy_static",
  "log",
- "pod",
  "spin 0.9.4",
 ]
 
@@ -234,9 +276,11 @@ name = "jinux-frame"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "align_ext",
+ "aml",
  "bitflags",
  "buddy_system_allocator",
- "font8x8",
+ "cfg-if",
  "intrusive-collections",
  "lazy_static",
  "limine",
@@ -244,10 +288,20 @@ dependencies = [
  "pod",
  "spin 0.9.4",
  "trapframe",
- "uart_16550",
  "volatile",
  "x86",
  "x86_64",
+]
+
+[[package]]
+name = "jinux-framebuffer"
+version = "0.1.0"
+dependencies = [
+ "component",
+ "font8x8",
+ "jinux-frame",
+ "log",
+ "spin 0.9.4",
 ]
 
 [[package]]
@@ -262,7 +316,6 @@ dependencies = [
  "jinux-virtio",
  "lazy_static",
  "log",
- "pod",
  "spin 0.9.4",
  "virtio-input-decoder",
 ]
@@ -294,6 +347,7 @@ dependencies = [
 name = "jinux-std"
 version = "0.1.0"
 dependencies = [
+ "align_ext",
  "ascii",
  "bitflags",
  "controlled",
@@ -303,6 +357,7 @@ dependencies = [
  "jinux-frame",
  "jinux-input",
  "jinux-rights-proc",
+ "jinux-time",
  "jinux-util",
  "lazy_static",
  "log",
@@ -316,6 +371,16 @@ dependencies = [
  "virtio-input-decoder",
  "vte",
  "xmas-elf",
+]
+
+[[package]]
+name = "jinux-time"
+version = "0.1.0"
+dependencies = [
+ "component",
+ "jinux-frame",
+ "log",
+ "spin 0.9.4",
 ]
 
 [[package]]
@@ -422,6 +487,7 @@ checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 [[package]]
 name = "pod"
 version = "0.1.0"
+source = "git+https://github.com/jinzhao-dev/pod?rev=7fa2ed2#7fa2ed2bb8344856f98f0d533ecb1bab238f79ba"
 dependencies = [
  "pod-derive",
 ]
@@ -429,6 +495,7 @@ dependencies = [
 [[package]]
 name = "pod-derive"
 version = "0.1.0"
+source = "git+https://github.com/jinzhao-dev/pod?rev=7fa2ed2#7fa2ed2bb8344856f98f0d533ecb1bab238f79ba"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -452,6 +519,12 @@ checksum = "bbe448f377a7d6961e30f5955f9b8d106c3f5e449d493ee1b125c1d43c2b5179"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "radium"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "raw-cpuid"
@@ -530,6 +603,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spinning_top"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b9eb1a2f4c41445a3a0ff9abc5221c5fcd28e1f13cd7c0397706f9ac938ddb0"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -539,6 +621,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "tap"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "thiserror"
@@ -613,9 +701,10 @@ dependencies = [
 [[package]]
 name = "trapframe"
 version = "0.9.0"
-source = "git+https://github.com/sdww0/trapframe-rs?rev=13e1065#13e106595d3cde9988e101e6b51e8fb9da38053d"
+source = "git+https://github.com/sdww0/trapframe-rs?rev=4234db5#4234db5ceb667a46c3a7b68b63a5e9ef25993ef9"
 dependencies = [
  "log",
+ "pod",
  "raw-cpuid",
  "x86_64",
 ]
@@ -633,17 +722,6 @@ dependencies = [
 [[package]]
 name = "typeflags-util"
 version = "0.1.0"
-
-[[package]]
-name = "uart_16550"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b074eb9300ad949edd74c529c0e8d451625af71bb948e6b65fe69f72dc1363d9"
-dependencies = [
- "bitflags",
- "rustversion",
- "x86_64",
-]
 
 [[package]]
 name = "unicode-ident"
@@ -718,6 +796,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf09497b8f8b5ac5d3bb4d05c0a99be20f26fd3d5f2db7b0716e946d5103658"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wyz"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
+dependencies = [
+ "tap",
 ]
 
 [[package]]

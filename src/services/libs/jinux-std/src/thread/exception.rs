@@ -21,20 +21,20 @@ pub fn handle_exception(context: &mut UserContext) {
 }
 
 fn handle_page_fault(trap_info: &TrapInformation) {
-    const PAGE_NOT_PRESENT_ERROR_MASK: usize = 0x1 << 0;
-    const WRITE_ACCESS_MASK: usize = 0x1 << 1;
+    const PAGE_NOT_PRESENT_ERROR_MASK: u64 = 0x1 << 0;
+    const WRITE_ACCESS_MASK: u64 = 0x1 << 1;
+    let page_fault_addr = trap_info.cr2 as Vaddr;
+    trace!(
+        "page fault error code: 0x{:x}, Page fault address: 0x{:x}",
+        trap_info.err,
+        page_fault_addr
+    );
     let not_present = trap_info.err & PAGE_NOT_PRESENT_ERROR_MASK == 0;
     let write = trap_info.err & WRITE_ACCESS_MASK != 0;
     if not_present || write {
         // If page is not present or due to write access, we should ask the vmar try to commit this page
         let current = current!();
         let root_vmar = current.root_vmar();
-        let page_fault_addr = trap_info.cr2 as Vaddr;
-        trace!(
-            "Page fault address: 0x{:x}, write access: {}",
-            page_fault_addr,
-            write
-        );
         if let Err(e) = root_vmar.handle_page_fault(page_fault_addr, not_present, write) {
             error!(
                 "page fault handler failed: addr: 0x{:x}, err: {:?}",

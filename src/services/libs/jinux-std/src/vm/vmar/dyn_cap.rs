@@ -144,6 +144,12 @@ impl Vmar<Rights> {
         self.check_rights(Rights::DUP)?;
         Ok(Vmar(self.0.clone(), self.1.clone()))
     }
+
+    /// Given a map size, returns the possible map address without doing actual allocation.
+    pub fn hint_map_addr(&self, map_size: usize) -> Result<Vaddr> {
+        self.check_rights(Rights::READ)?;
+        self.0.hint_map_addr(map_size)
+    }
 }
 
 impl VmIo for Vmar<Rights> {

@@ -15,6 +15,7 @@ use jinux_frame::vm::{VmIo, VmPerm};
 
 use super::aux_vec::{AuxKey, AuxVec};
 use super::elf_file::Elf;
+use super::load_elf::LdsoLoadInfo;
 
 pub const INIT_STACK_BASE: Vaddr = 0x0000_0000_2000_0000;
 pub const INIT_STACK_SIZE: usize = 0x1000 * 16; // 64KB
@@ -109,9 +110,15 @@ impl InitStack {
         self.init_stack_top - self.init_stack_size
     }
 
-    pub fn init(&mut self, root_vmar: &Vmar<Full>, elf: &Elf, aux_vec: &mut AuxVec) -> Result<()> {
+    pub fn init(
+        &mut self,
+        root_vmar: &Vmar<Full>,
+        elf: &Elf,
+        ldso_load_info: &Option<LdsoLoadInfo>,
+        aux_vec: &mut AuxVec,
+    ) -> Result<()> {
         self.map_and_zeroed(root_vmar)?;
-        self.write_stack_content(root_vmar, elf, aux_vec)?;
+        self.write_stack_content(root_vmar, elf, ldso_load_info, aux_vec)?;
         self.debug_print_stack_content(root_vmar);
         Ok(())
     }
@@ -155,6 +162,7 @@ impl InitStack {
         &mut self,
         root_vmar: &Vmar<Full>,
         elf: &Elf,
+        ldso_load_info: &Option<LdsoLoadInfo>,
         aux_vec: &mut AuxVec,
     ) -> Result<()> {
         // write a zero page. When a user program tries to read a cstring(like argv) from init stack,
@@ -173,6 +181,10 @@ impl InitStack {
         let random_value = generate_random_for_aux_vec();
         let random_value_pointer = self.write_bytes(&random_value, root_vmar)?;
         aux_vec.set(AuxKey::AT_RANDOM, random_value_pointer)?;
+        if let Some(ldso_load_info) = ldso_load_info {
+            let ldso_base = ldso_load_info.base_addr();
+            aux_vec.set(AuxKey::AT_BASE, ldso_base as u64)?;
+        }
         self.adjust_stack_alignment(root_vmar, &envp_pointers, &argv_pointers, &aux_vec)?;
         self.write_aux_vec(root_vmar, aux_vec)?;
         self.write_envp_pointers(root_vmar, envp_pointers)?;
@@ -331,6 +343,13 @@ pub fn init_aux_vec(elf: &Elf, elf_map_addr: Option<Vaddr>) -> Result<AuxVec> {
     aux_vec.set(AuxKey::AT_PHDR, ph_addr as u64)?;
     aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64)?;
     aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64)?;
+    let elf_entry = if elf.is_shared_object() {
+        let base_load_offset = elf.base_load_address_offset();
+        elf.entry_point() + elf_map_addr.unwrap() - base_load_offset as usize
+    } else {
+        elf.entry_point()
+    };
+    aux_vec.set(AuxKey::AT_ENTRY, elf_entry as u64)?;
     Ok(aux_vec)
 }
 
