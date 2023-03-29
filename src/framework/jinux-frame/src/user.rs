@@ -1,9 +1,7 @@
 //! User space.
 
-use trapframe::UserContext;
-
 cfg_if::cfg_if! {
-    if #[cfg(feature="x86_64")]{
+    if #[cfg(target_arch = "x86_64")]{
         use crate::arch::x86::cpu::CpuContext;
     }
 }

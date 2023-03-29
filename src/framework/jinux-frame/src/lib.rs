@@ -33,7 +33,7 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use core::{mem, panic::PanicInfo};
-#[cfg(feature = "x86_64")]
+#[cfg(target_arch = "x86_64")]
 pub use limine::{LimineFramebufferRequest, LimineModuleRequest};
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;

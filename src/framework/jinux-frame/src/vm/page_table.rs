@@ -219,7 +219,7 @@ fn next_table_or_create<'a>(
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
 pub fn vaddr_to_paddr(virtual_address: Vaddr) -> Option<Paddr> {
-    #[cfg(feature = "x86_64")]
+    #[cfg(target_arch = "x86_64")]
     let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
 
     let page_directory_base = page_directory_base.start_address().as_u64() as usize;
@@ -239,7 +239,7 @@ pub fn vaddr_to_paddr(virtual_address: Vaddr) -> Option<Paddr> {
 }
 
 pub(crate) fn init() {
-    #[cfg(feature = "x86_64")]
+    #[cfg(target_arch = "x86_64")]
     let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
     let page_directory_base = page_directory_base.start_address().as_u64() as usize;
 

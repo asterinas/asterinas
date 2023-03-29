@@ -57,7 +57,7 @@ pub fn alloc_with_paddr(paddr: Paddr) -> Option<VmFrame> {
 /// Check if the physical address in range is valid
 fn is_paddr_valid(range: Range<usize>) -> bool {
     // special area in x86
-    #[cfg(feature = "x86_64")]
+    #[cfg(target_arch = "x86_64")]
     if range.start >= 0xFE00_0000 && range.end <= 0xFFFF_FFFF {
         return true;
     }
