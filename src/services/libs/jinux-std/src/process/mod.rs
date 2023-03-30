@@ -9,6 +9,7 @@ use self::signal::constants::SIGCHLD;
 use self::signal::sig_disposition::SigDispositions;
 use self::signal::sig_queues::SigQueues;
 use self::signal::signals::kernel::KernelSignal;
+use self::signal::signals::Signal;
 use self::status::ProcessStatus;
 use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
@@ -378,6 +379,12 @@ impl Process {
 
     pub fn sig_queues(&self) -> &Mutex<SigQueues> {
         &self.sig_queues
+    }
+
+    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+        if !self.status().lock().is_zombie() {
+            self.sig_queues.lock().enqueue(signal);
+        }
     }
 }
 

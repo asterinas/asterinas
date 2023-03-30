@@ -1,4 +1,8 @@
-use super::{process_table, signal::signals::kernel::KernelSignal, Pgid, Pid, Process};
+use super::{
+    process_table,
+    signal::signals::{kernel::KernelSignal, user::UserSignal},
+    Pgid, Pid, Process,
+};
 use crate::prelude::*;
 
 pub struct ProcessGroup {
@@ -76,10 +80,14 @@ impl ProcessGroup {
     /// send kernel signal to all processes in the group
     pub fn kernel_signal(&self, signal: KernelSignal) {
         for (_, process) in &self.inner.lock().processes {
-            process
-                .sig_queues()
-                .lock()
-                .enqueue(Box::new(signal.clone()));
+            process.enqueue_signal(Box::new(signal.clone()));
+        }
+    }
+
+    /// send user signal to all processes in the group
+    pub fn user_signal(&self, signal: UserSignal) {
+        for (_, process) in &self.inner.lock().processes {
+            process.enqueue_signal(Box::new(signal.clone()));
         }
     }
 }

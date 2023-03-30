@@ -1,7 +1,7 @@
 use crate::{log_syscall_entry, prelude::*};
 
+use crate::process::process_table;
 use crate::process::signal::signals::user::{UserSignal, UserSignalKind};
-use crate::process::{process_table, Process};
 use crate::{
     process::{process_filter::ProcessFilter, signal::sig_num::SigNum},
     syscall::SYS_KILL,
@@ -21,41 +21,32 @@ pub fn sys_kill(process_filter: u64, sig_num: u64) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn do_sys_kill(process_filter: ProcessFilter, sig_num: SigNum) -> Result<()> {
+pub fn do_sys_kill(filter: ProcessFilter, sig_num: SigNum) -> Result<()> {
     let current = current!();
     let pid = current.pid();
     // FIXME: use the correct uid
     let uid = 0;
-    let processes = get_processes(&process_filter)?;
-    for process in processes.iter() {
-        if process.status().lock().is_zombie() {
-            continue;
-        }
-
-        let signal = Box::new(UserSignal::new(sig_num, UserSignalKind::Kill, pid, uid));
-        let sig_queues = process.sig_queues();
-        sig_queues.lock().enqueue(signal);
-    }
-    Ok(())
-}
-
-fn get_processes(filter: &ProcessFilter) -> Result<Vec<Arc<Process>>> {
-    let processes = match filter {
+    let signal = UserSignal::new(sig_num, UserSignalKind::Kill, pid, uid);
+    match filter {
         ProcessFilter::Any => {
-            let mut processes = process_table::get_all_processes();
-            processes.retain(|process| process.pid() != 0);
-            processes
-        }
-        ProcessFilter::WithPid(pid) => {
-            let process = process_table::pid_to_process(*pid);
-            match process {
-                None => {
-                    return_errno_with_message!(Errno::ESRCH, "No such process in process table")
-                }
-                Some(process) => vec![process],
+            for process in process_table::get_all_processes() {
+                process.enqueue_signal(Box::new(signal.clone()));
             }
         }
-        ProcessFilter::WithPgid(_) => todo!(),
-    };
-    Ok(processes)
+        ProcessFilter::WithPid(pid) => {
+            if let Some(process) = process_table::pid_to_process(pid) {
+                process.enqueue_signal(Box::new(signal));
+            } else {
+                return_errno_with_message!(Errno::ESRCH, "No such process in process table");
+            }
+        }
+        ProcessFilter::WithPgid(pgid) => {
+            if let Some(process_group) = process_table::pgid_to_process_group(pgid) {
+                process_group.user_signal(signal);
+            } else {
+                return_errno_with_message!(Errno::ESRCH, "No such process group in process table");
+            }
+        }
+    }
+    Ok(())
 }

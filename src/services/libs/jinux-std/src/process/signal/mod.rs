@@ -85,8 +85,6 @@ pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
                         let mut status = current_thread.status().lock();
                         if status.is_running() {
                             status.set_stopped();
-                        } else {
-                            panic!("Try to suspend a not running process.")
                         }
                         drop(status);
                     }
@@ -94,8 +92,6 @@ pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
                         let mut status = current_thread.status().lock();
                         if status.is_stopped() {
                             status.set_running();
-                        } else {
-                            panic!("Try to continue a not suspended process.")
                         }
                         drop(status);
                     }
