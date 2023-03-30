@@ -85,7 +85,7 @@ impl File for Tty {
             IoctlCmd::TCGETS => {
                 // Get terminal attributes
                 let termios = self.ldisc.get_termios();
-                debug!("get termios = {:?}", termios);
+                trace!("get termios = {:?}", termios);
                 write_val_to_user(arg, &termios)?;
                 Ok(0)
             }

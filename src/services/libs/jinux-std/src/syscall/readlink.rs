@@ -26,7 +26,7 @@ pub fn sys_readlinkat(
     let current = current!();
     if pathname == CString::new("/proc/self/exe")? {
         // "proc/self/exe" is used to read the filename of current executable
-        let process_file_name = current.executable_path().unwrap();
+        let process_file_name = current.executable_path().read();
         debug!("process exec filename= {:?}", process_file_name);
         // readlink does not append a terminating null byte to buf
         let bytes = process_file_name.as_bytes();

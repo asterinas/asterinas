@@ -124,12 +124,14 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
         let child_thread = clone_child_thread(parent_context, clone_args)?;
         let child_tid = child_thread.tid();
         debug!(
-            "*********schedule child thread, child pid = {}**********",
+            "*********schedule child thread, current tid = {}, child pid = {}**********",
+            current_thread!().tid(),
             child_tid
         );
         child_thread.run();
         debug!(
-            "*********return to parent thread, child pid = {}*********",
+            "*********return to parent thread, current tid = {}, child pid = {}*********",
+            current_thread!().tid(),
             child_tid
         );
         Ok(child_tid)
@@ -137,12 +139,14 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
         let child_process = clone_child_process(parent_context, clone_args)?;
         let child_pid = child_process.pid();
         debug!(
-            "*********schedule child process, child pid = {}**********",
+            "*********schedule child process, current pid = {}, child pid = {}**********",
+            current!().pid(),
             child_pid
         );
         child_process.run();
         debug!(
-            "*********return to parent process, child pid = {}*********",
+            "*********return to parent process, current pid = {}, child pid = {}*********",
+            current!().pid(),
             child_pid
         );
         Ok(child_pid)
@@ -197,7 +201,7 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
     // clone vm
     let parent_root_vmar = current.root_vmar();
     let child_root_vmar = clone_vm(parent_root_vmar, clone_flags)?;
-    let child_user_vm = Some(current.user_vm().unwrap().clone());
+    let child_user_vm = current.user_vm().clone();
 
     // clone user space
     let child_cpu_context = clone_cpu_context(
@@ -221,7 +225,7 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
     // clone system V semaphore
     clone_sysvsem(clone_flags)?;
 
-    let child_elf_path = current.executable_path().unwrap().clone();
+    let child_elf_path = current.executable_path().read().clone();
     let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
 
     // inherit parent's sig mask
@@ -243,7 +247,7 @@ fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Res
             child_pid,
             parent,
             vec![child_thread],
-            Some(child_elf_path),
+            child_elf_path,
             child_user_vm,
             child_root_vmar.clone(),
             Weak::new(),

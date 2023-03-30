@@ -31,7 +31,6 @@ pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let pid = current.pid();
-    let process_name = current.executable_path().unwrap();
     let sig_mask = posix_thread.sig_mask().lock().clone();
     let mut thread_sig_queues = posix_thread.sig_queues().lock();
     let mut proc_sig_queues = current.sig_queues().lock();
@@ -45,12 +44,12 @@ pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
     };
     if let Some(signal) = signal {
         let sig_num = signal.num();
-        debug!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
+        trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
         let sig_action = current.sig_dispositions().lock().get(sig_num);
-        debug!("sig action: {:x?}", sig_action);
+        trace!("sig action: {:x?}", sig_action);
         match sig_action {
             SigAction::Ign => {
-                debug!("Ignore signal {:?}", sig_num);
+                trace!("Ignore signal {:?}", sig_num);
             }
             SigAction::User {
                 handler_addr,
@@ -68,12 +67,12 @@ pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
             )?,
             SigAction::Dfl => {
                 let sig_default_action = SigDefaultAction::from_signum(sig_num);
-                debug!("sig_default_action: {:?}", sig_default_action);
+                trace!("sig_default_action: {:?}", sig_default_action);
                 match sig_default_action {
                     SigDefaultAction::Core | SigDefaultAction::Term => {
-                        error!(
+                        warn!(
                             "{:?}: terminating on signal {}",
-                            process_name,
+                            current.executable_path().read(),
                             sig_num.sig_name()
                         );
                         // FIXME: How to set correct status if process is terminated
@@ -116,7 +115,7 @@ pub fn handle_user_signal(
     context: &mut CpuContext,
     sig_info: siginfo_t,
 ) -> Result<()> {
-    debug!("sig_num = {:?}", sig_num);
+    debug!("sig_num = {:?}, signame = {}", sig_num, sig_num.sig_name());
     debug!("handler_addr = 0x{:x}", handler_addr);
     debug!("flags = {:?}", flags);
     debug!("restorer_addr = 0x{:x}", restorer_addr);
@@ -134,7 +133,8 @@ pub fn handle_user_signal(
     // block signals in sigmask when running signal handler
     posix_thread.sig_mask().lock().block(mask.as_u64());
 
-    // set up signal stack in user stack. // avoid corrupt user stack, we minus 128 first.
+    // Set up signal stack in user stack,
+    // to avoid corrupting user stack, we minus 128 first.
     let mut user_rsp = context.gp_regs.rsp;
     user_rsp = user_rsp - 128;
 
@@ -167,7 +167,7 @@ pub fn handle_user_signal(
         // If contains SA_RESTORER flag, trampoline code is provided by libc in restorer_addr.
         // We just store restorer_addr on user stack to allow user code just to trampoline code.
         user_rsp = write_u64_to_user_stack(user_rsp, restorer_addr as u64)?;
-        debug!("After set restorer addr: user_rsp = 0x{:x}", user_rsp);
+        trace!("After set restorer addr: user_rsp = 0x{:x}", user_rsp);
     } else {
         // Otherwise we create a trampoline.
         // FIXME: This may cause problems if we read old_context from rsp.

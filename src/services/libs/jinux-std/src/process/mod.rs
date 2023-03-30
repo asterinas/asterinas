@@ -40,12 +40,11 @@ pub type ExitCode = i32;
 const INIT_PROCESS_PID: Pid = 1;
 
 /// Process stands for a set of threads that shares the same userspace.
-/// Currently, we only support one thread inside a process.
 pub struct Process {
     // Immutable Part
     pid: Pid,
-    executable_path: Option<String>,
-    user_vm: Option<UserVm>,
+
+    user_vm: UserVm,
     root_vmar: Arc<Vmar<Full>>,
     /// wait for child status changed
     waiting_children: WaitQueue,
@@ -53,6 +52,8 @@ pub struct Process {
     poll_queue: WaitQueue,
 
     // Mutable Part
+    /// The executable path.
+    executable_path: RwLock<String>,
     /// The threads
     threads: Mutex<Vec<Arc<Thread>>>,
     /// The exit code
@@ -97,8 +98,8 @@ impl Process {
         pid: Pid,
         parent: Weak<Process>,
         threads: Vec<Arc<Thread>>,
-        executable_path: Option<String>,
-        user_vm: Option<UserVm>,
+        executable_path: String,
+        user_vm: UserVm,
         root_vmar: Arc<Vmar<Full>>,
         process_group: Weak<ProcessGroup>,
         file_table: Arc<Mutex<FileTable>>,
@@ -113,7 +114,7 @@ impl Process {
         Self {
             pid,
             threads: Mutex::new(threads),
-            executable_path,
+            executable_path: RwLock::new(executable_path),
             user_vm,
             root_vmar,
             waiting_children,
@@ -146,6 +147,8 @@ impl Process {
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Arc<Self>> {
+        // spawn user process should give an absolute path
+        debug_assert!(executable_path.starts_with('/'));
         let process = Process::create_user_process(executable_path, argv, envp)?;
         // FIXME: How to determine the fg process group?
         let pgid = process.pgid();
@@ -174,8 +177,8 @@ impl Process {
             pid,
             parent,
             vec![],
-            Some(executable_path.to_string()),
-            Some(user_vm),
+            executable_path.to_string(),
+            user_vm,
             Arc::new(root_vmar),
             process_group,
             Arc::new(Mutex::new(file_table)),
@@ -314,8 +317,8 @@ impl Process {
     }
 
     /// returns the user_vm
-    pub fn user_vm(&self) -> Option<&UserVm> {
-        self.user_vm.as_ref()
+    pub fn user_vm(&self) -> &UserVm {
+        &self.user_vm
     }
 
     /// returns the root vmar
@@ -324,11 +327,8 @@ impl Process {
     }
 
     /// returns the user heap if the process does have, otherwise None
-    pub fn user_heap(&self) -> Option<&UserHeap> {
-        match self.user_vm {
-            None => None,
-            Some(ref user_vm) => Some(user_vm.user_heap()),
-        }
+    pub fn user_heap(&self) -> &UserHeap {
+        self.user_vm.user_heap()
     }
 
     /// free zombie child with pid, returns the exit code of child process.
@@ -336,6 +336,7 @@ impl Process {
     pub fn reap_zombie_child(&self, pid: Pid) -> i32 {
         let child_process = self.children.lock().remove(&pid).unwrap();
         assert!(child_process.status().lock().is_zombie());
+        child_process.root_vmar().destroy_all().unwrap();
         for thread in &*child_process.threads.lock() {
             thread_table::remove_thread(thread.tid());
         }
@@ -359,8 +360,8 @@ impl Process {
         self.children.lock().len() != 0
     }
 
-    pub fn executable_path(&self) -> Option<&String> {
-        self.executable_path.as_ref()
+    pub fn executable_path(&self) -> &RwLock<String> {
+        &self.executable_path
     }
 
     pub fn status(&self) -> &Mutex<ProcessStatus> {
