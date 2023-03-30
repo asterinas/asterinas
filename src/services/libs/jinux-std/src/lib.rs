@@ -91,12 +91,10 @@ fn run_busybox() -> Result<Arc<Process>> {
     let argv = ["sh", "-l"];
     let envp = [
         "SHELL=/bin/sh",
-        "PWD=/",
         "LOGNAME=root",
         "HOME=/",
         "USER=root",
         "PATH=/bin",
-        "OLDPWD=/",
     ];
     let argv = argv
         .into_iter()

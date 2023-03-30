@@ -17,6 +17,7 @@ pub fn sys_execve(
     log_syscall_entry!(SYS_EXECVE);
     let executable_path = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
     let executable_path = executable_path.into_string().unwrap();
+
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;
     debug!(
@@ -33,20 +34,19 @@ pub fn sys_execve(
     // FIXME: should we clear ctid when execve?
     *posix_thread.clear_child_tid().lock() = 0;
 
-    // let elf_file_content = crate::user_apps::read_execve_hello_content();
     let current = current!();
     // destroy root vmars
     let root_vmar = current.root_vmar();
     root_vmar.clear()?;
-    let user_vm = current
-        .user_vm()
-        .expect("[Internal Error] User process should have user vm");
-    user_vm.set_default();
+    current.user_vm().set_default();
     // load elf content to new vm space
     let fs_resolver = &*current.fs().read();
-    let elf_load_info =
+    debug!("load program to root vmar");
+    let (new_executable_path, elf_load_info) =
         load_program_to_root_vmar(root_vmar, executable_path, argv, envp, fs_resolver, 1)?;
     debug!("load elf in execve succeeds");
+    // set executable path
+    *current.executable_path().write() = new_executable_path;
     // set signal disposition to default
     current.sig_dispositions().lock().inherit();
     // set cpu context to default

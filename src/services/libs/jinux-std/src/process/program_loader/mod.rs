@@ -25,15 +25,16 @@ pub fn load_program_to_root_vmar(
     envp: Vec<CString>,
     fs_resolver: &FsResolver,
     recursion_limit: usize,
-) -> Result<ElfLoadInfo> {
+) -> Result<(String, ElfLoadInfo)> {
     // Temporary use because fs_resolver cannot deal with procfs now.
     // FIXME: removes this when procfs is ready.
     let executable_path = if &executable_path == "/proc/self/exe" {
-        current!().executable_path().unwrap().clone()
+        current!().executable_path().read().clone()
     } else {
         executable_path
     };
     let fs_path = FsPath::new(AT_FDCWD, &executable_path)?;
+    let abs_path = fs_resolver.lookup(&fs_path)?.abs_path();
     let file = fs_resolver.open(&fs_path, AccessMode::O_RDONLY as u32, 0)?;
     let file_header = {
         // read the first page of file header
@@ -58,5 +59,6 @@ pub fn load_program_to_root_vmar(
     }
 
     let elf_file = Arc::new(FileHandle::new_inode_handle(file));
-    load_elf_to_root_vmar(root_vmar, &file_header, elf_file, argv, envp)
+    let elf_load_info = load_elf_to_root_vmar(root_vmar, &file_header, elf_file, argv, envp)?;
+    Ok((abs_path, elf_load_info))
 }

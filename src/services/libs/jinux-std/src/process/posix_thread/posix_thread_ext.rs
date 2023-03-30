@@ -34,7 +34,7 @@ impl PosixThreadExt for Thread {
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Arc<Self>> {
-        let elf_load_info = load_program_to_root_vmar(
+        let (_, elf_load_info) = load_program_to_root_vmar(
             root_vmar,
             executable_path.to_string(),
             argv,

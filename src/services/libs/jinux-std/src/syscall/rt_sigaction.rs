@@ -33,7 +33,7 @@ pub fn sys_rt_sigaction(
     if sig_action_addr != 0 {
         let sig_action_c = read_val_from_user::<sigaction_t>(sig_action_addr)?;
         let sig_action = SigAction::try_from(sig_action_c).unwrap();
-        debug!("sig action = {:?}", sig_action);
+        trace!("sig action = {:?}", sig_action);
         sig_dispositions.set(sig_num, sig_action);
     }
 
