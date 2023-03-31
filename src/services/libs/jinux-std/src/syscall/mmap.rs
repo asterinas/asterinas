@@ -107,7 +107,10 @@ fn mmap_filebacked_vmo(
     let fs_resolver = current.fs().read();
     let dentry = fs_resolver.lookup_from_fd(fd)?;
     let vnode = dentry.vnode();
-    let page_cache_vmo = vnode.page_cache();
+    let page_cache_vmo = vnode.page_cache().ok_or(Error::with_message(
+        Errno::EBADF,
+        "File does not have page cache",
+    ))?;
 
     let vmo = if flags.contains(MMapFlags::MAP_PRIVATE) {
         // map private

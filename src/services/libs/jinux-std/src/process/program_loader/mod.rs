@@ -1,9 +1,7 @@
 pub mod elf;
 mod shebang;
 
-use crate::fs::file_handle::FileHandle;
 use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
-use crate::fs::utils::AccessMode;
 use crate::prelude::*;
 use crate::rights::Full;
 use crate::vm::vmar::Vmar;
@@ -34,12 +32,13 @@ pub fn load_program_to_root_vmar(
         executable_path
     };
     let fs_path = FsPath::new(AT_FDCWD, &executable_path)?;
-    let abs_path = fs_resolver.lookup(&fs_path)?.abs_path();
-    let file = fs_resolver.open(&fs_path, AccessMode::O_RDONLY as u32, 0)?;
+    let elf_file = fs_resolver.lookup(&fs_path)?;
+    let abs_path = elf_file.abs_path();
+    let vnode = elf_file.vnode();
     let file_header = {
         // read the first page of file header
         let mut file_header_buffer = Box::new([0u8; PAGE_SIZE]);
-        file.read(&mut *file_header_buffer)?;
+        vnode.read_at(0, &mut *file_header_buffer)?;
         file_header_buffer
     };
     if let Some(mut new_argv) = parse_shebang_line(&*file_header)? {
@@ -58,7 +57,8 @@ pub fn load_program_to_root_vmar(
         );
     }
 
-    let elf_file = Arc::new(FileHandle::new_inode_handle(file));
     debug!("load executable,  path = {}", executable_path);
-    load_elf_to_root_vmar(root_vmar, &*file_header, elf_file, fs_resolver, argv, envp)
+    let elf_load_info =
+        load_elf_to_root_vmar(root_vmar, &*file_header, elf_file, fs_resolver, argv, envp)?;
+    Ok((abs_path, elf_load_info))
 }

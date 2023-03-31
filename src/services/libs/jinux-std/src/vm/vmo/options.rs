@@ -487,7 +487,12 @@ fn alloc_child_vmo_(
     }
     let parent_page_idx_offset = range.start / PAGE_SIZE;
     let inherited_end = range.end.min(parent_vmo_size);
-    let inherited_end_page_idx = inherited_end / PAGE_SIZE + 1;
+    let cow_size = if inherited_end >= range.start {
+        inherited_end - range.start
+    } else {
+        0
+    };
+    let inherited_end_page_idx = cow_size / PAGE_SIZE;
     let inherited_pages = InheritedPages::new(0..inherited_end_page_idx, parent_page_idx_offset);
     let vmo_inner = VmoInner {
         pager: None,

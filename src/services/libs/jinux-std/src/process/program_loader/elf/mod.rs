@@ -1,6 +1,5 @@
 mod aux_vec;
 mod elf_file;
-mod elf_segment_pager;
 mod init_stack;
 mod load_elf;
 
