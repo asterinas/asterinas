@@ -1,11 +1,10 @@
-use crate::fs::utils::IoEvents;
+use crate::fs::utils::{IoEvents, Pollee, Poller};
 use crate::process::signal::constants::{SIGINT, SIGQUIT};
 use crate::{
     prelude::*,
     process::{process_table, signal::signals::kernel::KernelSignal, Pgid},
 };
-use jinux_frame::sync::WaitQueue;
-use ringbuffer::{ConstGenericRingBuffer, RingBuffer, RingBufferRead, RingBufferWrite};
+use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
 use super::termio::{KernelTermios, CC_C_CHAR};
 
@@ -18,40 +17,39 @@ pub struct LineDiscipline {
     /// current line
     current_line: RwLock<CurrentLine>,
     /// The read buffer
-    read_buffer: Mutex<ConstGenericRingBuffer<u8, BUFFER_CAPACITY>>,
+    read_buffer: Mutex<StaticRb<u8, BUFFER_CAPACITY>>,
     /// The foreground process group
     foreground: RwLock<Option<Pgid>>,
     /// termios
     termios: RwLock<KernelTermios>,
-    /// wait until self is readable
-    read_wait_queue: WaitQueue,
+    /// Pollee
+    pollee: Pollee,
 }
 
-#[derive(Debug)]
 pub struct CurrentLine {
-    buffer: ConstGenericRingBuffer<u8, BUFFER_CAPACITY>,
+    buffer: StaticRb<u8, BUFFER_CAPACITY>,
 }
 
 impl CurrentLine {
     pub fn new() -> Self {
         Self {
-            buffer: ConstGenericRingBuffer::new(),
+            buffer: StaticRb::default(),
         }
     }
 
     /// read all bytes inside current line and clear current line
     pub fn drain(&mut self) -> Vec<u8> {
-        self.buffer.drain().collect()
+        self.buffer.pop_iter().collect()
     }
 
     pub fn push_char(&mut self, char: u8) {
         // What should we do if line is full?
         debug_assert!(!self.is_full());
-        self.buffer.push(char);
+        self.buffer.push_overwrite(char);
     }
 
     pub fn backspace(&mut self) {
-        self.buffer.dequeue();
+        self.buffer.pop();
     }
 
     pub fn is_full(&self) -> bool {
@@ -68,10 +66,10 @@ impl LineDiscipline {
     pub fn new() -> Self {
         Self {
             current_line: RwLock::new(CurrentLine::new()),
-            read_buffer: Mutex::new(ConstGenericRingBuffer::new()),
+            read_buffer: Mutex::new(StaticRb::default()),
             foreground: RwLock::new(None),
             termios: RwLock::new(KernelTermios::default()),
-            read_wait_queue: WaitQueue::new(),
+            pollee: Pollee::new(IoEvents::empty()),
         }
     }
 
@@ -118,7 +116,7 @@ impl LineDiscipline {
                 current_line.push_char(item);
                 let current_line_chars = current_line.drain();
                 for char in current_line_chars {
-                    self.read_buffer.lock().push(char);
+                    self.read_buffer.lock().push_overwrite(char);
                 }
             } else if item >= 0x20 && item < 0x7f {
                 // printable character
@@ -126,7 +124,7 @@ impl LineDiscipline {
             }
         } else {
             // raw mode
-            self.read_buffer.lock().push(item);
+            self.read_buffer.lock().push_overwrite(item);
             // debug!("push char: {}", char::from(item))
         }
 
@@ -135,13 +133,13 @@ impl LineDiscipline {
         }
 
         if self.is_readable() {
-            self.read_wait_queue.wake_all();
+            self.pollee.add_events(IoEvents::IN);
         }
     }
 
     /// whether self is readable
     fn is_readable(&self) -> bool {
-        self.read_buffer.lock().len() > 0
+        !self.read_buffer.lock().is_empty()
     }
 
     // TODO: respect output flags
@@ -170,58 +168,84 @@ impl LineDiscipline {
 
     /// read all bytes buffered to dst, return the actual read length.
     pub fn read(&self, dst: &mut [u8]) -> Result<usize> {
-        let termios = self.termios.read();
-        let vmin = *termios.get_special_char(CC_C_CHAR::VMIN);
-        let vtime = *termios.get_special_char(CC_C_CHAR::VTIME);
-        drop(termios);
-        let read_len: usize = self.read_wait_queue.wait_until(|| {
-            // if current process does not belong to foreground process group,
-            // block until current process become foreground.
-            if !self.current_belongs_to_foreground() {
-                warn!("current process does not belong to foreground process group");
-                return None;
+        let mut poller = None;
+        loop {
+            let res = self.try_read(dst);
+            match res {
+                Ok(read_len) => {
+                    return Ok(read_len);
+                }
+                Err(e) => {
+                    if e.error() != Errno::EAGAIN {
+                        return Err(e);
+                    }
+                }
             }
+
+            // Wait for read event
+            let need_poller = if poller.is_none() {
+                poller = Some(Poller::new());
+                poller.as_ref()
+            } else {
+                None
+            };
+            let revents = self.pollee.poll(IoEvents::IN, need_poller);
+            if revents.is_empty() {
+                poller.as_ref().unwrap().wait();
+            }
+        }
+    }
+
+    pub fn try_read(&self, dst: &mut [u8]) -> Result<usize> {
+        if !self.current_belongs_to_foreground() {
+            return_errno!(Errno::EAGAIN);
+        }
+
+        let (vmin, vtime) = {
+            let termios = self.termios.read();
+            let vmin = *termios.get_special_char(CC_C_CHAR::VMIN);
+            let vtime = *termios.get_special_char(CC_C_CHAR::VTIME);
+            (vmin, vtime)
+        };
+        let read_len = {
             let len = self.read_buffer.lock().len();
             let max_read_len = len.min(dst.len());
             if vmin == 0 && vtime == 0 {
                 // poll read
-                return self.poll_read(dst);
-            }
-            if vmin > 0 && vtime == 0 {
+                self.poll_read(dst)
+            } else if vmin > 0 && vtime == 0 {
                 // block read
-                return self.block_read(dst, vmin);
-            }
-            if vmin == 0 && vtime > 0 {
+                self.block_read(dst, vmin)?
+            } else if vmin == 0 && vtime > 0 {
                 todo!()
-            }
-            if vmin > 0 && vtime > 0 {
+            } else if vmin > 0 && vtime > 0 {
                 todo!()
+            } else {
+                unreachable!()
             }
-            unreachable!()
-        });
+        };
+        if !self.is_readable() {
+            self.pollee.del_events(IoEvents::IN);
+        }
         Ok(read_len)
     }
 
-    pub fn poll(&self) -> IoEvents {
-        if self.is_empty() {
-            IoEvents::empty()
-        } else {
-            IoEvents::POLLIN
-        }
+    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.pollee.poll(mask, poller)
     }
 
     /// returns immediately with the lesser of the number of bytes available or the number of bytes requested.
     /// If no bytes are available, completes immediately, returning 0.
-    fn poll_read(&self, dst: &mut [u8]) -> Option<usize> {
+    fn poll_read(&self, dst: &mut [u8]) -> usize {
         let mut buffer = self.read_buffer.lock();
         let len = buffer.len();
         let max_read_len = len.min(dst.len());
         if max_read_len == 0 {
-            return Some(0);
+            return 0;
         }
         let mut read_len = 0;
         for i in 0..max_read_len {
-            if let Some(next_char) = buffer.dequeue() {
+            if let Some(next_char) = buffer.pop() {
                 if self.termios.read().is_canonical_mode() {
                     // canonical mode, read until meet new line
                     if meet_new_line(next_char, &self.termios.read()) {
@@ -245,18 +269,18 @@ impl LineDiscipline {
             }
         }
 
-        Some(read_len)
+        read_len
     }
 
     // The read() blocks until the lesser of the number of bytes requested or
     // MIN bytes are available, and returns the lesser of the two values.
-    pub fn block_read(&self, dst: &mut [u8], vmin: u8) -> Option<usize> {
+    pub fn block_read(&self, dst: &mut [u8], vmin: u8) -> Result<usize> {
         let min_read_len = (vmin as usize).min(dst.len());
         let buffer_len = self.read_buffer.lock().len();
         if buffer_len < min_read_len {
-            return None;
+            return_errno!(Errno::EAGAIN);
         }
-        return self.poll_read(&mut dst[..min_read_len]);
+        Ok(self.poll_read(&mut dst[..min_read_len]))
     }
 
     /// write bytes to buffer, if flush to console, then write the content to console
@@ -283,7 +307,7 @@ impl LineDiscipline {
         *self.foreground.write() = Some(fg_pgid);
         // Some background processes may be waiting on the wait queue, when set_fg, the background processes may be able to read.
         if self.is_readable() {
-            self.read_wait_queue.wake_all();
+            self.pollee.add_events(IoEvents::IN);
         }
     }
 

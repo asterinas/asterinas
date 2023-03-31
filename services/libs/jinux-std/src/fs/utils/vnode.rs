@@ -1,4 +1,6 @@
-use super::{DirentVisitor, FsFlags, Inode, InodeMode, InodeType, Metadata, PageCache};
+use super::{
+    DirentVisitor, FsFlags, Inode, InodeMode, InodeType, IoEvents, Metadata, PageCache, Poller,
+};
 use crate::prelude::*;
 use crate::rights::Full;
 use crate::vm::vmo::Vmo;
@@ -182,6 +184,10 @@ impl Vnode {
 
     pub fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         self.inner.read().inode.readdir_at(offset, visitor)
+    }
+
+    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.inner.read().inode.poll(mask, poller)
     }
 
     pub fn metadata(&self) -> Metadata {

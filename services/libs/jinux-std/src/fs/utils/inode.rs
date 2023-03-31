@@ -5,7 +5,7 @@ use core::any::Any;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 
-use super::{DirentVisitor, FileSystem, IoctlCmd, SuperBlock};
+use super::{DirentVisitor, FileSystem, IoEvents, IoctlCmd, Poller, SuperBlock};
 use crate::prelude::*;
 
 #[repr(u32)]
@@ -196,6 +196,11 @@ pub trait Inode: Any + Sync + Send {
     fn ioctl(&self, cmd: &IoctlCmd) -> Result<()>;
 
     fn sync(&self) -> Result<()>;
+
+    fn poll(&self, mask: IoEvents, _poller: Option<&Poller>) -> IoEvents {
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
+    }
 
     fn fs(&self) -> Arc<dyn FileSystem>;
 
