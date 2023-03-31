@@ -146,6 +146,15 @@ name = "cpio-decoder"
 version = "0.1.0"
 
 [[package]]
+name = "crossbeam-utils"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c063cd8cc95f5c377ed0d4b49a4b21f632396ff690e8470c29b3359b346984b"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "ctor"
 version = "0.1.25"
 source = "git+https://github.com/sdww0/rust-ctor#a6ee5e7a69cb368f00e7df00108028635fdf3fbd"
@@ -359,11 +368,12 @@ dependencies = [
  "jinux-rights-proc",
  "jinux-time",
  "jinux-util",
+ "keyable-arc",
  "lazy_static",
  "log",
  "lru",
  "pod",
- "ringbuffer",
+ "ringbuf",
  "spin 0.9.4",
  "time",
  "typeflags",
@@ -410,6 +420,10 @@ name = "json"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "078e285eafdfb6c4b434e0d31e8cfcb5115b651496faca5749b88fafd4f23bfd"
+
+[[package]]
+name = "keyable-arc"
+version = "0.1.0"
 
 [[package]]
 name = "lazy_static"
@@ -536,10 +550,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "ringbuffer"
-version = "0.10.0"
+name = "ringbuf"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "310a2514cb46bb500a2f2ad70c79c51c5a475cc23faa245d2c675faabe889370"
+checksum = "93ca10b9c9e53ac855a2d6953bce34cef6edbac32c4b13047a4d59d67299420a"
+dependencies = [
+ "crossbeam-utils",
+]
 
 [[package]]
 name = "rsdp"

@@ -1,4 +1,4 @@
-use crate::fs::utils::{IoEvents, IoctlCmd, Metadata, SeekFrom};
+use crate::fs::utils::{IoEvents, IoctlCmd, Metadata, Poller, SeekFrom};
 use crate::prelude::*;
 use crate::tty::get_n_tty;
 
@@ -25,7 +25,7 @@ pub trait File: Send + Sync + Any {
         }
     }
 
-    fn poll(&self) -> IoEvents {
+    fn poll(&self, _mask: IoEvents, _poller: Option<&Poller>) -> IoEvents {
         IoEvents::empty()
     }
 

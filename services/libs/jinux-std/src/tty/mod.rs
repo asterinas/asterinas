@@ -1,9 +1,12 @@
 use self::line_discipline::LineDiscipline;
 use crate::driver::tty::TtyDriver;
 use crate::fs::utils::{InodeMode, InodeType, IoEvents, Metadata};
-use crate::fs::{file_handle::File, utils::IoctlCmd};
+use crate::fs::{
+    file_handle::File,
+    utils::{IoctlCmd, Poller},
+};
 use crate::prelude::*;
-use crate::process::{process_table, Pgid};
+use crate::process::Pgid;
 use crate::util::{read_val_from_user, write_val_to_user};
 
 pub mod line_discipline;
@@ -43,19 +46,8 @@ impl Tty {
         *self.driver.lock() = driver;
     }
 
-    /// Wake up foreground process group that wait on IO events.
-    /// This function should be called when the interrupt handler of IO events is called.
-    fn wake_fg_proc_grp(&self) {
-        if let Some(fg_pgid) = self.ldisc.get_fg() {
-            if let Some(fg_proc_grp) = process_table::pgid_to_process_group(fg_pgid) {
-                fg_proc_grp.wake_all_polling_procs();
-            }
-        }
-    }
-
     pub fn receive_char(&self, item: u8) {
         self.ldisc.push_char(item);
-        self.wake_fg_proc_grp();
     }
 }
 
@@ -73,8 +65,8 @@ impl File for Tty {
         Ok(buf.len())
     }
 
-    fn poll(&self) -> IoEvents {
-        self.ldisc.poll()
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.ldisc.poll(mask, poller)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

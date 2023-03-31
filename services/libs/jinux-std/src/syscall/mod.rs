@@ -36,6 +36,7 @@ use crate::syscall::mprotect::sys_mprotect;
 use crate::syscall::munmap::sys_munmap;
 use crate::syscall::open::{sys_open, sys_openat};
 use crate::syscall::pause::sys_pause;
+use crate::syscall::pipe::{sys_pipe, sys_pipe2};
 use crate::syscall::poll::sys_poll;
 use crate::syscall::prctl::sys_prctl;
 use crate::syscall::prlimit64::sys_prlimit64;
@@ -102,6 +103,7 @@ mod mprotect;
 mod munmap;
 mod open;
 mod pause;
+mod pipe;
 mod poll;
 mod prctl;
 mod pread64;
@@ -181,6 +183,7 @@ define_syscall_nums!(
     SYS_PREAD64 = 17,
     SYS_WRITEV = 20,
     SYS_ACCESS = 21,
+    SYS_PIPE = 22,
     SYS_SCHED_YIELD = 24,
     SYS_MADVISE = 28,
     SYS_DUP = 32,
@@ -234,6 +237,7 @@ define_syscall_nums!(
     SYS_READLINKAT = 267,
     SYS_SET_ROBUST_LIST = 273,
     SYS_UTIMENSAT = 280,
+    SYS_PIPE2 = 293,
     SYS_PRLIMIT64 = 302
 );
 
@@ -313,6 +317,7 @@ pub fn syscall_dispatch(
         SYS_PREAD64 => syscall_handler!(4, sys_pread64, args),
         SYS_WRITEV => syscall_handler!(3, sys_writev, args),
         SYS_ACCESS => syscall_handler!(2, sys_access, args),
+        SYS_PIPE => syscall_handler!(1, sys_pipe, args),
         SYS_SCHED_YIELD => syscall_handler!(0, sys_sched_yield),
         SYS_MADVISE => syscall_handler!(3, sys_madvise, args),
         SYS_DUP => syscall_handler!(1, sys_dup, args),
@@ -366,6 +371,7 @@ pub fn syscall_dispatch(
         SYS_READLINKAT => syscall_handler!(4, sys_readlinkat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_UTIMENSAT => syscall_handler!(4, sys_utimensat, args),
+        SYS_PIPE2 => syscall_handler!(2, sys_pipe2, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
         _ => {
             error!("Unimplemented syscall number: {}", syscall_number);

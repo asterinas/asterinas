@@ -3,7 +3,7 @@ use crate::tty::{get_n_tty, Tty};
 
 use super::file_handle::File;
 use super::file_table::FileDescripter;
-use super::utils::{InodeMode, InodeType, IoEvents, Metadata, SeekFrom};
+use super::utils::{InodeMode, InodeType, IoEvents, Metadata, Poller, SeekFrom};
 
 pub const FD_STDIN: FileDescripter = 0;
 pub const FD_STDOUT: FileDescripter = 1;
@@ -22,9 +22,9 @@ pub struct Stderr {
 }
 
 impl File for Stdin {
-    fn poll(&self) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         if let Some(console) = self.console.as_ref() {
-            console.poll()
+            console.poll(mask, poller)
         } else {
             todo!()
         }
