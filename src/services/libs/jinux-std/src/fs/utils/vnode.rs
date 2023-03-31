@@ -1,11 +1,7 @@
 use super::{DirentVisitor, FsFlags, Inode, InodeMode, InodeType, Metadata, PageCache};
 use crate::prelude::*;
-<<<<<<< HEAD
-
-=======
 use crate::rights::Full;
-use crate::vm::vmo::{Vmo, VmoFlags, VmoOptions};
->>>>>>> support file-backed mmap
+use crate::vm::vmo::Vmo;
 use alloc::string::String;
 use core::time::Duration;
 use jinux_frame::vm::VmIo;
@@ -23,8 +19,12 @@ struct Inner {
 }
 
 impl Vnode {
-    pub fn page_cache(&self) -> Vmo<Full> {
-        self.inner.read().page_cache.dup().unwrap()
+    pub fn page_cache(&self) -> Option<Vmo<Full>> {
+        self.inner
+            .read()
+            .page_cache
+            .as_ref()
+            .map(|page_chche| page_chche.pages().dup().unwrap())
     }
 
     pub fn new(inode: Arc<dyn Inode>) -> Result<Self> {

@@ -334,10 +334,10 @@ impl Vmo_ {
                     let frames = inner.committed_pages.get(&page_idx).unwrap().clone();
                     if let Some(parent_page_idx) = inner.inherited_pages.parent_page_idx(page_idx) {
                         // copy contents of parent to the frame
-                        let mut tmp_buffer = [0u8; PAGE_SIZE];
+                        let mut tmp_buffer = Box::new([0u8; PAGE_SIZE]);
                         let parent = self.parent.upgrade().unwrap();
-                        parent.read_bytes(parent_page_idx * PAGE_SIZE, &mut tmp_buffer)?;
-                        frames.write_bytes(0, &tmp_buffer)?;
+                        parent.read_bytes(parent_page_idx * PAGE_SIZE, &mut *tmp_buffer)?;
+                        frames.write_bytes(0, &*tmp_buffer)?;
                     } else {
                         frames.zero();
                     }

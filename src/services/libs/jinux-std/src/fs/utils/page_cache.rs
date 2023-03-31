@@ -1,6 +1,6 @@
 use super::Inode;
 use crate::prelude::*;
-use crate::rights::Rights;
+use crate::rights::Full;
 use crate::vm::vmo::{Pager, Vmo, VmoFlags, VmoOptions};
 
 use core::ops::Range;
@@ -8,21 +8,21 @@ use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};
 use lru::LruCache;
 
 pub struct PageCache {
-    pages: Vmo,
+    pages: Vmo<Full>,
     manager: Arc<PageCacheManager>,
 }
 
 impl PageCache {
     pub fn new(inode: &Arc<dyn Inode>) -> Result<Self> {
         let manager = Arc::new(PageCacheManager::new(Arc::downgrade(inode)));
-        let pages = VmoOptions::<Rights>::new(inode.len())
+        let pages = VmoOptions::<Full>::new(inode.len())
             .flags(VmoFlags::RESIZABLE)
             .pager(manager.clone())
             .alloc()?;
         Ok(Self { pages, manager })
     }
 
-    pub fn pages(&self) -> &Vmo {
+    pub fn pages(&self) -> &Vmo<Full> {
         &self.pages
     }
 

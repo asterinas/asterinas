@@ -38,7 +38,7 @@ pub fn sys_execve(
     // destroy root vmars
     let root_vmar = current.root_vmar();
     root_vmar.clear()?;
-    current.user_vm().set_default();
+    current.user_vm().set_default()?;
     // load elf content to new vm space
     let fs_resolver = &*current.fs().read();
     debug!("load program to root vmar");
