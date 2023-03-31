@@ -69,14 +69,6 @@ impl ProcessGroup {
         self.inner.lock().pgid
     }
 
-    /// Wake up all processes waiting on polling queue
-    pub fn wake_all_polling_procs(&self) {
-        let inner = self.inner.lock();
-        for (_, process) in &inner.processes {
-            process.poll_queue().wake_all();
-        }
-    }
-
     /// send kernel signal to all processes in the group
     pub fn kernel_signal(&self, signal: KernelSignal) {
         for (_, process) in &self.inner.lock().processes {

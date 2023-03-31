@@ -1,6 +1,7 @@
 //! VFS components
 
 pub use access_mode::AccessMode;
+pub use channel::{Channel, Consumer, Producer};
 pub use creation_flags::CreationFlags;
 pub use dentry_cache::Dentry;
 pub use dirent_visitor::DirentVisitor;
@@ -12,11 +13,12 @@ pub use inode::{Inode, InodeMode, InodeType, Metadata};
 pub use io_events::IoEvents;
 pub use ioctl::IoctlCmd;
 pub use page_cache::PageCache;
-pub use poll::{c_nfds, c_pollfd, PollFd};
+pub use poll::{c_pollfd, PollFd, Pollee, Poller};
 pub use status_flags::StatusFlags;
 pub use vnode::Vnode;
 
 mod access_mode;
+mod channel;
 mod creation_flags;
 mod dentry_cache;
 mod dirent_visitor;

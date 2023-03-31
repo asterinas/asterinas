@@ -49,8 +49,6 @@ pub struct Process {
     root_vmar: Arc<Vmar<Full>>,
     /// wait for child status changed
     waiting_children: WaitQueue,
-    /// wait for io events
-    poll_queue: WaitQueue,
 
     // Mutable Part
     /// The executable path.
@@ -110,7 +108,6 @@ impl Process {
     ) -> Self {
         let children = BTreeMap::new();
         let waiting_children = WaitQueue::new();
-        let poll_queue = WaitQueue::new();
         let resource_limits = ResourceLimits::default();
         Self {
             pid,
@@ -119,7 +116,6 @@ impl Process {
             user_vm,
             root_vmar,
             waiting_children,
-            poll_queue,
             exit_code: AtomicI32::new(0),
             status: Mutex::new(ProcessStatus::Runnable),
             parent: Mutex::new(parent),
@@ -136,10 +132,6 @@ impl Process {
 
     pub fn waiting_children(&self) -> &WaitQueue {
         &self.waiting_children
-    }
-
-    pub fn poll_queue(&self) -> &WaitQueue {
-        &self.poll_queue
     }
 
     /// init a user process and run the process

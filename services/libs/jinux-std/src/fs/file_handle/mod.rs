@@ -3,7 +3,7 @@
 mod file;
 mod inode_handle;
 
-use crate::fs::utils::{Metadata, SeekFrom};
+use crate::fs::utils::{IoEvents, Metadata, Poller, SeekFrom};
 use crate::prelude::*;
 use crate::rights::{ReadOp, WriteOp};
 use alloc::sync::Arc;
@@ -78,6 +78,13 @@ impl FileHandle {
         match &self.inner {
             Inner::File(file) => file.seek(seek_from),
             Inner::Inode(inode_handle) => inode_handle.seek(seek_from),
+        }
+    }
+
+    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        match &self.inner {
+            Inner::File(file) => file.poll(mask, poller),
+            Inner::Inode(inode_handle) => inode_handle.dentry().vnode().poll(mask, poller),
         }
     }
 
