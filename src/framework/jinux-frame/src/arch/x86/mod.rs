@@ -17,6 +17,7 @@ pub(crate) fn before_all_init() {
 }
 
 pub(crate) fn after_all_init() {
+    irq::init();
     device::serial::callback_init();
     kernel::acpi::init();
     if kernel::xapic::has_apic() {

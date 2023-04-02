@@ -9,7 +9,7 @@ pub struct RecycleAllocator {
 }
 
 impl RecycleAllocator {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         RecycleAllocator {
             current: 0,
             recycled: Vec::new(),
@@ -18,7 +18,7 @@ impl RecycleAllocator {
         }
     }
 
-    pub fn with_start_max(start: usize, max: usize) -> Self {
+    pub const fn with_start_max(start: usize, max: usize) -> Self {
         RecycleAllocator {
             current: start,
             recycled: Vec::new(),

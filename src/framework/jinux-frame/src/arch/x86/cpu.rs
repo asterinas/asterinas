@@ -127,6 +127,7 @@ impl UserContextApiInternal for UserContext {
         }
     }
 }
+
 /// As Osdev Wiki defines(https://wiki.osdev.org/Exceptions):
 /// CPU exceptions are classified as:
 ///
@@ -153,12 +154,6 @@ pub struct CpuException {
     pub number: u16,
     pub typ: CpuExceptionType,
 }
-
-// impl const PartialEq for CpuException{
-//     fn eq(&self, other: &Self) -> bool {
-//         self.number == other.number
-//     }
-// }
 
 /// Copy from: https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#slice-length
 macro_rules! replace_expr {
