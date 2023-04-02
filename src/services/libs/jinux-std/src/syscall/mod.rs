@@ -62,7 +62,7 @@ use crate::syscall::wait4::sys_wait4;
 use crate::syscall::waitid::sys_waitid;
 use crate::syscall::write::sys_write;
 use crate::syscall::writev::sys_writev;
-use jinux_frame::cpu::CpuContext;
+use jinux_frame::cpu::UserContext;
 
 mod access;
 mod arch_prctl;
@@ -248,7 +248,7 @@ pub enum SyscallReturn {
 }
 
 impl SyscallArgument {
-    fn new_from_context(context: &CpuContext) -> Self {
+    fn new_from_context(context: &UserContext) -> Self {
         let syscall_number = context.rax() as u64;
         let mut args = [0u64; 6];
         args[0] = context.rdi() as u64;
@@ -264,7 +264,7 @@ impl SyscallArgument {
     }
 }
 
-pub fn handle_syscall(context: &mut CpuContext) {
+pub fn handle_syscall(context: &mut UserContext) {
     let syscall_frame = SyscallArgument::new_from_context(context);
     let syscall_return =
         syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args, context);
@@ -286,7 +286,7 @@ pub fn handle_syscall(context: &mut CpuContext) {
 pub fn syscall_dispatch(
     syscall_number: u64,
     args: [u64; 6],
-    context: &mut CpuContext,
+    context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     match syscall_number {
         SYS_READ => syscall_handler!(3, sys_read, args),

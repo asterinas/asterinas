@@ -15,6 +15,7 @@ pub fn init() {
         .get()
         .expect("Not found HHDM Features");
     assert_eq!(config::PHYS_OFFSET as u64, response.offset);
+    STACK_REQUEST.get_response().get().unwrap();
 }
 
 static BOOTLOADER_INFO_REQUEST: LimineBootInfoRequest = LimineBootInfoRequest::new(0);

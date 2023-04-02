@@ -1,5 +1,5 @@
 use jinux_frame::{
-    cpu::CpuContext,
+    cpu::UserContext,
     user::UserSpace,
     vm::{VmIo, VmSpace},
 };
@@ -118,7 +118,7 @@ impl CloneFlags {
 }
 
 /// Clone a child thread. Without schedule it to run.
-pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<Tid> {
+pub fn clone_child(parent_context: UserContext, clone_args: CloneArgs) -> Result<Tid> {
     clone_args.clone_flags.check_unsupported_flags()?;
     if clone_args.clone_flags.contains(CloneFlags::CLONE_THREAD) {
         let child_thread = clone_child_thread(parent_context, clone_args)?;
@@ -153,7 +153,7 @@ pub fn clone_child(parent_context: CpuContext, clone_args: CloneArgs) -> Result<
     }
 }
 
-fn clone_child_thread(parent_context: CpuContext, clone_args: CloneArgs) -> Result<Arc<Thread>> {
+fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Result<Arc<Thread>> {
     let clone_flags = clone_args.clone_flags;
     let current = current!();
     debug_assert!(clone_flags.contains(CloneFlags::CLONE_VM));
@@ -193,7 +193,7 @@ fn clone_child_thread(parent_context: CpuContext, clone_args: CloneArgs) -> Resu
     Ok(child_thread)
 }
 
-fn clone_child_process(parent_context: CpuContext, clone_args: CloneArgs) -> Result<Arc<Process>> {
+fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Result<Arc<Process>> {
     let current = current!();
     let parent = Arc::downgrade(&current);
     let clone_flags = clone_args.clone_flags;
@@ -327,11 +327,11 @@ fn clone_vm(
 }
 
 fn clone_cpu_context(
-    parent_context: CpuContext,
+    parent_context: UserContext,
     new_sp: u64,
     tls: u64,
     clone_flags: CloneFlags,
-) -> CpuContext {
+) -> UserContext {
     let mut child_context = parent_context.clone();
     // The return value of child thread is zero
     child_context.set_rax(0);

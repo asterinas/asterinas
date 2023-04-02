@@ -11,17 +11,18 @@ cfg-if = "1.0"
 spin = "0.9.4"
 volatile = { version = "0.4.5", features = ["unstable"] }
 buddy_system_allocator = "0.9.0"
-pod = { git = "https://github.com/sdww0/POD", rev = "7fa2ed2" }
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "7fa2ed2" }
 align_ext = { path = "../align_ext" }
 intrusive-collections = "0.9.5"
 log = "0.4"
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
-trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "94fc010" }
+trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "4234db5" }
 
 [target.x86_64-custom.dependencies]
 limine = { version = "0.1.10", features = ["into-uuid"] }
 x86_64 = "0.14.2"
 x86 = "0.52.0"
 acpi = "4.1.1"
+aml = "0.16.3"
 
 [features]

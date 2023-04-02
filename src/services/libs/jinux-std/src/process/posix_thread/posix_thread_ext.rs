@@ -1,4 +1,4 @@
-use jinux_frame::{cpu::CpuContext, user::UserSpace};
+use jinux_frame::{cpu::UserContext, user::UserSpace};
 
 use crate::{
     fs::fs_resolver::FsResolver,
@@ -44,7 +44,7 @@ impl PosixThreadExt for Thread {
         )?;
 
         let vm_space = root_vmar.vm_space().clone();
-        let mut cpu_ctx = CpuContext::default();
+        let mut cpu_ctx = UserContext::default();
         cpu_ctx.set_rip(elf_load_info.entry_point() as _);
         cpu_ctx.set_rsp(elf_load_info.user_stack_top() as _);
         let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));

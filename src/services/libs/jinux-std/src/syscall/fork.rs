@@ -3,13 +3,13 @@ use crate::{
     prelude::*,
     process::clone::{clone_child, CloneArgs},
 };
-use jinux_frame::cpu::CpuContext;
+use jinux_frame::cpu::UserContext;
 
 use crate::syscall::SYS_FORK;
 
 use super::SyscallReturn;
 
-pub fn sys_fork(parent_context: CpuContext) -> Result<SyscallReturn> {
+pub fn sys_fork(parent_context: UserContext) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FORK);
     let current = current!();
     // FIXME: set correct args for fork

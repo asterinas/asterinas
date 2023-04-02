@@ -1,14 +1,10 @@
 //! User space.
 
-cfg_if::cfg_if! {
-    if #[cfg(target_arch = "x86_64")]{
-        use crate::arch::x86::cpu::CpuContext;
-    }
-}
-
+use crate::cpu::UserContext;
 use crate::prelude::*;
 use crate::task::Task;
 use crate::vm::VmSpace;
+use trapframe::TrapFrame;
 
 /// A user space.
 ///
@@ -18,7 +14,7 @@ pub struct UserSpace {
     /// vm space
     vm_space: VmSpace,
     /// cpu context before entering user space
-    pub cpu_ctx: CpuContext,
+    init_ctx: UserContext,
 }
 
 impl UserSpace {
@@ -26,11 +22,20 @@ impl UserSpace {
     ///
     /// Each instance maintains a VM address space and the CPU state to enable
     /// execution in the user space.
-    pub fn new(vm_space: VmSpace, cpu_ctx: CpuContext) -> Self {
-        Self {
-            vm_space: vm_space,
-            cpu_ctx: cpu_ctx,
-        }
+    pub fn new(vm_space: VmSpace, init_ctx: UserContext) -> Self {
+        Self { vm_space, init_ctx }
+    }
+
+    pub fn instruction_pointer(&self) -> usize {
+        self.init_ctx.instruction_pointer()
+    }
+
+    pub fn stack_pointer(&self) -> usize {
+        self.init_ctx.stack_pointer()
+    }
+
+    pub fn syscall_ret(&self) -> usize {
+        self.init_ctx.syscall_ret()
     }
 
     /// Returns the VM address space.
@@ -53,18 +58,48 @@ impl UserSpace {
     }
 }
 
-/// Specific architectures need to implement this trait so that UserMode tasks can be executed
-pub trait UserModeExecute {
-    /// Starts executing in the user mode. Make sure current task is the task in `UserMode`.
-    ///
-    /// The method returns for one of three possible reasons indicated by `UserEvent`.
-    /// 1. The user invokes a system call;
-    /// 2. The user triggers an exception;
-    /// 3. The user triggers a fault.
-    ///
-    /// After handling the user event and updating the user-mode CPU context,
-    /// this method can be invoked again to go back to the user space.
+/// Specific architectures need to implement this trait. This should only used in `UserMode`
+///
+/// Only visible in jinux-frame
+pub(crate) trait UserContextApiInternal {
+    /// Starts executing in the user mode.
     fn execute(&mut self) -> UserEvent;
+
+    /// Use the information inside CpuContext to build a trapframe
+    fn into_trap_frame(&self) -> TrapFrame;
+}
+
+/// The common interface that every CPU architecture-specific `CpuContext` implements.
+pub trait UserContextApi {
+    /// Get the trap number of this interrupt.
+    fn trap_number(&self) -> usize;
+
+    /// Get the trap error code of this interrupt.
+    fn trap_error_code(&self) -> usize;
+
+    /// Get number of syscall
+    fn syscall_num(&self) -> usize;
+
+    /// Get return value of syscall
+    fn syscall_ret(&self) -> usize;
+
+    /// Set return value of syscall
+    fn set_syscall_ret(&mut self, ret: usize);
+
+    /// Get syscall args
+    fn syscall_args(&self) -> [usize; 6];
+
+    /// Set instruction pointer
+    fn set_instruction_pointer(&mut self, ip: usize);
+
+    /// Get instruction pointer
+    fn instruction_pointer(&self) -> usize;
+
+    /// Set stack pointer
+    fn set_stack_pointer(&mut self, sp: usize);
+
+    /// Get stack pointer
+    fn stack_pointer(&self) -> usize;
 }
 
 /// Code execution in the user mode.
@@ -89,9 +124,8 @@ pub trait UserModeExecute {
 /// ```
 pub struct UserMode<'a> {
     current: Arc<Task>,
-    pub(crate) user_space: &'a Arc<UserSpace>,
-    pub(crate) context: CpuContext,
-    pub(crate) executed: bool,
+    user_space: &'a Arc<UserSpace>,
+    context: UserContext,
 }
 
 // An instance of `UserMode` is bound to the current task. So it cannot be
@@ -102,18 +136,34 @@ impl<'a> UserMode<'a> {
         Self {
             current: Task::current(),
             user_space,
-            context: CpuContext::default(),
-            executed: false,
+            context: user_space.init_ctx,
         }
     }
 
+    /// Starts executing in the user mode. Make sure current task is the task in `UserMode`.
+    ///
+    /// The method returns for one of three possible reasons indicated by `UserEvent`.
+    /// 1. The user invokes a system call;
+    /// 2. The user triggers an exception;
+    /// 3. The user triggers a fault.
+    ///
+    /// After handling the user event and updating the user-mode CPU context,
+    /// this method can be invoked again to go back to the user space.
+    pub fn execute(&mut self) -> UserEvent {
+        unsafe {
+            self.user_space.vm_space().activate();
+        }
+        debug_assert!(Arc::ptr_eq(&self.current, &Task::current()));
+        self.context.execute()
+    }
+
     /// Returns an immutable reference the user-mode CPU context.
-    pub fn context(&self) -> &CpuContext {
+    pub fn context(&self) -> &UserContext {
         &self.context
     }
 
     /// Returns a mutable reference the user-mode CPU context.
-    pub fn context_mut(&mut self) -> &mut CpuContext {
+    pub fn context_mut(&mut self) -> &mut UserContext {
         &mut self.context
     }
 }
