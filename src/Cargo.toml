@@ -19,8 +19,6 @@ jinux-framebuffer = { path = "services/comps/framebuffer" }
 members = [
     "boot",
     "framework/jinux-frame",
-    "framework/pod",
-    "framework/pod-derive",
     "services/comps/pci",
     "services/comps/virtio",
     "services/comps/input",
