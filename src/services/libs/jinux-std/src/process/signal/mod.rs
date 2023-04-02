@@ -10,7 +10,7 @@ pub mod signals;
 use core::mem;
 
 use align_ext::AlignExt;
-use jinux_frame::{cpu::CpuContext, task::Task};
+use jinux_frame::{cpu::UserContext, task::Task};
 
 use self::c_types::siginfo_t;
 use self::sig_mask::SigMask;
@@ -26,7 +26,7 @@ use crate::{
 };
 
 /// Handle pending signal for current process
-pub fn handle_pending_signal(context: &mut CpuContext) -> Result<()> {
+pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
     let current = current!();
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
@@ -108,7 +108,7 @@ pub fn handle_user_signal(
     flags: SigActionFlags,
     restorer_addr: Vaddr,
     mut mask: SigMask,
-    context: &mut CpuContext,
+    context: &mut UserContext,
     sig_info: siginfo_t,
 ) -> Result<()> {
     debug!("sig_num = {:?}, signame = {}", sig_num, sig_num.sig_name());
@@ -144,7 +144,7 @@ pub fn handle_user_signal(
     user_rsp = alloc_aligned_in_user_stack(user_rsp, mem::size_of::<ucontext_t>(), 16)?;
     let mut ucontext = ucontext_t::default();
     ucontext.uc_sigmask = mask.as_u64();
-    ucontext.uc_mcontext.inner.gp_regs = context.general_regs();
+    ucontext.uc_mcontext.inner.gp_regs = *context.general_regs();
     let mut sig_context = posix_thread.sig_context().lock();
     if let Some(sig_context_addr) = *sig_context {
         ucontext.uc_link = sig_context_addr;

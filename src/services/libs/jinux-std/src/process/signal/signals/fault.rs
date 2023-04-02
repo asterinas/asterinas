@@ -1,8 +1,9 @@
-use jinux_frame::cpu::TrapInformation;
-use jinux_frame::trap::{
+use jinux_frame::cpu::{CpuException, TrapInformation, UserContext};
+use jinux_frame::cpu::{
     ALIGNMENT_CHECK, BOUND_RANGE_EXCEEDED, DIVIDE_BY_ZERO, GENERAL_PROTECTION_FAULT,
     INVALID_OPCODE, PAGE_FAULT, SIMD_FLOATING_POINT_EXCEPTION, X87_FLOATING_POINT_EXCEPTION,
 };
+use jinux_frame::user::UserContextApi;
 
 use crate::prelude::*;
 use crate::process::signal::c_types::siginfo_t;
@@ -20,7 +21,8 @@ pub struct FaultSignal {
 impl FaultSignal {
     pub fn new(trap_info: &TrapInformation) -> FaultSignal {
         debug!("Trap id: {}", trap_info.id);
-        let (num, code, addr) = match trap_info.id {
+        let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
+        let (num, code, addr) = match *exception {
             DIVIDE_BY_ZERO => (SIGFPE, FPE_INTDIV, None),
             X87_FLOATING_POINT_EXCEPTION | SIMD_FLOATING_POINT_EXCEPTION => {
                 (SIGFPE, FPE_FLTDIV, None)

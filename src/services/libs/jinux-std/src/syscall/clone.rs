@@ -1,4 +1,4 @@
-use jinux_frame::cpu::CpuContext;
+use jinux_frame::cpu::UserContext;
 
 use crate::log_syscall_entry;
 use crate::process::clone::{clone_child, CloneArgs, CloneFlags};
@@ -14,7 +14,7 @@ pub fn sys_clone(
     parent_tidptr: Vaddr,
     child_tidptr: Vaddr,
     tls: u64,
-    parent_context: CpuContext,
+    parent_context: UserContext,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_CLONE);
     let clone_flags = CloneFlags::from(clone_flags);

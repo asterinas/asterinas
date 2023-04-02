@@ -1,7 +1,7 @@
 use jinux_frame::{
-    cpu::CpuContext,
+    cpu::UserContext,
     task::Task,
-    user::{UserEvent, UserMode, UserModeExecute, UserSpace},
+    user::{UserEvent, UserMode, UserSpace},
 };
 
 use crate::{
@@ -17,9 +17,12 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
         let cur = Task::current();
         let user_space = cur.user_space().expect("user task should have user space");
         let mut user_mode = UserMode::new(user_space);
-        debug!("[Task entry] rip = 0x{:x}", user_space.cpu_ctx.rip());
-        debug!("[Task entry] rsp = 0x{:x}", user_space.cpu_ctx.rsp());
-        debug!("[Task entry] rax = 0x{:x}", user_space.cpu_ctx.rax());
+        debug!(
+            "[Task entry] rip = 0x{:x}",
+            user_space.instruction_pointer()
+        );
+        debug!("[Task entry] rsp = 0x{:x}", user_space.stack_pointer());
+        debug!("[Task entry] rax = 0x{:x}", user_space.syscall_ret());
         loop {
             let user_event = user_mode.execute();
             let context = user_mode.context_mut();
@@ -50,7 +53,7 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
     Task::new(user_task_entry, thread_ref, Some(user_space)).expect("spawn task failed")
 }
 
-fn handle_user_event(user_event: UserEvent, context: &mut CpuContext) {
+fn handle_user_event(user_event: UserEvent, context: &mut UserContext) {
     match user_event {
         UserEvent::Syscall => handle_syscall(context),
         UserEvent::Fault => todo!(),

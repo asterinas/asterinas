@@ -1,20 +1,18 @@
-use jinux_frame::{
-    cpu::{CpuContext, TrapInformation},
-    trap::*,
-    vm::VmIo,
-};
+use jinux_frame::user::UserContextApi;
+use jinux_frame::{cpu::*, vm::VmIo};
 
 use crate::vm::page_fault_handler::PageFaultHandler;
 use crate::{prelude::*, process::signal::signals::fault::FaultSignal};
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
-pub fn handle_exception(context: &mut CpuContext) {
+pub fn handle_exception(context: &mut UserContext) {
     let trap_info = context.trap_information.clone();
-    log_trap_info(&trap_info);
+    let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
+    log_trap_info(exception, &trap_info);
     let current = current!();
     let root_vmar = current.root_vmar();
 
-    match trap_info.id {
+    match *exception {
         PAGE_FAULT => handle_page_fault(&trap_info),
         _ => {
             // We current do nothing about other exceptions
@@ -73,8 +71,8 @@ macro_rules! log_trap_common {
     };
 }
 
-fn log_trap_info(trap_info: &TrapInformation) {
-    match trap_info.id {
+fn log_trap_info(exception: &CpuException, trap_info: &TrapInformation) {
+    match *exception {
         DIVIDE_BY_ZERO => log_trap_common!(DIVIDE_BY_ZERO, trap_info),
         DEBUG => log_trap_common!(DEBUG, trap_info),
         NON_MASKABLE_INTERRUPT => log_trap_common!(NON_MASKABLE_INTERRUPT, trap_info),

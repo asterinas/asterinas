@@ -12,7 +12,6 @@ jinux-frame = { path = "../../../framework/jinux-frame" }
 jinux-pci = { path = "../pci" }
 jinux-virtio = { path = "../virtio" }
 jinux-util = { path = "../../libs/jinux-util" }
-pod = { git = "https://github.com/sdww0/POD", rev = "7fa2ed2" }
 component = { path = "../../comp-sys/component" }
 log = "0.4"
 

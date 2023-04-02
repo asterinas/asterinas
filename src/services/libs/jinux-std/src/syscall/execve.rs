@@ -1,4 +1,4 @@
-use jinux_frame::cpu::CpuContext;
+use jinux_frame::cpu::UserContext;
 
 use super::{constants::*, SyscallReturn};
 use crate::log_syscall_entry;
@@ -12,7 +12,7 @@ pub fn sys_execve(
     filename_ptr: Vaddr,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
-    context: &mut CpuContext,
+    context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_EXECVE);
     let executable_path = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
@@ -50,10 +50,10 @@ pub fn sys_execve(
     // set signal disposition to default
     current.sig_dispositions().lock().inherit();
     // set cpu context to default
-    let defalut_content = CpuContext::default();
-    context.set_general_regs(defalut_content.general_regs());
-    context.set_fsbase(defalut_content.fsbase());
-    context.fp_regs = defalut_content.fp_regs;
+    let default_content = UserContext::default();
+    *context.general_regs_mut() = *default_content.general_regs();
+    context.set_fsbase(default_content.fsbase());
+    context.fp_regs = default_content.fp_regs;
     // set new entry point
     context.set_rip(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());

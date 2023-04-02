@@ -4,11 +4,11 @@ use crate::{
     process::{posix_thread::posix_thread_ext::PosixThreadExt, signal::c_types::ucontext_t},
     util::read_val_from_user,
 };
-use jinux_frame::cpu::CpuContext;
+use jinux_frame::cpu::UserContext;
 
 use super::{SyscallReturn, SYS_RT_SIGRETRUN};
 
-pub fn sys_rt_sigreturn(context: &mut CpuContext) -> Result<SyscallReturn> {
+pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_RT_SIGRETRUN);
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
@@ -29,7 +29,7 @@ pub fn sys_rt_sigreturn(context: &mut CpuContext) -> Result<SyscallReturn> {
     } else {
         *sig_context = Some(ucontext.uc_link);
     };
-    context.set_general_regs(ucontext.uc_mcontext.inner.gp_regs);
+    *context.general_regs_mut() = ucontext.uc_mcontext.inner.gp_regs;
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;
     posix_thread.sig_mask().lock().unblock(sig_mask);

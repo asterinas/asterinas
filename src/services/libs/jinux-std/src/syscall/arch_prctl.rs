@@ -1,4 +1,4 @@
-use jinux_frame::cpu::CpuContext;
+use jinux_frame::cpu::UserContext;
 
 use crate::syscall::SYS_ARCH_PRCTL;
 use crate::{log_syscall_entry, prelude::*};
@@ -28,7 +28,7 @@ impl TryFrom<u64> for ArchPrctlCode {
     }
 }
 
-pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Result<SyscallReturn> {
+pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut UserContext) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_ARCH_PRCTL);
     let arch_prctl_code = ArchPrctlCode::try_from(code)?;
     debug!(
@@ -39,7 +39,7 @@ pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut CpuContext) -> Result<
     Ok(SyscallReturn::Return(res as _))
 }
 
-pub fn do_arch_prctl(code: ArchPrctlCode, addr: u64, context: &mut CpuContext) -> Result<u64> {
+pub fn do_arch_prctl(code: ArchPrctlCode, addr: u64, context: &mut UserContext) -> Result<u64> {
     match code {
         ArchPrctlCode::ARCH_SET_FS => {
             context.set_fsbase(addr as usize);

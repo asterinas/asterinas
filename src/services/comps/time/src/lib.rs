@@ -1,4 +1,4 @@
-//! The frambuffer of jinux
+//! The system time of jinux
 #![no_std]
 #![forbid(unsafe_code)]
 

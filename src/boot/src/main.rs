@@ -11,6 +11,8 @@ const COMMON_ARGS: &[&str] = &[
     "--no-reboot",
     "-cpu",
     "Icelake-Server",
+    "-m",
+    "1G",
     "-device",
     "isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-device",
