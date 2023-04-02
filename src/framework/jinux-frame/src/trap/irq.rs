@@ -1,15 +1,10 @@
+use crate::arch::irq::{IRQ_LIST, NOT_USING_IRQ};
 use crate::{prelude::*, Error};
 
 use crate::util::recycle_allocator::RecycleAllocator;
 use core::fmt::Debug;
-use lazy_static::lazy_static;
 use spin::{Mutex, MutexGuard};
 use trapframe::TrapFrame;
-
-lazy_static! {
-    /// The IRQ numbers which are not using
-    static ref NOT_USING_IRQ: Mutex<RecycleAllocator> = Mutex::new(RecycleAllocator::with_start_max(32,256));
-}
 
 pub fn allocate_irq() -> Result<IrqAllocateHandle> {
     let irq_num = NOT_USING_IRQ.lock().alloc();
@@ -77,22 +72,7 @@ impl Drop for IrqAllocateHandle {
     }
 }
 
-lazy_static! {
-    pub(crate) static ref IRQ_LIST: Vec<IrqLine> = {
-        let mut list: Vec<IrqLine> = Vec::new();
-        for i in 0..256 {
-            list.push(IrqLine {
-                irq_num: i as u8,
-                callback_list: Mutex::new(Vec::new()),
-            });
-        }
-        list
-    };
-}
-
-lazy_static! {
-    static ref ID_ALLOCATOR: Mutex<RecycleAllocator> = Mutex::new(RecycleAllocator::new());
-}
+static ID_ALLOCATOR: Mutex<RecycleAllocator> = Mutex::new(RecycleAllocator::new());
 
 pub struct CallbackElement {
     function: Box<dyn Fn(&TrapFrame) + Send + Sync + 'static>,
@@ -116,8 +96,8 @@ impl Debug for CallbackElement {
 /// An interrupt request (IRQ) line.
 #[derive(Debug)]
 pub(crate) struct IrqLine {
-    irq_num: u8,
-    callback_list: Mutex<Vec<CallbackElement>>,
+    pub(crate) irq_num: u8,
+    pub(crate) callback_list: Mutex<Vec<CallbackElement>>,
 }
 
 impl IrqLine {
@@ -128,7 +108,7 @@ impl IrqLine {
     /// This function is marked unsafe as manipulating interrupt lines is
     /// considered a dangerous operation.
     pub unsafe fn acquire(irq_num: u8) -> Arc<&'static Self> {
-        Arc::new(IRQ_LIST.get(irq_num as usize).unwrap())
+        Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap())
     }
 
     /// Get the IRQ number.
@@ -176,6 +156,8 @@ pub struct IrqCallbackHandle {
 impl Drop for IrqCallbackHandle {
     fn drop(&mut self) {
         let mut a = IRQ_LIST
+            .get()
+            .unwrap()
             .get(self.irq_num as usize)
             .unwrap()
             .callback_list
