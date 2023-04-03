@@ -26,18 +26,6 @@ impl UserSpace {
         Self { vm_space, init_ctx }
     }
 
-    pub fn instruction_pointer(&self) -> usize {
-        self.init_ctx.instruction_pointer()
-    }
-
-    pub fn stack_pointer(&self) -> usize {
-        self.init_ctx.stack_pointer()
-    }
-
-    pub fn syscall_ret(&self) -> usize {
-        self.init_ctx.syscall_ret()
-    }
-
     /// Returns the VM address space.
     pub fn vm_space(&self) -> &VmSpace {
         &self.vm_space

@@ -1,7 +1,7 @@
 use jinux_frame::{
     cpu::UserContext,
     task::Task,
-    user::{UserEvent, UserMode, UserSpace},
+    user::{UserEvent, UserMode, UserSpace, UserContextApi},
 };
 
 use crate::{
@@ -19,10 +19,10 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
         let mut user_mode = UserMode::new(user_space);
         debug!(
             "[Task entry] rip = 0x{:x}",
-            user_space.instruction_pointer()
+            user_mode.context().instruction_pointer()
         );
-        debug!("[Task entry] rsp = 0x{:x}", user_space.stack_pointer());
-        debug!("[Task entry] rax = 0x{:x}", user_space.syscall_ret());
+        debug!("[Task entry] rsp = 0x{:x}", user_mode.context().stack_pointer());
+        debug!("[Task entry] rax = 0x{:x}", user_mode.context().syscall_ret());
         loop {
             let user_event = user_mode.execute();
             let context = user_mode.context_mut();
