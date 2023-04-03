@@ -179,5 +179,4 @@ impl<'a> UserMode<'a> {
 pub enum UserEvent {
     Syscall,
     Exception,
-    Fault,
 }
