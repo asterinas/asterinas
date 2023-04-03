@@ -56,7 +56,6 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
 fn handle_user_event(user_event: UserEvent, context: &mut UserContext) {
     match user_event {
         UserEvent::Syscall => handle_syscall(context),
-        UserEvent::Fault => todo!(),
         UserEvent::Exception => handle_exception(context),
     }
 }
