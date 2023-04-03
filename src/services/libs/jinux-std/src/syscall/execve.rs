@@ -53,7 +53,7 @@ pub fn sys_execve(
     let default_content = UserContext::default();
     *context.general_regs_mut() = *default_content.general_regs();
     context.set_fsbase(default_content.fsbase());
-    context.fp_regs = default_content.fp_regs;
+    *context.fp_regs_mut() = *default_content.fp_regs();
     // set new entry point
     context.set_rip(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
