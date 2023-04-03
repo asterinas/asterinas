@@ -131,7 +131,7 @@ pub fn handle_user_signal(
 
     // Set up signal stack in user stack,
     // to avoid corrupting user stack, we minus 128 first.
-    let mut user_rsp = context.gp_regs.rsp() as u64;
+    let mut user_rsp = context.rsp() as u64;
     user_rsp = user_rsp - 128;
 
     // 1. write siginfo_t
