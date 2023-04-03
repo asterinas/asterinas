@@ -35,10 +35,9 @@ pub fn this_cpu() -> u32 {
 #[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
 pub struct UserContext {
-    pub(crate) user_context: RawUserContext,
-    pub fp_regs: FpRegs,
-    /// trap information, this field is all zero when it is syscall
-    pub trap_information: TrapInformation,
+    user_context: RawUserContext,
+    fp_regs: FpRegs,
+    trap_information: TrapInformation,
 }
 
 #[derive(Clone, Default, Copy, Debug)]
@@ -56,6 +55,18 @@ impl UserContext {
 
     pub fn general_regs_mut(&mut self) -> &mut GeneralRegs {
         &mut self.user_context.general
+    }
+
+    pub fn trap_information(&self) -> &TrapInformation {
+        &self.trap_information
+    }
+
+    pub fn fp_regs(&self) -> &FpRegs {
+        &self.fp_regs
+    }
+
+    pub fn fp_regs_mut(&mut self) -> &mut FpRegs {
+        &mut self.fp_regs
     }
 }
 

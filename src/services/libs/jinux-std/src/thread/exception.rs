@@ -1,4 +1,3 @@
-use jinux_frame::user::UserContextApi;
 use jinux_frame::{cpu::*, vm::VmIo};
 
 use crate::vm::page_fault_handler::PageFaultHandler;
@@ -6,9 +5,9 @@ use crate::{prelude::*, process::signal::signals::fault::FaultSignal};
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(context: &mut UserContext) {
-    let trap_info = context.trap_information.clone();
+    let trap_info = context.trap_information();
     let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
-    log_trap_info(exception, &trap_info);
+    log_trap_info(exception, trap_info);
     let current = current!();
     let root_vmar = current.root_vmar();
 
