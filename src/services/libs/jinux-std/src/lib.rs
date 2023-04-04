@@ -68,6 +68,7 @@ fn init_thread() {
         thread.tid()
     );
 
+    print_banner();
     run_busybox().expect("run busybox fails");
 
     loop {
@@ -109,4 +110,19 @@ fn run_busybox() -> Result<Arc<Process>> {
     println!("");
     println!("BusyBox v1.35.0 built-in shell (ash)\n");
     Process::spawn_user_process(executable_path, argv, envp)
+}
+
+fn print_banner() {
+    println!("\x1B[36m");
+    println!(
+        r"
+       __   __  .__   __.  __    __  ___   ___ 
+      |  | |  | |  \ |  | |  |  |  | \  \ /  / 
+      |  | |  | |   \|  | |  |  |  |  \  V  /  
+.--.  |  | |  | |  . `  | |  |  |  |   >   <   
+|  `--'  | |  | |  |\   | |  `--'  |  /  .  \  
+ \______/  |__| |__| \__|  \______/  /__/ \__\                                                                                            
+"
+    );
+    println!("\x1B[0m");
 }

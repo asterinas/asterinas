@@ -145,6 +145,7 @@ pub fn map_segment_vmos(elf: &Elf, root_vmar: &Vmar<Full>, elf_file: &Dentry) ->
             .get_type()
             .map_err(|_| Error::with_message(Errno::ENOEXEC, "parse program header type fails"))?;
         if type_ == program::Type::Load {
+            check_segment_align(program_header)?;
             let vmo = init_segment_vmo(program_header, elf_file)?;
             map_segment_vmo(program_header, vmo, root_vmar, base_addr)?;
         }
@@ -215,7 +216,6 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     let file_offset = program_header.offset as usize;
     let virtual_addr = program_header.virtual_addr as usize;
     debug_assert!(file_offset % PAGE_SIZE == virtual_addr % PAGE_SIZE);
-
     let page_cache_vmo = {
         let vnode = elf_file.vnode();
         vnode.page_cache().ok_or(Error::with_message(
@@ -270,4 +270,21 @@ fn parse_segment_perm(flags: xmas_elf::program::Flags) -> VmPerm {
         vm_perm |= VmPerm::X;
     }
     vm_perm
+}
+
+fn check_segment_align(program_header: &ProgramHeader64) -> Result<()> {
+    let align = program_header.align;
+    if align == 0 || align == 1 {
+        // no align requirement
+        return Ok(());
+    }
+    debug_assert!(align.is_power_of_two());
+    if !align.is_power_of_two() {
+        return_errno_with_message!(Errno::ENOEXEC, "segment align is invalid.");
+    }
+    debug_assert!(program_header.offset % align == program_header.virtual_addr % align);
+    if program_header.offset % align != program_header.virtual_addr % align {
+        return_errno_with_message!(Errno::ENOEXEC, "segment align is not satisfied.");
+    }
+    Ok(())
 }
