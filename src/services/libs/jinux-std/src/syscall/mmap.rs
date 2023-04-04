@@ -6,8 +6,8 @@ use crate::rights::Rights;
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{VmoChildOptions, VmoOptions, VmoRightsOp};
 use crate::{log_syscall_entry, prelude::*};
+use align_ext::AlignExt;
 use jinux_frame::vm::VmPerm;
-use jinux_frame::AlignExt;
 
 use crate::syscall::SYS_MMAP;
 
@@ -101,13 +101,15 @@ fn mmap_filebacked_vmo(
     flags: MMapFlags,
 ) -> Result<Vaddr> {
     let current = current!();
-    let fs_resolver = current.fs().read();
-    let dentry = fs_resolver.lookup_from_fd(fd)?;
-    let vnode = dentry.vnode();
-    let page_cache_vmo = vnode.page_cache().ok_or(Error::with_message(
-        Errno::EBADF,
-        "File does not have page cache",
-    ))?;
+    let page_cache_vmo = {
+        let fs_resolver = current.fs().read();
+        let dentry = fs_resolver.lookup_from_fd(fd)?;
+        let vnode = dentry.vnode();
+        vnode.page_cache().ok_or(Error::with_message(
+            Errno::EBADF,
+            "File does not have page cache",
+        ))?
+    };
 
     let vmo = if flags.contains(MMapFlags::MAP_PRIVATE) {
         // map private
@@ -119,10 +121,13 @@ fn mmap_filebacked_vmo(
     };
 
     let root_vmar = current.root_vmar();
-    let mut vm_map_options = root_vmar.new_map(vmo.to_dyn(), perms)?;
-    if flags.contains(MMapFlags::MAP_FIXED) {
-        vm_map_options = vm_map_options.offset(addr).can_overwrite(true);
-    }
+    let vm_map_options = {
+        let mut options = root_vmar.new_map(vmo.to_dyn(), perms)?;
+        if flags.contains(MMapFlags::MAP_FIXED) {
+            options = options.offset(addr).can_overwrite(true);
+        }
+        options
+    };
     let map_addr = vm_map_options.build()?;
     trace!("map range = 0x{:x} - 0x{:x}", map_addr, map_addr + len);
     Ok(map_addr)

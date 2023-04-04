@@ -13,7 +13,7 @@ use crate::{
     vm::{vmar::Vmar, vmo::Vmo},
 };
 use align_ext::AlignExt;
-use jinux_frame::vm::VmPerm;
+use jinux_frame::vm::{VmIo, VmPerm};
 use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::Elf;
@@ -66,29 +66,25 @@ fn load_ldso_for_shared_object(
     file_header: &[u8],
     fs_resolver: &FsResolver,
 ) -> Result<LdsoLoadInfo> {
-    if elf.is_shared_object() {
-        if let Ok(ldso_path) = elf.ldso_path(file_header) {
-            trace!("ldso_path = {:?}", ldso_path);
-            let fs_path = FsPath::new(AT_FDCWD, &ldso_path)?;
-            let ldso_file = fs_resolver.lookup(&fs_path)?;
-            let vnode = ldso_file.vnode();
-            let mut buf = Box::new([0u8; PAGE_SIZE]);
-            let ldso_header = vnode.read_at(0, &mut *buf)?;
-            let ldso_elf = Elf::parse_elf(&*buf)?;
-            let map_addr = map_segment_vmos(&ldso_elf, root_vmar, &ldso_file)?;
-            return Ok(LdsoLoadInfo::new(
-                ldso_elf.entry_point() + map_addr,
-                map_addr,
-            ));
-        }
+    if !elf.is_shared_object() {
+        return_errno_with_message!(Errno::EINVAL, "not shared object");
     }
-
-    // There are three reasons that an executable may lack ldso_path,
-    // 1. this is a statically linked executable,
-    // 2. the shared object is invalid,
-    // 3. the shared object is ldso itself,
-    // we don't try to distinguish these cases and just let it go.
-    return_errno_with_message!(Errno::ENOEXEC, "cannot find ldso for shared object");
+    let ldso_file = {
+        let ldso_path = elf.ldso_path(file_header)?;
+        let fs_path = FsPath::new(AT_FDCWD, &ldso_path)?;
+        fs_resolver.lookup(&fs_path)?
+    };
+    let ldso_elf = {
+        let mut buf = Box::new([0u8; PAGE_SIZE]);
+        let vnode = ldso_file.vnode();
+        vnode.read_at(0, &mut *buf)?;
+        Elf::parse_elf(&*buf)?
+    };
+    let map_addr = map_segment_vmos(&ldso_elf, root_vmar, &ldso_file)?;
+    Ok(LdsoLoadInfo::new(
+        ldso_elf.entry_point() + map_addr,
+        map_addr,
+    ))
 }
 
 pub struct LdsoLoadInfo {
@@ -157,14 +153,22 @@ pub fn map_segment_vmos(elf: &Elf, root_vmar: &Vmar<Full>, elf_file: &Dentry) ->
 }
 
 fn base_map_addr(elf: &Elf, root_vmar: &Vmar<Full>) -> Result<Vaddr> {
-    let elf_size = elf.program_headers.iter().fold(0, |prev, program_header| {
-        let ph_max_addr = program_header.virtual_addr as usize + program_header.mem_size as usize;
-        if ph_max_addr > prev {
-            ph_max_addr
+    let elf_size = elf
+        .program_headers
+        .iter()
+        .filter_map(|program_header| {
+            if let Ok(type_) = program_header.get_type() && type_ == program::Type::Load {
+            let ph_max_addr = program_header.virtual_addr + program_header.mem_size;
+            Some(ph_max_addr as usize)
         } else {
-            prev
+            None
         }
-    });
+        })
+        .max()
+        .ok_or(Error::with_message(
+            Errno::ENOEXEC,
+            "executable file does not has loadable sections",
+        ))?;
     let map_size = elf_size.align_up(PAGE_SIZE);
     let vmo = VmoOptions::<Rights>::new(0).alloc()?;
     let vmar_map_options = root_vmar.new_map(vmo, VmPerms::empty())?.size(map_size);
@@ -207,24 +211,29 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
         program_header.offset + program_header.file_size,
         program_header.file_size
     );
+
     let file_offset = program_header.offset as usize;
     let virtual_addr = program_header.virtual_addr as usize;
     debug_assert!(file_offset % PAGE_SIZE == virtual_addr % PAGE_SIZE);
 
-    let child_vmo_offset = file_offset.align_down(PAGE_SIZE);
-    let map_start = (program_header.virtual_addr as usize).align_down(PAGE_SIZE);
-    let map_end = (program_header.virtual_addr as usize + program_header.mem_size as usize)
-        .align_up(PAGE_SIZE);
-    let vmo_size = map_end - map_start;
-    debug_assert!(vmo_size >= (program_header.file_size as usize).align_up(PAGE_SIZE));
-    let vnode = elf_file.vnode();
-    let page_cache_vmo = vnode.page_cache().ok_or(Error::with_message(
-        Errno::ENOENT,
-        "executable has no page cache",
-    ))?;
-    let segment_vmo = page_cache_vmo
-        .new_cow_child(child_vmo_offset..child_vmo_offset + vmo_size)?
-        .alloc()?;
+    let page_cache_vmo = {
+        let vnode = elf_file.vnode();
+        vnode.page_cache().ok_or(Error::with_message(
+            Errno::ENOENT,
+            "executable has no page cache",
+        ))?
+    };
+
+    let segment_vmo = {
+        let vmo_offset = file_offset.align_down(PAGE_SIZE);
+        let map_start = virtual_addr.align_down(PAGE_SIZE);
+        let map_end = (virtual_addr + program_header.mem_size as usize).align_up(PAGE_SIZE);
+        let vmo_size = map_end - map_start;
+        debug_assert!(vmo_size >= (program_header.file_size as usize).align_up(PAGE_SIZE));
+        page_cache_vmo
+            .new_cow_child(vmo_offset..vmo_offset + vmo_size)?
+            .alloc()?
+    };
 
     // Write zero as paddings. There are head padding and tail padding.
     // Head padding: if the segment's virtual address is not page-aligned,
@@ -240,9 +249,10 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
         segment_vmo.write_bytes(0, &buffer)?;
     }
     // Tail padding.
+    let segment_vmo_size = segment_vmo.size();
     let tail_padding_offset = program_header.file_size as usize + page_offset;
-    if vmo_size > tail_padding_offset {
-        let buffer = vec![0u8; vmo_size - tail_padding_offset];
+    if segment_vmo_size > tail_padding_offset {
+        let buffer = vec![0u8; segment_vmo_size - tail_padding_offset];
         segment_vmo.write_bytes(tail_padding_offset, &buffer)?;
     }
     Ok(segment_vmo.to_dyn())

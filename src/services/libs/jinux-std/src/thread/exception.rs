@@ -21,8 +21,8 @@ pub fn handle_exception(context: &mut UserContext) {
 }
 
 fn handle_page_fault(trap_info: &TrapInformation) {
-    const PAGE_NOT_PRESENT_ERROR_MASK: u64 = 0x1 << 0;
-    const WRITE_ACCESS_MASK: u64 = 0x1 << 1;
+    const PAGE_NOT_PRESENT_ERROR_MASK: usize = 0x1 << 0;
+    const WRITE_ACCESS_MASK: usize = 0x1 << 1;
     let page_fault_addr = trap_info.cr2 as Vaddr;
     trace!(
         "page fault error code: 0x{:x}, Page fault address: 0x{:x}",

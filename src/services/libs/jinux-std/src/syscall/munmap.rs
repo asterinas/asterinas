@@ -1,4 +1,4 @@
-use jinux_frame::AlignExt;
+use align_ext::AlignExt;
 
 use crate::log_syscall_entry;
 use crate::prelude::*;

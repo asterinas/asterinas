@@ -1,9 +1,8 @@
-use jinux_frame::cpu::{CpuException, TrapInformation, UserContext};
+use jinux_frame::cpu::{CpuException, TrapInformation};
 use jinux_frame::cpu::{
     ALIGNMENT_CHECK, BOUND_RANGE_EXCEEDED, DIVIDE_BY_ZERO, GENERAL_PROTECTION_FAULT,
     INVALID_OPCODE, PAGE_FAULT, SIMD_FLOATING_POINT_EXCEPTION, X87_FLOATING_POINT_EXCEPTION,
 };
-use jinux_frame::user::UserContextApi;
 
 use crate::prelude::*;
 use crate::process::signal::c_types::siginfo_t;
