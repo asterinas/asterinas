@@ -12,14 +12,6 @@ use x86_64::registers::rflags::RFlags;
 use crate::trap::call_irq_callback_functions;
 use crate::user::{UserContextApi, UserContextApiInternal, UserEvent};
 
-/// Defines a CPU-local variable.
-#[macro_export]
-macro_rules! cpu_local {
-    () => {
-        todo!()
-    };
-}
-
 /// Returns the number of CPUs.
 pub fn num_cpus() -> u32 {
     // FIXME: we only start one cpu now.
