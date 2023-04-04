@@ -4,6 +4,7 @@ use crate::{prelude::*, Error};
 use crate::util::recycle_allocator::RecycleAllocator;
 use core::fmt::Debug;
 use spin::{Mutex, MutexGuard};
+// use crate::sync::{Mutex, MutexGuard};
 use trapframe::TrapFrame;
 
 pub fn allocate_irq() -> Result<IrqAllocateHandle> {
