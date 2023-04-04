@@ -90,7 +90,7 @@ impl UserContextApiInternal for UserContext {
             call_irq_callback_functions(&self.into_trap_frame());
         }
 
-        crate::arch::irq::enable_interrupts();
+        crate::arch::irq::enable_local();
         if self.user_context.trap_num as u16 != SYSCALL_TRAPNUM {
             self.trap_information = TrapInformation {
                 cr2: unsafe { x86::controlregs::cr2() },

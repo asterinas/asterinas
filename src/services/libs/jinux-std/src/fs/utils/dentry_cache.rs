@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use alloc::string::String;
 use core::time::Duration;
-use spin::MutexGuard;
 
 use super::{InodeMode, InodeType, Metadata, Vnode, NAME_MAX};
 

@@ -1,10 +1,13 @@
+use crate::arch::irq;
 use crate::arch::irq::{IRQ_LIST, NOT_USING_IRQ};
+use crate::cpu::CpuLocal;
+use crate::cpu_local;
+use crate::util::recycle_allocator::RecycleAllocator;
 use crate::{prelude::*, Error};
 
-use crate::util::recycle_allocator::RecycleAllocator;
 use core::fmt::Debug;
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use spin::{Mutex, MutexGuard};
-// use crate::sync::{Mutex, MutexGuard};
 use trapframe::TrapFrame;
 
 pub fn allocate_irq() -> Result<IrqAllocateHandle> {
@@ -165,5 +168,90 @@ impl Drop for IrqCallbackHandle {
             .lock();
         a.retain(|item| if (*item).id == self.id { false } else { true });
         ID_ALLOCATOR.lock().dealloc(self.id);
+    }
+}
+
+/// Disable all IRQs on the current CPU (i.e., locally).
+///
+/// This function returns a guard object, which will automatically enable local IRQs again when
+/// it is dropped. This function works correctly even when it is called in a _nested_ way.
+/// The local IRQs shall only be re-enabled when the most outer guard is dropped.
+///
+/// This function can play nicely with `SpinLock` as the type uses this function internally.
+/// One can invoke this function even after acquiring a spin lock. And the reversed order is also ok.
+///
+/// # Example
+///
+/// ``rust
+/// use jinux_frame::irq;
+///
+/// {
+///     let _ = irq::disable_local();
+///     todo!("do something when irqs are disabled");
+/// }
+/// ```
+#[must_use]
+pub fn disable_local() -> DisabledLocalIrqGuard {
+    DisabledLocalIrqGuard::new()
+}
+
+/// A guard for disabled local IRQs.
+pub struct DisabledLocalIrqGuard {
+    // Having a private field prevents user from constructing values of this type directly.
+    private: (),
+}
+
+impl !Send for DisabledLocalIrqGuard {}
+
+cpu_local! {
+    static IRQ_OFF_COUNT: IrqInfo = IrqInfo::new();
+}
+
+impl DisabledLocalIrqGuard {
+    fn new() -> Self {
+        IRQ_OFF_COUNT.inc();
+        Self { private: () }
+    }
+}
+
+impl Drop for DisabledLocalIrqGuard {
+    fn drop(&mut self) {
+        IRQ_OFF_COUNT.dec();
+    }
+}
+
+#[derive(Debug, Default)]
+struct IrqInfo {
+    // interrupt disabling level
+    level: AtomicU32,
+    // interrupt state before calling dec()/inc()
+    is_irq_enabled: AtomicBool,
+}
+
+impl IrqInfo {
+    const fn new() -> Self {
+        Self {
+            level: AtomicU32::new(0),
+            is_irq_enabled: AtomicBool::new(false),
+        }
+    }
+
+    fn inc(&self) {
+        let enabled = irq::is_local_enabled();
+        let level = self.level.load(Relaxed);
+        if level == 0 {
+            self.is_irq_enabled.store(enabled, Relaxed);
+        }
+        if enabled {
+            irq::disable_local();
+        }
+        self.level.fetch_add(1, Relaxed);
+    }
+
+    fn dec(&self) {
+        let level = self.level.fetch_sub(1, Relaxed) - 1;
+        if level == 0 && self.is_irq_enabled.load(Relaxed) {
+            irq::enable_local();
+        }
     }
 }
