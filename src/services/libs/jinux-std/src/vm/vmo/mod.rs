@@ -15,7 +15,6 @@ mod static_cap;
 
 pub use options::{VmoChildOptions, VmoOptions};
 pub use pager::Pager;
-use spin::Mutex;
 
 /// Virtual Memory Objects (VMOs) are a type of capability that represents a
 /// range of memory pages.

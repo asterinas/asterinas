@@ -15,11 +15,12 @@ pub(crate) use alloc::vec::Vec;
 pub(crate) use bitflags::bitflags;
 pub(crate) use core::ffi::CStr;
 pub(crate) use jinux_frame::config::PAGE_SIZE;
+pub(crate) use jinux_frame::sync::{Mutex, MutexGuard};
 pub(crate) use jinux_frame::vm::Vaddr;
 pub(crate) use jinux_frame::{print, println};
 pub(crate) use log::{debug, error, info, trace, warn};
 pub(crate) use pod::Pod;
-pub(crate) use spin::{Mutex, RwLock};
+pub(crate) use spin::RwLock;
 
 /// return current process
 #[macro_export]

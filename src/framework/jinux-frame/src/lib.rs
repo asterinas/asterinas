@@ -29,6 +29,7 @@ pub mod user;
 mod util;
 pub mod vm;
 
+pub use self::cpu::CpuLocal;
 pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;

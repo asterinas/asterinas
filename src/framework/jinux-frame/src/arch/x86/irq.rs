@@ -20,6 +20,14 @@ pub(crate) fn init() {
     IRQ_LIST.call_once(|| list);
 }
 
-pub(crate) fn enable_interrupts() {
+pub(crate) fn enable_local() {
     x86_64::instructions::interrupts::enable();
+}
+
+pub(crate) fn disable_local() {
+    x86_64::instructions::interrupts::disable();
+}
+
+pub(crate) fn is_local_enabled() -> bool {
+    x86_64::instructions::interrupts::are_enabled()
 }

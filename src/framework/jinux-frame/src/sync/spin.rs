@@ -1,13 +1,10 @@
 use core::cell::UnsafeCell;
-use core::sync::atomic::Ordering;
-use core::{
-    ops::{Deref, DerefMut},
-    sync::atomic::AtomicBool,
-};
-
-use crate::sync::disable_local;
-use crate::sync::irq::DisabledLocalIrqGuard;
 use core::fmt;
+use core::ops::{Deref, DerefMut};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use crate::trap::disable_local;
+use crate::trap::DisabledLocalIrqGuard;
 
 /// A spin lock.
 pub struct SpinLock<T> {
@@ -31,21 +28,35 @@ impl<T> SpinLock<T> {
     pub fn lock(&self) -> SpinLockGuard<T> {
         // FIXME: add disable_preemption
         let guard = disable_local();
-        self.access_lock();
+        self.acquire_lock();
         SpinLockGuard {
             lock: &self,
             irq_guard: guard,
         }
     }
 
+    /// Try Acquire the spin lock immedidately.
+    pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
+        // FIXME: add disable_preemption
+        let irq_guard = disable_local();
+        if self.try_acquire_lock() {
+            let lock_guard = SpinLockGuard {
+                lock: &self,
+                irq_guard,
+            };
+            return Some(lock_guard);
+        }
+        return None;
+    }
+
     /// Access the spin lock, otherwise busy waiting
-    fn access_lock(&self) {
-        while !self.try_access_lock() {
+    fn acquire_lock(&self) {
+        while !self.try_acquire_lock() {
             core::hint::spin_loop();
         }
     }
 
-    fn try_access_lock(&self) -> bool {
+    fn try_acquire_lock(&self) -> bool {
         self.lock
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
@@ -98,7 +109,6 @@ impl<'a, T: fmt::Debug> fmt::Debug for SpinLockGuard<'a, T> {
     }
 }
 
-// SpinLockGuard cannot be sent between tasks/threads
 impl<'a, T> !Send for SpinLockGuard<'a, T> {}
 
 // Safety. SpinLockGuard can be shared between tasks/threads in same CPU.
