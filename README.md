@@ -23,16 +23,16 @@ As a zero-cost, least-privilege OS, Jinux provides the best of both worlds: the 
 ## How to build and test
 
 While most code is written in Rust, the project-scope build process is governed 
-by Makefile.
+by Makefile. The following commands are intended for use on an Ubuntu server that has installed qemu-system-x86_64.
 
-Before downloading source code, install and init Git LFS since the project manage binaries with Git LFS.
+### Preparation
+Before downloading source code, install and init Git LFS since the project manages binaries with Git LFS. 
 ```bash
 # 1. install git-lfs
-brew install git-lfs            # for mac
-apt install git-lfs             # for ubuntu
+apt install git-lfs             
 
 # 2. init git-lfs for current user
-git lfs install --skip-repo     # for mac & ubuntu
+git lfs install --skip-repo     
 ```
 
 Then, download source codes as normal.
@@ -46,22 +46,29 @@ all developmennt tools are installed.
 make setup
 ```
 
-Then, install some standalone tools (e.g., `cargo-component`) under the project directory.
-``` bash
-make tools
-```
-
-Set environmental variables to enable `cargo` find installed tools.
+### build
+Then, we can build the project.
 ```bash
-export PATH=`pwd`/src/target/bin:${PATH}
-```
-
-Then, we can build and test the project.
-```bash
-make
+make build
 ```
 
 If everything goes well, then we can run the OS.
 ```bash
 make run
+```
+
+### Test  
+We can run unit tests and integration tests if building succeeds.
+```bash
+make test
+```
+
+If we want to check access control policy among components, install some standalone tools (e.g., `cargo-component`), and set environmental variables to enable `cargo` find installed tools under the project directory. 
+``` bash
+make tools
+export PATH=`pwd`/target/bin:${PATH}
+```
+Then we can use the tool to check access control policy.
+```bash
+cargo component-check
 ```
