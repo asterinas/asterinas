@@ -1,6 +1,6 @@
 .PHONY: all build clean docs fmt run setup test tools
 
-all: build test
+all: build
 
 setup:
 	@rustup component add rust-src
@@ -9,28 +9,28 @@ setup:
 	@cargo install mdbook
 
 build:
-	@make --no-print-directory -C src/ramdisk
-	@cd src && cargo kbuild
+	@make --no-print-directory -C regression/ramdisk
+	@cargo kbuild
 
 tools:
-	@cd src/services/comp-sys && cargo install --path cargo-component
+	@cd services/libs/comp-sys && cargo install --path cargo-component
 
 run: build
-	@cd src && cargo krun
+	@cargo krun
 
 test: build
-	@cd src && cargo ktest
+	@cargo ktest
 
 docs:
-	@cd src && cargo doc 					# Build Rust docs
+	@cargo doc 								# Build Rust docs
 	@echo "" 								# Add a blank line
 	@cd docs && mdbook build 				# Build mdBook
 
 check:
-	@cd src && cargo fmt --check 			# Check Rust format issues
-	@cd src && cargo clippy					# Check common programming mistakes
+	@cargo fmt --check 				# Check Rust format issues
+	@cargo clippy					# Check common programming mistakes
 
 clean:
-	@cd src && cargo clean
+	@cargo clean
 	@cd docs && mdbook clean
-	@make --no-print-directory -C src/ramdisk clean
+	@make --no-print-directory -C regression/ramdisk clean
