@@ -256,6 +256,12 @@ impl From<alloc::ffi::NulError> for Error {
     }
 }
 
+impl From<int_to_c_enum::TryFromIntError> for Error {
+    fn from(_: int_to_c_enum::TryFromIntError) -> Self {
+        Error::with_message(Errno::EINVAL, "Invalid enum value")
+    }
+}
+
 #[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {

@@ -1,6 +1,7 @@
 pub mod device;
 
 use bitflags::bitflags;
+use int_to_c_enum::TryFromInt;
 use jinux_pci::capability::vendor::virtio::CapabilityVirtioData;
 use jinux_pci::util::BAR;
 use jinux_util::frame_ptr::InFramePtr;
@@ -29,7 +30,7 @@ bitflags! {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod)]
 pub struct BlkReq {
-    pub type_: ReqType,
+    pub type_: u32,
     pub reserved: u32,
     pub sector: u64,
 }
@@ -38,19 +39,19 @@ pub struct BlkReq {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod)]
 pub struct BlkResp {
-    pub status: RespStatus,
+    pub status: u8,
 }
 
 impl Default for BlkResp {
     fn default() -> Self {
         BlkResp {
-            status: RespStatus::_NotReady,
+            status: RespStatus::_NotReady as _,
         }
     }
 }
 
 #[repr(u32)]
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, TryFromInt)]
 pub enum ReqType {
     In = 0,
     Out = 1,
@@ -60,7 +61,7 @@ pub enum ReqType {
 }
 
 #[repr(u8)]
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Pod)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, TryFromInt)]
 pub enum RespStatus {
     /// Ok.
     Ok = 0,

@@ -38,7 +38,7 @@ fn madv_dontneed(start: Vaddr, len: usize) -> Result<()> {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, TryFromInt)]
 #[allow(non_camel_case_types)]
 /// This definition is the same from linux
 pub enum MadviseBehavior {
@@ -76,20 +76,4 @@ pub enum MadviseBehavior {
     MADV_POPULATE_WRITE = 23, /* populate (prefault) page tables writable */
 
     MADV_DONTNEED_LOCKED = 24, /* like DONTNEED, but drop locked pages too */
-}
-
-impl TryFrom<i32> for MadviseBehavior {
-    type Error = Error;
-
-    fn try_from(value: i32) -> Result<Self> {
-        let behavior = match value {
-            0 => MadviseBehavior::MADV_NORMAL,
-            1 => MadviseBehavior::MADV_RANDOM,
-            2 => MadviseBehavior::MADV_SEQUENTIAL,
-            3 => MadviseBehavior::MADV_WILLNEED,
-            4 => MadviseBehavior::MADV_DONTNEED,
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid madvise behavior"),
-        };
-        Ok(behavior)
-    }
 }

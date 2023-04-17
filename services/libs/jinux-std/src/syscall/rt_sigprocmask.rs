@@ -64,24 +64,10 @@ fn do_rt_sigprocmask(
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(u32)]
 pub enum MaskOp {
     Block = 0,
     Unblock = 1,
     SetMask = 2,
-}
-
-impl TryFrom<u32> for MaskOp {
-    type Error = Error;
-
-    fn try_from(value: u32) -> Result<Self> {
-        let op = match value {
-            0 => MaskOp::Block,
-            1 => MaskOp::Unblock,
-            2 => MaskOp::SetMask,
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid mask op"),
-        };
-        Ok(op)
-    }
 }

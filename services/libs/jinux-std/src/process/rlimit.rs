@@ -37,7 +37,7 @@ impl Default for ResourceLimits {
 }
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum ResourceType {
     RLIMIT_CPU = 0,
     RLIMIT_FSIZE = 1,
@@ -55,32 +55,6 @@ pub enum ResourceType {
     RLIMIT_NICE = 13,
     RLIMIT_RTPRIO = 14,
     RLIMIT_RTTIME = 15,
-}
-
-impl TryFrom<u32> for ResourceType {
-    type Error = Error;
-
-    fn try_from(value: u32) -> Result<Self> {
-        match value {
-            0 => Ok(ResourceType::RLIMIT_CPU),
-            1 => Ok(ResourceType::RLIMIT_FSIZE),
-            2 => Ok(ResourceType::RLIMIT_DATA),
-            3 => Ok(ResourceType::RLIMIT_STACK),
-            4 => Ok(ResourceType::RLIMIT_CORE),
-            5 => Ok(ResourceType::RLIMIT_RSS),
-            6 => Ok(ResourceType::RLIMIT_NPROC),
-            7 => Ok(ResourceType::RLIMIT_NOFILE),
-            8 => Ok(ResourceType::RLIMIT_MEMLOCK),
-            9 => Ok(ResourceType::RLIMIT_AS),
-            10 => Ok(ResourceType::RLIMIT_LOCKS),
-            11 => Ok(ResourceType::RLIMIT_SIGPENDING),
-            12 => Ok(ResourceType::RLIMIT_MSGQUEUE),
-            13 => Ok(ResourceType::RLIMIT_NICE),
-            14 => Ok(ResourceType::RLIMIT_RTPRIO),
-            15 => Ok(ResourceType::RLIMIT_RTTIME),
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid resource type"),
-        }
-    }
 }
 
 pub const RLIMIT_COUNT: usize = 16;

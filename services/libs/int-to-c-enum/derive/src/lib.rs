@@ -71,7 +71,9 @@ fn fn_body_tokens(value_name: &str, data_enum: &DataEnum, ident: Ident) -> Token
         let statement = quote!(#value => ::core::result::Result::Ok(#ident::#vairant_ident),);
         match_bodys.append_all(statement);
     }
-    match_bodys.append_all(quote!(_ => core::result::Result::Err(::int_to_c_enum::TryFromIntError::InvalidValue),));
+    match_bodys.append_all(
+        quote!(_ => core::result::Result::Err(::int_to_c_enum::TryFromIntError::InvalidValue),),
+    );
     let param = format_ident!("{}", value_name);
     quote!(match #param {
         #match_bodys

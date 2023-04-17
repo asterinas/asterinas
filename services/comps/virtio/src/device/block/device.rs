@@ -60,7 +60,7 @@ impl BLKDevice {
     pub fn read_block(&mut self, block_id: usize, buf: &mut [u8]) {
         assert_eq!(buf.len(), BLK_SIZE);
         let req = BlkReq {
-            type_: ReqType::In,
+            type_: ReqType::In as _,
             reserved: 0,
             sector: block_id as u64,
         };
@@ -76,7 +76,7 @@ impl BLKDevice {
         self.queue
             .pop_used_with_token(token)
             .expect("pop used failed");
-        match resp.status {
+        match RespStatus::try_from(resp.status).unwrap() {
             RespStatus::Ok => {}
             _ => panic!("io error in block device"),
         };
@@ -85,7 +85,7 @@ impl BLKDevice {
     pub fn write_block(&mut self, block_id: usize, buf: &[u8]) {
         assert_eq!(buf.len(), BLK_SIZE);
         let req = BlkReq {
-            type_: ReqType::Out,
+            type_: ReqType::Out as _,
             reserved: 0,
             sector: block_id as u64,
         };
@@ -102,7 +102,7 @@ impl BLKDevice {
             .pop_used_with_token(token)
             .expect("pop used failed");
         let st = resp.status;
-        match st {
+        match RespStatus::try_from(st).unwrap() {
             RespStatus::Ok => {}
             _ => panic!("io error in block device:{:?}", st),
         };
@@ -127,7 +127,7 @@ impl BLKDevice {
     ) -> u16 {
         assert_eq!(buf.len(), BLK_SIZE);
         *req = BlkReq {
-            type_: ReqType::In,
+            type_: ReqType::In as _,
             reserved: 0,
             sector: block_id as u64,
         };
@@ -150,7 +150,7 @@ impl BLKDevice {
     ) -> u16 {
         assert_eq!(buf.len(), BLK_SIZE);
         *req = BlkReq {
-            type_: ReqType::Out,
+            type_: ReqType::Out as _,
             reserved: 0,
             sector: block_id as u64,
         };
