@@ -6,26 +6,13 @@ use crate::{log_syscall_entry, prelude::*};
 use super::SyscallReturn;
 
 #[allow(non_camel_case_types)]
-#[derive(Debug)]
+#[repr(u64)]
+#[derive(Debug, TryFromInt)]
 pub enum ArchPrctlCode {
     ARCH_SET_GS = 0x1001,
     ARCH_SET_FS = 0x1002,
     ARCH_GET_FS = 0x1003,
     ARCH_GET_GS = 0x1004,
-}
-
-impl TryFrom<u64> for ArchPrctlCode {
-    type Error = Error;
-
-    fn try_from(value: u64) -> Result<Self> {
-        match value {
-            0x1001 => Ok(ArchPrctlCode::ARCH_SET_GS),
-            0x1002 => Ok(ArchPrctlCode::ARCH_SET_FS),
-            0x1003 => Ok(ArchPrctlCode::ARCH_GET_FS),
-            0x1004 => Ok(ArchPrctlCode::ARCH_GET_GS),
-            _ => return_errno_with_message!(Errno::EINVAL, "Unknown code for arch_prctl"),
-        }
-    }
 }
 
 pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut UserContext) -> Result<SyscallReturn> {

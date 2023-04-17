@@ -14,5 +14,6 @@ jinux-util = { path = "../../libs/jinux-util" }
 pod = { git = "https://github.com/jinzhao-dev/pod", rev = "7fa2ed2" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
+int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 
 [features]

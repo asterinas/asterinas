@@ -17,6 +17,7 @@ typeflags = { path = "../typeflags" }
 typeflags-util = { path = "../typeflags-util" }
 jinux-rights-proc = { path = "../jinux-rights-proc" }
 jinux-util = { path = "../jinux-util" }
+int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 cpio-decoder = { path = "../cpio-decoder" }
 virtio-input-decoder = "0.1.4"
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }

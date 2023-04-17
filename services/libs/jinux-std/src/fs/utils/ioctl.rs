@@ -1,30 +1,8 @@
 use crate::prelude::*;
 
-macro_rules! define_ioctl_cmd {
-    ($($name: ident = $value: expr),*) => {
-        #[repr(u32)]
-        #[derive(Debug, Clone, Copy)]
-        pub enum IoctlCmd {
-            $($name = $value,)*
-        }
-
-        $(
-            pub const $name: u32 = $value;
-        )*
-
-        impl TryFrom<u32> for IoctlCmd {
-            type Error = Error;
-            fn try_from(value: u32) -> Result<Self> {
-                match value {
-                    $($name => Ok(IoctlCmd::$name),)*
-                    _ => return_errno!(Errno::EINVAL),
-                }
-            }
-        }
-    }
-}
-
-define_ioctl_cmd! {
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, TryFromInt)]
+pub enum IoctlCmd {
     // Get terminal attributes
     TCGETS = 0x5401,
     TCSETS = 0x5402,
@@ -34,5 +12,5 @@ define_ioctl_cmd! {
     TIOCSPGRP = 0x5410,
     // Set window size
     TIOCGWINSZ = 0x5413,
-    TIOCSWINSZ = 0x5414
+    TIOCSWINSZ = 0x5414,
 }

@@ -14,6 +14,7 @@ pub(crate) use alloc::vec;
 pub(crate) use alloc::vec::Vec;
 pub(crate) use bitflags::bitflags;
 pub(crate) use core::ffi::CStr;
+pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use jinux_frame::config::PAGE_SIZE;
 pub(crate) use jinux_frame::sync::{Mutex, MutexGuard};
 pub(crate) use jinux_frame::vm::Vaddr;

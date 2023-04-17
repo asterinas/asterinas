@@ -11,7 +11,7 @@ pub type time_t = i64;
 pub type suseconds_t = i64;
 pub type clock_t = i64;
 
-#[derive(Debug, Copy, Clone, Pod)]
+#[derive(Debug, Copy, Clone, TryFromInt)]
 #[repr(i32)]
 pub enum ClockID {
     CLOCK_REALTIME = 0,
@@ -22,24 +22,6 @@ pub enum ClockID {
     CLOCK_REALTIME_COARSE = 5,
     CLOCK_MONOTONIC_COARSE = 6,
     CLOCK_BOOTTIME = 7,
-}
-
-impl TryFrom<clockid_t> for ClockID {
-    type Error = Error;
-
-    fn try_from(value: clockid_t) -> Result<Self> {
-        Ok(match value as i32 {
-            0 => ClockID::CLOCK_REALTIME,
-            1 => ClockID::CLOCK_MONOTONIC,
-            2 => ClockID::CLOCK_PROCESS_CPUTIME_ID,
-            3 => ClockID::CLOCK_THREAD_CPUTIME_ID,
-            4 => ClockID::CLOCK_MONOTONIC_RAW,
-            5 => ClockID::CLOCK_REALTIME_COARSE,
-            6 => ClockID::CLOCK_MONOTONIC_COARSE,
-            7 => ClockID::CLOCK_BOOTTIME,
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid clockid"),
-        })
-    }
 }
 
 #[repr(C)]
