@@ -23,14 +23,14 @@ enum Inner {
 }
 
 impl FileHandle {
-    pub fn new_file(file: Arc<dyn File>) -> Self {
+    pub fn new_file(file: Arc<dyn File>) -> Arc<Self> {
         let inner = Inner::File(file);
-        Self { inner }
+        Arc::new(Self { inner })
     }
 
-    pub fn new_inode_handle(inode_handle: InodeHandle) -> Self {
+    pub fn new_inode_handle(inode_handle: InodeHandle) -> Arc<Self> {
         let inner = Inner::Inode(inode_handle);
-        Self { inner }
+        Arc::new(Self { inner })
     }
 
     pub fn as_file(&self) -> Option<&Arc<dyn File>> {

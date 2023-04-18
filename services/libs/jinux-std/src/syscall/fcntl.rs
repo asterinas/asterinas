@@ -12,8 +12,7 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
             // FIXME: deal with the cloexec flag
             let current = current!();
             let mut file_table = current.file_table().lock();
-            let new_fd = arg as FileDescripter;
-            file_table.dup(fd, Some(new_fd))?;
+            let new_fd = file_table.dup(fd, arg as FileDescripter)?;
             return Ok(SyscallReturn::Return(new_fd as _));
         }
         FcntlCmd::F_SETFD => {

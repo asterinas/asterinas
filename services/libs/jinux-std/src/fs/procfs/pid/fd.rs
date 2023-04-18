@@ -62,10 +62,10 @@ impl DirOps for FdDirOps {
 }
 
 /// Represents the inode at `/proc/[pid]/fd/N`.
-struct FileSymOps(FileHandle);
+struct FileSymOps(Arc<FileHandle>);
 
 impl FileSymOps {
-    pub fn new_inode(file: FileHandle, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub fn new_inode(file: Arc<FileHandle>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcSymBuilder::new(Self(file))
             .parent(parent)
             .build()
