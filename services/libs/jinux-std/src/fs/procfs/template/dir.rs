@@ -2,9 +2,10 @@ use alloc::string::String;
 use core::any::Any;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
+use jinux_util::slot_vec::SlotVec;
 
 use crate::fs::utils::{
-    DirEntryVec, DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+    DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
 };
 use crate::prelude::*;
 
@@ -14,7 +15,7 @@ pub struct ProcDir<D: DirOps> {
     inner: D,
     this: Weak<ProcDir<D>>,
     parent: Option<Weak<dyn Inode>>,
-    cached_children: RwLock<DirEntryVec<(String, Arc<dyn Inode>)>>,
+    cached_children: RwLock<SlotVec<(String, Arc<dyn Inode>)>>,
     info: ProcInodeInfo,
 }
 
@@ -38,7 +39,7 @@ impl<D: DirOps> ProcDir<D> {
             inner: dir,
             this: weak_self.clone(),
             parent,
-            cached_children: RwLock::new(DirEntryVec::new()),
+            cached_children: RwLock::new(SlotVec::new()),
             info,
         })
     }
@@ -51,7 +52,7 @@ impl<D: DirOps> ProcDir<D> {
         self.parent.as_ref().and_then(|p| p.upgrade())
     }
 
-    pub fn cached_children(&self) -> &RwLock<DirEntryVec<(String, Arc<dyn Inode>)>> {
+    pub fn cached_children(&self) -> &RwLock<SlotVec<(String, Arc<dyn Inode>)>> {
         &self.cached_children
     }
 }
@@ -127,7 +128,7 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
             self.inner.populate_children(self.this.clone());
             let cached_children = self.cached_children.read();
             for (idx, (name, child)) in cached_children
-                .idxes_and_entries()
+                .idxes_and_items()
                 .map(|(idx, (name, child))| (idx + 2, (name, child)))
             {
                 if idx < *offset {

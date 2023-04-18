@@ -5,12 +5,12 @@ use core::any::Any;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
+use jinux_util::slot_vec::SlotVec;
 use spin::{RwLock, RwLockWriteGuard};
 
 use super::*;
 use crate::fs::utils::{
-    DirEntryVec, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd,
-    Metadata, SuperBlock,
+    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
 };
 
 pub struct RamFS {
@@ -164,7 +164,7 @@ impl Inner {
 }
 
 struct DirEntry {
-    children: DirEntryVec<(Str256, Arc<RamInode>)>,
+    children: SlotVec<(Str256, Arc<RamInode>)>,
     this: Weak<RamInode>,
     parent: Weak<RamInode>,
 }
@@ -172,7 +172,7 @@ struct DirEntry {
 impl DirEntry {
     fn new() -> Self {
         Self {
-            children: DirEntryVec::new(),
+            children: SlotVec::new(),
             this: Weak::default(),
             parent: Weak::default(),
         }
@@ -205,13 +205,13 @@ impl DirEntry {
             Some((1, self.parent.upgrade().unwrap()))
         } else {
             self.children
-                .idxes_and_entries()
+                .idxes_and_items()
                 .find(|(_, (child, _))| child == &Str256::from(name))
                 .map(|(idx, (_, inode))| (idx + 2, inode.clone()))
         }
     }
 
-    fn append_entry(&mut self, name: &str, inode: Arc<RamInode>) {
+    fn append_entry(&mut self, name: &str, inode: Arc<RamInode>) -> usize {
         self.children.put((Str256::from(name), inode))
     }
 
@@ -255,7 +255,7 @@ impl DirEntry {
             // Read the normal child entries.
             for (offset, (name, child)) in self
                 .children
-                .idxes_and_entries()
+                .idxes_and_items()
                 .map(|(offset, (name, child))| (offset + 2, (name, child)))
             {
                 if offset < *idx {
