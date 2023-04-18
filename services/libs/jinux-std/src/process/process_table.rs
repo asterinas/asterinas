@@ -68,7 +68,7 @@ pub fn register_observer(observer: Weak<dyn Observer<PidEvent>>) {
     PROCESS_TABLE_SUBJECT.register_observer(observer);
 }
 
-pub fn unregister_observer(observer: Weak<dyn Observer<PidEvent>>) {
+pub fn unregister_observer(observer: &Weak<dyn Observer<PidEvent>>) {
     PROCESS_TABLE_SUBJECT.unregister_observer(observer);
 }
 

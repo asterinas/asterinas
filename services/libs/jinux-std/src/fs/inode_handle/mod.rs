@@ -3,7 +3,10 @@
 mod dyn_cap;
 mod static_cap;
 
-use crate::fs::utils::{AccessMode, Dentry, DirentVisitor, InodeType, SeekFrom, StatusFlags};
+use crate::fs::file_handle::FileLike;
+use crate::fs::utils::{
+    AccessMode, Dentry, DirentVisitor, InodeType, IoEvents, Metadata, Poller, SeekFrom, StatusFlags,
+};
 use crate::prelude::*;
 use crate::rights::Rights;
 

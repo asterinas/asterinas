@@ -36,25 +36,11 @@ impl InodeHandle<Rights> {
         Ok(InodeHandle(self.0, R1::new()))
     }
 
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        if !self.1.contains(Rights::READ) {
-            return_errno_with_message!(Errno::EBADF, "File is not readable");
-        }
-        self.0.read(buf)
-    }
-
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "File is not readable");
         }
         self.0.read_to_end(buf)
-    }
-
-    pub fn write(&self, buf: &[u8]) -> Result<usize> {
-        if !self.1.contains(Rights::WRITE) {
-            return_errno_with_message!(Errno::EBADF, "File is not writable");
-        }
-        self.0.write(buf)
     }
 
     pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -68,5 +54,42 @@ impl InodeHandle<Rights> {
 impl Clone for InodeHandle<Rights> {
     fn clone(&self) -> Self {
         Self(self.0.clone(), self.1.clone())
+    }
+}
+
+impl FileLike for InodeHandle<Rights> {
+    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+        if !self.1.contains(Rights::READ) {
+            return_errno_with_message!(Errno::EBADF, "File is not readable");
+        }
+        self.0.read(buf)
+    }
+
+    fn write(&self, buf: &[u8]) -> Result<usize> {
+        if !self.1.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EBADF, "File is not writable");
+        }
+        self.0.write(buf)
+    }
+
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.dentry().vnode().poll(mask, poller)
+    }
+
+    fn metadata(&self) -> Metadata {
+        self.dentry().vnode().metadata()
+    }
+
+    fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
+        self.0.seek(seek_from)
+    }
+
+    fn clean_for_close(&self) -> Result<()> {
+        // Close does not guarantee that the data has been successfully saved to disk.
+        Ok(())
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }

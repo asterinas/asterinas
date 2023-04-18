@@ -1,5 +1,6 @@
 use crate::fs::{
     file_table::FileDescripter,
+    inode_handle::InodeHandle,
     utils::{DirentVisitor, InodeType},
 };
 use crate::log_syscall_entry;
@@ -27,7 +28,7 @@ pub fn sys_getdents64(
         file_table.get_file(fd)?.clone()
     };
     let inode_handle = file
-        .as_inode_handle()
+        .downcast_ref::<InodeHandle>()
         .ok_or(Error::with_message(Errno::EBADE, "not inode"))?;
     if inode_handle.dentry().inode_type() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);

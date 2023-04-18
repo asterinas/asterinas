@@ -5,7 +5,7 @@ use core::cell::Cell;
 use jinux_util::slot_vec::SlotVec;
 
 use super::{
-    file_handle::FileHandle,
+    file_handle::FileLike,
     stdio::{Stderr, Stdin, Stdout},
 };
 
@@ -29,18 +29,9 @@ impl FileTable {
         let stdin = Stdin::new_with_default_console();
         let stdout = Stdout::new_with_default_console();
         let stderr = Stderr::new_with_default_console();
-        table.put(FileTableEntry::new(
-            FileHandle::new_file(Arc::new(stdin)),
-            false,
-        ));
-        table.put(FileTableEntry::new(
-            FileHandle::new_file(Arc::new(stdout)),
-            false,
-        ));
-        table.put(FileTableEntry::new(
-            FileHandle::new_file(Arc::new(stderr)),
-            false,
-        ));
+        table.put(FileTableEntry::new(Arc::new(stdin), false));
+        table.put(FileTableEntry::new(Arc::new(stdout), false));
+        table.put(FileTableEntry::new(Arc::new(stderr), false));
         Self {
             table,
             subject: Subject::new(),
@@ -73,7 +64,7 @@ impl FileTable {
         Ok(min_free_fd as FileDescripter)
     }
 
-    pub fn insert(&mut self, item: Arc<FileHandle>) -> FileDescripter {
+    pub fn insert(&mut self, item: Arc<dyn FileLike>) -> FileDescripter {
         let entry = FileTableEntry::new(item, false);
         self.table.put(entry) as FileDescripter
     }
@@ -81,32 +72,42 @@ impl FileTable {
     pub fn insert_at(
         &mut self,
         fd: FileDescripter,
-        item: Arc<FileHandle>,
-    ) -> Option<Arc<FileHandle>> {
+        item: Arc<dyn FileLike>,
+    ) -> Option<Arc<dyn FileLike>> {
         let entry = FileTableEntry::new(item, false);
         let entry = self.table.put_at(fd as usize, entry);
         if entry.is_some() {
-            self.notify_close_fd_event(fd);
+            let events = FdEvents::Close(fd);
+            self.notify_fd_events(&events);
+            entry.as_ref().unwrap().notify_fd_events(&events);
         }
         entry.map(|e| e.file)
     }
 
-    pub fn close_file(&mut self, fd: FileDescripter) -> Option<Arc<FileHandle>> {
+    pub fn close_file(&mut self, fd: FileDescripter) -> Option<Arc<dyn FileLike>> {
         let entry = self.table.remove(fd as usize);
         if entry.is_some() {
-            self.notify_close_fd_event(fd);
+            let events = FdEvents::Close(fd);
+            self.notify_fd_events(&events);
+            entry.as_ref().unwrap().notify_fd_events(&events);
         }
         entry.map(|e| e.file)
     }
 
-    pub fn get_file(&self, fd: FileDescripter) -> Result<&Arc<FileHandle>> {
+    pub fn get_file(&self, fd: FileDescripter) -> Result<&Arc<dyn FileLike>> {
         self.table
             .get(fd as usize)
             .map(|entry| &entry.file)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDescripter, &'_ Arc<FileHandle>)> {
+    pub fn get_entry(&self, fd: FileDescripter) -> Result<&FileTableEntry> {
+        self.table
+            .get(fd as usize)
+            .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
+    }
+
+    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDescripter, &'_ Arc<dyn FileLike>)> {
         self.table
             .idxes_and_items()
             .map(|(idx, entry)| (idx as FileDescripter, &entry.file))
@@ -116,13 +117,12 @@ impl FileTable {
         self.subject.register_observer(observer);
     }
 
-    pub fn unregister_observer(&self, observer: Weak<dyn Observer<FdEvents>>) {
+    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<FdEvents>>) {
         self.subject.unregister_observer(observer);
     }
 
-    fn notify_close_fd_event(&self, fd: FileDescripter) {
-        let events = FdEvents::Close(fd);
-        self.subject.notify_observers(&events);
+    fn notify_fd_events(&self, events: &FdEvents) {
+        self.subject.notify_observers(events);
     }
 }
 
@@ -150,17 +150,44 @@ pub enum FdEvents {
 
 impl Events for FdEvents {}
 
-#[derive(Clone)]
-struct FileTableEntry {
-    file: Arc<FileHandle>,
+pub struct FileTableEntry {
+    file: Arc<dyn FileLike>,
     close_on_exec: Cell<bool>,
+    subject: Subject<FdEvents>,
 }
 
 impl FileTableEntry {
-    pub fn new(file: Arc<FileHandle>, close_on_exec: bool) -> Self {
+    pub fn new(file: Arc<dyn FileLike>, close_on_exec: bool) -> Self {
         Self {
             file,
             close_on_exec: Cell::new(close_on_exec),
+            subject: Subject::new(),
+        }
+    }
+
+    pub fn file(&self) -> &Arc<dyn FileLike> {
+        &self.file
+    }
+
+    pub fn register_observer(&self, epoll: Weak<dyn Observer<FdEvents>>) {
+        self.subject.register_observer(epoll);
+    }
+
+    pub fn unregister_observer(&self, epoll: &Weak<dyn Observer<FdEvents>>) {
+        self.subject.unregister_observer(epoll);
+    }
+
+    pub fn notify_fd_events(&self, events: &FdEvents) {
+        self.subject.notify_observers(events);
+    }
+}
+
+impl Clone for FileTableEntry {
+    fn clone(&self) -> Self {
+        Self {
+            file: self.file.clone(),
+            close_on_exec: self.close_on_exec.clone(),
+            subject: Subject::new(),
         }
     }
 }

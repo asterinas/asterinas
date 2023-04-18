@@ -1,6 +1,7 @@
 use super::*;
-use crate::fs::file_handle::FileHandle;
+use crate::fs::file_handle::FileLike;
 use crate::fs::file_table::FileDescripter;
+use crate::fs::inode_handle::InodeHandle;
 
 /// Represents the inode at `/proc/[pid]/fd`.
 pub struct FdDirOps(Arc<Process>);
@@ -62,10 +63,10 @@ impl DirOps for FdDirOps {
 }
 
 /// Represents the inode at `/proc/[pid]/fd/N`.
-struct FileSymOps(Arc<FileHandle>);
+struct FileSymOps(Arc<dyn FileLike>);
 
 impl FileSymOps {
-    pub fn new_inode(file: Arc<FileHandle>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+    pub fn new_inode(file: Arc<dyn FileLike>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         ProcSymBuilder::new(Self(file))
             .parent(parent)
             .build()
@@ -75,13 +76,11 @@ impl FileSymOps {
 
 impl SymOps for FileSymOps {
     fn read_link(&self) -> Result<String> {
-        let path = if let Some(inode_handle) = self.0.as_inode_handle() {
+        let path = if let Some(inode_handle) = self.0.downcast_ref::<InodeHandle>() {
             inode_handle.dentry().abs_path()
-        } else if let Some(file) = self.0.as_file() {
-            // TODO: get the real path for stdio
-            String::from("/dev/tty")
         } else {
-            unreachable!()
+            // TODO: get the real path for other FileLike object
+            String::from("/dev/tty")
         };
         Ok(path)
     }

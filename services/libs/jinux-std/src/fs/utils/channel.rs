@@ -2,6 +2,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use jinux_rights_proc::require;
 use ringbuf::{HeapConsumer as HeapRbConsumer, HeapProducer as HeapRbProducer, HeapRb};
 
+use crate::events::Observer;
 use crate::prelude::*;
 use crate::rights::*;
 
@@ -48,6 +49,59 @@ pub struct Producer<T>(EndPoint<T, WriteOp>);
 
 pub struct Consumer<T>(EndPoint<T, ReadOp>);
 
+macro_rules! impl_common_methods_for_channel {
+    () => {
+        pub fn shutdown(&self) {
+            self.this_end().shutdown()
+        }
+
+        pub fn is_shutdown(&self) -> bool {
+            self.this_end().is_shutdown()
+        }
+
+        pub fn is_peer_shutdown(&self) -> bool {
+            self.peer_end().is_shutdown()
+        }
+
+        pub fn status_flags(&self) -> StatusFlags {
+            self.this_end().status_flags()
+        }
+
+        pub fn set_status_flags(&self, new_flags: StatusFlags) {
+            self.this_end().set_status_flags(new_flags)
+        }
+
+        pub fn is_nonblocking(&self) -> bool {
+            self.this_end()
+                .status_flags()
+                .contains(StatusFlags::O_NONBLOCK)
+        }
+
+        pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+            self.this_end().pollee.poll(mask, poller)
+        }
+
+        pub fn register_observer(
+            &self,
+            observer: Arc<dyn Observer<IoEvents>>,
+            mask: IoEvents,
+        ) -> Result<()> {
+            self.this_end().pollee.register_observer(observer, mask);
+            Ok(())
+        }
+
+        pub fn unregister_observer(
+            &self,
+            observer: &Arc<dyn Observer<IoEvents>>,
+        ) -> Result<Arc<dyn Observer<IoEvents>>> {
+            self.this_end()
+                .pollee
+                .unregister_observer(observer)
+                .ok_or_else(|| Error::with_message(Errno::ENOENT, "the observer is not registered"))
+        }
+    };
+}
+
 impl<T> Producer<T> {
     fn this_end(&self) -> &EndPointInner<HeapRbProducer<T>> {
         &self.0.common.producer
@@ -75,35 +129,7 @@ impl<T> Producer<T> {
         }
     }
 
-    pub fn shutdown(&self) {
-        self.this_end().shutdown()
-    }
-
-    pub fn is_shutdown(&self) -> bool {
-        self.this_end().is_shutdown()
-    }
-
-    pub fn is_peer_shutdown(&self) -> bool {
-        self.peer_end().is_shutdown()
-    }
-
-    pub fn status_flags(&self) -> StatusFlags {
-        self.this_end().status_flags()
-    }
-
-    pub fn set_status_flags(&self, new_flags: StatusFlags) {
-        self.this_end().set_status_flags(new_flags)
-    }
-
-    pub fn is_nonblocking(&self) -> bool {
-        self.this_end()
-            .status_flags()
-            .contains(StatusFlags::O_NONBLOCK)
-    }
-
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.this_end().pollee.poll(mask, poller)
-    }
+    impl_common_methods_for_channel!();
 }
 
 impl<T: Copy> Producer<T> {
@@ -167,35 +193,7 @@ impl<T> Consumer<T> {
         }
     }
 
-    pub fn shutdown(&self) {
-        self.this_end().shutdown()
-    }
-
-    pub fn is_shutdown(&self) -> bool {
-        self.this_end().is_shutdown()
-    }
-
-    pub fn is_peer_shutdown(&self) -> bool {
-        self.peer_end().is_shutdown()
-    }
-
-    pub fn status_flags(&self) -> StatusFlags {
-        self.this_end().status_flags()
-    }
-
-    pub fn set_status_flags(&self, new_flags: StatusFlags) {
-        self.this_end().set_status_flags(new_flags)
-    }
-
-    pub fn is_nonblocking(&self) -> bool {
-        self.this_end()
-            .status_flags()
-            .contains(StatusFlags::O_NONBLOCK)
-    }
-
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.this_end().pollee.poll(mask, poller)
-    }
+    impl_common_methods_for_channel!();
 }
 
 impl<T: Copy> Consumer<T> {

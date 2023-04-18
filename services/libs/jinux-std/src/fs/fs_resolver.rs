@@ -2,8 +2,8 @@ use crate::prelude::*;
 use alloc::str;
 use alloc::string::String;
 
-use super::file_handle::InodeHandle;
 use super::file_table::FileDescripter;
+use super::inode_handle::InodeHandle;
 use super::procfs::ProcFS;
 use super::ramfs::RamFS;
 use super::utils::{
@@ -253,7 +253,7 @@ impl FsResolver {
         let file_table = current.file_table().lock();
         let inode_handle = file_table
             .get_file(fd)?
-            .as_inode_handle()
+            .downcast_ref::<InodeHandle>()
             .ok_or(Error::with_message(Errno::EBADE, "not inode"))?;
         Ok(inode_handle.dentry().clone())
     }

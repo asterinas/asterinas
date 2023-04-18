@@ -1,4 +1,3 @@
-use crate::fs::file_handle::FileHandle;
 use crate::fs::file_table::FileDescripter;
 use crate::fs::pipe::{PipeReader, PipeWriter};
 use crate::fs::utils::{Channel, StatusFlags};
@@ -22,8 +21,8 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
         .split();
         (PipeReader::new(consumer), PipeWriter::new(producer))
     };
-    let pipe_reader = FileHandle::new_file(Arc::new(reader));
-    let pipe_writer = FileHandle::new_file(Arc::new(writer));
+    let pipe_reader = Arc::new(reader);
+    let pipe_writer = Arc::new(writer);
 
     let current = current!();
     let mut file_table = current.file_table().lock();
