@@ -1,92 +1,115 @@
 use crate::events::{Events, Observer, Subject};
 use crate::prelude::*;
 
+use core::cell::Cell;
+use jinux_util::slot_vec::SlotVec;
+
 use super::{
     file_handle::FileHandle,
-    stdio::{Stderr, Stdin, Stdout, FD_STDERR, FD_STDIN, FD_STDOUT},
+    stdio::{Stderr, Stdin, Stdout},
 };
 
 pub type FileDescripter = i32;
 
 pub struct FileTable {
-    table: BTreeMap<FileDescripter, FileHandle>,
+    table: SlotVec<FileTableEntry>,
     subject: Subject<FdEvents>,
 }
 
 impl FileTable {
     pub fn new() -> Self {
         Self {
-            table: BTreeMap::new(),
+            table: SlotVec::new(),
             subject: Subject::new(),
         }
     }
 
     pub fn new_with_stdio() -> Self {
-        let mut table = BTreeMap::new();
+        let mut table = SlotVec::new();
         let stdin = Stdin::new_with_default_console();
         let stdout = Stdout::new_with_default_console();
         let stderr = Stderr::new_with_default_console();
-        table.insert(FD_STDIN, FileHandle::new_file(Arc::new(stdin)));
-        table.insert(FD_STDOUT, FileHandle::new_file(Arc::new(stdout)));
-        table.insert(FD_STDERR, FileHandle::new_file(Arc::new(stderr)));
+        table.put(FileTableEntry::new(
+            FileHandle::new_file(Arc::new(stdin)),
+            false,
+        ));
+        table.put(FileTableEntry::new(
+            FileHandle::new_file(Arc::new(stdout)),
+            false,
+        ));
+        table.put(FileTableEntry::new(
+            FileHandle::new_file(Arc::new(stderr)),
+            false,
+        ));
         Self {
             table,
             subject: Subject::new(),
         }
     }
 
-    pub fn dup(&mut self, fd: FileDescripter, new_fd: Option<FileDescripter>) -> Result<()> {
-        let file = self.table.get(&fd).map_or_else(
+    pub fn dup(&mut self, fd: FileDescripter, new_fd: FileDescripter) -> Result<FileDescripter> {
+        let entry = self.table.get(fd as usize).map_or_else(
             || return_errno_with_message!(Errno::ENOENT, "No such file"),
-            |f| Ok(f.clone()),
+            |e| Ok(e.clone()),
         )?;
-        let new_fd = if let Some(new_fd) = new_fd {
-            new_fd
-        } else {
-            self.max_fd() + 1
+
+        // Get the lowest-numbered available fd equal to or greater than `new_fd`.
+        let get_min_free_fd = || -> usize {
+            let new_fd = new_fd as usize;
+            if self.table.get(new_fd).is_none() {
+                return new_fd;
+            }
+
+            for idx in new_fd + 1..self.table.slots_len() {
+                if self.table.get(idx).is_none() {
+                    return idx;
+                }
+            }
+            self.table.slots_len()
         };
-        if self.table.contains_key(&new_fd) {
-            return_errno_with_message!(Errno::EBADF, "Fd exists");
-        }
-        self.table.insert(new_fd, file);
 
-        Ok(())
+        let min_free_fd = get_min_free_fd();
+        self.table.put_at(min_free_fd, entry);
+        Ok(min_free_fd as FileDescripter)
     }
 
-    fn max_fd(&self) -> FileDescripter {
-        self.table.iter().map(|(fd, _)| fd.clone()).max().unwrap()
+    pub fn insert(&mut self, item: Arc<FileHandle>) -> FileDescripter {
+        let entry = FileTableEntry::new(item, false);
+        self.table.put(entry) as FileDescripter
     }
 
-    pub fn insert(&mut self, item: FileHandle) -> FileDescripter {
-        let fd = self.max_fd() + 1;
-        self.table.insert(fd, item);
-        fd
-    }
-
-    pub fn insert_at(&mut self, fd: FileDescripter, item: FileHandle) -> Option<FileHandle> {
-        let file = self.table.insert(fd, item);
-        if file.is_some() {
+    pub fn insert_at(
+        &mut self,
+        fd: FileDescripter,
+        item: Arc<FileHandle>,
+    ) -> Option<Arc<FileHandle>> {
+        let entry = FileTableEntry::new(item, false);
+        let entry = self.table.put_at(fd as usize, entry);
+        if entry.is_some() {
             self.notify_close_fd_event(fd);
         }
-        file
+        entry.map(|e| e.file)
     }
 
-    pub fn close_file(&mut self, fd: FileDescripter) -> Option<FileHandle> {
-        let file = self.table.remove(&fd);
-        if file.is_some() {
+    pub fn close_file(&mut self, fd: FileDescripter) -> Option<Arc<FileHandle>> {
+        let entry = self.table.remove(fd as usize);
+        if entry.is_some() {
             self.notify_close_fd_event(fd);
         }
-        file
+        entry.map(|e| e.file)
     }
 
-    pub fn get_file(&self, fd: FileDescripter) -> Result<&FileHandle> {
+    pub fn get_file(&self, fd: FileDescripter) -> Result<&Arc<FileHandle>> {
         self.table
-            .get(&fd)
+            .get(fd as usize)
+            .map(|entry| &entry.file)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn fds_and_files(&self) -> impl Iterator<Item = (&'_ FileDescripter, &'_ FileHandle)> {
-        self.table.iter()
+    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDescripter, &'_ Arc<FileHandle>)> {
+        self.table
+            .idxes_and_items()
+            .map(|(idx, entry)| (idx as FileDescripter, &entry.file))
     }
 
     pub fn register_observer(&self, observer: Weak<dyn Observer<FdEvents>>) {
@@ -126,3 +149,18 @@ pub enum FdEvents {
 }
 
 impl Events for FdEvents {}
+
+#[derive(Clone)]
+struct FileTableEntry {
+    file: Arc<FileHandle>,
+    close_on_exec: Cell<bool>,
+}
+
+impl FileTableEntry {
+    pub fn new(file: Arc<FileHandle>, close_on_exec: bool) -> Self {
+        Self {
+            file,
+            close_on_exec: Cell::new(close_on_exec),
+        }
+    }
+}
