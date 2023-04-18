@@ -5,7 +5,7 @@ pub use channel::{Channel, Consumer, Producer};
 pub use creation_flags::CreationFlags;
 pub use dentry_cache::Dentry;
 pub use dirent_visitor::DirentVisitor;
-pub use direntry_vec::{DirEntryVec, DirEntryVecExt};
+pub use direntry_vec::DirEntryVecExt;
 pub use fcntl::FcntlCmd;
 pub use file_creation_mask::FileCreationMask;
 pub use fs::{FileSystem, FsFlags, SuperBlock};
