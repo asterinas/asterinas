@@ -1,5 +1,5 @@
 use crate::fs::{
-    file_handle::{File, FileHandle},
+    file_handle::FileLike,
     file_table::FileDescripter,
     fs_resolver::{FsPath, AT_FDCWD},
 };
@@ -39,7 +39,7 @@ pub fn sys_openat(
 
     if dirfd == AT_FDCWD && pathname == CString::new("./trace")? {
         // Debug use: This file is used for output busybox log
-        let trace_file = FileHandle::new_file(Arc::new(BusyBoxTraceFile) as Arc<dyn File>);
+        let trace_file = Arc::new(BusyBoxTraceFile);
         let current = current!();
         let mut file_table = current.file_table().lock();
         let fd = file_table.insert(trace_file);
@@ -47,7 +47,7 @@ pub fn sys_openat(
     }
 
     if dirfd == AT_FDCWD && pathname == CString::new("/dev/tty")? {
-        let tty_file = FileHandle::new_file(get_n_tty().clone() as Arc<dyn File>);
+        let tty_file = get_n_tty().clone();
         let current = current!();
         let mut file_table = current.file_table().lock();
         let fd = file_table.insert(tty_file);
@@ -60,7 +60,7 @@ pub fn sys_openat(
         let pathname = pathname.to_string_lossy();
         let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
         let inode_handle = current.fs().read().open(&fs_path, flags, mode)?;
-        FileHandle::new_inode_handle(inode_handle)
+        Arc::new(inode_handle)
     };
     let mut file_table = current.file_table().lock();
     let fd = file_table.insert(file_handle);
@@ -74,9 +74,13 @@ pub fn sys_open(pathname_addr: Vaddr, flags: u32, mode: u16) -> Result<SyscallRe
 /// File for output busybox ash log.
 struct BusyBoxTraceFile;
 
-impl File for BusyBoxTraceFile {
+impl FileLike for BusyBoxTraceFile {
     fn write(&self, buf: &[u8]) -> Result<usize> {
         debug!("ASH TRACE: {}", core::str::from_utf8(buf)?);
         Ok(buf.len())
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }

@@ -73,6 +73,56 @@ impl Pollee {
         }
     }
 
+    /// Register an IoEvents observer.
+    ///
+    /// A registered observer will get notified (through its `on_events` method)
+    /// every time new events specified by the `mask` argument happen on the
+    /// pollee (through the `add_events` method).
+    ///
+    /// If the given observer has already been registered, then its registered
+    /// event mask will be updated.
+    ///
+    /// Note that the observer will always get notified of the events in
+    /// `IoEvents::ALWAYS_POLL` regardless of the value of `mask`.
+    ///
+    /// # Memory leakage
+    ///
+    /// Since an `Arc` for each observer is kept internally by a pollee,
+    /// it is important for the user to call the `unregister_observer` method
+    /// when the observer is no longer interested in the pollee. Otherwise,
+    /// the observer will not be dropped.
+    pub fn register_observer(&self, observer: Arc<dyn Observer<IoEvents>>, mask: IoEvents) {
+        let mut pollers = self.inner.pollers.lock();
+        let is_new = {
+            let observer: KeyableArc<dyn Observer<IoEvents>> = observer.into();
+            let mask = mask | IoEvents::ALWAYS_POLL;
+            pollers.insert(observer, mask).is_none()
+        };
+        if is_new {
+            self.inner.num_pollers.fetch_add(1, Ordering::Release);
+        }
+    }
+
+    /// Unregister an IoEvents observer.
+    ///
+    /// If such an observer is found, then the registered observer will be
+    /// removed from the pollee and returned as the return value. Otherwise,
+    /// a `None` will be returned.
+    pub fn unregister_observer(
+        &self,
+        observer: &Arc<dyn Observer<IoEvents>>,
+    ) -> Option<Arc<dyn Observer<IoEvents>>> {
+        let observer: KeyableArc<dyn Observer<IoEvents>> = observer.clone().into();
+        let mut pollers = self.inner.pollers.lock();
+        let observer = pollers
+            .remove_entry(&observer)
+            .map(|(observer, _)| observer.into());
+        if observer.is_some() {
+            self.inner.num_pollers.fetch_sub(1, Ordering::Relaxed);
+        }
+        observer
+    }
+
     /// Add some events to the pollee's state.
     ///
     /// This method wakes up all registered pollers that are interested in

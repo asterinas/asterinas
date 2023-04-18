@@ -9,6 +9,7 @@ use crate::syscall::clock_nanosleep::sys_clock_nanosleep;
 use crate::syscall::clone::sys_clone;
 use crate::syscall::close::sys_close;
 use crate::syscall::dup::{sys_dup, sys_dup2};
+use crate::syscall::epoll::{sys_epoll_create, sys_epoll_create1, sys_epoll_ctl, sys_epoll_wait};
 use crate::syscall::execve::sys_execve;
 use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
@@ -76,6 +77,7 @@ mod clone;
 mod close;
 mod constants;
 mod dup;
+mod epoll;
 mod execve;
 mod exit;
 mod exit_group;
@@ -221,10 +223,13 @@ define_syscall_nums!(
     SYS_GETTID = 186,
     SYS_TIME = 201,
     SYS_FUTEX = 202,
+    SYS_EPOLL_CREATE = 213,
     SYS_GETDENTS64 = 217,
     SYS_SET_TID_ADDRESS = 218,
     SYS_CLOCK_NANOSLEEP = 230,
     SYS_EXIT_GROUP = 231,
+    SYS_EPOLL_WAIT = 232,
+    SYS_EPOLL_CTL = 233,
     SYS_TGKILL = 234,
     SYS_WAITID = 247,
     SYS_OPENAT = 257,
@@ -237,6 +242,7 @@ define_syscall_nums!(
     SYS_READLINKAT = 267,
     SYS_SET_ROBUST_LIST = 273,
     SYS_UTIMENSAT = 280,
+    SYS_EPOLL_CREATE1 = 291,
     SYS_PIPE2 = 293,
     SYS_PRLIMIT64 = 302
 );
@@ -355,10 +361,13 @@ pub fn syscall_dispatch(
         SYS_GETTID => syscall_handler!(0, sys_gettid),
         SYS_TIME => syscall_handler!(1, sys_time, args),
         SYS_FUTEX => syscall_handler!(6, sys_futex, args),
+        SYS_EPOLL_CREATE => syscall_handler!(1, sys_epoll_create, args),
         SYS_GETDENTS64 => syscall_handler!(3, sys_getdents64, args),
         SYS_SET_TID_ADDRESS => syscall_handler!(1, sys_set_tid_address, args),
         SYS_CLOCK_NANOSLEEP => syscall_handler!(4, sys_clock_nanosleep, args),
         SYS_EXIT_GROUP => syscall_handler!(1, sys_exit_group, args),
+        SYS_EPOLL_WAIT => syscall_handler!(4, sys_epoll_wait, args),
+        SYS_EPOLL_CTL => syscall_handler!(4, sys_epoll_ctl, args),
         SYS_TGKILL => syscall_handler!(3, sys_tgkill, args),
         SYS_WAITID => syscall_handler!(5, sys_waitid, args),
         SYS_OPENAT => syscall_handler!(4, sys_openat, args),
@@ -371,6 +380,7 @@ pub fn syscall_dispatch(
         SYS_READLINKAT => syscall_handler!(4, sys_readlinkat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_UTIMENSAT => syscall_handler!(4, sys_utimensat, args),
+        SYS_EPOLL_CREATE1 => syscall_handler!(1, sys_epoll_create1, args),
         SYS_PIPE2 => syscall_handler!(2, sys_pipe2, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
         _ => {

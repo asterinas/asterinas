@@ -1,6 +1,7 @@
+use crate::events::Observer;
 use crate::prelude::*;
 
-use super::file_handle::File;
+use super::file_handle::FileLike;
 use super::utils::{Consumer, IoEvents, Poller, Producer};
 
 pub struct PipeReader {
@@ -13,7 +14,7 @@ impl PipeReader {
     }
 }
 
-impl File for PipeReader {
+impl FileLike for PipeReader {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         let is_nonblocking = self.consumer.is_nonblocking();
 
@@ -41,6 +42,25 @@ impl File for PipeReader {
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.consumer.poll(mask, poller)
     }
+
+    fn register_observer(
+        &self,
+        observer: Arc<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        self.consumer.register_observer(observer, mask)
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Arc<dyn Observer<IoEvents>>,
+    ) -> Result<Arc<dyn Observer<IoEvents>>> {
+        self.consumer.unregister_observer(observer)
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
 }
 
 pub struct PipeWriter {
@@ -53,7 +73,7 @@ impl PipeWriter {
     }
 }
 
-impl File for PipeWriter {
+impl FileLike for PipeWriter {
     fn write(&self, buf: &[u8]) -> Result<usize> {
         let is_nonblocking = self.producer.is_nonblocking();
 
@@ -80,6 +100,25 @@ impl File for PipeWriter {
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.producer.poll(mask, poller)
+    }
+
+    fn register_observer(
+        &self,
+        observer: Arc<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        self.producer.register_observer(observer, mask)
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Arc<dyn Observer<IoEvents>>,
+    ) -> Result<Arc<dyn Observer<IoEvents>>> {
+        self.producer.unregister_observer(observer)
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }
 

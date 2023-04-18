@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use crate::tty::{get_n_tty, Tty};
 
-use super::file_handle::File;
+use super::file_handle::FileLike;
 use super::file_table::FileDescripter;
 use super::utils::{InodeMode, InodeType, IoEvents, Metadata, Poller, SeekFrom};
 
@@ -21,7 +21,7 @@ pub struct Stderr {
     console: Option<Arc<Tty>>,
 }
 
-impl File for Stdin {
+impl FileLike for Stdin {
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         if let Some(console) = self.console.as_ref() {
             console.poll(mask, poller)
@@ -69,8 +69,12 @@ impl File for Stdin {
             rdev: 0,
         }
     }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
 }
-impl File for Stdout {
+impl FileLike for Stdout {
     fn ioctl(&self, cmd: super::utils::IoctlCmd, arg: usize) -> Result<i32> {
         if let Some(console) = self.console.as_ref() {
             console.ioctl(cmd, arg)
@@ -110,9 +114,13 @@ impl File for Stdout {
             rdev: 0,
         }
     }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
 }
 
-impl File for Stderr {
+impl FileLike for Stderr {
     fn ioctl(&self, cmd: super::utils::IoctlCmd, arg: usize) -> Result<i32> {
         if let Some(console) = self.console.as_ref() {
             console.ioctl(cmd, arg)
@@ -151,6 +159,10 @@ impl File for Stderr {
             gid: 0,
             rdev: 0,
         }
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }
 

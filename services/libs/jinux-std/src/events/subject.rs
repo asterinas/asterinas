@@ -21,9 +21,9 @@ impl<E: Events> Subject<E> {
     }
 
     /// Unregister an observer.
-    pub fn unregister_observer(&self, observer: Weak<dyn Observer<E>>) {
+    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<E>>) {
         let mut observers = self.observers.lock();
-        observers.retain(|e| !Weak::ptr_eq(&e, &observer));
+        observers.retain(|e| !Weak::ptr_eq(&e, observer));
     }
 
     /// Notify events to all registered observers.

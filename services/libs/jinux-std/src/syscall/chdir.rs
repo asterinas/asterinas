@@ -1,4 +1,6 @@
-use crate::fs::{file_table::FileDescripter, fs_resolver::FsPath, utils::InodeType};
+use crate::fs::{
+    file_table::FileDescripter, fs_resolver::FsPath, inode_handle::InodeHandle, utils::InodeType,
+};
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::syscall::constants::MAX_FILENAME_LEN;
@@ -38,7 +40,7 @@ pub fn sys_fchdir(fd: FileDescripter) -> Result<SyscallReturn> {
         let file_table = current.file_table().lock();
         let file = file_table.get_file(fd)?;
         let inode_handle = file
-            .as_inode_handle()
+            .downcast_ref::<InodeHandle>()
             .ok_or(Error::with_message(Errno::EBADE, "not inode"))?;
         inode_handle.dentry().clone()
     };

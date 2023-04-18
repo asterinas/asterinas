@@ -2,7 +2,7 @@ use self::line_discipline::LineDiscipline;
 use crate::driver::tty::TtyDriver;
 use crate::fs::utils::{InodeMode, InodeType, IoEvents, Metadata};
 use crate::fs::{
-    file_handle::File,
+    file_handle::FileLike,
     utils::{IoctlCmd, Poller},
 };
 use crate::prelude::*;
@@ -51,7 +51,7 @@ impl Tty {
     }
 }
 
-impl File for Tty {
+impl FileLike for Tty {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         self.ldisc.read(buf)
     }
@@ -128,6 +128,10 @@ impl File for Tty {
             gid: 0,
             rdev: 0,
         }
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }
 
