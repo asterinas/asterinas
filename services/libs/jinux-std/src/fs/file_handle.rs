@@ -51,7 +51,7 @@ pub trait FileLike: Send + Sync + Any {
 
     fn register_observer(
         &self,
-        observer: Arc<dyn Observer<IoEvents>>,
+        observer: Weak<dyn Observer<IoEvents>>,
         mask: IoEvents,
     ) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "register_observer is not supported")
@@ -59,8 +59,8 @@ pub trait FileLike: Send + Sync + Any {
 
     fn unregister_observer(
         &self,
-        observer: &Arc<dyn Observer<IoEvents>>,
-    ) -> Result<Arc<dyn Observer<IoEvents>>> {
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
         return_errno_with_message!(Errno::EINVAL, "unregister_observer is not supported")
     }
 

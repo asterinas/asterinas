@@ -65,7 +65,7 @@ pub fn pgid_to_process_group(pgid: Pgid) -> Option<Arc<ProcessGroup>> {
 }
 
 pub fn register_observer(observer: Weak<dyn Observer<PidEvent>>) {
-    PROCESS_TABLE_SUBJECT.register_observer(observer);
+    PROCESS_TABLE_SUBJECT.register_observer(observer, ());
 }
 
 pub fn unregister_observer(observer: &Weak<dyn Observer<PidEvent>>) {

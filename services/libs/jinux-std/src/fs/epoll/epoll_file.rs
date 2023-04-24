@@ -76,7 +76,7 @@ impl EpollFile {
         if interest.contains_key(&fd) {
             return_errno_with_message!(Errno::EEXIST, "the fd has been added");
         }
-        file.register_observer(entry.clone(), IoEvents::all())?;
+        file.register_observer(entry.self_weak() as _, IoEvents::all())?;
         interest.insert(fd, entry.clone());
         // Register self to the file table entry
         file_table_entry.register_observer(self.weak_self.clone() as _);
@@ -113,7 +113,7 @@ impl EpollFile {
             None => return Ok(()),
         };
 
-        file.unregister_observer(&(entry as _)).unwrap();
+        file.unregister_observer(&(entry.self_weak() as _)).unwrap();
         Ok(())
     }
 
@@ -294,7 +294,7 @@ impl Drop for EpollFile {
             .map(|(fd, entry)| {
                 entry.set_deleted();
                 if let Some(file) = entry.file() {
-                    let _ = file.unregister_observer(&(entry as _));
+                    let _ = file.unregister_observer(&(entry.self_weak() as _));
                 }
                 fd
             })
@@ -326,7 +326,7 @@ impl FileLike for EpollFile {
 
     fn register_observer(
         &self,
-        observer: Arc<dyn Observer<IoEvents>>,
+        observer: Weak<dyn Observer<IoEvents>>,
         mask: IoEvents,
     ) -> Result<()> {
         self.pollee.register_observer(observer, mask);
@@ -335,8 +335,8 @@ impl FileLike for EpollFile {
 
     fn unregister_observer(
         &self,
-        observer: &Arc<dyn Observer<IoEvents>>,
-    ) -> Result<Arc<dyn Observer<IoEvents>>> {
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
         self.pollee
             .unregister_observer(observer)
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "observer is not registered"))
@@ -396,6 +396,11 @@ impl EpollEntry {
     /// Get an instance of `Arc` that refers to this epoll entry.
     pub fn self_arc(&self) -> Arc<Self> {
         self.weak_self.upgrade().unwrap()
+    }
+
+    /// Get an instance of `Weak` that refers to this epoll entry.
+    pub fn self_weak(&self) -> Weak<Self> {
+        self.weak_self.clone()
     }
 
     /// Get the file associated with this epoll entry.

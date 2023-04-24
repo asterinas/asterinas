@@ -114,7 +114,7 @@ impl FileTable {
     }
 
     pub fn register_observer(&self, observer: Weak<dyn Observer<FdEvents>>) {
-        self.subject.register_observer(observer);
+        self.subject.register_observer(observer, ());
     }
 
     pub fn unregister_observer(&self, observer: &Weak<dyn Observer<FdEvents>>) {
@@ -170,7 +170,7 @@ impl FileTableEntry {
     }
 
     pub fn register_observer(&self, epoll: Weak<dyn Observer<FdEvents>>) {
-        self.subject.register_observer(epoll);
+        self.subject.register_observer(epoll, ());
     }
 
     pub fn unregister_observer(&self, epoll: &Weak<dyn Observer<FdEvents>>) {
