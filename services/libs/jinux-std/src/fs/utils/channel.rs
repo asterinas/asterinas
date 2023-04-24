@@ -83,7 +83,7 @@ macro_rules! impl_common_methods_for_channel {
 
         pub fn register_observer(
             &self,
-            observer: Arc<dyn Observer<IoEvents>>,
+            observer: Weak<dyn Observer<IoEvents>>,
             mask: IoEvents,
         ) -> Result<()> {
             self.this_end().pollee.register_observer(observer, mask);
@@ -92,8 +92,8 @@ macro_rules! impl_common_methods_for_channel {
 
         pub fn unregister_observer(
             &self,
-            observer: &Arc<dyn Observer<IoEvents>>,
-        ) -> Result<Arc<dyn Observer<IoEvents>>> {
+            observer: &Weak<dyn Observer<IoEvents>>,
+        ) -> Result<Weak<dyn Observer<IoEvents>>> {
             self.this_end()
                 .pollee
                 .unregister_observer(observer)

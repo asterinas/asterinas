@@ -1,10 +1,10 @@
 use super::IoEvents;
-use crate::events::Observer;
+use crate::events::{Observer, Subject};
 use crate::prelude::*;
 
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use jinux_frame::sync::WaitQueue;
-use keyable_arc::KeyableArc;
+use keyable_arc::KeyableWeak;
 
 /// A pollee maintains a set of active events, which can be polled with
 /// pollers or be monitored with observers.
@@ -13,21 +13,18 @@ pub struct Pollee {
 }
 
 struct PolleeInner {
-    // A table that maintains all interesting pollers
-    pollers: Mutex<BTreeMap<KeyableArc<dyn Observer<IoEvents>>, IoEvents>>,
-    // For efficient manipulation, we use AtomicU32 instead of RwLock<IoEvents>
+    // A subject which is monitored with pollers.
+    subject: Subject<IoEvents, IoEvents>,
+    // For efficient manipulation, we use AtomicU32 instead of RwLock<IoEvents>.
     events: AtomicU32,
-    // To reduce lock contentions, we maintain a counter for the size of the table
-    num_pollers: AtomicUsize,
 }
 
 impl Pollee {
     /// Creates a new instance of pollee.
     pub fn new(init_events: IoEvents) -> Self {
         let inner = PolleeInner {
-            pollers: Mutex::new(BTreeMap::new()),
+            subject: Subject::new(),
             events: AtomicU32::new(init_events.bits()),
-            num_pollers: AtomicUsize::new(0),
         };
         Self {
             inner: Arc::new(inner),
@@ -51,7 +48,7 @@ impl Pollee {
             return revents;
         }
 
-        // Slow path: register the provided poller
+        // Register the provided poller.
         self.register_poller(poller.unwrap(), mask);
 
         // It is important to check events again to handle race conditions
@@ -60,17 +57,11 @@ impl Pollee {
     }
 
     fn register_poller(&self, poller: &Poller, mask: IoEvents) {
-        let mut pollers = self.inner.pollers.lock();
-        let is_new = {
-            let observer = poller.observer();
-            pollers.insert(observer, mask).is_none()
-        };
-        if is_new {
-            let mut pollees = poller.inner.pollees.lock();
-            pollees.push(Arc::downgrade(&self.inner));
-
-            self.inner.num_pollers.fetch_add(1, Ordering::Release);
-        }
+        self.inner
+            .subject
+            .register_observer(poller.observer(), mask);
+        let mut pollees = poller.inner.pollees.lock();
+        pollees.insert(Arc::downgrade(&self.inner).into(), ());
     }
 
     /// Register an IoEvents observer.
@@ -84,23 +75,9 @@ impl Pollee {
     ///
     /// Note that the observer will always get notified of the events in
     /// `IoEvents::ALWAYS_POLL` regardless of the value of `mask`.
-    ///
-    /// # Memory leakage
-    ///
-    /// Since an `Arc` for each observer is kept internally by a pollee,
-    /// it is important for the user to call the `unregister_observer` method
-    /// when the observer is no longer interested in the pollee. Otherwise,
-    /// the observer will not be dropped.
-    pub fn register_observer(&self, observer: Arc<dyn Observer<IoEvents>>, mask: IoEvents) {
-        let mut pollers = self.inner.pollers.lock();
-        let is_new = {
-            let observer: KeyableArc<dyn Observer<IoEvents>> = observer.into();
-            let mask = mask | IoEvents::ALWAYS_POLL;
-            pollers.insert(observer, mask).is_none()
-        };
-        if is_new {
-            self.inner.num_pollers.fetch_add(1, Ordering::Release);
-        }
+    pub fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        let mask = mask | IoEvents::ALWAYS_POLL;
+        self.inner.subject.register_observer(observer, mask);
     }
 
     /// Unregister an IoEvents observer.
@@ -110,17 +87,9 @@ impl Pollee {
     /// a `None` will be returned.
     pub fn unregister_observer(
         &self,
-        observer: &Arc<dyn Observer<IoEvents>>,
-    ) -> Option<Arc<dyn Observer<IoEvents>>> {
-        let observer: KeyableArc<dyn Observer<IoEvents>> = observer.clone().into();
-        let mut pollers = self.inner.pollers.lock();
-        let observer = pollers
-            .remove_entry(&observer)
-            .map(|(observer, _)| observer.into());
-        if observer.is_some() {
-            self.inner.num_pollers.fetch_sub(1, Ordering::Relaxed);
-        }
-        observer
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
+        self.inner.subject.unregister_observer(observer)
     }
 
     /// Add some events to the pollee's state.
@@ -129,18 +98,7 @@ impl Pollee {
     /// the added events.
     pub fn add_events(&self, events: IoEvents) {
         self.inner.events.fetch_or(events.bits(), Ordering::Release);
-
-        // Fast path
-        if self.inner.num_pollers.load(Ordering::Relaxed) == 0 {
-            return;
-        }
-
-        // Slow path: broadcast the new events to all pollers
-        let pollers = self.inner.pollers.lock();
-        pollers
-            .iter()
-            .filter(|(_, mask)| mask.intersects(events))
-            .for_each(|(poller, mask)| poller.on_events(&(events & *mask)));
+        self.inner.subject.notify_observers(&events);
     }
 
     /// Remove some events from the pollee's state.
@@ -170,14 +128,14 @@ impl Pollee {
 
 /// A poller gets notified when its associated pollees have interesting events.
 pub struct Poller {
-    inner: KeyableArc<PollerInner>,
+    inner: Arc<PollerInner>,
 }
 
 struct PollerInner {
     // Use event counter to wait or wake up a poller
     event_counter: EventCounter,
     // All pollees that are interesting to this poller
-    pollees: Mutex<Vec<Weak<PolleeInner>>>,
+    pollees: Mutex<BTreeMap<KeyableWeak<PolleeInner>, ()>>,
 }
 
 impl Poller {
@@ -185,10 +143,10 @@ impl Poller {
     pub fn new() -> Self {
         let inner = PollerInner {
             event_counter: EventCounter::new(),
-            pollees: Mutex::new(Vec::with_capacity(1)),
+            pollees: Mutex::new(BTreeMap::new()),
         };
         Self {
-            inner: KeyableArc::new(inner),
+            inner: Arc::new(inner),
         }
     }
 
@@ -197,8 +155,8 @@ impl Poller {
         self.inner.event_counter.read();
     }
 
-    fn observer(&self) -> KeyableArc<dyn Observer<IoEvents>> {
-        self.inner.clone() as KeyableArc<dyn Observer<IoEvents>>
+    fn observer(&self) -> Weak<dyn Observer<IoEvents>> {
+        Arc::downgrade(&self.inner) as _
     }
 }
 
@@ -216,14 +174,9 @@ impl Drop for Poller {
         }
 
         let self_observer = self.observer();
-        for weak_pollee in pollees.drain(..) {
+        for (weak_pollee, _) in pollees.drain_filter(|_, _| true) {
             if let Some(pollee) = weak_pollee.upgrade() {
-                let mut pollers = pollee.pollers.lock();
-                let res = pollers.remove(&self_observer);
-                assert!(res.is_some());
-                drop(pollers);
-
-                pollee.num_pollers.fetch_sub(1, Ordering::Relaxed);
+                pollee.subject.unregister_observer(&self_observer);
             }
         }
     }
