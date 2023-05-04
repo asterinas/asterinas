@@ -1,5 +1,4 @@
 use super::{SyscallReturn, SYS_FCNTL};
-use crate::fs::utils::FcntlCmd;
 use crate::log_syscall_entry;
 use crate::{fs::file_table::FileDescripter, prelude::*};
 
@@ -24,4 +23,14 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
         }
         _ => todo!(),
     }
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, TryFromInt)]
+#[allow(non_camel_case_types)]
+enum FcntlCmd {
+    F_DUPFD = 0,
+    F_GETFD = 1,
+    F_SETFD = 2,
+    F_DUPFD_CLOEXEC = 1030,
 }

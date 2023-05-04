@@ -99,14 +99,14 @@ fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>) -> Result<usize> {
 // https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/poll.h
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-pub struct c_pollfd {
+struct c_pollfd {
     fd: i32,
     events: i16,
     revents: i16,
 }
 
 #[derive(Debug, Clone)]
-pub struct PollFd {
+struct PollFd {
     fd: Option<FileDescripter>,
     events: IoEvents,
     revents: Cell<IoEvents>,
