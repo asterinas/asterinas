@@ -45,28 +45,3 @@ impl EpollEvent {
         Self { events, user_data }
     }
 }
-
-impl From<&c_epoll_event> for EpollEvent {
-    fn from(c_event: &c_epoll_event) -> Self {
-        Self {
-            events: IoEvents::from_bits_truncate(c_event.events as u32),
-            user_data: c_event.data,
-        }
-    }
-}
-
-impl From<&EpollEvent> for c_epoll_event {
-    fn from(ep_event: &EpollEvent) -> Self {
-        Self {
-            events: ep_event.events.bits() as u32,
-            data: ep_event.user_data,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Pod)]
-#[repr(C)]
-pub struct c_epoll_event {
-    pub events: u32,
-    pub data: u64,
-}

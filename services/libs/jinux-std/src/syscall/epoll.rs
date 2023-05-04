@@ -1,8 +1,8 @@
 use core::time::Duration;
 
-use crate::fs::epoll::{c_epoll_event, EpollCtl, EpollEvent, EpollFile, EpollFlags};
+use crate::fs::epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags};
 use crate::fs::file_table::FileDescripter;
-use crate::fs::utils::CreationFlags;
+use crate::fs::utils::{CreationFlags, IoEvents};
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::util::{read_val_from_user, write_val_to_user};
@@ -130,4 +130,29 @@ pub fn sys_epoll_wait(
     }
 
     Ok(SyscallReturn::Return(epoll_events.len() as _))
+}
+
+#[derive(Debug, Clone, Copy, Pod)]
+#[repr(C)]
+struct c_epoll_event {
+    events: u32,
+    data: u64,
+}
+
+impl From<&EpollEvent> for c_epoll_event {
+    fn from(ep_event: &EpollEvent) -> Self {
+        Self {
+            events: ep_event.events.bits() as u32,
+            data: ep_event.user_data,
+        }
+    }
+}
+
+impl From<&c_epoll_event> for EpollEvent {
+    fn from(c_event: &c_epoll_event) -> Self {
+        Self::new(
+            IoEvents::from_bits_truncate(c_event.events as u32),
+            c_event.data,
+        )
+    }
 }
