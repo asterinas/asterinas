@@ -4,6 +4,7 @@ pub mod device;
 pub(crate) mod irq;
 mod kernel;
 pub(crate) mod mm;
+pub(crate) mod mmio;
 pub(crate) mod timer;
 
 use alloc::fmt;
