@@ -4,7 +4,7 @@ use core::ops::Range;
 
 use crate::rights::Rights;
 use align_ext::AlignExt;
-use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrameVec, VmIo};
+use jinux_frame::vm::{VmAllocOptions, VmFrameVec, VmIo};
 
 use crate::prelude::*;
 
@@ -142,8 +142,6 @@ pub(super) struct Vmo_ {
     inner: Mutex<VmoInner>,
     /// Parent Vmo
     parent: Weak<Vmo_>,
-    /// paddr
-    paddr: Option<Paddr>,
     /// vmo type
     vmo_type: VmoType,
 }
@@ -419,10 +417,6 @@ impl Vmo_ {
         Ok(())
     }
 
-    pub fn paddr(&self) -> Option<Paddr> {
-        self.paddr
-    }
-
     pub fn flags(&self) -> VmoFlags {
         self.flags.clone()
     }
@@ -432,12 +426,6 @@ impl<R> Vmo<R> {
     /// Returns the size (in bytes) of a VMO.
     pub fn size(&self) -> usize {
         self.0.size()
-    }
-
-    /// Returns the starting physical address of a VMO, if it is contiguous.
-    /// Otherwise, returns none.
-    pub fn paddr(&self) -> Option<Paddr> {
-        self.0.paddr()
     }
 
     /// Returns the flags of a VMO.

@@ -83,21 +83,22 @@ impl MSIX {
         debug!("command after:{:x}", am.read16(loc, crate::PCI_COMMAND));
         let message_control = am.read16(loc, cap_ptr + 2) | 0x8000;
         am.write16(loc, cap_ptr + 2, message_control);
-        for i in 0..table_size {
-            let value: InFramePtr<MSIXTableEntry> =
-                InFramePtr::new(table_base_address as usize + 16 * i as usize)
-                    .expect("can not get in frame ptr for msix");
+        let mut table_iter: InFramePtr<MSIXTableEntry> =
+            InFramePtr::new(table_base_address as usize)
+                .expect("can not get in frame ptr for msix");
+        for _ in 0..table_size {
             // local APIC address: 0xFEE0_0000
-            value.write_at(offset_of!(MSIXTableEntry, msg_addr), 0xFEE0_0000 as u32);
-            value.write_at(offset_of!(MSIXTableEntry, msg_upper_addr), 0 as u32);
+            table_iter.write_at(offset_of!(MSIXTableEntry, msg_addr), 0xFEE0_0000 as u32);
+            table_iter.write_at(offset_of!(MSIXTableEntry, msg_upper_addr), 0 as u32);
             // allocate irq number
             let handle = jinux_frame::trap::allocate_irq().expect("not enough irq");
-            value.write_at(offset_of!(MSIXTableEntry, msg_data), handle.num() as u32);
-            value.write_at(offset_of!(MSIXTableEntry, vector_control), 0 as u32);
+            table_iter.write_at(offset_of!(MSIXTableEntry, msg_data), handle.num() as u32);
+            table_iter.write_at(offset_of!(MSIXTableEntry, vector_control), 0 as u32);
             cap.table.push(MSIXEntry {
-                table_entry: value,
+                table_entry: table_iter.clone(),
                 irq_handle: handle,
             });
+            table_iter = table_iter.add(1);
         }
         cap
     }

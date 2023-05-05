@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use jinux_frame::vm::{Paddr, VmAllocOptions, VmFrameVec};
+use jinux_frame::vm::{VmAllocOptions, VmFrameVec};
 use jinux_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 
@@ -54,7 +54,6 @@ use super::{Pager, Vmo, VmoFlags};
 /// ```
 pub struct VmoOptions<R = Rights> {
     size: usize,
-    paddr: Option<Paddr>,
     flags: VmoFlags,
     rights: Option<R>,
     pager: Option<Arc<dyn Pager>>,
@@ -68,23 +67,10 @@ impl<R> VmoOptions<R> {
     pub fn new(size: usize) -> Self {
         Self {
             size,
-            paddr: None,
             flags: VmoFlags::empty(),
             rights: None,
             pager: None,
         }
-    }
-
-    /// Sets the starting physical address of the VMO.
-    ///
-    /// By default, this option is not set.
-    ///
-    /// If this option is set, then the underlying pages of VMO must be contiguous.
-    /// So `VmoFlags::IS_CONTIGUOUS` will be set automatically.
-    pub fn paddr(mut self, paddr: Paddr) -> Self {
-        self.paddr = Some(paddr);
-        self.flags |= VmoFlags::CONTIGUOUS;
-        self
     }
 
     /// Sets the VMO flags.
@@ -112,13 +98,9 @@ impl VmoOptions<Rights> {
     /// The VMO is initially assigned full access rights.
     pub fn alloc(self) -> Result<Vmo<Rights>> {
         let VmoOptions {
-            size,
-            paddr,
-            flags,
-            pager,
-            ..
+            size, flags, pager, ..
         } = self;
-        let vmo_ = alloc_vmo_(size, paddr, flags, pager)?;
+        let vmo_ = alloc_vmo_(size, flags, pager)?;
         Ok(Vmo(Arc::new(vmo_), Rights::all()))
     }
 }
@@ -133,24 +115,18 @@ impl<R: TRights> VmoOptions<R> {
     pub fn alloc(self) -> Result<Vmo<R>> {
         let VmoOptions {
             size,
-            paddr,
             flags,
             rights,
             pager,
         } = self;
-        let vmo_ = alloc_vmo_(size, paddr, flags, pager)?;
+        let vmo_ = alloc_vmo_(size, flags, pager)?;
         Ok(Vmo(Arc::new(vmo_), R::new()))
     }
 }
 
-fn alloc_vmo_(
-    size: usize,
-    paddr: Option<Paddr>,
-    flags: VmoFlags,
-    pager: Option<Arc<dyn Pager>>,
-) -> Result<Vmo_> {
+fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Result<Vmo_> {
     let size = size.align_up(PAGE_SIZE);
-    let committed_pages = committed_pages_if_continuous(flags, size, paddr)?;
+    let committed_pages = committed_pages_if_continuous(flags, size)?;
     let vmo_inner = VmoInner {
         pager,
         size,
@@ -161,7 +137,6 @@ fn alloc_vmo_(
         flags,
         inner: Mutex::new(vmo_inner),
         parent: Weak::new(),
-        paddr,
         vmo_type: VmoType::NotChild,
     })
 }
@@ -169,14 +144,12 @@ fn alloc_vmo_(
 fn committed_pages_if_continuous(
     flags: VmoFlags,
     size: usize,
-    paddr: Option<Paddr>,
 ) -> Result<BTreeMap<usize, VmFrameVec>> {
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
         let mut vm_alloc_option = VmAllocOptions::new(frames_num);
         vm_alloc_option.is_contiguous(true);
-        vm_alloc_option.paddr(paddr);
         let frames = VmFrameVec::allocate(&vm_alloc_option)?;
         let mut committed_pages = BTreeMap::new();
         for (idx, frame) in frames.into_iter().enumerate() {
@@ -500,9 +473,6 @@ fn alloc_child_vmo_(
         committed_pages: BTreeMap::new(),
         inherited_pages,
     };
-    let child_paddr = parent_vmo_
-        .paddr()
-        .map(|parent_paddr| parent_paddr + child_vmo_start);
     let vmo_type = match child_type {
         ChildType::Cow => VmoType::CopyOnWriteChild,
         ChildType::Slice => VmoType::SliceChild,
@@ -511,7 +481,6 @@ fn alloc_child_vmo_(
         flags: child_flags,
         inner: Mutex::new(vmo_inner),
         parent: Arc::downgrade(&parent_vmo_),
-        paddr: child_paddr,
         vmo_type,
     })
 }
