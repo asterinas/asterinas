@@ -20,6 +20,7 @@ pub mod config;
 pub mod cpu;
 mod error;
 pub mod logger;
+pub mod mmio;
 pub mod prelude;
 pub mod sync;
 pub mod task;
@@ -47,6 +48,7 @@ pub fn init() {
     vm::init();
     trap::init();
     arch::after_all_init();
+    mmio::init();
     register_irq_common_callback();
     invoke_c_init_funcs();
 }
