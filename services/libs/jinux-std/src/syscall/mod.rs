@@ -49,6 +49,7 @@ use crate::syscall::rt_sigaction::sys_rt_sigaction;
 use crate::syscall::rt_sigprocmask::sys_rt_sigprocmask;
 use crate::syscall::rt_sigreturn::sys_rt_sigreturn;
 use crate::syscall::sched_yield::sys_sched_yield;
+use crate::syscall::select::sys_select;
 use crate::syscall::set_robust_list::sys_set_robust_list;
 use crate::syscall::set_tid_address::sys_set_tid_address;
 use crate::syscall::setpgid::sys_setpgid;
@@ -118,6 +119,7 @@ mod rt_sigaction;
 mod rt_sigprocmask;
 mod rt_sigreturn;
 mod sched_yield;
+mod select;
 mod set_robust_list;
 mod set_tid_address;
 mod setpgid;
@@ -186,6 +188,7 @@ define_syscall_nums!(
     SYS_WRITEV = 20,
     SYS_ACCESS = 21,
     SYS_PIPE = 22,
+    SYS_SELECT = 23,
     SYS_SCHED_YIELD = 24,
     SYS_MADVISE = 28,
     SYS_DUP = 32,
@@ -324,6 +327,7 @@ pub fn syscall_dispatch(
         SYS_WRITEV => syscall_handler!(3, sys_writev, args),
         SYS_ACCESS => syscall_handler!(2, sys_access, args),
         SYS_PIPE => syscall_handler!(1, sys_pipe, args),
+        SYS_SELECT => syscall_handler!(5, sys_select, args),
         SYS_SCHED_YIELD => syscall_handler!(0, sys_sched_yield),
         SYS_MADVISE => syscall_handler!(3, sys_madvise, args),
         SYS_DUP => syscall_handler!(1, sys_dup, args),
