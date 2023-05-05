@@ -51,7 +51,7 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(num_revents as _))
 }
 
-fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>) -> Result<usize> {
+pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>) -> Result<usize> {
     // The main loop of polling
     let poller = Poller::new();
     loop {
@@ -106,13 +106,22 @@ struct c_pollfd {
 }
 
 #[derive(Debug, Clone)]
-struct PollFd {
+pub struct PollFd {
     fd: Option<FileDescripter>,
     events: IoEvents,
     revents: Cell<IoEvents>,
 }
 
 impl PollFd {
+    pub fn new(fd: Option<FileDescripter>, events: IoEvents) -> Self {
+        let revents = Cell::new(IoEvents::empty());
+        Self {
+            fd,
+            events,
+            revents,
+        }
+    }
+
     pub fn fd(&self) -> Option<FileDescripter> {
         self.fd
     }

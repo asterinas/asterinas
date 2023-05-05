@@ -46,5 +46,27 @@ impl From<timespec_t> for Duration {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Pod)]
+pub struct timeval_t {
+    pub sec: time_t,
+    pub usec: suseconds_t,
+}
+
+impl From<Duration> for timeval_t {
+    fn from(duration: Duration) -> timeval_t {
+        let sec = duration.as_secs() as time_t;
+        let usec = duration.subsec_micros() as suseconds_t;
+        debug_assert!(sec >= 0); // usec >= 0 always holds
+        timeval_t { sec, usec }
+    }
+}
+
+impl From<timeval_t> for Duration {
+    fn from(timeval: timeval_t) -> Self {
+        Duration::new(timeval.sec as u64, (timeval.usec * 1000) as u32)
+    }
+}
+
 /// The various flags for setting POSIX.1b interval timers:
 pub const TIMER_ABSTIME: i32 = 0x01;
