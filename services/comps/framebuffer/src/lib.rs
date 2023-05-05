@@ -12,11 +12,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 use font8x8::UnicodeFonts;
-use jinux_frame::{
-    config::PAGE_SIZE,
-    vm::{VmAllocOptions, VmFrameVec, VmIo},
-    LimineFramebufferRequest,
-};
+use jinux_frame::{config::PAGE_SIZE, mmio::Mmio, vm::VmIo, LimineFramebufferRequest};
 use spin::{Mutex, Once};
 
 #[init_component]
@@ -43,10 +39,10 @@ pub(crate) fn init() {
         for i in response.framebuffers() {
             let page_size = size / PAGE_SIZE;
 
-            let frame_vec = VmFrameVec::allocate(VmAllocOptions::new(page_size).paddr(
-                jinux_frame::vm::vaddr_to_paddr(i.address.as_ptr().unwrap().addr()),
-            ))
-            .unwrap();
+            let start_paddr = i.address.as_ptr().unwrap().addr();
+            let mmio =
+                Mmio::new(start_paddr..(start_paddr + jinux_frame::config::PAGE_SIZE * page_size))
+                    .unwrap();
 
             let mut buffer: Vec<u8> = Vec::with_capacity(size);
             for _ in 0..size {
@@ -55,7 +51,7 @@ pub(crate) fn init() {
             log::debug!("Found framebuffer:{:?}", *i);
 
             writer = Some(Writer {
-                frame_vec,
+                mmio,
                 x_pos: 0,
                 y_pos: 0,
                 bytes_per_pixel: (i.bpp / 8) as usize,
@@ -72,7 +68,7 @@ pub(crate) fn init() {
 }
 
 pub(crate) struct Writer {
-    frame_vec: VmFrameVec,
+    mmio: Mmio,
     /// FIXME: remove buffer. The meaning of buffer is to facilitate the various operations of framebuffer
     buffer: &'static mut [u8],
 
@@ -99,14 +95,14 @@ impl Writer {
         self.x_pos = 0;
         self.y_pos = 0;
         self.buffer.fill(0);
-        self.frame_vec.write_bytes(0, self.buffer).unwrap();
+        self.mmio.write_bytes(0, self.buffer).unwrap();
     }
 
     /// Everything moves up one letter in size
     fn shift_lines_up(&mut self) {
         let offset = self.bytes_per_pixel * 8;
         self.buffer.copy_within(offset.., 0);
-        self.frame_vec.write_bytes(0, self.buffer).unwrap();
+        self.mmio.write_bytes(0, self.buffer).unwrap();
         self.y_pos -= 8;
     }
 
@@ -159,7 +155,7 @@ impl Writer {
         self.buffer
             .index_mut(byte_offset..(byte_offset + bytes_per_pixel))
             .copy_from_slice(&color[..bytes_per_pixel]);
-        self.frame_vec
+        self.mmio
             .write_bytes(
                 byte_offset,
                 self.buffer

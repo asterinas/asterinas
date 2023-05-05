@@ -6,7 +6,7 @@ use bitflags::bitflags;
 use core::sync::atomic::{fence, Ordering};
 use jinux_frame::{
     offset_of,
-    vm::{VmAllocOptions, VmFrame, VmFrameVec},
+    vm::{VmAllocOptions, VmFrameVec},
 };
 use jinux_util::frame_ptr::InFramePtr;
 use log::debug;
@@ -45,13 +45,11 @@ pub struct VirtQueue {
     /// The number of used queues.
     num_used: u16,
     /// The head desc index of the free list.
-    pub free_head: u16,
+    free_head: u16,
     /// the index of the next avail ring index
     avail_idx: u16,
     /// last service used index
     last_used_idx: u16,
-
-    physical_frame_store: Vec<VmFrame>,
 }
 
 impl VirtQueue {
@@ -69,9 +67,7 @@ impl VirtQueue {
             cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_select)),
             idx as u16
         );
-        // info!("actual queue_size:{}",cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_size)));
-        if !size.is_power_of_two() || cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_size)) < size
-        {
+        if !size.is_power_of_two() {
             return Err(QueueError::InvalidArgs);
         }
 
@@ -85,63 +81,54 @@ impl VirtQueue {
             msix_vector
         );
 
-        let mut descs = Vec::new();
-
         //allocate page
-        let mut frame_vec = Vec::new();
-        let vm_allocate_option = VmAllocOptions::new(1);
-        if cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_desc)) == 0 as u64 {
-            let frame = VmFrameVec::allocate(&vm_allocate_option)
-                .expect("cannot allocate physical frame for virtqueue")
-                .remove(0);
-            cfg.write_at(
-                offset_of!(VitrioPciCommonCfg, queue_desc),
-                frame.start_paddr() as u64,
-            );
-            debug!("queue_desc vm frame:{:x?}", frame);
-            frame_vec.push(frame);
+
+        let desc_frame_ptr: InFramePtr<Descriptor> = InFramePtr::new_with_vm_frame(
+            VmFrameVec::allocate(&VmAllocOptions::new(1))
+                .unwrap()
+                .pop()
+                .unwrap(),
+        )
+        .unwrap();
+        let avail_frame_ptr: InFramePtr<AvailRing> = InFramePtr::new_with_vm_frame(
+            VmFrameVec::allocate(&VmAllocOptions::new(1))
+                .unwrap()
+                .pop()
+                .unwrap(),
+        )
+        .unwrap();
+        let used_frame_ptr: InFramePtr<UsedRing> = InFramePtr::new_with_vm_frame(
+            VmFrameVec::allocate(&VmAllocOptions::new(1))
+                .unwrap()
+                .pop()
+                .unwrap(),
+        )
+        .unwrap();
+        debug!("queue_desc start paddr:{:x?}", desc_frame_ptr.paddr());
+        debug!("queue_driver start paddr:{:x?}", avail_frame_ptr.paddr());
+        debug!("queue_device start paddr:{:x?}", used_frame_ptr.paddr());
+
+        cfg.write_at(
+            offset_of!(VitrioPciCommonCfg, queue_desc),
+            desc_frame_ptr.paddr() as u64,
+        );
+
+        cfg.write_at(
+            offset_of!(VitrioPciCommonCfg, queue_driver),
+            avail_frame_ptr.paddr() as u64,
+        );
+
+        cfg.write_at(
+            offset_of!(VitrioPciCommonCfg, queue_device),
+            used_frame_ptr.paddr() as u64,
+        );
+
+        let mut descs = Vec::with_capacity(size as usize);
+        descs.push(desc_frame_ptr);
+        for i in 0..size as usize {
+            descs.push(descs.get(i).unwrap().add(1))
         }
 
-        if cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_driver)) == 0 as u64 {
-            let frame = VmFrameVec::allocate(&vm_allocate_option)
-                .expect("cannot allocate physical frame for virtqueue")
-                .remove(0);
-            cfg.write_at(
-                offset_of!(VitrioPciCommonCfg, queue_driver),
-                frame.start_paddr() as u64,
-            );
-            debug!("queue_driver vm frame:{:x?}", frame);
-            frame_vec.push(frame);
-        }
-
-        if cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_device)) == 0 as u64 {
-            let frame = VmFrameVec::allocate(&vm_allocate_option)
-                .expect("cannot allocate physical frame for virtqueue")
-                .remove(0);
-            cfg.write_at(
-                offset_of!(VitrioPciCommonCfg, queue_device),
-                frame.start_paddr() as u64,
-            );
-            debug!("queue_device vm frame:{:x?}", frame);
-            frame_vec.push(frame);
-        }
-
-        for i in 0..size {
-            descs.push(
-                InFramePtr::new(
-                    cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_desc)) as usize
-                        + i as usize * 16,
-                )
-                .expect("can not get Inframeptr for virtio queue Descriptor"),
-            )
-        }
-
-        let avail =
-            InFramePtr::new(cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_driver)) as usize)
-                .expect("can not get Inframeptr for virtio queue available ring");
-        let used =
-            InFramePtr::new(cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_device)) as usize)
-                .expect("can not get Inframeptr for virtio queue used ring");
         let notify = InFramePtr::new(notify_base_address + notify_off_multiplier as usize * idx)
             .expect("can not get Inframeptr for virtio queue notify");
         // Link descriptors together.
@@ -149,12 +136,12 @@ impl VirtQueue {
             let temp = descs.get(i as usize).unwrap();
             temp.write_at(offset_of!(Descriptor, next), i + 1);
         }
-        avail.write_at(offset_of!(AvailRing, flags), 0 as u16);
+        avail_frame_ptr.write_at(offset_of!(AvailRing, flags), 0 as u16);
         cfg.write_at(offset_of!(VitrioPciCommonCfg, queue_enable), 1 as u16);
         Ok(VirtQueue {
             descs,
-            avail,
-            used,
+            avail: avail_frame_ptr,
+            used: used_frame_ptr,
             notify,
             queue_size: size,
             queue_idx: idx as u32,
@@ -162,7 +149,6 @@ impl VirtQueue {
             free_head: 0,
             avail_idx: 0,
             last_used_idx: 0,
-            physical_frame_store: frame_vec,
         })
     }
 
@@ -346,8 +332,6 @@ impl Descriptor {
 fn set_buf(inframe_ptr: &InFramePtr<Descriptor>, buf: &[u8]) {
     let va = buf.as_ptr() as usize;
     let pa = jinux_frame::vm::vaddr_to_paddr(va).unwrap();
-    debug!("set buf write virt address:{:x}", va);
-    debug!("set buf write phys address:{:x}", pa);
     inframe_ptr.write_at(offset_of!(Descriptor, addr), pa as u64);
     inframe_ptr.write_at(offset_of!(Descriptor, len), buf.len() as u32);
 }

@@ -35,9 +35,6 @@ impl VmFrameVec {
         let page_size = options.page_size;
         let mut frame_list = Vec::new();
         if options.is_contiguous {
-            if options.paddr.is_some() {
-                panic!("not support contiguous paddr");
-            }
             let frames = frame_allocator::alloc_continuous(options.page_size);
             if frames.is_none() {
                 return Err(Error::NoMemory);
@@ -45,15 +42,7 @@ impl VmFrameVec {
             return Ok(Self(frames.unwrap()));
         }
         for i in 0..page_size {
-            let vm_frame = if let Some(paddr) = options.paddr {
-                frame_allocator::alloc_with_paddr(paddr + i * PAGE_SIZE)
-            } else {
-                frame_allocator::alloc()
-            };
-            if vm_frame.is_none() {
-                return Err(Error::NoMemory);
-            }
-            frame_list.push(vm_frame.unwrap());
+            frame_list.push(frame_allocator::alloc().unwrap());
         }
         Ok(Self(frame_list))
     }
@@ -211,7 +200,6 @@ impl<'a> Iterator for VmFrameVecIter<'a> {
 /// See `VmFrameVec::alloc`.
 pub struct VmAllocOptions {
     page_size: usize,
-    paddr: Option<Paddr>,
     is_contiguous: bool,
 }
 
@@ -220,20 +208,8 @@ impl VmAllocOptions {
     pub fn new(len: usize) -> Self {
         Self {
             page_size: len,
-            paddr: None,
             is_contiguous: false,
         }
-    }
-
-    /// Sets the physical address of the first frame.
-    ///
-    /// If the physical address is given, then the allocated frames will be
-    /// contiguous.
-    ///
-    /// The default value is `None`.
-    pub fn paddr(&mut self, paddr: Option<Paddr>) -> &mut Self {
-        self.paddr = paddr;
-        self
     }
 
     /// Sets whether the allocated frames should be contiguous.
@@ -366,14 +342,13 @@ impl VmIo for VmFrame {
     /// Read a value of a specified type at a specified offset.
     fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
         let paddr = self.start_paddr() + offset;
-        let val = unsafe { &mut *(super::paddr_to_vaddr(paddr) as *mut T) };
-        Ok(*val)
+        Ok(unsafe { core::ptr::read(super::paddr_to_vaddr(paddr) as *const T) })
     }
 
     /// Write a value of a specified type at a specified offset.
     fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
         let paddr = self.start_paddr() + offset;
-        unsafe { (super::paddr_to_vaddr(paddr) as *mut T).write(*new_val) };
+        unsafe { core::ptr::write(super::paddr_to_vaddr(paddr) as *mut T, *new_val) };
         Ok(())
     }
 }

@@ -267,6 +267,10 @@ impl PCIVirtioDevice {
         let mut msix_vector_list: Vec<u16> = (0..msix.table_size).collect();
         let config_msix_vector = msix_vector_list.pop().unwrap();
         let common_cfg_frame_ptr = &virtio_info.common_cfg_frame_ptr;
+
+        // Reset device
+        common_cfg_frame_ptr.write_at(offset_of!(VitrioPciCommonCfg, device_status), 0 as u8);
+
         let num_queues: u16 =
             common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, num_queues));
         debug!("num_queues:{:x}", num_queues);
