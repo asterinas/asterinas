@@ -4,8 +4,10 @@ use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::{
     fold::Fold, parse::Parse, parse_quote, punctuated::Punctuated, token::Comma, GenericParam,
-    Generics, ItemFn, Token, Type, WhereClause,
+    Generics, Token, Type, WhereClause,
 };
+
+use super::require_item::RequireItem;
 
 pub struct RequireAttr {
     type_set: Type,
@@ -61,11 +63,19 @@ impl Fold for RequireAttr {
     }
 }
 
-pub fn expand_require(item_fn: ItemFn, mut require_attr: RequireAttr) -> TokenStream {
-    let new_item_fn = require_attr.fold_item_fn(item_fn);
-    quote!(
-        #new_item_fn
-    )
+pub fn expand_require(item: RequireItem, mut require_attr: RequireAttr) -> TokenStream {
+    match item {
+        RequireItem::Impl(item_impl) => {
+            let new_item_impl = require_attr.fold_item_impl(item_impl);
+            quote!(#new_item_impl)
+        }
+        RequireItem::Fn(item_fn) => {
+            let new_item_fn = require_attr.fold_item_fn(item_fn);
+            quote!(
+                #new_item_fn
+            )
+        }
+    }
 }
 
 fn is_generic_param(ident: Ident, generic_params: &Punctuated<GenericParam, Comma>) -> bool {
