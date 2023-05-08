@@ -15,7 +15,7 @@
 //! Below is a simple example.
 //! Suppose we have a channel that may have read and write capability.
 //!
-//! ```rust
+//! ```ignore
 //! /// A simple channel, only for demonstration.
 //! struct Channel<R: RightSet> {
 //!    rights: PhantomData<R>,
@@ -42,7 +42,7 @@
 //! ```
 //! When we initialize channels with different rights, it can check whether the function
 //! are wrongly used due to lack of capabilities at compilation time.
-//! ```rust
+//! ```ignore
 //!     let read_channel = Channel::<R>::new();
 //!     read_channel.read();
 //!     // read_channel.write();                    // compilation error!
@@ -73,20 +73,21 @@
 #![feature(proc_macro_diagnostic)]
 #![allow(dead_code)]
 
+use require_item::RequireItem;
 use syn::parse_macro_input;
-use syn::ItemFn;
 
 use crate::require_attr::expand_require;
 use crate::require_attr::RequireAttr;
 
 mod require_attr;
+mod require_item;
 
 #[proc_macro_attribute]
 pub fn require(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let item_fn = parse_macro_input!(item as ItemFn);
+    let require_item = parse_macro_input!(item as RequireItem);
     let require_attr = parse_macro_input!(attr as RequireAttr);
-    expand_require(item_fn, require_attr).into()
+    expand_require(require_item, require_attr).into()
 }
