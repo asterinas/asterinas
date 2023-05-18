@@ -81,7 +81,7 @@ pub const S_IFLNK: u32 = 0o120000;
 #[repr(C)]
 pub struct Stat {
     /// ID of device containing file
-    st_dev: usize,
+    st_dev: u64,
     /// Inode number
     st_ino: usize,
     /// Number of hard links
@@ -95,7 +95,7 @@ pub struct Stat {
     /// Padding bytes
     __pad0: u32,
     /// Device ID (if special file)
-    st_rdev: usize,
+    st_rdev: u64,
     /// Total size, in bytes
     st_size: isize,
     /// Block size for filesystem I/O
@@ -122,7 +122,7 @@ impl From<Metadata> for Stat {
             st_uid: info.uid as u32,
             st_gid: info.gid as u32,
             __pad0: 0,
-            st_rdev: 0,
+            st_rdev: info.rdev,
             st_size: info.size as isize,
             st_blksize: info.blk_size as isize,
             st_blocks: (info.blocks * (info.blk_size / 512)) as isize, // Number of 512B blocks

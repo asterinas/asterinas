@@ -1,10 +1,7 @@
 use self::line_discipline::LineDiscipline;
+use super::*;
 use crate::driver::tty::TtyDriver;
-use crate::fs::utils::{InodeMode, InodeType, IoEvents, Metadata};
-use crate::fs::{
-    file_handle::FileLike,
-    utils::{IoctlCmd, Poller},
-};
+use crate::fs::utils::{IoEvents, IoctlCmd, Poller};
 use crate::prelude::*;
 use crate::process::Pgid;
 use crate::util::{read_val_from_user, write_val_to_user};
@@ -51,7 +48,16 @@ impl Tty {
     }
 }
 
-impl FileLike for Tty {
+impl Device for Tty {
+    fn type_(&self) -> DeviceType {
+        DeviceType::CharDevice
+    }
+
+    fn id(&self) -> DeviceId {
+        // Same value with Linux
+        DeviceId::new(5, 0)
+    }
+
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         self.ldisc.read(buf)
     }
@@ -108,25 +114,6 @@ impl FileLike for Tty {
                 Ok(0)
             }
             _ => todo!(),
-        }
-    }
-
-    fn metadata(&self) -> Metadata {
-        Metadata {
-            dev: 0,
-            ino: 0,
-            size: 0,
-            blk_size: 1024,
-            blocks: 0,
-            atime: Default::default(),
-            mtime: Default::default(),
-            ctime: Default::default(),
-            type_: InodeType::CharDevice,
-            mode: InodeMode::from_bits_truncate(0o666),
-            nlinks: 1,
-            uid: 0,
-            gid: 0,
-            rdev: 0,
         }
     }
 }

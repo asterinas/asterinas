@@ -11,13 +11,13 @@ use self::signal::sig_queues::SigQueues;
 use self::signal::signals::kernel::KernelSignal;
 use self::signal::signals::Signal;
 use self::status::ProcessStatus;
+use crate::device::tty::get_n_tty;
 use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
 use crate::fs::utils::FileCreationMask;
 use crate::prelude::*;
 use crate::rights::Full;
 use crate::thread::{allocate_tid, thread_table, Thread};
-use crate::tty::get_n_tty;
 use crate::vm::vmar::Vmar;
 use jinux_frame::sync::WaitQueue;
 

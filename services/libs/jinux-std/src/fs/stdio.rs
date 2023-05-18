@@ -1,6 +1,7 @@
+use crate::device::tty::{get_n_tty, Tty};
 use crate::prelude::*;
-use crate::tty::{get_n_tty, Tty};
 
+use super::device::Device;
 use super::file_handle::FileLike;
 use super::file_table::FileDescripter;
 use super::utils::{InodeMode, InodeType, IoEvents, Metadata, Poller, SeekFrom};

@@ -6,6 +6,7 @@ use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 
 use super::{DirentVisitor, FileSystem, IoEvents, IoctlCmd, Poller, SuperBlock};
+use crate::fs::device::{Device, DeviceType};
 use crate::prelude::*;
 
 #[repr(u32)]
@@ -18,6 +19,15 @@ pub enum InodeType {
     File = 0o100000,
     SymLink = 0o120000,
     Socket = 0o140000,
+}
+
+impl From<DeviceType> for InodeType {
+    fn from(type_: DeviceType) -> InodeType {
+        match type_ {
+            DeviceType::CharDevice => InodeType::CharDevice,
+            DeviceType::BlockDevice => InodeType::BlockDevice,
+        }
+    }
 }
 
 bitflags! {
@@ -77,7 +87,7 @@ impl InodeMode {
 
 #[derive(Debug, Clone)]
 pub struct Metadata {
-    pub dev: usize,
+    pub dev: u64,
     pub ino: usize,
     pub size: usize,
     pub blk_size: usize,
@@ -90,7 +100,7 @@ pub struct Metadata {
     pub nlinks: usize,
     pub uid: usize,
     pub gid: usize,
-    pub rdev: usize,
+    pub rdev: u64,
 }
 
 impl Metadata {
@@ -150,6 +160,30 @@ impl Metadata {
             rdev: 0,
         }
     }
+    pub fn new_device(
+        ino: usize,
+        mode: InodeMode,
+        sb: &SuperBlock,
+        type_: DeviceType,
+        rdev: u64,
+    ) -> Self {
+        Self {
+            dev: 0,
+            ino,
+            size: 0,
+            blk_size: sb.bsize,
+            blocks: 0,
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
+            type_: InodeType::from(type_),
+            mode,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev,
+        }
+    }
 }
 
 pub trait Inode: Any + Sync + Send {
@@ -167,33 +201,65 @@ pub trait Inode: Any + Sync + Send {
 
     fn set_mtime(&self, time: Duration);
 
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
+    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+        Err(Error::new(Errno::EISDIR))
+    }
 
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
+    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+        Err(Error::new(Errno::EISDIR))
+    }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize>;
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
+    }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize>;
+    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
+    }
 
-    fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>>;
+    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::ENOTDIR))
+    }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize>;
+    fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::ENOTDIR))
+    }
 
-    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()>;
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        Err(Error::new(Errno::ENOTDIR))
+    }
 
-    fn unlink(&self, name: &str) -> Result<()>;
+    fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+        Err(Error::new(Errno::ENOTDIR))
+    }
 
-    fn rmdir(&self, name: &str) -> Result<()>;
+    fn unlink(&self, name: &str) -> Result<()> {
+        Err(Error::new(Errno::ENOTDIR))
+    }
 
-    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>>;
+    fn rmdir(&self, name: &str) -> Result<()> {
+        Err(Error::new(Errno::ENOTDIR))
+    }
 
-    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()>;
+    fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::ENOTDIR))
+    }
 
-    fn read_link(&self) -> Result<String>;
+    fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+        Err(Error::new(Errno::ENOTDIR))
+    }
 
-    fn write_link(&self, target: &str) -> Result<()>;
+    fn read_link(&self) -> Result<String> {
+        Err(Error::new(Errno::EISDIR))
+    }
 
-    fn ioctl(&self, cmd: &IoctlCmd) -> Result<()>;
+    fn write_link(&self, target: &str) -> Result<()> {
+        Err(Error::new(Errno::EISDIR))
+    }
+
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        Err(Error::new(Errno::EISDIR))
+    }
 
     fn sync(&self) -> Result<()>;
 

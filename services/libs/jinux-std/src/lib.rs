@@ -31,6 +31,7 @@ extern crate lru;
 #[macro_use]
 extern crate controlled;
 
+pub mod device;
 pub mod driver;
 pub mod error;
 pub mod events;
@@ -41,7 +42,6 @@ pub mod rights;
 pub mod syscall;
 pub mod thread;
 pub mod time;
-pub mod tty;
 mod util;
 pub mod vm;
 
@@ -49,6 +49,7 @@ pub fn init(ramdisk: &[u8]) {
     driver::init();
     process::fifo_scheduler::init();
     fs::initramfs::init(ramdisk).unwrap();
+    device::init().unwrap();
 }
 
 fn init_thread() {

@@ -3,7 +3,6 @@
 use crate::events::Observer;
 use crate::fs::utils::{AccessMode, IoEvents, IoctlCmd, Metadata, Poller, SeekFrom, StatusFlags};
 use crate::prelude::*;
-use crate::tty::get_n_tty;
 
 use core::any::Any;
 
@@ -18,14 +17,7 @@ pub trait FileLike: Send + Sync + Any {
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        match cmd {
-            IoctlCmd::TCGETS => {
-                // FIXME: only a work around
-                let tty = get_n_tty();
-                tty.ioctl(cmd, arg)
-            }
-            _ => panic!("Ioctl unsupported"),
-        }
+        return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
     }
 
     fn poll(&self, _mask: IoEvents, _poller: Option<&Poller>) -> IoEvents {

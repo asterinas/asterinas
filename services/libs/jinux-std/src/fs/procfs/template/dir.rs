@@ -1,10 +1,8 @@
 use core::time::Duration;
-use jinux_frame::vm::VmFrame;
 use jinux_util::slot_vec::SlotVec;
 
-use crate::fs::utils::{
-    DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
-};
+use crate::fs::device::Device;
+use crate::fs::utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata};
 use crate::prelude::*;
 
 use super::{ProcFS, ProcInodeInfo};
@@ -78,23 +76,16 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
 
     fn set_mtime(&self, _time: Duration) {}
 
-    fn read_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
+    fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        Err(Error::new(Errno::EPERM))
     }
 
-    fn write_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn mknod(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn mknod(
+        &self,
+        _name: &str,
+        _mode: InodeMode,
+        _device: Arc<dyn Device>,
+    ) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
 
@@ -184,18 +175,6 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
 
     fn rename(&self, _old_name: &str, _target: &Arc<dyn Inode>, _new_name: &str) -> Result<()> {
         Err(Error::new(Errno::EPERM))
-    }
-
-    fn read_link(&self) -> Result<String> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn write_link(&self, _target: &str) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn ioctl(&self, _cmd: &IoctlCmd) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
     }
 
     fn sync(&self) -> Result<()> {

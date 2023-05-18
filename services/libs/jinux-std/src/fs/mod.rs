@@ -1,3 +1,4 @@
+pub mod device;
 pub mod epoll;
 pub mod file_handle;
 pub mod file_table;
