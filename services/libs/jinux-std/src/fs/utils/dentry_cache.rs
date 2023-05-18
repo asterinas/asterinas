@@ -1,4 +1,6 @@
+use crate::fs::device::Device;
 use crate::prelude::*;
+
 use alloc::string::String;
 use core::time::Duration;
 
@@ -76,7 +78,26 @@ impl Dentry {
         }
 
         let child = {
-            let vnode = self.vnode.mknod(name, type_, mode)?;
+            let vnode = self.vnode.create(name, type_, mode)?;
+            let dentry = Dentry::new(name, Some(self.this()), vnode);
+            children.insert_dentry(&dentry);
+            dentry
+        };
+        Ok(child)
+    }
+
+    /// Create a dentry by making a device inode.
+    pub fn mknod(&self, name: &str, mode: InodeMode, device: Arc<dyn Device>) -> Result<Arc<Self>> {
+        if self.vnode.inode_type() != InodeType::Dir {
+            return_errno!(Errno::ENOTDIR);
+        }
+        let mut children = self.children.lock();
+        if children.find_dentry(name).is_some() {
+            return_errno!(Errno::EEXIST);
+        }
+
+        let child = {
+            let vnode = self.vnode.mknod(name, mode, device)?;
             let dentry = Dentry::new(name, Some(self.this()), vnode);
             children.insert_dentry(&dentry);
             dentry

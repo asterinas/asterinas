@@ -1,9 +1,7 @@
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 
-use crate::fs::utils::{
-    DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
-};
+use crate::fs::utils::{FileSystem, Inode, InodeMode, IoctlCmd, Metadata};
 use crate::prelude::*;
 
 use super::{ProcFS, ProcInodeInfo};
@@ -67,34 +65,6 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn mknod(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOTDIR))
-    }
-
-    fn readdir_at(&self, _offset: usize, _visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        Err(Error::new(Errno::ENOTDIR))
-    }
-
-    fn link(&self, _old: &Arc<dyn Inode>, _name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
-    }
-
-    fn unlink(&self, _name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
-    }
-
-    fn rmdir(&self, _name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
-    }
-
-    fn lookup(&self, _name: &str) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOTDIR))
-    }
-
-    fn rename(&self, _old_name: &str, _target: &Arc<dyn Inode>, _new_name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
-    }
-
     fn read_link(&self) -> Result<String> {
         self.inner.read_link()
     }
@@ -103,7 +73,7 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn ioctl(&self, _cmd: &IoctlCmd) -> Result<()> {
+    fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
         Err(Error::new(Errno::EPERM))
     }
 

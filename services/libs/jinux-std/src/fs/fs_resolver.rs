@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use alloc::str;
-use alloc::string::String;
 
 use super::file_table::FileDescripter;
 use super::inode_handle::InodeHandle;
@@ -12,17 +11,19 @@ use super::utils::{
 };
 
 lazy_static! {
-    static ref RAM_FS: Arc<dyn FileSystem> = RamFS::new();
+    static ref ROOT_FS: Arc<dyn FileSystem> = RamFS::new(true);
     static ref ROOT_DENTRY: Arc<Dentry> = {
-        fn init() -> Result<Arc<Dentry>> {
-            let root_vnode = Vnode::new(RAM_FS.root_inode())?;
-            Ok(Dentry::new_root(root_vnode))
-        }
-        init().unwrap()
+        let vnode = Vnode::new(ROOT_FS.root_inode()).unwrap();
+        Dentry::new_root(vnode)
     };
     static ref PROC_FS: Arc<dyn FileSystem> = ProcFS::new();
     static ref PROC_DENTRY: Arc<Dentry> = {
         let vnode = Vnode::new(PROC_FS.root_inode()).unwrap();
+        Dentry::new_root(vnode)
+    };
+    static ref DEV_FS: Arc<dyn FileSystem> = RamFS::new(false);
+    static ref DEV_DENTRY: Arc<Dentry> = {
+        let vnode = Vnode::new(DEV_FS.root_inode()).unwrap();
         Dentry::new_root(vnode)
     };
 }
@@ -138,6 +139,13 @@ impl FsResolver {
                     let path = path.strip_prefix("/proc").unwrap();
                     self.lookup_from_parent(
                         &PROC_DENTRY,
+                        path.trim_start_matches('/'),
+                        follow_tail_link,
+                    )?
+                } else if path.starts_with("/dev") {
+                    let path = path.strip_prefix("/dev").unwrap();
+                    self.lookup_from_parent(
+                        &DEV_DENTRY,
                         path.trim_start_matches('/'),
                         follow_tail_link,
                     )?

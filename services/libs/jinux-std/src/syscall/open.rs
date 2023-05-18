@@ -6,7 +6,6 @@ use crate::fs::{
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::syscall::constants::MAX_FILENAME_LEN;
-use crate::tty::get_n_tty;
 use crate::util::read_cstring_from_user;
 
 use super::SyscallReturn;
@@ -43,14 +42,6 @@ pub fn sys_openat(
         let current = current!();
         let mut file_table = current.file_table().lock();
         let fd = file_table.insert(trace_file);
-        return Ok(SyscallReturn::Return(fd as _));
-    }
-
-    if dirfd == AT_FDCWD && pathname == CString::new("/dev/tty")? {
-        let tty_file = get_n_tty().clone();
-        let current = current!();
-        let mut file_table = current.file_table().lock();
-        let fd = file_table.insert(tty_file);
         return Ok(SyscallReturn::Return(fd as _));
     }
 

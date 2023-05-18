@@ -1,9 +1,12 @@
 use super::{
-    DirentVisitor, FsFlags, Inode, InodeMode, InodeType, IoEvents, Metadata, PageCache, Poller,
+    DirentVisitor, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata, PageCache,
+    Poller,
 };
+use crate::fs::device::Device;
 use crate::prelude::*;
 use crate::rights::Full;
 use crate::vm::vmo::Vmo;
+
 use alloc::string::String;
 use core::time::Duration;
 use jinux_frame::vm::VmIo;
@@ -145,8 +148,13 @@ impl Vnode {
         inner.inode.read_at(0, &mut buf[..file_len])
     }
 
-    pub fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
-        let inode = self.inner.read().inode.mknod(name, type_, mode)?;
+    pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
+        let inode = self.inner.read().inode.create(name, type_, mode)?;
+        Self::new(inode)
+    }
+
+    pub fn mknod(&self, name: &str, mode: InodeMode, device: Arc<dyn Device>) -> Result<Self> {
+        let inode = self.inner.read().inode.mknod(name, mode, device)?;
         Self::new(inode)
     }
 
@@ -188,6 +196,10 @@ impl Vnode {
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.inner.read().inode.poll(mask, poller)
+    }
+
+    pub fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        self.inner.read().inode.ioctl(cmd, arg)
     }
 
     pub fn metadata(&self) -> Metadata {

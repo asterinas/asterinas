@@ -1,8 +1,8 @@
 pub use jinux_frame::arch::x86::device::serial::register_serial_input_callback;
 
 use crate::{
+    device::tty::{get_n_tty, Tty},
     prelude::*,
-    tty::{get_n_tty, Tty},
 };
 
 lazy_static! {

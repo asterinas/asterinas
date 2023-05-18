@@ -8,28 +8,40 @@ use jinux_util::slot_vec::SlotVec;
 use spin::{RwLock, RwLockWriteGuard};
 
 use super::*;
+use crate::fs::device::Device;
 use crate::fs::utils::{
-    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SuperBlock,
+    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
+    Poller, SuperBlock,
 };
 
+/// A volatile file system whose data and metadata exists only in memory.
 pub struct RamFS {
     metadata: RwLock<SuperBlock>,
     root: Arc<RamInode>,
     inode_allocator: AtomicUsize,
+    flags: FsFlags,
 }
 
 impl RamFS {
-    pub fn new() -> Arc<Self> {
+    pub fn new(use_pagecache: bool) -> Arc<Self> {
         let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX);
         let root = Arc::new(RamInode(RwLock::new(Inode_::new_dir(
             ROOT_INO,
             InodeMode::from_bits_truncate(0o755),
             &sb,
         ))));
+        let flags = {
+            let mut flags = FsFlags::DENTRY_UNEVICTABLE;
+            if !use_pagecache {
+                flags |= FsFlags::NO_PAGECACHE;
+            }
+            flags
+        };
         let ramfs = Arc::new(Self {
             metadata: RwLock::new(sb),
             root,
             inode_allocator: AtomicUsize::new(ROOT_INO + 1),
+            flags,
         });
         let mut root = ramfs.root.0.write();
         root.inner
@@ -64,7 +76,7 @@ impl FileSystem for RamFS {
     }
 
     fn flags(&self) -> FsFlags {
-        FsFlags::DENTRY_UNEVICTABLE
+        self.flags
     }
 }
 
@@ -105,6 +117,22 @@ impl Inode_ {
         }
     }
 
+    pub fn new_device(
+        ino: usize,
+        mode: InodeMode,
+        sb: &SuperBlock,
+        device: Arc<dyn Device>,
+    ) -> Self {
+        let type_ = device.type_();
+        let rdev = device.id().into();
+        Self {
+            inner: Inner::Device(device),
+            metadata: Metadata::new_device(ino, mode, sb, type_, rdev),
+            this: Weak::default(),
+            fs: Weak::default(),
+        }
+    }
+
     pub fn inc_size(&mut self) {
         self.metadata.size += 1;
         self.metadata.blocks = (self.metadata.size + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -126,6 +154,7 @@ enum Inner {
     Dir(DirEntry),
     File,
     SymLink(Str256),
+    Device(Arc<dyn Device>),
 }
 
 impl Inner {
@@ -153,6 +182,13 @@ impl Inner {
     fn as_symlink_mut(&mut self) -> Option<&mut Str256> {
         match self {
             Inner::SymLink(link) => Some(link),
+            _ => None,
+        }
+    }
+
+    fn as_device(&self) -> Option<&Arc<dyn Device>> {
+        match self {
+            Inner::Device(device) => Some(device),
             _ => None,
         }
     }
@@ -320,11 +356,17 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
+        if let Some(device) = self.0.read().inner.as_device() {
+            return device.read(buf);
+        }
         return_errno_with_message!(Errno::EOPNOTSUPP, "direct read is not supported");
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
+        if let Some(device) = self.0.read().inner.as_device() {
+            return device.write(buf);
+        }
         return_errno_with_message!(Errno::EOPNOTSUPP, "direct write is not supported");
     }
 
@@ -352,7 +394,41 @@ impl Inode for RamInode {
         self.0.write().metadata.mtime = time;
     }
 
-    fn mknod(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+    fn mknod(
+        &self,
+        name: &str,
+        mode: InodeMode,
+        device: Arc<dyn Device>,
+    ) -> Result<Arc<dyn Inode>> {
+        if self.0.read().metadata.type_ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
+        }
+        let mut self_inode = self.0.write();
+        if self_inode.inner.as_direntry().unwrap().contains_entry(name) {
+            return_errno_with_message!(Errno::EEXIST, "entry exists");
+        }
+        let device_inode = {
+            let fs = self_inode.fs.upgrade().unwrap();
+            let device_inode = Arc::new(RamInode(RwLock::new(Inode_::new_device(
+                fs.alloc_id(),
+                mode,
+                &fs.sb(),
+                device,
+            ))));
+            device_inode.0.write().fs = self_inode.fs.clone();
+            device_inode.0.write().this = Arc::downgrade(&device_inode);
+            device_inode
+        };
+        self_inode
+            .inner
+            .as_direntry_mut()
+            .unwrap()
+            .append_entry(name, device_inode.clone());
+        self_inode.inc_size();
+        Ok(device_inode)
+    }
+
+    fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
@@ -631,12 +707,24 @@ impl Inode for RamInode {
         Ok(())
     }
 
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        if let Some(device) = self.0.read().inner.as_device() {
+            device.poll(mask, poller)
+        } else {
+            let events = IoEvents::IN | IoEvents::OUT;
+            events & mask
+        }
+    }
+
     fn fs(&self) -> Arc<dyn FileSystem> {
         Weak::upgrade(&self.0.read().fs).unwrap()
     }
 
-    fn ioctl(&self, cmd: &IoctlCmd) -> Result<()> {
-        return_errno!(Errno::ENOSYS);
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        if let Some(device) = self.0.read().inner.as_device() {
+            return device.ioctl(cmd, arg);
+        }
+        return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
     }
 }
 

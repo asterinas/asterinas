@@ -76,6 +76,10 @@ impl FileLike for InodeHandle<Rights> {
         self.dentry().vnode().poll(mask, poller)
     }
 
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        self.dentry().vnode().ioctl(cmd, arg)
+    }
+
     fn metadata(&self) -> Metadata {
         self.dentry().vnode().metadata()
     }
