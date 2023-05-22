@@ -3,6 +3,8 @@
 mod dyn_cap;
 mod static_cap;
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use crate::fs::file_handle::FileLike;
 use crate::fs::utils::{
     AccessMode, Dentry, DirentVisitor, InodeType, IoEvents, Metadata, Poller, SeekFrom, StatusFlags,
@@ -16,13 +18,13 @@ struct InodeHandle_ {
     dentry: Arc<Dentry>,
     offset: Mutex<usize>,
     access_mode: AccessMode,
-    status_flags: Mutex<StatusFlags>,
+    status_flags: AtomicU32,
 }
 
 impl InodeHandle_ {
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
         let mut offset = self.offset.lock();
-        let len = if self.status_flags.lock().contains(StatusFlags::O_DIRECT) {
+        let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
             self.dentry.vnode().read_direct_at(*offset, buf)?
         } else {
             self.dentry.vnode().read_at(*offset, buf)?
@@ -34,10 +36,10 @@ impl InodeHandle_ {
 
     pub fn write(&self, buf: &[u8]) -> Result<usize> {
         let mut offset = self.offset.lock();
-        if self.status_flags.lock().contains(StatusFlags::O_APPEND) {
+        if self.status_flags().contains(StatusFlags::O_APPEND) {
             *offset = self.dentry.vnode().len();
         }
-        let len = if self.status_flags.lock().contains(StatusFlags::O_DIRECT) {
+        let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
             self.dentry.vnode().write_direct_at(*offset, buf)?
         } else {
             self.dentry.vnode().write_at(*offset, buf)?
@@ -48,7 +50,7 @@ impl InodeHandle_ {
     }
 
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
-        let len = if self.status_flags.lock().contains(StatusFlags::O_DIRECT) {
+        let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
             self.dentry.vnode().read_direct_to_end(buf)?
         } else {
             self.dentry.vnode().read_to_end(buf)?
@@ -99,19 +101,13 @@ impl InodeHandle_ {
     }
 
     pub fn status_flags(&self) -> StatusFlags {
-        let status_flags = self.status_flags.lock();
-        *status_flags
+        let bits = self.status_flags.load(Ordering::Relaxed);
+        StatusFlags::from_bits(bits).unwrap()
     }
 
     pub fn set_status_flags(&self, new_status_flags: StatusFlags) {
-        let mut status_flags = self.status_flags.lock();
-        // Can change only the O_APPEND, O_ASYNC, O_NOATIME, and O_NONBLOCK flags
-        let valid_flags_mask = StatusFlags::O_APPEND
-            | StatusFlags::O_ASYNC
-            | StatusFlags::O_NOATIME
-            | StatusFlags::O_NONBLOCK;
-        status_flags.remove(valid_flags_mask);
-        status_flags.insert(new_status_flags & valid_flags_mask);
+        self.status_flags
+            .store(new_status_flags.bits(), Ordering::Relaxed);
     }
 
     pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -124,30 +120,6 @@ impl InodeHandle_ {
 
 /// Methods for both dyn and static
 impl<R> InodeHandle<R> {
-    pub fn seek(&self, pos: SeekFrom) -> Result<usize> {
-        self.0.seek(pos)
-    }
-
-    pub fn offset(&self) -> usize {
-        self.0.offset()
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn access_mode(&self) -> AccessMode {
-        self.0.access_mode()
-    }
-
-    pub fn status_flags(&self) -> StatusFlags {
-        self.0.status_flags()
-    }
-
-    pub fn set_status_flags(&self, new_status_flags: StatusFlags) {
-        self.0.set_status_flags(new_status_flags)
-    }
-
     pub fn dentry(&self) -> &Arc<Dentry> {
         &self.0.dentry
     }

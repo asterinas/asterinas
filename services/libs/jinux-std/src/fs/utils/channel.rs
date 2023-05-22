@@ -67,7 +67,7 @@ macro_rules! impl_common_methods_for_channel {
             self.this_end().status_flags()
         }
 
-        pub fn set_status_flags(&self, new_flags: StatusFlags) {
+        pub fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
             self.this_end().set_status_flags(new_flags)
         }
 
@@ -330,8 +330,10 @@ impl<T> EndPointInner<T> {
         StatusFlags::from_bits(bits).unwrap()
     }
 
-    pub fn set_status_flags(&self, new_flags: StatusFlags) {
+    pub fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
+        check_status_flags(new_flags)?;
         self.status_flags.store(new_flags.bits(), Ordering::Relaxed);
+        Ok(())
     }
 }
 

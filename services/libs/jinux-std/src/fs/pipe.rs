@@ -2,7 +2,7 @@ use crate::events::Observer;
 use crate::prelude::*;
 
 use super::file_handle::FileLike;
-use super::utils::{Consumer, IoEvents, Poller, Producer};
+use super::utils::{AccessMode, Consumer, IoEvents, Poller, Producer, StatusFlags};
 
 pub struct PipeReader {
     consumer: Consumer<u8>,
@@ -41,6 +41,18 @@ impl FileLike for PipeReader {
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.consumer.poll(mask, poller)
+    }
+
+    fn status_flags(&self) -> StatusFlags {
+        self.consumer.status_flags()
+    }
+
+    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
+        self.consumer.set_status_flags(new_flags)
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        AccessMode::O_RDONLY
     }
 
     fn register_observer(
@@ -100,6 +112,18 @@ impl FileLike for PipeWriter {
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.producer.poll(mask, poller)
+    }
+
+    fn status_flags(&self) -> StatusFlags {
+        self.producer.status_flags()
+    }
+
+    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
+        self.producer.set_status_flags(new_flags)
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        AccessMode::O_WRONLY
     }
 
     fn register_observer(
