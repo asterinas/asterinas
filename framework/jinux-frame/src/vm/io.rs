@@ -1,6 +1,8 @@
 use crate::prelude::*;
 use pod::Pod;
 
+use inherit_methods_macro::inherit_methods;
+
 /// A trait that enables reading/writing data from/to a VM object,
 /// e.g., `VmSpace`, `VmFrameVec`, and `VmFrame`.
 ///
@@ -62,3 +64,22 @@ pub trait VmIo: Send + Sync {
         self.write_bytes(offset, buf)
     }
 }
+
+macro_rules! impl_vmio_pointer {
+    ($typ:ty,$from:tt) => {
+        #[inherit_methods(from = $from)]
+        impl<T: VmIo> VmIo for $typ {
+            fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()>;
+            fn read_val<F: Pod>(&self, offset: usize) -> Result<F>;
+            fn read_slice<F: Pod>(&self, offset: usize, slice: &mut [F]) -> Result<()>;
+            fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
+            fn write_val<F: Pod>(&self, offset: usize, new_val: &F) -> Result<()>;
+            fn write_slice<F: Pod>(&self, offset: usize, slice: &[F]) -> Result<()>;
+        }
+    };
+}
+
+impl_vmio_pointer!(&T, "(**self)");
+impl_vmio_pointer!(&mut T, "(**self)");
+impl_vmio_pointer!(Box<T>, "(**self)");
+impl_vmio_pointer!(Arc<T>, "(**self)");

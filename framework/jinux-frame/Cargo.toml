@@ -17,6 +17,7 @@ intrusive-collections = "0.9.5"
 log = "0.4"
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
 trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "4234db5" }
+inherit-methods-macro = { git = "https://github.com/occlum/occlum", branch = "1.0.0-preview" }
 
 [target.x86_64-custom.dependencies]
 limine = { version = "0.1.10", features = ["into-uuid"] }
