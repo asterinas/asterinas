@@ -1,7 +1,7 @@
 //! Opend File Handle
 
 use crate::events::Observer;
-use crate::fs::utils::{IoEvents, IoctlCmd, Metadata, Poller, SeekFrom};
+use crate::fs::utils::{AccessMode, IoEvents, IoctlCmd, Metadata, Poller, SeekFrom, StatusFlags};
 use crate::prelude::*;
 use crate::tty::get_n_tty;
 
@@ -38,6 +38,18 @@ pub trait FileLike: Send + Sync + Any {
 
     fn metadata(&self) -> Metadata {
         panic!("metadata unsupported");
+    }
+
+    fn status_flags(&self) -> StatusFlags {
+        StatusFlags::empty()
+    }
+
+    fn set_status_flags(&self, _new_flags: StatusFlags) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "set_status_flags is not supported");
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        AccessMode::O_RDWR
     }
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {

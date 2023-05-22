@@ -23,7 +23,7 @@ impl InodeHandle<Rights> {
             dentry,
             offset: Mutex::new(0),
             access_mode,
-            status_flags: Mutex::new(status_flags),
+            status_flags: AtomicU32::new(status_flags.bits()),
         });
         Ok(Self(inner, Rights::from(access_mode)))
     }
@@ -78,6 +78,19 @@ impl FileLike for InodeHandle<Rights> {
 
     fn metadata(&self) -> Metadata {
         self.dentry().vnode().metadata()
+    }
+
+    fn status_flags(&self) -> StatusFlags {
+        self.0.status_flags()
+    }
+
+    fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
+        self.0.set_status_flags(new_status_flags);
+        Ok(())
+    }
+
+    fn access_mode(&self) -> AccessMode {
+        self.0.access_mode()
     }
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
