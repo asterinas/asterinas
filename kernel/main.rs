@@ -10,9 +10,10 @@ extern crate jinux_frame;
 
 use core::panic::PanicInfo;
 use jinux_frame::println;
-use limine::LimineBootInfoRequest;
+use limine::{LimineBootInfoRequest, LimineModuleRequest};
 
 static BOOTLOADER_INFO: LimineBootInfoRequest = LimineBootInfoRequest::new(0);
+static BOOTLOADER_MODULE: LimineModuleRequest = LimineModuleRequest::new(0);
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -21,9 +22,19 @@ pub extern "C" fn _start() -> ! {
     jinux_frame::init();
     println!("[kernel] finish init jinux_frame");
     component::init_all(component::parse_metadata!()).unwrap();
-    jinux_std::init();
+    jinux_std::init(read_ramdisk_content());
     jinux_std::run_first_process();
 }
+
+fn read_ramdisk_content() -> &'static [u8] {
+    let module_info = BOOTLOADER_MODULE.get_response().get().unwrap();
+    assert!(module_info.module_count == 1);
+    let ramdisk_file = &module_info.modules()[0];
+    let base_ptr = ramdisk_file.base.as_ptr().unwrap();
+    let length = ramdisk_file.length as usize;
+    unsafe { core::slice::from_raw_parts(base_ptr, length) }
+}
+
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
