@@ -44,10 +44,10 @@ pub mod tty;
 mod util;
 pub mod vm;
 
-pub fn init() {
+pub fn init(ramdisk: &[u8]) {
     driver::init();
     process::fifo_scheduler::init();
-    fs::initramfs::init(read_ramdisk_content()).unwrap();
+    fs::initramfs::init(ramdisk).unwrap();
 }
 
 fn init_thread() {
@@ -76,10 +76,6 @@ fn init_thread() {
         // The long running init thread should yield its own execution to allow other tasks to go on.
         Thread::yield_now();
     }
-}
-
-fn read_ramdisk_content() -> &'static [u8] {
-    include_bytes!("../../../../regression/ramdisk/build/ramdisk.cpio")
 }
 
 /// first process never return
