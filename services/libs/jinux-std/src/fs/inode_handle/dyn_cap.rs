@@ -88,8 +88,4 @@ impl FileLike for InodeHandle<Rights> {
         // Close does not guarantee that the data has been successfully saved to disk.
         Ok(())
     }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
-    }
 }

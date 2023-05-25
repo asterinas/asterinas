@@ -79,8 +79,4 @@ impl FileLike for BusyBoxTraceFile {
         debug!("ASH TRACE: {}", core::str::from_utf8(buf)?);
         Ok(buf.len())
     }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
-    }
 }

@@ -1,5 +1,3 @@
-use alloc::string::String;
-use core::any::Any;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 use jinux_util::slot_vec::SlotVec;
@@ -210,10 +208,6 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
 
     fn is_dentry_cacheable(&self) -> bool {
         !self.info.is_volatile()
-    }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
     }
 }
 

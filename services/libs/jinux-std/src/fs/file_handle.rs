@@ -63,12 +63,10 @@ pub trait FileLike: Send + Sync + Any {
     ) -> Result<Weak<dyn Observer<IoEvents>>> {
         return_errno_with_message!(Errno::EINVAL, "unregister_observer is not supported")
     }
-
-    fn as_any_ref(&self) -> &dyn Any;
 }
 
 impl dyn FileLike {
     pub fn downcast_ref<T: FileLike>(&self) -> Option<&T> {
-        self.as_any_ref().downcast_ref::<T>()
+        (self as &dyn Any).downcast_ref::<T>()
     }
 }

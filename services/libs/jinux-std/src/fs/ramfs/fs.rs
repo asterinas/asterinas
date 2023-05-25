@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use alloc::str;
 use alloc::string::String;
-use core::any::Any;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
@@ -66,10 +65,6 @@ impl FileSystem for RamFS {
 
     fn flags(&self) -> FsFlags {
         FsFlags::DENTRY_UNEVICTABLE
-    }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -642,10 +637,6 @@ impl Inode for RamInode {
 
     fn ioctl(&self, cmd: &IoctlCmd) -> Result<()> {
         return_errno!(Errno::ENOSYS);
-    }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
     }
 }
 

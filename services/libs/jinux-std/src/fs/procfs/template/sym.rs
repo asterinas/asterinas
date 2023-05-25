@@ -1,5 +1,3 @@
-use alloc::string::String;
-use core::any::Any;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 
@@ -119,10 +117,6 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
 
     fn is_dentry_cacheable(&self) -> bool {
         !self.info.is_volatile()
-    }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
     }
 }
 
