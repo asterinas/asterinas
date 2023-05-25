@@ -341,10 +341,6 @@ impl FileLike for EpollFile {
             .unregister_observer(observer)
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "observer is not registered"))
     }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
-    }
 }
 
 /// An epoll entry contained in an epoll file. Each epoll entry is added, modified,

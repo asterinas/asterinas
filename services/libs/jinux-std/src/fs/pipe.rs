@@ -57,10 +57,6 @@ impl FileLike for PipeReader {
     ) -> Result<Weak<dyn Observer<IoEvents>>> {
         self.consumer.unregister_observer(observer)
     }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
-    }
 }
 
 pub struct PipeWriter {
@@ -115,10 +111,6 @@ impl FileLike for PipeWriter {
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Result<Weak<dyn Observer<IoEvents>>> {
         self.producer.unregister_observer(observer)
-    }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
     }
 }
 

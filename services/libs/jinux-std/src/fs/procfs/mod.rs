@@ -1,5 +1,3 @@
-use alloc::string::{String, ToString};
-use core::any::Any;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::events::Observer;
@@ -65,10 +63,6 @@ impl FileSystem for ProcFS {
 
     fn flags(&self) -> FsFlags {
         FsFlags::NO_PAGECACHE
-    }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
     }
 }
 

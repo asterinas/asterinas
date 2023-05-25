@@ -69,10 +69,6 @@ impl FileLike for Stdin {
             rdev: 0,
         }
     }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
-    }
 }
 impl FileLike for Stdout {
     fn ioctl(&self, cmd: super::utils::IoctlCmd, arg: usize) -> Result<i32> {
@@ -113,10 +109,6 @@ impl FileLike for Stdout {
             gid: 0,
             rdev: 0,
         }
-    }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -159,10 +151,6 @@ impl FileLike for Stderr {
             gid: 0,
             rdev: 0,
         }
-    }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
     }
 }
 

@@ -17,6 +17,7 @@
 #![feature(fn_traits)]
 #![feature(linked_list_remove)]
 #![feature(register_tool)]
+#![feature(trait_upcasting)]
 #![register_tool(component_access_control)]
 
 use crate::{

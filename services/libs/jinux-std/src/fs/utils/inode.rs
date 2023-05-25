@@ -204,8 +204,6 @@ pub trait Inode: Any + Sync + Send {
 
     fn fs(&self) -> Arc<dyn FileSystem>;
 
-    fn as_any_ref(&self) -> &dyn Any;
-
     /// Returns whether a VFS dentry for this inode should be put into the dentry cache.
     ///
     /// The dentry cache in the VFS layer can accelerate the lookup of inodes. So usually,
@@ -229,6 +227,6 @@ pub trait Inode: Any + Sync + Send {
 
 impl dyn Inode {
     pub fn downcast_ref<T: Inode>(&self) -> Option<&T> {
-        self.as_any_ref().downcast_ref::<T>()
+        (self as &dyn Any).downcast_ref::<T>()
     }
 }

@@ -129,10 +129,6 @@ impl FileLike for Tty {
             rdev: 0,
         }
     }
-
-    fn as_any_ref(&self) -> &dyn Any {
-        self
-    }
 }
 
 /// FIXME: should we maintain a static console?

@@ -55,12 +55,10 @@ pub trait FileSystem: Any + Sync + Send {
     fn sb(&self) -> SuperBlock;
 
     fn flags(&self) -> FsFlags;
-
-    fn as_any_ref(&self) -> &dyn Any;
 }
 
 impl dyn FileSystem {
     pub fn downcast_ref<T: FileSystem>(&self) -> Option<&T> {
-        self.as_any_ref().downcast_ref::<T>()
+        (self as &dyn Any).downcast_ref::<T>()
     }
 }
