@@ -28,7 +28,7 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
             let current = current!();
             let file = {
                 let file_table = current.file_table().lock();
-                file_table.get_file(arg as FileDescripter)?.clone()
+                file_table.get_file(fd)?.clone()
             };
             let status_flags = file.status_flags();
             let access_mode = file.access_mode();
@@ -40,7 +40,7 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
             let current = current!();
             let file = {
                 let file_table = current.file_table().lock();
-                file_table.get_file(arg as FileDescripter)?.clone()
+                file_table.get_file(fd)?.clone()
             };
             let new_status_flags = {
                 // This cmd can change(set or unset) only the O_APPEND, O_ASYNC, O_DIRECT,
