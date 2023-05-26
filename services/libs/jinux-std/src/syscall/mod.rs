@@ -5,6 +5,7 @@ use crate::syscall::access::sys_access;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
 use crate::syscall::chdir::{sys_chdir, sys_fchdir};
+use crate::syscall::clock_gettime::sys_clock_gettime;
 use crate::syscall::clock_nanosleep::sys_clock_nanosleep;
 use crate::syscall::clone::sys_clone;
 use crate::syscall::close::sys_close;
@@ -25,6 +26,7 @@ use crate::syscall::getpgrp::sys_getpgrp;
 use crate::syscall::getpid::sys_getpid;
 use crate::syscall::getppid::sys_getppid;
 use crate::syscall::gettid::sys_gettid;
+use crate::syscall::gettimeofday::sys_gettimeofday;
 use crate::syscall::getuid::sys_getuid;
 use crate::syscall::ioctl::sys_ioctl;
 use crate::syscall::kill::sys_kill;
@@ -73,6 +75,7 @@ mod access;
 mod arch_prctl;
 mod brk;
 mod chdir;
+mod clock_gettime;
 mod clock_nanosleep;
 mod clone;
 mod close;
@@ -94,6 +97,7 @@ mod getpgrp;
 mod getpid;
 mod getppid;
 mod gettid;
+mod gettimeofday;
 mod getuid;
 mod ioctl;
 mod kill;
@@ -214,6 +218,7 @@ define_syscall_nums!(
     SYS_SYMLINK = 88,
     SYS_READLINK = 89,
     SYS_UMASK = 95,
+    SYS_GETTIMEOFDAY = 96,
     SYS_GETUID = 102,
     SYS_GETGID = 104,
     SYS_GETEUID = 107,
@@ -229,6 +234,7 @@ define_syscall_nums!(
     SYS_EPOLL_CREATE = 213,
     SYS_GETDENTS64 = 217,
     SYS_SET_TID_ADDRESS = 218,
+    SYS_CLOCK_GETTIME = 228,
     SYS_CLOCK_NANOSLEEP = 230,
     SYS_EXIT_GROUP = 231,
     SYS_EPOLL_WAIT = 232,
@@ -353,6 +359,7 @@ pub fn syscall_dispatch(
         SYS_SYMLINK => syscall_handler!(2, sys_symlink, args),
         SYS_READLINK => syscall_handler!(3, sys_readlink, args),
         SYS_UMASK => syscall_handler!(1, sys_umask, args),
+        SYS_GETTIMEOFDAY => syscall_handler!(1, sys_gettimeofday, args),
         SYS_GETUID => syscall_handler!(0, sys_getuid),
         SYS_GETGID => syscall_handler!(0, sys_getgid),
         SYS_GETEUID => syscall_handler!(0, sys_geteuid),
@@ -368,6 +375,7 @@ pub fn syscall_dispatch(
         SYS_EPOLL_CREATE => syscall_handler!(1, sys_epoll_create, args),
         SYS_GETDENTS64 => syscall_handler!(3, sys_getdents64, args),
         SYS_SET_TID_ADDRESS => syscall_handler!(1, sys_set_tid_address, args),
+        SYS_CLOCK_GETTIME => syscall_handler!(2, sys_clock_gettime, args),
         SYS_CLOCK_NANOSLEEP => syscall_handler!(4, sys_clock_nanosleep, args),
         SYS_EXIT_GROUP => syscall_handler!(1, sys_exit_group, args),
         SYS_EPOLL_WAIT => syscall_handler!(4, sys_epoll_wait, args),
