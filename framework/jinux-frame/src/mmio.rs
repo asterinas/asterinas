@@ -50,12 +50,12 @@ impl VmIo for Mmio {
 
     fn read_val<T: Pod>(&self, offset: usize) -> crate::Result<T> {
         self.check_range(offset, size_of::<T>())?;
-        Ok(unsafe { core::ptr::read((self.virtual_address + offset) as *const T) })
+        Ok(unsafe { core::ptr::read_volatile((self.virtual_address + offset) as *const T) })
     }
 
     fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> crate::Result<()> {
         self.check_range(offset, size_of::<T>())?;
-        unsafe { core::ptr::write((self.virtual_address + offset) as *mut T, *new_val) };
+        unsafe { core::ptr::write_volatile((self.virtual_address + offset) as *mut T, *new_val) };
         Ok(())
     }
 }
