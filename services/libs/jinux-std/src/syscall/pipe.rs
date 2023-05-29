@@ -28,6 +28,7 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
     let mut file_table = current.file_table().lock();
     pipe_fds.reader_fd = file_table.insert(pipe_reader);
     pipe_fds.writer_fd = file_table.insert(pipe_writer);
+    debug!("pipe_fds: {:?}", pipe_fds);
     write_val_to_user(fds, &pipe_fds)?;
 
     Ok(SyscallReturn::Return(0))

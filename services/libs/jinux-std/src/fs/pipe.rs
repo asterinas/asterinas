@@ -2,7 +2,9 @@ use crate::events::Observer;
 use crate::prelude::*;
 
 use super::file_handle::FileLike;
-use super::utils::{AccessMode, Consumer, IoEvents, Poller, Producer, StatusFlags};
+use super::utils::{
+    AccessMode, Consumer, InodeMode, InodeType, IoEvents, Metadata, Poller, Producer, StatusFlags,
+};
 
 pub struct PipeReader {
     consumer: Consumer<u8>,
@@ -53,6 +55,25 @@ impl FileLike for PipeReader {
 
     fn access_mode(&self) -> AccessMode {
         AccessMode::O_RDONLY
+    }
+
+    fn metadata(&self) -> Metadata {
+        Metadata {
+            dev: 0,
+            ino: 0,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
+            type_: InodeType::NamedPipe,
+            mode: InodeMode::from_bits_truncate(0o400),
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
     }
 
     fn register_observer(
@@ -120,6 +141,25 @@ impl FileLike for PipeWriter {
 
     fn access_mode(&self) -> AccessMode {
         AccessMode::O_WRONLY
+    }
+
+    fn metadata(&self) -> Metadata {
+        Metadata {
+            dev: 0,
+            ino: 0,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
+            type_: InodeType::NamedPipe,
+            mode: InodeMode::from_bits_truncate(0o200),
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
     }
 
     fn register_observer(

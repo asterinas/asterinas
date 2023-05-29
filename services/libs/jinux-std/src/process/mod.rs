@@ -270,6 +270,11 @@ impl Process {
         for thread in &*self.threads.lock() {
             thread.exit();
         }
+        // close all files then exit the process
+        let files = self.file_table().lock().close_all();
+        for file in files {
+            let _ = file.clean_for_close();
+        }
         // move children to the init process
         if !self.is_init_process() {
             if let Some(init_process) = get_init_process() {

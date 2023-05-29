@@ -77,6 +77,23 @@ Then we can use the tool to check access control policy.
 cargo component-check
 ```
 
+### Syscall Test
+
+If we have already built the project for normal use, please clean the project before running syscall test.
+```bash
+make clean
+```
+
+For running syscall tests, we can run following command to build test binaries and run the OS for testing purpose.
+```bash
+ENABLE_SYSCALL_TEST=1 make run
+```
+
+Then, we can run the following script inside the OS to run all syscall test cases.
+```bash
+/opt/syscall_test/run_syscall_test.sh
+```
+
 ## Code organization
 
 The codebase of Jinux is organized as below.

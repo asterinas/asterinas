@@ -108,6 +108,23 @@ impl FileTable {
         entry.map(|e| e.file)
     }
 
+    pub fn close_all(&mut self) -> Vec<Arc<dyn FileLike>> {
+        let mut closed_files = Vec::new();
+        let closed_fds: Vec<FileDescripter> = self
+            .table
+            .idxes_and_items()
+            .map(|(idx, _)| idx as FileDescripter)
+            .collect();
+        for fd in closed_fds {
+            let entry = self.table.remove(fd as usize).unwrap();
+            let events = FdEvents::Close(fd);
+            self.notify_fd_events(&events);
+            entry.notify_fd_events(&events);
+            closed_files.push(entry.file);
+        }
+        closed_files
+    }
+
     pub fn get_file(&self, fd: FileDescripter) -> Result<&Arc<dyn FileLike>> {
         self.table
             .get(fd as usize)
