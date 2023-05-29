@@ -22,16 +22,23 @@ all: $(RAMDISK)
 
 $(INITRAMFS): $(APPS) $(APPS_DIRS) $(APPS_FILES)
 	@rm -rf $@ && mkdir -p $@
+# Copy Apps
 	@cp -a $(APPS)/* $@
 	@cd $@ && find . \( -name "*.s" -o -name "*.c" -o -name "Makefile" -o -name "README.md" \) -delete
+# Mkdir folders
+	@mkdir -p $@/tmp
+	@mkdir -p $@/test
+	@mkdir -p $@/lib64
+	@mkdir -p $@/lib/x86_64-linux-gnu
+# Copy libs
+	@cp -L /lib64/ld-linux-x86-64.so.2 $@/lib64
+	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $@/lib/x86_64-linux-gnu
+	@cp -L /lib/x86_64-linux-gnu/libstdc++.so.6 $@/lib/x86_64-linux-gnu
+	@cp -L /lib/x86_64-linux-gnu/libm.so.6 $@/lib/x86_64-linux-gnu
+	@cp -L /lib/x86_64-linux-gnu/libgcc_s.so.1 $@/lib/x86_64-linux-gnu
+	@cp -L /lib/x86_64-linux-gnu/libpthread.so.0 $@/lib/x86_64-linux-gnu
 
-prepare_libs: $(INITRAMFS)
-	@mkdir -p $(INITRAMFS)/lib64
-	@cp -L /lib64/ld-linux-x86-64.so.2 $(INITRAMFS)/lib64
-	@mkdir -p $(INITRAMFS)/lib/x86_64-linux-gnu
-	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $(INITRAMFS)/lib/x86_64-linux-gnu
-
-$(RAMDISK): $(INITRAMFS) $(INITRAMFS_DIRS) $(INITRAMFS_FILES) prepare_libs
+$(RAMDISK): $(INITRAMFS) $(INITRAMFS_DIRS) $(INITRAMFS_FILES)
 	@echo "Generating the ramdisk image..."
 	@rm -rf $(BUILD_DIR) && mkdir -p $(BUILD_DIR)
 	@./mkinitramfs $(INITRAMFS) $@
