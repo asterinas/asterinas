@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-pub const MAX_THREAD_NAME_LEN: usize = 256;
+pub const MAX_THREAD_NAME_LEN: usize = 16;
 
 #[derive(Debug)]
 pub struct ThreadName {

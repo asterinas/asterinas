@@ -1,47 +1,45 @@
-MAKEFLAGS += --no-builtin-rules # Prevent the implicit rules from compiling ".c" or ".s" files automatically.
-APPS := ../apps
-BUILD_DIR := ./build
-INITRAMFS := ./initramfs
+MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
+BUILD_DIR := $(CUR_DIR)/build
+INITRAMFS := $(BUILD_DIR)/initramfs
 RAMDISK := $(BUILD_DIR)/ramdisk.cpio
 SHELL := /bin/bash
-
-ifneq (, $(wildcard $(APPS)/. ))
-	APPS_DIRS := $(shell find $(APPS) -type d 2>/dev/null | sed 's/ /\\ /g' | sed 's/:/\\:/g' || true)
-	APPS_FILES := $(shell find $(APPS) -type f 2>/dev/null | sed 's/ /\\ /g' | sed 's/:/\\:/g' || true)
-endif
 
 ifneq (, $(wildcard $(INITRAMFS)/. ))
 	INITRAMFS_DIRS := $(shell find $(INITRAMFS) -type d 2>/dev/null | sed 's/ /\\ /g' | sed 's/:/\\:/g' || true)
 	INITRAMFS_FILES := $(shell find $(INITRAMFS) -type f 2>/dev/null | sed 's/ /\\ /g' | sed 's/:/\\:/g' || true)
 endif
 
+.PHONY: all clean
 
-.PHONY: all clean prepare_libs copy_special_files
+all: build
 
-all: $(RAMDISK)
-
-$(INITRAMFS): $(APPS) $(APPS_DIRS) $(APPS_FILES)
+$(INITRAMFS):
 	@rm -rf $@ && mkdir -p $@
-# Copy Apps
-	@cp -a $(APPS)/* $@
-	@cd $@ && find . \( -name "*.s" -o -name "*.c" -o -name "Makefile" -o -name "README.md" \) -delete
-# Mkdir folders
+	@# Mkdir necessary folders
 	@mkdir -p $@/tmp
-	@mkdir -p $@/test
+	@mkdir -p $@/opt
 	@mkdir -p $@/lib64
 	@mkdir -p $@/lib/x86_64-linux-gnu
-# Copy libs
+	@# Copy necessary libs
 	@cp -L /lib64/ld-linux-x86-64.so.2 $@/lib64
 	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $@/lib/x86_64-linux-gnu
 	@cp -L /lib/x86_64-linux-gnu/libstdc++.so.6 $@/lib/x86_64-linux-gnu
 	@cp -L /lib/x86_64-linux-gnu/libm.so.6 $@/lib/x86_64-linux-gnu
 	@cp -L /lib/x86_64-linux-gnu/libgcc_s.so.1 $@/lib/x86_64-linux-gnu
 	@cp -L /lib/x86_64-linux-gnu/libpthread.so.0 $@/lib/x86_64-linux-gnu
+	@# Copy from apps
+	@make --no-print-directory -C apps
+ifeq ($(ENABLE_SYSCALL_TEST), 1)
+	@# Copy syscall test suite
+	@make --no-print-directory -C syscall_test
+endif
 
 $(RAMDISK): $(INITRAMFS) $(INITRAMFS_DIRS) $(INITRAMFS_FILES)
 	@echo "Generating the ramdisk image..."
-	@rm -rf $(BUILD_DIR) && mkdir -p $(BUILD_DIR)
-	@./mkinitramfs $(INITRAMFS) $@
+	@(cd $(INITRAMFS); find . | cpio -o -H newc) > $@
+
+build: $(RAMDISK)
 
 clean:
-	@rm -rf $(INITRAMFS) $(BUILD_DIR)
+	@rm -rf $(BUILD_DIR)

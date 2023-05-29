@@ -9,7 +9,7 @@ setup:
 	@cargo install mdbook
 
 build:
-	@make --no-print-directory -C regression/ramdisk
+	@make --no-print-directory -C regression
 	@cargo kbuild
 
 tools:
@@ -33,4 +33,4 @@ check:
 clean:
 	@cargo clean
 	@cd docs && mdbook clean
-	@make --no-print-directory -C regression/ramdisk clean
+	@make --no-print-directory -C regression clean
