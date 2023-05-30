@@ -114,6 +114,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
+name = "bytes"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89b2fd2a0dcf38d7971e2194b6b6eebab45ae01067456a7fd93d5547a61b70be"
+
+[[package]]
 name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -474,6 +480,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jinux-network"
+version = "0.1.0"
+dependencies = [
+ "component",
+ "jinux-frame",
+ "jinux-pci",
+ "jinux-util",
+ "jinux-virtio",
+ "log",
+ "ringbuf",
+ "smoltcp",
+ "spin 0.9.4",
+]
+
+[[package]]
 name = "jinux-pci"
 version = "0.1.0"
 dependencies = [
@@ -520,6 +541,7 @@ dependencies = [
  "jinux-block",
  "jinux-frame",
  "jinux-input",
+ "jinux-network",
  "jinux-rights",
  "jinux-rights-proc",
  "jinux-time",
@@ -567,6 +589,7 @@ version = "0.1.0"
 dependencies = [
  "align_ext",
  "bitflags",
+ "bytes",
  "component",
  "int-to-c-enum",
  "jinux-frame",

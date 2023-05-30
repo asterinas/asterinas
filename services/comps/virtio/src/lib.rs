@@ -202,7 +202,7 @@ pub enum VirtioDeviceType {
 impl VirtioDeviceType {
     pub fn from_virtio_device(device: &VirtioDevice) -> Self {
         match device {
-            VirtioDevice::Network => VirtioDeviceType::Network,
+            VirtioDevice::Network(_) => VirtioDeviceType::Network,
             VirtioDevice::Block(_) => VirtioDeviceType::Block,
             VirtioDevice::Console => VirtioDeviceType::Console,
             VirtioDevice::Entropy => VirtioDeviceType::Entropy,

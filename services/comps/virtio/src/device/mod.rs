@@ -9,10 +9,11 @@ use jinux_pci::{
 };
 use jinux_util::frame_ptr::InFramePtr;
 
-use self::input::device::InputDevice;
+use self::{input::device::InputDevice, network::device::NetworkDevice};
 
 pub mod block;
 pub mod input;
+pub mod network;
 
 pub(crate) const PCI_VIRTIO_CAP_COMMON_CFG: u8 = 1;
 pub(crate) const PCI_VIRTIO_CAP_NOTIFY_CFG: u8 = 2;
@@ -20,9 +21,8 @@ pub(crate) const PCI_VIRTIO_CAP_ISR_CFG: u8 = 3;
 pub(crate) const PCI_VIRTIO_CAP_DEVICE_CFG: u8 = 4;
 pub(crate) const PCI_VIRTIO_CAP_PCI_CFG: u8 = 5;
 
-#[derive(Debug)]
 pub enum VirtioDevice {
-    Network,
+    Network(NetworkDevice),
     Block(BLKDevice),
     Console,
     Entropy,
@@ -141,6 +141,14 @@ impl VirtioDevice {
                 virtio_info.notify_off_multiplier,
                 msix_vector_left,
             )?),
+            VirtioDeviceType::Network => VirtioDevice::Network(NetworkDevice::new(
+                &virtio_info.device_cap_cfg,
+                bars,
+                &virtio_info.common_cfg_frame_ptr,
+                virtio_info.notify_base_address as usize,
+                virtio_info.notify_off_multiplier,
+                msix_vector_left,
+            )?),
             _ => {
                 panic!("initialize PCIDevice failed, unsupport Virtio Device Type")
             }
@@ -152,7 +160,9 @@ impl VirtioDevice {
         let mask = ((1u64 << 24) - 1) | (((1u64 << 24) - 1) << 50);
         let device_specified_features = features & mask;
         let device_support_features = match device_type {
-            VirtioDeviceType::Network => todo!(),
+            VirtioDeviceType::Network => {
+                NetworkDevice::negotiate_features(device_specified_features)
+            }
             VirtioDeviceType::Block => BLKDevice::negotiate_features(device_specified_features),
             VirtioDeviceType::Console => todo!(),
             VirtioDeviceType::Entropy => todo!(),

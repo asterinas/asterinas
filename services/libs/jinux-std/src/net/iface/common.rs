@@ -17,8 +17,8 @@ use super::{
 };
 
 pub struct IfaceCommon {
-    interface: Mutex<smoltcp::iface::Interface>,
-    sockets: Mutex<SocketSet<'static>>,
+    interface: SpinLock<smoltcp::iface::Interface>,
+    sockets: SpinLock<SocketSet<'static>>,
     used_ports: RwLock<BTreeMap<u16, usize>>,
     /// The time should do next poll. We stores the total microseconds since system boots up.
     next_poll_at_ms: AtomicU64,
@@ -30,19 +30,19 @@ impl IfaceCommon {
         let socket_set = SocketSet::new(Vec::new());
         let used_ports = BTreeMap::new();
         Self {
-            interface: Mutex::new(interface),
-            sockets: Mutex::new(socket_set),
+            interface: SpinLock::new(interface),
+            sockets: SpinLock::new(socket_set),
             used_ports: RwLock::new(used_ports),
             next_poll_at_ms: AtomicU64::new(0),
             bound_sockets: RwLock::new(BTreeSet::new()),
         }
     }
 
-    pub(super) fn interface(&self) -> MutexGuard<smoltcp::iface::Interface> {
+    pub(super) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface> {
         self.interface.lock()
     }
 
-    pub(super) fn sockets(&self) -> MutexGuard<smoltcp::iface::SocketSet<'static>> {
+    pub(super) fn sockets(&self) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>> {
         self.sockets.lock()
     }
 
