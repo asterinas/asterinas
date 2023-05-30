@@ -2,18 +2,16 @@ use core::ops::Range;
 
 use crate::prelude::*;
 use jinux_frame::vm::VmIo;
+use jinux_rights::{Dup, Read, Rights, TRightSet, TRights};
 use jinux_rights_proc::require;
 
-use crate::{
-    rights::{Dup, Read, Rights, TRights},
-    vm::{page_fault_handler::PageFaultHandler, vmo::Vmo},
-};
+use crate::vm::{page_fault_handler::PageFaultHandler, vmo::Vmo};
 
 use super::{
     options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_,
 };
 
-impl<R: TRights> Vmar<R> {
+impl<R: TRights> Vmar<TRightSet<R>> {
     /// Creates a root VMAR.
     ///
     /// # Access rights
@@ -22,7 +20,7 @@ impl<R: TRights> Vmar<R> {
     pub fn new_root() -> Result<Self> {
         let inner = Arc::new(Vmar_::new_root()?);
         let rights = R::new();
-        let new_self = Self(inner, rights);
+        let new_self = Self(inner, TRightSet(rights));
         Ok(new_self)
     }
 
@@ -34,7 +32,7 @@ impl<R: TRights> Vmar<R> {
     /// use jinux_std::prelude::*;
     /// use jinux_std::vm::{PAGE_SIZE, Vmar, VmoOptions};
     ///
-    /// let vmar = Vmar::<Full>::new().unwrap();
+    /// let vmar = Vmar::<RightsWrapper<Full>>::new().unwrap();
     /// let vmo = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
     /// let target_vaddr = 0x1234000;
     /// let real_vaddr = vmar
@@ -62,7 +60,11 @@ impl<R: TRights> Vmar<R> {
     /// which ensures that any updated memory permissions do not go beyond
     /// the access rights of the underlying VMOs.
     #[require(R > Dup)]
-    pub fn new_map(&self, vmo: Vmo<Rights>, perms: VmPerms) -> Result<VmarMapOptions<R, Rights>> {
+    pub fn new_map(
+        &self,
+        vmo: Vmo<Rights>,
+        perms: VmPerms,
+    ) -> Result<VmarMapOptions<TRightSet<R>, Rights>> {
         let dup_self = self.dup()?;
         Ok(VmarMapOptions::new(dup_self, vmo, perms))
     }
@@ -87,7 +89,7 @@ impl<R: TRights> Vmar<R> {
     /// The new VMAR child will be of the same capability class and
     /// access rights as the parent.
     #[require(R > Dup)]
-    pub fn new_child(&self, size: usize) -> Result<VmarChildOptions<R>> {
+    pub fn new_child(&self, size: usize) -> Result<VmarChildOptions<TRightSet<R>>> {
         let dup_self = self.dup()?;
         Ok(VmarChildOptions::new(dup_self, size))
     }
@@ -169,7 +171,7 @@ impl<R: TRights> Vmar<R> {
     }
 }
 
-impl<R: TRights> VmIo for Vmar<R> {
+impl<R: TRights> VmIo for Vmar<TRightSet<R>> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
         self.0.read(offset, buf)?;
@@ -183,7 +185,7 @@ impl<R: TRights> VmIo for Vmar<R> {
     }
 }
 
-impl<R: TRights> PageFaultHandler for Vmar<R> {
+impl<R: TRights> PageFaultHandler for Vmar<TRightSet<R>> {
     fn handle_page_fault(
         &self,
         page_fault_addr: Vaddr,
@@ -200,7 +202,7 @@ impl<R: TRights> PageFaultHandler for Vmar<R> {
     }
 }
 
-impl<R: TRights> VmarRightsOp for Vmar<R> {
+impl<R: TRights> VmarRightsOp for Vmar<TRightSet<R>> {
     fn rights(&self) -> Rights {
         Rights::from_bits(R::BITS).unwrap()
     }

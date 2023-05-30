@@ -3,8 +3,8 @@ mod shebang;
 
 use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
 use crate::prelude::*;
-use crate::rights::Full;
 use crate::vm::vmar::Vmar;
+use jinux_rights::Full;
 
 use self::elf::{load_elf_to_root_vmar, ElfLoadInfo};
 use self::shebang::parse_shebang_line;

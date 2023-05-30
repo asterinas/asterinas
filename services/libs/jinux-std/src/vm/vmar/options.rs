@@ -138,11 +138,9 @@ mod test {
     use crate::vm::page_fault_handler::PageFaultHandler;
     use crate::vm::perms::VmPerms;
     use crate::vm::vmo::VmoRightsOp;
-    use crate::{
-        rights::Full,
-        vm::{vmar::ROOT_VMAR_HIGHEST_ADDR, vmo::VmoOptions},
-    };
+    use crate::vm::{vmar::ROOT_VMAR_HIGHEST_ADDR, vmo::VmoOptions};
     use jinux_frame::vm::VmIo;
+    use jinux_rights::Full;
 
     #[test]
     fn root_vmar() {

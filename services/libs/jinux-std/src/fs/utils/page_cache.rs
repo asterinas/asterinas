@@ -1,7 +1,7 @@
 use super::Inode;
 use crate::prelude::*;
-use crate::rights::Full;
 use crate::vm::vmo::{Pager, Vmo, VmoFlags, VmoOptions};
+use jinux_rights::Full;
 
 use core::ops::Range;
 use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};

@@ -1,14 +1,13 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::rights::Full;
 use crate::vm::perms::VmPerms;
 use crate::vm::vmar::Vmar;
 use crate::{
     prelude::*,
-    rights::Rights,
     vm::vmo::{VmoFlags, VmoOptions},
 };
 use align_ext::AlignExt;
+use jinux_rights::{Full, Rights};
 
 pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
 pub const USER_HEAP_SIZE_LIMIT: usize = PAGE_SIZE * 1000;

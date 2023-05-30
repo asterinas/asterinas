@@ -1,10 +1,10 @@
 use crate::prelude::*;
-use crate::rights::*;
+use jinux_rights::{Read, TRightSet, TRights, Write};
 use jinux_rights_proc::require;
 
 use super::*;
 
-impl<R: TRights> InodeHandle<R> {
+impl<R: TRights> InodeHandle<TRightSet<R>> {
     #[require(R > Read)]
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
         self.0.read(buf)

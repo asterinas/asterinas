@@ -2,11 +2,11 @@ use super::{
     DirentVisitor, FsFlags, Inode, InodeMode, InodeType, IoEvents, Metadata, PageCache, Poller,
 };
 use crate::prelude::*;
-use crate::rights::Full;
 use crate::vm::vmo::Vmo;
 use alloc::string::String;
 use core::time::Duration;
 use jinux_frame::vm::VmIo;
+use jinux_rights::Full;
 
 /// VFS-level representation of an inode
 #[derive(Clone)]

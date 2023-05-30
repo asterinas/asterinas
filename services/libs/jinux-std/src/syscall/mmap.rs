@@ -2,12 +2,12 @@
 
 use crate::fs::file_table::FileDescripter;
 use crate::process::process_vm::mmap_flags::MMapFlags;
-use crate::rights::Rights;
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{VmoChildOptions, VmoOptions, VmoRightsOp};
 use crate::{log_syscall_entry, prelude::*};
 use align_ext::AlignExt;
 use jinux_frame::vm::VmPerm;
+use jinux_rights::Rights;
 
 use crate::syscall::SYS_MMAP;
 

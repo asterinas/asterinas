@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::rights::Rights;
+use jinux_rights::Rights;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug)]

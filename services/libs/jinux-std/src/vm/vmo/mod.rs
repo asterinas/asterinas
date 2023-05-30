@@ -2,9 +2,9 @@
 
 use core::ops::Range;
 
-use crate::rights::Rights;
 use align_ext::AlignExt;
 use jinux_frame::vm::{VmAllocOptions, VmFrameVec, VmIo};
+use jinux_rights::Rights;
 
 use crate::prelude::*;
 

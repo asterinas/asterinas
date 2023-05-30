@@ -4,7 +4,7 @@ use ringbuf::{HeapConsumer as HeapRbConsumer, HeapProducer as HeapRbProducer, He
 
 use crate::events::Observer;
 use crate::prelude::*;
-use crate::rights::*;
+use jinux_rights::{Read, ReadOp, TRights, Write, WriteOp};
 
 use super::{IoEvents, Pollee, Poller, StatusFlags};
 

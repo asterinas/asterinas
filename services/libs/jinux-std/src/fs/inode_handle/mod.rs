@@ -8,7 +8,7 @@ use crate::fs::utils::{
     AccessMode, Dentry, DirentVisitor, InodeType, IoEvents, Metadata, Poller, SeekFrom, StatusFlags,
 };
 use crate::prelude::*;
-use crate::rights::Rights;
+use jinux_rights::Rights;
 
 pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
 

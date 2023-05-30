@@ -8,9 +8,10 @@ pub mod mmap_flags;
 pub mod user_heap;
 
 use crate::prelude::*;
+use jinux_rights::Full;
 use user_heap::UserHeap;
 
-use crate::{rights::Full, vm::vmar::Vmar};
+use crate::vm::vmar::Vmar;
 
 /*
 * The user vm space layout is look like below.

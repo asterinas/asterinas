@@ -6,8 +6,6 @@ mod static_cap;
 pub mod vm_mapping;
 
 use crate::prelude::*;
-use crate::rights::Full;
-use crate::rights::Rights;
 use crate::vm::perms::VmPerms;
 use align_ext::AlignExt;
 use alloc::collections::BTreeMap;
@@ -16,6 +14,7 @@ use alloc::sync::Weak;
 use alloc::vec::Vec;
 use core::ops::Range;
 use jinux_frame::vm::VmSpace;
+use jinux_rights::{Dup, Exec, Full, Read, Rights, Signal, TRightSet, TRights, Write};
 
 use self::vm_mapping::VmMapping;
 
@@ -719,7 +718,10 @@ impl<R> Vmar<R> {
         let rights = Rights::all();
         self.check_rights(rights)?;
         let vmar_ = self.0.fork_vmar_(Weak::new())?;
-        Ok(Vmar(vmar_, Full::new()))
+        Ok(Vmar(
+            vmar_,
+            TRightSet(<TRights![Dup, Read, Write, Exec, Signal]>::new()),
+        ))
     }
 
     /// get a mapped vmo

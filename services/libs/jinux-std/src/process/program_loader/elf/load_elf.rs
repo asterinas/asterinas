@@ -4,16 +4,15 @@
 use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
 use crate::fs::utils::Dentry;
 use crate::process::program_loader::elf::init_stack::{init_aux_vec, InitStack};
-use crate::rights::Rights;
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{VmoOptions, VmoRightsOp};
 use crate::{
     prelude::*,
-    rights::Full,
     vm::{vmar::Vmar, vmo::Vmo},
 };
 use align_ext::AlignExt;
 use jinux_frame::vm::{VmIo, VmPerm};
+use jinux_rights::{Full, Rights};
 use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::Elf;
