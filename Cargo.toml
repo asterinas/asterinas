@@ -27,6 +27,7 @@ members = [
     "services/comps/virtio",
     "services/comps/input",
     "services/comps/block",
+    "services/comps/network",
     "services/comps/framebuffer",
     "services/comps/time",
     "services/libs/jinux-std",

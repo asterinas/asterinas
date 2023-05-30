@@ -1,0 +1,17 @@
+[package]
+name = "jinux-network"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+component = { path = "../../libs/comp-sys/component" }
+jinux-frame = { path = "../../../framework/jinux-frame" }
+jinux-virtio = { path = "../virtio" }
+jinux-util = { path = "../../libs/jinux-util" }
+jinux-pci = { path = "../pci" }
+spin = "0.9.4"
+ringbuf = { version = "0.3.2", default-features = false, features = ["alloc"] }
+log = "0.4"
+smoltcp = { version = "0.9.1", default-features = false, features = ["alloc", "log", "medium-ethernet", "medium-ip", "proto-dhcpv4", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw", "socket-dhcpv4"] }

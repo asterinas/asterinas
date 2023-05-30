@@ -11,6 +11,7 @@ align_ext = { path = "../../../framework/libs/align_ext" }
 pod = { git = "https://github.com/jinzhao-dev/pod", rev = "7fa2ed2" }
 jinux-input = { path = "../../comps/input" }
 jinux-block = { path = "../../comps/block" }
+jinux-network = { path = "../../comps/network" }
 jinux-time = { path = "../../comps/time" }
 jinux-rights = { path = "../jinux-rights" }
 controlled = { path = "../../libs/comp-sys/controlled" }
