@@ -1,6 +1,6 @@
-use crate::rights::Rights;
 use bitflags::bitflags;
 use jinux_frame::vm::VmPerm;
+use jinux_rights::Rights;
 
 bitflags! {
     /// The memory access permissions of memory mappings.

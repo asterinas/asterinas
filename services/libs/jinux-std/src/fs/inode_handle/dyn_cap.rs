@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::rights::{Rights, TRights};
+use jinux_rights::{Rights, TRights};
 
 use super::*;
 

@@ -11,7 +11,7 @@ use crate::fs::utils::{
     StatusFlags,
 };
 use crate::prelude::*;
-use crate::rights::Rights;
+use jinux_rights::Rights;
 
 pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
 

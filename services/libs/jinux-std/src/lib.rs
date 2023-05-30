@@ -38,7 +38,6 @@ pub mod events;
 pub mod fs;
 pub mod prelude;
 mod process;
-pub mod rights;
 pub mod syscall;
 pub mod thread;
 pub mod time;

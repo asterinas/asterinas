@@ -1,12 +1,10 @@
 use core::ops::Range;
 use jinux_frame::vm::{Vaddr, VmIo};
+use jinux_rights::Rights;
 
 use crate::prelude::*;
 
-use crate::{
-    rights::Rights,
-    vm::{page_fault_handler::PageFaultHandler, vmo::Vmo},
-};
+use crate::vm::{page_fault_handler::PageFaultHandler, vmo::Vmo};
 
 use super::{
     options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_,

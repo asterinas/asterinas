@@ -1,10 +1,10 @@
 use jinux_frame::{cpu::UserContext, user::UserSpace};
+use jinux_rights::Full;
 
 use crate::{
     fs::fs_resolver::FsResolver,
     prelude::*,
     process::{program_loader::load_program_to_root_vmar, Process},
-    rights::Full,
     thread::{Thread, Tid},
     vm::vmar::Vmar,
 };

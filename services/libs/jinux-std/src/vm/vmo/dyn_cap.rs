@@ -4,7 +4,7 @@ use crate::prelude::*;
 
 use jinux_frame::vm::VmIo;
 
-use crate::rights::{Rights, TRights};
+use jinux_rights::{Rights, TRights};
 
 use super::VmoRightsOp;
 use super::{

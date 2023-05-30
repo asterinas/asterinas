@@ -16,10 +16,10 @@ use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
 use crate::fs::utils::FileCreationMask;
 use crate::prelude::*;
-use crate::rights::Full;
 use crate::thread::{allocate_tid, thread_table, Thread};
 use crate::vm::vmar::Vmar;
 use jinux_frame::sync::WaitQueue;
+use jinux_rights::Full;
 
 pub mod clone;
 pub mod fifo_scheduler;

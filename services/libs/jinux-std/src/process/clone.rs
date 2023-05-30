@@ -4,6 +4,8 @@ use jinux_frame::{
     vm::{VmIo, VmSpace},
 };
 
+use jinux_rights::Full;
+
 use crate::{
     current_thread,
     fs::file_table::FileTable,
@@ -15,7 +17,6 @@ use crate::{
         },
         process_table,
     },
-    rights::Full,
     thread::{allocate_tid, thread_table, Thread, Tid},
     util::write_val_to_user,
     vm::vmar::Vmar,
