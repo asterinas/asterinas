@@ -154,8 +154,8 @@ impl VirtioDevice {
             VirtioDeviceType::Socket => todo!(),
             VirtioDeviceType::Unknown => todo!(),
         };
-        let support_feature = Feature::from_bits_truncate(features);
-        // support_feature.remove(Feature::RING_EVENT_IDX);
+        let mut support_feature = Feature::from_bits_truncate(features);
+        support_feature.remove(Feature::RING_EVENT_IDX);
         features & (support_feature.bits | device_support_features)
     }
 }
