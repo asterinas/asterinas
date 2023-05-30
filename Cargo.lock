@@ -164,10 +164,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "darling"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a01d95850c592940db9b8194bc39f4bc0e89dee5c4265e4b1807c34a9aba453c"
+dependencies = [
+ "darling_core",
+ "darling_macro",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "859d65a907b6852c9361e3185c862aae7fafd2887876799fa55f5f99dc40d610"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c972679f83bdf9c42bd905396b6c3588a843a17f0f16dfcfa3e2c5d57441835"
+dependencies = [
+ "darling_core",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "either"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90e5c1c8368803113bf0c9584fc495a58b86dc8a29edbf8fe877d21d9507e797"
+
+[[package]]
+name = "fnv"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "font8x8"
@@ -208,6 +249,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ident_case"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
+
+[[package]]
 name = "indexmap"
 version = "1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -215,6 +262,17 @@ checksum = "1885e79c1fc4b10f0e172c475f458b7f7b93061064d98c3293e98c5ba0c8b399"
 dependencies = [
  "autocfg",
  "hashbrown 0.12.3",
+]
+
+[[package]]
+name = "inherit-methods-macro"
+version = "0.1.0"
+source = "git+https://github.com/occlum/occlum?branch=1.0.0-preview#927512bc20b1221060bcfc505e71adae5f42b1ff"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -306,6 +364,7 @@ dependencies = [
  "bitflags",
  "buddy_system_allocator",
  "cfg-if",
+ "inherit-methods-macro",
  "intrusive-collections",
  "lazy_static",
  "limine",
@@ -360,6 +419,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jinux-rights"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "jinux-rights-proc",
+ "typeflags",
+ "typeflags-util",
+]
+
+[[package]]
 name = "jinux-rights-proc"
 version = "0.1.0"
 dependencies = [
@@ -382,6 +451,7 @@ dependencies = [
  "jinux-block",
  "jinux-frame",
  "jinux-input",
+ "jinux-rights",
  "jinux-rights-proc",
  "jinux-time",
  "jinux-util",
@@ -415,7 +485,10 @@ name = "jinux-util"
 version = "0.1.0"
 dependencies = [
  "jinux-frame",
+ "jinux-rights",
+ "jinux-rights-proc",
  "pod",
+ "typeflags-util",
 ]
 
 [[package]]
@@ -645,6 +718,12 @@ checksum = "5b9eb1a2f4c41445a3a0ff9abc5221c5fcd28e1f13cd7c0397706f9ac938ddb0"
 dependencies = [
  "lock_api",
 ]
+
+[[package]]
+name = "strsim"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "syn"

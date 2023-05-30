@@ -4,6 +4,8 @@
 
 extern crate alloc;
 
+pub mod dup;
 pub mod frame_ptr;
+pub mod safe_ptr;
 pub mod slot_vec;
 pub mod union_read_ptr;
