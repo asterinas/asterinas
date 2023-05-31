@@ -1,5 +1,3 @@
-pub mod tty;
-
 use jinux_input::INPUT_COMPONENT;
 use log::info;
 
@@ -8,7 +6,6 @@ pub fn init() {
     for comp in INPUT_COMPONENT.get().unwrap().get_input_device() {
         info!("input device name:{}", comp.name());
     }
-    tty::init();
 }
 
 #[allow(unused)]

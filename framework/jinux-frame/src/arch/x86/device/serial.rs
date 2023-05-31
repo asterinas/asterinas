@@ -1,10 +1,11 @@
 //! A port-mapped UART. Copied from uart_16550.
 
 use crate::arch::x86::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
+use crate::sync::SpinLock;
 use crate::trap::IrqAllocateHandle;
 use alloc::{sync::Arc, vec::Vec};
 use log::debug;
-use spin::{Mutex, Once};
+use spin::Once;
 use trapframe::TrapFrame;
 
 bitflags::bitflags! {
@@ -24,9 +25,9 @@ static SERIAL_MODEM_CTRL: IoPort<u8, WriteOnlyAccess> =
     unsafe { IoPort::new(SERIAL_DATA_PORT + 4) };
 static SERIAL_LINE_STS: IoPort<u8, ReadWriteAccess> = unsafe { IoPort::new(SERIAL_DATA_PORT + 5) };
 
-static CONSOLE_IRQ_CALLBACK: Once<Mutex<IrqAllocateHandle>> = Once::new();
-static SERIAL_INPUT_CALLBACKS: Mutex<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
-    Mutex::new(Vec::new());
+static CONSOLE_IRQ_CALLBACK: Once<SpinLock<IrqAllocateHandle>> = Once::new();
+static SERIAL_INPUT_CALLBACKS: SpinLock<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
+    SpinLock::new(Vec::new());
 
 /// Initializes the serial port.
 pub(crate) fn init() {
@@ -56,7 +57,7 @@ pub fn register_serial_input_callback(f: impl Fn(u8) + Send + Sync + 'static) {
 pub(crate) fn callback_init() {
     let mut irq = crate::arch::x86::kernel::pic::allocate_irq(4).unwrap();
     irq.on_active(handle_serial_input);
-    CONSOLE_IRQ_CALLBACK.call_once(|| Mutex::new(irq));
+    CONSOLE_IRQ_CALLBACK.call_once(|| SpinLock::new(irq));
 }
 
 pub(crate) fn register_serial_input_irq_handler<F>(callback: F)
@@ -72,10 +73,11 @@ where
 
 fn handle_serial_input(trap_frame: &TrapFrame) {
     // debug!("keyboard interrupt was met");
-    if SERIAL_INPUT_CALLBACKS.is_locked() {
+    let lock = if let Some(lock) = SERIAL_INPUT_CALLBACKS.try_lock() {
+        lock
+    } else {
         return;
-    }
-    let lock = SERIAL_INPUT_CALLBACKS.lock();
+    };
     let received_char = receive_char().unwrap();
     debug!("receive char = {:?}", received_char);
     for callback in lock.iter() {

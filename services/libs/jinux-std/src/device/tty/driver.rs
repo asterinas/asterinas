@@ -1,28 +1,30 @@
 pub use jinux_frame::arch::x86::device::serial::register_serial_input_callback;
+use spin::Once;
 
 use crate::{
     device::tty::{get_n_tty, Tty},
     prelude::*,
 };
 
-lazy_static! {
-    pub static ref TTY_DRIVER: Arc<TtyDriver> = {
-        let tty_driver = Arc::new(TtyDriver::new());
-        // FIXME: install n_tty into tty_driver?
-        let n_tty = get_n_tty();
-        tty_driver.install(n_tty.clone());
-        tty_driver
-    };
+pub static TTY_DRIVER: Once<Arc<TtyDriver>> = Once::new();
+
+pub(super) fn init() {
+    register_serial_input_callback(serial_input_callback);
+    let tty_driver = Arc::new(TtyDriver::new());
+    // FIXME: install n_tty into tty_driver?
+    let n_tty = get_n_tty();
+    tty_driver.install(n_tty.clone());
+    TTY_DRIVER.call_once(|| tty_driver);
 }
 
 pub struct TtyDriver {
-    ttys: Mutex<Vec<Arc<Tty>>>,
+    ttys: SpinLock<Vec<Arc<Tty>>>,
 }
 
 impl TtyDriver {
     pub fn new() -> Self {
         Self {
-            ttys: Mutex::new(Vec::new()),
+            ttys: SpinLock::new(Vec::new()),
         }
     }
 
@@ -70,9 +72,5 @@ fn serial_input_callback(item: u8) {
 }
 
 fn get_tty_driver() -> &'static TtyDriver {
-    &TTY_DRIVER
-}
-
-pub fn init() {
-    register_serial_input_callback(serial_input_callback);
+    TTY_DRIVER.get().unwrap()
 }

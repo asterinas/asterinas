@@ -12,8 +12,10 @@ use core::{
     ops::{Index, IndexMut},
 };
 use font8x8::UnicodeFonts;
-use jinux_frame::{config::PAGE_SIZE, mmio::Mmio, vm::VmIo, LimineFramebufferRequest};
-use spin::{Mutex, Once};
+use jinux_frame::{
+    config::PAGE_SIZE, mmio::Mmio, sync::SpinLock, vm::VmIo, LimineFramebufferRequest,
+};
+use spin::Once;
 
 #[init_component]
 fn framebuffer_init() -> Result<(), ComponentInitError> {
@@ -21,7 +23,7 @@ fn framebuffer_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-pub(crate) static WRITER: Once<Mutex<Writer>> = Once::new();
+pub(crate) static WRITER: Once<SpinLock<Writer>> = Once::new();
 static FRAMEBUFFER_REUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
 
 pub(crate) fn init() {
@@ -64,7 +66,7 @@ pub(crate) fn init() {
     };
     writer.clear();
 
-    WRITER.call_once(|| Mutex::new(writer));
+    WRITER.call_once(|| SpinLock::new(writer));
 }
 
 pub(crate) struct Writer {

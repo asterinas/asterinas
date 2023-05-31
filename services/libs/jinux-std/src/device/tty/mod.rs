@@ -1,19 +1,24 @@
+use spin::Once;
+
+use self::driver::TtyDriver;
 use self::line_discipline::LineDiscipline;
 use super::*;
-use crate::driver::tty::TtyDriver;
 use crate::fs::utils::{IoEvents, IoctlCmd, Poller};
 use crate::prelude::*;
 use crate::process::Pgid;
 use crate::util::{read_val_from_user, write_val_to_user};
 
+pub mod driver;
 pub mod line_discipline;
 pub mod termio;
 
-lazy_static! {
-    static ref N_TTY: Arc<Tty> = {
-        let name = CString::new("console").unwrap();
-        Arc::new(Tty::new(name))
-    };
+static N_TTY: Once<Arc<Tty>> = Once::new();
+
+pub(super) fn init() {
+    let name = CString::new("console").unwrap();
+    let tty = Arc::new(Tty::new(name));
+    N_TTY.call_once(|| tty);
+    driver::init();
 }
 
 pub struct Tty {
@@ -22,7 +27,7 @@ pub struct Tty {
     /// line discipline
     ldisc: LineDiscipline,
     /// driver
-    driver: Mutex<Weak<TtyDriver>>,
+    driver: SpinLock<Weak<TtyDriver>>,
 }
 
 impl Tty {
@@ -30,7 +35,7 @@ impl Tty {
         Tty {
             name,
             ldisc: LineDiscipline::new(),
-            driver: Mutex::new(Weak::new()),
+            driver: SpinLock::new(Weak::new()),
         }
     }
 
@@ -79,14 +84,14 @@ impl Device for Tty {
         match cmd {
             IoctlCmd::TCGETS => {
                 // Get terminal attributes
-                let termios = self.ldisc.get_termios();
+                let termios = self.ldisc.termios();
                 trace!("get termios = {:?}", termios);
                 write_val_to_user(arg, &termios)?;
                 Ok(0)
             }
             IoctlCmd::TIOCGPGRP => {
                 // FIXME: Get the process group ID of the foreground process group on this terminal.
-                let fg_pgid = self.ldisc.get_fg();
+                let fg_pgid = self.ldisc.fg_pgid();
                 match fg_pgid {
                     None => return_errno_with_message!(Errno::ENOENT, "No fg process group"),
                     Some(fg_pgid) => {
@@ -120,5 +125,5 @@ impl Device for Tty {
 
 /// FIXME: should we maintain a static console?
 pub fn get_n_tty() -> &'static Arc<Tty> {
-    &N_TTY
+    N_TTY.get().unwrap()
 }
