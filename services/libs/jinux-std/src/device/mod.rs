@@ -11,6 +11,7 @@ pub fn init() -> Result<()> {
     add_node(null, "null")?;
     let zero = Arc::new(zero::Zero);
     add_node(zero, "zero")?;
+    tty::init();
     let tty = tty::get_n_tty().clone();
     add_node(tty, "tty")?;
     Ok(())
