@@ -1,6 +1,6 @@
 //! Virtqueue
 
-use super::VitrioPciCommonCfg;
+use super::VirtioPciCommonCfg;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::sync::atomic::{fence, Ordering};
@@ -55,29 +55,29 @@ pub struct VirtQueue {
 impl VirtQueue {
     /// Create a new VirtQueue.
     pub(crate) fn new(
-        cfg: &InFramePtr<VitrioPciCommonCfg>,
+        cfg: &InFramePtr<VirtioPciCommonCfg>,
         idx: usize,
         size: u16,
         notify_base_address: usize,
         notify_off_multiplier: u32,
         msix_vector: u16,
     ) -> Result<Self, QueueError> {
-        cfg.write_at(offset_of!(VitrioPciCommonCfg, queue_select), idx as u16);
+        cfg.write_at(offset_of!(VirtioPciCommonCfg, queue_select), idx as u16);
         assert_eq!(
-            cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_select)),
+            cfg.read_at(offset_of!(VirtioPciCommonCfg, queue_select)),
             idx as u16
         );
         if !size.is_power_of_two() {
             return Err(QueueError::InvalidArgs);
         }
 
-        cfg.write_at(offset_of!(VitrioPciCommonCfg, queue_size), size);
+        cfg.write_at(offset_of!(VirtioPciCommonCfg, queue_size), size);
         cfg.write_at(
-            offset_of!(VitrioPciCommonCfg, queue_msix_vector),
+            offset_of!(VirtioPciCommonCfg, queue_msix_vector),
             msix_vector,
         );
         assert_eq!(
-            cfg.read_at(offset_of!(VitrioPciCommonCfg, queue_msix_vector)),
+            cfg.read_at(offset_of!(VirtioPciCommonCfg, queue_msix_vector)),
             msix_vector
         );
 
@@ -109,17 +109,17 @@ impl VirtQueue {
         debug!("queue_device start paddr:{:x?}", used_frame_ptr.paddr());
 
         cfg.write_at(
-            offset_of!(VitrioPciCommonCfg, queue_desc),
+            offset_of!(VirtioPciCommonCfg, queue_desc),
             desc_frame_ptr.paddr() as u64,
         );
 
         cfg.write_at(
-            offset_of!(VitrioPciCommonCfg, queue_driver),
+            offset_of!(VirtioPciCommonCfg, queue_driver),
             avail_frame_ptr.paddr() as u64,
         );
 
         cfg.write_at(
-            offset_of!(VitrioPciCommonCfg, queue_device),
+            offset_of!(VirtioPciCommonCfg, queue_device),
             used_frame_ptr.paddr() as u64,
         );
 
@@ -137,7 +137,7 @@ impl VirtQueue {
             temp.write_at(offset_of!(Descriptor, next), i + 1);
         }
         avail_frame_ptr.write_at(offset_of!(AvailRing, flags), 0 as u16);
-        cfg.write_at(offset_of!(VitrioPciCommonCfg, queue_enable), 1 as u16);
+        cfg.write_at(offset_of!(VirtioPciCommonCfg, queue_enable), 1 as u16);
         Ok(VirtQueue {
             descs,
             avail: avail_frame_ptr,
@@ -303,6 +303,14 @@ impl VirtQueue {
     /// Return size of the queue.
     pub fn size(&self) -> u16 {
         self.queue_size
+    }
+
+    /// whether the driver should notify the device
+    pub fn should_notify(&self) -> bool {
+        // read barrier
+        fence(Ordering::SeqCst);
+        let flags = self.used.read_at(offset_of!(UsedRing, flags));
+        flags & 0x0001u16 == 0u16
     }
 
     /// notify that there are available rings

@@ -10,7 +10,7 @@ use crate::{
     device::block::{BlkReq, BlkResp, ReqType, RespStatus, BLK_SIZE},
     device::VirtioDeviceError,
     queue::{QueueError, VirtQueue},
-    VitrioPciCommonCfg,
+    VirtioPciCommonCfg,
 };
 
 use super::{BLKFeatures, VirtioBLKConfig};
@@ -27,13 +27,13 @@ impl BLKDevice {
     pub(crate) fn new(
         cap: &CapabilityVirtioData,
         bars: [Option<BAR>; 6],
-        common_cfg: &InFramePtr<VitrioPciCommonCfg>,
+        common_cfg: &InFramePtr<VirtioPciCommonCfg>,
         notify_base_address: usize,
         notify_off_multiplier: u32,
         mut msix_vector_left: Vec<u16>,
     ) -> Result<Self, VirtioDeviceError> {
         let config = VirtioBLKConfig::new(cap, bars);
-        let num_queues = common_cfg.read_at(offset_of!(VitrioPciCommonCfg, num_queues)) as u16;
+        let num_queues = common_cfg.read_at(offset_of!(VirtioPciCommonCfg, num_queues)) as u16;
         if num_queues != 1 {
             return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
         }

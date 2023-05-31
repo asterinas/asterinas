@@ -6,7 +6,7 @@ use jinux_frame::trap::TrapFrame;
 use jinux_pci::msix::MSIX;
 use jinux_util::frame_ptr::InFramePtr;
 use jinux_virtio::device::input::device::InputProp;
-use jinux_virtio::VitrioPciCommonCfg;
+use jinux_virtio::VirtioPciCommonCfg;
 use jinux_virtio::{
     device::input::{device::InputDevice, InputConfigSelect},
     PCIVirtioDevice,
@@ -18,7 +18,7 @@ use virtio_input_decoder::{DecodeType, Decoder};
 use crate::INPUTDevice;
 pub struct VirtioInputDevice {
     input_device: InputDevice,
-    common_cfg: InFramePtr<VitrioPciCommonCfg>,
+    common_cfg: InFramePtr<VirtioPciCommonCfg>,
     msix: Mutex<MSIX>,
     name: String,
     callbacks: Mutex<Vec<Arc<dyn Fn(DecodeType) + Send + Sync + 'static>>>,
@@ -57,7 +57,7 @@ impl VirtioInputDevice {
         let mut msix = virtio_device.msix;
 
         let config_msix_vector =
-            common_cfg.read_at(offset_of!(VitrioPciCommonCfg, config_msix_vector)) as usize;
+            common_cfg.read_at(offset_of!(VirtioPciCommonCfg, config_msix_vector)) as usize;
 
         let mut event_irq_number = 0;
         for i in 0..msix.table_size as usize {

@@ -163,6 +163,7 @@ fn match_and_call(
     }
 
     infos.sort();
+    debug!("component infos: {infos:?}");
     info!("Components initializing...");
 
     for i in infos {

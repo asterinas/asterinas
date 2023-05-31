@@ -18,4 +18,4 @@ pub const KVA_START: usize = (usize::MAX) << PAGE_SIZE_BITS;
 
 pub const DEFAULT_LOG_LEVEL: Level = Level::Error;
 /// This value represent the base timer frequency in Hz
-pub const TIMER_FREQ: u64 = 100;
+pub const TIMER_FREQ: u64 = 1000;

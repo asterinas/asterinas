@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use core::fmt::Debug;
 use core::marker::PhantomData;
 
 use alloc::sync::Arc;
@@ -16,13 +17,28 @@ enum InFramePtrAccessMethod {
     VmFrame(Arc<VmFrame>),
 }
 
+impl InFramePtrAccessMethod {
+    fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
+        match self {
+            InFramePtrAccessMethod::Mmio(mmio) => mmio.read_val(offset),
+            InFramePtrAccessMethod::VmFrame(frame) => frame.read_val(offset),
+        }
+    }
+}
+
 /// An in-frame pointer to a POD value, enabling safe access
 /// to a POD value given its physical memory address.
-#[derive(Debug)]
 pub struct InFramePtr<T: 'static> {
     access_method: InFramePtrAccessMethod,
     offset: usize,
     marker: PhantomData<&'static mut T>,
+}
+
+impl<T: Debug + Pod + 'static> Debug for InFramePtr<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let inner = self.access_method.read_val::<T>(self.offset).unwrap();
+        f.write_fmt(format_args!("{:?}", inner))
+    }
 }
 
 impl<T: Pod> InFramePtr<T> {
@@ -47,6 +63,12 @@ impl<T: Pod> InFramePtr<T> {
             offset: 0,
             marker: PhantomData,
         })
+    }
+
+    pub fn read(&self) -> T {
+        self.access_method
+            .read_val::<T>(self.offset)
+            .expect("read inner from frame failed")
     }
 
     pub fn read_at<F: Pod>(&self, offset: *const F) -> F {

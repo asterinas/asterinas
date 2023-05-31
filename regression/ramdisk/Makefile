@@ -16,7 +16,7 @@ ifneq (, $(wildcard $(INITRAMFS)/. ))
 endif
 
 
-.PHONY: all clean prepare_libs
+.PHONY: all clean prepare_libs copy_special_files
 
 all: $(RAMDISK)
 

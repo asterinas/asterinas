@@ -2,6 +2,7 @@
 
 use crate::events::Observer;
 use crate::fs::utils::{AccessMode, IoEvents, IoctlCmd, Metadata, Poller, SeekFrom, StatusFlags};
+use crate::net::socket::Socket;
 use crate::prelude::*;
 
 use core::any::Any;
@@ -66,6 +67,10 @@ pub trait FileLike: Send + Sync + Any {
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Result<Weak<dyn Observer<IoEvents>>> {
         return_errno_with_message!(Errno::EINVAL, "unregister_observer is not supported")
+    }
+
+    fn as_socket(&self) -> Option<&dyn Socket> {
+        None
     }
 }
 

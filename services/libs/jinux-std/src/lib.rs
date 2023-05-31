@@ -16,14 +16,17 @@
 #![feature(specialization)]
 #![feature(fn_traits)]
 #![feature(linked_list_remove)]
+#![feature(trait_alias)]
 #![feature(register_tool)]
 #![feature(trait_upcasting)]
 #![register_tool(component_access_control)]
 
 use crate::{
     prelude::*,
+    process::status::ProcessStatus,
     thread::{kernel_thread::KernelThreadExt, Thread},
 };
+use jinux_frame::exit_qemu;
 use process::Process;
 
 extern crate alloc;
@@ -36,6 +39,7 @@ pub mod driver;
 pub mod error;
 pub mod events;
 pub mod fs;
+pub mod net;
 pub mod prelude;
 mod process;
 pub mod syscall;
@@ -46,6 +50,7 @@ pub mod vm;
 
 pub fn init(ramdisk: &[u8]) {
     driver::init();
+    net::init();
     process::fifo_scheduler::init();
     fs::initramfs::init(ramdisk).unwrap();
     device::init().unwrap();
@@ -56,6 +61,7 @@ fn init_thread() {
         "[kernel] Spawn init thread, tid = {}",
         current_thread!().tid()
     );
+    net::lazy_init();
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(|| {
         println!("[kernel] Hello world from kernel!");
@@ -70,9 +76,14 @@ fn init_thread() {
     );
 
     print_banner();
-    run_busybox().expect("run busybox fails");
+    let busybox = run_busybox().expect("run busybox fails");
 
     loop {
+        // If busybox becomes zombie, then exit qemu.
+        if *busybox.status().lock() == ProcessStatus::Zombie {
+            println!("Exit jinux.");
+            exit_qemu(jinux_frame::QemuExitCode::Success);
+        }
         // We don't have preemptive scheduler now.
         // The long running init thread should yield its own execution to allow other tasks to go on.
         Thread::yield_now();
