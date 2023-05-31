@@ -3,6 +3,7 @@ pub mod hpet;
 pub mod pit;
 
 use core::any::Any;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use alloc::{boxed::Box, collections::BinaryHeap, sync::Arc, vec::Vec};
 use spin::{Mutex, Once};
@@ -12,7 +13,7 @@ use crate::arch::x86::kernel;
 use crate::trap::IrqAllocateHandle;
 
 pub const TIMER_IRQ_NUM: u8 = 32;
-pub static mut TICK: u64 = 0;
+pub static TICK: AtomicU64 = AtomicU64::new(0);
 
 static TIMER_IRQ: Once<IrqAllocateHandle> = Once::new();
 
@@ -30,11 +31,7 @@ pub fn init() {
 }
 
 fn timer_callback(trap_frame: &TrapFrame) {
-    let current_ms;
-    unsafe {
-        current_ms = TICK;
-        TICK += 1;
-    }
+    let current_ms = TICK.fetch_add(1, Ordering::SeqCst);
     let mut timeout_list = TIMEOUT_LIST.get().unwrap().lock();
     let mut callbacks: Vec<Arc<TimerCallback>> = Vec::new();
     while let Some(t) = timeout_list.peek() {
@@ -121,10 +118,18 @@ where
     F: Fn(&TimerCallback) + Send + Sync + 'static,
     T: Any + Send + Sync,
 {
-    unsafe {
-        let timer_callback = TimerCallback::new(TICK + timeout, Arc::new(data), Box::new(callback));
-        let arc = Arc::new(timer_callback);
-        TIMEOUT_LIST.get().unwrap().lock().push(arc.clone());
-        arc
-    }
+    let timer_callback = TimerCallback::new(
+        TICK.load(Ordering::SeqCst) + timeout,
+        Arc::new(data),
+        Box::new(callback),
+    );
+    let arc = Arc::new(timer_callback);
+    TIMEOUT_LIST.get().unwrap().lock().push(arc.clone());
+    arc
+}
+
+/// The time since the system boots up.
+/// The currently returned results are in milliseconds.
+pub fn read_monotonic_milli_seconds() -> u64 {
+    TICK.load(Ordering::SeqCst)
 }

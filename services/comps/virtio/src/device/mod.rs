@@ -1,4 +1,7 @@
-use crate::{device::block::device::BLKDevice, Feature, VirtioDeviceType, VitrioPciCommonCfg};
+use crate::{
+    device::block::device::BLKDevice, queue::QueueError, Feature, VirtioDeviceType,
+    VirtioPciCommonCfg,
+};
 use alloc::vec::Vec;
 use jinux_pci::{
     capability::{vendor::virtio::CapabilityVirtioData, Capability},
@@ -43,11 +46,17 @@ pub enum VirtioDeviceError {
     CapabilityListError,
 }
 
+impl From<QueueError> for VirtioDeviceError {
+    fn from(_: QueueError) -> Self {
+        VirtioDeviceError::QueueUnknownError
+    }
+}
+
 pub struct VirtioInfo {
     pub device_type: VirtioDeviceType,
     pub notify_base_address: u64,
     pub notify_off_multiplier: u32,
-    pub common_cfg_frame_ptr: InFramePtr<VitrioPciCommonCfg>,
+    pub common_cfg_frame_ptr: InFramePtr<VirtioPciCommonCfg>,
     pub device_cap_cfg: CapabilityVirtioData,
 }
 
@@ -68,7 +77,7 @@ impl VirtioInfo {
                         match cap_data.cfg_type {
                             PCI_VIRTIO_CAP_COMMON_CFG => {
                                 common_cfg_frame_ptr_some =
-                                    Some(VitrioPciCommonCfg::new(&cap_data, bars));
+                                    Some(VirtioPciCommonCfg::new(&cap_data, bars));
                             }
                             PCI_VIRTIO_CAP_NOTIFY_CFG => {
                                 notify_off_multiplier = cap_data.option.unwrap();
@@ -140,7 +149,8 @@ impl VirtioDevice {
     }
 
     pub(crate) fn negotiate_features(features: u64, device_type: VirtioDeviceType) -> u64 {
-        let device_specified_features = features & ((1 << 24) - 1);
+        let mask = ((1u64 << 24) - 1) | (((1u64 << 24) - 1) << 50);
+        let device_specified_features = features & mask;
         let device_support_features = match device_type {
             VirtioDeviceType::Network => todo!(),
             VirtioDeviceType::Block => BLKDevice::negotiate_features(device_specified_features),

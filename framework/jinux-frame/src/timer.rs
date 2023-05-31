@@ -3,8 +3,11 @@
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86::timer::{add_timeout_list, TimerCallback, TICK};
 use crate::{config::TIMER_FREQ, prelude::*};
-use core::time::Duration;
+use core::{sync::atomic::Ordering, time::Duration};
 use spin::Mutex;
+
+#[cfg(target_arch = "x86_64")]
+pub use crate::arch::x86::timer::read_monotonic_milli_seconds;
 
 /// A timer invokes a callback function after a specified span of time elapsed.
 ///
@@ -63,10 +66,9 @@ impl Timer {
         }
         let tick_count =
             timeout.as_secs() * TIMER_FREQ + timeout.subsec_nanos() as u64 / NANOS_DIVIDE;
-        unsafe {
-            lock.start_tick = TICK;
-            lock.timeout_tick = TICK + tick_count;
-        }
+        let tick = TICK.load(Ordering::SeqCst);
+        lock.start_tick = tick;
+        lock.timeout_tick = tick + tick_count;
         lock.timer_callback = Some(add_timeout_list(tick_count, self.clone(), timer_callback));
     }
 
@@ -75,10 +77,10 @@ impl Timer {
     /// If the timer is not set, then the remaining timeout value is zero.
     pub fn remain(&self) -> Duration {
         let lock = self.inner.lock();
-        let tick_remain;
-        unsafe {
-            tick_remain = lock.timeout_tick as i64 - TICK as i64;
-        }
+        let tick_remain = {
+            let tick = TICK.load(Ordering::SeqCst) as i64;
+            lock.timeout_tick as i64 - tick
+        };
         if tick_remain <= 0 {
             Duration::new(0, 0)
         } else {

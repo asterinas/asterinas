@@ -69,16 +69,30 @@ use crate::syscall::write::sys_write;
 use crate::syscall::writev::sys_writev;
 use jinux_frame::cpu::UserContext;
 
+use self::accept::sys_accept;
+use self::bind::sys_bind;
+use self::connect::sys_connect;
+use self::getpeername::sys_getpeername;
+use self::getsockname::sys_getsockname;
+use self::listen::sys_listen;
 use self::pread64::sys_pread64;
+use self::recvfrom::sys_recvfrom;
+use self::sendto::sys_sendto;
+use self::setsockopt::sys_setsockopt;
+use self::shutdown::sys_shutdown;
+use self::socket::sys_socket;
 
+mod accept;
 mod access;
 mod arch_prctl;
+mod bind;
 mod brk;
 mod chdir;
 mod clock_gettime;
 mod clock_nanosleep;
 mod clone;
 mod close;
+mod connect;
 mod constants;
 mod dup;
 mod epoll;
@@ -93,15 +107,18 @@ mod getdents64;
 mod getegid;
 mod geteuid;
 mod getgid;
+mod getpeername;
 mod getpgrp;
 mod getpid;
 mod getppid;
+mod getsockname;
 mod gettid;
 mod gettimeofday;
 mod getuid;
 mod ioctl;
 mod kill;
 mod link;
+mod listen;
 mod lseek;
 mod madvise;
 mod mkdir;
@@ -117,6 +134,7 @@ mod pread64;
 mod prlimit64;
 mod read;
 mod readlink;
+mod recvfrom;
 mod rename;
 mod rmdir;
 mod rt_sigaction;
@@ -124,9 +142,13 @@ mod rt_sigprocmask;
 mod rt_sigreturn;
 mod sched_yield;
 mod select;
+mod sendto;
 mod set_robust_list;
 mod set_tid_address;
 mod setpgid;
+mod setsockopt;
+mod shutdown;
+mod socket;
 mod stat;
 mod symlink;
 mod tgkill;
@@ -199,6 +221,17 @@ define_syscall_nums!(
     SYS_DUP2 = 33,
     SYS_PAUSE = 34,
     SYS_GETPID = 39,
+    SYS_SOCKET = 41,
+    SYS_CONNECT = 42,
+    SYS_ACCEPT = 43,
+    SYS_SENDTO = 44,
+    SYS_RECVFROM = 45,
+    SYS_SHUTDOWN = 48,
+    SYS_BIND = 49,
+    SYS_LISTEN = 50,
+    SYS_GETSOCKNAME = 51,
+    SYS_GETPEERNAME = 52,
+    SYS_SETSOCKOPT = 54,
     SYS_CLONE = 56,
     SYS_FORK = 57,
     SYS_EXECVE = 59,
@@ -340,6 +373,17 @@ pub fn syscall_dispatch(
         SYS_DUP2 => syscall_handler!(2, sys_dup2, args),
         SYS_PAUSE => syscall_handler!(0, sys_pause),
         SYS_GETPID => syscall_handler!(0, sys_getpid),
+        SYS_SOCKET => syscall_handler!(3, sys_socket, args),
+        SYS_CONNECT => syscall_handler!(3, sys_connect, args),
+        SYS_ACCEPT => syscall_handler!(3, sys_accept, args),
+        SYS_SENDTO => syscall_handler!(6, sys_sendto, args),
+        SYS_RECVFROM => syscall_handler!(6, sys_recvfrom, args),
+        SYS_SHUTDOWN => syscall_handler!(2, sys_shutdown, args),
+        SYS_BIND => syscall_handler!(3, sys_bind, args),
+        SYS_LISTEN => syscall_handler!(2, sys_listen, args),
+        SYS_GETSOCKNAME => syscall_handler!(3, sys_getsockname, args),
+        SYS_GETPEERNAME => syscall_handler!(3, sys_getpeername, args),
+        SYS_SETSOCKOPT => syscall_handler!(5, sys_setsockopt, args),
         SYS_CLONE => syscall_handler!(5, sys_clone, args, context.clone()),
         SYS_FORK => syscall_handler!(0, sys_fork, context.clone()),
         SYS_EXECVE => syscall_handler!(3, sys_execve, args, context),

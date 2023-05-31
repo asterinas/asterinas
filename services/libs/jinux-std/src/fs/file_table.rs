@@ -1,4 +1,5 @@
 use crate::events::{Events, Observer, Subject};
+use crate::net::socket::Socket;
 use crate::prelude::*;
 
 use core::cell::Cell;
@@ -99,6 +100,12 @@ impl FileTable {
             .get(fd as usize)
             .map(|entry| &entry.file)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
+    }
+
+    pub fn get_socket(&self, sockfd: FileDescripter) -> Result<&dyn Socket> {
+        self.get_file(sockfd)?
+            .as_socket()
+            .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the fd is not a socket"))
     }
 
     pub fn get_entry(&self, fd: FileDescripter) -> Result<&FileTableEntry> {

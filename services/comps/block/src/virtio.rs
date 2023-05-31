@@ -3,7 +3,7 @@
 use jinux_frame::trap::TrapFrame;
 use jinux_pci::msix::MSIX;
 use jinux_util::frame_ptr::InFramePtr;
-use jinux_virtio::{device::block::device::BLKDevice, PCIVirtioDevice, VitrioPciCommonCfg};
+use jinux_virtio::{device::block::device::BLKDevice, PCIVirtioDevice, VirtioPciCommonCfg};
 use log::debug;
 use spin::Mutex;
 
@@ -11,7 +11,7 @@ use crate::{BlockDevice, BLK_COMPONENT};
 
 pub struct VirtioBlockDevice {
     blk_device: Mutex<BLKDevice>,
-    pub common_cfg: InFramePtr<VitrioPciCommonCfg>,
+    pub common_cfg: InFramePtr<VirtioPciCommonCfg>,
     msix: MSIX,
 }
 

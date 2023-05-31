@@ -119,7 +119,7 @@ bitflags! {
 }
 
 bitflags! {
-    /// all device features, bits 0~23 are sepecified by device
+    /// all device features, bits 0~23 and 50~63 are sepecified by device.
     /// if using this struct to translate u64, use from_bits_truncate function instead of from_bits
     ///
     struct Feature: u64 {
@@ -144,7 +144,7 @@ bitflags! {
 
 #[derive(Debug, Default, Copy, Clone, Pod)]
 #[repr(C)]
-pub struct VitrioPciCommonCfg {
+pub struct VirtioPciCommonCfg {
     device_feature_select: u32,
     device_feature: u32,
     driver_feature_select: u32,
@@ -164,7 +164,7 @@ pub struct VitrioPciCommonCfg {
     queue_device: u64,
 }
 
-impl VitrioPciCommonCfg {
+impl VirtioPciCommonCfg {
     pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> InFramePtr<Self> {
         let bar = cap.bar;
         let offset = cap.offset;
@@ -219,7 +219,7 @@ impl VirtioDeviceType {
 
 pub struct PCIVirtioDevice {
     /// common config of one device
-    pub common_cfg: InFramePtr<VitrioPciCommonCfg>,
+    pub common_cfg: InFramePtr<VirtioPciCommonCfg>,
     pub device: VirtioDevice,
     pub msix: MSIX,
 }
@@ -269,35 +269,35 @@ impl PCIVirtioDevice {
         let common_cfg_frame_ptr = &virtio_info.common_cfg_frame_ptr;
 
         // Reset device
-        common_cfg_frame_ptr.write_at(offset_of!(VitrioPciCommonCfg, device_status), 0 as u8);
+        common_cfg_frame_ptr.write_at(offset_of!(VirtioPciCommonCfg, device_status), 0 as u8);
 
         let num_queues: u16 =
-            common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, num_queues));
+            common_cfg_frame_ptr.read_at(offset_of!(VirtioPciCommonCfg, num_queues));
         debug!("num_queues:{:x}", num_queues);
         // the table size of msix should be equal to n+1 or 2 where n is the virtqueue amount
         assert!(msix.table_size == 2 || msix.table_size == (num_queues + 1));
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, config_msix_vector),
+            offset_of!(VirtioPciCommonCfg, config_msix_vector),
             config_msix_vector,
         );
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, device_status),
+            offset_of!(VirtioPciCommonCfg, device_status),
             (DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER).bits(),
         );
         // negotiate features
         // get the value of device features
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, device_feature_select),
+            offset_of!(VirtioPciCommonCfg, device_feature_select),
             0 as u32,
         );
         let mut low: u32 =
-            common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, device_feature));
+            common_cfg_frame_ptr.read_at(offset_of!(VirtioPciCommonCfg, device_feature));
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, device_feature_select),
+            offset_of!(VirtioPciCommonCfg, device_feature_select),
             1 as u32,
         );
         let mut high: u32 =
-            common_cfg_frame_ptr.read_at(offset_of!(VitrioPciCommonCfg, device_feature));
+            common_cfg_frame_ptr.read_at(offset_of!(VirtioPciCommonCfg, device_feature));
         let mut feature = (high as u64) << 32;
         feature |= low as u64;
         // let the device to negotiate Features
@@ -307,26 +307,26 @@ impl PCIVirtioDevice {
         low = driver_features as u32;
         high = (driver_features >> 32) as u32;
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, driver_feature_select),
+            offset_of!(VirtioPciCommonCfg, driver_feature_select),
             0 as u32,
         );
-        common_cfg_frame_ptr.write_at(offset_of!(VitrioPciCommonCfg, driver_feature), low);
+        common_cfg_frame_ptr.write_at(offset_of!(VirtioPciCommonCfg, driver_feature), low);
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, driver_feature_select),
+            offset_of!(VirtioPciCommonCfg, driver_feature_select),
             1 as u32,
         );
-        common_cfg_frame_ptr.write_at(offset_of!(VitrioPciCommonCfg, driver_feature), high);
+        common_cfg_frame_ptr.write_at(offset_of!(VirtioPciCommonCfg, driver_feature), high);
 
         // change to features ok status
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, device_status),
+            offset_of!(VirtioPciCommonCfg, device_status),
             (DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::FEATURES_OK).bits(),
         );
         let device = VirtioDevice::new(&virtio_info, bars, msix_vector_list).unwrap();
 
         // change to driver ok status
         common_cfg_frame_ptr.write_at(
-            offset_of!(VitrioPciCommonCfg, device_status),
+            offset_of!(VirtioPciCommonCfg, device_status),
             (DeviceStatus::ACKNOWLEDGE
                 | DeviceStatus::DRIVER
                 | DeviceStatus::FEATURES_OK
@@ -351,7 +351,7 @@ impl PCIVirtioDevice {
     {
         let config_msix_vector =
             self.common_cfg
-                .read_at(offset_of!(VitrioPciCommonCfg, config_msix_vector)) as usize;
+                .read_at(offset_of!(VirtioPciCommonCfg, config_msix_vector)) as usize;
         for i in 0..self.msix.table_size as usize {
             let msix = self.msix.table.get_mut(i).unwrap();
             if !msix.irq_handle.is_empty() {

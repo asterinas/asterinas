@@ -1,4 +1,4 @@
-use crate::{device::VirtioDeviceError, queue::VirtQueue, VitrioPciCommonCfg};
+use crate::{device::VirtioDeviceError, queue::VirtQueue, VirtioPciCommonCfg};
 use alloc::{boxed::Box, vec::Vec};
 use bitflags::bitflags;
 use jinux_frame::offset_of;
@@ -56,7 +56,7 @@ impl InputDevice {
     pub fn new(
         cap: &CapabilityVirtioData,
         bars: [Option<BAR>; 6],
-        common_cfg: &InFramePtr<VitrioPciCommonCfg>,
+        common_cfg: &InFramePtr<VirtioPciCommonCfg>,
         notify_base_address: usize,
         notify_off_multiplier: u32,
         mut msix_vector_left: Vec<u16>,

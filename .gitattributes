@@ -8,3 +8,7 @@ regression/apps/signal_c/signal_test filter=lfs diff=lfs merge=lfs -text
 regression/apps/busybox/busybox filter=lfs diff=lfs merge=lfs -text
 regression/apps/pthread/pthread_test filter=lfs diff=lfs merge=lfs -text
 regression/apps/hello_pie/hello filter=lfs diff=lfs merge=lfs -text
+regression/apps/network/tcp/client filter=lfs diff=lfs merge=lfs -text
+regression/apps/network/tcp/server filter=lfs diff=lfs merge=lfs -text
+regression/apps/network/udp/client filter=lfs diff=lfs merge=lfs -text
+regression/apps/network/udp/server filter=lfs diff=lfs merge=lfs -text

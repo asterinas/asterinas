@@ -17,12 +17,13 @@ pub(crate) use core::any::Any;
 pub(crate) use core::ffi::CStr;
 pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use jinux_frame::config::PAGE_SIZE;
-pub(crate) use jinux_frame::sync::{Mutex, MutexGuard};
+// pub(crate) use jinux_frame::sync::{Mutex, MutexGuard};
 pub(crate) use jinux_frame::vm::Vaddr;
 pub(crate) use jinux_frame::{print, println};
 pub(crate) use log::{debug, error, info, trace, warn};
 pub(crate) use pod::Pod;
 pub(crate) use spin::RwLock;
+pub(crate) use spin::{Mutex, MutexGuard};
 
 /// return current process
 #[macro_export]
