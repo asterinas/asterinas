@@ -31,10 +31,8 @@ pub fn alloc_continuous(frame_count: usize) -> Option<Vec<VmFrame>> {
             let mut vector = Vec::new();
             unsafe {
                 for i in 0..frame_count {
-                    vector.push(VmFrame::new(
-                        (start + i) * PAGE_SIZE,
-                        VmFrameFlags::NEED_DEALLOC,
-                    ))
+                    let frame = VmFrame::new((start + i) * PAGE_SIZE, VmFrameFlags::NEED_DEALLOC);
+                    vector.push(frame);
                 }
             }
             vector

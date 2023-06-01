@@ -204,9 +204,7 @@ impl Vmo_ {
             let frames = match &inner.pager {
                 None => {
                     let vm_alloc_option = VmAllocOptions::new(1);
-                    let frames = VmFrameVec::allocate(&vm_alloc_option)?;
-                    frames.iter().for_each(|frame| frame.zero());
-                    frames
+                    VmFrameVec::allocate(&vm_alloc_option)?
                 }
                 Some(pager) => {
                     let frame = pager.commit_page(offset)?;
