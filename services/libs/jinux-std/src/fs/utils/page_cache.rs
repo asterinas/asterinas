@@ -112,7 +112,8 @@ struct Page {
 impl Page {
     pub fn alloc() -> Result<Self> {
         let frame = {
-            let vm_alloc_option = VmAllocOptions::new(1);
+            let mut vm_alloc_option = VmAllocOptions::new(1);
+            vm_alloc_option.uninit(true);
             let mut frames = VmFrameVec::allocate(&vm_alloc_option)?;
             frames.pop().unwrap()
         };
@@ -126,7 +127,6 @@ impl Page {
         let frame = {
             let vm_alloc_option = VmAllocOptions::new(1);
             let mut frames = VmFrameVec::allocate(&vm_alloc_option)?;
-            frames.zero();
             frames.pop().unwrap()
         };
         Ok(Self {

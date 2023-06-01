@@ -33,18 +33,20 @@ impl VmFrameVec {
     /// For more information, see `VmAllocOptions`.
     pub fn allocate(options: &VmAllocOptions) -> Result<Self> {
         let page_size = options.page_size;
-        let mut frame_list = Vec::new();
-        if options.is_contiguous {
-            let frames = frame_allocator::alloc_continuous(options.page_size);
-            if frames.is_none() {
-                return Err(Error::NoMemory);
+        let frames = if options.is_contiguous {
+            frame_allocator::alloc_continuous(options.page_size).ok_or(Error::NoMemory)?
+        } else {
+            let mut frame_list = Vec::new();
+            for _ in 0..page_size {
+                frame_list.push(frame_allocator::alloc().ok_or(Error::NoMemory)?);
             }
-            return Ok(Self(frames.unwrap()));
+            frame_list
+        };
+        let frame_vec = Self(frames);
+        if !options.uninit {
+            frame_vec.zero();
         }
-        for i in 0..page_size {
-            frame_list.push(frame_allocator::alloc().unwrap());
-        }
-        Ok(Self(frame_list))
+        Ok(frame_vec)
     }
 
     pub fn get(&self, index: usize) -> Option<&VmFrame> {
@@ -201,6 +203,7 @@ impl<'a> Iterator for VmFrameVecIter<'a> {
 pub struct VmAllocOptions {
     page_size: usize,
     is_contiguous: bool,
+    uninit: bool,
 }
 
 impl VmAllocOptions {
@@ -209,6 +212,7 @@ impl VmAllocOptions {
         Self {
             page_size: len,
             is_contiguous: false,
+            uninit: false,
         }
     }
 
@@ -219,6 +223,17 @@ impl VmAllocOptions {
     /// The default value is `false`.
     pub fn is_contiguous(&mut self, is_contiguous: bool) -> &mut Self {
         self.is_contiguous = is_contiguous;
+        self
+    }
+
+    /// Sets whether the allocated frames should be uninitialized.
+    ///
+    /// If `uninit` is set as `false`, the frame will be zeroed once allocated.
+    /// If `uninit` is set as `true`, the frame will **NOT** be zeroed and should *NOT* be read before writing.
+    ///
+    /// The default value is false.
+    pub fn uninit(&mut self, uninit: bool) -> &mut Self {
+        self.uninit = uninit;
         self
     }
 
