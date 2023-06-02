@@ -8,5 +8,4 @@ pub mod inode_handle;
 pub mod pipe;
 pub mod procfs;
 pub mod ramfs;
-pub mod stdio;
 pub mod utils;

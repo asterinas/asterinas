@@ -45,7 +45,7 @@ impl Vnode {
 
     pub fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let type_ = self.inode_type();
-        if type_ != InodeType::File && type_ != InodeType::Socket {
+        if !type_.support_write() {
             return_errno!(Errno::EINVAL);
         }
         let inner = self.inner.write();
@@ -68,7 +68,7 @@ impl Vnode {
 
     pub fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let type_ = self.inode_type();
-        if type_ != InodeType::File && type_ != InodeType::Socket {
+        if !type_.support_write() {
             return_errno!(Errno::EINVAL);
         }
         let inner = self.inner.write();
@@ -80,7 +80,7 @@ impl Vnode {
 
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let type_ = self.inode_type();
-        if type_ != InodeType::File && type_ != InodeType::Socket {
+        if !type_.support_read() {
             return_errno!(Errno::EISDIR);
         }
         let inner = self.inner.read();
@@ -103,7 +103,7 @@ impl Vnode {
 
     pub fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let type_ = self.inode_type();
-        if type_ != InodeType::File && type_ != InodeType::Socket {
+        if !type_.support_read() {
             return_errno!(Errno::EISDIR);
         }
         let inner = self.inner.read();
@@ -115,7 +115,7 @@ impl Vnode {
 
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
         let type_ = self.inode_type();
-        if type_ != InodeType::File && type_ != InodeType::Socket {
+        if !type_.support_read() {
             return_errno!(Errno::EISDIR);
         }
         let inner = self.inner.read();
@@ -134,7 +134,7 @@ impl Vnode {
 
     pub fn read_direct_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
         let type_ = self.inode_type();
-        if type_ != InodeType::File && type_ != InodeType::Socket {
+        if !type_.support_read() {
             return_errno!(Errno::EISDIR);
         }
         let inner = self.inner.read();

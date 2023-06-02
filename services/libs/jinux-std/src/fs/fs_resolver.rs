@@ -341,6 +341,7 @@ impl FsResolver {
 
 pub const AT_FDCWD: FileDescripter = -100;
 
+#[derive(Debug)]
 pub struct FsPath<'a> {
     inner: FsPathInner<'a>,
 }
