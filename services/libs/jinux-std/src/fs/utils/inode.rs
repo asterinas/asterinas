@@ -21,6 +21,28 @@ pub enum InodeType {
     Socket = 0o140000,
 }
 
+impl InodeType {
+    pub fn support_read(&self) -> bool {
+        match self {
+            InodeType::File
+            | InodeType::Socket
+            | InodeType::CharDevice
+            | InodeType::BlockDevice => true,
+            _ => false,
+        }
+    }
+
+    pub fn support_write(&self) -> bool {
+        match self {
+            InodeType::File
+            | InodeType::Socket
+            | InodeType::CharDevice
+            | InodeType::BlockDevice => true,
+            _ => false,
+        }
+    }
+}
+
 impl From<DeviceType> for InodeType {
     fn from(type_: DeviceType) -> InodeType {
         match type_ {
