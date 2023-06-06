@@ -345,7 +345,7 @@ dependencies = [
 [[package]]
 name = "inherit-methods-macro"
 version = "0.1.0"
-source = "git+https://github.com/occlum/occlum?branch=1.0.0-preview#927512bc20b1221060bcfc505e71adae5f42b1ff"
+source = "git+https://github.com/jinzhao-dev/inherit-methods-macro?rev=98f7e3e#98f7e3eb9efdac98faf5a7076f154f30894b9b02"
 dependencies = [
  "darling",
  "proc-macro2",
