@@ -3,7 +3,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{quote, TokenStreamExt};
 use syn::Expr;
 
-use crate::type_flag::TypeFlagDef;
+use crate::{type_flag::TypeFlagDef, util::wrapper_ident};
 
 const EMPTY_SET_NAME: &'static str = "::typeflags_util::Nil";
 const SET_NAME: &'static str = "::typeflags_util::Cons";
@@ -60,7 +60,6 @@ impl FlagSet {
             };
             res = new_res;
         }
-
         res
     }
 
@@ -72,19 +71,20 @@ impl FlagSet {
     /// the tokens to impl main trait for the current flagset
     pub fn impl_main_trait_tokens(&self, type_flags_def: &TypeFlagDef) -> TokenStream {
         let trait_ident = type_flags_def.trait_ident();
+        let wrapper_struct_ident = wrapper_ident();
         let name = self.type_name_tokens();
         let mut all_tokens = quote! (
-            impl #trait_ident for #name
+            impl #trait_ident for #wrapper_struct_ident<#name>
         );
-        all_tokens.append_all(self.inner_tokens(type_flags_def));
+        all_tokens.append_all(self.inner_tokens_for_wrapper(type_flags_def));
         all_tokens
     }
 
     /// the impl main trait inner content
-    fn inner_tokens(&self, type_flags_def: &TypeFlagDef) -> TokenStream {
+    fn inner_tokens_for_wrapper(&self, type_flags_def: &TypeFlagDef) -> TokenStream {
         let ty = type_flags_def.val_type();
         let item_vals = self.items.iter().map(|item| item.val.clone());
-
+        let wrapper_struct_ident = wrapper_ident();
         // quote seems unable to use string for types.
         // So we hardcode all types here.
         if item_vals.len() == 0 {
@@ -92,7 +92,7 @@ impl FlagSet {
                 {
                     const BITS: #ty = 0 ;
                     fn new() -> Self {
-                        ::typeflags_util::Nil
+                        #wrapper_struct_ident::new_default()
                     }
                 }
             )
@@ -101,7 +101,7 @@ impl FlagSet {
                 {
                     const BITS: #ty = #(#item_vals)|* ;
                     fn new() -> Self {
-                        ::typeflags_util::Cons::new()
+                        #wrapper_struct_ident::new_default()
                     }
                 }
             )
@@ -127,8 +127,9 @@ impl FlagSet {
 
     /// The token stream inside macro definition. We will generate a token stream for each permutation of items
     /// since the user may use arbitrary order of items in macro.
-    pub fn macro_item_tokens(&self) -> Vec<TokenStream> {
-        let res_type = self.type_name_tokens();
+    pub fn macro_item_tokens(&self, wrapper_struct_ident: TokenStream) -> Vec<TokenStream> {
+        let type_name = self.type_name_tokens();
+        let res_type = quote!(#wrapper_struct_ident<#type_name>);
         // We first calculate the full permutations,
         let item_permutations = self.items.iter().permutations(self.items.len());
         item_permutations

@@ -14,7 +14,7 @@ use alloc::sync::Weak;
 use alloc::vec::Vec;
 use core::ops::Range;
 use jinux_frame::vm::VmSpace;
-use jinux_rights::{Dup, Exec, Full, Read, Rights, Signal, TRightSet, TRights, Write};
+use jinux_rights::{Dup, Exec, Full, Read, Rights, Signal, TRights, Write};
 
 use self::vm_mapping::VmMapping;
 
@@ -720,7 +720,7 @@ impl<R> Vmar<R> {
         let vmar_ = self.0.fork_vmar_(Weak::new())?;
         Ok(Vmar(
             vmar_,
-            TRightSet(<TRights![Dup, Read, Write, Exec, Signal]>::new()),
+            <TRights![Dup, Read, Write, Exec, Signal]>::new(),
         ))
     }
 

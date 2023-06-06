@@ -20,6 +20,8 @@
 //! struct Channel<R: RightSet> {
 //!    rights: PhantomData<R>,
 //! }
+//!
+//! #[static_cap(R)]
 //! impl <R: RightSet> Channel<R> {
 //!     pub fn new() -> Self {
 //!         Channel { rights: PhantomData }
@@ -71,16 +73,22 @@
 //! ```
 
 #![feature(proc_macro_diagnostic)]
+#![feature(iter_advance_by)]
+#![feature(let_chains)]
 #![allow(dead_code)]
 
 use require_item::RequireItem;
+use static_cap::expand_static_cap;
+use static_cap::CapType;
 use syn::parse_macro_input;
+use syn::ItemImpl;
 
 use crate::require_attr::expand_require;
 use crate::require_attr::RequireAttr;
 
 mod require_attr;
 mod require_item;
+mod static_cap;
 
 #[proc_macro_attribute]
 pub fn require(
@@ -90,4 +98,42 @@ pub fn require(
     let require_item = parse_macro_input!(item as RequireItem);
     let require_attr = parse_macro_input!(attr as RequireAttr);
     expand_require(require_item, require_attr).into()
+}
+
+/// The static_cap macro is used to replace all appearance of a generic parameter to a wrapper version in a impl block.
+/// i.e., it will change generic parameter R to TypeWrapper<R> in impl header, impl items and etc. (TypeWrapper is defined in typeflags_util)
+/// Below is a simple example.
+///
+/// ```ignore
+/// #[static_cap(R)]
+/// impl <R: RightSet> Channel<R> {
+///     fn new() -> Channel<R> {
+///         let r = R::new();
+///         todo!()
+///     }
+///
+///     #[require(R > Read)]
+///     fn read(&self) {}
+/// }
+/// ```
+/// After macro expansion, it will looks like
+/// ```ignore
+/// impl <R> Channel<TypeWrapper<R>> where TypeWrapper<R>: RightSet {
+///     fn new() -> Channel<TypeWrapper<R>> {
+///         let r = TypeWrapper::<R>::new()
+///         todo!()
+///     }
+///
+///     #[require(TypeWrapper<R> > Read)]
+///     fn read(&self) {}
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn static_cap(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let item_impl = parse_macro_input!(item as ItemImpl);
+    let cap_type = parse_macro_input!(attr as CapType);
+    expand_static_cap(item_impl, cap_type).into()
 }

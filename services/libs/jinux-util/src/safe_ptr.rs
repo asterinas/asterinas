@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 use jinux_frame::vm::VmIo;
 use jinux_frame::Result;
-use jinux_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
+use jinux_rights::{Dup, Exec, Full, Read, Signal, TRights, Write};
 use jinux_rights_proc::require;
 use pod::Pod;
 
@@ -161,7 +161,7 @@ impl<T: Pod, M: VmIo> SafePtr<T, M> {
         Self {
             vm_obj,
             addr,
-            rights: TRightSet(<TRights![Dup, Read, Write, Exec, Signal]>::new()),
+            rights: <TRights![Dup, Read, Write, Exec, Signal]>::new(),
             phantom: PhantomData,
         }
     }

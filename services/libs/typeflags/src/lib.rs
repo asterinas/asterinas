@@ -5,7 +5,7 @@
 //!
 //! typeflags is used to define another declarive macro to define type set.
 //! It can be used as the following example.
-//! ```rust
+//! ```ignore
 //! typeflags! {
 //!     pub trait RightSet: u32 {
 //!          struct Read = 1 << 1;
@@ -15,12 +15,12 @@
 //! ```
 //! The code will generate a macro with the name as RightSet, we can use this macro to define typesets with different types.
 //! Usage example:
-//! ```rust
-//! type O = RightSet![];               // Nil
-//! type R = RightSet![Read];           // Cons<Read, Nil>
-//! type W = RightSet![Write];          // Cons<Write, Nil>
-//! type RW = RightSet![Read, Write];   // Cons<Write, Cons<Read, Nil>>
-//! type WR = RightSet![Write, Read];   // Cons<Write, Cons<Read, Nil>>
+//! ```ignore
+//! type O = RightSet![];               // TypeWrapper<Nil>
+//! type R = RightSet![Read];           // TypeWrapper<Cons<Read, Nil>
+//! type W = RightSet![Write];          // TypeWrapper<Cons<Write, Nil>>
+//! type RW = RightSet![Read, Write];   // TypeWrapper<Cons<Write, Cons<Read, Nil>>>
+//! type WR = RightSet![Write, Read];   // TypeWrapper<Cons<Write, Cons<Read, Nil>>>
 //! ```
 //!
 //! Test Example

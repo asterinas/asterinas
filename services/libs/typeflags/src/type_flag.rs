@@ -36,7 +36,7 @@ impl Parse for TypeFlagDef {
         // read content inside brace
         let content;
         let _ = braced!(content in input);
-        let items = content.parse_terminated(TypeFlagItem::parse)?;
+        let items = content.parse_terminated(TypeFlagItem::parse, Token![;])?;
 
         let res = TypeFlagDef {
             attributes,
@@ -77,12 +77,11 @@ impl TypeFlagDef {
         let type_ = self.type_.clone();
         quote!(
             #(#attributes)*
-            #vis trait #ident : Sync + Send + Copy + Clone{
+            #vis trait #ident : Sync + Send + Copy + Clone + ::typeflags_util::TypeWrap {
                 const BITS: #type_;
 
                 fn new() -> Self;
             }
-
         )
     }
 

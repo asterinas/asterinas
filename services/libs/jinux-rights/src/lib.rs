@@ -1,7 +1,5 @@
 #![no_std]
 
-use core::ops::{Deref, DerefMut};
-
 bitflags::bitflags! {
     /// Value-based access rights.
     ///
@@ -47,41 +45,6 @@ typeflags::typeflags! {
 }
 
 /// The full set of access rights.
-pub type Full = TRightSet<TRights![Dup, Read, Write, Exec, Signal]>;
+pub type Full = TRights![Dup, Read, Write, Exec, Signal];
 pub type ReadOp = TRights![Read];
 pub type WriteOp = TRights![Write];
-
-/// Wrapper for TRights, used to bypass an error message from the Rust compiler,
-/// the relevant issue is: https://github.com/rust-lang/rfcs/issues/2758
-///
-/// Example:
-///
-/// ```rust
-/// pub struct Vmo<R=Rights>(R);
-///
-/// impl<R:TRights> Vmo<TRightSet<R>>{
-///     //...
-/// }
-///
-/// impl Vmo<Rights>{
-///     //...
-/// }
-///
-/// ```
-///
-#[derive(Clone, Copy)]
-pub struct TRightSet<T>(pub T);
-
-impl<T> Deref for TRightSet<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<T> DerefMut for TRightSet<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}

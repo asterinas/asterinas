@@ -5,7 +5,8 @@ use core::ops::Range;
 
 use align_ext::AlignExt;
 use jinux_frame::vm::{VmAllocOptions, VmFrameVec};
-use jinux_rights_proc::require;
+use jinux_rights_proc::{require, static_cap};
+use typeflags_util::TypeWrapper;
 use typeflags_util::{SetExtend, SetExtendOp};
 
 use crate::prelude::*;
@@ -13,7 +14,7 @@ use crate::prelude::*;
 use crate::vm::vmo::InheritedPages;
 use crate::vm::vmo::VmoType;
 use crate::vm::vmo::{VmoInner, Vmo_};
-use jinux_rights::{Dup, Rights, TRightSet, TRights, Write};
+use jinux_rights::{Dup, Rights, TRights, Write};
 
 use super::VmoRightsOp;
 use super::{Pager, Vmo, VmoFlags};
@@ -105,14 +106,15 @@ impl VmoOptions<Rights> {
     }
 }
 
-impl<R: TRights> VmoOptions<TRightSet<R>> {
+#[static_cap(R)]
+impl<R: TRights> VmoOptions<R> {
     /// Allocates the VMO according to the specified options.
     ///
     /// # Access rights
     ///
     /// The VMO is initially assigned the access rights represented
     /// by `R: TRights`.
-    pub fn alloc(self) -> Result<Vmo<TRightSet<R>>> {
+    pub fn alloc(self) -> Result<Vmo<R>> {
         let VmoOptions {
             size,
             flags,
@@ -120,7 +122,7 @@ impl<R: TRights> VmoOptions<TRightSet<R>> {
             pager,
         } = self;
         let vmo_ = alloc_vmo_(size, flags, pager)?;
-        Ok(Vmo(Arc::new(vmo_), TRightSet(R::new())))
+        Ok(Vmo(Arc::new(vmo_), R::new()))
     }
 }
 
@@ -252,7 +254,8 @@ pub struct VmoChildOptions<R, C> {
     marker: PhantomData<C>,
 }
 
-impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoSliceChild> {
+#[static_cap(R)]
+impl<R: TRights> VmoChildOptions<R, VmoSliceChild> {
     /// Creates a default set of options for creating a slice VMO child.
     ///
     /// A slice child of a VMO, which has direct access to a range of memory
@@ -261,7 +264,7 @@ impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoSliceChild> {
     ///
     /// The range of a child must be within that of the parent.
     #[require(R > Dup)]
-    pub fn new_slice(parent: Vmo<TRightSet<R>>, range: Range<usize>) -> Self {
+    pub fn new_slice(parent: Vmo<R>, range: Range<usize>) -> Self {
         Self {
             flags: parent.flags() & Self::PARENT_FLAGS_MASK,
             parent,
@@ -373,13 +376,14 @@ impl VmoChildOptions<Rights, VmoCowChild> {
     }
 }
 
-impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoSliceChild> {
+#[static_cap(R)]
+impl<R: TRights> VmoChildOptions<R, VmoSliceChild> {
     /// Allocates the child VMO.
     ///
     /// # Access rights
     ///
     /// The child VMO is initially assigned all the parent's access rights.
-    pub fn alloc(self) -> Result<Vmo<TRightSet<R>>> {
+    pub fn alloc(self) -> Result<Vmo<R>> {
         let VmoChildOptions {
             parent,
             range,
@@ -392,17 +396,18 @@ impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoSliceChild> {
     }
 }
 
-impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoCowChild> {
+#[static_cap(R)]
+impl<R: TRights> VmoChildOptions<R, VmoCowChild> {
     /// Allocates the child VMO.
     ///
     /// # Access rights
     ///
     /// The child VMO is initially assigned all the parent's access rights
     /// plus the Write right.
-    pub fn alloc(self) -> Result<Vmo<TRightSet<SetExtendOp<R, Write>>>>
+    pub fn alloc(self) -> Result<Vmo<SetExtendOp<R, Write>>>
     where
         R: SetExtend<Write>,
-        SetExtendOp<R, Write>: TRights,
+        TypeWrapper<SetExtendOp<R, Write>>: TRights,
     {
         let VmoChildOptions {
             parent,
@@ -412,8 +417,8 @@ impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoCowChild> {
         } = self;
         let Vmo(parent_vmo_, _) = parent;
         let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Cow)?;
-        let right = SetExtendOp::<R, Write>::new();
-        Ok(Vmo(Arc::new(child_vmo_), TRightSet(right)))
+        let right = TypeWrapper::<SetExtendOp<R, Write>>::new();
+        Ok(Vmo(Arc::new(child_vmo_), right))
     }
 }
 

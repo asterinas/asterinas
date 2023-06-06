@@ -1,9 +1,9 @@
 use crate::prelude::*;
 use core::ops::Range;
 use jinux_frame::vm::VmIo;
-use jinux_rights_proc::require;
+use jinux_rights_proc::{require, static_cap};
 
-use jinux_rights::{Dup, Rights, TRightSet, TRights, Write};
+use jinux_rights::{Dup, Rights, TRights, Write};
 
 use super::VmoRightsOp;
 use super::{
@@ -11,7 +11,8 @@ use super::{
     Vmo, VmoChildOptions,
 };
 
-impl<R: TRights> Vmo<TRightSet<R>> {
+#[static_cap(R)]
+impl<R: TRights> Vmo<R> {
     /// Creates a new slice VMO through a set of VMO child options.
     ///
     /// # Example
@@ -35,7 +36,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     pub fn new_slice_child(
         &self,
         range: Range<usize>,
-    ) -> Result<VmoChildOptions<TRightSet<R>, VmoSliceChild>> {
+    ) -> Result<VmoChildOptions<R, VmoSliceChild>> {
         let dup_self = self.dup()?;
         Ok(VmoChildOptions::new_slice(dup_self, range))
     }
@@ -61,10 +62,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// The child will be given the access rights of the parent
     /// plus the Write right.
     #[require(R > Dup)]
-    pub fn new_cow_child(
-        &self,
-        range: Range<usize>,
-    ) -> Result<VmoChildOptions<TRightSet<R>, VmoCowChild>> {
+    pub fn new_cow_child(&self, range: Range<usize>) -> Result<VmoChildOptions<R, VmoCowChild>> {
         let dup_self = self.dup()?;
         Ok(VmoChildOptions::new_cow(dup_self, range))
     }
@@ -144,7 +142,8 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     }
 }
 
-impl<R: TRights> VmIo for Vmo<TRightSet<R>> {
+#[static_cap(R)]
+impl<R: TRights> VmIo for Vmo<R> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
         self.0.read_bytes(offset, buf)?;
@@ -158,7 +157,8 @@ impl<R: TRights> VmIo for Vmo<TRightSet<R>> {
     }
 }
 
-impl<R: TRights> VmoRightsOp for Vmo<TRightSet<R>> {
+#[static_cap(R)]
+impl<R: TRights> VmoRightsOp for Vmo<R> {
     fn rights(&self) -> Rights {
         Rights::from_bits(R::BITS).unwrap()
     }

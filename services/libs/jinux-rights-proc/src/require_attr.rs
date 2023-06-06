@@ -1,7 +1,7 @@
 //! expand the require macro
 
-use proc_macro2::{Ident, TokenStream};
-use quote::quote;
+use proc_macro2::TokenStream;
+use quote::{quote, ToTokens};
 use syn::{
     fold::Fold, parse::Parse, parse_quote, punctuated::Punctuated, token::Comma, GenericParam,
     Generics, Token, Type, WhereClause,
@@ -11,14 +11,14 @@ use super::require_item::RequireItem;
 
 pub struct RequireAttr {
     type_set: Type,
-    required_types: Punctuated<Ident, Token![|]>,
+    required_types: Punctuated<Type, Token![|]>,
 }
 
 impl Parse for RequireAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let type_set: Type = input.parse()?;
         let _: Token![>] = input.parse()?;
-        let required_types = input.parse_terminated(Ident::parse)?;
+        let required_types = input.parse_terminated(Type::parse, Token![|])?;
         Ok(RequireAttr {
             type_set,
             required_types,
@@ -78,18 +78,19 @@ pub fn expand_require(item: RequireItem, mut require_attr: RequireAttr) -> Token
     }
 }
 
-fn is_generic_param(ident: Ident, generic_params: &Punctuated<GenericParam, Comma>) -> bool {
+fn is_generic_param(bound_type: Type, generic_params: &Punctuated<GenericParam, Comma>) -> bool {
+    let bound_type = bound_type.to_token_stream().to_string();
     for generic_param in generic_params {
         match generic_param {
             GenericParam::Type(type_param) => {
-                let type_param_ident = type_param.ident.clone();
-                if ident.to_string() == type_param_ident.to_string() {
+                let type_param_ident = type_param.ident.to_token_stream().to_string();
+                if bound_type == type_param_ident {
                     return true;
                 }
             }
             GenericParam::Const(const_param) => {
-                let const_param_ident = const_param.ident.clone();
-                if ident.to_string() == const_param_ident.to_string() {
+                let const_param_ident = const_param.ident.to_token_stream().to_string();
+                if bound_type == const_param_ident {
                     return true;
                 }
             }
@@ -102,16 +103,16 @@ fn is_generic_param(ident: Ident, generic_params: &Punctuated<GenericParam, Comm
 
 fn set_contain_where_clause(
     require_attr: &RequireAttr,
-    required_type: Ident,
+    required_type: Type,
     old_where_clause: Option<WhereClause>,
 ) -> WhereClause {
     let type_set = require_attr.type_set.clone();
     let mut where_predicates = Vec::new();
     where_predicates.push(parse_quote!(
-        #type_set: ::typeflags_util::SetContain<#required_type>
+        ::typeflags_util::TypeWrapOp<#type_set>: ::typeflags_util::SetContain<#required_type>
     ));
     where_predicates.push(parse_quote!(
-        ::typeflags_util::SetContainOp<#type_set, #required_type>: ::typeflags_util::IsTrue
+        ::typeflags_util::SetContainOp<::typeflags_util::TypeWrapOp<#type_set>, #required_type>: ::typeflags_util::IsTrue
     ));
 
     let comma = parse_quote!(,);
@@ -153,7 +154,7 @@ fn set_contain_where_clause(
 /// generate a where clause to constraint the type set with another type set
 fn set_include_where_clause(
     require_attr: &RequireAttr,
-    required_type_set: Ident,
+    required_type_set: Type,
     old_where_clause: Option<WhereClause>,
 ) -> WhereClause {
     let type_set = require_attr.type_set.clone();
@@ -161,13 +162,13 @@ fn set_include_where_clause(
 
     let mut additional_where_prediates = Vec::new();
     additional_where_prediates.push(parse_quote!(
-        #required_type_set: ::typeflags_util::Set
+        ::typeflags_util::TypeWrapOp<#required_type_set>: ::typeflags_util::Set
     ));
     additional_where_prediates.push(parse_quote!(
-        #type_set: ::typeflags_util::SetInclude<#required_type_set>
+        ::typeflags_util::TypeWrapOp<#type_set>: ::typeflags_util::SetInclude<::typeflags_util::TypeWrapOp<#required_type_set>>
     ));
     additional_where_prediates.push(parse_quote!(
-        ::typeflags_util::SetIncludeOp<#type_set, #required_type_set>: ::typeflags_util::IsTrue
+        ::typeflags_util::SetIncludeOp<::typeflags_util::TypeWrapOp<#type_set>, ::typeflags_util::TypeWrapOp<#required_type_set>>: ::typeflags_util::IsTrue
     ));
 
     match old_where_clause {

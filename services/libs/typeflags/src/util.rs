@@ -1,5 +1,6 @@
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, TokenStreamExt};
+use syn::parse_quote;
 
 use crate::{
     flag_set::{generate_flag_sets, FlagSet},
@@ -131,7 +132,7 @@ pub fn export_declarive_macro(type_flags_def: &TypeFlagDef, flag_sets: &[FlagSet
     let macro_ident = type_flags_def.trait_ident();
     let macro_item_tokens = flag_sets
         .iter()
-        .map(|flag_set| flag_set.macro_item_tokens())
+        .map(|flag_set| flag_set.macro_item_tokens(wrapper_ident()))
         .fold(Vec::new(), |mut left, mut new_item| {
             left.append(&mut new_item);
             left
@@ -145,4 +146,8 @@ pub fn export_declarive_macro(type_flags_def: &TypeFlagDef, flag_sets: &[FlagSet
     );
 
     tokens
+}
+
+pub fn wrapper_ident() -> TokenStream {
+    parse_quote!(::typeflags_util::TypeWrapper)
 }
