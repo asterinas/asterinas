@@ -75,6 +75,7 @@ use self::accept::sys_accept;
 use self::bind::sys_bind;
 use self::connect::sys_connect;
 use self::getpeername::sys_getpeername;
+use self::getrandom::sys_getrandom;
 use self::getsockname::sys_getsockname;
 use self::listen::sys_listen;
 use self::pread64::sys_pread64;
@@ -114,6 +115,7 @@ mod getpeername;
 mod getpgrp;
 mod getpid;
 mod getppid;
+mod getrandom;
 mod getsockname;
 mod gettid;
 mod gettimeofday;
@@ -295,7 +297,8 @@ define_syscall_nums!(
     SYS_UTIMENSAT = 280,
     SYS_EPOLL_CREATE1 = 291,
     SYS_PIPE2 = 293,
-    SYS_PRLIMIT64 = 302
+    SYS_PRLIMIT64 = 302,
+    SYS_GETRANDOM = 318
 );
 
 pub struct SyscallArgument {
@@ -453,6 +456,7 @@ pub fn syscall_dispatch(
         SYS_EPOLL_CREATE1 => syscall_handler!(1, sys_epoll_create1, args),
         SYS_PIPE2 => syscall_handler!(2, sys_pipe2, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
+        SYS_GETRANDOM => syscall_handler!(3, sys_getrandom, args),
         _ => {
             error!("Unimplemented syscall number: {}", syscall_number);
             return_errno_with_message!(Errno::ENOSYS, "Syscall was unimplemented");
