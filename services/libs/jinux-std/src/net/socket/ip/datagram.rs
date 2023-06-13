@@ -9,9 +9,7 @@ use crate::{
         iface::{AnyBoundSocket, AnyUnboundSocket, RawUdpSocket},
         poll_ifaces,
         socket::{
-            util::{
-                send_recv_flags::SendRecvFlags, sock_options::SockOptionName, sockaddr::SocketAddr,
-            },
+            util::{send_recv_flags::SendRecvFlags, sockaddr::SocketAddr},
             Socket,
         },
     },
@@ -214,11 +212,6 @@ impl Socket for DatagramSocket {
         } else {
             return_errno_with_message!(Errno::EINVAL, "remote endpoint is not specified");
         }
-    }
-
-    fn set_sock_option(&self, optname: SockOptionName, option_val: &[u8]) -> Result<()> {
-        // FIXME: deal with sock options here
-        Ok(())
     }
 
     // FIXME: respect RecvFromFlags

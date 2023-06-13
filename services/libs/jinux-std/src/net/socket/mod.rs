@@ -2,7 +2,7 @@ use crate::{fs::file_handle::FileLike, prelude::*};
 
 pub use self::util::send_recv_flags::SendRecvFlags;
 pub use self::util::shutdown_cmd::SockShutdownCmd;
-pub use self::util::sock_options::SockOptionName;
+pub use self::util::sock_options::{SockOptionLevel, SockOptionName};
 pub use self::util::sockaddr::SocketAddr;
 
 pub mod ip;
@@ -51,7 +51,12 @@ pub trait Socket: FileLike + Send + Sync {
     }
 
     /// Set options on the socket
-    fn set_sock_option(&self, optname: SockOptionName, option_val: &[u8]) -> Result<()> {
+    fn set_sock_option(
+        &self,
+        opt_level: SockOptionLevel,
+        optname: SockOptionName,
+        option_val: &[u8],
+    ) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "setsockopt not implemented");
     }
 
