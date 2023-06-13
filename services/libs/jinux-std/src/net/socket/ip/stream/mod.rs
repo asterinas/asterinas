@@ -162,11 +162,6 @@ impl Socket for StreamSocket {
         return_errno_with_message!(Errno::EINVAL, "getsockopt not implemented");
     }
 
-    fn set_sock_option(&self, optname: SockOptionName, option_val: &[u8]) -> Result<()> {
-        // TODO: implement setsockopt
-        Ok(())
-    }
-
     fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         let state = self.state.read();
         let (recv_size, remote_endpoint) = match &*state {

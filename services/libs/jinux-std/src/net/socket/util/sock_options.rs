@@ -23,4 +23,19 @@ pub enum SockOptionName {
     SO_LINGER = 13,
     SO_BSDCOMPAT = 14,
     SO_REUSEPORT = 15,
+    SO_RCVTIMEO_NEW = 66,
+    SO_SNDTIMEO_NEW = 67,
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+/// Sock Opt level. The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h#L343
+pub enum SockOptionLevel {
+    SOL_IP = 0,
+    SOL_SOCKET = 1,
+    SOL_TCP = 6,
+    SOL_UDP = 17,
+    SOL_IPV6 = 41,
+    SOL_RAW = 255,
 }

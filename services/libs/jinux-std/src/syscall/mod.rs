@@ -78,6 +78,7 @@ use self::execve::sys_execveat;
 use self::getpeername::sys_getpeername;
 use self::getrandom::sys_getrandom;
 use self::getsockname::sys_getsockname;
+use self::getsockopt::sys_getsockopt;
 use self::listen::sys_listen;
 use self::pread64::sys_pread64;
 use self::recvfrom::sys_recvfrom;
@@ -118,6 +119,7 @@ mod getpid;
 mod getppid;
 mod getrandom;
 mod getsockname;
+mod getsockopt;
 mod gettid;
 mod gettimeofday;
 mod getuid;
@@ -239,6 +241,7 @@ define_syscall_nums!(
     SYS_GETSOCKNAME = 51,
     SYS_GETPEERNAME = 52,
     SYS_SETSOCKOPT = 54,
+    SYS_GETSOCKOPT = 55,
     SYS_CLONE = 56,
     SYS_FORK = 57,
     SYS_EXECVE = 59,
@@ -398,6 +401,7 @@ pub fn syscall_dispatch(
         SYS_GETSOCKNAME => syscall_handler!(3, sys_getsockname, args),
         SYS_GETPEERNAME => syscall_handler!(3, sys_getpeername, args),
         SYS_SETSOCKOPT => syscall_handler!(5, sys_setsockopt, args),
+        SYS_GETSOCKOPT => syscall_handler!(5, sys_getsockopt, args),
         SYS_CLONE => syscall_handler!(5, sys_clone, args, context.clone()),
         SYS_FORK => syscall_handler!(0, sys_fork, context.clone()),
         SYS_EXECVE => syscall_handler!(3, sys_execve, args, context),
