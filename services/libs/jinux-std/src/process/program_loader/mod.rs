@@ -2,6 +2,7 @@ pub mod elf;
 mod shebang;
 
 use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
+use crate::fs::utils::Dentry;
 use crate::prelude::*;
 use crate::vm::vmar::Vmar;
 use jinux_rights::Full;
@@ -18,21 +19,12 @@ use self::shebang::parse_shebang_line;
 /// because the interpreter is usually an elf binary(e.g., /bin/bash)
 pub fn load_program_to_root_vmar(
     root_vmar: &Vmar<Full>,
-    executable_path: String,
+    elf_file: Arc<Dentry>,
     argv: Vec<CString>,
     envp: Vec<CString>,
     fs_resolver: &FsResolver,
     recursion_limit: usize,
-) -> Result<(String, ElfLoadInfo)> {
-    // Temporary use because fs_resolver cannot deal with procfs now.
-    // FIXME: removes this when procfs is ready.
-    let executable_path = if &executable_path == "/proc/self/exe" {
-        current!().executable_path().read().clone()
-    } else {
-        executable_path
-    };
-    let fs_path = FsPath::new(AT_FDCWD, &executable_path)?;
-    let elf_file = fs_resolver.lookup(&fs_path)?;
+) -> Result<ElfLoadInfo> {
     let abs_path = elf_file.abs_path();
     let vnode = elf_file.vnode();
     let file_header = {
@@ -46,7 +38,11 @@ pub fn load_program_to_root_vmar(
             return_errno_with_message!(Errno::EINVAL, "the recursieve limit is reached");
         }
         new_argv.extend_from_slice(&argv);
-        let interpreter = new_argv[0].to_str()?.to_string();
+        let interpreter = {
+            let filename = new_argv[0].to_str()?.to_string();
+            let fs_path = FsPath::new(AT_FDCWD, &filename)?;
+            fs_resolver.lookup(&fs_path)?
+        };
         return load_program_to_root_vmar(
             root_vmar,
             interpreter,
@@ -56,9 +52,7 @@ pub fn load_program_to_root_vmar(
             recursion_limit - 1,
         );
     }
-
-    debug!("load executable,  path = {}", executable_path);
     let elf_load_info =
         load_elf_to_root_vmar(root_vmar, &*file_header, elf_file, fs_resolver, argv, envp)?;
-    Ok((abs_path, elf_load_info))
+    Ok(elf_load_info)
 }
