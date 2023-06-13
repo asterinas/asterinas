@@ -1,3 +1,6 @@
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use crate::fs::utils::StatusFlags;
 use crate::net::iface::IpEndpoint;
 
 use crate::{
@@ -20,6 +23,7 @@ use super::always_some::AlwaysSome;
 use super::common::{bind_socket, get_ephemeral_endpoint};
 
 pub struct DatagramSocket {
+    nonblocking: AtomicBool,
     inner: RwLock<Inner>,
 }
 
@@ -128,6 +132,7 @@ impl DatagramSocket {
         let udp_socket = AnyUnboundSocket::new_udp();
         Self {
             inner: RwLock::new(Inner::Unbound(AlwaysSome::new(udp_socket))),
+            nonblocking: AtomicBool::new(false),
         }
     }
 
@@ -156,6 +161,14 @@ impl DatagramSocket {
                 "udp should provide remote addr",
             ))
     }
+
+    pub fn nonblocking(&self) -> bool {
+        self.nonblocking.load(Ordering::SeqCst)
+    }
+
+    pub fn set_nonblocking(&self, nonblocking: bool) {
+        self.nonblocking.store(nonblocking, Ordering::SeqCst);
+    }
 }
 
 impl FileLike for DatagramSocket {
@@ -178,6 +191,23 @@ impl FileLike for DatagramSocket {
 
     fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
+    }
+
+    fn status_flags(&self) -> StatusFlags {
+        if self.nonblocking() {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        }
+    }
+
+    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
+        if new_flags.contains(StatusFlags::O_NONBLOCK) {
+            self.set_nonblocking(true);
+        } else {
+            self.set_nonblocking(false);
+        }
+        Ok(())
     }
 }
 

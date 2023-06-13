@@ -1,3 +1,5 @@
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use crate::fs::utils::{IoEvents, Poller};
 use crate::net::iface::Iface;
 use crate::net::iface::IpEndpoint;
@@ -9,6 +11,8 @@ use crate::prelude::*;
 
 pub struct InitStream {
     inner: RwLock<Inner>,
+    // TODO: deal with nonblocking
+    nonblocking: AtomicBool,
 }
 
 enum Inner {
@@ -114,6 +118,7 @@ impl InitStream {
         let socket = AnyUnboundSocket::new_tcp();
         let inner = Inner::Unbound(AlwaysSome::new(socket));
         Self {
+            nonblocking: AtomicBool::new(false),
             inner: RwLock::new(inner),
         }
     }
@@ -171,5 +176,13 @@ impl InitStream {
 
     pub fn bound_socket(&self) -> Option<Arc<AnyBoundSocket>> {
         self.inner.read().bound_socket().map(Clone::clone)
+    }
+
+    pub fn nonblocking(&self) -> bool {
+        self.nonblocking.load(Ordering::SeqCst)
+    }
+
+    pub fn set_nonblocking(&self, nonblocking: bool) {
+        self.nonblocking.store(nonblocking, Ordering::SeqCst);
     }
 }
