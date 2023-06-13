@@ -24,28 +24,6 @@ pub fn sys_openat(
         dirfd, pathname, flags, mode
     );
 
-    // TODO: do real openat
-
-    // Below are three special files we encountered when running busybox ash.
-    // We currently only return ENOENT, which means the file does not exist.
-    if dirfd == AT_FDCWD && pathname == CString::new("/etc/passwd")? {
-        return_errno_with_message!(Errno::ENOENT, "No such file");
-    }
-
-    if dirfd == AT_FDCWD && pathname == CString::new("/etc/profile")? {
-        return_errno_with_message!(Errno::ENOENT, "No such file");
-    }
-
-    if dirfd == AT_FDCWD && pathname == CString::new("./trace")? {
-        // Debug use: This file is used for output busybox log
-        let trace_file = Arc::new(BusyBoxTraceFile);
-        let current = current!();
-        let mut file_table = current.file_table().lock();
-        let fd = file_table.insert(trace_file);
-        return Ok(SyscallReturn::Return(fd as _));
-    }
-
-    // The common path
     let current = current!();
     let file_handle = {
         let pathname = pathname.to_string_lossy();
