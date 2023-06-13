@@ -41,6 +41,10 @@ impl InodeType {
             _ => false,
         }
     }
+
+    pub fn is_reguler_file(&self) -> bool {
+        *self == InodeType::File
+    }
 }
 
 impl From<DeviceType> for InodeType {

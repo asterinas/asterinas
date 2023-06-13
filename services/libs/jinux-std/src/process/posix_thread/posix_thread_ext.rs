@@ -2,7 +2,7 @@ use jinux_frame::{cpu::UserContext, user::UserSpace};
 use jinux_rights::Full;
 
 use crate::{
-    fs::fs_resolver::FsResolver,
+    fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     prelude::*,
     process::{program_loader::load_program_to_root_vmar, Process},
     thread::{Thread, Tid},
@@ -34,14 +34,12 @@ impl PosixThreadExt for Thread {
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Arc<Self>> {
-        let (_, elf_load_info) = load_program_to_root_vmar(
-            root_vmar,
-            executable_path.to_string(),
-            argv,
-            envp,
-            fs_resolver,
-            1,
-        )?;
+        let elf_file = {
+            let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
+            fs_resolver.lookup(&fs_path)?
+        };
+        let elf_load_info =
+            load_program_to_root_vmar(root_vmar, elf_file, argv, envp, fs_resolver, 1)?;
 
         let vm_space = root_vmar.vm_space().clone();
         let mut cpu_ctx = UserContext::default();

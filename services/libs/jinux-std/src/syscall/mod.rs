@@ -74,6 +74,7 @@ use jinux_frame::cpu::UserContext;
 use self::accept::sys_accept;
 use self::bind::sys_bind;
 use self::connect::sys_connect;
+use self::execve::sys_execveat;
 use self::getpeername::sys_getpeername;
 use self::getrandom::sys_getrandom;
 use self::getsockname::sys_getsockname;
@@ -298,7 +299,8 @@ define_syscall_nums!(
     SYS_EPOLL_CREATE1 = 291,
     SYS_PIPE2 = 293,
     SYS_PRLIMIT64 = 302,
-    SYS_GETRANDOM = 318
+    SYS_GETRANDOM = 318,
+    SYS_EXECVEAT = 322
 );
 
 pub struct SyscallArgument {
@@ -457,6 +459,7 @@ pub fn syscall_dispatch(
         SYS_PIPE2 => syscall_handler!(2, sys_pipe2, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
         SYS_GETRANDOM => syscall_handler!(3, sys_getrandom, args),
+        SYS_EXECVEAT => syscall_handler!(5, sys_execveat, args, context),
         _ => {
             error!("Unimplemented syscall number: {}", syscall_number);
             return_errno_with_message!(Errno::ENOSYS, "Syscall was unimplemented");

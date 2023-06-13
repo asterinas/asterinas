@@ -1,12 +1,16 @@
 use jinux_frame::cpu::UserContext;
 
 use super::{constants::*, SyscallReturn};
+use crate::fs::file_table::FileDescripter;
+use crate::fs::fs_resolver::{FsPath, AT_FDCWD};
+use crate::fs::utils::{Dentry, InodeType};
 use crate::log_syscall_entry;
+use crate::prelude::*;
 use crate::process::posix_thread::name::ThreadName;
 use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
 use crate::process::program_loader::load_program_to_root_vmar;
+use crate::syscall::{SYS_EXECVE, SYS_EXECVEAT};
 use crate::util::{read_cstring_from_user, read_val_from_user};
-use crate::{prelude::*, syscall::SYS_EXECVE};
 
 pub fn sys_execve(
     filename_ptr: Vaddr,
@@ -15,9 +19,78 @@ pub fn sys_execve(
     context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_EXECVE);
-    let executable_path = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
-    let executable_path = executable_path.into_string().unwrap();
+    let executable_path = read_filename(filename_ptr)?;
+    let elf_file = {
+        let current = current!();
+        let fs_resolver = current.fs().read();
+        let fs_path = FsPath::new(AT_FDCWD, &executable_path)?;
+        fs_resolver.lookup(&fs_path)?
+    };
+    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, context)?;
+    Ok(SyscallReturn::NoReturn)
+}
 
+pub fn sys_execveat(
+    dfd: FileDescripter,
+    filename_ptr: Vaddr,
+    argv_ptr_ptr: Vaddr,
+    envp_ptr_ptr: Vaddr,
+    flags: u32,
+    context: &mut UserContext,
+) -> Result<SyscallReturn> {
+    log_syscall_entry!(SYS_EXECVEAT);
+    let flags = OpenFlags::from_bits_truncate(flags);
+    let filename = read_filename(filename_ptr)?;
+    let elf_file = lookup_executable_file(dfd, filename, flags)?;
+    check_file_type_and_permission(&elf_file)?;
+    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, context)?;
+    Ok(SyscallReturn::NoReturn)
+}
+
+fn lookup_executable_file(
+    dfd: FileDescripter,
+    filename: String,
+    flags: OpenFlags,
+) -> Result<Arc<Dentry>> {
+    let current = current!();
+    let fs_resolver = current.fs().read();
+    let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.len() == 0 {
+        fs_resolver.lookup_from_fd(dfd)
+    } else {
+        let fs_path = FsPath::new(dfd, &filename)?;
+        if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
+            let dentry = fs_resolver.lookup_no_follow(&fs_path)?;
+            if dentry.inode_type() == InodeType::SymLink {
+                return_errno_with_message!(Errno::ELOOP, "the executable file is a symlink");
+            }
+            Ok(dentry)
+        } else {
+            fs_resolver.lookup(&fs_path)
+        }
+    }?;
+    check_file_type_and_permission(&dentry)?;
+    Ok(dentry)
+}
+
+fn check_file_type_and_permission(dentry: &Arc<Dentry>) -> Result<()> {
+    if !dentry.inode_type().is_reguler_file() {
+        return_errno_with_message!(Errno::EACCES, "the dentry is not a regular file");
+    }
+
+    if !dentry.inode_mode().is_executable() {
+        return_errno_with_message!(Errno::EACCES, "the dentry is not executable");
+    }
+
+    Ok(())
+}
+
+fn do_execve(
+    elf_file: Arc<Dentry>,
+    argv_ptr_ptr: Vaddr,
+    envp_ptr_ptr: Vaddr,
+    context: &mut UserContext,
+) -> Result<()> {
+    let executable_path = elf_file.abs_path();
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;
     debug!(
@@ -27,9 +100,8 @@ pub fn sys_execve(
     // FIXME: should we set thread name in execve?
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
-    let mut thread_name = posix_thread.thread_name().lock();
-    let new_thread_name = ThreadName::new_from_executable_path(&executable_path)?;
-    *thread_name = Some(new_thread_name);
+    *posix_thread.thread_name().lock() =
+        Some(ThreadName::new_from_executable_path(&executable_path)?);
     // clear ctid
     // FIXME: should we clear ctid when execve?
     *posix_thread.clear_child_tid().lock() = 0;
@@ -42,11 +114,10 @@ pub fn sys_execve(
     // load elf content to new vm space
     let fs_resolver = &*current.fs().read();
     debug!("load program to root vmar");
-    let (new_executable_path, elf_load_info) =
-        load_program_to_root_vmar(root_vmar, executable_path, argv, envp, fs_resolver, 1)?;
+    let elf_load_info = load_program_to_root_vmar(root_vmar, elf_file, argv, envp, fs_resolver, 1)?;
     debug!("load elf in execve succeeds");
     // set executable path
-    *current.executable_path().write() = new_executable_path;
+    *current.executable_path().write() = executable_path;
     // set signal disposition to default
     current.sig_dispositions().lock().inherit();
     // set cpu context to default
@@ -60,7 +131,19 @@ pub fn sys_execve(
     // set new user stack top
     context.set_rsp(elf_load_info.user_stack_top() as _);
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
-    Ok(SyscallReturn::NoReturn)
+    Ok(())
+}
+
+bitflags::bitflags! {
+    struct OpenFlags: u32 {
+        const AT_EMPTY_PATH = 0x1000;
+        const AT_SYMLINK_NOFOLLOW = 0x100;
+    }
+}
+
+fn read_filename(filename_ptr: Vaddr) -> Result<String> {
+    let filename = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
+    Ok(filename.into_string().unwrap())
 }
 
 fn read_cstring_vec(
