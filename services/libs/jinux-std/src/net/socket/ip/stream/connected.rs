@@ -1,3 +1,5 @@
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use crate::net::iface::IpEndpoint;
 use crate::{
     fs::utils::{IoEvents, Poller},
@@ -10,13 +12,19 @@ use crate::{
 };
 
 pub struct ConnectedStream {
+    nonblocking: AtomicBool,
     bound_socket: Arc<AnyBoundSocket>,
     remote_endpoint: IpEndpoint,
 }
 
 impl ConnectedStream {
-    pub fn new(bound_socket: Arc<AnyBoundSocket>, remote_endpoint: IpEndpoint) -> Self {
+    pub fn new(
+        nonblocking: bool,
+        bound_socket: Arc<AnyBoundSocket>,
+        remote_endpoint: IpEndpoint,
+    ) -> Self {
         Self {
+            nonblocking: AtomicBool::new(nonblocking),
             bound_socket,
             remote_endpoint,
         }
@@ -91,5 +99,13 @@ impl ConnectedStream {
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.bound_socket.poll(mask, poller)
+    }
+
+    pub fn nonblocking(&self) -> bool {
+        self.nonblocking.load(Ordering::SeqCst)
+    }
+
+    pub fn set_nonblocking(&self, nonblocking: bool) {
+        self.nonblocking.store(nonblocking, Ordering::SeqCst);
     }
 }

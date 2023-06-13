@@ -1,6 +1,6 @@
 use crate::fs::{
     file_handle::FileLike,
-    utils::{IoEvents, Poller},
+    utils::{IoEvents, Poller, StatusFlags},
 };
 use crate::net::socket::{
     util::{
@@ -37,6 +37,22 @@ impl StreamSocket {
             state: RwLock::new(state),
         }
     }
+
+    fn nonblocking(&self) -> bool {
+        match &*self.state.read() {
+            State::Init(init) => init.nonblocking(),
+            State::Connected(connected) => connected.nonblocking(),
+            State::Listen(listen) => listen.nonblocking(),
+        }
+    }
+
+    fn set_nonblocking(&self, nonblocking: bool) {
+        match &*self.state.read() {
+            State::Init(init) => init.set_nonblocking(nonblocking),
+            State::Connected(connected) => connected.set_nonblocking(nonblocking),
+            State::Listen(listen) => listen.set_nonblocking(nonblocking),
+        }
+    }
 }
 
 impl FileLike for StreamSocket {
@@ -62,6 +78,23 @@ impl FileLike for StreamSocket {
         }
     }
 
+    fn status_flags(&self) -> StatusFlags {
+        if self.nonblocking() {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        }
+    }
+
+    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
+        if new_flags.contains(StatusFlags::O_NONBLOCK) {
+            self.set_nonblocking(true);
+        } else {
+            self.set_nonblocking(false);
+        }
+        Ok(())
+    }
+
     fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
     }
@@ -84,9 +117,13 @@ impl Socket for StreamSocket {
         match &*state {
             State::Init(init_stream) => {
                 init_stream.connect(&remote_endpoint)?;
+                let nonblocking = init_stream.nonblocking();
                 let bound_socket = init_stream.bound_socket().unwrap();
-                let connected_stream =
-                    Arc::new(ConnectedStream::new(bound_socket, remote_endpoint));
+                let connected_stream = Arc::new(ConnectedStream::new(
+                    nonblocking,
+                    bound_socket,
+                    remote_endpoint,
+                ));
                 *state = State::Connected(connected_stream);
                 Ok(())
             }
@@ -101,8 +138,9 @@ impl Socket for StreamSocket {
                 if !init_stream.is_bound() {
                     return_errno_with_message!(Errno::EINVAL, "cannot listen without bound");
                 }
+                let nonblocking = init_stream.nonblocking();
                 let bound_socket = init_stream.bound_socket().unwrap();
-                let listener = Arc::new(ListenStream::new(bound_socket, backlog)?);
+                let listener = Arc::new(ListenStream::new(nonblocking, bound_socket, backlog)?);
                 *state = State::Listen(listener);
                 Ok(())
             }

@@ -1,3 +1,5 @@
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use crate::net::iface::{AnyUnboundSocket, BindPortConfig, IpEndpoint};
 
 use crate::fs::utils::{IoEvents, Poller};
@@ -7,16 +9,22 @@ use crate::{net::poll_ifaces, prelude::*};
 use super::connected::ConnectedStream;
 
 pub struct ListenStream {
+    nonblocking: AtomicBool,
     backlog: usize,
     /// Sockets also listening at LocalEndPoint when called `listen`
     backlog_sockets: RwLock<Vec<BacklogSocket>>,
 }
 
 impl ListenStream {
-    pub fn new(bound_socket: Arc<AnyBoundSocket>, backlog: usize) -> Result<Self> {
+    pub fn new(
+        nonblocking: bool,
+        bound_socket: Arc<AnyBoundSocket>,
+        backlog: usize,
+    ) -> Result<Self> {
         debug_assert!(backlog >= 1);
         let backlog_socket = BacklogSocket::new(&bound_socket)?;
         let listen_stream = Self {
+            nonblocking: AtomicBool::new(nonblocking),
             backlog,
             backlog_sockets: RwLock::new(vec![backlog_socket]),
         };
@@ -43,7 +51,8 @@ impl ListenStream {
                 let BacklogSocket {
                     bound_socket: backlog_socket,
                 } = accepted_socket;
-                ConnectedStream::new(backlog_socket, remote_endpoint)
+                let nonblocking = self.nonblocking();
+                ConnectedStream::new(nonblocking, backlog_socket, remote_endpoint)
             };
             return Ok((connected_stream, remote_endpoint));
         }
@@ -99,6 +108,14 @@ impl ListenStream {
 
     fn bound_socket(&self) -> Arc<AnyBoundSocket> {
         self.backlog_sockets.read()[0].bound_socket.clone()
+    }
+
+    pub fn nonblocking(&self) -> bool {
+        self.nonblocking.load(Ordering::SeqCst)
+    }
+
+    pub fn set_nonblocking(&self, nonblocking: bool) {
+        self.nonblocking.store(nonblocking, Ordering::SeqCst);
     }
 }
 
