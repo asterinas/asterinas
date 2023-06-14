@@ -15,6 +15,7 @@
 #![forbid(unsafe_code)]
 
 use crate::error::{Error, Result};
+use int_to_c_enum::TryFromInt;
 
 pub mod error;
 
@@ -192,7 +193,7 @@ impl FileMetadata {
         let raw_mode = read_hex_bytes_to_u32(&header.mode)?;
         let metadata = Self {
             ino: read_hex_bytes_to_u32(&header.ino)?,
-            type_: FileType::from_u32(raw_mode)?,
+            type_: FileType::try_from(raw_mode).map_err(|_| Error::FileTypeError)?,
             mode: (raw_mode & MODE_MASK) as u16,
             uid: read_hex_bytes_to_u32(&header.uid)?,
             gid: read_hex_bytes_to_u32(&header.gid)?,
@@ -270,7 +271,7 @@ impl FileMetadata {
 
 /// The type of the file.
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
 pub enum FileType {
     /// FIFO special file
     FiFo = 0o010000,
@@ -286,31 +287,6 @@ pub enum FileType {
     Link = 0o120000,
     /// Socket
     Socket = 0o140000,
-}
-
-impl FileType {
-    pub fn from_u32(bits: u32) -> Result<Self> {
-        const TYPE_MASK: u32 = 0o170000;
-        let bits = bits & TYPE_MASK;
-        let type_ = if bits == Self::FiFo as u32 {
-            Self::FiFo
-        } else if bits == Self::Char as u32 {
-            Self::Char
-        } else if bits == Self::Dir as u32 {
-            Self::Dir
-        } else if bits == Self::Block as u32 {
-            Self::Block
-        } else if bits == Self::File as u32 {
-            Self::File
-        } else if bits == Self::Link as u32 {
-            Self::Link
-        } else if bits == Self::Socket as u32 {
-            Self::Socket
-        } else {
-            return Err(Error::FileTypeError);
-        };
-        Ok(type_)
-    }
 }
 
 impl Default for FileType {

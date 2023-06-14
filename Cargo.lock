@@ -159,6 +159,9 @@ dependencies = [
 [[package]]
 name = "cpio-decoder"
 version = "0.1.0"
+dependencies = [
+ "int-to-c-enum",
+]
 
 [[package]]
 name = "critical-section"
