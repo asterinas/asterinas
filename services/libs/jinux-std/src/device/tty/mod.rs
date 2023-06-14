@@ -114,6 +114,21 @@ impl Device for Tty {
                 self.ldisc.set_termios(termios);
                 Ok(0)
             }
+            IoctlCmd::TCSETSW => {
+                let termios = read_val_from_user(arg)?;
+                debug!("set termios = {:?}", termios);
+                self.ldisc.set_termios(termios);
+                // TODO: drain output buffer
+                Ok(0)
+            }
+            IoctlCmd::TCSETSF => {
+                let termios = read_val_from_user(arg)?;
+                debug!("set termios = {:?}", termios);
+                self.ldisc.set_termios(termios);
+                self.ldisc.drain_input();
+                // TODO: drain output buffer
+                Ok(0)
+            }
             IoctlCmd::TIOCGWINSZ => {
                 // TODO:get window size
                 Ok(0)

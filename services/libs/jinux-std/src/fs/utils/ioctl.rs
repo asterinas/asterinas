@@ -6,6 +6,10 @@ pub enum IoctlCmd {
     // Get terminal attributes
     TCGETS = 0x5401,
     TCSETS = 0x5402,
+    // Drain the output buffer and set attributes
+    TCSETSW = 0x5403,
+    // Drain the output buffer, and discard pending input, and set attributes
+    TCSETSF = 0x5404,
     // Get the process group ID of the foreground process group on this terminal
     TIOCGPGRP = 0x540f,
     // Set the foreground process group ID of this terminal.
