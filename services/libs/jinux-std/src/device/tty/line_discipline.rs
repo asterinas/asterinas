@@ -109,7 +109,7 @@ impl LineDiscipline {
                 if !current_line.is_empty() {
                     current_line.backspace();
                 }
-            } else if meet_new_line(item, &self.termios()) {
+            } else if meet_new_line(item, &termios) {
                 // a new line was met. We currently add the item to buffer.
                 // when we read content, the item should be skipped if it's EOF.
                 let mut current_line = self.current_line.lock();
@@ -129,7 +129,7 @@ impl LineDiscipline {
         }
 
         if termios.contain_echo() {
-            self.output_char(item);
+            self.output_char(item, &termios);
         }
 
         if self.is_readable() {
@@ -143,12 +143,11 @@ impl LineDiscipline {
     }
 
     // TODO: respect output flags
-    fn output_char(&self, item: u8) {
+    fn output_char(&self, item: u8, termios: &KernelTermios) {
         if 0x20 <= item && item < 0x7f {
             let ch = char::from(item);
             print!("{}", ch);
         }
-        let termios = self.termios.lock();
         if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
             // write a space to overwrite current character
             let bytes: [u8; 3] = [b'\x08', b' ', b'\x08'];
