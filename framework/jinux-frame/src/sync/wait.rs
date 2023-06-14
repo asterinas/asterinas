@@ -2,9 +2,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
-use spin::mutex::Mutex;
 
 use crate::task::schedule;
+
+use super::SpinLock;
 
 /// A wait queue.
 ///
@@ -13,14 +14,14 @@ use crate::task::schedule;
 /// Other threads may invoke the `wake`-family methods of a wait queue to
 /// wake up one or many waiter threads.
 pub struct WaitQueue {
-    waiters: Mutex<VecDeque<Arc<Waiter>>>,
+    waiters: SpinLock<VecDeque<Arc<Waiter>>>,
 }
 
 impl WaitQueue {
     /// Creates a new instance.
     pub fn new() -> Self {
         WaitQueue {
-            waiters: Mutex::new(VecDeque::new()),
+            waiters: SpinLock::new(VecDeque::new()),
         }
     }
 
