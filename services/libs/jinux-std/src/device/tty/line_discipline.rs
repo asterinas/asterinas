@@ -328,6 +328,11 @@ impl LineDiscipline {
     pub fn set_termios(&self, termios: KernelTermios) {
         *self.termios.lock_irq_disabled() = termios;
     }
+
+    pub fn drain_input(&self) {
+        self.current_line.lock().drain();
+        let _: Vec<_> = self.read_buffer.lock().pop_iter().collect();
+    }
 }
 
 fn meet_new_line(item: u8, termios: &KernelTermios) -> bool {
