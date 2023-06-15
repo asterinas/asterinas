@@ -19,12 +19,12 @@ pub struct ConnectedStream {
 
 impl ConnectedStream {
     pub fn new(
-        nonblocking: bool,
+        is_nonblocking: bool,
         bound_socket: Arc<AnyBoundSocket>,
         remote_endpoint: IpEndpoint,
     ) -> Self {
         Self {
-            nonblocking: AtomicBool::new(nonblocking),
+            nonblocking: AtomicBool::new(is_nonblocking),
             bound_socket,
             remote_endpoint,
         }
@@ -54,6 +54,9 @@ impl ConnectedStream {
                 return_errno_with_message!(Errno::ENOTCONN, "recv packet fails");
             }
             if !events.contains(IoEvents::IN) {
+                if self.is_nonblocking() {
+                    return_errno_with_message!(Errno::EAGAIN, "try to recv again");
+                }
                 poller.wait();
             }
         }
@@ -101,11 +104,11 @@ impl ConnectedStream {
         self.bound_socket.poll(mask, poller)
     }
 
-    pub fn nonblocking(&self) -> bool {
-        self.nonblocking.load(Ordering::SeqCst)
+    pub fn is_nonblocking(&self) -> bool {
+        self.nonblocking.load(Ordering::Relaxed)
     }
 
     pub fn set_nonblocking(&self, nonblocking: bool) {
-        self.nonblocking.store(nonblocking, Ordering::SeqCst);
+        self.nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 }

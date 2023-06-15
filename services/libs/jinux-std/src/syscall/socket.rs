@@ -17,14 +17,15 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
         "domain = {:?}, sock_type = {:?}, sock_flags = {:?}, protocol = {:?}",
         domain, sock_type, sock_flags, protocol
     );
+    let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let file_like = match (domain, sock_type, protocol) {
         (
             SaFamily::AF_INET,
             SockType::SOCK_STREAM,
             Protocol::IPPROTO_IP | Protocol::IPPROTO_TCP,
-        ) => Arc::new(StreamSocket::new()) as Arc<dyn FileLike>,
+        ) => Arc::new(StreamSocket::new(nonblocking)) as Arc<dyn FileLike>,
         (SaFamily::AF_INET, SockType::SOCK_DGRAM, Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP) => {
-            Arc::new(DatagramSocket::new()) as Arc<dyn FileLike>
+            Arc::new(DatagramSocket::new(nonblocking)) as Arc<dyn FileLike>
         }
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };

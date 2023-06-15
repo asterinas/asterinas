@@ -11,8 +11,7 @@ use crate::prelude::*;
 
 pub struct InitStream {
     inner: RwLock<Inner>,
-    // TODO: deal with nonblocking
-    nonblocking: AtomicBool,
+    is_nonblocking: AtomicBool,
 }
 
 enum Inner {
@@ -114,11 +113,11 @@ impl Inner {
 }
 
 impl InitStream {
-    pub fn new() -> Self {
+    pub fn new(nonblocking: bool) -> Self {
         let socket = AnyUnboundSocket::new_tcp();
         let inner = Inner::Unbound(AlwaysSome::new(socket));
         Self {
-            nonblocking: AtomicBool::new(false),
+            is_nonblocking: AtomicBool::new(nonblocking),
             inner: RwLock::new(inner),
         }
     }
@@ -149,7 +148,9 @@ impl InitStream {
             if events.contains(IoEvents::IN) || events.contains(IoEvents::OUT) {
                 return Ok(());
             } else if !events.is_empty() {
-                return_errno_with_message!(Errno::ECONNREFUSED, "connect refused")
+                return_errno_with_message!(Errno::ECONNREFUSED, "connect refused");
+            } else if self.is_nonblocking() {
+                return_errno_with_message!(Errno::EAGAIN, "try connect again");
             } else {
                 poller.wait();
             }
@@ -178,11 +179,11 @@ impl InitStream {
         self.inner.read().bound_socket().map(Clone::clone)
     }
 
-    pub fn nonblocking(&self) -> bool {
-        self.nonblocking.load(Ordering::SeqCst)
+    pub fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
     pub fn set_nonblocking(&self, nonblocking: bool) {
-        self.nonblocking.store(nonblocking, Ordering::SeqCst);
+        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 }
