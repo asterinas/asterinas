@@ -31,18 +31,18 @@ enum State {
 }
 
 impl StreamSocket {
-    pub fn new() -> Self {
-        let state = State::Init(Arc::new(InitStream::new()));
+    pub fn new(nonblocking: bool) -> Self {
+        let state = State::Init(Arc::new(InitStream::new(nonblocking)));
         Self {
             state: RwLock::new(state),
         }
     }
 
-    fn nonblocking(&self) -> bool {
+    fn is_nonblocking(&self) -> bool {
         match &*self.state.read() {
-            State::Init(init) => init.nonblocking(),
-            State::Connected(connected) => connected.nonblocking(),
-            State::Listen(listen) => listen.nonblocking(),
+            State::Init(init) => init.is_nonblocking(),
+            State::Connected(connected) => connected.is_nonblocking(),
+            State::Listen(listen) => listen.is_nonblocking(),
         }
     }
 
@@ -79,7 +79,7 @@ impl FileLike for StreamSocket {
     }
 
     fn status_flags(&self) -> StatusFlags {
-        if self.nonblocking() {
+        if self.is_nonblocking() {
             StatusFlags::O_NONBLOCK
         } else {
             StatusFlags::empty()
@@ -112,19 +112,20 @@ impl Socket for StreamSocket {
 
     fn connect(&self, sockaddr: SocketAddr) -> Result<()> {
         let remote_endpoint = sockaddr.try_into()?;
-        let mut state = self.state.write();
-        // FIXME: The rwlock is held when trying to connect, which may cause dead lock.
+        let state = self.state.read();
         match &*state {
             State::Init(init_stream) => {
+                let init_stream = init_stream.clone();
+                drop(state);
                 init_stream.connect(&remote_endpoint)?;
-                let nonblocking = init_stream.nonblocking();
+                let nonblocking = init_stream.is_nonblocking();
                 let bound_socket = init_stream.bound_socket().unwrap();
                 let connected_stream = Arc::new(ConnectedStream::new(
                     nonblocking,
                     bound_socket,
                     remote_endpoint,
                 ));
-                *state = State::Connected(connected_stream);
+                *self.state.write() = State::Connected(connected_stream);
                 Ok(())
             }
             _ => return_errno_with_message!(Errno::EINVAL, "cannot connect"),
@@ -138,7 +139,7 @@ impl Socket for StreamSocket {
                 if !init_stream.is_bound() {
                     return_errno_with_message!(Errno::EINVAL, "cannot listen without bound");
                 }
-                let nonblocking = init_stream.nonblocking();
+                let nonblocking = init_stream.is_nonblocking();
                 let bound_socket = init_stream.bound_socket().unwrap();
                 let listener = Arc::new(ListenStream::new(nonblocking, bound_socket, backlog)?);
                 *state = State::Listen(listener);

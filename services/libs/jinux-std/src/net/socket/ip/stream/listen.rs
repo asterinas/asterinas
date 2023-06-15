@@ -9,7 +9,7 @@ use crate::{net::poll_ifaces, prelude::*};
 use super::connected::ConnectedStream;
 
 pub struct ListenStream {
-    nonblocking: AtomicBool,
+    is_nonblocking: AtomicBool,
     backlog: usize,
     /// Sockets also listening at LocalEndPoint when called `listen`
     backlog_sockets: RwLock<Vec<BacklogSocket>>,
@@ -24,7 +24,7 @@ impl ListenStream {
         debug_assert!(backlog >= 1);
         let backlog_socket = BacklogSocket::new(&bound_socket)?;
         let listen_stream = Self {
-            nonblocking: AtomicBool::new(nonblocking),
+            is_nonblocking: AtomicBool::new(nonblocking),
             backlog,
             backlog_sockets: RwLock::new(vec![backlog_socket]),
         };
@@ -42,6 +42,9 @@ impl ListenStream {
             } else {
                 let events = self.poll(IoEvents::IN | IoEvents::OUT, Some(&poller));
                 if !events.contains(IoEvents::IN) && !events.contains(IoEvents::OUT) {
+                    if self.is_nonblocking() {
+                        return_errno_with_message!(Errno::EAGAIN, "try accept again");
+                    }
                     poller.wait();
                 }
                 continue;
@@ -51,8 +54,7 @@ impl ListenStream {
                 let BacklogSocket {
                     bound_socket: backlog_socket,
                 } = accepted_socket;
-                let nonblocking = self.nonblocking();
-                ConnectedStream::new(nonblocking, backlog_socket, remote_endpoint)
+                ConnectedStream::new(false, backlog_socket, remote_endpoint)
             };
             return Ok((connected_stream, remote_endpoint));
         }
@@ -110,12 +112,12 @@ impl ListenStream {
         self.backlog_sockets.read()[0].bound_socket.clone()
     }
 
-    pub fn nonblocking(&self) -> bool {
-        self.nonblocking.load(Ordering::SeqCst)
+    pub fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
     pub fn set_nonblocking(&self, nonblocking: bool) {
-        self.nonblocking.store(nonblocking, Ordering::SeqCst);
+        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 }
 

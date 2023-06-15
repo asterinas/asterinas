@@ -128,11 +128,11 @@ impl Inner {
 }
 
 impl DatagramSocket {
-    pub fn new() -> Self {
+    pub fn new(nonblocking: bool) -> Self {
         let udp_socket = AnyUnboundSocket::new_udp();
         Self {
             inner: RwLock::new(Inner::Unbound(AlwaysSome::new(udp_socket))),
-            nonblocking: AtomicBool::new(false),
+            nonblocking: AtomicBool::new(nonblocking),
         }
     }
 
@@ -259,6 +259,9 @@ impl Socket for DatagramSocket {
             }
             let events = self.inner.read().poll(IoEvents::IN, Some(&poller));
             if !events.contains(IoEvents::IN) {
+                if self.nonblocking() {
+                    return_errno_with_message!(Errno::EAGAIN, "try to receive again");
+                }
                 poller.wait();
             }
         }
