@@ -144,24 +144,24 @@ impl LineDiscipline {
 
     // TODO: respect output flags
     fn output_char(&self, item: u8, termios: &KernelTermios) {
-        if 0x20 <= item && item < 0x7f {
-            let ch = char::from(item);
-            print!("{}", ch);
-        }
-        if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
-            // write a space to overwrite current character
-            let bytes: [u8; 3] = [b'\x08', b' ', b'\x08'];
-            let backspace = core::str::from_utf8(&bytes).unwrap();
-            print!("{}", backspace);
-        }
-        if termios.contains_echo_ctl() {
-            // The unprintable chars between 1-31 are mapped to ctrl characters between 65-95.
-            // e.g., 0x3 is mapped to 0x43, which is C. So, we will print ^C when 0x3 is met.
-            if 0 < item && item < 0x20 {
-                let ctrl_char_ascii = item + 0x40;
-                let ctrl_char = char::from(ctrl_char_ascii);
-                print!("^{ctrl_char}");
+        match item {
+            b'\n' => print!("\n"),
+            b'\r' => print!("\r\n"),
+            item if item == *termios.get_special_char(CC_C_CHAR::VERASE) => {
+                // write a space to overwrite current character
+                let backspace: &str = core::str::from_utf8(&[b'\x08', b' ', b'\x08']).unwrap();
+                print!("{}", backspace);
             }
+            item if 0x20 <= item && item < 0x7f => print!("{}", char::from(item)),
+            item if 0 < item && item < 0x20 && termios.contains_echo_ctl() => {
+                // The unprintable chars between 1-31 are mapped to ctrl characters between 65-95.
+                // e.g., 0x3 is mapped to 0x43, which is C. So, we will print ^C when 0x3 is met.
+                if 0 < item && item < 0x20 {
+                    let ctrl_char = char::from(item + 0x40);
+                    print!("^{ctrl_char}");
+                }
+            }
+            item => {}
         }
     }
 
