@@ -2,7 +2,7 @@ MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
-RAMDISK := $(BUILD_DIR)/ramdisk.cpio
+RAMDISK := $(BUILD_DIR)/ramdisk.cpio.gz
 SHELL := /bin/bash
 
 ifneq (, $(wildcard $(INITRAMFS)/. ))
@@ -37,7 +37,7 @@ endif
 
 $(RAMDISK): $(INITRAMFS) $(INITRAMFS_DIRS) $(INITRAMFS_FILES)
 	@echo "Generating the ramdisk image..."
-	@(cd $(INITRAMFS); find . | cpio -o -H newc) > $@
+	@(cd $(INITRAMFS); find . | cpio -o -H newc | gzip) > $@
 
 build: $(RAMDISK)
 

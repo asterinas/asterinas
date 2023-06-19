@@ -2,11 +2,16 @@ use crate::prelude::*;
 
 use super::fs_resolver::{FsPath, FsResolver};
 use super::utils::{InodeMode, InodeType};
+use core2::io::Read;
 use cpio_decoder::{CpioDecoder, FileType};
+use libflate::gzip::Decoder as GZipDecoder;
 
 /// Unpack and prepare the fs from the ramdisk CPIO buffer.
 pub fn init(ramdisk_buf: &[u8]) -> Result<()> {
-    let decoder = CpioDecoder::new(ramdisk_buf);
+    println!("[kernel] unzipping ramdisk.cpio.gz ...");
+    let unzipped_ramdisk_buf = unzip(ramdisk_buf)?;
+    println!("[kernel] unzip ramdisk.cpio.gz done");
+    let decoder = CpioDecoder::new(&unzipped_ramdisk_buf);
     let fs = FsResolver::new();
     for entry_result in decoder.decode_entries() {
         let entry = entry_result?;
@@ -50,6 +55,17 @@ pub fn init(ramdisk_buf: &[u8]) -> Result<()> {
             }
         }
     }
+    println!("[kernel] initramfs is ready");
 
     Ok(())
+}
+
+fn unzip(buf: &[u8]) -> Result<Vec<u8>> {
+    let mut decoder = GZipDecoder::new(buf)
+        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid gzip buffer"))?;
+    let mut unzipped_buf = Vec::new();
+    decoder
+        .read_to_end(&mut unzipped_buf)
+        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid gzip buffer"))?;
+    Ok(unzipped_buf)
 }
