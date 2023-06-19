@@ -25,7 +25,7 @@ cp target/limine/limine-cd.bin target/iso_root
 cp target/limine/limine-cd-efi.bin target/iso_root
 
 # Copy ramdisk
-cp regression/build/ramdisk.cpio target/iso_root
+cp regression/build/ramdisk.cpio.gz target/iso_root
 
 xorriso -as mkisofs                                             \
     -b limine-cd.bin                                            \
