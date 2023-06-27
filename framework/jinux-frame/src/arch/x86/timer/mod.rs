@@ -10,6 +10,7 @@ use spin::{Mutex, Once};
 use trapframe::TrapFrame;
 
 use crate::arch::x86::kernel;
+use crate::config::TIMER_FREQ;
 use crate::trap::IrqAllocateHandle;
 
 pub const TIMER_IRQ_NUM: u8 = 32;
@@ -19,7 +20,7 @@ static TIMER_IRQ: Once<IrqAllocateHandle> = Once::new();
 
 pub fn init() {
     TIMEOUT_LIST.call_once(|| Mutex::new(BinaryHeap::new()));
-    if kernel::xapic::has_apic() {
+    if kernel::apic::APIC_INSTANCE.is_completed() {
         apic::init();
     } else {
         pit::init();
@@ -131,5 +132,5 @@ where
 /// The time since the system boots up.
 /// The currently returned results are in milliseconds.
 pub fn read_monotonic_milli_seconds() -> u64 {
-    TICK.load(Ordering::SeqCst)
+    TICK.load(Ordering::SeqCst) * (1000 / TIMER_FREQ)
 }
