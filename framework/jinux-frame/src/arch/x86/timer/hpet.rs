@@ -7,7 +7,7 @@ use volatile::{
     Volatile,
 };
 
-use crate::arch::x86::kernel::{acpi::ACPI_TABLES, ioapic};
+use crate::arch::x86::kernel::{acpi::ACPI_TABLES, apic::ioapic};
 static HPET_INSTANCE: Once<Hpet> = Once::new();
 
 const OFFSET_ID_REGISTER: usize = 0x000;

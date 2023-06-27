@@ -4,6 +4,5 @@
 //!
 
 pub mod acpi;
-pub mod ioapic;
+pub mod apic;
 pub mod pic;
-pub mod xapic;

@@ -3,7 +3,7 @@ use log::info;
 use spin::{Mutex, Once};
 use x86::apic::ioapic::IoApic;
 
-use super::acpi::ACPI_TABLES;
+use crate::arch::x86::kernel::acpi::ACPI_TABLES;
 
 pub struct IoApicWrapper {
     io_apic: IoApic,

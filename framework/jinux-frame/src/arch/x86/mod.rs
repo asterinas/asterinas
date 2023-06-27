@@ -9,6 +9,7 @@ pub(crate) mod timer;
 
 use alloc::fmt;
 use core::fmt::Write;
+use kernel::apic::ioapic;
 use log::info;
 
 pub(crate) fn before_all_init() {
@@ -21,12 +22,14 @@ pub(crate) fn after_all_init() {
     irq::init();
     device::serial::callback_init();
     kernel::acpi::init();
-    if kernel::xapic::has_apic() {
-        kernel::ioapic::init();
-        kernel::xapic::init();
-    } else {
-        info!("No apic exists, using pic instead");
-        kernel::pic::enable();
+    match kernel::apic::init() {
+        Ok(_) => {
+            ioapic::init();
+        }
+        Err(err) => {
+            info!("APIC init error:{:?}", err);
+            kernel::pic::enable();
+        }
     }
     timer::init();
     // Some driver like serial may use PIC
@@ -35,7 +38,9 @@ pub(crate) fn after_all_init() {
 
 pub(crate) fn interrupts_ack() {
     kernel::pic::ack();
-    kernel::xapic::ack();
+    if let Some(apic) = kernel::apic::APIC_INSTANCE.get() {
+        apic.lock().eoi();
+    }
 }
 
 struct Stdout;
