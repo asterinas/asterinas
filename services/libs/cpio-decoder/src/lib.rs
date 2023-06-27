@@ -190,10 +190,11 @@ pub struct FileMetadata {
 impl FileMetadata {
     fn new(header: Header) -> Result<Self> {
         const MODE_MASK: u32 = 0o7777;
+        const TYPE_MASK: u32 = 0o170000;
         let raw_mode = read_hex_bytes_to_u32(&header.mode)?;
         let metadata = Self {
             ino: read_hex_bytes_to_u32(&header.ino)?,
-            type_: FileType::try_from(raw_mode).map_err(|_| Error::FileTypeError)?,
+            type_: FileType::try_from(raw_mode & TYPE_MASK).map_err(|_| Error::FileTypeError)?,
             mode: (raw_mode & MODE_MASK) as u16,
             uid: read_hex_bytes_to_u32(&header.uid)?,
             gid: read_hex_bytes_to_u32(&header.gid)?,
