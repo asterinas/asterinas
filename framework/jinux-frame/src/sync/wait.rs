@@ -1,5 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use super::SpinLock;
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
 
