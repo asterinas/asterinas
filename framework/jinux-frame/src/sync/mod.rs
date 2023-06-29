@@ -2,6 +2,7 @@ mod atomic_bits;
 mod mutex;
 mod rcu;
 mod rwlock;
+mod rwmutex;
 mod spin;
 mod wait;
 
