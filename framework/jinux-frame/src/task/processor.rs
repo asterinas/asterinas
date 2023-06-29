@@ -71,8 +71,12 @@ pub fn switch_to_task(next_task: Arc<Task>) {
         PROCESSOR.lock().get_idle_task_cx_ptr()
     } else {
         current_task = current_task_option.unwrap();
-        if current_task.status() != TaskStatus::Exited {
-            GLOBAL_SCHEDULER.lock().enqueue(current_task.clone());
+        if current_task.status() != TaskStatus::Exited
+            && current_task.status() != TaskStatus::Sleeping
+        {
+            GLOBAL_SCHEDULER
+                .lock_irq_disabled()
+                .enqueue(current_task.clone());
         }
         &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
     };
