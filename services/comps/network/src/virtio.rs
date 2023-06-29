@@ -97,7 +97,12 @@ fn config_space_change(_: &TrapFrame) {
 /// Interrupt handler if network device receives some packet
 fn handle_network_event(trap_frame: &TrapFrame) {
     let irq_num = trap_frame.trap_num as u8;
-    for callback in NETWORK_IRQ_HANDLERS.get().unwrap().lock().iter() {
+    for callback in NETWORK_IRQ_HANDLERS
+        .get()
+        .unwrap()
+        .lock_irq_disabled()
+        .iter()
+    {
         callback(irq_num);
     }
 }

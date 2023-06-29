@@ -75,7 +75,7 @@ impl LineDiscipline {
 
     /// push char to line discipline. This function should be called in input interrupt handler.
     pub fn push_char(&self, mut item: u8) {
-        let termios = self.termios.lock();
+        let termios = self.termios.lock_irq_disabled();
         if termios.contains_icrnl() {
             if item == b'\r' {
                 item = b'\n'
@@ -85,7 +85,7 @@ impl LineDiscipline {
             if item == *termios.get_special_char(CC_C_CHAR::VINTR) {
                 // type Ctrl + C, signal SIGINT
                 if termios.contains_isig() {
-                    if let Some(fg) = *self.foreground.lock() {
+                    if let Some(fg) = *self.foreground.lock_irq_disabled() {
                         let kernel_signal = KernelSignal::new(SIGINT);
                         let fg_group = process_table::pgid_to_process_group(fg).unwrap();
                         fg_group.kernel_signal(kernel_signal);
@@ -94,7 +94,7 @@ impl LineDiscipline {
             } else if item == *termios.get_special_char(CC_C_CHAR::VQUIT) {
                 // type Ctrl + \, signal SIGQUIT
                 if termios.contains_isig() {
-                    if let Some(fg) = *self.foreground.lock() {
+                    if let Some(fg) = *self.foreground.lock_irq_disabled() {
                         let kernel_signal = KernelSignal::new(SIGQUIT);
                         let fg_group = process_table::pgid_to_process_group(fg).unwrap();
                         fg_group.kernel_signal(kernel_signal);
@@ -102,29 +102,29 @@ impl LineDiscipline {
                 }
             } else if item == *termios.get_special_char(CC_C_CHAR::VKILL) {
                 // erase current line
-                self.current_line.lock().drain();
+                self.current_line.lock_irq_disabled().drain();
             } else if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
                 // type backspace
-                let mut current_line = self.current_line.lock();
+                let mut current_line = self.current_line.lock_irq_disabled();
                 if !current_line.is_empty() {
                     current_line.backspace();
                 }
             } else if meet_new_line(item, &self.termios()) {
                 // a new line was met. We currently add the item to buffer.
                 // when we read content, the item should be skipped if it's EOF.
-                let mut current_line = self.current_line.lock();
+                let mut current_line = self.current_line.lock_irq_disabled();
                 current_line.push_char(item);
                 let current_line_chars = current_line.drain();
                 for char in current_line_chars {
-                    self.read_buffer.lock().push_overwrite(char);
+                    self.read_buffer.lock_irq_disabled().push_overwrite(char);
                 }
             } else if item >= 0x20 && item < 0x7f {
                 // printable character
-                self.current_line.lock().push_char(item);
+                self.current_line.lock_irq_disabled().push_char(item);
             }
         } else {
             // raw mode
-            self.read_buffer.lock().push_overwrite(item);
+            self.read_buffer.lock_irq_disabled().push_overwrite(item);
             // debug!("push char: {}", char::from(item))
         }
 
@@ -139,7 +139,7 @@ impl LineDiscipline {
 
     /// whether self is readable
     fn is_readable(&self) -> bool {
-        !self.read_buffer.lock().is_empty()
+        !self.read_buffer.lock_irq_disabled().is_empty()
     }
 
     // TODO: respect output flags
@@ -148,7 +148,7 @@ impl LineDiscipline {
             let ch = char::from(item);
             print!("{}", ch);
         }
-        let termios = self.termios.lock();
+        let termios = self.termios.lock_irq_disabled();
         if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
             // write a space to overwrite current character
             let bytes: [u8; 3] = [b'\x08', b' ', b'\x08'];
@@ -202,13 +202,13 @@ impl LineDiscipline {
         }
 
         let (vmin, vtime) = {
-            let termios = self.termios.lock();
+            let termios = self.termios.lock_irq_disabled();
             let vmin = *termios.get_special_char(CC_C_CHAR::VMIN);
             let vtime = *termios.get_special_char(CC_C_CHAR::VTIME);
             (vmin, vtime)
         };
         let read_len = {
-            let len = self.read_buffer.lock().len();
+            let len = self.read_buffer.lock_irq_disabled().len();
             let max_read_len = len.min(dst.len());
             if vmin == 0 && vtime == 0 {
                 // poll read
@@ -237,7 +237,7 @@ impl LineDiscipline {
     /// returns immediately with the lesser of the number of bytes available or the number of bytes requested.
     /// If no bytes are available, completes immediately, returning 0.
     fn poll_read(&self, dst: &mut [u8]) -> usize {
-        let mut buffer = self.read_buffer.lock();
+        let mut buffer = self.read_buffer.lock_irq_disabled();
         let len = buffer.len();
         let max_read_len = len.min(dst.len());
         if max_read_len == 0 {
@@ -246,7 +246,7 @@ impl LineDiscipline {
         let mut read_len = 0;
         for i in 0..max_read_len {
             if let Some(next_char) = buffer.pop() {
-                let termios = self.termios.lock();
+                let termios = self.termios.lock_irq_disabled();
                 if termios.is_canonical_mode() {
                     // canonical mode, read until meet new line
                     if meet_new_line(next_char, &termios) {
@@ -277,7 +277,7 @@ impl LineDiscipline {
     // MIN bytes are available, and returns the lesser of the two values.
     pub fn block_read(&self, dst: &mut [u8], vmin: u8) -> Result<usize> {
         let min_read_len = (vmin as usize).min(dst.len());
-        let buffer_len = self.read_buffer.lock().len();
+        let buffer_len = self.read_buffer.lock_irq_disabled().len();
         if buffer_len < min_read_len {
             return_errno!(Errno::EAGAIN);
         }
@@ -292,7 +292,7 @@ impl LineDiscipline {
     /// whether the current process belongs to foreground process group
     fn current_belongs_to_foreground(&self) -> bool {
         let current = current!();
-        if let Some(fg_pgid) = *self.foreground.lock() {
+        if let Some(fg_pgid) = *self.foreground.lock_irq_disabled() {
             if let Some(process_group) = process_table::pgid_to_process_group(fg_pgid) {
                 if process_group.contains_process(current.pid()) {
                     return true;
@@ -305,7 +305,7 @@ impl LineDiscipline {
 
     /// set foreground process group
     pub fn set_fg(&self, fg_pgid: Pgid) {
-        *self.foreground.lock() = Some(fg_pgid);
+        *self.foreground.lock_irq_disabled() = Some(fg_pgid);
         // Some background processes may be waiting on the wait queue, when set_fg, the background processes may be able to read.
         if self.is_readable() {
             self.pollee.add_events(IoEvents::IN);
@@ -314,20 +314,20 @@ impl LineDiscipline {
 
     /// get foreground process group id
     pub fn fg_pgid(&self) -> Option<Pgid> {
-        *self.foreground.lock()
+        *self.foreground.lock_irq_disabled()
     }
 
     /// whether there is buffered data
     pub fn is_empty(&self) -> bool {
-        self.read_buffer.lock().len() == 0
+        self.read_buffer.lock_irq_disabled().len() == 0
     }
 
     pub fn termios(&self) -> KernelTermios {
-        *self.termios.lock()
+        *self.termios.lock_irq_disabled()
     }
 
     pub fn set_termios(&self, termios: KernelTermios) {
-        *self.termios.lock() = termios;
+        *self.termios.lock_irq_disabled() = termios;
     }
 }
 

@@ -204,5 +204,10 @@ macro_rules! println {
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
 
-    WRITER.get().unwrap().lock().write_fmt(args).unwrap();
+    WRITER
+        .get()
+        .unwrap()
+        .lock_irq_disabled()
+        .write_fmt(args)
+        .unwrap();
 }

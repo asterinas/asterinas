@@ -54,6 +54,6 @@ pub fn register_net_device_irq_handler(callback: impl NetDeviceIrqHandler) {
     NETWORK_IRQ_HANDLERS
         .get()
         .unwrap()
-        .lock()
+        .lock_irq_disabled()
         .push(Arc::new(callback))
 }
