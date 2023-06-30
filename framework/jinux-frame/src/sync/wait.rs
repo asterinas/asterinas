@@ -6,8 +6,6 @@ use bitflags::bitflags;
 
 use crate::task::schedule;
 
-use super::SpinLock;
-
 /// A wait queue.
 ///
 /// One may wait on a wait queue to put its executing thread to sleep.
