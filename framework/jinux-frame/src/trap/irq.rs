@@ -210,6 +210,14 @@ impl DisabledLocalIrqGuard {
         }
         Self { was_enabled }
     }
+
+    /// Transfer the saved IRQ status of this guard to a new guard.
+    /// The saved IRQ status of this guard is cleared.
+    pub fn transfer_to(&mut self) -> Self {
+        let was_enabled = self.was_enabled;
+        self.was_enabled = false;
+        Self { was_enabled }
+    }
 }
 
 impl Drop for DisabledLocalIrqGuard {
