@@ -1,12 +1,12 @@
 use crate::prelude::*;
+use crate::sync::SpinLock;
 use crate::task::Task;
 
 use lazy_static::lazy_static;
-use spin::Mutex;
 
 lazy_static! {
-    pub(crate) static ref GLOBAL_SCHEDULER: Mutex<GlobalScheduler> =
-        Mutex::new(GlobalScheduler { scheduler: None });
+    pub(crate) static ref GLOBAL_SCHEDULER: SpinLock<GlobalScheduler> =
+        SpinLock::new(GlobalScheduler { scheduler: None });
 }
 
 /// A scheduler for tasks.
@@ -43,13 +43,13 @@ impl GlobalScheduler {
 ///
 /// This must be called before invoking `Task::spawn`.
 pub fn set_scheduler(scheduler: &'static dyn Scheduler) {
-    GLOBAL_SCHEDULER.lock().scheduler = Some(scheduler);
+    GLOBAL_SCHEDULER.lock_irq_disabled().scheduler = Some(scheduler);
 }
 
 pub fn fetch_task() -> Option<Arc<Task>> {
-    GLOBAL_SCHEDULER.lock().dequeue()
+    GLOBAL_SCHEDULER.lock_irq_disabled().dequeue()
 }
 
 pub fn add_task(task: Arc<Task>) {
-    GLOBAL_SCHEDULER.lock().enqueue(task);
+    GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(task);
 }

@@ -5,6 +5,6 @@ mod scheduler;
 #[allow(clippy::module_inception)]
 mod task;
 
-pub use self::processor::schedule;
-pub use self::scheduler::{set_scheduler, Scheduler};
+pub use self::processor::{current_task, schedule};
+pub use self::scheduler::{add_task, set_scheduler, Scheduler};
 pub use self::task::{Task, TaskAdapter, TaskStatus};
