@@ -46,6 +46,8 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeap<ORDER> {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         debug_assert!(ptr as usize != 0);
-        self.0.lock_irq_disabled().dealloc(NonNull::new_unchecked(ptr), layout)
+        self.0
+            .lock_irq_disabled()
+            .dealloc(NonNull::new_unchecked(ptr), layout)
     }
 }

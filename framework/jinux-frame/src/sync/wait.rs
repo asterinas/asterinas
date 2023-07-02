@@ -1,11 +1,10 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use super::SpinLock;
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
 
 use crate::task::schedule;
-
-use super::SpinLock;
 
 /// A wait queue.
 ///
@@ -80,7 +79,9 @@ impl WaitQueue {
 
     /// removes all waiters that have finished wait
     fn finish_wait(&self) {
-        self.waiters.lock_irq_disabled().retain(|waiter| !waiter.is_finished())
+        self.waiters
+            .lock_irq_disabled()
+            .retain(|waiter| !waiter.is_finished())
     }
 }
 
