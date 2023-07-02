@@ -83,12 +83,12 @@ impl<T> SpinLock<T> {
 
     fn try_acquire_lock(&self) -> bool {
         self.lock
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
     }
 
     fn release_lock(&self) {
-        self.lock.store(false, Ordering::SeqCst);
+        self.lock.store(false, Ordering::Release);
     }
 }
 
