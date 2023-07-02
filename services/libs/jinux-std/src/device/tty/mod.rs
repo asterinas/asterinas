@@ -45,7 +45,7 @@ impl Tty {
     }
 
     pub fn set_driver(&self, driver: Weak<TtyDriver>) {
-        *self.driver.lock() = driver;
+        *self.driver.lock_irq_disabled() = driver;
     }
 
     pub fn receive_char(&self, item: u8) {

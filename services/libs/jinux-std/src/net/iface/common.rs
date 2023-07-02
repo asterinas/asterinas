@@ -38,20 +38,20 @@ impl IfaceCommon {
         }
     }
 
-    pub(super) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface> {
-        self.interface.lock()
+    pub(super) fn interface(&self) -> SpinLockIrqDisabledGuard<smoltcp::iface::Interface> {
+        self.interface.lock_irq_disabled()
     }
 
-    pub(super) fn sockets(&self) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>> {
-        self.sockets.lock()
+    pub(super) fn sockets(&self) -> SpinLockIrqDisabledGuard<smoltcp::iface::SocketSet<'static>> {
+        self.sockets.lock_irq_disabled()
     }
 
     pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
-        self.interface.lock().ipv4_addr()
+        self.interface.lock_irq_disabled().ipv4_addr()
     }
 
     pub(super) fn netmask(&self) -> Option<Ipv4Address> {
-        let interface = self.interface.lock();
+        let interface = self.interface.lock_irq_disabled();
         let ip_addrs = interface.ip_addrs();
         ip_addrs.first().map(|cidr| match cidr {
             IpCidr::Ipv4(ipv4_cidr) => ipv4_cidr.netmask(),
@@ -113,7 +113,7 @@ impl IfaceCommon {
         }
         let socket_family = socket.socket_family();
         let pollee = socket.pollee();
-        let mut sockets = self.sockets.lock();
+        let mut sockets = self.sockets.lock_irq_disabled();
         let handle = match socket.raw_socket_family() {
             AnyRawSocket::Tcp(tcp_socket) => sockets.add(tcp_socket),
             AnyRawSocket::Udp(udp_socket) => sockets.add(udp_socket),
@@ -125,14 +125,14 @@ impl IfaceCommon {
 
     /// Remove a socket from the interface
     pub(super) fn remove_socket(&self, handle: SocketHandle) {
-        self.sockets.lock().remove(handle);
+        self.sockets.lock_irq_disabled().remove(handle);
     }
 
     pub(super) fn poll<D: Device + ?Sized>(&self, device: &mut D) {
-        let mut interface = self.interface.lock();
+        let mut interface = self.interface.lock_irq_disabled();
         let timestamp = get_network_timestamp();
         let has_events = {
-            let mut sockets = self.sockets.lock();
+            let mut sockets = self.sockets.lock_irq_disabled();
             interface.poll(timestamp, device, &mut sockets)
             // drop sockets here to avoid deadlock
         };
@@ -143,7 +143,7 @@ impl IfaceCommon {
             });
         }
 
-        let sockets = self.sockets.lock();
+        let sockets = self.sockets.lock_irq_disabled();
         if let Some(instant) = interface.poll_at(timestamp, &sockets) {
             self.next_poll_at_ms
                 .store(instant.total_millis() as u64, Ordering::SeqCst);

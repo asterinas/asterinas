@@ -53,14 +53,14 @@ impl WaitQueue {
 
     /// Wake one waiter thread, if there is one.
     pub fn wake_one(&self) {
-        if let Some(waiter) = self.waiters.lock().front() {
+        if let Some(waiter) = self.waiters.lock_irq_disabled().front() {
             waiter.wake_up();
         }
     }
 
     /// Wake all not-exclusive waiter threads and at most one exclusive waiter.
     pub fn wake_all(&self) {
-        for waiter in self.waiters.lock().iter() {
+        for waiter in self.waiters.lock_irq_disabled().iter() {
             waiter.wake_up();
             if waiter.is_exclusive() {
                 break;
@@ -72,15 +72,15 @@ impl WaitQueue {
     // Otherwise, add to the front of waitqueue
     fn enqueue(&self, waiter: &Arc<Waiter>) {
         if waiter.is_exclusive() {
-            self.waiters.lock().push_back(waiter.clone())
+            self.waiters.lock_irq_disabled().push_back(waiter.clone())
         } else {
-            self.waiters.lock().push_front(waiter.clone());
+            self.waiters.lock_irq_disabled().push_front(waiter.clone());
         }
     }
 
     /// removes all waiters that have finished wait
     fn finish_wait(&self) {
-        self.waiters.lock().retain(|waiter| !waiter.is_finished())
+        self.waiters.lock_irq_disabled().retain(|waiter| !waiter.is_finished())
     }
 }
 

@@ -51,7 +51,7 @@ pub(crate) fn init() {
 }
 
 pub fn register_serial_input_callback(f: impl Fn(u8) + Send + Sync + 'static) {
-    SERIAL_INPUT_CALLBACKS.lock().push(Arc::new(f));
+    SERIAL_INPUT_CALLBACKS.lock_irq_disabled().push(Arc::new(f));
 }
 
 pub(crate) fn callback_init() {
@@ -67,7 +67,7 @@ where
     CONSOLE_IRQ_CALLBACK
         .get()
         .unwrap()
-        .lock()
+        .lock_irq_disabled()
         .on_active(callback);
 }
 

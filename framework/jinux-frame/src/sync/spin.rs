@@ -52,8 +52,8 @@ impl<T> SpinLock<T> {
 
     /// Acquire the spin lock without disabling local IRQs.
     ///
-    /// This method is twice as fast as the `lock_irq_disable` method.
-    /// So prefer using this method over the `lock_irq_disable` method
+    /// This method is twice as fast as the `lock_irq_disabled` method.
+    /// So prefer using this method over the `lock_irq_disabled` method
     /// when IRQ handlers are allowed to get executed while
     /// holding this lock. For example, if a lock is never used
     /// in the interrupt context, then it is ok to use this method
@@ -137,7 +137,7 @@ impl<'a, T: fmt::Debug> fmt::Debug for SpinLockIrqDisabledGuard<'a, T> {
 impl<'a, T> !Send for SpinLockIrqDisabledGuard<'a, T> {}
 
 // Safety. `SpinLockIrqDisabledGuard` can be shared between tasks/threads in same CPU.
-// As `lock_irq_disable()` disables interrupts to prevent race conditions caused by interrupts.
+// As `lock_irq_disabled()` disables interrupts to prevent race conditions caused by interrupts.
 unsafe impl<T: Sync> Sync for SpinLockIrqDisabledGuard<'_, T> {}
 
 pub struct SpinLockGuard<'a, T> {
