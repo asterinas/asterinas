@@ -197,60 +197,24 @@ pub fn disable_local() -> DisabledLocalIrqGuard {
 
 /// A guard for disabled local IRQs.
 pub struct DisabledLocalIrqGuard {
-    // Having a private field prevents user from constructing values of this type directly.
-    private: (),
+    was_enabled: bool,
 }
 
 impl !Send for DisabledLocalIrqGuard {}
 
-cpu_local! {
-    static IRQ_OFF_COUNT: IrqInfo = IrqInfo::new();
-}
-
 impl DisabledLocalIrqGuard {
     fn new() -> Self {
-        IRQ_OFF_COUNT.inc();
-        Self { private: () }
+        let was_enabled = irq::is_local_enabled();
+        if was_enabled {
+            irq::disable_local();
+        }
+        Self { was_enabled }
     }
 }
 
 impl Drop for DisabledLocalIrqGuard {
     fn drop(&mut self) {
-        IRQ_OFF_COUNT.dec();
-    }
-}
-
-#[derive(Debug, Default)]
-struct IrqInfo {
-    // interrupt disabling level
-    level: AtomicU32,
-    // interrupt state before calling dec()/inc()
-    is_irq_enabled: AtomicBool,
-}
-
-impl IrqInfo {
-    const fn new() -> Self {
-        Self {
-            level: AtomicU32::new(0),
-            is_irq_enabled: AtomicBool::new(false),
-        }
-    }
-
-    fn inc(&self) {
-        let enabled = irq::is_local_enabled();
-        let level = self.level.load(Relaxed);
-        if level == 0 {
-            self.is_irq_enabled.store(enabled, Relaxed);
-        }
-        if enabled {
-            irq::disable_local();
-        }
-        self.level.fetch_add(1, Relaxed);
-    }
-
-    fn dec(&self) {
-        let level = self.level.fetch_sub(1, Relaxed) - 1;
-        if level == 0 && self.is_irq_enabled.load(Relaxed) {
+        if self.was_enabled {
             irq::enable_local();
         }
     }
