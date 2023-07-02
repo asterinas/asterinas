@@ -32,20 +32,20 @@ impl<const ORDER: usize> LockedHeap<ORDER> {
 
     /// Safety: The range [start, start + size) must be a valid memory region.
     pub unsafe fn init(&self, start: *const u8, size: usize) {
-        self.0.lock().init(start as usize, size);
+        self.0.lock_irq_disabled().init(start as usize, size);
     }
 }
 
 unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeap<ORDER> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         self.0
-            .lock()
+            .lock_irq_disabled()
             .alloc(layout)
             .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         debug_assert!(ptr as usize != 0);
-        self.0.lock().dealloc(NonNull::new_unchecked(ptr), layout)
+        self.0.lock_irq_disabled().dealloc(NonNull::new_unchecked(ptr), layout)
     }
 }

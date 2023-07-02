@@ -112,7 +112,7 @@ impl Iface for IfaceVirtio {
     }
 
     fn poll(&self) {
-        let mut driver = self.driver.lock();
+        let mut driver = self.driver.lock_irq_disabled();
         self.common.poll(&mut *driver);
         self.process_dhcp();
     }
