@@ -4,7 +4,7 @@ use super::SpinLock;
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
 
-use crate::task::schedule;
+use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
 
 /// A wait queue.
 ///
@@ -85,7 +85,6 @@ impl WaitQueue {
     }
 }
 
-#[derive(Debug)]
 struct Waiter {
     /// Whether the
     is_woken_up: AtomicBool,
@@ -93,6 +92,8 @@ struct Waiter {
     flag: WaiterFlag,
     /// if the wait condition is ture, then the waiter is finished and can be removed from waitqueue
     wait_finished: AtomicBool,
+    /// The `Task` held by the waiter.
+    task: Arc<Task>,
 }
 
 impl Waiter {
@@ -101,16 +102,18 @@ impl Waiter {
             is_woken_up: AtomicBool::new(false),
             flag: WaiterFlag::empty(),
             wait_finished: AtomicBool::new(false),
+            task: current_task().unwrap(),
         }
     }
 
     /// make self into wait status until be called wake up
     pub fn wait(&self) {
         self.is_woken_up.store(false, Ordering::SeqCst);
+        self.task.inner_exclusive_access().task_status = TaskStatus::Sleeping;
         while !self.is_woken_up.load(Ordering::SeqCst) {
-            // yield the execution, to allow other task to continue
             schedule();
         }
+        self.task.inner_exclusive_access().task_status = TaskStatus::Runnable;
     }
 
     pub fn is_woken_up(&self) -> bool {
@@ -119,6 +122,7 @@ impl Waiter {
 
     pub fn wake_up(&self) {
         self.is_woken_up.store(true, Ordering::SeqCst);
+        add_task(self.task.clone());
     }
 
     pub fn set_finished(&self) {

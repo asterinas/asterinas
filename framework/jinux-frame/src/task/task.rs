@@ -216,8 +216,6 @@ impl Task {
 pub enum TaskStatus {
     /// The task is runnable.
     Runnable,
-    /// The task is running.
-    Running,
     /// The task is sleeping.
     Sleeping,
     /// The task has exited.
