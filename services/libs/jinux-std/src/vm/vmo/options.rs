@@ -131,12 +131,11 @@ fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Re
         pager,
         size,
         committed_pages,
-        inherited_pages: InheritedPages::new_empty(),
+        inherited_pages: None,
     };
     Ok(Vmo_ {
         flags,
         inner: Mutex::new(vmo_inner),
-        parent: Weak::new(),
         vmo_type: VmoType::NotChild,
     })
 }
@@ -439,7 +438,7 @@ fn alloc_child_vmo_(
     let parent_vmo_size = parent_vmo_.size();
     let parent_vmo_inner = parent_vmo_.inner.lock();
 
-    match child_type {
+    let is_copy_on_write = match child_type {
         ChildType::Slice => {
             // A slice child should be inside parent vmo's range
             debug_assert!(child_vmo_end <= parent_vmo_inner.size);
@@ -449,6 +448,7 @@ fn alloc_child_vmo_(
                     "slice child vmo cannot exceed parent vmo's size"
                 );
             }
+            false
         }
         ChildType::Cow => {
             // A copy on Write child should intersect with parent vmo
@@ -456,8 +456,9 @@ fn alloc_child_vmo_(
             if range.start > parent_vmo_inner.size {
                 return_errno_with_message!(Errno::EINVAL, "COW vmo should overlap with its parent");
             }
+            true
         }
-    }
+    };
     let parent_page_idx_offset = range.start / PAGE_SIZE;
     let inherited_end = range.end.min(parent_vmo_size);
     let cow_size = if inherited_end >= range.start {
@@ -466,12 +467,17 @@ fn alloc_child_vmo_(
         0
     };
     let inherited_end_page_idx = cow_size / PAGE_SIZE;
-    let inherited_pages = InheritedPages::new(0..inherited_end_page_idx, parent_page_idx_offset);
+    let inherited_pages = InheritedPages::new(
+        parent_vmo_.clone(),
+        0..inherited_end_page_idx,
+        parent_page_idx_offset,
+        is_copy_on_write,
+    );
     let vmo_inner = VmoInner {
         pager: None,
         size: child_vmo_end - child_vmo_start,
         committed_pages: BTreeMap::new(),
-        inherited_pages,
+        inherited_pages: Some(inherited_pages),
     };
     let vmo_type = match child_type {
         ChildType::Cow => VmoType::CopyOnWriteChild,
@@ -480,7 +486,6 @@ fn alloc_child_vmo_(
     Ok(Vmo_ {
         flags: child_flags,
         inner: Mutex::new(vmo_inner),
-        parent: Arc::downgrade(&parent_vmo_),
         vmo_type,
     })
 }
