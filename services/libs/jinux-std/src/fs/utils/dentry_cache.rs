@@ -110,6 +110,9 @@ impl Dentry {
         if self.vnode.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
+        if !self.vnode.inode_mode().is_executable() {
+            return_errno!(Errno::EACCES);
+        }
         if name.len() > NAME_MAX {
             return_errno!(Errno::ENAMETOOLONG);
         }
@@ -251,6 +254,11 @@ impl Dentry {
     /// Get the inode permission mode
     pub fn inode_mode(&self) -> InodeMode {
         self.vnode.inode_mode()
+    }
+
+    /// Set the inode permission mode
+    pub fn set_inode_mode(&self, mode: InodeMode) {
+        self.vnode.set_inode_mode(mode)
     }
 
     /// Get the inode length
