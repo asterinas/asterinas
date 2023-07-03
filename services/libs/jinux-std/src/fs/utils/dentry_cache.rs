@@ -4,7 +4,7 @@ use crate::prelude::*;
 use alloc::string::String;
 use core::time::Duration;
 
-use super::{InodeMode, InodeType, Metadata, Vnode, NAME_MAX};
+use super::{FileSystem, InodeMode, InodeType, Metadata, Vnode, NAME_MAX};
 
 lazy_static! {
     static ref DCACHE: Mutex<BTreeMap<DentryKey, Arc<Dentry>>> = Mutex::new(BTreeMap::new());
@@ -231,6 +231,11 @@ impl Dentry {
             }
         }
         Ok(())
+    }
+
+    /// Get the filesystem the inode belongs to
+    pub fn fs(&self) -> Arc<dyn FileSystem> {
+        self.vnode.fs()
     }
 
     /// Get the inode metadata

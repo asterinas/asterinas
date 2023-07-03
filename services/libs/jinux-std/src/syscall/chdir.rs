@@ -41,7 +41,7 @@ pub fn sys_fchdir(fd: FileDescripter) -> Result<SyscallReturn> {
         let file = file_table.get_file(fd)?;
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
-            .ok_or(Error::with_message(Errno::EBADE, "not inode"))?;
+            .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
         inode_handle.dentry().clone()
     };
     if dentry.inode_type() != InodeType::Dir {

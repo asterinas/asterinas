@@ -1,6 +1,6 @@
 use super::{
-    DirentVisitor, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata, PageCache,
-    Poller,
+    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
+    PageCache, Poller,
 };
 use crate::fs::device::Device;
 use crate::prelude::*;
@@ -200,6 +200,10 @@ impl Vnode {
 
     pub fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         self.inner.read().inode.ioctl(cmd, arg)
+    }
+
+    pub fn fs(&self) -> Arc<dyn FileSystem> {
+        self.inner.read().inode.fs()
     }
 
     pub fn metadata(&self) -> Metadata {
