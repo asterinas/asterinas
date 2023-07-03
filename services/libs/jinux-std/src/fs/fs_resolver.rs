@@ -262,7 +262,7 @@ impl FsResolver {
         let inode_handle = file_table
             .get_file(fd)?
             .downcast_ref::<InodeHandle>()
-            .ok_or(Error::with_message(Errno::EBADE, "not inode"))?;
+            .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
         Ok(inode_handle.dentry().clone())
     }
 
@@ -381,7 +381,7 @@ impl<'a> FsPath<'a> {
                 FsPathInner::CwdRelative(path)
             }
         } else {
-            return_errno_with_message!(Errno::EINVAL, "invalid dirfd number");
+            return_errno_with_message!(Errno::EBADF, "invalid dirfd number");
         };
 
         Ok(Self {

@@ -14,7 +14,7 @@ mod self_;
 mod template;
 
 /// Magic number.
-const PROC_MAGIC: usize = 0x9fa0;
+const PROC_MAGIC: u64 = 0x9fa0;
 /// Root Inode ID.
 const PROC_ROOT_INO: usize = 1;
 /// Block size.

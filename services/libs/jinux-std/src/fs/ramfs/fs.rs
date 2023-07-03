@@ -11,7 +11,7 @@ use super::*;
 use crate::fs::device::Device;
 use crate::fs::utils::{
     DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
-    Poller, SuperBlock,
+    Poller, SuperBlock, NAME_MAX,
 };
 
 /// A volatile file system whose data and metadata exists only in memory.

@@ -7,21 +7,21 @@ use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct SuperBlock {
-    pub magic: usize,
+    pub magic: u64,
     pub bsize: usize,
     pub blocks: usize,
     pub bfree: usize,
     pub bavail: usize,
     pub files: usize,
     pub ffree: usize,
-    pub fsid: usize,
+    pub fsid: u64,
     pub namelen: usize,
     pub frsize: usize,
-    pub flags: usize,
+    pub flags: u64,
 }
 
 impl SuperBlock {
-    pub fn new(magic: usize, block_size: usize, name_len: usize) -> Self {
+    pub fn new(magic: u64, block_size: usize, name_max_len: usize) -> Self {
         Self {
             magic,
             bsize: block_size,
@@ -31,7 +31,7 @@ impl SuperBlock {
             files: 0,
             ffree: 0,
             fsid: 0,
-            namelen: 255,
+            namelen: name_max_len,
             frsize: block_size,
             flags: 0,
         }

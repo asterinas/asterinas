@@ -56,6 +56,7 @@ use crate::syscall::set_robust_list::sys_set_robust_list;
 use crate::syscall::set_tid_address::sys_set_tid_address;
 use crate::syscall::setpgid::sys_setpgid;
 use crate::syscall::stat::{sys_fstat, sys_fstatat, sys_lstat, sys_stat};
+use crate::syscall::statfs::{sys_fstatfs, sys_statfs};
 use crate::syscall::symlink::{sys_symlink, sys_symlinkat};
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::time::sys_time;
@@ -150,6 +151,7 @@ mod setsockopt;
 mod shutdown;
 mod socket;
 mod stat;
+mod statfs;
 mod symlink;
 mod tgkill;
 mod time;
@@ -259,6 +261,8 @@ define_syscall_nums!(
     SYS_SETPGID = 109,
     SYS_GETPPID = 110,
     SYS_GETPGRP = 111,
+    SYS_STATFS = 137,
+    SYS_FSTATFS = 138,
     SYS_PRCTL = 157,
     SYS_ARCH_PRCTL = 158,
     SYS_GETTID = 186,
@@ -411,6 +415,8 @@ pub fn syscall_dispatch(
         SYS_SETPGID => syscall_handler!(2, sys_setpgid, args),
         SYS_GETPPID => syscall_handler!(0, sys_getppid),
         SYS_GETPGRP => syscall_handler!(0, sys_getpgrp),
+        SYS_STATFS => syscall_handler!(2, sys_statfs, args),
+        SYS_FSTATFS => syscall_handler!(2, sys_fstatfs, args),
         SYS_PRCTL => syscall_handler!(5, sys_prctl, args),
         SYS_ARCH_PRCTL => syscall_handler!(2, sys_arch_prctl, args, context),
         SYS_GETTID => syscall_handler!(0, sys_gettid),

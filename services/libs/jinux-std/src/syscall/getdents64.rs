@@ -29,7 +29,7 @@ pub fn sys_getdents64(
     };
     let inode_handle = file
         .downcast_ref::<InodeHandle>()
-        .ok_or(Error::with_message(Errno::EBADE, "not inode"))?;
+        .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
     if inode_handle.dentry().inode_type() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
     }
