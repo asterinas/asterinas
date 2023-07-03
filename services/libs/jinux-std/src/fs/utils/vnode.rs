@@ -218,6 +218,10 @@ impl Vnode {
         self.inner.read().inode.metadata().mode
     }
 
+    pub fn set_inode_mode(&self, mode: InodeMode) {
+        self.inner.read().inode.set_mode(mode)
+    }
+
     pub fn len(&self) -> usize {
         self.inner.read().inode.len()
     }

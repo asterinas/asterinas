@@ -394,6 +394,10 @@ impl Inode for RamInode {
         self.0.write().metadata.mtime = time;
     }
 
+    fn set_mode(&self, mode: InodeMode) {
+        self.0.write().metadata.mode = mode;
+    }
+
     fn mknod(
         &self,
         name: &str,

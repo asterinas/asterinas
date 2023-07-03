@@ -1,4 +1,6 @@
-use crate::fs::utils::{FileSystem, Metadata};
+use core::time::Duration;
+
+use crate::fs::utils::{FileSystem, InodeMode, Metadata};
 use crate::prelude::*;
 
 use super::ProcFS;
@@ -14,7 +16,7 @@ mod file;
 mod sym;
 
 struct ProcInodeInfo {
-    metadata: Metadata,
+    metadata: RwLock<Metadata>,
     fs: Weak<dyn FileSystem>,
     is_volatile: bool,
 }
@@ -22,7 +24,7 @@ struct ProcInodeInfo {
 impl ProcInodeInfo {
     pub fn new(metadata: Metadata, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Self {
         Self {
-            metadata,
+            metadata: RwLock::new(metadata),
             fs,
             is_volatile,
         }
@@ -32,8 +34,32 @@ impl ProcInodeInfo {
         &self.fs
     }
 
-    pub fn metadata(&self) -> &Metadata {
-        &self.metadata
+    pub fn metadata(&self) -> Metadata {
+        self.metadata.read().clone()
+    }
+
+    pub fn size(&self) -> usize {
+        self.metadata.read().size
+    }
+
+    pub fn atime(&self) -> Duration {
+        self.metadata.read().atime
+    }
+
+    pub fn set_atime(&self, time: Duration) {
+        self.metadata.write().atime = time;
+    }
+
+    pub fn mtime(&self) -> Duration {
+        self.metadata.read().mtime
+    }
+
+    pub fn set_mtime(&self, time: Duration) {
+        self.metadata.write().mtime = time;
+    }
+
+    pub fn set_mode(&self, mode: InodeMode) {
+        self.metadata.write().mode = mode;
     }
 
     pub fn is_volatile(&self) -> bool {

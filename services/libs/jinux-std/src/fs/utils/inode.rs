@@ -223,6 +223,8 @@ pub trait Inode: Any + Sync + Send {
 
     fn set_mtime(&self, time: Duration);
 
+    fn set_mode(&self, mode: InodeMode);
+
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         Err(Error::new(Errno::EISDIR))
     }

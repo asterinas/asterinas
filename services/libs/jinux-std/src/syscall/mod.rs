@@ -5,6 +5,7 @@ use crate::syscall::access::sys_access;
 use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
 use crate::syscall::chdir::{sys_chdir, sys_fchdir};
+use crate::syscall::chmod::{sys_chmod, sys_fchmod, sys_fchmodat};
 use crate::syscall::clock_gettime::sys_clock_gettime;
 use crate::syscall::clock_nanosleep::sys_clock_nanosleep;
 use crate::syscall::clone::sys_clone;
@@ -89,6 +90,7 @@ mod arch_prctl;
 mod bind;
 mod brk;
 mod chdir;
+mod chmod;
 mod clock_gettime;
 mod clock_nanosleep;
 mod clone;
@@ -252,6 +254,8 @@ define_syscall_nums!(
     SYS_UNLINK = 87,
     SYS_SYMLINK = 88,
     SYS_READLINK = 89,
+    SYS_CHMOD = 90,
+    SYS_FCHMOD = 91,
     SYS_UMASK = 95,
     SYS_GETTIMEOFDAY = 96,
     SYS_GETUID = 102,
@@ -286,6 +290,7 @@ define_syscall_nums!(
     SYS_LINKAT = 265,
     SYS_SYMLINKAT = 266,
     SYS_READLINKAT = 267,
+    SYS_FCHMODAT = 268,
     SYS_SET_ROBUST_LIST = 273,
     SYS_UTIMENSAT = 280,
     SYS_EPOLL_CREATE1 = 291,
@@ -406,6 +411,8 @@ pub fn syscall_dispatch(
         SYS_UNLINK => syscall_handler!(1, sys_unlink, args),
         SYS_SYMLINK => syscall_handler!(2, sys_symlink, args),
         SYS_READLINK => syscall_handler!(3, sys_readlink, args),
+        SYS_CHMOD => syscall_handler!(2, sys_chmod, args),
+        SYS_FCHMOD => syscall_handler!(2, sys_fchmod, args),
         SYS_UMASK => syscall_handler!(1, sys_umask, args),
         SYS_GETTIMEOFDAY => syscall_handler!(1, sys_gettimeofday, args),
         SYS_GETUID => syscall_handler!(0, sys_getuid),
@@ -440,6 +447,7 @@ pub fn syscall_dispatch(
         SYS_LINKAT => syscall_handler!(5, sys_linkat, args),
         SYS_SYMLINKAT => syscall_handler!(3, sys_symlinkat, args),
         SYS_READLINKAT => syscall_handler!(4, sys_readlinkat, args),
+        SYS_FCHMODAT => syscall_handler!(3, sys_fchmodat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_UTIMENSAT => syscall_handler!(4, sys_utimensat, args),
         SYS_EPOLL_CREATE1 => syscall_handler!(1, sys_epoll_create1, args),

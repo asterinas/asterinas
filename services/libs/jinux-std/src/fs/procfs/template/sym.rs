@@ -28,26 +28,34 @@ impl<S: SymOps> ProcSym<S> {
 
 impl<S: SymOps + 'static> Inode for ProcSym<S> {
     fn len(&self) -> usize {
-        self.info.metadata().size
+        self.info.size()
     }
 
     fn resize(&self, _new_size: usize) {}
 
     fn metadata(&self) -> Metadata {
-        self.info.metadata().clone()
+        self.info.metadata()
     }
 
     fn atime(&self) -> Duration {
-        self.info.metadata().atime
+        self.info.atime()
     }
 
-    fn set_atime(&self, _time: Duration) {}
+    fn set_atime(&self, time: Duration) {
+        self.info.set_atime(time)
+    }
 
     fn mtime(&self) -> Duration {
-        self.info.metadata().mtime
+        self.info.mtime()
     }
 
-    fn set_mtime(&self, _time: Duration) {}
+    fn set_mtime(&self, time: Duration) {
+        self.info.set_mtime(time)
+    }
+
+    fn set_mode(&self, mode: InodeMode) {
+        self.info.set_mode(mode)
+    }
 
     fn read_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
         Err(Error::new(Errno::EPERM))

@@ -109,7 +109,7 @@ impl FsResolver {
                     return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
                 }
                 if !dir_dentry.vnode().inode_mode().is_writable() {
-                    return_errno_with_message!(Errno::EPERM, "file cannot be created");
+                    return_errno_with_message!(Errno::EACCES, "file cannot be created");
                 }
                 let new_dentry = dir_dentry.create(&file_name, InodeType::File, inode_mode)?;
                 new_dentry
