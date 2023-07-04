@@ -12,7 +12,7 @@ use crate::vm::{
 use super::{is_intersected, Vmar, Vmar_};
 use crate::vm::perms::VmPerms;
 use crate::vm::vmar::Rights;
-use crate::vm::vmo::VmoRightsOp;
+use crate::vm::vmo::{VmoFlags, VmoRightsOp};
 
 /// A VmMapping represents mapping a vmo into a vmar.
 /// A vmar can has multiple VmMappings, which means multiple vmos are mapped to a vmar.
@@ -276,7 +276,14 @@ impl VmMapping {
             "fork vmo, parent size = 0x{:x}, map_to_addr = 0x{:x}",
             vmo_size, map_to_addr
         );
-        let child_vmo = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?;
+        let child_vmo = {
+            let parent_flags = parent_vmo.flags();
+            let mut options = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size);
+            if parent_flags.contains(VmoFlags::RESIZABLE) {
+                options = options.flags(VmoFlags::RESIZABLE);
+            }
+            options.alloc()?
+        };
         let parent_vmar = new_parent.upgrade().unwrap();
         let vm_space = parent_vmar.vm_space();
 

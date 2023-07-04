@@ -293,7 +293,34 @@ impl VmoChildOptions<Rights, VmoSliceChild> {
     }
 }
 
+impl<R> VmoChildOptions<R, VmoSliceChild> {
+    /// Flags that a VMO child inherits from its parent.
+    pub const PARENT_FLAGS_MASK: VmoFlags =
+        VmoFlags::from_bits(VmoFlags::CONTIGUOUS.bits | VmoFlags::DMA.bits).unwrap();
+    /// Flags that a VMO child may differ from its parent.
+    pub const CHILD_FLAGS_MASK: VmoFlags = VmoFlags::empty();
+
+    /// Sets the VMO flags.
+    ///
+    /// Only the flags among `Self::CHILD_FLAGS_MASK` may be set through this
+    /// method.
+    ///
+    /// To set `VmoFlags::RESIZABLE`, the child must be COW.
+    ///
+    /// The default value is `VmoFlags::empty()`.
+    pub fn flags(mut self, flags: VmoFlags) -> Self {
+        let inherited_flags = self.flags & Self::PARENT_FLAGS_MASK;
+        self.flags = inherited_flags | (flags & Self::CHILD_FLAGS_MASK);
+        self
+    }
+}
+
 impl<R> VmoChildOptions<R, VmoCowChild> {
+    /// Flags that a VMO child inherits from its parent.
+    pub const PARENT_FLAGS_MASK: VmoFlags =
+        VmoFlags::from_bits(VmoFlags::CONTIGUOUS.bits | VmoFlags::DMA.bits).unwrap();
+    /// Flags that a VMO child may differ from its parent.
+    pub const CHILD_FLAGS_MASK: VmoFlags = VmoFlags::RESIZABLE;
     /// Creates a default set of options for creating a copy-on-write (COW)
     /// VMO child.
     ///
@@ -311,14 +338,6 @@ impl<R> VmoChildOptions<R, VmoCowChild> {
             marker: PhantomData,
         }
     }
-}
-
-impl<R, C> VmoChildOptions<R, C> {
-    /// Flags that a VMO child inherits from its parent.
-    pub const PARENT_FLAGS_MASK: VmoFlags =
-        VmoFlags::from_bits(VmoFlags::CONTIGUOUS.bits | VmoFlags::DMA.bits).unwrap();
-    /// Flags that a VMO child may differ from its parent.
-    pub const CHILD_FLAGS_MASK: VmoFlags = VmoFlags::RESIZABLE;
 
     /// Sets the VMO flags.
     ///
@@ -329,7 +348,8 @@ impl<R, C> VmoChildOptions<R, C> {
     ///
     /// The default value is `VmoFlags::empty()`.
     pub fn flags(mut self, flags: VmoFlags) -> Self {
-        self.flags = flags & Self::CHILD_FLAGS_MASK;
+        let inherited_flags = self.flags & Self::PARENT_FLAGS_MASK;
+        self.flags = inherited_flags | (flags & Self::CHILD_FLAGS_MASK);
         self
     }
 }
