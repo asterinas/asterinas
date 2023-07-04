@@ -1,255 +1,269 @@
 use super::{
-    frame_allocator,
-    memory_set::MapArea,
-    {Paddr, Vaddr},
+    frame_allocator, paddr_to_vaddr, VmAllocOptions, VmFrameVec, {Paddr, Vaddr},
 };
 use crate::{
-    config::{ENTRY_COUNT, PAGE_SIZE, PHYS_OFFSET},
+    arch::mm::PageTableEntry,
+    config::{ENTRY_COUNT, PAGE_SIZE},
     vm::VmFrame,
 };
-use align_ext::AlignExt;
-use alloc::{collections::BTreeMap, vec, vec::Vec};
-use core::{fmt, panic};
-use lazy_static::lazy_static;
-use spin::Mutex;
+use alloc::{vec, vec::Vec};
+use core::{fmt::Debug, marker::PhantomData, mem::size_of};
+use log::trace;
+use pod::Pod;
 
-lazy_static! {
-    pub(crate) static ref ALL_MAPPED_PTE: Mutex<BTreeMap<usize, PageTableEntry>> =
-        Mutex::new(BTreeMap::new());
+pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
+    fn new() -> Self;
+
+    fn set_present(self, present: bool) -> Self;
+
+    fn set_writable(self, writable: bool) -> Self;
+
+    fn set_readable(self, readable: bool) -> Self;
+
+    fn set_accessible_by_user(self, accessible: bool) -> Self;
+
+    fn set_executable(self, executable: bool) -> Self;
+
+    fn is_present(&self) -> bool;
+
+    fn writable(&self) -> bool;
+
+    fn readable(&self) -> bool;
+
+    fn executable(&self) -> bool;
+
+    fn has_accessed(&self) -> bool;
+
+    fn accessible_by_user(&self) -> bool;
+
+    /// Returns a new set of flags, containing any flags present in either self or other. It is similar to the OR operation.
+    fn union(&self, other: &Self) -> Self;
+
+    /// Remove the specified flags.
+    fn remove(&mut self, flags: &Self);
+
+    /// Insert the specified flags.
+    fn insert(&mut self, flags: &Self);
 }
 
-bitflags::bitflags! {
-  /// Possible flags for a page table entry.
-  pub struct PageTableFlags: usize {
-    /// Specifies whether the mapped frame or page table is loaded in memory.
-    const PRESENT =         1 << 0;
-    /// Controls whether writes to the mapped frames are allowed.
-    const WRITABLE =        1 << 1;
-    /// Controls whether accesses from userspace (i.e. ring 3) are permitted.
-    const USER =            1 << 2;
-    /// If this bit is set, a “write-through” policy is used for the cache, else a “write-back”
-    /// policy is used.
-    const WRITE_THROUGH =   1 << 3;
-    /// Disables caching for the pointed entry is cacheable.
-    const NO_CACHE =        1 << 4;
-    /// Indicates that the mapping is present in all address spaces, so it isn't flushed from
-    /// the TLB on an address space switch.
-    const GLOBAL =          1 << 8;
-    /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
-    const NO_EXECUTE =      1 << 63;
-  }
+pub trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
+    type F: PageTableFlagsTrait;
+
+    fn new(paddr: Paddr, flags: Self::F) -> Self;
+
+    fn paddr(&self) -> Paddr;
+
+    fn flags(&self) -> Self::F;
+
+    fn update(&mut self, paddr: Paddr, flags: Self::F);
+
+    /// To determine whether the PTE is unused, it usually checks whether it is 0.
+    ///
+    /// The page table will first use this value to determine whether a new page needs to be created to complete the mapping.
+    fn is_unused(&self) -> bool;
+
+    /// Clear the PTE and reset it to the initial state, which is usually 0.
+    fn clear(&mut self);
+
+    /// The index of the next PTE is determined based on the virtual address and the current level, and the level range is [1,5].
+    ///
+    /// For example, in x86 we use the following expression to get the index (ENTRY_COUNT is 512):
+    /// ```
+    /// va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
+    /// ```
+    ///
+    fn page_index(va: Vaddr, level: usize) -> usize;
 }
 
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct PageTableEntry(usize);
-
-impl PageTableEntry {
-    const PHYS_ADDR_MASK: usize = !(PAGE_SIZE - 1);
-
-    pub const fn new_page(pa: Paddr, flags: PageTableFlags) -> Self {
-        Self((pa & Self::PHYS_ADDR_MASK) | flags.bits)
-    }
-    const fn paddr(self) -> Paddr {
-        self.0 as usize & Self::PHYS_ADDR_MASK
-    }
-    const fn flags(self) -> PageTableFlags {
-        PageTableFlags::from_bits_truncate(self.0)
-    }
-    const fn is_unused(self) -> bool {
-        self.0 == 0
-    }
-    const fn is_present(self) -> bool {
-        (self.0 & PageTableFlags::PRESENT.bits) != 0
-    }
+#[derive(Debug, Clone, Copy)]
+pub struct PageTableConfig {
+    pub address_width: AddressWidth,
 }
 
-impl fmt::Debug for PageTableEntry {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut f = f.debug_struct("PageTableEntry");
-        f.field("raw", &self.0)
-            .field("paddr", &self.paddr())
-            .field("flags", &self.flags())
-            .finish()
-    }
+#[derive(Debug, Clone, Copy)]
+#[repr(usize)]
+pub enum AddressWidth {
+    Level3PageTable = 3,
+    Level4PageTable = 4,
+    Level5PageTable = 5,
 }
 
-pub struct PageTable {
+#[derive(Debug)]
+pub enum PageTableError {
+    /// Modifications to page tables (map, unmap, protect, etc.) are invalid for the following reasons:
+    ///
+    /// 1. The mapping is present before map operation.
+    /// 2. The mapping is already invalid before unmap operation.
+    /// 3. The mapping is not exists before protect operation.
+    InvalidModification,
+}
+
+#[derive(Clone, Debug)]
+pub struct PageTable<T: PageTableEntryTrait> {
     pub root_pa: Paddr,
     /// store all the physical frame that the page table need to map all the frame e.g. the frame of the root_pa
     tables: Vec<VmFrame>,
+    config: PageTableConfig,
+    _phantom: PhantomData<T>,
 }
 
-impl PageTable {
-    pub fn new() -> Self {
+impl<T: PageTableEntryTrait> PageTable<T> {
+    pub fn new(config: PageTableConfig) -> Self {
         let root_frame = frame_allocator::alloc_zero().unwrap();
-        let p4 = table_of(root_frame.start_paddr()).unwrap();
-        let map_pte = ALL_MAPPED_PTE.lock();
-        for (index, pte) in map_pte.iter() {
-            p4[*index] = *pte;
-        }
         Self {
             root_pa: root_frame.start_paddr(),
             tables: vec![root_frame],
+            config,
+            _phantom: PhantomData,
         }
     }
 
-    pub fn map(&mut self, va: Vaddr, pa: Paddr, flags: PageTableFlags) {
-        let entry = self.get_entry_or_create(va).unwrap();
-        if !entry.is_unused() {
-            panic!("{:#x?} is mapped before mapping", va);
-        }
-        *entry = PageTableEntry::new_page(pa.align_down(PAGE_SIZE), flags);
-    }
-
-    pub fn unmap(&mut self, va: Vaddr) {
-        let entry = get_entry(self.root_pa, va).unwrap();
-        if entry.is_unused() {
-            panic!("{:#x?} is invalid before unmapping", va);
-        }
-        entry.0 = 0;
-    }
-
-    pub fn protect(&mut self, va: Vaddr, flags: PageTableFlags) {
-        let entry = self.get_entry_or_create(va).unwrap();
-        if entry.is_unused() || !entry.is_present() {
-            panic!("{:#x?} is invalid before protect", va);
-        }
-        // clear old mask
-        let clear_flags_mask = !PageTableFlags::all().bits;
-        entry.0 &= clear_flags_mask;
-        // set new mask
-        entry.0 |= flags.bits;
-    }
-
-    pub fn map_area(&mut self, area: &MapArea) {
-        for (va, pa) in area.mapper.iter() {
-            assert!(pa.start_paddr() < PHYS_OFFSET);
-            self.map(*va, pa.start_paddr(), area.flags);
+    /// Create the page table structure according to the physical address, note that the created page table can only use the page_walk function without create.
+    ///
+    /// # Safety
+    ///
+    /// User should ensure the physical address is valid and only invoke the `page_walk` function without creating new PTE.
+    ///
+    pub unsafe fn from_paddr(config: PageTableConfig, paddr: Paddr) -> Self {
+        Self {
+            root_pa: paddr,
+            tables: Vec::new(),
+            config,
+            _phantom: PhantomData,
         }
     }
 
-    pub fn unmap_area(&mut self, area: &MapArea) {
-        for (va, _) in area.mapper.iter() {
-            self.unmap(*va);
+    /// Add a new mapping directly in the root page table.
+    ///
+    /// # Safety
+    ///
+    /// User must guarantee the validity of the PTE.
+    ///
+    pub unsafe fn add_root_mapping(&mut self, index: usize, pte: &T) {
+        debug_assert!((index + 1) * size_of::<T>() <= PAGE_SIZE);
+        // Safety: The root_pa is refer to the root of a valid page table.
+        let root_ptes: &mut [T] = table_of(self.root_pa).unwrap();
+        root_ptes[index] = *pte;
+    }
+
+    pub fn map(&mut self, vaddr: Vaddr, paddr: Paddr, flags: T::F) -> Result<(), PageTableError> {
+        let last_entry = self.page_walk(vaddr, true).unwrap();
+        trace!(
+            "Page Table: Map vaddr:{:x?}, paddr:{:x?}, flags:{:x?}",
+            vaddr,
+            paddr,
+            flags
+        );
+        if !last_entry.is_unused() && last_entry.flags().is_present() {
+            return Err(PageTableError::InvalidModification);
         }
+        last_entry.update(paddr, flags);
+        Ok(())
+    }
+
+    /// Find the last PTE
+    ///
+    /// If create is set, it will create the next table until the last PTE.
+    /// If not, it will return None if it is not reach the last PTE.
+    ///
+    fn page_walk(&mut self, vaddr: Vaddr, create: bool) -> Option<&mut T> {
+        let mut count = self.config.address_width as usize;
+        debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
+        // Safety: The offset does not exceed the value of PAGE_SIZE.
+        // It only change the memory controlled by page table.
+        let mut current: &mut T = unsafe {
+            &mut *(paddr_to_vaddr(self.root_pa + size_of::<T>() * T::page_index(vaddr, count))
+                as *mut T)
+        };
+
+        while count > 1 {
+            if current.paddr() == 0 {
+                if !create {
+                    return None;
+                }
+                // Create next table
+                let frame = VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false))
+                    .unwrap()
+                    .pop()
+                    .unwrap();
+                // Default flags: read, write, user, present
+                let flags = T::F::new()
+                    .set_present(true)
+                    .set_accessible_by_user(true)
+                    .set_readable(true)
+                    .set_writable(true);
+                current.update(frame.start_paddr(), flags);
+                self.tables.push(frame);
+            }
+            count -= 1;
+            debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
+            // Safety: The offset does not exceed the value of PAGE_SIZE.
+            // It only change the memory controlled by page table.
+            current = unsafe {
+                &mut *(paddr_to_vaddr(
+                    current.paddr() + size_of::<T>() * T::page_index(vaddr, count),
+                ) as *mut T)
+            };
+        }
+        Some(current)
+    }
+
+    pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
+        let last_entry = self.page_walk(vaddr, false).unwrap();
+        trace!("Page Table: Unmap vaddr:{:x?}", vaddr);
+        if last_entry.is_unused() && !last_entry.flags().is_present() {
+            return Err(PageTableError::InvalidModification);
+        }
+        last_entry.clear();
+        Ok(())
+    }
+
+    pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+        let last_entry = self.page_walk(vaddr, false).unwrap();
+        trace!("Page Table: Protect vaddr:{:x?}, flags:{:x?}", vaddr, flags);
+        if last_entry.is_unused() || !last_entry.flags().is_present() {
+            return Err(PageTableError::InvalidModification);
+        }
+        last_entry.update(last_entry.paddr(), flags);
+        Ok(())
+    }
+
+    pub fn root_paddr(&self) -> Paddr {
+        self.root_pa
     }
 }
 
-impl PageTable {
-    fn alloc_table(&mut self) -> Paddr {
-        let frame = frame_allocator::alloc_zero().unwrap();
-        let pa = frame.start_paddr();
-        self.tables.push(frame);
-        pa
-    }
-
-    fn get_entry_or_create(&mut self, va: Vaddr) -> Option<&mut PageTableEntry> {
-        let p4 = table_of(self.root_pa).unwrap();
-        let p4e = &mut p4[p4_index(va)];
-        let p3 = next_table_or_create(p4e, || self.alloc_table())?;
-        let p3e = &mut p3[p3_index(va)];
-        let p2 = next_table_or_create(p3e, || self.alloc_table())?;
-        let p2e = &mut p2[p2_index(va)];
-        let p1 = next_table_or_create(p2e, || self.alloc_table())?;
-        let p1e = &mut p1[p1_index(va)];
-        Some(p1e)
-    }
-}
-
-const fn p4_index(va: Vaddr) -> usize {
-    (va >> (12 + 27)) & (ENTRY_COUNT - 1)
-}
-
-const fn p3_index(va: Vaddr) -> usize {
-    (va >> (12 + 18)) & (ENTRY_COUNT - 1)
-}
-
-const fn p2_index(va: Vaddr) -> usize {
-    (va >> (12 + 9)) & (ENTRY_COUNT - 1)
-}
-
-const fn p1_index(va: Vaddr) -> usize {
-    (va >> 12) & (ENTRY_COUNT - 1)
-}
-
-fn get_entry(root_pa: Paddr, va: Vaddr) -> Option<&'static mut PageTableEntry> {
-    let p4 = table_of(root_pa).unwrap();
-    let p4e = &mut p4[p4_index(va)];
-    let p3 = next_table(p4e)?;
-    let p3e = &mut p3[p3_index(va)];
-    let p2 = next_table(p3e)?;
-    let p2e = &mut p2[p2_index(va)];
-    let p1 = next_table(p2e)?;
-    let p1e = &mut p1[p1_index(va)];
-    Some(p1e)
-}
-
-fn table_of<'a>(pa: Paddr) -> Option<&'a mut [PageTableEntry]> {
+/// Read `ENTRY_COUNT` of PageTableEntry from an address
+///
+/// # Safety
+///
+/// User must ensure that the physical address refers to the root of a valid page table.
+///
+pub unsafe fn table_of<'a, T: PageTableEntryTrait>(pa: Paddr) -> Option<&'a mut [T]> {
     if pa == 0 {
         return None;
     }
     let ptr = super::paddr_to_vaddr(pa) as *mut _;
-    unsafe { Some(core::slice::from_raw_parts_mut(ptr, ENTRY_COUNT)) }
-}
-
-fn next_table<'a>(entry: &PageTableEntry) -> Option<&'a mut [PageTableEntry]> {
-    if entry.is_present() {
-        Some(table_of(entry.paddr()).unwrap())
-    } else {
-        None
-    }
-}
-
-fn next_table_or_create<'a>(
-    entry: &mut PageTableEntry,
-    mut alloc: impl FnMut() -> Paddr,
-) -> Option<&'a mut [PageTableEntry]> {
-    if entry.is_unused() {
-        let pa = alloc();
-        *entry = PageTableEntry::new_page(
-            pa,
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER,
-        );
-        Some(table_of(pa).unwrap())
-    } else {
-        next_table(entry)
-    }
+    Some(core::slice::from_raw_parts_mut(ptr, ENTRY_COUNT))
 }
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
-pub fn vaddr_to_paddr(virtual_address: Vaddr) -> Option<Paddr> {
+pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
     #[cfg(target_arch = "x86_64")]
     let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
 
+    // TODO: Read and use different level page table.
+    // Safety: The page_directory_base is valid since it is read from PDBR.
+    // We only use this instance to do the page walk without creating.
+    let mut page_table: PageTable<PageTableEntry> = unsafe {
+        PageTable::from_paddr(
+            PageTableConfig {
+                address_width: AddressWidth::Level4PageTable,
+            },
+            page_directory_base.start_address().as_u64() as usize,
+        )
+    };
     let page_directory_base = page_directory_base.start_address().as_u64() as usize;
-    let p4 = table_of(page_directory_base)?;
-
-    let pte = p4[p4_index(virtual_address)];
-    let p3 = table_of(pte.paddr())?;
-
-    let pte = p3[p3_index(virtual_address)];
-    let p2 = table_of(pte.paddr())?;
-
-    let pte = p2[p2_index(virtual_address)];
-    let p1 = table_of(pte.paddr())?;
-
-    let pte = p1[p1_index(virtual_address)];
-    Some((pte.paddr() & ((1 << 48) - 1)) + (virtual_address & ((1 << 12) - 1)))
-}
-
-pub(crate) fn init() {
-    #[cfg(target_arch = "x86_64")]
-    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
-    let page_directory_base = page_directory_base.start_address().as_u64() as usize;
-
-    let p4 = table_of(page_directory_base).unwrap();
-    // Cancel mapping in lowest addresses.
-    p4[0].0 = 0;
-    let mut map_pte = ALL_MAPPED_PTE.lock();
-    for i in 0..512 {
-        if p4[i].flags().contains(PageTableFlags::PRESENT) {
-            map_pte.insert(i, p4[i]);
-        }
-    }
+    let last_entry = page_table.page_walk(vaddr, false)?;
+    Some(last_entry.paddr())
 }

@@ -1,5 +1,5 @@
+use crate::arch::mm::PageTableFlags;
 use crate::config::PAGE_SIZE;
-use crate::vm::page_table::PageTableFlags;
 use bitflags::bitflags;
 use core::ops::Range;
 use spin::Mutex;

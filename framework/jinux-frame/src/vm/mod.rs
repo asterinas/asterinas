@@ -76,14 +76,13 @@ pub const fn is_page_aligned(p: usize) -> bool {
 }
 
 /// Only available inside jinux-frame
-pub(crate) static MEMORY_REGIONS: Once<&Vec<MemoryRegions>> = Once::new();
+pub(crate) static MEMORY_REGIONS: Once<Vec<MemoryRegions>> = Once::new();
 
 pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegions>> = Once::new();
 
 pub(crate) fn init() {
     heap_allocator::init();
-    #[cfg(target_arch = "x86_64")]
-    let memory_regions = crate::arch::x86::mm::get_memory_regions();
+    let memory_regions = crate::arch::mm::get_memory_regions();
 
     let mut framebuffer_regions = Vec::new();
     for i in memory_regions.iter() {
@@ -92,8 +91,7 @@ pub(crate) fn init() {
         }
     }
 
-    frame_allocator::init(memory_regions);
-    page_table::init();
+    frame_allocator::init(&memory_regions);
 
     MEMORY_REGIONS.call_once(|| memory_regions);
     FRAMEBUFFER_REGIONS.call_once(|| framebuffer_regions);

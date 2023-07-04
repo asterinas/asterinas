@@ -1,12 +1,9 @@
-use core::ops::Range;
-
-use align_ext::AlignExt;
 use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;
-use log::{debug, info};
+use log::info;
 use spin::{Mutex, Once};
 
-use crate::{config::PAGE_SIZE, vm::Paddr};
+use crate::config::PAGE_SIZE;
 
 use super::{frame::VmFrameFlags, MemoryRegions, MemoryRegionsType, VmFrame};
 
