@@ -742,7 +742,7 @@ checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 [[package]]
 name = "pod"
 version = "0.1.0"
-source = "git+https://github.com/jinzhao-dev/pod?rev=7fa2ed2#7fa2ed2bb8344856f98f0d533ecb1bab238f79ba"
+source = "git+https://github.com/jinzhao-dev/pod?rev=71e59ec#71e59ec1ddf6562e8a928f609f2048a69a5297b0"
 dependencies = [
  "pod-derive",
 ]
@@ -750,7 +750,7 @@ dependencies = [
 [[package]]
 name = "pod-derive"
 version = "0.1.0"
-source = "git+https://github.com/jinzhao-dev/pod?rev=7fa2ed2#7fa2ed2bb8344856f98f0d533ecb1bab238f79ba"
+source = "git+https://github.com/jinzhao-dev/pod?rev=71e59ec#71e59ec1ddf6562e8a928f609f2048a69a5297b0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1042,7 +1042,7 @@ dependencies = [
 [[package]]
 name = "trapframe"
 version = "0.9.0"
-source = "git+https://github.com/sdww0/trapframe-rs?rev=4234db5#4234db5ceb667a46c3a7b68b63a5e9ef25993ef9"
+source = "git+https://github.com/sdww0/trapframe-rs?rev=d4c5eba#d4c5ebab73d2295d69e2fcc66f51b9ae2883f8d9"
 dependencies = [
  "log",
  "pod",
