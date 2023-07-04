@@ -1,6 +1,7 @@
-use super::page_table::{PageTable, PageTableFlags};
+use super::page_table::{PageTable, PageTableConfig};
 use crate::{
-    config::PAGE_SIZE,
+    arch::mm::{PageTableEntry, PageTableFlags},
+    config::{PAGE_SIZE, PHYS_OFFSET},
     vm::is_page_aligned,
     vm::{VmFrame, VmFrameVec},
 };
@@ -10,6 +11,7 @@ use core::fmt;
 
 use super::frame_allocator;
 
+#[derive(Debug)]
 pub struct MapArea {
     pub flags: PageTableFlags,
     pub start_va: Vaddr,
@@ -18,7 +20,7 @@ pub struct MapArea {
 }
 
 pub struct MemorySet {
-    pub pt: PageTable,
+    pub pt: PageTable<PageTableEntry>,
     /// all the map area, sort by the start virtual address
     areas: BTreeMap<Vaddr, MapArea>,
 }
@@ -149,7 +151,11 @@ impl MemorySet {
         if area.size > 0 {
             // TODO: check overlap
             if let Entry::Vacant(e) = self.areas.entry(area.start_va) {
-                self.pt.map_area(e.insert(area));
+                let area = e.insert(area);
+                for (va, pa) in area.mapper.iter() {
+                    debug_assert!(pa.start_paddr() < PHYS_OFFSET);
+                    self.pt.map(*va, pa.start_paddr(), area.flags).unwrap();
+                }
             } else {
                 panic!(
                     "MemorySet::map: MapArea starts from {:#x?} is existed!",
@@ -173,15 +179,27 @@ impl MemorySet {
     }
 
     pub fn new() -> Self {
+        let mut page_table = PageTable::new(PageTableConfig {
+            address_width: super::page_table::AddressWidth::Level4PageTable,
+        });
+        let mapped_pte = crate::arch::mm::ALL_MAPPED_PTE.lock();
+        for (index, pte) in mapped_pte.iter() {
+            // Safety: These PTEs are all valid PTEs fetched from the initial page table during memory initialization.
+            unsafe {
+                page_table.add_root_mapping(*index, pte);
+            }
+        }
         Self {
-            pt: PageTable::new(),
+            pt: page_table,
             areas: BTreeMap::new(),
         }
     }
 
     pub fn unmap(&mut self, va: Vaddr) -> Result<()> {
         if let Some(area) = self.areas.remove(&va) {
-            self.pt.unmap_area(&area);
+            for (va, _) in area.mapper.iter() {
+                self.pt.unmap(*va).unwrap();
+            }
             Ok(())
         } else {
             Err(Error::PageFault)
@@ -190,7 +208,9 @@ impl MemorySet {
 
     pub fn clear(&mut self) {
         for area in self.areas.values_mut() {
-            self.pt.unmap_area(area);
+            for (va, _) in area.mapper.iter() {
+                self.pt.unmap(*va).unwrap();
+            }
         }
         self.areas.clear();
     }
@@ -246,7 +266,7 @@ impl MemorySet {
 
     pub fn protect(&mut self, addr: Vaddr, flags: PageTableFlags) {
         let va = addr;
-        self.pt.protect(va, flags)
+        self.pt.protect(va, flags).unwrap();
     }
 }
 
@@ -262,15 +282,6 @@ impl Clone for MemorySet {
 impl Drop for MemorySet {
     fn drop(&mut self) {
         self.clear();
-    }
-}
-
-impl fmt::Debug for MapArea {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("MapArea")
-            .field("flags", &self.flags)
-            .field("mapped area", &self.mapper)
-            .finish()
     }
 }
 
