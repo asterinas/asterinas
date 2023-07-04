@@ -573,6 +573,7 @@ dependencies = [
  "align_ext",
  "ascii",
  "bitflags",
+ "bitvec",
  "controlled",
  "core2",
  "cpio-decoder",

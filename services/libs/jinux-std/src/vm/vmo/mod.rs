@@ -3,6 +3,8 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
+use bitvec::bitvec;
+use bitvec::vec::BitVec;
 use jinux_frame::vm::{VmAllocOptions, VmFrameVec, VmIo};
 use jinux_rights::Rights;
 
@@ -167,6 +169,8 @@ struct InheritedPages {
     /// page with index `idx + parent_page_idx_offset` in parent vmo
     parent_page_idx_offset: usize,
     is_copy_on_write: bool,
+    /// The pages already committed by child
+    committed_pages: BitVec,
 }
 
 impl InheritedPages {
@@ -176,11 +180,13 @@ impl InheritedPages {
         parent_page_idx_offset: usize,
         is_copy_on_write: bool,
     ) -> Self {
+        let committed_pages = bitvec![0; page_range.len()];
         Self {
             parent: Some(parent),
             page_range,
             parent_page_idx_offset,
             is_copy_on_write,
+            committed_pages,
         }
     }
 
@@ -235,6 +241,19 @@ impl InheritedPages {
 
     fn should_child_commit_page(&self, write_page: bool) -> bool {
         !self.is_copy_on_write || (self.is_copy_on_write && write_page)
+    }
+
+    fn mark_page_as_commited(&mut self, page_idx: usize) {
+        if !self.contains_page(page_idx) {
+            return;
+        }
+        let idx = page_idx - self.page_range.start;
+        debug_assert_eq!(self.committed_pages[idx], false);
+        debug_assert!(self.parent.is_some());
+        self.committed_pages.set(idx, true);
+        if self.committed_pages.count_ones() == self.page_range.len() {
+            self.parent.take();
+        }
     }
 }
 
@@ -292,10 +311,11 @@ impl VmoInner {
             return Ok(frames);
         }
 
-        let inherited_pages = self.inherited_pages.as_ref().unwrap();
+        let inherited_pages = self.inherited_pages.as_mut().unwrap();
         let frame = inherited_pages.get_frame_from_parent(page_idx, write_page, commit_if_none)?;
 
         if inherited_pages.should_child_commit_page(write_page) {
+            inherited_pages.mark_page_as_commited(page_idx);
             self.insert_frame(page_idx, frame.clone());
         }
 
