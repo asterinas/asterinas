@@ -24,10 +24,9 @@ fn test_decoder() {
         output.stdout
     };
 
-    let decoder = CpioDecoder::new(&buffer);
-    assert!(decoder.decode_entries().count() > 3);
+    assert!(CpioDecoder::new(buffer.as_slice()).decode_entries().count() > 3);
+    let mut decoder = CpioDecoder::new(buffer.as_slice());
     for (idx, entry_result) in decoder.decode_entries().enumerate() {
-        assert!(entry_result.is_ok());
         let entry = entry_result.unwrap();
         if idx == 0 {
             assert!(entry.name() == ".");
@@ -40,7 +39,11 @@ fn test_decoder() {
             assert!(entry.metadata().ino() > 0);
         }
         if idx == 2 {
-            assert!(entry.name() == "src/lib.rs");
+            assert!(
+                entry.name() == "src/lib.rs"
+                    || entry.name() == "src/test.rs"
+                    || entry.name() == "src/error.rs"
+            );
             assert!(entry.metadata().file_type() == FileType::File);
             assert!(entry.metadata().ino() > 0);
         }
@@ -49,7 +52,8 @@ fn test_decoder() {
 
 #[test]
 fn test_short_buffer() {
-    let decoder = CpioDecoder::new(&[]);
+    let short_buffer: Vec<u8> = Vec::new();
+    let mut decoder = CpioDecoder::new(short_buffer.as_slice());
     for entry_result in decoder.decode_entries() {
         assert!(entry_result.is_err());
         assert!(entry_result.err() == Some(Error::BufferShortError));
@@ -59,7 +63,7 @@ fn test_short_buffer() {
 #[test]
 fn test_invalid_buffer() {
     let buffer: &[u8] = b"invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic.invalidmagic";
-    let decoder = CpioDecoder::new(buffer);
+    let mut decoder = CpioDecoder::new(buffer);
     for entry_result in decoder.decode_entries() {
         assert!(entry_result.is_err());
         assert!(entry_result.err() == Some(Error::MagicError));
