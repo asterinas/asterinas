@@ -24,38 +24,34 @@ As a zero-cost, least-privilege OS, Jinux provides the best of both worlds: the 
 
 ## Build and test
 
-While most of the code is written in Rust, the project-scope build process is governed by Makefile. The following commands are intended for use on an Ubuntu server that has installed qemu-system-x86_64.
+While most of the code is written in Rust, the project-scope build process is governed by Makefile. The development environment is managed with Docker. Please ensure Docker is installed and can be run without sudo privilege.
 
 ### Preparation
-
-Before downloading source code, install and init Git LFS since the project manages binaries with Git LFS. 
-```bash
-# 1. install git-lfs
-apt install git-lfs             
-
-# 2. init git-lfs for current user
-git lfs install --skip-repo     
-```
-
-Then, download source codes as normal.
+1. Download the latest source code of jinux.
 ```bash
 git clone [repository url]
 ```
 
-After downloading the source code, run the following command once to make sure
-all developmennt tools are installed.
+2. After downloading the source code, run the following command to pull the development image.
 ```bash
-make setup
+docker pull jinuxdev/jinux:0.1.0
 ```
+
+3. Start the development container.
+```bash
+docker run -it --privileged --network=host --device=/dev/kvm -v `pwd`:/root/jinux jinuxdev/jinux:0.1.0
+```
+
+**All build and test commands should be run inside the development container.**
 
 ### Build
 
-Then, we can build the project.
+1. Build the project.
 ```bash
 make build
 ```
 
-If everything goes well, then we can run the OS.
+2. If everything goes well, then we can run the OS.
 ```bash
 make run
 ```
@@ -67,11 +63,11 @@ We can run unit tests and integration tests if building succeeds.
 make test
 ```
 
-If we want to check access control policy among components, install some standalone tools (e.g., `cargo-component`), and set environmental variables to enable `cargo` find installed tools under the project directory. 
+If we want to check access control policy among components, install some standalone tools (e.g., `cargo-component`).
 ``` bash
 make tools
-export PATH=`pwd`/target/bin:${PATH}
 ```
+
 Then we can use the tool to check access control policy.
 ```bash
 cargo component-check

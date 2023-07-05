@@ -254,7 +254,6 @@ impl Vmo_ {
 
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         let read_len = buf.len();
-        debug_assert!(offset + read_len <= self.size());
         if offset + read_len > self.size() {
             return_errno_with_message!(Errno::EINVAL, "read range exceeds vmo size");
         }

@@ -1,10 +1,3 @@
-.PHONY: build clean run
+include ../test_common.mk
 
-build: hello_world.s
-	@gcc -static -nostdlib hello_world.s -o hello_world
-
-clean:
-	@rm hello_world
-
-run: build
-	@./hello_world
+EXTRA_C_FLAGS :=-static -nostdlib

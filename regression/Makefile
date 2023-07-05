@@ -17,10 +17,10 @@ all: build
 $(INITRAMFS):
 	@rm -rf $@ && mkdir -p $@
 	@# Mkdir necessary folders
-	@mkdir -p $@/tmp
-	@mkdir -p $@/opt
-	@mkdir -p $@/lib64
-	@mkdir -p $@/lib/x86_64-linux-gnu
+	@mkdir -p $@/bin $@/etc $@/sbin $@/usr/bin $@/root $@/tmp $@/opt $@/lib64 $@/lib/x86_64-linux-gnu
+	@# Install busybox
+	@/bin/busybox --install -s $@/bin
+	@cp /usr/bin/busybox $@/usr/bin
 	@# Copy necessary libs
 	@cp -L /lib64/ld-linux-x86-64.so.2 $@/lib64
 	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $@/lib/x86_64-linux-gnu

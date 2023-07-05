@@ -53,14 +53,12 @@ pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
         debug!("spawn background poll thread");
         loop {
             let next_poll_time = if let Some(next_poll_time) = iface.next_poll_at_ms() {
-                trace!("next poll time = {:?}", next_poll_time);
                 next_poll_time
             } else {
                 Thread::yield_now();
                 continue;
             };
             let now = read_monotonic_milli_seconds();
-            trace!("now = {:?}", now);
             if now > next_poll_time {
                 // FIXME: now is later than next poll time. This may cause problem.
                 iface.poll();

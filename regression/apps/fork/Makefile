@@ -1,10 +1,3 @@
-.PHONY: build clean run
+include ../test_common.mk
 
-build: fork.s
-	@gcc -static -nostdlib fork.s -o fork
-
-clean:
-	@rm fork
-
-run: build
-	@./fork
+EXTRA_C_FLAGS :=-static -nostdlib
