@@ -1,4 +1,5 @@
-use crate::util::*;
+use crate::util::CSpaceAccessMethod;
+use jinux_frame::bus::pci::PciDeviceLocation;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CapabilityVirtioData {
@@ -10,7 +11,7 @@ pub struct CapabilityVirtioData {
 }
 
 impl CapabilityVirtioData {
-    pub(crate) fn new(loc: Location, cap_ptr: u16) -> Self {
+    pub(crate) fn new(loc: PciDeviceLocation, cap_ptr: u16) -> Self {
         let am = CSpaceAccessMethod::IO;
         let cap_len = am.read8(loc, cap_ptr + 2);
         let option = if cap_len > 0x10 {

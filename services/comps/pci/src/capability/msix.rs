@@ -1,4 +1,5 @@
-use crate::util::*;
+use crate::util::CSpaceAccessMethod;
+use jinux_frame::bus::pci::PciDeviceLocation;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(C)]
@@ -9,7 +10,7 @@ pub struct CapabilityMSIXData {
 }
 
 impl CapabilityMSIXData {
-    pub fn new(loc: Location, cap_ptr: u16) -> Self {
+    pub fn new(loc: PciDeviceLocation, cap_ptr: u16) -> Self {
         let am = CSpaceAccessMethod::IO;
         Self {
             message_control: am.read16(loc, cap_ptr + 2),

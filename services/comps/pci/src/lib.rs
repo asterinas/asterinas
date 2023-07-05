@@ -11,10 +11,11 @@ use component::init_component;
 use component::ComponentInitError;
 
 use alloc::{sync::Arc, vec::Vec};
+use jinux_frame::bus::pci::PciDeviceLocation;
 use spin::{mutex::Mutex, Once};
 use util::CSpaceAccessMethod;
 
-pub use crate::util::PCIDevice;
+pub use crate::util::PciDevice;
 
 pub const PCI_COMMAND: u16 = 0x04;
 pub const PCI_BAR: u16 = 0x10;
@@ -37,28 +38,31 @@ fn pci_component_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 pub struct PCIComponent {
-    pci_device: Mutex<Vec<Arc<PCIDevice>>>,
+    pci_device: Mutex<Vec<Arc<PciDevice>>>,
 }
 
 impl PCIComponent {
     pub fn init() -> Result<Self, ComponentInitError> {
         let mut devices = Vec::new();
-        for dev in util::scan_bus(CSpaceAccessMethod::IO) {
+        for location in PciDeviceLocation::all() {
+            let Some(device) = util::find_device(location,CSpaceAccessMethod::IO) else{
+                continue;
+            };
             log::info!(
                 "pci: {:02x}:{:02x}.{} {:#x} {:#x} ({} {}) command: {:?} status: {:?} irq: {}:{:?}",
-                dev.loc.bus,
-                dev.loc.device,
-                dev.loc.function,
-                dev.id.vendor_id,
-                dev.id.device_id,
-                dev.id.class,
-                dev.id.subclass,
-                dev.command,
-                dev.status,
-                dev.pic_interrupt_line,
-                dev.interrupt_pin
+                device.loc.bus,
+                device.loc.device,
+                device.loc.function,
+                device.id.vendor_id,
+                device.id.device_id,
+                device.id.class,
+                device.id.subclass,
+                device.command,
+                device.status,
+                device.pic_interrupt_line,
+                device.interrupt_pin
             );
-            devices.push(Arc::new(dev));
+            devices.push(Arc::new(device));
         }
         Ok(Self {
             pci_device: Mutex::new(devices),
@@ -75,7 +79,7 @@ impl PCIComponent {
 }
 
 impl PCIComponent {
-    pub fn get_pci_devices(self: &Self, index: usize) -> Option<Arc<PCIDevice>> {
+    pub fn get_pci_devices(self: &Self, index: usize) -> Option<Arc<PciDevice>> {
         self.pci_device.lock().get(index).cloned()
     }
 

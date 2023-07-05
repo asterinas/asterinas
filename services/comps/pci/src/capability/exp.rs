@@ -1,4 +1,5 @@
-use crate::util::{CSpaceAccessMethod, Location};
+use crate::util::CSpaceAccessMethod;
+use jinux_frame::bus::pci::PciDeviceLocation;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CapabilityEXPData {
@@ -9,7 +10,7 @@ pub struct CapabilityEXPData {
 }
 
 impl CapabilityEXPData {
-    pub(crate) fn new(loc: Location, cap_ptr: u16) -> Self {
+    pub(crate) fn new(loc: PciDeviceLocation, cap_ptr: u16) -> Self {
         let am = CSpaceAccessMethod::IO;
         let cap = am.read16(loc, cap_ptr + 0x2);
         Self {

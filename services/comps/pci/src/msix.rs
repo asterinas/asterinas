@@ -2,11 +2,11 @@ use alloc::vec::Vec;
 use log::debug;
 use pod::Pod;
 
-use crate::util::{CSpaceAccessMethod, Location, BAR};
+use crate::util::{CSpaceAccessMethod, BAR};
 
 use super::capability::msix::CapabilityMSIXData;
 
-use jinux_frame::{offset_of, trap::IrqAllocateHandle};
+use jinux_frame::{bus::pci::PciDeviceLocation, offset_of, trap::IrqAllocateHandle};
 use jinux_util::frame_ptr::InFramePtr;
 
 #[derive(Debug, Default)]
@@ -37,7 +37,7 @@ impl MSIX {
     pub fn new(
         cap: &CapabilityMSIXData,
         bars: [Option<BAR>; 6],
-        loc: Location,
+        loc: PciDeviceLocation,
         cap_ptr: u16,
     ) -> Self {
         let table_info = cap.table_info;

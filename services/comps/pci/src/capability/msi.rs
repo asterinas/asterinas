@@ -1,5 +1,6 @@
-use crate::util::{CSpaceAccessMethod, Location};
+use crate::util::CSpaceAccessMethod;
 use bitflags::bitflags;
+use jinux_frame::bus::pci::PciDeviceLocation;
 bitflags! {
     pub struct CapabilityMSIMessageControl: u16 {
         const ADDR64_CAPABLE = 1 << 7;
@@ -25,7 +26,7 @@ pub struct CapabilityMSIData {
 }
 
 impl CapabilityMSIData {
-    pub(crate) fn new(loc: Location, cap_ptr: u16) -> Self {
+    pub(crate) fn new(loc: PciDeviceLocation, cap_ptr: u16) -> Self {
         let am = CSpaceAccessMethod::IO;
         let message_control =
             CapabilityMSIMessageControl::from_bits_truncate(am.read16(loc, cap_ptr + 0x02));

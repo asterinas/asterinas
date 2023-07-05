@@ -13,7 +13,7 @@ use bitflags::bitflags;
 use component::ComponentInitError;
 use device::VirtioDevice;
 use jinux_frame::{offset_of, trap::TrapFrame};
-use jinux_pci::util::{PCIDevice, BAR};
+use jinux_pci::{util::BAR, PciDevice};
 use jinux_util::frame_ptr::InFramePtr;
 use log::{debug, info};
 use pod::Pod;
@@ -226,7 +226,7 @@ pub struct PCIVirtioDevice {
 
 impl PCIVirtioDevice {
     /// create a new PCI Virtio Device, note that this function will stop with device status features ok
-    pub fn new(dev: Arc<PCIDevice>) -> Self {
+    pub fn new(dev: Arc<PciDevice>) -> Self {
         assert_eq!(dev.id.vendor_id, 0x1af4);
         let device_type = match dev.id.device_id {
             0x1000 | 0x1041 => VirtioDeviceType::Network,
