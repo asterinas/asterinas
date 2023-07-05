@@ -2,6 +2,7 @@ extern crate jinux_frame;
 use crate::capability::Capability;
 use alloc::vec::Vec;
 use bitflags::bitflags;
+use jinux_frame::bus::pci::PciDeviceLocation;
 
 pub enum PCIDeviceCommonCfgOffset {
     VendorId = 0x00,
@@ -46,19 +47,19 @@ pub enum CSpaceAccessMethod {
 // All IO-bus ops are 32-bit, we mask and shift to get the values we want.
 
 impl CSpaceAccessMethod {
-    pub fn read8(self, loc: Location, offset: u16) -> u8 {
+    pub fn read8(self, loc: PciDeviceLocation, offset: u16) -> u8 {
         let val = self.read32(loc, offset & 0b11111100);
         ((val >> ((offset as usize & 0b11) << 3)) & 0xFF) as u8
     }
 
     /// Returns a value in native endian.
-    pub fn read16(self, loc: Location, offset: u16) -> u16 {
+    pub fn read16(self, loc: PciDeviceLocation, offset: u16) -> u16 {
         let val = self.read32(loc, offset & 0b11111100);
         ((val >> ((offset as usize & 0b10) << 3)) & 0xFFFF) as u16
     }
 
     /// Returns a value in native endian.
-    pub fn read32(self, loc: Location, offset: u16) -> u32 {
+    pub fn read32(self, loc: PciDeviceLocation, offset: u16) -> u32 {
         debug_assert!(
             (offset & 0b11) == 0,
             "misaligned PCI configuration dword u32 read"
@@ -66,7 +67,7 @@ impl CSpaceAccessMethod {
         match self {
             CSpaceAccessMethod::IO => {
                 jinux_frame::arch::x86::device::pci::PCI_ADDRESS_PORT
-                    .write(loc.encode() | ((offset as u32) & 0b11111100));
+                    .write(loc.encode_as_x86_address_value() | ((offset as u32) & 0b11111100));
                 jinux_frame::arch::x86::device::pci::PCI_DATA_PORT
                     .read()
                     .to_le()
@@ -77,7 +78,7 @@ impl CSpaceAccessMethod {
         }
     }
 
-    pub fn write8(self, loc: Location, offset: u16, val: u8) {
+    pub fn write8(self, loc: PciDeviceLocation, offset: u16, val: u8) {
         let old = self.read32(loc, offset & (0xFFFC));
         let dest = offset as usize & 0b11 << 3;
         let mask = (0xFF << dest) as u32;
@@ -89,7 +90,7 @@ impl CSpaceAccessMethod {
     }
 
     /// Converts val to little endian before writing.
-    pub fn write16(self, loc: Location, offset: u16, val: u16) {
+    pub fn write16(self, loc: PciDeviceLocation, offset: u16, val: u16) {
         let old = self.read32(loc, offset & (0xFFFC));
         let dest = offset as usize & 0b10 << 3;
         let mask = (0xFFFF << dest) as u32;
@@ -102,7 +103,7 @@ impl CSpaceAccessMethod {
 
     /// Takes a value in native endian, converts it to little-endian, and writes it to the PCI
     /// device configuration space at register `offset`.
-    pub fn write32(self, loc: Location, offset: u16, val: u32) {
+    pub fn write32(self, loc: PciDeviceLocation, offset: u16, val: u32) {
         debug_assert!(
             (offset & 0b11) == 0,
             "misaligned PCI configuration dword u32 read"
@@ -110,31 +111,13 @@ impl CSpaceAccessMethod {
         match self {
             CSpaceAccessMethod::IO => {
                 jinux_frame::arch::x86::device::pci::PCI_ADDRESS_PORT
-                    .write(loc.encode() | (offset as u32 & 0b11111100));
+                    .write(loc.encode_as_x86_address_value() | (offset as u32 & 0b11111100));
                 jinux_frame::arch::x86::device::pci::PCI_DATA_PORT.write(val.to_le())
             } //MemoryMapped(ptr) => {
               //    // FIXME: Clarify whether the rules for GEP/GEPi forbid using regular .offset() here.
               //    ::core::intrinsics::volatile_load(::core::intrinsics::arith_offset(ptr, offset as usize))
               //}
         }
-    }
-}
-
-/// Physical location of a device on the bus
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Location {
-    pub bus: u8,
-    pub device: u8,
-    pub function: u8,
-}
-
-impl Location {
-    #[inline(always)]
-    fn encode(self) -> u32 {
-        (1 << 31)
-            | ((self.bus as u32) << 16)
-            | (((self.device as u32) & 0b11111) << 11)
-            | (((self.function as u32) & 0b111) << 8)
     }
 }
 
@@ -215,8 +198,8 @@ bitflags! {
 ///
 /// Although accessing configuration space may be expensive, it is not cached.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PCIDevice {
-    pub loc: Location,
+pub struct PciDevice {
+    pub loc: PciDeviceLocation,
     pub id: Identifier,
     pub command: Command,
     pub status: Status,
@@ -232,7 +215,7 @@ pub struct PCIDevice {
     pub capabilities: Vec<Capability>,
 }
 
-impl PCIDevice {
+impl PciDevice {
     /// set the status bits
     pub fn set_status_bits(&self, status: Status) {
         let am = CSpaceAccessMethod::IO;
@@ -328,7 +311,11 @@ pub enum BAR {
 }
 
 impl BAR {
-    pub fn decode(loc: Location, am: CSpaceAccessMethod, idx: u16) -> (Option<BAR>, usize) {
+    pub fn decode(
+        loc: PciDeviceLocation,
+        am: CSpaceAccessMethod,
+        idx: u16,
+    ) -> (Option<BAR>, usize) {
         let raw = am.read32(loc, 16 + (idx << 2));
         am.write32(loc, 16 + (idx << 2), !0);
         let len_encoded = am.read32(loc, 16 + (idx << 2));
@@ -370,66 +357,7 @@ impl BAR {
     }
 }
 
-pub(crate) struct BusScan {
-    loc: Location,
-    am: CSpaceAccessMethod,
-}
-
-impl BusScan {
-    fn done(&self) -> bool {
-        if self.loc.bus == 255 && self.loc.device == 31 && self.loc.function == 7 {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn increment(&mut self) {
-        // TODO: Decide whether this is actually nicer than taking a u16 and incrementing until it
-        // wraps.
-        if self.loc.function < 7 {
-            self.loc.function += 1;
-            return;
-        } else {
-            self.loc.function = 0;
-            if self.loc.device < 31 {
-                self.loc.device += 1;
-                return;
-            } else {
-                self.loc.device = 0;
-                if self.loc.bus == 255 {
-                    self.loc.device = 31;
-                    self.loc.device = 7;
-                } else {
-                    self.loc.bus += 1;
-                    return;
-                }
-            }
-        }
-    }
-}
-
-impl ::core::iter::Iterator for BusScan {
-    type Item = PCIDevice;
-    #[inline]
-    fn next(&mut self) -> Option<PCIDevice> {
-        // FIXME: very naive atm, could be smarter and waste much less time by only scanning used
-        // busses.
-        let mut ret = None;
-        loop {
-            if self.done() {
-                return ret;
-            }
-            ret = probe_function(self.loc, self.am);
-            self.increment();
-            if ret.is_some() {
-                return ret;
-            }
-        }
-    }
-}
-
-fn probe_function(loc: Location, am: CSpaceAccessMethod) -> Option<PCIDevice> {
+pub(crate) fn find_device(loc: PciDeviceLocation, am: CSpaceAccessMethod) -> Option<PciDevice> {
     // FIXME: it'd be more efficient to use read32 and decode separately.
     let vid = am.read16(loc, 0);
     if vid == 0xFFFF {
@@ -551,7 +479,7 @@ fn probe_function(loc: Location, am: CSpaceAccessMethod) -> Option<PCIDevice> {
         i = next;
     }
 
-    Some(PCIDevice {
+    Some(PciDevice {
         loc: loc,
         id: id,
         command: command,
@@ -567,15 +495,4 @@ fn probe_function(loc: Location, am: CSpaceAccessMethod) -> Option<PCIDevice> {
         cspace_access_method: am,
         capabilities: capabilities,
     })
-}
-
-pub(crate) fn scan_bus(am: CSpaceAccessMethod) -> BusScan {
-    BusScan {
-        loc: Location {
-            bus: 0,
-            device: 0,
-            function: 0,
-        },
-        am: am,
-    }
 }

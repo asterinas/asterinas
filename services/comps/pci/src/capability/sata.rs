@@ -1,4 +1,5 @@
-use crate::util::{CSpaceAccessMethod, Location};
+use crate::util::CSpaceAccessMethod;
+use jinux_frame::bus::pci::PciDeviceLocation;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CapabilitySATAData {
@@ -9,7 +10,7 @@ pub struct CapabilitySATAData {
 }
 
 impl CapabilitySATAData {
-    pub(crate) fn new(loc: Location, cap_ptr: u16) -> Self {
+    pub(crate) fn new(loc: PciDeviceLocation, cap_ptr: u16) -> Self {
         let am = CSpaceAccessMethod::IO;
         let sata_cr0 = am.read32(loc, cap_ptr);
         let sata_cr1 = am.read32(loc, cap_ptr + 0x4);

@@ -1,6 +1,7 @@
 //! This mod is used in frame to do device initialization
-use crate::util::*;
+use crate::util::CSpaceAccessMethod;
 use alloc::vec::Vec;
+use jinux_frame::bus::pci::PciDeviceLocation;
 
 use self::{
     exp::CapabilityEXPData, msi::CapabilityMSIData, msix::CapabilityMSIXData, pm::CapabilityPMData,
@@ -70,7 +71,7 @@ pub struct Capability {
 
 impl Capability {
     /// get the capabilities of one device
-    pub fn device_capabilities(loc: Location) -> Vec<Self> {
+    pub fn device_capabilities(loc: PciDeviceLocation) -> Vec<Self> {
         let mut capabilities = Vec::new();
         let am = CSpaceAccessMethod::IO;
         let mut cap_ptr = am.read8(loc, PCI_CAP_PTR) as u16;
