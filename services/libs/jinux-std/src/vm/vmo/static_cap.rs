@@ -139,8 +139,8 @@ impl<R: TRights> Vmo<TRightSet<R>> {
 
     /// Strict the access rights.
     #[require(R > R1)]
-    pub fn restrict<R1: TRights>(self) -> Vmo<R1> {
-        Vmo(self.0, R1::new())
+    pub fn restrict<R1: TRights>(self) -> Vmo<TRightSet<R1>> {
+        Vmo(self.0, TRightSet(R1::new()))
     }
 }
 
