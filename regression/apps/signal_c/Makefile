@@ -1,7 +1,3 @@
-.PHONY: build clean run
-build: signal_test.c
-	@gcc -static signal_test.c -o signal_test
-clean:
-	@rm signal_test
-run: build
-	@./signal_test
+include ../test_common.mk
+
+EXTRA_C_FLAGS :=-static

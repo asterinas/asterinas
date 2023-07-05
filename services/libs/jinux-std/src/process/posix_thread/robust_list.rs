@@ -102,7 +102,9 @@ impl<'a> Iterator for FutexIter<'a> {
             } else {
                 None
             };
-            let robust_list = read_val_from_user::<RobustList>(self.entry_ptr).unwrap();
+            let Ok(robust_list) = read_val_from_user::<RobustList>(self.entry_ptr) else {
+                return None;
+            };
             self.entry_ptr = robust_list.next;
             self.count += 1;
             if futex_addr.is_some() {

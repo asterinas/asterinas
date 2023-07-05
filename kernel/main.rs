@@ -38,9 +38,11 @@ fn read_ramdisk_content() -> &'static [u8] {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    use jinux_frame::{exit_qemu, QemuExitCode};
+
     println!("[panic]:{:?}", info);
     jinux_frame::panic_handler();
-    loop {}
+    exit_qemu(QemuExitCode::Failed);
 }
 
 #[cfg(test)]

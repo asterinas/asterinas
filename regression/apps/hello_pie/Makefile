@@ -1,10 +1,3 @@
-.PHONY: build clean run
+include ../test_common.mk
 
-build: hello.c
-	@gcc hello.c -o hello
-
-clean:
-	@rm hello
-
-run: build
-	@./hello
+EXTRA_C_FLAGS :=

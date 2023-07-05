@@ -3,7 +3,7 @@
 set -e
 set -x
 
-SCRIPT_DIR=/scripts
+SCRIPT_DIR=/regression
 cd ${SCRIPT_DIR}
 
 touch hello.txt

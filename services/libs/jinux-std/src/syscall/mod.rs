@@ -465,7 +465,7 @@ pub fn syscall_dispatch(
         SYS_GETRANDOM => syscall_handler!(3, sys_getrandom, args),
         SYS_EXECVEAT => syscall_handler!(5, sys_execveat, args, context),
         _ => {
-            error!("Unimplemented syscall number: {}", syscall_number);
+            warn!("Unimplemented syscall number: {}", syscall_number);
             return_errno_with_message!(Errno::ENOSYS, "Syscall was unimplemented");
         }
     }
