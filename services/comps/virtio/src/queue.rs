@@ -84,21 +84,21 @@ impl VirtQueue {
         //allocate page
 
         let desc_frame_ptr: InFramePtr<Descriptor> = InFramePtr::new_with_vm_frame(
-            VmFrameVec::allocate(&VmAllocOptions::new(1))
+            VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
         )
         .unwrap();
         let avail_frame_ptr: InFramePtr<AvailRing> = InFramePtr::new_with_vm_frame(
-            VmFrameVec::allocate(&VmAllocOptions::new(1))
+            VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
         )
         .unwrap();
         let used_frame_ptr: InFramePtr<UsedRing> = InFramePtr::new_with_vm_frame(
-            VmFrameVec::allocate(&VmAllocOptions::new(1))
+            VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
