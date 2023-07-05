@@ -12,10 +12,13 @@
 #![feature(strict_provenance)]
 #![feature(const_trait_impl)]
 #![feature(const_ops)]
+#![feature(generators)]
+#![feature(iter_from_generator)]
 
 extern crate alloc;
 
 pub mod arch;
+pub mod bus;
 pub mod config;
 pub mod cpu;
 mod error;

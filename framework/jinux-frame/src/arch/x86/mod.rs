@@ -1,6 +1,7 @@
 mod boot;
 pub(crate) mod cpu;
 pub mod device;
+pub mod iommu;
 pub(crate) mod irq;
 mod kernel;
 pub(crate) mod mm;
@@ -10,7 +11,7 @@ pub(crate) mod timer;
 use alloc::fmt;
 use core::fmt::Write;
 use kernel::apic::ioapic;
-use log::info;
+use log::{info, warn};
 
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
@@ -31,6 +32,10 @@ pub(crate) fn after_all_init() {
             info!("APIC init error:{:?}", err);
             kernel::pic::enable();
         }
+    }
+    match iommu::init() {
+        Ok(_) => {}
+        Err(err) => warn!("IOMMU initialization error:{:?}", err),
     }
     timer::init();
     // Some driver like serial may use PIC

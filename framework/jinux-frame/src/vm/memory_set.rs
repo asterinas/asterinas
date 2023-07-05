@@ -1,4 +1,7 @@
-use super::page_table::{PageTable, PageTableConfig};
+use super::{
+    frame::VmFrameFlags,
+    page_table::{PageTable, PageTableConfig},
+};
 use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
     config::{PAGE_SIZE, PHYS_OFFSET},
@@ -33,7 +36,7 @@ impl MapArea {
     pub fn clone(&self) -> Self {
         let mut mapper = BTreeMap::new();
         for (&va, old) in &self.mapper {
-            let new = frame_allocator::alloc().unwrap();
+            let new = frame_allocator::alloc(VmFrameFlags::empty()).unwrap();
             unsafe {
                 new.as_slice().copy_from_slice(old.as_slice());
             }
@@ -94,7 +97,7 @@ impl MapArea {
         match self.mapper.entry(va) {
             Entry::Occupied(e) => e.get().start_paddr(),
             Entry::Vacant(e) => e
-                .insert(frame_allocator::alloc_zero().unwrap())
+                .insert(frame_allocator::alloc_zero(VmFrameFlags::empty()).unwrap())
                 .start_paddr(),
         }
     }

@@ -7,7 +7,9 @@ edition = "2021"
 [dependencies]
 runner-utils = "0.0.2"
 anyhow = "1.0.32"
+cfg-if = "1.0"
 
 [features]
 default = ["limine"]
-limine= []
+limine = []
+iommu = []

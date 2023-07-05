@@ -2,11 +2,11 @@ use alloc::{collections::BTreeMap, fmt, vec::Vec};
 use limine::{LimineMemmapEntry, LimineMemmapRequest, LimineMemoryMapEntryType};
 use log::debug;
 use pod::Pod;
-use spin::{Mutex, Once};
+use spin::Mutex;
 use x86_64::structures::paging::PhysFrame;
 
 use crate::{
-    config::{ENTRY_COUNT, PAGE_SIZE},
+    config::ENTRY_COUNT,
     vm::{
         page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
         MemoryRegions, MemoryRegionsType, Paddr,
