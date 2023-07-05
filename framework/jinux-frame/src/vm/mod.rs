@@ -12,6 +12,7 @@ mod heap_allocator;
 mod io;
 mod memory_set;
 mod offset;
+mod owned_frames;
 pub(crate) mod page_table;
 mod space;
 
@@ -19,6 +20,7 @@ use crate::config::{PAGE_SIZE, PHYS_OFFSET};
 
 pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
 pub use self::io::VmIo;
+pub use self::owned_frames::OwnedFrames;
 pub use self::space::{VmMapOptions, VmPerm, VmSpace};
 
 pub use self::{

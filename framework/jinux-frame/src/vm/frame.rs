@@ -331,6 +331,10 @@ impl VmFrame {
             PAGE_SIZE,
         )
     }
+
+    pub(super) fn start_vaddr(&self) -> Vaddr {
+        super::paddr_to_vaddr(self.start_paddr())
+    }
 }
 
 impl VmIo for VmFrame {
