@@ -1,4 +1,5 @@
 use super::{
+    frame::VmFrameFlags,
     frame_allocator, paddr_to_vaddr, VmAllocOptions, VmFrameVec, {Paddr, Vaddr},
 };
 use crate::{
@@ -109,7 +110,7 @@ pub struct PageTable<T: PageTableEntryTrait> {
 
 impl<T: PageTableEntryTrait> PageTable<T> {
     pub fn new(config: PageTableConfig) -> Self {
-        let root_frame = frame_allocator::alloc_zero().unwrap();
+        let root_frame = frame_allocator::alloc_zero(VmFrameFlags::empty()).unwrap();
         Self {
             root_pa: root_frame.start_paddr(),
             tables: vec![root_frame],

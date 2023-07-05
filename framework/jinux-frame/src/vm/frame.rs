@@ -4,7 +4,7 @@ use core::{
     ops::{BitAnd, BitOr, Not},
 };
 
-use crate::{config::PAGE_SIZE, prelude::*, Error};
+use crate::{arch::iommu, config::PAGE_SIZE, prelude::*, Error};
 
 use super::frame_allocator;
 use super::{Paddr, VmIo};
@@ -33,15 +33,35 @@ impl VmFrameVec {
     /// For more information, see `VmAllocOptions`.
     pub fn allocate(options: &VmAllocOptions) -> Result<Self> {
         let page_size = options.page_size;
-        let frames = if options.is_contiguous {
-            frame_allocator::alloc_continuous(options.page_size).ok_or(Error::NoMemory)?
+        let mut flags = VmFrameFlags::empty();
+        if options.can_dma {
+            flags.insert(VmFrameFlags::CAN_DMA);
+        }
+        let mut frames = if options.is_contiguous {
+            frame_allocator::alloc_continuous(options.page_size, flags).ok_or(Error::NoMemory)?
         } else {
             let mut frame_list = Vec::new();
             for _ in 0..page_size {
-                frame_list.push(frame_allocator::alloc().ok_or(Error::NoMemory)?);
+                frame_list.push(frame_allocator::alloc(flags).ok_or(Error::NoMemory)?);
             }
             frame_list
         };
+        if options.can_dma {
+            for frame in frames.iter_mut() {
+                // Safety: The address is controlled by frame allocator.
+                unsafe {
+                    if let Err(err) = iommu::map(frame.start_paddr(), frame.start_paddr()) {
+                        match err {
+                            // do nothing
+                            iommu::IommuError::NoIommu => {}
+                            iommu::IommuError::ModificationError(err) => {
+                                panic!("iommu map error:{:?}", err)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let frame_vec = Self(frames);
         if !options.uninit {
             frame_vec.zero();
@@ -204,6 +224,7 @@ pub struct VmAllocOptions {
     page_size: usize,
     is_contiguous: bool,
     uninit: bool,
+    can_dma: bool,
 }
 
 impl VmAllocOptions {
@@ -213,6 +234,7 @@ impl VmAllocOptions {
             page_size: len,
             is_contiguous: false,
             uninit: false,
+            can_dma: false,
         }
     }
 
@@ -243,13 +265,15 @@ impl VmAllocOptions {
     /// In a TEE environment, DMAable pages are untrusted pages shared with
     /// the VMM.
     pub fn can_dma(&mut self, can_dma: bool) -> &mut Self {
-        todo!()
+        self.can_dma = can_dma;
+        self
     }
 }
 
 bitflags::bitflags! {
     pub(crate) struct VmFrameFlags : usize{
         const NEED_DEALLOC =    1 << 63;
+        const CAN_DMA =         1 << 62;
     }
 }
 
@@ -314,7 +338,7 @@ impl VmFrame {
     /// In a TEE environment, DMAable pages are untrusted pages shared with
     /// the VMM.
     pub fn can_dma(&self) -> bool {
-        todo!()
+        (*self.frame_index & VmFrameFlags::CAN_DMA.bits()) != 0
     }
 
     fn need_dealloc(&self) -> bool {
@@ -371,6 +395,17 @@ impl VmIo for VmFrame {
 impl Drop for VmFrame {
     fn drop(&mut self) {
         if self.need_dealloc() && Arc::strong_count(&self.frame_index) == 1 {
+            if self.can_dma() {
+                if let Err(err) = iommu::unmap(self.start_paddr()) {
+                    match err {
+                        // do nothing
+                        iommu::IommuError::NoIommu => {}
+                        iommu::IommuError::ModificationError(err) => {
+                            panic!("iommu map error:{:?}", err)
+                        }
+                    }
+                }
+            }
             unsafe {
                 frame_allocator::dealloc(self.frame_index());
             }

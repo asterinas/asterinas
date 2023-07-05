@@ -10,30 +10,56 @@ use std::{
 const COMMON_ARGS: &[&str] = &[
     "--no-reboot",
     "-machine",
-    "q35",
+    "q35,kernel-irqchip=split",
     "-enable-kvm",
     "-cpu",
     "Icelake-Server,+x2apic",
     "-m",
     "2G",
-    "-device",
-    "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-device",
-    "virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0",
-    "-device",
-    "virtio-keyboard-pci",
-    "-device",
-    "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
-    "-netdev",
-    "user,id=net01,hostfwd=tcp::30022-:22,hostfwd=tcp::30080-:8080",
-    "-object",
-    "filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
     "-monitor",
     "vc",
     "-serial",
     "mon:stdio",
     "-display",
     "none",
+];
+
+cfg_if::cfg_if!(
+    if #[cfg(feature="iommu")] {
+        macro_rules! virtio_device_args {
+            ($($args:tt),*) => {
+                concat!($($args,)*"disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",)
+            };
+        }
+        const OPTION_ARGS: &[&str] = &[
+            "-device",
+            "intel-iommu,intremap=on,device-iotlb=on",
+            "-device",
+            "ioh3420,id=pcie.0,chassis=1",
+        ];
+    } else {
+        macro_rules! virtio_device_args {
+            ($($args:tt),*) => {
+                concat!($($args,)*"disable-legacy=on,disable-modern=off",)
+            };
+        }
+        const OPTION_ARGS: &[&str] = &[];
+    }
+);
+
+const DEVICE_ARGS: &[&str] = &[
+    "-device",
+    "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-device",
+    virtio_device_args!("virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,"),
+    "-device",
+    virtio_device_args!("virtio-keyboard-pci,"),
+    "-device",
+    virtio_device_args!("virtio-net-pci,netdev=net01,"),
+    "-netdev",
+    "user,id=net01,hostfwd=tcp::30022-:22,hostfwd=tcp::30080-:8080",
+    "-object",
+    "filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
 ];
 
 const RUN_ARGS: &[&str] = &[];
@@ -62,13 +88,12 @@ fn main() -> anyhow::Result<()> {
         a.join(str.add(".iso"))
     };
 
-    #[cfg(windows)]
-    let mut qemu_cmd = Command::new("qemu-system-x86_64.exe");
-    #[cfg(not(windows))]
     let mut qemu_cmd = Command::new("qemu-system-x86_64");
 
     let binary_kind = runner_utils::binary_kind(&kernel_binary_path);
     let mut qemu_args = COMMON_ARGS.clone().to_vec();
+    qemu_args.extend(DEVICE_ARGS.clone().to_vec().iter());
+    qemu_args.extend(OPTION_ARGS.clone().to_vec().iter());
     qemu_args.push("-drive");
     let binding = create_fs_image(kernel_binary_path.as_path())?;
     qemu_args.push(binding.as_str());
@@ -110,9 +135,6 @@ fn call_limine_build_script(path: &PathBuf) -> anyhow::Result<()> {
 
 fn create_fs_image(path: &Path) -> anyhow::Result<String> {
     let mut fs_img_path = path.parent().unwrap().to_str().unwrap().to_string();
-    #[cfg(windows)]
-    fs_img_path.push_str("\\fs.img");
-    #[cfg(not(windows))]
     fs_img_path.push_str("/fs.img");
     let path = Path::new(fs_img_path.as_str());
     if path.exists() {

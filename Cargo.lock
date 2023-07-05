@@ -453,6 +453,7 @@ name = "jinux-boot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cfg-if",
  "runner-utils",
 ]
 

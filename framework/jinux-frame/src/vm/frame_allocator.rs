@@ -9,16 +9,16 @@ use super::{frame::VmFrameFlags, MemoryRegions, MemoryRegionsType, VmFrame};
 
 static FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
 
-pub fn alloc() -> Option<VmFrame> {
+pub(crate) fn alloc(flags: VmFrameFlags) -> Option<VmFrame> {
     FRAME_ALLOCATOR
         .get()
         .unwrap()
         .lock()
         .alloc(1)
-        .map(|pa| unsafe { VmFrame::new(pa * PAGE_SIZE, VmFrameFlags::NEED_DEALLOC) })
+        .map(|pa| unsafe { VmFrame::new(pa * PAGE_SIZE, flags.union(VmFrameFlags::NEED_DEALLOC)) })
 }
 
-pub fn alloc_continuous(frame_count: usize) -> Option<Vec<VmFrame>> {
+pub(crate) fn alloc_continuous(frame_count: usize, flags: VmFrameFlags) -> Option<Vec<VmFrame>> {
     FRAME_ALLOCATOR
         .get()
         .unwrap()
@@ -28,7 +28,10 @@ pub fn alloc_continuous(frame_count: usize) -> Option<Vec<VmFrame>> {
             let mut vector = Vec::new();
             unsafe {
                 for i in 0..frame_count {
-                    let frame = VmFrame::new((start + i) * PAGE_SIZE, VmFrameFlags::NEED_DEALLOC);
+                    let frame = VmFrame::new(
+                        (start + i) * PAGE_SIZE,
+                        flags.union(VmFrameFlags::NEED_DEALLOC),
+                    );
                     vector.push(frame);
                 }
             }
@@ -36,8 +39,8 @@ pub fn alloc_continuous(frame_count: usize) -> Option<Vec<VmFrame>> {
         })
 }
 
-pub(crate) fn alloc_zero() -> Option<VmFrame> {
-    let frame = alloc()?;
+pub(crate) fn alloc_zero(flags: VmFrameFlags) -> Option<VmFrame> {
+    let frame = alloc(flags)?;
     frame.zero();
     Some(frame)
 }
