@@ -175,6 +175,7 @@ dependencies = [
 name = "cpio-decoder"
 version = "0.1.0"
 dependencies = [
+ "core2",
  "int-to-c-enum",
 ]
 
@@ -574,7 +575,6 @@ dependencies = [
  "ascii",
  "bitflags",
  "controlled",
- "core2",
  "cpio-decoder",
  "getrandom",
  "int-to-c-enum",
