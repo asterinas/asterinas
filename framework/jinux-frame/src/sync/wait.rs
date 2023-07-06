@@ -121,8 +121,12 @@ impl Waiter {
     }
 
     pub fn wake_up(&self) {
-        self.is_woken_up.store(true, Ordering::SeqCst);
-        add_task(self.task.clone());
+        if let Ok(false) =
+            self.is_woken_up
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        {
+            add_task(self.task.clone());
+        }
     }
 
     pub fn set_finished(&self) {
