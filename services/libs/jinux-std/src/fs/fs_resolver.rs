@@ -3,29 +3,14 @@ use alloc::str;
 
 use super::file_table::FileDescripter;
 use super::inode_handle::InodeHandle;
-use super::procfs::ProcFS;
 use super::ramfs::RamFS;
 use super::utils::{
-    AccessMode, CreationFlags, Dentry, FileSystem, InodeMode, InodeType, StatusFlags, Vnode,
-    PATH_MAX, SYMLINKS_MAX,
+    AccessMode, CreationFlags, Dentry, InodeMode, InodeType, MountNode, StatusFlags, PATH_MAX,
+    SYMLINKS_MAX,
 };
 
 lazy_static! {
-    static ref ROOT_FS: Arc<dyn FileSystem> = RamFS::new(true);
-    static ref ROOT_DENTRY: Arc<Dentry> = {
-        let vnode = Vnode::new(ROOT_FS.root_inode()).unwrap();
-        Dentry::new_root(vnode)
-    };
-    static ref PROC_FS: Arc<dyn FileSystem> = ProcFS::new();
-    static ref PROC_DENTRY: Arc<Dentry> = {
-        let vnode = Vnode::new(PROC_FS.root_inode()).unwrap();
-        Dentry::new_root(vnode)
-    };
-    static ref DEV_FS: Arc<dyn FileSystem> = RamFS::new(false);
-    static ref DEV_DENTRY: Arc<Dentry> = {
-        let vnode = Vnode::new(DEV_FS.root_inode()).unwrap();
-        Dentry::new_root(vnode)
-    };
+    static ref ROOT_MOUNT: Arc<MountNode> = MountNode::new_root(RamFS::new(true)).unwrap();
 }
 
 pub struct FsResolver {
@@ -45,8 +30,8 @@ impl Clone for FsResolver {
 impl FsResolver {
     pub fn new() -> Self {
         Self {
-            root: ROOT_DENTRY.clone(),
-            cwd: ROOT_DENTRY.clone(),
+            root: ROOT_MOUNT.root_dentry().clone(),
+            cwd: ROOT_MOUNT.root_dentry().clone(),
         }
     }
 
@@ -134,28 +119,7 @@ impl FsResolver {
     fn lookup_inner(&self, path: &FsPath, follow_tail_link: bool) -> Result<Arc<Dentry>> {
         let dentry = match path.inner {
             FsPathInner::Absolute(path) => {
-                // TODO: Mount procfs at "/proc" if mount feature is ready
-                if path.starts_with("/proc") {
-                    let path = path.strip_prefix("/proc").unwrap();
-                    self.lookup_from_parent(
-                        &PROC_DENTRY,
-                        path.trim_start_matches('/'),
-                        follow_tail_link,
-                    )?
-                } else if path.starts_with("/dev") {
-                    let path = path.strip_prefix("/dev").unwrap();
-                    self.lookup_from_parent(
-                        &DEV_DENTRY,
-                        path.trim_start_matches('/'),
-                        follow_tail_link,
-                    )?
-                } else {
-                    self.lookup_from_parent(
-                        &self.root,
-                        path.trim_start_matches('/'),
-                        follow_tail_link,
-                    )?
-                }
+                self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
             }
             FsPathInner::CwdRelative(path) => {
                 self.lookup_from_parent(&self.cwd, path, follow_tail_link)?

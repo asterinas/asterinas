@@ -1,6 +1,9 @@
-use super::fs_resolver::{FsPath, FsResolver};
-use super::utils::{InodeMode, InodeType};
 use crate::prelude::*;
+
+use super::fs_resolver::{FsPath, FsResolver};
+use super::procfs::ProcFS;
+use super::ramfs::RamFS;
+use super::utils::{InodeMode, InodeType};
 
 use cpio_decoder::{CpioDecoder, FileType};
 use lending_iterator::LendingIterator;
@@ -65,6 +68,12 @@ pub fn init(gzip_ramdisk_buf: &[u8]) -> Result<()> {
             }
         }
     }
+    // Mount ProcFS
+    let proc_dentry = fs.lookup(&FsPath::try_from("/proc")?)?;
+    proc_dentry.mount(ProcFS::new())?;
+    // Mount DevFS
+    let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
+    dev_dentry.mount(RamFS::new(false))?;
     println!("[kernel] initramfs is ready");
 
     Ok(())
