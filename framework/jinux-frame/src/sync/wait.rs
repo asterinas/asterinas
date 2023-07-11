@@ -42,8 +42,7 @@ impl WaitQueue {
         self.enqueue(&waiter);
         loop {
             if let Some(res) = cond() {
-                waiter.set_finished();
-                self.finish_wait();
+                self.dequeue(&waiter);
                 return res;
             };
             waiter.wait();
@@ -67,7 +66,7 @@ impl WaitQueue {
         }
     }
 
-    // enqueue a waiter into current waitqueue. If waiter is exclusive, add to the back of waitqueue.
+    // Enqueue a waiter into current waitqueue. If waiter is exclusive, add to the back of waitqueue.
     // Otherwise, add to the front of waitqueue
     fn enqueue(&self, waiter: &Arc<Waiter>) {
         if waiter.is_exclusive() {
@@ -77,11 +76,10 @@ impl WaitQueue {
         }
     }
 
-    /// removes all waiters that have finished wait
-    fn finish_wait(&self) {
+    fn dequeue(&self, waiter: &Arc<Waiter>) {
         self.waiters
             .lock_irq_disabled()
-            .retain(|waiter| !waiter.is_finished())
+            .retain(|waiter_| !Arc::ptr_eq(waiter_, waiter))
     }
 }
 
@@ -90,8 +88,6 @@ struct Waiter {
     is_woken_up: AtomicBool,
     /// To respect different wait condition
     flag: WaiterFlag,
-    /// if the wait condition is ture, then the waiter is finished and can be removed from waitqueue
-    wait_finished: AtomicBool,
     /// The `Task` held by the waiter.
     task: Arc<Task>,
 }
@@ -101,7 +97,6 @@ impl Waiter {
         Waiter {
             is_woken_up: AtomicBool::new(false),
             flag: WaiterFlag::empty(),
-            wait_finished: AtomicBool::new(false),
             task: current_task().unwrap(),
         }
     }
@@ -127,14 +122,6 @@ impl Waiter {
         {
             add_task(self.task.clone());
         }
-    }
-
-    pub fn set_finished(&self) {
-        self.wait_finished.store(true, Ordering::SeqCst);
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.wait_finished.load(Ordering::SeqCst)
     }
 
     pub fn is_exclusive(&self) -> bool {
