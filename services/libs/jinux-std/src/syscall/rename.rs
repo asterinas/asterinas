@@ -28,14 +28,15 @@ pub fn sys_renameat(
     let current = current!();
     let fs = current.fs().read();
 
-    let old_dentry = {
+    let (old_dir_dentry, old_name) = {
         let old_pathname = old_pathname.to_string_lossy();
         if old_pathname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "oldpath is empty");
         }
         let old_fs_path = FsPath::new(old_dirfd, old_pathname.as_ref())?;
-        fs.lookup_no_follow(&old_fs_path)?
+        fs.lookup_dir_and_base_name(&old_fs_path)?
     };
+    let old_dentry = old_dir_dentry.lookup(&old_name)?;
 
     let (new_dir_dentry, new_name) = {
         let new_pathname = new_pathname.to_string_lossy();
@@ -63,8 +64,7 @@ pub fn sys_renameat(
         }
     }
 
-    let old_dir_dentry = old_dentry.parent().unwrap();
-    old_dir_dentry.rename(&old_dentry.name(), &new_dir_dentry, &new_name)?;
+    old_dir_dentry.rename(&old_name, &new_dir_dentry, &new_name)?;
 
     Ok(SyscallReturn::Return(0))
 }

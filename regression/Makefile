@@ -17,7 +17,7 @@ all: build
 $(INITRAMFS):
 	@rm -rf $@ && mkdir -p $@
 	@# Mkdir necessary folders
-	@mkdir -p $@/bin $@/etc $@/sbin $@/usr/bin $@/root $@/tmp $@/opt $@/lib64 $@/lib/x86_64-linux-gnu
+	@mkdir -p $@/bin $@/etc $@/sbin $@/usr/bin $@/root $@/tmp $@/opt $@/proc $@/dev $@/lib64 $@/lib/x86_64-linux-gnu
 	@# Install busybox
 	@/bin/busybox --install -s $@/bin
 	@cp /usr/bin/busybox $@/usr/bin
