@@ -114,10 +114,11 @@ fn do_execve(
     // load elf content to new vm space
     let fs_resolver = &*current.fs().read();
     debug!("load program to root vmar");
-    let elf_load_info = load_program_to_root_vmar(root_vmar, elf_file, argv, envp, fs_resolver, 1)?;
+    let (new_executable_path, elf_load_info) =
+        load_program_to_root_vmar(root_vmar, elf_file, argv, envp, fs_resolver, 1)?;
     debug!("load elf in execve succeeds");
     // set executable path
-    *current.executable_path().write() = executable_path;
+    *current.executable_path().write() = new_executable_path;
     // set signal disposition to default
     current.sig_dispositions().lock().inherit();
     // set cpu context to default

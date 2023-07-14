@@ -38,7 +38,7 @@ impl PosixThreadExt for Thread {
             let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
             fs_resolver.lookup(&fs_path)?
         };
-        let elf_load_info =
+        let (_, elf_load_info) =
             load_program_to_root_vmar(root_vmar, elf_file, argv, envp, fs_resolver, 1)?;
 
         let vm_space = root_vmar.vm_space().clone();
