@@ -1055,7 +1055,7 @@ dependencies = [
 [[package]]
 name = "trapframe"
 version = "0.9.0"
-source = "git+https://github.com/sdww0/trapframe-rs?rev=d4c5eba#d4c5ebab73d2295d69e2fcc66f51b9ae2883f8d9"
+source = "git+https://github.com/sdww0/trapframe-rs?rev=e886763#e8867631def557939be5107f2be6c8d909d72431"
 dependencies = [
  "log",
  "pod",

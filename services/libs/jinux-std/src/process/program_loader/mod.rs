@@ -24,7 +24,7 @@ pub fn load_program_to_root_vmar(
     envp: Vec<CString>,
     fs_resolver: &FsResolver,
     recursion_limit: usize,
-) -> Result<ElfLoadInfo> {
+) -> Result<(String, ElfLoadInfo)> {
     let abs_path = elf_file.abs_path();
     let vnode = elf_file.vnode();
     let file_header = {
@@ -54,5 +54,5 @@ pub fn load_program_to_root_vmar(
     }
     let elf_load_info =
         load_elf_to_root_vmar(root_vmar, &*file_header, elf_file, fs_resolver, argv, envp)?;
-    Ok(elf_load_info)
+    Ok((abs_path, elf_load_info))
 }
