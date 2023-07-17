@@ -127,23 +127,11 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VmoType {
-    /// This vmo_ is created as a copy on write child
-    CopyOnWriteChild,
-    /// This vmo_ is created as a slice child
-    SliceChild,
-    /// This vmo_ is not created as a child of a parent vmo
-    NotChild,
-}
-
 pub(super) struct Vmo_ {
     /// Flags
     flags: VmoFlags,
     /// VmoInner
     inner: Mutex<VmoInner>,
-    /// vmo type
-    vmo_type: VmoType,
 }
 
 struct VmoInner {
@@ -321,6 +309,14 @@ impl VmoInner {
 
         Ok(frame)
     }
+
+    fn is_cow_child(&self) -> bool {
+        if let Some(inherited_pages) = &self.inherited_pages {
+            inherited_pages.is_copy_on_write
+        } else {
+            false
+        }
+    }
 }
 
 impl Vmo_ {
@@ -474,7 +470,7 @@ impl<R> Vmo<R> {
     }
 
     pub fn is_cow_child(&self) -> bool {
-        self.0.vmo_type == VmoType::CopyOnWriteChild
+        self.0.inner.lock().is_cow_child()
     }
 }
 
