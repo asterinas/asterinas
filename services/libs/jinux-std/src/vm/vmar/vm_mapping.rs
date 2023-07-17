@@ -2,6 +2,7 @@ use crate::prelude::*;
 use core::ops::Range;
 use jinux_frame::vm::{VmFrame, VmMapOptions};
 use jinux_frame::vm::{VmFrameVec, VmIo, VmPerm};
+use jinux_frame::vm::{VmMapOptions, VmSpace};
 use spin::Mutex;
 
 use crate::vm::{
@@ -125,35 +126,16 @@ impl VmMapping {
     ) -> Result<()> {
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
-        let map_addr = page_idx * PAGE_SIZE + self.map_to_addr();
-        let mut vm_perm = self.inner.lock().page_perms.get(&page_idx).unwrap().clone();
-        if forbid_write_access {
-            debug_assert!(self.vmo.is_cow_child());
-            vm_perm -= VmPerm::W;
-        }
-        let mut vm_map_options = VmMapOptions::new();
-        vm_map_options.addr(Some(map_addr));
-        vm_map_options.perm(vm_perm.clone());
-        // copy on write allows unmap the mapped page
-        if self.vmo.is_cow_child() && vm_space.is_mapped(map_addr) {
-            vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
-        }
-        vm_space.map(VmFrameVec::from_one_frame(frame), &vm_map_options)?;
-        self.inner.lock().mapped_pages.insert(page_idx);
-        Ok(())
+        self.inner
+            .lock()
+            .map_one_page(&self.vmo, vm_space, page_idx, frames, forbid_write_access)
     }
 
     /// unmap a page
     pub(super) fn unmap_one_page(&self, page_idx: usize) -> Result<()> {
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
-        let map_addr = page_idx * PAGE_SIZE + self.map_to_addr();
-        let range = map_addr..(map_addr + PAGE_SIZE);
-        if vm_space.is_mapped(map_addr) {
-            vm_space.unmap(&range)?;
-        }
-        self.inner.lock().mapped_pages.remove(&page_idx);
-        Ok(())
+        self.inner.lock().unmap_one_page(vm_space, page_idx)
     }
 
     /// the mapping's start address
@@ -184,22 +166,17 @@ impl VmMapping {
 
     /// Unmap pages in the range
     pub fn unmap(&self, range: &Range<usize>, destroy: bool) -> Result<()> {
-        let map_to_addr = self.map_to_addr();
-        let vmo_map_range = (range.start - map_to_addr)..(range.end - map_to_addr);
-        let page_idx_range = get_page_idx_range(&vmo_map_range);
-        for page_idx in page_idx_range {
-            self.unmap_one_page(page_idx)?;
-        }
-        if destroy && *range == self.range() {
-            self.inner.lock().is_destroyed = false;
-        }
-        Ok(())
+        let parent = self.parent.upgrade().unwrap();
+        let vm_space = parent.vm_space();
+        self.inner.lock().unmap(vm_space, range, destroy)
     }
 
     pub fn unmap_and_decommit(&self, range: Range<usize>) -> Result<()> {
-        let map_to_addr = self.map_to_addr();
-        let vmo_range = (range.start - map_to_addr)..(range.end - map_to_addr);
         self.unmap(&range, false)?;
+        let vmo_range = {
+            let map_to_addr = self.map_to_addr();
+            (range.start - map_to_addr)..(range.end - map_to_addr)
+        };
         self.vmo.decommit(vmo_range)?;
         Ok(())
     }
@@ -241,81 +218,17 @@ impl VmMapping {
     pub(super) fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         let rights = Rights::from(perms);
         self.vmo().check_rights(rights)?;
-        debug_assert!(range.start % PAGE_SIZE == 0);
-        debug_assert!(range.end % PAGE_SIZE == 0);
-        let map_to_addr = self.map_to_addr();
-        let start_page = (range.start - map_to_addr) / PAGE_SIZE;
-        let end_page = (range.end - map_to_addr) / PAGE_SIZE;
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
-        let perm = VmPerm::from(perms);
-        let mut inner = self.inner.lock();
-        for page_idx in start_page..end_page {
-            inner.page_perms.insert(page_idx, perm);
-            let page_addr = page_idx * PAGE_SIZE + map_to_addr;
-            if vm_space.is_mapped(page_addr) {
-                // if the page is already mapped, we will modify page table
-                let perm = VmPerm::from(perms);
-                let page_range = page_addr..(page_addr + PAGE_SIZE);
-                vm_space.protect(&page_range, perm)?;
-            }
-        }
-
-        Ok(())
+        self.inner.lock().protect(vm_space, perms, range)
     }
 
     pub(super) fn fork_mapping(&self, new_parent: Weak<Vmar_>) -> Result<VmMapping> {
-        let VmMapping { inner, parent, vmo } = self;
+        let VmMapping { inner, vmo, .. } = self;
         let parent_vmo = vmo.dup().unwrap();
         let vmo_size = parent_vmo.size();
-        let vmo_offset = self.vmo_offset();
-        let map_to_addr = self.map_to_addr();
-        let map_size = self.map_size();
-
-        debug!(
-            "fork vmo, parent size = 0x{:x}, map_to_addr = 0x{:x}",
-            vmo_size, map_to_addr
-        );
-        let child_vmo = {
-            let parent_flags = parent_vmo.flags();
-            let mut options = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size);
-            if parent_flags.contains(VmoFlags::RESIZABLE) {
-                options = options.flags(VmoFlags::RESIZABLE);
-            }
-            options.alloc()?
-        };
-        let parent_vmar = new_parent.upgrade().unwrap();
-        let vm_space = parent_vmar.vm_space();
-
-        let real_map_size = self.map_size().min(child_vmo.size());
-        let page_idx_range = get_page_idx_range(&(vmo_offset..vmo_offset + real_map_size));
-        let start_page_idx = page_idx_range.start;
-        let mut mapped_pages = BTreeSet::new();
-
-        for page_idx in page_idx_range {
-            // When map pages from parent, we should forbid write access to these pages.
-            // So any write access to these pages will trigger a page fault. Then, we can allocate new pages for the page.
-            let mut vm_perm = inner.lock().page_perms.get(&page_idx).unwrap().clone();
-            vm_perm -= VmPerm::W;
-            let mut vm_map_options = VmMapOptions::new();
-            let map_addr = (page_idx - start_page_idx) * PAGE_SIZE + map_to_addr;
-            vm_map_options.addr(Some(map_addr));
-            vm_map_options.perm(vm_perm);
-            if let Ok(frame) = child_vmo.get_committed_frame(page_idx, false) {
-                vm_space.map(VmFrameVec::from_one_frame(frame), &vm_map_options)?;
-                mapped_pages.insert(page_idx);
-            }
-        }
-        let is_destroyed = inner.lock().is_destroyed;
-        let page_perms = inner.lock().page_perms.clone();
-        let inner = VmMappingInner {
-            is_destroyed,
-            mapped_pages,
-            page_perms,
-            vmo_offset,
-            map_size,
-            map_to_addr,
-        };
+        let child_vmo = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?;
+        let inner = self.inner.lock().fork_mapping(vmo_size)?;
         Ok(VmMapping {
             inner: Mutex::new(inner),
             parent: new_parent,
@@ -382,63 +295,175 @@ impl VmMapping {
 
     /// trim the mapping from left to a new address.
     fn trim_left(&self, vaddr: Vaddr) -> Result<Vaddr> {
+        let vmar = self.parent.upgrade().unwrap();
+        let vm_space = vmar.vm_space();
+        self.inner.lock().trim_left(vm_space, vaddr)
+    }
+
+    /// trim the mapping from right to a new address.
+    fn trim_right(&self, vaddr: Vaddr) -> Result<Vaddr> {
+        let vmar = self.parent.upgrade().unwrap();
+        let vm_space = vmar.vm_space();
+        self.inner.lock().trim_right(vm_space, vaddr)
+    }
+
+    fn check_perm(&self, page_idx: &usize, write: bool) -> Result<()> {
+        self.inner.lock().check_perm(page_idx, write)
+    }
+}
+
+impl VmMappingInner {
+    fn map_one_page(
+        &mut self,
+        vmo: &Vmo<Rights>,
+        vm_space: &VmSpace,
+        page_idx: usize,
+        frames: VmFrameVec,
+        forbid_write_access: bool,
+    ) -> Result<()> {
+        let map_addr = page_idx * PAGE_SIZE + self.map_to_addr;
+        let mut vm_perm = self.page_perms.get(&page_idx).unwrap().clone();
+        if forbid_write_access {
+            debug_assert!(vmo.is_cow_child());
+            vm_perm -= VmPerm::W;
+        }
+        let vm_map_options = {
+            let mut options = VmMapOptions::new();
+            options.addr(Some(map_addr));
+            options.perm(vm_perm.clone());
+            options
+        };
+        // copy on write allows unmap the mapped page
+        if vmo.is_cow_child() && vm_space.is_mapped(map_addr) {
+            vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
+        }
+        vm_space.map(frames, &vm_map_options)?;
+        self.mapped_pages.insert(page_idx);
+        Ok(())
+    }
+
+    fn unmap_one_page(&mut self, vm_space: &VmSpace, page_idx: usize) -> Result<()> {
+        let map_addr = page_idx * PAGE_SIZE + self.map_to_addr;
+        let range = map_addr..(map_addr + PAGE_SIZE);
+        if vm_space.is_mapped(map_addr) {
+            vm_space.unmap(&range)?;
+        }
+        self.mapped_pages.remove(&page_idx);
+        Ok(())
+    }
+
+    /// Unmap pages in the range
+    fn unmap(&mut self, vm_space: &VmSpace, range: &Range<usize>, destroy: bool) -> Result<()> {
+        let map_to_addr = self.map_to_addr;
+        let vmo_map_range = (range.start - map_to_addr)..(range.end - map_to_addr);
+        let page_idx_range = get_page_idx_range(&vmo_map_range);
+        for page_idx in page_idx_range {
+            self.unmap_one_page(vm_space, page_idx)?;
+        }
+        if destroy && *range == self.range() {
+            self.is_destroyed = false;
+        }
+        Ok(())
+    }
+
+    pub(super) fn protect(
+        &mut self,
+        vm_space: &VmSpace,
+        perms: VmPerms,
+        range: Range<usize>,
+    ) -> Result<()> {
+        debug_assert!(range.start % PAGE_SIZE == 0);
+        debug_assert!(range.end % PAGE_SIZE == 0);
+        let start_page = (range.start - self.map_to_addr) / PAGE_SIZE;
+        let end_page = (range.end - self.map_to_addr) / PAGE_SIZE;
+        let perm = VmPerm::from(perms);
+        for page_idx in start_page..end_page {
+            self.page_perms.insert(page_idx, perm);
+            let page_addr = page_idx * PAGE_SIZE + self.map_to_addr;
+            if vm_space.is_mapped(page_addr) {
+                // if the page is already mapped, we will modify page table
+                let perm = VmPerm::from(perms);
+                let page_range = page_addr..(page_addr + PAGE_SIZE);
+                vm_space.protect(&page_range, perm)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn fork_mapping(&self, vmo_size: usize) -> Result<VmMappingInner> {
+        debug!(
+            "fork vmo, parent size = 0x{:x}, map_to_addr = 0x{:x}",
+            vmo_size, self.map_to_addr
+        );
+        Ok(VmMappingInner {
+            is_destroyed: self.is_destroyed,
+            mapped_pages: BTreeSet::new(),
+            page_perms: self.page_perms.clone(),
+            vmo_offset: self.vmo_offset,
+            map_size: self.map_size,
+            map_to_addr: self.map_to_addr,
+        })
+    }
+
+    /// trim the mapping from left to a new address.
+    fn trim_left(&mut self, vm_space: &VmSpace, vaddr: Vaddr) -> Result<Vaddr> {
         trace!(
             "trim left: range: {:x?}, vaddr = 0x{:x}",
             self.range(),
             vaddr
         );
-        let old_left_addr = self.map_to_addr();
-        let old_right_addr = self.map_to_addr() + self.map_size();
+        let old_left_addr = self.map_to_addr;
+        let old_right_addr = self.map_to_addr + self.map_size;
         debug_assert!(vaddr >= old_left_addr && vaddr <= old_right_addr);
         debug_assert!(vaddr % PAGE_SIZE == 0);
         let trim_size = vaddr - old_left_addr;
 
-        let mut inner = self.inner.lock();
-        inner.map_to_addr = vaddr;
-        inner.vmo_offset = inner.vmo_offset + trim_size;
-        inner.map_size = inner.map_size - trim_size;
+        self.map_to_addr = vaddr;
+        self.vmo_offset = self.vmo_offset + trim_size;
+        self.map_size = self.map_size - trim_size;
         let mut pages_to_unmap = Vec::new();
         for page_idx in 0..trim_size / PAGE_SIZE {
-            inner.page_perms.remove(&page_idx);
-            if inner.mapped_pages.remove(&page_idx) {
+            self.page_perms.remove(&page_idx);
+            if self.mapped_pages.remove(&page_idx) {
                 pages_to_unmap.push(page_idx);
             }
         }
 
-        // release lock here to avoid dead lock
-        drop(inner);
         for page_idx in pages_to_unmap {
-            let _ = self.unmap_one_page(page_idx);
+            let _ = self.unmap_one_page(vm_space, page_idx);
         }
-        Ok(self.map_to_addr())
+        Ok(self.map_to_addr)
     }
 
     /// trim the mapping from right to a new address.
-    fn trim_right(&self, vaddr: Vaddr) -> Result<Vaddr> {
+    fn trim_right(&mut self, vm_space: &VmSpace, vaddr: Vaddr) -> Result<Vaddr> {
         trace!(
             "trim right: range: {:x?}, vaddr = 0x{:x}",
             self.range(),
             vaddr
         );
-        let map_to_addr = self.map_to_addr();
-        let old_left_addr = map_to_addr;
-        let old_right_addr = map_to_addr + self.map_size();
+        let old_left_addr = self.map_to_addr;
+        let old_right_addr = self.map_to_addr + self.map_size;
         debug_assert!(vaddr >= old_left_addr && vaddr <= old_right_addr);
         debug_assert!(vaddr % PAGE_SIZE == 0);
         let trim_size = old_right_addr - vaddr;
         let trim_page_idx =
-            (vaddr - map_to_addr) / PAGE_SIZE..(old_right_addr - map_to_addr) / PAGE_SIZE;
+            (vaddr - self.map_to_addr) / PAGE_SIZE..(old_right_addr - self.map_to_addr) / PAGE_SIZE;
         for page_idx in trim_page_idx.clone() {
-            self.inner.lock().page_perms.remove(&page_idx);
-            let _ = self.unmap_one_page(page_idx);
+            self.page_perms.remove(&page_idx);
+            let _ = self.unmap_one_page(vm_space, page_idx);
         }
-        self.inner.lock().map_size = vaddr - map_to_addr;
-        Ok(map_to_addr)
+        self.map_size = vaddr - self.map_to_addr;
+        Ok(self.map_to_addr)
+    }
+
+    fn range(&self) -> Range<usize> {
+        self.map_to_addr..self.map_to_addr + self.map_size
     }
 
     fn check_perm(&self, page_idx: &usize, write: bool) -> Result<()> {
-        let inner = self.inner.lock();
-        let page_perm = inner
+        let page_perm = self
             .page_perms
             .get(&page_idx)
             .ok_or(Error::with_message(Errno::EINVAL, "invalid page idx"))?;
