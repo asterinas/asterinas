@@ -11,7 +11,6 @@ use typeflags_util::{SetExtend, SetExtendOp};
 use crate::prelude::*;
 
 use crate::vm::vmo::InheritedPages;
-use crate::vm::vmo::VmoType;
 use crate::vm::vmo::{VmoInner, Vmo_};
 use jinux_rights::{Dup, Rights, TRightSet, TRights, Write};
 
@@ -136,7 +135,6 @@ fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Re
     Ok(Vmo_ {
         flags,
         inner: Mutex::new(vmo_inner),
-        vmo_type: VmoType::NotChild,
     })
 }
 
@@ -499,14 +497,9 @@ fn alloc_child_vmo_(
         committed_pages: BTreeMap::new(),
         inherited_pages: Some(inherited_pages),
     };
-    let vmo_type = match child_type {
-        ChildType::Cow => VmoType::CopyOnWriteChild,
-        ChildType::Slice => VmoType::SliceChild,
-    };
     Ok(Vmo_ {
         flags: child_flags,
         inner: Mutex::new(vmo_inner),
-        vmo_type,
     })
 }
 
