@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use core::ops::Range;
-use jinux_frame::vm::VmMapOptions;
+use jinux_frame::vm::{VmFrame, VmMapOptions};
 use jinux_frame::vm::{VmFrameVec, VmIo, VmPerm};
 use spin::Mutex;
 
@@ -42,7 +42,7 @@ impl VmMapping {
 struct VmMappingInner {
     /// The map offset of the vmo, in bytes.
     vmo_offset: usize,
-    /// The size of mapping, in bytes. The map size can even be larger than the size of backup vmo.
+    /// The size of mapping, in bytes. The map size can even be larger than the size of vmo.
     /// Those pages outside vmo range cannot be read or write.
     map_size: usize,
     /// The base address relative to the root vmar where the vmo is mapped.
@@ -120,7 +120,7 @@ impl VmMapping {
     pub(super) fn map_one_page(
         &self,
         page_idx: usize,
-        frames: VmFrameVec,
+        frame: VmFrame,
         forbid_write_access: bool,
     ) -> Result<()> {
         let parent = self.parent.upgrade().unwrap();
@@ -138,7 +138,7 @@ impl VmMapping {
         if self.vmo.is_cow_child() && vm_space.is_mapped(map_addr) {
             vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
         }
-        vm_space.map(frames, &vm_map_options)?;
+        vm_space.map(VmFrameVec::from_one_frame(frame), &vm_map_options)?;
         self.inner.lock().mapped_pages.insert(page_idx);
         Ok(())
     }
@@ -226,15 +226,15 @@ impl VmMapping {
         }
         self.check_perm(&page_idx, write)?;
 
-        // get the backup frame for page
-        let frames = self.vmo.get_backup_frame(page_idx, write, true)?;
+        // get the committed frame for page
+        let frame = self.vmo.get_committed_frame(page_idx, write)?;
         // map the page
         if self.vmo.is_cow_child() && !write {
             // Since the read access triggers page fault, the child vmo does not commit a new frame ever.
             // Note the frame is from parent, so the map must forbid write access.
-            self.map_one_page(page_idx, frames, true)
+            self.map_one_page(page_idx, frame, true)
         } else {
-            self.map_one_page(page_idx, frames, false)
+            self.map_one_page(page_idx, frame, false)
         }
     }
 
@@ -301,8 +301,8 @@ impl VmMapping {
             let map_addr = (page_idx - start_page_idx) * PAGE_SIZE + map_to_addr;
             vm_map_options.addr(Some(map_addr));
             vm_map_options.perm(vm_perm);
-            if let Ok(frames) = child_vmo.get_backup_frame(page_idx, false, false) {
-                vm_space.map(frames, &vm_map_options)?;
+            if let Ok(frame) = child_vmo.get_committed_frame(page_idx, false) {
+                vm_space.map(VmFrameVec::from_one_frame(frame), &vm_map_options)?;
                 mapped_pages.insert(page_idx);
             }
         }

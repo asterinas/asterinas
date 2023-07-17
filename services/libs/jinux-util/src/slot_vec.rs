@@ -20,6 +20,13 @@ impl<T> SlotVec<T> {
         }
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            slots: Vec::with_capacity(capacity),
+            num_occupied: 0,
+        }
+    }
+
     /// Return `true` if the vector contains no items.
     pub fn is_empty(&self) -> bool {
         self.num_occupied == 0

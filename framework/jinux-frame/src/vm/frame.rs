@@ -78,6 +78,10 @@ impl VmFrameVec {
         Self(Vec::new())
     }
 
+    pub fn new_with_capacity(capacity: usize) -> Self {
+        Self(Vec::with_capacity(capacity))
+    }
+
     /// Pushs a new frame to the collection.
     pub fn push(&mut self, new_frame: VmFrame) {
         self.0.push(new_frame);

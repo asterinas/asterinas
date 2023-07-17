@@ -4,13 +4,13 @@ use core::marker::PhantomData;
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use jinux_frame::vm::{VmAllocOptions, VmFrameVec};
+use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};
 use jinux_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 
 use crate::prelude::*;
 
-use crate::vm::vmo::InheritedPages;
+use crate::vm::vmo::get_inherited_frames_from_parent;
 use crate::vm::vmo::{VmoInner, Vmo_};
 use jinux_rights::{Dup, Rights, TRightSet, TRights, Write};
 
@@ -131,6 +131,7 @@ fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Re
         size,
         committed_pages,
         inherited_pages: None,
+        is_cow: false,
     };
     Ok(Vmo_ {
         flags,
@@ -138,10 +139,7 @@ fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Re
     })
 }
 
-fn committed_pages_if_continuous(
-    flags: VmoFlags,
-    size: usize,
-) -> Result<BTreeMap<usize, VmFrameVec>> {
+fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMap<usize, VmFrame>> {
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
@@ -150,7 +148,7 @@ fn committed_pages_if_continuous(
         let frames = VmFrameVec::allocate(&vm_alloc_option)?;
         let mut committed_pages = BTreeMap::new();
         for (idx, frame) in frames.into_iter().enumerate() {
-            committed_pages.insert(idx * PAGE_SIZE, VmFrameVec::from_one_frame(frame));
+            committed_pages.insert(idx * PAGE_SIZE, frame);
         }
         Ok(committed_pages)
     } else {
@@ -454,27 +452,32 @@ fn alloc_child_vmo_(
         return_errno_with_message!(Errno::EINVAL, "vmo range does not aligned with PAGE_SIZE");
     }
     let parent_vmo_size = parent_vmo_.size();
-    let parent_vmo_inner = parent_vmo_.inner.lock();
 
-    let is_copy_on_write = match child_type {
-        ChildType::Slice => {
-            // A slice child should be inside parent vmo's range
-            debug_assert!(child_vmo_end <= parent_vmo_inner.size);
-            if child_vmo_end > parent_vmo_inner.size {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "slice child vmo cannot exceed parent vmo's size"
-                );
+    let is_cow = {
+        let parent_vmo_inner = parent_vmo_.inner.lock();
+        match child_type {
+            ChildType::Slice => {
+                // A slice child should be inside parent vmo's range
+                debug_assert!(child_vmo_end <= parent_vmo_inner.size);
+                if child_vmo_end > parent_vmo_inner.size {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "slice child vmo cannot exceed parent vmo's size"
+                    );
+                }
+                false
             }
-            false
-        }
-        ChildType::Cow => {
-            // A copy on Write child should intersect with parent vmo
-            debug_assert!(range.start <= parent_vmo_inner.size);
-            if range.start > parent_vmo_inner.size {
-                return_errno_with_message!(Errno::EINVAL, "COW vmo should overlap with its parent");
+            ChildType::Cow => {
+                // A copy on Write child should intersect with parent vmo
+                debug_assert!(range.start <= parent_vmo_inner.size);
+                if range.start > parent_vmo_inner.size {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "COW vmo should overlap with its parent"
+                    );
+                }
+                true
             }
-            true
         }
     };
     let parent_page_idx_offset = range.start / PAGE_SIZE;
@@ -484,18 +487,15 @@ fn alloc_child_vmo_(
     } else {
         0
     };
-    let inherited_end_page_idx = cow_size / PAGE_SIZE;
-    let inherited_pages = InheritedPages::new(
-        parent_vmo_.clone(),
-        0..inherited_end_page_idx,
-        parent_page_idx_offset,
-        is_copy_on_write,
-    );
+    let num_pages = cow_size / PAGE_SIZE;
+    let inherited_pages =
+        get_inherited_frames_from_parent(parent_vmo_, num_pages, parent_page_idx_offset, is_cow);
     let vmo_inner = VmoInner {
         pager: None,
         size: child_vmo_end - child_vmo_start,
         committed_pages: BTreeMap::new(),
         inherited_pages: Some(inherited_pages),
+        is_cow,
     };
     Ok(Vmo_ {
         flags: child_flags,

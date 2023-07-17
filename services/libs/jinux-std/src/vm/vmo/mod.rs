@@ -3,9 +3,7 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use bitvec::bitvec;
-use bitvec::vec::BitVec;
-use jinux_frame::vm::{VmAllocOptions, VmFrameVec, VmIo};
+use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec, VmIo};
 use jinux_rights::Rights;
 
 use crate::prelude::*;
@@ -135,114 +133,16 @@ pub(super) struct Vmo_ {
 }
 
 struct VmoInner {
-    /// The backup pager
     pager: Option<Arc<dyn Pager>>,
     /// size, in bytes
     size: usize,
-    /// The pages committed. The key is the page index, the value is the backup frame.
-    committed_pages: BTreeMap<usize, VmFrameVec>,
+    /// The pages committed. The key is the page index, the value is the committed frame.
+    committed_pages: BTreeMap<usize, VmFrame>,
     /// The pages from the parent that current vmo can access. The pages can only be inherited when create childs vmo.
     /// We store the page index range
-    inherited_pages: Option<InheritedPages>,
-}
-
-/// Pages inherited from parent
-struct InheritedPages {
-    /// Parent vmo.
-    parent: Option<Arc<Vmo_>>,
-    /// The page index range in child vmo. The pages inside these range are initially inherited from parent vmo.
-    /// The range includes the start page, but not including the end page
-    page_range: Range<usize>,
-    /// The page index offset in parent vmo. That is to say, the page with index `idx` in child vmo corrsponds to
-    /// page with index `idx + parent_page_idx_offset` in parent vmo
-    parent_page_idx_offset: usize,
-    is_copy_on_write: bool,
-    /// The pages already committed by child
-    committed_pages: BitVec,
-}
-
-impl InheritedPages {
-    pub fn new(
-        parent: Arc<Vmo_>,
-        page_range: Range<usize>,
-        parent_page_idx_offset: usize,
-        is_copy_on_write: bool,
-    ) -> Self {
-        let committed_pages = bitvec![0; page_range.len()];
-        Self {
-            parent: Some(parent),
-            page_range,
-            parent_page_idx_offset,
-            is_copy_on_write,
-            committed_pages,
-        }
-    }
-
-    fn contains_page(&self, page_idx: usize) -> bool {
-        self.page_range.start <= page_idx && page_idx < self.page_range.end
-    }
-
-    fn parent_page_idx(&self, child_page_idx: usize) -> Option<usize> {
-        if self.contains_page(child_page_idx) {
-            Some(child_page_idx + self.parent_page_idx_offset)
-        } else {
-            None
-        }
-    }
-
-    fn get_frame_from_parent(
-        &self,
-        page_idx: usize,
-        write_page: bool,
-        commit_if_none: bool,
-    ) -> Result<VmFrameVec> {
-        let Some(parent_page_idx) = self.parent_page_idx(page_idx) else {
-            if self.is_copy_on_write {
-                let options = VmAllocOptions::new(1);
-                return Ok(VmFrameVec::allocate(&options)?);
-            }
-            return_errno_with_message!(Errno::EINVAL, "the page is not inherited from parent");
-        };
-        match (self.is_copy_on_write, write_page) {
-            (false, _) | (true, false) => {
-                debug_assert!(self.parent.is_some());
-                let parent = self.parent.as_ref().unwrap();
-                parent.get_backup_frame(parent_page_idx, write_page, commit_if_none)
-            }
-            (true, true) => {
-                debug_assert!(self.parent.is_some());
-                let parent = self.parent.as_ref().unwrap();
-                let tmp_buffer = {
-                    let mut buffer = Box::new([0u8; PAGE_SIZE]);
-                    parent.read_bytes(parent_page_idx * PAGE_SIZE, &mut *buffer)?;
-                    buffer
-                };
-                let frames = {
-                    let options = VmAllocOptions::new(1);
-                    VmFrameVec::allocate(&options)?
-                };
-                frames.write_bytes(0, &*tmp_buffer)?;
-                Ok(frames)
-            }
-        }
-    }
-
-    fn should_child_commit_page(&self, write_page: bool) -> bool {
-        !self.is_copy_on_write || (self.is_copy_on_write && write_page)
-    }
-
-    fn mark_page_as_commited(&mut self, page_idx: usize) {
-        if !self.contains_page(page_idx) {
-            return;
-        }
-        let idx = page_idx - self.page_range.start;
-        debug_assert_eq!(self.committed_pages[idx], false);
-        debug_assert!(self.parent.is_some());
-        self.committed_pages.set(idx, true);
-        if self.committed_pages.count_ones() == self.page_range.len() {
-            self.parent.take();
-        }
-    }
+    inherited_pages: Option<Vec<VmFrame>>,
+    /// Whether the vmo is copy on write child.
+    is_cow: bool,
 }
 
 impl VmoInner {
@@ -252,17 +152,14 @@ impl VmoInner {
         if self.committed_pages.contains_key(&page_idx) {
             return Ok(());
         }
-        let frames = match &self.pager {
+        let frame = match &self.pager {
             None => {
                 let vm_alloc_option = VmAllocOptions::new(1);
-                VmFrameVec::allocate(&vm_alloc_option)?
+                VmFrameVec::allocate(&vm_alloc_option)?.pop().unwrap()
             }
-            Some(pager) => {
-                let frame = pager.commit_page(offset)?;
-                VmFrameVec::from_one_frame(frame)
-            }
+            Some(pager) => pager.commit_page(offset)?,
         };
-        self.committed_pages.insert(page_idx, frames);
+        self.insert_frame(page_idx, frame);
         Ok(())
     }
 
@@ -276,17 +173,12 @@ impl VmoInner {
         Ok(())
     }
 
-    fn insert_frame(&mut self, page_idx: usize, frame: VmFrameVec) {
+    fn insert_frame(&mut self, page_idx: usize, frame: VmFrame) {
         debug_assert!(!self.committed_pages.contains_key(&page_idx));
         self.committed_pages.insert(page_idx, frame);
     }
 
-    fn get_backup_frame(
-        &mut self,
-        page_idx: usize,
-        write_page: bool,
-        commit_if_none: bool,
-    ) -> Result<VmFrameVec> {
+    fn get_committed_frame(&mut self, page_idx: usize, write_page: bool) -> Result<VmFrame> {
         // if the page is already commit, return the committed page.
         if let Some(frames) = self.committed_pages.get(&page_idx) {
             return Ok(frames.clone());
@@ -295,27 +187,50 @@ impl VmoInner {
         // The vmo is not child
         if self.inherited_pages.is_none() {
             self.commit_page(page_idx * PAGE_SIZE)?;
-            let frames = self.committed_pages.get(&page_idx).unwrap().clone();
-            return Ok(frames);
+            let frame = self.committed_pages.get(&page_idx).unwrap().clone();
+            return Ok(frame);
         }
 
-        let inherited_pages = self.inherited_pages.as_mut().unwrap();
-        let frame = inherited_pages.get_frame_from_parent(page_idx, write_page, commit_if_none)?;
+        let frame = self.get_inherited_frame_or_alloc(page_idx, write_page)?;
 
-        if inherited_pages.should_child_commit_page(write_page) {
-            inherited_pages.mark_page_as_commited(page_idx);
+        if !self.should_share_frame_with_parent(write_page) {
             self.insert_frame(page_idx, frame.clone());
         }
 
         Ok(frame)
     }
 
-    fn is_cow_child(&self) -> bool {
-        if let Some(inherited_pages) = &self.inherited_pages {
-            inherited_pages.is_copy_on_write
-        } else {
-            false
+    fn get_inherited_frame_or_alloc(&self, page_idx: usize, write_page: bool) -> Result<VmFrame> {
+        let inherited_frames = self.inherited_pages.as_ref().unwrap();
+
+        if page_idx >= inherited_frames.len() {
+            if self.is_cow {
+                let options = VmAllocOptions::new(1);
+                return Ok(VmFrameVec::allocate(&options)?.pop().unwrap());
+            }
+            return_errno_with_message!(Errno::EINVAL, "the page is not inherited from parent");
         }
+
+        let inherited_frame = inherited_frames.get(page_idx).unwrap().clone();
+
+        if self.should_share_frame_with_parent(write_page) {
+            return Ok(inherited_frame);
+        }
+
+        let frame = {
+            let options = VmAllocOptions::new(1);
+            VmFrameVec::allocate(&options)?.pop().unwrap()
+        };
+        frame.write_bytes(0, &*tmp_buffer)?;
+        Ok(frame)
+    }
+
+    fn is_cow_child(&self) -> bool {
+        self.is_cow
+    }
+
+    fn should_share_frame_with_parent(&self, write_page: bool) -> bool {
+        !self.is_cow || (self.is_cow && !write_page)
     }
 }
 
@@ -366,25 +281,18 @@ impl Vmo_ {
     /// Ensure all pages inside range are backed up vm frames, returns the frames.
     fn ensure_all_pages_exist(&self, range: &Range<usize>, write_page: bool) -> Result<VmFrameVec> {
         let page_idx_range = get_page_idx_range(range);
-        let mut frames = VmFrameVec::empty();
+        let mut frames = VmFrameVec::new_with_capacity(page_idx_range.len());
         for page_idx in page_idx_range {
-            let mut page_frame = self.get_backup_frame(page_idx, write_page, true)?;
-            frames.append(&mut page_frame)?;
+            let page_frame = self.get_committed_frame(page_idx, write_page)?;
+            frames.push(page_frame);
         }
         Ok(frames)
     }
 
-    /// Get the backup frame for a page. If commit_if_none is set, we will commit a new page for the page
-    /// if the page does not have a backup frame.
-    fn get_backup_frame(
-        &self,
-        page_idx: usize,
-        write_page: bool,
-        commit_if_none: bool,
-    ) -> Result<VmFrameVec> {
-        self.inner
-            .lock()
-            .get_backup_frame(page_idx, write_page, commit_if_none)
+    /// Get the frame for a page. If commit_if_none is set, we will commit a new page for the page
+    /// if the page is not committed.
+    fn get_committed_frame(&self, page_idx: usize, write_page: bool) -> Result<VmFrame> {
+        self.inner.lock().get_committed_frame(page_idx, write_page)
     }
 
     pub fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
@@ -451,22 +359,12 @@ impl<R> Vmo<R> {
     }
 
     /// return whether a page is already committed
-    pub fn has_backup_frame(&self, page_idx: usize) -> bool {
-        if let Ok(_) = self.0.get_backup_frame(page_idx, false, false) {
-            true
-        } else {
-            false
-        }
+    pub fn is_page_committed(&self, page_idx: usize) -> bool {
+        self.0.page_commited(page_idx)
     }
 
-    pub fn get_backup_frame(
-        &self,
-        page_idx: usize,
-        write_page: bool,
-        commit_if_none: bool,
-    ) -> Result<VmFrameVec> {
-        self.0
-            .get_backup_frame(page_idx, write_page, commit_if_none)
+    pub fn get_committed_frame(&self, page_idx: usize, write_page: bool) -> Result<VmFrame> {
+        self.0.get_committed_frame(page_idx, write_page)
     }
 
     pub fn is_cow_child(&self) -> bool {
@@ -479,4 +377,21 @@ pub fn get_page_idx_range(vmo_offset_range: &Range<usize>) -> Range<usize> {
     let start = vmo_offset_range.start.align_down(PAGE_SIZE);
     let end = vmo_offset_range.end.align_up(PAGE_SIZE);
     (start / PAGE_SIZE)..(end / PAGE_SIZE)
+}
+
+pub(super) fn get_inherited_frames_from_parent(
+    parent: Arc<Vmo_>,
+    num_pages: usize,
+    parent_page_idx_offset: usize,
+    is_cow: bool,
+) -> Vec<VmFrame> {
+    let mut inherited_frames = Vec::with_capacity(num_pages);
+    for page_idx in 0..num_pages {
+        let parent_page_idx = page_idx + parent_page_idx_offset;
+        let inherited_frame = parent
+            .get_committed_frame(parent_page_idx, !is_cow)
+            .unwrap();
+        inherited_frames.push(inherited_frame);
+    }
+    inherited_frames
 }
