@@ -11,5 +11,6 @@ pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }
 typeflags-util = { path = "../typeflags-util" }
 jinux-rights-proc = { path = "../jinux-rights-proc" }
 jinux-rights = { path = "../jinux-rights" }
+bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [features]

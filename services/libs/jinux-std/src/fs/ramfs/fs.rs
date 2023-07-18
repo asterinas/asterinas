@@ -123,11 +123,9 @@ impl Inode_ {
         sb: &SuperBlock,
         device: Arc<dyn Device>,
     ) -> Self {
-        let type_ = device.type_();
-        let rdev = device.id().into();
         Self {
+            metadata: Metadata::new_device(ino, mode, sb, device.as_ref()),
             inner: Inner::Device(device),
-            metadata: Metadata::new_device(ino, mode, sb, type_, rdev),
             this: Weak::default(),
             fs: Weak::default(),
         }
@@ -260,7 +258,7 @@ impl DirEntry {
         self.children.put_at(idx - 2, new_entry)
     }
 
-    fn visit_entry(&self, mut idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn visit_entry(&self, idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let try_visit = |idx: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
             // Read the two special entries("." and "..").
             if *idx == 0 {
@@ -284,14 +282,13 @@ impl DirEntry {
                 *idx += 1;
             }
             // Read the normal child entries.
+            let start_idx = idx.clone();
             for (offset, (name, child)) in self
                 .children
                 .idxes_and_items()
                 .map(|(offset, (name, child))| (offset + 2, (name, child)))
+                .skip_while(|(offset, _)| offset < &start_idx)
             {
-                if offset < *idx {
-                    continue;
-                }
                 visitor.visit(
                     name.as_ref(),
                     child.metadata().ino as u64,
@@ -303,10 +300,10 @@ impl DirEntry {
             Ok(())
         };
 
-        let initial_idx = idx;
-        match try_visit(&mut idx, visitor) {
-            Err(e) if idx == initial_idx => Err(e),
-            _ => Ok(idx - initial_idx),
+        let mut iterate_idx = idx;
+        match try_visit(&mut iterate_idx, visitor) {
+            Err(e) if idx == iterate_idx => Err(e),
+            _ => Ok(iterate_idx - idx),
         }
     }
 
@@ -342,6 +339,60 @@ impl<'a> From<&'a str> for Str256 {
 impl core::fmt::Debug for Str256 {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{}", self.as_ref())
+    }
+}
+
+impl RamInode {
+    fn new_dir(fs: &Arc<RamFS>, mode: InodeMode, parent: &Weak<Self>) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let inode = RamInode(RwLock::new(Inode_::new_dir(fs.alloc_id(), mode, &fs.sb())));
+            inode.0.write().fs = Arc::downgrade(fs);
+            inode.0.write().this = weak_self.clone();
+            inode
+                .0
+                .write()
+                .inner
+                .as_direntry_mut()
+                .unwrap()
+                .init(weak_self.clone(), parent.clone());
+            inode
+        })
+    }
+
+    fn new_file(fs: &Arc<RamFS>, mode: InodeMode) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let inode = RamInode(RwLock::new(Inode_::new_file(fs.alloc_id(), mode, &fs.sb())));
+            inode.0.write().fs = Arc::downgrade(fs);
+            inode.0.write().this = weak_self.clone();
+            inode
+        })
+    }
+
+    fn new_symlink(fs: &Arc<RamFS>, mode: InodeMode) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let inode = RamInode(RwLock::new(Inode_::new_symlink(
+                fs.alloc_id(),
+                mode,
+                &fs.sb(),
+            )));
+            inode.0.write().fs = Arc::downgrade(fs);
+            inode.0.write().this = weak_self.clone();
+            inode
+        })
+    }
+
+    fn new_device(fs: &Arc<RamFS>, mode: InodeMode, device: Arc<dyn Device>) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let inode = RamInode(RwLock::new(Inode_::new_device(
+                fs.alloc_id(),
+                mode,
+                &fs.sb(),
+                device,
+            )));
+            inode.0.write().fs = Arc::downgrade(fs);
+            inode.0.write().this = weak_self.clone();
+            inode
+        })
     }
 }
 
@@ -411,18 +462,7 @@ impl Inode for RamInode {
         if self_inode.inner.as_direntry().unwrap().contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
-        let device_inode = {
-            let fs = self_inode.fs.upgrade().unwrap();
-            let device_inode = Arc::new(RamInode(RwLock::new(Inode_::new_device(
-                fs.alloc_id(),
-                mode,
-                &fs.sb(),
-                device,
-            ))));
-            device_inode.0.write().fs = self_inode.fs.clone();
-            device_inode.0.write().this = Arc::downgrade(&device_inode);
-            device_inode
-        };
+        let device_inode = RamInode::new_device(&self_inode.fs.upgrade().unwrap(), mode, device);
         self_inode
             .inner
             .as_direntry_mut()
@@ -442,43 +482,17 @@ impl Inode for RamInode {
         }
         let fs = self_inode.fs.upgrade().unwrap();
         let new_inode = match type_ {
-            InodeType::File => {
-                let file_inode = Arc::new(RamInode(RwLock::new(Inode_::new_file(
-                    fs.alloc_id(),
-                    mode,
-                    &fs.sb(),
-                ))));
-                file_inode.0.write().fs = self_inode.fs.clone();
-                file_inode
-            }
+            InodeType::File => RamInode::new_file(&fs, mode),
+            InodeType::SymLink => RamInode::new_symlink(&fs, mode),
             InodeType::Dir => {
-                let dir_inode = Arc::new(RamInode(RwLock::new(Inode_::new_dir(
-                    fs.alloc_id(),
-                    mode,
-                    &fs.sb(),
-                ))));
-                dir_inode.0.write().fs = self_inode.fs.clone();
-                dir_inode.0.write().inner.as_direntry_mut().unwrap().init(
-                    Arc::downgrade(&dir_inode),
-                    self_inode.inner.as_direntry().unwrap().this.clone(),
-                );
+                let dir_inode = RamInode::new_dir(&fs, mode, &self_inode.this);
                 self_inode.metadata.nlinks += 1;
                 dir_inode
-            }
-            InodeType::SymLink => {
-                let sym_inode = Arc::new(RamInode(RwLock::new(Inode_::new_symlink(
-                    fs.alloc_id(),
-                    mode,
-                    &fs.sb(),
-                ))));
-                sym_inode.0.write().fs = self_inode.fs.clone();
-                sym_inode
             }
             _ => {
                 panic!("unsupported inode type");
             }
         };
-        new_inode.0.write().this = Arc::downgrade(&new_inode);
         self_inode
             .inner
             .as_direntry_mut()

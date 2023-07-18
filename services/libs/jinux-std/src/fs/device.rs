@@ -46,6 +46,7 @@ pub enum DeviceType {
 }
 
 /// Device Id
+#[derive(Clone, Copy)]
 pub struct DeviceId(u64);
 
 impl DeviceId {

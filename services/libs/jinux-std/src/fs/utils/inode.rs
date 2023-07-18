@@ -186,13 +186,7 @@ impl Metadata {
             rdev: 0,
         }
     }
-    pub fn new_device(
-        ino: usize,
-        mode: InodeMode,
-        sb: &SuperBlock,
-        type_: DeviceType,
-        rdev: u64,
-    ) -> Self {
+    pub fn new_device(ino: usize, mode: InodeMode, sb: &SuperBlock, device: &dyn Device) -> Self {
         Self {
             dev: 0,
             ino,
@@ -202,12 +196,12 @@ impl Metadata {
             atime: Default::default(),
             mtime: Default::default(),
             ctime: Default::default(),
-            type_: InodeType::from(type_),
+            type_: InodeType::from(device.type_()),
             mode,
             nlinks: 1,
             uid: 0,
             gid: 0,
-            rdev,
+            rdev: device.id().into(),
         }
     }
 }
@@ -289,7 +283,9 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn sync(&self) -> Result<()>;
+    fn sync(&self) -> Result<()> {
+        Ok(())
+    }
 
     fn poll(&self, mask: IoEvents, _poller: Option<&Poller>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
@@ -307,9 +303,10 @@ pub trait Inode: Any + Sync + Send {
     /// But this caching can raise consistency issues in certain use cases. Specifically, the dentry
     /// cache works on the assumption that all FS operations go through the dentry layer first.
     /// This is why the dentry cache can reflect the up-to-date FS state. Yet, this assumption
-    /// may be broken. For example, an inode in procfs (say, `/proc/1/fd/2`) can "disappear" without
-    /// notice from the perspective of the dentry cache. So for such inodes, they are incompatible
-    /// with the dentry cache. And this method returns `false`.
+    /// may be broken. If the inodes of a file system may "disappear" without unlinking through the
+    /// VFS layer, then their dentries should not be cached. For example, an inode in procfs
+    /// (say, `/proc/1/fd/2`) can "disappear" without notice from the perspective of the dentry cache.
+    /// So for such inodes, they are incompatible with the dentry cache. And this method returns `false`.
     ///
     /// Note that if any ancestor directory of an inode has this method returns `false`, then
     /// this inode would not be cached by the dentry cache, even when the method of this

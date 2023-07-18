@@ -811,6 +811,7 @@ dependencies = [
 name = "jinux-util"
 version = "0.1.0"
 dependencies = [
+ "bitvec",
  "jinux-frame",
  "jinux-rights",
  "jinux-rights-proc",
