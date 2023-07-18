@@ -14,6 +14,7 @@
 #![feature(const_ops)]
 #![feature(generators)]
 #![feature(iter_from_generator)]
+#![feature(const_mut_refs)]
 
 extern crate alloc;
 
