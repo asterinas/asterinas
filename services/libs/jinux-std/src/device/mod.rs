@@ -1,4 +1,5 @@
 mod null;
+mod pty;
 mod random;
 pub mod tty;
 mod urandom;
@@ -22,5 +23,6 @@ pub fn init() -> Result<()> {
     add_node(random, "random")?;
     let urandom = Arc::new(urandom::Urandom);
     add_node(urandom, "urandom")?;
+    pty::init()?;
     Ok(())
 }

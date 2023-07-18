@@ -97,7 +97,7 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn readdir_at(&self, mut offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
             // Read the two special entries.
             if *offset == 0 {
@@ -124,13 +124,12 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
             // Read the normal child entries.
             self.inner.populate_children(self.this.clone());
             let cached_children = self.cached_children.read();
+            let start_offset = offset.clone();
             for (idx, (name, child)) in cached_children
                 .idxes_and_items()
                 .map(|(idx, (name, child))| (idx + 2, (name, child)))
+                .skip_while(|(idx, _)| idx < &start_offset)
             {
-                if idx < *offset {
-                    continue;
-                }
                 visitor.visit(
                     name.as_ref(),
                     child.metadata().ino as u64,
@@ -142,10 +141,10 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
             Ok(())
         };
 
-        let initial_offset = offset;
-        match try_readdir(&mut offset, visitor) {
-            Err(e) if initial_offset == offset => Err(e),
-            _ => Ok(offset - initial_offset),
+        let mut iterate_offset = offset;
+        match try_readdir(&mut iterate_offset, visitor) {
+            Err(e) if iterate_offset == offset => Err(e),
+            _ => Ok(iterate_offset - offset),
         }
     }
 
