@@ -1,13 +1,13 @@
 use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;
 use log::info;
-use spin::{Mutex, Once};
+use spin::Once;
 
-use crate::config::PAGE_SIZE;
+use crate::{config::PAGE_SIZE, sync::SpinLock};
 
 use super::{frame::VmFrameFlags, MemoryRegions, MemoryRegionsType, VmFrame};
 
-static FRAME_ALLOCATOR: Once<Mutex<FrameAllocator>> = Once::new();
+pub(super) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 
 pub(crate) fn alloc(flags: VmFrameFlags) -> Option<VmFrame> {
     FRAME_ALLOCATOR
@@ -71,5 +71,5 @@ pub(crate) fn init(regions: &Vec<MemoryRegions>) {
             );
         }
     }
-    FRAME_ALLOCATOR.call_once(|| Mutex::new(allocator));
+    FRAME_ALLOCATOR.call_once(|| SpinLock::new(allocator));
 }

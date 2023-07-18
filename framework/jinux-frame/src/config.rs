@@ -4,7 +4,7 @@ use log::Level;
 
 pub const USER_STACK_SIZE: usize = PAGE_SIZE * 4;
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
-pub const KERNEL_HEAP_SIZE: usize = 0x5_000_000;
+pub const KERNEL_HEAP_SIZE: usize = PAGE_SIZE * 256;
 
 pub const KERNEL_OFFSET: usize = 0xffffffff80000000;
 
