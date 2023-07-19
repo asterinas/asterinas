@@ -87,6 +87,10 @@ impl PageTableFlagsTrait for PageTableFlags {
         self.contains(Self::ACCESSED)
     }
 
+    fn is_dirty(&self) -> bool {
+        self.contains(Self::DIRTY)
+    }
+
     fn accessible_by_user(&self) -> bool {
         true
     }
@@ -101,6 +105,16 @@ impl PageTableFlagsTrait for PageTableFlags {
 
     fn insert(&mut self, flags: &Self) {
         self.insert(*flags)
+    }
+
+    fn is_huge(&self) -> bool {
+        // FIXME: this is super bad
+        false
+    }
+
+    fn set_huge(self, huge: bool) -> Self {
+        // FIXME: this is super bad
+        self
     }
 }
 

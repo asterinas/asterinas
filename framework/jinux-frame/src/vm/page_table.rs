@@ -25,6 +25,8 @@ pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
 
     fn set_executable(self, executable: bool) -> Self;
 
+    fn set_huge(self, huge: bool) -> Self;
+
     fn is_present(&self) -> bool;
 
     fn writable(&self) -> bool;
@@ -34,6 +36,10 @@ pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
     fn executable(&self) -> bool;
 
     fn has_accessed(&self) -> bool;
+
+    fn is_dirty(&self) -> bool;
+
+    fn is_huge(&self) -> bool;
 
     fn accessible_by_user(&self) -> bool;
 
@@ -178,7 +184,7 @@ impl<T: PageTableEntryTrait> PageTable<T> {
         };
 
         while count > 1 {
-            if current.paddr() == 0 {
+            if !current.flags().is_present() {
                 if !create {
                     return None;
                 }
@@ -195,6 +201,9 @@ impl<T: PageTableEntryTrait> PageTable<T> {
                     .set_writable(true);
                 current.update(frame.start_paddr(), flags);
                 self.tables.push(frame);
+            }
+            if current.flags().is_huge() {
+                break;
             }
             count -= 1;
             debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);

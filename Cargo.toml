@@ -8,8 +8,7 @@ name = "jinux"
 path = "kernel/main.rs"
 
 [dependencies]
-limine = "0.1.10"
-jinux-frame = { path = "framework/jinux-frame" }
+jinux-frame = { path = "framework/jinux-frame", features = ["multiboot2"] }
 jinux-std = { path = "services/libs/jinux-std" }
 component = { path = "services/libs/comp-sys/component" }
 
@@ -21,7 +20,7 @@ jinux-framebuffer = { path = "services/comps/framebuffer" }
 [workspace]
 
 members = [
-    "boot",
+    "build",
     "framework/jinux-frame",
     "services/comps/pci",
     "services/comps/virtio",

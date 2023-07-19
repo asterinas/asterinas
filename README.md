@@ -94,7 +94,7 @@ Then, we can run the following script inside the OS to run all syscall test case
 
 The codebase of Jinux is organized as below.
 
-* `boot/`: creating a bootable Jinux kernel image along with an initramfs image.
+* `build/`: creating a bootable Jinux kernel image along with an initramfs image. It also supports `cargo run` since it is the only package with `main()`.
 * `kernel/`: defining the entry point of the Jinux kernel.
 * `framework/`: the privileged half of Jinux (allowed to use `unsafe` keyword)
     * `jinux-frame`: providing the safe Rust abstractions for low-level resources like CPU, memory, interrupts, etc;

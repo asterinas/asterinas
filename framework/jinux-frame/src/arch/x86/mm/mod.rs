@@ -1,6 +1,4 @@
-use alloc::{collections::BTreeMap, fmt, vec::Vec};
-use limine::{LimineMemmapEntry, LimineMemmapRequest, LimineMemoryMapEntryType};
-use log::debug;
+use alloc::{collections::BTreeMap, fmt};
 use pod::Pod;
 use spin::Mutex;
 use x86_64::structures::paging::PhysFrame;
@@ -9,7 +7,7 @@ use crate::{
     config::ENTRY_COUNT,
     vm::{
         page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
-        MemoryRegions, MemoryRegionsType, Paddr,
+        Paddr,
     },
 };
 
@@ -31,6 +29,10 @@ bitflags::bitflags! {
         const NO_CACHE =        1 << 4;
         /// Whether this entry has been used for linear-address translation.
         const ACCESSED =        1 << 5;
+        /// Whether the memory area represented by this entry is modified.
+        const DIRTY =           1 << 6;
+        /// Only in the non-starting and non-ending levels, indication of huge page.
+        const HUGE =            1 << 7;
         /// Indicates that the mapping is present in all address spaces, so it isn't flushed from
         /// the TLB on an address space switch.
         const GLOBAL =          1 << 8;
@@ -51,20 +53,6 @@ pub unsafe fn activate_page_table(root_paddr: Paddr, flags: x86_64::registers::c
 }
 
 pub static ALL_MAPPED_PTE: Mutex<BTreeMap<usize, PageTableEntry>> = Mutex::new(BTreeMap::new());
-
-/// Get memory regions, this function should call after the heap was initialized
-pub fn get_memory_regions() -> Vec<MemoryRegions> {
-    let mut memory_regions = Vec::new();
-    let response = MEMMAP_REQUEST
-        .get_response()
-        .get()
-        .expect("Not found memory region information");
-    for i in response.memmap() {
-        debug!("Found memory region:{:x?}", **i);
-        memory_regions.push(MemoryRegions::from(&**i));
-    }
-    memory_regions
-}
 
 pub fn init() {
     let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
@@ -137,6 +125,10 @@ impl PageTableFlagsTrait for PageTableFlags {
         self.contains(Self::ACCESSED)
     }
 
+    fn is_dirty(&self) -> bool {
+        self.contains(Self::DIRTY)
+    }
+
     fn union(&self, flags: &Self) -> Self {
         (*self).union(*flags)
     }
@@ -147,6 +139,15 @@ impl PageTableFlagsTrait for PageTableFlags {
 
     fn insert(&mut self, flags: &Self) {
         self.insert(*flags)
+    }
+
+    fn is_huge(&self) -> bool {
+        self.contains(Self::HUGE)
+    }
+
+    fn set_huge(mut self, huge: bool) -> Self {
+        self.set(Self::HUGE, huge);
+        self
     }
 }
 
@@ -191,32 +192,5 @@ impl fmt::Debug for PageTableEntry {
             .field("paddr", &self.paddr())
             .field("flags", &self.flags())
             .finish()
-    }
-}
-
-static MEMMAP_REQUEST: LimineMemmapRequest = LimineMemmapRequest::new(0);
-
-impl From<&LimineMemmapEntry> for MemoryRegions {
-    fn from(value: &LimineMemmapEntry) -> Self {
-        Self {
-            base: value.base,
-            len: value.len,
-            typ: MemoryRegionsType::from(value.typ),
-        }
-    }
-}
-
-impl From<LimineMemoryMapEntryType> for MemoryRegionsType {
-    fn from(value: LimineMemoryMapEntryType) -> Self {
-        match value {
-            LimineMemoryMapEntryType::Usable => Self::Usable,
-            LimineMemoryMapEntryType::Reserved => Self::Reserved,
-            LimineMemoryMapEntryType::AcpiReclaimable => Self::AcpiReclaimable,
-            LimineMemoryMapEntryType::AcpiNvs => Self::AcpiNvs,
-            LimineMemoryMapEntryType::BadMemory => Self::BadMemory,
-            LimineMemoryMapEntryType::BootloaderReclaimable => Self::BootloaderReclaimable,
-            LimineMemoryMapEntryType::KernelAndModules => Self::KernelAndModules,
-            LimineMemoryMapEntryType::Framebuffer => Self::Framebuffer,
-        }
     }
 }
