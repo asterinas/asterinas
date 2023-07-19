@@ -5,7 +5,7 @@ use spin::Once;
 
 use crate::{config::PAGE_SIZE, sync::SpinLock};
 
-use super::{frame::VmFrameFlags, MemoryRegions, MemoryRegionsType, VmFrame};
+use super::{frame::VmFrameFlags, MemoryRegion, MemoryRegionType, VmFrame};
 
 pub(super) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 
@@ -55,19 +55,17 @@ pub(crate) unsafe fn dealloc(index: usize) {
     FRAME_ALLOCATOR.get().unwrap().lock().dealloc(index, 1);
 }
 
-pub(crate) fn init(regions: &Vec<MemoryRegions>) {
+pub(crate) fn init(regions: &Vec<MemoryRegion>) {
     let mut allocator = FrameAllocator::<32>::new();
     for region in regions.iter() {
-        if region.typ == MemoryRegionsType::Usable {
-            assert_eq!(region.base % PAGE_SIZE as u64, 0);
-            assert_eq!(region.len % PAGE_SIZE as u64, 0);
-            let start = region.base as usize / PAGE_SIZE;
-            let end = start + region.len as usize / PAGE_SIZE;
+        if region.typ() == MemoryRegionType::Usable {
+            let start = region.base() / PAGE_SIZE;
+            let end = start + region.len() / PAGE_SIZE;
             allocator.add_frame(start, end);
             info!(
                 "Found usable region, start:{:x}, end:{:x}",
-                region.base,
-                region.base + region.len
+                region.base(),
+                region.base() + region.len()
             );
         }
     }

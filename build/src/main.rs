@@ -16,6 +16,7 @@ const COMMON_ARGS: &[&str] = &[
     "Icelake-Server,+x2apic",
     "-m",
     "2G",
+    "-nographic", // TODO: figure out why grub can't shown up without it
     "-monitor",
     "vc",
     "-serial",
@@ -73,9 +74,11 @@ fn main() -> anyhow::Result<()> {
         path.canonicalize().unwrap()
     };
 
-    #[cfg(feature = "limine")]
-    call_limine_build_script(&kernel_binary_path).unwrap();
-    // add .iso
+    call_bootloader_build_script(
+        &PathBuf::from("build/grub/scripts/build-grub-image.sh"),
+        &kernel_binary_path,
+    )
+    .unwrap();
 
     let kernel_iso_path = {
         let a = kernel_binary_path.parent().unwrap();
@@ -92,6 +95,7 @@ fn main() -> anyhow::Result<()> {
 
     let binary_kind = runner_utils::binary_kind(&kernel_binary_path);
     let mut qemu_args = COMMON_ARGS.clone().to_vec();
+
     qemu_args.extend(DEVICE_ARGS.clone().to_vec().iter());
     qemu_args.extend(OPTION_ARGS.clone().to_vec().iter());
     qemu_args.push("-drive");
@@ -123,9 +127,12 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn call_limine_build_script(path: &PathBuf) -> anyhow::Result<()> {
-    let mut cmd = Command::new("boot/limine/scripts/limine-build.sh");
-    cmd.arg(path.to_str().unwrap());
+fn call_bootloader_build_script(
+    script_path: &PathBuf,
+    kernel_path: &PathBuf,
+) -> anyhow::Result<()> {
+    let mut cmd = Command::new(script_path.to_str().unwrap());
+    cmd.arg(kernel_path.to_str().unwrap());
     let exit_status = cmd.status()?;
     if !exit_status.success() {
         std::process::exit(exit_status.code().unwrap_or(1));

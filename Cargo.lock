@@ -93,6 +93,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "bitflags"
+version = "2.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "630be753d4e58660abd17930c71b647fe46c27ea6b63cc59e1e3851406972e42"
+
+[[package]]
 name = "bitvec"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -110,7 +116,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43f9365b6b0c9e1663ca4ca9440c00eda46bc85a3407070be8b5e0d8d1f29629"
 dependencies = [
- "spin 0.9.4",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -254,7 +260,7 @@ version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "956673bd3cb347512bf988d1e8d89ac9a82b64f6eec54d3c01c3529dac019882"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "defmt-macros",
 ]
 
@@ -278,6 +284,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "269924c02afd7f94bc4cecbfa5c379f6ffcf9766b3408fe63d22c728654eccd0"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "derive_more"
+version = "0.99.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fb810d30a7c1953f91334de7244731fc3f3c10d7fe163338a35b9f640960321"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -388,7 +405,7 @@ dependencies = [
  "atomic-polyfill",
  "hash32",
  "rustc_version",
- "spin 0.9.4",
+ "spin 0.9.8",
  "stable_deref_trait",
 ]
 
@@ -471,7 +488,6 @@ dependencies = [
  "jinux-framebuffer",
  "jinux-std",
  "jinux-time",
- "limine",
  "x86_64",
 ]
 
@@ -479,7 +495,7 @@ dependencies = [
 name = "jinux-block"
 version = "0.1.0"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "component",
  "jinux-frame",
  "jinux-pci",
@@ -487,11 +503,11 @@ dependencies = [
  "jinux-virtio",
  "lazy_static",
  "log",
- "spin 0.9.4",
+ "spin 0.9.8",
 ]
 
 [[package]]
-name = "jinux-boot"
+name = "jinux-build"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -506,16 +522,16 @@ dependencies = [
  "acpi",
  "align_ext",
  "aml",
- "bitflags",
+ "bitflags 1.3.2",
  "buddy_system_allocator",
  "cfg-if",
  "inherit-methods-macro",
  "intrusive-collections",
  "lazy_static",
- "limine",
  "log",
+ "multiboot2",
  "pod",
- "spin 0.9.4",
+ "spin 0.9.8",
  "trapframe",
  "volatile",
  "x86",
@@ -530,14 +546,14 @@ dependencies = [
  "font8x8",
  "jinux-frame",
  "log",
- "spin 0.9.4",
+ "spin 0.9.8",
 ]
 
 [[package]]
 name = "jinux-input"
 version = "0.1.0"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "component",
  "jinux-frame",
  "jinux-pci",
@@ -545,7 +561,7 @@ dependencies = [
  "jinux-virtio",
  "lazy_static",
  "log",
- "spin 0.9.4",
+ "spin 0.9.8",
  "virtio-input-decoder",
 ]
 
@@ -561,28 +577,28 @@ dependencies = [
  "log",
  "ringbuf",
  "smoltcp",
- "spin 0.9.4",
+ "spin 0.9.8",
 ]
 
 [[package]]
 name = "jinux-pci"
 version = "0.1.0"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "component",
  "jinux-frame",
  "jinux-util",
  "lazy_static",
  "log",
  "pod",
- "spin 0.9.4",
+ "spin 0.9.8",
 ]
 
 [[package]]
 name = "jinux-rights"
 version = "0.1.0"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "jinux-rights-proc",
  "typeflags",
  "typeflags-util",
@@ -603,7 +619,7 @@ version = "0.1.0"
 dependencies = [
  "align_ext",
  "ascii",
- "bitflags",
+ "bitflags 1.3.2",
  "controlled",
  "core2",
  "cpio-decoder",
@@ -627,7 +643,7 @@ dependencies = [
  "pod",
  "ringbuf",
  "smoltcp",
- "spin 0.9.4",
+ "spin 0.9.8",
  "time",
  "typeflags",
  "typeflags-util",
@@ -643,7 +659,7 @@ dependencies = [
  "component",
  "jinux-frame",
  "log",
- "spin 0.9.4",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -662,7 +678,7 @@ name = "jinux-virtio"
 version = "0.1.0"
 dependencies = [
  "align_ext",
- "bitflags",
+ "bitflags 1.3.2",
  "bytes",
  "component",
  "int-to-c-enum",
@@ -671,7 +687,7 @@ dependencies = [
  "jinux-util",
  "log",
  "pod",
- "spin 0.9.4",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -746,15 +762,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "limine"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e9d0c951056ac044f0e6b09448b9d702f8fb1001db89cffd2bc467bd1c25307"
-dependencies = [
- "uuid",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -817,6 +824,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d61c719bcfbcf5d62b3a09efa6088de8c54bc0bfcd3ea7ae39fcc186108b8de1"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "multiboot2"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b624a7b3f704734d98d21455b617607eb7043d4509d1c34bf9e7ff7dd47b31a"
+dependencies = [
+ "bitflags 2.3.3",
+ "derive_more",
+ "log",
+ "ptr_meta",
+ "uefi-raw",
 ]
 
 [[package]]
@@ -916,6 +936,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ptr_meta"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bcada80daa06c42ed5f48c9a043865edea5dc44cbf9ac009fda3b89526e28607"
+dependencies = [
+ "ptr_meta_derive",
+]
+
+[[package]]
+name = "ptr_meta_derive"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bca9224df2e20e7c5548aeb5f110a0f3b77ef05f8585139b7148b59056168ed2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -936,7 +976,7 @@ version = "10.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c297679cb867470fa8c9f67dbba74a78d78e3e98d7cf2b08d6d71540f797332"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
 ]
 
 [[package]]
@@ -1021,7 +1061,7 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e9786ac45091b96f946693e05bfa4d8ca93e2d3341237d97a380107a6b38dea"
 dependencies = [
- "bitflags",
+ "bitflags 1.3.2",
  "byteorder",
  "cfg-if",
  "defmt",
@@ -1038,9 +1078,9 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "spin"
-version = "0.9.4"
+version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f6002a767bff9e83f8eeecf883ecb8011875a21ae8da43bffb817a57e78cc09"
+checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 dependencies = [
  "lock_api",
 ]
@@ -1190,6 +1230,23 @@ name = "typeflags-util"
 version = "0.1.0"
 
 [[package]]
+name = "uefi-raw"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62642516099c6441a5f41b0da8486d5fc3515a0603b0fdaea67b31600e22082e"
+dependencies = [
+ "bitflags 2.3.3",
+ "ptr_meta",
+ "uguid",
+]
+
+[[package]]
+name = "uguid"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16dfbd255defbd727b3a30e8950695d2e6d045841ee250ff0f1f7ced17917f8d"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1200,12 +1257,6 @@ name = "utf8parse"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "936e4b492acfd135421d8dca4b1aa80a7bfc26e702ef3af710e0752684df5372"
-
-[[package]]
-name = "uuid"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1674845326ee10d37ca60470760d4288a6f80f304007d92e5c53bab78c9cfd79"
 
 [[package]]
 name = "version_check"
@@ -1286,7 +1337,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2781db97787217ad2a2845c396a5efe286f87467a5810836db6d74926e94a385"
 dependencies = [
  "bit_field",
- "bitflags",
+ "bitflags 1.3.2",
  "raw-cpuid",
 ]
 
@@ -1297,7 +1348,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "100555a863c0092238c2e0e814c1096c1e5cf066a309c696a87e907b5f8c5d69"
 dependencies = [
  "bit_field",
- "bitflags",
+ "bitflags 1.3.2",
  "rustversion",
  "volatile",
 ]

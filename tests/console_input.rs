@@ -10,7 +10,7 @@ use jinux_frame::println;
 static mut INPUT_VALUE: u8 = 0;
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub fn jinux_main() -> ! {
     jinux_frame::init();
     test_main();
     loop {}

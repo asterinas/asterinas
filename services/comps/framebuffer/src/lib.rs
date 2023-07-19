@@ -1,4 +1,4 @@
-//! The frambuffer of jinux
+//! The framebuffer of jinux
 #![no_std]
 #![forbid(unsafe_code)]
 #![feature(strict_provenance)]
@@ -13,7 +13,7 @@ use core::{
 };
 use font8x8::UnicodeFonts;
 use jinux_frame::{
-    config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo, LimineFramebufferRequest,
+    config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo, arch::boot,
 };
 use spin::Once;
 
@@ -24,44 +24,39 @@ fn framebuffer_init() -> Result<(), ComponentInitError> {
 }
 
 pub(crate) static WRITER: Once<SpinLock<Writer>> = Once::new();
-static FRAMEBUFFER_REUEST: LimineFramebufferRequest = LimineFramebufferRequest::new(0);
 
 pub(crate) fn init() {
     let mut writer = {
-        let response = FRAMEBUFFER_REUEST
-            .get_response()
-            .get()
-            .expect("Not found framebuffer");
-        assert_eq!(response.framebuffer_count, 1);
+        let framebuffer = boot::get_framebuffer_info();
         let mut writer = None;
         let mut size = 0;
         for i in jinux_frame::vm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
-            size = i.len as usize;
+            size = i.len() as usize;
         }
-        for i in response.framebuffers() {
-            let page_size = size / PAGE_SIZE;
 
-            let start_paddr = i.address.as_ptr().unwrap().addr();
-            let io_mem =
-                IoMem::new(start_paddr..(start_paddr + jinux_frame::config::PAGE_SIZE * page_size))
-                    .unwrap();
+        let page_size = size / PAGE_SIZE;
 
-            let mut buffer: Vec<u8> = Vec::with_capacity(size);
-            for _ in 0..size {
-                buffer.push(0);
-            }
-            log::debug!("Found framebuffer:{:?}", *i);
+        let start_paddr = framebuffer.address.as_ptr().unwrap().addr();
+        let io_mem =
+            IoMem::new(start_paddr..(start_paddr + jinux_frame::config::PAGE_SIZE * page_size))
+                .unwrap();
 
-            writer = Some(Writer {
-                io_mem,
-                x_pos: 0,
-                y_pos: 0,
-                bytes_per_pixel: (i.bpp / 8) as usize,
-                width: i.width as usize,
-                height: i.height as usize,
-                buffer: buffer.leak(),
-            })
+        let mut buffer: Vec<u8> = Vec::with_capacity(size);
+        for _ in 0..size {
+            buffer.push(0);
         }
+        log::debug!("Found framebuffer:{:?}", framebuffer);
+
+        writer = Some(Writer {
+            io_mem,
+            x_pos: 0,
+            y_pos: 0,
+            bytes_per_pixel: (framebuffer.bpp / 8) as usize,
+            width: framebuffer.width as usize,
+            height: framebuffer.height as usize,
+            buffer: buffer.leak(),
+        })
+
         writer.unwrap()
     };
     writer.clear();

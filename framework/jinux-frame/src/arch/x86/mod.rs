@@ -1,4 +1,4 @@
-mod boot;
+pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
 pub mod iommu;

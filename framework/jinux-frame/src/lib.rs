@@ -8,8 +8,8 @@
 #![feature(alloc_error_handler)]
 #![feature(core_intrinsics)]
 #![feature(new_uninit)]
-#![feature(link_llvm_intrinsics)]
 #![feature(strict_provenance)]
+#![feature(link_llvm_intrinsics)]
 #![feature(const_trait_impl)]
 #![feature(const_ops)]
 #![feature(generators)]
@@ -23,6 +23,7 @@ pub mod bus;
 pub mod config;
 pub mod cpu;
 mod error;
+mod heap_allocator;
 pub mod logger;
 pub mod io_mem;
 pub mod prelude;
@@ -39,14 +40,13 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use core::{mem, panic::PanicInfo};
-#[cfg(target_arch = "x86_64")]
-pub use limine::{LimineFramebufferRequest, LimineModuleRequest};
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
 pub fn init() {
+    heap_allocator::init();
     arch::before_all_init();
     logger::init();
     vm::init();
@@ -68,13 +68,13 @@ fn register_irq_common_callback() {
 
 fn invoke_c_init_funcs() {
     extern "C" {
-        fn sinit_array();
-        fn einit_array();
+        fn __sinit_array();
+        fn __einit_array();
     }
-    let call_len = (einit_array as u64 - sinit_array as u64) / 8;
+    let call_len = (__einit_array as u64 - __sinit_array as u64) / 8;
     for i in 0..call_len {
         unsafe {
-            let address = (sinit_array as u64 + 8 * i) as *const u64;
+            let address = (__sinit_array as u64 + 8 * i) as *const u64;
             let function = address as *const fn();
             (*function)();
         }

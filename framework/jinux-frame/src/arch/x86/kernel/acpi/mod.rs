@@ -6,9 +6,9 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::{config, vm::paddr_to_vaddr};
+use crate::arch::boot::{self, BootloaderAcpiArg};
+use crate::vm::paddr_to_vaddr;
 use acpi::{sdt::SdtHeader, AcpiHandler, AcpiTable, AcpiTables};
-use limine::LimineRsdpRequest;
 use log::info;
 use spin::{Mutex, Once};
 
@@ -89,17 +89,18 @@ impl AcpiHandler for AcpiMemoryHandler {
     fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
 }
 
-static RSDP_REQUEST: LimineRsdpRequest = LimineRsdpRequest::new(0);
-
 pub fn init() {
-    let response = RSDP_REQUEST
-        .get_response()
-        .get()
-        .expect("Need RSDP address");
-    let rsdp = response.address.as_ptr().unwrap().addr() - config::PHYS_OFFSET;
-    // Safety: The RSDP is the value provided by bootloader.
-    let acpi_tables =
-        unsafe { AcpiTables::from_rsdp(AcpiMemoryHandler {}, rsdp as usize).unwrap() };
+    let acpi_tables = match boot::get_acpi_rsdp() {
+        BootloaderAcpiArg::Rsdp(addr) => unsafe {
+            AcpiTables::from_rsdp(AcpiMemoryHandler {}, addr as usize).unwrap()
+        },
+        BootloaderAcpiArg::Rsdt(addr) => unsafe {
+            AcpiTables::from_rsdt(AcpiMemoryHandler {}, 0, addr as usize).unwrap()
+        },
+        BootloaderAcpiArg::Xsdt(addr) => unsafe {
+            AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr as usize).unwrap()
+        },
+    };
 
     for (signature, sdt) in acpi_tables.sdts.iter() {
         info!("ACPI found signature:{:?}", signature);

@@ -7,7 +7,7 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 #[no_mangle]
-pub extern "C" fn _start() -> ! {
+pub fn jinux_main() -> ! {
     jinux_frame::init();
     component::init_all(component::parse_metadata!()).unwrap();
     test_main();
