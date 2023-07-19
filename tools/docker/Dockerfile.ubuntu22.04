@@ -15,6 +15,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     git-core \
     gnupg \
     grub-common \
+    grub-pc \
     libssl-dev \
     net-tools \
     openssh-server \
