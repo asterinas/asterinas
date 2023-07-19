@@ -101,6 +101,7 @@ fn main() -> anyhow::Result<()> {
     qemu_args.push("-drive");
     let binding = create_fs_image(kernel_binary_path.as_path())?;
     qemu_args.push(binding.as_str());
+    qemu_cmd.arg("-cdrom");
     qemu_cmd.arg(kernel_iso_path.to_str().unwrap());
     if binary_kind.is_test() {
         qemu_args.append(&mut TEST_ARGS.to_vec());
