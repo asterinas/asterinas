@@ -359,6 +359,24 @@ impl VmFrame {
             PAGE_SIZE,
         )
     }
+
+    pub fn as_ptr(&self) -> *const u8 {
+        super::paddr_to_vaddr(self.start_paddr()) as *const u8
+    }
+
+    pub fn as_mut_ptr(&self) -> *mut u8 {
+        super::paddr_to_vaddr(self.start_paddr()) as *mut u8
+    }
+
+    pub fn copy_from_frame(&self, src: &VmFrame) {
+        if Arc::ptr_eq(&self.frame_index, &src.frame_index) {
+            return;
+        }
+        // Safety: src and dst is not overlapped.
+        unsafe {
+            core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), PAGE_SIZE);
+        }
+    }
 }
 
 impl VmIo for VmFrame {
