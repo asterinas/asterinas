@@ -8,6 +8,7 @@ pub type Paddr = usize;
 
 mod frame;
 mod frame_allocator;
+pub(crate) mod heap_allocator;
 mod io;
 mod memory_set;
 mod offset;

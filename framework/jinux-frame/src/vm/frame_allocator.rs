@@ -3,9 +3,10 @@ use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
+use crate::arch::boot::{MemoryRegion, MemoryRegionType};
 use crate::{config::PAGE_SIZE, sync::SpinLock};
 
-use super::{frame::VmFrameFlags, MemoryRegion, MemoryRegionType, VmFrame};
+use super::{frame::VmFrameFlags, VmFrame};
 
 pub(super) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 

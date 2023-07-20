@@ -23,7 +23,6 @@ pub mod bus;
 pub mod config;
 pub mod cpu;
 mod error;
-mod heap_allocator;
 pub mod logger;
 pub mod io_mem;
 pub mod prelude;
@@ -46,7 +45,7 @@ use trapframe::TrapFrame;
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
 pub fn init() {
-    heap_allocator::init();
+    vm::heap_allocator::init();
     arch::before_all_init();
     logger::init();
     vm::init();

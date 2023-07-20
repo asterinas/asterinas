@@ -152,15 +152,27 @@ PTE_GLOBAL      = (1 << 8)
 
     // Page Directory: map to low 1 GiB * 4 space
     lea edi, [boot_pd]
-    mov eax, PTE_PRESENT | PTE_WRITE | PTE_HUGE | PTE_GLOBAL
+    lea eax, [boot_pt + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov ecx, 512 * 4 // (of entries in PD) * (number of PD)
 
 write_pd_entry:
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
-    add eax, 0x200000 // 2 MiB
+    add eax, 0x1000 // 4kiB
     add edi, 8
     loop write_pd_entry
+
+    // Page Table: map to low 4 KiB * 1M space
+    lea edi, [boot_pt]
+    mov eax, 0x103 // Present, writable, global.
+    mov ecx, 512 * 512 * 4 // (of entries in PT) * (number of PT)
+
+write_pt_entry:
+    mov dword ptr [edi], eax
+    mov dword ptr [edi + 4], 0
+    add eax, 0x1000 // 4KiB
+    add edi, 8
+    loop write_pt_entry
 
     jmp enable_long_mode
 
@@ -226,6 +238,8 @@ boot_pd_2g_3g:
     .skip 4096
 boot_pd_3g_4g:
     .skip 4096
+boot_pt:
+    .skip 4096 * 512 * 4
 boot_page_table_end:
 
 boot_stack_bottom:
