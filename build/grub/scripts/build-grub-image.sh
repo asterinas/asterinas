@@ -5,7 +5,7 @@ set -eux
 KERNEL=$1
 
 # Copy the needed files into an ISO image.
-mkdir -p target/iso_root
+mkdir -p target/iso_root/boot
 cp $KERNEL target/iso_root/boot/jinux
 mkdir -p target/iso_root/boot/grub
 cp build/grub/conf/grub.cfg target/iso_root/boot/grub
