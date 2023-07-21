@@ -1,8 +1,8 @@
 //! The boot module defines the entrypoints of Jinux and the corresponding
 //! headers for different bootloaders.
 //!
-//! We currently support Multiboot2 and the Limine Boot Protocol. The
-//! support for Linux boot protocol is on its way.
+//! We currently support Multiboot2. The support for Linux Boot Protocol is
+//! on its way.
 //!
 //! In this module, we use println! to print information on screen rather
 //! than logging since the logger is not initialized here.
@@ -19,10 +19,10 @@ pub use memory_region::*;
 use alloc::{string::String, vec::Vec};
 use spin::Once;
 
-#[derive(Copy, Clone, Debug)]
 /// The boot crate can choose either providing the raw RSDP physical address or
 /// providing the RSDT/XSDT physical address after parsing RSDP.
 /// This is because bootloaders differ in such behaviors.
+#[derive(Copy, Clone, Debug)]
 pub enum BootloaderAcpiArg {
     /// Physical address of the RSDP.
     Rsdp(usize),
@@ -32,8 +32,8 @@ pub enum BootloaderAcpiArg {
     Xsdt(usize),
 }
 
-#[derive(Copy, Clone, Debug)]
 /// The framebuffer arguments.
+#[derive(Copy, Clone, Debug)]
 pub struct BootloaderFramebufferArg {
     pub address: usize,
     pub width: usize,

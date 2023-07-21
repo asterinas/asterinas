@@ -6,8 +6,8 @@ use alloc::{vec, vec::Vec};
 
 use crate::config::PAGE_SIZE;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The type of initial memory regions that are needed for the kernel.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum MemoryRegionType {
     /// Maybe points to an unplugged DIMM module. It's bad anyway.
     BadMemory = 0,
@@ -27,9 +27,9 @@ pub enum MemoryRegionType {
     Usable = 7,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The information of initial memory regions that are needed by the kernel.
 /// The sections are **not** guaranteed to not overlap. The region must be page aligned.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct MemoryRegion {
     base: usize,
     len: usize,
@@ -43,12 +43,15 @@ impl MemoryRegion {
         let aligned_end;
         match typ {
             MemoryRegionType::Usable | MemoryRegionType::Reclaimable => {
-                // Align shrinked.
+                // Align shrinked. These regions may be used by the frame allocator.
                 aligned_base = base.align_up(PAGE_SIZE);
                 aligned_end = (base + len).align_down(PAGE_SIZE);
             }
             _ => {
-                // Align bloated.
+                // We can align other regions in a bloated manner since we do not
+                // use MemoryRegion as a way to deliver objects. They are just
+                // markers of untouchable memory areas or areas that need special
+                // treatments.
                 aligned_base = base.align_down(PAGE_SIZE);
                 aligned_end = (base + len).align_up(PAGE_SIZE);
             }
