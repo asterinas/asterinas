@@ -172,7 +172,7 @@ pub fn init_memory_regions() {
     for &r_unusable in &regions_unusable {
         regions_dst.clear();
         for r_usable in &*regions_src {
-            regions_dst.append(&mut r_usable.truncate(r_unusable));
+            regions_dst.append(&mut r_usable.truncate(&r_unusable));
         }
         swap(regions_src, regions_dst);
     }
@@ -182,8 +182,8 @@ pub fn init_memory_regions() {
     MEMORY_REGIONS.call_once(|| regions_unusable);
 }
 
-/// The entry point of kernel code, which should be defined by the package that
-/// uses jinux-frame.
+// The entry point of kernel code, which should be defined by the package that
+// uses jinux-frame.
 extern "Rust" {
     fn jinux_main() -> !;
 }
