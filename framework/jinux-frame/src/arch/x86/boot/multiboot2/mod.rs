@@ -12,6 +12,8 @@ use crate::{config::PHYS_OFFSET, vm::paddr_to_vaddr};
 
 global_asm!(include_str!("boot.S"));
 
+const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
+
 static MB2_INFO: Once<BootInformation> = Once::new();
 
 pub fn init_bootloader_name() {
@@ -187,7 +189,7 @@ extern "Rust" {
 #[no_mangle]
 /// The entry point of Rust code called by inline asm.
 unsafe extern "C" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
-    assert_eq!(boot_magic, 0x36d76289_u32);
+    assert_eq!(boot_magic, MULTIBOOT2_ENTRY_MAGIC);
     MB2_INFO.call_once(|| unsafe {
         BootInformation::load(boot_params as *const BootInformationHeader).unwrap()
     });
