@@ -186,7 +186,7 @@ extern "Rust" {
 
 #[no_mangle]
 /// The entry point of Rust code called by inline asm.
-unsafe extern "C" fn boot(boot_magic: u32, boot_params: u64) -> ! {
+unsafe extern "C" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
     assert_eq!(boot_magic, 0x36d76289_u32);
     MB2_INFO.call_once(|| unsafe {
         BootInformation::load(boot_params as *const BootInformationHeader).unwrap()
