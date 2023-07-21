@@ -9,4 +9,17 @@ pub enum Error {
     FileTypeError,
     FileNameError,
     BufferShortError,
+    IoError,
+}
+
+impl From<core2::io::Error> for Error {
+    #[inline]
+    fn from(err: core2::io::Error) -> Self {
+        use core2::io::ErrorKind;
+
+        match err.kind() {
+            ErrorKind::UnexpectedEof => Self::BufferShortError,
+            _ => Self::IoError,
+        }
+    }
 }

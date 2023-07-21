@@ -14,7 +14,7 @@ pub use ioctl::IoctlCmd;
 pub use page_cache::PageCache;
 pub use poll::{Pollee, Poller};
 pub use status_flags::StatusFlags;
-pub use vnode::Vnode;
+pub use vnode::{Vnode, VnodeWriter};
 
 mod access_mode;
 mod channel;
