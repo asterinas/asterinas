@@ -280,7 +280,8 @@ long_mode:
     // Clear the frame pointer to stop backtracing here.
     xor rbp, rbp
 
-    lea  rax, [rip + boot]  // jump into Rust code
+.extern __multiboot2_entry
+    lea  rax, [rip + __multiboot2_entry]  // jump into Rust code
     call rax
 
     // In case boot() returns.
