@@ -182,12 +182,14 @@ pub fn init_memory_regions() {
     MEMORY_REGIONS.call_once(|| regions_unusable);
 }
 
+/// The entry point of kernel code, which should be defined by the package that
+/// uses jinux-frame.
 extern "Rust" {
     fn jinux_main() -> !;
 }
 
-#[no_mangle]
 /// The entry point of Rust code called by inline asm.
+#[no_mangle]
 unsafe extern "C" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
     assert_eq!(boot_magic, MULTIBOOT2_ENTRY_MAGIC);
     MB2_INFO.call_once(|| unsafe {
