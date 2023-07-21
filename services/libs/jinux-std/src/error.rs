@@ -232,6 +232,9 @@ impl From<cpio_decoder::error::Error> for Error {
             cpio_decoder::error::Error::BufferShortError => {
                 Error::with_message(Errno::EINVAL, "CPIO buffer is too short")
             }
+            cpio_decoder::error::Error::IoError => {
+                Error::with_message(Errno::EIO, "CPIO buffer I/O error")
+            }
         }
     }
 }

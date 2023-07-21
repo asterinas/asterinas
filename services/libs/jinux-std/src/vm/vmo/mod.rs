@@ -216,7 +216,7 @@ impl VmoInner {
         if self.should_share_frame_with_parent(write_page) {
             return Ok(inherited_frame);
         }
-        
+
         let frame = {
             let options = VmAllocOptions::new(1);
             VmFrameVec::allocate(&options)?.pop().unwrap()

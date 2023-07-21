@@ -4,10 +4,11 @@
 //!
 //! ```rust
 //! use cpio_decoder::CpioDecoder;
+//! use lending_iterator::LendingIterator;
 //!
 //! let short_buffer: Vec<u8> = Vec::new();
 //! let mut decoder = CpioDecoder::new(short_buffer.as_slice());
-//! for entry_result in decoder.decode_entries() {
+//! if let Some(entry_result) = decoder.next() {
 //!     println!("The entry_result is: {:?}", entry_result);
 //! }
 //! ```
@@ -21,16 +22,17 @@ extern crate alloc;
 use crate::error::{Error, Result};
 use alloc::string::{String, ToString};
 use alloc::vec;
-use alloc::vec::Vec;
-use core2::io::Read;
+use core::cmp::min;
+use core2::io::{Read, Write};
 use int_to_c_enum::TryFromInt;
+use lending_iterator::prelude::*;
 
 pub mod error;
 
 #[cfg(test)]
 mod test;
 
-/// A CPIO (the newc format) decoder.
+/// A CPIO (the newc format) decoder to iterator over the results of CPIO entries.
 ///
 /// "newc" is the new portable format and CRC format.
 ///
@@ -41,37 +43,16 @@ mod test;
 /// All the fields in the header are ISO 646 (approximately ASCII) strings
 /// of hexadecimal numbers, left padded, not NULL terminated.
 pub struct CpioDecoder<R> {
-    inner: R,
+    reader: R,
+    is_error: bool,
 }
 
 impl<R> CpioDecoder<R>
 where
     R: Read,
 {
-    /// create a decoder to decode the CPIO.
-    pub fn new(inner: R) -> Self {
-        Self { inner }
-    }
-
-    /// Return an iterator trying to decode the entries in the CPIO.
-    pub fn decode_entries(&mut self) -> CpioEntryIter<R> {
-        CpioEntryIter::new(&mut self.inner)
-    }
-}
-
-/// An iterator over the results of CPIO entries.
-///
-/// It stops if reaches to the trailer entry or encounters an error.
-pub struct CpioEntryIter<'a, R> {
-    reader: &'a mut R,
-    is_error: bool,
-}
-
-impl<'a, R> CpioEntryIter<'a, R>
-where
-    R: Read,
-{
-    fn new(reader: &'a mut R) -> Self {
+    /// Create a decoder.
+    pub fn new(reader: R) -> Self {
         Self {
             reader,
             is_error: false,
@@ -79,19 +60,21 @@ where
     }
 }
 
-impl<'a, R> Iterator for CpioEntryIter<'a, R>
+#[gat]
+impl<R> LendingIterator for CpioDecoder<R>
 where
     R: Read,
 {
-    type Item = Result<CpioEntry>;
+    type Item<'a> = Result<CpioEntry<'a, R>>;
 
-    fn next(&mut self) -> Option<Result<CpioEntry>> {
+    /// Stops if reaches to the trailer entry or encounters an error.
+    fn next<'a>(self: &'a mut Self) -> Option<Self::Item<'a>> {
         // Stop to iterate entries if encounters an error.
         if self.is_error {
             return None;
         }
 
-        let entry_result = CpioEntry::new(self.reader);
+        let entry_result = CpioEntry::new(&mut self.reader);
         match &entry_result {
             Ok(entry) => {
                 // A correct CPIO buffer must end with a trailer.
@@ -109,25 +92,24 @@ where
 
 /// A file entry in the CPIO.
 #[derive(Debug)]
-pub struct CpioEntry {
+pub struct CpioEntry<'a, R> {
     metadata: FileMetadata,
     name: String,
-    data: Vec<u8>,
+    reader: &'a mut R,
+    data_padding_len: usize,
 }
 
-impl CpioEntry {
-    fn new<R>(reader: &mut R) -> Result<Self>
-    where
-        R: Read,
-    {
-        let (metadata, name, data) = {
+impl<'a, R> CpioEntry<'a, R>
+where
+    R: Read,
+{
+    fn new(reader: &'a mut R) -> Result<Self> {
+        let (metadata, name, data_padding_len) = {
             let header = Header::new(reader)?;
             let name = {
                 let name_size = read_hex_bytes_to_u32(&header.name_size)? as usize;
                 let mut name_bytes = vec![0u8; name_size];
-                reader
-                    .read_exact(&mut name_bytes)
-                    .map_err(|_| Error::BufferShortError)?;
+                reader.read_exact(&mut name_bytes)?;
                 let name = core::ffi::CStr::from_bytes_with_nul(&name_bytes)
                     .map_err(|_| Error::FileNameError)?;
                 name.to_str().map_err(|_| Error::Utf8Error)?.to_string()
@@ -137,38 +119,22 @@ impl CpioEntry {
             } else {
                 FileMetadata::new(&header)?
             };
-            let data = {
-                let pad_header_len = align_up_pad(header.len() + name.len() + 1, 4);
-                if pad_header_len > 0 {
-                    let mut pad_buf = vec![0u8; pad_header_len];
-                    reader
-                        .read_exact(&mut pad_buf)
-                        .map_err(|_| Error::BufferShortError)?;
+            let data_padding_len = {
+                let header_padding_len = align_up_pad(header.len() + name.len() + 1, 4);
+                if header_padding_len > 0 {
+                    let mut pad_buf = vec![0u8; header_padding_len];
+                    reader.read_exact(&mut pad_buf)?;
                 }
-                let mut data: Vec<u8> = Vec::new();
-                let data_size = metadata.size as usize;
-                if data_size > 0 {
-                    data.resize_with(data_size, Default::default);
-                    reader
-                        .read_exact(&mut data)
-                        .map_err(|_| Error::BufferShortError)?;
-                }
-                data
+                align_up_pad(metadata.size() as usize, 4)
             };
-            let pad_data_len = align_up_pad(data.len(), 4);
-            if pad_data_len > 0 {
-                let mut pad_buf = vec![0u8; pad_data_len];
-                reader
-                    .read_exact(&mut pad_buf)
-                    .map_err(|_| Error::BufferShortError)?;
-            }
 
-            (metadata, name, data)
+            (metadata, name, data_padding_len)
         };
         Ok(Self {
             metadata,
             name,
-            data,
+            reader,
+            data_padding_len,
         })
     }
 
@@ -182,12 +148,28 @@ impl CpioEntry {
         &self.name
     }
 
-    /// The data of the file.
-    pub fn data(&self) -> &[u8] {
-        &self.data
+    /// Read all data to the writer.
+    pub fn read_all<W>(&mut self, mut writer: W) -> Result<()>
+    where
+        W: Write,
+    {
+        let data_len = self.metadata().size() as usize;
+        let mut send_len = 0;
+        let mut buffer = vec![0u8; 0x1000];
+        while send_len < data_len {
+            let len = min(buffer.len(), data_len - send_len);
+            self.reader.read_exact(&mut buffer[..len])?;
+            writer.write_all(&mut buffer[..len])?;
+            send_len += len;
+        }
+        if self.data_padding_len > 0 {
+            self.reader
+                .read_exact(&mut buffer[..self.data_padding_len])?;
+        }
+        Ok(())
     }
 
-    fn is_trailer(&self) -> bool {
+    pub fn is_trailer(&self) -> bool {
         &self.name == TRAILER_NAME
     }
 }
@@ -344,9 +326,7 @@ impl Header {
         R: Read,
     {
         let mut buf = vec![0u8; core::mem::size_of::<Self>()];
-        reader
-            .read_exact(&mut buf)
-            .map_err(|_| Error::BufferShortError)?;
+        reader.read_exact(&mut buf)?;
 
         let header = Self {
             magic: <[u8; 6]>::try_from(&buf[0..6]).unwrap(),

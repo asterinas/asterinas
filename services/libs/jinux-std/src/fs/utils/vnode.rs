@@ -8,6 +8,7 @@ use crate::vm::vmo::Vmo;
 
 use alloc::string::String;
 use core::time::Duration;
+use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use jinux_frame::vm::VmIo;
 use jinux_rights::Full;
 
@@ -244,5 +245,34 @@ impl Vnode {
 
     pub fn is_dentry_cacheable(&self) -> bool {
         self.inner.read().inode.is_dentry_cacheable()
+    }
+
+    pub fn writer(&self, from_offset: usize) -> VnodeWriter {
+        VnodeWriter {
+            inner: &self,
+            offset: from_offset,
+        }
+    }
+}
+
+pub struct VnodeWriter<'a> {
+    inner: &'a Vnode,
+    offset: usize,
+}
+
+impl<'a> Write for VnodeWriter<'a> {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        let write_len = self
+            .inner
+            .write_at(self.offset, buf)
+            .map_err(|_| IoError::new(IoErrorKind::WriteZero, "failed to write buffer"))?;
+        self.offset += write_len;
+        Ok(write_len)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
     }
 }
