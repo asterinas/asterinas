@@ -4,6 +4,11 @@ set -eux
 # Cargo passes the path to the built executable as the first argument.
 KERNEL=$1
 
+# Clean up the image directory
+if [ -f target/iso_root ]; then
+    rm -rf target/iso_root
+fi
+
 # Copy the needed files into an ISO image.
 mkdir -p target/iso_root/boot
 cp $KERNEL target/iso_root/boot/jinux
