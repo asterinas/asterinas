@@ -80,7 +80,7 @@ impl MemoryRegion {
 
     /// Remove range t from self, resulting in 0, 1 or 2 truncated ranges.
     /// We need to have this method since memory regions can overlap.
-    pub fn truncate(&self, t: MemoryRegion) -> Vec<MemoryRegion> {
+    pub fn truncate(&self, t: &MemoryRegion) -> Vec<MemoryRegion> {
         if self.base < t.base {
             if self.base + self.len > t.base {
                 if self.base + self.len > t.base + t.len {
