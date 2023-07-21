@@ -266,5 +266,6 @@ pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
     };
     let page_directory_base = page_directory_base.start_address().as_u64() as usize;
     let last_entry = page_table.page_walk(vaddr, false)?;
-    Some(last_entry.paddr())
+    // FIXME: Support huge page
+    Some(last_entry.paddr() + (vaddr & (PAGE_SIZE - 1)))
 }
