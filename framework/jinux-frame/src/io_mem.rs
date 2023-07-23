@@ -22,12 +22,12 @@ pub(crate) fn init() {
 }
 
 #[derive(Debug, Clone)]
-pub struct Mmio {
+pub struct IoMem {
     virtual_address: Vaddr,
     limit: usize,
 }
 
-impl VmIo for Mmio {
+impl VmIo for IoMem {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> crate::Result<()> {
         self.check_range(offset, buf.len())?;
         unsafe {
@@ -60,10 +60,10 @@ impl VmIo for Mmio {
     }
 }
 
-impl Mmio {
-    pub fn new(range: Range<Paddr>) -> Option<Mmio> {
+impl IoMem {
+    pub fn new(range: Range<Paddr>) -> Option<IoMem> {
         if CHECKER.get().unwrap().check(&range) {
-            Some(Mmio {
+            Some(IoMem {
                 virtual_address: crate::vm::paddr_to_vaddr(range.start),
                 limit: range.len(),
             })

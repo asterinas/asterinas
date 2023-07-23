@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 
 use alloc::sync::Arc;
 use jinux_frame::{
-    mmio::Mmio,
+    io_mem::IoMem,
     vm::{Paddr, VmFrame, VmIo},
     Result,
 };
@@ -13,14 +13,14 @@ use pod::Pod;
 
 #[derive(Debug, Clone)]
 enum InFramePtrAccessMethod {
-    Mmio(Mmio),
+    IoMem(IoMem),
     VmFrame(Arc<VmFrame>),
 }
 
 impl InFramePtrAccessMethod {
     fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
         match self {
-            InFramePtrAccessMethod::Mmio(mmio) => mmio.read_val(offset),
+            InFramePtrAccessMethod::IoMem(mmio) => mmio.read_val(offset),
             InFramePtrAccessMethod::VmFrame(frame) => frame.read_val(offset),
         }
     }
@@ -48,8 +48,8 @@ impl<T: Pod> InFramePtr<T> {
     pub fn new(paddr: Paddr) -> Result<Self> {
         let limit = core::mem::size_of::<T>();
         Ok(Self {
-            access_method: InFramePtrAccessMethod::Mmio(
-                jinux_frame::mmio::Mmio::new(paddr..paddr + limit).unwrap(),
+            access_method: InFramePtrAccessMethod::IoMem(
+                jinux_frame::io_mem::IoMem::new(paddr..paddr + limit).unwrap(),
             ),
             offset: 0,
             marker: PhantomData,
@@ -73,7 +73,7 @@ impl<T: Pod> InFramePtr<T> {
 
     pub fn read_at<F: Pod>(&self, offset: *const F) -> F {
         match &self.access_method {
-            InFramePtrAccessMethod::Mmio(mmio) => mmio
+            InFramePtrAccessMethod::IoMem(mmio) => mmio
                 .read_val::<F>(self.offset + offset as usize)
                 .expect("write data from frame failed"),
             InFramePtrAccessMethod::VmFrame(vm_frame) => vm_frame
@@ -84,7 +84,7 @@ impl<T: Pod> InFramePtr<T> {
 
     pub fn write_at<F: Pod>(&self, offset: *const F, new_val: F) {
         match &self.access_method {
-            InFramePtrAccessMethod::Mmio(mmio) => mmio
+            InFramePtrAccessMethod::IoMem(mmio) => mmio
                 .write_val::<F>(self.offset + offset as usize, &new_val)
                 .expect("write data from frame failed"),
             InFramePtrAccessMethod::VmFrame(vm_frame) => vm_frame
@@ -99,7 +99,7 @@ impl<T: Pod> InFramePtr<T> {
 
     pub fn paddr(&self) -> usize {
         match &self.access_method {
-            InFramePtrAccessMethod::Mmio(mmio) => self.offset + mmio.paddr(),
+            InFramePtrAccessMethod::IoMem(mmio) => self.offset + mmio.paddr(),
             InFramePtrAccessMethod::VmFrame(vm_frame) => self.offset + vm_frame.start_paddr(),
         }
     }
@@ -129,8 +129,8 @@ impl<T: Pod> InFramePtr<T> {
     pub fn add(&self, count: usize) -> Self {
         let mut next: InFramePtr<T> = self.clone();
         next.access_method = match next.access_method {
-            InFramePtrAccessMethod::Mmio(mmio) => InFramePtrAccessMethod::Mmio(
-                jinux_frame::mmio::Mmio::new(
+            InFramePtrAccessMethod::IoMem(mmio) => InFramePtrAccessMethod::IoMem(
+                jinux_frame::io_mem::IoMem::new(
                     mmio.paddr() + count * core::mem::size_of::<T>()
                         ..mmio.paddr() + (count + 1) * core::mem::size_of::<T>(),
                 )
