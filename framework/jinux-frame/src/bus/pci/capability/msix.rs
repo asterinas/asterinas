@@ -69,15 +69,15 @@ impl CapabilityMsixData {
         for i in 0..table_size {
             // Set message address and disable this msix entry
             table_bar
-                .mmio()
+                .io_mem()
                 .write_val((16 * i) as usize, &message_address)
                 .unwrap();
             table_bar
-                .mmio()
+                .io_mem()
                 .write_val((16 * i + 4) as usize, &message_upper_address)
                 .unwrap();
             table_bar
-                .mmio()
+                .io_mem()
                 .write_val((16 * i + 12) as usize, &(1 as u32))
                 .unwrap();
         }
@@ -130,7 +130,7 @@ impl CapabilityMsixData {
             core::mem::replace(&mut self.irq_allocate_handles[index as usize], Some(vector));
         // Enable this msix vector
         self.table_bar
-            .mmio()
+            .io_mem()
             .write_val((16 * index + 12) as usize, &(0 as u32))
             .unwrap();
     }

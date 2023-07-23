@@ -1,7 +1,7 @@
 use alloc::sync::Arc;
 use bitflags::bitflags;
 
-use crate::{mmio::Mmio, Error, Result};
+use crate::{io_mem::IoMem, Error, Result};
 
 use super::PciDeviceLocation;
 
@@ -104,7 +104,7 @@ pub struct MemoryBar {
     /// in advance.
     prefetchable: bool,
     address_length: AddrLen,
-    mmio: Mmio,
+    io_memory: IoMem,
 }
 
 impl MemoryBar {
@@ -125,8 +125,8 @@ impl MemoryBar {
         self.size
     }
 
-    pub fn mmio(&self) -> &Mmio {
-        &self.mmio
+    pub fn io_mem(&self) -> &IoMem {
+        &self.io_memory
     }
 
     /// Create a memory BAR structure.
@@ -159,7 +159,7 @@ impl MemoryBar {
             size,
             prefetchable,
             address_length,
-            mmio: Mmio::new((base as usize)..((base + size as u64) as usize)).unwrap(),
+            io_memory: IoMem::new((base as usize)..((base + size as u64) as usize)).unwrap(),
         })
     }
 }

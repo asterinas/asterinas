@@ -13,7 +13,7 @@ use core::{
 };
 use font8x8::UnicodeFonts;
 use jinux_frame::{
-    config::PAGE_SIZE, mmio::Mmio, sync::SpinLock, vm::VmIo, LimineFramebufferRequest,
+    config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo, LimineFramebufferRequest,
 };
 use spin::Once;
 
@@ -42,8 +42,8 @@ pub(crate) fn init() {
             let page_size = size / PAGE_SIZE;
 
             let start_paddr = i.address.as_ptr().unwrap().addr();
-            let mmio =
-                Mmio::new(start_paddr..(start_paddr + jinux_frame::config::PAGE_SIZE * page_size))
+            let io_mem =
+                IoMem::new(start_paddr..(start_paddr + jinux_frame::config::PAGE_SIZE * page_size))
                     .unwrap();
 
             let mut buffer: Vec<u8> = Vec::with_capacity(size);
@@ -53,7 +53,7 @@ pub(crate) fn init() {
             log::debug!("Found framebuffer:{:?}", *i);
 
             writer = Some(Writer {
-                mmio,
+                io_mem,
                 x_pos: 0,
                 y_pos: 0,
                 bytes_per_pixel: (i.bpp / 8) as usize,
@@ -70,7 +70,7 @@ pub(crate) fn init() {
 }
 
 pub(crate) struct Writer {
-    mmio: Mmio,
+    io_mem: IoMem,
     /// FIXME: remove buffer. The meaning of buffer is to facilitate the various operations of framebuffer
     buffer: &'static mut [u8],
 
@@ -97,14 +97,14 @@ impl Writer {
         self.x_pos = 0;
         self.y_pos = 0;
         self.buffer.fill(0);
-        self.mmio.write_bytes(0, self.buffer).unwrap();
+        self.io_mem.write_bytes(0, self.buffer).unwrap();
     }
 
     /// Everything moves up one letter in size
     fn shift_lines_up(&mut self) {
         let offset = self.bytes_per_pixel * 8;
         self.buffer.copy_within(offset.., 0);
-        self.mmio.write_bytes(0, self.buffer).unwrap();
+        self.io_mem.write_bytes(0, self.buffer).unwrap();
         self.y_pos -= 8;
     }
 
@@ -157,7 +157,7 @@ impl Writer {
         self.buffer
             .index_mut(byte_offset..(byte_offset + bytes_per_pixel))
             .copy_from_slice(&color[..bytes_per_pixel]);
-        self.mmio
+        self.io_mem
             .write_bytes(
                 byte_offset,
                 self.buffer
