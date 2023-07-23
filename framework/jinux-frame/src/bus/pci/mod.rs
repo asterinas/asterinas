@@ -1,46 +1,72 @@
-use core::iter;
+//! PCI bus
+//!
+//! Users can implement the bus under the `PciDriver` to the PCI bus to register devices,
+//! when the physical device and the driver match successfully, it will be provided through the driver `construct` function
+//! to construct a structure that implements the `PciDevice` trait. And in the end,
+//! PCI bus will store a reference to the structure and finally call the driver's probe function to remind the driver of a new device access.
+//!
+//! Use case:
+//!
+//! ```rust norun
+//! #[derive(Debug)]
+//! pub struct PciDeviceA {
+//!     common_device: PciCommonDevice,
+//! }
+//!
+//! impl PciDevice for PciDeviceA {
+//!     fn device_id(&self) -> PciDeviceId {
+//!         self.common_device.device_id().clone()
+//!     }
+//! }
+//!
+//! #[derive(Debug)]
+//! pub struct PciDriverA {
+//!     devices: Mutex<Vec<Arc<PciDeviceA>>>,
+//! }
+//!
+//! impl PciDriver for PciDriverA {
+//!     fn probe(
+//!         &self,
+//!         device: PciCommonDevice,
+//!     ) -> Result<Arc<dyn PciDevice>, (PciDriverProbeError, PciCommonDevice)> {
+//!         if device.device_id().vendor_id != 0x1234 {
+//!             return Err((PciDriverProbeError::DeviceNotMatch, device));
+//!         }
+//!         let device = Arc::new(PciDeviceA {
+//!             common_device: device,
+//!         });
+//!         self.devices.lock().push(device.clone());
+//!         Ok(device)
+//!     }
+//! }
+//!
+//! pub fn driver_a_init() {
+//!     let driver_a = Arc::new(PciDriverA {
+//!         devices: Mutex::new(Vec::new()),
+//!     });
+//!     PCI_BUS.lock().register_driver(driver_a);
+//! }
+//! ```
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PciDeviceLocation {
-    pub bus: u8,
-    /// Max 31
-    pub device: u8,
-    /// Max 7
-    pub function: u8,
-}
+pub mod bus;
+mod capability;
+mod cfg_space;
+mod common_device;
+mod device_info;
 
-impl PciDeviceLocation {
-    pub const MIN_BUS: u8 = 0;
-    pub const MAX_BUS: u8 = 255;
-    pub const MIN_DEVICE: u8 = 0;
-    pub const MAX_DEVICE: u8 = 31;
-    pub const MIN_FUNCTION: u8 = 0;
-    pub const MAX_FUNCTION: u8 = 7;
-    /// By encoding bus, device, and function into u32, user can access a PCI device in x86 by passing in this value.
-    #[inline(always)]
-    pub fn encode_as_x86_address_value(self) -> u32 {
-        // 1 << 31: Configuration enable
-        (1 << 31)
-            | ((self.bus as u32) << 16)
-            | (((self.device as u32) & 0b11111) << 11)
-            | (((self.function as u32) & 0b111) << 8)
-    }
+pub use device_info::{PciDeviceId, PciDeviceLocation};
+use spin::Mutex;
 
-    /// Returns an iterator that enumerates all possible PCI device locations.
-    pub fn all() -> impl Iterator<Item = PciDeviceLocation> {
-        iter::from_generator(|| {
-            for bus in Self::MIN_BUS..=Self::MAX_BUS {
-                for device in Self::MIN_DEVICE..=Self::MAX_DEVICE {
-                    for function in Self::MIN_FUNCTION..=Self::MAX_FUNCTION {
-                        let loc = PciDeviceLocation {
-                            bus,
-                            device,
-                            function,
-                        };
-                        yield loc;
-                    }
-                }
-            }
-        })
+use self::{bus::PciBus, common_device::PciCommonDevice};
+
+pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
+
+pub(crate) fn init() {
+    let mut lock = PCI_BUS.lock();
+    for location in PciDeviceLocation::all() {
+        let Some(device) = PciCommonDevice::new(location)else{
+            continue;
+        };
+        lock.register_common_device(device);
     }
 }
