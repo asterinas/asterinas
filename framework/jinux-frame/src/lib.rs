@@ -53,6 +53,7 @@ pub fn init() {
     trap::init();
     arch::after_all_init();
     mmio::init();
+    bus::init();
     register_irq_common_callback();
     invoke_c_init_funcs();
 }
