@@ -29,7 +29,7 @@ pub use self::{
 use alloc::vec::Vec;
 use spin::Once;
 
-use crate::arch::boot::{MemoryRegion, MemoryRegionType};
+use crate::arch::boot::memory_region::{MemoryRegion, MemoryRegionType};
 
 /// Convert physical address to virtual address using offset, only available inside jinux-frame
 pub(crate) fn paddr_to_vaddr(pa: usize) -> usize {

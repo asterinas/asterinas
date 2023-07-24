@@ -14,7 +14,7 @@ pub mod multiboot2;
 use self::multiboot2::*;
 
 pub mod memory_region;
-pub use memory_region::*;
+use self::memory_region::MemoryRegion;
 
 use alloc::{string::String, vec::Vec};
 use spin::Once;
