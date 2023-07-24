@@ -8,7 +8,7 @@ name = "jinux"
 path = "kernel/main.rs"
 
 [dependencies]
-jinux-frame = { path = "framework/jinux-frame", features = ["multiboot2"] }
+jinux-frame = { path = "framework/jinux-frame" }
 jinux-std = { path = "services/libs/jinux-std" }
 component = { path = "services/libs/comp-sys/component" }
 
