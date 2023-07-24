@@ -179,8 +179,11 @@ pub fn init_memory_regions() {
     }
 
     // Initialize with regions_unusable + regions_src
-    regions_unusable.append(regions_src);
-    MEMORY_REGIONS.call_once(|| regions_unusable);
+    MEMORY_REGIONS.call_once(move || {
+        let mut all_regions = regions_unusable;
+        all_regions.append(regions_src);
+        all_regions
+    });
 }
 
 // The entry point of kernel code, which should be defined by the package that

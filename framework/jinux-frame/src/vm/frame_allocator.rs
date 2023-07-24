@@ -1,3 +1,4 @@
+use align_ext::AlignExt;
 use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;
 use log::info;
@@ -60,8 +61,9 @@ pub(crate) fn init(regions: &Vec<MemoryRegion>) {
     let mut allocator = FrameAllocator::<32>::new();
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {
-            let start = region.base() / PAGE_SIZE;
-            let end = start + region.len() / PAGE_SIZE;
+            // Make the memory region page-aligned
+            let start = region.base().align_up(PAGE_SIZE) / PAGE_SIZE;
+            let end = (start + region.len()).align_down(PAGE_SIZE) / PAGE_SIZE;
             allocator.add_frame(start, end);
             info!(
                 "Found usable region, start:{:x}, end:{:x}",
