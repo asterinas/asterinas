@@ -17,7 +17,7 @@ const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
 
 static MB2_INFO: Once<BootInformation> = Once::new();
 
-pub fn init_bootloader_name() {
+fn init_bootloader_name() {
     BOOTLOADER_NAME.call_once(|| {
         MB2_INFO
             .get()
@@ -30,7 +30,7 @@ pub fn init_bootloader_name() {
     });
 }
 
-pub fn init_kernel_commandline() {
+fn init_kernel_commandline() {
     KERNEL_COMMANDLINE.call_once(|| {
         MB2_INFO
             .get()
@@ -43,7 +43,7 @@ pub fn init_kernel_commandline() {
     });
 }
 
-pub fn init_initramfs() {
+fn init_initramfs() {
     let mb2_module_tag = MB2_INFO
         .get()
         .unwrap()
@@ -61,7 +61,7 @@ pub fn init_initramfs() {
     INITRAMFS.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
 }
 
-pub fn init_acpi_rsdp() {
+fn init_acpi_rsdp() {
     ACPI_RSDP.call_once(|| {
         if let Some(v2_tag) = MB2_INFO.get().unwrap().rsdp_v2_tag() {
             // check for rsdp v2
@@ -75,7 +75,7 @@ pub fn init_acpi_rsdp() {
     });
 }
 
-pub fn init_framebuffer_info() {
+fn init_framebuffer_info() {
     let fb_tag = MB2_INFO.get().unwrap().framebuffer_tag().unwrap().unwrap();
     FRAMEBUFFER_INFO.call_once(|| BootloaderFramebufferArg {
         address: fb_tag.address() as usize,
@@ -97,7 +97,7 @@ impl From<MemoryAreaType> for MemoryRegionType {
     }
 }
 
-pub fn init_memory_regions() {
+fn init_memory_regions() {
     // We should later use regions in `regions_unusable` to truncate all
     // regions in `regions_usable`.
     // The difference is that regions in `regions_usable` could be used by
@@ -184,6 +184,17 @@ pub fn init_memory_regions() {
         all_regions.append(regions_src);
         all_regions
     });
+}
+
+/// Initialize the global boot static varaiables in the boot module to allow
+/// other modules to get the boot information.
+pub fn init_global_boot_statics() {
+    init_bootloader_name();
+    init_kernel_commandline();
+    init_initramfs();
+    init_acpi_rsdp();
+    init_framebuffer_info();
+    init_memory_regions();
 }
 
 // The entry point of kernel code, which should be defined by the package that

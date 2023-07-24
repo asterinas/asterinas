@@ -8,10 +8,8 @@
 //! than logging since the logger is not initialized here.
 //!
 
-#[cfg(feature = "multiboot2")]
 pub mod multiboot2;
-#[cfg(feature = "multiboot2")]
-use self::multiboot2::*;
+use self::multiboot2::init_global_boot_statics;
 
 pub mod memory_region;
 use self::memory_region::MemoryRegion;
@@ -46,12 +44,7 @@ pub struct BootloaderFramebufferArg {
 /// The initialization must be done after the heap is set and before physical
 /// mappings are cancelled.
 pub fn init() {
-    init_bootloader_name();
-    init_kernel_commandline();
-    init_initramfs();
-    init_acpi_rsdp();
-    init_framebuffer_info();
-    init_memory_regions();
+    init_global_boot_statics();
 }
 
 // The public get_* APIs.
