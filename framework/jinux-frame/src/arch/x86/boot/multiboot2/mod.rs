@@ -2,8 +2,9 @@ use alloc::{string::ToString, vec::Vec};
 use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
 
 use super::{
-    BootloaderAcpiArg, BootloaderFramebufferArg, MemoryRegion, MemoryRegionType, ACPI_RSDP,
-    BOOTLOADER_NAME, FRAMEBUFFER_INFO, INITRAMFS, KERNEL_COMMANDLINE, MEMORY_REGIONS,
+    memory_region::{MemoryRegion, MemoryRegionType},
+    BootloaderAcpiArg, BootloaderFramebufferArg, ACPI_RSDP, BOOTLOADER_NAME, FRAMEBUFFER_INFO,
+    INITRAMFS, KERNEL_COMMANDLINE, MEMORY_REGIONS,
 };
 use core::{arch::global_asm, mem::swap};
 use spin::Once;
