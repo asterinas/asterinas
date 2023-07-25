@@ -1,6 +1,6 @@
 //! The architecture-independent boot module, which provides a universal interface
 //! from the bootloader to the rest of the framework.
-//! 
+//!
 
 use crate::arch::boot::init_boot_args;
 

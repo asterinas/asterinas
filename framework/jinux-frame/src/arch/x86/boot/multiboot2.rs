@@ -1,9 +1,13 @@
-use alloc::{string::{ToString, String}, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
 
 use crate::boot::{
+    kcmdline::KCmdlineArg,
     memory_region::{MemoryRegion, MemoryRegionType},
-    kcmdline::KCmdlineArg, BootloaderAcpiArg, BootloaderFramebufferArg,
+    BootloaderAcpiArg, BootloaderFramebufferArg,
 };
 use core::{arch::global_asm, mem::swap};
 use spin::Once;
@@ -35,9 +39,9 @@ fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
             .get()
             .unwrap()
             .command_line_tag()
-            .expect("Kernel commandline not found from the Multiboot2 header!")
+            .expect("Kernel command-line not found from the Multiboot2 header!")
             .cmdline()
-            .expect("UTF-8 error: failed to parse kernel commandline!")
+            .expect("UTF-8 error: failed to parse kernel command-line!")
             .into()
     });
 }
