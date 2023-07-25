@@ -9,11 +9,12 @@ use jinux_pci::{
 };
 use jinux_util::frame_ptr::InFramePtr;
 
-use self::{input::device::InputDevice, network::device::NetworkDevice};
+use self::{input::device::InputDevice, network::device::NetworkDevice, socket::device::SocketDevice};
 
 pub mod block;
 pub mod input;
 pub mod network;
+pub mod socket;
 
 pub(crate) const PCI_VIRTIO_CAP_COMMON_CFG: u8 = 1;
 pub(crate) const PCI_VIRTIO_CAP_NOTIFY_CFG: u8 = 2;
@@ -31,7 +32,7 @@ pub enum VirtioDevice {
     GPU,
     Input(InputDevice),
     Crypto,
-    Socket,
+    Socket(SocketDevice),
     Unknown,
 }
 
@@ -149,6 +150,14 @@ impl VirtioDevice {
                 virtio_info.notify_off_multiplier,
                 msix_vector_left,
             )?),
+            VirtioDeviceType::Socket => VirtioDevice::Socket(SocketDevice::new(
+                &virtio_info.device_cap_cfg,
+                bars,
+                &virtio_info.common_cfg_frame_ptr,
+                virtio_info.notify_base_address as usize,
+                virtio_info.notify_off_multiplier,
+                msix_vector_left, 
+            )?), 
             _ => {
                 panic!("initialize PCIDevice failed, unsupport Virtio Device Type")
             }
@@ -171,7 +180,7 @@ impl VirtioDevice {
             VirtioDeviceType::GPU => todo!(),
             VirtioDeviceType::Input => InputDevice::negotiate_features(device_specified_features),
             VirtioDeviceType::Crypto => todo!(),
-            VirtioDeviceType::Socket => todo!(),
+            VirtioDeviceType::Socket => SocketDevice::negotiate_features(device_specified_features),
             VirtioDeviceType::Unknown => todo!(),
         };
         let mut support_feature = Feature::from_bits_truncate(features);

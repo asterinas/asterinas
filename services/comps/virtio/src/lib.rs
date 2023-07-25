@@ -211,7 +211,7 @@ impl VirtioDeviceType {
             VirtioDevice::GPU => VirtioDeviceType::GPU,
             VirtioDevice::Input(_) => VirtioDeviceType::Input,
             VirtioDevice::Crypto => VirtioDeviceType::Crypto,
-            VirtioDevice::Socket => VirtioDeviceType::Socket,
+            VirtioDevice::Socket(_) => VirtioDeviceType::Socket,
             VirtioDevice::Unknown => VirtioDeviceType::Unknown,
         }
     }
@@ -228,6 +228,8 @@ impl PCIVirtioDevice {
     /// create a new PCI Virtio Device, note that this function will stop with device status features ok
     pub fn new(dev: Arc<PciDevice>) -> Self {
         assert_eq!(dev.id.vendor_id, 0x1af4);
+        // Devices MUST either have the PCI Device ID or Transitional PCI Device ID
+        // device_id: PCI Device ID
         let device_type = match dev.id.device_id {
             0x1000 | 0x1041 => VirtioDeviceType::Network,
             0x1001 | 0x1042 => VirtioDeviceType::Block,
@@ -237,6 +239,7 @@ impl PCIVirtioDevice {
             0x1005 | 0x1046 => VirtioDeviceType::Entropy,
             // 0x1009 | 0x104a => VirtioDeviceType::,
             0x1011 | 0x1052 => VirtioDeviceType::Input,
+            0x1012 | 0x1053 => VirtioDeviceType::Socket,
             _ => {
                 panic!("initialize PCIDevice failed, unrecognized Virtio Device Type")
             }

@@ -57,8 +57,10 @@ const DEVICE_ARGS: &[&str] = &[
     virtio_device_args!("virtio-keyboard-pci,"),
     "-device",
     virtio_device_args!("virtio-net-pci,netdev=net01,"),
+    "-device",
+    virtio_device_args!("vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,"),
     "-netdev",
-    "user,id=net01,hostfwd=tcp::30022-:22,hostfwd=tcp::30080-:8080",
+    "user,id=net01,hostfwd=tcp::30023-:22,hostfwd=tcp::30081-:8080",
     "-object",
     "filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
 ];
@@ -91,7 +93,8 @@ fn main() -> anyhow::Result<()> {
         a.join(str.add(".iso"))
     };
 
-    let mut qemu_cmd = Command::new("qemu-system-x86_64");
+    let mut qemu_cmd = Command::new("sudo");  // for having permissions to open /dev/vhost-vsock
+    qemu_cmd.arg("qemu-system-x86_64");
 
     let binary_kind = runner_utils::binary_kind(&kernel_binary_path);
     let mut qemu_args = COMMON_ARGS.clone().to_vec();

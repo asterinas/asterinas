@@ -26,6 +26,9 @@ ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 intrusive-collections = "0.9.5"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
 smoltcp = { version = "0.9.1", default-features = false, features = ["alloc", "log", "medium-ethernet", "medium-ip", "proto-dhcpv4", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw", "socket-dhcpv4"] }
+# used for test in mod driver
+jinux-virtio={path="../../comps/virtio"}
+component = {path="../../libs/comp-sys/component"}
 
 # parse elf file
 xmas-elf = "0.8.0"
