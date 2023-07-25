@@ -12,9 +12,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 use font8x8::UnicodeFonts;
-use jinux_frame::{
-    config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo, arch::boot,
-};
+use jinux_frame::{arch::boot, config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo};
 use spin::Once;
 
 #[init_component]
@@ -55,7 +53,7 @@ pub(crate) fn init() {
             width: framebuffer.width as usize,
             height: framebuffer.height as usize,
             buffer: buffer.leak(),
-        })
+        });
 
         writer.unwrap()
     };

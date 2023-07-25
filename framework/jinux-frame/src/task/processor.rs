@@ -1,3 +1,10 @@
+use core::sync::atomic::AtomicUsize;
+
+use crate::cpu::CpuLocal;
+use crate::cpu_local;
+
+use core::sync::atomic::Ordering::Relaxed;
+
 use super::{
     scheduler::{fetch_task, GLOBAL_SCHEDULER},
     task::{context_switch, TaskContext},
@@ -5,6 +12,7 @@ use super::{
 };
 use alloc::sync::Arc;
 use lazy_static::lazy_static;
+use log::warn;
 use spin::Mutex;
 
 pub struct Processor {
@@ -64,6 +72,14 @@ pub fn schedule() {
 ///
 /// before context switch, current task will switch to the next task
 pub fn switch_to_task(next_task: Arc<Task>) {
+    if !PREEMPT_COUNT.is_preemptive() {
+        panic!(
+            "Calling schedule() while holding {} locks",
+            PREEMPT_COUNT.num_locks()
+        );
+        //GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(next_task);
+        //return;
+    }
     let current_task_option = current_task();
     let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
     let current_task: Arc<Task>;
@@ -84,4 +100,71 @@ pub fn switch_to_task(next_task: Arc<Task>) {
     unsafe {
         context_switch(current_task_cx_ptr, next_task_cx_ptr);
     }
+}
+
+cpu_local! {
+    static PREEMPT_COUNT: PreemptInfo = PreemptInfo::new();
+}
+
+/// Currently, ``PreemptInfo`` only holds the number of spin
+/// locks held by the current CPU. When it has a non-zero value,
+/// the CPU cannot call ``schedule()``.
+struct PreemptInfo {
+    num_locks: AtomicUsize,
+}
+
+impl PreemptInfo {
+    const fn new() -> Self {
+        Self {
+            num_locks: AtomicUsize::new(0),
+        }
+    }
+
+    fn incease_num_locks(&self) {
+        self.num_locks.fetch_add(1, Relaxed);
+    }
+
+    fn decrease_num_locks(&self) {
+        self.num_locks.fetch_sub(1, Relaxed);
+    }
+
+    fn is_preemptive(&self) -> bool {
+        self.num_locks.load(Relaxed) == 0
+    }
+
+    fn num_locks(&self) -> usize {
+        self.num_locks.load(Relaxed)
+    }
+}
+
+/// a guard for disable preempt.
+pub struct DisablePreemptGuard {
+    // This private field prevents user from constructing values of this type directly.
+    private: (),
+}
+
+impl !Send for DisablePreemptGuard {}
+
+impl DisablePreemptGuard {
+    fn new() -> Self {
+        PREEMPT_COUNT.incease_num_locks();
+        Self { private: () }
+    }
+
+    /// Transfer this guard to a new guard.
+    /// This guard must be dropped after this function.
+    pub fn transfer_to(&self) -> Self {
+        disable_preempt()
+    }
+}
+
+impl Drop for DisablePreemptGuard {
+    fn drop(&mut self) {
+        PREEMPT_COUNT.decrease_num_locks();
+    }
+}
+
+#[must_use]
+pub fn disable_preempt() -> DisablePreemptGuard {
+    DisablePreemptGuard::new()
 }

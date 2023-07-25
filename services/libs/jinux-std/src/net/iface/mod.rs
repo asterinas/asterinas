@@ -65,11 +65,11 @@ mod internal {
     pub trait IfaceInternal {
         fn common(&self) -> &IfaceCommon;
         /// The inner socket set
-        fn sockets(&self) -> SpinLockIrqDisabledGuard<SocketSet<'static>> {
+        fn sockets(&self) -> SpinLockGuard<SocketSet<'static>> {
             self.common().sockets()
         }
         /// The inner iface.
-        fn iface_inner(&self) -> SpinLockIrqDisabledGuard<smoltcp::iface::Interface> {
+        fn iface_inner(&self) -> SpinLockGuard<smoltcp::iface::Interface> {
             self.common().interface()
         }
         /// The time we should do another poll.

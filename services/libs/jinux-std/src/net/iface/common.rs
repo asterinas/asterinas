@@ -38,11 +38,11 @@ impl IfaceCommon {
         }
     }
 
-    pub(super) fn interface(&self) -> SpinLockIrqDisabledGuard<smoltcp::iface::Interface> {
+    pub(super) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface> {
         self.interface.lock_irq_disabled()
     }
 
-    pub(super) fn sockets(&self) -> SpinLockIrqDisabledGuard<smoltcp::iface::SocketSet<'static>> {
+    pub(super) fn sockets(&self) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>> {
         self.sockets.lock_irq_disabled()
     }
 
