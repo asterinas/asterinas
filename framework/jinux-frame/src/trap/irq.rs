@@ -1,12 +1,10 @@
 use crate::arch::irq;
 use crate::arch::irq::{IRQ_LIST, NOT_USING_IRQ};
-use crate::cpu::CpuLocal;
-use crate::cpu_local;
+use crate::task::{disable_preempt, DisablePreemptGuard};
 use crate::util::recycle_allocator::RecycleAllocator;
 use crate::{prelude::*, Error};
 
 use core::fmt::Debug;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use spin::{Mutex, MutexGuard};
 use trapframe::TrapFrame;
 
@@ -198,6 +196,7 @@ pub fn disable_local() -> DisabledLocalIrqGuard {
 /// A guard for disabled local IRQs.
 pub struct DisabledLocalIrqGuard {
     was_enabled: bool,
+    preempt_guard: DisablePreemptGuard,
 }
 
 impl !Send for DisabledLocalIrqGuard {}
@@ -208,7 +207,11 @@ impl DisabledLocalIrqGuard {
         if was_enabled {
             irq::disable_local();
         }
-        Self { was_enabled }
+        let preempt_guard = disable_preempt();
+        Self {
+            was_enabled,
+            preempt_guard,
+        }
     }
 
     /// Transfer the saved IRQ status of this guard to a new guard.
@@ -216,7 +219,10 @@ impl DisabledLocalIrqGuard {
     pub fn transfer_to(&mut self) -> Self {
         let was_enabled = self.was_enabled;
         self.was_enabled = false;
-        Self { was_enabled }
+        Self {
+            was_enabled,
+            preempt_guard: disable_preempt(),
+        }
     }
 }
 

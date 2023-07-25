@@ -3,6 +3,7 @@ use core::fmt;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::task::{disable_preempt, DisablePreemptGuard};
 use crate::trap::disable_local;
 use crate::trap::DisabledLocalIrqGuard;
 
@@ -26,24 +27,22 @@ impl<T> SpinLock<T> {
     ///
     /// This method runs in a busy loop until the lock can be acquired.
     /// After acquiring the spin lock, all interrupts are disabled.
-    pub fn lock_irq_disabled(&self) -> SpinLockIrqDisabledGuard<T> {
-        // FIXME: add disable_preemption
+    pub fn lock_irq_disabled(&self) -> SpinLockGuard<T> {
         let guard = disable_local();
         self.acquire_lock();
-        SpinLockIrqDisabledGuard {
+        SpinLockGuard {
             lock: &self,
-            irq_guard: guard,
+            inner_guard: InnerGuard::IrqGuard(guard),
         }
     }
 
     /// Try acquiring the spin lock immedidately with disabling the local IRQs.
-    pub fn try_lock_irq_disabled(&self) -> Option<SpinLockIrqDisabledGuard<T>> {
-        // FIXME: add disable_preemption
+    pub fn try_lock_irq_disabled(&self) -> Option<SpinLockGuard<T>> {
         let irq_guard = disable_local();
         if self.try_acquire_lock() {
-            let lock_guard = SpinLockIrqDisabledGuard {
+            let lock_guard = SpinLockGuard {
                 lock: &self,
-                irq_guard,
+                inner_guard: InnerGuard::IrqGuard(irq_guard),
             };
             return Some(lock_guard);
         }
@@ -59,16 +58,22 @@ impl<T> SpinLock<T> {
     /// in the interrupt context, then it is ok to use this method
     /// in the process context.
     pub fn lock(&self) -> SpinLockGuard<T> {
-        // FIXME: add disable_preemption
+        let guard = disable_preempt();
         self.acquire_lock();
-        SpinLockGuard { lock: &self }
+        SpinLockGuard {
+            lock: &self,
+            inner_guard: InnerGuard::PreemptGuard(guard),
+        }
     }
 
     /// Try acquiring the spin lock immedidately without disabling the local IRQs.
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
-        // FIXME: add disable_preemption
+        let guard = disable_preempt();
         if self.try_acquire_lock() {
-            let lock_guard = SpinLockGuard { lock: &self };
+            let lock_guard = SpinLockGuard {
+                lock: &self,
+                inner_guard: InnerGuard::PreemptGuard(guard),
+            };
             return Some(lock_guard);
         }
         return None;
@@ -102,46 +107,15 @@ impl<T: fmt::Debug> fmt::Debug for SpinLock<T> {
 unsafe impl<T: Send> Send for SpinLock<T> {}
 unsafe impl<T: Send> Sync for SpinLock<T> {}
 
+enum InnerGuard {
+    IrqGuard(DisabledLocalIrqGuard),
+    PreemptGuard(DisablePreemptGuard),
+}
+
 /// The guard of a spin lock that disables the local IRQs.
-pub struct SpinLockIrqDisabledGuard<'a, T> {
-    lock: &'a SpinLock<T>,
-    irq_guard: DisabledLocalIrqGuard,
-}
-
-impl<'a, T> Deref for SpinLockIrqDisabledGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe { &mut *self.lock.val.get() }
-    }
-}
-
-impl<'a, T> DerefMut for SpinLockIrqDisabledGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.lock.val.get() }
-    }
-}
-
-impl<'a, T> Drop for SpinLockIrqDisabledGuard<'a, T> {
-    fn drop(&mut self) {
-        self.lock.release_lock();
-    }
-}
-
-impl<'a, T: fmt::Debug> fmt::Debug for SpinLockIrqDisabledGuard<'a, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&**self, f)
-    }
-}
-
-impl<'a, T> !Send for SpinLockIrqDisabledGuard<'a, T> {}
-
-// Safety. `SpinLockIrqDisabledGuard` can be shared between tasks/threads in same CPU.
-// As `lock_irq_disabled()` disables interrupts to prevent race conditions caused by interrupts.
-unsafe impl<T: Sync> Sync for SpinLockIrqDisabledGuard<'_, T> {}
-
 pub struct SpinLockGuard<'a, T> {
     lock: &'a SpinLock<T>,
+    inner_guard: InnerGuard,
 }
 
 impl<'a, T> Deref for SpinLockGuard<'a, T> {

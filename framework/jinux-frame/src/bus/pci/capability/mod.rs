@@ -87,7 +87,8 @@ impl Capability {
         // read all cap_ptr so that it is easy for us to get the length.
         while cap_ptr > 0 {
             cap_ptr_vec.push(cap_ptr);
-            cap_ptr = dev.location().read8(cap_ptr + 1) as u16 & PciDeviceLocation::BIT32_ALIGN_MASK;
+            cap_ptr =
+                dev.location().read8(cap_ptr + 1) as u16 & PciDeviceLocation::BIT32_ALIGN_MASK;
         }
         cap_ptr_vec.sort();
         // Push here so that we can calculate the length of the last capability.

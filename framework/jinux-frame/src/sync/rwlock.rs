@@ -4,6 +4,7 @@ use core::ops::{Deref, DerefMut};
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
+use crate::task::{disable_preempt, DisablePreemptGuard};
 use crate::trap::disable_local;
 use crate::trap::DisabledLocalIrqGuard;
 
@@ -37,7 +38,7 @@ impl<T> RwLock<T> {
     /// This method runs in a busy loop until the lock can be acquired (when there are
     /// no writers).
     /// After acquiring the spin lock, all interrupts are disabled.
-    pub fn read_irq_disabled(&self) -> RwLockReadIrqDisabledGuard<T> {
+    pub fn read_irq_disabled(&self) -> RwLockReadGuard<T> {
         loop {
             if let Some(readguard) = self.try_read_irq_disabled() {
                 return readguard;
@@ -53,7 +54,7 @@ impl<T> RwLock<T> {
     /// This method runs in a busy loop until the lock can be acquired (when there are
     /// no writers and readers).
     /// After acquiring the spin lock, all interrupts are disabled.
-    pub fn write_irq_disabled(&self) -> RwLockWriteIrqDisabledGuard<T> {
+    pub fn write_irq_disabled(&self) -> RwLockWriteGuard<T> {
         loop {
             if let Some(writeguard) = self.try_write_irq_disabled() {
                 return writeguard;
@@ -64,14 +65,13 @@ impl<T> RwLock<T> {
     }
 
     /// Try acquire a read lock with disabling local IRQs.
-    pub fn try_read_irq_disabled(&self) -> Option<RwLockReadIrqDisabledGuard<T>> {
-        // FIXME: add disable_preemption
+    pub fn try_read_irq_disabled(&self) -> Option<RwLockReadGuard<T>> {
         let irq_guard = disable_local();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER) == 0 {
-            Some(RwLockReadIrqDisabledGuard {
+            Some(RwLockReadGuard {
                 inner: &self,
-                irq_guard,
+                inner_guard: InnerGuard::IrqGuard(irq_guard),
             })
         } else {
             self.lock.fetch_sub(READER, Release);
@@ -80,17 +80,16 @@ impl<T> RwLock<T> {
     }
 
     /// Try acquire a write lock with disabling local IRQs.
-    pub fn try_write_irq_disabled(&self) -> Option<RwLockWriteIrqDisabledGuard<T>> {
-        // FIXME: add disable_preemption
+    pub fn try_write_irq_disabled(&self) -> Option<RwLockWriteGuard<T>> {
         let irq_guard = disable_local();
         if self
             .lock
             .compare_exchange(0, WRITER, Acquire, Relaxed)
             .is_ok()
         {
-            Some(RwLockWriteIrqDisabledGuard {
+            Some(RwLockWriteGuard {
                 inner: &self,
-                irq_guard,
+                inner_guard: InnerGuard::IrqGuard(irq_guard),
             })
         } else {
             None
@@ -127,10 +126,13 @@ impl<T> RwLock<T> {
 
     /// Try acquire a read lock without disabling the local IRQs.
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
-        // FIXME: add disable_preemption
+        let guard = disable_preempt();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER) == 0 {
-            Some(RwLockReadGuard { inner: &self })
+            Some(RwLockReadGuard {
+                inner: &self,
+                inner_guard: InnerGuard::PreemptGuard(guard),
+            })
         } else {
             self.lock.fetch_sub(READER, Release);
             None
@@ -139,13 +141,16 @@ impl<T> RwLock<T> {
 
     /// Try acquire a write lock without disabling the local IRQs.
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
-        // FIXME: add disable_preemption
+        let guard = disable_preempt();
         if self
             .lock
             .compare_exchange(0, WRITER, Acquire, Relaxed)
             .is_ok()
         {
-            Some(RwLockWriteGuard { inner: &self })
+            Some(RwLockWriteGuard {
+                inner: &self,
+                inner_guard: InnerGuard::PreemptGuard(guard),
+            })
         } else {
             None
         }
@@ -163,103 +168,21 @@ impl<T: fmt::Debug> fmt::Debug for RwLock<T> {
 unsafe impl<T: Send> Send for RwLock<T> {}
 unsafe impl<T: Send + Sync> Sync for RwLock<T> {}
 
-impl<'a, T> !Send for RwLockWriteIrqDisabledGuard<'a, T> {}
-unsafe impl<T: Sync> Sync for RwLockWriteIrqDisabledGuard<'_, T> {}
-
-impl<'a, T> !Send for RwLockReadIrqDisabledGuard<'a, T> {}
-unsafe impl<T: Sync> Sync for RwLockReadIrqDisabledGuard<'_, T> {}
-
-/// The guard of a read lock that disables the local IRQs.
-pub struct RwLockReadIrqDisabledGuard<'a, T> {
-    inner: &'a RwLock<T>,
-    irq_guard: DisabledLocalIrqGuard,
-}
-
-/// Upgrade a read lock that disables the local IRQs to a write lock.
-///
-/// This method first release the old read lock and then aquire a new write lock.
-/// So it may not return the guard immidiately
-/// due to other readers or another writer.
-impl<'a, T> RwLockReadIrqDisabledGuard<'a, T> {
-    pub fn upgrade(mut self) -> RwLockWriteIrqDisabledGuard<'a, T> {
-        let inner = self.inner;
-        let irq_guard = self.irq_guard.transfer_to();
-        drop(self);
-        while inner
-            .lock
-            .compare_exchange(0, WRITER, Acquire, Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
-        RwLockWriteIrqDisabledGuard { inner, irq_guard }
-    }
-}
-
-impl<'a, T> Deref for RwLockReadIrqDisabledGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe { &*self.inner.val.get() }
-    }
-}
-
-impl<'a, T> Drop for RwLockReadIrqDisabledGuard<'a, T> {
-    fn drop(&mut self) {
-        self.inner.lock.fetch_sub(READER, Release);
-    }
-}
-
-/// The guard of a write lock that disables the local IRQs.
-pub struct RwLockWriteIrqDisabledGuard<'a, T> {
-    inner: &'a RwLock<T>,
-    irq_guard: DisabledLocalIrqGuard,
-}
-
-/// Downgrade a write lock that disables the local IRQs to a read lock.
-///
-/// This method can return the read guard immidiately
-/// due to there must be no other users.
-impl<'a, T> RwLockWriteIrqDisabledGuard<'a, T> {
-    pub fn downgrade(mut self) -> RwLockReadIrqDisabledGuard<'a, T> {
-        self.inner.lock.fetch_add(READER, Acquire);
-        let inner = self.inner;
-        let irq_guard = self.irq_guard.transfer_to();
-        drop(self);
-        let irq_guard = disable_local();
-        RwLockReadIrqDisabledGuard { inner, irq_guard }
-    }
-}
-
-impl<'a, T> Deref for RwLockWriteIrqDisabledGuard<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe { &*self.inner.val.get() }
-    }
-}
-
-impl<'a, T> DerefMut for RwLockWriteIrqDisabledGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.inner.val.get() }
-    }
-}
-
-impl<'a, T> Drop for RwLockWriteIrqDisabledGuard<'a, T> {
-    fn drop(&mut self) {
-        self.inner.lock.fetch_and(!(WRITER), Release);
-    }
-}
-
 impl<'a, T> !Send for RwLockWriteGuard<'a, T> {}
 unsafe impl<T: Sync> Sync for RwLockWriteGuard<'_, T> {}
 
 impl<'a, T> !Send for RwLockReadGuard<'a, T> {}
 unsafe impl<T: Sync> Sync for RwLockReadGuard<'_, T> {}
 
+enum InnerGuard {
+    IrqGuard(DisabledLocalIrqGuard),
+    PreemptGuard(DisablePreemptGuard),
+}
+
 /// The guard of the read lock.
 pub struct RwLockReadGuard<'a, T> {
     inner: &'a RwLock<T>,
+    inner_guard: InnerGuard,
 }
 
 /// Upgrade a read lock to a write lock.
@@ -268,8 +191,14 @@ pub struct RwLockReadGuard<'a, T> {
 /// So it may not return the write guard immidiately
 /// due to other readers or another writer.
 impl<'a, T> RwLockReadGuard<'a, T> {
-    pub fn upgrade(self) -> RwLockWriteGuard<'a, T> {
+    pub fn upgrade(mut self) -> RwLockWriteGuard<'a, T> {
         let inner = self.inner;
+        let inner_guard = match &mut self.inner_guard {
+            InnerGuard::IrqGuard(irq_guard) => InnerGuard::IrqGuard(irq_guard.transfer_to()),
+            InnerGuard::PreemptGuard(preempt_guard) => {
+                InnerGuard::PreemptGuard(preempt_guard.transfer_to())
+            }
+        };
         drop(self);
         while inner
             .lock
@@ -278,7 +207,7 @@ impl<'a, T> RwLockReadGuard<'a, T> {
         {
             core::hint::spin_loop();
         }
-        RwLockWriteGuard { inner }
+        RwLockWriteGuard { inner, inner_guard }
     }
 }
 
@@ -298,6 +227,7 @@ impl<'a, T> Drop for RwLockReadGuard<'a, T> {
 
 pub struct RwLockWriteGuard<'a, T> {
     inner: &'a RwLock<T>,
+    inner_guard: InnerGuard,
 }
 
 /// Downgrade a write lock to a read lock.
@@ -305,11 +235,15 @@ pub struct RwLockWriteGuard<'a, T> {
 /// This method can return the read guard immidiately
 /// due to there are no other users.
 impl<'a, T> RwLockWriteGuard<'a, T> {
-    pub fn downgrade(self) -> RwLockReadGuard<'a, T> {
+    pub fn downgrade(mut self) -> RwLockReadGuard<'a, T> {
         self.inner.lock.fetch_add(READER, Acquire);
         let inner = self.inner;
+        let inner_guard = match &mut self.inner_guard {
+            InnerGuard::IrqGuard(irq_guard) => InnerGuard::IrqGuard(irq_guard.transfer_to()),
+            InnerGuard::PreemptGuard(preempt_guard) => InnerGuard::PreemptGuard(disable_preempt()),
+        };
         drop(self);
-        RwLockReadGuard { inner }
+        RwLockReadGuard { inner, inner_guard }
     }
 }
 
