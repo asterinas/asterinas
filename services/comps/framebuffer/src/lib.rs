@@ -12,7 +12,7 @@ use core::{
     ops::{Index, IndexMut},
 };
 use font8x8::UnicodeFonts;
-use jinux_frame::{arch::boot, config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo};
+use jinux_frame::{boot, config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo};
 use spin::Once;
 
 #[init_component]

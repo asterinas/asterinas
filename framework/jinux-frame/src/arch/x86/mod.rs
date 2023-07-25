@@ -16,7 +16,6 @@ use log::{info, warn};
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
     device::serial::init();
-    boot::init();
 }
 
 pub(crate) fn after_all_init() {

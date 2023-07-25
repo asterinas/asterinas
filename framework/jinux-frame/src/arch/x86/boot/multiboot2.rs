@@ -1,10 +1,9 @@
-use alloc::{string::ToString, vec::Vec};
+use alloc::{string::{ToString, String}, vec::Vec};
 use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
 
-use super::{
+use crate::boot::{
     memory_region::{MemoryRegion, MemoryRegionType},
-    BootloaderAcpiArg, BootloaderFramebufferArg, ACPI_RSDP, BOOTLOADER_NAME, FRAMEBUFFER_INFO,
-    INITRAMFS, KERNEL_COMMANDLINE, MEMORY_REGIONS,
+    kcmdline::KCmdlineArg, BootloaderAcpiArg, BootloaderFramebufferArg,
 };
 use core::{arch::global_asm, mem::swap};
 use spin::Once;
@@ -17,8 +16,8 @@ const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
 
 static MB2_INFO: Once<BootInformation> = Once::new();
 
-fn init_bootloader_name() {
-    BOOTLOADER_NAME.call_once(|| {
+fn init_bootloader_name(bootloader_name: &'static Once<String>) {
+    bootloader_name.call_once(|| {
         MB2_INFO
             .get()
             .unwrap()
@@ -30,8 +29,8 @@ fn init_bootloader_name() {
     });
 }
 
-fn init_kernel_commandline() {
-    KERNEL_COMMANDLINE.call_once(|| {
+fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
+    kernel_cmdline.call_once(|| {
         MB2_INFO
             .get()
             .unwrap()
@@ -39,11 +38,11 @@ fn init_kernel_commandline() {
             .expect("Kernel commandline not found from the Multiboot2 header!")
             .cmdline()
             .expect("UTF-8 error: failed to parse kernel commandline!")
-            .to_string()
+            .into()
     });
 }
 
-fn init_initramfs() {
+fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
     let mb2_module_tag = MB2_INFO
         .get()
         .unwrap()
@@ -58,11 +57,11 @@ fn init_initramfs() {
         base_addr
     };
     let length = mb2_module_tag.module_size() as usize;
-    INITRAMFS.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
+    initramfs.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
 }
 
-fn init_acpi_rsdp() {
-    ACPI_RSDP.call_once(|| {
+fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
+    acpi.call_once(|| {
         if let Some(v2_tag) = MB2_INFO.get().unwrap().rsdp_v2_tag() {
             // check for rsdp v2
             BootloaderAcpiArg::Xsdt(v2_tag.xsdt_address())
@@ -75,9 +74,9 @@ fn init_acpi_rsdp() {
     });
 }
 
-fn init_framebuffer_info() {
+fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {
     let fb_tag = MB2_INFO.get().unwrap().framebuffer_tag().unwrap().unwrap();
-    FRAMEBUFFER_INFO.call_once(|| BootloaderFramebufferArg {
+    framebuffer_arg.call_once(|| BootloaderFramebufferArg {
         address: fb_tag.address() as usize,
         width: fb_tag.width() as usize,
         height: fb_tag.height() as usize,
@@ -97,7 +96,7 @@ impl From<MemoryAreaType> for MemoryRegionType {
     }
 }
 
-fn init_memory_regions() {
+fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     // We should later use regions in `regions_unusable` to truncate all
     // regions in `regions_usable`.
     // The difference is that regions in `regions_usable` could be used by
@@ -179,7 +178,7 @@ fn init_memory_regions() {
     }
 
     // Initialize with regions_unusable + regions_src
-    MEMORY_REGIONS.call_once(move || {
+    memory_regions.call_once(move || {
         let mut all_regions = regions_unusable;
         all_regions.append(regions_src);
         all_regions
@@ -188,13 +187,20 @@ fn init_memory_regions() {
 
 /// Initialize the global boot static varaiables in the boot module to allow
 /// other modules to get the boot information.
-pub fn init_global_boot_statics() {
-    init_bootloader_name();
-    init_kernel_commandline();
-    init_initramfs();
-    init_acpi_rsdp();
-    init_framebuffer_info();
-    init_memory_regions();
+pub fn init_boot_args(
+    bootloader_name: &'static Once<String>,
+    kernel_cmdline: &'static Once<KCmdlineArg>,
+    initramfs: &'static Once<&'static [u8]>,
+    acpi: &'static Once<BootloaderAcpiArg>,
+    framebuffer_arg: &'static Once<BootloaderFramebufferArg>,
+    memory_regions: &'static Once<Vec<MemoryRegion>>,
+) {
+    init_bootloader_name(bootloader_name);
+    init_kernel_commandline(kernel_cmdline);
+    init_initramfs(initramfs);
+    init_acpi_arg(acpi);
+    init_framebuffer_info(framebuffer_arg);
+    init_memory_regions(memory_regions);
 }
 
 // The entry point of kernel code, which should be defined by the package that

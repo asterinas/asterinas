@@ -4,7 +4,7 @@ use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
-use crate::arch::boot::memory_region::{MemoryRegion, MemoryRegionType};
+use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
 use crate::{config::PAGE_SIZE, sync::SpinLock};
 
 use super::{frame::VmFrameFlags, VmFrame};

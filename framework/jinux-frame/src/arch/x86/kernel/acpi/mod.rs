@@ -6,9 +6,10 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::arch::boot::{self, BootloaderAcpiArg};
+use crate::boot::{self, BootloaderAcpiArg};
 use crate::vm::paddr_to_vaddr;
 use acpi::{sdt::SdtHeader, AcpiHandler, AcpiTable, AcpiTables};
+use alloc::borrow::ToOwned;
 use log::info;
 use spin::{Mutex, Once};
 
@@ -90,7 +91,7 @@ impl AcpiHandler for AcpiMemoryHandler {
 }
 
 pub fn init() {
-    let acpi_tables = match boot::get_acpi_rsdp() {
+    let acpi_tables = match boot::acpi_arg().to_owned() {
         BootloaderAcpiArg::Rsdp(addr) => unsafe {
             AcpiTables::from_rsdp(AcpiMemoryHandler {}, addr as usize).unwrap()
         },
