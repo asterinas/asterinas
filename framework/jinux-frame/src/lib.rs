@@ -19,6 +19,7 @@
 extern crate alloc;
 
 pub mod arch;
+pub mod boot;
 pub mod bus;
 pub mod config;
 pub mod cpu;
@@ -45,9 +46,10 @@ use trapframe::TrapFrame;
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
 pub fn init() {
-    vm::heap_allocator::init();
     arch::before_all_init();
     logger::init();
+    vm::heap_allocator::init();
+    boot::init();
     vm::init();
     trap::init();
     arch::after_all_init();

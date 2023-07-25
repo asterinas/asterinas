@@ -26,7 +26,7 @@ use crate::{
     process::status::ProcessStatus,
     thread::{kernel_thread::KernelThreadExt, Thread},
 };
-use jinux_frame::{arch::boot, exit_qemu};
+use jinux_frame::{boot, exit_qemu};
 use process::Process;
 
 extern crate alloc;
@@ -52,7 +52,7 @@ pub fn init() {
     driver::init();
     net::init();
     process::fifo_scheduler::init();
-    fs::initramfs::init(boot::get_initramfs()).unwrap();
+    fs::initramfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
 }
 

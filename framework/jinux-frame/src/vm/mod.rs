@@ -26,10 +26,11 @@ pub use self::{
     page_table::PageTable,
 };
 
+use alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 use spin::Once;
 
-use crate::arch::boot::memory_region::{MemoryRegion, MemoryRegionType};
+use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
 
 /// Convert physical address to virtual address using offset, only available inside jinux-frame
 pub(crate) fn paddr_to_vaddr(pa: usize) -> usize {
@@ -55,7 +56,7 @@ pub(crate) static MEMORY_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 
 pub(crate) fn init() {
-    let memory_regions = crate::arch::boot::get_memory_regions();
+    let memory_regions = crate::boot::memory_regions().to_owned();
     frame_allocator::init(&memory_regions);
 
     let mut framebuffer_regions = Vec::new();
