@@ -1,4 +1,4 @@
-.PHONY: all build clean docs fmt run setup test tools
+.PHONY: all build clean docs fmt run setup test tools eval
 
 all: build
 
@@ -18,6 +18,11 @@ tools:
 run: build
 	@cargo krun
 
+# Test Jinux in a QEMU guest VM and run a series of evaluations.
+eval: build
+	@cargo keval
+
+# The usermode cargo test of Jinux frame and Jinux standard library.
 test: build
 	@cargo ktest
 
