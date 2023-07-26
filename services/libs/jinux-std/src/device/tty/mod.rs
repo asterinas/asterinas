@@ -5,7 +5,8 @@ use self::line_discipline::LineDiscipline;
 use super::*;
 use crate::fs::utils::{IoEvents, IoctlCmd, Poller};
 use crate::prelude::*;
-use crate::process::Pgid;
+use crate::process::process_group::ProcessGroup;
+use crate::process::{process_table, Pgid};
 use crate::util::{read_val_from_user, write_val_to_user};
 
 pub mod driver;
@@ -40,8 +41,8 @@ impl Tty {
     }
 
     /// Set foreground process group
-    pub fn set_fg(&self, pgid: Pgid) {
-        self.ldisc.set_fg(pgid);
+    pub fn set_fg(&self, process_group: Weak<ProcessGroup>) {
+        self.ldisc.set_fg(process_group);
     }
 
     pub fn set_driver(&self, driver: Weak<TtyDriver>) {
@@ -90,21 +91,20 @@ impl Device for Tty {
                 Ok(0)
             }
             IoctlCmd::TIOCGPGRP => {
-                // FIXME: Get the process group ID of the foreground process group on this terminal.
-                let fg_pgid = self.ldisc.fg_pgid();
-                match fg_pgid {
-                    None => return_errno_with_message!(Errno::ENOENT, "No fg process group"),
-                    Some(fg_pgid) => {
-                        debug!("fg_pgid = {}", fg_pgid);
-                        write_val_to_user(arg, &fg_pgid)?;
-                        Ok(0)
-                    }
-                }
+                let Some(fg_pgid) = self.ldisc.fg_pgid() else {
+                    return_errno_with_message!(Errno::ENOENT, "No fg process group")
+                };
+                debug!("fg_pgid = {}", fg_pgid);
+                write_val_to_user(arg, &fg_pgid)?;
+                Ok(0)
             }
             IoctlCmd::TIOCSPGRP => {
                 // Set the process group id of fg progress group
                 let pgid = read_val_from_user::<i32>(arg)?;
-                self.ldisc.set_fg(pgid);
+                match process_table::pgid_to_process_group(pgid) {
+                    None => self.ldisc.set_fg(Weak::new()),
+                    Some(process_group) => self.ldisc.set_fg(Arc::downgrade(&process_group)),
+                }
                 Ok(0)
             }
             IoctlCmd::TCSETS => {
