@@ -50,7 +50,7 @@ impl Tty {
     }
 
     pub fn receive_char(&self, item: u8) {
-        self.ldisc.push_char(item);
+        self.ldisc.push_char(item, |content| print!("{}", content));
     }
 }
 
