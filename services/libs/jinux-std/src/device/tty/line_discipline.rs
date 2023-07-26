@@ -6,6 +6,7 @@ use crate::{
     process::{process_table, signal::signals::kernel::KernelSignal, Pgid},
 };
 use alloc::format;
+use jinux_frame::trap::disable_local;
 use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
 use super::termio::{KernelTermios, CC_C_CHAR};
@@ -272,15 +273,18 @@ impl LineDiscipline {
         read_len
     }
 
-    // The read() blocks until the lesser of the number of bytes requested or
-    // MIN bytes are available, and returns the lesser of the two values.
+    // The read() blocks until the number of bytes requested or
+    // at least vmin bytes are available, and returns the real read value.
     pub fn block_read(&self, dst: &mut [u8], vmin: u8) -> Result<usize> {
-        let min_read_len = (vmin as usize).min(dst.len());
-        let buffer_len = self.read_buffer.lock_irq_disabled().len();
-        if buffer_len < min_read_len {
+        let _guard = disable_local();
+        let buffer_len = self.read_buffer.lock().len();
+        if buffer_len >= dst.len() {
+            return Ok(self.poll_read(dst));
+        }
+        if buffer_len < vmin as usize {
             return_errno!(Errno::EAGAIN);
         }
-        Ok(self.poll_read(&mut dst[..min_read_len]))
+        Ok(self.poll_read(&mut dst[..buffer_len]))
     }
 
     /// write bytes to buffer, if flush to console, then write the content to console
