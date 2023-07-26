@@ -1,8 +1,8 @@
-//! This is the Jinux runner to ease the pain of
+//! This is the Jinux runner script (I repeat: script) to ease the pain of
 //! running and testing Jinux inside a QEMU VM.
 
 use std::{
-    fs::OpenOptions,
+    fs::{self, OpenOptions},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -107,23 +107,44 @@ fn main() {
     }
 }
 
-fn call_bootloader_build_script(script_path: &PathBuf, kernel_path: &PathBuf) {
-    let mut cmd = Command::new(script_path.to_str().unwrap());
-    cmd.arg(kernel_path.to_str().unwrap());
-    let exit_status = cmd.status().unwrap();
-    if !exit_status.success() {
-        std::process::exit(exit_status.code().unwrap_or(1));
-    }
-}
-
 fn create_bootdev_image(path: PathBuf) -> String {
-    call_bootloader_build_script(
-        &PathBuf::from("build/grub/scripts/build-grub-image.sh"),
-        &path,
-    );
     let dir = path.parent().unwrap();
     let name = path.file_name().unwrap().to_str().unwrap().to_string();
-    dir.join(name + ".iso").to_str().unwrap().to_string()
+    let iso_path = dir.join(name + ".iso").to_str().unwrap().to_string();
+
+    // Clean up the image directory
+    if Path::new("target/iso_root").exists() {
+        fs::remove_dir_all("target/iso_root").unwrap();
+    }
+
+    // Copy the needed files into an ISO image.
+    fs::create_dir_all("target/iso_root/boot/grub").unwrap();
+
+    fs::copy(path.as_os_str(), "target/iso_root/boot/jinux").unwrap();
+    fs::copy(
+        "build/grub/conf/grub.cfg",
+        "target/iso_root/boot/grub/grub.cfg",
+    )
+    .unwrap();
+    fs::copy(
+        "regression/build/ramdisk.cpio.gz",
+        "target/iso_root/boot/ramdisk.cpio.gz",
+    )
+    .unwrap();
+
+    // Make boot device .iso image
+    let status = std::process::Command::new("grub-mkrescue")
+        .arg("-o")
+        .arg(&iso_path)
+        .arg("target/iso_root")
+        .status()
+        .unwrap();
+
+    if !status.success() {
+        panic!("Failed to create boot iso image.")
+    }
+
+    iso_path
 }
 
 fn create_fs_image(path: &Path) -> String {
