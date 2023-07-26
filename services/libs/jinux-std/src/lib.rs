@@ -25,6 +25,7 @@ use crate::{
     process::status::ProcessStatus,
     thread::{kernel_thread::KernelThreadExt, Thread},
 };
+use alloc::sync::Arc;
 use jinux_frame::{boot, exit_qemu};
 use process::Process;
 
@@ -75,11 +76,18 @@ fn init_thread() {
     );
 
     print_banner();
-    let busybox = run_busybox().expect("run busybox fails");
+
+    let karg = boot::kernel_cmdline();
+
+    let initproc = Process::spawn_user_process(
+        karg.get_initproc_path().unwrap(),
+        karg.get_initproc_argv().unwrap().to_vec(),
+        karg.get_initproc_envp().unwrap().to_vec(),
+    ).expect("Run init process failed.");
 
     loop {
-        // If busybox becomes zombie, then exit qemu.
-        if *busybox.status().lock() == ProcessStatus::Zombie {
+        // If initproc becomes zombie, then exit qemu.
+        if *initproc.status().lock() == ProcessStatus::Zombie {
             println!("Exit jinux.");
             exit_qemu(jinux_frame::QemuExitCode::Success);
         }
@@ -94,29 +102,6 @@ fn init_thread() {
 pub fn run_first_process() -> ! {
     Thread::spawn_kernel_thread(init_thread);
     unreachable!()
-}
-
-fn run_busybox() -> Result<Arc<Process>> {
-    let executable_path = "/usr/bin/busybox";
-    let argv = ["sh", "-l"];
-    let envp = [
-        "SHELL=/bin/sh",
-        "LOGNAME=root",
-        "HOME=/",
-        "USER=root",
-        "PATH=/bin",
-    ];
-    let argv = argv
-        .into_iter()
-        .map(|arg| CString::new(arg).unwrap())
-        .collect();
-    let envp = envp
-        .into_iter()
-        .map(|env| CString::new(env).unwrap())
-        .collect();
-    println!("");
-    println!("BusyBox v1.35.0 built-in shell (ash)\n");
-    Process::spawn_user_process(executable_path, argv, envp)
 }
 
 fn print_banner() {
