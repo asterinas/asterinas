@@ -83,7 +83,8 @@ fn init_thread() {
         karg.get_initproc_path().unwrap(),
         karg.get_initproc_argv().unwrap().to_vec(),
         karg.get_initproc_envp().unwrap().to_vec(),
-    ).expect("Run init process failed.");
+    )
+    .expect("Run init process failed.");
 
     loop {
         // If initproc becomes zombie, then exit qemu.
