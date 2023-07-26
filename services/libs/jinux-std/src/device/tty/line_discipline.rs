@@ -5,6 +5,7 @@ use crate::{
     prelude::*,
     process::{process_table, signal::signals::kernel::KernelSignal, Pgid},
 };
+use alloc::format;
 use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
 use super::termio::{KernelTermios, CC_C_CHAR};
@@ -75,7 +76,7 @@ impl LineDiscipline {
     }
 
     /// push char to line discipline. This function should be called in input interrupt handler.
-    pub fn push_char(&self, mut item: u8) {
+    pub fn push_char(&self, mut item: u8, echo_callback: fn(&str)) {
         let termios = self.termios.lock_irq_disabled();
         if termios.contains_icrnl() {
             if item == b'\r' {
@@ -128,7 +129,7 @@ impl LineDiscipline {
         }
 
         if termios.contain_echo() {
-            self.output_char(item, &termios);
+            self.output_char(item, &termios, echo_callback);
         }
 
         if self.is_readable() {
@@ -142,22 +143,22 @@ impl LineDiscipline {
     }
 
     // TODO: respect output flags
-    fn output_char(&self, item: u8, termios: &KernelTermios) {
+    fn output_char(&self, item: u8, termios: &KernelTermios, echo_callback: fn(&str)) {
         match item {
-            b'\n' => print!("\n"),
-            b'\r' => print!("\r\n"),
+            b'\n' => echo_callback("\n"),
+            b'\r' => echo_callback("\r\n"),
             item if item == *termios.get_special_char(CC_C_CHAR::VERASE) => {
                 // write a space to overwrite current character
                 let backspace: &str = core::str::from_utf8(&[b'\x08', b' ', b'\x08']).unwrap();
-                print!("{}", backspace);
+                echo_callback(backspace);
             }
             item if 0x20 <= item && item < 0x7f => print!("{}", char::from(item)),
             item if 0 < item && item < 0x20 && termios.contains_echo_ctl() => {
                 // The unprintable chars between 1-31 are mapped to ctrl characters between 65-95.
                 // e.g., 0x3 is mapped to 0x43, which is C. So, we will print ^C when 0x3 is met.
                 if 0 < item && item < 0x20 {
-                    let ctrl_char = char::from(item + 0x40);
-                    print!("^{ctrl_char}");
+                    let ctrl_char = format!("^{}", char::from(item + 0x40));
+                    echo_callback(&ctrl_char);
                 }
             }
             item => {}
