@@ -1,4 +1,5 @@
 use crate::fs::utils::{IoEvents, Pollee, Poller};
+use crate::process::process_group::ProcessGroup;
 use crate::process::signal::constants::{SIGINT, SIGQUIT};
 use crate::{
     prelude::*,
@@ -19,7 +20,7 @@ pub struct LineDiscipline {
     /// The read buffer
     read_buffer: SpinLock<StaticRb<u8, BUFFER_CAPACITY>>,
     /// The foreground process group
-    foreground: SpinLock<Option<Pgid>>,
+    foreground: SpinLock<Weak<ProcessGroup>>,
     /// termios
     termios: SpinLock<KernelTermios>,
     /// Pollee
@@ -67,7 +68,7 @@ impl LineDiscipline {
         Self {
             current_line: SpinLock::new(CurrentLine::new()),
             read_buffer: SpinLock::new(StaticRb::default()),
-            foreground: SpinLock::new(None),
+            foreground: SpinLock::new(Weak::new()),
             termios: SpinLock::new(KernelTermios::default()),
             pollee: Pollee::new(IoEvents::empty()),
         }
@@ -85,19 +86,17 @@ impl LineDiscipline {
             if item == *termios.get_special_char(CC_C_CHAR::VINTR) {
                 // type Ctrl + C, signal SIGINT
                 if termios.contains_isig() {
-                    if let Some(fg) = *self.foreground.lock_irq_disabled() {
+                    if let Some(foreground) = self.foreground.lock_irq_disabled().upgrade() {
                         let kernel_signal = KernelSignal::new(SIGINT);
-                        let fg_group = process_table::pgid_to_process_group(fg).unwrap();
-                        fg_group.kernel_signal(kernel_signal);
+                        foreground.kernel_signal(kernel_signal);
                     }
                 }
             } else if item == *termios.get_special_char(CC_C_CHAR::VQUIT) {
                 // type Ctrl + \, signal SIGQUIT
                 if termios.contains_isig() {
-                    if let Some(fg) = *self.foreground.lock_irq_disabled() {
+                    if let Some(foreground) = self.foreground.lock_irq_disabled().upgrade() {
                         let kernel_signal = KernelSignal::new(SIGQUIT);
-                        let fg_group = process_table::pgid_to_process_group(fg).unwrap();
-                        fg_group.kernel_signal(kernel_signal);
+                        foreground.kernel_signal(kernel_signal);
                     }
                 }
             } else if item == *termios.get_special_char(CC_C_CHAR::VKILL) {
@@ -196,7 +195,7 @@ impl LineDiscipline {
     }
 
     pub fn try_read(&self, dst: &mut [u8]) -> Result<usize> {
-        if !self.current_belongs_to_foreground() {
+        if !self.current_can_read() {
             return_errno!(Errno::EAGAIN);
         }
 
@@ -288,23 +287,19 @@ impl LineDiscipline {
         todo!()
     }
 
-    /// whether the current process belongs to foreground process group
-    fn current_belongs_to_foreground(&self) -> bool {
+    /// Determine whether current process can read the line discipline. If current belongs to the foreground process group.
+    /// or the foreground process group is None, returns true.
+    fn current_can_read(&self) -> bool {
         let current = current!();
-        if let Some(fg_pgid) = *self.foreground.lock_irq_disabled() {
-            if let Some(process_group) = process_table::pgid_to_process_group(fg_pgid) {
-                if process_group.contains_process(current.pid()) {
-                    return true;
-                }
-            }
-        }
-
-        false
+        let Some(foreground) = self.foreground.lock_irq_disabled().upgrade() else {
+            return true;
+        };
+        foreground.contains_process(current.pid())
     }
 
     /// set foreground process group
-    pub fn set_fg(&self, fg_pgid: Pgid) {
-        *self.foreground.lock_irq_disabled() = Some(fg_pgid);
+    pub fn set_fg(&self, foreground: Weak<ProcessGroup>) {
+        *self.foreground.lock_irq_disabled() = foreground;
         // Some background processes may be waiting on the wait queue, when set_fg, the background processes may be able to read.
         if self.is_readable() {
             self.pollee.add_events(IoEvents::IN);
@@ -313,7 +308,10 @@ impl LineDiscipline {
 
     /// get foreground process group id
     pub fn fg_pgid(&self) -> Option<Pgid> {
-        *self.foreground.lock_irq_disabled()
+        self.foreground
+            .lock_irq_disabled()
+            .upgrade()
+            .and_then(|foreground| Some(foreground.pgid()))
     }
 
     /// whether there is buffered data

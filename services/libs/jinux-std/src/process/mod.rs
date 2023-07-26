@@ -144,10 +144,10 @@ impl Process {
         debug_assert!(executable_path.starts_with('/'));
         let process = Process::create_user_process(executable_path, argv, envp)?;
         // FIXME: How to determine the fg process group?
-        let pgid = process.pgid();
+        let process_group = Weak::clone(&process.process_group.lock());
         // FIXME: tty should be a parameter?
         let tty = get_n_tty();
-        tty.set_fg(pgid);
+        tty.set_fg(process_group);
         process.run();
         Ok(process)
     }
