@@ -65,7 +65,7 @@ impl CurrentLine {
 }
 
 impl LineDiscipline {
-    /// create a new line discipline
+    /// Create a new line discipline
     pub fn new() -> Self {
         Self {
             current_line: SpinLock::new(CurrentLine::new()),
@@ -76,71 +76,89 @@ impl LineDiscipline {
         }
     }
 
-    /// push char to line discipline. This function should be called in input interrupt handler.
+    /// Push char to line discipline.
     pub fn push_char(&self, mut item: u8, echo_callback: fn(&str)) {
         let termios = self.termios.lock_irq_disabled();
-        if termios.contains_icrnl() {
-            if item == b'\r' {
-                item = b'\n'
+        if termios.contains_icrnl() && item == b'\r' {
+            item = b'\n'
+        }
+
+        // Raw mode
+        if !termios.is_canonical_mode() {
+            self.read_buffer.lock_irq_disabled().push_overwrite(item);
+            self.update_readable_state();
+            return;
+        }
+
+        // Canonical mode
+
+        self.may_send_signal_to_foreground(&termios, item);
+
+        if item == *termios.get_special_char(CC_C_CHAR::VKILL) {
+            // Erase current line
+            self.current_line.lock_irq_disabled().drain();
+        }
+
+        if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
+            // Type backspace
+            let mut current_line = self.current_line.lock_irq_disabled();
+            if !current_line.is_empty() {
+                current_line.backspace();
             }
         }
-        if termios.is_canonical_mode() {
-            if item == *termios.get_special_char(CC_C_CHAR::VINTR) {
-                // type Ctrl + C, signal SIGINT
-                if termios.contains_isig() {
-                    if let Some(foreground) = self.foreground.lock_irq_disabled().upgrade() {
-                        let kernel_signal = KernelSignal::new(SIGINT);
-                        foreground.kernel_signal(kernel_signal);
-                    }
-                }
-            } else if item == *termios.get_special_char(CC_C_CHAR::VQUIT) {
-                // type Ctrl + \, signal SIGQUIT
-                if termios.contains_isig() {
-                    if let Some(foreground) = self.foreground.lock_irq_disabled().upgrade() {
-                        let kernel_signal = KernelSignal::new(SIGQUIT);
-                        foreground.kernel_signal(kernel_signal);
-                    }
-                }
-            } else if item == *termios.get_special_char(CC_C_CHAR::VKILL) {
-                // erase current line
-                self.current_line.lock_irq_disabled().drain();
-            } else if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
-                // type backspace
-                let mut current_line = self.current_line.lock_irq_disabled();
-                if !current_line.is_empty() {
-                    current_line.backspace();
-                }
-            } else if meet_new_line(item, &termios) {
-                // a new line was met. We currently add the item to buffer.
-                // when we read content, the item should be skipped if it's EOF.
-                let mut current_line = self.current_line.lock_irq_disabled();
-                current_line.push_char(item);
-                let current_line_chars = current_line.drain();
-                for char in current_line_chars {
-                    self.read_buffer.lock_irq_disabled().push_overwrite(char);
-                }
-            } else if item >= 0x20 && item < 0x7f {
-                // printable character
-                self.current_line.lock_irq_disabled().push_char(item);
+
+        if meet_new_line(item, &termios) {
+            // If a new line is met, all bytes in current_line will be moved to read_buffer
+            let mut current_line = self.current_line.lock_irq_disabled();
+            current_line.push_char(item);
+            let current_line_chars = current_line.drain();
+            for char in current_line_chars {
+                self.read_buffer.lock_irq_disabled().push_overwrite(char);
             }
-        } else {
-            // raw mode
-            self.read_buffer.lock_irq_disabled().push_overwrite(item);
-            // debug!("push char: {}", char::from(item))
+        }
+
+        if item >= 0x20 && item < 0x7f {
+            // Printable character
+            self.current_line.lock_irq_disabled().push_char(item);
         }
 
         if termios.contain_echo() {
             self.output_char(item, &termios, echo_callback);
         }
 
-        if self.is_readable() {
-            self.pollee.add_events(IoEvents::IN);
-        }
+        self.update_readable_state();
     }
 
-    /// whether self is readable
-    fn is_readable(&self) -> bool {
-        !self.read_buffer.lock_irq_disabled().is_empty()
+    fn may_send_signal_to_foreground(&self, termios: &KernelTermios, item: u8) {
+        if !termios.is_canonical_mode() || !termios.contains_isig() {
+            return;
+        }
+
+        let Some(foreground) = self.foreground.lock().upgrade() else {
+            return;
+        };
+
+        let signal = match item {
+            item if item == *termios.get_special_char(CC_C_CHAR::VINTR) => {
+                KernelSignal::new(SIGINT)
+            }
+            item if item == *termios.get_special_char(CC_C_CHAR::VQUIT) => {
+                KernelSignal::new(SIGQUIT)
+            }
+            _ => return,
+        };
+        // FIXME: kernel_signal may sleep
+        foreground.kernel_signal(signal);
+    }
+
+    fn update_readable_state(&self) {
+        let buffer = self.read_buffer.lock_irq_disabled();
+        // FIXME: add/del events may sleep
+        if !buffer.is_empty() {
+            self.pollee.add_events(IoEvents::IN);
+        } else {
+            self.pollee.del_events(IoEvents::IN);
+        }
     }
 
     // TODO: respect output flags
@@ -224,9 +242,7 @@ impl LineDiscipline {
                 unreachable!()
             }
         };
-        if !self.is_readable() {
-            self.pollee.del_events(IoEvents::IN);
-        }
+        self.update_readable_state();
         Ok(read_len)
     }
 
@@ -306,9 +322,7 @@ impl LineDiscipline {
     pub fn set_fg(&self, foreground: Weak<ProcessGroup>) {
         *self.foreground.lock_irq_disabled() = foreground;
         // Some background processes may be waiting on the wait queue, when set_fg, the background processes may be able to read.
-        if self.is_readable() {
-            self.pollee.add_events(IoEvents::IN);
-        }
+        self.update_readable_state();
     }
 
     /// get foreground process group id
