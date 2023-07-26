@@ -3,6 +3,7 @@
 
 use std::{
     fs::{self, OpenOptions},
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -76,10 +77,6 @@ const IOMMU_DEVICE_ARGS: &[&str] = &[
 fn main() {
     let args = Args::parse();
 
-    if args.eval {
-        panic!("No eval yet.");
-    }
-
     let mut qemu_cmd = Command::new("qemu-system-x86_64");
 
     let mut qemu_args = COMMON_ARGS.clone().to_vec();
@@ -93,7 +90,7 @@ fn main() {
     qemu_args.push("-drive");
     qemu_args.push(fs_image.as_str());
 
-    let bootdev_image = create_bootdev_image(args.path);
+    let bootdev_image = create_bootdev_image(args.path, args.eval);
     qemu_cmd.arg("-cdrom");
     qemu_cmd.arg(bootdev_image.as_str());
 
@@ -107,7 +104,36 @@ fn main() {
     }
 }
 
-fn create_bootdev_image(path: PathBuf) -> String {
+const KERNEL_CMDLINE: &str =
+    r#"SHELL="/bin/sh" LOGNAME="root" HOME="/" USER="root" PATH="/bin" init=/usr/bin/busybox"#;
+const EVAL_INIT_CMDLINE: &str = r#"sh -l /opt/syscall_test/run_syscall_test.sh"#;
+const COMMON_INIT_CMDLINE: &str = r#"sh -l"#;
+
+fn generate_grub_cfg(template_filename: &str, target_filename: &str, is_eval: bool) {
+    let mut buffer = String::new();
+
+    // Read the contents of the file
+    fs::File::open(template_filename)
+        .unwrap()
+        .read_to_string(&mut buffer)
+        .unwrap();
+
+    // Replace all occurrences of "#KERNEL_COMMAND_LINE#" with the desired value
+    let cmdline = if is_eval {
+        KERNEL_CMDLINE.to_string() + " -- " + EVAL_INIT_CMDLINE
+    } else {
+        KERNEL_CMDLINE.to_string() + " -- " + COMMON_INIT_CMDLINE
+    };
+    let replaced_content = buffer.replace("#KERNEL_COMMAND_LINE#", &cmdline);
+
+    // Write the modified content back to the file
+    fs::File::create(target_filename)
+        .unwrap()
+        .write_all(replaced_content.as_bytes())
+        .unwrap();
+}
+
+fn create_bootdev_image(path: PathBuf, is_eval: bool) -> String {
     let dir = path.parent().unwrap();
     let name = path.file_name().unwrap().to_str().unwrap().to_string();
     let iso_path = dir.join(name + ".iso").to_str().unwrap().to_string();
@@ -121,18 +147,18 @@ fn create_bootdev_image(path: PathBuf) -> String {
     fs::create_dir_all("target/iso_root/boot/grub").unwrap();
 
     fs::copy(path.as_os_str(), "target/iso_root/boot/jinux").unwrap();
-    fs::copy(
-        "build/grub/conf/grub.cfg",
+    generate_grub_cfg(
+        "build/grub/grub.cfg.template",
         "target/iso_root/boot/grub/grub.cfg",
-    )
-    .unwrap();
+        is_eval,
+    );
     fs::copy(
         "regression/build/ramdisk.cpio.gz",
         "target/iso_root/boot/ramdisk.cpio.gz",
     )
     .unwrap();
 
-    // Make boot device .iso image
+    // Make the boot device .iso image
     let status = std::process::Command::new("grub-mkrescue")
         .arg("-o")
         .arg(&iso_path)
