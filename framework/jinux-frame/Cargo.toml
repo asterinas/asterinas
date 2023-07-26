@@ -18,13 +18,12 @@ log = "0.4"
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
 trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "e886763" }
 inherit-methods-macro = { git = "https://github.com/jinzhao-dev/inherit-methods-macro", rev = "98f7e3e" }
-regex = { version = "1.9.1", default-features = false, features = ["unicode"] }
 
 [target.x86_64-custom.dependencies]
 x86_64 = "0.14.2"
 x86 = "0.52.0"
 acpi = "4.1.1"
 aml = "0.16.3"
-multiboot2 = { version = "0.16.0", features = [] }
+multiboot2 = "0.16.0"
 
 [features]

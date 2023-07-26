@@ -14,7 +14,6 @@ use alloc::{
     vec::Vec,
 };
 use log::debug;
-use regex::Regex;
 
 #[derive(PartialEq, Debug)]
 struct InitprocArg {
@@ -55,6 +54,20 @@ impl KCmdlineArg {
     }
 }
 
+// Split the command line string by spaces but preserve
+// ones that are protected by double quotes(`"`).
+fn split_arg(input: &str) -> impl Iterator<Item = &str> {
+    let mut inside_quotes = false;
+
+    input.split(move |c: char| {
+        if c == '"' {
+            inside_quotes = !inside_quotes;
+        }
+
+        !inside_quotes && c.is_whitespace()
+    })
+}
+
 // Define the way to parse a string to `KCmdlineArg`.
 impl From<&str> for KCmdlineArg {
     fn from(cmdline: &str) -> Self {
@@ -64,18 +77,12 @@ impl From<&str> for KCmdlineArg {
             module_args: BTreeMap::new(),
         };
 
-        // Split the command line string by spaces but preserve
-        // ones that are protected by double quotes(`"`).
-        let re = Regex::new(r#"((\S*"[^"]*"\S*)+|\S+)"#).unwrap();
         // Every thing after the "--" mark is the initproc arguments.
         let mut kcmdline_end = false;
 
         // The main parse loop. The processing steps are arranged (not very strictly)
         // by the analysis over the Backus–Naur form syntax tree.
-        for arg in re.find_iter(cmdline).map(|m| m.as_str()) {
-            if arg == "" || arg == " " {
-                continue;
-            }
+        for arg in split_arg(cmdline) {
             // Cmdline => KernelArg "--" InitArg
             // KernelArg => Arg "\s+" KernelArg | %empty
             // InitArg => Arg "\s+" InitArg | %empty
