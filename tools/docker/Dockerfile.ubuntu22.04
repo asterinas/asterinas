@@ -1,27 +1,47 @@
-FROM ubuntu:22.04
+FROM ubuntu:22.04 as ubuntu-22.04-with-bazel
 
 SHELL ["/bin/bash", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
+
+# Install all Bazel dependent packages
 RUN apt update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
+    curl \
+    git-core \
+    gnupg \
+    python-is-python3 \
+    python3-pip
+
+# Install bazel, which is required by the system call test suite from Gvisor project
+COPY bom/syscall_test/install_bazel.sh /tmp/
+WORKDIR /tmp
+RUN ./install_bazel.sh && rm -f /tmp/install_bazel.sh
+
+FROM ubuntu-22.04-with-bazel as syscall_test
+
+# Build the syscall test binaries
+COPY bom/syscall_test /root/syscall_test
+WORKDIR /root/syscall_test
+RUN export BUILD_DIR=build && \
+    make ${BUILD_DIR}/syscall_test_bins
+
+FROM ubuntu-22.04-with-bazel
+
+# Install all Jinux dependent packages
+RUN apt update && apt-get install -y --no-install-recommends \
     cpio \
     cpuid \
-    curl \
     file \
     g++ \
     gdb \
-    git-core \
-    gnupg \
     grub-common \
     grub-pc \
     libssl-dev \
     net-tools \
     openssh-server \
     pkg-config \
-    python-is-python3 \
-    python3-pip \
     qemu-system-x86 \
     strace \
     sudo \
@@ -31,16 +51,13 @@ RUN apt update && apt-get install -y --no-install-recommends \
     xorriso \
     zip
 
-# Install bazel, , which is required by the system call test suite from Gvisor project
-RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel.gpg \ 
-    && mv bazel.gpg /etc/apt/trusted.gpg.d/ \
-    && echo 'deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8' | tee /etc/apt/sources.list.d/bazel.list \
-    && apt update \ 
-    && apt install bazel=5.4.0 -y
-
 # Clean apt cache
 RUN apt clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Prepare the system call test suite
+COPY --from=syscall_test /root/syscall_test/build/syscall_test_bins /root/syscall_test_bins
+ENV JINUX_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
 
 # Install Rust
 ENV PATH="/root/.cargo/bin:${PATH}"
