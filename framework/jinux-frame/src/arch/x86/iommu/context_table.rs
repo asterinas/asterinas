@@ -137,7 +137,7 @@ impl RootTable {
         }
         let address = page_table.root_paddr();
         context_table.page_tables.insert(address, page_table);
-        let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
+        let entry = ContextEntry(address as u128 | 1 | 0x1_0000_0000_0000_0000);
         context_table
             .entries_frame
             .write_val::<ContextEntry>(
