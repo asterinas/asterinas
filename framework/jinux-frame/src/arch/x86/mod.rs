@@ -33,11 +33,11 @@ pub(crate) fn after_all_init() {
             kernel::pic::enable();
         }
     }
+    timer::init();
     match iommu::init() {
         Ok(_) => {}
         Err(err) => warn!("IOMMU initialization error:{:?}", err),
     }
-    timer::init();
     // Some driver like serial may use PIC
     kernel::pic::init();
 }
