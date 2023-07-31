@@ -6,7 +6,7 @@ type PortNum = u16;
 
 #[derive(Debug)]
 pub enum SocketAddr {
-    Unix,
+    Unix(String),
     IPv4(Ipv4Address, PortNum),
     IPv6,
 }

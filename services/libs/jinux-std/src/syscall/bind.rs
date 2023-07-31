@@ -1,5 +1,5 @@
 use crate::log_syscall_entry;
-use crate::util::read_socket_addr_from_user;
+use crate::util::net::read_socket_addr_from_user;
 use crate::{fs::file_table::FileDescripter, prelude::*};
 
 use super::SyscallReturn;

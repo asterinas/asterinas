@@ -1,4 +1,5 @@
-use crate::util::write_socket_addr_to_user;
+use crate::util::net::write_socket_addr_to_user;
+use crate::util::read_val_from_user;
 use crate::{fs::file_table::FileDescripter, prelude::*};
 use crate::{get_socket_without_holding_filetable_lock, log_syscall_entry};
 
@@ -8,9 +9,10 @@ use super::SYS_ACCEPT;
 pub fn sys_accept(
     sockfd: FileDescripter,
     sockaddr_ptr: Vaddr,
-    addr_len: u32,
+    addr_len_ptr: Vaddr,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_ACCEPT);
+    let addr_len: i32 = read_val_from_user(addr_len_ptr)?;
     debug!("sockfd = {sockfd}, sockaddr_ptr = 0x{sockaddr_ptr:x}, addr_len = {addr_len}");
     let current = current!();
     get_socket_without_holding_filetable_lock!(socket, current, sockfd);

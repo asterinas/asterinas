@@ -134,6 +134,30 @@ impl<T> Producer<T> {
 
 impl<T: Copy> Producer<T> {
     pub fn write(&self, buf: &[T]) -> Result<usize> {
+        let is_nonblocking = self.is_nonblocking();
+
+        // Fast path
+        let res = self.try_write(buf);
+        if should_io_return(&res, is_nonblocking) {
+            return res;
+        }
+
+        // Slow path
+        let mask = IoEvents::OUT;
+        let poller = Poller::new();
+        loop {
+            let res = self.try_write(buf);
+            if should_io_return(&res, is_nonblocking) {
+                return res;
+            }
+            let events = self.poll(mask, Some(&poller));
+            if events.is_empty() {
+                poller.wait();
+            }
+        }
+    }
+
+    fn try_write(&self, buf: &[T]) -> Result<usize> {
         if self.is_shutdown() || self.is_peer_shutdown() {
             return_errno!(Errno::EPIPE);
         }
@@ -198,10 +222,33 @@ impl<T> Consumer<T> {
 
 impl<T: Copy> Consumer<T> {
     pub fn read(&self, buf: &mut [T]) -> Result<usize> {
+        let is_nonblocking = self.is_nonblocking();
+
+        // Fast path
+        let res = self.try_read(buf);
+        if should_io_return(&res, is_nonblocking) {
+            return res;
+        }
+
+        // Slow path
+        let mask = IoEvents::IN;
+        let poller = Poller::new();
+        loop {
+            let res = self.try_read(buf);
+            if should_io_return(&res, is_nonblocking) {
+                return res;
+            }
+            let events = self.poll(mask, Some(&poller));
+            if events.is_empty() {
+                poller.wait();
+            }
+        }
+    }
+
+    fn try_read(&self, buf: &mut [T]) -> Result<usize> {
         if self.is_shutdown() {
             return_errno!(Errno::EPIPE);
         }
-
         if buf.len() == 0 {
             return Ok(0);
         }
@@ -346,4 +393,15 @@ fn check_status_flags(flags: StatusFlags) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "O_DIRECT is not supported");
     }
     Ok(())
+}
+
+fn should_io_return(res: &Result<usize>, is_nonblocking: bool) -> bool {
+    if is_nonblocking {
+        return true;
+    }
+    match res {
+        Ok(_) => true,
+        Err(e) if e.error() == Errno::EAGAIN => false,
+        Err(_) => true,
+    }
 }

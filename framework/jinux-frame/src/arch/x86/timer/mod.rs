@@ -3,14 +3,15 @@ pub mod hpet;
 pub mod pit;
 
 use core::any::Any;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use alloc::{boxed::Box, collections::BinaryHeap, sync::Arc, vec::Vec};
-use spin::{Mutex, Once};
+use spin::Once;
 use trapframe::TrapFrame;
 
 use crate::arch::x86::kernel;
 use crate::config::TIMER_FREQ;
+use crate::sync::SpinLock;
 use crate::trap::IrqAllocateHandle;
 
 use self::apic::APIC_TIMER_CALLBACK;
@@ -21,7 +22,7 @@ pub static TICK: AtomicU64 = AtomicU64::new(0);
 static TIMER_IRQ: Once<IrqAllocateHandle> = Once::new();
 
 pub fn init() {
-    TIMEOUT_LIST.call_once(|| Mutex::new(BinaryHeap::new()));
+    TIMEOUT_LIST.call_once(|| SpinLock::new(BinaryHeap::new()));
     if kernel::apic::APIC_INSTANCE.is_completed() {
         apic::init();
     } else {
@@ -53,13 +54,13 @@ fn timer_callback(trap_frame: &TrapFrame) {
     }
 }
 
-static TIMEOUT_LIST: Once<Mutex<BinaryHeap<Arc<TimerCallback>>>> = Once::new();
+static TIMEOUT_LIST: Once<SpinLock<BinaryHeap<Arc<TimerCallback>>>> = Once::new();
 
 pub struct TimerCallback {
     expire_ms: u64,
     data: Arc<dyn Any + Send + Sync>,
     callback: Box<dyn Fn(&TimerCallback) + Send + Sync>,
-    enable: Mutex<bool>,
+    enable: AtomicBool,
 }
 
 impl TimerCallback {
@@ -72,7 +73,7 @@ impl TimerCallback {
             expire_ms: timeout_ms,
             data,
             callback,
-            enable: Mutex::new(true),
+            enable: AtomicBool::new(true),
         }
     }
 
@@ -82,16 +83,16 @@ impl TimerCallback {
 
     /// disable this timeout
     pub fn disable(&self) {
-        *self.enable.lock() = false;
+        self.enable.store(false, Ordering::Release)
     }
 
     /// enable this timeout
     pub fn enable(&self) {
-        *self.enable.lock() = true;
+        self.enable.store(false, Ordering::Release)
     }
 
     pub fn is_enable(&self) -> bool {
-        *self.enable.lock()
+        self.enable.load(Ordering::Acquire)
     }
 }
 
@@ -125,7 +126,7 @@ where
     T: Any + Send + Sync,
 {
     let timer_callback = TimerCallback::new(
-        TICK.load(Ordering::SeqCst) + timeout,
+        TICK.load(Ordering::Acquire) + timeout,
         Arc::new(data),
         Box::new(callback),
     );
@@ -137,5 +138,5 @@ where
 /// The time since the system boots up.
 /// The currently returned results are in milliseconds.
 pub fn read_monotonic_milli_seconds() -> u64 {
-    TICK.load(Ordering::SeqCst) * (1000 / TIMER_FREQ)
+    TICK.load(Ordering::Acquire) * (1000 / TIMER_FREQ)
 }

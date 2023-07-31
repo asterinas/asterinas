@@ -6,6 +6,7 @@ pub use self::util::sock_options::{SockOptionLevel, SockOptionName};
 pub use self::util::sockaddr::SocketAddr;
 
 pub mod ip;
+pub mod unix;
 mod util;
 
 /// Operations defined on a socket.

@@ -117,6 +117,15 @@ impl Inode_ {
         }
     }
 
+    pub fn new_socket(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
+        Self {
+            inner: Inner::Socket,
+            metadata: Metadata::new_socket(ino, mode, sb),
+            this: Weak::default(),
+            fs: Weak::default(),
+        }
+    }
+
     pub fn new_device(
         ino: usize,
         mode: InodeMode,
@@ -153,6 +162,7 @@ enum Inner {
     File,
     SymLink(Str256),
     Device(Arc<dyn Device>),
+    Socket,
 }
 
 impl Inner {
@@ -488,6 +498,24 @@ impl Inode for RamInode {
                 let dir_inode = RamInode::new_dir(&fs, mode, &self_inode.this);
                 self_inode.metadata.nlinks += 1;
                 dir_inode
+            }
+            InodeType::SymLink => {
+                let sym_inode = Arc::new(RamInode(RwLock::new(Inode_::new_symlink(
+                    fs.alloc_id(),
+                    mode,
+                    &fs.sb(),
+                ))));
+                sym_inode.0.write().fs = self_inode.fs.clone();
+                sym_inode
+            }
+            InodeType::Socket => {
+                let socket_inode = Arc::new(RamInode(RwLock::new(Inode_::new_socket(
+                    fs.alloc_id(),
+                    mode,
+                    &fs.sb(),
+                ))));
+                socket_inode.0.write().fs = self_inode.fs.clone();
+                socket_inode
             }
             _ => {
                 panic!("unsupported inode type");

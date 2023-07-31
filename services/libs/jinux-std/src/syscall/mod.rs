@@ -86,6 +86,7 @@ use self::sendto::sys_sendto;
 use self::setsockopt::sys_setsockopt;
 use self::shutdown::sys_shutdown;
 use self::socket::sys_socket;
+use self::socketpair::sys_socketpair;
 
 mod accept;
 mod access;
@@ -157,6 +158,7 @@ mod setpgid;
 mod setsockopt;
 mod shutdown;
 mod socket;
+mod socketpair;
 mod stat;
 mod statfs;
 mod symlink;
@@ -240,6 +242,7 @@ define_syscall_nums!(
     SYS_LISTEN = 50,
     SYS_GETSOCKNAME = 51,
     SYS_GETPEERNAME = 52,
+    SYS_SOCKETPAIR = 53,
     SYS_SETSOCKOPT = 54,
     SYS_GETSOCKOPT = 55,
     SYS_CLONE = 56,
@@ -400,6 +403,7 @@ pub fn syscall_dispatch(
         SYS_LISTEN => syscall_handler!(2, sys_listen, args),
         SYS_GETSOCKNAME => syscall_handler!(3, sys_getsockname, args),
         SYS_GETPEERNAME => syscall_handler!(3, sys_getpeername, args),
+        SYS_SOCKETPAIR => syscall_handler!(4, sys_socketpair, args),
         SYS_SETSOCKOPT => syscall_handler!(5, sys_setsockopt, args),
         SYS_GETSOCKOPT => syscall_handler!(5, sys_getsockopt, args),
         SYS_CLONE => syscall_handler!(5, sys_clone, args, context.clone()),

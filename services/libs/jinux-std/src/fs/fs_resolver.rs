@@ -370,7 +370,7 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
 /// Example:
 ///
 /// The path "/dir/file/" will be split to ("/dir", "file/").
-fn split_path(path: &str) -> (&str, &str) {
+pub fn split_path(path: &str) -> (&str, &str) {
     let file_name = path
         .split_inclusive('/')
         .filter(|&x| x != "/")
