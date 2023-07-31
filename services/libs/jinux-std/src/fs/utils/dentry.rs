@@ -5,7 +5,7 @@ use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
 
-use super::{FileSystem, Inode, InodeMode, InodeType, Metadata, Vnode, NAME_MAX};
+use super::{FileSystem, Inode, InodeMode, InodeType, Metadata, MountNode, Vnode, NAME_MAX};
 
 lazy_static! {
     static ref DCACHE: Mutex<BTreeMap<DentryKey, Arc<Dentry>>> = Mutex::new(BTreeMap::new());
@@ -162,6 +162,8 @@ impl Dentry {
     /// Get the mount node which the dentry belongs to.
     pub fn mount_node(&self) -> Arc<MountNode> {
         self.mount_node.upgrade().unwrap()
+    }
+
     pub fn inode(&self) -> Weak<dyn Inode> {
         self.vnode.inode()
     }
