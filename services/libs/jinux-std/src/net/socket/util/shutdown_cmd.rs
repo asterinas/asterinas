@@ -13,3 +13,13 @@ pub enum SockShutdownCmd {
     /// Shutdown receptions and transmissions
     SHUT_RDWR = 2,
 }
+
+impl SockShutdownCmd {
+    pub fn shut_read(&self) -> bool {
+        *self == Self::SHUT_RD || *self == Self::SHUT_RDWR
+    }
+
+    pub fn shut_write(&self) -> bool {
+        *self == Self::SHUT_WR || *self == Self::SHUT_RDWR
+    }
+}

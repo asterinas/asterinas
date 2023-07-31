@@ -204,6 +204,25 @@ impl Metadata {
             rdev: device.id().into(),
         }
     }
+
+    pub fn new_socket(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Metadata {
+        Self {
+            dev: 0,
+            ino,
+            size: 0,
+            blk_size: sb.bsize,
+            blocks: 0,
+            atime: Default::default(),
+            mtime: Default::default(),
+            ctime: Default::default(),
+            type_: InodeType::Socket,
+            mode,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        }
+    }
 }
 
 pub trait Inode: Any + Sync + Send {

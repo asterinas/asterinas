@@ -18,27 +18,7 @@ impl PipeReader {
 
 impl FileLike for PipeReader {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        let is_nonblocking = self.consumer.is_nonblocking();
-
-        // Fast path
-        let res = self.consumer.read(buf);
-        if should_io_return(&res, is_nonblocking) {
-            return res;
-        }
-
-        // Slow path
-        let mask = IoEvents::IN;
-        let poller = Poller::new();
-        loop {
-            let res = self.consumer.read(buf);
-            if should_io_return(&res, is_nonblocking) {
-                return res;
-            }
-            let events = self.poll(mask, Some(&poller));
-            if events.is_empty() {
-                poller.wait();
-            }
-        }
+        self.consumer.read(buf)
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -104,27 +84,7 @@ impl PipeWriter {
 
 impl FileLike for PipeWriter {
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        let is_nonblocking = self.producer.is_nonblocking();
-
-        // Fast path
-        let res = self.producer.write(buf);
-        if should_io_return(&res, is_nonblocking) {
-            return res;
-        }
-
-        // Slow path
-        let mask = IoEvents::OUT;
-        let poller = Poller::new();
-        loop {
-            let res = self.producer.write(buf);
-            if should_io_return(&res, is_nonblocking) {
-                return res;
-            }
-            let events = self.poll(mask, Some(&poller));
-            if events.is_empty() {
-                poller.wait();
-            }
-        }
+        self.producer.write(buf)
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {

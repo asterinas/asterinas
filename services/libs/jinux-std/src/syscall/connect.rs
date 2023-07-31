@@ -2,7 +2,7 @@ use crate::fs::file_table::FileDescripter;
 use crate::get_socket_without_holding_filetable_lock;
 use crate::log_syscall_entry;
 use crate::prelude::*;
-use crate::util::read_socket_addr_from_user;
+use crate::util::net::read_socket_addr_from_user;
 
 use super::SyscallReturn;
 use super::SYS_CONNECT;

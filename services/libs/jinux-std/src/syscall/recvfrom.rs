@@ -1,7 +1,6 @@
 use crate::net::socket::SendRecvFlags;
-use crate::util::{
-    read_val_from_user, write_bytes_to_user, write_socket_addr_to_user, write_val_to_user,
-};
+use crate::util::net::write_socket_addr_to_user;
+use crate::util::{read_val_from_user, write_bytes_to_user, write_val_to_user};
 use crate::{fs::file_table::FileDescripter, prelude::*};
 use crate::{get_socket_without_holding_filetable_lock, log_syscall_entry};
 

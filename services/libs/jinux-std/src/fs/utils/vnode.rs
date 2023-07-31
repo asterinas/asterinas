@@ -211,6 +211,11 @@ impl Vnode {
         self.inner.read().inode.metadata()
     }
 
+    pub fn inode(&self) -> Weak<dyn Inode> {
+        let inner = self.inner.read();
+        Arc::downgrade(&inner.inode)
+    }
+
     pub fn inode_type(&self) -> InodeType {
         self.inner.read().inode.metadata().type_
     }
