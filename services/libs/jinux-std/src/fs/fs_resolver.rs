@@ -3,15 +3,10 @@ use alloc::str;
 
 use super::file_table::FileDescripter;
 use super::inode_handle::InodeHandle;
-use super::ramfs::RamFS;
+use super::rootfs::root_mount;
 use super::utils::{
-    AccessMode, CreationFlags, Dentry, InodeMode, InodeType, MountNode, StatusFlags, PATH_MAX,
-    SYMLINKS_MAX,
+    AccessMode, CreationFlags, Dentry, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX,
 };
-
-lazy_static! {
-    static ref ROOT_MOUNT: Arc<MountNode> = MountNode::new_root(RamFS::new(true)).unwrap();
-}
 
 #[derive(Debug)]
 pub struct FsResolver {
@@ -31,8 +26,8 @@ impl Clone for FsResolver {
 impl FsResolver {
     pub fn new() -> Self {
         Self {
-            root: ROOT_MOUNT.root_dentry().clone(),
-            cwd: ROOT_MOUNT.root_dentry().clone(),
+            root: root_mount().root_dentry().clone(),
+            cwd: root_mount().root_dentry().clone(),
         }
     }
 

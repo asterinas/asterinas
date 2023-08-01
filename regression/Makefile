@@ -2,7 +2,7 @@ MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
-RAMDISK := $(BUILD_DIR)/ramdisk.cpio.gz
+INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 SHELL := /bin/bash
 INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/etc \
@@ -59,14 +59,14 @@ $(INITRAMFS)/opt/syscall_test:
 # If the BUILD_SYSCALL_TEST variable is set, we should depend on the
 # sub make output to do incremental building.
 ifeq ($(BUILD_SYSCALL_TEST), 1)
-$(RAMDISK): $(INITRAMFS_ALL_DIRS) $(INITRAMFS)/opt/syscall_test
+$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS) $(INITRAMFS)/opt/syscall_test
 else
-$(RAMDISK): $(INITRAMFS_ALL_DIRS)
+$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS)
 endif
-	@echo "Generating the ramdisk image..."
+	@echo "Generating the initramfs image..."
 	@(cd $(INITRAMFS); find . | cpio -o -H newc | gzip) > $@
 
-build: $(RAMDISK)
+build: $(INITRAMFS_IMAGE)
 
 clean:
 	@rm -rf $(BUILD_DIR)
