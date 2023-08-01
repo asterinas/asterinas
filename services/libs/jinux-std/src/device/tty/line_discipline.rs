@@ -3,7 +3,7 @@ use crate::process::process_group::ProcessGroup;
 use crate::process::signal::constants::{SIGINT, SIGQUIT};
 use crate::{
     prelude::*,
-    process::{process_table, signal::signals::kernel::KernelSignal, Pgid},
+    process::{signal::signals::kernel::KernelSignal, Pgid},
 };
 use alloc::format;
 use jinux_frame::trap::disable_local;
@@ -77,7 +77,7 @@ impl LineDiscipline {
     }
 
     /// Push char to line discipline.
-    pub fn push_char(&self, mut item: u8, echo_callback: fn(&str)) {
+    pub fn push_char<F: FnMut(&str)>(&self, mut item: u8, echo_callback: F) {
         let termios = self.termios.lock_irq_disabled();
         if termios.contains_icrnl() && item == b'\r' {
             item = b'\n'
@@ -162,7 +162,7 @@ impl LineDiscipline {
     }
 
     // TODO: respect output flags
-    fn output_char(&self, item: u8, termios: &KernelTermios, echo_callback: fn(&str)) {
+    fn output_char<F: FnMut(&str)>(&self, item: u8, termios: &KernelTermios, mut echo_callback: F) {
         match item {
             b'\n' => echo_callback("\n"),
             b'\r' => echo_callback("\r\n"),
