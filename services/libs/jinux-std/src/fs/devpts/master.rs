@@ -1,6 +1,8 @@
-use crate::prelude::*;
+use crate::{fs::file_handle::FileLike, prelude::*};
 
 use super::*;
+
+use crate::device::PtyMaster;
 
 /// Pty master inode for the master device.
 pub struct PtyMasterInode(Arc<PtyMaster>);
@@ -14,8 +16,10 @@ impl PtyMasterInode {
 impl Drop for PtyMasterInode {
     fn drop(&mut self) {
         // Remove the slave from fs.
-        let index = self.0.slave_index();
-        let _ = self.0.ptmx().devpts().remove_slave(index);
+        let index = self.0.index();
+        let fs = self.0.ptmx().fs();
+        let devpts = fs.downcast_ref::<DevPts>().unwrap();
+        devpts.remove_slave(index);
     }
 }
 
@@ -77,52 +81,6 @@ impl Inode for PtyMasterInode {
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
-        self.0.ptmx().devpts()
-    }
-}
-
-// TODO: implement real pty master.
-pub struct PtyMaster {
-    slave_index: u32,
-    ptmx: Arc<Ptmx>,
-}
-
-impl PtyMaster {
-    pub fn new(slave_index: u32, ptmx: Arc<Ptmx>) -> Arc<Self> {
-        Arc::new(Self { slave_index, ptmx })
-    }
-
-    pub fn slave_index(&self) -> u32 {
-        self.slave_index
-    }
-
-    fn ptmx(&self) -> &Ptmx {
-        &self.ptmx
-    }
-}
-
-impl Device for PtyMaster {
-    fn type_(&self) -> DeviceType {
-        self.ptmx.device_type()
-    }
-
-    fn id(&self) -> DeviceId {
-        self.ptmx.device_id()
-    }
-
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        todo!();
-    }
-
-    fn write(&self, buf: &[u8]) -> Result<usize> {
-        todo!();
-    }
-
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        todo!();
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        todo!();
+        self.0.ptmx().fs()
     }
 }

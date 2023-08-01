@@ -2,6 +2,8 @@ use crate::prelude::*;
 
 use super::*;
 
+use crate::device::PtySlave;
+
 /// Same major number with Linux, the minor number is the index of slave.
 const SLAVE_MAJOR_NUM: u32 = 3;
 
@@ -86,46 +88,5 @@ impl Inode for PtySlaveInode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
-    }
-}
-
-// TODO: implement real pty slave.
-pub struct PtySlave {
-    master: Arc<PtyMaster>,
-}
-
-impl PtySlave {
-    pub fn new(master: Arc<PtyMaster>) -> Arc<Self> {
-        Arc::new(Self { master })
-    }
-
-    pub fn index(&self) -> u32 {
-        self.master.slave_index()
-    }
-}
-
-impl Device for PtySlave {
-    fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
-    }
-
-    fn id(&self) -> DeviceId {
-        DeviceId::new(SLAVE_MAJOR_NUM, self.index())
-    }
-
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        todo!();
-    }
-
-    fn write(&self, buf: &[u8]) -> Result<usize> {
-        todo!();
-    }
-
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        todo!();
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        todo!();
     }
 }

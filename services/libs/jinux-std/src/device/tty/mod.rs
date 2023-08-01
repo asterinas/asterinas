@@ -6,7 +6,7 @@ use super::*;
 use crate::fs::utils::{IoEvents, IoctlCmd, Poller};
 use crate::prelude::*;
 use crate::process::process_group::ProcessGroup;
-use crate::process::{process_table, Pgid};
+use crate::process::process_table;
 use crate::util::{read_val_from_user, write_val_to_user};
 
 pub mod driver;

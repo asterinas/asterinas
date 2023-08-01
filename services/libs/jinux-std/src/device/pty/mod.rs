@@ -1,3 +1,9 @@
+mod master;
+mod slave;
+
+pub use master::PtyMaster;
+pub use slave::PtySlave;
+
 use crate::fs::{
     devpts::DevPts,
     fs_resolver::{FsPath, FsResolver},
