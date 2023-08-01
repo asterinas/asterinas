@@ -25,8 +25,8 @@ use crate::{
     process::status::ProcessStatus,
     thread::{kernel_thread::KernelThreadExt, Thread},
 };
-use alloc::sync::Arc;
-use jinux_frame::{boot, exit_qemu};
+use core::sync::atomic::Ordering;
+use jinux_frame::{boot, exit_qemu, QemuExitCode};
 use process::Process;
 
 extern crate alloc;
@@ -89,8 +89,12 @@ fn init_thread() {
     loop {
         // If initproc becomes zombie, then exit qemu.
         if *initproc.status().lock() == ProcessStatus::Zombie {
-            println!("Exit jinux.");
-            exit_qemu(jinux_frame::QemuExitCode::Success);
+            let exit_code = if initproc.exit_code().load(Ordering::Relaxed) == 0 {
+                QemuExitCode::Success
+            } else {
+                QemuExitCode::Failed
+            };
+            exit_qemu(exit_code);
         }
         // We don't have preemptive scheduler now.
         // The long running init thread should yield its own execution to allow other tasks to go on.

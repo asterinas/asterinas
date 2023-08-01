@@ -21,7 +21,7 @@ struct Args {
     // Options.
     /// Automatically run integration tests and exit.
     #[arg(short, long, default_value_t = false)]
-    eval: bool,
+    syscall_test: bool,
 
     /// Emulate Intel IOMMU by QEMU.
     #[arg(short, long, default_value_t = false)]
@@ -90,7 +90,7 @@ fn main() {
     qemu_args.push("-drive");
     qemu_args.push(fs_image.as_str());
 
-    let bootdev_image = create_bootdev_image(args.path, args.eval);
+    let bootdev_image = create_bootdev_image(args.path, args.syscall_test);
     qemu_cmd.arg("-cdrom");
     qemu_cmd.arg(bootdev_image.as_str());
 

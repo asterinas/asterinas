@@ -75,14 +75,15 @@ cargo component-check
 
 ### Syscall Test
 
-If we have already built the project for normal use, please clean the project before running syscall test.
+This command will build the syscall test binary and run Jinux with it in QEMU.
 ```bash
-make clean
+make syscall_test
 ```
 
-For running syscall tests, we can run following command to build test binaries and run the OS for testing purpose.
-```bash
-ENABLE_SYSCALL_TEST=1 make run
+If you wish to test it interactively inside a shell in Jinux.
+```
+make syscall_bin
+make run
 ```
 
 Then, we can run the following script inside the OS to run all syscall test cases.
