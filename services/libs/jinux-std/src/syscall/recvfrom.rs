@@ -1,6 +1,6 @@
 use crate::net::socket::SendRecvFlags;
 use crate::util::net::write_socket_addr_to_user;
-use crate::util::{read_val_from_user, write_bytes_to_user, write_val_to_user};
+use crate::util::write_bytes_to_user;
 use crate::{fs::file_table::FileDescripter, prelude::*};
 use crate::{get_socket_without_holding_filetable_lock, log_syscall_entry};
 
@@ -13,11 +13,11 @@ pub fn sys_recvfrom(
     len: usize,
     flags: i32,
     src_addr: Vaddr,
-    addrlen: Vaddr,
+    addrlen_ptr: Vaddr,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_RECVFROM);
     let flags = SendRecvFlags::from_bits_truncate(flags);
-    debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen = 0x{addrlen:x}");
+    debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
     let current = current!();
     get_socket_without_holding_filetable_lock!(socket, current, sockfd);
     let mut buffer = vec![0u8; len];
@@ -26,10 +26,7 @@ pub fn sys_recvfrom(
         write_bytes_to_user(buf, &buffer[..recv_size])?;
     }
     if src_addr != 0 {
-        debug_assert!(addrlen != 0);
-        let max_len: u32 = read_val_from_user(addrlen)?;
-        let write_size = write_socket_addr_to_user(&socket_addr, src_addr, max_len as usize)?;
-        write_val_to_user(addrlen, &(write_size as u32))?;
+        write_socket_addr_to_user(&socket_addr, src_addr, addrlen_ptr)?;
     }
     Ok(SyscallReturn::Return(recv_size as _))
 }
