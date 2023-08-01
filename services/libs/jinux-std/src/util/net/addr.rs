@@ -49,15 +49,20 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
 pub fn write_socket_addr_to_user(
     socket_addr: &SocketAddr,
     dest: Vaddr,
-    max_len: usize,
-) -> Result<usize> {
-    match socket_addr {
+    addrlen_ptr: Vaddr,
+) -> Result<()> {
+    debug_assert!(addrlen_ptr != 0);
+    if addrlen_ptr == 0 {
+        return_errno_with_message!(Errno::EINVAL, "must provide the addrlen ptr");
+    }
+    let max_len = read_val_from_user::<i32>(addrlen_ptr)? as usize;
+    let write_size = match socket_addr {
         SocketAddr::Unix(path) => {
             let sock_addr_unix = SockAddrUnix::try_from(path.as_str())?;
             let write_size = core::mem::size_of::<SockAddrUnix>();
             debug_assert!(max_len >= write_size);
             write_val_to_user(dest, &sock_addr_unix)?;
-            Ok(write_size)
+            write_size as i32
         }
         SocketAddr::IPv4(addr, port) => {
             let in_addr = InetAddr::from(*addr);
@@ -65,10 +70,14 @@ pub fn write_socket_addr_to_user(
             let write_size = core::mem::size_of::<SockAddrInet>();
             debug_assert!(max_len >= write_size);
             write_val_to_user(dest, &sock_addr_in)?;
-            Ok(write_size)
+            write_size as i32
         }
         SocketAddr::IPv6 => todo!(),
+    };
+    if addrlen_ptr != 0 {
+        write_val_to_user(addrlen_ptr, &write_size)?;
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
