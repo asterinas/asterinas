@@ -1,4 +1,4 @@
-.PHONY: all build clean docs fmt run setup test tools eval
+.PHONY: all build clean docs fmt run setup test tools syscall_test syscall_bin
 
 all: build
 
@@ -16,11 +16,14 @@ tools:
 	@cd services/libs/comp-sys && cargo install --path cargo-component
 
 run: build
-	@cargo krun
+	@cargo krun || exit $$(($$? >> 1))			# FIXME: Exit code manipulation is not needed using non-x86 QEMU
+
+syscall_bin:
+	@make --no-print-directory -C regression/syscall_test
 
 # Test Jinux in a QEMU guest VM and run a series of evaluations.
-eval: build
-	@cargo keval
+syscall_test: syscall_bin build
+	@cargo ksctest || exit $$(($$? >> 1))		# FIXME: Exit code manipulation is not needed using non-x86 QEMU
 
 # The usermode cargo test of Jinux frame and Jinux standard library.
 test: build

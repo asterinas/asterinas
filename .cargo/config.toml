@@ -6,7 +6,7 @@ runner = "cargo run --package jinux-build --"
 kcheck = "check --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 kbuild = "build --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 krun = "run --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
-keval = "run --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem -- --eval"
+ksctest = "run --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem -- --syscall-test"
 ktest = "test --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 component-check = "component check --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 
