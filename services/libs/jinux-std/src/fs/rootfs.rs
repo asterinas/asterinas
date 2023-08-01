@@ -3,18 +3,21 @@ use crate::prelude::*;
 use super::fs_resolver::{FsPath, FsResolver};
 use super::procfs::ProcFS;
 use super::ramfs::RamFS;
-use super::utils::{InodeMode, InodeType};
+use super::utils::{InodeMode, InodeType, MountNode};
 
 use cpio_decoder::{CpioDecoder, FileType};
 use lending_iterator::LendingIterator;
 use libflate::gzip::Decoder as GZipDecoder;
+use spin::Once;
 
-/// Unpack and prepare the fs from the ramdisk CPIO buffer.
-pub fn init(gzip_ramdisk_buf: &[u8]) -> Result<()> {
-    println!("[kernel] unzipping ramdisk.cpio.gz ...");
+/// Unpack and prepare the rootfs from the initramfs CPIO buffer.
+pub fn init(initramfs_buf: &[u8]) -> Result<()> {
+    init_root_mount()?;
+
+    println!("[kernel] unpacking the initramfs.cpio.gz to rootfs ...");
     let fs = FsResolver::new();
     let mut decoder = CpioDecoder::new(
-        GZipDecoder::new(gzip_ramdisk_buf)
+        GZipDecoder::new(initramfs_buf)
             .map_err(|_| Error::with_message(Errno::EINVAL, "invalid gzip buffer"))?,
     );
 
@@ -74,7 +77,23 @@ pub fn init(gzip_ramdisk_buf: &[u8]) -> Result<()> {
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
     dev_dentry.mount(RamFS::new(false))?;
-    println!("[kernel] initramfs is ready");
+    println!("[kernel] rootfs is ready");
 
     Ok(())
+}
+
+static ROOT_MOUNT: Once<Arc<MountNode>> = Once::new();
+
+fn init_root_mount() -> Result<()> {
+    ROOT_MOUNT.try_call_once(|| -> Result<Arc<MountNode>> {
+        let rootfs = RamFS::new(true);
+        let root_mount = MountNode::new_root(rootfs)?;
+        Ok(root_mount)
+    })?;
+
+    Ok(())
+}
+
+pub fn root_mount() -> &'static Arc<MountNode> {
+    ROOT_MOUNT.get().unwrap()
 }

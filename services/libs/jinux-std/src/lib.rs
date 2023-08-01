@@ -52,7 +52,7 @@ pub fn init() {
     driver::init();
     net::init();
     process::fifo_scheduler::init();
-    fs::initramfs::init(boot::initramfs()).unwrap();
+    fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
 }
 

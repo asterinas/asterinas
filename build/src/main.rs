@@ -156,8 +156,8 @@ fn create_bootdev_image(path: PathBuf, kcmdline: &str) -> String {
         kcmdline,
     );
     fs::copy(
-        "regression/build/ramdisk.cpio.gz",
-        "target/iso_root/boot/ramdisk.cpio.gz",
+        "regression/build/initramfs.cpio.gz",
+        "target/iso_root/boot/initramfs.cpio.gz",
     )
     .unwrap();
 

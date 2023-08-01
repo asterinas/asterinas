@@ -7,6 +7,6 @@ set timeout=1
 
 menuentry 'jinux' {
     multiboot2 /boot/jinux #KERNEL_COMMAND_LINE#
-    module2 --nounzip /boot/ramdisk.cpio.gz
+    module2 --nounzip /boot/initramfs.cpio.gz
     boot
 }
