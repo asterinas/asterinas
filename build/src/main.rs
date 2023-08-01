@@ -23,6 +23,10 @@ struct Args {
     #[arg(short, long, default_value_t = false)]
     syscall_test: bool,
 
+    /// Enable KVM when running QEMU.
+    #[arg(short, long, default_value_t = false)]
+    enable_kvm: bool,
+
     /// Emulate Intel IOMMU by QEMU.
     #[arg(short, long, default_value_t = false)]
     iommu: bool,
@@ -36,7 +40,6 @@ const COMMON_ARGS: &[&str] = &[
     "Icelake-Server,+x2apic",
     "-m",
     "2G",
-    "-enable-kvm",
     "-nographic", // TODO: figure out why grub can't shown up without it
     "-monitor",
     "vc",
@@ -80,6 +83,9 @@ fn main() {
     let mut qemu_cmd = Command::new("qemu-system-x86_64");
 
     let mut qemu_args = COMMON_ARGS.clone().to_vec();
+    if args.enable_kvm {
+        qemu_args.push("-enable-kvm");
+    }
     if args.iommu {
         qemu_args.extend(IOMMU_DEVICE_ARGS.clone().to_vec().iter());
     } else {

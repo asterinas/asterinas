@@ -15,15 +15,24 @@ build:
 tools:
 	@cd services/libs/comp-sys && cargo install --path cargo-component
 
+# FIXME: Exit code manipulation is not needed using non-x86 QEMU
 run: build
-	@cargo krun || exit $$(($$? >> 1))			# FIXME: Exit code manipulation is not needed using non-x86 QEMU
+ifneq ($(ENABLE_KVM), false)
+	cargo krun --enable-kvm || exit $$(($$? >> 1))
+else
+	cargo krun || exit $$(($$? >> 1))
+endif
 
 syscall_bin:
 	@make --no-print-directory -C regression/syscall_test
 
 # Test Jinux in a QEMU guest VM and run a series of evaluations.
 syscall_test: syscall_bin build
-	@cargo ksctest || exit $$(($$? >> 1))		# FIXME: Exit code manipulation is not needed using non-x86 QEMU
+ifneq ($(ENABLE_KVM), false)
+	@cargo ksctest --enable-kvm || exit $$(($$? >> 1))
+else
+	@cargo ksctest || exit $$(($$? >> 1))
+endif
 
 # The usermode cargo test of Jinux frame and Jinux standard library.
 test: build
