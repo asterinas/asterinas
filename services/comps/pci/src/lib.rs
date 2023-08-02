@@ -45,7 +45,7 @@ impl PCIComponent {
     pub fn init() -> Result<Self, ComponentInitError> {
         let mut devices = Vec::new();
         for location in PciDeviceLocation::all() {
-            let Some(device) = util::find_device(location,CSpaceAccessMethod::IO) else{
+            let Some(device) = util::find_device(location, CSpaceAccessMethod::IO) else {
                 continue;
             };
             log::info!(
