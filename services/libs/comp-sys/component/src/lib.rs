@@ -71,16 +71,17 @@ impl PartialEq for ComponentInfo {
     }
 }
 
-impl PartialOrd for ComponentInfo {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        self.priority.partial_cmp(&other.priority)
-    }
-}
-
 impl Eq for ComponentInfo {}
+
 impl Ord for ComponentInfo {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.priority.cmp(&other.priority)
+    }
+}
+
+impl PartialOrd for ComponentInfo {
+    fn partial_cmp(&self, other: &ComponentInfo) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
