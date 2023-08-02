@@ -185,15 +185,15 @@ impl<T: ?Sized> PartialEq for KeyableArc<T> {
 
 impl<T: ?Sized> Eq for KeyableArc<T> {}
 
-impl<T: ?Sized> PartialOrd for KeyableArc<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(Arc::as_ptr(&self.0).cmp(&Arc::as_ptr(&other.0)))
-    }
-}
-
 impl<T: ?Sized> Ord for KeyableArc<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         Arc::as_ptr(&self.0).cmp(&Arc::as_ptr(&other.0))
+    }
+}
+
+impl<T: ?Sized> PartialOrd for KeyableArc<T> {
+    fn partial_cmp(&self, other: &KeyableArc<T>) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -275,15 +275,15 @@ impl<T: ?Sized> PartialEq for KeyableWeak<T> {
 
 impl<T: ?Sized> Eq for KeyableWeak<T> {}
 
-impl<T: ?Sized> PartialOrd for KeyableWeak<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.0.as_ptr().cmp(&other.0.as_ptr()))
-    }
-}
-
 impl<T: ?Sized> Ord for KeyableWeak<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.as_ptr().cmp(&other.0.as_ptr())
+    }
+}
+
+impl<T: ?Sized> PartialOrd for KeyableWeak<T> {
+    fn partial_cmp(&self, other: &KeyableWeak<T>) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
