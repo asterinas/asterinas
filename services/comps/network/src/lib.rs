@@ -41,9 +41,9 @@ pub fn probe_virtio_net() -> Result<VirtioNet, ComponentInitError> {
         virtio.get_device(VirtioDeviceType::Network)
     };
 
-    for device in network_devices {
+    // FIXME: deal with multiple net devices
+    if let Some(device) = network_devices.into_iter().next() {
         let virtio_net = VirtioNet::new(device);
-        // FIXME: deal with multiple net devices
         return Ok(virtio_net);
     }
 

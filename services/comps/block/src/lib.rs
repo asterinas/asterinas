@@ -44,7 +44,8 @@ impl BLKComponent {
     pub fn init() -> Result<Self, ComponentInitError> {
         let virtio = jinux_virtio::VIRTIO_COMPONENT.get().unwrap();
         let devices = virtio.get_device(VirtioDeviceType::Block);
-        for device in devices {
+        // FIXME: deal with multiple block devices
+        if let Some(device) = devices.into_iter().next() {
             let v_device = VirtioBlockDevice::new(device);
             return Ok(Self {
                 blk_device: Arc::new(v_device),
