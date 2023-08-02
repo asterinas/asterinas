@@ -1,4 +1,33 @@
-.PHONY: all build clean docs fmt run setup test tools syscall_test syscall_bin
+# Make arguments and their defaults
+AUTO_SYSCALL_TEST ?= 0
+BUILD_SYSCALL_TEST ?= 0
+EMULATE_IOMMU ?= 0
+ENABLE_KVM ?= 1
+# End of Make arguments
+
+KERNEL_CMDLINE := SHELL="/bin/sh" LOGNAME="root" HOME="/" USER="root" PATH="/bin" init=/usr/bin/busybox -- sh -l
+ifeq ($(AUTO_SYSCALL_TEST), 1)
+KERNEL_CMDLINE += /opt/syscall_test/run_syscall_test.sh
+endif
+
+CARGO_KRUN_ARGS := -- '$(KERNEL_CMDLINE)'
+
+ifeq ($(ENABLE_KVM), 1)
+CARGO_KRUN_ARGS += --enable-kvm
+endif
+
+ifeq ($(EMULATE_IOMMU), 1)
+CARGO_KRUN_ARGS += --emulate-iommu
+endif
+
+ifeq ($(AUTO_SYSCALL_TEST), 1)
+BUILD_SYSCALL_TEST := 1
+endif
+
+# Pass make variables to all subdirectory makes
+export
+
+.PHONY: all setup build tools run test docs check clean
 
 all: build
 
@@ -15,26 +44,9 @@ build:
 tools:
 	@cd services/libs/comp-sys && cargo install --path cargo-component
 
-# FIXME: Exit code manipulation is not needed using non-x86 QEMU
 run: build
-ifneq ($(ENABLE_KVM), false)
-	cargo krun --enable-kvm || exit $$(($$? >> 1))
-else
-	cargo krun || exit $$(($$? >> 1))
-endif
+	@cargo krun $(CARGO_KRUN_ARGS)
 
-syscall_bin:
-	@make --no-print-directory -C regression/syscall_test
-
-# Test Jinux in a QEMU guest VM and run a series of evaluations.
-syscall_test: syscall_bin build
-ifneq ($(ENABLE_KVM), false)
-	@cargo ksctest --enable-kvm || exit $$(($$? >> 1))
-else
-	@cargo ksctest || exit $$(($$? >> 1))
-endif
-
-# The usermode cargo test of Jinux frame and Jinux standard library.
 test: build
 	@cargo ktest
 

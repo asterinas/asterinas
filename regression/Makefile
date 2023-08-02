@@ -4,17 +4,7 @@ BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
 RAMDISK := $(BUILD_DIR)/ramdisk.cpio.gz
 SHELL := /bin/bash
-
-.PHONY: all clean
-
-all: build
-
-TARGETS=\
-	$(INITRAMFS)/lib/x86_64-linux-gnu \
-	$(INITRAMFS)/lib64 \
-	$(INITRAMFS)/bin \
-	$(INITRAMFS)/usr/bin \
-	$(INITRAMFS)/regression \
+INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/etc \
 	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/root \
@@ -22,8 +12,18 @@ TARGETS=\
 	$(INITRAMFS)/opt \
 	$(INITRAMFS)/proc \
 	$(INITRAMFS)/dev
+INITRAMFS_ALL_DIRS := \
+	$(INITRAMFS)/lib/x86_64-linux-gnu \
+	$(INITRAMFS)/lib64 \
+	$(INITRAMFS)/bin \
+	$(INITRAMFS)/usr/bin \
+	$(INITRAMFS)/regression \
+	$(INITRAMFS_EMPTY_DIRS)
 
-# Copy necessary libs
+.PHONY: all clean
+
+all: build
+
 $(INITRAMFS)/lib/x86_64-linux-gnu:
 	@mkdir -p $@
 	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $@
@@ -36,7 +36,7 @@ $(INITRAMFS)/lib64:
 	@mkdir -p $@
 	@cp -L /lib64/ld-linux-x86-64.so.2 $@
 
-# Install busybox
+# Install busybox into /bin and /usr/bin.
 $(INITRAMFS)/bin:
 	@mkdir -p $@
 	@/bin/busybox --install -s $@
@@ -45,33 +45,24 @@ $(INITRAMFS)/usr/bin: $(INITRAMFS)/bin
 	@mkdir -p $@
 	@cp /usr/bin/busybox $@
 
-# Copy from apps
+# Copy from apps.
 $(INITRAMFS)/regression:
 	@make --no-print-directory -C apps
 
-# Make necessary directories
-$(INITRAMFS)/etc:
+# Make necessary directories.
+$(INITRAMFS_EMPTY_DIRS):
 	@mkdir -p $@
 
-$(INITRAMFS)/sbin:
-	@mkdir -p $@
+$(INITRAMFS)/opt/syscall_test:
+	@make --no-print-directory -C syscall_test
 
-$(INITRAMFS)/root:
-	@mkdir -p $@
-
-$(INITRAMFS)/tmp:
-	@mkdir -p $@
-
-$(INITRAMFS)/opt:
-	@mkdir -p $@
-
-$(INITRAMFS)/proc:
-	@mkdir -p $@
-
-$(INITRAMFS)/dev:
-	@mkdir -p $@
-
-$(RAMDISK): $(TARGETS)
+# If the BUILD_SYSCALL_TEST variable is set, we should depend on the
+# sub make output to do incremental building.
+ifeq ($(BUILD_SYSCALL_TEST), 1)
+$(RAMDISK): $(INITRAMFS_ALL_DIRS) $(INITRAMFS)/opt/syscall_test
+else
+$(RAMDISK): $(INITRAMFS_ALL_DIRS)
+endif
 	@echo "Generating the ramdisk image..."
 	@(cd $(INITRAMFS); find . | cpio -o -H newc | gzip) > $@
 
