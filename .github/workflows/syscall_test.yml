@@ -1,0 +1,21 @@
+name: Syscall test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - releases/*
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: jinuxdev/jinux:0.1.0
+    steps:
+      - run: echo "Running in jinuxdev/jinux:0.1.0"
+
+      - uses: actions/checkout@v3
+
+      - name: Syscall Test
+        id: syscall_test
+        run: make syscall_test ENABLE_KVM=false
