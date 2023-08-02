@@ -175,7 +175,7 @@ impl Drop for Poller {
         }
 
         let self_observer = self.observer();
-        for (weak_pollee, _) in pollees.drain_filter(|_, _| true) {
+        for (weak_pollee, _) in pollees.extract_if(|_, _| true) {
             if let Some(pollee) = weak_pollee.upgrade() {
                 pollee.subject.unregister_observer(&self_observer);
             }
