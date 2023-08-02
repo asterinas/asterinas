@@ -290,7 +290,7 @@ impl Drop for EpollFile {
         trace!("EpollFile Drop");
         let mut interest = self.interest.lock();
         let fds: Vec<_> = interest
-            .drain_filter(|_, _| true)
+            .extract_if(|_, _| true)
             .map(|(fd, entry)| {
                 entry.set_deleted();
                 if let Some(file) = entry.file() {

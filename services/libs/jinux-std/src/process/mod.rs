@@ -278,7 +278,7 @@ impl Process {
         // move children to the init process
         if !self.is_init_process() {
             if let Some(init_process) = get_init_process() {
-                for (_, child_process) in self.children.lock().drain_filter(|_, _| true) {
+                for (_, child_process) in self.children.lock().extract_if(|_, _| true) {
                     child_process.set_parent(Arc::downgrade(&init_process));
                     init_process.add_child(child_process);
                 }

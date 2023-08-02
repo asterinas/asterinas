@@ -36,9 +36,9 @@ version = "0.1.0"
 
 [[package]]
 name = "aml"
-version = "0.16.3"
+version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dcf92e2afd8d6607e435cdc1d8ea76260fa467f6cf821f6af40e88dca15d183"
+checksum = "c4f8cba7d4260ea05671dda81029f6f718b54402a4ec926a0d9a41bdbb96b415"
 dependencies = [
  "bit_field",
  "bitvec",
@@ -928,9 +928,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.56"
+version = "1.0.66"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b63bdb0cd06f1f4dedf69b254734f9b45af66e4a031e42a7480257d9898b435"
+checksum = "18fb31db3f9bddb2ea821cde30a9f70117e3f119938b5ee630b7403aa6e2ead9"
 dependencies = [
  "unicode-ident",
 ]

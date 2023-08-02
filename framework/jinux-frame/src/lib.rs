@@ -11,7 +11,6 @@
 #![feature(strict_provenance)]
 #![feature(link_llvm_intrinsics)]
 #![feature(const_trait_impl)]
-#![feature(const_ops)]
 #![feature(generators)]
 #![feature(iter_from_generator)]
 #![feature(const_mut_refs)]
