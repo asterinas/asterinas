@@ -21,7 +21,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[test_case]
 fn test_framebuffer() {
-    for i in 0..30 {
+    for _i in 0..30 {
         jinux_framebuffer::println!("test_println!");
     }
 }
