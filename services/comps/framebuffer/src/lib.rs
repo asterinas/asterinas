@@ -25,7 +25,7 @@ pub(crate) static WRITER: Once<SpinLock<Writer>> = Once::new();
 
 pub(crate) fn init() {
     let mut writer = {
-        let framebuffer = boot::get_framebuffer_info();
+        let framebuffer = boot::framebuffer_arg();
         let mut writer = None;
         let mut size = 0;
         for i in jinux_frame::vm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
@@ -34,7 +34,7 @@ pub(crate) fn init() {
 
         let page_size = size / PAGE_SIZE;
 
-        let start_paddr = framebuffer.address.as_ptr().unwrap().addr();
+        let start_paddr = framebuffer.address;
         let io_mem =
             IoMem::new(start_paddr..(start_paddr + jinux_frame::config::PAGE_SIZE * page_size))
                 .unwrap();

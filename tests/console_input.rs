@@ -25,7 +25,8 @@ fn panic(info: &PanicInfo) -> ! {
 fn test_input() {
     x86_64::instructions::interrupts::enable();
     println!("please input value into console to pass this test");
-    jinux_std::driver::tty::register_serial_input_callback(input_callback);
+    // FIXME: Where is tty?
+    // jinux_std::driver::tty::register_serial_input_callback(input_callback);
     unsafe {
         while INPUT_VALUE == 0 {
             x86_64::instructions::hlt();
