@@ -88,7 +88,7 @@ pub struct BarManager {
 impl BarManager {
     /// Gain access to the BAR space and return None if that BAR is set to be invisible or absent.
     pub fn bar(&self, idx: u8) -> Option<Bar> {
-        let Some((bar,visible)) = self.bars[idx as usize].clone() else{
+        let Some((bar, visible)) = self.bars[idx as usize].clone() else {
             return None;
         };
         if visible {
@@ -132,12 +132,12 @@ impl BarManager {
 
     pub(super) fn set_invisible(&mut self, idx: u8) {
         if self.bars[idx as usize].is_some() {
-            let Some((bar,_)) = self.bars[idx as usize].clone() else{
+            let Some((bar, _)) = self.bars[idx as usize].clone() else {
                 return;
             };
             self.bars[idx as usize] = Some((bar, false));
         }
-        let Some((_,visible)) = self.bars[idx as usize] else{
+        let Some((_, visible)) = self.bars[idx as usize] else {
             return;
         };
     }

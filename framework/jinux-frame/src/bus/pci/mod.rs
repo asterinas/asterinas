@@ -64,7 +64,7 @@ pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 pub(crate) fn init() {
     let mut lock = PCI_BUS.lock();
     for location in PciDeviceLocation::all() {
-        let Some(device) = PciCommonDevice::new(location)else{
+        let Some(device) = PciCommonDevice::new(location) else {
             continue;
         };
         lock.register_common_device(device);

@@ -27,7 +27,7 @@ pub enum IommuError {
 ///
 /// Mapping an incorrect address may lead to a kernel data leak.
 pub(crate) unsafe fn map(vaddr: Vaddr, paddr: Paddr) -> Result<(), IommuError> {
-    let Some(table) = PAGE_TABLE.get() else{
+    let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);
     };
     // The page table of all devices is the same. So we can use any device ID.
@@ -51,7 +51,7 @@ pub(crate) unsafe fn map(vaddr: Vaddr, paddr: Paddr) -> Result<(), IommuError> {
 }
 
 pub(crate) fn unmap(vaddr: Vaddr) -> Result<(), IommuError> {
-    let Some(table) = PAGE_TABLE.get() else{
+    let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);
     };
     // The page table of all devices is the same. So we can use any device ID.
