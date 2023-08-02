@@ -131,7 +131,7 @@ impl Waiter {
 
 bitflags! {
     pub struct WaiterFlag: u32 {
-        const EXCLUSIVE = 0x1;
-        const INTERRUPTIABLE = 0x10;
+        const EXCLUSIVE         = 1 << 0;
+        const INTERRUPTIABLE    = 1 << 1;
     }
 }

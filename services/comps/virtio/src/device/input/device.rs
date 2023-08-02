@@ -13,14 +13,13 @@ use super::{
 
 bitflags! {
     pub struct InputProp : u8{
-        const POINTER = 0x00;
-        const DIRECT = 0x01;
-        const BUTTONPAD = 0x02;
-        const SEMI_MT = 0x03;
-        const TOPBUTTONPAD = 0x04;
-        const POINTING_STICK = 0x05;
-        const ACCELEROMETER = 0x06;
-
+        const POINTER           = 1 << 0;
+        const DIRECT            = 1 << 1;
+        const BUTTONPAD         = 1 << 2;
+        const SEMI_MT           = 1 << 3;
+        const TOPBUTTONPAD      = 1 << 4;
+        const POINTING_STICK    = 1 << 5;
+        const ACCELEROMETER     = 1 << 6;
     }
 }
 
