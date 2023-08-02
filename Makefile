@@ -45,7 +45,7 @@ docs:
 
 check:
 	@cargo fmt --check 				# Check Rust format issues
-	@cargo clippy					# Check common programming mistakes
+	@cargo kclippy					# Check common programming mistakes
 
 clean:
 	@cargo clean

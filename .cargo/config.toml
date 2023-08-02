@@ -8,6 +8,7 @@ kbuild = "build --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_buil
 krun = "run --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem --"
 ksctest = "run --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem -- --syscall-test"
 ktest = "test --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
+kclippy = "clippy --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 component-check = "component check --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"
 
 [install]
