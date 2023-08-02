@@ -1,13 +1,25 @@
+//! Definition of MMap flags, conforming to the linux mmap interface:
+//! https://man7.org/linux/man-pages/man2/mmap.2.html
+//!
+//! The first 4 bits of the flag value represents the type of memory map,
+//! while other bits are used as memory map flags.
+//!
+
 use crate::prelude::*;
 
-// The definition of MMapFlags is from occlum
+// The map type mask
+const MAP_TYPE: u32 = 0xf;
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum MMapType {
+    MapFile = 0x0,
+    MapShared = 0x1,
+    MapPrivate = 0x2,
+    MapSharedValidate = 0x3,
+}
+
 bitflags! {
     pub struct MMapFlags : u32 {
-        const MAP_FILE            = 0x0;
-        const MAP_SHARED          = 0x1;
-        const MAP_PRIVATE         = 0x2;
-        const MAP_SHARED_VALIDATE = 0x3;
-        const MAP_TYPE            = 0xf;
         const MAP_FIXED           = 0x10;
         const MAP_ANONYMOUS       = 0x20;
         const MAP_GROWSDOWN       = 0x100;
@@ -24,11 +36,42 @@ bitflags! {
     }
 }
 
-impl TryFrom<u64> for MMapFlags {
+#[derive(Debug)]
+pub struct MMapOption {
+    typ: MMapType,
+    flags: MMapFlags,
+}
+
+impl TryFrom<u64> for MMapOption {
     type Error = Error;
 
     fn try_from(value: u64) -> Result<Self> {
-        MMapFlags::from_bits(value as u32)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown mmap flags"))
+        let typ_raw = value as u32 & MAP_TYPE;
+        let flags_raw = value as u32 & !MAP_TYPE;
+        let typ = match typ_raw {
+            0x0 => MMapType::MapFile,
+            0x1 => MMapType::MapShared,
+            0x2 => MMapType::MapPrivate,
+            0x3 => MMapType::MapSharedValidate,
+            _ => return Err(Error::with_message(Errno::EINVAL, "unknown mmap flags")),
+        };
+        if let Some(flags) = MMapFlags::from_bits(flags_raw) {
+            Ok(MMapOption {
+                typ: typ,
+                flags: flags,
+            })
+        } else {
+            Err(Error::with_message(Errno::EINVAL, "unknown mmap flags"))
+        }
+    }
+}
+
+impl MMapOption {
+    pub fn typ(&self) -> MMapType {
+        self.typ
+    }
+
+    pub fn flags(&self) -> MMapFlags {
+        self.flags
     }
 }

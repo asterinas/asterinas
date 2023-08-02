@@ -1,7 +1,7 @@
 //! This mod defines mmap flags and the handler to syscall mmap
 
 use crate::fs::file_table::FileDescripter;
-use crate::process::process_vm::mmap_flags::MMapFlags;
+use crate::process::process_vm::mmap_flags::{MMapFlags, MMapOption, MMapType};
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{VmoChildOptions, VmoOptions, VmoRightsOp};
 use crate::{log_syscall_entry, prelude::*};
@@ -23,12 +23,12 @@ pub fn sys_mmap(
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MMAP);
     let perms = VmPerm::try_from(perms).unwrap();
-    let flags = MMapFlags::try_from(flags).unwrap();
+    let option = MMapOption::try_from(flags).unwrap();
     let res = do_sys_mmap(
         addr as usize,
         len as usize,
         perms,
-        flags,
+        option,
         fd as _,
         offset as usize,
     )?;
@@ -39,13 +39,13 @@ pub fn do_sys_mmap(
     addr: Vaddr,
     len: usize,
     vm_perm: VmPerm,
-    flags: MMapFlags,
+    option: MMapOption,
     fd: FileDescripter,
     offset: usize,
 ) -> Result<Vaddr> {
     debug!(
-        "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, flags = {:?}, fd = {}, offset = 0x{:x}",
-        addr, len, vm_perm, flags, fd, offset
+        "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, option = {:?}, fd = {}, offset = 0x{:x}",
+        addr, len, vm_perm, option, fd, offset
     );
 
     let len = len.align_up(PAGE_SIZE);
@@ -55,11 +55,10 @@ pub fn do_sys_mmap(
     }
     let perms = VmPerms::from(vm_perm);
 
-    if flags.contains(MMapFlags::MAP_ANONYMOUS) {
-        // only support map anonymous areas.
-        mmap_anonymous_vmo(addr, len, offset, perms, flags)
+    if option.flags().contains(MMapFlags::MAP_ANONYMOUS) {
+        mmap_anonymous_vmo(addr, len, offset, perms, option)
     } else {
-        mmap_filebacked_vmo(addr, fd, len, offset, perms, flags)
+        mmap_filebacked_vmo(addr, fd, len, offset, perms, option)
     }
 }
 
@@ -68,15 +67,15 @@ fn mmap_anonymous_vmo(
     len: usize,
     offset: usize,
     perms: VmPerms,
-    flags: MMapFlags,
+    option: MMapOption,
 ) -> Result<Vaddr> {
-    // TODO: how to respect flags?
-    if flags.complement().contains(MMapFlags::MAP_ANONYMOUS)
-        | flags.complement().contains(MMapFlags::MAP_PRIVATE)
-    {
-        panic!("Unsupported mmap flags {:?} now", flags);
-    }
+    assert!(option.flags().contains(MMapFlags::MAP_ANONYMOUS));
     debug_assert!(offset == 0);
+
+    // TODO: implement features presented by other flags.
+    if option.typ() != MMapType::MapPrivate {
+        panic!("Unsupported mmap flags {:?} now", option);
+    }
 
     let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
     let vmo = vmo_options.alloc()?;
@@ -84,7 +83,7 @@ fn mmap_anonymous_vmo(
     let root_vmar = current.root_vmar();
 
     let mut vmar_map_options = root_vmar.new_map(vmo, perms)?;
-    if flags.contains(MMapFlags::MAP_FIXED) {
+    if option.flags().contains(MMapFlags::MAP_FIXED) {
         vmar_map_options = vmar_map_options.offset(addr).can_overwrite(true);
     }
     let map_addr = vmar_map_options.build()?;
@@ -98,7 +97,7 @@ fn mmap_filebacked_vmo(
     len: usize,
     offset: usize,
     perms: VmPerms,
-    flags: MMapFlags,
+    option: MMapOption,
 ) -> Result<Vaddr> {
     let current = current!();
     let page_cache_vmo = {
@@ -111,7 +110,7 @@ fn mmap_filebacked_vmo(
         ))?
     };
 
-    let vmo = if flags.contains(MMapFlags::MAP_PRIVATE) {
+    let vmo = if option.typ() == MMapType::MapPrivate {
         // map private
         VmoChildOptions::new_cow(page_cache_vmo, offset..(offset + len)).alloc()?
     } else {
@@ -123,7 +122,7 @@ fn mmap_filebacked_vmo(
     let root_vmar = current.root_vmar();
     let vm_map_options = {
         let mut options = root_vmar.new_map(vmo.to_dyn(), perms)?;
-        if flags.contains(MMapFlags::MAP_FIXED) {
+        if option.flags().contains(MMapFlags::MAP_FIXED) {
             options = options.offset(addr).can_overwrite(true);
         }
         options
