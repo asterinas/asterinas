@@ -336,7 +336,11 @@ impl FpRegs {
     pub fn new() -> Self {
         // The buffer address requires 16bytes alignment.
         Self {
-            buf: unsafe { MaybeUninit::uninit().assume_init() },
+            buf: unsafe {
+                // FIXME: This is an UB. The initialization could be done in a controlled manner.
+                #[allow(clippy::uninit_assumed_init)]
+                MaybeUninit::uninit().assume_init()
+            },
             is_valid: false,
         }
     }

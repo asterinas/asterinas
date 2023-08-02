@@ -67,9 +67,6 @@ impl IrqAllocateHandle {
 
 impl Drop for IrqAllocateHandle {
     fn drop(&mut self) {
-        for callback in &self.callbacks {
-            drop(callback)
-        }
         NOT_USING_IRQ.lock().dealloc(self.irq_num as usize);
     }
 }

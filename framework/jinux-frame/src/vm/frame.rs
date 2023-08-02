@@ -353,6 +353,9 @@ impl VmFrame {
         (*self.frame_index).bitand(VmFrameFlags::all().bits().not())
     }
 
+    // FIXME: need a sound reason for creating a mutable reference
+    // for getting the content of the frame.
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn as_slice(&self) -> &mut [u8] {
         core::slice::from_raw_parts_mut(
             super::paddr_to_vaddr(self.start_paddr()) as *mut u8,
