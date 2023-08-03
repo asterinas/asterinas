@@ -18,4 +18,4 @@ jobs:
 
       - name: Syscall Test
         id: syscall_test
-        run: make syscall_test ENABLE_KVM=false
+        run: make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0
