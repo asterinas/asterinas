@@ -1,10 +1,10 @@
 //! jinux-build is the Jinux runner script to ease the pain of running
 //! and testing Jinux inside a QEMU VM, which should be called as the
 //! cargo runner: https://doc.rust-lang.org/cargo/reference/config.html
-//! 
+//!
 //! The runner generates the the filesystem image and the containing
 //! boot device image. Then it invokes QEMU to boot Jinux.
-//! 
+//!
 
 use std::{
     fs::{self, OpenOptions},
@@ -13,14 +13,13 @@ use std::{
     process::Command,
 };
 
-use clap::{Parser, builder::Str};
+use clap::{builder::Str, Parser};
 
 /// The CLI of this runner.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     // Positional arguments.
-
     /// The Jinux binary path.
     path: PathBuf,
 
@@ -29,7 +28,6 @@ struct Args {
     kcmdline: String,
 
     // Optional arguments.
-
     /// Enable KVM when running QEMU.
     #[arg(long, default_value_t = false)]
     enable_kvm: bool,

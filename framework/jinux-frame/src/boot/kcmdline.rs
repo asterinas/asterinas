@@ -13,12 +13,9 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use log::debug;
 
 #[derive(PartialEq, Debug)]
-struct InitprocArg {
-    // Since environment arguments can precede the init path argument, we
-    // have no choice but to wrap the path in `Option` and check it later.
+struct InitprocArgs {
     path: Option<String>,
     argv: Vec<CString>,
     envp: Vec<CString>,
@@ -27,7 +24,7 @@ struct InitprocArg {
 /// The struct to store the parsed kernel command-line arguments.
 #[derive(Debug)]
 pub struct KCmdlineArg {
-    initproc: Option<InitprocArg>,
+    initproc: InitprocArgs,
     module_args: BTreeMap<String, Vec<CString>>,
 }
 
@@ -35,18 +32,15 @@ pub struct KCmdlineArg {
 impl KCmdlineArg {
     /// Get the path of the initprocess.
     pub fn get_initproc_path(&self) -> Option<&str> {
-        self.initproc
-            .as_ref()
-            .and_then(|i| i.path.as_ref())
-            .map(|s| s.as_str())
+        self.initproc.path.as_ref().map(|s| s.as_str())
     }
     /// Get the argument vector(argv) of the initprocess.
-    pub fn get_initproc_argv(&self) -> Option<&Vec<CString>> {
-        self.initproc.as_ref().map(|i| &i.argv)
+    pub fn get_initproc_argv(&self) -> &Vec<CString> {
+        &self.initproc.argv
     }
     /// Get the environment vector(envp) of the initprocess.
-    pub fn get_initproc_envp(&self) -> Option<&Vec<CString>> {
-        self.initproc.as_ref().map(|i| &i.argv)
+    pub fn get_initproc_envp(&self) -> &Vec<CString> {
+        &self.initproc.envp
     }
     /// Get the argument vector of a kernel module.
     pub fn get_module_args(&self, module: &str) -> Option<&Vec<CString>> {
@@ -72,8 +66,12 @@ fn split_arg(input: &str) -> impl Iterator<Item = &str> {
 impl From<&str> for KCmdlineArg {
     fn from(cmdline: &str) -> Self {
         // What we construct.
-        let mut result = KCmdlineArg {
-            initproc: None,
+        let mut result: KCmdlineArg = KCmdlineArg {
+            initproc: InitprocArgs {
+                path: None,
+                argv: Vec::new(),
+                envp: Vec::new(),
+            },
             module_args: BTreeMap::new(),
         };
 
@@ -87,11 +85,10 @@ impl From<&str> for KCmdlineArg {
             // KernelArg => Arg "\s+" KernelArg | %empty
             // InitArg => Arg "\s+" InitArg | %empty
             if kcmdline_end {
-                if let Some(&mut ref mut i) = result.initproc.as_mut() {
-                    i.argv.push(CString::new(arg).unwrap());
-                } else {
+                if result.initproc.path == None {
                     panic!("Initproc arguments provided but no initproc path specified!");
                 }
+                result.initproc.argv.push(CString::new(arg).unwrap());
                 continue;
             }
             if arg == "--" {
@@ -134,32 +131,16 @@ impl From<&str> for KCmdlineArg {
                 // The option has a value.
                 match option {
                     "init" => {
-                        if let Some(&mut ref mut i) = result.initproc.as_mut() {
-                            if let Some(v) = &i.path {
-                                panic!("Initproc assigned twice in the command line!");
-                            }
-                            i.path = Some(value.to_string());
-                        } else {
-                            result.initproc = Some(InitprocArg {
-                                path: Some(value.to_string()),
-                                argv: Vec::new(),
-                                envp: Vec::new(),
-                            });
+                        if let Some(v) = &result.initproc.path {
+                            panic!("Initproc assigned twice in the command line!");
                         }
+                        result.initproc.path = Some(value.to_string());
                     }
                     _ => {
                         // If the option is not recognized, it is passed to the initproc.
                         // Pattern 'option=value' is treated as the init environment.
                         let envp_entry = CString::new(option.to_string() + "=" + value).unwrap();
-                        if let Some(&mut ref mut i) = result.initproc.as_mut() {
-                            i.envp.push(envp_entry);
-                        } else {
-                            result.initproc = Some(InitprocArg {
-                                path: None,
-                                argv: Vec::new(),
-                                envp: vec![envp_entry],
-                            });
-                        }
+                        result.initproc.envp.push(envp_entry);
                     }
                 }
             } else {
@@ -169,25 +150,9 @@ impl From<&str> for KCmdlineArg {
                         // If the option is not recognized, it is passed to the initproc.
                         // Pattern 'option' without value is treated as the init argument.
                         let argv_entry = CString::new(option.to_string()).unwrap();
-                        if let Some(&mut ref mut i) = result.initproc.as_mut() {
-                            i.argv.push(argv_entry);
-                        } else {
-                            result.initproc = Some(InitprocArg {
-                                path: None,
-                                argv: vec![argv_entry],
-                                envp: Vec::new(),
-                            });
-                        }
+                        result.initproc.argv.push(argv_entry);
                     }
                 }
-            }
-        }
-
-        debug!("{:?}", result);
-
-        if let Some(&ref i) = result.initproc.as_ref() {
-            if i.path == None {
-                panic!("Initproc arguments provided but no initproc! Maybe have bad option.");
             }
         }
 

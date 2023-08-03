@@ -5,5 +5,5 @@
 //! on its way.
 //!
 
-pub mod multiboot2;
+mod multiboot2;
 pub use self::multiboot2::init_boot_args;

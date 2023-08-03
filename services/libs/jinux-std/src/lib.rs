@@ -81,25 +81,25 @@ fn init_thread() {
 
     let initproc = Process::spawn_user_process(
         karg.get_initproc_path().unwrap(),
-        karg.get_initproc_argv().unwrap().to_vec(),
-        karg.get_initproc_envp().unwrap().to_vec(),
+        karg.get_initproc_argv().to_vec(),
+        karg.get_initproc_envp().to_vec(),
     )
     .expect("Run init process failed.");
 
-    loop {
-        // If initproc becomes zombie, then exit qemu.
-        if *initproc.status().lock() == ProcessStatus::Zombie {
-            let exit_code = if initproc.exit_code().load(Ordering::Relaxed) == 0 {
-                QemuExitCode::Success
-            } else {
-                QemuExitCode::Failed
-            };
-            exit_qemu(exit_code);
-        }
+    // Wait till initproc become zombie.
+    while *initproc.status().lock() != ProcessStatus::Zombie {
         // We don't have preemptive scheduler now.
         // The long running init thread should yield its own execution to allow other tasks to go on.
         Thread::yield_now();
     }
+
+    // TODO: exit via qemu isa debug device should not be the only way.
+    let exit_code = if initproc.exit_code().load(Ordering::Relaxed) == 0 {
+        QemuExitCode::Success
+    } else {
+        QemuExitCode::Failed
+    };
+    exit_qemu(exit_code);
 }
 
 /// first process never return
