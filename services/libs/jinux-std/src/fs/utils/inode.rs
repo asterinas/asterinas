@@ -324,3 +324,12 @@ impl dyn Inode {
         (self as &dyn Any).downcast_ref::<T>()
     }
 }
+
+impl Debug for dyn Inode {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Inode")
+            .field("metadata", &self.metadata())
+            .field("fs", &self.fs())
+            .finish()
+    }
+}

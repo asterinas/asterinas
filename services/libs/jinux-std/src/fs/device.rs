@@ -29,6 +29,16 @@ pub trait Device: Sync + Send {
     }
 }
 
+impl Debug for dyn Device {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Device")
+            .field("type", &self.type_())
+            .field("id", &self.id())
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 /// Device type
 pub enum DeviceType {
     CharDevice,
@@ -56,6 +66,15 @@ impl DeviceId {
 
     pub fn minor(&self) -> u32 {
         ((self.0 >> 12) & 0xffff_ff00 | self.0 & 0x0000_00ff) as u32
+    }
+}
+
+impl Debug for DeviceId {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("DeviceId")
+            .field("major", &self.major())
+            .field("minor", &self.minor())
+            .finish()
     }
 }
 

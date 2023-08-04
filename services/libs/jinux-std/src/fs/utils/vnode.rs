@@ -255,6 +255,15 @@ impl Vnode {
     }
 }
 
+impl Debug for Vnode {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Vnode")
+            .field("inode", &self.inner.read().inode)
+            .field("page_cache", &self.inner.read().page_cache)
+            .finish()
+    }
+}
+
 pub struct VnodeWriter<'a> {
     inner: &'a Vnode,
     offset: usize,

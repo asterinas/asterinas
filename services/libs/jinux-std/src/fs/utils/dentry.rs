@@ -474,11 +474,21 @@ impl Dentry {
     }
 }
 
+impl Debug for Dentry {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("Dentry")
+            .field("abs_path", &self.abs_path())
+            .field("vnode", &self.vnode)
+            .field("flags", &self.flags())
+            .finish()
+    }
+}
+
 /// DentryKey is the unique identifier for Dentry in DCACHE.
 ///
 /// For none-root dentries, it uses self's name and parent's pointer to form the key,
 /// meanwhile, the root dentry uses "/" and self's pointer to form the key.
-#[derive(Clone, Hash, PartialOrd, Ord, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, PartialOrd, Ord, Eq, PartialEq)]
 pub struct DentryKey {
     name: String,
     parent_ptr: usize,

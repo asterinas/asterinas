@@ -34,6 +34,15 @@ impl PageCache {
     }
 }
 
+impl Debug for PageCache {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PageCache")
+            .field("size", &self.pages.size())
+            .field("mamager", &self.manager)
+            .finish()
+    }
+}
+
 struct PageCacheManager {
     pages: Mutex<LruCache<usize, Page>>,
     backed_inode: Weak<dyn Inode>,
@@ -45,6 +54,14 @@ impl PageCacheManager {
             pages: Mutex::new(LruCache::unbounded()),
             backed_inode: inode,
         }
+    }
+}
+
+impl Debug for PageCacheManager {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("PageCacheManager")
+            .field("pages", &self.pages.lock())
+            .finish()
     }
 }
 
@@ -104,6 +121,7 @@ impl Pager for PageCacheManager {
     }
 }
 
+#[derive(Debug)]
 struct Page {
     frame: VmFrame,
     state: PageState,
@@ -148,6 +166,7 @@ impl Page {
     }
 }
 
+#[derive(Debug)]
 enum PageState {
     /// `Uninit` indicates a new allocated page which content has not been initialized.
     /// The page is available to write, not available to read.

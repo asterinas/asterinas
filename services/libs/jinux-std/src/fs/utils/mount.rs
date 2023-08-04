@@ -119,3 +119,13 @@ impl MountNode {
         &self.fs
     }
 }
+
+impl Debug for MountNode {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("MountNode")
+            .field("root", &self.root_dentry)
+            .field("mountpoint", &self.mountpoint_dentry)
+            .field("fs", &self.fs)
+            .finish()
+    }
+}

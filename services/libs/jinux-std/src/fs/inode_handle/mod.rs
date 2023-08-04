@@ -13,6 +13,7 @@ use crate::fs::utils::{
 use crate::prelude::*;
 use jinux_rights::Rights;
 
+#[derive(Debug)]
 pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
 
 struct InodeHandle_ {
@@ -116,6 +117,17 @@ impl InodeHandle_ {
         let read_cnt = self.dentry.vnode().readdir_at(*offset, visitor)?;
         *offset += read_cnt;
         Ok(read_cnt)
+    }
+}
+
+impl Debug for InodeHandle_ {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("InodeHandle_")
+            .field("dentry", &self.dentry)
+            .field("offset", &self.offset())
+            .field("access_mode", &self.access_mode())
+            .field("status_flags", &self.status_flags())
+            .finish()
     }
 }
 
