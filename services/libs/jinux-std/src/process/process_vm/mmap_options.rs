@@ -37,17 +37,17 @@ bitflags! {
 }
 
 #[derive(Debug)]
-pub struct MMapOption {
+pub struct MMapOptions {
     typ: MMapType,
     flags: MMapFlags,
 }
 
-impl TryFrom<u64> for MMapOption {
+impl TryFrom<u32> for MMapOptions {
     type Error = Error;
 
-    fn try_from(value: u64) -> Result<Self> {
-        let typ_raw = value as u32 & MAP_TYPE;
-        let flags_raw = value as u32 & !MAP_TYPE;
+    fn try_from(value: u32) -> Result<Self> {
+        let typ_raw = value & MAP_TYPE;
+        let flags_raw = value & !MAP_TYPE;
         let typ = match typ_raw {
             0x0 => MMapType::MapFile,
             0x1 => MMapType::MapShared,
@@ -55,18 +55,14 @@ impl TryFrom<u64> for MMapOption {
             0x3 => MMapType::MapSharedValidate,
             _ => return Err(Error::with_message(Errno::EINVAL, "unknown mmap flags")),
         };
-        if let Some(flags) = MMapFlags::from_bits(flags_raw) {
-            Ok(MMapOption {
-                typ: typ,
-                flags: flags,
-            })
-        } else {
-            Err(Error::with_message(Errno::EINVAL, "unknown mmap flags"))
-        }
+        let Some(flags) = MMapFlags::from_bits(flags_raw) else {
+            return Err(Error::with_message(Errno::EINVAL, "unknown mmap flags"));
+        };
+        Ok(MMapOptions { typ, flags })
     }
 }
 
-impl MMapOption {
+impl MMapOptions {
     pub fn typ(&self) -> MMapType {
         self.typ
     }

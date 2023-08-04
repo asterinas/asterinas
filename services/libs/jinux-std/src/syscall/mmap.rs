@@ -1,7 +1,7 @@
 //! This mod defines mmap flags and the handler to syscall mmap
 
 use crate::fs::file_table::FileDescripter;
-use crate::process::process_vm::mmap_flags::{MMapFlags, MMapOption, MMapType};
+use crate::process::process_vm::mmap_options::{MMapFlags, MMapOptions, MMapType};
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{VmoChildOptions, VmoOptions, VmoRightsOp};
 use crate::{log_syscall_entry, prelude::*};
@@ -23,7 +23,7 @@ pub fn sys_mmap(
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MMAP);
     let perms = VmPerm::try_from(perms).unwrap();
-    let option = MMapOption::try_from(flags).unwrap();
+    let option = MMapOptions::try_from(flags as u32).unwrap();
     let res = do_sys_mmap(
         addr as usize,
         len as usize,
@@ -39,7 +39,7 @@ pub fn do_sys_mmap(
     addr: Vaddr,
     len: usize,
     vm_perm: VmPerm,
-    option: MMapOption,
+    option: MMapOptions,
     fd: FileDescripter,
     offset: usize,
 ) -> Result<Vaddr> {
@@ -67,7 +67,7 @@ fn mmap_anonymous_vmo(
     len: usize,
     offset: usize,
     perms: VmPerms,
-    option: MMapOption,
+    option: MMapOptions,
 ) -> Result<Vaddr> {
     assert!(option.flags().contains(MMapFlags::MAP_ANONYMOUS));
     debug_assert!(offset == 0);
@@ -97,7 +97,7 @@ fn mmap_filebacked_vmo(
     len: usize,
     offset: usize,
     perms: VmPerms,
-    option: MMapOption,
+    option: MMapOptions,
 ) -> Result<Vaddr> {
     let current = current!();
     let page_cache_vmo = {
