@@ -4,7 +4,7 @@
 //! So we define a UserVm struct to store such infomation.
 //! Briefly, it contains the exact usage of each segment of virtual spaces.
 
-pub mod mmap_flags;
+pub mod mmap_options;
 pub mod user_heap;
 
 use crate::prelude::*;
