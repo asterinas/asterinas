@@ -336,11 +336,7 @@ impl FpRegs {
     pub fn new() -> Self {
         // The buffer address requires 16bytes alignment.
         Self {
-            buf: unsafe {
-                // FIXME: This is an UB. The initialization could be done in a controlled manner.
-                #[allow(clippy::uninit_assumed_init)]
-                MaybeUninit::uninit().assume_init()
-            },
+            buf: FxsaveArea { data: [0; 512] },
             is_valid: false,
         }
     }
