@@ -62,3 +62,12 @@ impl dyn FileSystem {
         (self as &dyn Any).downcast_ref::<T>()
     }
 }
+
+impl Debug for dyn FileSystem {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("FileSystem")
+            .field("super_block", &self.sb())
+            .field("flags", &self.flags())
+            .finish()
+    }
+}

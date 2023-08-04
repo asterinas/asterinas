@@ -13,6 +13,7 @@ lazy_static! {
     static ref ROOT_MOUNT: Arc<MountNode> = MountNode::new_root(RamFS::new(true)).unwrap();
 }
 
+#[derive(Debug)]
 pub struct FsResolver {
     root: Arc<Dentry>,
     cwd: Arc<Dentry>,
