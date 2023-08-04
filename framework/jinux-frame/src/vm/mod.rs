@@ -16,6 +16,8 @@ pub(crate) mod page_table;
 mod space;
 
 use crate::config::{PAGE_SIZE, PHYS_OFFSET};
+#[cfg(feature = "intel_tdx")]
+use crate::linux_boot::E820Entry;
 
 pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
 pub use self::io::VmIo;
@@ -54,8 +56,25 @@ pub(crate) static MEMORY_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 
 pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 
+#[cfg(not(feature = "intel_tdx"))]
 pub(crate) fn init() {
     let memory_regions = crate::arch::boot::get_memory_regions();
+    frame_allocator::init(&memory_regions);
+
+    let mut framebuffer_regions = Vec::new();
+    for i in memory_regions.iter() {
+        if i.typ() == MemoryRegionType::Framebuffer {
+            framebuffer_regions.push(i.clone());
+        }
+    }
+    FRAMEBUFFER_REGIONS.call_once(|| framebuffer_regions);
+
+    MEMORY_REGIONS.call_once(|| memory_regions);
+}
+
+#[cfg(feature = "intel_tdx")]
+pub(crate) fn init(memory: [E820Entry; 128]) {
+    let memory_regions = crate::arch::boot::get_memory_regions(memory);
     frame_allocator::init(&memory_regions);
 
     let mut framebuffer_regions = Vec::new();

@@ -14,7 +14,11 @@ use self::multiboot2::init_global_boot_statics;
 pub mod memory_region;
 use self::memory_region::MemoryRegion;
 
+#[cfg(feature = "intel_tdx")]
+use crate::E820Entry;
 use alloc::{string::String, vec::Vec};
+#[cfg(feature = "intel_tdx")]
+use memory_region::MemoryRegionType;
 use spin::Once;
 
 /// The boot crate can choose either providing the raw RSDP physical address or
@@ -82,6 +86,21 @@ pub fn get_framebuffer_info() -> BootloaderFramebufferArg {
 static MEMORY_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 /// Get memory regions.
 /// The returned usable memory regions are guarenteed to not overlap with other unusable ones.
+#[cfg(not(feature = "intel_tdx"))]
 pub fn get_memory_regions() -> Vec<MemoryRegion> {
     MEMORY_REGIONS.get().unwrap().clone()
+}
+
+#[cfg(feature = "intel_tdx")]
+pub fn get_memory_regions(memory: [E820Entry; 128]) -> Vec<MemoryRegion> {
+    let memory_regions: Vec<MemoryRegion> = memory
+        .iter()
+        .filter(|memory_region| memory_region.r#type == 1)
+        .map(|memory_region| MemoryRegion {
+            base: memory_region.addr as usize,
+            len: memory_region.size as usize,
+            typ: MemoryRegionType::Usable,
+        })
+        .collect();
+    memory_regions
 }

@@ -89,6 +89,7 @@ impl AcpiHandler for AcpiMemoryHandler {
     fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
 }
 
+#[cfg(not(feature = "intel_tdx"))]
 pub fn init() {
     let acpi_tables = match boot::get_acpi_rsdp() {
         BootloaderAcpiArg::Rsdp(addr) => unsafe {
@@ -101,6 +102,19 @@ pub fn init() {
             AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr as usize).unwrap()
         },
     };
+
+    for (signature, sdt) in acpi_tables.sdts.iter() {
+        info!("ACPI found signature:{:?}", signature);
+    }
+    ACPI_TABLES.call_once(|| Mutex::new(acpi_tables));
+
+    info!("acpi init complete");
+}
+
+#[cfg(feature = "intel_tdx")]
+pub fn init(rsdp_addr: u64) {
+    let acpi_tables =
+        unsafe { AcpiTables::from_rsdp(AcpiMemoryHandler {}, rsdp_addr as usize).unwrap() };
 
     for (signature, sdt) in acpi_tables.sdts.iter() {
         info!("ACPI found signature:{:?}", signature);

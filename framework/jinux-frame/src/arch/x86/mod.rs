@@ -16,9 +16,11 @@ use log::{info, warn};
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
     device::serial::init();
+    #[cfg(not(feature = "intel_tdx"))]
     boot::init();
 }
 
+#[cfg(not(feature = "intel_tdx"))]
 pub(crate) fn after_all_init() {
     irq::init();
     mm::init();
@@ -38,6 +40,30 @@ pub(crate) fn after_all_init() {
         Ok(_) => {}
         Err(err) => warn!("IOMMU initialization error:{:?}", err),
     }
+    // Some driver like serial may use PIC
+    kernel::pic::init();
+}
+
+#[cfg(feature = "intel_tdx")]
+pub(crate) fn after_all_init(rsdp_addr: u64) {
+    irq::init();
+    mm::init();
+    device::serial::callback_init();
+    kernel::acpi::init(rsdp_addr);
+    match kernel::apic::init() {
+        Ok(_) => {
+            ioapic::init();
+        }
+        Err(err) => {
+            info!("APIC init error:{:?}", err);
+            kernel::pic::enable();
+        }
+    }
+    match iommu::init() {
+        Ok(_) => {}
+        Err(err) => warn!("IOMMU initialization error:{:?}", err),
+    }
+    // timer::init();
     // Some driver like serial may use PIC
     kernel::pic::init();
 }
@@ -92,6 +118,7 @@ fn enable_common_cpu_features() {
         x86_64::registers::xcontrol::XCr0::write(xcr0);
     }
 
+    #[cfg(not(feature = "intel_tdx"))]
     unsafe {
         // enable non-executable page protection
         x86_64::registers::model_specific::Efer::update(|efer| {

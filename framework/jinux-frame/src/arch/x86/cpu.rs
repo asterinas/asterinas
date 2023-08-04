@@ -7,6 +7,8 @@ use core::mem::MaybeUninit;
 use trapframe::{GeneralRegs, UserContext as RawUserContext};
 
 use log::debug;
+#[cfg(feature = "intel_tdx")]
+use tdx_guest::*;
 use x86_64::registers::rflags::RFlags;
 
 use crate::trap::call_irq_callback_functions;
@@ -38,6 +40,55 @@ pub struct TrapInformation {
     pub cr2: usize,
     pub id: usize,
     pub err: usize,
+}
+
+#[cfg(feature = "intel_tdx")]
+struct VeGeneralRegs<'a>(&'a mut GeneralRegs);
+
+#[cfg(feature = "intel_tdx")]
+impl TdxTrapFrame for VeGeneralRegs<'_> {
+    fn rax(&self) -> usize {
+        self.0.rax
+    }
+    fn set_rax(&mut self, rax: usize) {
+        self.0.rax = rax;
+    }
+    fn rbx(&self) -> usize {
+        self.0.rbx
+    }
+    fn set_rbx(&mut self, rbx: usize) {
+        self.0.rbx = rbx;
+    }
+    fn rcx(&self) -> usize {
+        self.0.rcx
+    }
+    fn set_rcx(&mut self, rcx: usize) {
+        self.0.rcx = rcx;
+    }
+    fn rdx(&self) -> usize {
+        self.0.rdx
+    }
+    fn set_rdx(&mut self, rdx: usize) {
+        self.0.rdx = rdx;
+    }
+    fn rsi(&self) -> usize {
+        self.0.rsi
+    }
+    fn set_rsi(&mut self, rsi: usize) {
+        self.0.rsi = rsi;
+    }
+    fn rdi(&self) -> usize {
+        self.0.rdi
+    }
+    fn set_rdi(&mut self, rdi: usize) {
+        self.0.rdi = rdi;
+    }
+    fn rip(&self) -> usize {
+        self.0.rip
+    }
+    fn set_rip(&mut self, rip: usize) {
+        self.0.rip = rip;
+    }
 }
 
 impl UserContext {
@@ -74,6 +125,14 @@ impl UserContextApiInternal for UserContext {
             self.user_context.run();
             match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
                 Some(exception) => {
+                    #[cfg(feature = "intel_tdx")]
+                    if *exception == VIRTUALIZATION_EXCEPTION {
+                        let ve_info =
+                            tdg_vp_veinfo_get().expect("#VE handler: fail to get VE info\n");
+                        let mut ve_f = VeGeneralRegs(self.general_regs_mut());
+                        virtual_exception_handler(&mut ve_f, &ve_info);
+                        continue;
+                    }
                     if exception.typ == CpuExceptionType::FaultOrTrap
                         || exception.typ == CpuExceptionType::Fault
                         || exception.typ == CpuExceptionType::Trap

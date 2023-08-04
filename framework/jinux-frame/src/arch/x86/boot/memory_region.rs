@@ -28,9 +28,9 @@ pub enum MemoryRegionType {
 /// The sections are **not** guaranteed to not overlap. The region must be page aligned.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct MemoryRegion {
-    base: usize,
-    len: usize,
-    typ: MemoryRegionType,
+    pub base: usize,
+    pub len: usize,
+    pub typ: MemoryRegionType,
 }
 
 impl MemoryRegion {

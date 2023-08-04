@@ -27,8 +27,10 @@ impl X2Apic {
         unsafe {
             // Enable x2APIC mode globally
             let mut base = rdmsr(IA32_APIC_BASE);
-            base = base | 0b1100_0000_0000; // Enable x2APIC and xAPIC
-            wrmsr(IA32_APIC_BASE, base);
+            if base & 0b1100_0000_0000 != 0b1100_0000_0000 {
+                base = base | 0b1100_0000_0000; // Enable x2APIC and xAPIC
+                wrmsr(IA32_APIC_BASE, base);
+            }
 
             // Set SVR, Enable APIC and set Spurious Vector to 15 (Reserved irq number)
             let svr: u64 = 1 << 8 | 15;

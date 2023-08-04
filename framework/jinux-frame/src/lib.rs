@@ -24,6 +24,7 @@ pub mod config;
 pub mod cpu;
 mod error;
 pub mod io_mem;
+pub mod linux_boot;
 pub mod logger;
 pub mod prelude;
 pub mod sync;
@@ -39,11 +40,16 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use core::{mem, panic::PanicInfo};
+#[cfg(feature = "intel_tdx")]
+use linux_boot::E820Entry;
+#[cfg(feature = "intel_tdx")]
+use tdx_guest::tdx_early_init;
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 
+#[cfg(not(feature = "intel_tdx"))]
 pub fn init() {
     vm::heap_allocator::init();
     arch::before_all_init();
@@ -51,6 +57,25 @@ pub fn init() {
     vm::init();
     trap::init();
     arch::after_all_init();
+    io_mem::init();
+    bus::init();
+    register_irq_common_callback();
+    invoke_c_init_funcs();
+}
+
+#[cfg(feature = "intel_tdx")]
+pub fn init(memory: [E820Entry; 128], rsdp_addr: u64) {
+    vm::heap_allocator::init();
+    arch::before_all_init();
+    logger::init();
+    let td_info = tdx_early_init().unwrap();
+    println!(
+        "td gpaw: {}, td attributes: {:?}\nTDX guest is initialized",
+        td_info.gpaw, td_info.attributes
+    );
+    vm::init(memory);
+    trap::init();
+    arch::after_all_init(rsdp_addr);
     io_mem::init();
     bus::init();
     register_irq_common_callback();

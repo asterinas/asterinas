@@ -11,6 +11,9 @@ use crate::{
     },
 };
 
+#[cfg(feature = "intel_tdx")]
+use crate::linux_boot::E820Entry;
+
 bitflags::bitflags! {
     #[derive(Pod)]
     #[repr(C)]
