@@ -39,6 +39,8 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use core::{mem, panic::PanicInfo};
+#[cfg(feature = "intel_tdx")]
+use tdx_guest::tdx_early_init;
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
 
@@ -47,6 +49,13 @@ static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();
 pub fn init() {
     arch::before_all_init();
     logger::init();
+    #[cfg(feature = "intel_tdx")]
+    let td_info = tdx_early_init().unwrap();
+    #[cfg(feature = "intel_tdx")]
+    println!(
+        "td gpaw: {}, td attributes: {:?}\nTDX guest is initialized",
+        td_info.gpaw, td_info.attributes
+    );
     vm::heap_allocator::init();
     boot::init();
     vm::init();
