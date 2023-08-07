@@ -5,8 +5,7 @@ version = 3
 [[package]]
 name = "acpi"
 version = "4.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "654f48ab3178632ea535be1765073b990895cb62f70a7e5671975d7150c26d15"
+source = "git+https://github.com/Hsy-Intel/acpi.git?rev=109aecb#109aecbb6d3c686aea4457bb98639e024162c42d"
 dependencies = [
  "bit_field",
  "log",
@@ -1361,7 +1360,7 @@ dependencies = [
 [[package]]
 name = "trapframe"
 version = "0.9.0"
-source = "git+https://github.com/sdww0/trapframe-rs?rev=e886763#e8867631def557939be5107f2be6c8d909d72431"
+source = "git+https://github.com/Hsy-Intel/trapframe-rs?rev=fe6fc6e#fe6fc6e57417dbcb4a6d4da9aa9ea08812c40003"
 dependencies = [
  "log",
  "pod",

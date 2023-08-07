@@ -91,6 +91,7 @@ fn enable_common_cpu_features() {
         x86_64::registers::xcontrol::XCr0::write(xcr0);
     }
 
+    #[cfg(not(feature = "intel_tdx"))]
     unsafe {
         // enable non-executable page protection
         x86_64::registers::model_specific::Efer::update(|efer| {

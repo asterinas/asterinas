@@ -16,13 +16,13 @@ align_ext = { path = "../libs/align_ext" }
 intrusive-collections = "0.9.5"
 log = "0.4"
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
-trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "e886763" }
+trapframe = { git = "https://github.com/Hsy-Intel/trapframe-rs", rev = "fe6fc6e" }
 inherit-methods-macro = { git = "https://github.com/jinzhao-dev/inherit-methods-macro", rev = "98f7e3e" }
 
 [target.x86_64-custom.dependencies]
 x86_64 = "0.14.2"
 x86 = "0.52.0"
-acpi = "4.1.1"
+acpi = { git = "https://github.com/Hsy-Intel/acpi.git", rev = "109aecb" }
 aml = "0.16.3"
 multiboot2 = "0.16.0"
 

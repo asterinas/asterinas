@@ -49,7 +49,9 @@ pub fn init() {
 
     let ioapic_address = match platform_info.interrupt_model {
         acpi::InterruptModel::Unknown => panic!("not found APIC in ACPI Table"),
-        acpi::InterruptModel::Apic(apic) => {
+        acpi::InterruptModel::Apic(apic) =>
+        {
+            #[cfg(not(feature = "intel_tdx"))]
             apic.io_apics
                 .iter()
                 .next()
@@ -60,14 +62,17 @@ pub fn init() {
             panic!("Unknown interrupt model")
         }
     };
-    let mut io_apic = unsafe { IoApic::new(crate::vm::paddr_to_vaddr(ioapic_address as usize)) };
-
-    let id = io_apic.id();
-    let version = io_apic.version();
-    let max_redirection_entry = io_apic.supported_interrupts();
-    info!(
-        "IOAPIC id: {}, version:{}, max_redirection_entry:{}",
-        id, version, max_redirection_entry
-    );
-    IO_APIC.call_once(|| Mutex::new(IoApicWrapper::new(io_apic)));
+    #[cfg(not(feature = "intel_tdx"))]
+    {
+        let mut io_apic =
+            unsafe { IoApic::new(crate::vm::paddr_to_vaddr(ioapic_address as usize)) };
+        let id = io_apic.id();
+        let version = io_apic.version();
+        let max_redirection_entry = io_apic.supported_interrupts();
+        info!(
+            "IOAPIC id: {}, version:{}, max_redirection_entry:{}",
+            id, version, max_redirection_entry
+        );
+        IO_APIC.call_once(|| Mutex::new(IoApicWrapper::new(io_apic)));
+    }
 }

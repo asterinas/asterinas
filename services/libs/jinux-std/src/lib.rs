@@ -50,6 +50,7 @@ pub mod vm;
 
 pub fn init() {
     driver::init();
+    #[cfg(not(feature = "intel_tdx"))]
     net::init();
     process::fifo_scheduler::init();
     fs::rootfs::init(boot::initramfs()).unwrap();
@@ -61,6 +62,7 @@ fn init_thread() {
         "[kernel] Spawn init thread, tid = {}",
         current_thread!().tid()
     );
+    #[cfg(not(feature = "intel_tdx"))]
     net::lazy_init();
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(|| {
