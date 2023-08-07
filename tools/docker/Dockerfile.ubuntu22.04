@@ -44,7 +44,7 @@ RUN apt clean \
 
 # Install Rust
 ENV PATH="/root/.cargo/bin:${PATH}"
-ENV JINUX_RUST_VERSION="nightly-2023-02-05"
+ARG JINUX_RUST_VERSION
 RUN curl https://sh.rustup.rs -sSf | \
         sh -s -- --default-toolchain ${JINUX_RUST_VERSION} -y \
     && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \
@@ -60,7 +60,8 @@ ENV PATH="/root/jinux/target/bin:${PATH}"
 # Build busybox
 RUN curl --output busybox.tar.bz2 https://busybox.net/downloads/busybox-1.35.0.tar.bz2 \ 
     && mkdir /root/busybox \
-    && tar xf busybox.tar.bz2 --strip-components=1 -C /root/busybox
+    && tar xf busybox.tar.bz2 --strip-components=1 -C /root/busybox \
+    && rm busybox.tar.bz2
 WORKDIR /root/busybox
 RUN make defconfig \
     && sed -i "s/# CONFIG_STATIC is not set/CONFIG_STATIC=y/g" .config \
