@@ -26,6 +26,7 @@ ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 intrusive-collections = "0.9.5"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
 smoltcp = { version = "0.9.1", default-features = false, features = ["alloc", "log", "medium-ethernet", "medium-ip", "proto-dhcpv4", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw", "socket-dhcpv4"] }
+tdx-guest = { path = "../../../framework/libs/tdx-guest", optional = true }
 
 # parse elf file
 xmas-elf = "0.8.0"
@@ -47,3 +48,6 @@ getrandom = { version = "0.2.10", default-features = false, features = ["rdrand"
 [dependencies.lazy_static]
 version = "1.0"
 features = ["spin_no_std"]
+
+[features]
+intel_tdx = ["dep:tdx-guest"]

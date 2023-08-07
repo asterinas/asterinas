@@ -41,6 +41,10 @@ build:
 	@make --no-print-directory -C regression
 	@cargo kbuild
 
+build_td:
+	@make --no-print-directory -C regression
+	@cargo kbuild --features intel_tdx
+
 tools:
 	@cd services/libs/comp-sys && cargo install --path cargo-component
 

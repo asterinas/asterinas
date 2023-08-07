@@ -11,6 +11,7 @@ path = "kernel/main.rs"
 jinux-frame = { path = "framework/jinux-frame" }
 jinux-std = { path = "services/libs/jinux-std" }
 component = { path = "services/libs/comp-sys/component" }
+tdx-guest = { path = "framework/libs/tdx-guest", optional = true }
 
 [dev-dependencies]
 x86_64 = "0.14.2"
@@ -39,3 +40,6 @@ members = [
 ]
 
 exclude = ["services/libs/comp-sys/controlled", "services/libs/comp-sys/cargo-component"]
+
+[features]
+intel_tdx = ["dep:tdx-guest", "jinux-frame/intel_tdx", "jinux-std/intel_tdx"]
