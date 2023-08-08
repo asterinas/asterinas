@@ -156,25 +156,24 @@ Jinux is under active development. The list below summarizes the progress of imp
     * Inter-process communication
         * POSIX signals
             - [X] Essential system calls (sigaction, sigreturn, kill, etc.)
-        - [ ] Pipe
+        - [X] Pipe
     * Network I/O
         * I/O multiplexing
-            - [ ] poll
-            - [ ] select
-            - [ ] epoll
+            - [X] poll
+            - [X] select
+            - [X] epoll
         * Socket types
-            - [ ] TCP sockets
-            - [ ] Unix sockets
+            - [X] TCP sockets
+            - [X] Unix sockets
             - [ ] UDP sockets
     * Time and clocks
-
 * Low-level stuff
     * Devices
         - [X] PCI
         - [X] System time 
         - [X] Tty
         - [X] Virtio-blk
-        - [ ] Virtio-net
+        - [X] Virtio-net
         - [ ] Device abstraction layer
     * CPU archs
         - [X] x86-64
