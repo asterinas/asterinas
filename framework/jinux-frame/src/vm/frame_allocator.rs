@@ -63,7 +63,7 @@ pub(crate) fn init(regions: &Vec<MemoryRegion>) {
         if region.typ() == MemoryRegionType::Usable {
             // Make the memory region page-aligned
             let start = region.base().align_up(PAGE_SIZE) / PAGE_SIZE;
-            let end = (start + region.len()).align_down(PAGE_SIZE) / PAGE_SIZE;
+            let end = (region.base() + region.len()).align_down(PAGE_SIZE) / PAGE_SIZE;
             allocator.add_frame(start, end);
             info!(
                 "Found usable region, start:{:x}, end:{:x}",

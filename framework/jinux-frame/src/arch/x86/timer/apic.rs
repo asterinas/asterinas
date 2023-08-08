@@ -1,3 +1,4 @@
+use core::sync::atomic::{AtomicBool, Ordering};
 use log::info;
 use trapframe::TrapFrame;
 
@@ -20,13 +21,11 @@ pub fn init() {
     pic::enable_temp();
     super::pit::init();
 
-    static mut IS_FINISH: bool = false;
     // wait until it is finish
     x86_64::instructions::interrupts::enable();
-    unsafe {
-        while !IS_FINISH {
-            x86_64::instructions::hlt();
-        }
+    static IS_FINISH: AtomicBool = AtomicBool::new(false);
+    while !IS_FINISH.load(Ordering::Acquire) {
+        x86_64::instructions::hlt();
     }
     x86_64::instructions::interrupts::disable();
     drop(a);
@@ -36,7 +35,7 @@ pub fn init() {
         static mut IN_TIME: u8 = 0;
         static mut FIRST_TIME_COUNT: u64 = 0;
         unsafe {
-            if IS_FINISH || IN_TIME == 0 {
+            if IS_FINISH.load(Ordering::Acquire) || IN_TIME == 0 {
                 // drop the first entry, since it may not be the time we want
                 IN_TIME += 1;
                 let apic_lock = APIC_INSTANCE.get().unwrap().lock();
@@ -63,8 +62,6 @@ pub fn init() {
             remain_ticks,
             config::TIMER_FREQ
         );
-        unsafe {
-            IS_FINISH = true;
-        }
+        IS_FINISH.store(true, Ordering::Release);
     }
 }
