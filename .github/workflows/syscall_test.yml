@@ -2,6 +2,11 @@ name: Syscall test
 
 on:
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
   push:
     branches:
       - main
@@ -18,4 +23,4 @@ jobs:
 
       - name: Syscall Test
         id: syscall_test
-        run: make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0
+        run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0
