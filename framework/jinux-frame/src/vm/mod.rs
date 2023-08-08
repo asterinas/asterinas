@@ -32,9 +32,9 @@ use spin::Once;
 
 use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
 
-/// Convert physical address to virtual address using offset, only available inside jinux-frame
-pub(crate) fn paddr_to_vaddr(pa: usize) -> usize {
-    pa + PHYS_OFFSET
+/// Get physical address trait
+pub trait HasPaddr {
+    fn paddr(&self) -> Paddr;
 }
 
 pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
@@ -48,6 +48,11 @@ pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
 
 pub const fn is_page_aligned(p: usize) -> bool {
     (p & (PAGE_SIZE - 1)) == 0
+}
+
+/// Convert physical address to virtual address using offset, only available inside jinux-frame
+pub(crate) fn paddr_to_vaddr(pa: usize) -> usize {
+    pa + PHYS_OFFSET
 }
 
 /// Only available inside jinux-frame

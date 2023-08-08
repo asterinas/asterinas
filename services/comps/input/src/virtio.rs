@@ -1,10 +1,12 @@
 //! Input device based on Virtio
 
 use alloc::{string::String, sync::Arc, vec::Vec};
+use jinux_frame::io_mem::IoMem;
 use jinux_frame::offset_of;
 use jinux_frame::trap::TrapFrame;
 use jinux_pci::msix::MSIX;
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_util::field_ptr;
+use jinux_util::safe_ptr::SafePtr;
 use jinux_virtio::device::input::device::InputProp;
 use jinux_virtio::VirtioPciCommonCfg;
 use jinux_virtio::{
@@ -18,8 +20,8 @@ use virtio_input_decoder::{DecodeType, Decoder};
 use crate::INPUTDevice;
 pub struct VirtioInputDevice {
     input_device: InputDevice,
-    common_cfg: InFramePtr<VirtioPciCommonCfg>,
-    msix: Mutex<MSIX>,
+    _common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
+    _msix: Mutex<MSIX>,
     name: String,
     callbacks: Mutex<Vec<Arc<dyn Fn(DecodeType) + Send + Sync + 'static>>>,
 }
@@ -47,7 +49,7 @@ impl VirtioInputDevice {
         fn handle_input(frame: &TrapFrame) {
             debug!("in handle input");
             let input_component = crate::INPUT_COMPONENT.get().unwrap();
-            input_component.call(frame.trap_num as u8);
+            input_component.call(frame.trap_num as u8).unwrap();
         }
         fn config_space_change(_: &TrapFrame) {
             debug!("input device config space change");
@@ -56,8 +58,9 @@ impl VirtioInputDevice {
         let common_cfg = virtio_device.common_cfg;
         let mut msix = virtio_device.msix;
 
-        let config_msix_vector =
-            common_cfg.read_at(offset_of!(VirtioPciCommonCfg, config_msix_vector)) as usize;
+        let config_msix_vector = field_ptr!(&common_cfg, VirtioPciCommonCfg, config_msix_vector)
+            .read()
+            .unwrap() as usize;
 
         let mut event_irq_number = 0;
         for i in 0..msix.table_size as usize {
@@ -76,8 +79,8 @@ impl VirtioInputDevice {
         (
             Self {
                 input_device,
-                common_cfg,
-                msix: Mutex::new(msix),
+                _common_cfg: common_cfg,
+                _msix: Mutex::new(msix),
                 name,
                 callbacks: Mutex::new(Vec::new()),
             },

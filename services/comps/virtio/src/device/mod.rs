@@ -3,11 +3,12 @@ use crate::{
     VirtioPciCommonCfg,
 };
 use alloc::vec::Vec;
+use jinux_frame::io_mem::IoMem;
 use jinux_pci::{
     capability::{vendor::virtio::CapabilityVirtioData, Capability},
     util::BAR,
 };
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_util::safe_ptr::SafePtr;
 
 use self::{input::device::InputDevice, network::device::NetworkDevice};
 
@@ -56,7 +57,7 @@ pub struct VirtioInfo {
     pub device_type: VirtioDeviceType,
     pub notify_base_address: u64,
     pub notify_off_multiplier: u32,
-    pub common_cfg_frame_ptr: InFramePtr<VirtioPciCommonCfg>,
+    pub common_cfg_frame_ptr: SafePtr<VirtioPciCommonCfg, IoMem>,
     pub device_cap_cfg: CapabilityVirtioData,
 }
 

@@ -12,6 +12,7 @@ jinux-frame = { path = "../../../framework/jinux-frame" }
 jinux-pci = { path = "../pci" }
 jinux-virtio = { path = "../virtio" }
 jinux-util = { path = "../../libs/jinux-util" }
+jinux-rights = { path = "../../libs/jinux-rights" }
 component = { path = "../../libs/comp-sys/component" }
 virtio-input-decoder = "0.1.4"
 log = "0.4"

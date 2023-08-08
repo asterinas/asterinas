@@ -3,12 +3,17 @@
 use super::VirtioPciCommonCfg;
 use alloc::vec::Vec;
 use bitflags::bitflags;
-use core::sync::atomic::{fence, Ordering};
-use jinux_frame::{
-    offset_of,
-    vm::{VmAllocOptions, VmFrameVec},
+use core::{
+    mem::size_of,
+    sync::atomic::{fence, Ordering},
 };
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_frame::{
+    io_mem::IoMem,
+    offset_of,
+    vm::{VmAllocOptions, VmFrame, VmFrameVec},
+};
+use jinux_rights::{Dup, TRightSet, TRights, Write};
+use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use log::debug;
 use pod::Pod;
 
@@ -27,13 +32,13 @@ pub enum QueueError {
 #[derive(Debug)]
 pub struct VirtQueue {
     /// Descriptor table
-    descs: Vec<InFramePtr<Descriptor>>,
+    descs: Vec<SafePtr<Descriptor, VmFrame>>,
     /// Available ring
-    avail: InFramePtr<AvailRing>,
+    avail: SafePtr<AvailRing, VmFrame>,
     /// Used ring
-    used: InFramePtr<UsedRing>,
+    used: SafePtr<UsedRing, VmFrame>,
     /// point to notify address
-    notify: InFramePtr<u32>,
+    notify: SafePtr<u32, IoMem>,
 
     /// The index of queue
     queue_idx: u32,
@@ -55,89 +60,97 @@ pub struct VirtQueue {
 impl VirtQueue {
     /// Create a new VirtQueue.
     pub(crate) fn new(
-        cfg: &InFramePtr<VirtioPciCommonCfg>,
+        cfg: &SafePtr<VirtioPciCommonCfg, IoMem>,
         idx: usize,
         size: u16,
         notify_base_address: usize,
         notify_off_multiplier: u32,
         msix_vector: u16,
     ) -> Result<Self, QueueError> {
-        cfg.write_at(offset_of!(VirtioPciCommonCfg, queue_select), idx as u16);
+        field_ptr!(cfg, VirtioPciCommonCfg, queue_select)
+            .write(&(idx as u16))
+            .unwrap();
         assert_eq!(
-            cfg.read_at(offset_of!(VirtioPciCommonCfg, queue_select)),
+            field_ptr!(cfg, VirtioPciCommonCfg, queue_select)
+                .read()
+                .unwrap(),
             idx as u16
         );
         if !size.is_power_of_two() {
             return Err(QueueError::InvalidArgs);
         }
-
-        cfg.write_at(offset_of!(VirtioPciCommonCfg, queue_size), size);
-        cfg.write_at(
-            offset_of!(VirtioPciCommonCfg, queue_msix_vector),
-            msix_vector,
-        );
+        field_ptr!(cfg, VirtioPciCommonCfg, queue_size)
+            .write(&size)
+            .unwrap();
+        field_ptr!(cfg, VirtioPciCommonCfg, queue_msix_vector)
+            .write(&msix_vector)
+            .unwrap();
         assert_eq!(
-            cfg.read_at(offset_of!(VirtioPciCommonCfg, queue_msix_vector)),
+            field_ptr!(cfg, VirtioPciCommonCfg, queue_msix_vector)
+                .read()
+                .unwrap(),
             msix_vector
         );
 
-        //allocate page
-
-        let desc_frame_ptr: InFramePtr<Descriptor> = InFramePtr::new_with_vm_frame(
+        let desc_frame_ptr: SafePtr<Descriptor, VmFrame> = SafePtr::new(
             VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
-        )
-        .unwrap();
-        let avail_frame_ptr: InFramePtr<AvailRing> = InFramePtr::new_with_vm_frame(
+            0,
+        );
+        let avail_frame_ptr: SafePtr<AvailRing, VmFrame> = SafePtr::new(
             VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
-        )
-        .unwrap();
-        let used_frame_ptr: InFramePtr<UsedRing> = InFramePtr::new_with_vm_frame(
+            0,
+        );
+        let used_frame_ptr: SafePtr<UsedRing, VmFrame> = SafePtr::new(
             VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
-        )
-        .unwrap();
+            0,
+        );
         debug!("queue_desc start paddr:{:x?}", desc_frame_ptr.paddr());
         debug!("queue_driver start paddr:{:x?}", avail_frame_ptr.paddr());
         debug!("queue_device start paddr:{:x?}", used_frame_ptr.paddr());
-
-        cfg.write_at(
-            offset_of!(VirtioPciCommonCfg, queue_desc),
-            desc_frame_ptr.paddr() as u64,
-        );
-
-        cfg.write_at(
-            offset_of!(VirtioPciCommonCfg, queue_driver),
-            avail_frame_ptr.paddr() as u64,
-        );
-
-        cfg.write_at(
-            offset_of!(VirtioPciCommonCfg, queue_device),
-            used_frame_ptr.paddr() as u64,
-        );
+        field_ptr!(cfg, VirtioPciCommonCfg, queue_desc)
+            .write(&(desc_frame_ptr.paddr() as u64))
+            .unwrap();
+        field_ptr!(cfg, VirtioPciCommonCfg, queue_driver)
+            .write(&(avail_frame_ptr.paddr() as u64))
+            .unwrap();
+        field_ptr!(cfg, VirtioPciCommonCfg, queue_device)
+            .write(&(used_frame_ptr.paddr() as u64))
+            .unwrap();
 
         let mut descs = Vec::with_capacity(size as usize);
         descs.push(desc_frame_ptr);
         for i in 0..size as usize {
-            descs.push(descs.get(i).unwrap().add(1))
+            let mut desc = descs.get(i).unwrap().clone();
+            desc.offset(1);
+            descs.push(desc);
         }
-
-        let notify = InFramePtr::new(notify_base_address + notify_off_multiplier as usize * idx)
-            .expect("can not get Inframeptr for virtio queue notify");
+        let notify_address = notify_base_address + notify_off_multiplier as usize * idx;
+        let notify = SafePtr::new(
+            IoMem::new(notify_address..notify_address + size_of::<u32>()).unwrap(),
+            0,
+        );
         // Link descriptors together.
         for i in 0..(size - 1) {
             let temp = descs.get(i as usize).unwrap();
-            temp.write_at(offset_of!(Descriptor, next), i + 1);
+            field_ptr!(temp, Descriptor, next)
+                .write(&(i + 1))
+                .map_err(|_err| QueueError::InvalidArgs)?;
         }
-        avail_frame_ptr.write_at(offset_of!(AvailRing, flags), 0 as u16);
-        cfg.write_at(offset_of!(VirtioPciCommonCfg, queue_enable), 1 as u16);
+        field_ptr!(&avail_frame_ptr, AvailRing, flags)
+            .write(&(0u16))
+            .map_err(|_err| QueueError::InvalidArgs)?;
+        field_ptr!(cfg, VirtioPciCommonCfg, queue_enable)
+            .write(&1u16)
+            .unwrap();
         Ok(VirtQueue {
             descs,
             avail: avail_frame_ptr,
@@ -168,44 +181,46 @@ impl VirtQueue {
         let mut last = self.free_head;
         for input in inputs.iter() {
             let desc = &self.descs[self.free_head as usize];
-            set_buf(desc, input);
-            desc.write_at(offset_of!(Descriptor, flags), DescFlags::NEXT);
+            set_buf(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), input);
+            field_ptr!(desc, Descriptor, flags)
+                .write(&DescFlags::NEXT)
+                .unwrap();
             last = self.free_head;
-            self.free_head = desc.read_at(offset_of!(Descriptor, next));
+            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
         }
         for output in outputs.iter() {
             let desc = &mut self.descs[self.free_head as usize];
-            set_buf(desc, output);
-            desc.write_at(
-                offset_of!(Descriptor, flags),
-                DescFlags::NEXT | DescFlags::WRITE,
-            );
+            set_buf(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), output);
+            field_ptr!(desc, Descriptor, flags)
+                .write(&(DescFlags::NEXT | DescFlags::WRITE))
+                .unwrap();
             last = self.free_head;
-            self.free_head = desc.read_at(offset_of!(Descriptor, next));
+            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
         }
         // set last_elem.next = NULL
         {
             let desc = &mut self.descs[last as usize];
-            let mut flags: DescFlags = desc.read_at(offset_of!(Descriptor, flags));
+            let mut flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
             flags.remove(DescFlags::NEXT);
-            desc.write_at(offset_of!(Descriptor, flags), flags);
+            field_ptr!(desc, Descriptor, flags).write(&flags).unwrap();
         }
         self.num_used += (inputs.len() + outputs.len()) as u16;
 
         let avail_slot = self.avail_idx & (self.queue_size - 1);
 
-        self.avail.write_at(
-            (offset_of!(AvailRing, ring) as usize + avail_slot as usize * 2) as *const u16,
-            head,
-        );
-
+        {
+            let mut ring_ptr = field_ptr!(&self.avail, AvailRing, ring);
+            ring_ptr.byte_add(offset_of!(AvailRing, ring) as usize + avail_slot as usize * 2);
+            ring_ptr.cast::<u16>().write(&self.avail_idx).unwrap();
+        }
         // write barrier
         fence(Ordering::SeqCst);
 
         // increase head of avail ring
         self.avail_idx = self.avail_idx.wrapping_add(1);
-        self.avail
-            .write_at(offset_of!(AvailRing, idx), self.avail_idx);
+        field_ptr!(&self.avail, AvailRing, idx)
+            .write(&self.avail_idx)
+            .unwrap();
 
         fence(Ordering::SeqCst);
         Ok(head)
@@ -213,7 +228,7 @@ impl VirtQueue {
 
     /// Whether there is a used element that can pop.
     pub fn can_pop(&self) -> bool {
-        self.last_used_idx != self.used.read_at(offset_of!(UsedRing, idx))
+        self.last_used_idx != field_ptr!(&self.used, UsedRing, idx).read().unwrap()
     }
 
     /// The number of free descriptors.
@@ -233,15 +248,19 @@ impl VirtQueue {
             head - 1
         };
         let temp_desc = &mut self.descs[last_free_head as usize];
-        temp_desc.write_at(offset_of!(Descriptor, next), head);
+        field_ptr!(temp_desc, Descriptor, next)
+            .write(&head)
+            .unwrap();
         loop {
             let desc = &mut self.descs[head as usize];
-            let flags: DescFlags = desc.read_at(offset_of!(Descriptor, flags));
+            let flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
             self.num_used -= 1;
             if flags.contains(DescFlags::NEXT) {
-                head = desc.read_at(offset_of!(Descriptor, next));
+                head = field_ptr!(desc, Descriptor, next).read().unwrap();
             } else {
-                desc.write_at(offset_of!(Descriptor, next), origin_free_head);
+                field_ptr!(desc, Descriptor, next)
+                    .write(&origin_free_head)
+                    .unwrap();
                 return;
             }
         }
@@ -258,17 +277,18 @@ impl VirtQueue {
         fence(Ordering::SeqCst);
 
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
-        let index = self.used.read_at(
-            (offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8) as *const u32,
-        ) as u16;
-        let len = self.used.read_at(
-            (offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8 + 4) as *const u32,
-        );
+        let element_ptr = {
+            let mut ptr = self.used.borrow_vm();
+            ptr.byte_add(offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8);
+            ptr.cast::<UsedElem>()
+        };
+        let index = field_ptr!(&element_ptr, UsedElem, id).read().unwrap();
+        let len = field_ptr!(&element_ptr, UsedElem, len).read().unwrap();
 
-        self.recycle_descriptors(index);
+        self.recycle_descriptors(index as u16);
         self.last_used_idx = self.last_used_idx.wrapping_add(1);
 
-        Ok((index, len))
+        Ok((index as u16, len))
     }
 
     /// If the given token is next on the device used queue, pops it and returns the total buffer
@@ -283,18 +303,19 @@ impl VirtQueue {
         fence(Ordering::SeqCst);
 
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
-        let index = self.used.read_at(
-            (offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8) as *const u32,
-        ) as u16;
-        let len = self.used.read_at(
-            (offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8 + 4) as *const u32,
-        );
+        let element_ptr = {
+            let mut ptr = self.used.borrow_vm();
+            ptr.byte_add(offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8);
+            ptr.cast::<UsedElem>()
+        };
+        let index = field_ptr!(&element_ptr, UsedElem, id).read().unwrap();
+        let len = field_ptr!(&element_ptr, UsedElem, len).read().unwrap();
 
-        if index != token {
+        if index as u16 != token {
             return Err(QueueError::WrongToken);
         }
 
-        self.recycle_descriptors(index);
+        self.recycle_descriptors(index as u16);
         self.last_used_idx = self.last_used_idx.wrapping_add(1);
 
         Ok(len)
@@ -309,14 +330,13 @@ impl VirtQueue {
     pub fn should_notify(&self) -> bool {
         // read barrier
         fence(Ordering::SeqCst);
-        let flags = self.used.read_at(offset_of!(UsedRing, flags));
+        let flags = field_ptr!(&self.used, UsedRing, flags).read().unwrap();
         flags & 0x0001u16 == 0u16
     }
 
     /// notify that there are available rings
     pub fn notify(&mut self) {
-        self.notify
-            .write_at(0 as usize as *const u32, self.queue_idx);
+        self.notify.write(&self.queue_idx).unwrap();
     }
 }
 
@@ -329,19 +349,16 @@ struct Descriptor {
     next: u16,
 }
 
-impl Descriptor {
-    fn set_buf(&mut self, buf: &[u8]) {
-        self.addr = jinux_frame::vm::vaddr_to_paddr(buf.as_ptr() as usize).unwrap() as u64;
-
-        self.len = buf.len() as u32;
-    }
-}
-
-fn set_buf(inframe_ptr: &InFramePtr<Descriptor>, buf: &[u8]) {
+#[inline]
+fn set_buf(ptr: &SafePtr<Descriptor, &VmFrame, TRightSet<TRights![Dup, Write]>>, buf: &[u8]) {
     let va = buf.as_ptr() as usize;
     let pa = jinux_frame::vm::vaddr_to_paddr(va).unwrap();
-    inframe_ptr.write_at(offset_of!(Descriptor, addr), pa as u64);
-    inframe_ptr.write_at(offset_of!(Descriptor, len), buf.len() as u32);
+    field_ptr!(ptr, Descriptor, addr)
+        .write(&(pa as u64))
+        .unwrap();
+    field_ptr!(ptr, Descriptor, len)
+        .write(&(buf.len() as u32))
+        .unwrap();
 }
 bitflags! {
     /// Descriptor flags

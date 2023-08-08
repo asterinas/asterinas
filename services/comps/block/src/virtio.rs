@@ -1,8 +1,8 @@
 //! Block device based on Virtio
 
-use jinux_frame::trap::TrapFrame;
+use jinux_frame::{io_mem::IoMem, trap::TrapFrame};
 use jinux_pci::msix::MSIX;
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_util::safe_ptr::SafePtr;
 use jinux_virtio::{device::block::device::BLKDevice, PCIVirtioDevice, VirtioPciCommonCfg};
 use log::debug;
 use spin::Mutex;
@@ -11,8 +11,8 @@ use crate::{BlockDevice, BLK_COMPONENT};
 
 pub struct VirtioBlockDevice {
     blk_device: Mutex<BLKDevice>,
-    pub common_cfg: InFramePtr<VirtioPciCommonCfg>,
-    msix: MSIX,
+    pub common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
+    _msix: MSIX,
 }
 
 impl BlockDevice for VirtioBlockDevice {
@@ -48,7 +48,7 @@ impl VirtioBlockDevice {
         Self {
             blk_device,
             common_cfg: virtio_device.common_cfg,
-            msix: virtio_device.msix,
+            _msix: virtio_device.msix,
         }
     }
 }

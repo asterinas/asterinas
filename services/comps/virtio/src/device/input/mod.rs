@@ -25,8 +25,11 @@
 //
 
 pub mod device;
+use core::mem::size_of;
+
+use jinux_frame::io_mem::IoMem;
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_util::safe_ptr::SafePtr;
 use pod::Pod;
 
 /// Select value used for [`VirtIOInput::query_config_select()`].
@@ -69,15 +72,19 @@ pub struct VirtioInputConfig {
 }
 
 impl VirtioInputConfig {
-    pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> InFramePtr<Self> {
+    pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> SafePtr<Self, IoMem> {
         let bar = cap.bar;
         let offset = cap.offset;
         match bars[bar as usize].expect("Virtio pci block cfg:bar is none") {
-            BAR::Memory(address, _, _, _) => InFramePtr::new(address as usize + offset as usize)
-                .expect("can not get in frame ptr for virtio block config"),
-            BAR::IO(_, _) => {
-                panic!("Virtio pci block cfg:bar is IO type")
-            }
+            BAR::Memory(address, _, _, _) => SafePtr::new(
+                IoMem::new(
+                    (address as usize + offset as usize)
+                        ..(address as usize + offset as usize + size_of::<Self>()),
+                )
+                .unwrap(),
+                0,
+            ),
+            BAR::IO(_, _) => panic!("Virtio pci block cfg:bar is IO type"),
         }
     }
 }

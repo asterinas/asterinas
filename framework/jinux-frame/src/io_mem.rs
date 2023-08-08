@@ -3,7 +3,7 @@ use pod::Pod;
 use spin::Once;
 
 use crate::{
-    vm::{Paddr, Vaddr, VmIo},
+    vm::{HasPaddr, Paddr, Vaddr, VmIo},
     Error,
 };
 
@@ -60,6 +60,12 @@ impl VmIo for IoMem {
     }
 }
 
+impl HasPaddr for IoMem {
+    fn paddr(&self) -> Paddr {
+        crate::vm::vaddr_to_paddr(self.virtual_address).unwrap()
+    }
+}
+
 impl IoMem {
     pub fn new(range: Range<Paddr>) -> Option<IoMem> {
         if CHECKER.get().unwrap().check(&range) {
@@ -70,10 +76,6 @@ impl IoMem {
         } else {
             None
         }
-    }
-
-    pub fn paddr(&self) -> Paddr {
-        crate::vm::vaddr_to_paddr(self.virtual_address).unwrap()
     }
 
     fn check_range(&self, offset: usize, len: usize) -> crate::Result<()> {

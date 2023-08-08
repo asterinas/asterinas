@@ -13,6 +13,8 @@ align_ext = { path = "../../../framework/libs/align_ext" }
 jinux-frame = { path = "../../../framework/jinux-frame" }
 jinux-pci = { path = "../pci" }
 jinux-util = { path = "../../libs/jinux-util" }
+jinux-rights = { path = "../../libs/jinux-rights" }
+typeflags-util = { path = "../../libs/typeflags-util" }
 pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"

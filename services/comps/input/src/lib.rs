@@ -83,6 +83,7 @@ impl INPUTComponent {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum InputDeviceHandleError {
     DeviceNotExists,
