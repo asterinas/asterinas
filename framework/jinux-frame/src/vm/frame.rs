@@ -6,7 +6,7 @@ use core::{
 
 use crate::{arch::iommu, config::PAGE_SIZE, prelude::*, Error};
 
-use super::frame_allocator;
+use super::{frame_allocator, HasPaddr};
 use super::{Paddr, VmIo};
 
 use pod::Pod;
@@ -301,6 +301,12 @@ impl Clone for VmFrame {
         Self {
             frame_index: self.frame_index.clone(),
         }
+    }
+}
+
+impl HasPaddr for VmFrame {
+    fn paddr(&self) -> Paddr {
+        self.start_paddr()
     }
 }
 

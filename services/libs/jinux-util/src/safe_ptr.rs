@@ -1,9 +1,12 @@
+use core::fmt::Debug;
 use core::marker::PhantomData;
-use jinux_frame::vm::VmIo;
+use jinux_frame::vm::Paddr;
+use jinux_frame::vm::{HasPaddr, VmIo};
 use jinux_frame::Result;
 use jinux_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use jinux_rights_proc::require;
-use pod::Pod;
+pub use pod::Pod;
+pub use typeflags_util::SetContain;
 
 /// Safe pointers.
 ///
@@ -48,10 +51,10 @@ use pod::Pod;
 /// ```
 ///
 /// The generic parameter `M` of `SafePtr<_, M, _>` must implement the `VmIo`
-/// trait. The most important `VmIo` types are `Vmar`, `Vmo`, `Mmio`, and
+/// trait. The most important `VmIo` types are `Vmar`, `Vmo`, `IoMem`, and
 /// `VmFrame`. The blanket implementations of `VmIo` also include pointer-like
 /// types that refer to a `VmIo` type. Some examples are `&Vmo`, `Box<Vmar>`,
-/// and `Arc<Mmio>`.
+/// and `Arc<IoMem>`.
 ///
 /// The safe pointer itself does not and cannot guarantee that its address is valid.
 /// This is because different VM objects may interpret addresses differently
@@ -144,7 +147,7 @@ use pod::Pod;
 /// A safe pointer may have a combination of three access rights:
 /// Read, Write, and Dup.
 pub struct SafePtr<T, M, R = Full> {
-    addr: usize,
+    offset: usize,
     vm_obj: M,
     rights: R,
     phantom: PhantomData<T>,
@@ -157,17 +160,23 @@ impl<T: Pod, M: VmIo> SafePtr<T, M> {
     ///
     /// The default access rights of a new instance are `Read`, `Write`, and
     /// `Dup`.
-    pub fn new(vm_obj: M, addr: usize) -> Self {
+    pub fn new(vm_obj: M, offset: usize) -> Self {
         Self {
             vm_obj,
-            addr,
+            offset,
             rights: TRightSet(<TRights![Dup, Read, Write, Exec, Signal]>::new()),
             phantom: PhantomData,
         }
     }
 }
 
-impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, R> {
+impl<T: Pod, M: VmIo + HasPaddr> SafePtr<T, M> {
+    pub fn paddr(&self) -> Paddr {
+        self.vm_obj.paddr() + self.offset
+    }
+}
+
+impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
     // =============== Read and write methods ==============
 
     /// Read the value from the pointer.
@@ -177,7 +186,7 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, R> {
     /// This method requires the Read right.
     #[require(R > Read)]
     pub fn read(&self) -> Result<T> {
-        self.vm_obj.read_val(self.addr)
+        self.vm_obj.read_val(self.offset)
     }
 
     /// Read a slice of values from the pointer.
@@ -197,7 +206,7 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, R> {
     /// This method requires the Write right.
     #[require(R > Write)]
     pub fn write(&self, val: &T) -> Result<()> {
-        self.vm_obj.write_val(self.addr, val)
+        self.vm_obj.write_val(self.offset, val)
     }
 
     /// Overwrite a slice of values at the pointer.
@@ -212,45 +221,37 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, R> {
 
     // =============== Address-related methods ==============
 
-    pub const fn addr(&self) -> usize {
-        self.addr
-    }
-
-    pub fn set_addr(&mut self, addr: usize) {
-        self.addr = addr;
-    }
-
     pub const fn is_aligned(&self) -> bool {
-        self.addr % core::mem::align_of::<T>() == 0
+        self.offset % core::mem::align_of::<T>() == 0
     }
 
     /// Increase the address in units of bytes occupied by the generic T.
     pub fn add(&mut self, count: usize) {
         let offset = count * core::mem::size_of::<T>();
-        self.addr += offset;
+        self.offset += offset;
     }
 
     /// Increase or decrease the address in units of bytes occupied by the generic T.
     pub fn offset(&mut self, count: isize) {
         let offset = count * core::mem::size_of::<T>() as isize;
         if count >= 0 {
-            self.addr += offset as usize;
+            self.offset += offset as usize;
         } else {
-            self.addr -= (-offset) as usize;
+            self.offset -= (-offset) as usize;
         }
     }
 
     /// Increase the address in units of bytes.
     pub fn byte_add(&mut self, bytes: usize) {
-        self.addr += bytes;
+        self.offset += bytes;
     }
 
     /// Increase or decrease the address in units of bytes.
     pub fn byte_offset(&mut self, bytes: isize) {
         if bytes >= 0 {
-            self.addr += bytes as usize;
+            self.offset += bytes as usize;
         } else {
-            self.addr -= (-bytes) as usize;
+            self.offset -= (-bytes) as usize;
         }
     }
 
@@ -265,15 +266,15 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, R> {
     }
 
     /// Construct a new SafePtr which will point to the same address
-    pub const fn borrow_vm(&self) -> SafePtr<T, &M, R> {
+    pub fn borrow_vm(&self) -> SafePtr<T, &M, TRightSet<R>> {
         let SafePtr {
-            addr,
+            offset: addr,
             vm_obj,
             rights,
             ..
         } = self;
         SafePtr {
-            addr: *addr,
+            offset: *addr,
             vm_obj,
             rights: *rights,
             phantom: PhantomData,
@@ -283,15 +284,15 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, R> {
     // =============== Type conversion methods ==============
 
     /// Cast the accessed structure into a new one, which is usually used when accessing a field in a structure.
-    pub fn cast<U: Pod>(self) -> SafePtr<U, M, R> {
+    pub fn cast<U: Pod>(self) -> SafePtr<U, M, TRightSet<R>> {
         let SafePtr {
-            addr,
+            offset: addr,
             vm_obj,
             rights,
             ..
         } = self;
         SafePtr {
-            addr,
+            offset: addr,
             vm_obj,
             rights,
             phantom: PhantomData,
@@ -304,22 +305,26 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, R> {
     ///
     /// This method requires the target rights to be a subset of the current rights.
     #[require(R > R1)]
-    pub fn restrict<R1: TRights>(self) -> SafePtr<T, M, R1> {
-        let SafePtr { addr, vm_obj, .. } = self;
-        SafePtr {
-            addr,
+    pub fn restrict<R1: TRights>(self) -> SafePtr<T, M, TRightSet<R1>> {
+        let SafePtr {
+            offset: addr,
             vm_obj,
-            rights: R1::new(),
+            ..
+        } = self;
+        SafePtr {
+            offset: addr,
+            vm_obj,
+            rights: TRightSet(R1::new()),
             phantom: PhantomData,
         }
     }
 }
 
 #[require(R > Dup)]
-impl<T, M: Clone, R: TRights> Clone for SafePtr<T, M, R> {
+impl<T, M: Clone, R: TRights> Clone for SafePtr<T, M, TRightSet<R>> {
     fn clone(&self) -> Self {
         Self {
-            addr: self.addr,
+            offset: self.offset,
             vm_obj: self.vm_obj.clone(),
             rights: self.rights,
             phantom: PhantomData,
@@ -328,15 +333,24 @@ impl<T, M: Clone, R: TRights> Clone for SafePtr<T, M, R> {
 }
 
 #[require(R > Dup)]
-impl<T, M: crate::dup::Dup, R: TRights> crate::dup::Dup for SafePtr<T, M, R> {
+impl<T, M: crate::dup::Dup, R: TRights> crate::dup::Dup for SafePtr<T, M, TRightSet<R>> {
     fn dup(&self) -> Result<Self> {
         let duplicated = Self {
-            addr: self.addr,
+            offset: self.offset,
             vm_obj: self.vm_obj.dup()?,
             rights: self.rights,
             phantom: PhantomData,
         };
         Ok(duplicated)
+    }
+}
+
+impl<T, M: Debug, R> Debug for SafePtr<T, M, R> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SafePtr")
+            .field("offset", &self.offset)
+            .field("vm_obj", &self.vm_obj)
+            .finish()
     }
 }
 
@@ -346,27 +360,29 @@ macro_rules! field_ptr {
     ($ptr:expr, $type:ty, $($field:tt)+) => {{
         use jinux_frame::offset_of;
         use jinux_frame::vm::VmIo;
-        // import more...
+        use jinux_rights::TRights;
+        use jinux_rights::TRightSet;
+        use jinux_rights::Dup;
+        use jinux_util::safe_ptr::SetContain;
+        use jinux_util::safe_ptr::Pod;
 
         #[inline]
         fn new_field_ptr<T, M, R, U>(
-            container_ptr: &SafePtr<T, M, R>,
+            container_ptr: &SafePtr<T, M, TRightSet<R>>,
             field_offset: *const U
-        ) -> SafePtr<U, &M, R>
+        ) -> SafePtr<U, &M, TRightSet<R>>
         where
             T: Pod,
             M: VmIo,
             R: TRights,
             U: Pod,
         {
-            container_ptr
-                .borrow_vm()
-                .byte_add(offset as usize)
-                .cast()
+            let mut ptr = container_ptr.borrow_vm();
+            ptr.byte_add(field_offset as usize);
+            ptr.cast()
         }
 
-        let ptr = $ptr;
-        let field_offset = offset_of!(ty, $($field)*);
-        new_field_ptr(ptr, field_offset)
+        let field_offset = offset_of!($type, $($field)*);
+        new_field_ptr($ptr,field_offset)
     }}
 }

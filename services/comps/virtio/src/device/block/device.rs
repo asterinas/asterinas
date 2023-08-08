@@ -1,9 +1,9 @@
 use core::hint::spin_loop;
 
 use alloc::vec::Vec;
-use jinux_frame::offset_of;
+use jinux_frame::{io_mem::IoMem, offset_of};
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use pod::Pod;
 
 use crate::{
@@ -17,7 +17,7 @@ use super::{BLKFeatures, VirtioBLKConfig};
 
 #[derive(Debug)]
 pub struct BLKDevice {
-    config: InFramePtr<VirtioBLKConfig>,
+    config: SafePtr<VirtioBLKConfig, IoMem>,
     queue: VirtQueue,
 }
 
@@ -27,13 +27,15 @@ impl BLKDevice {
     pub(crate) fn new(
         cap: &CapabilityVirtioData,
         bars: [Option<BAR>; 6],
-        common_cfg: &InFramePtr<VirtioPciCommonCfg>,
+        common_cfg: &SafePtr<VirtioPciCommonCfg, IoMem>,
         notify_base_address: usize,
         notify_off_multiplier: u32,
         mut msix_vector_left: Vec<u16>,
     ) -> Result<Self, VirtioDeviceError> {
         let config = VirtioBLKConfig::new(cap, bars);
-        let num_queues = common_cfg.read_at(offset_of!(VirtioPciCommonCfg, num_queues)) as u16;
+        let num_queues = field_ptr!(common_cfg, VirtioPciCommonCfg, num_queues)
+            .read()
+            .unwrap();
         if num_queues != 1 {
             return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
         }

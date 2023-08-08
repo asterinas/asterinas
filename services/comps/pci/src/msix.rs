@@ -1,3 +1,5 @@
+use core::mem::size_of;
+
 use alloc::vec::Vec;
 use log::debug;
 use pod::Pod;
@@ -6,8 +8,8 @@ use crate::util::{CSpaceAccessMethod, BAR};
 
 use super::capability::msix::CapabilityMSIXData;
 
-use jinux_frame::{bus::pci::PciDeviceLocation, offset_of, trap::IrqAllocateHandle};
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_frame::{bus::pci::PciDeviceLocation, io_mem::IoMem, offset_of, trap::IrqAllocateHandle};
+use jinux_util::{field_ptr, safe_ptr::SafePtr};
 
 #[derive(Debug, Default)]
 pub struct MSIX {
@@ -19,7 +21,7 @@ pub struct MSIX {
 
 #[derive(Debug)]
 pub struct MSIXEntry {
-    pub table_entry: InFramePtr<MSIXTableEntry>,
+    pub table_entry: SafePtr<MSIXTableEntry, IoMem>,
     pub irq_handle: IrqAllocateHandle,
 }
 
@@ -83,22 +85,36 @@ impl MSIX {
         debug!("command after:{:x}", am.read16(loc, crate::PCI_COMMAND));
         let message_control = am.read16(loc, cap_ptr + 2) | 0x8000;
         am.write16(loc, cap_ptr + 2, message_control);
-        let mut table_iter: InFramePtr<MSIXTableEntry> =
-            InFramePtr::new(table_base_address as usize)
-                .expect("can not get in frame ptr for msix");
+        let mut table_iter: SafePtr<MSIXTableEntry, IoMem> = SafePtr::new(
+            IoMem::new(
+                table_base_address as usize
+                    ..table_base_address as usize
+                        + (size_of::<MSIXTableEntry>() * table_size as usize),
+            )
+            .unwrap(),
+            0,
+        );
         for _ in 0..table_size {
             // local APIC address: 0xFEE0_0000
-            table_iter.write_at(offset_of!(MSIXTableEntry, msg_addr), 0xFEE0_0000 as u32);
-            table_iter.write_at(offset_of!(MSIXTableEntry, msg_upper_addr), 0 as u32);
+            field_ptr!(&table_iter, MSIXTableEntry, msg_addr)
+                .write(&0xFEE0_0000u32)
+                .unwrap();
+            field_ptr!(&table_iter, MSIXTableEntry, msg_upper_addr)
+                .write(&0u32)
+                .unwrap();
             // allocate irq number
             let handle = jinux_frame::trap::allocate_irq().expect("not enough irq");
-            table_iter.write_at(offset_of!(MSIXTableEntry, msg_data), handle.num() as u32);
-            table_iter.write_at(offset_of!(MSIXTableEntry, vector_control), 0 as u32);
+            field_ptr!(&table_iter, MSIXTableEntry, msg_data)
+                .write(&(handle.num() as u32))
+                .unwrap();
+            field_ptr!(&table_iter, MSIXTableEntry, vector_control)
+                .write(&0u32)
+                .unwrap();
             cap.table.push(MSIXEntry {
                 table_entry: table_iter.clone(),
                 irq_handle: handle,
             });
-            table_iter = table_iter.add(1);
+            table_iter.add(1);
         }
         cap
     }

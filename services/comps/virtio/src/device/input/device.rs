@@ -1,9 +1,9 @@
 use crate::{device::VirtioDeviceError, queue::VirtQueue, VirtioPciCommonCfg};
 use alloc::{boxed::Box, vec::Vec};
 use bitflags::bitflags;
-use jinux_frame::offset_of;
+use jinux_frame::{io_mem::IoMem, offset_of};
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use pod::Pod;
 use spin::Mutex;
 
@@ -43,7 +43,7 @@ pub const FF_STATUS: u8 = 0x17;
 /// making pass-through implementations on top of evdev easy.
 #[derive(Debug)]
 pub struct InputDevice {
-    config: InFramePtr<VirtioInputConfig>,
+    config: SafePtr<VirtioInputConfig, IoMem>,
     event_queue: Mutex<VirtQueue>,
     status_queue: VirtQueue,
     pub event_buf: Mutex<Box<[InputEvent; QUEUE_SIZE]>>,
@@ -55,7 +55,7 @@ impl InputDevice {
     pub fn new(
         cap: &CapabilityVirtioData,
         bars: [Option<BAR>; 6],
-        common_cfg: &InFramePtr<VirtioPciCommonCfg>,
+        common_cfg: &SafePtr<VirtioPciCommonCfg, IoMem>,
         notify_base_address: usize,
         notify_off_multiplier: u32,
         mut msix_vector_left: Vec<u16>,
@@ -135,12 +135,18 @@ impl InputDevice {
     /// Query a specific piece of information by `select` and `subsel`, and write
     /// result to `out`, return the result size.
     pub fn query_config_select(&self, select: InputConfigSelect, subsel: u8, out: &mut [u8]) -> u8 {
-        self.config
-            .write_at(offset_of!(VirtioInputConfig, select), select as u8);
-        self.config
-            .write_at(offset_of!(VirtioInputConfig, subsel), subsel as u8);
-        let size = self.config.read_at(offset_of!(VirtioInputConfig, size));
-        let data: [u8; 128] = self.config.read_at(offset_of!(VirtioInputConfig, data));
+        field_ptr!(&self.config, VirtioInputConfig, select)
+            .write(&(select as u8))
+            .unwrap();
+        field_ptr!(&self.config, VirtioInputConfig, subsel)
+            .write(&(subsel as u8))
+            .unwrap();
+        let size = field_ptr!(&self.config, VirtioInputConfig, size)
+            .read()
+            .unwrap();
+        let data: [u8; 128] = field_ptr!(&self.config, VirtioInputConfig, data)
+            .read()
+            .unwrap();
         out[..size as usize].copy_from_slice(&data[..size as usize]);
         size
     }

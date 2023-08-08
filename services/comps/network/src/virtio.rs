@@ -1,8 +1,10 @@
+use jinux_frame::io_mem::IoMem;
 use jinux_frame::offset_of;
 use jinux_frame::sync::SpinLock;
 use jinux_frame::trap::TrapFrame;
 use jinux_pci::msix::MSIX;
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_util::field_ptr;
+use jinux_util::safe_ptr::SafePtr;
 use jinux_virtio::device::network::device::{self, EthernetAddr};
 use jinux_virtio::PCIVirtioDevice;
 use jinux_virtio::VirtioPciCommonCfg;
@@ -14,7 +16,7 @@ pub struct VirtioNet {
     /// Network Device
     device: device::NetworkDevice,
     /// Own common cfg to avoid other devices access this frame
-    _common_cfg: InFramePtr<VirtioPciCommonCfg>,
+    _common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
     _msix: SpinLock<MSIX>,
     irq_number: u8,
 }
@@ -45,8 +47,9 @@ impl VirtioNet {
 
         let common_cfg = virtio_device.common_cfg;
         let mut msix = virtio_device.msix;
-        let config_msix_vector =
-            common_cfg.read_at(offset_of!(VirtioPciCommonCfg, config_msix_vector)) as usize;
+        let config_msix_vector = field_ptr!(&common_cfg, VirtioPciCommonCfg, config_msix_vector)
+            .read()
+            .unwrap() as usize;
 
         let mut network_irq_num = 0;
         for i in 0..msix.table_size as usize {

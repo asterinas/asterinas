@@ -1,9 +1,9 @@
 use core::hint::spin_loop;
 
 use alloc::vec::Vec;
-use jinux_frame::offset_of;
+use jinux_frame::{io_mem::IoMem, offset_of};
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
-use jinux_util::{frame_ptr::InFramePtr, slot_vec::SlotVec};
+use jinux_util::{field_ptr, safe_ptr::SafePtr, slot_vec::SlotVec};
 use log::debug;
 use pod::Pod;
 
@@ -60,7 +60,7 @@ impl NetworkDevice {
     pub fn new(
         cap: &CapabilityVirtioData,
         bars: [Option<BAR>; 6],
-        common_cfg: &InFramePtr<VirtioPciCommonCfg>,
+        common_cfg: &SafePtr<VirtioPciCommonCfg, IoMem>,
         notify_base_address: usize,
         notify_off_multiplier: u32,
         mut msix_vector_left: Vec<u16>,
@@ -68,26 +68,30 @@ impl NetworkDevice {
         let virtio_net_config = VirtioNetConfig::new(cap, bars);
         let features = {
             // select low
-            common_cfg.write_at(
-                offset_of!(VirtioPciCommonCfg, device_feature_select),
-                0 as u32,
-            );
-            let device_feature_low =
-                common_cfg.read_at(offset_of!(VirtioPciCommonCfg, device_feature)) as u64;
+            field_ptr!(common_cfg, VirtioPciCommonCfg, device_feature_select)
+                .write(&0u32)
+                .unwrap();
+            let device_feature_low = field_ptr!(common_cfg, VirtioPciCommonCfg, device_feature)
+                .read()
+                .unwrap() as u64;
             // select high
-            common_cfg.write_at(
-                offset_of!(VirtioPciCommonCfg, device_feature_select),
-                1 as u32,
-            );
-            let device_feature_high =
-                common_cfg.read_at(offset_of!(VirtioPciCommonCfg, device_feature)) as u64;
+            field_ptr!(common_cfg, VirtioPciCommonCfg, device_feature_select)
+                .write(&1u32)
+                .unwrap();
+            let device_feature_high = field_ptr!(common_cfg, VirtioPciCommonCfg, device_feature)
+                .read()
+                .unwrap() as u64;
             let device_feature = device_feature_high << 32 | device_feature_low;
             NetworkFeatures::from_bits_truncate(Self::negotiate_features(device_feature))
         };
         debug!("virtio_net_config = {:?}", virtio_net_config);
         debug!("features = {:?}", features);
-        let mac_addr = virtio_net_config.read_at(offset_of!(VirtioNetConfig, mac));
-        let status = virtio_net_config.read_at(offset_of!(VirtioNetConfig, status));
+        let mac_addr = field_ptr!(&virtio_net_config, VirtioNetConfig, mac)
+            .read()
+            .unwrap();
+        let status = field_ptr!(&virtio_net_config, VirtioNetConfig, status)
+            .read()
+            .unwrap();
         debug!("mac addr = {:x?}, status = {:?}", mac_addr, status);
         let (recv_msix_vec, send_msix_vec) = {
             if msix_vector_left.len() >= 2 {
@@ -132,7 +136,7 @@ impl NetworkDevice {
         }
 
         Ok(Self {
-            config: virtio_net_config.read(),
+            config: virtio_net_config.read().unwrap(),
             mac_addr,
             send_queue,
             recv_queue,

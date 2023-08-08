@@ -6,7 +6,7 @@ use core::marker::PhantomData;
 use alloc::sync::Arc;
 use jinux_frame::{
     io_mem::IoMem,
-    vm::{Paddr, VmFrame, VmIo},
+    vm::{HasPaddr, Paddr, VmFrame, VmIo},
     Result,
 };
 use pod::Pod;

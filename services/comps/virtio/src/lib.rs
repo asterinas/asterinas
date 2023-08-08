@@ -6,15 +6,15 @@
 extern crate alloc;
 
 use component::init_component;
-use core::str::FromStr;
+use core::{mem::size_of, str::FromStr};
 
 use alloc::{collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use bitflags::bitflags;
 use component::ComponentInitError;
 use device::VirtioDevice;
-use jinux_frame::{offset_of, trap::TrapFrame};
+use jinux_frame::{io_mem::IoMem, offset_of, trap::TrapFrame};
 use jinux_pci::{util::BAR, PciDevice};
-use jinux_util::frame_ptr::InFramePtr;
+use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use log::{debug, info};
 use pod::Pod;
 use spin::{Mutex, Once};
@@ -76,7 +76,7 @@ impl VIRTIOComponent {
         let mut devices = Vec::new();
         let mut lock = self.virtio_devices.lock();
         let len = lock.len();
-        for i in 0..len {
+        for _ in 0..len {
             let device = lock.pop_front().unwrap();
             let d_type = VirtioDeviceType::from_virtio_device(&device.device);
             if d_type == device_type {
@@ -165,14 +165,20 @@ pub struct VirtioPciCommonCfg {
 }
 
 impl VirtioPciCommonCfg {
-    pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> InFramePtr<Self> {
+    pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> SafePtr<Self, IoMem> {
         let bar = cap.bar;
         let offset = cap.offset;
         match bars[bar as usize].expect("Virtio pci common cfg:bar is none") {
             BAR::Memory(address, _, _, _) => {
                 debug!("common_cfg addr:{:x}", (address as usize + offset as usize));
-                InFramePtr::new(address as usize + offset as usize)
-                    .expect("cannot get InFramePtr in VitioPciCommonCfg")
+                SafePtr::new(
+                    IoMem::new(
+                        (address as usize + offset as usize)
+                            ..(address as usize + offset as usize + size_of::<Self>()),
+                    )
+                    .unwrap(),
+                    0,
+                )
             }
             BAR::IO(first, second) => {
                 panic!(
@@ -219,7 +225,7 @@ impl VirtioDeviceType {
 
 pub struct PCIVirtioDevice {
     /// common config of one device
-    pub common_cfg: InFramePtr<VirtioPciCommonCfg>,
+    pub common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
     pub device: VirtioDevice,
     pub msix: MSIX,
 }
@@ -266,73 +272,70 @@ impl PCIVirtioDevice {
         let virtio_info = VirtioInfo::new(device_type, bars, virtio_cap_list).unwrap();
         let mut msix_vector_list: Vec<u16> = (0..msix.table_size).collect();
         let config_msix_vector = msix_vector_list.pop().unwrap();
-        let common_cfg_frame_ptr = &virtio_info.common_cfg_frame_ptr;
+        let common_cfg = &virtio_info.common_cfg_frame_ptr;
 
         // Reset device
-        common_cfg_frame_ptr.write_at(offset_of!(VirtioPciCommonCfg, device_status), 0 as u8);
+        field_ptr!(common_cfg, VirtioPciCommonCfg, device_status)
+            .write(&0u8)
+            .unwrap();
 
-        let num_queues: u16 =
-            common_cfg_frame_ptr.read_at(offset_of!(VirtioPciCommonCfg, num_queues));
-        debug!("num_queues:{:x}", num_queues);
-        // the table size of msix should be equal to n+1 or 2 where n is the virtqueue amount
-        assert!(msix.table_size == 2 || msix.table_size == (num_queues + 1));
-        common_cfg_frame_ptr.write_at(
-            offset_of!(VirtioPciCommonCfg, config_msix_vector),
-            config_msix_vector,
-        );
-        common_cfg_frame_ptr.write_at(
-            offset_of!(VirtioPciCommonCfg, device_status),
-            (DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER).bits(),
-        );
+        field_ptr!(common_cfg, VirtioPciCommonCfg, config_msix_vector)
+            .write(&config_msix_vector)
+            .unwrap();
+        field_ptr!(common_cfg, VirtioPciCommonCfg, device_status)
+            .write(&(DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER).bits())
+            .unwrap();
         // negotiate features
         // get the value of device features
-        common_cfg_frame_ptr.write_at(
-            offset_of!(VirtioPciCommonCfg, device_feature_select),
-            0 as u32,
-        );
-        let mut low: u32 =
-            common_cfg_frame_ptr.read_at(offset_of!(VirtioPciCommonCfg, device_feature));
-        common_cfg_frame_ptr.write_at(
-            offset_of!(VirtioPciCommonCfg, device_feature_select),
-            1 as u32,
-        );
-        let mut high: u32 =
-            common_cfg_frame_ptr.read_at(offset_of!(VirtioPciCommonCfg, device_feature));
+        field_ptr!(common_cfg, VirtioPciCommonCfg, device_feature_select)
+            .write(&0u32)
+            .unwrap();
+        let mut low: u32 = field_ptr!(common_cfg, VirtioPciCommonCfg, device_feature)
+            .read()
+            .unwrap();
+        field_ptr!(common_cfg, VirtioPciCommonCfg, device_feature_select)
+            .write(&1u32)
+            .unwrap();
+        let mut high: u32 = field_ptr!(common_cfg, VirtioPciCommonCfg, device_feature)
+            .read()
+            .unwrap();
         let mut feature = (high as u64) << 32;
         feature |= low as u64;
         // let the device to negotiate Features
         let driver_features = VirtioDevice::negotiate_features(feature, device_type);
-        debug!("support_features:{:x}", driver_features);
         // write features back
         low = driver_features as u32;
         high = (driver_features >> 32) as u32;
-        common_cfg_frame_ptr.write_at(
-            offset_of!(VirtioPciCommonCfg, driver_feature_select),
-            0 as u32,
-        );
-        common_cfg_frame_ptr.write_at(offset_of!(VirtioPciCommonCfg, driver_feature), low);
-        common_cfg_frame_ptr.write_at(
-            offset_of!(VirtioPciCommonCfg, driver_feature_select),
-            1 as u32,
-        );
-        common_cfg_frame_ptr.write_at(offset_of!(VirtioPciCommonCfg, driver_feature), high);
-
+        field_ptr!(common_cfg, VirtioPciCommonCfg, driver_feature_select)
+            .write(&0u32)
+            .unwrap();
+        field_ptr!(common_cfg, VirtioPciCommonCfg, driver_feature)
+            .write(&low)
+            .unwrap();
+        field_ptr!(common_cfg, VirtioPciCommonCfg, driver_feature_select)
+            .write(&1u32)
+            .unwrap();
+        field_ptr!(common_cfg, VirtioPciCommonCfg, driver_feature)
+            .write(&high)
+            .unwrap();
         // change to features ok status
-        common_cfg_frame_ptr.write_at(
-            offset_of!(VirtioPciCommonCfg, device_status),
-            (DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::FEATURES_OK).bits(),
-        );
+        field_ptr!(common_cfg, VirtioPciCommonCfg, device_status)
+            .write(
+                &(DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::FEATURES_OK)
+                    .bits(),
+            )
+            .unwrap();
         let device = VirtioDevice::new(&virtio_info, bars, msix_vector_list).unwrap();
-
         // change to driver ok status
-        common_cfg_frame_ptr.write_at(
-            offset_of!(VirtioPciCommonCfg, device_status),
-            (DeviceStatus::ACKNOWLEDGE
-                | DeviceStatus::DRIVER
-                | DeviceStatus::FEATURES_OK
-                | DeviceStatus::DRIVER_OK)
-                .bits(),
-        );
+        field_ptr!(common_cfg, VirtioPciCommonCfg, device_status)
+            .write(
+                &(DeviceStatus::ACKNOWLEDGE
+                    | DeviceStatus::DRIVER
+                    | DeviceStatus::FEATURES_OK
+                    | DeviceStatus::DRIVER_OK)
+                    .bits(),
+            )
+            .unwrap();
         Self {
             common_cfg: virtio_info.common_cfg_frame_ptr,
             device,
@@ -350,8 +353,9 @@ impl PCIVirtioDevice {
         T: Fn(&TrapFrame) + Send + Sync + 'static,
     {
         let config_msix_vector =
-            self.common_cfg
-                .read_at(offset_of!(VirtioPciCommonCfg, config_msix_vector)) as usize;
+            field_ptr!(&self.common_cfg, VirtioPciCommonCfg, config_msix_vector)
+                .read()
+                .unwrap() as usize;
         for i in 0..self.msix.table_size as usize {
             let msix = self.msix.table.get_mut(i).unwrap();
             if !msix.irq_handle.is_empty() {
