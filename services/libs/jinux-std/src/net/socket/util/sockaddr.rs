@@ -1,12 +1,13 @@
 use crate::net::iface::{IpAddress, Ipv4Address};
 use crate::net::iface::{IpEndpoint, IpListenEndpoint};
+use crate::net::socket::unix::UnixSocketAddr;
 use crate::prelude::*;
 
 type PortNum = u16;
 
 #[derive(Debug)]
 pub enum SocketAddr {
-    Unix(String),
+    Unix(UnixSocketAddr),
     IPv4(Ipv4Address, PortNum),
     IPv6,
 }

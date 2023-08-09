@@ -1,10 +1,10 @@
 use crate::prelude::*;
 
+/// Standard well-defined IP protocols.
+/// From https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/in.h.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[allow(non_camel_case_types)]
-/// Standard well-defined IP protocols.
-/// From https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/in.h.
 pub enum Protocol {
     IPPROTO_IP = 0,         /* Dummy protocol for TCP		*/
     IPPROTO_ICMP = 1,       /* Internet Control Message Protocol	*/
@@ -34,11 +34,11 @@ pub enum Protocol {
     IPPROTO_MPTCP = 262,    /* Multipath TCP connection		*/
 }
 
+/// Socket types.
+/// From https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/net.h
 #[repr(i32)]
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
-/// Socket types.
-/// From https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/net.h
 pub enum SockType {
     /// Stream socket
     SOCK_STREAM = 1,

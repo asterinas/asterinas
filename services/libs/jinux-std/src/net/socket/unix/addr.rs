@@ -1,88 +1,63 @@
-use crate::{
-    fs::{
-        fs_resolver::{split_path, FsPath},
-        utils::{Dentry, InodeMode, InodeType},
-    },
-    net::socket::util::sockaddr::SocketAddr,
-    prelude::*,
-};
+use crate::fs::utils::Dentry;
+use crate::net::socket::util::sockaddr::SocketAddr;
+use crate::prelude::*;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UnixSocketAddr {
+    Path(String),
+    Abstract(String),
+}
 
 #[derive(Clone)]
-pub enum UnixSocketAddr {
-    Bound(Arc<Dentry>),
-    Unbound(String),
+pub(super) enum UnixSocketAddrBound {
+    Path(Arc<Dentry>),
+    Abstract(String),
+}
+
+impl PartialEq for UnixSocketAddrBound {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Abstract(l0), Self::Abstract(r0)) => l0 == r0,
+            (Self::Path(l0), Self::Path(r0)) => {
+                let Some(linode) = l0.inode().upgrade() else {
+                    return false;
+                };
+                let Some(rinode) = r0.inode().upgrade() else {
+                    return false;
+                };
+                Arc::ptr_eq(&linode, &rinode)
+            }
+            _ => false,
+        }
+    }
 }
 
 impl TryFrom<SocketAddr> for UnixSocketAddr {
     type Error = Error;
 
     fn try_from(value: SocketAddr) -> Result<Self> {
-        let SocketAddr::Unix(path) = value else {
-            return_errno_with_message!(Errno::EINVAL, "Invalid unix socket addr")
-        };
-        Ok(Self::Unbound(path))
+        match value {
+            SocketAddr::Unix(unix_socket_addr) => Ok(unix_socket_addr),
+            _ => return_errno_with_message!(Errno::EINVAL, "Invalid unix socket addr"),
+        }
     }
 }
 
-impl From<UnixSocketAddr> for SocketAddr {
-    fn from(value: UnixSocketAddr) -> Self {
-        SocketAddr::Unix(value.path())
-    }
-}
-
-impl UnixSocketAddr {
-    pub fn create_file_and_bind(&mut self) -> Result<()> {
-        let Self::Unbound(path) = self else {
-            return_errno_with_message!(Errno::EINVAL, "the addr is already bound");
-        };
-
-        let (parent_pathname, file_name) = split_path(path);
-        let parent = {
-            let current = current!();
-            let fs = current.fs().read();
-            let parent_path = FsPath::try_from(parent_pathname)?;
-            fs.lookup(&parent_path)?
-        };
-        let dentry = parent.create(
-            file_name,
-            InodeType::Socket,
-            InodeMode::S_IRUSR | InodeMode::S_IWUSR,
-        )?;
-        *self = Self::Bound(dentry);
-        Ok(())
-    }
-
-    /// The dentry. If self is bound, return the bound dentry, otherwise lookup dentry in file system.
-    pub fn dentry(&self) -> Result<Arc<Dentry>> {
-        match self {
-            UnixSocketAddr::Bound(dentry) => Ok(dentry.clone()),
-            UnixSocketAddr::Unbound(path) => {
-                let dentry = {
-                    let current = current!();
-                    let fs = current.fs().read();
-                    let fs_path = FsPath::try_from(path.as_str())?;
-                    fs.lookup(&fs_path)?
-                };
-
-                if dentry.inode_type() != InodeType::Socket {
-                    return_errno_with_message!(Errno::EACCES, "not a socket file")
-                }
-
-                if !dentry.inode_mode().is_readable() || !dentry.inode_mode().is_writable() {
-                    return_errno_with_message!(
-                        Errno::EACCES,
-                        "the socket cannot be read or written"
-                    )
-                }
-                return Ok(dentry);
+impl From<UnixSocketAddrBound> for UnixSocketAddr {
+    fn from(value: UnixSocketAddrBound) -> Self {
+        match value {
+            UnixSocketAddrBound::Path(dentry) => {
+                let abs_path = dentry.abs_path();
+                Self::Path(abs_path)
             }
+            UnixSocketAddrBound::Abstract(name) => Self::Abstract(name),
         }
     }
+}
 
-    pub fn path(&self) -> String {
-        match self {
-            UnixSocketAddr::Bound(dentry) => dentry.abs_path(),
-            UnixSocketAddr::Unbound(path) => path.clone(),
-        }
+impl From<UnixSocketAddrBound> for SocketAddr {
+    fn from(value: UnixSocketAddrBound) -> Self {
+        let unix_socket_addr = UnixSocketAddr::from(value);
+        SocketAddr::Unix(unix_socket_addr)
     }
 }

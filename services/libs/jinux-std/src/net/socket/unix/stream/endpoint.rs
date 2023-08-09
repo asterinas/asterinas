@@ -1,20 +1,20 @@
 use crate::{
     fs::utils::{Channel, Consumer, IoEvents, Poller, Producer, StatusFlags},
-    net::socket::{unix::addr::UnixSocketAddr, SockShutdownCmd},
+    net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd},
     prelude::*,
 };
 
-pub struct Endpoint(Inner);
+pub(super) struct Endpoint(Inner);
 
 struct Inner {
-    addr: RwLock<Option<UnixSocketAddr>>,
+    addr: RwLock<Option<UnixSocketAddrBound>>,
     reader: Consumer<u8>,
     writer: Producer<u8>,
     peer: Weak<Endpoint>,
 }
 
 impl Endpoint {
-    pub fn end_pair(is_nonblocking: bool) -> Result<(Arc<Endpoint>, Arc<Endpoint>)> {
+    pub(super) fn new_pair(is_nonblocking: bool) -> Result<(Arc<Endpoint>, Arc<Endpoint>)> {
         let flags = if is_nonblocking {
             StatusFlags::O_NONBLOCK
         } else {
@@ -43,26 +43,26 @@ impl Endpoint {
         })
     }
 
-    pub fn addr(&self) -> Option<UnixSocketAddr> {
+    pub(super) fn addr(&self) -> Option<UnixSocketAddrBound> {
         self.0.addr.read().clone()
     }
 
-    pub fn set_addr(&self, addr: UnixSocketAddr) {
+    pub(super) fn set_addr(&self, addr: UnixSocketAddrBound) {
         *self.0.addr.write() = Some(addr);
     }
 
-    pub fn peer_addr(&self) -> Option<UnixSocketAddr> {
+    pub(super) fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
         self.0.peer.upgrade().map(|peer| peer.addr()).flatten()
     }
 
-    pub fn is_nonblocking(&self) -> bool {
+    pub(super) fn is_nonblocking(&self) -> bool {
         let reader_status = self.0.reader.is_nonblocking();
         let writer_status = self.0.writer.is_nonblocking();
         debug_assert!(reader_status == writer_status);
         reader_status
     }
 
-    pub fn set_nonblocking(&self, is_nonblocking: bool) -> Result<()> {
+    pub(super) fn set_nonblocking(&self, is_nonblocking: bool) -> Result<()> {
         let reader_flags = self.0.reader.status_flags();
         self.0
             .reader
@@ -74,15 +74,15 @@ impl Endpoint {
         Ok(())
     }
 
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    pub(super) fn read(&self, buf: &mut [u8]) -> Result<usize> {
         self.0.reader.read(buf)
     }
 
-    pub fn write(&self, buf: &[u8]) -> Result<usize> {
+    pub(super) fn write(&self, buf: &[u8]) -> Result<usize> {
         self.0.writer.write(buf)
     }
 
-    pub fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
+    pub(super) fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
         if !self.is_connected() {
             return_errno_with_message!(Errno::ENOTCONN, "The socket is not connected.");
         }
@@ -98,11 +98,11 @@ impl Endpoint {
         Ok(())
     }
 
-    pub fn is_connected(&self) -> bool {
+    pub(super) fn is_connected(&self) -> bool {
         self.0.peer.upgrade().is_some()
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         let mut events = IoEvents::empty();
         // FIXME: should reader and writer use the same mask?
         let reader_events = self.0.reader.poll(mask, poller);

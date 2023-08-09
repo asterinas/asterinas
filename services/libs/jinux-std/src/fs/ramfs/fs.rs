@@ -378,6 +378,19 @@ impl RamInode {
         })
     }
 
+    fn new_socket(fs: &Arc<RamFS>, mode: InodeMode) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let inode = RamInode(RwLock::new(Inode_::new_socket(
+                fs.alloc_id(),
+                mode,
+                &fs.sb(),
+            )));
+            inode.0.write().fs = Arc::downgrade(fs);
+            inode.0.write().this = weak_self.clone();
+            inode
+        })
+    }
+
     fn new_symlink(fs: &Arc<RamFS>, mode: InodeMode) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| {
             let inode = RamInode(RwLock::new(Inode_::new_symlink(
@@ -494,28 +507,11 @@ impl Inode for RamInode {
         let new_inode = match type_ {
             InodeType::File => RamInode::new_file(&fs, mode),
             InodeType::SymLink => RamInode::new_symlink(&fs, mode),
+            InodeType::Socket => RamInode::new_socket(&fs, mode),
             InodeType::Dir => {
                 let dir_inode = RamInode::new_dir(&fs, mode, &self_inode.this);
                 self_inode.metadata.nlinks += 1;
                 dir_inode
-            }
-            InodeType::SymLink => {
-                let sym_inode = Arc::new(RamInode(RwLock::new(Inode_::new_symlink(
-                    fs.alloc_id(),
-                    mode,
-                    &fs.sb(),
-                ))));
-                sym_inode.0.write().fs = self_inode.fs.clone();
-                sym_inode
-            }
-            InodeType::Socket => {
-                let socket_inode = Arc::new(RamInode(RwLock::new(Inode_::new_socket(
-                    fs.alloc_id(),
-                    mode,
-                    &fs.sb(),
-                ))));
-                socket_inode.0.write().fs = self_inode.fs.clone();
-                socket_inode
             }
             _ => {
                 panic!("unsupported inode type");
