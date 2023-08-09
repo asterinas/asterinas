@@ -72,7 +72,7 @@ pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
                     SigDefaultAction::Core | SigDefaultAction::Term => {
                         warn!(
                             "{:?}: terminating on signal {}",
-                            current.executable_path().read(),
+                            &*current.executable_path().read(),
                             sig_num.sig_name()
                         );
                         // FIXME: How to set correct status if process is terminated

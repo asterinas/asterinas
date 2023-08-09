@@ -1,4 +1,5 @@
 use crate::net::iface::Ipv4Address;
+use crate::net::socket::unix::UnixSocketAddr;
 use crate::net::socket::SocketAddr;
 use crate::prelude::*;
 use crate::util::{read_bytes_from_user, read_val_from_user, write_val_to_user};
@@ -22,12 +23,19 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
                 bytes
             };
 
-            let path = {
+            let unix_socket_addr = if bytes.starts_with(&[0]) {
+                // Abstract unix socket addr
+                let cstr = CStr::from_bytes_until_nul(&bytes[1..])?;
+                let abstract_path = cstr.to_string_lossy().to_string();
+                UnixSocketAddr::Abstract(abstract_path)
+            } else {
+                // Normal unix sockket addr
                 let cstr = CStr::from_bytes_until_nul(&bytes)?;
-                cstr.to_string_lossy().to_string()
+                let path = cstr.to_string_lossy().to_string();
+                UnixSocketAddr::Path(path)
             };
 
-            SocketAddr::Unix(path)
+            SocketAddr::Unix(unix_socket_addr)
         }
         SaFamily::AF_INET => {
             debug_assert!(addr_len >= core::mem::size_of::<SockAddrInet>());
@@ -58,7 +66,7 @@ pub fn write_socket_addr_to_user(
     let max_len = read_val_from_user::<i32>(addrlen_ptr)? as usize;
     let write_size = match socket_addr {
         SocketAddr::Unix(path) => {
-            let sock_addr_unix = SockAddrUnix::try_from(path.as_str())?;
+            let sock_addr_unix = SockAddrUnix::try_from(path)?;
             let write_size = core::mem::size_of::<SockAddrUnix>();
             debug_assert!(max_len >= write_size);
             write_val_to_user(dest, &sock_addr_unix)?;
@@ -80,9 +88,9 @@ pub fn write_socket_addr_to_user(
     Ok(())
 }
 
+/// PlaceHolder
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-/// PlaceHolder
 pub struct SockAddr {
     sa_family: u16, // SaFamily
     sa_data: [u8; 14],
@@ -103,9 +111,9 @@ pub struct SockAddrUnix {
     sun_path: [u8; SOCK_ADDR_UNIX_LEN],
 }
 
+/// IPv4 4-byte address
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-/// IPv4 4-byte address
 pub struct InetAddr {
     s_addr: [u8; 4],
 }
@@ -140,9 +148,9 @@ impl PortNum {
     }
 }
 
+/// IPv4 socket address
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-/// IPv4 socket address
 pub struct SockAddrInet {
     /// always SaFamily::AF_INET
     sin_family: u16,
@@ -168,7 +176,6 @@ impl SockAddrInet {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-/// IPv6 address
 pub struct Inet6Addr {
     s6_addr: [u8; 16],
 }
@@ -278,17 +285,22 @@ impl From<SockAddrInet> for SocketAddr {
     }
 }
 
-impl TryFrom<&str> for SockAddrUnix {
+impl TryFrom<&UnixSocketAddr> for SockAddrUnix {
     type Error = Error;
 
-    fn try_from(value: &str) -> Result<Self> {
+    fn try_from(value: &UnixSocketAddr) -> Result<Self> {
         let mut sun_path = [0u8; SOCK_ADDR_UNIX_LEN];
-        let bytes = value.as_bytes();
-        let copy_len = bytes.len().min(SOCK_ADDR_UNIX_LEN - 1);
-        sun_path[..copy_len].copy_from_slice(&bytes[..copy_len]);
-        Ok(SockAddrUnix {
-            sun_family: SaFamily::AF_UNIX as u16,
-            sun_path,
-        })
+        match value {
+            UnixSocketAddr::Path(path) => {
+                let bytes = path.as_bytes();
+                let copy_len = bytes.len().min(SOCK_ADDR_UNIX_LEN - 1);
+                sun_path[..copy_len].copy_from_slice(&bytes[..copy_len]);
+                Ok(SockAddrUnix {
+                    sun_family: SaFamily::AF_UNIX as u16,
+                    sun_path,
+                })
+            }
+            UnixSocketAddr::Abstract(_) => todo!(),
+        }
     }
 }

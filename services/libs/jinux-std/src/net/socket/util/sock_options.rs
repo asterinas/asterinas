@@ -1,10 +1,10 @@
 use crate::prelude::*;
 
+/// The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/socket.h.
+/// We do not include all options here
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(non_camel_case_types)]
-/// The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/socket.h.
-/// We do not include all options here
 pub enum SockOptionName {
     SO_DEBUG = 1,
     SO_REUSEADDR = 2,
@@ -27,10 +27,10 @@ pub enum SockOptionName {
     SO_SNDTIMEO_NEW = 67,
 }
 
+/// Sock Opt level. The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h#L343
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
-/// Sock Opt level. The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h#L343
 pub enum SockOptionLevel {
     SOL_IP = 0,
     SOL_SOCKET = 1,
