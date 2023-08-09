@@ -3,14 +3,37 @@ use super::{
     frame_allocator, paddr_to_vaddr, VmAllocOptions, VmFrameVec, {Paddr, Vaddr},
 };
 use crate::{
-    arch::mm::PageTableEntry,
-    config::{ENTRY_COUNT, PAGE_SIZE},
+    config::{self, ENTRY_COUNT, PAGE_SIZE},
     vm::VmFrame,
 };
 use alloc::{vec, vec::Vec};
+use bit_field::BitField;
 use core::{fmt::Debug, marker::PhantomData, mem::size_of};
 use log::trace;
 use pod::Pod;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u16)]
+pub enum PageSize {
+    Size4KiB = 1,
+    Size2MiB = 2,
+    Size1GiB = 3,
+}
+
+impl PageSize {
+    /// Get the final physical address through PTE and virtual address.
+    pub fn final_paddr<T: PageTableEntryTrait>(
+        &self,
+        pte: &T,
+        vaddr: Vaddr,
+        address_width: AddressWidth,
+    ) -> Paddr {
+        let page_bits = (T::VADDR_OFFSET_BITS + T::VADDR_INDEX_BITS * (*self as u16 - 1)) as usize;
+        let max_bits = (T::VADDR_OFFSET_BITS + address_width as u16 * T::VADDR_INDEX_BITS) as usize;
+        let phys_frame = pte.raw().get_bits(page_bits..max_bits) << page_bits;
+        vaddr.get_bits(0..page_bits) | phys_frame
+    }
+}
 
 pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
     fn new() -> Self;
@@ -55,12 +78,18 @@ pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
 
 pub trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
     type F: PageTableFlagsTrait;
+    /// The index bits of the vaddr. For example, in x86-64 the index is 9.
+    const VADDR_INDEX_BITS: u16;
+    /// The default offset bits of the vaddr. For example, in x86-64 the default offset is 12(4KiB).
+    const VADDR_OFFSET_BITS: u16;
 
     fn new(paddr: Paddr, flags: Self::F) -> Self;
 
     fn paddr(&self) -> Paddr;
 
     fn flags(&self) -> Self::F;
+
+    fn raw(&self) -> usize;
 
     fn update(&mut self, paddr: Paddr, flags: Self::F);
 
@@ -71,15 +100,6 @@ pub trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
 
     /// Clear the PTE and reset it to the initial state, which is usually 0.
     fn clear(&mut self);
-
-    /// The index of the next PTE is determined based on the virtual address and the current level, and the level range is [1,5].
-    ///
-    /// For example, in x86 we use the following expression to get the index (ENTRY_COUNT is 512):
-    /// ```
-    /// va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
-    /// ```
-    ///
-    fn page_index(va: Vaddr, level: usize) -> usize;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -88,7 +108,7 @@ pub struct PageTableConfig {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[repr(usize)]
+#[repr(u16)]
 pub enum AddressWidth {
     Level3PageTable = 3,
     Level4PageTable = 4,
@@ -154,13 +174,15 @@ impl<T: PageTableEntryTrait> PageTable<T> {
     }
 
     pub fn map(&mut self, vaddr: Vaddr, paddr: Paddr, flags: T::F) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, true).unwrap();
+        let (last_entry, page_size) = self.page_walk(vaddr, true).unwrap();
         trace!(
             "Page Table: Map vaddr:{:x?}, paddr:{:x?}, flags:{:x?}",
             vaddr,
             paddr,
             flags
         );
+        debug_assert!(vaddr < config::PHYS_OFFSET);
+        debug_assert!(page_size == PageSize::Size4KiB);
         if !last_entry.is_unused() && last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
         }
@@ -173,17 +195,17 @@ impl<T: PageTableEntryTrait> PageTable<T> {
     /// If create is set, it will create the next table until the last PTE.
     /// If not, it will return None if it is not reach the last PTE.
     ///
-    fn page_walk(&mut self, vaddr: Vaddr, create: bool) -> Option<&mut T> {
-        let mut count = self.config.address_width as usize;
-        debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
+    pub(crate) fn page_walk(&mut self, vaddr: Vaddr, create: bool) -> Option<(&mut T, PageSize)> {
+        let mut level = self.config.address_width as u16;
+        let page_index = vaddr >> (T::VADDR_OFFSET_BITS + T::VADDR_INDEX_BITS * (level - 1))
+            & ((1 << T::VADDR_INDEX_BITS) - 1);
+        debug_assert!(size_of::<T>() * (page_index + 1) <= PAGE_SIZE);
         // Safety: The offset does not exceed the value of PAGE_SIZE.
         // It only change the memory controlled by page table.
-        let mut current: &mut T = unsafe {
-            &mut *(paddr_to_vaddr(self.root_pa + size_of::<T>() * T::page_index(vaddr, count))
-                as *mut T)
-        };
+        let mut current: &mut T =
+            unsafe { &mut *(paddr_to_vaddr(self.root_pa + size_of::<T>() * page_index) as *mut T) };
 
-        while count > 1 {
+        while level > 1 && !current.flags().is_huge() {
             if !current.flags().is_present() {
                 if !create {
                     return None;
@@ -202,25 +224,30 @@ impl<T: PageTableEntryTrait> PageTable<T> {
                 current.update(frame.start_paddr(), flags);
                 self.tables.push(frame);
             }
-            if current.flags().is_huge() {
-                break;
-            }
-            count -= 1;
-            debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
+            level -= 1;
+            let page_index = vaddr >> (T::VADDR_OFFSET_BITS + T::VADDR_INDEX_BITS * (level - 1))
+                & ((1 << T::VADDR_INDEX_BITS) - 1);
+            debug_assert!(size_of::<T>() * (page_index + 1) <= PAGE_SIZE);
             // Safety: The offset does not exceed the value of PAGE_SIZE.
             // It only change the memory controlled by page table.
             current = unsafe {
-                &mut *(paddr_to_vaddr(
-                    current.paddr() + size_of::<T>() * T::page_index(vaddr, count),
-                ) as *mut T)
+                &mut *(paddr_to_vaddr(current.paddr() + size_of::<T>() * page_index) as *mut T)
             };
         }
-        Some(current)
+        let page_size = match level {
+            1 => PageSize::Size4KiB,
+            2 => PageSize::Size2MiB,
+            3 => PageSize::Size1GiB,
+            _ => unreachable!(),
+        };
+        Some((current, page_size))
     }
 
     pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, false).unwrap();
+        let (last_entry, page_size) = self.page_walk(vaddr, false).unwrap();
         trace!("Page Table: Unmap vaddr:{:x?}", vaddr);
+        debug_assert!(vaddr < config::PHYS_OFFSET);
+        debug_assert!(page_size == PageSize::Size4KiB);
         if last_entry.is_unused() && !last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
         }
@@ -229,8 +256,10 @@ impl<T: PageTableEntryTrait> PageTable<T> {
     }
 
     pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, false).unwrap();
+        let (last_entry, page_size) = self.page_walk(vaddr, false).unwrap();
         trace!("Page Table: Protect vaddr:{:x?}, flags:{:x?}", vaddr, flags);
+        debug_assert!(vaddr < config::PHYS_OFFSET);
+        debug_assert!(page_size == PageSize::Size4KiB);
         if last_entry.is_unused() || !last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
         }
@@ -255,26 +284,4 @@ pub unsafe fn table_of<'a, T: PageTableEntryTrait>(pa: Paddr) -> Option<&'a mut 
     }
     let ptr = super::paddr_to_vaddr(pa) as *mut _;
     Some(core::slice::from_raw_parts_mut(ptr, ENTRY_COUNT))
-}
-
-/// translate a virtual address to physical address which cannot use offset to get physical address
-pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
-    #[cfg(target_arch = "x86_64")]
-    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
-
-    // TODO: Read and use different level page table.
-    // Safety: The page_directory_base is valid since it is read from PDBR.
-    // We only use this instance to do the page walk without creating.
-    let mut page_table: PageTable<PageTableEntry> = unsafe {
-        PageTable::from_paddr(
-            PageTableConfig {
-                address_width: AddressWidth::Level4PageTable,
-            },
-            page_directory_base.start_address().as_u64() as usize,
-        )
-    };
-    let page_directory_base = page_directory_base.start_address().as_u64() as usize;
-    let last_entry = page_table.page_walk(vaddr, false)?;
-    // FIXME: Support huge page
-    Some(last_entry.paddr() + (vaddr & (PAGE_SIZE - 1)))
 }

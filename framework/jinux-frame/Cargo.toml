@@ -18,6 +18,7 @@ log = "0.4"
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
 trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "e886763" }
 inherit-methods-macro = { git = "https://github.com/jinzhao-dev/inherit-methods-macro", rev = "98f7e3e" }
+bit_field = "0.10.1"
 
 [target.x86_64-custom.dependencies]
 x86_64 = "0.14.2"

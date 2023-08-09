@@ -1,9 +1,6 @@
 use pod::Pod;
 
-use crate::{
-    config::ENTRY_COUNT,
-    vm::page_table::{PageTableEntryTrait, PageTableFlagsTrait},
-};
+use crate::vm::page_table::{PageTableEntryTrait, PageTableFlagsTrait};
 
 bitflags::bitflags! {
     #[derive(Pod)]
@@ -15,8 +12,8 @@ bitflags::bitflags! {
         const DIRTY =           1 << 9;
 
         const ACCESSED =        1 << 8;
-        /// Whether this page table entry is the last entry.
-        const LAST_PAGE =       1 << 7;
+        /// Used to determine if the page is a huge page.
+        const HUGE_PAGE =       1 << 7;
 
         /// Ignore PAT, 1 if the scalable-mode PASID-table entry is not
         /// used for effective memory-type determination.
@@ -108,12 +105,11 @@ impl PageTableFlagsTrait for PageTableFlags {
     }
 
     fn is_huge(&self) -> bool {
-        // FIXME: this is super bad
-        false
+        self.contains(Self::HUGE_PAGE)
     }
 
-    fn set_huge(self, huge: bool) -> Self {
-        // FIXME: this is super bad
+    fn set_huge(mut self, huge_page: bool) -> Self {
+        self.set(Self::HUGE_PAGE, huge_page);
         self
     }
 }
@@ -125,6 +121,8 @@ impl PageTableEntry {
 impl PageTableEntryTrait for PageTableEntry {
     // bit 47~12
     type F = PageTableFlags;
+    const VADDR_INDEX_BITS: u16 = 9;
+    const VADDR_OFFSET_BITS: u16 = 12;
     fn new(paddr: crate::vm::Paddr, flags: PageTableFlags) -> Self {
         Self(((paddr & Self::PHYS_MASK) as u64 | flags.bits) as u64)
     }
@@ -149,8 +147,7 @@ impl PageTableEntryTrait for PageTableEntry {
         self.0 = 0;
     }
 
-    fn page_index(va: crate::vm::Vaddr, level: usize) -> usize {
-        debug_assert!(level >= 1 && level <= 5);
-        va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
+    fn raw(&self) -> usize {
+        self.0 as usize
     }
 }

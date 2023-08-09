@@ -296,7 +296,7 @@ impl ContextTable {
             .map(
                 vaddr,
                 paddr,
-                PageTableFlags::WRITABLE | PageTableFlags::READABLE | PageTableFlags::LAST_PAGE,
+                PageTableFlags::WRITABLE | PageTableFlags::READABLE,
             )
             .map_err(|err| ContextTableError::ModificationError(err))
     }

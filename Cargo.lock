@@ -667,6 +667,7 @@ dependencies = [
  "acpi",
  "align_ext",
  "aml",
+ "bit_field",
  "bitflags 1.3.2",
  "buddy_system_allocator",
  "cfg-if",

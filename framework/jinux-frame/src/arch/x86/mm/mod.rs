@@ -3,13 +3,33 @@ use pod::Pod;
 use spin::Mutex;
 use x86_64::structures::paging::PhysFrame;
 
-use crate::{
-    config::ENTRY_COUNT,
-    vm::{
-        page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
-        Paddr,
+use crate::vm::{
+    page_table::{
+        table_of, AddressWidth, PageTableConfig, PageTableEntryTrait, PageTableFlagsTrait,
     },
+    Paddr, PageTable, Vaddr,
 };
+
+/// translate a virtual address to physical address which cannot use offset to get physical address
+pub fn translate_vaddr(vaddr: Vaddr) -> Option<Paddr> {
+    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
+
+    // TODO: Read and use different level page table.
+    // Safety: The page_directory_base is valid since it is read from PDBR.
+    // We only use this instance to do the page walk without creating.
+    let mut page_table: PageTable<PageTableEntry> = unsafe {
+        PageTable::from_paddr(
+            PageTableConfig {
+                address_width: AddressWidth::Level4PageTable,
+            },
+            page_directory_base.start_address().as_u64() as usize,
+        )
+    };
+    let page_directory_base = page_directory_base.start_address().as_u64() as usize;
+    let (last_entry, page_size) = page_table.page_walk(vaddr, false)?;
+
+    Some(page_size.final_paddr(last_entry, vaddr, AddressWidth::Level4PageTable))
+}
 
 bitflags::bitflags! {
     #[derive(Pod)]
@@ -158,6 +178,9 @@ impl PageTableEntry {
 
 impl PageTableEntryTrait for PageTableEntry {
     type F = PageTableFlags;
+    const VADDR_INDEX_BITS: u16 = 9;
+    const VADDR_OFFSET_BITS: u16 = 12;
+
     fn new(paddr: Paddr, flags: PageTableFlags) -> Self {
         Self((paddr & Self::PHYS_ADDR_MASK) | flags.bits)
     }
@@ -179,9 +202,8 @@ impl PageTableEntryTrait for PageTableEntry {
         self.0 = 0;
     }
 
-    fn page_index(va: crate::vm::Vaddr, level: usize) -> usize {
-        debug_assert!(level >= 1 && level <= 5);
-        va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
+    fn raw(&self) -> usize {
+        self.0
     }
 }
 

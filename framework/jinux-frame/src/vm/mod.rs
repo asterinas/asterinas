@@ -42,7 +42,7 @@ pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
         // can use offset to get the physical address
         Some(va - PHYS_OFFSET)
     } else {
-        page_table::vaddr_to_paddr(va)
+        crate::arch::mm::translate_vaddr(va)
     }
 }
 
