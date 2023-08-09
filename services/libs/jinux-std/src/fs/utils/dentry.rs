@@ -531,9 +531,13 @@ impl Children {
     }
 
     pub fn insert_dentry(&mut self, dentry: &Arc<Dentry>) {
-        if dentry.vnode().is_dentry_cacheable() {
-            DCACHE.lock().insert(dentry.key(), dentry.clone());
+        // Do not cache it in DCACHE and children if is not cacheable.
+        // When we look up it from the parent, it will always be newly created.
+        if !dentry.vnode().is_dentry_cacheable() {
+            return;
         }
+
+        DCACHE.lock().insert(dentry.key(), dentry.clone());
         self.inner.insert(dentry.name(), Arc::downgrade(dentry));
     }
 
