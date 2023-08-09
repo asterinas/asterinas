@@ -38,6 +38,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     gdb \
     grub-common \
     grub-pc \
+    grub-pc-dbg \
     libssl-dev \
     net-tools \
     openssh-server \
@@ -68,8 +69,9 @@ RUN curl https://sh.rustup.rs -sSf | \
     && cargo -V \
     && rustup component add rust-src rustc-dev llvm-tools-preview
 
-# Install mdbook
-RUN cargo install mdbook
+# Install cargo tools
+RUN cargo install mdbook \
+    && cargo install cargo-binutils
 
 # Add the path of jinux tools
 ENV PATH="/root/jinux/target/bin:${PATH}"

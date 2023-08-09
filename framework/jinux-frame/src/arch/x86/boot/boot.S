@@ -4,68 +4,78 @@
 .section ".boot", "awx"
 .code32
 
-// The entry point of our ELF target.
-.global __boot
-__boot:
-    jmp initial_boot_setup
+ENTRYTYPE_MULTIBOOT     = 1
+ENTRYTYPE_MULTIBOOT2    = 2
+ENTRYTYPE_LINUX_32      = 3
 
-// This is the GNU Multiboot 2 header.
-// Reference: https://www.gnu.org/software/grub/manual/multiboot2/html_node/Index.html//Index
-
-// Macros for cleaner code in the header fields.
-MB2_MAGIC = 0xE85250D6
-MB2_ARCHITECTURE = 0 // 32-bit (protected) mode of i386
-MB2_HEADERLEN = header_end - header_start
-MB2_CHECKSUM = -(MB2_MAGIC + MB2_ARCHITECTURE + MB2_HEADERLEN)
-
-MB_MAGIC = 0x1BADB002
-MB_FLAGS = 0
-MB_CHECKSUM = -(MB_MAGIC + MB_FLAGS)
-
-header_start:
-    .align 8
-
-    .long MB2_MAGIC
-    .long MB2_ARCHITECTURE
-    .long MB2_HEADERLEN
-    .long MB2_CHECKSUM
-
-    // Tag: information request
-    .align 8
-info_request:
-    .short 1
-    .short 0            // Required
-    .long  info_request_end - info_request
-    .long  6            // Memory map request
-    .long  15           // ACPI (new) request
-info_request_end:
-
-    // Tag: header end
-    .align 8
-    .short 0            // type: tags end
-    .short 0            // flags
-    .long 8             // size
-header_end:
-
-multiboot_header:
-    .align 8
-    .long MB_MAGIC
-    .long MB_FLAGS
-    .long MB_CHECKSUM
-
-initial_boot_setup:
+// The Linux 32-bit Boot Protocol entry point.
+// Must be located at 0x100000, ABI immutable!
+.code32
+.org 0x000
+.global __linux32_boot
+__linux32_boot:
     cli
     cld
 
     // Set the kernel call stack.
     mov esp, offset boot_stack_top
 
-    // Save the multiboot magic and 64-bit physical address of multiboot info onto the stack.
-    push 0      // Upper 32-bits.
-    push eax
-    push 0      // Upper 32-bits.
-    push ebx
+    push 0      // upper 32-bits
+    push esi    // boot_params ptr
+    push 0      // upper 32-bits
+    push ENTRYTYPE_LINUX_32
 
+    jmp initial_boot_setup
+
+// The Linux 64-bit Boot Protocol entry point.
+// Must be located at 0x100200, ABI immutable!
+.code64
+.org 0x200
+.global __linux64_boot_tag
+__linux64_boot_tag:
+    lea  rax, [rip + __linux64_boot]  // jump into Rust code
+    call rax
+    jmp halt // unreachable here
+
+// The multiboot entry point.
+.code32
+.global __multiboot_boot
+__multiboot_boot:
+    cli
+    cld
+
+    // Set the kernel call stack.
+    mov esp, offset boot_stack_top
+
+    push 0      // Upper 32-bits.
+    push eax    // multiboot magic ptr
+    push 0      // Upper 32-bits.
+    push ebx    // multiboot info ptr
+    push 0      // Upper 32-bits.
+    push ENTRYTYPE_MULTIBOOT
+
+    jmp initial_boot_setup
+
+// The multiboot2 entry point.
+.code32
+.global __multiboot2_boot
+__multiboot2_boot:
+    cli
+    cld
+
+    // Set the kernel call stack.
+    mov esp, offset boot_stack_top
+
+    push 0      // Upper 32-bits.
+    push eax    // multiboot magic ptr
+    push 0      // Upper 32-bits.
+    push ebx    // multiboot info ptr
+    push 0      // Upper 32-bits.
+    push ENTRYTYPE_MULTIBOOT2
+
+    jmp initial_boot_setup
+
+initial_boot_setup:
     // Prepare for far return. We use a far return as a fence after setting GDT.
     mov eax, 24
     push eax
@@ -284,17 +294,38 @@ long_mode:
     cld
     rep stosb
 
+    // Call the corresponding Rust entrypoint according to the boot entrypoint
+    pop rax
+    cmp rax, ENTRYTYPE_MULTIBOOT2
+    je entry_type_multiboot2
+    cmp rax, ENTRYTYPE_LINUX_32
+    je entry_type_pvh_elf
+    // Unreachable!
+    jmp halt
+
+entry_type_pvh_elf:
+    pop rdi // boot_params ptr
+
+    // Clear the frame pointer to stop backtracing here.
+    xor rbp, rbp
+
+.extern __linux64_boot
+    lea  rax, [rip + __linux64_boot]  // jump into Rust code
+    call rax
+    jmp halt
+
+entry_type_multiboot2:
     pop rsi // the address of multiboot info
     pop rdi // multiboot magic
 
     // Clear the frame pointer to stop backtracing here.
     xor rbp, rbp
 
-.extern __boot_entry
-    lea  rax, [rip + __boot_entry]  // jump into Rust code
+.extern __multiboot2_entry
+    lea  rax, [rip + __multiboot2_entry]  // jump into Rust code
     call rax
+    jmp halt
 
-    // In case boot() returns.
 halt:
     cli
     hlt

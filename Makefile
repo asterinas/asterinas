@@ -1,10 +1,13 @@
 # Make arguments and their defaults
 AUTO_SYSCALL_TEST ?= 0
+BOOT_METHOD ?= grub-multiboot2
 BUILD_SYSCALL_TEST ?= 0
 EMULATE_IOMMU ?= 0
-RUN_MICROVM ?= 0
 ENABLE_KVM ?= 1
+GDB_CLIENT ?= 0
+GDB_SERVER ?= 0
 INTEL_TDX ?= 0
+SKIP_GRUB_MENU ?= 0
 # End of Make arguments
 
 KERNEL_CMDLINE := SHELL="/bin/sh" LOGNAME="root" HOME="/" USER="root" PATH="/bin" init=/usr/bin/busybox -- sh -l
@@ -16,29 +19,47 @@ CARGO_KBUILD_ARGS :=
 
 CARGO_KRUN_ARGS := -- '$(KERNEL_CMDLINE)'
 
-ifeq ($(INTEL_TDX), 1)
-CARGO_KBUILD_ARGS += --features intel_tdx
-CARGO_KRUN_ARGS += --features intel_tdx
+ifeq ($(AUTO_SYSCALL_TEST), 1)
+BUILD_SYSCALL_TEST := 1
+endif
+
+CARGO_KRUN_ARGS += --boot-method="$(BOOT_METHOD)"
+
+ifeq ($(EMULATE_IOMMU), 1)
+CARGO_KRUN_ARGS += --emulate-iommu
 endif
 
 ifeq ($(ENABLE_KVM), 1)
 CARGO_KRUN_ARGS += --enable-kvm
 endif
 
-ifeq ($(EMULATE_IOMMU), 1)
-CARGO_KRUN_ARGS += --emulate-iommu
+ifeq ($(GDB_SERVER), 1)
+ENABLE_KVM := 0
+CARGO_KRUN_ARGS += --halt-for-gdb
 endif
 
-ifeq ($(RUN_MICROVM), 1)
-CARGO_KRUN_ARGS += --run-microvm
+ifeq ($(GDB_CLIENT), 1)
+CARGO_KRUN_ARGS += --run-gdb-client
 endif
 
-ifeq ($(AUTO_SYSCALL_TEST), 1)
-BUILD_SYSCALL_TEST := 1
+ifeq ($(INTEL_TDX), 1)
+CARGO_KBUILD_ARGS += --features intel_tdx
+CARGO_KRUN_ARGS += --features intel_tdx
+endif
+
+ifeq ($(SKIP_GRUB_MENU), 1)
+CARGO_KRUN_ARGS += --skip-grub-menu
 endif
 
 # Pass make variables to all subdirectory makes
 export
+
+export JINUX_BOOT_PROTOCOL=$(BOOT_PROTOCOL)
+
+# GNU toolchain variables
+export AS := as
+export CC := gcc
+export OBJCOPY := objcopy
 
 .PHONY: all setup build tools run test docs check clean
 

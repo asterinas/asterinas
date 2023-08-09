@@ -21,7 +21,7 @@ pub const DEVICE_ARGS: &[&str] = &[
     "virtio-net-device,netdev=net01",
 ];
 
-pub fn create_bootdev_image(path: PathBuf) -> String {
+pub fn create_bootdev_image(path: PathBuf) -> PathBuf {
     let dir = path.parent().unwrap();
     let name = path.file_name().unwrap().to_str().unwrap().to_string();
     let elf_path = dir.join(name.clone()).to_str().unwrap().to_string();
@@ -70,5 +70,5 @@ pub fn create_bootdev_image(path: PathBuf) -> String {
     file.write_all(&bytes).unwrap();
     file.flush().unwrap();
 
-    strip_elf_path
+    strip_elf_path.into()
 }

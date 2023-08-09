@@ -2,6 +2,7 @@
 //!
 
 use alloc::{vec, vec::Vec};
+use core::mem::swap;
 
 /// The type of initial memory regions that are needed for the kernel.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -34,7 +35,7 @@ pub struct MemoryRegion {
 }
 
 impl MemoryRegion {
-    /// Construct a page aligned memory region.
+    /// Construct a valid memory region.
     pub fn new(base: usize, len: usize, typ: MemoryRegionType) -> Self {
         MemoryRegion { base, len, typ }
     }
@@ -100,4 +101,47 @@ impl MemoryRegion {
             vec![*self]
         }
     }
+}
+
+/// Truncate regions, resulting in a set of regions that does not overlap.
+///
+/// The truncation will be done according to the type of the regions, that
+/// usable and reclaimable regions will be truncated by the unusable regions.
+pub fn non_overlapping_regions_from(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
+    // We should later use regions in `regions_unusable` to truncate all
+    // regions in `regions_usable`.
+    // The difference is that regions in `regions_usable` could be used by
+    // the frame allocator.
+    let mut regions_usable = Vec::<MemoryRegion>::new();
+    let mut regions_unusable = Vec::<MemoryRegion>::new();
+
+    for r in regions {
+        match r.typ {
+            MemoryRegionType::Usable | MemoryRegionType::Reclaimable => {
+                regions_usable.push(*r);
+            }
+            _ => {
+                regions_unusable.push(*r);
+            }
+        }
+    }
+
+    // `regions_*` are 2 rolling vectors since we are going to truncate
+    // the regions in a iterative manner.
+    let mut regions = Vec::<MemoryRegion>::new();
+    let regions_src = &mut regions_usable;
+    let regions_dst = &mut regions;
+    // Truncate the usable regions.
+    for &r_unusable in &regions_unusable {
+        regions_dst.clear();
+        for r_usable in &*regions_src {
+            regions_dst.append(&mut r_usable.truncate(&r_unusable));
+        }
+        swap(regions_src, regions_dst);
+    }
+
+    // Combine all the regions processed.
+    let mut all_regions = regions_unusable;
+    all_regions.append(&mut regions_usable);
+    all_regions
 }
