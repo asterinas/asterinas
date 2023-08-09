@@ -1,14 +1,67 @@
+use core::arch::x86_64::_rdtsc;
 use core::sync::atomic::{AtomicBool, Ordering};
-use log::info;
-use trapframe::TrapFrame;
 
-use crate::arch::x86::kernel::{
-    apic::{DivideConfig, APIC_INSTANCE},
-    pic,
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use log::info;
+use spin::Once;
+use trapframe::TrapFrame;
+use x86::cpuid::cpuid;
+use x86::msr::{wrmsr, IA32_TSC_DEADLINE};
+
+use crate::{
+    arch::x86::kernel::{
+        apic::{DivideConfig, APIC_INSTANCE},
+        pic,
+        tsc::tsc_freq,
+    },
+    config::TIMER_FREQ,
 };
-use crate::config;
 
 pub fn init() {
+    if tsc_mode_support() {
+        info!("APIC Timer: Enable TSC deadline mode.");
+        tsc_mode_init();
+    } else {
+        info!("APIC Timer: Enable periodic mode.");
+        periodic_mode_init();
+    }
+}
+
+fn tsc_mode_support() -> bool {
+    let tsc_rate = tsc_freq();
+    if tsc_rate.is_none() {
+        return false;
+    }
+    let cpuid = cpuid!(0x1);
+    // bit 24
+    cpuid.ecx & 0x100_0000 != 0
+}
+
+pub(super) static APIC_TIMER_CALLBACK: Once<Arc<dyn Fn() + Sync + Send>> = Once::new();
+
+fn tsc_mode_init() {
+    let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
+    // Enable tsc deadline mode.
+    apic_lock.set_lvt_timer(super::TIMER_IRQ_NUM as u64 | (1 << 18));
+
+    let tsc_step = {
+        let tsc_rate = tsc_freq().unwrap() as u64;
+        info!("TSC frequency:{:?} Hz", tsc_rate * 1000);
+        tsc_rate * 1000 / TIMER_FREQ
+    };
+
+    let callback = move || unsafe {
+        let tsc_value = _rdtsc();
+        let next_tsc_value = tsc_step + tsc_value;
+        wrmsr(IA32_TSC_DEADLINE, next_tsc_value);
+    };
+
+    callback.call(());
+    APIC_TIMER_CALLBACK.call_once(|| Arc::new(callback));
+}
+
+fn periodic_mode_init() {
     let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
     let handle = unsafe { crate::trap::IrqLine::acquire(super::TIMER_IRQ_NUM) };
     let a = handle.on_active(init_function);
@@ -58,9 +111,7 @@ pub fn init() {
 
         info!(
             "APIC Timer ticks count:{:x}, remain ticks: {:x},Timer Freq:{} Hz",
-            ticks,
-            remain_ticks,
-            config::TIMER_FREQ
+            ticks, remain_ticks, TIMER_FREQ
         );
         IS_FINISH.store(true, Ordering::Release);
     }

@@ -13,6 +13,8 @@ use crate::arch::x86::kernel;
 use crate::config::TIMER_FREQ;
 use crate::trap::IrqAllocateHandle;
 
+use self::apic::APIC_TIMER_CALLBACK;
+
 pub const TIMER_IRQ_NUM: u8 = 32;
 pub static TICK: AtomicU64 = AtomicU64::new(0);
 
@@ -45,6 +47,9 @@ fn timer_callback(trap_frame: &TrapFrame) {
     drop(timeout_list);
     for callback in callbacks {
         callback.callback.call((&callback,));
+    }
+    if APIC_TIMER_CALLBACK.is_completed() {
+        APIC_TIMER_CALLBACK.get().unwrap().call(());
     }
 }
 
