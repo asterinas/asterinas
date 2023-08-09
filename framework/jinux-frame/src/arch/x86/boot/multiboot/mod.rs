@@ -1,5 +1,3 @@
-use core::mem::swap;
-
 use alloc::{string::String, vec::Vec};
 use multiboot2::MemoryAreaType;
 use spin::Once;
@@ -8,36 +6,18 @@ use crate::{
     arch::x86::kernel::acpi::AcpiMemoryHandler,
     boot::{
         kcmdline::KCmdlineArg,
-        memory_region::{MemoryRegion, MemoryRegionType},
+        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     config::PHYS_OFFSET,
     vm::paddr_to_vaddr,
 };
 
+use core::arch::global_asm;
+
+global_asm!(include_str!("header.S"));
+
 pub(super) const MULTIBOOT_ENTRY_MAGIC: u32 = 0x2BADB002;
-
-/// Initialize the global boot static varaiables in the boot module to allow
-/// other modules to get the boot information.
-pub(super) fn init_boot_args(
-    bootloader_name: &'static Once<String>,
-    kernel_cmdline: &'static Once<KCmdlineArg>,
-    initramfs: &'static Once<&'static [u8]>,
-    acpi: &'static Once<BootloaderAcpiArg>,
-    framebuffer_arg: &'static Once<BootloaderFramebufferArg>,
-    memory_regions: &'static Once<Vec<MemoryRegion>>,
-) {
-    init_bootloader_name(bootloader_name);
-    init_kernel_commandline(kernel_cmdline);
-    init_initramfs(initramfs);
-    init_acpi_arg(acpi);
-    init_framebuffer_info(framebuffer_arg);
-    init_memory_regions(memory_regions);
-}
-
-pub fn boot_by_multiboot() -> bool {
-    MB1_INFO.is_completed()
-}
 
 fn init_bootloader_name(bootloader_name: &'static Once<String>) {
     bootloader_name.call_once(|| {
@@ -135,12 +115,7 @@ fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg
 }
 
 fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
-    // We should later use regions in `regions_unusable` to truncate all
-    // regions in `regions_usable`.
-    // The difference is that regions in `regions_usable` could be used by
-    // the frame allocator.
-    let mut regions_usable = Vec::<MemoryRegion>::new();
-    let mut regions_unusable = Vec::<MemoryRegion>::new();
+    let mut regions = Vec::<MemoryRegion>::new();
 
     // Add the regions in the multiboot protocol.
     let info = MB1_INFO.get().unwrap();
@@ -157,14 +132,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
             entry.length.try_into().unwrap(),
             area_type,
         );
-        match area_type {
-            MemoryRegionType::Usable | MemoryRegionType::Reclaimable => {
-                regions_usable.push(region);
-            }
-            _ => {
-                regions_unusable.push(region);
-            }
-        }
+        regions.push(region);
         current += entry.size as usize + 4;
     }
 
@@ -175,7 +143,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         height: info.framebuffer_table.height as usize,
         bpp: info.framebuffer_table.bpp as usize,
     };
-    regions_unusable.push(MemoryRegion::new(
+    regions.push(MemoryRegion::new(
         fb.address,
         (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
         MemoryRegionType::Framebuffer,
@@ -186,14 +154,13 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         fn __kernel_start();
         fn __kernel_end();
     }
-    regions_unusable.push(MemoryRegion::new(
+    regions.push(MemoryRegion::new(
         __kernel_start as usize,
         __kernel_end as usize - __kernel_start as usize,
         MemoryRegionType::Kernel,
     ));
 
     // Add the initramfs area.
-    // These are physical addresses provided by the linker script.
     if info.mods_count != 0 {
         let modules_addr = info.mods_addr as usize;
         // We only use one module
@@ -203,33 +170,15 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
                 (*(paddr_to_vaddr(modules_addr + 4) as *const u32)) as usize,
             )
         };
-        regions_unusable.push(MemoryRegion::new(
+        regions.push(MemoryRegion::new(
             start,
             end - start,
-            MemoryRegionType::Reserved,
+            MemoryRegionType::Module,
         ));
     }
 
-    // `regions_*` are 2 rolling vectors since we are going to truncate
-    // the regions in a iterative manner.
-    let mut regions = Vec::<MemoryRegion>::new();
-    let regions_src = &mut regions_usable;
-    let regions_dst = &mut regions;
-    // Truncate the usable regions.
-    for &r_unusable in &regions_unusable {
-        regions_dst.clear();
-        for r_usable in &*regions_src {
-            regions_dst.append(&mut r_usable.truncate(&r_unusable));
-        }
-        swap(regions_src, regions_dst);
-    }
-
-    // Initialize with regions_unusable + regions_src
-    memory_regions.call_once(move || {
-        let mut all_regions = regions_unusable;
-        all_regions.append(&mut regions_usable);
-        all_regions
-    });
+    // Initialize with non-overlapping regions.
+    memory_regions.call_once(move || non_overlapping_regions_from(regions.as_ref()));
 }
 
 /// Representation of Multiboot Information according to specification.
@@ -405,8 +354,18 @@ extern "Rust" {
 
 static MB1_INFO: Once<&'static MultibootLegacyInfo> = Once::new();
 
-pub(super) unsafe fn multiboot_entry(boot_magic: u32, boot_params: u64) -> ! {
+/// The entry point of Rust code called by inline asm.
+#[no_mangle]
+unsafe extern "sysv64" fn __multiboot_entry(boot_magic: u32, boot_params: u64) -> ! {
     assert_eq!(boot_magic, MULTIBOOT_ENTRY_MAGIC);
     MB1_INFO.call_once(|| &*(paddr_to_vaddr(boot_params as usize) as *const MultibootLegacyInfo));
+    crate::boot::register_boot_init_callbacks(
+        init_bootloader_name,
+        init_kernel_commandline,
+        init_initramfs,
+        init_acpi_arg,
+        init_framebuffer_info,
+        init_memory_regions,
+    );
     jinux_main();
 }

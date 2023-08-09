@@ -48,11 +48,33 @@ macro_rules! define_global_static_boot_arguments {
             }
         )*
 
-        // Produce a init function call. The init function must
-        // be defined in the `arch::boot` module conforming to this
-        // definition.
-        fn arch_init_boot_args() {
-            crate::arch::boot::init_boot_args( $( &$upper, )* );
+        struct BootInitCallBacks {
+            $( $lower: fn(&'static Once<$typ>) -> (), )*
+        }
+
+        static BOOT_INIT_CALLBACKS: Once<BootInitCallBacks> = Once::new();
+
+        /// The macro generated boot init callbacks registering interface.
+        ///
+        /// For the introduction of a new boot protocol, the entry point could be a novel
+        /// one. The entry point function should register all the boot initialization
+        /// methods before `jinux_main` is called. A boot initialization method takes a
+        /// reference of the global static boot information variable and initialize it,
+        /// so that the boot information it represents could be accessed in the kernel
+        /// anywhere.
+        ///
+        /// The reason why the entry point function is not designed to directly initialize
+        /// the boot information variables is simply that the heap is not initialized at
+        /// that moment.
+        pub fn register_boot_init_callbacks($( $lower: fn(&'static Once<$typ>) -> (), )* ) {
+            BOOT_INIT_CALLBACKS.call_once(|| {
+                BootInitCallBacks { $( $lower, )* }
+            });
+        }
+
+        fn call_all_boot_init_callbacks() {
+            let callbacks = &BOOT_INIT_CALLBACKS.get().unwrap();
+            $( (callbacks.$lower)(&$upper); )*
         }
     };
 }
@@ -74,5 +96,5 @@ define_global_static_boot_arguments!(
 /// The initialization must be done after the heap is set and before physical
 /// mappings are cancelled.
 pub fn init() {
-    arch_init_boot_args();
+    call_all_boot_init_callbacks();
 }

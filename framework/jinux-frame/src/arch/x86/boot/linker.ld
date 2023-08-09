@@ -1,4 +1,4 @@
-ENTRY(__boot)
+ENTRY(__linux64_boot)
 OUTPUT_ARCH(i386:x86-64)
 OUTPUT_FORMAT(elf64-x86-64)
 
@@ -10,7 +10,9 @@ SECTIONS
     . = KERNEL_LMA;
 
     __kernel_start = .;
-
+    
+    .multiboot_header       : { KEEP(*(.multiboot_header)) }
+    .multiboot2_header      : { KEEP(*(.multiboot2_header)) }
     .boot                   : { KEEP(*(.boot)) }
 
     . += KERNEL_VMA;
@@ -46,6 +48,9 @@ SECTIONS
         KEEP(*(.eh_frame))
         __eh_frame_end = .;
     }
+
+    # The notes section are used to mark the PVH boot entry point, useful for QEMU and Xen
+    .notes                  : { *(.notes) }
 
     __kernel_end = . - KERNEL_VMA;
 }
