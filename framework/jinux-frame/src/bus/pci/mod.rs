@@ -49,9 +49,9 @@
 //! ```
 
 pub mod bus;
-mod capability;
-mod cfg_space;
-mod common_device;
+pub mod capability;
+pub mod cfg_space;
+pub mod common_device;
 mod device_info;
 
 use crate::sync::Mutex;

@@ -2,16 +2,17 @@ use alloc::{sync::Arc, vec::Vec};
 
 use crate::{
     bus::pci::{
-        cfg_space::{Bar, MemoryBar},
+        cfg_space::{Bar, Command, MemoryBar},
         common_device::PciCommonDevice,
         device_info::PciDeviceLocation,
     },
+    sync::{SpinLock, SpinLockGuard},
     trap::IrqAllocateHandle,
     vm::VmIo,
 };
 
 /// MSI-X capability. It will set the BAR space it uses to be hidden.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct CapabilityMsixData {
     loc: PciDeviceLocation,
@@ -22,7 +23,26 @@ pub struct CapabilityMsixData {
     table_bar: Arc<MemoryBar>,
     /// Pending bits table.
     pending_table_bar: Arc<MemoryBar>,
-    irq_allocate_handles: Vec<Option<Arc<IrqAllocateHandle>>>,
+    table_offset: usize,
+    pending_table_offset: usize,
+    irq_allocate_handles: SpinLock<Vec<Option<IrqAllocateHandle>>>,
+}
+
+impl Clone for CapabilityMsixData {
+    fn clone(&self) -> Self {
+        let handles = self.irq_allocate_handles.lock();
+        let new_vec = handles.clone().to_vec();
+        Self {
+            loc: self.loc.clone(),
+            ptr: self.ptr.clone(),
+            table_size: self.table_size.clone(),
+            table_bar: self.table_bar.clone(),
+            pending_table_bar: self.pending_table_bar.clone(),
+            irq_allocate_handles: SpinLock::new(new_vec),
+            table_offset: self.table_offset,
+            pending_table_offset: self.pending_table_offset,
+        }
+    }
 }
 
 impl CapabilityMsixData {
@@ -60,27 +80,36 @@ impl CapabilityMsixData {
             }
         }
 
+        let pba_offset = (pba_info & !(0b111u32)) as usize;
+        let table_offset = (table_info & !(0b111u32)) as usize;
+
         let table_size = (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1;
         // TODO: Different architecture seems to have different, so we should set different address here.
-        let message_address = 0xFEE0_000 as u32;
-        let message_upper_address = 0 as u32;
+        let message_address = 0xFEE0_0000u32;
+        let message_upper_address = 0u32;
 
         // Set message address 0xFEE0_0000
         for i in 0..table_size {
             // Set message address and disable this msix entry
             table_bar
                 .io_mem()
-                .write_val((16 * i) as usize, &message_address)
+                .write_val((16 * i) as usize + table_offset, &message_address)
                 .unwrap();
             table_bar
                 .io_mem()
-                .write_val((16 * i + 4) as usize, &message_upper_address)
+                .write_val((16 * i + 4) as usize + table_offset, &message_upper_address)
                 .unwrap();
             table_bar
                 .io_mem()
-                .write_val((16 * i + 12) as usize, &(1 as u32))
+                .write_val((16 * i + 12) as usize + table_offset, &(1 as u32))
                 .unwrap();
         }
+
+        // enable MSI-X, bit15: MSI-X Enable
+        dev.location()
+            .write16(cap_ptr + 2, dev.location().read16(cap_ptr + 2) | 0x8000);
+        // disable INTx, enable Bus master.
+        dev.set_command(dev.command() | Command::INTERRUPT_DISABLE | Command::BUS_MASTER);
 
         let mut irq_allocate_handles = Vec::with_capacity(table_size as usize);
         for i in 0..table_size {
@@ -93,7 +122,9 @@ impl CapabilityMsixData {
             table_size: (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1,
             table_bar,
             pending_table_bar: pba_bar,
-            irq_allocate_handles,
+            irq_allocate_handles: SpinLock::new(irq_allocate_handles),
+            table_offset: table_offset,
+            pending_table_offset: pba_offset,
         }
     }
 
@@ -102,37 +133,30 @@ impl CapabilityMsixData {
         (self.loc.read16(self.ptr + 2) & 0b11_1111_1111) + 1
     }
 
-    pub fn set_msix_enable(&self, enable: bool) {
-        // bit15: msix enable
-        let value = (enable as u16) << 15;
-        // message control
-        self.loc.write16(
-            self.ptr + 2,
-            set_bit(self.loc.read16(self.ptr + 2), 15, enable),
-        )
-    }
-
-    pub fn set_interrupt_enable(&self, enable: bool) {
-        // bit14: msix enable
-        let value = (enable as u16) << 14;
-        // message control
-        self.loc.write16(
-            self.ptr + 2,
-            set_bit(self.loc.read16(self.ptr + 2), 14, enable),
-        )
-    }
-
-    pub fn set_interrupt_vector(&mut self, vector: Arc<IrqAllocateHandle>, index: u16) {
+    pub fn set_interrupt_vector(&self, handle: IrqAllocateHandle, index: u16) {
         if index >= self.table_size {
             return;
         }
-        let old_handles =
-            core::mem::replace(&mut self.irq_allocate_handles[index as usize], Some(vector));
+        self.table_bar
+            .io_mem()
+            .write_val(
+                (16 * index + 8) as usize + self.table_offset,
+                &(handle.num() as u32),
+            )
+            .unwrap();
+        let old_handles = core::mem::replace(
+            &mut self.irq_allocate_handles.lock()[index as usize],
+            Some(handle),
+        );
         // Enable this msix vector
         self.table_bar
             .io_mem()
-            .write_val((16 * index + 12) as usize, &(0 as u32))
+            .write_val((16 * index + 12) as usize + self.table_offset, &(0 as u32))
             .unwrap();
+    }
+
+    pub fn interrupt_handles(&self) -> SpinLockGuard<'_, Vec<Option<IrqAllocateHandle>>> {
+        self.irq_allocate_handles.lock()
     }
 }
 
