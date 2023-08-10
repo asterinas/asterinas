@@ -285,6 +285,10 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::ENOTDIR))
     }
 
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        None
+    }
+
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         Err(Error::new(Errno::ENOTDIR))
     }
