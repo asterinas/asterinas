@@ -15,14 +15,14 @@ RUN apt update && apt-get install -y --no-install-recommends \
     python3-pip
 
 # Install bazel, which is required by the system call test suite from Gvisor project
-COPY bom/syscall_test/install_bazel.sh /tmp/
+COPY regression/syscall_test/install_bazel.sh /tmp/
 WORKDIR /tmp
 RUN ./install_bazel.sh && rm -f /tmp/install_bazel.sh
 
 FROM ubuntu-22.04-with-bazel as syscall_test
 
 # Build the syscall test binaries
-COPY bom/syscall_test /root/syscall_test
+COPY regression/syscall_test /root/syscall_test
 WORKDIR /root/syscall_test
 RUN export BUILD_DIR=build && \
     make ${BUILD_DIR}/syscall_test_bins
