@@ -112,8 +112,13 @@ fn main() {
     let exit_status = qemu_cmd.status().unwrap();
     if !exit_status.success() {
         // FIXME: Exit code manipulation is not needed when using non-x86 QEMU
-        let exit_code = exit_status.code().unwrap_or(0b10) >> 1;
-        std::process::exit(exit_code);
+        let qemu_exit_code = exit_status.code().unwrap();
+        let kernel_exit_code = qemu_exit_code >> 1;
+        match kernel_exit_code {
+            0x10 /*jinux_frame::QemuExitCode::Success*/ => { std::process::exit(0); },
+            0x20 /*jinux_frame::QemuExitCode::Failed*/ => { std::process::exit(1); },
+            _ => { std::process::exit(qemu_exit_code) },
+        }
     }
 }
 

@@ -147,15 +147,17 @@ pub fn panic_handler() {
     // }
 }
 
-/// The exit code of x86 QEMU. In `qemu-system-x86_64` the exit code will be
-/// `(code << 1) | 1`. So you could never let QEMU invoke `exit(0)`. Check
-/// if the result is `0b01` instead.
+/// The exit code of x86 QEMU isa debug device. In `qemu-system-x86_64` the
+/// exit code will be `(code << 1) | 1`. So you could never let QEMU invoke
+/// `exit(0)`. We also need to check if the exit code is returned by the
+/// kernel, so we couldn't use 0 as exit_success because this may conflict
+/// with QEMU return value 1, which indicates that QEMU itself fails.
 #[cfg(target_arch = "x86_64")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode {
-    Success = 0b0,
-    Failed = 0b1,
+    Success = 0x10,
+    Failed = 0x20,
 }
 
 pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
