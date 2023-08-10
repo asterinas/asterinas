@@ -5,7 +5,6 @@
 extern crate alloc;
 
 pub mod dup;
-pub mod frame_ptr;
 pub mod id_allocator;
 pub mod safe_ptr;
 pub mod slot_vec;
