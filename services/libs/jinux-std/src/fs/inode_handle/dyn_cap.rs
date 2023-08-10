@@ -105,4 +105,8 @@ impl FileLike for InodeHandle<Rights> {
         // Close does not guarantee that the data has been successfully saved to disk.
         Ok(())
     }
+
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        self.dentry().vnode().as_device()
+    }
 }

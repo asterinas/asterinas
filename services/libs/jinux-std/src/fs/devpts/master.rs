@@ -79,6 +79,10 @@ impl Inode for PtyMasterInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.0.ptmx().devpts()
     }
+
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        Some(self.0.clone())
+    }
 }
 
 // TODO: implement real pty master.

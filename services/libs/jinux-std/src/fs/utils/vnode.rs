@@ -247,6 +247,10 @@ impl Vnode {
         self.inner.read().inode.is_dentry_cacheable()
     }
 
+    pub fn as_device(&self) -> Option<Arc<dyn Device>> {
+        self.inner.read().inode.as_device()
+    }
+
     pub fn writer(&self, from_offset: usize) -> VnodeWriter {
         VnodeWriter {
             inner: &self,

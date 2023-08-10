@@ -5,6 +5,7 @@ mod static_cap;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use crate::fs::device::Device;
 use crate::fs::file_handle::FileLike;
 use crate::fs::utils::{
     AccessMode, Dentry, DirentVisitor, InodeType, IoEvents, IoctlCmd, Metadata, Poller, SeekFrom,
