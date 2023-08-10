@@ -574,6 +574,10 @@ impl Inode for RamInode {
         Ok(device_inode)
     }
 
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        self.0.read().inner.as_device().cloned()
+    }
+
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");

@@ -119,8 +119,13 @@ impl Inode for Ptmx {
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.devpts()
     }
+
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        Some(Arc::new(self.inner))
+    }
 }
 
+#[derive(Clone, Copy)]
 struct Inner;
 
 impl Device for Inner {
