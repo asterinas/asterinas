@@ -1,25 +1,10 @@
 use core::{mem::size_of, ops::Range};
 use pod::Pod;
-use spin::Once;
 
 use crate::{
-    vm::{HasPaddr, Paddr, Vaddr, VmIo},
-    Error,
+    vm::{paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
+    Error, Result,
 };
-
-static CHECKER: Once<MmioChecker> = Once::new();
-
-pub(crate) fn init() {
-    CHECKER.call_once(|| MmioChecker {
-        start: crate::arch::mmio::start_address(),
-        end: crate::arch::mmio::end_address(),
-    });
-    log::info!(
-        "MMIO start: 0x{:x}, end: 0x{:x}",
-        CHECKER.get().unwrap().start,
-        CHECKER.get().unwrap().end
-    );
-}
 
 #[derive(Debug, Clone)]
 pub struct IoMem {
@@ -67,18 +52,39 @@ impl HasPaddr for IoMem {
 }
 
 impl IoMem {
-    pub fn new(range: Range<Paddr>) -> Option<IoMem> {
-        if CHECKER.get().unwrap().check(&range) {
-            Some(IoMem {
-                virtual_address: crate::vm::paddr_to_vaddr(range.start),
-                limit: range.len(),
-            })
-        } else {
-            None
+    /// # Safety
+    ///
+    /// User must ensure the range is in the I/O memory region.
+    pub(crate) unsafe fn new(range: Range<Paddr>) -> IoMem {
+        IoMem {
+            virtual_address: paddr_to_vaddr(range.start),
+            limit: range.len(),
         }
     }
 
-    fn check_range(&self, offset: usize, len: usize) -> crate::Result<()> {
+    pub fn paddr(&self) -> Paddr {
+        crate::vm::vaddr_to_paddr(self.virtual_address).unwrap()
+    }
+
+    pub fn length(&self) -> usize {
+        self.limit
+    }
+
+    pub fn resize(&mut self, range: Range<Paddr>) -> Result<()> {
+        let start_vaddr = paddr_to_vaddr(range.start);
+        if start_vaddr < self.virtual_address || start_vaddr >= self.virtual_address + self.limit {
+            return Err(Error::InvalidArgs);
+        }
+        let end_vaddr = start_vaddr + range.len();
+        if end_vaddr <= self.virtual_address || end_vaddr > self.virtual_address + self.limit {
+            return Err(Error::InvalidArgs);
+        }
+        self.virtual_address = start_vaddr;
+        self.limit = range.len();
+        Ok(())
+    }
+
+    fn check_range(&self, offset: usize, len: usize) -> Result<()> {
         let sum = offset.checked_add(len).ok_or(Error::InvalidArgs)?;
         if sum > self.limit {
             log::error!(
@@ -90,17 +96,5 @@ impl IoMem {
         } else {
             Ok(())
         }
-    }
-}
-
-struct MmioChecker {
-    start: Paddr,
-    end: Paddr,
-}
-
-impl MmioChecker {
-    /// Check whether the physical address is in MMIO region.
-    fn check(&self, range: &Range<Paddr>) -> bool {
-        range.start >= self.start && range.end < self.end
     }
 }

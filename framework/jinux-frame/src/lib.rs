@@ -52,7 +52,6 @@ pub fn init() {
     vm::init();
     trap::init();
     arch::after_all_init();
-    io_mem::init();
     bus::init();
     register_irq_common_callback();
     invoke_c_init_funcs();

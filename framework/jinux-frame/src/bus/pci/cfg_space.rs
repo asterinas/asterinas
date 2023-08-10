@@ -154,12 +154,13 @@ impl MemoryBar {
         // length
         let size = !(len_encoded & !0xF).wrapping_add(1);
         let prefetchable = if raw & 0b1000 == 0 { false } else { true };
+        // The BAR is located in I/O memory region
         Ok(MemoryBar {
             base,
             size,
             prefetchable,
             address_length,
-            io_memory: IoMem::new((base as usize)..((base + size as u64) as usize)).unwrap(),
+            io_memory: unsafe { IoMem::new((base as usize)..((base + size as u64) as usize)) },
         })
     }
 }
