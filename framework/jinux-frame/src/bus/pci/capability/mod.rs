@@ -73,8 +73,12 @@ impl Capability {
     /// 0xFC, the top of the capability position.
     const CAPABILITY_TOP: u16 = 0xFC;
 
+    pub fn capability_data(&self) -> &CapabilityData {
+        &self.cap_data
+    }
+
     /// get the capabilities of one device
-    pub fn device_capabilities(dev: &mut PciCommonDevice) -> Vec<Self> {
+    pub(super) fn device_capabilities(dev: &mut PciCommonDevice) -> Vec<Self> {
         if !dev.status().contains(Status::CAPABILITIES_LIST) {
             return Vec::new();
         }

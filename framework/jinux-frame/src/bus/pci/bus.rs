@@ -9,7 +9,7 @@ pub trait PciDevice: Sync + Send + Debug {
     fn device_id(&self) -> PciDeviceId;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PciDriverProbeError {
     DeviceNotMatch,
     ConfigurationSpaceError,
@@ -55,7 +55,9 @@ impl PciBus {
                     continue;
                 }
                 Err((err, common_device)) => {
-                    error!("PCI device construction failed, reason: {:?}", err);
+                    if err != PciDriverProbeError::DeviceNotMatch {
+                        error!("PCI device construction failed, reason: {:?}", err);
+                    }
                     debug_assert!(device_id == *common_device.device_id());
                     common_device
                 }
@@ -76,7 +78,9 @@ impl PciBus {
                     return;
                 }
                 Err((err, common_device)) => {
-                    error!("PCI device construction failed, reason: {:?}", err);
+                    if err != PciDriverProbeError::DeviceNotMatch {
+                        error!("PCI device construction failed, reason: {:?}", err);
+                    }
                     debug_assert!(device_id == *common_device.device_id());
                     common_device
                 }

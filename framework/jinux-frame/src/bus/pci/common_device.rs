@@ -112,15 +112,17 @@ impl BarManager {
         while idx < max {
             match Bar::new(location, idx) {
                 Ok(bar) => {
+                    let mut idx_step = 0;
                     match &bar {
                         Bar::Memory(memory_bar) => {
                             if memory_bar.address_length() == AddrLen::Bits64 {
-                                idx += 1;
+                                idx_step = 1;
                             }
                         }
                         Bar::Io(_) => {}
                     }
-                    bars[idx as usize] = Some((bar, false));
+                    bars[idx as usize] = Some((bar, true));
+                    idx += idx_step;
                 }
                 // ignore for now
                 Err(_) => {}
