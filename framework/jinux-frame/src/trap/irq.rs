@@ -39,7 +39,7 @@ pub struct IrqAllocateHandle {
 impl IrqAllocateHandle {
     fn new(irq_num: u8) -> Self {
         Self {
-            irq_num: irq_num,
+            irq_num,
             irq: unsafe { IrqLine::acquire(irq_num) },
             callbacks: Vec::new(),
         }
@@ -65,9 +65,21 @@ impl IrqAllocateHandle {
     }
 }
 
+impl Clone for IrqAllocateHandle {
+    fn clone(&self) -> Self {
+        Self {
+            irq_num: self.irq_num.clone(),
+            irq: self.irq.clone(),
+            callbacks: Vec::new(),
+        }
+    }
+}
+
 impl Drop for IrqAllocateHandle {
     fn drop(&mut self) {
-        NOT_USING_IRQ.lock().dealloc(self.irq_num as usize);
+        if Arc::strong_count(&self.irq) == 1 {
+            NOT_USING_IRQ.lock().dealloc(self.irq_num as usize);
+        }
     }
 }
 
