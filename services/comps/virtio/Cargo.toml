@@ -11,7 +11,6 @@ spin = "0.9.4"
 bytes = { version = "1.4.0", default-features = false }
 align_ext = { path = "../../../framework/libs/align_ext" }
 jinux-frame = { path = "../../../framework/jinux-frame" }
-jinux-pci = { path = "../pci" }
 jinux-util = { path = "../../libs/jinux-util" }
 jinux-rights = { path = "../../libs/jinux-rights" }
 typeflags-util = { path = "../../libs/typeflags-util" }

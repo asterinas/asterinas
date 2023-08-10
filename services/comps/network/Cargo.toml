@@ -10,7 +10,6 @@ component = { path = "../../libs/comp-sys/component" }
 jinux-frame = { path = "../../../framework/jinux-frame" }
 jinux-virtio = { path = "../virtio" }
 jinux-util = { path = "../../libs/jinux-util" }
-jinux-pci = { path = "../pci" }
 jinux-rights = { path = "../../libs/jinux-rights" }
 spin = "0.9.4"
 ringbuf = { version = "0.3.2", default-features = false, features = ["alloc"] }
