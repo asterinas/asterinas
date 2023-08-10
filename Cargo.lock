@@ -659,7 +659,6 @@ dependencies = [
  "bitflags 1.3.2",
  "component",
  "jinux-frame",
- "jinux-pci",
  "jinux-util",
  "jinux-virtio",
  "lazy_static",
@@ -716,7 +715,6 @@ dependencies = [
  "bitflags 1.3.2",
  "component",
  "jinux-frame",
- "jinux-pci",
  "jinux-rights",
  "jinux-util",
  "jinux-virtio",
@@ -732,28 +730,12 @@ version = "0.1.0"
 dependencies = [
  "component",
  "jinux-frame",
- "jinux-pci",
  "jinux-rights",
  "jinux-util",
  "jinux-virtio",
  "log",
  "ringbuf",
  "smoltcp",
- "spin 0.9.8",
-]
-
-[[package]]
-name = "jinux-pci"
-version = "0.1.0"
-dependencies = [
- "bitflags 1.3.2",
- "component",
- "jinux-frame",
- "jinux-rights",
- "jinux-util",
- "lazy_static",
- "log",
- "pod",
  "spin 0.9.8",
 ]
 
@@ -847,7 +829,6 @@ dependencies = [
  "component",
  "int-to-c-enum",
  "jinux-frame",
- "jinux-pci",
  "jinux-rights",
  "jinux-util",
  "log",

@@ -1,7 +1,6 @@
 # template
 [components]
 std = { name = "jinux-std" }
-pci = { name = "jinux-pci" }
 virtio = { name = "jinux-virtio" }
 input = { name = "jinux-input" }
 block = { name = "jinux-block" }

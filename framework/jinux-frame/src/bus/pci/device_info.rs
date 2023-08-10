@@ -1,6 +1,6 @@
 use core::iter;
 
-use crate::arch::device::pci::{PCI_ADDRESS_PORT, PCI_DATA_PORT};
+use crate::arch::pci::{PCI_ADDRESS_PORT, PCI_DATA_PORT};
 
 use super::cfg_space::PciDeviceCommonCfgOffset;
 

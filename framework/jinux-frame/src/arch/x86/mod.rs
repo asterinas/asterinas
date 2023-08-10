@@ -5,6 +5,7 @@ pub mod iommu;
 pub(crate) mod irq;
 mod kernel;
 pub(crate) mod mm;
+pub(crate) mod pci;
 pub(crate) mod timer;
 
 use alloc::fmt;

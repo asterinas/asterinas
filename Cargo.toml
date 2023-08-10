@@ -22,7 +22,6 @@ jinux-framebuffer = { path = "services/comps/framebuffer" }
 members = [
     "build",
     "framework/jinux-frame",
-    "services/comps/pci",
     "services/comps/virtio",
     "services/comps/input",
     "services/comps/block",

@@ -3,5 +3,4 @@
 
 pub mod cmos;
 pub mod io_port;
-pub mod pci;
 pub mod serial;
