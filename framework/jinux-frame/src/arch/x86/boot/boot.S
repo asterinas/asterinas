@@ -29,12 +29,23 @@ header_start:
     // Tag: information request
     .align 8
 info_request:
-    .short 1
+    .short 1            // Type: info request
     .short 0            // Required
     .long  info_request_end - info_request
     .long  6            // Memory map request
     .long  15           // ACPI (new) request
 info_request_end:
+
+    // Tag: framebuffer
+    .align 8
+framebuffer_request:
+    .short 5            // Type: framebuffer
+    .short 1            // Optional
+    .long  framebuffer_request_end - framebuffer_request
+    .long  1280         // Width
+    .long  720          // Height
+    .long  32           // Depth
+framebuffer_request_end:
 
     // Tag: header end
     .align 8

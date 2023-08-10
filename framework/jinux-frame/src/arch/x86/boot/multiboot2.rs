@@ -79,7 +79,9 @@ fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
 }
 
 fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {
-    let fb_tag = MB2_INFO.get().unwrap().framebuffer_tag().unwrap().unwrap();
+    let Some(Ok(fb_tag)) = MB2_INFO.get().unwrap().framebuffer_tag() else {
+        return;
+    };
     framebuffer_arg.call_once(|| BootloaderFramebufferArg {
         address: fb_tag.address() as usize,
         width: fb_tag.width() as usize,
@@ -134,18 +136,19 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         }
     }
     // Add the framebuffer region since Grub does not specify it.
-    let fb_tag = MB2_INFO.get().unwrap().framebuffer_tag().unwrap().unwrap();
-    let fb = BootloaderFramebufferArg {
-        address: fb_tag.address() as usize,
-        width: fb_tag.width() as usize,
-        height: fb_tag.height() as usize,
-        bpp: fb_tag.bpp() as usize,
-    };
-    regions_unusable.push(MemoryRegion::new(
-        fb.address,
-        (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
-        MemoryRegionType::Framebuffer,
-    ));
+    if let Some(Ok(fb_tag)) = MB2_INFO.get().unwrap().framebuffer_tag() {
+        let fb = BootloaderFramebufferArg {
+            address: fb_tag.address() as usize,
+            width: fb_tag.width() as usize,
+            height: fb_tag.height() as usize,
+            bpp: fb_tag.bpp() as usize,
+        };
+        regions_unusable.push(MemoryRegion::new(
+            fb.address,
+            (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
+            MemoryRegionType::Framebuffer,
+        ));
+    }
     // Add the kernel region since Grub does not specify it.
     // These are physical addresses provided by the linker script.
     extern "C" {

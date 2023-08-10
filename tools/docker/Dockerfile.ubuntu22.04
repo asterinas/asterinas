@@ -15,10 +15,12 @@ RUN apt update && apt-get install -y --no-install-recommends \
     git-core \
     gnupg \
     grub-common \
-    grub-pc \
+    grub-efi \
     libssl-dev \
+    mtools \
     net-tools \
     openssh-server \
+    ovmf \
     pkg-config \
     python-is-python3 \
     python3-pip \

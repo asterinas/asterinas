@@ -58,6 +58,8 @@ const COMMON_ARGS: &[&str] = &[
     "user,id=net01,hostfwd=tcp::30022-:22,hostfwd=tcp::30080-:8080",
     "-object",
     "filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
+    "-drive", "if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd",
+    "-drive", "if=pflash,format=raw,unit=1,file=/usr/share/OVMF/OVMF_VARS.fd",
 ];
 
 const COMMON_DEVICE_ARGS: &[&str] = &[
