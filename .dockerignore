@@ -1,0 +1,9 @@
+# Ignore binaries to avoid performance issues
+target/
+regression/build/
+
+# QEMU log file
+qemu.log
+
+# Packet dump file
+virtio-net.pcap

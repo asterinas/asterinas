@@ -10,9 +10,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: jinuxdev/jinux:0.1.0
+    container: jinuxdev/jinux:0.1.1
     steps:
-      - run: echo "Running in jinuxdev/jinux:0.1.0"
+      - run: echo "Running in jinuxdev/jinux:0.1.1"
 
       - uses: actions/checkout@v3
 
