@@ -1,15 +1,10 @@
 name: Docker image build
 
 on:
+  workflow_dispatch:
   push:
     paths:
-      # The image build workflow will be triggered if changes are present
-      # in the following files/directories. Make sure that all files used
-      # in the building process are listed here.
-      - tools/docker/**
-      - regression/syscall_test/**
-      - Cargo.toml
-      - rust-toolchain.toml
+      - VERSION
     branches:
       - 'main'
 
@@ -31,8 +26,8 @@ jobs:
       - name: Fetch versions in the repo
         id: fetch-versions
         run: |
-          echo "jinux=$( grep -m1 -o '[0-9]\+\.[0-9]\+\.[0-9]\+' Cargo.toml | sed 's/[^0-9\.]//g' )" >> "$GITHUB_OUTPUT"
-          echo "rust=$( grep -m1 -o 'nightly-[0-9]\+-[0-9]\+-[0-9]\+' rust-toolchain.toml )" >> "$GITHUB_OUTPUT"
+          echo "jinux_version=$( cat VERSION )" >> "$GITHUB_OUTPUT"
+          echo "rust_version=$( grep -m1 -o 'nightly-[0-9]\+-[0-9]\+-[0-9]\+' rust-toolchain.toml )" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v4
@@ -41,6 +36,6 @@ jobs:
           file: ./tools/docker/Dockerfile.ubuntu22.04
           platforms: linux/amd64
           push: true
-          tags: jinuxdev/jinux:${{ steps.fetch-versions.outputs.jinux }}
+          tags: jinuxdev/jinux:${{ steps.fetch-versions.outputs.jinux_version }}
           build-args: |
-            "JINUX_RUST_VERSION=${{ steps.fetch-versions.outputs.rust }}"
+            "JINUX_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
