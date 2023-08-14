@@ -15,7 +15,7 @@ pub struct PageCache {
 impl PageCache {
     pub fn new(inode: &Arc<dyn Inode>) -> Result<Self> {
         let manager = Arc::new(PageCacheManager::new(Arc::downgrade(inode)));
-        let pages = VmoOptions::<Full>::new(inode.len())
+        let pages = VmoOptions::<Full>::new(inode.blocks_len())
             .flags(VmoFlags::RESIZABLE)
             .pager(manager.clone())
             .alloc()?;

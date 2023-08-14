@@ -61,6 +61,9 @@ log = "0.4"
 getrandom = { version = "0.2.10", default-features = false, features = [
     "rdrand",
 ] }
+ext2 = { path = "../../libs/ext2", default_features = false, features = ["jinux"] }
+block-io = { path = "../../libs/block-io" }
+mem-storage = { path = "../../../framework/libs/mem-storage" }
 
 [dependencies.lazy_static]
 version = "1.0"

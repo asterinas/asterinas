@@ -160,6 +160,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-io"
+version = "0.1.0"
+dependencies = [
+ "mem-storage",
+]
+
+[[package]]
 name = "buddy_system_allocator"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -462,6 +469,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ext2"
+version = "0.1.0"
+dependencies = [
+ "bitflags 1.3.2",
+ "bitvec",
+ "block-io",
+ "int-to-c-enum",
+ "jinux-frame",
+ "lazy_static",
+ "log",
+ "mem-storage",
+ "pod",
+ "spin 0.9.8",
+]
+
+[[package]]
 name = "extension-traits"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -687,6 +710,7 @@ dependencies = [
  "intrusive-collections",
  "lazy_static",
  "log",
+ "mem-storage",
  "multiboot2",
  "pod",
  "spin 0.9.8",
@@ -767,9 +791,11 @@ dependencies = [
  "align_ext",
  "ascii",
  "bitflags 1.3.2",
+ "block-io",
  "controlled",
  "core2",
  "cpio-decoder",
+ "ext2",
  "getrandom",
  "int-to-c-enum",
  "intrusive-collections",
@@ -788,6 +814,7 @@ dependencies = [
  "libflate",
  "log",
  "lru",
+ "mem-storage",
  "pod",
  "ringbuf",
  "smoltcp",
@@ -968,6 +995,13 @@ name = "managed"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
+
+[[package]]
+name = "mem-storage"
+version = "0.1.0"
+dependencies = [
+ "pod",
+]
 
 [[package]]
 name = "memchr"

@@ -1,0 +1,9 @@
+[package]
+name = "mem-storage"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }

@@ -454,6 +454,10 @@ impl Inode for RamInode {
         self.0.write().resize(new_size)
     }
 
+    fn blocks_len(&self) -> usize {
+        self.0.read().metadata.blocks * BLOCK_SIZE
+    }
+
     fn atime(&self) -> Duration {
         self.0.read().metadata.atime
     }

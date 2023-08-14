@@ -12,7 +12,7 @@ use crate::prelude::*;
 use crate::vm::vmo::Vmo;
 
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
 pub enum InodeType {
     NamedPipe = 0o010000,
     CharDevice = 0o020000,
@@ -230,6 +230,11 @@ pub trait Inode: Any + Sync + Send {
 
     fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    fn blocks_len(&self) -> usize {
+        let metadata = self.metadata();
+        metadata.blocks * metadata.blk_size
     }
 
     fn resize(&self, new_size: usize);

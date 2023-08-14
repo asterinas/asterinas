@@ -240,12 +240,18 @@ impl Vnode {
     }
 
     pub fn write_link(&self, target: &str) -> Result<()> {
-        let inner = self.inner.read();
+        let inner = self.inner.write();
         match &inner.page_cache {
             None => inner.inode.write_link(target),
-            Some(page_cache) => inner
-                .inode
-                .write_link_with_pages(target, page_cache.pages()),
+            Some(page_cache) => {
+                inner.inode.resize(target.len());
+                page_cache
+                    .pages()
+                    .resize(inner.inode.blocks_len().min(inner.inode.len()))?;
+                inner
+                    .inode
+                    .write_link_with_pages(target, page_cache.pages())
+            }
         }
     }
 

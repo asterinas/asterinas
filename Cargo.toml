@@ -22,6 +22,7 @@ jinux-framebuffer = { path = "services/comps/framebuffer" }
 members = [
     "build",
     "framework/jinux-frame",
+    "framework/libs/mem-storage",
     "services/comps/virtio",
     "services/comps/input",
     "services/comps/block",
@@ -35,6 +36,8 @@ members = [
     "services/libs/jinux-util",
     "services/libs/cpio-decoder",
     "services/libs/int-to-c-enum",
+    "services/libs/ext2",
+    "services/libs/block-io",
 ]
 
 exclude = ["services/libs/comp-sys/controlled", "services/libs/comp-sys/cargo-component"]
