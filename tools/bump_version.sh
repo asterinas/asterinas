@@ -30,7 +30,7 @@ fi
 update_cargo_versions ${CARGO_TOML_PATH}
 
 # Automatically bump Cargo.lock file
-cargo update
+cargo update -p jinux --precise $new_version
 
 # Update Docker image versions in README files
 update_image_versions ${JINUX_SRC_DIR}/README.md
