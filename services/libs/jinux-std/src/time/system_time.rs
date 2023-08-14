@@ -13,8 +13,13 @@ impl SystemTime {
 
     const fn unix_epoch() -> Self {
         // 1970-01-01 00:00:00
-        let date = Date::__from_ordinal_date_unchecked(1970, 1);
-        let time = Time::__from_hms_nanos_unchecked(0, 0, 0, 0);
+        let Ok(date) = Date::from_ordinal_date(1970, 1) else {
+            unreachable!()
+        };
+        let Ok(time) = Time::from_hms_nano(0, 0, 0, 0) else {
+            unreachable!()
+        };
+
         SystemTime(PrimitiveDateTime::new(date, time))
     }
 
