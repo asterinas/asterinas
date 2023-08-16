@@ -10,12 +10,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: jinuxdev/jinux:0.1.1
+    container: jinuxdev/jinux:0.1.2
     steps:
-      - run: echo "Running in jinuxdev/jinux:0.1.1"
+      - run: echo "Running in jinuxdev/jinux:0.1.2"
 
       - uses: actions/checkout@v3
 
       - name: Syscall Test
         id: syscall_test
-        run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0
+        run: make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 OPT_LEVEL=1

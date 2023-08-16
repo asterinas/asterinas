@@ -2,8 +2,8 @@
 
 # AUTOMATICALLY GENERATED FILE, DO NOT EDIT IF YOU KNOW WHAT YOU ARE DOING
 
-set timeout_style=menu
-set timeout=1
+set timeout_style=#GRUB_TIMEOUT_STYLE#
+set timeout=#GRUB_TIMEOUT#
 
 menuentry 'jinux' {
     multiboot2 /boot/jinux #KERNEL_COMMAND_LINE#

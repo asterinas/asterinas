@@ -31,6 +31,7 @@ FROM ubuntu-22.04-with-bazel
 
 # Install all Jinux dependent packages
 RUN apt update && apt-get install -y --no-install-recommends \
+    clang \
     cpio \
     cpuid \
     file \
@@ -39,6 +40,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     grub-common \
     grub-pc \
     libssl-dev \
+    llvm \
     net-tools \
     openssh-server \
     pkg-config \

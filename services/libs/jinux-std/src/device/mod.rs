@@ -4,6 +4,9 @@ mod random;
 pub mod tty;
 mod urandom;
 mod zero;
+// TODO: coverage is usually a debugfs device and should be placed under /sys/kernel but not /dev
+#[cfg(feature = "coverage")]
+mod cov;
 
 use crate::fs::device::{add_node, Device, DeviceId, DeviceType};
 use crate::prelude::*;
@@ -23,6 +26,11 @@ pub fn init() -> Result<()> {
     add_node(random, "random")?;
     let urandom = Arc::new(urandom::Urandom);
     add_node(urandom, "urandom")?;
+    #[cfg(feature = "coverage")]
+    {
+        let cov = Arc::new(cov::Cov);
+        add_node(cov, "cov")?;
+    }
     pty::init()?;
     Ok(())
 }

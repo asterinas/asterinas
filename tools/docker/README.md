@@ -27,7 +27,7 @@ If a commit needs to create a new Docker image, it should
 
 1. Update the Dockerfile as well as other materials relevant to the Docker image, and
 2. Run [`tools/bump_version.sh`](../bump_version.sh) tool to update the Jinux project's version number.
- 
+
 For bug fixes or small changes, increment the last number of a [SemVer](https://semver.org/) by one. For major features or releases, increment the second number. All changes made in the two steps should be included in the commit.
 
 ## Uploading Docker Images

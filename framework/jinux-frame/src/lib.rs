@@ -37,7 +37,7 @@ pub mod vm;
 pub use self::cpu::CpuLocal;
 pub use self::error::Error;
 pub use self::prelude::Result;
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use core::{mem, panic::PanicInfo};
 use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
@@ -162,10 +162,21 @@ pub enum QemuExitCode {
 
 pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
     use x86_64::instructions::port::Port;
-
     unsafe {
         let mut port = Port::new(0xf4);
         port.write(exit_code as u32);
     }
     unreachable!()
+}
+
+#[cfg(feature = "coverage")]
+pub fn get_llvm_coverage_raw() -> Vec<u8> {
+    let mut coverage = vec![];
+    // Safety: minicov::capture_coverage is not thread safe.
+    // There mustn't be any races here.
+    unsafe {
+        minicov::capture_coverage(&mut coverage).unwrap();
+    }
+    minicov::reset_coverage();
+    coverage
 }
