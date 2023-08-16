@@ -35,7 +35,7 @@ pub fn load_program_to_root_vmar(
     };
     if let Some(mut new_argv) = parse_shebang_line(&*file_header)? {
         if recursion_limit == 0 {
-            return_errno_with_message!(Errno::EINVAL, "the recursieve limit is reached");
+            return_errno_with_message!(Errno::ELOOP, "the recursieve limit is reached");
         }
         new_argv.extend_from_slice(&argv);
         let interpreter = {
@@ -43,6 +43,7 @@ pub fn load_program_to_root_vmar(
             let fs_path = FsPath::new(AT_FDCWD, &filename)?;
             fs_resolver.lookup(&fs_path)?
         };
+        check_executable_file(&interpreter)?;
         return load_program_to_root_vmar(
             root_vmar,
             interpreter,
@@ -55,4 +56,20 @@ pub fn load_program_to_root_vmar(
     let elf_load_info =
         load_elf_to_root_vmar(root_vmar, &*file_header, elf_file, fs_resolver, argv, envp)?;
     Ok((abs_path, elf_load_info))
+}
+
+pub fn check_executable_file(dentry: &Arc<Dentry>) -> Result<()> {
+    if dentry.inode_type().is_directory() {
+        return_errno_with_message!(Errno::EISDIR, "the file is a directory");
+    }
+
+    if !dentry.inode_type().is_reguler_file() {
+        return_errno_with_message!(Errno::EACCES, "the dentry is not a regular file");
+    }
+
+    if !dentry.inode_mode().is_executable() {
+        return_errno_with_message!(Errno::EACCES, "the dentry is not executable");
+    }
+
+    Ok(())
 }

@@ -8,7 +8,7 @@ use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::process::posix_thread::name::ThreadName;
 use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
-use crate::process::program_loader::load_program_to_root_vmar;
+use crate::process::program_loader::{check_executable_file, load_program_to_root_vmar};
 use crate::syscall::{SYS_EXECVE, SYS_EXECVEAT};
 use crate::util::{read_cstring_from_user, read_val_from_user};
 
@@ -19,13 +19,11 @@ pub fn sys_execve(
     context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_EXECVE);
-    let executable_path = read_filename(filename_ptr)?;
     let elf_file = {
-        let current = current!();
-        let fs_resolver = current.fs().read();
-        let fs_path = FsPath::new(AT_FDCWD, &executable_path)?;
-        fs_resolver.lookup(&fs_path)?
+        let executable_path = read_filename(filename_ptr)?;
+        lookup_executable_file(AT_FDCWD, executable_path, OpenFlags::empty())?
     };
+
     do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, context)?;
     Ok(SyscallReturn::NoReturn)
 }
@@ -39,10 +37,13 @@ pub fn sys_execveat(
     context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_EXECVEAT);
-    let flags = OpenFlags::from_bits_truncate(flags);
-    let filename = read_filename(filename_ptr)?;
-    let elf_file = lookup_executable_file(dfd, filename, flags)?;
-    check_file_type_and_permission(&elf_file)?;
+
+    let elf_file = {
+        let flags = OpenFlags::from_bits_truncate(flags);
+        let filename = read_filename(filename_ptr)?;
+        lookup_executable_file(dfd, filename, flags)?
+    };
+
     do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, context)?;
     Ok(SyscallReturn::NoReturn)
 }
@@ -68,20 +69,8 @@ fn lookup_executable_file(
             fs_resolver.lookup(&fs_path)
         }
     }?;
-    check_file_type_and_permission(&dentry)?;
+    check_executable_file(&dentry)?;
     Ok(dentry)
-}
-
-fn check_file_type_and_permission(dentry: &Arc<Dentry>) -> Result<()> {
-    if !dentry.inode_type().is_reguler_file() {
-        return_errno_with_message!(Errno::EACCES, "the dentry is not a regular file");
-    }
-
-    if !dentry.inode_mode().is_executable() {
-        return_errno_with_message!(Errno::EACCES, "the dentry is not executable");
-    }
-
-    Ok(())
 }
 
 fn do_execve(
