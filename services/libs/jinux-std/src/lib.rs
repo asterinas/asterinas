@@ -18,6 +18,8 @@
 #![feature(trait_alias)]
 #![feature(register_tool)]
 #![feature(trait_upcasting)]
+#![feature(custom_test_frameworks)]
+#![test_runner(jinux_frame::test::test_runner)]
 #![register_tool(component_access_control)]
 
 use crate::{
@@ -26,7 +28,7 @@ use crate::{
     thread::{kernel_thread::KernelThreadExt, Thread},
 };
 use core::sync::atomic::Ordering;
-use jinux_frame::{boot, exit_qemu, QemuExitCode};
+use jinux_frame::{boot, test::{exit_qemu, QemuExitCode}};
 use process::Process;
 
 extern crate alloc;

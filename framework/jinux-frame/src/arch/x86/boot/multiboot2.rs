@@ -8,6 +8,7 @@ use crate::boot::{
     kcmdline::KCmdlineArg,
     memory_region::{MemoryRegion, MemoryRegionType},
     BootloaderAcpiArg, BootloaderFramebufferArg,
+    call_jinux_main,
 };
 use core::{arch::global_asm, mem::swap};
 use spin::Once;
@@ -207,18 +208,12 @@ pub fn init_boot_args(
     init_memory_regions(memory_regions);
 }
 
-// The entry point of kernel code, which should be defined by the package that
-// uses jinux-frame.
-extern "Rust" {
-    fn jinux_main() -> !;
-}
-
 /// The entry point of Rust code called by inline asm.
 #[no_mangle]
-unsafe extern "C" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
+unsafe extern "C" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) {
     assert_eq!(boot_magic, MULTIBOOT2_ENTRY_MAGIC);
     MB2_INFO.call_once(|| unsafe {
         BootInformation::load(boot_params as *const BootInformationHeader).unwrap()
     });
-    jinux_main();
+    call_jinux_main();
 }

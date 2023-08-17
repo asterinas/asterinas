@@ -6,6 +6,7 @@ pub mod kcmdline;
 use kcmdline::KCmdlineArg;
 
 pub mod memory_region;
+
 use self::memory_region::MemoryRegion;
 
 use alloc::{string::String, vec::Vec};
@@ -74,4 +75,18 @@ define_global_static_boot_arguments!(
 /// mappings are cancelled.
 pub fn init() {
     arch_init_boot_args();
+}
+
+/// Call the framework-user defined entrypoint of the actual kernel.
+pub fn call_jinux_main() {
+    unsafe {
+        // The entry point of kernel code, which should be defined by the package that
+        // uses jinux-frame.
+        extern "Rust" {
+            fn jinux_main();
+        }
+        jinux_main();
+    }
+    #[cfg(test)]
+    test_main();
 }

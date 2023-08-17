@@ -16,7 +16,7 @@ impl Device for Cov {
     }
 
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        let cov = jinux_frame::get_llvm_coverage_raw();
+        let cov = jinux_frame::test::get_llvm_coverage_raw();
         // Since device have no state, we cannot store where we were read at.
         // Just ask the user to prepare a buffer large enough (typically > 7M).
         assert!(buf.len() >= cov.len());

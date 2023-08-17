@@ -522,7 +522,7 @@ mod test {
     use jinux_frame::vm::VmIo;
     use jinux_rights::Full;
 
-    #[test]
+    #[test_case]
     fn alloc_vmo() {
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
         assert!(vmo.size() == PAGE_SIZE);
@@ -530,7 +530,7 @@ mod test {
         assert!(vmo.read_val::<usize>(0).unwrap() == 0);
     }
 
-    #[test]
+    #[test_case]
     #[should_panic]
     /// FIXME: alloc continuous frames is not supported now
     fn alloc_continuous_vmo() {
@@ -541,7 +541,7 @@ mod test {
         assert!(vmo.size() == 10 * PAGE_SIZE);
     }
 
-    #[test]
+    #[test_case]
     fn write_and_read() {
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
         let val = 42u8;
@@ -555,7 +555,7 @@ mod test {
         assert!(read_val == 0x78563412)
     }
 
-    #[test]
+    #[test_case]
     fn slice_child() {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
         let parent_dup = parent.dup().unwrap();
@@ -570,7 +570,7 @@ mod test {
         assert!(parent.read_val::<u32>(99).unwrap() == 0x1234);
     }
 
-    #[test]
+    #[test_case]
     fn cow_child() {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
         let parent_dup = parent.dup().unwrap();
@@ -596,7 +596,7 @@ mod test {
         assert!(cow_child.read_val::<u32>(PAGE_SIZE + 10).unwrap() == 12345);
     }
 
-    #[test]
+    #[test_case]
     fn resize() {
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE)
             .flags(VmoFlags::RESIZABLE)

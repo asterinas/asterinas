@@ -142,13 +142,13 @@ mod test {
     use jinux_frame::vm::VmIo;
     use jinux_rights::Full;
 
-    #[test]
+    #[test_case]
     fn root_vmar() {
         let vmar = Vmar::<Full>::new_root().unwrap();
         assert!(vmar.size() == ROOT_VMAR_HIGHEST_ADDR);
     }
 
-    #[test]
+    #[test_case]
     fn child_vmar() {
         let root_vmar = Vmar::<Full>::new_root().unwrap();
         let root_vmar_dup = root_vmar.dup().unwrap();
@@ -167,7 +167,7 @@ mod test {
             .is_err());
     }
 
-    #[test]
+    #[test_case]
     fn map_vmo() {
         let root_vmar = Vmar::<Full>::new_root().unwrap();
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap().to_dyn();
@@ -193,7 +193,7 @@ mod test {
         assert!(root_vmar.read_val::<u8>(another_map_offset).unwrap() == 100);
     }
 
-    #[test]
+    #[test_case]
     fn handle_page_fault() {
         const OFFSET: usize = 0x1000_0000;
         let root_vmar = Vmar::<Full>::new_root().unwrap();
