@@ -130,7 +130,13 @@ impl Device for Tty {
                 Ok(0)
             }
             IoctlCmd::TIOCGWINSZ => {
-                // TODO:get window size
+                let winsize = self.ldisc.window_size();
+                write_val_to_user(arg, &winsize)?;
+                Ok(0)
+            }
+            IoctlCmd::TIOCSWINSZ => {
+                let winsize = read_val_from_user(arg)?;
+                self.ldisc.set_window_size(winsize);
                 Ok(0)
             }
             _ => todo!(),

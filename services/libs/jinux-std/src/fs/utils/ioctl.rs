@@ -16,6 +16,8 @@ pub enum IoctlCmd {
     TIOCGPGRP = 0x540f,
     /// Set the foreground process group ID of this terminal.
     TIOCSPGRP = 0x5410,
+    /// Get the number of bytes in the input buffer.
+    FIONREAD = 0x541B,
     /// Set window size
     TIOCGWINSZ = 0x5413,
     TIOCSWINSZ = 0x5414,

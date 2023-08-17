@@ -33,22 +33,76 @@ bitflags! {
     }
 }
 
+impl C_IFLAGS {
+    pub fn new_default() -> Self {
+        C_IFLAGS::ICRNL | C_IFLAGS::IXON
+    }
+}
+
 bitflags! {
     #[repr(C)]
     #[derive(Pod)]
     pub struct C_OFLAGS: u32 {
-        const OPOST	= 0x01;			/* Perform output processing */
-        const OCRNL	= 0x08;
-        const ONOCR	= 0x10;
-        const ONLRET= 0x20;
-        const OFILL	= 0x40;
-        const OFDEL	= 0x80;
+        const OPOST	= 0x1 << 0;			/* Perform output processing */
+        const OLCUC	= 0x1 << 1;
+        const ONLCR = 0x1 << 2;
+        const OCRNL	= 0x1 << 3;
+        const ONOCR	= 0x1 << 4;
+        const ONLRET= 0x1 << 5;
+        const OFILL	= 0x1 << 6;
+        const OFDEL	= 0x1 << 7;
     }
 }
 
-#[repr(u32)]
+impl C_OFLAGS {
+    pub fn new_default() -> Self {
+        C_OFLAGS::OPOST | C_OFLAGS::ONLCR
+    }
+}
+
+#[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub enum C_CFLAGS {
+pub struct C_CFLAGS(u32);
+
+impl C_CFLAGS {
+    pub fn new_default() -> Self {
+        let cbaud = C_CFLAGS_BAUD::B38400 as u32;
+        let csize = C_CFLAGS_CSIZE::CS8 as u32;
+        let c_cflags = cbaud | csize | CREAD;
+        Self(c_cflags)
+    }
+
+    pub fn cbaud(&self) -> Result<C_CFLAGS_BAUD> {
+        let cbaud = self.0 & CBAUD_MASK;
+        Ok(C_CFLAGS_BAUD::try_from(cbaud)?)
+    }
+
+    pub fn csize(&self) -> Result<C_CFLAGS_CSIZE> {
+        let csize = self.0 & CSIZE_MASK;
+        Ok(C_CFLAGS_CSIZE::try_from(csize)?)
+    }
+
+    pub fn cread(&self) -> bool {
+        self.0 & CREAD != 0
+    }
+}
+
+const CREAD: u32 = 0x00000080;
+const CBAUD_MASK: u32 = 0x0000100f;
+const CSIZE_MASK: u32 = 0x00000030;
+
+#[repr(u32)]
+#[derive(Clone, Copy, TryFromInt)]
+pub enum C_CFLAGS_CSIZE {
+    CS5 = 0x00000000,
+    CS6 = 0x00000010,
+    CS7 = 0x00000020,
+    CS8 = 0x00000030,
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, TryFromInt)]
+pub enum C_CFLAGS_BAUD {
     B0 = 0x00000000, /* hang up */
     B50 = 0x00000001,
     B75 = 0x00000002,
@@ -90,6 +144,19 @@ bitflags! {
     }
 }
 
+impl C_LFLAGS {
+    pub fn new_default() -> Self {
+        C_LFLAGS::ICANON
+            | C_LFLAGS::ECHO
+            | C_LFLAGS::ISIG
+            | C_LFLAGS::ECHOE
+            | C_LFLAGS::ECHOK
+            | C_LFLAGS::ECHOCTL
+            | C_LFLAGS::ECHOKE
+            | C_LFLAGS::IEXTEN
+    }
+}
+
 /* c_cc characters index*/
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, Pod)]
@@ -114,26 +181,26 @@ pub enum CC_C_CHAR {
 }
 
 impl CC_C_CHAR {
-    // The special char is the same as ubuntu
-    pub fn char(&self) -> u8 {
+    // The special char is from gvisor
+    pub fn default_char(&self) -> u8 {
         match self {
-            CC_C_CHAR::VINTR => 3,
-            CC_C_CHAR::VQUIT => 28,
-            CC_C_CHAR::VERASE => 127,
-            CC_C_CHAR::VKILL => 21,
-            CC_C_CHAR::VEOF => 4,
-            CC_C_CHAR::VTIME => 0,
+            CC_C_CHAR::VINTR => control_character('C'),
+            CC_C_CHAR::VQUIT => control_character('\\'),
+            CC_C_CHAR::VERASE => '\x7f' as u8,
+            CC_C_CHAR::VKILL => control_character('U'),
+            CC_C_CHAR::VEOF => control_character('D'),
+            CC_C_CHAR::VTIME => '\0' as u8,
             CC_C_CHAR::VMIN => 1,
-            CC_C_CHAR::VSWTC => 0,
-            CC_C_CHAR::VSTART => 17,
-            CC_C_CHAR::VSTOP => 19,
-            CC_C_CHAR::VSUSP => 26,
-            CC_C_CHAR::VEOL => 255,
-            CC_C_CHAR::VREPRINT => 18,
-            CC_C_CHAR::VDISCARD => 15,
-            CC_C_CHAR::VWERASE => 23,
-            CC_C_CHAR::VLNEXT => 22,
-            CC_C_CHAR::VEOL2 => 255,
+            CC_C_CHAR::VSWTC => '\0' as u8,
+            CC_C_CHAR::VSTART => control_character('Q'),
+            CC_C_CHAR::VSTOP => control_character('S'),
+            CC_C_CHAR::VSUSP => control_character('Z'),
+            CC_C_CHAR::VEOL => '\0' as u8,
+            CC_C_CHAR::VREPRINT => control_character('R'),
+            CC_C_CHAR::VDISCARD => control_character('O'),
+            CC_C_CHAR::VWERASE => control_character('W'),
+            CC_C_CHAR::VLNEXT => control_character('V'),
+            CC_C_CHAR::VEOL2 => '\0' as u8,
         }
     }
 
@@ -142,28 +209,28 @@ impl CC_C_CHAR {
     }
 
     pub fn from_char(item: u8) -> Result<Self> {
-        if item == Self::VINTR.char() {
+        if item == Self::VINTR.default_char() {
             return Ok(Self::VINTR);
         }
-        if item == Self::VQUIT.char() {
+        if item == Self::VQUIT.default_char() {
             return Ok(Self::VQUIT);
         }
-        if item == Self::VINTR.char() {
+        if item == Self::VINTR.default_char() {
             return Ok(Self::VINTR);
         }
-        if item == Self::VERASE.char() {
+        if item == Self::VERASE.default_char() {
             return Ok(Self::VERASE);
         }
-        if item == Self::VEOF.char() {
+        if item == Self::VEOF.default_char() {
             return Ok(Self::VEOF);
         }
-        if item == Self::VSTART.char() {
+        if item == Self::VSTART.default_char() {
             return Ok(Self::VSTART);
         }
-        if item == Self::VSTOP.char() {
+        if item == Self::VSTOP.default_char() {
             return Ok(Self::VSTOP);
         }
-        if item == Self::VSUSP.char() {
+        if item == Self::VSUSP.default_char() {
             return Ok(Self::VSUSP);
         }
 
@@ -185,42 +252,31 @@ pub struct KernelTermios {
 impl KernelTermios {
     pub fn default() -> Self {
         let mut termios = Self {
-            c_iflags: C_IFLAGS::ICRNL,
-            c_oflags: C_OFLAGS::empty(),
-            c_cflags: C_CFLAGS::B0,
-            c_lflags: C_LFLAGS::ICANON | C_LFLAGS::ECHO,
+            c_iflags: C_IFLAGS::new_default(),
+            c_oflags: C_OFLAGS::new_default(),
+            c_cflags: C_CFLAGS::new_default(),
+            c_lflags: C_LFLAGS::new_default(),
             c_line: 0,
             c_cc: [0; KERNEL_NCCS],
         };
-        *termios.get_special_char_mut(CC_C_CHAR::VINTR) = CC_C_CHAR::VINTR.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VQUIT) = CC_C_CHAR::VQUIT.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VERASE) = CC_C_CHAR::VERASE.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VKILL) = CC_C_CHAR::VKILL.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VEOF) = CC_C_CHAR::VEOF.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VTIME) = CC_C_CHAR::VTIME.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VMIN) = CC_C_CHAR::VMIN.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VSWTC) = CC_C_CHAR::VSWTC.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VSTART) = CC_C_CHAR::VSTART.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VSTOP) = CC_C_CHAR::VSTOP.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VSUSP) = CC_C_CHAR::VSUSP.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VEOL) = CC_C_CHAR::VEOL.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VREPRINT) = CC_C_CHAR::VREPRINT.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VDISCARD) = CC_C_CHAR::VDISCARD.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VWERASE) = CC_C_CHAR::VWERASE.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VLNEXT) = CC_C_CHAR::VLNEXT.char();
-        *termios.get_special_char_mut(CC_C_CHAR::VEOL2) = CC_C_CHAR::VEOL2.char();
+        *termios.get_special_char_mut(CC_C_CHAR::VINTR) = CC_C_CHAR::VINTR.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VQUIT) = CC_C_CHAR::VQUIT.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VERASE) = CC_C_CHAR::VERASE.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VKILL) = CC_C_CHAR::VKILL.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VEOF) = CC_C_CHAR::VEOF.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VTIME) = CC_C_CHAR::VTIME.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VMIN) = CC_C_CHAR::VMIN.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VSWTC) = CC_C_CHAR::VSWTC.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VSTART) = CC_C_CHAR::VSTART.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VSTOP) = CC_C_CHAR::VSTOP.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VSUSP) = CC_C_CHAR::VSUSP.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VEOL) = CC_C_CHAR::VEOL.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VREPRINT) = CC_C_CHAR::VREPRINT.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VDISCARD) = CC_C_CHAR::VDISCARD.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VWERASE) = CC_C_CHAR::VWERASE.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VLNEXT) = CC_C_CHAR::VLNEXT.default_char();
+        *termios.get_special_char_mut(CC_C_CHAR::VEOL2) = CC_C_CHAR::VEOL2.default_char();
         termios
-    }
-
-    fn new() -> Self {
-        KernelTermios {
-            c_iflags: C_IFLAGS::empty(),
-            c_oflags: C_OFLAGS::empty(),
-            c_cflags: C_CFLAGS::B0,
-            c_lflags: C_LFLAGS::empty(),
-            c_line: 0,
-            c_cc: [0; KERNEL_NCCS],
-        }
     }
 
     pub fn get_special_char(&self, cc_c_char: CC_C_CHAR) -> &CcT {
@@ -264,4 +320,18 @@ impl KernelTermios {
     pub fn contains_iexten(&self) -> bool {
         self.c_lflags.contains(C_LFLAGS::IEXTEN)
     }
+}
+
+const fn control_character(c: char) -> u8 {
+    debug_assert!(c as u8 >= 'A' as u8);
+    c as u8 - 'A' as u8 + 1u8
+}
+
+#[derive(Debug, Clone, Copy, Default, Pod)]
+#[repr(C)]
+pub struct WinSize {
+    ws_row: u16,
+    ws_col: u16,
+    ws_xpixel: u16,
+    ws_ypixel: u16,
 }

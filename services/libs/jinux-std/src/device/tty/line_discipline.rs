@@ -9,7 +9,7 @@ use alloc::format;
 use jinux_frame::trap::disable_local;
 use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
-use super::termio::{KernelTermios, CC_C_CHAR};
+use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
 
 // This implementation refers the implementation of linux
 // https://elixir.bootlin.com/linux/latest/source/include/linux/tty_ldisc.h
@@ -25,6 +25,8 @@ pub struct LineDiscipline {
     foreground: SpinLock<Weak<ProcessGroup>>,
     /// termios
     termios: SpinLock<KernelTermios>,
+    /// Windows size,
+    winsize: SpinLock<WinSize>,
     /// Pollee
     pollee: Pollee,
 }
@@ -72,6 +74,7 @@ impl LineDiscipline {
             read_buffer: SpinLock::new(StaticRb::default()),
             foreground: SpinLock::new(Weak::new()),
             termios: SpinLock::new(KernelTermios::default()),
+            winsize: SpinLock::new(WinSize::default()),
             pollee: Pollee::new(IoEvents::empty()),
         }
     }
@@ -349,6 +352,18 @@ impl LineDiscipline {
     pub fn drain_input(&self) {
         self.current_line.lock().drain();
         let _: Vec<_> = self.read_buffer.lock().pop_iter().collect();
+    }
+
+    pub fn buffer_len(&self) -> usize {
+        self.read_buffer.lock().len()
+    }
+
+    pub fn window_size(&self) -> WinSize {
+        self.winsize.lock().clone()
+    }
+
+    pub fn set_window_size(&self, winsize: WinSize) {
+        *self.winsize.lock() = winsize;
     }
 }
 

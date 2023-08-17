@@ -150,12 +150,26 @@ impl VmMapping {
     }
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         let vmo_read_offset = self.vmo_offset() + offset;
+
+        let page_idx_range = get_page_idx_range(&(vmo_read_offset..vmo_read_offset + buf.len()));
+        let read_perm = VmPerm::R;
+        for page_idx in page_idx_range {
+            self.check_perm(&page_idx, &read_perm)?;
+        }
+
         self.vmo.read_bytes(vmo_read_offset, buf)?;
         Ok(())
     }
 
     pub fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         let vmo_write_offset = self.vmo_offset() + offset;
+
+        let page_idx_range = get_page_idx_range(&(vmo_write_offset..vmo_write_offset + buf.len()));
+        let write_perm = VmPerm::W;
+        for page_idx in page_idx_range {
+            self.check_perm(&page_idx, &write_perm)?;
+        }
+
         self.vmo.write_bytes(vmo_write_offset, buf)?;
         Ok(())
     }
@@ -198,7 +212,9 @@ impl VmMapping {
         } else {
             self.vmo.check_rights(Rights::READ)?;
         }
-        self.check_perm(&page_idx, write)?;
+
+        let required_perm = if write { VmPerm::W } else { VmPerm::R };
+        self.check_perm(&page_idx, &required_perm)?;
 
         let frame = self.vmo.get_committed_frame(page_idx, write)?;
 
@@ -300,8 +316,8 @@ impl VmMapping {
         self.inner.lock().trim_right(vm_space, vaddr)
     }
 
-    fn check_perm(&self, page_idx: &usize, write: bool) -> Result<()> {
-        self.inner.lock().check_perm(page_idx, write)
+    fn check_perm(&self, page_idx: &usize, perm: &VmPerm) -> Result<()> {
+        self.inner.lock().check_perm(page_idx, perm)
     }
 }
 
@@ -457,16 +473,14 @@ impl VmMappingInner {
         self.map_to_addr..self.map_to_addr + self.map_size
     }
 
-    fn check_perm(&self, page_idx: &usize, write: bool) -> Result<()> {
+    fn check_perm(&self, page_idx: &usize, perm: &VmPerm) -> Result<()> {
         let page_perm = self
             .page_perms
             .get(&page_idx)
             .ok_or(Error::with_message(Errno::EINVAL, "invalid page idx"))?;
-        if !page_perm.contains(VmPerm::R) {
-            return_errno_with_message!(Errno::EINVAL, "perm should at least contain read");
-        }
-        if write && !page_perm.contains(VmPerm::W) {
-            return_errno_with_message!(Errno::EINVAL, "perm should contain write for write access");
+
+        if !page_perm.contains(*perm) {
+            return_errno_with_message!(Errno::EACCES, "perm check fails");
         }
 
         Ok(())

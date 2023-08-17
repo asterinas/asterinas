@@ -146,6 +146,7 @@ impl Vnode {
         if let Some(page_cache) = &inner.page_cache {
             page_cache.evict_range(0..file_len);
         }
+
         inner.inode.read_at(0, &mut buf[..file_len])
     }
 
@@ -196,11 +197,13 @@ impl Vnode {
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.inner.read().inode.poll(mask, poller)
+        let inode = self.inner.read().inode.clone();
+        inode.poll(mask, poller)
     }
 
     pub fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        self.inner.read().inode.ioctl(cmd, arg)
+        let inode = self.inner.read().inode.clone();
+        inode.ioctl(cmd, arg)
     }
 
     pub fn fs(&self) -> Arc<dyn FileSystem> {

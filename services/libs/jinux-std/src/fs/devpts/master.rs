@@ -16,9 +16,10 @@ impl PtyMasterInode {
 impl Drop for PtyMasterInode {
     fn drop(&mut self) {
         // Remove the slave from fs.
-        let index = self.0.index();
         let fs = self.0.ptmx().fs();
         let devpts = fs.downcast_ref::<DevPts>().unwrap();
+
+        let index = self.0.index();
         devpts.remove_slave(index);
     }
 }
