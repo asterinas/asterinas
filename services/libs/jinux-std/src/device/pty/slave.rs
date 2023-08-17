@@ -2,6 +2,7 @@ use crate::fs::device::{Device, DeviceId, DeviceType};
 use crate::fs::file_handle::FileLike;
 use crate::fs::utils::{IoEvents, IoctlCmd, Poller};
 use crate::prelude::*;
+use crate::util::write_val_to_user;
 
 use super::master::PtyMaster;
 
@@ -45,14 +46,23 @@ impl Device for PtySlave {
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         match cmd {
-            IoctlCmd::TCGETS | IoctlCmd::TCSETS | IoctlCmd::TIOCGPGRP => self.0.ioctl(cmd, arg),
-            IoctlCmd::TIOCGWINSZ => Ok(0),
+            IoctlCmd::TCGETS
+            | IoctlCmd::TCSETS
+            | IoctlCmd::TIOCGPGRP
+            | IoctlCmd::TIOCGPTN
+            | IoctlCmd::TIOCGWINSZ
+            | IoctlCmd::TIOCSWINSZ => self.0.ioctl(cmd, arg),
             IoctlCmd::TIOCSCTTY => {
                 // TODO:
                 Ok(0)
             }
             IoctlCmd::TIOCNOTTY => {
                 // TODO:
+                Ok(0)
+            }
+            IoctlCmd::FIONREAD => {
+                let buffer_len = self.0.slave_buf_len() as i32;
+                write_val_to_user(arg, &buffer_len)?;
                 Ok(0)
             }
             _ => Ok(0),

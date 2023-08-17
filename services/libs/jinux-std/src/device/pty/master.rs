@@ -55,11 +55,7 @@ impl PtyMaster {
 
     pub(super) fn slave_push_char(&self, item: u8) -> Result<()> {
         let mut buf = self.master_buffer.lock_irq_disabled();
-        if buf.is_full() {
-            return_errno_with_message!(Errno::EIO, "the buffer is full");
-        }
-        // Unwrap safety: the buf is not full, so push will always succeed.
-        buf.push(item).unwrap();
+        buf.push_overwrite(item);
         self.update_state(&buf);
         Ok(())
     }
@@ -93,13 +89,11 @@ impl PtyMaster {
         }
     }
 
-    fn update_state(&self, buf: &HeapRb<u8>) {
-        if buf.is_full() {
-            self.pollee.del_events(IoEvents::OUT);
-        } else {
-            self.pollee.add_events(IoEvents::OUT);
-        }
+    pub(super) fn slave_buf_len(&self) -> usize {
+        self.ldisc.buffer_len()
+    }
 
+    fn update_state(&self, buf: &HeapRb<u8>) {
         if buf.is_empty() {
             self.pollee.del_events(IoEvents::IN)
         } else {
@@ -139,18 +133,10 @@ impl FileLike for PtyMaster {
     fn write(&self, buf: &[u8]) -> Result<usize> {
         let mut master_buf = self.master_buffer.lock();
 
-        if self.ldisc.termios().contain_echo() && master_buf.len() + buf.len() > BUFFER_CAPACITY {
-            return_errno_with_message!(
-                Errno::EIO,
-                "the written bytes exceeds the master buf capacity"
-            );
-        }
-
         for item in buf {
             self.ldisc.push_char(*item, |content| {
                 for byte in content.as_bytes() {
-                    // Unwrap safety: the master buf is ensured to have enough space.
-                    master_buf.push(*byte).unwrap();
+                    master_buf.push_overwrite(*byte);
                 }
             });
         }
@@ -203,9 +189,18 @@ impl FileLike for PtyMaster {
                 };
                 Ok(fd)
             }
-            IoctlCmd::TIOCGWINSZ => Ok(0),
+            IoctlCmd::TIOCGWINSZ => {
+                let winsize = self.ldisc.window_size();
+                write_val_to_user(arg, &winsize)?;
+                Ok(0)
+            }
+            IoctlCmd::TIOCSWINSZ => {
+                let winsize = read_val_from_user(arg)?;
+                self.ldisc.set_window_size(winsize);
+                Ok(0)
+            }
             IoctlCmd::TIOCSCTTY => {
-                // TODO
+                // TODO: reimplement when adding session.
                 let foreground = {
                     let current = current!();
                     let process_group = current.process_group().lock();
@@ -225,7 +220,13 @@ impl FileLike for PtyMaster {
                 Ok(0)
             }
             IoctlCmd::TIOCNOTTY => {
+                // TODO: reimplement when adding session.
                 self.ldisc.set_fg(Weak::new());
+                Ok(0)
+            }
+            IoctlCmd::FIONREAD => {
+                let len = self.master_buffer.lock().len() as i32;
+                write_val_to_user(arg, &len)?;
                 Ok(0)
             }
             _ => Ok(0),
@@ -237,8 +238,6 @@ impl FileLike for PtyMaster {
         let poll_in_mask = mask & IoEvents::IN;
 
         loop {
-            let _master_buf = self.master_buffer.lock_irq_disabled();
-
             let mut poll_status = IoEvents::empty();
 
             if !poll_in_mask.is_empty() {
