@@ -12,7 +12,8 @@ use component::ComponentInitError;
 
 use alloc::{sync::Arc, vec::Vec};
 use jinux_frame::bus::pci::PciDeviceLocation;
-use spin::{mutex::Mutex, Once};
+use jinux_frame::sync::Mutex;
+use spin::Once;
 use util::CSpaceAccessMethod;
 
 pub use crate::util::PciDevice;

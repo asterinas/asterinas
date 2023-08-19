@@ -1,11 +1,11 @@
 use crate::{device::VirtioDeviceError, queue::VirtQueue, VirtioPciCommonCfg};
 use alloc::{boxed::Box, vec::Vec};
 use bitflags::bitflags;
+use jinux_frame::sync::Mutex;
 use jinux_frame::{io_mem::IoMem, offset_of};
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
 use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use pod::Pod;
-use spin::Mutex;
 
 use super::{
     InputConfigSelect, InputEvent, VirtioInputConfig, QUEUE_EVENT, QUEUE_SIZE, QUEUE_STATUS,

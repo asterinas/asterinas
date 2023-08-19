@@ -2,6 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 use crate::cpu::CpuLocal;
 use crate::cpu_local;
+use crate::sync::Mutex;
 
 use core::sync::atomic::Ordering::Relaxed;
 
@@ -13,7 +14,6 @@ use super::{
 use alloc::sync::Arc;
 use lazy_static::lazy_static;
 use log::warn;
-use spin::Mutex;
 
 pub struct Processor {
     current: Option<Arc<Task>>,

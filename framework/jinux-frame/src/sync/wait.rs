@@ -18,7 +18,7 @@ pub struct WaitQueue {
 
 impl WaitQueue {
     /// Creates a new instance.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         WaitQueue {
             waiters: SpinLock::new(VecDeque::new()),
         }
@@ -38,6 +38,10 @@ impl WaitQueue {
     where
         F: FnMut() -> Option<R>,
     {
+        if let Some(res) = cond() {
+            return res;
+        }
+
         let waiter = Arc::new(Waiter::new());
         self.enqueue(&waiter);
         loop {

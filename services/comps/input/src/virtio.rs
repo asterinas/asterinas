@@ -3,6 +3,7 @@
 use alloc::{string::String, sync::Arc, vec::Vec};
 use jinux_frame::io_mem::IoMem;
 use jinux_frame::offset_of;
+use jinux_frame::sync::Mutex;
 use jinux_frame::trap::TrapFrame;
 use jinux_pci::msix::MSIX;
 use jinux_util::field_ptr;
@@ -14,7 +15,6 @@ use jinux_virtio::{
     PCIVirtioDevice,
 };
 use log::{debug, info};
-use spin::Mutex;
 use virtio_input_decoder::{DecodeType, Decoder};
 
 use crate::INPUTDevice;

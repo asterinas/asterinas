@@ -2,9 +2,9 @@
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86::timer::{add_timeout_list, TimerCallback, TICK};
+use crate::sync::Mutex;
 use crate::{config::TIMER_FREQ, prelude::*};
 use core::{sync::atomic::Ordering, time::Duration};
-use spin::Mutex;
 
 #[cfg(target_arch = "x86_64")]
 pub use crate::arch::x86::timer::read_monotonic_milli_seconds;

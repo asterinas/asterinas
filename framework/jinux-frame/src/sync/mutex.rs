@@ -14,7 +14,7 @@ pub struct Mutex<T> {
 
 impl<T> Mutex<T> {
     /// Create a new mutex.
-    pub fn new(val: T) -> Self {
+    pub const fn new(val: T) -> Self {
         Self {
             val: UnsafeCell::new(val),
             lock: AtomicBool::new(false),

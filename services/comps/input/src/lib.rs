@@ -14,9 +14,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use component::init_component;
 use component::ComponentInitError;
+use jinux_frame::sync::Mutex;
 use jinux_virtio::VirtioDeviceType;
 
-use spin::{Mutex, Once};
+use spin::Once;
 use virtio::VirtioInputDevice;
 use virtio_input_decoder::DecodeType;
 

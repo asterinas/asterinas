@@ -1,6 +1,7 @@
+use crate::sync::Mutex;
 use acpi::PlatformInfo;
 use log::info;
-use spin::{Mutex, Once};
+use spin::Once;
 use x86::apic::ioapic::IoApic;
 
 use crate::arch::x86::kernel::acpi::ACPI_TABLES;
