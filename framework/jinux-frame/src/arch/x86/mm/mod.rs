@@ -1,6 +1,6 @@
+use crate::sync::Mutex;
 use alloc::{collections::BTreeMap, fmt};
 use pod::Pod;
-use spin::Mutex;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::{

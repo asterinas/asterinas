@@ -14,10 +14,10 @@ const IRQ_OFFSET: u8 = 0x20;
 
 const TIMER_IRQ_NUM: u8 = 32;
 
+use crate::sync::Mutex;
 use alloc::vec::Vec;
 use lazy_static::lazy_static;
 use log::info;
-use spin::Mutex;
 
 lazy_static! {
     /// store the irq, although we have APIC for manage interrupts

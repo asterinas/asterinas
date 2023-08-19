@@ -3,9 +3,9 @@ use alloc::str;
 use alloc::string::String;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
+use jinux_frame::sync::{RwLock, RwLockWriteGuard};
 use jinux_frame::vm::VmFrame;
 use jinux_util::slot_vec::SlotVec;
-use spin::{RwLock, RwLockWriteGuard};
 
 use super::*;
 use crate::fs::device::Device;

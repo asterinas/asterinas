@@ -12,12 +12,13 @@ use alloc::{collections::VecDeque, string::String, sync::Arc, vec::Vec};
 use bitflags::bitflags;
 use component::ComponentInitError;
 use device::VirtioDevice;
+use jinux_frame::sync::Mutex;
 use jinux_frame::{io_mem::IoMem, offset_of, trap::TrapFrame};
 use jinux_pci::{util::BAR, PciDevice};
 use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use log::{debug, info};
 use pod::Pod;
-use spin::{Mutex, Once};
+use spin::Once;
 
 use crate::device::VirtioInfo;
 use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, msix::MSIX};

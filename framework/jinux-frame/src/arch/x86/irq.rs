@@ -1,5 +1,6 @@
+use crate::sync::Mutex;
 use alloc::vec::Vec;
-use spin::{Mutex, Once};
+use spin::Once;
 
 use crate::{trap::IrqLine, util::recycle_allocator::RecycleAllocator};
 

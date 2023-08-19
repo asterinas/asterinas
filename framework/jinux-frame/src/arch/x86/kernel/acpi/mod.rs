@@ -7,11 +7,12 @@ use core::{
 };
 
 use crate::boot::{self, BootloaderAcpiArg};
+use crate::sync::Mutex;
 use crate::vm::paddr_to_vaddr;
 use acpi::{sdt::SdtHeader, AcpiHandler, AcpiTable, AcpiTables};
 use alloc::borrow::ToOwned;
 use log::info;
-use spin::{Mutex, Once};
+use spin::Once;
 
 /// RSDP information, key is the signature, value is the virtual address of the signature
 pub static ACPI_TABLES: Once<Mutex<AcpiTables<AcpiMemoryHandler>>> = Once::new();

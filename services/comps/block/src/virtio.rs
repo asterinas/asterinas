@@ -1,11 +1,11 @@
 //! Block device based on Virtio
 
+use jinux_frame::sync::Mutex;
 use jinux_frame::{io_mem::IoMem, trap::TrapFrame};
 use jinux_pci::msix::MSIX;
 use jinux_util::safe_ptr::SafePtr;
 use jinux_virtio::{device::block::device::BLKDevice, PCIVirtioDevice, VirtioPciCommonCfg};
 use log::debug;
-use spin::Mutex;
 
 use crate::{BlockDevice, BLK_COMPONENT};
 

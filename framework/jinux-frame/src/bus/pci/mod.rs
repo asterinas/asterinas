@@ -54,8 +54,8 @@ mod cfg_space;
 mod common_device;
 mod device_info;
 
+use crate::sync::Mutex;
 pub use device_info::{PciDeviceId, PciDeviceLocation};
-use spin::Mutex;
 
 use self::{bus::PciBus, common_device::PciCommonDevice};
 

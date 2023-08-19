@@ -3,8 +3,9 @@ mod fault;
 mod remapping;
 mod second_stage;
 
+use crate::sync::Mutex;
 use log::info;
-use spin::{Mutex, Once};
+use spin::Once;
 
 use crate::{
     arch::iommu::{context_table::RootTable, second_stage::PageTableEntry},

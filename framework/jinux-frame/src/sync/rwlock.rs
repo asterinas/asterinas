@@ -225,6 +225,12 @@ impl<'a, T> Drop for RwLockReadGuard<'a, T> {
     }
 }
 
+impl<'a, T: fmt::Debug> fmt::Debug for RwLockReadGuard<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
 pub struct RwLockWriteGuard<'a, T> {
     inner: &'a RwLock<T>,
     inner_guard: InnerGuard,
@@ -264,5 +270,11 @@ impl<'a, T> DerefMut for RwLockWriteGuard<'a, T> {
 impl<'a, T> Drop for RwLockWriteGuard<'a, T> {
     fn drop(&mut self) {
         self.inner.lock.fetch_and(!(WRITER), Release);
+    }
+}
+
+impl<'a, T: fmt::Debug> fmt::Debug for RwLockWriteGuard<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
     }
 }

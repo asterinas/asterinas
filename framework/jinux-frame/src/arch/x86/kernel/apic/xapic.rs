@@ -1,5 +1,6 @@
+use crate::sync::Mutex;
 use crate::vm;
-use spin::{Mutex, Once};
+use spin::Once;
 use x86::apic::xapic;
 
 use super::ApicTimer;
