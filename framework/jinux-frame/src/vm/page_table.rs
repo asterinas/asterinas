@@ -3,7 +3,7 @@ use super::{
     frame_allocator, paddr_to_vaddr, VmAllocOptions, VmFrameVec, {Paddr, Vaddr},
 };
 use crate::{
-    arch::mm::PageTableEntry,
+    arch::mm::{tlb_flush, PageTableEntry},
     config::{ENTRY_COUNT, PAGE_SIZE},
     vm::VmFrame,
 };
@@ -165,6 +165,7 @@ impl<T: PageTableEntryTrait> PageTable<T> {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.update(paddr, flags);
+        tlb_flush(vaddr);
         Ok(())
     }
 
@@ -225,6 +226,7 @@ impl<T: PageTableEntryTrait> PageTable<T> {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.clear();
+        tlb_flush(vaddr);
         Ok(())
     }
 
@@ -235,6 +237,7 @@ impl<T: PageTableEntryTrait> PageTable<T> {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.update(last_entry.paddr(), flags);
+        tlb_flush(vaddr);
         Ok(())
     }
 
