@@ -1,13 +1,13 @@
 use alloc::{collections::BTreeMap, fmt};
 use pod::Pod;
 use spin::Mutex;
-use x86_64::structures::paging::PhysFrame;
+use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::{
     config::ENTRY_COUNT,
     vm::{
         page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
-        Paddr,
+        Paddr, Vaddr,
     },
 };
 
@@ -39,6 +39,10 @@ bitflags::bitflags! {
         /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
         const NO_EXECUTE =      1 << 63;
     }
+}
+
+pub fn tlb_flush(vaddr: Vaddr) {
+    tlb::flush(VirtAddr::new(vaddr as u64));
 }
 
 #[derive(Clone, Copy, Pod)]
