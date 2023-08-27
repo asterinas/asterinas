@@ -18,6 +18,7 @@ use spin::Once;
 /// This is because bootloaders differ in such behaviors.
 #[derive(Copy, Clone, Debug)]
 pub enum BootloaderAcpiArg {
+    NotExists,
     /// Physical address of the RSDP.
     Rsdp(usize),
     /// Address of RSDT provided in RSDP v1.

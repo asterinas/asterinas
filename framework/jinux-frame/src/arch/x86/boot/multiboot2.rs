@@ -9,14 +9,16 @@ use crate::boot::{
     memory_region::{MemoryRegion, MemoryRegionType},
     BootloaderAcpiArg, BootloaderFramebufferArg,
 };
-use core::{arch::global_asm, mem::swap};
+use core::mem::swap;
 use spin::Once;
 
 use crate::{config::PHYS_OFFSET, vm::paddr_to_vaddr};
 
-global_asm!(include_str!("boot.S"));
+pub(super) const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
 
-const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
+pub(super) fn boot_by_multiboot2() -> bool {
+    MB2_INFO.is_completed()
+}
 
 static MB2_INFO: Once<BootInformation> = Once::new();
 
@@ -214,8 +216,7 @@ extern "Rust" {
 }
 
 /// The entry point of Rust code called by inline asm.
-#[no_mangle]
-unsafe extern "C" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
+pub(super) unsafe fn multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
     assert_eq!(boot_magic, MULTIBOOT2_ENTRY_MAGIC);
     MB2_INFO.call_once(|| unsafe {
         BootInformation::load(boot_params as *const BootInformationHeader).unwrap()

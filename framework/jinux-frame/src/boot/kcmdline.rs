@@ -81,6 +81,10 @@ impl From<&str> for KCmdlineArg {
         // The main parse loop. The processing steps are arranged (not very strictly)
         // by the analysis over the Backus–Naur form syntax tree.
         for arg in split_arg(cmdline) {
+            // FIXME: The -kernel option in QEMU seems to add this string to the command line, which we skip for now.
+            if arg.starts_with("target/x86_64-custom/debug/jinux") {
+                continue;
+            }
             // Cmdline => KernelArg "--" InitArg
             // KernelArg => Arg "\s+" KernelArg | %empty
             // InitArg => Arg "\s+" InitArg | %empty

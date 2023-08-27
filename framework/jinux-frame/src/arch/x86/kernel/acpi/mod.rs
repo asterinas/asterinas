@@ -6,16 +6,18 @@ use core::{
     ptr::NonNull,
 };
 
-use crate::boot::{self, BootloaderAcpiArg};
-use crate::sync::Mutex;
 use crate::vm::paddr_to_vaddr;
+use crate::{
+    boot::{self, BootloaderAcpiArg},
+    sync::SpinLock,
+};
 use acpi::{sdt::SdtHeader, AcpiHandler, AcpiTable, AcpiTables};
 use alloc::borrow::ToOwned;
-use log::info;
+use log::{info, warn};
 use spin::Once;
 
 /// RSDP information, key is the signature, value is the virtual address of the signature
-pub static ACPI_TABLES: Once<Mutex<AcpiTables<AcpiMemoryHandler>>> = Once::new();
+pub static ACPI_TABLES: Once<SpinLock<AcpiTables<AcpiMemoryHandler>>> = Once::new();
 
 /// Sdt header wrapper, user can use this structure to easily derive Debug, get table information without creating a new struture.
 ///
@@ -102,12 +104,16 @@ pub fn init() {
         BootloaderAcpiArg::Xsdt(addr) => unsafe {
             AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr).unwrap()
         },
+        BootloaderAcpiArg::NotExists => {
+            warn!("Not found ACPI table");
+            return;
+        }
     };
 
     for (signature, sdt) in acpi_tables.sdts.iter() {
         info!("ACPI found signature:{:?}", signature);
     }
-    ACPI_TABLES.call_once(|| Mutex::new(acpi_tables));
+    ACPI_TABLES.call_once(|| SpinLock::new(acpi_tables));
 
     info!("acpi init complete");
 }
