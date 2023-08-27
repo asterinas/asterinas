@@ -6,14 +6,17 @@
 //! boot device image. Then it invokes QEMU to boot Jinux.
 //!
 
+pub mod machine;
+
 use std::{
-    fs::{self, OpenOptions},
-    io::{Read, Write},
+    fs::OpenOptions,
     path::{Path, PathBuf},
     process::Command,
 };
 
-use clap::{builder::Str, Parser};
+use clap::Parser;
+
+use crate::machine::{default, microvm};
 
 /// The CLI of this runner.
 #[derive(Parser, Debug)]
@@ -35,12 +38,14 @@ struct Args {
     /// Emulate Intel IOMMU by QEMU.
     #[arg(long, default_value_t = false)]
     emulate_iommu: bool,
+
+    /// Run Jinux as microvm mode.
+    #[arg(long, default_value_t = false)]
+    run_microvm: bool,
 }
 
-const COMMON_ARGS: &[&str] = &[
+pub const COMMON_ARGS: &[&str] = &[
     "--no-reboot",
-    "-machine",
-    "q35,kernel-irqchip=split",
     "-cpu",
     "Icelake-Server,+x2apic",
     "-m",
@@ -60,54 +65,52 @@ const COMMON_ARGS: &[&str] = &[
     "filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
 ];
 
-const COMMON_DEVICE_ARGS: &[&str] = &[
-    "-device",
-    "virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off",
-    "-device",
-    "virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
-    "-device",
-    "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
-];
-
-const IOMMU_DEVICE_ARGS: &[&str] = &[
-    "-device",
-    "virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device",
-    "virtio-keyboard-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device",
-    "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device",
-    "intel-iommu,intremap=on,device-iotlb=on",
-    "-device",
-    "ioh3420,id=pcie.0,chassis=1",
-];
-
 fn main() {
     let args = Args::parse();
 
     let mut qemu_cmd = Command::new("qemu-system-x86_64");
 
-    let mut qemu_args = COMMON_ARGS.clone().to_vec();
+    let mut qemu_args = COMMON_ARGS.to_vec();
+
     if args.enable_kvm {
         qemu_args.push("-enable-kvm");
     }
-    if args.emulate_iommu {
-        qemu_args.extend(IOMMU_DEVICE_ARGS.clone().to_vec().iter());
+    // Specify machine type
+    if args.run_microvm {
+        qemu_args.extend(microvm::MACHINE_ARGS.to_vec().iter());
     } else {
-        qemu_args.extend(COMMON_DEVICE_ARGS.clone().to_vec().iter());
+        qemu_args.extend(default::MACHINE_ARGS.to_vec().iter());
+    }
+    // Add device arguments
+    if args.run_microvm {
+        qemu_args.extend(microvm::DEVICE_ARGS.to_vec().iter())
+    } else if args.emulate_iommu {
+        qemu_args.extend(default::IOMMU_DEVICE_ARGS.to_vec().iter());
+    } else {
+        qemu_args.extend(default::NOIOMMU_DEVICE_ARGS.to_vec().iter());
     }
 
     let fs_image = create_fs_image(args.path.as_path());
     qemu_args.push("-drive");
     qemu_args.push(fs_image.as_str());
 
-    let bootdev_image = create_bootdev_image(args.path, &args.kcmdline);
-    qemu_cmd.arg("-cdrom");
-    qemu_cmd.arg(bootdev_image.as_str());
+    if args.run_microvm {
+        let image = microvm::create_bootdev_image(args.path);
+        qemu_cmd.arg("-kernel");
+        qemu_cmd.arg(image.as_str());
+        qemu_cmd.arg("-append");
+        qemu_cmd.arg(&args.kcmdline);
+        qemu_cmd.arg("-initrd");
+        qemu_cmd.arg("regression/build/initramfs.cpio.gz");
+    } else {
+        let bootdev_image = default::create_bootdev_image(args.path, &args.kcmdline);
+        qemu_cmd.arg("-cdrom");
+        qemu_cmd.arg(bootdev_image.as_str());
+    }
 
     qemu_cmd.args(qemu_args);
 
-    println!("running:{:?}", qemu_cmd);
+    println!("running:{:#?}", qemu_cmd);
 
     let exit_status = qemu_cmd.status().unwrap();
     if !exit_status.success() {
@@ -122,66 +125,7 @@ fn main() {
     }
 }
 
-fn generate_grub_cfg(template_filename: &str, target_filename: &str, kcmdline: &str) {
-    let mut buffer = String::new();
-
-    // Read the contents of the file
-    fs::File::open(template_filename)
-        .unwrap()
-        .read_to_string(&mut buffer)
-        .unwrap();
-
-    // Replace all occurrences of "#KERNEL_COMMAND_LINE#" with the desired value
-    let replaced_content = buffer.replace("#KERNEL_COMMAND_LINE#", kcmdline);
-
-    // Write the modified content back to the file
-    fs::File::create(target_filename)
-        .unwrap()
-        .write_all(replaced_content.as_bytes())
-        .unwrap();
-}
-
-fn create_bootdev_image(path: PathBuf, kcmdline: &str) -> String {
-    let dir = path.parent().unwrap();
-    let name = path.file_name().unwrap().to_str().unwrap().to_string();
-    let iso_path = dir.join(name + ".iso").to_str().unwrap().to_string();
-
-    // Clean up the image directory
-    if Path::new("target/iso_root").exists() {
-        fs::remove_dir_all("target/iso_root").unwrap();
-    }
-
-    // Copy the needed files into an ISO image.
-    fs::create_dir_all("target/iso_root/boot/grub").unwrap();
-
-    fs::copy(path.as_os_str(), "target/iso_root/boot/jinux").unwrap();
-    generate_grub_cfg(
-        "build/grub/grub.cfg.template",
-        "target/iso_root/boot/grub/grub.cfg",
-        kcmdline,
-    );
-    fs::copy(
-        "regression/build/initramfs.cpio.gz",
-        "target/iso_root/boot/initramfs.cpio.gz",
-    )
-    .unwrap();
-
-    // Make the boot device .iso image
-    let status = std::process::Command::new("grub-mkrescue")
-        .arg("-o")
-        .arg(&iso_path)
-        .arg("target/iso_root")
-        .status()
-        .unwrap();
-
-    if !status.success() {
-        panic!("Failed to create boot iso image.")
-    }
-
-    iso_path
-}
-
-fn create_fs_image(path: &Path) -> String {
+pub fn create_fs_image(path: &Path) -> String {
     let mut fs_img_path = path.parent().unwrap().to_str().unwrap().to_string();
     fs_img_path.push_str("/fs.img");
     let path = Path::new(fs_img_path.as_str());

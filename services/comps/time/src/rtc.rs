@@ -3,7 +3,7 @@ use core::sync::atomic::Ordering::Relaxed;
 
 use crate::SystemTime;
 
-use jinux_frame::arch::x86::device::cmos::{get_century, CMOS_ADDRESS, CMOS_DATA};
+use jinux_frame::arch::x86::device::cmos::{get_century_register, CMOS_ADDRESS, CMOS_DATA};
 use jinux_frame::sync::Mutex;
 
 pub(crate) static CENTURY_REGISTER: AtomicU8 = AtomicU8::new(0);
@@ -11,7 +11,10 @@ pub(crate) static CENTURY_REGISTER: AtomicU8 = AtomicU8::new(0);
 static READ_TIME: Mutex<SystemTime> = Mutex::new(SystemTime::zero());
 
 pub fn init() {
-    CENTURY_REGISTER.store(get_century(), Relaxed);
+    let Some(century_register) = get_century_register() else {
+        return;
+    };
+    CENTURY_REGISTER.store(century_register, Relaxed);
 }
 
 pub fn get_cmos(reg: u8) -> u8 {
