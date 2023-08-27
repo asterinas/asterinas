@@ -18,6 +18,10 @@ MB2_ARCHITECTURE = 0 // 32-bit (protected) mode of i386
 MB2_HEADERLEN = header_end - header_start
 MB2_CHECKSUM = -(MB2_MAGIC + MB2_ARCHITECTURE + MB2_HEADERLEN)
 
+MB_MAGIC = 0x1BADB002
+MB_FLAGS = 0
+MB_CHECKSUM = -(MB_MAGIC + MB_FLAGS)
+
 header_start:
     .align 8
 
@@ -42,6 +46,12 @@ info_request_end:
     .short 0            // flags
     .long 8             // size
 header_end:
+
+multiboot_header:
+    .align 8
+    .long MB_MAGIC
+    .long MB_FLAGS
+    .long MB_CHECKSUM
 
 initial_boot_setup:
     cli
@@ -280,8 +290,8 @@ long_mode:
     // Clear the frame pointer to stop backtracing here.
     xor rbp, rbp
 
-.extern __multiboot2_entry
-    lea  rax, [rip + __multiboot2_entry]  // jump into Rust code
+.extern __boot_entry
+    lea  rax, [rip + __boot_entry]  // jump into Rust code
     call rax
 
     // In case boot() returns.

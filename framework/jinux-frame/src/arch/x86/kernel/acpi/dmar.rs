@@ -63,6 +63,9 @@ impl AcpiTable for DmarHeader {
 impl Dmar {
     /// Create a instance from ACPI table.
     pub fn new() -> Option<Self> {
+        if !super::ACPI_TABLES.is_completed() {
+            return None;
+        }
         let acpi_table_lock = super::ACPI_TABLES.get().unwrap().lock();
         // Safety: The DmarHeader is the header for the DMAR structure, it fits all the field described in Intel manual.
         let dmar_mapping = unsafe {

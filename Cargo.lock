@@ -689,6 +689,7 @@ dependencies = [
  "log",
  "multiboot2",
  "pod",
+ "rsdp",
  "spin 0.9.8",
  "tdx-guest",
  "trapframe",
