@@ -2,6 +2,7 @@
 AUTO_SYSCALL_TEST ?= 0
 BUILD_SYSCALL_TEST ?= 0
 EMULATE_IOMMU ?= 0
+RUN_MICROVM ?= 0
 ENABLE_KVM ?= 1
 # End of Make arguments
 
@@ -18,6 +19,10 @@ endif
 
 ifeq ($(EMULATE_IOMMU), 1)
 CARGO_KRUN_ARGS += --emulate-iommu
+endif
+
+ifeq ($(RUN_MICROVM), 1)
+CARGO_KRUN_ARGS += --run-microvm
 endif
 
 ifeq ($(AUTO_SYSCALL_TEST), 1)

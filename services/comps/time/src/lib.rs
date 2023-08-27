@@ -48,7 +48,6 @@ impl SystemTime {
         self.year = get_cmos(0x09) as u16;
 
         let century_register = CENTURY_REGISTER.load(Relaxed);
-
         if century_register != 0 {
             self.century = get_cmos(century_register);
         }
@@ -58,7 +57,6 @@ impl SystemTime {
     /// ref:https://wiki.osdev.org/CMOS#Reading_All_RTC_Time_and_Date_Registers
     pub(crate) fn convert_bcd_to_binary(&mut self, register_b: u8) {
         if register_b & 0x04 == 0 {
-            let century_register = CENTURY_REGISTER.load(Relaxed);
             self.second = (self.second & 0x0F) + ((self.second / 16) * 10);
             self.minute = (self.minute & 0x0F) + ((self.minute / 16) * 10);
             self.hour =
@@ -66,8 +64,12 @@ impl SystemTime {
             self.day = (self.day & 0x0F) + ((self.day / 16) * 10);
             self.month = (self.month & 0x0F) + ((self.month / 16) * 10);
             self.year = (self.year & 0x0F) + ((self.year / 16) * 10);
-            if century_register != 0 {
+            if CENTURY_REGISTER.load(Relaxed) != 0 {
                 self.century = (self.century & 0x0F) + ((self.century / 16) * 10);
+            } else {
+                // 2000 ~ 2099
+                const DEFAULT_21_CENTURY: u8 = 20;
+                self.century = DEFAULT_21_CENTURY;
             }
         }
     }
@@ -82,12 +84,7 @@ impl SystemTime {
 
     /// convert raw year (10, 20 etc.) to real year (2010, 2020 etc.)
     pub(crate) fn modify_year(&mut self) {
-        let century_register = CENTURY_REGISTER.load(Relaxed);
-        if century_register != 0 {
-            self.year += self.century as u16 * 100;
-        } else {
-            panic!("century register not exists");
-        }
+        self.year += self.century as u16 * 100;
     }
 }
 
