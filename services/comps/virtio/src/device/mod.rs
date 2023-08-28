@@ -1,39 +1,36 @@
-use crate::{
-    device::block::device::BLKDevice, queue::QueueError, Feature, VirtioDeviceType,
-    VirtioPciCommonCfg,
-};
-use alloc::vec::Vec;
-use jinux_frame::io_mem::IoMem;
-use jinux_pci::{
-    capability::{vendor::virtio::CapabilityVirtioData, Capability},
-    util::BAR,
-};
-use jinux_util::safe_ptr::SafePtr;
-
-use self::{input::device::InputDevice, network::device::NetworkDevice};
+use crate::queue::QueueError;
+use int_to_c_enum::TryFromInt;
 
 pub mod block;
 pub mod input;
 pub mod network;
 
-pub(crate) const PCI_VIRTIO_CAP_COMMON_CFG: u8 = 1;
-pub(crate) const PCI_VIRTIO_CAP_NOTIFY_CFG: u8 = 2;
-pub(crate) const PCI_VIRTIO_CAP_ISR_CFG: u8 = 3;
-pub(crate) const PCI_VIRTIO_CAP_DEVICE_CFG: u8 = 4;
-pub(crate) const PCI_VIRTIO_CAP_PCI_CFG: u8 = 5;
-
-pub enum VirtioDevice {
-    Network(NetworkDevice),
-    Block(BLKDevice),
-    Console,
-    Entropy,
-    TraditionalMemoryBalloon,
-    ScsiHost,
-    GPU,
-    Input(InputDevice),
-    Crypto,
-    Socket,
-    Unknown,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromInt)]
+#[repr(u8)]
+pub enum VirtioDeviceType {
+    Invalid = 0,
+    Network = 1,
+    Block = 2,
+    Console = 3,
+    Entropy = 4,
+    TraditionalMemoryBalloon = 5,
+    IoMemory = 6,
+    Rpmsg = 7,
+    ScsiHost = 8,
+    Transport9P = 9,
+    Mac80211Wlan = 10,
+    RprocSerial = 11,
+    VirtioCAIF = 12,
+    MemoryBalloon = 13,
+    GPU = 16,
+    Timer = 17,
+    Input = 18,
+    Socket = 19,
+    Crypto = 20,
+    SignalDistribution = 21,
+    Pstore = 22,
+    IOMMU = 23,
+    Memory = 24,
 }
 
 #[derive(Debug)]
@@ -50,133 +47,5 @@ pub enum VirtioDeviceError {
 impl From<QueueError> for VirtioDeviceError {
     fn from(_: QueueError) -> Self {
         VirtioDeviceError::QueueUnknownError
-    }
-}
-
-pub struct VirtioInfo {
-    pub device_type: VirtioDeviceType,
-    pub notify_base_address: u64,
-    pub notify_off_multiplier: u32,
-    pub common_cfg_frame_ptr: SafePtr<VirtioPciCommonCfg, IoMem>,
-    pub device_cap_cfg: CapabilityVirtioData,
-}
-
-impl VirtioInfo {
-    pub(crate) fn new(
-        device_type: VirtioDeviceType,
-        bars: [Option<BAR>; 6],
-        virtio_cap_list: Vec<&Capability>,
-    ) -> Result<Self, VirtioDeviceError> {
-        let mut notify_base_address = 0;
-        let mut notify_off_multiplier = 0;
-        let mut common_cfg_frame_ptr_some = None;
-        let mut device_cap_cfg = None;
-        for cap in virtio_cap_list.iter() {
-            match cap.data {
-                jinux_pci::capability::CapabilityData::VNDR(vndr_data) => match vndr_data {
-                    jinux_pci::capability::vendor::CapabilityVNDRData::VIRTIO(cap_data) => {
-                        match cap_data.cfg_type {
-                            PCI_VIRTIO_CAP_COMMON_CFG => {
-                                common_cfg_frame_ptr_some =
-                                    Some(VirtioPciCommonCfg::new(&cap_data, bars));
-                            }
-                            PCI_VIRTIO_CAP_NOTIFY_CFG => {
-                                notify_off_multiplier = cap_data.option.unwrap();
-                                match bars[cap_data.bar as usize]
-                                    .expect("initialize PCIDevice failed, notify bar is None")
-                                {
-                                    BAR::Memory(address, _, _, _) => {
-                                        notify_base_address = address + cap_data.offset as u64;
-                                    }
-                                    BAR::IO(_, _) => {
-                                        panic!("initialize PCIDevice failed, notify bar is IO Type")
-                                    }
-                                };
-                            }
-                            PCI_VIRTIO_CAP_ISR_CFG => {}
-                            PCI_VIRTIO_CAP_DEVICE_CFG => {
-                                device_cap_cfg = Some(cap_data);
-                            }
-                            PCI_VIRTIO_CAP_PCI_CFG => {}
-                            _ => panic!("unsupport cfg, cfg_type:{}", cap_data.cfg_type),
-                        };
-                    }
-                },
-                _ => {
-                    return Err(VirtioDeviceError::CapabilityListError);
-                }
-            }
-        }
-        Ok(Self {
-            notify_base_address,
-            notify_off_multiplier,
-            common_cfg_frame_ptr: common_cfg_frame_ptr_some
-                .ok_or(VirtioDeviceError::CapabilityListError)?,
-            device_cap_cfg: device_cap_cfg.ok_or(VirtioDeviceError::CapabilityListError)?,
-            device_type,
-        })
-    }
-}
-
-impl VirtioDevice {
-    /// call this function after features_ok
-    pub(crate) fn new(
-        virtio_info: &VirtioInfo,
-        bars: [Option<BAR>; 6],
-        msix_vector_left: Vec<u16>,
-    ) -> Result<Self, VirtioDeviceError> {
-        let device = match virtio_info.device_type {
-            VirtioDeviceType::Block => VirtioDevice::Block(BLKDevice::new(
-                &virtio_info.device_cap_cfg,
-                bars,
-                &virtio_info.common_cfg_frame_ptr,
-                virtio_info.notify_base_address as usize,
-                virtio_info.notify_off_multiplier,
-                msix_vector_left,
-            )?),
-            VirtioDeviceType::Input => VirtioDevice::Input(InputDevice::new(
-                &virtio_info.device_cap_cfg,
-                bars,
-                &virtio_info.common_cfg_frame_ptr,
-                virtio_info.notify_base_address as usize,
-                virtio_info.notify_off_multiplier,
-                msix_vector_left,
-            )?),
-            VirtioDeviceType::Network => VirtioDevice::Network(NetworkDevice::new(
-                &virtio_info.device_cap_cfg,
-                bars,
-                &virtio_info.common_cfg_frame_ptr,
-                virtio_info.notify_base_address as usize,
-                virtio_info.notify_off_multiplier,
-                msix_vector_left,
-            )?),
-            _ => {
-                panic!("initialize PCIDevice failed, unsupport Virtio Device Type")
-            }
-        };
-        Ok(device)
-    }
-
-    pub(crate) fn negotiate_features(features: u64, device_type: VirtioDeviceType) -> u64 {
-        let mask = ((1u64 << 24) - 1) | (((1u64 << 24) - 1) << 50);
-        let device_specified_features = features & mask;
-        let device_support_features = match device_type {
-            VirtioDeviceType::Network => {
-                NetworkDevice::negotiate_features(device_specified_features)
-            }
-            VirtioDeviceType::Block => BLKDevice::negotiate_features(device_specified_features),
-            VirtioDeviceType::Console => todo!(),
-            VirtioDeviceType::Entropy => todo!(),
-            VirtioDeviceType::TraditionalMemoryBalloon => todo!(),
-            VirtioDeviceType::ScsiHost => todo!(),
-            VirtioDeviceType::GPU => todo!(),
-            VirtioDeviceType::Input => InputDevice::negotiate_features(device_specified_features),
-            VirtioDeviceType::Crypto => todo!(),
-            VirtioDeviceType::Socket => todo!(),
-            VirtioDeviceType::Unknown => todo!(),
-        };
-        let mut support_feature = Feature::from_bits_truncate(features);
-        support_feature.remove(Feature::RING_EVENT_IDX);
-        features & (support_feature.bits | device_support_features)
     }
 }

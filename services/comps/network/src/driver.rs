@@ -1,47 +1,36 @@
 use alloc::vec;
-use smoltcp::phy::{self, Medium};
+use smoltcp::{phy, time::Instant};
 
-use crate::VirtioNet;
-use jinux_virtio::device::network::{
+use crate::{
     buffer::{RxBuffer, TxBuffer},
-    device::NetworkDevice,
+    NetworkDevice,
 };
 
-impl phy::Device for VirtioNet {
+impl phy::Device for dyn NetworkDevice {
     type RxToken<'a> = RxToken;
     type TxToken<'a> = TxToken<'a>;
 
-    fn receive(
-        &mut self,
-        _timestamp: smoltcp::time::Instant,
-    ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+    fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         if self.can_receive() {
-            let device = self.device_mut();
-            let rx_buffer = device.receive().unwrap();
-            Some((RxToken(rx_buffer), TxToken(device)))
+            let rx_buffer = self.receive().unwrap();
+            Some((RxToken(rx_buffer), TxToken(self)))
         } else {
             None
         }
     }
 
-    fn transmit(&mut self, _timestamp: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
+    fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
         if self.can_send() {
-            let device = self.device_mut();
-            Some(TxToken(device))
+            Some(TxToken(self))
         } else {
             None
         }
     }
 
     fn capabilities(&self) -> phy::DeviceCapabilities {
-        let mut caps = phy::DeviceCapabilities::default();
-        caps.max_transmission_unit = 1536;
-        caps.max_burst_size = Some(1);
-        caps.medium = Medium::Ethernet;
-        caps
+        self.capabilities()
     }
 }
-
 pub struct RxToken(RxBuffer);
 
 impl phy::RxToken for RxToken {
@@ -55,7 +44,7 @@ impl phy::RxToken for RxToken {
     }
 }
 
-pub struct TxToken<'a>(&'a mut NetworkDevice);
+pub struct TxToken<'a>(&'a mut dyn NetworkDevice);
 
 impl<'a> phy::TxToken for TxToken<'a> {
     fn consume<R, F>(self, len: usize, f: F) -> R

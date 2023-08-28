@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use jinux_frame::sync::SpinLock;
-use jinux_network::{probe_virtio_net, NetworkDevice, VirtioNet};
+use jinux_network::NetworkDevice;
+use jinux_virtio::device::network::DEVICE_NAME;
 use smoltcp::{
     iface::{Config, Routes, SocketHandle, SocketSet},
     socket::dhcpv4,
@@ -10,7 +11,7 @@ use smoltcp::{
 use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
 
 pub struct IfaceVirtio {
-    driver: SpinLock<VirtioNet>,
+    driver: Arc<SpinLock<Box<dyn NetworkDevice>>>,
     common: IfaceCommon,
     dhcp_handle: SocketHandle,
     weak_self: Weak<Self>,
@@ -18,9 +19,9 @@ pub struct IfaceVirtio {
 
 impl IfaceVirtio {
     pub fn new() -> Arc<Self> {
-        let mut virtio_net = probe_virtio_net().unwrap();
+        let mut virtio_net = jinux_network::get_device(&(DEVICE_NAME).to_string()).unwrap();
         let interface = {
-            let mac_addr = virtio_net.mac_addr();
+            let mac_addr = virtio_net.lock().mac_addr();
             let ip_addr = IpCidr::new(wire::IpAddress::Ipv4(wire::Ipv4Address::UNSPECIFIED), 0);
             let routes = Routes::new();
             let config = {
@@ -30,7 +31,7 @@ impl IfaceVirtio {
                 ));
                 config
             };
-            let mut interface = smoltcp::iface::Interface::new(config, &mut virtio_net);
+            let mut interface = smoltcp::iface::Interface::new(config, &mut **virtio_net.lock());
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.len() == 0);
                 ip_addrs.push(ip_addr).unwrap();
@@ -42,7 +43,7 @@ impl IfaceVirtio {
         let dhcp_handle = init_dhcp_client(&mut socket_set);
         drop(socket_set);
         Arc::new_cyclic(|weak| Self {
-            driver: SpinLock::new(virtio_net),
+            driver: virtio_net,
             common,
             dhcp_handle,
             weak_self: weak.clone(),
@@ -113,7 +114,7 @@ impl Iface for IfaceVirtio {
 
     fn poll(&self) {
         let mut driver = self.driver.lock_irq_disabled();
-        self.common.poll(&mut *driver);
+        self.common.poll(&mut **driver);
         self.process_dhcp();
     }
 }

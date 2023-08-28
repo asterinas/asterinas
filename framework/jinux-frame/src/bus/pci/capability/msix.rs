@@ -6,7 +6,6 @@ use crate::{
         common_device::PciCommonDevice,
         device_info::PciDeviceLocation,
     },
-    sync::{SpinLock, SpinLockGuard},
     trap::IrqAllocateHandle,
     vm::VmIo,
 };
@@ -25,20 +24,19 @@ pub struct CapabilityMsixData {
     pending_table_bar: Arc<MemoryBar>,
     table_offset: usize,
     pending_table_offset: usize,
-    irq_allocate_handles: SpinLock<Vec<Option<IrqAllocateHandle>>>,
+    irqs: Vec<Option<IrqAllocateHandle>>,
 }
 
 impl Clone for CapabilityMsixData {
     fn clone(&self) -> Self {
-        let handles = self.irq_allocate_handles.lock();
-        let new_vec = handles.clone().to_vec();
+        let new_vec = self.irqs.clone().to_vec();
         Self {
             loc: self.loc.clone(),
             ptr: self.ptr.clone(),
             table_size: self.table_size.clone(),
             table_bar: self.table_bar.clone(),
             pending_table_bar: self.pending_table_bar.clone(),
-            irq_allocate_handles: SpinLock::new(new_vec),
+            irqs: new_vec,
             table_offset: self.table_offset,
             pending_table_offset: self.pending_table_offset,
         }
@@ -122,7 +120,7 @@ impl CapabilityMsixData {
             table_size: (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1,
             table_bar,
             pending_table_bar: pba_bar,
-            irq_allocate_handles: SpinLock::new(irq_allocate_handles),
+            irqs: irq_allocate_handles,
             table_offset: table_offset,
             pending_table_offset: pba_offset,
         }
@@ -133,7 +131,7 @@ impl CapabilityMsixData {
         (self.loc.read16(self.ptr + 2) & 0b11_1111_1111) + 1
     }
 
-    pub fn set_interrupt_vector(&self, handle: IrqAllocateHandle, index: u16) {
+    pub fn set_interrupt_vector(&mut self, handle: IrqAllocateHandle, index: u16) {
         if index >= self.table_size {
             return;
         }
@@ -144,10 +142,7 @@ impl CapabilityMsixData {
                 &(handle.num() as u32),
             )
             .unwrap();
-        let old_handles = core::mem::replace(
-            &mut self.irq_allocate_handles.lock()[index as usize],
-            Some(handle),
-        );
+        let old_handles = core::mem::replace(&mut self.irqs[index as usize], Some(handle));
         // Enable this msix vector
         self.table_bar
             .io_mem()
@@ -155,8 +150,8 @@ impl CapabilityMsixData {
             .unwrap();
     }
 
-    pub fn interrupt_handles(&self) -> SpinLockGuard<'_, Vec<Option<IrqAllocateHandle>>> {
-        self.irq_allocate_handles.lock()
+    pub fn irq_mut(&mut self, index: usize) -> Option<&mut IrqAllocateHandle> {
+        self.irqs[index].as_mut()
     }
 }
 

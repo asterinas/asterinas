@@ -1,12 +1,10 @@
 //! Virtqueue
 
-use super::VirtioPciCommonCfg;
+use crate::transport::VirtioTransport;
+
 use alloc::vec::Vec;
 use bitflags::bitflags;
-use core::{
-    mem::size_of,
-    sync::atomic::{fence, Ordering},
-};
+use core::sync::atomic::{fence, Ordering};
 use jinux_frame::{
     io_mem::IoMem,
     offset_of,
@@ -60,101 +58,64 @@ pub struct VirtQueue {
 impl VirtQueue {
     /// Create a new VirtQueue.
     pub(crate) fn new(
-        cfg: &SafePtr<VirtioPciCommonCfg, IoMem>,
-        idx: usize,
+        idx: u16,
         size: u16,
-        notify_base_address: usize,
-        notify_off_multiplier: u32,
-        msix_vector: u16,
+        transport: &mut dyn VirtioTransport,
     ) -> Result<Self, QueueError> {
-        field_ptr!(cfg, VirtioPciCommonCfg, queue_select)
-            .write(&(idx as u16))
-            .unwrap();
-        assert_eq!(
-            field_ptr!(cfg, VirtioPciCommonCfg, queue_select)
-                .read()
-                .unwrap(),
-            idx as u16
-        );
         if !size.is_power_of_two() {
             return Err(QueueError::InvalidArgs);
         }
-        field_ptr!(cfg, VirtioPciCommonCfg, queue_size)
-            .write(&size)
-            .unwrap();
-        field_ptr!(cfg, VirtioPciCommonCfg, queue_msix_vector)
-            .write(&msix_vector)
-            .unwrap();
-        assert_eq!(
-            field_ptr!(cfg, VirtioPciCommonCfg, queue_msix_vector)
-                .read()
-                .unwrap(),
-            msix_vector
-        );
 
-        let desc_frame_ptr: SafePtr<Descriptor, VmFrame> = SafePtr::new(
+        let descriptor_ptr: SafePtr<Descriptor, VmFrame> = SafePtr::new(
             VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
             0,
         );
-        let avail_frame_ptr: SafePtr<AvailRing, VmFrame> = SafePtr::new(
+        let avail_ring_ptr: SafePtr<AvailRing, VmFrame> = SafePtr::new(
             VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
             0,
         );
-        let used_frame_ptr: SafePtr<UsedRing, VmFrame> = SafePtr::new(
+        let used_ring_ptr: SafePtr<UsedRing, VmFrame> = SafePtr::new(
             VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
             0,
         );
-        debug!("queue_desc start paddr:{:x?}", desc_frame_ptr.paddr());
-        debug!("queue_driver start paddr:{:x?}", avail_frame_ptr.paddr());
-        debug!("queue_device start paddr:{:x?}", used_frame_ptr.paddr());
-        field_ptr!(cfg, VirtioPciCommonCfg, queue_desc)
-            .write(&(desc_frame_ptr.paddr() as u64))
-            .unwrap();
-        field_ptr!(cfg, VirtioPciCommonCfg, queue_driver)
-            .write(&(avail_frame_ptr.paddr() as u64))
-            .unwrap();
-        field_ptr!(cfg, VirtioPciCommonCfg, queue_device)
-            .write(&(used_frame_ptr.paddr() as u64))
+        debug!("queue_desc start paddr:{:x?}", descriptor_ptr.paddr());
+        debug!("queue_driver start paddr:{:x?}", avail_ring_ptr.paddr());
+        debug!("queue_device start paddr:{:x?}", used_ring_ptr.paddr());
+
+        transport
+            .set_queue(idx, size, &descriptor_ptr, &avail_ring_ptr, &used_ring_ptr)
             .unwrap();
 
         let mut descs = Vec::with_capacity(size as usize);
-        descs.push(desc_frame_ptr);
+        descs.push(descriptor_ptr);
         for i in 0..size as usize {
             let mut desc = descs.get(i).unwrap().clone();
             desc.offset(1);
             descs.push(desc);
         }
-        let notify_address = notify_base_address + notify_off_multiplier as usize * idx;
-        let notify = SafePtr::new(
-            IoMem::new(notify_address..notify_address + size_of::<u32>()).unwrap(),
-            0,
-        );
+
+        let notify = transport.get_notify_ptr(idx).unwrap();
         // Link descriptors together.
         for i in 0..(size - 1) {
             let temp = descs.get(i as usize).unwrap();
-            field_ptr!(temp, Descriptor, next)
-                .write(&(i + 1))
-                .map_err(|_err| QueueError::InvalidArgs)?;
+            field_ptr!(temp, Descriptor, next).write(&(i + 1)).unwrap();
         }
-        field_ptr!(&avail_frame_ptr, AvailRing, flags)
+        field_ptr!(&avail_ring_ptr, AvailRing, flags)
             .write(&(0u16))
-            .map_err(|_err| QueueError::InvalidArgs)?;
-        field_ptr!(cfg, VirtioPciCommonCfg, queue_enable)
-            .write(&1u16)
             .unwrap();
         Ok(VirtQueue {
             descs,
-            avail: avail_frame_ptr,
-            used: used_frame_ptr,
+            avail: avail_ring_ptr,
+            used: used_ring_ptr,
             notify,
             queue_size: size,
             queue_idx: idx as u32,
@@ -342,7 +303,7 @@ impl VirtQueue {
 
 #[repr(C, align(16))]
 #[derive(Debug, Default, Copy, Clone, Pod)]
-struct Descriptor {
+pub struct Descriptor {
     addr: u64,
     len: u32,
     flags: DescFlags,
@@ -383,7 +344,7 @@ impl Default for DescFlags {
 /// It is only written by the driver and read by the device.
 #[repr(C, align(2))]
 #[derive(Debug, Copy, Clone, Pod)]
-struct AvailRing {
+pub struct AvailRing {
     flags: u16,
     /// A driver MUST NOT decrement the idx.
     idx: u16,
@@ -395,7 +356,7 @@ struct AvailRing {
 /// it is only written to by the device, and read by the driver.
 #[repr(C, align(4))]
 #[derive(Debug, Copy, Clone, Pod)]
-struct UsedRing {
+pub struct UsedRing {
     // the flag in UsedRing
     flags: u16,
     // the next index of the used element in ring array
@@ -406,7 +367,7 @@ struct UsedRing {
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
-struct UsedElem {
+pub struct UsedElem {
     id: u32,
     len: u32,
 }

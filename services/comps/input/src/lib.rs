@@ -1,12 +1,11 @@
-//! The input device of jinux
+//! The input devices of jinux
 #![no_std]
 #![forbid(unsafe_code)]
 #![feature(fn_traits)]
 
-mod virtio;
-
 extern crate alloc;
 use core::any::Any;
+use core::fmt::Debug;
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -14,79 +13,51 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use component::init_component;
 use component::ComponentInitError;
-use jinux_frame::sync::Mutex;
-use jinux_virtio::VirtioDeviceType;
 
+use jinux_frame::sync::SpinLock;
 use spin::Once;
-use virtio::VirtioInputDevice;
 use virtio_input_decoder::DecodeType;
 
-pub trait INPUTDevice: Send + Sync + Any {
+pub trait InputDevice: Send + Sync + Any + Debug {
     fn handle_irq(&self) -> Option<()>;
     fn register_callbacks(&self, function: &'static (dyn Fn(DecodeType) + Send + Sync));
-    fn name(&self) -> &String;
 }
 
-pub static INPUT_COMPONENT: Once<INPUTComponent> = Once::new();
+pub fn register_device(name: String, device: Arc<dyn InputDevice>) {
+    COMPONENT.get().unwrap().devices.lock().insert(name, device);
+}
+
+pub fn get_device(str: &String) -> Option<Arc<dyn InputDevice>> {
+    COMPONENT.get().unwrap().devices.lock().get(str).cloned()
+}
+
+pub fn all_devices() -> Vec<(String, Arc<dyn InputDevice>)> {
+    let lock = COMPONENT.get().unwrap().devices.lock();
+    let mut vec = Vec::new();
+    for (name, device) in lock.iter() {
+        vec.push((name.clone(), device.clone()));
+    }
+    vec
+}
+
+static COMPONENT: Once<Component> = Once::new();
 
 #[init_component]
-fn input_component_init() -> Result<(), ComponentInitError> {
-    let a = INPUTComponent::init()?;
-    INPUT_COMPONENT.call_once(|| a);
+fn component_init() -> Result<(), ComponentInitError> {
+    let a = Component::init()?;
+    COMPONENT.call_once(|| a);
     Ok(())
 }
 
-pub struct INPUTComponent {
-    /// Input device map, key is the irq number, value is the Input device
-    input_device_map: Mutex<BTreeMap<u8, Arc<dyn INPUTDevice>>>,
+#[derive(Debug)]
+struct Component {
+    devices: SpinLock<BTreeMap<String, Arc<dyn InputDevice>>>,
 }
 
-impl INPUTComponent {
+impl Component {
     pub fn init() -> Result<Self, ComponentInitError> {
-        let mut input_device_map: BTreeMap<u8, Arc<dyn INPUTDevice>> = BTreeMap::new();
-        let virtio = jinux_virtio::VIRTIO_COMPONENT.get().unwrap();
-        let devices = virtio.get_device(VirtioDeviceType::Input);
-        for device in devices {
-            let (v_device, irq_num) = VirtioInputDevice::new(device);
-            input_device_map.insert(irq_num, Arc::new(v_device));
-        }
         Ok(Self {
-            input_device_map: Mutex::new(input_device_map),
+            devices: SpinLock::new(BTreeMap::new()),
         })
     }
-
-    pub const fn name() -> &'static str {
-        "Input Device"
-    }
-    // 0~65535
-    pub const fn priority() -> u16 {
-        8192
-    }
-}
-
-impl INPUTComponent {
-    fn call(self: &Self, irq_number: u8) -> Result<(), InputDeviceHandleError> {
-        // FIXME: use Result instead
-        let binding = self.input_device_map.lock();
-        let device = binding
-            .get(&irq_number)
-            .ok_or(InputDeviceHandleError::DeviceNotExists)?;
-        device.handle_irq();
-        Ok(())
-    }
-
-    pub fn get_input_device(self: &Self) -> Vec<Arc<dyn INPUTDevice>> {
-        self.input_device_map
-            .lock()
-            .iter()
-            .map(|(_, device)| device.clone())
-            .collect::<Vec<Arc<dyn INPUTDevice>>>()
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-enum InputDeviceHandleError {
-    DeviceNotExists,
-    Unknown,
 }

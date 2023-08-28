@@ -360,11 +360,12 @@ macro_rules! field_ptr {
     ($ptr:expr, $type:ty, $($field:tt)+) => {{
         use jinux_frame::offset_of;
         use jinux_frame::vm::VmIo;
-        use jinux_rights::TRights;
-        use jinux_rights::TRightSet;
         use jinux_rights::Dup;
-        use jinux_util::safe_ptr::SetContain;
+        use jinux_rights::TRightSet;
+        use jinux_rights::TRights;
         use jinux_util::safe_ptr::Pod;
+        use jinux_util::safe_ptr::SetContain;
+        use jinux_util::safe_ptr::SafePtr;
 
         #[inline]
         fn new_field_ptr<T, M, R, U>(
