@@ -1,12 +1,10 @@
-use core::mem::size_of;
-
 use bitflags::bitflags;
 use jinux_frame::io_mem::IoMem;
-use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
+use jinux_network::EthernetAddr;
 use jinux_util::safe_ptr::SafePtr;
 use pod::Pod;
 
-use super::device::EthernetAddr;
+use crate::transport::VirtioTransport;
 
 bitflags! {
     /// Virtio Net Feature bits.
@@ -73,19 +71,8 @@ pub struct VirtioNetConfig {
 }
 
 impl VirtioNetConfig {
-    pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> SafePtr<Self, IoMem> {
-        let bar = cap.bar;
-        let offset = cap.offset;
-        match bars[bar as usize].expect("Virtio pci net cfg:bar is none") {
-            BAR::Memory(address, _, _, _) => SafePtr::new(
-                IoMem::new(
-                    (address as usize + offset as usize)
-                        ..(address as usize + offset as usize + size_of::<Self>()),
-                )
-                .unwrap(),
-                0,
-            ),
-            BAR::IO(_, _) => panic!("Virtio pci net cfg:bar is IO type"),
-        }
+    pub(super) fn new(transport: &mut dyn VirtioTransport) -> SafePtr<Self, IoMem> {
+        let memory = transport.device_config_memory();
+        SafePtr::new(memory, 0)
     }
 }

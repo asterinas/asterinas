@@ -1,20 +1,19 @@
 pub mod device;
 
-use core::mem::size_of;
-
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
 use jinux_frame::io_mem::IoMem;
-use jinux_pci::capability::vendor::virtio::CapabilityVirtioData;
-use jinux_pci::util::BAR;
 use jinux_util::safe_ptr::SafePtr;
 use pod::Pod;
 
+use crate::transport::VirtioTransport;
+
 pub const BLK_SIZE: usize = 512;
+pub static DEVICE_NAME: &'static str = "Virtio-Block";
 
 bitflags! {
     /// features for virtio block device
-    pub(crate) struct BLKFeatures : u64{
+    pub(crate) struct BlkFeatures : u64{
         const SIZE_MAX      = 1 << 1;
         const SEG_MAX       = 1 << 2;
         const GEOMETRY      = 1 << 4;
@@ -78,12 +77,12 @@ pub enum RespStatus {
 
 #[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
-pub struct VirtioBLKConfig {
+pub struct VirtioBlkConfig {
     capacity: u64,
     size_max: u64,
-    geometry: VirtioBLKGeometry,
+    geometry: VirtioBlkGeometry,
     blk_size: u32,
-    topology: VirtioBLKTopology,
+    topology: VirtioBlkTopology,
     writeback: u8,
     unused0: [u8; 3],
     max_discard_sectors: u32,
@@ -97,7 +96,7 @@ pub struct VirtioBLKConfig {
 
 #[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
-pub struct VirtioBLKGeometry {
+pub struct VirtioBlkGeometry {
     cylinders: u16,
     heads: u8,
     sectors: u8,
@@ -105,27 +104,16 @@ pub struct VirtioBLKGeometry {
 
 #[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
-pub struct VirtioBLKTopology {
+pub struct VirtioBlkTopology {
     physical_block_exp: u8,
     alignment_offset: u8,
     min_io_size: u16,
     opt_io_size: u32,
 }
 
-impl VirtioBLKConfig {
-    pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> SafePtr<Self, IoMem> {
-        let bar = cap.bar;
-        let offset = cap.offset;
-        match bars[bar as usize].expect("Virtio pci block cfg:bar is none") {
-            BAR::Memory(address, _, _, _) => SafePtr::new(
-                IoMem::new(
-                    (address as usize + offset as usize)
-                        ..(address as usize + offset as usize + size_of::<Self>()),
-                )
-                .unwrap(),
-                0,
-            ),
-            BAR::IO(_, _) => panic!("Virtio pci block cfg:bar is IO type"),
-        }
+impl VirtioBlkConfig {
+    pub(self) fn new(transport: &mut dyn VirtioTransport) -> SafePtr<Self, IoMem> {
+        let memory = transport.device_config_memory();
+        SafePtr::new(memory, 0)
     }
 }

@@ -1,65 +1,30 @@
 use core::hint::spin_loop;
 
-use alloc::vec::Vec;
-use jinux_frame::{io_mem::IoMem, offset_of};
-use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
-use jinux_util::{field_ptr, safe_ptr::SafePtr};
+use alloc::{boxed::Box, string::ToString, sync::Arc};
+use jinux_frame::{io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
+use jinux_util::safe_ptr::SafePtr;
+use log::info;
 use pod::Pod;
 
 use crate::{
     device::block::{BlkReq, BlkResp, ReqType, RespStatus, BLK_SIZE},
     device::VirtioDeviceError,
-    queue::{QueueError, VirtQueue},
-    VirtioPciCommonCfg,
+    queue::VirtQueue,
+    transport::VirtioTransport,
 };
 
-use super::{BLKFeatures, VirtioBLKConfig};
+use super::{BlkFeatures, VirtioBlkConfig};
 
 #[derive(Debug)]
-pub struct BLKDevice {
-    config: SafePtr<VirtioBLKConfig, IoMem>,
-    queue: VirtQueue,
+pub struct BlockDevice {
+    config: SafePtr<VirtioBlkConfig, IoMem>,
+    queue: SpinLock<VirtQueue>,
+    transport: Box<dyn VirtioTransport>,
 }
 
-impl BLKDevice {
-    /// Create a new VirtIO-Block driver.
-    /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
-    pub(crate) fn new(
-        cap: &CapabilityVirtioData,
-        bars: [Option<BAR>; 6],
-        common_cfg: &SafePtr<VirtioPciCommonCfg, IoMem>,
-        notify_base_address: usize,
-        notify_off_multiplier: u32,
-        mut msix_vector_left: Vec<u16>,
-    ) -> Result<Self, VirtioDeviceError> {
-        let config = VirtioBLKConfig::new(cap, bars);
-        let num_queues = field_ptr!(common_cfg, VirtioPciCommonCfg, num_queues)
-            .read()
-            .unwrap();
-        if num_queues != 1 {
-            return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
-        }
-        let queue = VirtQueue::new(
-            &common_cfg,
-            0 as usize,
-            128,
-            notify_base_address as usize,
-            notify_off_multiplier,
-            msix_vector_left.pop().unwrap(),
-        )
-        .expect("create virtqueue failed");
-        Ok(Self { config, queue })
-    }
-
-    /// Negotiate features for the device specified bits 0~23
-    pub(crate) fn negotiate_features(features: u64) -> u64 {
-        let feature = BLKFeatures::from_bits(features).unwrap();
-        let support_features = BLKFeatures::from_bits(features).unwrap();
-        (feature & support_features).bits
-    }
-
+impl BlockDevice {
     /// read data from block device, this function is blocking
-    pub fn read_block(&mut self, block_id: usize, buf: &mut [u8]) {
+    pub fn read(&self, block_id: usize, buf: &mut [u8]) {
         assert_eq!(buf.len(), BLK_SIZE);
         let req = BlkReq {
             type_: ReqType::In as _,
@@ -67,24 +32,22 @@ impl BLKDevice {
             sector: block_id as u64,
         };
         let mut resp = BlkResp::default();
-        let token = self
-            .queue
+        let mut queue = self.queue.lock_irq_disabled();
+        let token = queue
             .add(&[req.as_bytes()], &[buf, resp.as_bytes_mut()])
             .expect("add queue failed");
-        self.queue.notify();
-        while !self.queue.can_pop() {
+        queue.notify();
+        while !queue.can_pop() {
             spin_loop();
         }
-        self.queue
-            .pop_used_with_token(token)
-            .expect("pop used failed");
+        queue.pop_used_with_token(token).expect("pop used failed");
         match RespStatus::try_from(resp.status).unwrap() {
             RespStatus::Ok => {}
             _ => panic!("io error in block device"),
         };
     }
     /// write data to block device, this function is blocking
-    pub fn write_block(&mut self, block_id: usize, buf: &[u8]) {
+    pub fn write(&self, block_id: usize, buf: &[u8]) {
         assert_eq!(buf.len(), BLK_SIZE);
         let req = BlkReq {
             type_: ReqType::Out as _,
@@ -92,17 +55,15 @@ impl BLKDevice {
             sector: block_id as u64,
         };
         let mut resp = BlkResp::default();
-        let token = self
-            .queue
+        let mut queue = self.queue.lock_irq_disabled();
+        let token = queue
             .add(&[req.as_bytes(), buf], &[resp.as_bytes_mut()])
             .expect("add queue failed");
-        self.queue.notify();
-        while !self.queue.can_pop() {
+        queue.notify();
+        while !queue.can_pop() {
             spin_loop();
         }
-        self.queue
-            .pop_used_with_token(token)
-            .expect("pop used failed");
+        queue.pop_used_with_token(token).expect("pop used failed");
         let st = resp.status;
         match RespStatus::try_from(st).unwrap() {
             RespStatus::Ok => {}
@@ -110,57 +71,63 @@ impl BLKDevice {
         };
     }
 
-    pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
-        self.queue.pop_used()
-    }
-
-    pub fn pop_used_with_token(&mut self, token: u16) -> Result<u32, QueueError> {
-        self.queue.pop_used_with_token(token)
-    }
-
-    /// read data from block device, this function is non-blocking
-    /// return value is token
-    pub fn read_block_non_blocking(
-        &mut self,
-        block_id: usize,
-        buf: &mut [u8],
-        req: &mut BlkReq,
-        resp: &mut BlkResp,
-    ) -> u16 {
-        assert_eq!(buf.len(), BLK_SIZE);
-        *req = BlkReq {
-            type_: ReqType::In as _,
-            reserved: 0,
-            sector: block_id as u64,
+    /// Create a new VirtIO-Block driver.
+    pub(crate) fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+        let config = VirtioBlkConfig::new(transport.as_mut());
+        let num_queues = transport.num_queues();
+        if num_queues != 1 {
+            return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
+        }
+        let queue = VirtQueue::new(0, 64, transport.as_mut()).expect("create virtqueue failed");
+        let mut device = Self {
+            config,
+            queue: SpinLock::new(queue),
+            transport,
         };
-        let token = self
-            .queue
-            .add(&[req.as_bytes()], &[buf, resp.as_bytes_mut()])
+
+        device
+            .transport
+            .register_cfg_callback(Box::new(config_space_change))
             .unwrap();
-        self.queue.notify();
-        token
+        device
+            .transport
+            .register_queue_callback(0, Box::new(handle_block_device), false)
+            .unwrap();
+
+        fn handle_block_device(_: &TrapFrame) {
+            jinux_block::get_device(&(super::DEVICE_NAME.to_string()))
+                .unwrap()
+                .handle_irq();
+        }
+
+        fn config_space_change(_: &TrapFrame) {
+            info!("Virtio block device config space change");
+        }
+        device.transport.finish_init();
+
+        jinux_block::register_device(super::DEVICE_NAME.to_string(), Arc::new(device));
+
+        Ok(())
     }
 
-    /// write data to block device, this function is non-blocking
-    /// return value is token
-    pub fn write_block_non_blocking(
-        &mut self,
-        block_id: usize,
-        buf: &[u8],
-        req: &mut BlkReq,
-        resp: &mut BlkResp,
-    ) -> u16 {
-        assert_eq!(buf.len(), BLK_SIZE);
-        *req = BlkReq {
-            type_: ReqType::Out as _,
-            reserved: 0,
-            sector: block_id as u64,
-        };
-        let token = self
-            .queue
-            .add(&[req.as_bytes(), buf], &[resp.as_bytes_mut()])
-            .expect("add queue failed");
-        self.queue.notify();
-        token
+    /// Negotiate features for the device specified bits 0~23
+    pub(crate) fn negotiate_features(features: u64) -> u64 {
+        let feature = BlkFeatures::from_bits(features).unwrap();
+        let support_features = BlkFeatures::from_bits(features).unwrap();
+        (feature & support_features).bits
+    }
+}
+
+impl jinux_block::BlockDevice for BlockDevice {
+    fn read_block(&self, block_id: usize, buf: &mut [u8]) {
+        self.read(block_id, buf);
+    }
+
+    fn write_block(&self, block_id: usize, buf: &[u8]) {
+        self.write(block_id, buf);
+    }
+
+    fn handle_irq(&self) {
+        info!("Virtio block device handle irq");
     }
 }

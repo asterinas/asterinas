@@ -27,7 +27,7 @@ pub fn jinux_main() -> ! {
 fn panic(info: &PanicInfo) -> ! {
     use jinux_frame::{exit_qemu, QemuExitCode};
 
-    println!("[panic]:{:?}", info);
+    println!("[panic]:{:#?}", info);
     jinux_frame::panic_handler();
     exit_qemu(QemuExitCode::Failed);
 }

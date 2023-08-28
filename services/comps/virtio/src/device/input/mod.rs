@@ -25,12 +25,12 @@
 //
 
 pub mod device;
-use core::mem::size_of;
-
+use crate::transport::VirtioTransport;
 use jinux_frame::io_mem::IoMem;
-use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
 use jinux_util::safe_ptr::SafePtr;
 use pod::Pod;
+
+pub static DEVICE_NAME: &'static str = "Virtio-Input";
 
 /// Select value used for [`VirtIOInput::query_config_select()`].
 #[repr(u8)]
@@ -72,20 +72,9 @@ pub struct VirtioInputConfig {
 }
 
 impl VirtioInputConfig {
-    pub(crate) fn new(cap: &CapabilityVirtioData, bars: [Option<BAR>; 6]) -> SafePtr<Self, IoMem> {
-        let bar = cap.bar;
-        let offset = cap.offset;
-        match bars[bar as usize].expect("Virtio pci block cfg:bar is none") {
-            BAR::Memory(address, _, _, _) => SafePtr::new(
-                IoMem::new(
-                    (address as usize + offset as usize)
-                        ..(address as usize + offset as usize + size_of::<Self>()),
-                )
-                .unwrap(),
-                0,
-            ),
-            BAR::IO(_, _) => panic!("Virtio pci block cfg:bar is IO type"),
-        }
+    pub(self) fn new(transport: &mut dyn VirtioTransport) -> SafePtr<Self, IoMem> {
+        let memory = transport.device_config_memory();
+        SafePtr::new(memory, 0)
     }
 }
 
@@ -121,8 +110,5 @@ pub struct InputEvent {
     pub value: u32,
 }
 
-const QUEUE_EVENT: usize = 0;
-const QUEUE_STATUS: usize = 1;
-
-// a parameter that can change
-const QUEUE_SIZE: usize = 64;
+const QUEUE_EVENT: u16 = 0;
+const QUEUE_STATUS: u16 = 1;

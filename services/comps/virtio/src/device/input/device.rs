@@ -1,15 +1,20 @@
-use crate::{device::VirtioDeviceError, queue::VirtQueue, VirtioPciCommonCfg};
-use alloc::{boxed::Box, vec::Vec};
-use bitflags::bitflags;
-use jinux_frame::sync::Mutex;
-use jinux_frame::{io_mem::IoMem, offset_of};
-use jinux_pci::{capability::vendor::virtio::CapabilityVirtioData, util::BAR};
-use jinux_util::{field_ptr, safe_ptr::SafePtr};
-use pod::Pod;
+use core::fmt::Debug;
 
-use super::{
-    InputConfigSelect, InputEvent, VirtioInputConfig, QUEUE_EVENT, QUEUE_SIZE, QUEUE_STATUS,
+use crate::{device::VirtioDeviceError, queue::VirtQueue, transport::VirtioTransport};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    sync::Arc,
+    vec::Vec,
 };
+use bitflags::bitflags;
+use jinux_frame::{io_mem::IoMem, offset_of, sync::SpinLock, trap::TrapFrame};
+use jinux_util::{field_ptr, safe_ptr::SafePtr};
+use log::{debug, info};
+use pod::Pod;
+use virtio_input_decoder::{DecodeType, Decoder};
+
+use super::{InputConfigSelect, InputEvent, VirtioInputConfig, QUEUE_EVENT, QUEUE_STATUS};
 
 bitflags! {
     /// The properties of input device.
@@ -46,56 +51,31 @@ pub const FF: u8 = 0x15;
 pub const PWR: u8 = 0x16;
 pub const FF_STATUS: u8 = 0x17;
 
+const QUEUE_SIZE: u16 = 64;
+
 /// Virtual human interface devices such as keyboards, mice and tablets.
 ///
 /// An instance of the virtio device represents one such input device.
 /// Device behavior mirrors that of the evdev layer in Linux,
 /// making pass-through implementations on top of evdev easy.
-#[derive(Debug)]
 pub struct InputDevice {
     config: SafePtr<VirtioInputConfig, IoMem>,
-    event_queue: Mutex<VirtQueue>,
+    event_queue: SpinLock<VirtQueue>,
     status_queue: VirtQueue,
-    pub event_buf: Mutex<Box<[InputEvent; QUEUE_SIZE]>>,
+    event_buf: SpinLock<Box<[InputEvent; QUEUE_SIZE as usize]>>,
+    callbacks: SpinLock<Vec<Arc<dyn Fn(DecodeType) + Send + Sync + 'static>>>,
+    transport: Box<dyn VirtioTransport>,
 }
 
 impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
-    pub fn new(
-        cap: &CapabilityVirtioData,
-        bars: [Option<BAR>; 6],
-        common_cfg: &SafePtr<VirtioPciCommonCfg, IoMem>,
-        notify_base_address: usize,
-        notify_off_multiplier: u32,
-        mut msix_vector_left: Vec<u16>,
-    ) -> Result<Self, VirtioDeviceError> {
-        let mut event_buf = Box::new([InputEvent::default(); QUEUE_SIZE]);
-        let vector_left = msix_vector_left.len();
-        let mut next_msix_vector = msix_vector_left.pop().unwrap();
-        let mut event_queue = VirtQueue::new(
-            &common_cfg,
-            QUEUE_EVENT,
-            QUEUE_SIZE as u16,
-            notify_base_address,
-            notify_off_multiplier,
-            next_msix_vector,
-        )
-        .expect("create event virtqueue failed");
-        next_msix_vector = if vector_left == 1 {
-            next_msix_vector
-        } else {
-            msix_vector_left.pop().unwrap()
-        };
-        let status_queue = VirtQueue::new(
-            &common_cfg,
-            QUEUE_STATUS,
-            QUEUE_SIZE as u16,
-            notify_base_address,
-            notify_off_multiplier,
-            next_msix_vector,
-        )
-        .expect("create status virtqueue failed");
+    pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+        let mut event_buf = Box::new([InputEvent::default(); QUEUE_SIZE as usize]);
+        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())
+            .expect("create event virtqueue failed");
+        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, transport.as_mut())
+            .expect("create status virtqueue failed");
 
         for (i, event) in event_buf.as_mut().iter_mut().enumerate() {
             let token = event_queue.add(&[], &[event.as_bytes_mut()]);
@@ -109,24 +89,56 @@ impl InputDevice {
             }
         }
 
-        Ok(Self {
-            config: VirtioInputConfig::new(cap, bars),
-            event_queue: Mutex::new(event_queue),
+        let mut device = Self {
+            config: VirtioInputConfig::new(transport.as_mut()),
+            event_queue: SpinLock::new(event_queue),
             status_queue,
-            event_buf: Mutex::new(event_buf),
-        })
-    }
+            event_buf: SpinLock::new(event_buf),
+            transport,
+            callbacks: SpinLock::new(Vec::new()),
+        };
 
-    // /// Acknowledge interrupt and process events.
-    // pub fn ack_interrupt(&mut self) -> bool {
-    //     self.transport.ack_interrupt()
-    // }
+        let mut raw_name: [u8; 128] = [0; 128];
+        device.query_config_select(InputConfigSelect::IdName, 0, &mut raw_name);
+        let name = String::from_utf8(raw_name.to_vec()).unwrap();
+        info!("Virtio input device name:{}", name);
+
+        let mut prop: [u8; 128] = [0; 128];
+        device.query_config_select(InputConfigSelect::PropBits, 0, &mut prop);
+        let input_prop = InputProp::from_bits(prop[0]).unwrap();
+        debug!("input device prop:{:?}", input_prop);
+
+        fn handle_input(_: &TrapFrame) {
+            debug!("Handle Virtio input interrupt");
+            let device = jinux_input::get_device(&(super::DEVICE_NAME.to_string())).unwrap();
+            device.handle_irq().unwrap();
+        }
+
+        fn config_space_change(_: &TrapFrame) {
+            debug!("input device config space change");
+        }
+
+        device
+            .transport
+            .register_cfg_callback(Box::new(config_space_change))
+            .unwrap();
+        device
+            .transport
+            .register_queue_callback(QUEUE_EVENT, Box::new(handle_input), false)
+            .unwrap();
+
+        device.transport.finish_init();
+
+        jinux_input::register_device(super::DEVICE_NAME.to_string(), Arc::new(device));
+
+        Ok(())
+    }
 
     /// Pop the pending event.
     pub fn pop_pending_event(&self) -> Option<InputEvent> {
         let mut lock = self.event_queue.lock();
         if let Ok((token, _)) = lock.pop_used() {
-            if token >= QUEUE_SIZE as u16 {
+            if token >= QUEUE_SIZE {
                 return None;
             }
             let event = &mut self.event_buf.lock()[token as usize];
@@ -165,5 +177,51 @@ impl InputDevice {
     pub(crate) fn negotiate_features(features: u64) -> u64 {
         assert_eq!(features, 0);
         0
+    }
+}
+
+impl jinux_input::InputDevice for InputDevice {
+    fn handle_irq(&self) -> Option<()> {
+        // one interrupt may contains serval input, so it should loop
+        loop {
+            let event = self.pop_pending_event()?;
+            let dtype = match Decoder::decode(
+                event.event_type as usize,
+                event.code as usize,
+                event.value as usize,
+            ) {
+                Ok(dtype) => dtype,
+                Err(_) => return Some(()),
+            };
+            let lock = self.callbacks.lock();
+            for callback in lock.iter() {
+                callback.call((dtype,));
+            }
+            match dtype {
+                virtio_input_decoder::DecodeType::Key(key, r#type) => {
+                    info!("{:?} {:?}", key, r#type);
+                }
+                virtio_input_decoder::DecodeType::Mouse(mouse) => info!("{:?}", mouse),
+            }
+        }
+    }
+
+    fn register_callbacks(
+        &self,
+        function: &'static (dyn Fn(virtio_input_decoder::DecodeType) + Send + Sync),
+    ) {
+        self.callbacks.lock().push(Arc::new(function))
+    }
+}
+
+impl Debug for InputDevice {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("InputDevice")
+            .field("config", &self.config)
+            .field("event_queue", &self.event_queue)
+            .field("status_queue", &self.status_queue)
+            .field("event_buf", &self.event_buf)
+            .field("transport", &self.transport)
+            .finish()
     }
 }
