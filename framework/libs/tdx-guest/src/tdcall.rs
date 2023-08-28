@@ -1,25 +1,34 @@
-use super::tdvmcall::*;
-use crate::{asm::asm_td_call, serial_println, TdxTrapFrame};
+//! The TDCALL instruction causes a VM exit to the Intel TDX module.
+//! It is used to call guest-side Intel TDX functions. For more information about
+//! TDCALL, please refer to the [Intel® TDX Module v1.5 ABI Specification](https://cdrdv2.intel.com/v1/dl/getContent/733579)
+
+use crate::asm::asm_td_call;
 use bitflags::bitflags;
 use core::fmt;
 
-const TDCALL_VP_INFO: u64 = 1;
-const TDCALL_MR_RTMR_EXTEND: u64 = 2;
-const TDCALL_VP_VEINFO_GET: u64 = 3;
-const TDCALL_MR_REPORT: u64 = 4;
-const TDCALL_VP_CPUIDVE_SET: u64 = 5;
-const TDCALL_MEM_PAGE_ACCEPT: u64 = 6;
-const TDCALL_VM_RD: u64 = 7;
-const TDCALL_VM_WR: u64 = 8;
-const TDCALL_MR_VERIFYREPORT: u64 = 22;
-const TDCALL_MEM_PAGE_ATTR_RD: u64 = 23;
-const TDCALL_MEM_PAGE_ATTR_WR: u64 = 24;
+/// TDCALL Instruction Leaf Numbers Definition.
+#[repr(u64)]
+pub enum TdcallNum {
+    VpInfo = 1,
+    MrRtmrExtend = 2,
+    VpVeinfoGet = 3,
+    MrReport = 4,
+    VpCpuidveSet = 5,
+    MemPageAccept = 6,
+    VmRd = 7,
+    VmWr = 8,
+    MrVerifyreport = 22,
+    MemPageAttrRd = 23,
+    MemPageAttrWr = 24,
+}
 
 bitflags! {
-    pub struct Attributes: u64 {
+    /// GuestTdAttributes is defined as a 64b field that specifies various guest TD attributes.
+    /// It is reported to the guest TD by TDG.VP.INFO and as part of TDREPORT_STRUCT returned by TDG.MR.REPORT.
+    pub struct GuestTdAttributes: u64 {
         /// Guest TD runs in off-TD debug mode.
         /// Its VCPU state and private memory are accessible by the host VMM.
-        const DEBUG = 1;
+        const DEBUG = 1 << 0;
         /// TD is migratable (using a Migration TD).
         const MIGRATABLE = 1 << 29;
         /// TD is allowed to use Supervisor Protection Keys.
@@ -36,7 +45,7 @@ bitflags! {
     struct CpuidveFlag: u64 {
         /// Flags that when CPL is 0, a CPUID executed
         /// by the guest TD will cause a #VE unconditionally.
-        const SUPERVISOR = 1;
+        const SUPERVISOR = 1 << 0;
         /// Flags that when CPL > 0, a CPUID executed
         /// by the guest TD will cause a #VE unconditionally.
         const USER = 1 << 1;
@@ -254,7 +263,7 @@ pub struct TdgVpInfo {
     /// Only GPAW values 48 and 52 are possible.
     pub gpaw: Gpaw,
     /// The TD's ATTRIBUTES (provided as input to TDH.MNG.INIT)
-    pub attributes: Attributes,
+    pub attributes: GuestTdAttributes,
     pub num_vcpus: u32,
     pub max_vcpus: u32,
     pub vcpu_index: u32,
@@ -350,16 +359,16 @@ impl From<TdCallError> for InitError {
 }
 
 /// Get guest TD execution environment information.
-pub(crate) fn tdg_vp_info() -> Result<TdgVpInfo, TdCallError> {
+pub fn get_tdinfo() -> Result<TdgVpInfo, TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_VP_INFO,
+        rax: TdcallNum::VpInfo as u64,
         ..Default::default()
     };
     match td_call(&mut args) {
         Ok(()) => {
             let td_info = TdgVpInfo {
                 gpaw: Gpaw::from(args.rcx),
-                attributes: Attributes::from_bits_truncate(args.rdx),
+                attributes: GuestTdAttributes::from_bits_truncate(args.rdx),
                 num_vcpus: args.r8 as u32,
                 max_vcpus: (args.r8 >> 32) as u32,
                 vcpu_index: args.r9 as u32,
@@ -372,9 +381,9 @@ pub(crate) fn tdg_vp_info() -> Result<TdgVpInfo, TdCallError> {
 }
 
 /// Get Virtualization Exception Information for the recent #VE exception.
-pub fn tdg_vp_veinfo_get() -> Result<TdgVeInfo, TdCallError> {
+pub fn get_veinfo() -> Result<TdgVeInfo, TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_VP_VEINFO_GET,
+        rax: TdcallNum::VpVeinfoGet as u64,
         ..Default::default()
     };
     match td_call(&mut args) {
@@ -393,64 +402,10 @@ pub fn tdg_vp_veinfo_get() -> Result<TdgVeInfo, TdCallError> {
     }
 }
 
-/// Perform a TD Exit to the host VMM.
-pub(crate) fn tdg_vp_vmcall(trapframe: &mut impl TdxTrapFrame, ve_info: &TdgVeInfo) {
-    match ve_info.exit_reason.into() {
-        TdxVirtualExceptionType::Hlt => {
-            serial_println!("Ready to halt");
-            tdvmcall_hlt();
-        }
-        TdxVirtualExceptionType::Io => {
-            if !tdvmcall_io(trapframe, ve_info) {
-                serial_println!("Handle tdx ioexit errors, ready to halt");
-                tdvmcall_hlt();
-            }
-        }
-        TdxVirtualExceptionType::MsrRead => {
-            let msr = tdvmcall_rdmsr(trapframe.rcx() as u32).unwrap();
-            trapframe.set_rax((msr as u32 & u32::MAX) as usize);
-            trapframe.set_rdx(((msr >> 32) as u32 & u32::MAX) as usize);
-        }
-        TdxVirtualExceptionType::MsrWrite => {
-            let data = trapframe.rax() as u64 | ((trapframe.rdx() as u64) << 32);
-            tdvmcall_wrmsr(trapframe.rcx() as u32, data).unwrap();
-        }
-        TdxVirtualExceptionType::CpuId => {
-            let cpuid = tdvmcall_cpuid(trapframe.rax() as u32, trapframe.rcx() as u32).unwrap();
-            let mask = 0xFFFF_FFFF_0000_0000_usize;
-            trapframe.set_rax((trapframe.rax() & mask) | cpuid.eax);
-            trapframe.set_rbx((trapframe.rbx() & mask) | cpuid.ebx);
-            trapframe.set_rcx((trapframe.rcx() & mask) | cpuid.ecx);
-            trapframe.set_rdx((trapframe.rdx() & mask) | cpuid.edx);
-        }
-        _ => {
-            unreachable!()
-        }
-    };
-}
-
-#[allow(dead_code)]
-pub fn deadloop() {
-    #[allow(clippy::empty_loop)]
-    loop {
-        x86_64::instructions::interrupts::enable();
-        x86_64::instructions::hlt();
-    }
-}
-
-fn td_call(args: &mut TdcallArgs) -> Result<(), TdCallError> {
-    let td_call_result = unsafe { asm_td_call(args) };
-    if td_call_result == 0 {
-        Ok(())
-    } else {
-        Err(td_call_result.into())
-    }
-}
-
 /// Extend a TDCS.RTMR measurement register.
-fn tdg_mr_rtmr_extend() -> Result<(), TdCallError> {
+pub fn extend_rtmr() -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_MR_RTMR_EXTEND,
+        rax: TdcallNum::MrRtmrExtend as u64,
         ..Default::default()
     };
     match td_call(&mut args) {
@@ -462,9 +417,9 @@ fn tdg_mr_rtmr_extend() -> Result<(), TdCallError> {
 /// TDG.MR.REPORT creates a TDREPORT_STRUCT structure that contains the measurements/configuration
 /// information of the guest TD that called the function, measurements/configuration information
 /// of the Intel TDX module and a REPORTMACSTRUCT.
-fn tdg_mr_report(report_addr: u64, data_addr: u64) -> Result<(), TdCallError> {
+pub fn get_report(report_addr: u64, data_addr: u64) -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_MR_REPORT,
+        rax: TdcallNum::MrReport as u64,
         rcx: report_addr,
         rdx: data_addr,
         ..Default::default()
@@ -477,9 +432,9 @@ fn tdg_mr_report(report_addr: u64, data_addr: u64) -> Result<(), TdCallError> {
 
 /// Verify a cryptographic REPORTMACSTRUCT that describes the contents of a TD,
 /// to determine that it was created on the current TEE on the current platform.
-fn tdg_mr_verifyreport(report_mac_addr: u64) -> Result<(), TdCallError> {
+pub fn verify_report(report_mac_addr: u64) -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_MR_VERIFYREPORT,
+        rax: TdcallNum::MrVerifyreport as u64,
         rcx: report_mac_addr,
         ..Default::default()
     };
@@ -490,9 +445,9 @@ fn tdg_mr_verifyreport(report_mac_addr: u64) -> Result<(), TdCallError> {
 }
 
 /// Accept a pending private page and initialize it to all-0 using the TD ephemeral private key.
-fn tdg_mem_page_accept(sept_level: u64, addr: u64) -> Result<(), TdCallError> {
+pub fn accept_page(sept_level: u64, addr: u64) -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_MEM_PAGE_ACCEPT,
+        rax: TdcallNum::MemPageAccept as u64,
         rcx: sept_level | (addr << 12),
         ..Default::default()
     };
@@ -503,9 +458,9 @@ fn tdg_mem_page_accept(sept_level: u64, addr: u64) -> Result<(), TdCallError> {
 }
 
 /// Read the GPA mapping and attributes of a TD private page.
-fn tdg_mem_page_attr_rd(phy_addr: u64) -> Result<PageAttr, TdCallError> {
+pub fn read_page_attr(phy_addr: u64) -> Result<PageAttr, TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_MEM_PAGE_ATTR_RD,
+        rax: TdcallNum::MemPageAttrRd as u64,
         rcx: phy_addr,
         ..Default::default()
     };
@@ -522,9 +477,9 @@ fn tdg_mem_page_attr_rd(phy_addr: u64) -> Result<PageAttr, TdCallError> {
 }
 
 /// Write the attributes of a private page. Create or remove L2 page aliases as required.
-fn tdg_mem_page_attr_wr(page_attr: PageAttr, attr_flags: u64) -> Result<PageAttr, TdCallError> {
+pub fn write_page_attr(page_attr: PageAttr, attr_flags: u64) -> Result<PageAttr, TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_MEM_PAGE_ATTR_WR,
+        rax: TdcallNum::MemPageAttrWr as u64,
         rcx: page_attr.gpa_mapping,
         rdx: u64::from(page_attr.gpa_attr),
         r8: attr_flags,
@@ -543,9 +498,9 @@ fn tdg_mem_page_attr_wr(page_attr: PageAttr, attr_flags: u64) -> Result<PageAttr
 }
 
 /// Read a TD-scope metadata field (control structure field) of a TD.
-fn tdg_vm_rd(field_identifier: u64) -> Result<u64, TdCallError> {
+pub fn read_td_metadata(field_identifier: u64) -> Result<u64, TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_VM_RD,
+        rax: TdcallNum::VmRd as u64,
         rdx: field_identifier,
         ..Default::default()
     };
@@ -563,18 +518,19 @@ fn tdg_vm_rd(field_identifier: u64) -> Result<u64, TdCallError> {
 /// in R8 are to be written to the field.
 ///
 /// It returns previous contents of the field.
-fn tdg_vm_wr(field_identifier: u64, data: u64, write_mask: u64) -> Result<u64, TdCallError> {
+pub fn write_td_metadata(
+    field_identifier: u64,
+    data: u64,
+    write_mask: u64,
+) -> Result<u64, TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_VM_WR,
+        rax: TdcallNum::VmWr as u64,
         rdx: field_identifier,
         r8: data,
         r9: write_mask,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => Ok(args.r8),
-        Err(res) => Err(res),
-    }
+    td_call(&mut args).map(|_| args.r8)
 }
 
 /// TDG.VP.CPUIDVE.SET controls unconditional #VE on CPUID execution by the guest TD.
@@ -583,14 +539,23 @@ fn tdg_vm_wr(field_identifier: u64, data: u64, write_mask: u64) -> Result<u64, T
 ///
 /// The guest TD may control the same settings by writing to the
 /// VCPU-scope metadata fields CPUID_SUPERVISOR_VE and CPUID_USER_VE using TDG.VP.WR.
-fn tdg_vp_cpuidve_set(cpuidve_flag: u64) -> Result<(), TdCallError> {
+pub fn set_cpuidve(cpuidve_flag: u64) -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
-        rax: TDCALL_VP_CPUIDVE_SET,
+        rax: TdcallNum::VpCpuidveSet as u64,
         rcx: cpuidve_flag,
         ..Default::default()
     };
     match td_call(&mut args) {
         Ok(()) => Ok(()),
         Err(res) => Err(res),
+    }
+}
+
+fn td_call(args: &mut TdcallArgs) -> Result<(), TdCallError> {
+    let td_call_result = unsafe { asm_td_call(args) };
+    if td_call_result == 0 {
+        Ok(())
+    } else {
+        Err(td_call_result.into())
     }
 }
