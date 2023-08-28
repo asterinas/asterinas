@@ -138,8 +138,9 @@ impl IfaceCommon {
         };
         if has_events {
             self.bound_sockets.read().iter().for_each(|bound_socket| {
-                let bound_socket = bound_socket.upgrade().unwrap();
-                bound_socket.update_socket_state();
+                if let Some(bound_socket) = bound_socket.upgrade() {
+                    bound_socket.update_socket_state();
+                }
             });
         }
 

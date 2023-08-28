@@ -174,6 +174,7 @@ impl AnyBoundSocket {
 impl Drop for AnyBoundSocket {
     fn drop(&mut self) {
         self.close();
+        self.iface.poll();
         self.iface.common().remove_socket(self.handle);
         self.iface.common().release_port(self.port);
         self.iface.common().remove_bound_socket(self.weak_ref());
