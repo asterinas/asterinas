@@ -1,3 +1,8 @@
+//! The TDVMCALL helps invoke services from the host VMM. From the perspective of the host VMM, the TDVMCALL is a trap-like, VM exit into
+//! the host VMM, reported via the SEAMRET instruction flow.
+//! By design, after the SEAMRET, the host VMM services the request specified in the parameters
+//! passed by the TD during the TDG.VP.VMCALL (that are passed via SEAMRET to the VMM), then
+//! resumes the TD via a SEAMCALL [TDH.VP.ENTER] invocation.
 extern crate alloc;
 
 use crate::{asm::asm_td_vmcall, tdcall::TdgVeInfo, TdxTrapFrame};
@@ -9,15 +14,19 @@ use x86_64::{
     structures::port::PortRead,
 };
 
-const TDVMCALL_CPUID: u64 = 0x0000a;
-const TDVMCALL_HLT: u64 = 0x0000c;
-const TDVMCALL_IO: u64 = 0x0001e;
-const TDVMCALL_RDMSR: u64 = 0x0001f;
-const TDVMCALL_WRMSR: u64 = 0x00020;
-const TDVMCALL_REQUEST_MMIO: u64 = 0x00030;
-const TDVMCALL_WBINVD: u64 = 0x00036;
-const TDVMCALL_PCONFIG: u64 = 0x00041;
-const TDVMCALL_MAPGPA: u64 = 0x10001;
+/// TDVMCALL Instruction Leaf Numbers Definition.
+#[repr(u64)]
+pub enum TdvmcallNum {
+    Cpuid = 0x0000a,
+    Hlt = 0x0000c,
+    Io = 0x0001e,
+    Rdmsr = 0x0001f,
+    Wrmsr = 0x00020,
+    RequestMmio = 0x00030,
+    Wbinvd = 0x00036,
+    Pconfig = 0x00041,
+    Mapgpa = 0x10001,
+}
 
 const SERIAL_IO_PORT: u16 = 0x3F8;
 const SERIAL_LINE_STS: u16 = 0x3FD;
@@ -62,26 +71,26 @@ pub(crate) struct TdVmcallArgs {
 
 #[repr(C)]
 #[derive(Debug, Default)]
-pub(crate) struct CpuIdInfo {
+pub struct CpuIdInfo {
     pub eax: usize,
     pub ebx: usize,
     pub ecx: usize,
     pub edx: usize,
 }
 
-enum Direction {
+pub enum Direction {
     In,
     Out,
 }
 
-enum Operand {
+pub enum Operand {
     Dx,
     Immediate,
 }
 
-pub(crate) fn tdvmcall_cpuid(eax: u32, ecx: u32) -> Result<CpuIdInfo, TdVmcallError> {
+pub fn cpuid(eax: u32, ecx: u32) -> Result<CpuIdInfo, TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TDVMCALL_CPUID,
+        r11: TdvmcallNum::Cpuid as u64,
         r12: eax as u64,
         r13: ecx as u64,
         ..Default::default()
@@ -97,19 +106,19 @@ pub(crate) fn tdvmcall_cpuid(eax: u32, ecx: u32) -> Result<CpuIdInfo, TdVmcallEr
     }
 }
 
-pub(crate) fn tdvmcall_hlt() {
+pub fn hlt() {
     let interrupt_blocked = !rflags::read().contains(RFlags::INTERRUPT_FLAG);
     let mut args = TdVmcallArgs {
-        r11: TDVMCALL_HLT,
+        r11: TdvmcallNum::Hlt as u64,
         r12: interrupt_blocked as u64,
         ..Default::default()
     };
     let _ = td_vmcall(&mut args);
 }
 
-pub(crate) fn tdvmcall_rdmsr(index: u32) -> Result<u64, TdVmcallError> {
+pub fn rdmsr(index: u32) -> Result<u64, TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TDVMCALL_RDMSR,
+        r11: TdvmcallNum::Rdmsr as u64,
         r12: index as u64,
         ..Default::default()
     };
@@ -119,9 +128,9 @@ pub(crate) fn tdvmcall_rdmsr(index: u32) -> Result<u64, TdVmcallError> {
     }
 }
 
-pub(crate) fn tdvmcall_wrmsr(index: u32, value: u64) -> Result<(), TdVmcallError> {
+pub fn wrmsr(index: u32, value: u64) -> Result<(), TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TDVMCALL_WRMSR,
+        r11: TdvmcallNum::Wrmsr as u64,
         r12: index as u64,
         r13: value,
         ..Default::default()
@@ -133,9 +142,9 @@ pub(crate) fn tdvmcall_wrmsr(index: u32, value: u64) -> Result<(), TdVmcallError
 }
 
 /// Used to help perform WBINVD operation.
-pub(crate) fn tdvmcall_wbinvd(wbinvd: u64) -> Result<(), TdVmcallError> {
+pub fn wbinvd(wbinvd: u64) -> Result<(), TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TDVMCALL_WBINVD,
+        r11: TdvmcallNum::Wbinvd as u64,
         r12: wbinvd,
         ..Default::default()
     };
@@ -145,13 +154,13 @@ pub(crate) fn tdvmcall_wbinvd(wbinvd: u64) -> Result<(), TdVmcallError> {
     }
 }
 
-pub(crate) fn tdvmcall_read_mmio(size: u64, mmio_addr: u64) -> Result<u64, TdVmcallError> {
+pub fn read_mmio(size: u64, mmio_addr: u64) -> Result<u64, TdVmcallError> {
     match size {
         1 | 2 | 4 | 8 => {}
         _ => return Err(TdVmcallError::TdxInvalidOperand),
     }
     let mut args = TdVmcallArgs {
-        r11: TDVMCALL_REQUEST_MMIO,
+        r11: TdvmcallNum::RequestMmio as u64,
         r12: size,
         r13: 0,
         r14: mmio_addr,
@@ -163,11 +172,7 @@ pub(crate) fn tdvmcall_read_mmio(size: u64, mmio_addr: u64) -> Result<u64, TdVmc
     }
 }
 
-pub(crate) fn tdvmcall_write_mmio(
-    size: u64,
-    mmio_addr: u64,
-    data: u64,
-) -> Result<(), TdVmcallError> {
+pub fn write_mmio(size: u64, mmio_addr: u64, data: u64) -> Result<(), TdVmcallError> {
     match size {
         1 | 2 | 4 | 8 => {}
         _ => {
@@ -175,7 +180,7 @@ pub(crate) fn tdvmcall_write_mmio(
         }
     }
     let mut args = TdVmcallArgs {
-        r11: TDVMCALL_REQUEST_MMIO,
+        r11: TdvmcallNum::RequestMmio as u64,
         r12: size,
         r13: 1,
         r14: mmio_addr,
@@ -188,7 +193,7 @@ pub(crate) fn tdvmcall_write_mmio(
     }
 }
 
-pub(crate) fn tdvmcall_io(trapframe: &mut impl TdxTrapFrame, ve_info: &TdgVeInfo) -> bool {
+pub fn handle_io(trapframe: &mut impl TdxTrapFrame, ve_info: &TdgVeInfo) -> bool {
     let size = match ve_info.exit_qualification & 0x3 {
         0 => 1,
         1 => 2,
@@ -220,10 +225,10 @@ pub(crate) fn tdvmcall_io(trapframe: &mut impl TdxTrapFrame, ve_info: &TdgVeInfo
     true
 }
 
-macro_rules! tdvmcall_io_read {
+macro_rules! io_read {
     ($port:expr, $ty:ty) => {{
         let mut args = TdVmcallArgs {
-            r11: TDVMCALL_IO,
+            r11: TdvmcallNum::Io as u64,
             r12: core::mem::size_of::<$ty>() as u64,
             r13: IO_READ,
             r14: $port as u64,
@@ -236,19 +241,19 @@ macro_rules! tdvmcall_io_read {
     }};
 }
 
-fn io_read(size: usize, port: u16) -> Result<u32, TdVmcallError> {
+pub fn io_read(size: usize, port: u16) -> Result<u32, TdVmcallError> {
     match size {
-        1 => tdvmcall_io_read!(port, u8),
-        2 => tdvmcall_io_read!(port, u16),
-        4 => tdvmcall_io_read!(port, u32),
+        1 => io_read!(port, u8),
+        2 => io_read!(port, u16),
+        4 => io_read!(port, u32),
         _ => unreachable!(),
     }
 }
 
-macro_rules! tdvmcall_io_write {
+macro_rules! io_write {
     ($port:expr, $byte:expr, $size:expr) => {{
         let mut args = TdVmcallArgs {
-            r11: TDVMCALL_IO,
+            r11: TdvmcallNum::Io as u64,
             r12: core::mem::size_of_val(&$byte) as u64,
             r13: IO_WRITE,
             r14: $port as u64,
@@ -262,11 +267,11 @@ macro_rules! tdvmcall_io_write {
     }};
 }
 
-fn io_write(size: usize, port: u16, byte: u32) -> Result<(), TdVmcallError> {
+pub fn io_write(size: usize, port: u16, byte: u32) -> Result<(), TdVmcallError> {
     match size {
-        1 => tdvmcall_io_write!(port, byte, u8),
-        2 => tdvmcall_io_write!(port, byte, u16),
-        4 => tdvmcall_io_write!(port, byte, u32),
+        1 => io_write!(port, byte, u8),
+        2 => io_write!(port, byte, u16),
+        4 => io_write!(port, byte, u32),
         _ => unreachable!(),
     }
 }
@@ -312,15 +317,15 @@ fn serial_write_byte(byte: u8) {
     match byte {
         8 | 0x7F => {
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            tdvmcall_io_write!(SERIAL_IO_PORT, 8, u8).unwrap();
+            io_write!(SERIAL_IO_PORT, 8, u8).unwrap();
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            tdvmcall_io_write!(SERIAL_IO_PORT, b' ', u8).unwrap();
+            io_write!(SERIAL_IO_PORT, b' ', u8).unwrap();
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            tdvmcall_io_write!(SERIAL_IO_PORT, 8, u8).unwrap();
+            io_write!(SERIAL_IO_PORT, 8, u8).unwrap();
         }
         _ => {
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            tdvmcall_io_write!(SERIAL_IO_PORT, byte, u8).unwrap();
+            io_write!(SERIAL_IO_PORT, byte, u8).unwrap();
         }
     }
 }
