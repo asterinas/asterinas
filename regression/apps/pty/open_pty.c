@@ -15,8 +15,6 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    printf("master fd: %d\n", master);
-    printf("slave fd: %d\n", slave);
     printf("slave name: %s\n", name);
 
     // Set pty slave terminal attributes
@@ -33,7 +31,7 @@ int main() {
     char buf[256];
     ssize_t n = read(master, buf, sizeof(buf));
     if (n > 0) {
-        printf("read %ld bytes from slave: %.*s\n", n, (int)n, buf);
+        printf("read %ld bytes from slave: %.*s", n, (int)n, buf);
     }
 
     // Write to pty master
@@ -43,7 +41,7 @@ int main() {
     char nbuf[256];
     ssize_t nn = read(slave, nbuf, sizeof(nbuf));
     if (nn > 0) {
-        printf("read %ld bytes from master: %.*s\n", nn, (int)nn, nbuf);
+        printf("read %ld bytes from master: %.*s", nn, (int)nn, nbuf);
     }
 
     close(master);

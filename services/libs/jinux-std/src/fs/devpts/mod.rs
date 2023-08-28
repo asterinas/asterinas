@@ -12,7 +12,6 @@ use jinux_util::{id_allocator::IdAlloc, slot_vec::SlotVec};
 use self::master::PtyMasterInode;
 use self::ptmx::Ptmx;
 use self::slave::PtySlaveInode;
-use crate::device::PtyMaster;
 
 mod master;
 mod ptmx;
@@ -61,7 +60,7 @@ impl DevPts {
             .alloc()
             .ok_or_else(|| Error::with_message(Errno::EIO, "cannot alloc index"))?;
 
-        let (master, slave) = PtyMaster::new_pair(index as u32, self.root.ptmx.clone())?;
+        let (master, slave) = crate::device::new_pty_pair(index as u32, self.root.ptmx.clone())?;
 
         let master_inode = PtyMasterInode::new(master);
         let slave_inode = PtySlaveInode::new(slave, self.this.clone());
@@ -73,10 +72,10 @@ impl DevPts {
     /// Remove the slave from fs.
     ///
     /// This is called when the master is being dropped.
-    fn remove_slave(&self, index: usize) -> Option<Arc<PtySlaveInode>> {
+    fn remove_slave(&self, index: u32) -> Option<Arc<PtySlaveInode>> {
         let removed_slave = self.root.remove_slave(&index.to_string());
         if removed_slave.is_some() {
-            self.index_alloc.lock().free(index);
+            self.index_alloc.lock().free(index as usize);
         }
         removed_slave
     }

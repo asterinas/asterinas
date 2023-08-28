@@ -151,6 +151,7 @@ impl VmMapping {
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         let vmo_read_offset = self.vmo_offset() + offset;
 
+        // TODO: the current logic is vulnerable to TOCTTOU attack, since the permission may change after check.
         let page_idx_range = get_page_idx_range(&(vmo_read_offset..vmo_read_offset + buf.len()));
         let read_perm = VmPerm::R;
         for page_idx in page_idx_range {
