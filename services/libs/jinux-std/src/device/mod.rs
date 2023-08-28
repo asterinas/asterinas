@@ -7,6 +7,7 @@ mod zero;
 
 use crate::fs::device::{add_node, Device, DeviceId, DeviceType};
 use crate::prelude::*;
+pub use pty::new_pty_pair;
 pub use pty::{PtyMaster, PtySlave};
 pub use random::Random;
 pub use urandom::Urandom;

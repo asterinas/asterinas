@@ -14,27 +14,27 @@ bitflags! {
     #[repr(C)]
     pub struct C_IFLAGS: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h
-        const IGNBRK	= 0x001;			/* Ignore break condition */
-        const BRKINT	= 0x002;			/* Signal interrupt on break */
-        const IGNPAR	= 0x004;			/* Ignore characters with parity errors */
-        const PARMRK	= 0x008;			/* Mark parity and framing errors */
-        const INPCK	    = 0x010;			/* Enable input parity check */
-        const ISTRIP	= 0x020;			/* Strip 8th bit off characters */
-        const INLCR	    = 0x040;			/* Map NL to CR on input */
-        const IGNCR	    = 0x080;			/* Ignore CR */
-        const ICRNL	    = 0x100;			/* Map CR to NL on input */
-        const IXANY	    = 0x800;			/* Any character will restart after stop */
+        const IGNBRK  = 0x001;			/* Ignore break condition */
+        const BRKINT  = 0x002;			/* Signal interrupt on break */
+        const IGNPAR  = 0x004;			/* Ignore characters with parity errors */
+        const PARMRK  = 0x008;			/* Mark parity and framing errors */
+        const INPCK   = 0x010;			/* Enable input parity check */
+        const ISTRIP  = 0x020;			/* Strip 8th bit off characters */
+        const INLCR   = 0x040;			/* Map NL to CR on input */
+        const IGNCR   = 0x080;			/* Ignore CR */
+        const ICRNL   = 0x100;			/* Map CR to NL on input */
+        const IXANY   = 0x800;			/* Any character will restart after stop */
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h
-        const IUCLC	    = 0x0200;
-        const IXON	    = 0x0400;
-        const IXOFF	    = 0x1000;
-        const IMAXBEL	= 0x2000;
-        const IUTF8	    = 0x4000;
+        const IUCLC   = 0x0200;
+        const IXON    = 0x0400;
+        const IXOFF   = 0x1000;
+        const IMAXBEL = 0x2000;
+        const IUTF8   = 0x4000;
     }
 }
 
-impl C_IFLAGS {
-    pub fn new_default() -> Self {
+impl Default for C_IFLAGS {
+    fn default() -> Self {
         C_IFLAGS::ICRNL | C_IFLAGS::IXON
     }
 }
@@ -43,19 +43,19 @@ bitflags! {
     #[repr(C)]
     #[derive(Pod)]
     pub struct C_OFLAGS: u32 {
-        const OPOST	= 0x1 << 0;			/* Perform output processing */
-        const OLCUC	= 0x1 << 1;
-        const ONLCR = 0x1 << 2;
-        const OCRNL	= 0x1 << 3;
-        const ONOCR	= 0x1 << 4;
-        const ONLRET= 0x1 << 5;
-        const OFILL	= 0x1 << 6;
-        const OFDEL	= 0x1 << 7;
+        const OPOST  = 1 << 0;			/* Perform output processing */
+        const OLCUC  = 1 << 1;
+        const ONLCR  = 1 << 2;
+        const OCRNL  = 1 << 3;
+        const ONOCR  = 1 << 4;
+        const ONLRET = 1 << 5;
+        const OFILL  = 1 << 6;
+        const OFDEL  = 1 << 7;
     }
 }
 
-impl C_OFLAGS {
-    pub fn new_default() -> Self {
+impl Default for C_OFLAGS {
+    fn default() -> Self {
         C_OFLAGS::OPOST | C_OFLAGS::ONLCR
     }
 }
@@ -64,14 +64,16 @@ impl C_OFLAGS {
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct C_CFLAGS(u32);
 
-impl C_CFLAGS {
-    pub fn new_default() -> Self {
+impl Default for C_CFLAGS {
+    fn default() -> Self {
         let cbaud = C_CFLAGS_BAUD::B38400 as u32;
         let csize = C_CFLAGS_CSIZE::CS8 as u32;
         let c_cflags = cbaud | csize | CREAD;
         Self(c_cflags)
     }
+}
 
+impl C_CFLAGS {
     pub fn cbaud(&self) -> Result<C_CFLAGS_BAUD> {
         let cbaud = self.0 & CBAUD_MASK;
         Ok(C_CFLAGS_BAUD::try_from(cbaud)?)
@@ -125,27 +127,27 @@ bitflags! {
     #[repr(C)]
     #[derive(Pod)]
     pub struct C_LFLAGS: u32 {
-        const ISIG	=   0x00001;
-        const ICANON=   0x00002;
-        const XCASE	=   0x00004;
-        const ECHO	=   0x00008;
-        const ECHOE	=   0x00010;
-        const ECHOK	=   0x00020;
-        const ECHONL=	0x00040;
-        const NOFLSH=	0x00080;
-        const TOSTOP=	0x00100;
-        const ECHOCTL=	0x00200;
-        const ECHOPRT=	0x00400;
-        const ECHOKE=   0x00800;
-        const FLUSHO=	0x01000;
-        const PENDIN=	0x04000;
-        const IEXTEN=	0x08000;
-        const EXTPROC=	0x10000;
+        const ISIG    = 0x00001;
+        const ICANON  = 0x00002;
+        const XCASE   = 0x00004;
+        const ECHO    = 0x00008;
+        const ECHOE   = 0x00010;
+        const ECHOK   = 0x00020;
+        const ECHONL  = 0x00040;
+        const NOFLSH  = 0x00080;
+        const TOSTOP  = 0x00100;
+        const ECHOCTL = 0x00200;
+        const ECHOPRT = 0x00400;
+        const ECHOKE  = 0x00800;
+        const FLUSHO  = 0x01000;
+        const PENDIN  = 0x04000;
+        const IEXTEN  = 0x08000;
+        const EXTPROC = 0x10000;
     }
 }
 
-impl C_LFLAGS {
-    pub fn new_default() -> Self {
+impl Default for C_LFLAGS {
+    fn default() -> Self {
         C_LFLAGS::ICANON
             | C_LFLAGS::ECHO
             | C_LFLAGS::ISIG
@@ -159,7 +161,7 @@ impl C_LFLAGS {
 
 /* c_cc characters index*/
 #[repr(u32)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum CC_C_CHAR {
     VINTR = 0,
     VQUIT = 1,
@@ -203,39 +205,6 @@ impl CC_C_CHAR {
             CC_C_CHAR::VEOL2 => '\0' as u8,
         }
     }
-
-    pub fn as_usize(&self) -> usize {
-        *self as usize
-    }
-
-    pub fn from_char(item: u8) -> Result<Self> {
-        if item == Self::VINTR.default_char() {
-            return Ok(Self::VINTR);
-        }
-        if item == Self::VQUIT.default_char() {
-            return Ok(Self::VQUIT);
-        }
-        if item == Self::VINTR.default_char() {
-            return Ok(Self::VINTR);
-        }
-        if item == Self::VERASE.default_char() {
-            return Ok(Self::VERASE);
-        }
-        if item == Self::VEOF.default_char() {
-            return Ok(Self::VEOF);
-        }
-        if item == Self::VSTART.default_char() {
-            return Ok(Self::VSTART);
-        }
-        if item == Self::VSTOP.default_char() {
-            return Ok(Self::VSTOP);
-        }
-        if item == Self::VSUSP.default_char() {
-            return Ok(Self::VSUSP);
-        }
-
-        return_errno_with_message!(Errno::EINVAL, "Not a valid cc_char");
-    }
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
@@ -252,12 +221,12 @@ pub struct KernelTermios {
 impl KernelTermios {
     pub fn default() -> Self {
         let mut termios = Self {
-            c_iflags: C_IFLAGS::new_default(),
-            c_oflags: C_OFLAGS::new_default(),
-            c_cflags: C_CFLAGS::new_default(),
-            c_lflags: C_LFLAGS::new_default(),
+            c_iflags: C_IFLAGS::default(),
+            c_oflags: C_OFLAGS::default(),
+            c_cflags: C_CFLAGS::default(),
+            c_lflags: C_LFLAGS::default(),
             c_line: 0,
-            c_cc: [0; KERNEL_NCCS],
+            c_cc: [CcT::default(); KERNEL_NCCS],
         };
         *termios.get_special_char_mut(CC_C_CHAR::VINTR) = CC_C_CHAR::VINTR.default_char();
         *termios.get_special_char_mut(CC_C_CHAR::VQUIT) = CC_C_CHAR::VQUIT.default_char();
@@ -280,11 +249,11 @@ impl KernelTermios {
     }
 
     pub fn get_special_char(&self, cc_c_char: CC_C_CHAR) -> &CcT {
-        &self.c_cc[cc_c_char.as_usize()]
+        &self.c_cc[cc_c_char as usize]
     }
 
     pub fn get_special_char_mut(&mut self, cc_c_char: CC_C_CHAR) -> &mut CcT {
-        &mut self.c_cc[cc_c_char.as_usize()]
+        &mut self.c_cc[cc_c_char as usize]
     }
 
     /// Canonical mode means we will handle input by lines, not by single character
