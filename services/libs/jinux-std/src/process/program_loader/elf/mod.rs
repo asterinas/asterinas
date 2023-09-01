@@ -4,4 +4,4 @@ mod init_stack;
 mod load_elf;
 
 pub use init_stack::INIT_STACK_SIZE;
-pub use load_elf::{load_elf_to_root_vmar, ElfLoadInfo};
+pub use load_elf::{load_elf_to_vm, ElfLoadInfo};

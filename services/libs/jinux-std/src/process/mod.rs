@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicI32, Ordering};
 use self::posix_thread::posix_thread_ext::PosixThreadExt;
 use self::process_group::ProcessGroup;
 use self::process_vm::user_heap::UserHeap;
-use self::process_vm::UserVm;
+use self::process_vm::ProcessVm;
 use self::rlimit::ResourceLimits;
 use self::signal::constants::SIGCHLD;
 use self::signal::sig_disposition::SigDispositions;
@@ -45,8 +45,7 @@ pub struct Process {
     // Immutable Part
     pid: Pid,
 
-    user_vm: UserVm,
-    root_vmar: Arc<Vmar<Full>>,
+    process_vm: ProcessVm,
     /// wait for child status changed
     waiting_children: WaitQueue,
 
@@ -98,8 +97,7 @@ impl Process {
         parent: Weak<Process>,
         threads: Vec<Arc<Thread>>,
         executable_path: String,
-        user_vm: UserVm,
-        root_vmar: Arc<Vmar<Full>>,
+        process_vm: ProcessVm,
         process_group: Weak<ProcessGroup>,
         file_table: Arc<Mutex<FileTable>>,
         fs: Arc<RwLock<FsResolver>>,
@@ -113,8 +111,7 @@ impl Process {
             pid,
             threads: Mutex::new(threads),
             executable_path: RwLock::new(executable_path),
-            user_vm,
-            root_vmar,
+            process_vm,
             waiting_children,
             exit_code: AtomicI32::new(0),
             status: Mutex::new(ProcessStatus::Runnable),
@@ -157,13 +154,12 @@ impl Process {
         argv: Vec<CString>,
         envp: Vec<CString>,
     ) -> Result<Arc<Self>> {
-        let root_vmar = Vmar::<Full>::new_root()?;
         let fs = FsResolver::new();
         let umask = FileCreationMask::default();
         let pid = allocate_tid();
         let parent = Weak::new();
         let process_group = Weak::new();
-        let user_vm = UserVm::new(&root_vmar)?;
+        let process_vm = ProcessVm::alloc()?;
         let file_table = FileTable::new_with_stdio();
         let sig_dispositions = SigDispositions::new();
         let user_process = Arc::new(Process::new(
@@ -171,8 +167,7 @@ impl Process {
             parent,
             vec![],
             executable_path.to_string(),
-            user_vm,
-            Arc::new(root_vmar),
+            process_vm,
             process_group,
             Arc::new(Mutex::new(file_table)),
             Arc::new(RwLock::new(fs)),
@@ -182,7 +177,7 @@ impl Process {
 
         let thread = Thread::new_posix_thread_from_executable(
             pid,
-            &user_process.root_vmar(),
+            &user_process.process_vm,
             &user_process.fs().read(),
             executable_path,
             Arc::downgrade(&user_process),
@@ -315,18 +310,18 @@ impl Process {
     }
 
     /// returns the user_vm
-    pub fn user_vm(&self) -> &UserVm {
-        &self.user_vm
+    pub fn process_vm(&self) -> &ProcessVm {
+        &self.process_vm
     }
 
     /// returns the root vmar
-    pub fn root_vmar(&self) -> &Arc<Vmar<Full>> {
-        &self.root_vmar
+    pub fn root_vmar(&self) -> &Vmar<Full> {
+        &self.process_vm.root_vmar()
     }
 
     /// returns the user heap if the process does have, otherwise None
     pub fn user_heap(&self) -> &UserHeap {
-        self.user_vm.user_heap()
+        self.process_vm.user_heap()
     }
 
     /// free zombie child with pid, returns the exit code of child process.

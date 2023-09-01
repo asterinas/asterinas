@@ -22,7 +22,10 @@ use crate::{
     vm::vmar::Vmar,
 };
 
-use super::{posix_thread::PosixThread, signal::sig_disposition::SigDispositions, Process};
+use super::{
+    posix_thread::PosixThread, process_vm::ProcessVm, signal::sig_disposition::SigDispositions,
+    Process,
+};
 
 bitflags! {
     pub struct CloneFlags: u32 {
@@ -200,9 +203,15 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
     let clone_flags = clone_args.clone_flags;
 
     // clone vm
-    let parent_root_vmar = current.root_vmar();
-    let child_root_vmar = clone_vm(parent_root_vmar, clone_flags)?;
-    let child_user_vm = current.user_vm().clone();
+    let child_root_vmar = {
+        let parent_root_vmar = current.root_vmar();
+        clone_vm(parent_root_vmar, clone_flags)?
+    };
+
+    let child_process_vm = {
+        let child_user_heap = current.user_heap().clone();
+        ProcessVm::new(child_user_heap, child_root_vmar.dup()?)
+    };
 
     // clone user space
     let child_cpu_context = clone_cpu_context(
@@ -249,8 +258,7 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
             parent,
             vec![child_thread],
             child_elf_path,
-            child_user_vm,
-            child_root_vmar.clone(),
+            child_process_vm,
             Weak::new(),
             child_file_table,
             child_fs,
@@ -316,14 +324,11 @@ fn clone_parent_settid(
 
 /// clone child vmar. If CLONE_VM is set, both threads share the same root vmar.
 /// Otherwise, fork a new copy-on-write vmar.
-fn clone_vm(
-    parent_root_vmar: &Arc<Vmar<Full>>,
-    clone_flags: CloneFlags,
-) -> Result<Arc<Vmar<Full>>> {
+fn clone_vm(parent_root_vmar: &Vmar<Full>, clone_flags: CloneFlags) -> Result<Vmar<Full>> {
     if clone_flags.contains(CloneFlags::CLONE_VM) {
-        Ok(parent_root_vmar.clone())
+        Ok(parent_root_vmar.dup()?)
     } else {
-        Ok(Arc::new(parent_root_vmar.fork_vmar()?))
+        Ok(parent_root_vmar.fork_vmar()?)
     }
 }
 

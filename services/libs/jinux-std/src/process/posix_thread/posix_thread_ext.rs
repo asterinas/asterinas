@@ -1,12 +1,10 @@
 use jinux_frame::{cpu::UserContext, user::UserSpace};
-use jinux_rights::Full;
 
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     prelude::*,
-    process::{program_loader::load_program_to_root_vmar, Process},
+    process::{process_vm::ProcessVm, program_loader::load_program_to_vm, Process},
     thread::{Thread, Tid},
-    vm::vmar::Vmar,
 };
 
 use super::{builder::PosixThreadBuilder, name::ThreadName, PosixThread};
@@ -14,7 +12,7 @@ pub trait PosixThreadExt {
     fn as_posix_thread(&self) -> Option<&PosixThread>;
     fn new_posix_thread_from_executable(
         tid: Tid,
-        root_vmar: &Vmar<Full>,
+        process_vm: &ProcessVm,
         fs_resolver: &FsResolver,
         executable_path: &str,
         process: Weak<Process>,
@@ -27,7 +25,7 @@ impl PosixThreadExt for Thread {
     /// This function should only be called when launch shell()
     fn new_posix_thread_from_executable(
         tid: Tid,
-        root_vmar: &Vmar<Full>,
+        process_vm: &ProcessVm,
         fs_resolver: &FsResolver,
         executable_path: &str,
         process: Weak<Process>,
@@ -39,9 +37,9 @@ impl PosixThreadExt for Thread {
             fs_resolver.lookup(&fs_path)?
         };
         let (_, elf_load_info) =
-            load_program_to_root_vmar(root_vmar, elf_file, argv, envp, fs_resolver, 1)?;
+            load_program_to_vm(process_vm, elf_file, argv, envp, fs_resolver, 1)?;
 
-        let vm_space = root_vmar.vm_space().clone();
+        let vm_space = process_vm.root_vmar().vm_space().clone();
         let mut cpu_ctx = UserContext::default();
         cpu_ctx.set_rip(elf_load_info.entry_point() as _);
         cpu_ctx.set_rsp(elf_load_info.user_stack_top() as _);
