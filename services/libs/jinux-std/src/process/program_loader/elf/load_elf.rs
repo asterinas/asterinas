@@ -3,7 +3,9 @@
 
 use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
 use crate::fs::utils::Dentry;
+use crate::process::process_vm::ProcessVm;
 use crate::process::program_loader::elf::init_stack::{init_aux_vec, InitStack};
+use crate::process::TermStatus;
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{VmoOptions, VmoRightsOp};
 use crate::{
@@ -11,6 +13,7 @@ use crate::{
     vm::{vmar::Vmar, vmo::Vmo},
 };
 use align_ext::AlignExt;
+use jinux_frame::task::Task;
 use jinux_frame::vm::{VmIo, VmPerm};
 use jinux_rights::{Full, Rights};
 use xmas_elf::program::{self, ProgramHeader64};
@@ -21,8 +24,8 @@ use super::elf_file::Elf;
 /// 1. read the vaddr of each segment to get all elf pages.  
 /// 2. create a vmo for each elf segment, create a pager for each segment. Then map the vmo to the root vmar.
 /// 3. write proper content to the init stack.
-pub fn load_elf_to_root_vmar(
-    root_vmar: &Vmar<Full>,
+pub fn load_elf_to_vm(
+    process_vm: &ProcessVm,
     file_header: &[u8],
     elf_file: Arc<Dentry>,
     fs_resolver: &FsResolver,
@@ -30,13 +33,75 @@ pub fn load_elf_to_root_vmar(
     envp: Vec<CString>,
 ) -> Result<ElfLoadInfo> {
     let elf = Elf::parse_elf(file_header)?;
-    let ldso_load_info = if let Ok(ldso_load_info) =
-        load_ldso_for_shared_object(root_vmar, &elf, file_header, fs_resolver)
-    {
-        Some(ldso_load_info)
+
+    let ldso = if elf.is_shared_object() {
+        Some(lookup_and_parse_ldso(&elf, file_header, fs_resolver)?)
     } else {
         None
     };
+
+    process_vm.clear();
+
+    match init_and_map_vmos(process_vm, ldso, &elf, &elf_file, argv, envp) {
+        Ok(elf_load_info) => return Ok(elf_load_info),
+        Err(e) => {
+            // Since the process_vm is cleared, the process cannot return to user space again,
+            // so exit_group is called here.
+
+            // FIXME: if `current` macro is used when creating the init process,
+            // the macro will panic. This corner case should be handled later.
+            let current = current!();
+            // FIXME: how to set the correct exit status?
+            current.exit_group(TermStatus::Exited(1));
+            Task::current().exit();
+        }
+    }
+}
+
+fn lookup_and_parse_ldso(
+    elf: &Elf,
+    file_header: &[u8],
+    fs_resolver: &FsResolver,
+) -> Result<(Arc<Dentry>, Elf)> {
+    let ldso_file = {
+        let ldso_path = elf.ldso_path(file_header)?;
+        let fs_path = FsPath::new(AT_FDCWD, &ldso_path)?;
+        fs_resolver.lookup(&fs_path)?
+    };
+    let ldso_elf = {
+        let mut buf = Box::new([0u8; PAGE_SIZE]);
+        let vnode = ldso_file.vnode();
+        vnode.read_at(0, &mut *buf)?;
+        Elf::parse_elf(&*buf)?
+    };
+    Ok((ldso_file, ldso_elf))
+}
+
+fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {
+    let map_addr = map_segment_vmos(&ldso_elf, root_vmar, &ldso_file)?;
+    Ok(LdsoLoadInfo::new(
+        ldso_elf.entry_point() + map_addr,
+        map_addr,
+    ))
+}
+
+fn init_and_map_vmos(
+    process_vm: &ProcessVm,
+    ldso: Option<(Arc<Dentry>, Elf)>,
+    elf: &Elf,
+    elf_file: &Dentry,
+    argv: Vec<CString>,
+    envp: Vec<CString>,
+) -> Result<ElfLoadInfo> {
+    let root_vmar = process_vm.root_vmar();
+
+    // After we clear process vm, if any error happens, we must call exit_group instead of return to user space.
+    let ldso_load_info = if let Some((ldso_file, ldso_elf)) = ldso {
+        Some(load_ldso(root_vmar, &ldso_file, &ldso_elf)?)
+    } else {
+        None
+    };
+
     let map_addr = map_segment_vmos(&elf, root_vmar, &elf_file)?;
     let mut aux_vec = init_aux_vec(&elf, map_addr)?;
     let mut init_stack = InitStack::new_default_config(argv, envp);
@@ -55,35 +120,7 @@ pub fn load_elf_to_root_vmar(
     };
 
     let elf_load_info = ElfLoadInfo::new(entry_point, init_stack.user_stack_top());
-    debug!("load elf succeeds.");
     Ok(elf_load_info)
-}
-
-fn load_ldso_for_shared_object(
-    root_vmar: &Vmar<Full>,
-    elf: &Elf,
-    file_header: &[u8],
-    fs_resolver: &FsResolver,
-) -> Result<LdsoLoadInfo> {
-    if !elf.is_shared_object() {
-        return_errno_with_message!(Errno::EINVAL, "not shared object");
-    }
-    let ldso_file = {
-        let ldso_path = elf.ldso_path(file_header)?;
-        let fs_path = FsPath::new(AT_FDCWD, &ldso_path)?;
-        fs_resolver.lookup(&fs_path)?
-    };
-    let ldso_elf = {
-        let mut buf = Box::new([0u8; PAGE_SIZE]);
-        let vnode = ldso_file.vnode();
-        vnode.read_at(0, &mut *buf)?;
-        Elf::parse_elf(&*buf)?
-    };
-    let map_addr = map_segment_vmos(&ldso_elf, root_vmar, &ldso_file)?;
-    Ok(LdsoLoadInfo::new(
-        ldso_elf.entry_point() + map_addr,
-        map_addr,
-    ))
 }
 
 pub struct LdsoLoadInfo {

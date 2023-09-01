@@ -30,7 +30,7 @@ impl UserHeap {
         }
     }
 
-    pub fn init(&self, root_vmar: &Vmar<Full>) -> Result<Vaddr> {
+    pub fn init(&self, root_vmar: &Vmar<Full>) -> Vaddr {
         let perms = VmPerms::READ | VmPerms::WRITE;
         let vmo_options = VmoOptions::<Rights>::new(0).flags(VmoFlags::RESIZABLE);
         let heap_vmo = vmo_options.alloc().unwrap();
@@ -40,7 +40,7 @@ impl UserHeap {
             .offset(self.heap_base)
             .size(self.heap_size_limit);
         vmar_map_options.build().unwrap();
-        return Ok(self.current_heap_end.load(Ordering::Relaxed));
+        return self.current_heap_end.load(Ordering::Relaxed);
     }
 
     pub fn brk(&self, new_heap_end: Option<Vaddr>) -> Result<Vaddr> {
@@ -71,12 +71,10 @@ impl UserHeap {
 
     /// Set heap to the default status. i.e., point the heap end to heap base.
     /// This function will we called in execve.
-    pub fn set_default(&self) -> Result<()> {
+    pub fn set_default(&self, root_vmar: &Vmar<Full>) {
         self.current_heap_end
             .store(self.heap_base, Ordering::Relaxed);
-        let current = current!();
-        self.init(current.root_vmar())?;
-        Ok(())
+        self.init(root_vmar);
     }
 }
 

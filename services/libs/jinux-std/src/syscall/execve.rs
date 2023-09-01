@@ -8,7 +8,7 @@ use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::process::posix_thread::name::ThreadName;
 use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
-use crate::process::program_loader::{check_executable_file, load_program_to_root_vmar};
+use crate::process::program_loader::{check_executable_file, load_program_to_vm};
 use crate::syscall::{SYS_EXECVE, SYS_EXECVEAT};
 use crate::util::{read_cstring_from_user, read_val_from_user};
 
@@ -96,15 +96,13 @@ fn do_execve(
     *posix_thread.clear_child_tid().lock() = 0;
 
     let current = current!();
-    // destroy root vmars
-    let root_vmar = current.root_vmar();
-    root_vmar.clear()?;
-    current.user_vm().set_default()?;
-    // load elf content to new vm space
-    let fs_resolver = &*current.fs().read();
+
     debug!("load program to root vmar");
-    let (new_executable_path, elf_load_info) =
-        load_program_to_root_vmar(root_vmar, elf_file, argv, envp, fs_resolver, 1)?;
+    let (new_executable_path, elf_load_info) = {
+        let fs_resolver = &*current.fs().read();
+        let process_vm = current.process_vm();
+        load_program_to_vm(process_vm, elf_file, argv, envp, fs_resolver, 1)?
+    };
     debug!("load elf in execve succeeds");
     // set executable path
     *current.executable_path().write() = new_executable_path;

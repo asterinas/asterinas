@@ -4,11 +4,11 @@ mod shebang;
 use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
 use crate::fs::utils::Dentry;
 use crate::prelude::*;
-use crate::vm::vmar::Vmar;
-use jinux_rights::Full;
 
-use self::elf::{load_elf_to_root_vmar, ElfLoadInfo};
+use self::elf::{load_elf_to_vm, ElfLoadInfo};
 use self::shebang::parse_shebang_line;
+
+use super::process_vm::ProcessVm;
 
 /// Load an executable to root vmar, including loading programe image, preparing heap and stack,
 /// initializing argv, envp and aux tables.
@@ -17,8 +17,8 @@ use self::shebang::parse_shebang_line;
 /// then it will trigger recursion. We will try to setup root vmar for the interpreter.
 /// I guess for most cases, setting the recursion_limit as 1 should be enough.
 /// because the interpreter is usually an elf binary(e.g., /bin/bash)
-pub fn load_program_to_root_vmar(
-    root_vmar: &Vmar<Full>,
+pub fn load_program_to_vm(
+    process_vm: &ProcessVm,
     elf_file: Arc<Dentry>,
     argv: Vec<CString>,
     envp: Vec<CString>,
@@ -44,8 +44,8 @@ pub fn load_program_to_root_vmar(
             fs_resolver.lookup(&fs_path)?
         };
         check_executable_file(&interpreter)?;
-        return load_program_to_root_vmar(
-            root_vmar,
+        return load_program_to_vm(
+            process_vm,
             interpreter,
             new_argv,
             envp,
@@ -54,7 +54,7 @@ pub fn load_program_to_root_vmar(
         );
     }
     let elf_load_info =
-        load_elf_to_root_vmar(root_vmar, &*file_header, elf_file, fs_resolver, argv, envp)?;
+        load_elf_to_vm(process_vm, &*file_header, elf_file, fs_resolver, argv, envp)?;
     Ok((abs_path, elf_load_info))
 }
 

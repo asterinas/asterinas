@@ -41,24 +41,40 @@ use crate::vm::vmar::Vmar;
 
 /// The virtual space usage.
 /// This struct is used to control brk and mmap now.
-#[derive(Debug, Clone)]
-pub struct UserVm {
+pub struct ProcessVm {
     user_heap: UserHeap,
+    root_vmar: Vmar<Full>,
 }
 
-impl UserVm {
-    pub fn new(root_vmar: &Vmar<Full>) -> Result<Self> {
+impl ProcessVm {
+    pub fn alloc() -> Result<Self> {
+        let root_vmar = Vmar::<Full>::new_root()?;
         let user_heap = UserHeap::new();
-        user_heap.init(root_vmar).unwrap();
-        Ok(UserVm { user_heap })
+        user_heap.init(&root_vmar);
+        Ok(ProcessVm {
+            user_heap,
+            root_vmar,
+        })
+    }
+
+    pub fn new(user_heap: UserHeap, root_vmar: Vmar<Full>) -> Self {
+        Self {
+            user_heap,
+            root_vmar,
+        }
     }
 
     pub fn user_heap(&self) -> &UserHeap {
         &self.user_heap
     }
 
+    pub fn root_vmar(&self) -> &Vmar<Full> {
+        &self.root_vmar
+    }
+
     /// Set user vm to the init status
-    pub fn set_default(&self) -> Result<()> {
-        self.user_heap.set_default()
+    pub fn clear(&self) {
+        self.root_vmar.clear().unwrap();
+        self.user_heap.set_default(&self.root_vmar);
     }
 }
