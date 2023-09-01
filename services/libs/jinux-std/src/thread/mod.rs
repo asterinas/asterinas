@@ -75,6 +75,10 @@ impl Thread {
         }
     }
 
+    pub fn is_exited(&self) -> bool {
+        self.status.lock().is_exited()
+    }
+
     pub fn status(&self) -> &Mutex<ThreadStatus> {
         &self.status
     }

@@ -22,10 +22,8 @@
 
 use crate::{
     prelude::*,
-    process::status::ProcessStatus,
     thread::{kernel_thread::KernelThreadExt, Thread},
 };
-use core::sync::atomic::Ordering;
 use jinux_frame::{boot, exit_qemu, QemuExitCode};
 use process::Process;
 
@@ -87,14 +85,14 @@ fn init_thread() {
     .expect("Run init process failed.");
 
     // Wait till initproc become zombie.
-    while *initproc.status().lock() != ProcessStatus::Zombie {
+    while !initproc.status().lock().is_zombie() {
         // We don't have preemptive scheduler now.
         // The long running init thread should yield its own execution to allow other tasks to go on.
         Thread::yield_now();
     }
 
     // TODO: exit via qemu isa debug device should not be the only way.
-    let exit_code = if initproc.exit_code().load(Ordering::Relaxed) == 0 {
+    let exit_code = if initproc.exit_code().unwrap() == 0 {
         QemuExitCode::Success
     } else {
         QemuExitCode::Failed

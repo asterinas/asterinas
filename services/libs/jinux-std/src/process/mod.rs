@@ -1,5 +1,3 @@
-use core::sync::atomic::{AtomicI32, Ordering};
-
 use self::posix_thread::posix_thread_ext::PosixThreadExt;
 use self::process_group::ProcessGroup;
 use self::process_vm::user_heap::UserHeap;
@@ -32,7 +30,10 @@ pub mod program_loader;
 pub mod rlimit;
 pub mod signal;
 pub mod status;
+mod term_status;
 pub mod wait;
+
+pub use term_status::TermStatus;
 
 pub type Pid = i32;
 pub type Pgid = i32;
@@ -54,8 +55,6 @@ pub struct Process {
     executable_path: RwLock<String>,
     /// The threads
     threads: Mutex<Vec<Arc<Thread>>>,
-    /// The exit code
-    exit_code: AtomicI32,
     /// Process status
     status: Mutex<ProcessStatus>,
     /// Parent process
@@ -113,7 +112,6 @@ impl Process {
             executable_path: RwLock::new(executable_path),
             process_vm,
             waiting_children,
-            exit_code: AtomicI32::new(0),
             status: Mutex::new(ProcessStatus::Runnable),
             parent: Mutex::new(parent),
             children: Mutex::new(children),
@@ -258,12 +256,26 @@ impl Process {
     /// Set the status of the process as Zombie and set exit code.
     /// Move all children to init process.
     /// Wake up the parent wait queue if parent is waiting for self.
-    pub fn exit_group(&self, exit_code: i32) {
+    pub fn exit_group(&self, term_status: TermStatus) {
         debug!("exit group was called");
-        self.status.lock().set_zombie();
-        self.exit_code.store(exit_code, Ordering::Relaxed);
-        for thread in &*self.threads.lock() {
+        if self.status.lock().is_zombie() {
+            return;
+        }
+        self.status.lock().set_zombie(term_status);
+
+        let threads = self.threads.lock().clone();
+        for thread in threads {
+            if thread.is_exited() {
+                continue;
+            }
+
             thread.exit();
+            if let Some(posix_thread) = thread.as_posix_thread() {
+                let tid = thread.tid();
+                if let Err(e) = posix_thread.exit(tid, term_status) {
+                    debug!("Ignore error when call exit: {:?}", e);
+                }
+            }
         }
         // close all files then exit the process
         let files = self.file_table().lock().close_all();
@@ -326,7 +338,7 @@ impl Process {
 
     /// free zombie child with pid, returns the exit code of child process.
     /// remove process from process group.
-    pub fn reap_zombie_child(&self, pid: Pid) -> i32 {
+    pub fn reap_zombie_child(&self, pid: Pid) -> u32 {
         let child_process = self.children.lock().remove(&pid).unwrap();
         assert!(child_process.status().lock().is_zombie());
         child_process.root_vmar().destroy_all().unwrap();
@@ -337,15 +349,18 @@ impl Process {
         if let Some(process_group) = child_process.process_group().lock().upgrade() {
             process_group.remove_process(child_process.pid);
         }
-        child_process.exit_code().load(Ordering::SeqCst)
+        child_process.exit_code().unwrap()
     }
 
     pub fn children(&self) -> &Mutex<BTreeMap<Pid, Arc<Process>>> {
         &self.children
     }
 
-    pub fn exit_code(&self) -> &AtomicI32 {
-        &self.exit_code
+    pub fn exit_code(&self) -> Option<u32> {
+        match &*self.status.lock() {
+            ProcessStatus::Runnable => None,
+            ProcessStatus::Zombie(term_status) => Some(term_status.as_u32()),
+        }
     }
 
     /// whether the process has child process

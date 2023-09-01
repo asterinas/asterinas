@@ -1,5 +1,3 @@
-use core::sync::atomic::Ordering;
-
 use crate::prelude::*;
 
 use super::{process_filter::ProcessFilter, ExitCode, Pid};
@@ -53,7 +51,7 @@ pub fn wait_child_exit(
 
         if let Some(zombie_child) = zombie_child {
             let zombie_pid = zombie_child.pid();
-            let exit_code = zombie_child.exit_code().load(Ordering::SeqCst);
+            let exit_code = zombie_child.exit_code().unwrap();
             if wait_options.contains(WaitOptions::WNOWAIT) {
                 // does not reap child, directly return
                 return Some(Ok((zombie_pid, exit_code)));
@@ -71,5 +69,5 @@ pub fn wait_child_exit(
         None
     })?;
 
-    Ok((pid, exit_code))
+    Ok((pid, exit_code as _))
 }
