@@ -19,6 +19,7 @@ use crate::current_thread;
 use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
 use crate::process::signal::c_types::ucontext_t;
 use crate::process::signal::sig_action::SigActionFlags;
+use crate::process::TermStatus;
 use crate::util::{write_bytes_to_user, write_val_to_user};
 use crate::{
     prelude::*,
@@ -75,8 +76,7 @@ pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
                             &*current.executable_path().read(),
                             sig_num.sig_name()
                         );
-                        // FIXME: How to set correct status if process is terminated
-                        current.exit_group(1);
+                        current.exit_group(TermStatus::Killed(sig_num));
                         // We should exit current here, since we cannot restore a valid status from trap now.
                         Task::current().exit();
                     }

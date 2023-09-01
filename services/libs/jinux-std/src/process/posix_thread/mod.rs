@@ -1,6 +1,9 @@
 use crate::{
     prelude::*,
-    process::posix_thread::{futex::futex_wake, robust_list::wake_robust_futex},
+    process::{
+        posix_thread::{futex::futex_wake, robust_list::wake_robust_futex},
+        TermStatus,
+    },
     thread::{thread_table, Tid},
     util::write_val_to_user,
 };
@@ -112,7 +115,7 @@ impl PosixThread {
     }
 
     /// Posix thread does not contains tid info. So we require tid as a parameter.
-    pub fn exit(&self, tid: Tid, exit_code: i32) -> Result<()> {
+    pub fn exit(&self, tid: Tid, term_status: TermStatus) -> Result<()> {
         let mut clear_ctid = self.clear_child_tid().lock();
         // If clear_ctid !=0 ,do a futex wake and write zero to the clear_ctid addr.
         debug!("wake up ctid");
@@ -141,7 +144,7 @@ impl PosixThread {
             debug!("self is main thread or last thread");
             debug!("main thread: {}", self.is_main_thread());
             debug!("last thread: {}", self.is_last_thread());
-            current!().exit_group(exit_code);
+            current!().exit_group(term_status);
         }
         debug!("perform futex wake");
         futex_wake(Arc::as_ptr(&self.process()) as Vaddr, 1)?;
