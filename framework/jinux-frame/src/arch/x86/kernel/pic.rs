@@ -1,6 +1,5 @@
 use crate::arch::x86::device::io_port::{IoPort, WriteOnlyAccess};
-use crate::trap::allocate_target_irq;
-use crate::trap::IrqAllocateHandle;
+use crate::trap::IrqLine;
 
 use core::sync::atomic::Ordering::Relaxed;
 use core::sync::atomic::{AtomicBool, AtomicU8};
@@ -22,7 +21,7 @@ use log::info;
 lazy_static! {
     /// store the irq, although we have APIC for manage interrupts
     /// but something like serial still need pic for register interrupts
-    static ref IRQ_LOCK : Mutex<Vec<IrqAllocateHandle>> = Mutex::new(Vec::new());
+    static ref IRQ_LOCK : Mutex<Vec<IrqLine>> = Mutex::new(Vec::new());
 }
 
 static MASK_MASTER: AtomicU8 = AtomicU8::new(0x00);
@@ -46,11 +45,11 @@ pub fn init() {
 }
 
 /// allocate irq, for example, if timer need IRQ0, it will return IrqAllocateHandle with irq num: IRQ_OFFSET+0
-pub fn allocate_irq(index: u8) -> Option<IrqAllocateHandle> {
+pub fn allocate_irq(index: u8) -> Option<IrqLine> {
     if index >= 16 {
         return None;
     }
-    if let Ok(irq) = allocate_target_irq(IRQ_OFFSET + index) {
+    if let Ok(irq) = IrqLine::alloc_specific(IRQ_OFFSET + index) {
         if index >= 8 {
             MASK_SLAVE.fetch_or(1 << (index - 8), Relaxed);
         } else {

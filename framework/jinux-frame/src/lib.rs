@@ -38,8 +38,8 @@ pub use self::cpu::CpuLocal;
 pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
+use arch::irq::{IrqCallbackHandle, IrqLine};
 use core::{mem, panic::PanicInfo};
-use trap::{IrqCallbackHandle, IrqLine};
 use trapframe::TrapFrame;
 
 static mut IRQ_CALLBACK_LIST: Vec<IrqCallbackHandle> = Vec::new();

@@ -9,6 +9,7 @@ use trapframe::TrapFrame;
 use x86::cpuid::cpuid;
 use x86::msr::{wrmsr, IA32_TSC_DEADLINE};
 
+use crate::arch::irq::IrqLine;
 use crate::{
     arch::x86::kernel::{
         apic::{DivideConfig, APIC_INSTANCE},
@@ -63,7 +64,7 @@ fn tsc_mode_init() {
 
 fn periodic_mode_init() {
     let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
-    let handle = unsafe { crate::trap::IrqLine::acquire(super::TIMER_IRQ_NUM) };
+    let handle = unsafe { IrqLine::acquire(super::TIMER_IRQ_NUM) };
     let a = handle.on_active(init_function);
     // divide by 64
     apic_lock.set_timer_div_config(DivideConfig::Divide64);

@@ -12,14 +12,14 @@ use trapframe::TrapFrame;
 use crate::arch::x86::kernel;
 use crate::config::TIMER_FREQ;
 use crate::sync::SpinLock;
-use crate::trap::IrqAllocateHandle;
+use crate::trap::IrqLine;
 
 use self::apic::APIC_TIMER_CALLBACK;
 
 pub const TIMER_IRQ_NUM: u8 = 32;
 pub static TICK: AtomicU64 = AtomicU64::new(0);
 
-static TIMER_IRQ: Once<IrqAllocateHandle> = Once::new();
+static TIMER_IRQ: Once<IrqLine> = Once::new();
 
 pub fn init() {
     TIMEOUT_LIST.call_once(|| SpinLock::new(BinaryHeap::new()));
@@ -29,7 +29,7 @@ pub fn init() {
         pit::init();
     }
     let mut timer_irq =
-        crate::trap::allocate_target_irq(TIMER_IRQ_NUM).expect("Timer irq Allocate error");
+        crate::trap::IrqLine::alloc_specific(TIMER_IRQ_NUM).expect("Timer irq Allocate error");
     timer_irq.on_active(timer_callback);
     TIMER_IRQ.call_once(|| timer_irq);
 }
