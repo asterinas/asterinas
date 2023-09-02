@@ -7,7 +7,7 @@ use spin::Once;
 use trapframe::TrapFrame;
 use volatile::{access::ReadWrite, Volatile};
 
-use crate::{trap::IrqAllocateHandle, vm::Vaddr};
+use crate::{trap::IrqLine, vm::Vaddr};
 
 use super::remapping::Capability;
 
@@ -21,7 +21,7 @@ pub struct FaultEventRegisters {
     upper_address: Volatile<&'static mut u32, ReadWrite>,
     recordings: Vec<Volatile<&'static mut u128, ReadWrite>>,
 
-    fault_irq: IrqAllocateHandle,
+    fault_irq: IrqLine,
 }
 
 impl FaultEventRegisters {
@@ -47,7 +47,7 @@ impl FaultEventRegisters {
         let mut data = Volatile::new(&mut *((base_register_vaddr + 0x3c) as *mut u32));
         let mut address = Volatile::new(&mut *((base_register_vaddr + 0x40) as *mut u32));
         let upper_address = Volatile::new(&mut *((base_register_vaddr + 0x44) as *mut u32));
-        let mut fault_irq = crate::trap::allocate_irq().unwrap();
+        let mut fault_irq = crate::trap::IrqLine::alloc().unwrap();
 
         // Set page fault interrupt vector and address
         data.write(fault_irq.num() as u32);

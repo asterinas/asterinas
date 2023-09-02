@@ -55,7 +55,7 @@ const COMMON_ARGS: &[&str] = &[
     "-device",
     "isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-netdev",
-    "user,id=net01,hostfwd=tcp::30033-:22,hostfwd=tcp::30088-:8080",
+    "user,id=net01,hostfwd=tcp::30133-:22,hostfwd=tcp::31088-:8080",
     "-object",
     "filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
 ];

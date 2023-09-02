@@ -2,7 +2,7 @@
 
 use crate::arch::x86::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
 use crate::sync::SpinLock;
-use crate::trap::IrqAllocateHandle;
+use crate::trap::IrqLine;
 use alloc::{sync::Arc, vec::Vec};
 use log::debug;
 use spin::Once;
@@ -25,7 +25,7 @@ static SERIAL_MODEM_CTRL: IoPort<u8, WriteOnlyAccess> =
     unsafe { IoPort::new(SERIAL_DATA_PORT + 4) };
 static SERIAL_LINE_STS: IoPort<u8, ReadWriteAccess> = unsafe { IoPort::new(SERIAL_DATA_PORT + 5) };
 
-static CONSOLE_IRQ_CALLBACK: Once<SpinLock<IrqAllocateHandle>> = Once::new();
+static CONSOLE_IRQ_CALLBACK: Once<SpinLock<IrqLine>> = Once::new();
 static SERIAL_INPUT_CALLBACKS: SpinLock<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
     SpinLock::new(Vec::new());
 

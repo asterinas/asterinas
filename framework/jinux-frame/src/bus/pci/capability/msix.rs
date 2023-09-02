@@ -6,7 +6,7 @@ use crate::{
         common_device::PciCommonDevice,
         device_info::PciDeviceLocation,
     },
-    trap::IrqAllocateHandle,
+    trap::IrqLine,
     vm::VmIo,
 };
 
@@ -24,7 +24,7 @@ pub struct CapabilityMsixData {
     pending_table_bar: Arc<MemoryBar>,
     table_offset: usize,
     pending_table_offset: usize,
-    irqs: Vec<Option<IrqAllocateHandle>>,
+    irqs: Vec<Option<IrqLine>>,
 }
 
 impl Clone for CapabilityMsixData {
@@ -109,9 +109,9 @@ impl CapabilityMsixData {
         // disable INTx, enable Bus master.
         dev.set_command(dev.command() | Command::INTERRUPT_DISABLE | Command::BUS_MASTER);
 
-        let mut irq_allocate_handles = Vec::with_capacity(table_size as usize);
+        let mut irqs = Vec::with_capacity(table_size as usize);
         for i in 0..table_size {
-            irq_allocate_handles.push(None);
+            irqs.push(None);
         }
 
         Self {
@@ -120,7 +120,7 @@ impl CapabilityMsixData {
             table_size: (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1,
             table_bar,
             pending_table_bar: pba_bar,
-            irqs: irq_allocate_handles,
+            irqs,
             table_offset: table_offset,
             pending_table_offset: pba_offset,
         }
@@ -131,7 +131,7 @@ impl CapabilityMsixData {
         (self.loc.read16(self.ptr + 2) & 0b11_1111_1111) + 1
     }
 
-    pub fn set_interrupt_vector(&mut self, handle: IrqAllocateHandle, index: u16) {
+    pub fn set_interrupt_vector(&mut self, handle: IrqLine, index: u16) {
         if index >= self.table_size {
             return;
         }
@@ -150,7 +150,7 @@ impl CapabilityMsixData {
             .unwrap();
     }
 
-    pub fn irq_mut(&mut self, index: usize) -> Option<&mut IrqAllocateHandle> {
+    pub fn irq_mut(&mut self, index: usize) -> Option<&mut IrqLine> {
         self.irqs[index].as_mut()
     }
 }
