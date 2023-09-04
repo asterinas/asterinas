@@ -80,7 +80,7 @@ impl AuxVec {
     }
 
     pub fn get(&self, key: AuxKey) -> Option<u64> {
-        self.table.get(&key).map(|val_ref| *val_ref)
+        self.table.get(&key).copied()
     }
 
     pub fn del(&mut self, key: AuxKey) -> Option<u64> {

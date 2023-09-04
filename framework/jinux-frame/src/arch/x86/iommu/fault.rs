@@ -116,7 +116,7 @@ impl FaultRecording {
 
     pub fn pasid_value(&self) -> u32 {
         // bit 123:104
-        ((self.0 & 0xF_FFFF0_0000_0000_0000_0000_0000_0000) >> 104) as u32
+        ((self.0 & 0x00FF_FFF0_0000_0000_0000_0000_0000_0000) >> 104) as u32
     }
 
     pub fn fault_reason(&self) -> u8 {
@@ -165,6 +165,7 @@ pub enum FaultRequestType {
 
 #[derive(Debug)]
 #[repr(u8)]
+#[allow(clippy::enum_variant_names)]
 pub enum FaultAddressType {
     UntranslatedRequest = 0,
     TranslationRequest = 1,
@@ -201,6 +202,6 @@ pub(super) unsafe fn init(base_register_vaddr: Vaddr) {
 fn iommu_page_fault_handler(frame: &TrapFrame) {
     let fault_event = FAULT_EVENT_REGS.get().unwrap();
     let index = (fault_event.status().bits & FaultStatus::FRI.bits) >> 8;
-    let recording = FaultRecording(*(&fault_event.recordings[index as usize].read()));
+    let recording = FaultRecording(fault_event.recordings[index as usize].read());
     info!("Catch iommu page fault, recording:{:x?}", recording)
 }

@@ -44,7 +44,7 @@ impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
             frame: VmFrameVec::allocate(
-                &VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).is_contiguous(true),
+                VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).is_contiguous(true),
             )?,
         })
     }

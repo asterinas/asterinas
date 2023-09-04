@@ -43,13 +43,12 @@ pub struct DevPts {
 impl DevPts {
     pub fn new() -> Arc<Self> {
         let sb = SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX);
-        let devpts = Arc::new_cyclic(|weak_self| Self {
+        Arc::new_cyclic(|weak_self| Self {
             root: RootInode::new(weak_self.clone(), &sb),
             sb,
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             this: weak_self.clone(),
-        });
-        devpts
+        })
     }
 
     /// Create the master and slave pair.
@@ -194,7 +193,7 @@ impl Inode for RootInode {
 
             // Read the slaves.
             let slaves = self.slaves.read();
-            let start_offset = offset.clone();
+            let start_offset = *offset;
             for (idx, (name, node)) in slaves
                 .idxes_and_items()
                 .map(|(idx, (name, node))| (idx + 3, (name, node)))
@@ -239,7 +238,7 @@ impl Inode for RootInode {
                 .slaves
                 .read()
                 .idxes_and_items()
-                .find(|(_, (child_name, _))| child_name == &slave)
+                .find(|(_, (child_name, _))| child_name == slave)
                 .map(|(_, (_, node))| node.clone())
                 .ok_or(Error::new(Errno::ENOENT))?,
         };

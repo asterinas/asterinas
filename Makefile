@@ -56,8 +56,8 @@ docs:
 	@cd docs && mdbook build 				# Build mdBook
 
 check:
-	@cargo fmt --check 				# Check Rust format issues
-	@cargo kclippy					# Check common programming mistakes
+	@cargo fmt --check              # Check Rust format issues
+	@cargo kclippy -- -D warnings   # Make build fail if any warnings are found by rustc and clippy
 
 clean:
 	@cargo clean

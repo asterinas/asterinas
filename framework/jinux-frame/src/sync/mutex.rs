@@ -31,7 +31,7 @@ impl<T> Mutex<T> {
 
     /// Try Acquire the mutex immedidately.
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        self.acquire_lock().then(|| MutexGuard { mutex: &self })
+        self.acquire_lock().then_some(MutexGuard { mutex: self })
     }
 
     /// Release the mutex and wake up one thread which is blocked on this mutex.

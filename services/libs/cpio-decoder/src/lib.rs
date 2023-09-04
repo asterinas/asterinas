@@ -68,7 +68,7 @@ where
     type Item<'a> = Result<CpioEntry<'a, R>>;
 
     /// Stops if reaches to the trailer entry or encounters an error.
-    fn next<'a>(self: &'a mut Self) -> Option<Self::Item<'a>> {
+    fn next(&mut self) -> Option<Self::Item<'_>> {
         // Stop to iterate entries if encounters an error.
         if self.is_error {
             return None;
@@ -159,7 +159,7 @@ where
         while send_len < data_len {
             let len = min(buffer.len(), data_len - send_len);
             self.reader.read_exact(&mut buffer[..len])?;
-            writer.write_all(&mut buffer[..len])?;
+            writer.write_all(&buffer[..len])?;
             send_len += len;
         }
         if self.data_padding_len > 0 {
@@ -170,7 +170,7 @@ where
     }
 
     pub fn is_trailer(&self) -> bool {
-        &self.name == TRAILER_NAME
+        self.name == TRAILER_NAME
     }
 }
 

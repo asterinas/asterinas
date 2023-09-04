@@ -2,6 +2,6 @@ mod connected;
 mod endpoint;
 mod init;
 mod listener;
-mod stream;
+mod socket;
 
-pub use stream::UnixStreamSocket;
+pub use socket::UnixStreamSocket;

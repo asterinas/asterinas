@@ -31,6 +31,7 @@ pub struct LineDiscipline {
     pollee: Pollee,
 }
 
+#[derive(Default)]
 pub struct CurrentLine {
     buffer: StaticRb<u8, BUFFER_CAPACITY>,
 }
@@ -63,6 +64,12 @@ impl CurrentLine {
 
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
+    }
+}
+
+impl Default for LineDiscipline {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -120,7 +127,7 @@ impl LineDiscipline {
             }
         }
 
-        if item >= 0x20 && item < 0x7f {
+        if (0x20..0x7f).contains(&item) {
             // Printable character
             self.current_line.lock_irq_disabled().push_char(item);
         }
@@ -174,7 +181,7 @@ impl LineDiscipline {
                 let backspace: &str = core::str::from_utf8(&[b'\x08', b' ', b'\x08']).unwrap();
                 echo_callback(backspace);
             }
-            item if 0x20 <= item && item < 0x7f => print!("{}", char::from(item)),
+            item if (0x20..0x7f).contains(&item) => print!("{}", char::from(item)),
             item if 0 < item && item < 0x20 && termios.contains_echo_ctl() => {
                 // The unprintable chars between 1-31 are mapped to ctrl characters between 65-95.
                 // e.g., 0x3 is mapped to 0x43, which is C. So, we will print ^C when 0x3 is met.
@@ -263,25 +270,25 @@ impl LineDiscipline {
             return 0;
         }
         let mut read_len = 0;
-        for i in 0..max_read_len {
+        for dst_i in dst.iter_mut().take(max_read_len) {
             if let Some(next_char) = buffer.pop() {
                 let termios = self.termios.lock_irq_disabled();
                 if termios.is_canonical_mode() {
                     // canonical mode, read until meet new line
                     if meet_new_line(next_char, &termios) {
                         if !should_not_be_read(next_char, &termios) {
-                            dst[i] = next_char;
+                            *dst_i = next_char;
                             read_len += 1;
                         }
                         break;
                     } else {
-                        dst[i] = next_char;
+                        *dst_i = next_char;
                         read_len += 1;
                     }
                 } else {
                     // raw mode
                     // FIXME: avoid addtional bound check
-                    dst[i] = next_char;
+                    *dst_i = next_char;
                     read_len += 1;
                 }
             } else {
@@ -333,7 +340,7 @@ impl LineDiscipline {
         self.foreground
             .lock_irq_disabled()
             .upgrade()
-            .and_then(|foreground| Some(foreground.pgid()))
+            .map(|foreground| foreground.pgid())
     }
 
     /// whether there is buffered data
@@ -359,7 +366,7 @@ impl LineDiscipline {
     }
 
     pub fn window_size(&self) -> WinSize {
-        self.winsize.lock().clone()
+        *self.winsize.lock()
     }
 
     pub fn set_window_size(&self, winsize: WinSize) {
@@ -384,9 +391,5 @@ fn meet_new_line(item: u8, termios: &KernelTermios) -> bool {
 
 /// The special char should not be read by reading process
 fn should_not_be_read(item: u8, termios: &KernelTermios) -> bool {
-    if item == *termios.get_special_char(CC_C_CHAR::VEOF) {
-        true
-    } else {
-        false
-    }
+    item == *termios.get_special_char(CC_C_CHAR::VEOF)
 }

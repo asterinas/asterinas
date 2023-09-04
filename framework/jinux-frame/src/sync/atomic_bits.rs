@@ -83,17 +83,17 @@ impl AtomicBits {
     }
 
     /// Get an iterator for the bits.
-    pub fn iter<'a>(&'a self) -> Iter<'a> {
+    pub fn iter(&self) -> Iter<'_> {
         Iter::new(self)
     }
 
     /// Get an iterator that gives the positions of all 1s in the bits.
-    pub fn iter_ones<'a>(&'a self) -> OnesIter<'a> {
+    pub fn iter_ones(&self) -> OnesIter<'_> {
         OnesIter::new(self)
     }
 
     /// Get an iterator that gives the positions of all 0s in the bits.
-    pub fn iter_zeroes<'a>(&'a self) -> ZeroesIter<'a> {
+    pub fn iter_zeroes(&self) -> ZeroesIter<'_> {
         ZeroesIter::new(self)
     }
 }

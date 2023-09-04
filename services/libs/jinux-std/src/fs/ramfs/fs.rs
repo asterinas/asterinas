@@ -157,6 +157,7 @@ impl Inode_ {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 enum Inner {
     Dir(DirEntry),
     File,
@@ -232,8 +233,7 @@ impl DirEntry {
         } else {
             self.children
                 .iter()
-                .find(|(child, _)| child == &Str256::from(name))
-                .is_some()
+                .any(|(child, _)| child == &Str256::from(name))
         }
     }
 
@@ -292,7 +292,7 @@ impl DirEntry {
                 *idx += 1;
             }
             // Read the normal child entries.
-            let start_idx = idx.clone();
+            let start_idx = *idx;
             for (offset, (name, child)) in self
                 .children
                 .idxes_and_items()

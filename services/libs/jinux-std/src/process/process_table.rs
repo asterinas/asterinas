@@ -30,10 +30,7 @@ pub fn remove_process(pid: Pid) {
 
 /// get a process with pid
 pub fn pid_to_process(pid: Pid) -> Option<Arc<Process>> {
-    PROCESS_TABLE
-        .lock()
-        .get(&pid)
-        .map(|process| process.clone())
+    PROCESS_TABLE.lock().get(&pid).cloned()
 }
 
 /// get all processes
@@ -58,10 +55,7 @@ pub fn remove_process_group(pgid: Pgid) {
 
 /// get a process group with pgid
 pub fn pgid_to_process_group(pgid: Pgid) -> Option<Arc<ProcessGroup>> {
-    PROCESS_GROUP_TABLE
-        .lock()
-        .get(&pgid)
-        .map(|process_group| process_group.clone())
+    PROCESS_GROUP_TABLE.lock().get(&pgid).cloned()
 }
 
 pub fn register_observer(observer: Weak<dyn Observer<PidEvent>>) {

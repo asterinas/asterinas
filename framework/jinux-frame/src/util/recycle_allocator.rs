@@ -23,7 +23,7 @@ impl RecycleAllocator {
             current: start,
             recycled: Vec::new(),
             skip: Vec::new(),
-            max: max,
+            max,
         }
     }
 
@@ -82,13 +82,11 @@ impl RecycleAllocator {
                 self.skip.push(target);
                 true
             }
+        } else if self.recycled.contains(&target) {
+            self.recycled.retain(|value| *value != target);
+            true
         } else {
-            if self.recycled.contains(&target) {
-                self.recycled.retain(|value| *value != target);
-                true
-            } else {
-                false
-            }
+            false
         }
     }
 }

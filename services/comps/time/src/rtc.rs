@@ -26,7 +26,7 @@ pub fn is_updating() -> bool {
 
 pub fn read() -> SystemTime {
     update_time();
-    READ_TIME.lock().clone()
+    *READ_TIME.lock()
 }
 
 /// read year,month,day and other data
@@ -34,22 +34,21 @@ pub fn read() -> SystemTime {
 fn update_time() {
     let mut last_time: SystemTime;
 
-    let register_b: u8;
     let mut lock = READ_TIME.lock();
 
     lock.update_from_rtc();
 
-    last_time = lock.clone();
+    last_time = *lock;
 
     lock.update_from_rtc();
 
     while *lock != last_time {
-        last_time = lock.clone();
+        last_time = *lock;
 
         lock.update_from_rtc();
     }
 
-    register_b = get_cmos(0x0B);
+    let register_b: u8 = get_cmos(0x0B);
 
     lock.convert_bcd_to_binary(register_b);
     lock.convert_12_hour_to_24_hour(register_b);

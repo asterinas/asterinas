@@ -70,11 +70,10 @@ fn invoke_c_init_funcs() {
         fn __sinit_array();
         fn __einit_array();
     }
-    let call_len = (__einit_array as u64 - __sinit_array as u64) / 8;
+    let call_len = (__einit_array as usize - __sinit_array as usize) / 8;
     for i in 0..call_len {
         unsafe {
-            let address = (__sinit_array as u64 + 8 * i) as *const u64;
-            let function = address as *const fn();
+            let function = (__sinit_array as usize + 8 * i) as *const fn();
             (*function)();
         }
     }
@@ -96,7 +95,7 @@ pub(crate) const fn zero<T>() -> T {
 }
 
 pub trait Testable {
-    fn run(&self) -> ();
+    fn run(&self);
 }
 
 impl<T> Testable for T

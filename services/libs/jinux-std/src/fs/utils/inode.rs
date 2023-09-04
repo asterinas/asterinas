@@ -23,23 +23,17 @@ pub enum InodeType {
 
 impl InodeType {
     pub fn support_read(&self) -> bool {
-        match self {
-            InodeType::File
-            | InodeType::Socket
-            | InodeType::CharDevice
-            | InodeType::BlockDevice => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            InodeType::File | InodeType::Socket | InodeType::CharDevice | InodeType::BlockDevice
+        )
     }
 
     pub fn support_write(&self) -> bool {
-        match self {
-            InodeType::File
-            | InodeType::Socket
-            | InodeType::CharDevice
-            | InodeType::BlockDevice => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            InodeType::File | InodeType::Socket | InodeType::CharDevice | InodeType::BlockDevice
+        )
     }
 
     pub fn is_reguler_file(&self) -> bool {
@@ -231,6 +225,10 @@ impl Metadata {
 
 pub trait Inode: Any + Sync + Send {
     fn len(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     fn resize(&self, new_size: usize);
 

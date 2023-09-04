@@ -34,7 +34,7 @@ pub fn sys_symlinkat(
         if linkpath.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "linkpath is empty");
         }
-        if linkpath.ends_with("/") {
+        if linkpath.ends_with('/') {
             return_errno_with_message!(Errno::EISDIR, "linkpath is dir");
         }
         let fs_path = FsPath::new(dirfd, linkpath.as_ref())?;

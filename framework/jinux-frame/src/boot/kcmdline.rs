@@ -32,7 +32,7 @@ pub struct KCmdlineArg {
 impl KCmdlineArg {
     /// Get the path of the initprocess.
     pub fn get_initproc_path(&self) -> Option<&str> {
-        self.initproc.path.as_ref().map(|s| s.as_str())
+        self.initproc.path.as_deref()
     }
     /// Get the argument vector(argv) of the initprocess.
     pub fn get_initproc_argv(&self) -> &Vec<CString> {
@@ -85,7 +85,7 @@ impl From<&str> for KCmdlineArg {
             // KernelArg => Arg "\s+" KernelArg | %empty
             // InitArg => Arg "\s+" InitArg | %empty
             if kcmdline_end {
-                if result.initproc.path == None {
+                if result.initproc.path.is_none() {
                     panic!("Initproc arguments provided but no initproc path specified!");
                 }
                 result.initproc.argv.push(CString::new(arg).unwrap());
@@ -96,7 +96,7 @@ impl From<&str> for KCmdlineArg {
                 continue;
             }
             // Arg => Entry | Entry "=" Value
-            let arg_pattern: Vec<_> = arg.split("=").collect();
+            let arg_pattern: Vec<_> = arg.split('=').collect();
             let (entry, value) = match arg_pattern.len() {
                 1 => (arg_pattern[0], None),
                 2 => (arg_pattern[0], Some(arg_pattern[1])),
@@ -105,7 +105,7 @@ impl From<&str> for KCmdlineArg {
                 }
             };
             // Entry => Module "." ModuleOptionName | KernelOptionName
-            let entry_pattern: Vec<_> = entry.split(".").collect();
+            let entry_pattern: Vec<_> = entry.split('.').collect();
             let (node, option) = match entry_pattern.len() {
                 1 => (None, entry_pattern[0]),
                 2 => (Some(entry_pattern[0]), entry_pattern[1]),
@@ -145,14 +145,11 @@ impl From<&str> for KCmdlineArg {
                 }
             } else {
                 // There is no value, the entry is only a option.
-                match option {
-                    _ => {
-                        // If the option is not recognized, it is passed to the initproc.
-                        // Pattern 'option' without value is treated as the init argument.
-                        let argv_entry = CString::new(option.to_string()).unwrap();
-                        result.initproc.argv.push(argv_entry);
-                    }
-                }
+
+                // If the option is not recognized, it is passed to the initproc.
+                // Pattern 'option' without value is treated as the init argument.
+                let argv_entry = CString::new(option.to_string()).unwrap();
+                result.initproc.argv.push(argv_entry);
             }
         }
 

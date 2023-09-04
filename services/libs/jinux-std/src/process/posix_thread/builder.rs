@@ -63,6 +63,7 @@ impl PosixThreadBuilder {
         self
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_main_thread(mut self, is_main_thread: bool) -> Self {
         self.is_main_thread = is_main_thread;
         self

@@ -9,7 +9,7 @@ use pod::Pod;
 use crate::transport::VirtioTransport;
 
 pub const BLK_SIZE: usize = 512;
-pub static DEVICE_NAME: &'static str = "Virtio-Block";
+pub static DEVICE_NAME: &str = "Virtio-Block";
 
 bitflags! {
     /// features for virtio block device
@@ -112,7 +112,7 @@ pub struct VirtioBlkTopology {
 }
 
 impl VirtioBlkConfig {
-    pub(self) fn new(transport: &mut dyn VirtioTransport) -> SafePtr<Self, IoMem> {
+    pub(self) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
         let memory = transport.device_config_memory();
         SafePtr::new(memory, 0)
     }

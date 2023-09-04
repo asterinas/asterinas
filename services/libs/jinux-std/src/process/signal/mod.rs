@@ -32,16 +32,14 @@ pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let pid = current.pid();
-    let sig_mask = posix_thread.sig_mask().lock().clone();
+    let sig_mask = *posix_thread.sig_mask().lock();
     let mut thread_sig_queues = posix_thread.sig_queues().lock();
     let mut proc_sig_queues = current.sig_queues().lock();
     // We first deal with signal in current thread, then signal in current process.
     let signal = if let Some(signal) = thread_sig_queues.dequeue(&sig_mask) {
         Some(signal)
-    } else if let Some(signal) = proc_sig_queues.dequeue(&sig_mask) {
-        Some(signal)
     } else {
-        None
+        proc_sig_queues.dequeue(&sig_mask)
     };
     if let Some(signal) = signal {
         let sig_num = signal.num();
@@ -132,18 +130,20 @@ pub fn handle_user_signal(
     // Set up signal stack in user stack,
     // to avoid corrupting user stack, we minus 128 first.
     let mut user_rsp = context.rsp() as u64;
-    user_rsp = user_rsp - 128;
+    user_rsp -= 128;
 
     // 1. write siginfo_t
-    user_rsp = user_rsp - mem::size_of::<siginfo_t>() as u64;
+    user_rsp -= mem::size_of::<siginfo_t>() as u64;
     write_val_to_user(user_rsp as _, &sig_info)?;
     let siginfo_addr = user_rsp;
     // debug!("siginfo_addr = 0x{:x}", siginfo_addr);
 
     // 2. write ucontext_t.
     user_rsp = alloc_aligned_in_user_stack(user_rsp, mem::size_of::<ucontext_t>(), 16)?;
-    let mut ucontext = ucontext_t::default();
-    ucontext.uc_sigmask = mask.as_u64();
+    let mut ucontext = ucontext_t {
+        uc_sigmask: mask.as_u64(),
+        ..Default::default()
+    };
     ucontext.uc_mcontext.inner.gp_regs = *context.general_regs();
     let mut sig_context = posix_thread.sig_context().lock();
     if let Some(sig_context_addr) = *sig_context {
@@ -172,7 +172,7 @@ pub fn handle_user_signal(
             0x0f, 0x05, // syscall (call rt_sigreturn)
             0x90, // nop (for alignment)
         ];
-        user_rsp = user_rsp - TRAMPOLINE.len() as u64;
+        user_rsp -= TRAMPOLINE.len() as u64;
         let trampoline_rip = user_rsp;
         write_bytes_to_user(user_rsp as Vaddr, TRAMPOLINE)?;
         user_rsp = write_u64_to_user_stack(user_rsp, trampoline_rip)?;

@@ -37,11 +37,7 @@ enum Inner {
 
 impl Inner {
     fn is_bound(&self) -> bool {
-        if let Inner::Bound { .. } = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Inner::Bound { .. })
     }
 
     fn bind(&mut self, endpoint: IpEndpoint) -> Result<()> {
@@ -91,7 +87,7 @@ impl Inner {
             remote_endpoint, ..
         } = self
         {
-            remote_endpoint.clone()
+            *remote_endpoint
         } else {
             None
         }

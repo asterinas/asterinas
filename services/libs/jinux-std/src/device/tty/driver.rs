@@ -22,7 +22,7 @@ pub struct TtyDriver {
 }
 
 impl TtyDriver {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             ttys: SpinLock::new(Vec::new()),
         }

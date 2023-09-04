@@ -250,8 +250,7 @@ impl Rhsa {
     pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
         let length = u16_from_slice(&bytes[2..4]) as u32;
         debug_assert_eq!(length, bytes.len() as u32);
-        let result = *(bytes.as_ptr() as *const Self);
-        result
+        *(bytes.as_ptr() as *const Self)
     }
 }
 

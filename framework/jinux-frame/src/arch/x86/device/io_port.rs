@@ -33,7 +33,7 @@ impl<T, A> IoPort<T, A> {
     /// a privileged operation.
     pub const unsafe fn new(port: u16) -> Self {
         Self {
-            port: port,
+            port,
             value_marker: PhantomData,
             access_marker: PhantomData,
         }

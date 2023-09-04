@@ -67,21 +67,21 @@ impl VirtQueue {
         }
 
         let descriptor_ptr: SafePtr<Descriptor, VmFrame> = SafePtr::new(
-            VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
+            VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
             0,
         );
         let avail_ring_ptr: SafePtr<AvailRing, VmFrame> = SafePtr::new(
-            VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
+            VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
             0,
         );
         let used_ring_ptr: SafePtr<UsedRing, VmFrame> = SafePtr::new(
-            VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false).can_dma(true))
+            VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
                 .unwrap()
                 .pop()
                 .unwrap(),
@@ -311,6 +311,7 @@ pub struct Descriptor {
 }
 
 #[inline]
+#[allow(clippy::type_complexity)]
 fn set_buf(ptr: &SafePtr<Descriptor, &VmFrame, TRightSet<TRights![Dup, Write]>>, buf: &[u8]) {
     let va = buf.as_ptr() as usize;
     let pa = jinux_frame::vm::vaddr_to_paddr(va).unwrap();
@@ -323,19 +324,12 @@ fn set_buf(ptr: &SafePtr<Descriptor, &VmFrame, TRightSet<TRights![Dup, Write]>>,
 }
 bitflags! {
     /// Descriptor flags
-    #[derive(Pod)]
+    #[derive(Pod, Default)]
     #[repr(C)]
     struct DescFlags: u16 {
         const NEXT = 1;
         const WRITE = 2;
         const INDIRECT = 4;
-    }
-}
-impl Default for DescFlags {
-    fn default() -> Self {
-        Self {
-            bits: Default::default(),
-        }
     }
 }
 

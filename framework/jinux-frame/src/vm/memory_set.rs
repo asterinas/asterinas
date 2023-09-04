@@ -28,12 +28,8 @@ pub struct MemorySet {
     areas: BTreeMap<Vaddr, MapArea>,
 }
 
-impl MapArea {
-    pub fn mapped_size(&self) -> usize {
-        self.size
-    }
-
-    pub fn clone(&self) -> Self {
+impl Clone for MapArea {
+    fn clone(&self) -> Self {
         let mut mapper = BTreeMap::new();
         for (&va, old) in &self.mapper {
             let new = frame_allocator::alloc(VmFrameFlags::empty()).unwrap();
@@ -48,6 +44,12 @@ impl MapArea {
             flags: self.flags,
             mapper,
         }
+    }
+}
+
+impl MapArea {
+    pub fn mapped_size(&self) -> usize {
+        self.size
     }
 
     /// This function will map the vitural address to the given physical frames
@@ -69,7 +71,7 @@ impl MapArea {
             size,
             mapper: BTreeMap::new(),
         };
-        let mut current_va = start_va.clone();
+        let mut current_va = start_va;
         let page_size = size / PAGE_SIZE;
         let mut phy_frame_iter = physical_frames.iter();
 
@@ -146,6 +148,12 @@ impl MapArea {
                 start = va + PAGE_SIZE;
             }
         }
+    }
+}
+
+impl Default for MemorySet {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

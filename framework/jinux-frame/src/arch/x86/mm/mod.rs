@@ -49,6 +49,10 @@ pub fn tlb_flush(vaddr: Vaddr) {
 #[repr(C)]
 pub struct PageTableEntry(usize);
 
+/// ## Safety
+///
+/// Changing the level 4 page table is unsafe, because it's possible to violate memory safety by
+/// changing the page mapping.
 pub unsafe fn activate_page_table(root_paddr: Paddr, flags: x86_64::registers::control::Cr3Flags) {
     x86_64::registers::control::Cr3::write(
         PhysFrame::from_start_address(x86_64::PhysAddr::new(root_paddr as u64)).unwrap(),
@@ -67,9 +71,9 @@ pub fn init() {
     // Cancel mapping in lowest addresses.
     p4[0].clear();
     let mut map_pte = ALL_MAPPED_PTE.lock();
-    for i in 0..512 {
-        if p4[i].flags().contains(PageTableFlags::PRESENT) {
-            map_pte.insert(i, p4[i]);
+    for (i, p4_i) in p4.iter().enumerate().take(512) {
+        if p4_i.flags().contains(PageTableFlags::PRESENT) {
+            map_pte.insert(i, *p4_i);
         }
     }
 }
@@ -166,7 +170,7 @@ impl PageTableEntryTrait for PageTableEntry {
         Self((paddr & Self::PHYS_ADDR_MASK) | flags.bits)
     }
     fn paddr(&self) -> Paddr {
-        self.0 as usize & Self::PHYS_ADDR_MASK
+        self.0 & Self::PHYS_ADDR_MASK
     }
     fn flags(&self) -> PageTableFlags {
         PageTableFlags::from_bits_truncate(self.0)
@@ -184,7 +188,7 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     fn page_index(va: crate::vm::Vaddr, level: usize) -> usize {
-        debug_assert!(level >= 1 && level <= 5);
+        debug_assert!((1..=5).contains(&level));
         va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
     }
 }

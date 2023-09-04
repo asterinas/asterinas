@@ -26,6 +26,7 @@ static SERIAL_MODEM_CTRL: IoPort<u8, WriteOnlyAccess> =
 static SERIAL_LINE_STS: IoPort<u8, ReadWriteAccess> = unsafe { IoPort::new(SERIAL_DATA_PORT + 5) };
 
 static CONSOLE_IRQ_CALLBACK: Once<SpinLock<IrqLine>> = Once::new();
+#[allow(clippy::type_complexity)]
 static SERIAL_INPUT_CALLBACKS: SpinLock<Vec<Arc<dyn Fn(u8) + Send + Sync + 'static>>> =
     SpinLock::new(Vec::new());
 

@@ -2,6 +2,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::Ipv4Address;
 use crate::prelude::*;
+use alloc::collections::btree_map::Entry;
 use keyable_arc::KeyableWeak;
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
@@ -62,8 +63,8 @@ impl IfaceCommon {
     fn alloc_ephemeral_port(&self) -> Result<u16> {
         let mut used_ports = self.used_ports.write();
         for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
-            if !used_ports.contains_key(&port) {
-                used_ports.insert(port, 0);
+            if let Entry::Vacant(e) = used_ports.entry(port) {
+                e.insert(0);
                 return Ok(port);
             }
         }
@@ -74,7 +75,7 @@ impl IfaceCommon {
         let mut used_ports = self.used_ports.write();
         if let Some(used_times) = used_ports.get_mut(&port) {
             if *used_times == 0 || can_reuse {
-                *used_times = *used_times + 1;
+                *used_times += 1;
             } else {
                 return_errno_with_message!(Errno::EADDRINUSE, "cannot bind port");
             }
@@ -163,7 +164,7 @@ impl IfaceCommon {
     }
 
     fn insert_bound_socket(&self, socket: &Arc<AnyBoundSocket>) -> Result<()> {
-        let weak_ref = KeyableWeak::from(Arc::downgrade(&socket));
+        let weak_ref = KeyableWeak::from(Arc::downgrade(socket));
         let mut bound_sockets = self.bound_sockets.write();
         if bound_sockets.contains(&weak_ref) {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound");

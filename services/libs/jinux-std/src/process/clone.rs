@@ -178,7 +178,7 @@ fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Res
     // inherit sigmask from current thread
     let current_thread = current_thread!();
     let current_posix_thread = current_thread.as_posix_thread().unwrap();
-    let sig_mask = current_posix_thread.sig_mask().lock().clone();
+    let sig_mask = *current_posix_thread.sig_mask().lock();
     let is_main_thread = child_tid == current.pid();
     let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
         .process(Arc::downgrade(&current))
@@ -241,7 +241,7 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
     // inherit parent's sig mask
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
-    let child_sig_mask = posix_thread.sig_mask().lock().clone();
+    let child_sig_mask = *posix_thread.sig_mask().lock();
 
     let child_tid = allocate_tid();
     let mut child_thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
@@ -338,7 +338,7 @@ fn clone_cpu_context(
     tls: u64,
     clone_flags: CloneFlags,
 ) -> UserContext {
-    let mut child_context = parent_context.clone();
+    let mut child_context = parent_context;
     // The return value of child thread is zero
     child_context.set_rax(0);
 
@@ -390,7 +390,7 @@ fn clone_sighand(
     if clone_flags.contains(CloneFlags::CLONE_SIGHAND) {
         parent_sig_dispositions.clone()
     } else {
-        Arc::new(Mutex::new(parent_sig_dispositions.lock().clone()))
+        Arc::new(Mutex::new(*parent_sig_dispositions.lock()))
     }
 }
 

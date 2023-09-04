@@ -5,8 +5,8 @@ use syn::Expr;
 
 use crate::type_flag::TypeFlagDef;
 
-const EMPTY_SET_NAME: &'static str = "::typeflags_util::Nil";
-const SET_NAME: &'static str = "::typeflags_util::Cons";
+const EMPTY_SET_NAME: &str = "::typeflags_util::Nil";
+const SET_NAME: &str = "::typeflags_util::Cons";
 
 /// A flagSet represent the combination of differnt flag item.
 /// e.g. [Read, Write], [Read], [] are all flag sets.
@@ -25,26 +25,6 @@ impl FlagSet {
     /// add a flag item
     pub fn push_item(&mut self, flag_item: FlagItem) {
         self.items.push(flag_item);
-    }
-
-    /// the flag set string. debug use.
-    pub fn to_string(&self) -> String {
-        if self.items.len() == 0 {
-            return EMPTY_SET_NAME.to_string();
-        }
-
-        let mut res = EMPTY_SET_NAME.to_string();
-
-        for item in self.items.iter() {
-            let replace_set = format!(
-                "{}<{}, {}>",
-                SET_NAME,
-                item.ident.to_string(),
-                EMPTY_SET_NAME
-            );
-            res = res.replace(EMPTY_SET_NAME, &replace_set);
-        }
-        res
     }
 
     /// the tokens represents the flag set type name
@@ -110,10 +90,7 @@ impl FlagSet {
 
     pub fn contains_type(&self, type_ident: &Ident) -> bool {
         let type_name = type_ident.to_string();
-        self.items
-            .iter()
-            .position(|item| item.ident.to_string() == type_name)
-            .is_some()
+        self.items.iter().any(|item| item.ident == type_name)
     }
 
     pub fn contains_set(&self, other_set: &FlagSet) -> bool {
@@ -122,7 +99,7 @@ impl FlagSet {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     /// The token stream inside macro definition. We will generate a token stream for each permutation of items
@@ -177,9 +154,9 @@ pub fn generate_flag_sets(type_flag_def: &TypeFlagDef) -> Vec<FlagSet> {
 
     for i in 0..limit {
         let mut flag_set = FlagSet::new();
-        for j in 0..flag_item_num {
+        for (j, item_j) in flag_items.iter().enumerate().take(flag_item_num) {
             if (i >> j) & 0x1 == 1usize {
-                flag_set.push_item(flag_items[j].clone());
+                flag_set.push_item(item_j.clone());
             }
         }
         res.push(flag_set);

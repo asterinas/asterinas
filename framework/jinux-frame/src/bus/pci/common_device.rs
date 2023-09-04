@@ -110,22 +110,18 @@ impl BarManager {
         let mut idx = 0;
         let mut bars = [None, None, None, None, None, None];
         while idx < max {
-            match Bar::new(location, idx) {
-                Ok(bar) => {
-                    let mut idx_step = 0;
-                    match &bar {
-                        Bar::Memory(memory_bar) => {
-                            if memory_bar.address_length() == AddrLen::Bits64 {
-                                idx_step = 1;
-                            }
+            if let Ok(bar) = Bar::new(location, idx) {
+                let mut idx_step = 0;
+                match &bar {
+                    Bar::Memory(memory_bar) => {
+                        if memory_bar.address_length() == AddrLen::Bits64 {
+                            idx_step = 1;
                         }
-                        Bar::Io(_) => {}
                     }
-                    bars[idx as usize] = Some((bar, true));
-                    idx += idx_step;
+                    Bar::Io(_) => {}
                 }
-                // ignore for now
-                Err(_) => {}
+                bars[idx as usize] = Some((bar, true));
+                idx += idx_step;
             }
             idx += 1;
         }

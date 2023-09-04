@@ -31,7 +31,7 @@ pub fn sys_unlinkat(
         if pathname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        if pathname.ends_with("/") {
+        if pathname.ends_with('/') {
             return_errno_with_message!(Errno::EISDIR, "unlink on directory");
         }
         let fs_path = FsPath::new(dirfd, pathname.as_ref())?;

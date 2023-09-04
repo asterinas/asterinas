@@ -151,6 +151,7 @@ impl OptionalBuilder {
         self
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn build(self) -> Result<(Arc<dyn FileSystem>, Option<Weak<dyn Inode>>, bool)> {
         if self.parent.is_none() && self.fs.is_none() {
             return_errno_with_message!(Errno::EINVAL, "must have parent or fs");

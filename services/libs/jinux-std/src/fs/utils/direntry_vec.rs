@@ -14,11 +14,7 @@ pub trait DirEntryVecExt {
 
 impl DirEntryVecExt for SlotVec<(String, Arc<dyn Inode>)> {
     fn put_entry_if_not_found(&mut self, name: &str, f: impl Fn() -> Arc<dyn Inode>) {
-        if self
-            .iter()
-            .find(|(child_name, _)| child_name == name)
-            .is_none()
-        {
+        if !self.iter().any(|(child_name, _)| child_name == name) {
             let inode = f();
             self.put((String::from(name), inode));
         }

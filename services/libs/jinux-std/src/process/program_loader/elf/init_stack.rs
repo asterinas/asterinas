@@ -184,7 +184,7 @@ impl InitStack {
             let ldso_base = ldso_load_info.base_addr();
             aux_vec.set(AuxKey::AT_BASE, ldso_base as u64)?;
         }
-        self.adjust_stack_alignment(root_vmar, &envp_pointers, &argv_pointers, &aux_vec)?;
+        self.adjust_stack_alignment(root_vmar, &envp_pointers, &argv_pointers, aux_vec)?;
         self.write_aux_vec(root_vmar, aux_vec)?;
         self.write_envp_pointers(root_vmar, envp_pointers)?;
         self.write_argv_pointers(root_vmar, argv_pointers)?;
@@ -195,11 +195,7 @@ impl InitStack {
     }
 
     fn write_envp_strings(&mut self, root_vmar: &Vmar<Full>) -> Result<Vec<u64>> {
-        let envp = self
-            .envp
-            .iter()
-            .map(|envp| envp.clone())
-            .collect::<Vec<_>>();
+        let envp = self.envp.to_vec();
         let mut envp_pointers = Vec::with_capacity(envp.len());
         for envp in envp.iter() {
             let pointer = self.write_cstring(envp, root_vmar)?;
@@ -209,11 +205,7 @@ impl InitStack {
     }
 
     fn write_argv_strings(&mut self, root_vmar: &Vmar<Full>) -> Result<Vec<u64>> {
-        let argv = self
-            .argv
-            .iter()
-            .map(|argv| argv.clone())
-            .collect::<Vec<_>>();
+        let argv = self.argv.to_vec();
         let mut argv_pointers = Vec::with_capacity(argv.len());
         for argv in argv.iter().rev() {
             let pointer = self.write_cstring(argv, root_vmar)?;
@@ -224,7 +216,7 @@ impl InitStack {
         Ok(argv_pointers)
     }
 
-    fn write_aux_vec(&mut self, root_vmar: &Vmar<Full>, aux_vec: &mut AuxVec) -> Result<()> {
+    fn write_aux_vec(&mut self, root_vmar: &Vmar<Full>, aux_vec: &AuxVec) -> Result<()> {
         // Write NULL auxilary
         self.write_u64(0, root_vmar)?;
         self.write_u64(AuxKey::AT_NULL as u64, root_vmar)?;

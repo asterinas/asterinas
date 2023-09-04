@@ -126,7 +126,7 @@ impl PageTableEntryTrait for PageTableEntry {
     // bit 47~12
     type F = PageTableFlags;
     fn new(paddr: crate::vm::Paddr, flags: PageTableFlags) -> Self {
-        Self(((paddr & Self::PHYS_MASK) as u64 | flags.bits) as u64)
+        Self((paddr & Self::PHYS_MASK) as u64 | flags.bits)
     }
 
     fn paddr(&self) -> crate::vm::Paddr {
@@ -150,7 +150,7 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     fn page_index(va: crate::vm::Vaddr, level: usize) -> usize {
-        debug_assert!(level >= 1 && level <= 5);
+        debug_assert!((1..=5).contains(&level));
         va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
     }
 }

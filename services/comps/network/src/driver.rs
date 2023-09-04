@@ -39,8 +39,7 @@ impl phy::RxToken for RxToken {
         F: FnOnce(&mut [u8]) -> R,
     {
         let packet_but = self.0.packet_mut();
-        let res = f(packet_but);
-        res
+        f(packet_but)
     }
 }
 

@@ -154,11 +154,7 @@ impl From<c_pollfd> for PollFd {
 
 impl From<PollFd> for c_pollfd {
     fn from(raw: PollFd) -> Self {
-        let fd = if let Some(fd) = raw.fd() {
-            fd as i32
-        } else {
-            -1
-        };
+        let fd = if let Some(fd) = raw.fd() { fd } else { -1 };
         let events = raw.events().bits() as i16;
         let revents = raw.revents().get().bits() as i16;
         Self {

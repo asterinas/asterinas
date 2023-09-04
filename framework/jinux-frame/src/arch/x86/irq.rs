@@ -72,6 +72,7 @@ impl IrqLine {
     ///
     /// This function is marked unsafe as manipulating interrupt lines is
     /// considered a dangerous operation.
+    #[allow(clippy::redundant_allocation)]
     pub unsafe fn acquire(irq_num: u8) -> Arc<&'static Self> {
         Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap())
     }
@@ -126,7 +127,7 @@ impl Drop for IrqCallbackHandle {
             .unwrap()
             .callback_list
             .lock();
-        a.retain(|item| if (*item).id == self.id { false } else { true });
+        a.retain(|item| item.id != self.id);
         ID_ALLOCATOR.lock().dealloc(self.id);
     }
 }

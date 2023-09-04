@@ -34,7 +34,7 @@ impl RobustListHead {
     ///
     /// The futex refered to by `list_op_pending`, if any, will be returned as
     /// the last item.
-    pub fn futexes<'a>(&'a self) -> FutexIter<'a> {
+    pub fn futexes(&self) -> FutexIter<'_> {
         FutexIter::new(self)
     }
 

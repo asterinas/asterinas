@@ -57,7 +57,7 @@ pub(crate) unsafe fn dealloc(index: usize) {
     FRAME_ALLOCATOR.get().unwrap().lock().dealloc(index, 1);
 }
 
-pub(crate) fn init(regions: &Vec<MemoryRegion>) {
+pub(crate) fn init(regions: &[MemoryRegion]) {
     let mut allocator = FrameAllocator::<32>::new();
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {

@@ -142,7 +142,7 @@ struct c_epoll_event {
 impl From<&EpollEvent> for c_epoll_event {
     fn from(ep_event: &EpollEvent) -> Self {
         Self {
-            events: ep_event.events.bits() as u32,
+            events: ep_event.events.bits(),
             data: ep_event.user_data,
         }
     }
@@ -150,9 +150,6 @@ impl From<&EpollEvent> for c_epoll_event {
 
 impl From<&c_epoll_event> for EpollEvent {
     fn from(c_event: &c_epoll_event) -> Self {
-        Self::new(
-            IoEvents::from_bits_truncate(c_event.events as u32),
-            c_event.data,
-        )
+        Self::new(IoEvents::from_bits_truncate(c_event.events), c_event.data)
     }
 }

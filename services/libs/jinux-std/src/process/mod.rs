@@ -91,6 +91,7 @@ impl Process {
     }
 
     /// create a new process(not schedule it)
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pid: Pid,
         parent: Weak<Process>,
@@ -328,7 +329,7 @@ impl Process {
 
     /// returns the root vmar
     pub fn root_vmar(&self) -> &Vmar<Full> {
-        &self.process_vm.root_vmar()
+        self.process_vm.root_vmar()
     }
 
     /// returns the user heap if the process does have, otherwise None

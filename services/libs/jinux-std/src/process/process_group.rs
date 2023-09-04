@@ -71,15 +71,15 @@ impl ProcessGroup {
 
     /// send kernel signal to all processes in the group
     pub fn kernel_signal(&self, signal: KernelSignal) {
-        for (_, process) in &self.inner.lock().processes {
-            process.enqueue_signal(Box::new(signal.clone()));
+        for process in self.inner.lock().processes.values() {
+            process.enqueue_signal(Box::new(signal));
         }
     }
 
     /// send user signal to all processes in the group
     pub fn user_signal(&self, signal: UserSignal) {
-        for (_, process) in &self.inner.lock().processes {
-            process.enqueue_signal(Box::new(signal.clone()));
+        for process in self.inner.lock().processes.values() {
+            process.enqueue_signal(Box::new(signal));
         }
     }
 }

@@ -52,8 +52,7 @@ pub fn init() {
         acpi::InterruptModel::Unknown => panic!("not found APIC in ACPI Table"),
         acpi::InterruptModel::Apic(apic) => {
             apic.io_apics
-                .iter()
-                .next()
+                .first()
                 .expect("There must be at least one IO APIC")
                 .address
         }

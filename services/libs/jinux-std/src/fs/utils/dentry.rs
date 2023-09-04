@@ -58,7 +58,7 @@ impl Dentry {
         if !self.is_mountpoint() {
             return self.this();
         }
-        match self.mount_node().get(&self) {
+        match self.mount_node().get(self) {
             Some(child_mount) => child_mount.root_dentry().overlaid_dentry(),
             None => self.this(),
         }
@@ -126,7 +126,7 @@ impl Dentry {
 
     /// Get the DentryKey.
     pub fn key(&self) -> DentryKey {
-        DentryKey::new(&self)
+        DentryKey::new(self)
     }
 
     /// Get the vnode.
@@ -331,7 +331,7 @@ impl Dentry {
                 Some(dentry) => {
                     children.delete_dentry(old_name);
                     dentry.set_name_and_parent(new_name, self.this());
-                    children.insert_dentry(&dentry);
+                    children.insert_dentry(dentry);
                 }
                 None => {
                     children.delete_dentry(new_name);
@@ -343,7 +343,7 @@ impl Dentry {
                 return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
             }
             let (mut self_children, mut new_dir_children) =
-                write_lock_children_on_two_dentries(&self, &new_dir);
+                write_lock_children_on_two_dentries(self, new_dir);
             let old_dentry = self_children.find_dentry_with_checking_mountpoint(old_name)?;
             let _ = new_dir_children.find_dentry_with_checking_mountpoint(new_name)?;
             self.vnode.rename(old_name, &new_dir.vnode, new_name)?;
@@ -351,7 +351,7 @@ impl Dentry {
                 Some(dentry) => {
                     self_children.delete_dentry(old_name);
                     dentry.set_name_and_parent(new_name, new_dir.this());
-                    new_dir_children.insert_dentry(&dentry);
+                    new_dir_children.insert_dentry(dentry);
                 }
                 None => {
                     new_dir_children.delete_dentry(new_name);
@@ -473,7 +473,7 @@ impl Dentry {
             }
         }
 
-        debug_assert!(path.starts_with("/"));
+        debug_assert!(path.starts_with('/'));
         path
     }
 }

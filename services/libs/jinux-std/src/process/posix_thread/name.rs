@@ -43,6 +43,6 @@ impl ThreadName {
     }
 
     pub fn name(&self) -> Result<Option<&CStr>> {
-        Ok(Some(&(CStr::from_bytes_until_nul(&self.inner)?)))
+        Ok(Some(CStr::from_bytes_until_nul(&self.inner)?))
     }
 }

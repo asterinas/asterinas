@@ -15,17 +15,11 @@ pub enum AccessMode {
 
 impl AccessMode {
     pub fn is_readable(&self) -> bool {
-        match *self {
-            AccessMode::O_RDONLY | AccessMode::O_RDWR => true,
-            _ => false,
-        }
+        matches!(*self, AccessMode::O_RDONLY | AccessMode::O_RDWR)
     }
 
     pub fn is_writable(&self) -> bool {
-        match *self {
-            AccessMode::O_WRONLY | AccessMode::O_RDWR => true,
-            _ => false,
-        }
+        matches!(*self, AccessMode::O_WRONLY | AccessMode::O_RDWR)
     }
 }
 

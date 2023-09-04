@@ -30,14 +30,14 @@ pub fn sys_linkat(
     let current = current!();
     let (old_dentry, new_dir_dentry, new_name) = {
         let old_pathname = old_pathname.to_string_lossy();
-        if old_pathname.ends_with("/") {
+        if old_pathname.ends_with('/') {
             return_errno_with_message!(Errno::EPERM, "oldpath is dir");
         }
         if old_pathname.is_empty() && !flags.contains(LinkFlags::AT_EMPTY_PATH) {
             return_errno_with_message!(Errno::ENOENT, "oldpath is empty");
         }
         let new_pathname = new_pathname.to_string_lossy();
-        if new_pathname.ends_with("/") {
+        if new_pathname.ends_with('/') {
             return_errno_with_message!(Errno::EPERM, "newpath is dir");
         }
         if new_pathname.is_empty() {

@@ -100,9 +100,15 @@ fn do_select(
     };
 
     // Clear up the three input fd_set's, which will be used for output as well
-    readfds.as_mut().map_or((), |fds| fds.clear());
-    writefds.as_mut().map_or((), |fds| fds.clear());
-    exceptfds.as_mut().map_or((), |fds| fds.clear());
+    if let Some(fds) = readfds.as_mut() {
+        fds.clear();
+    }
+    if let Some(fds) = writefds.as_mut() {
+        fds.clear();
+    }
+    if let Some(fds) = exceptfds.as_mut() {
+        fds.clear();
+    }
 
     // Do the poll syscall that is equivalent to the select syscall
     let num_revents = do_poll(&poll_fds, timeout)?;

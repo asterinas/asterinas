@@ -53,8 +53,7 @@ impl Pollee {
         self.register_poller(poller.unwrap(), mask);
 
         // It is important to check events again to handle race conditions
-        let revents = self.events() & mask;
-        revents
+        self.events() & mask
     }
 
     fn register_poller(&self, poller: &Poller, mask: IoEvents) {
@@ -137,6 +136,12 @@ struct PollerInner {
     event_counter: EventCounter,
     // All pollees that are interesting to this poller
     pollees: Mutex<BTreeMap<KeyableWeak<PolleeInner>, ()>>,
+}
+
+impl Default for Poller {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Poller {

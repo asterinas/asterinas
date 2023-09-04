@@ -2,7 +2,6 @@
 
 use core::arch::x86_64::{_fxrstor, _fxsave};
 use core::fmt::Debug;
-use core::mem::MaybeUninit;
 
 use trapframe::{GeneralRegs, UserContext as RawUserContext};
 
@@ -87,7 +86,7 @@ impl UserContextApiInternal for UserContext {
                     }
                 }
             };
-            call_irq_callback_functions(&self.into_trap_frame());
+            call_irq_callback_functions(&self.as_trap_frame());
         }
 
         crate::arch::irq::enable_local();
@@ -103,7 +102,7 @@ impl UserContextApiInternal for UserContext {
         }
     }
 
-    fn into_trap_frame(&self) -> trapframe::TrapFrame {
+    fn as_trap_frame(&self) -> trapframe::TrapFrame {
         trapframe::TrapFrame {
             rax: self.user_context.general.rax,
             rbx: self.user_context.general.rbx,
@@ -350,7 +349,7 @@ impl FpRegs {
         let ptr = unsafe { alloc::alloc::alloc(layout) } as usize;
         debug!("ptr = 0x{:x}", ptr);
         unsafe {
-            _fxsave((&mut self.buf.data).as_mut_ptr() as *mut u8);
+            _fxsave(self.buf.data.as_mut_ptr());
         }
         debug!("save fpregs success");
         self.is_valid = true;
@@ -365,7 +364,7 @@ impl FpRegs {
     /// It is the caller's responsibility to ensure that the source slice contains
     /// data that is in xsave/xrstor format. The slice must have a length of 512 bytes.
     pub unsafe fn save_from_slice(&mut self, src: &[u8]) {
-        (&mut self.buf.data).copy_from_slice(src);
+        self.buf.data.copy_from_slice(src);
         self.is_valid = true;
     }
 
@@ -388,7 +387,7 @@ impl FpRegs {
     pub fn restore(&self) {
         debug!("restore fpregs");
         assert!(self.is_valid);
-        unsafe { _fxrstor((&self.buf.data).as_ptr()) };
+        unsafe { _fxrstor(self.buf.data.as_ptr()) };
         debug!("restore fpregs success");
     }
 

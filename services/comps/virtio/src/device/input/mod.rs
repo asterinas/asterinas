@@ -30,7 +30,7 @@ use jinux_frame::io_mem::IoMem;
 use jinux_util::safe_ptr::SafePtr;
 use pod::Pod;
 
-pub static DEVICE_NAME: &'static str = "Virtio-Input";
+pub static DEVICE_NAME: &str = "Virtio-Input";
 
 /// Select value used for [`VirtIOInput::query_config_select()`].
 #[repr(u8)]
@@ -72,7 +72,7 @@ pub struct VirtioInputConfig {
 }
 
 impl VirtioInputConfig {
-    pub(self) fn new(transport: &mut dyn VirtioTransport) -> SafePtr<Self, IoMem> {
+    pub(self) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
         let memory = transport.device_config_memory();
         SafePtr::new(memory, 0)
     }

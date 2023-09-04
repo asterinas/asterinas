@@ -71,7 +71,7 @@ pub struct VirtioNetConfig {
 }
 
 impl VirtioNetConfig {
-    pub(super) fn new(transport: &mut dyn VirtioTransport) -> SafePtr<Self, IoMem> {
+    pub(super) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
         let memory = transport.device_config_memory();
         SafePtr::new(memory, 0)
     }

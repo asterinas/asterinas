@@ -38,7 +38,7 @@ macro_rules! cpu_local {
     // multiple declarations
     ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty = $init:expr; $($rest:tt)*) => {
         $(#[$attr])* $vis static $name: CpuLocal<$t> = unsafe { CpuLocal::new($init) };
-        crate::cpu_local!($($rest)*);
+        $crate::cpu_local!($($rest)*);
     };
 
     // single declaration
@@ -66,6 +66,7 @@ unsafe impl<T> Sync for CpuLocal<T> {}
 impl<T> CpuLocal<T> {
     /// Initialize CPU-local object
     /// Developer cannot construct a valid CpuLocal object arbitrarily
+    #[allow(clippy::missing_safety_doc)]
     pub const unsafe fn new(val: T) -> Self {
         Self(UnsafeCell::new(val))
     }

@@ -40,16 +40,14 @@ impl UserHeap {
             .offset(self.heap_base)
             .size(self.heap_size_limit);
         vmar_map_options.build().unwrap();
-        return self.current_heap_end.load(Ordering::Relaxed);
+        self.current_heap_end.load(Ordering::Relaxed)
     }
 
     pub fn brk(&self, new_heap_end: Option<Vaddr>) -> Result<Vaddr> {
         let current = current!();
         let root_vmar = current.root_vmar();
         match new_heap_end {
-            None => {
-                return Ok(self.current_heap_end.load(Ordering::Relaxed));
-            }
+            None => Ok(self.current_heap_end.load(Ordering::Relaxed)),
             Some(new_heap_end) => {
                 if new_heap_end > self.heap_base + self.heap_size_limit {
                     return_errno_with_message!(Errno::ENOMEM, "heap size limit was met.");
@@ -64,7 +62,7 @@ impl UserHeap {
                 let heap_vmo = heap_mapping.vmo();
                 heap_vmo.resize(new_size)?;
                 self.current_heap_end.store(new_heap_end, Ordering::Release);
-                return Ok(new_heap_end);
+                Ok(new_heap_end)
             }
         }
     }
@@ -82,8 +80,8 @@ impl Clone for UserHeap {
     fn clone(&self) -> Self {
         let current_heap_end = self.current_heap_end.load(Ordering::Relaxed);
         Self {
-            heap_base: self.heap_base.clone(),
-            heap_size_limit: self.heap_size_limit.clone(),
+            heap_base: self.heap_base,
+            heap_size_limit: self.heap_size_limit,
             current_heap_end: AtomicUsize::new(current_heap_end),
         }
     }

@@ -13,7 +13,7 @@ pub struct CapabilityVndrData {
 impl CapabilityVndrData {
     pub(super) fn new(dev: &PciCommonDevice, cap_ptr: u16, length: u16) -> Self {
         Self {
-            location: dev.location().clone(),
+            location: *dev.location(),
             cap_ptr,
             length,
         }
@@ -23,6 +23,10 @@ impl CapabilityVndrData {
         self.length
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+
     pub fn read8(&self, offset: u16) -> Result<u8> {
         self.check_range(offset)?;
         Ok(self.location.read8(self.cap_ptr + offset))
@@ -30,7 +34,8 @@ impl CapabilityVndrData {
 
     pub fn write8(&self, offset: u16, value: u8) -> Result<()> {
         self.check_range(offset)?;
-        Ok(self.location.write8(self.cap_ptr + offset, value))
+        self.location.write8(self.cap_ptr + offset, value);
+        Ok(())
     }
 
     pub fn read16(&self, offset: u16) -> Result<u16> {
@@ -40,7 +45,8 @@ impl CapabilityVndrData {
 
     pub fn write16(&self, offset: u16, value: u16) -> Result<()> {
         self.check_range(offset)?;
-        Ok(self.location.write16(self.cap_ptr + offset, value))
+        self.location.write16(self.cap_ptr + offset, value);
+        Ok(())
     }
 
     pub fn read32(&self, offset: u16) -> Result<u32> {
@@ -50,7 +56,8 @@ impl CapabilityVndrData {
 
     pub fn write32(&self, offset: u16, value: u32) -> Result<()> {
         self.check_range(offset)?;
-        Ok(self.location.write32(self.cap_ptr + offset, value))
+        self.location.write32(self.cap_ptr + offset, value);
+        Ok(())
     }
 
     #[inline]

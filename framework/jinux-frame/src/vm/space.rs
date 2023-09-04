@@ -36,6 +36,7 @@ impl VmSpace {
         }
     }
     /// Activate the page table, load root physical address to cr3
+    #[allow(clippy::missing_safety_doc)]
     pub unsafe fn activate(&self) {
         #[cfg(target_arch = "x86_64")]
         crate::arch::x86::mm::activate_page_table(
@@ -188,7 +189,7 @@ impl VmMapOptions {
     ///
     /// The default value of this option is `None`.
     pub fn addr(&mut self, addr: Option<Vaddr>) -> &mut Self {
-        if addr == None {
+        if addr.is_none() {
             return self;
         }
         self.addr = Some(addr.unwrap());

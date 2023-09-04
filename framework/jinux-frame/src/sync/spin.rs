@@ -31,7 +31,7 @@ impl<T> SpinLock<T> {
         let guard = disable_local();
         self.acquire_lock();
         SpinLockGuard {
-            lock: &self,
+            lock: self,
             inner_guard: InnerGuard::IrqGuard(guard),
         }
     }
@@ -41,12 +41,12 @@ impl<T> SpinLock<T> {
         let irq_guard = disable_local();
         if self.try_acquire_lock() {
             let lock_guard = SpinLockGuard {
-                lock: &self,
+                lock: self,
                 inner_guard: InnerGuard::IrqGuard(irq_guard),
             };
             return Some(lock_guard);
         }
-        return None;
+        None
     }
 
     /// Acquire the spin lock without disabling local IRQs.
@@ -61,7 +61,7 @@ impl<T> SpinLock<T> {
         let guard = disable_preempt();
         self.acquire_lock();
         SpinLockGuard {
-            lock: &self,
+            lock: self,
             inner_guard: InnerGuard::PreemptGuard(guard),
         }
     }
@@ -71,12 +71,12 @@ impl<T> SpinLock<T> {
         let guard = disable_preempt();
         if self.try_acquire_lock() {
             let lock_guard = SpinLockGuard {
-                lock: &self,
+                lock: self,
                 inner_guard: InnerGuard::PreemptGuard(guard),
             };
             return Some(lock_guard);
         }
-        return None;
+        None
     }
 
     /// Access the spin lock, otherwise busy waiting

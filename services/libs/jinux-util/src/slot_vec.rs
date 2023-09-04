@@ -13,7 +13,7 @@ pub struct SlotVec<T> {
 
 impl<T> SlotVec<T> {
     /// New an empty vector.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             slots: Vec::new(),
             num_occupied: 0,
@@ -120,7 +120,7 @@ impl<T: Clone> Clone for SlotVec<T> {
     fn clone(&self) -> Self {
         Self {
             slots: self.slots.clone(),
-            num_occupied: self.num_occupied.clone(),
+            num_occupied: self.num_occupied,
         }
     }
 }

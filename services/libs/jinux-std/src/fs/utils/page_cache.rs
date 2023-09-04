@@ -106,13 +106,11 @@ impl Pager for PageCacheManager {
         let page_idx = offset / PAGE_SIZE;
         let mut pages = self.pages.lock();
         if let Some(page) = pages.pop(&page_idx) {
-            match page.state() {
-                PageState::Dirty => self
-                    .backed_inode
+            if let PageState::Dirty = page.state() {
+                self.backed_inode
                     .upgrade()
                     .unwrap()
-                    .write_page(page_idx, &page.frame())?,
-                _ => (),
+                    .write_page(page_idx, &page.frame())?
             }
         } else {
             warn!("page {} is not in page cache, do nothing", page_idx);

@@ -52,7 +52,7 @@ impl Endpoint {
     }
 
     pub(super) fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
-        self.0.peer.upgrade().map(|peer| peer.addr()).flatten()
+        self.0.peer.upgrade().and_then(|peer| peer.addr())
     }
 
     pub(super) fn is_nonblocking(&self) -> bool {

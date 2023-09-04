@@ -28,7 +28,7 @@ pub(crate) use pod::Pod;
 #[macro_export]
 macro_rules! current {
     () => {
-        crate::process::Process::current()
+        $crate::process::Process::current()
     };
 }
 
@@ -36,7 +36,7 @@ macro_rules! current {
 #[macro_export]
 macro_rules! current_thread {
     () => {
-        crate::thread::Thread::current()
+        $crate::thread::Thread::current()
     };
 }
 

@@ -64,7 +64,7 @@ pub fn futex_wake_bitset(
 ) -> Result<usize> {
     debug!(
         "futex_wake_bitset addr: {:#x}, max_count: {}, bitset: {:#x}",
-        futex_addr as usize, max_count, bitset
+        futex_addr, max_count, bitset
     );
 
     let futex_key = FutexKey::new(futex_addr);
@@ -234,8 +234,8 @@ impl FutexBucket {
             if count == max_count {
                 break;
             }
-            if (*item).key == key {
-                (*item).key = new_key;
+            if item.key == key {
+                item.key = new_key;
                 count += 1;
             }
         }

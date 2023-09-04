@@ -54,7 +54,7 @@ pub(crate) trait UserContextApiInternal {
     fn execute(&mut self) -> UserEvent;
 
     /// Use the information inside CpuContext to build a trapframe
-    fn into_trap_frame(&self) -> TrapFrame;
+    fn as_trap_frame(&self) -> TrapFrame;
 }
 
 /// The common interface that every CPU architecture-specific `CpuContext` implements.

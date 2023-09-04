@@ -124,7 +124,7 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
             // Read the normal child entries.
             self.inner.populate_children(self.this.clone());
             let cached_children = self.cached_children.read();
-            let start_offset = offset.clone();
+            let start_offset = *offset;
             for (idx, (name, child)) in cached_children
                 .idxes_and_items()
                 .map(|(idx, (name, child))| (idx + 2, (name, child)))

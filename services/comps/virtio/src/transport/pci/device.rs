@@ -49,7 +49,7 @@ pub struct VirtioPciTransport {
 
 impl PciDevice for VirtioPciDevice {
     fn device_id(&self) -> PciDeviceId {
-        self.device_id.clone()
+        self.device_id
     }
 }
 
@@ -78,13 +78,13 @@ impl VirtioTransport for VirtioPciTransport {
             return Err(VirtioTransportError::InvalidArgs);
         }
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
-            .write(&(idx as u16))
+            .write(&idx)
             .unwrap();
         debug_assert_eq!(
             field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
                 .read()
                 .unwrap(),
-            idx as u16
+            idx
         );
 
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_size)
@@ -189,13 +189,13 @@ impl VirtioTransport for VirtioPciTransport {
 
     fn max_queue_size(&self, idx: u16) -> Result<u16, crate::transport::VirtioTransportError> {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
-            .write(&(idx as u16))
+            .write(&idx)
             .unwrap();
         debug_assert_eq!(
             field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
                 .read()
                 .unwrap(),
-            idx as u16
+            idx
         );
 
         Ok(field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_size)
@@ -250,6 +250,7 @@ impl VirtioPciTransport {
         &self.device
     }
 
+    #[allow(clippy::result_large_err)]
     pub(super) fn new(
         common_device: PciCommonDevice,
     ) -> Result<Self, (PciDriverProbeError, PciCommonDevice)> {
@@ -280,8 +281,7 @@ impl VirtioPciTransport {
         for cap in common_device.capabilities().iter() {
             match cap.capability_data() {
                 CapabilityData::Vndr(vendor) => {
-                    let data =
-                        VirtioPciCapabilityData::new(common_device.bar_manager(), vendor.clone());
+                    let data = VirtioPciCapabilityData::new(common_device.bar_manager(), *vendor);
                     match data.typ() {
                         VirtioPciCpabilityType::CommonCfg => {
                             common_cfg = Some(VirtioPciCommonCfg::new(&data));
@@ -317,7 +317,7 @@ impl VirtioPciTransport {
         let common_cfg = common_cfg.unwrap();
         let device_cfg = device_cfg.unwrap();
         let msix_manager = VirtioMsixManager::new(msix);
-        let device_id = common_device.device_id().clone();
+        let device_id = *common_device.device_id();
         Ok(Self {
             common_device,
             common_cfg,

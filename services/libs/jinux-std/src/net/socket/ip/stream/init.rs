@@ -72,7 +72,7 @@ impl Inner {
 
     fn bound_socket(&self) -> Option<&Arc<AnyBoundSocket>> {
         match self {
-            Inner::Bound(bound_socket) => Some(&bound_socket),
+            Inner::Bound(bound_socket) => Some(bound_socket),
             Inner::Connecting { bound_socket, .. } => Some(bound_socket),
             _ => None,
         }
@@ -96,8 +96,7 @@ impl Inner {
 
     fn local_endpoint(&self) -> Option<IpEndpoint> {
         self.bound_socket()
-            .map(|socket| socket.local_endpoint())
-            .flatten()
+            .and_then(|socket| socket.local_endpoint())
     }
 
     fn remote_endpoint(&self) -> Option<IpEndpoint> {

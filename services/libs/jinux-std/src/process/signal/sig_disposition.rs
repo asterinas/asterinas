@@ -6,6 +6,12 @@ pub struct SigDispositions {
     map: [SigAction; COUNT_ALL_SIGS],
 }
 
+impl Default for SigDispositions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SigDispositions {
     pub fn new() -> Self {
         Self {
@@ -34,11 +40,8 @@ impl SigDispositions {
     /// This function should be used when execve.
     pub fn inherit(&mut self) {
         for sigaction in &mut self.map {
-            match sigaction {
-                SigAction::User { .. } => {
-                    *sigaction = SigAction::Dfl;
-                }
-                _ => {}
+            if let SigAction::User { .. } = sigaction {
+                *sigaction = SigAction::Dfl;
             }
         }
     }
