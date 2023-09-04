@@ -13,7 +13,7 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let mut sig_context = posix_thread.sig_context().lock();
-    if None == *sig_context {
+    if (*sig_context).is_none() {
         return_errno_with_message!(Errno::EINVAL, "sigretrun should not been called");
     }
     let sig_context_addr = sig_context.unwrap();

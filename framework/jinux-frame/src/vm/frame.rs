@@ -123,11 +123,6 @@ impl VmFrameVec {
         self.0.iter()
     }
 
-    /// Return IntoIterator for internal frames
-    pub fn into_iter(self) -> alloc::vec::IntoIter<VmFrame> {
-        self.0.into_iter()
-    }
-
     /// Returns the number of frames.
     pub fn len(&self) -> usize {
         self.0.len()
@@ -147,6 +142,16 @@ impl VmFrameVec {
 
     pub fn from_one_frame(frame: VmFrame) -> Self {
         Self(vec![frame])
+    }
+}
+
+impl IntoIterator for VmFrameVec {
+    type Item = VmFrame;
+
+    type IntoIter = alloc::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -362,6 +367,7 @@ impl VmFrame {
     // FIXME: need a sound reason for creating a mutable reference
     // for getting the content of the frame.
     #[allow(clippy::mut_from_ref)]
+    #[allow(clippy::missing_safety_doc)]
     pub unsafe fn as_slice(&self) -> &mut [u8] {
         core::slice::from_raw_parts_mut(
             super::paddr_to_vaddr(self.start_paddr()) as *mut u8,

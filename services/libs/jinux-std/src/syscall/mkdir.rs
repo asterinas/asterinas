@@ -33,7 +33,7 @@ pub fn sys_mkdirat(
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
     let inode_mode = InodeMode::from_bits_truncate(mode);
-    let _ = dir_dentry.create(&name.trim_end_matches('/'), InodeType::Dir, inode_mode)?;
+    let _ = dir_dentry.create(name.trim_end_matches('/'), InodeType::Dir, inode_mode)?;
     Ok(SyscallReturn::Return(0))
 }
 

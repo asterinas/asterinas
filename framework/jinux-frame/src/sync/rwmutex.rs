@@ -25,7 +25,7 @@ const MAX_READER: usize = WRITER >> 1;
 
 impl<T> RwMutex<T> {
     /// Creates a new `RwMutex`.
-    pub fn new(val: T) -> Self {
+    pub const fn new(val: T) -> Self {
         Self {
             val: UnsafeCell::new(val),
             lock: AtomicUsize::new(0),
@@ -47,7 +47,7 @@ impl<T> RwMutex<T> {
     pub fn try_read(&self) -> Option<RwMutexReadGuard<T>> {
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER) == 0 {
-            Some(RwMutexReadGuard { inner: &self })
+            Some(RwMutexReadGuard { inner: self })
         } else {
             self.lock.fetch_sub(READER, Release);
             None
@@ -61,7 +61,7 @@ impl<T> RwMutex<T> {
             .compare_exchange(0, WRITER, Acquire, Relaxed)
             .is_ok()
         {
-            Some(RwMutexWriteGuard { inner: &self })
+            Some(RwMutexWriteGuard { inner: self })
         } else {
             None
         }

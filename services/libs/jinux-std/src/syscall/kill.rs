@@ -30,7 +30,7 @@ pub fn do_sys_kill(filter: ProcessFilter, sig_num: SigNum) -> Result<()> {
     match filter {
         ProcessFilter::Any => {
             for process in process_table::get_all_processes() {
-                process.enqueue_signal(Box::new(signal.clone()));
+                process.enqueue_signal(Box::new(signal));
             }
         }
         ProcessFilter::WithPid(pid) => {

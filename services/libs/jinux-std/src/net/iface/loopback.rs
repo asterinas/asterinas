@@ -28,7 +28,7 @@ impl IfaceLoopback {
             let config = Config::new();
             let mut interface = smoltcp::iface::Interface::new(config, &mut loopback);
             interface.update_ip_addrs(|ip_addrs| {
-                debug_assert!(ip_addrs.len() == 0);
+                debug_assert!(ip_addrs.is_empty());
                 let ip_addr = IpCidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN);
                 ip_addrs.push(ip_addr).unwrap();
             });

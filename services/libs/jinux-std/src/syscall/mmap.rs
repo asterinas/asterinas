@@ -73,7 +73,7 @@ fn mmap_anonymous_vmo(
     debug_assert!(offset == 0);
 
     // TODO: implement features presented by other flags.
-    if option.typ() != MMapType::MapPrivate {
+    if option.typ() != MMapType::Private {
         panic!("Unsupported mmap flags {:?} now", option);
     }
 
@@ -110,7 +110,7 @@ fn mmap_filebacked_vmo(
         ))?
     };
 
-    let vmo = if option.typ() == MMapType::MapPrivate {
+    let vmo = if option.typ() == MMapType::Private {
         // map private
         VmoChildOptions::new_cow(page_cache_vmo, offset..(offset + len)).alloc()?
     } else {

@@ -15,14 +15,14 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
             let current = current!();
             let mut file_table = current.file_table().lock();
             let new_fd = file_table.dup(fd, arg as FileDescripter)?;
-            return Ok(SyscallReturn::Return(new_fd as _));
+            Ok(SyscallReturn::Return(new_fd as _))
         }
         FcntlCmd::F_SETFD => {
             if arg != 1 {
                 panic!("Unknown setfd argument");
             }
             // TODO: Set cloexec
-            return Ok(SyscallReturn::Return(0));
+            Ok(SyscallReturn::Return(0))
         }
         FcntlCmd::F_GETFL => {
             let current = current!();
@@ -32,9 +32,9 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
             };
             let status_flags = file.status_flags();
             let access_mode = file.access_mode();
-            return Ok(SyscallReturn::Return(
+            Ok(SyscallReturn::Return(
                 (status_flags.bits() | access_mode as u32) as _,
-            ));
+            ))
         }
         FcntlCmd::F_SETFL => {
             let current = current!();
@@ -56,7 +56,7 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
                 status_flags
             };
             file.set_status_flags(new_status_flags)?;
-            return Ok(SyscallReturn::Return(0));
+            Ok(SyscallReturn::Return(0))
         }
         _ => todo!(),
     }

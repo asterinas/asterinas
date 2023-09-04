@@ -12,11 +12,7 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
 }
 
 pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame) {
-    let irq_line = IRQ_LIST
-        .get()
-        .unwrap()
-        .get(trap_frame.trap_num as usize)
-        .unwrap();
+    let irq_line = IRQ_LIST.get().unwrap().get(trap_frame.trap_num).unwrap();
     let callback_functions = irq_line.callback_list();
     for callback_function in callback_functions.iter() {
         callback_function.call(trap_frame);

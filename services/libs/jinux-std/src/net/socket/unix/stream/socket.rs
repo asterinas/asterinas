@@ -233,10 +233,8 @@ impl Socket for UnixStreamSocket {
         };
 
         match connected.peer_addr() {
-            None => return Ok(SocketAddr::Unix(UnixSocketAddr::Path(String::new()))),
-            Some(peer_addr) => {
-                return Ok(SocketAddr::from(peer_addr.clone()));
-            }
+            None => Ok(SocketAddr::Unix(UnixSocketAddr::Path(String::new()))),
+            Some(peer_addr) => Ok(SocketAddr::from(peer_addr.clone())),
         }
     }
 
@@ -295,5 +293,5 @@ fn lookup_socket_file(path: &str) -> Result<Arc<Dentry>> {
     if !dentry.inode_mode().is_readable() || !dentry.inode_mode().is_writable() {
         return_errno_with_message!(Errno::EACCES, "the socket cannot be read or written")
     }
-    return Ok(dentry);
+    Ok(dentry)
 }

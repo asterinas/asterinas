@@ -91,7 +91,7 @@ pub fn handle_recv_irq(name: &String) {
     }
 }
 
-pub fn all_devices() -> Vec<(String, Arc<SpinLock<Box<dyn NetworkDevice>>>)> {
+pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
     let lock = COMPONENT.get().unwrap().devices.lock();
     let mut vec = Vec::new();
     for (name, (_, device)) in lock.iter() {
@@ -112,17 +112,12 @@ fn init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
+type NetDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>>;
+type NetworkDeviceRef = Arc<SpinLock<Box<dyn NetworkDevice>>>;
+
 struct Component {
     /// Device list, the key is device name, value is (callbacks, device);
-    devices: SpinLock<
-        BTreeMap<
-            String,
-            (
-                Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>>,
-                Arc<SpinLock<Box<dyn NetworkDevice>>>,
-            ),
-        >,
-    >,
+    devices: SpinLock<BTreeMap<String, (NetDeviceIrqHandlerListRef, NetworkDeviceRef)>>,
 }
 
 impl Component {

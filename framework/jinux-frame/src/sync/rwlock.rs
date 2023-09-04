@@ -70,7 +70,7 @@ impl<T> RwLock<T> {
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER) == 0 {
             Some(RwLockReadGuard {
-                inner: &self,
+                inner: self,
                 inner_guard: InnerGuard::IrqGuard(irq_guard),
             })
         } else {
@@ -88,7 +88,7 @@ impl<T> RwLock<T> {
             .is_ok()
         {
             Some(RwLockWriteGuard {
-                inner: &self,
+                inner: self,
                 inner_guard: InnerGuard::IrqGuard(irq_guard),
             })
         } else {
@@ -130,7 +130,7 @@ impl<T> RwLock<T> {
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER) == 0 {
             Some(RwLockReadGuard {
-                inner: &self,
+                inner: self,
                 inner_guard: InnerGuard::PreemptGuard(guard),
             })
         } else {
@@ -148,7 +148,7 @@ impl<T> RwLock<T> {
             .is_ok()
         {
             Some(RwLockWriteGuard {
-                inner: &self,
+                inner: self,
                 inner_guard: InnerGuard::PreemptGuard(guard),
             })
         } else {

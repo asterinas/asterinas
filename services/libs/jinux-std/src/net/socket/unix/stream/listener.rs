@@ -205,7 +205,7 @@ fn create_keyable_inode(dentry: &Arc<Dentry>) -> KeyableWeak<dyn Inode> {
 }
 
 pub(super) fn unregister_backlog(addr: &UnixSocketAddrBound) {
-    BACKLOG_TABLE.remove_backlog(&addr);
+    BACKLOG_TABLE.remove_backlog(addr);
 }
 
 pub(super) fn push_incoming(

@@ -43,8 +43,7 @@ impl ProcFS {
     }
 
     pub(in crate::fs::procfs) fn alloc_id(&self) -> usize {
-        let next_id = self.inode_allocator.fetch_add(1, Ordering::SeqCst);
-        next_id
+        self.inode_allocator.fetch_add(1, Ordering::SeqCst)
     }
 }
 

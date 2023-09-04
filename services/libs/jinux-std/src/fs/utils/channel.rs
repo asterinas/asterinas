@@ -162,7 +162,7 @@ impl<T: Copy> Producer<T> {
             return_errno!(Errno::EPIPE);
         }
 
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(0);
         }
 
@@ -249,7 +249,7 @@ impl<T: Copy> Consumer<T> {
         if self.is_shutdown() {
             return_errno!(Errno::EPIPE);
         }
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(0);
         }
 

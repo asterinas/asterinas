@@ -55,7 +55,7 @@ fn lookup_executable_file(
 ) -> Result<Arc<Dentry>> {
     let current = current!();
     let fs_resolver = current.fs().read();
-    let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.len() == 0 {
+    let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
         fs_resolver.lookup_from_fd(dfd)
     } else {
         let fs_path = FsPath::new(dfd, &filename)?;

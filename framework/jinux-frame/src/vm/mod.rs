@@ -15,7 +15,7 @@ mod offset;
 pub(crate) mod page_table;
 mod space;
 
-use crate::config::{PAGE_SIZE, PHYS_OFFSET};
+use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
 
 pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
 pub use self::io::VmIo;
@@ -38,7 +38,7 @@ pub trait HasPaddr {
 }
 
 pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
-    if va >= crate::config::PHYS_OFFSET && va <= crate::config::KERNEL_OFFSET {
+    if (PHYS_OFFSET..=KERNEL_OFFSET).contains(&va) {
         // can use offset to get the physical address
         Some(va - PHYS_OFFSET)
     } else {
@@ -67,7 +67,7 @@ pub(crate) fn init() {
     let mut framebuffer_regions = Vec::new();
     for i in memory_regions.iter() {
         if i.typ() == MemoryRegionType::Framebuffer {
-            framebuffer_regions.push(i.clone());
+            framebuffer_regions.push(*i);
         }
     }
     FRAMEBUFFER_REGIONS.call_once(|| framebuffer_regions);

@@ -15,6 +15,7 @@ pub struct AnyUnboundSocket {
     pollee: Pollee,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(super) enum AnyRawSocket {
     Tcp(RawTcpSocket),
     Udp(RawUdpSocket),

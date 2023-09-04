@@ -13,6 +13,7 @@ use trapframe::TrapFrame;
 #[must_use]
 pub struct IrqLine {
     irq_num: u8,
+    #[allow(clippy::redundant_allocation)]
     irq: Arc<&'static irq::IrqLine>,
     callbacks: Vec<IrqCallbackHandle>,
 }
@@ -68,7 +69,7 @@ impl IrqLine {
 impl Clone for IrqLine {
     fn clone(&self) -> Self {
         Self {
-            irq_num: self.irq_num.clone(),
+            irq_num: self.irq_num,
             irq: self.irq.clone(),
             callbacks: Vec::new(),
         }

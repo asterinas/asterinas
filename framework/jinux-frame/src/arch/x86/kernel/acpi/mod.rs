@@ -94,13 +94,13 @@ impl AcpiHandler for AcpiMemoryHandler {
 pub fn init() {
     let acpi_tables = match boot::acpi_arg().to_owned() {
         BootloaderAcpiArg::Rsdp(addr) => unsafe {
-            AcpiTables::from_rsdp(AcpiMemoryHandler {}, addr as usize).unwrap()
+            AcpiTables::from_rsdp(AcpiMemoryHandler {}, addr).unwrap()
         },
         BootloaderAcpiArg::Rsdt(addr) => unsafe {
-            AcpiTables::from_rsdt(AcpiMemoryHandler {}, 0, addr as usize).unwrap()
+            AcpiTables::from_rsdt(AcpiMemoryHandler {}, 0, addr).unwrap()
         },
         BootloaderAcpiArg::Xsdt(addr) => unsafe {
-            AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr as usize).unwrap()
+            AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr).unwrap()
         },
     };
 

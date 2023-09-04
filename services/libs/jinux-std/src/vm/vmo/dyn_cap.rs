@@ -133,7 +133,7 @@ impl Vmo<Rights> {
     /// The method requires the Dup right.
     pub fn dup(&self) -> Result<Self> {
         self.check_rights(Rights::DUP)?;
-        Ok(Self(self.0.clone(), self.1.clone()))
+        Ok(Self(self.0.clone(), self.1))
     }
 
     /// Restricts the access rights given the mask.

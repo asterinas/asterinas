@@ -19,7 +19,7 @@ pub struct IfaceVirtio {
 
 impl IfaceVirtio {
     pub fn new() -> Arc<Self> {
-        let mut virtio_net = jinux_network::get_device(&(DEVICE_NAME).to_string()).unwrap();
+        let virtio_net = jinux_network::get_device(&(DEVICE_NAME).to_string()).unwrap();
         let interface = {
             let mac_addr = virtio_net.lock().mac_addr();
             let ip_addr = IpCidr::new(wire::IpAddress::Ipv4(wire::Ipv4Address::UNSPECIFIED), 0);
@@ -33,7 +33,7 @@ impl IfaceVirtio {
             };
             let mut interface = smoltcp::iface::Interface::new(config, &mut **virtio_net.lock());
             interface.update_ip_addrs(|ip_addrs| {
-                debug_assert!(ip_addrs.len() == 0);
+                debug_assert!(ip_addrs.is_empty());
                 ip_addrs.push(ip_addr).unwrap();
             });
             interface

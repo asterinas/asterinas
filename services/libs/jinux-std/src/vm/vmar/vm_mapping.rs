@@ -270,7 +270,7 @@ impl VmMapping {
         let map_to_addr = self.map_to_addr();
         let map_size = self.map_size();
         let range = self.range();
-        if !is_intersected(&range, &trim_range) {
+        if !is_intersected(&range, trim_range) {
             return Ok(());
         }
         if trim_range.start <= map_to_addr && trim_range.end >= map_to_addr + map_size {
@@ -334,7 +334,7 @@ impl VmMappingInner {
         let map_addr = self.page_map_addr(page_idx);
 
         let vm_perm = {
-            let mut perm = self.page_perms.get(&page_idx).unwrap().clone();
+            let mut perm = *self.page_perms.get(&page_idx).unwrap();
             if is_readonly {
                 debug_assert!(vmo.is_cow_child());
                 perm -= VmPerm::W;
@@ -345,7 +345,7 @@ impl VmMappingInner {
         let vm_map_options = {
             let mut options = VmMapOptions::new();
             options.addr(Some(map_addr));
-            options.perm(vm_perm.clone());
+            options.perm(vm_perm);
             options
         };
 
@@ -440,8 +440,8 @@ impl VmMappingInner {
 
         self.map_to_addr = vaddr;
         let old_vmo_offset = self.vmo_offset;
-        self.vmo_offset = self.vmo_offset + trim_size;
-        self.map_size = self.map_size - trim_size;
+        self.vmo_offset += trim_size;
+        self.map_size -= trim_size;
         for page_idx in old_vmo_offset / PAGE_SIZE..self.vmo_offset / PAGE_SIZE {
             self.page_perms.remove(&page_idx);
             if self.mapped_pages.remove(&page_idx) {
@@ -477,7 +477,7 @@ impl VmMappingInner {
     fn check_perm(&self, page_idx: &usize, perm: &VmPerm) -> Result<()> {
         let page_perm = self
             .page_perms
-            .get(&page_idx)
+            .get(page_idx)
             .ok_or(Error::with_message(Errno::EINVAL, "invalid page idx"))?;
 
         if !page_perm.contains(*perm) {
@@ -637,15 +637,15 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
     fn check_overwrite(&self) -> Result<()> {
         if self.can_overwrite {
             // if can_overwrite is set, the offset cannot be None
-            debug_assert!(self.offset != None);
-            if self.offset == None {
+            debug_assert!(self.offset.is_some());
+            if self.offset.is_none() {
                 return_errno_with_message!(
                     Errno::EINVAL,
                     "offset can not be none when can overwrite is true"
                 );
             }
         }
-        if self.offset == None {
+        if self.offset.is_none() {
             // if does not specify the offset, we assume the map can always find suitable free region.
             // FIXME: is this always true?
             return Ok(());

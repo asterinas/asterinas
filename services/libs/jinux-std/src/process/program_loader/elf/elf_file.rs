@@ -33,7 +33,7 @@ impl Elf {
             let program_header = xmas_elf::program::parse_program_header(input, header, index)
                 .map_err(|_| Error::with_message(Errno::ENOEXEC, "parse program header fails"))?;
             let ph64 = match program_header {
-                xmas_elf::program::ProgramHeader::Ph64(ph64) => ph64.clone(),
+                xmas_elf::program::ProgramHeader::Ph64(ph64) => *ph64,
                 xmas_elf::program::ProgramHeader::Ph32(_) => {
                     return_errno_with_message!(Errno::ENOEXEC, "Not 64 byte executable")
                 }
@@ -111,7 +111,7 @@ impl Elf {
 
     // An offset to be subtracted from ELF vaddr for PIE
     pub fn base_load_address_offset(&self) -> u64 {
-        let phdr = self.program_headers.iter().nth(0).unwrap();
+        let phdr = self.program_headers.get(0).unwrap();
         phdr.virtual_addr - phdr.offset
     }
 }
@@ -123,7 +123,7 @@ pub struct ElfHeader {
 
 impl ElfHeader {
     fn parse_elf_header(header: Header) -> Result<Self> {
-        let pt1 = header.pt1.clone();
+        let pt1 = *header.pt1;
         let pt2 = match header.pt2 {
             HeaderPt2::Header64(header_pt2) => {
                 let HeaderPt2_ {

@@ -31,9 +31,9 @@ impl Clone for CapabilityMsixData {
     fn clone(&self) -> Self {
         let new_vec = self.irqs.clone().to_vec();
         Self {
-            loc: self.loc.clone(),
-            ptr: self.ptr.clone(),
-            table_size: self.table_size.clone(),
+            loc: self.loc,
+            ptr: self.ptr,
+            table_size: self.table_size,
             table_bar: self.table_bar.clone(),
             pending_table_bar: self.pending_table_bar.clone(),
             irqs: new_vec,
@@ -99,7 +99,7 @@ impl CapabilityMsixData {
                 .unwrap();
             table_bar
                 .io_mem()
-                .write_val((16 * i + 12) as usize + table_offset, &(1 as u32))
+                .write_val((16 * i + 12) as usize + table_offset, &1_u32)
                 .unwrap();
         }
 
@@ -115,13 +115,13 @@ impl CapabilityMsixData {
         }
 
         Self {
-            loc: dev.location().clone(),
+            loc: *dev.location(),
             ptr: cap_ptr,
             table_size: (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1,
             table_bar,
             pending_table_bar: pba_bar,
             irqs,
-            table_offset: table_offset,
+            table_offset,
             pending_table_offset: pba_offset,
         }
     }
@@ -146,7 +146,7 @@ impl CapabilityMsixData {
         // Enable this msix vector
         self.table_bar
             .io_mem()
-            .write_val((16 * index + 12) as usize + self.table_offset, &(0 as u32))
+            .write_val((16 * index + 12) as usize + self.table_offset, &0_u32)
             .unwrap();
     }
 

@@ -63,6 +63,7 @@ pub struct InputDevice {
     event_queue: SpinLock<VirtQueue>,
     status_queue: VirtQueue,
     event_buf: SpinLock<Box<[InputEvent; QUEUE_SIZE as usize]>>,
+    #[allow(clippy::type_complexity)]
     callbacks: SpinLock<Vec<Arc<dyn Fn(DecodeType) + Send + Sync + 'static>>>,
     transport: Box<dyn VirtioTransport>,
 }
@@ -161,7 +162,7 @@ impl InputDevice {
             .write(&(select as u8))
             .unwrap();
         field_ptr!(&self.config, VirtioInputConfig, subsel)
-            .write(&(subsel as u8))
+            .write(&subsel)
             .unwrap();
         let size = field_ptr!(&self.config, VirtioInputConfig, size)
             .read()

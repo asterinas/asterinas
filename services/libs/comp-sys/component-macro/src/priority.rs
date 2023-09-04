@@ -30,7 +30,7 @@ pub fn component_generate() -> Vec<ComponentInfo> {
 
     let mut component_packages = vec![];
     let workspace_root = metadata["workspace_root"].as_str().unwrap();
-    let workspace_root = String::from_str(workspace_root).unwrap().replace("\\", "/");
+    let workspace_root = String::from_str(workspace_root).unwrap().replace('\\', "/");
 
     let comps_name = get_components_name(&workspace_root, &metadata["packages"]);
     for package in metadata["packages"].members_mut() {
@@ -78,7 +78,7 @@ pub fn component_generate() -> Vec<ComponentInfo> {
             // remove the last character
             let mut path1 = paths.pop().unwrap().to_string();
             path1.pop();
-            if path1.starts_with("/") {
+            if path1.starts_with('/') {
                 path1.remove(0);
             }
             path1
@@ -101,7 +101,7 @@ pub fn get_component_toml_path() -> TokenStream {
     let workspace_root = metadata["workspace_root"].as_str().unwrap();
     let mut workspace_root = String::from_str(workspace_root)
         .unwrap()
-        .replace("\\", "/")
+        .replace('\\', "/")
         .add("/")
         .add(COMPONENT_FILE_NAME)
         .add("\"");
@@ -141,10 +141,10 @@ fn get_components_name(workspace_root: &String, packages: &JsonValue) -> Vec<Str
 }
 
 /// read component file, return all the components name
-fn read_component_file(workspace_root: &String) -> Vec<String> {
+fn read_component_file(workspace_root: &str) -> Vec<String> {
     let component_toml: toml::Value = {
-        let mut component_file_path = workspace_root.clone();
-        component_file_path.push_str("/");
+        let mut component_file_path = workspace_root.to_owned();
+        component_file_path.push('/');
         component_file_path.push_str(COMPONENT_FILE_NAME);
         let mut file = File::open(component_file_path)
             .expect("Components.toml file not found, please check if the file exists");
@@ -179,7 +179,7 @@ fn calculate_priority(
     node_name: String,
 ) -> u16 {
     if prioritys.contains_key(&node_name) {
-        return prioritys.get(&node_name).unwrap().clone();
+        return *prioritys.get(&node_name).unwrap();
     }
 
     let package = &package_mapping[&node_name];
@@ -209,7 +209,5 @@ fn metadata() -> json::JsonValue {
     }
 
     let output = String::from_utf8(output.stdout).unwrap();
-    let parsed = json::parse(&output).unwrap();
-
-    parsed
+    json::parse(&output).unwrap()
 }

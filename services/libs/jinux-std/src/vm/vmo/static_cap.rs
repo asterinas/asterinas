@@ -134,7 +134,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// The method requires the Dup right.
     #[require(R > Dup)]
     pub fn dup(&self) -> Result<Self> {
-        Ok(Vmo(self.0.clone(), self.1.clone()))
+        Ok(Vmo(self.0.clone(), self.1))
     }
 
     /// Strict the access rights.

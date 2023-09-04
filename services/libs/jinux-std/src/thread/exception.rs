@@ -4,7 +4,7 @@ use crate::vm::page_fault_handler::PageFaultHandler;
 use crate::{prelude::*, process::signal::signals::fault::FaultSignal};
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
-pub fn handle_exception(context: &mut UserContext) {
+pub fn handle_exception(context: &UserContext) {
     let trap_info = context.trap_information();
     let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
     log_trap_info(exception, trap_info);
@@ -12,10 +12,10 @@ pub fn handle_exception(context: &mut UserContext) {
     let root_vmar = current.root_vmar();
 
     match *exception {
-        PAGE_FAULT => handle_page_fault(&trap_info),
+        PAGE_FAULT => handle_page_fault(trap_info),
         _ => {
             // We current do nothing about other exceptions
-            generate_fault_signal(&trap_info);
+            generate_fault_signal(trap_info);
         }
     }
 }

@@ -25,6 +25,7 @@ pub trait PciDriver: Sync + Send + Debug {
     ///
     /// Once a device is matched and claimed by a driver,
     /// it won't be fed to another driver for probing.
+    #[allow(clippy::result_large_err)]
     fn probe(
         &self,
         device: PciCommonDevice,
@@ -69,7 +70,7 @@ impl PciBus {
 
     pub(super) fn register_common_device(&mut self, mut common_device: PciCommonDevice) {
         debug!("Find pci common devices:{:x?}", common_device);
-        let device_id = common_device.device_id().clone();
+        let device_id = *common_device.device_id();
         for driver in self.drivers.iter() {
             common_device = match driver.probe(common_device) {
                 Ok(device) => {

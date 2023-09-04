@@ -36,7 +36,7 @@ fn impl_try_from(
     } else {
         panic!(
             "{} does not have invalid repr to implement TryFromInt.",
-            ident.to_string()
+            ident
         );
     };
 

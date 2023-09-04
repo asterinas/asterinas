@@ -19,7 +19,6 @@ impl Signal for KernelSignal {
     }
 
     fn to_info(&self) -> siginfo_t {
-        let info = siginfo_t::new(self.num, SI_KERNEL);
-        info
+        siginfo_t::new(self.num, SI_KERNEL)
     }
 }

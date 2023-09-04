@@ -4,7 +4,6 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![feature(fn_traits)]
-#![feature(once_cell)]
 
 extern crate alloc;
 
@@ -132,7 +131,7 @@ fn match_and_call(
     for registry in inventory::iter::<ComponentRegistry> {
         // relative/path/to/comps/pci/src/lib.rs
         let mut str: String = registry.path.to_owned();
-        str = str.replace("\\", "/");
+        str = str.replace('\\', "/");
         // relative/path/to/comps/pci
         // There are two cases, one in the test folder and one in the src folder.
         // There may be multiple directories within the folder.
@@ -148,7 +147,7 @@ fn match_and_call(
         } else {
             panic!("The path of {} cannot recognized by component system", str);
         }
-        str = str.trim_end_matches("/").to_owned();
+        str = str.trim_end_matches('/').to_owned();
 
         let mut info = components
             .remove(&str)
@@ -159,7 +158,7 @@ fn match_and_call(
 
     debug!("Remain componets:{components:?}");
 
-    if components.len() != 0 {
+    if !components.is_empty() {
         info!("Exists components that are not initialized");
     }
 

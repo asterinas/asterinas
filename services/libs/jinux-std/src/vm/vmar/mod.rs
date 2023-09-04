@@ -140,11 +140,7 @@ impl Vmar_ {
     }
 
     fn is_root_vmar(&self) -> bool {
-        if let Some(_) = self.parent.upgrade() {
-            false
-        } else {
-            true
-        }
+        self.parent.upgrade().is_none()
     }
 
     pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
@@ -165,7 +161,7 @@ impl Vmar_ {
             }
         }
 
-        for (_, child_vmar_) in &self.inner.lock().child_vmar_s {
+        for child_vmar_ in self.inner.lock().child_vmar_s.values() {
             let child_vmar_range = child_vmar_.range();
             if is_intersected(&range, &child_vmar_range) {
                 let intersected_range = get_intersected_range(&range, &child_vmar_range);
@@ -185,17 +181,17 @@ impl Vmar_ {
         assert!(protected_range.end <= self.base + self.size);
 
         // The protected range should not interstect with any free region
-        for (_, free_region) in &self.inner.lock().free_regions {
-            if is_intersected(&free_region.range, &protected_range) {
+        for free_region in self.inner.lock().free_regions.values() {
+            if is_intersected(&free_region.range, protected_range) {
                 return_errno_with_message!(Errno::EACCES, "protected range is not fully mapped");
             }
         }
 
         // if the protected range intersects with child vmar_, child vmar_ is responsible to do the check.
-        for (_, child_vmar_) in &self.inner.lock().child_vmar_s {
+        for child_vmar_ in self.inner.lock().child_vmar_s.values() {
             let child_range = child_vmar_.range();
-            if is_intersected(&child_range, &protected_range) {
-                let intersected_range = get_intersected_range(&child_range, &protected_range);
+            if is_intersected(&child_range, protected_range) {
+                let intersected_range = get_intersected_range(&child_range, protected_range);
                 child_vmar_.check_protected_range(&intersected_range)?;
             }
         }
@@ -263,7 +259,7 @@ impl Vmar_ {
         inner.child_vmar_s.clear();
         inner.free_regions.append(&mut free_regions);
 
-        for (_, vm_mapping) in &inner.vm_mappings {
+        for vm_mapping in inner.vm_mappings.values() {
             vm_mapping.unmap(&vm_mapping.range(), true)?;
             let free_region = FreeRegion::new(vm_mapping.range());
             free_regions.insert(free_region.start(), free_region);
@@ -296,7 +292,7 @@ impl Vmar_ {
 
         let mut mappings_to_remove = BTreeSet::new();
         let mut mappings_to_append = BTreeMap::new();
-        for (_, vm_mapping) in &inner.vm_mappings {
+        for vm_mapping in inner.vm_mappings.values() {
             let vm_mapping_range = vm_mapping.range();
             if is_intersected(&vm_mapping_range, &range) {
                 let intersected_range = get_intersected_range(&vm_mapping_range, &range);
@@ -501,7 +497,7 @@ impl Vmar_ {
 
     fn check_vmo_overwrite(&self, vmo_range: Range<usize>, can_overwrite: bool) -> Result<()> {
         let inner = self.inner.lock();
-        for (_, child_vmar) in &inner.child_vmar_s {
+        for child_vmar in inner.child_vmar_s.values() {
             let child_vmar_range = child_vmar.range();
             if is_intersected(&vmo_range, &child_vmar_range) {
                 return_errno_with_message!(
@@ -578,7 +574,7 @@ impl Vmar_ {
             }
             drop(inner);
             self.trim_existing_mappings(map_range)?;
-            return Ok(offset);
+            Ok(offset)
         } else {
             // Otherwise, the vmo in a single region
             let (free_region_base, offset) =
@@ -591,7 +587,7 @@ impl Vmar_ {
             regions_after_split.into_iter().for_each(|region| {
                 inner.free_regions.insert(region.start(), region);
             });
-            return Ok(offset);
+            Ok(offset)
         }
     }
 
@@ -609,7 +605,7 @@ impl Vmar_ {
         let mut inner = self.inner.lock();
         let mut mappings_to_remove = BTreeSet::new();
         let mut mappings_to_append = BTreeMap::new();
-        for (_, vm_mapping) in &inner.vm_mappings {
+        for vm_mapping in inner.vm_mappings.values() {
             vm_mapping.trim_mapping(
                 &trim_range,
                 &mut mappings_to_remove,

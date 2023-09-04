@@ -14,13 +14,12 @@ pub struct Subject<E: Events, F: EventsFilter<E> = ()> {
 }
 
 impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             observers: Mutex::new(BTreeMap::new()),
             num_observers: AtomicUsize::new(0),
         }
     }
-
     /// Register an observer.
     ///
     /// A registered observer will get notified through its `on_events` method.

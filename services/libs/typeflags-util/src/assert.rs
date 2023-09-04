@@ -7,7 +7,7 @@ pub type AssertTypeSame<Lhs, Rhs> = <Lhs as SameAs<Rhs>>::Output;
 #[macro_export]
 macro_rules! assert_type_same {
     ($lhs:ty, $rhs:ty) => {
-        const _: $crate::assert::AssertTypeSame<$lhs, $rhs> = crate::True;
+        const _: $crate::assert::AssertTypeSame<$lhs, $rhs> = $crate::True;
     };
 }
 

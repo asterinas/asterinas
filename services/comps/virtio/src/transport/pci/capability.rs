@@ -7,6 +7,7 @@ use jinux_frame::bus::pci::{
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
+#[allow(clippy::enum_variant_names)]
 pub enum VirtioPciCpabilityType {
     CommonCfg = 1,
     NotifyCfg = 2,
@@ -72,16 +73,15 @@ impl VirtioPciCapabilityData {
 
         let mut io_bar = None;
         let mut memory_bar = None;
-        match bar_manager.bar(bar) {
-            Some(bar) => match bar {
+        if let Some(bar) = bar_manager.bar(bar) {
+            match bar {
                 Bar::Memory(memory) => {
                     memory_bar = Some(memory);
                 }
                 Bar::Io(io) => {
                     io_bar = Some(io);
                 }
-            },
-            None => {}
+            }
         };
         Self {
             cfg_type,

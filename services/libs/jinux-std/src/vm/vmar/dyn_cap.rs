@@ -140,7 +140,7 @@ impl Vmar<Rights> {
     /// The method requires the Dup right.
     pub fn dup(&self) -> Result<Self> {
         self.check_rights(Rights::DUP)?;
-        Ok(Vmar(self.0.clone(), self.1.clone()))
+        Ok(Vmar(self.0.clone(), self.1))
     }
 
     /// Given a map size, returns the possible map address without doing actual allocation.

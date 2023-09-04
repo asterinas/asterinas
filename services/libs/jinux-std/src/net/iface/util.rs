@@ -21,22 +21,16 @@ impl BindPortConfig {
             } else {
                 Self::Specified(port)
             }
+        } else if can_reuse {
+            return_errno_with_message!(Errno::EINVAL, "invalid bind port config");
         } else {
-            if can_reuse {
-                return_errno_with_message!(Errno::EINVAL, "invalid bind port config");
-            } else {
-                Self::Ephemeral
-            }
+            Self::Ephemeral
         };
         Ok(config)
     }
 
     pub(super) fn can_reuse(&self) -> bool {
-        if let Self::CanReuse(_) = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, Self::CanReuse(_))
     }
 
     pub(super) fn port(&self) -> Option<u16> {

@@ -3,6 +3,7 @@ use crate::fs::fs_resolver::{FsPath, FsResolver};
 use crate::fs::utils::{Dentry, Inode, InodeMode, InodeType};
 use crate::prelude::*;
 
+#[allow(clippy::module_inception)]
 mod pty;
 
 pub use pty::{PtyMaster, PtySlave};

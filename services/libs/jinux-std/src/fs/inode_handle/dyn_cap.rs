@@ -53,7 +53,7 @@ impl InodeHandle<Rights> {
 
 impl Clone for InodeHandle<Rights> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1.clone())
+        Self(self.0.clone(), self.1)
     }
 }
 

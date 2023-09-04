@@ -17,7 +17,6 @@ pub struct WaitQueue {
 }
 
 impl WaitQueue {
-    /// Creates a new instance.
     pub const fn new() -> Self {
         WaitQueue {
             waiters: SpinLock::new(VecDeque::new()),

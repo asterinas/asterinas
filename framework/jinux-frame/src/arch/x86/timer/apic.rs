@@ -1,7 +1,6 @@
 use core::arch::x86_64::_rdtsc;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use alloc::boxed::Box;
 use alloc::sync::Arc;
 use log::info;
 use spin::Once;
@@ -83,7 +82,6 @@ fn periodic_mode_init() {
     }
     x86_64::instructions::interrupts::disable();
     drop(a);
-    drop(handle);
 
     fn init_function(trap_frame: &TrapFrame) {
         static mut IN_TIME: u8 = 0;

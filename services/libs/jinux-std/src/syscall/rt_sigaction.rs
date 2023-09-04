@@ -26,7 +26,7 @@ pub fn sys_rt_sigaction(
     let current = current!();
     let mut sig_dispositions = current.sig_dispositions().lock();
     let old_action = sig_dispositions.get(sig_num);
-    let old_action_c = old_action.to_c();
+    let old_action_c = old_action.as_c_type();
     if old_sig_action_addr != 0 {
         write_val_to_user(old_sig_action_addr, &old_action_c)?;
     }

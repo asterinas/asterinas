@@ -36,11 +36,7 @@ pub struct MemoryRegion {
 impl MemoryRegion {
     /// Construct a page aligned memory region.
     pub fn new(base: usize, len: usize, typ: MemoryRegionType) -> Self {
-        MemoryRegion {
-            base: base,
-            len: len,
-            typ: typ,
-        }
+        MemoryRegion { base, len, typ }
     }
 
     /// The physical address of the base of the region.
@@ -51,6 +47,10 @@ impl MemoryRegion {
     /// The length in bytes of the region.
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     /// The type of the region.
@@ -86,20 +86,18 @@ impl MemoryRegion {
             } else {
                 vec![*self]
             }
-        } else {
-            if self.base < t.base + t.len {
-                if self.base + self.len > t.base + t.len {
-                    vec![MemoryRegion {
-                        base: t.base + t.len,
-                        len: self.base + self.len - (t.base + t.len),
-                        typ: self.typ,
-                    }]
-                } else {
-                    vec![]
-                }
+        } else if self.base < t.base + t.len {
+            if self.base + self.len > t.base + t.len {
+                vec![MemoryRegion {
+                    base: t.base + t.len,
+                    len: self.base + self.len - (t.base + t.len),
+                    typ: self.typ,
+                }]
             } else {
-                vec![*self]
+                vec![]
             }
+        } else {
+            vec![*self]
         }
     }
 }

@@ -34,6 +34,7 @@ pub enum Remapping {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u16)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum RemappingType {
     DRHD = 0,
     RMRR = 1,
@@ -65,14 +66,9 @@ impl Dmar {
         let acpi_table_lock = super::ACPI_TABLES.get().unwrap().lock();
         // Safety: The DmarHeader is the header for the DMAR structure, it fits all the field described in Intel manual.
         let dmar_mapping = unsafe {
-            if let Some(temp) = acpi_table_lock
+            acpi_table_lock
                 .get_sdt::<DmarHeader>(Signature::DMAR)
-                .unwrap()
-            {
-                temp
-            } else {
-                return None;
-            }
+                .unwrap()?
         };
 
         let physical_address = dmar_mapping.physical_start();
@@ -93,9 +89,9 @@ impl Dmar {
         unsafe {
             while remain_length > 0 {
                 // Common header: type: u16, length: u16
-                let length = *dmar_slice[index as usize + 2..index as usize + 4].as_ptr() as usize;
-                let typ = *dmar_slice[index as usize..index as usize + 2].as_ptr() as usize;
-                let bytes = &&dmar_slice[index as usize..index as usize + length];
+                let length = *dmar_slice[index + 2..index + 4].as_ptr() as usize;
+                let typ = *dmar_slice[index..index + 2].as_ptr() as usize;
+                let bytes = &&dmar_slice[index..index + length];
                 let remapping = match typ {
                     0 => Remapping::Drhd(Drhd::from_bytes(bytes)),
                     1 => Remapping::Rmrr(Rmrr::from_bytes(bytes)),
@@ -119,7 +115,7 @@ impl Dmar {
 
         Some(Dmar {
             header: *dmar_mapping,
-            remapping_structures: remapping_structures,
+            remapping_structures,
         })
     }
 

@@ -17,5 +17,5 @@ pub fn sys_ioctl(fd: FileDescripter, cmd: u32, arg: Vaddr) -> Result<SyscallRetu
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;
     let res = file.ioctl(ioctl_cmd, arg)?;
-    return Ok(SyscallReturn::Return(res as _));
+    Ok(SyscallReturn::Return(res as _))
 }

@@ -18,6 +18,6 @@ pub fn sys_rmdir(pathname_addr: Vaddr) -> Result<SyscallReturn> {
         let fs_path = FsPath::try_from(pathname.as_ref())?;
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
-    dir_dentry.rmdir(&name.trim_end_matches('/'))?;
+    dir_dentry.rmdir(name.trim_end_matches('/'))?;
     Ok(SyscallReturn::Return(0))
 }

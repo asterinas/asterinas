@@ -188,21 +188,21 @@ impl CC_C_CHAR {
         match self {
             CC_C_CHAR::VINTR => control_character('C'),
             CC_C_CHAR::VQUIT => control_character('\\'),
-            CC_C_CHAR::VERASE => '\x7f' as u8,
+            CC_C_CHAR::VERASE => b'\x7f',
             CC_C_CHAR::VKILL => control_character('U'),
             CC_C_CHAR::VEOF => control_character('D'),
-            CC_C_CHAR::VTIME => '\0' as u8,
+            CC_C_CHAR::VTIME => b'\0',
             CC_C_CHAR::VMIN => 1,
-            CC_C_CHAR::VSWTC => '\0' as u8,
+            CC_C_CHAR::VSWTC => b'\0',
             CC_C_CHAR::VSTART => control_character('Q'),
             CC_C_CHAR::VSTOP => control_character('S'),
             CC_C_CHAR::VSUSP => control_character('Z'),
-            CC_C_CHAR::VEOL => '\0' as u8,
+            CC_C_CHAR::VEOL => b'\0',
             CC_C_CHAR::VREPRINT => control_character('R'),
             CC_C_CHAR::VDISCARD => control_character('O'),
             CC_C_CHAR::VWERASE => control_character('W'),
             CC_C_CHAR::VLNEXT => control_character('V'),
-            CC_C_CHAR::VEOL2 => '\0' as u8,
+            CC_C_CHAR::VEOL2 => b'\0',
         }
     }
 }
@@ -218,8 +218,8 @@ pub struct KernelTermios {
     c_cc: [CcT; KERNEL_NCCS],
 }
 
-impl KernelTermios {
-    pub fn default() -> Self {
+impl Default for KernelTermios {
+    fn default() -> Self {
         let mut termios = Self {
             c_iflags: C_IFLAGS::default(),
             c_oflags: C_OFLAGS::default(),
@@ -247,7 +247,9 @@ impl KernelTermios {
         *termios.get_special_char_mut(CC_C_CHAR::VEOL2) = CC_C_CHAR::VEOL2.default_char();
         termios
     }
+}
 
+impl KernelTermios {
     pub fn get_special_char(&self, cc_c_char: CC_C_CHAR) -> &CcT {
         &self.c_cc[cc_c_char as usize]
     }
@@ -292,8 +294,8 @@ impl KernelTermios {
 }
 
 const fn control_character(c: char) -> u8 {
-    debug_assert!(c as u8 >= 'A' as u8);
-    c as u8 - 'A' as u8 + 1u8
+    debug_assert!(c as u8 >= b'A');
+    c as u8 - b'A' + 1u8
 }
 
 #[derive(Debug, Clone, Copy, Default, Pod)]

@@ -79,9 +79,9 @@ impl Debug for DeviceId {
     }
 }
 
-impl Into<u64> for DeviceId {
-    fn into(self) -> u64 {
-        self.0
+impl From<DeviceId> for u64 {
+    fn from(value: DeviceId) -> Self {
+        value.0
     }
 }
 

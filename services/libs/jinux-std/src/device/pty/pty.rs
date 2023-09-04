@@ -88,7 +88,7 @@ impl PtyMaster {
 impl FileLike for PtyMaster {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         // TODO: deal with nonblocking read
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(0);
         }
 
@@ -261,7 +261,7 @@ impl Device for PtySlave {
     }
 
     fn id(&self) -> crate::fs::device::DeviceId {
-        DeviceId::new(88, self.index() as u32)
+        DeviceId::new(88, self.index())
     }
 
     fn read(&self, buf: &mut [u8]) -> Result<usize> {

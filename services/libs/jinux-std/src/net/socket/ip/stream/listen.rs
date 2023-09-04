@@ -105,7 +105,7 @@ impl ListenStream {
                 backlog_socket.poll(mask, poller);
             }
         }
-        return IoEvents::empty();
+        IoEvents::empty()
     }
 
     fn bound_socket(&self) -> Arc<AnyBoundSocket> {

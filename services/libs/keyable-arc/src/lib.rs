@@ -145,21 +145,21 @@ impl<T: ?Sized> Deref for KeyableArc<T> {
 
     #[inline]
     fn deref(&self) -> &T {
-        &*self.0
+        &self.0
     }
 }
 
 impl<T: ?Sized> AsRef<T> for KeyableArc<T> {
     #[inline]
     fn as_ref(&self) -> &T {
-        &**self
+        self
     }
 }
 
 impl<T: ?Sized> Borrow<T> for KeyableArc<T> {
     #[inline]
     fn borrow(&self) -> &T {
-        &**self
+        self
     }
 }
 
@@ -170,10 +170,10 @@ impl<T: ?Sized> From<Arc<T>> for KeyableArc<T> {
     }
 }
 
-impl<T: ?Sized> Into<Arc<T>> for KeyableArc<T> {
+impl<T: ?Sized> From<KeyableArc<T>> for Arc<T> {
     #[inline]
-    fn into(self) -> Arc<T> {
-        self.0
+    fn from(value: KeyableArc<T>) -> Self {
+        value.0
     }
 }
 
@@ -230,6 +230,7 @@ impl<T> KeyableWeak<T> {
     /// Constructs a new `KeyableWeak<T>`, without allocating any memory.
     /// Calling `upgrade` on the return value always gives `None`.
     #[inline]
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(Weak::new())
     }
@@ -300,10 +301,9 @@ impl<T: ?Sized> From<Weak<T>> for KeyableWeak<T> {
     }
 }
 
-impl<T: ?Sized> Into<Weak<T>> for KeyableWeak<T> {
-    #[inline]
-    fn into(self) -> Weak<T> {
-        self.0
+impl<T: ?Sized> From<KeyableWeak<T>> for Weak<T> {
+    fn from(value: KeyableWeak<T>) -> Self {
+        value.0
     }
 }
 

@@ -17,7 +17,7 @@ pub fn expand_type_flag(type_flags_def: &TypeFlagDef) -> TokenStream {
     let impl_same_as_tokens = impl_same_as(type_flags_def);
     all_tokens.append_all(impl_same_as_tokens);
 
-    let flag_sets = generate_flag_sets(&type_flags_def);
+    let flag_sets = generate_flag_sets(type_flags_def);
     flag_sets.iter().for_each(|flag_set| {
         let impl_main_trait_tokens = flag_set.impl_main_trait_tokens(type_flags_def);
         all_tokens.append_all(impl_main_trait_tokens);

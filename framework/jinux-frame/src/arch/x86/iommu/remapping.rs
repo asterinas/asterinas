@@ -44,9 +44,8 @@ impl RemappingRegisters {
         let base_address = {
             let mut addr = 0;
             for remapping in dmar.remapping_iter() {
-                match remapping {
-                    Remapping::Drhd(drhd) => addr = drhd.register_base_addr(),
-                    _ => {}
+                if let Remapping::Drhd(drhd) = remapping {
+                    addr = drhd.register_base_addr()
                 }
             }
             if addr == 0 {
@@ -110,7 +109,7 @@ bitflags! {
         /// 6 => 16-bit domain-ids with support for up to 64K domains.
         /// 7 => Reserved.
         /// ```
-        const ND =          0x7 << 0;
+        const ND =          0x7;
         /// Required Write-Buffer Flushing.
         const RWBF =        1 << 4;
         /// Protected Low-Memory Region

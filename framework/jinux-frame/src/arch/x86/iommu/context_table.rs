@@ -49,7 +49,7 @@ pub enum ContextTableError {
 impl RootTable {
     pub fn new() -> Self {
         Self {
-            root_frame: VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false))
+            root_frame: VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false))
                 .unwrap()
                 .pop()
                 .unwrap(),
@@ -128,7 +128,7 @@ impl RootTable {
         let bus_entry = context_table
             .entries_frame
             .read_val::<ContextEntry>(
-                (device_id.device as usize * 8 + device_id.function as usize) as usize
+                (device_id.device as usize * 8 + device_id.function as usize)
                     * size_of::<ContextEntry>(),
             )
             .unwrap();
@@ -141,7 +141,7 @@ impl RootTable {
         context_table
             .entries_frame
             .write_val::<ContextEntry>(
-                (device_id.device as usize * 8 + device_id.function as usize) as usize
+                (device_id.device as usize * 8 + device_id.function as usize)
                     * size_of::<ContextEntry>(),
                 &entry,
             )
@@ -237,7 +237,7 @@ pub struct ContextTable {
 impl ContextTable {
     fn new() -> Self {
         Self {
-            entries_frame: VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false))
+            entries_frame: VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false))
                 .unwrap()
                 .pop()
                 .unwrap(),
@@ -256,8 +256,7 @@ impl ContextTable {
         let bus_entry = self
             .entries_frame
             .read_val::<ContextEntry>(
-                (device.device as usize * 8 + device.function as usize) as usize
-                    * size_of::<ContextEntry>(),
+                (device.device as usize * 8 + device.function as usize) * size_of::<ContextEntry>(),
             )
             .unwrap();
 
@@ -270,7 +269,7 @@ impl ContextTable {
             let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
             self.entries_frame
                 .write_val::<ContextEntry>(
-                    (device.device as usize * 8 + device.function as usize) as usize
+                    (device.device as usize * 8 + device.function as usize)
                         * size_of::<ContextEntry>(),
                     &entry,
                 )
@@ -298,7 +297,7 @@ impl ContextTable {
                 paddr,
                 PageTableFlags::WRITABLE | PageTableFlags::READABLE | PageTableFlags::LAST_PAGE,
             )
-            .map_err(|err| ContextTableError::ModificationError(err))
+            .map_err(ContextTableError::ModificationError)
     }
 
     fn unmap(&mut self, device: PciDeviceLocation, vaddr: Vaddr) -> Result<(), ContextTableError> {
@@ -308,6 +307,6 @@ impl ContextTable {
 
         self.get_or_create_page_table(device)
             .unmap(vaddr)
-            .map_err(|err| ContextTableError::ModificationError(err))
+            .map_err(ContextTableError::ModificationError)
     }
 }

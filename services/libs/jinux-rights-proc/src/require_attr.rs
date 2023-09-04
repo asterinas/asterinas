@@ -83,13 +83,13 @@ fn is_generic_param(ident: Ident, generic_params: &Punctuated<GenericParam, Comm
         match generic_param {
             GenericParam::Type(type_param) => {
                 let type_param_ident = type_param.ident.clone();
-                if ident.to_string() == type_param_ident.to_string() {
+                if ident == type_param_ident {
                     return true;
                 }
             }
             GenericParam::Const(const_param) => {
                 let const_param_ident = const_param.ident.clone();
-                if ident.to_string() == const_param_ident.to_string() {
+                if const_param_ident == ident {
                     return true;
                 }
             }

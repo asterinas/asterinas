@@ -40,7 +40,7 @@ pub fn wait_child_exit(
         // we need to drop the lock here, since reap child process need to acquire this lock again
         drop(children_lock);
 
-        if unwaited_children.len() == 0 {
+        if unwaited_children.is_empty() {
             return Some(Err(jinux_frame::Error::NoChild));
         }
 

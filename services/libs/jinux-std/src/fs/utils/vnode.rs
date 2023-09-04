@@ -235,6 +235,10 @@ impl Vnode {
         self.inner.read().inode.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn atime(&self) -> Duration {
         self.inner.read().inode.atime()
     }
@@ -257,7 +261,7 @@ impl Vnode {
 
     pub fn writer(&self, from_offset: usize) -> VnodeWriter {
         VnodeWriter {
-            inner: &self,
+            inner: self,
             offset: from_offset,
         }
     }

@@ -17,5 +17,5 @@ pub fn sys_read(fd: FileDescripter, user_buf_addr: Vaddr, buf_len: usize) -> Res
     let mut read_buf = vec![0u8; buf_len];
     let read_len = file.read(&mut read_buf)?;
     write_bytes_to_user(user_buf_addr, &read_buf)?;
-    return Ok(SyscallReturn::Return(read_len as _));
+    Ok(SyscallReturn::Return(read_len as _))
 }

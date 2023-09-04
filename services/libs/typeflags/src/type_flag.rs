@@ -106,7 +106,7 @@ impl TypeFlagDef {
 
     /// get item at specific position
     pub fn get_item(&self, index: usize) -> Option<TypeFlagItem> {
-        self.items.iter().nth(index).map(|item| item.clone())
+        self.items.iter().nth(index).cloned()
     }
 
     /// the trait ident
@@ -147,9 +147,9 @@ impl TypeFlagItem {
 impl TypeFlagDef {
     /// Debug use. Print all item's name.
     pub fn debug(&self) {
-        println!("{}", self.ident.to_string());
+        println!("{}", self.ident);
         for type_flag_item in &self.items {
-            println!("{}", type_flag_item.ident.to_string());
+            println!("{}", type_flag_item.ident);
         }
     }
 }

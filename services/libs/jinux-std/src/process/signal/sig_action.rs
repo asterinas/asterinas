@@ -2,8 +2,9 @@ use super::{c_types::sigaction_t, constants::*, sig_mask::SigMask, sig_num::SigN
 use crate::prelude::*;
 use bitflags::bitflags;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum SigAction {
+    #[default]
     Dfl, // Default action
     Ign, // Ignore this signal
     User {
@@ -13,12 +14,6 @@ pub enum SigAction {
         restorer_addr: usize,
         mask: SigMask,
     },
-}
-
-impl Default for SigAction {
-    fn default() -> Self {
-        SigAction::Dfl
-    }
 }
 
 impl TryFrom<sigaction_t> for SigAction {
@@ -44,7 +39,7 @@ impl TryFrom<sigaction_t> for SigAction {
 }
 
 impl SigAction {
-    pub fn to_c(&self) -> sigaction_t {
+    pub fn as_c_type(&self) -> sigaction_t {
         match self {
             SigAction::Dfl => sigaction_t {
                 handler_ptr: SIG_DFL,
@@ -65,7 +60,7 @@ impl SigAction {
                 mask,
             } => sigaction_t {
                 handler_ptr: *handler_addr,
-                flags: flags.to_u32(),
+                flags: flags.as_u32(),
                 restorer_ptr: *restorer_addr,
                 mask: mask.as_u64(),
             },
@@ -100,7 +95,7 @@ impl TryFrom<u32> for SigActionFlags {
 }
 
 impl SigActionFlags {
-    pub fn to_u32(&self) -> u32 {
+    pub fn as_u32(&self) -> u32 {
         self.bits()
     }
 

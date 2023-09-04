@@ -13,7 +13,6 @@ use super::{
 };
 use alloc::sync::Arc;
 use lazy_static::lazy_static;
-use log::warn;
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -83,17 +82,18 @@ pub fn switch_to_task(next_task: Arc<Task>) {
     let current_task_option = current_task();
     let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
     let current_task: Arc<Task>;
-    let current_task_cx_ptr = if current_task_option.is_none() {
-        PROCESSOR.lock().get_idle_task_cx_ptr()
-    } else {
-        current_task = current_task_option.unwrap();
-        if current_task.status() == TaskStatus::Runnable {
-            GLOBAL_SCHEDULER
-                .lock_irq_disabled()
-                .enqueue(current_task.clone());
+    let current_task_cx_ptr = match current_task_option {
+        None => PROCESSOR.lock().get_idle_task_cx_ptr(),
+        Some(current_task) => {
+            if current_task.status() == TaskStatus::Runnable {
+                GLOBAL_SCHEDULER
+                    .lock_irq_disabled()
+                    .enqueue(current_task.clone());
+            }
+            &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
         }
-        &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
     };
+
     // change the current task to the next task
 
     PROCESSOR.lock().current = Some(next_task.clone());

@@ -23,6 +23,12 @@ impl Clone for FsResolver {
     }
 }
 
+impl Default for FsResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FsResolver {
     pub fn new() -> Self {
         Self {
@@ -86,14 +92,13 @@ impl FsResolver {
                 }
                 let (dir_dentry, file_name) =
                     self.lookup_dir_and_base_name_inner(path, follow_tail_link)?;
-                if file_name.ends_with("/") {
+                if file_name.ends_with('/') {
                     return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
                 }
                 if !dir_dentry.vnode().inode_mode().is_writable() {
                     return_errno_with_message!(Errno::EACCES, "file cannot be created");
                 }
-                let new_dentry = dir_dentry.create(&file_name, InodeType::File, inode_mode)?;
-                new_dentry
+                dir_dentry.create(&file_name, InodeType::File, inode_mode)?
             }
             Err(e) => return Err(e),
         };
@@ -148,7 +153,7 @@ impl FsResolver {
         relative_path: &str,
         follow_tail_link: bool,
     ) -> Result<Arc<Dentry>> {
-        debug_assert!(!relative_path.starts_with("/"));
+        debug_assert!(!relative_path.starts_with('/'));
 
         if relative_path.len() > PATH_MAX {
             return_errno_with_message!(Errno::ENAMETOOLONG, "path is too long");
@@ -195,11 +200,11 @@ impl FsResolver {
                 };
 
                 // Change the dentry and relative path according to symlink
-                if link_path_remain.starts_with("/") {
+                if link_path_remain.starts_with('/') {
                     dentry = self.root.clone();
                 }
                 link_path.clear();
-                link_path.push_str(&link_path_remain.trim_start_matches('/'));
+                link_path.push_str(link_path_remain.trim_start_matches('/'));
                 relative_path = &link_path;
                 follows += 1;
             } else {
@@ -269,20 +274,20 @@ impl FsResolver {
 
         // Dereference the tail symlinks if needed
         loop {
-            match dir_dentry.lookup(&base_name.trim_end_matches('/')) {
+            match dir_dentry.lookup(base_name.trim_end_matches('/')) {
                 Ok(dentry) if dentry.vnode().inode_type() == InodeType::SymLink => {
                     let link = {
                         let mut link = dentry.vnode().read_link()?;
                         if link.is_empty() {
                             return_errno_with_message!(Errno::ENOENT, "invalid symlink");
                         }
-                        if base_name.ends_with("/") && !link.ends_with("/") {
+                        if base_name.ends_with('/') && !link.ends_with('/') {
                             link += "/";
                         }
                         link
                     };
                     let (dir, file_name) = split_path(&link);
-                    if dir.starts_with("/") {
+                    if dir.starts_with('/') {
                         dir_dentry =
                             self.lookup_from_parent(&self.root, dir.trim_start_matches('/'), true)?;
                         base_name = String::from(file_name);
@@ -326,7 +331,7 @@ impl<'a> FsPath<'a> {
             return_errno_with_message!(Errno::ENAMETOOLONG, "path name too long");
         }
 
-        let fs_path_inner = if path.starts_with("/") {
+        let fs_path_inner = if path.starts_with('/') {
             FsPathInner::Absolute(path)
         } else if dirfd >= 0 {
             if path.is_empty() {

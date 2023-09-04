@@ -89,6 +89,7 @@ pub struct PageTableConfig {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(usize)]
+#[allow(clippy::enum_variant_names)]
 pub enum AddressWidth {
     Level3PageTable = 3,
     Level4PageTable = 4,
@@ -190,7 +191,7 @@ impl<T: PageTableEntryTrait> PageTable<T> {
                     return None;
                 }
                 // Create next table
-                let frame = VmFrameVec::allocate(&VmAllocOptions::new(1).uninit(false))
+                let frame = VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false))
                     .unwrap()
                     .pop()
                     .unwrap();

@@ -24,7 +24,7 @@ pub fn sys_write(
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;
     let mut buffer = vec![0u8; user_buf_len];
-    read_bytes_from_user(user_buf_ptr as usize, &mut buffer)?;
+    read_bytes_from_user(user_buf_ptr, &mut buffer)?;
     debug!("write content = {:?}", buffer);
     let write_len = file.write(&buffer)?;
     Ok(SyscallReturn::Return(write_len as _))

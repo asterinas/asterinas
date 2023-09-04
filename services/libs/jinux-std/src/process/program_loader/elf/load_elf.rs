@@ -43,7 +43,7 @@ pub fn load_elf_to_vm(
     process_vm.clear();
 
     match init_and_map_vmos(process_vm, ldso, &elf, &elf_file, argv, envp) {
-        Ok(elf_load_info) => return Ok(elf_load_info),
+        Ok(elf_load_info) => Ok(elf_load_info),
         Err(e) => {
             // Since the process_vm is cleared, the process cannot return to user space again,
             // so exit_group is called here.
@@ -78,7 +78,7 @@ fn lookup_and_parse_ldso(
 }
 
 fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {
-    let map_addr = map_segment_vmos(&ldso_elf, root_vmar, &ldso_file)?;
+    let map_addr = map_segment_vmos(ldso_elf, root_vmar, ldso_file)?;
     Ok(LdsoLoadInfo::new(
         ldso_elf.entry_point() + map_addr,
         map_addr,
@@ -102,21 +102,19 @@ fn init_and_map_vmos(
         None
     };
 
-    let map_addr = map_segment_vmos(&elf, root_vmar, &elf_file)?;
-    let mut aux_vec = init_aux_vec(&elf, map_addr)?;
+    let map_addr = map_segment_vmos(elf, root_vmar, elf_file)?;
+    let mut aux_vec = init_aux_vec(elf, map_addr)?;
     let mut init_stack = InitStack::new_default_config(argv, envp);
-    init_stack.init(root_vmar, &elf, &ldso_load_info, &mut aux_vec)?;
+    init_stack.init(root_vmar, elf, &ldso_load_info, &mut aux_vec)?;
     let entry_point = if let Some(ldso_load_info) = ldso_load_info {
         // Normal shared object
         ldso_load_info.entry_point()
+    } else if elf.is_shared_object() {
+        // ldso itself
+        elf.entry_point() + map_addr
     } else {
-        if elf.is_shared_object() {
-            // ldso itself
-            elf.entry_point() + map_addr
-        } else {
-            // statically linked executable
-            elf.entry_point()
-        }
+        // statically linked executable
+        elf.entry_point()
     };
 
     let elf_load_info = ElfLoadInfo::new(entry_point, init_stack.user_stack_top());

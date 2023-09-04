@@ -268,13 +268,13 @@ impl From<int_to_c_enum::TryFromIntError> for Error {
 #[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {
-        return core::prelude::v1::Err(crate::error::Error::new($errno))
+        return Err($crate::error::Error::new($errno))
     };
 }
 
 #[macro_export]
 macro_rules! return_errno_with_message {
     ($errno: expr, $message: expr) => {
-        return core::prelude::v1::Err(crate::error::Error::with_message($errno, $message))
+        return Err($crate::error::Error::with_message($errno, $message))
     };
 }

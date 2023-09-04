@@ -230,7 +230,7 @@ impl VmoInner {
     }
 
     fn should_share_frame_with_parent(&self, write_page: bool) -> bool {
-        !self.is_cow || (self.is_cow && !write_page)
+        !self.is_cow || !write_page
     }
 }
 
@@ -343,7 +343,7 @@ impl Vmo_ {
     }
 
     pub fn flags(&self) -> VmoFlags {
-        self.flags.clone()
+        self.flags
     }
 }
 

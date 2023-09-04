@@ -61,13 +61,11 @@ impl Signal for UserSignal {
             UserSignalKind::Sigqueue => SI_QUEUE,
         };
 
-        let info = siginfo_t::new(self.num, code);
+        siginfo_t::new(self.num, code)
         // info.set_si_pid(self.pid);
         // info.set_si_uid(self.uid);
         // if let UserSignalKind::Sigqueue(val) = self.kind {
         //     info.set_si_value(val);
         // }
-
-        info
     }
 }
