@@ -144,13 +144,13 @@ mod test {
 
     #[test]
     fn root_vmar() {
-        let vmar = Vmar::<Full>::new_root().unwrap();
+        let vmar = Vmar::<Full>::new_root();
         assert!(vmar.size() == ROOT_VMAR_HIGHEST_ADDR);
     }
 
     #[test]
     fn child_vmar() {
-        let root_vmar = Vmar::<Full>::new_root().unwrap();
+        let root_vmar = Vmar::<Full>::new_root();
         let root_vmar_dup = root_vmar.dup().unwrap();
         let child_vmar = VmarChildOptions::new(root_vmar_dup, 10 * PAGE_SIZE)
             .alloc()
@@ -169,7 +169,7 @@ mod test {
 
     #[test]
     fn map_vmo() {
-        let root_vmar = Vmar::<Full>::new_root().unwrap();
+        let root_vmar = Vmar::<Full>::new_root();
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap().to_dyn();
         let perms = VmPerms::READ | VmPerms::WRITE;
         let map_offset = 0x1000_0000;
@@ -196,7 +196,7 @@ mod test {
     #[test]
     fn handle_page_fault() {
         const OFFSET: usize = 0x1000_0000;
-        let root_vmar = Vmar::<Full>::new_root().unwrap();
+        let root_vmar = Vmar::<Full>::new_root();
         // the page is not mapped by a vmo
         assert!(root_vmar.handle_page_fault(OFFSET, true, true).is_err());
         // the page is mapped READ

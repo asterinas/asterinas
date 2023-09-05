@@ -14,7 +14,7 @@ use alloc::sync::Weak;
 use alloc::vec::Vec;
 use core::ops::Range;
 use jinux_frame::vm::VmSpace;
-use jinux_rights::{Dup, Exec, Full, Read, Rights, Signal, TRightSet, TRights, Write};
+use jinux_rights::Rights;
 
 use self::vm_mapping::VmMapping;
 
@@ -112,14 +112,47 @@ struct VmarInner {
     free_regions: BTreeMap<Vaddr, FreeRegion>,
 }
 
+impl VmarInner {
+    const fn new() -> Self {
+        Self {
+            is_destroyed: false,
+            child_vmar_s: BTreeMap::new(),
+            vm_mappings: BTreeMap::new(),
+            free_regions: BTreeMap::new(),
+        }
+    }
+}
+
 // FIXME: How to set the correct root vmar range?
 // We should not include addr 0 here(is this right?), since the 0 addr means the null pointer.
 // We should include addr 0x0040_0000, since non-pie executables typically are put on 0x0040_0000.
-pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x0010_0000;
-pub const ROOT_VMAR_HIGHEST_ADDR: Vaddr = 0x1000_0000_0000;
+const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x0010_0000;
+const ROOT_VMAR_HIGHEST_ADDR: Vaddr = 0x1000_0000_0000;
 
 impl Vmar_ {
-    pub fn new_root() -> Result<Self> {
+    fn new(
+        inner: VmarInner,
+        vm_space: VmSpace,
+        base: usize,
+        size: usize,
+        parent: Option<&Arc<Vmar_>>,
+    ) -> Arc<Self> {
+        let parent = if let Some(parent) = parent {
+            Arc::downgrade(parent)
+        } else {
+            Weak::new()
+        };
+
+        Arc::new(Vmar_ {
+            inner: Mutex::new(inner),
+            base,
+            size,
+            vm_space,
+            parent,
+        })
+    }
+
+    pub fn new_root() -> Arc<Self> {
         let mut free_regions = BTreeMap::new();
         let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_HIGHEST_ADDR);
         free_regions.insert(root_region.start(), root_region);
@@ -129,14 +162,7 @@ impl Vmar_ {
             vm_mappings: BTreeMap::new(),
             free_regions,
         };
-        let vmar_ = Vmar_ {
-            inner: Mutex::new(vmar_inner),
-            vm_space: VmSpace::new(),
-            base: 0,
-            size: ROOT_VMAR_HIGHEST_ADDR,
-            parent: Weak::new(),
-        };
-        Ok(vmar_)
+        Vmar_::new(vmar_inner, VmSpace::new(), 0, ROOT_VMAR_HIGHEST_ADDR, None)
     }
 
     fn is_root_vmar(&self) -> bool {
@@ -445,13 +471,13 @@ impl Vmar_ {
             vm_mappings: BTreeMap::new(),
             free_regions: child_regions,
         };
-        let child_vmar_ = Arc::new(Vmar_ {
-            inner: Mutex::new(child_vmar_inner),
-            base: child_vmar_offset,
-            size: child_vmar_size,
-            vm_space: self.vm_space.clone(),
-            parent: Arc::downgrade(self),
-        });
+        let child_vmar_ = Vmar_::new(
+            child_vmar_inner,
+            self.vm_space.clone(),
+            child_vmar_offset,
+            child_vmar_size,
+            Some(self),
+        );
         self.inner
             .lock()
             .child_vmar_s
@@ -591,16 +617,6 @@ impl Vmar_ {
         }
     }
 
-    fn hint_map_addr(&self, size: usize) -> Result<Vaddr> {
-        let inner = self.inner.lock();
-        for (free_region_base, free_region) in &inner.free_regions {
-            if free_region.size() >= size {
-                return Ok(*free_region_base);
-            }
-        }
-        return_errno_with_message!(Errno::ENOMEM, "cannot find a suitale free region");
-    }
-
     fn trim_existing_mappings(&self, trim_range: Range<usize>) -> Result<()> {
         let mut inner = self.inner.lock();
         let mut mappings_to_remove = BTreeSet::new();
@@ -622,35 +638,28 @@ impl Vmar_ {
         Ok(())
     }
 
-    /// fork vmar for child process
-    pub fn fork_vmar_(&self, parent: Weak<Vmar_>) -> Result<Arc<Self>> {
-        // create an empty vmar at first
-        let is_destroyed = false;
-        let child_vmar_s = BTreeMap::new();
-        let mapped_vmos = BTreeMap::new();
-        let free_regions = BTreeMap::new();
-        let vmar_inner = VmarInner {
-            is_destroyed,
-            child_vmar_s,
-            vm_mappings: mapped_vmos,
-            free_regions,
-        };
-        // If this is a root vmar, we create a new vmspace
-        // Otherwise, we clone the vm space from parent.
-        let vm_space = if let Some(parent) = parent.upgrade() {
-            parent.vm_space().clone()
-        } else {
-            VmSpace::new()
-        };
-        let vmar_ = Vmar_ {
-            inner: Mutex::new(vmar_inner),
-            base: self.base,
-            size: self.size,
-            vm_space,
-            parent,
+    pub(super) fn new_cow_root(self: &Arc<Self>) -> Result<Arc<Self>> {
+        if self.parent.upgrade().is_some() {
+            return_errno_with_message!(Errno::EINVAL, "can only dup cow vmar for root vmar");
+        }
+
+        self.new_cow(None)
+    }
+
+    /// Create a new vmar by creating cow child for all mapped vmos
+    fn new_cow(&self, parent: Option<&Arc<Vmar_>>) -> Result<Arc<Self>> {
+        let new_vmar_ = {
+            let vmar_inner = VmarInner::new();
+            // If this is a root vmar, we create a new vmspace,
+            // Otherwise, we clone the vm space from parent.
+            let vm_space = if let Some(parent) = parent {
+                parent.vm_space().clone()
+            } else {
+                VmSpace::new()
+            };
+            Vmar_::new(vmar_inner, vm_space, self.base, self.size, parent)
         };
 
-        let new_vmar_ = Arc::new(vmar_);
         let inner = self.inner.lock();
         // clone free regions
         for (free_region_base, free_region) in &inner.free_regions {
@@ -663,30 +672,28 @@ impl Vmar_ {
 
         // clone child vmars
         for (child_vmar_base, child_vmar_) in &inner.child_vmar_s {
-            let parent_of_forked_child = Arc::downgrade(&new_vmar_);
-            let forked_child_vmar = child_vmar_.fork_vmar_(parent_of_forked_child)?;
+            let new_child_vmar = child_vmar_.new_cow(Some(&new_vmar_))?;
             new_vmar_
                 .inner
                 .lock()
                 .child_vmar_s
-                .insert(*child_vmar_base, forked_child_vmar);
+                .insert(*child_vmar_base, new_child_vmar);
         }
 
         // clone vm mappings
         for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
-            let parent_of_forked_mapping = Arc::downgrade(&new_vmar_);
-            let forked_mapping = Arc::new(vm_mapping.fork_mapping(parent_of_forked_mapping)?);
+            let new_mapping = Arc::new(vm_mapping.new_cow(&new_vmar_)?);
             new_vmar_
                 .inner
                 .lock()
                 .vm_mappings
-                .insert(*vm_mapping_base, forked_mapping);
+                .insert(*vm_mapping_base, new_mapping);
         }
         Ok(new_vmar_)
     }
 
     /// get mapped vmo at given offset
-    pub fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
+    fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
         for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
             if *vm_mapping_base <= offset && offset < *vm_mapping_base + vm_mapping.map_size() {
                 return Ok(vm_mapping.clone());
@@ -707,17 +714,6 @@ impl<R> Vmar<R> {
     /// The size of the vmar in bytes.
     pub fn size(&self) -> usize {
         self.0.size
-    }
-
-    /// Fork a vmar for child process
-    pub fn fork_vmar(&self) -> Result<Vmar<Full>> {
-        let rights = Rights::all();
-        self.check_rights(rights)?;
-        let vmar_ = self.0.fork_vmar_(Weak::new())?;
-        Ok(Vmar(
-            vmar_,
-            TRightSet(<TRights![Dup, Read, Write, Exec, Signal]>::new()),
-        ))
     }
 
     /// get a mapped vmo

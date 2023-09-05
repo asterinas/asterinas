@@ -101,6 +101,7 @@ impl VmMapping {
             mapped_pages: BTreeSet::new(),
             page_perms,
         };
+
         Ok(Self {
             inner: Mutex::new(vm_mapping_inner),
             parent: Arc::downgrade(&parent_vmar),
@@ -233,18 +234,30 @@ impl VmMapping {
         self.inner.lock().protect(vm_space, perms, range)
     }
 
-    pub(super) fn fork_mapping(&self, new_parent: Weak<Vmar_>) -> Result<VmMapping> {
+    pub(super) fn new_cow(&self, new_parent: &Arc<Vmar_>) -> Result<VmMapping> {
         let VmMapping { inner, vmo, .. } = self;
+
         let child_vmo = {
             let parent_vmo = vmo.dup().unwrap();
             let vmo_size = parent_vmo.size();
             VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?
         };
 
-        let inner = self.inner.lock().fork_mapping(child_vmo.size())?;
+        let new_inner = {
+            let inner = self.inner.lock();
+            VmMappingInner {
+                vmo_offset: inner.vmo_offset,
+                map_size: inner.map_size,
+                map_to_addr: inner.map_to_addr,
+                is_destroyed: inner.is_destroyed,
+                mapped_pages: BTreeSet::new(),
+                page_perms: inner.page_perms.clone(),
+            }
+        };
+
         Ok(VmMapping {
-            inner: Mutex::new(inner),
-            parent: new_parent,
+            inner: Mutex::new(new_inner),
+            parent: Arc::downgrade(new_parent),
             vmo: child_vmo,
         })
     }
@@ -410,21 +423,6 @@ impl VmMappingInner {
             }
         }
         Ok(())
-    }
-
-    fn fork_mapping(&self, vmo_size: usize) -> Result<VmMappingInner> {
-        debug!(
-            "fork vmo, parent size = 0x{:x}, map_to_addr = 0x{:x}",
-            vmo_size, self.map_to_addr
-        );
-        Ok(VmMappingInner {
-            is_destroyed: self.is_destroyed,
-            mapped_pages: BTreeSet::new(),
-            page_perms: self.page_perms.clone(),
-            vmo_offset: self.vmo_offset,
-            map_size: self.map_size,
-            map_to_addr: self.map_to_addr,
-        })
     }
 
     /// trim the mapping from left to a new address.
