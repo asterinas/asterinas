@@ -184,3 +184,10 @@ Jinux is under active development. The list below summarizes the progress of imp
     * Misc
         - [ ] Multi-core support
         - [ ] User-mode development
+
+## License
+
+The Jinux project is dual-licensed under Apache 2.0 and MIT terms.
+
+See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT), and
+[COPYRIGHT](COPYRIGHT) for details.
