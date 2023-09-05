@@ -6,6 +6,8 @@ pub(crate) mod irq;
 mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
+#[cfg(feature = "intel_tdx")]
+pub(crate) mod tdx_guest;
 pub(crate) mod timer;
 
 use alloc::fmt;
