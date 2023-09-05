@@ -5,7 +5,7 @@
 //! resumes the TD via a SEAMCALL [TDH.VP.ENTER] invocation.
 extern crate alloc;
 
-use crate::{asm::asm_td_vmcall, tdcall::TdgVeInfo, TdxTrapFrame};
+use crate::{asm::asm_td_vmcall, tdcall::TdgVeInfo};
 use alloc::fmt;
 use bitflags::bitflags;
 use core::fmt::Write;
@@ -193,38 +193,6 @@ pub fn write_mmio(size: u64, mmio_addr: u64, data: u64) -> Result<(), TdVmcallEr
     }
 }
 
-pub fn handle_io(trapframe: &mut impl TdxTrapFrame, ve_info: &TdgVeInfo) -> bool {
-    let size = match ve_info.exit_qualification & 0x3 {
-        0 => 1,
-        1 => 2,
-        3 => 4,
-        _ => panic!("Invalid size value"),
-    };
-    let direction = if (ve_info.exit_qualification >> 3) & 0x1 == 0 {
-        Direction::Out
-    } else {
-        Direction::In
-    };
-    let string = (ve_info.exit_qualification >> 4) & 0x1 == 1;
-    let repeat = (ve_info.exit_qualification >> 5) & 0x1 == 1;
-    let operand = if (ve_info.exit_qualification >> 6) & 0x1 == 0 {
-        Operand::Dx
-    } else {
-        Operand::Immediate
-    };
-    let port = (ve_info.exit_qualification >> 16) as u16;
-
-    match direction {
-        Direction::In => {
-            trapframe.set_rax(io_read(size, port).unwrap() as usize);
-        }
-        Direction::Out => {
-            io_write(size, port, trapframe.rax() as u32).unwrap();
-        }
-    };
-    true
-}
-
 macro_rules! io_read {
     ($port:expr, $ty:ty) => {{
         let mut args = TdVmcallArgs {
@@ -286,22 +254,42 @@ fn td_vmcall(args: &mut TdVmcallArgs) -> Result<(), TdVmcallError> {
 }
 
 bitflags! {
-  struct LineSts: u8 {
-    const INPUT_FULL = 1;
-    const OUTPUT_EMPTY = 1 << 5;
-  }
+    struct LineSts: u8 {
+        const INPUT_FULL = 1;
+        const OUTPUT_EMPTY = 1 << 5;
+    }
 }
 
-fn line_sts() -> LineSts {
+fn read_line_sts() -> LineSts {
     LineSts::from_bits_truncate(unsafe { PortRead::read_from_port(SERIAL_LINE_STS) })
 }
 
 struct Serial;
 
+impl Serial {
+    fn serial_write_byte(byte: u8) {
+        match byte {
+            // Backspace/Delete
+            8 | 0x7F => {
+                while !read_line_sts().contains(LineSts::OUTPUT_EMPTY) {}
+                io_write!(SERIAL_IO_PORT, 8, u8).unwrap();
+                while !read_line_sts().contains(LineSts::OUTPUT_EMPTY) {}
+                io_write!(SERIAL_IO_PORT, b' ', u8).unwrap();
+                while !read_line_sts().contains(LineSts::OUTPUT_EMPTY) {}
+                io_write!(SERIAL_IO_PORT, 8, u8).unwrap();
+            }
+            _ => {
+                while !read_line_sts().contains(LineSts::OUTPUT_EMPTY) {}
+                io_write!(SERIAL_IO_PORT, byte, u8).unwrap();
+            }
+        }
+    }
+}
+
 impl Write for Serial {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for &c in s.as_bytes() {
-            serial_write_byte(c);
+            Serial::serial_write_byte(c);
         }
         Ok(())
     }
@@ -313,23 +301,6 @@ pub fn print(args: fmt::Arguments) {
         .expect("Failed to write to serial port");
 }
 
-fn serial_write_byte(byte: u8) {
-    match byte {
-        8 | 0x7F => {
-            while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            io_write!(SERIAL_IO_PORT, 8, u8).unwrap();
-            while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            io_write!(SERIAL_IO_PORT, b' ', u8).unwrap();
-            while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            io_write!(SERIAL_IO_PORT, 8, u8).unwrap();
-        }
-        _ => {
-            while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            io_write!(SERIAL_IO_PORT, byte, u8).unwrap();
-        }
-    }
-}
-
 #[macro_export]
 macro_rules! serial_print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
@@ -339,7 +310,7 @@ macro_rules! serial_print {
 
 #[macro_export]
 macro_rules! serial_println {
-  ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::tdvmcall::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
-  }
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        $crate::tdvmcall::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
+    }
 }
