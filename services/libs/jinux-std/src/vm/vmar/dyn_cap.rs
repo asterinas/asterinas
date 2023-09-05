@@ -12,11 +12,10 @@ use super::{
 
 impl Vmar<Rights> {
     /// Creates a root VMAR.
-    pub fn new_root() -> Result<Self> {
-        let inner = Arc::new(Vmar_::new_root()?);
+    pub fn new_root() -> Self {
+        let inner = Vmar_::new_root();
         let rights = Rights::all();
-        let new_self = Self(inner, rights);
-        Ok(new_self)
+        Self(inner, rights)
     }
 
     /// Maps the given VMO into the VMAR through a set of VMAR mapping options.
@@ -143,10 +142,16 @@ impl Vmar<Rights> {
         Ok(Vmar(self.0.clone(), self.1))
     }
 
-    /// Given a map size, returns the possible map address without doing actual allocation.
-    pub fn hint_map_addr(&self, map_size: usize) -> Result<Vaddr> {
-        self.check_rights(Rights::READ)?;
-        self.0.hint_map_addr(map_size)
+    /// Creates a new root VMAR whose content is inherited from another
+    /// using copy-on-write (COW) technique.
+    ///
+    /// # Access rights
+    ///
+    /// The method requires the Read right.
+    pub fn fork_from(vmar: &Vmar) -> Result<Self> {
+        vmar.check_rights(Rights::READ)?;
+        let vmar_ = vmar.0.new_cow_root()?;
+        Ok(Vmar(vmar_, Rights::all()))
     }
 }
 

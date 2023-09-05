@@ -6,7 +6,6 @@
 
 pub mod user_heap;
 
-use crate::prelude::*;
 use jinux_rights::Full;
 use user_heap::UserHeap;
 
@@ -55,14 +54,14 @@ impl Clone for ProcessVm {
 }
 
 impl ProcessVm {
-    pub fn alloc() -> Result<Self> {
-        let root_vmar = Vmar::<Full>::new_root()?;
+    pub fn alloc() -> Self {
+        let root_vmar = Vmar::<Full>::new_root();
         let user_heap = UserHeap::new();
         user_heap.init(&root_vmar);
-        Ok(ProcessVm {
+        ProcessVm {
             user_heap,
             root_vmar,
-        })
+        }
     }
 
     pub fn new(user_heap: UserHeap, root_vmar: Vmar<Full>) -> Self {

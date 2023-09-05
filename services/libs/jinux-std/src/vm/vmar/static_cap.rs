@@ -2,7 +2,7 @@ use core::ops::Range;
 
 use crate::prelude::*;
 use jinux_frame::vm::VmIo;
-use jinux_rights::{Dup, Read, Rights, TRightSet, TRights};
+use jinux_rights::{Dup, Rights, TRightSet, TRights};
 use jinux_rights_proc::require;
 
 use crate::vm::{page_fault_handler::PageFaultHandler, vmo::Vmo};
@@ -17,11 +17,10 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// # Access rights
     ///
     /// A root VMAR is initially given full access rights.
-    pub fn new_root() -> Result<Self> {
-        let inner = Arc::new(Vmar_::new_root()?);
+    pub fn new_root() -> Self {
+        let inner = Vmar_::new_root();
         let rights = R::new();
-        let new_self = Self(inner, TRightSet(rights));
-        Ok(new_self)
+        Self(inner, TRightSet(rights))
     }
 
     /// Maps the given VMO into the VMAR through a set of VMAR mapping options.
@@ -150,10 +149,16 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         Ok(Vmar(self.0.clone(), self.1))
     }
 
-    /// Given a map size, returns the possible map address without doing actual allocation.
-    #[require(R > Read)]
-    pub fn hint_map_addr(&self, map_size: usize) -> Result<Vaddr> {
-        self.0.hint_map_addr(map_size)
+    /// Creates a new root VMAR whose content is inherited from another
+    /// using copy-on-write (COW) technique.
+    ///
+    /// # Access rights
+    ///
+    /// The method requires the Read right.
+    pub fn fork_from<R1>(vmar: &Vmar<R1>) -> Result<Self> {
+        vmar.check_rights(Rights::READ)?;
+        let vmar_ = vmar.0.new_cow_root()?;
+        Ok(Vmar(vmar_, TRightSet(R::new())))
     }
 
     /// Strict the access rights.

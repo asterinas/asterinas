@@ -134,9 +134,7 @@ impl<'a> ProcessBuilder<'a> {
             sig_dispositions,
         } = self;
 
-        let process_vm = process_vm
-            .or_else(|| Some(ProcessVm::alloc().unwrap()))
-            .unwrap();
+        let process_vm = process_vm.or_else(|| Some(ProcessVm::alloc())).unwrap();
 
         let process_group_ref = process_group
             .as_ref()
