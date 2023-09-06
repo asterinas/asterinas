@@ -5,7 +5,7 @@ use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
 use crate::fs::utils::Dentry;
 use crate::process::process_vm::ProcessVm;
 use crate::process::program_loader::elf::init_stack::{init_aux_vec, InitStack};
-use crate::process::TermStatus;
+use crate::process::{do_exit_group, TermStatus};
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{VmoOptions, VmoRightsOp};
 use crate::{
@@ -50,9 +50,8 @@ pub fn load_elf_to_vm(
 
             // FIXME: if `current` macro is used when creating the init process,
             // the macro will panic. This corner case should be handled later.
-            let current = current!();
             // FIXME: how to set the correct exit status?
-            current.exit_group(TermStatus::Exited(1));
+            do_exit_group(TermStatus::Exited(1));
             Task::current().exit();
         }
     }

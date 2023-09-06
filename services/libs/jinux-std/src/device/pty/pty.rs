@@ -194,8 +194,8 @@ impl FileLike for PtyMaster {
                 // TODO: reimplement when adding session.
                 let foreground = {
                     let current = current!();
-                    let process_group = current.process_group().lock();
-                    process_group.clone()
+                    let process_group = current.process_group().unwrap();
+                    Arc::downgrade(&process_group)
                 };
                 self.output.set_fg(foreground);
                 Ok(0)

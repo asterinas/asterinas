@@ -1,12 +1,12 @@
 use crate::{
     log_syscall_entry,
-    process::{process_filter::ProcessFilter, wait::wait_child_exit},
+    process::{wait_child_exit, ProcessFilter},
     syscall::SYS_WAIT4,
     util::write_val_to_user,
 };
 
 use crate::prelude::*;
-use crate::process::wait::WaitOptions;
+use crate::process::WaitOptions;
 
 use super::SyscallReturn;
 

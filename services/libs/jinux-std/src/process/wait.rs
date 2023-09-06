@@ -1,6 +1,6 @@
-use crate::prelude::*;
+use crate::{prelude::*, process::process_table, thread::thread_table};
 
-use super::{process_filter::ProcessFilter, ExitCode, Pid};
+use super::{process_filter::ProcessFilter, ExitCode, Pid, Process};
 
 // The definition of WaitOptions is from Occlum
 bitflags! {
@@ -45,9 +45,7 @@ pub fn wait_child_exit(
         }
 
         // return immediately if we find a zombie child
-        let zombie_child = unwaited_children
-            .iter()
-            .find(|child| child.status().lock().is_zombie());
+        let zombie_child = unwaited_children.iter().find(|child| child.is_zombie());
 
         if let Some(zombie_child) = zombie_child {
             let zombie_pid = zombie_child.pid();
@@ -56,7 +54,7 @@ pub fn wait_child_exit(
                 // does not reap child, directly return
                 return Some(Ok((zombie_pid, exit_code)));
             } else {
-                let exit_code = current.reap_zombie_child(zombie_pid);
+                let exit_code = reap_zombie_child(&current, zombie_pid);
                 return Some(Ok((zombie_pid, exit_code)));
             }
         }
@@ -70,4 +68,19 @@ pub fn wait_child_exit(
     })?;
 
     Ok((pid, exit_code as _))
+}
+
+/// Free zombie child with pid, returns the exit code of child process.
+fn reap_zombie_child(process: &Process, pid: Pid) -> u32 {
+    let child_process = process.children().lock().remove(&pid).unwrap();
+    assert!(child_process.is_zombie());
+    child_process.root_vmar().destroy_all().unwrap();
+    for thread in &*child_process.threads().lock() {
+        thread_table::remove_thread(thread.tid());
+    }
+    process_table::remove_process(child_process.pid());
+    if let Some(process_group) = child_process.process_group() {
+        process_group.remove_process(child_process.pid());
+    }
+    child_process.exit_code().unwrap()
 }

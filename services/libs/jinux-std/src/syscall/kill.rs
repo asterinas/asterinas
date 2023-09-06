@@ -3,7 +3,7 @@ use crate::{log_syscall_entry, prelude::*};
 use crate::process::process_table;
 use crate::process::signal::signals::user::{UserSignal, UserSignalKind};
 use crate::{
-    process::{process_filter::ProcessFilter, signal::sig_num::SigNum},
+    process::{signal::sig_num::SigNum, ProcessFilter},
     syscall::SYS_KILL,
 };
 

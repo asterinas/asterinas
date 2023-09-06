@@ -132,7 +132,7 @@ pub fn wake_robust_futex(futex_addr: Vaddr, tid: Pid) -> Result<()> {
     let mut old_val = futex_val;
     loop {
         // This futex may held by another thread, do nothing
-        if old_val & FUTEX_TID_MASK != tid as u32 {
+        if old_val & FUTEX_TID_MASK != tid {
             break;
         }
         let new_val = (old_val & FUTEX_WAITERS) | FUTEX_OWNER_DIED;

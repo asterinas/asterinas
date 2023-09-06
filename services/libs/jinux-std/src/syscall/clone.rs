@@ -1,7 +1,7 @@
 use jinux_frame::cpu::UserContext;
 
 use crate::log_syscall_entry;
-use crate::process::clone::{clone_child, CloneArgs, CloneFlags};
+use crate::process::{clone_child, CloneArgs, CloneFlags};
 use crate::{prelude::*, syscall::SYS_CLONE};
 
 use super::SyscallReturn;

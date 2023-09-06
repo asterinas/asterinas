@@ -1,8 +1,4 @@
-use jinux_frame::{
-    cpu::UserContext,
-    user::UserSpace,
-    vm::{VmIo, VmSpace},
-};
+use jinux_frame::{cpu::UserContext, user::UserSpace, vm::VmIo};
 
 use jinux_rights::Full;
 
@@ -12,9 +8,7 @@ use crate::{
     fs::{fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     process::{
-        posix_thread::{
-            builder::PosixThreadBuilder, name::ThreadName, posix_thread_ext::PosixThreadExt,
-        },
+        posix_thread::{PosixThreadBuilder, PosixThreadExt, ThreadName},
         process_table,
     },
     thread::{allocate_tid, thread_table, Thread, Tid},
@@ -24,7 +18,7 @@ use crate::{
 
 use super::{
     posix_thread::PosixThread, process_vm::ProcessVm, signal::sig_disposition::SigDispositions,
-    Process,
+    Process, ProcessBuilder,
 };
 
 bitflags! {
@@ -164,27 +158,39 @@ fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Res
     debug_assert!(clone_flags.contains(CloneFlags::CLONE_FILES));
     debug_assert!(clone_flags.contains(CloneFlags::CLONE_SIGHAND));
     let child_root_vmar = current.root_vmar();
-    let child_vm_space = child_root_vmar.vm_space().clone();
-    let child_cpu_context = clone_cpu_context(
-        parent_context,
-        clone_args.new_sp,
-        clone_args.tls,
-        clone_flags,
-    );
-    let child_user_space = Arc::new(UserSpace::new(child_vm_space, child_cpu_context));
+
+    let child_user_space = {
+        let child_vm_space = child_root_vmar.vm_space().clone();
+        let child_cpu_context = clone_cpu_context(
+            parent_context,
+            clone_args.new_sp,
+            clone_args.tls,
+            clone_flags,
+        );
+        Arc::new(UserSpace::new(child_vm_space, child_cpu_context))
+    };
     clone_sysvsem(clone_flags)?;
 
+    // Inherit sigmask from current thread
+    let sig_mask = {
+        let current_thread = current_thread!();
+        let current_posix_thread = current_thread.as_posix_thread().unwrap();
+        let sigmask = current_posix_thread.sig_mask().lock();
+        *sigmask
+    };
+
     let child_tid = allocate_tid();
-    // inherit sigmask from current thread
-    let current_thread = current_thread!();
-    let current_posix_thread = current_thread.as_posix_thread().unwrap();
-    let sig_mask = *current_posix_thread.sig_mask().lock();
-    let is_main_thread = child_tid == current.pid();
-    let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
-        .process(Arc::downgrade(&current))
-        .is_main_thread(is_main_thread);
-    let child_thread = thread_builder.build();
-    current.threads.lock().push(child_thread.clone());
+    let child_thread = {
+        let is_main_thread = child_tid == current.pid();
+        let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
+            .process(Arc::downgrade(&current))
+            .sig_mask(sig_mask)
+            .is_main_thread(is_main_thread);
+        thread_builder.build()
+    };
+
+    current.threads().lock().push(child_thread.clone());
+
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
@@ -203,73 +209,77 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
     let clone_flags = clone_args.clone_flags;
 
     // clone vm
-    let child_root_vmar = {
-        let parent_root_vmar = current.root_vmar();
-        clone_vm(parent_root_vmar, clone_flags)?
-    };
-
     let child_process_vm = {
-        let child_user_heap = current.user_heap().clone();
-        ProcessVm::new(child_user_heap, child_root_vmar.dup()?)
+        let parent_process_vm = current.vm();
+        clone_vm(parent_process_vm, clone_flags)?
     };
 
     // clone user space
-    let child_cpu_context = clone_cpu_context(
-        parent_context,
-        clone_args.new_sp,
-        clone_args.tls,
-        clone_flags,
-    );
-    let child_vm_space = child_root_vmar.vm_space().clone();
-    let child_user_space = Arc::new(UserSpace::new(child_vm_space, child_cpu_context));
+    let child_user_space = {
+        let child_cpu_context = clone_cpu_context(
+            parent_context,
+            clone_args.new_sp,
+            clone_args.tls,
+            clone_flags,
+        );
+        let child_vm_space = {
+            let child_root_vmar = child_process_vm.root_vmar();
+            child_root_vmar.vm_space().clone()
+        };
+        Arc::new(UserSpace::new(child_vm_space, child_cpu_context))
+    };
 
     // clone file table
     let child_file_table = clone_files(current.file_table(), clone_flags);
+
     // clone fs
     let child_fs = clone_fs(current.fs(), clone_flags);
+
     // clone umask
-    let parent_umask = current.umask.read().get();
-    let child_umask = Arc::new(RwLock::new(FileCreationMask::new(parent_umask)));
+    let child_umask = {
+        let parent_umask = current.umask().read().get();
+        Arc::new(RwLock::new(FileCreationMask::new(parent_umask)))
+    };
+
     // clone sig dispositions
     let child_sig_dispositions = clone_sighand(current.sig_dispositions(), clone_flags);
+
     // clone system V semaphore
     clone_sysvsem(clone_flags)?;
 
-    let child_elf_path = current.executable_path().read().clone();
-    let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
-
     // inherit parent's sig mask
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-    let child_sig_mask = *posix_thread.sig_mask().lock();
+    let child_sig_mask = {
+        let current_thread = current_thread!();
+        let posix_thread = current_thread.as_posix_thread().unwrap();
+        let sigmask = posix_thread.sig_mask().lock();
+        *sigmask
+    };
 
     let child_tid = allocate_tid();
-    let mut child_thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
-        .thread_name(Some(child_thread_name))
-        .sig_mask(child_sig_mask);
 
-    let child = Arc::new_cyclic(|child_process_ref| {
-        let weak_child_process = child_process_ref.clone();
-        let child_pid = child_tid;
-        child_thread_builder = child_thread_builder.process(weak_child_process);
-        let child_thread = child_thread_builder.build();
-        Process::new(
-            child_pid,
-            parent,
-            vec![child_thread],
-            child_elf_path,
-            child_process_vm,
-            Weak::new(),
-            child_file_table,
-            child_fs,
-            child_umask,
-            child_sig_dispositions,
-        )
-    });
-    // Inherit parent's process group
-    let parent_process_group = current.process_group().lock().upgrade().unwrap();
-    parent_process_group.add_process(child.clone());
-    child.set_process_group(Arc::downgrade(&parent_process_group));
+    let child = {
+        let child_elf_path = current.executable_path();
+        let child_thread_builder = {
+            let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
+            PosixThreadBuilder::new(child_tid, child_user_space)
+                .thread_name(Some(child_thread_name))
+                .sig_mask(child_sig_mask)
+        };
+
+        let mut process_builder =
+            ProcessBuilder::new(child_tid, &child_elf_path, Arc::downgrade(&current));
+
+        process_builder
+            .main_thread_builder(child_thread_builder)
+            .process_vm(child_process_vm)
+            .file_table(child_file_table)
+            .fs(child_fs)
+            .umask(child_umask)
+            .sig_dispositions(child_sig_dispositions)
+            .process_group(current.process_group().unwrap());
+
+        process_builder.build()?
+    };
 
     current!().add_child(child.clone());
     process_table::add_process(child.clone());
@@ -278,8 +288,10 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
+
+    let child_root_vmar = child.root_vmar();
     clone_child_settid(
-        &child_root_vmar,
+        child_root_vmar,
         child_tid,
         clone_args.child_tidptr,
         clone_flags,
@@ -322,13 +334,15 @@ fn clone_parent_settid(
     Ok(())
 }
 
-/// clone child vmar. If CLONE_VM is set, both threads share the same root vmar.
+/// Clone child process vm. If CLONE_VM is set, both threads share the same root vmar.
 /// Otherwise, fork a new copy-on-write vmar.
-fn clone_vm(parent_root_vmar: &Vmar<Full>, clone_flags: CloneFlags) -> Result<Vmar<Full>> {
+fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<ProcessVm> {
     if clone_flags.contains(CloneFlags::CLONE_VM) {
-        Ok(parent_root_vmar.dup()?)
+        Ok(parent_process_vm.clone())
     } else {
-        Ok(parent_root_vmar.fork_vmar()?)
+        let root_vmar = parent_process_vm.root_vmar().fork_vmar()?;
+        let user_heap = parent_process_vm.user_heap().clone();
+        Ok(ProcessVm::new(user_heap, root_vmar))
     }
 }
 
@@ -399,20 +413,4 @@ fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
         warn!("CLONE_SYSVSEM is not supported now");
     }
     Ok(())
-}
-
-/// debug use. check clone vm space corrent.
-fn debug_check_clone_vm_space(parent_vm_space: &VmSpace, child_vm_space: &VmSpace) {
-    let mut buffer1 = vec![0u8; 0x78];
-    let mut buffer2 = vec![0u8; 0x78];
-    parent_vm_space
-        .read_bytes(0x401000, &mut buffer1)
-        .expect("read buffer1 failed");
-    child_vm_space
-        .read_bytes(0x401000, &mut buffer2)
-        .expect("read buffer1 failed");
-    for len in 0..buffer1.len() {
-        assert_eq!(buffer1[len], buffer2[len]);
-    }
-    debug!("check clone vm space succeed.");
 }

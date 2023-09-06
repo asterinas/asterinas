@@ -1,6 +1,7 @@
 use crate::{
     prelude::*,
     process::{
+        do_exit_group,
         posix_thread::{futex::futex_wake, robust_list::wake_robust_futex},
         TermStatus,
     },
@@ -8,18 +9,21 @@ use crate::{
     util::write_val_to_user,
 };
 
-use self::{name::ThreadName, robust_list::RobustListHead};
-
 use super::{
-    signal::{sig_mask::SigMask, sig_queues::SigQueues},
+    signal::{sig_mask::SigMask, sig_queues::SigQueues, signals::Signal},
     Process,
 };
 
-pub mod builder;
+mod builder;
 pub mod futex;
-pub mod name;
-pub mod posix_thread_ext;
-pub mod robust_list;
+mod name;
+mod posix_thread_ext;
+mod robust_list;
+
+pub use builder::PosixThreadBuilder;
+pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
+pub use posix_thread_ext::PosixThreadExt;
+pub use robust_list::RobustListHead;
 
 pub struct PosixThread {
     // Immutable part
@@ -69,6 +73,18 @@ impl PosixThread {
 
     pub fn sig_queues(&self) -> &Mutex<SigQueues> {
         &self.sig_queues
+    }
+
+    pub fn has_pending_signal(&self) -> bool {
+        self.sig_queues.lock().is_empty()
+    }
+
+    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+        self.sig_queues.lock().enqueue(signal);
+    }
+
+    pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
+        self.sig_queues.lock().dequeue(mask)
     }
 
     pub fn sig_context(&self) -> &Mutex<Option<Vaddr>> {
@@ -133,7 +149,7 @@ impl PosixThread {
         // exit the robust list: walk the robust list; mark futex words as dead and do futex wake
         self.wake_robust_list(tid);
 
-        if tid != self.process().pid {
+        if tid != self.process().pid() {
             // If the thread is not main thread. We don't remove main thread.
             // Main thread are removed when the whole process is reaped.
             thread_table::remove_thread(tid);
@@ -144,7 +160,7 @@ impl PosixThread {
             debug!("self is main thread or last thread");
             debug!("main thread: {}", self.is_main_thread());
             debug!("last thread: {}", self.is_last_thread());
-            current!().exit_group(term_status);
+            do_exit_group(term_status);
         }
         debug!("perform futex wake");
         futex_wake(Arc::as_ptr(&self.process()) as Vaddr, 1)?;

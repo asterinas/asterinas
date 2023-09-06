@@ -1,6 +1,6 @@
 use crate::fs::utils::{IoEvents, Pollee, Poller};
-use crate::process::process_group::ProcessGroup;
 use crate::process::signal::constants::{SIGINT, SIGQUIT};
+use crate::process::ProcessGroup;
 use crate::{
     prelude::*,
     process::{signal::signals::kernel::KernelSignal, Pgid},

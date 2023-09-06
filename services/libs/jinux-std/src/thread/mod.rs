@@ -2,7 +2,7 @@
 
 use core::{
     any::Any,
-    sync::atomic::{AtomicI32, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use jinux_frame::task::Task;
@@ -17,9 +17,9 @@ pub mod status;
 pub mod task;
 pub mod thread_table;
 
-pub type Tid = i32;
+pub type Tid = u32;
 
-static TID_ALLOCATOR: AtomicI32 = AtomicI32::new(0);
+static TID_ALLOCATOR: AtomicU32 = AtomicU32::new(0);
 
 /// A thread is a wrapper on top of task.
 pub struct Thread {

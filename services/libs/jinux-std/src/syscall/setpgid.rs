@@ -1,11 +1,7 @@
 use crate::{
     log_syscall_entry,
     prelude::*,
-    process::{
-        process_group::ProcessGroup,
-        process_table::{self, pid_to_process},
-        Pgid, Pid,
-    },
+    process::{process_table, Pgid, Pid, ProcessGroup},
 };
 
 use super::{SyscallReturn, SYS_SETPGID};
@@ -33,8 +29,8 @@ pub fn sys_setpgid(pid: Pid, pgid: Pgid) -> Result<SyscallReturn> {
         return_errno_with_message!(Errno::EPERM, "process group must exist");
     }
 
-    let process =
-        pid_to_process(pid).ok_or(Error::with_message(Errno::ESRCH, "process does not exist"))?;
+    let process = process_table::pid_to_process(pid)
+        .ok_or(Error::with_message(Errno::ESRCH, "process does not exist"))?;
 
     // if the process already belongs to the process group
     if process.pgid() == pgid {

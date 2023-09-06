@@ -1,4 +1,5 @@
-use super::{Pgid, Pid, Process};
+use super::{Pgid, Pid};
+use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessFilter {
@@ -32,7 +33,7 @@ impl ProcessFilter {
             ProcessFilter::Any
         } else if wait_pid == 0 {
             // wait for any child process with same process group ID
-            let pgid = Process::current().pgid();
+            let pgid = current!().pgid();
             ProcessFilter::WithPgid(pgid)
         } else {
             // pid > 0. wait for the child whose process ID is equal to the value of pid.

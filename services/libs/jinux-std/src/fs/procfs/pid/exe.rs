@@ -14,6 +14,6 @@ impl ExeSymOps {
 
 impl SymOps for ExeSymOps {
     fn read_link(&self) -> Result<String> {
-        Ok(self.0.executable_path().read().clone())
+        Ok(self.0.executable_path())
     }
 }
