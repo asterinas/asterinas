@@ -1,4 +1,4 @@
-use super::*;
+use crate::fs::utils::{Device, DeviceId, DeviceType};
 use crate::prelude::*;
 
 pub struct Null;

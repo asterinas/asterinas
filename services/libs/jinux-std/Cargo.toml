@@ -15,12 +15,14 @@ jinux-network = { path = "../../comps/network" }
 jinux-time = { path = "../../comps/time" }
 jinux-virtio = { path = "../../comps/virtio" }
 jinux-rights = { path = "../jinux-rights" }
+jinux-error = { path = "../jinux-error" }
+jinux-vfs = { path = "../jinux-vfs" }
 controlled = { path = "../../libs/comp-sys/controlled" }
 typeflags = { path = "../typeflags" }
 typeflags-util = { path = "../typeflags-util" }
 jinux-rights-proc = { path = "../jinux-rights-proc" }
 jinux-util = { path = "../jinux-util" }
-int-to-c-enum = { path = "../../libs/int-to-c-enum" }
+int-to-c-enum = { path = "../int-to-c-enum" }
 cpio-decoder = { path = "../cpio-decoder" }
 virtio-input-decoder = "0.1.4"
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }

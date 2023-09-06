@@ -8,10 +8,9 @@ use jinux_frame::vm::VmFrame;
 use jinux_util::slot_vec::SlotVec;
 
 use super::*;
-use crate::fs::device::Device;
 use crate::fs::utils::{
-    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
-    Poller, SuperBlock, NAME_MAX,
+    Device, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd,
+    Metadata, Poller, SuperBlock, NAME_MAX,
 };
 
 /// A volatile file system whose data and metadata exists only in memory.

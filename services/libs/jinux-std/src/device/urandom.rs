@@ -1,4 +1,4 @@
-use crate::fs::device::{Device, DeviceId, DeviceType};
+use crate::fs::utils::{Device, DeviceId, DeviceType};
 use crate::prelude::*;
 
 pub struct Urandom;

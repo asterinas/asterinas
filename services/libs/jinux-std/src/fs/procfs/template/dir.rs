@@ -1,8 +1,7 @@
 use core::time::Duration;
 use jinux_util::slot_vec::SlotVec;
 
-use crate::fs::device::Device;
-use crate::fs::utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata};
+use crate::fs::utils::{Device, DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata};
 use crate::prelude::*;
 
 use super::{ProcFS, ProcInodeInfo};

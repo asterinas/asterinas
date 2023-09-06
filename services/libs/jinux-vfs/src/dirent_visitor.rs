@@ -1,4 +1,4 @@
-use super::InodeType;
+use crate::metadata::InodeType;
 use crate::prelude::*;
 
 /// A visitor for dir entries.
@@ -25,7 +25,7 @@ pub trait DirentVisitor {
 }
 
 impl DirentVisitor for Vec<String> {
-    fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()> {
+    fn visit(&mut self, name: &str, _ino: u64, _type_: InodeType, _offset: usize) -> Result<()> {
         self.push(name.into());
         Ok(())
     }

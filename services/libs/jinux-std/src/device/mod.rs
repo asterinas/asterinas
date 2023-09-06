@@ -5,7 +5,7 @@ pub mod tty;
 mod urandom;
 mod zero;
 
-use crate::fs::device::{add_node, Device, DeviceId, DeviceType};
+use crate::fs::device::add_node;
 use crate::prelude::*;
 pub use pty::new_pty_pair;
 pub use pty::{PtyMaster, PtySlave};

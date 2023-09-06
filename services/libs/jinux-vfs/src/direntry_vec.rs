@@ -1,4 +1,4 @@
-use super::Inode;
+use crate::inode::Inode;
 use crate::prelude::*;
 
 use jinux_util::slot_vec::SlotVec;

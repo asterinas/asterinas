@@ -33,6 +33,8 @@ members = [
     "services/libs/typeflags",
     "services/libs/typeflags-util",
     "services/libs/jinux-util",
+    "services/libs/jinux-vfs",
+    "services/libs/jinux-error",
     "services/libs/cpio-decoder",
     "services/libs/int-to-c-enum",
 ]

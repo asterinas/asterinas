@@ -1,5 +1,5 @@
-use super::IoEvents;
 use crate::events::{Observer, Subject};
+use crate::io_events::IoEvents;
 use crate::prelude::*;
 
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};

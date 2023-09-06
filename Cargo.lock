@@ -674,6 +674,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jinux-error"
+version = "0.1.0"
+dependencies = [
+ "cpio-decoder",
+ "getrandom",
+ "int-to-c-enum",
+ "jinux-frame",
+]
+
+[[package]]
 name = "jinux-frame"
 version = "0.1.0"
 dependencies = [
@@ -774,6 +784,7 @@ dependencies = [
  "int-to-c-enum",
  "intrusive-collections",
  "jinux-block",
+ "jinux-error",
  "jinux-frame",
  "jinux-input",
  "jinux-network",
@@ -781,6 +792,7 @@ dependencies = [
  "jinux-rights-proc",
  "jinux-time",
  "jinux-util",
+ "jinux-vfs",
  "jinux-virtio",
  "keyable-arc",
  "lazy_static",
@@ -820,6 +832,18 @@ dependencies = [
  "jinux-rights-proc",
  "pod",
  "typeflags-util",
+]
+
+[[package]]
+name = "jinux-vfs"
+version = "0.1.0"
+dependencies = [
+ "bitflags 1.3.2",
+ "int-to-c-enum",
+ "jinux-error",
+ "jinux-frame",
+ "jinux-util",
+ "keyable-arc",
 ]
 
 [[package]]

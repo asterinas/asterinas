@@ -1,7 +1,6 @@
-use crate::fs::device::{Device, DeviceId, DeviceType};
 use crate::fs::utils::{
-    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
-    Poller, SuperBlock, NAME_MAX,
+    Device, DeviceId, DeviceType, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType,
+    IoEvents, IoctlCmd, Metadata, Poller, SuperBlock, NAME_MAX,
 };
 use crate::prelude::*;
 

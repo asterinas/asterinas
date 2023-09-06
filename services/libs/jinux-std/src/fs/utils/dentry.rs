@@ -1,11 +1,11 @@
-use crate::fs::device::Device;
 use crate::prelude::*;
 
-use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
 
-use super::{FileSystem, Inode, InodeMode, InodeType, Metadata, MountNode, Vnode, NAME_MAX};
+use super::{
+    Device, FileSystem, Inode, InodeMode, InodeType, Metadata, MountNode, Vnode, NAME_MAX,
+};
 
 lazy_static! {
     static ref DCACHE: Mutex<BTreeMap<DentryKey, Arc<Dentry>>> = Mutex::new(BTreeMap::new());

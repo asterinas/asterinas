@@ -2,7 +2,8 @@ use spin::Once;
 
 use self::driver::TtyDriver;
 use self::line_discipline::LineDiscipline;
-use super::*;
+
+use crate::fs::utils::{Device, DeviceId, DeviceType};
 use crate::fs::utils::{IoEvents, IoctlCmd, Poller};
 use crate::prelude::*;
 use crate::process::process_group::ProcessGroup;

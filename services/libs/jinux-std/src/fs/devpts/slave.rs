@@ -1,5 +1,3 @@
-use crate::prelude::*;
-
 use super::*;
 
 use crate::device::PtySlave;

@@ -1,12 +1,10 @@
 use super::{
-    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
-    PageCache, Poller,
+    Device, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd,
+    Metadata, PageCache, Poller,
 };
-use crate::fs::device::Device;
 use crate::prelude::*;
 use crate::vm::vmo::Vmo;
 
-use alloc::string::String;
 use core::time::Duration;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use jinux_frame::vm::VmIo;

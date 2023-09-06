@@ -1,4 +1,4 @@
-use crate::fs::device::{Device, DeviceId, DeviceType};
+use crate::fs::utils::{Device, DeviceId, DeviceType};
 use crate::prelude::*;
 
 pub struct Random;
@@ -26,11 +26,5 @@ impl Device for Random {
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
         Ok(buf.len())
-    }
-}
-
-impl From<getrandom::Error> for Error {
-    fn from(value: getrandom::Error) -> Self {
-        Error::with_message(Errno::ENOSYS, "cannot generate random bytes")
     }
 }
