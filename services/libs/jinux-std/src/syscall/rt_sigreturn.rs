@@ -1,7 +1,7 @@
 use crate::{
     log_syscall_entry,
     prelude::*,
-    process::{posix_thread::posix_thread_ext::PosixThreadExt, signal::c_types::ucontext_t},
+    process::{posix_thread::PosixThreadExt, signal::c_types::ucontext_t},
     util::read_val_from_user,
 };
 use jinux_frame::cpu::UserContext;

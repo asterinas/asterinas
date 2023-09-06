@@ -15,7 +15,7 @@ impl CommFileOps {
 impl FileOps for CommFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let mut comm_output = {
-            let exe_path = self.0.executable_path().read();
+            let exe_path = self.0.executable_path();
             let last_component = exe_path.rsplit('/').next().unwrap_or(&exe_path);
             let mut comm = last_component.as_bytes().to_vec();
             comm.push(b'\0');

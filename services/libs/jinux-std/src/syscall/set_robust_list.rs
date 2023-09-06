@@ -2,7 +2,7 @@ use super::{SyscallReturn, SYS_SET_ROBUST_LIST};
 use crate::{
     log_syscall_entry,
     prelude::*,
-    process::posix_thread::{posix_thread_ext::PosixThreadExt, robust_list::RobustListHead},
+    process::posix_thread::{PosixThreadExt, RobustListHead},
     util::read_val_from_user,
 };
 

@@ -1,6 +1,6 @@
 use jinux_frame::vm::VmIo;
 
-use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
+use crate::process::posix_thread::PosixThreadExt;
 use crate::process::signal::constants::{SIGKILL, SIGSTOP};
 use crate::{
     log_syscall_entry,

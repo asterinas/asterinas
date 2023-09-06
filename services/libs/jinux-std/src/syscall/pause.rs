@@ -1,4 +1,4 @@
-use crate::{prelude::*, process::posix_thread::posix_thread_ext::PosixThreadExt, thread::Thread};
+use crate::{prelude::*, process::posix_thread::PosixThreadExt, thread::Thread};
 
 use super::SyscallReturn;
 
@@ -8,7 +8,7 @@ pub fn sys_pause() -> Result<SyscallReturn> {
         // check sig_queue of current thread and process,
         // if there's any pending signal, break loop
         let posix_thread = current_thread.as_posix_thread().unwrap();
-        if !posix_thread.sig_queues().lock().empty() || !current!().sig_queues().lock().empty() {
+        if posix_thread.has_pending_signal() || current!().has_pending_signal() {
             break;
         }
         // there's no pending signal, yield execution

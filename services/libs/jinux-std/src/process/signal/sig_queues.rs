@@ -24,7 +24,7 @@ impl SigQueues {
         }
     }
 
-    pub fn empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.count == 0
     }
 
@@ -63,7 +63,7 @@ impl SigQueues {
 
     pub fn dequeue(&mut self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
         // Fast path for the common case of no pending signals
-        if self.empty() {
+        if self.is_empty() {
             return None;
         }
 

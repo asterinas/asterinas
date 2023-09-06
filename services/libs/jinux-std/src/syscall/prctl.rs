@@ -1,7 +1,7 @@
 use crate::log_syscall_entry;
 use crate::prelude::*;
-use crate::process::posix_thread::name::MAX_THREAD_NAME_LEN;
-use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
+use crate::process::posix_thread::PosixThreadExt;
+use crate::process::posix_thread::MAX_THREAD_NAME_LEN;
 use crate::util::read_cstring_from_user;
 use crate::util::write_bytes_to_user;
 

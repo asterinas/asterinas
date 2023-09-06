@@ -57,7 +57,7 @@ fn handle_page_fault(trap_info: &TrapInformation) {
 fn generate_fault_signal(trap_info: &TrapInformation) {
     let current = current!();
     let signal = Box::new(FaultSignal::new(trap_info));
-    current.sig_queues().lock().enqueue(signal);
+    current.enqueue_signal(signal);
 }
 
 macro_rules! log_trap_common {

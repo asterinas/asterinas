@@ -1,4 +1,4 @@
-use crate::process::rlimit::ResourceType;
+use crate::process::ResourceType;
 use crate::util::{read_val_from_user, write_val_to_user};
 use crate::{log_syscall_entry, prelude::*, process::Pid};
 

@@ -4,7 +4,6 @@
 //! So we define a UserVm struct to store such infomation.
 //! Briefly, it contains the exact usage of each segment of virtual spaces.
 
-pub mod mmap_options;
 pub mod user_heap;
 
 use crate::prelude::*;
@@ -44,6 +43,15 @@ use crate::vm::vmar::Vmar;
 pub struct ProcessVm {
     user_heap: UserHeap,
     root_vmar: Vmar<Full>,
+}
+
+impl Clone for ProcessVm {
+    fn clone(&self) -> Self {
+        Self {
+            root_vmar: self.root_vmar.dup().unwrap(),
+            user_heap: self.user_heap.clone(),
+        }
+    }
 }
 
 impl ProcessVm {

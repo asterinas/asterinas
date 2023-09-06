@@ -5,8 +5,7 @@ use self::line_discipline::LineDiscipline;
 use super::*;
 use crate::fs::utils::{IoEvents, IoctlCmd, Poller};
 use crate::prelude::*;
-use crate::process::process_group::ProcessGroup;
-use crate::process::process_table;
+use crate::process::{process_table, ProcessGroup};
 use crate::util::{read_val_from_user, write_val_to_user};
 
 pub mod driver;
@@ -101,7 +100,10 @@ impl Device for Tty {
             IoctlCmd::TIOCSPGRP => {
                 // Set the process group id of fg progress group
                 let pgid = read_val_from_user::<i32>(arg)?;
-                match process_table::pgid_to_process_group(pgid) {
+                if pgid < 0 {
+                    return_errno_with_message!(Errno::EINVAL, "invalid pgid");
+                }
+                match process_table::pgid_to_process_group(pgid as u32) {
                     None => self.ldisc.set_fg(Weak::new()),
                     Some(process_group) => self.ldisc.set_fg(Arc::downgrade(&process_group)),
                 }

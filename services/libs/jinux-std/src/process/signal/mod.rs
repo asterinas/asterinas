@@ -16,10 +16,10 @@ use self::c_types::siginfo_t;
 use self::sig_mask::SigMask;
 use self::sig_num::SigNum;
 use crate::current_thread;
-use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
+use crate::process::posix_thread::PosixThreadExt;
 use crate::process::signal::c_types::ucontext_t;
 use crate::process::signal::sig_action::SigActionFlags;
-use crate::process::TermStatus;
+use crate::process::{do_exit_group, TermStatus};
 use crate::util::{write_bytes_to_user, write_val_to_user};
 use crate::{
     prelude::*,
@@ -33,13 +33,11 @@ pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let pid = current.pid();
     let sig_mask = *posix_thread.sig_mask().lock();
-    let mut thread_sig_queues = posix_thread.sig_queues().lock();
-    let mut proc_sig_queues = current.sig_queues().lock();
     // We first deal with signal in current thread, then signal in current process.
-    let signal = if let Some(signal) = thread_sig_queues.dequeue(&sig_mask) {
+    let signal = if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
         Some(signal)
     } else {
-        proc_sig_queues.dequeue(&sig_mask)
+        current.dequeue_signal(&sig_mask)
     };
     if let Some(signal) = signal {
         let sig_num = signal.num();
@@ -71,10 +69,10 @@ pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
                     SigDefaultAction::Core | SigDefaultAction::Term => {
                         warn!(
                             "{:?}: terminating on signal {}",
-                            &*current.executable_path().read(),
+                            current.executable_path(),
                             sig_num.sig_name()
                         );
-                        current.exit_group(TermStatus::Killed(sig_num));
+                        do_exit_group(TermStatus::Killed(sig_num));
                         // We should exit current here, since we cannot restore a valid status from trap now.
                         Task::current().exit();
                     }

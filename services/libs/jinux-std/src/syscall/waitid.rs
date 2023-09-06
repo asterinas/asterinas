@@ -1,7 +1,7 @@
-use crate::process::{process_filter::ProcessFilter, wait::wait_child_exit};
+use crate::process::{wait_child_exit, ProcessFilter};
 use crate::{log_syscall_entry, prelude::*};
 
-use crate::process::wait::WaitOptions;
+use crate::process::WaitOptions;
 
 use super::SyscallReturn;
 use super::SYS_WAITID;

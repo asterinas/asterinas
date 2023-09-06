@@ -85,7 +85,7 @@ fn init_thread() {
     .expect("Run init process failed.");
 
     // Wait till initproc become zombie.
-    while !initproc.status().lock().is_zombie() {
+    while !initproc.is_zombie() {
         // We don't have preemptive scheduler now.
         // The long running init thread should yield its own execution to allow other tasks to go on.
         Thread::yield_now();

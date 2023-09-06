@@ -1,4 +1,4 @@
-use crate::process::posix_thread::posix_thread_ext::PosixThreadExt;
+use crate::process::posix_thread::PosixThreadExt;
 use crate::process::TermStatus;
 use crate::{log_syscall_entry, prelude::*};
 
