@@ -1,76 +1,198 @@
-use crate::sync::Mutex;
 use acpi::PlatformInfo;
+use alloc::vec;
+use alloc::vec::Vec;
+use bit_field::BitField;
 use log::info;
 use spin::Once;
-use x86::apic::ioapic::IoApic;
 
-use crate::arch::x86::kernel::acpi::ACPI_TABLES;
+use crate::{
+    arch::x86::kernel::acpi::ACPI_TABLES, sync::SpinLock, trap::IrqLine, vm::paddr_to_vaddr, Error,
+    Result,
+};
 
-pub struct IoApicWrapper {
-    io_apic: IoApic,
+/// I/O Advanced Programmable Interrupt Controller. It is used to distribute external interrupts
+/// in a more advanced manner than that of the standard 8259 PIC.
+///
+/// User can enable external interrupts by specifying IRQ and the external interrupt line index,
+/// such as the terminal input being interrupt line 0.
+///
+/// Ref: https://wiki.osdev.org/IOAPIC
+pub struct IoApic {
+    access: IoApicAccess,
+    irqs: Vec<IrqLine>,
+    interrupt_base: u32,
 }
 
-impl IoApicWrapper {
-    fn new(io_apic: IoApic) -> Self {
-        Self { io_apic }
+impl IoApic {
+    const TABLE_REG_BASE: u8 = 0x10;
+
+    /// Enable an entry. The index should not exceed the `max_redirection_entry`
+    pub fn enable(&mut self, index: u8, irq: IrqLine) -> Result<()> {
+        if index >= self.max_redirection_entry() {
+            return Err(Error::InvalidArgs);
+        }
+        let value = self.access.read(Self::TABLE_REG_BASE + 2 * index);
+        if value.get_bits(0..8) as u8 != 0 {
+            return Err(Error::AccessDenied);
+        }
+        self.access
+            .write(Self::TABLE_REG_BASE + 2 * index, irq.num() as u32);
+        self.access.write(Self::TABLE_REG_BASE + 2 * index + 1, 0);
+        self.irqs.push(irq);
+        Ok(())
     }
 
-    pub fn disable_all(&mut self) {
-        self.io_apic.disable_all()
+    /// Disable an entry. The index should not exceed the `max_redirection_entry`
+    pub fn disable(&mut self, index: u8) -> Result<()> {
+        if index >= self.max_redirection_entry() {
+            return Err(Error::InvalidArgs);
+        }
+        let value = self.access.read(Self::TABLE_REG_BASE + 2 * index);
+        let irq_num = value.get_bits(0..8) as u8;
+        // mask interrupt
+        self.access.write(Self::TABLE_REG_BASE + 2 * index, 1 << 16);
+        self.access.write(Self::TABLE_REG_BASE + 2 * index + 1, 0);
+        self.irqs.retain(|h| h.num() != irq_num);
+        Ok(())
     }
 
-    pub fn enable(&mut self, irq: u8, cpunum: u8) {
-        self.io_apic.enable(irq, cpunum);
+    /// The global system interrupt number where this I/O APIC's inputs start, typically 0.
+    pub fn interrupt_base(&self) -> u32 {
+        self.interrupt_base
     }
 
     pub fn id(&mut self) -> u8 {
-        self.io_apic.id()
+        self.access.id()
     }
 
     pub fn version(&mut self) -> u8 {
-        self.io_apic.version()
+        self.access.version()
     }
 
-    pub fn supported_interrupts(&mut self) -> u8 {
-        self.io_apic.supported_interrupts()
+    pub fn max_redirection_entry(&mut self) -> u8 {
+        self.access.max_redirection_entry()
+    }
+
+    pub fn vaddr(&self) -> usize {
+        self.access.register.addr()
+    }
+
+    fn new(io_apic_access: IoApicAccess, interrupt_base: u32) -> Self {
+        Self {
+            access: io_apic_access,
+            irqs: Vec::new(),
+            interrupt_base,
+        }
+    }
+}
+
+struct IoApicAccess {
+    register: *mut u32,
+    data: *mut u32,
+}
+
+impl IoApicAccess {
+    /// # Safety
+    ///
+    /// User must ensure the base address is valid.
+    unsafe fn new(base_address: usize) -> Self {
+        let vaddr = paddr_to_vaddr(base_address);
+        Self {
+            register: vaddr as *mut u32,
+            data: (vaddr + 0x10) as *mut u32,
+        }
+    }
+
+    pub fn read(&mut self, register: u8) -> u32 {
+        // Safety: Since the base address is valid, the read/write should be safe.
+        unsafe {
+            self.register.write_volatile(register as u32);
+            self.data.read_volatile()
+        }
+    }
+
+    pub fn write(&mut self, register: u8, data: u32) {
+        // Safety: Since the base address is valid, the read/write should be safe.
+        unsafe {
+            self.register.write_volatile(register as u32);
+            self.data.write_volatile(data);
+        }
+    }
+
+    pub fn id(&mut self) -> u8 {
+        self.read(0).get_bits(24..28) as u8
+    }
+
+    pub fn set_id(&mut self, id: u8) {
+        self.write(0, (id as u32) << 24)
+    }
+
+    pub fn version(&mut self) -> u8 {
+        self.read(1).get_bits(0..9) as u8
+    }
+
+    pub fn max_redirection_entry(&mut self) -> u8 {
+        (self.read(1).get_bits(16..24) + 1) as u8
     }
 }
 
 /// # Safety: The pointer inside the IoApic will not change
-unsafe impl Send for IoApicWrapper {}
+unsafe impl Send for IoApic {}
 /// # Safety: The pointer inside the IoApic will not change
-unsafe impl Sync for IoApicWrapper {}
+unsafe impl Sync for IoApic {}
 
-pub static IO_APIC: Once<Mutex<IoApicWrapper>> = Once::new();
+pub static IO_APIC: Once<Vec<SpinLock<IoApic>>> = Once::new();
 
 pub fn init() {
     if !ACPI_TABLES.is_completed() {
+        IO_APIC.call_once(|| {
+            // FIXME: Is it possible to have an address that is not the default 0xFEC0_0000?
+            // Need to find a way to determine if it is a valid address or not.
+            const IO_APIC_DEFAULT_ADDRESS: usize = 0xFEC0_0000;
+            let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS) };
+            io_apic.set_id(0);
+            let id = io_apic.id();
+            let version = io_apic.version();
+            let max_redirection_entry = io_apic.max_redirection_entry();
+            info!(
+                "[IOAPIC]: Not found ACPI talbes, using default address:{:x?}",
+                IO_APIC_DEFAULT_ADDRESS,
+            );
+            info!(
+                "[IOAPIC]: IOAPIC id: {}, version:{}, max_redirection_entry:{}, interrupt base:{}",
+                id, version, max_redirection_entry, 0
+            );
+            vec![SpinLock::new(IoApic::new(io_apic, 0))]
+        });
         return;
     }
-    let c = ACPI_TABLES.get().unwrap().lock();
-
-    let platform_info = PlatformInfo::new(&*c).unwrap();
-
-    let ioapic_address = match platform_info.interrupt_model {
+    let table = ACPI_TABLES.get().unwrap().lock();
+    let platform_info = PlatformInfo::new(&*table).unwrap();
+    match platform_info.interrupt_model {
         acpi::InterruptModel::Unknown => panic!("not found APIC in ACPI Table"),
         acpi::InterruptModel::Apic(apic) => {
-            apic.io_apics
-                .first()
-                .expect("There must be at least one IO APIC")
-                .address
+            let mut vec = Vec::new();
+            for id in 0..apic.io_apics.len() {
+                let io_apic = apic.io_apics.get(id).unwrap();
+                let interrupt_base = io_apic.global_system_interrupt_base;
+                let mut io_apic = unsafe { IoApicAccess::new(io_apic.address as usize) };
+                io_apic.set_id(id as u8);
+                let id = io_apic.id();
+                let version = io_apic.version();
+                let max_redirection_entry = io_apic.max_redirection_entry();
+                info!(
+                    "[IOAPIC]: IOAPIC id: {}, version:{}, max_redirection_entry:{}, interrupt base:{}",
+                    id, version, max_redirection_entry, interrupt_base
+                );
+                vec.push(SpinLock::new(IoApic::new(io_apic, interrupt_base)));
+            }
+            if vec.is_empty() {
+                panic!("[IOAPIC]: Not exists IOAPIC");
+            }
+            IO_APIC.call_once(|| vec);
         }
         _ => {
             panic!("Unknown interrupt model")
         }
     };
-    let mut io_apic = unsafe { IoApic::new(crate::vm::paddr_to_vaddr(ioapic_address as usize)) };
-
-    let id = io_apic.id();
-    let version = io_apic.version();
-    let max_redirection_entry = io_apic.supported_interrupts();
-    info!(
-        "IOAPIC id: {}, version:{}, max_redirection_entry:{}",
-        id, version, max_redirection_entry
-    );
-    IO_APIC.call_once(|| Mutex::new(IoApicWrapper::new(io_apic)));
 }

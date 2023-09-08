@@ -47,7 +47,7 @@ impl FaultEventRegisters {
         let mut data = Volatile::new(&mut *((base_register_vaddr + 0x3c) as *mut u32));
         let mut address = Volatile::new(&mut *((base_register_vaddr + 0x40) as *mut u32));
         let upper_address = Volatile::new(&mut *((base_register_vaddr + 0x44) as *mut u32));
-        let mut fault_irq = crate::trap::IrqLine::alloc().unwrap();
+        let mut fault_irq = IrqLine::alloc().unwrap();
 
         // Set page fault interrupt vector and address
         data.write(fault_irq.num() as u32);

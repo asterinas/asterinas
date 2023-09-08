@@ -9,6 +9,7 @@ use spin::Once;
 use trapframe::TrapFrame;
 
 use super::device::serial::SerialPort;
+use super::kernel::IO_APIC;
 
 #[inline]
 pub fn print(args: fmt::Arguments) {
@@ -50,7 +51,14 @@ pub(crate) fn init() {
 }
 
 pub(crate) fn callback_init() {
-    let mut irq = crate::arch::x86::kernel::pic::allocate_irq(4).unwrap();
+    let mut irq = if !IO_APIC.is_completed() {
+        crate::arch::x86::kernel::pic::allocate_irq(4).unwrap()
+    } else {
+        let irq = IrqLine::alloc().unwrap();
+        let mut io_apic = IO_APIC.get().unwrap().get(0).unwrap().lock();
+        io_apic.enable(4, irq.clone()).unwrap();
+        irq
+    };
     irq.on_active(handle_serial_input);
     CONSOLE_IRQ_CALLBACK.call_once(|| SpinLock::new(irq));
 }
