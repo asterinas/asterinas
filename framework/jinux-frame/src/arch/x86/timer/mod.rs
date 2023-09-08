@@ -3,7 +3,7 @@ pub mod hpet;
 pub mod pit;
 
 use core::any::Any;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use alloc::{boxed::Box, collections::BinaryHeap, sync::Arc, vec::Vec};
 use spin::Once;
@@ -16,7 +16,7 @@ use crate::trap::IrqLine;
 
 use self::apic::APIC_TIMER_CALLBACK;
 
-pub const TIMER_IRQ_NUM: u8 = 32;
+pub static TIMER_IRQ_NUM: AtomicU8 = AtomicU8::new(32);
 pub static TICK: AtomicU64 = AtomicU64::new(0);
 
 static TIMER_IRQ: Once<IrqLine> = Once::new();
@@ -24,12 +24,16 @@ static TIMER_IRQ: Once<IrqLine> = Once::new();
 pub fn init() {
     TIMEOUT_LIST.call_once(|| SpinLock::new(BinaryHeap::new()));
     if kernel::apic::APIC_INSTANCE.is_completed() {
+        // Get the free irq number first. Use `allocate_target_irq` to get the Irq handle after dropping it.
+        // Because the function inside `apic::init` will allocate this irq.
+        let irq = IrqLine::alloc().unwrap();
+        TIMER_IRQ_NUM.store(irq.num(), Ordering::Relaxed);
+        drop(irq);
         apic::init();
     } else {
         pit::init();
-    }
-    let mut timer_irq =
-        crate::trap::IrqLine::alloc_specific(TIMER_IRQ_NUM).expect("Timer irq Allocate error");
+    };
+    let mut timer_irq = IrqLine::alloc_specific(TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
     timer_irq.on_active(timer_callback);
     TIMER_IRQ.call_once(|| timer_irq);
 }

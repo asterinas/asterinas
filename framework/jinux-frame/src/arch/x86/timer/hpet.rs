@@ -1,4 +1,4 @@
-use crate::vm::paddr_to_vaddr;
+use crate::{trap::IrqLine, vm::paddr_to_vaddr};
 use acpi::{AcpiError, HpetInfo};
 use alloc::vec::Vec;
 use spin::Once;
@@ -31,6 +31,7 @@ struct Hpet {
     general_interrupt_status_register: Volatile<&'static mut u32, ReadWrite>,
 
     timer_registers: Vec<Volatile<&'static mut HpetTimerRegister, ReadWrite>>,
+    irq: IrqLine,
 }
 
 impl Hpet {
@@ -64,21 +65,18 @@ impl Hpet {
             comparators.push(comp);
         }
 
-        let vector = super::TIMER_IRQ_NUM;
-        // 0 for now
-        let destination_apic_id: u8 = 0;
-
-        ioapic::IO_APIC
-            .get()
-            .unwrap()
-            .lock()
-            .enable(vector, destination_apic_id);
+        let mut lock = ioapic::IO_APIC.get().unwrap()[0].lock();
+        let irq = IrqLine::alloc().unwrap();
+        // FIXME: The index of HPET interrupt needs to be tested.
+        lock.enable(0, irq.clone()).unwrap();
+        drop(lock);
 
         Hpet {
             information_register,
             general_configuration_register,
             general_interrupt_status_register,
             timer_registers: comparators,
+            irq,
         }
     }
 

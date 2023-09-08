@@ -1,8 +1,9 @@
 use crate::arch::x86::device::io_port::{IoPort, WriteOnlyAccess};
 use crate::trap::IrqLine;
-
 use core::sync::atomic::Ordering::Relaxed;
 use core::sync::atomic::{AtomicBool, AtomicU8};
+
+use log::info;
 
 static MASTER_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x20) };
 static MASTER_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x21) };
@@ -11,23 +12,8 @@ static SLAVE_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0xA1) };
 
 const IRQ_OFFSET: u8 = 0x20;
 
-const TIMER_IRQ_NUM: u8 = 32;
-
-use crate::sync::Mutex;
-use alloc::vec::Vec;
-use lazy_static::lazy_static;
-use log::info;
-
-lazy_static! {
-    /// store the irq, although we have APIC for manage interrupts
-    /// but something like serial still need pic for register interrupts
-    static ref IRQ_LOCK : Mutex<Vec<IrqLine>> = Mutex::new(Vec::new());
-}
-
 static MASK_MASTER: AtomicU8 = AtomicU8::new(0x00);
-
 static MASK_SLAVE: AtomicU8 = AtomicU8::new(0x00);
-
 static CHANGE_LOCK: AtomicBool = AtomicBool::new(false);
 
 /// init the PIC device
