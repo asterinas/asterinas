@@ -1,4 +1,4 @@
-pub use jinux_frame::arch::x86::device::serial::register_serial_input_callback;
+pub use jinux_frame::arch::console::register_console_input_callback;
 use spin::Once;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 pub static TTY_DRIVER: Once<Arc<TtyDriver>> = Once::new();
 
 pub(super) fn init() {
-    register_serial_input_callback(serial_input_callback);
+    register_console_input_callback(&serial_input_callback);
     let tty_driver = Arc::new(TtyDriver::new());
     // FIXME: install n_tty into tty_driver?
     let n_tty = get_n_tty();
