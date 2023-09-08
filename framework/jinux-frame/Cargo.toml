@@ -21,6 +21,7 @@ inherit-methods-macro = { git = "https://github.com/jinzhao-dev/inherit-methods-
 tdx-guest = { path = "../libs/tdx-guest", optional = true }
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 static_assertions = "1.1.0"
+bit_field = "0.10.1"
 
 [target.x86_64-custom.dependencies]
 x86_64 = "0.14.2"

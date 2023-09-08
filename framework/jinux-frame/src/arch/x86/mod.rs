@@ -1,4 +1,5 @@
 pub mod boot;
+pub mod console;
 pub(crate) mod cpu;
 pub mod device;
 pub mod iommu;
@@ -10,20 +11,17 @@ pub(crate) mod pci;
 pub(crate) mod tdx_guest;
 pub(crate) mod timer;
 
-use alloc::fmt;
-use core::fmt::Write;
 use kernel::apic::ioapic;
 use log::{info, warn};
 
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
-    device::serial::init();
+    console::init();
 }
 
 pub(crate) fn after_all_init() {
     irq::init();
     mm::init();
-    device::serial::callback_init();
     kernel::acpi::init();
     match kernel::apic::init() {
         Ok(_) => {
@@ -34,6 +32,7 @@ pub(crate) fn after_all_init() {
             kernel::pic::enable();
         }
     }
+    console::callback_init();
     timer::init();
     match iommu::init() {
         Ok(_) => {}
@@ -48,35 +47,6 @@ pub(crate) fn interrupts_ack() {
     if let Some(apic) = kernel::apic::APIC_INSTANCE.get() {
         apic.lock().eoi();
     }
-}
-
-struct Stdout;
-
-impl Write for Stdout {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for &c in s.as_bytes() {
-            device::serial::send(c);
-        }
-        Ok(())
-    }
-}
-
-pub fn print(args: fmt::Arguments) {
-    Stdout.write_fmt(args).unwrap();
-}
-
-#[macro_export]
-macro_rules! print {
-  ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::arch::x86::print(format_args!($fmt $(, $($arg)+)?))
-  }
-}
-
-#[macro_export]
-macro_rules! println {
-  ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::arch::x86::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
-  }
 }
 
 fn enable_common_cpu_features() {
