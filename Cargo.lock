@@ -649,7 +649,6 @@ dependencies = [
  "jinux-framebuffer",
  "jinux-std",
  "jinux-time",
- "tdx-guest",
  "x86_64",
 ]
 

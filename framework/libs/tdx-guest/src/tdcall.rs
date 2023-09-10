@@ -364,20 +364,16 @@ pub fn get_tdinfo() -> Result<TdgVpInfo, TdCallError> {
         rax: TdcallNum::VpInfo as u64,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => {
-            let td_info = TdgVpInfo {
-                gpaw: Gpaw::from(args.rcx),
-                attributes: GuestTdAttributes::from_bits_truncate(args.rdx),
-                num_vcpus: args.r8 as u32,
-                max_vcpus: (args.r8 >> 32) as u32,
-                vcpu_index: args.r9 as u32,
-                sys_rd: args.r10 as u32,
-            };
-            Ok(td_info)
-        }
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)?;
+    let td_info = TdgVpInfo {
+        gpaw: Gpaw::from(args.rcx),
+        attributes: GuestTdAttributes::from_bits_truncate(args.rdx),
+        num_vcpus: args.r8 as u32,
+        max_vcpus: (args.r8 >> 32) as u32,
+        vcpu_index: args.r9 as u32,
+        sys_rd: args.r10 as u32,
+    };
+    Ok(td_info)
 }
 
 /// Get Virtualization Exception Information for the recent #VE exception.
@@ -386,20 +382,16 @@ pub fn get_veinfo() -> Result<TdgVeInfo, TdCallError> {
         rax: TdcallNum::VpVeinfoGet as u64,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => {
-            let ve_info = TdgVeInfo {
-                exit_reason: args.rcx as u32,
-                exit_qualification: args.rdx,
-                guest_linear_address: args.r8,
-                guest_physical_address: args.r9,
-                exit_instruction_length: args.r10 as u32,
-                exit_instruction_info: (args.r10 >> 32) as u32,
-            };
-            Ok(ve_info)
-        }
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)?;
+    let ve_info = TdgVeInfo {
+        exit_reason: args.rcx as u32,
+        exit_qualification: args.rdx,
+        guest_linear_address: args.r8,
+        guest_physical_address: args.r9,
+        exit_instruction_length: args.r10 as u32,
+        exit_instruction_info: (args.r10 >> 32) as u32,
+    };
+    Ok(ve_info)
 }
 
 /// Extend a TDCS.RTMR measurement register.
@@ -408,72 +400,58 @@ pub fn extend_rtmr() -> Result<(), TdCallError> {
         rax: TdcallNum::MrRtmrExtend as u64,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => Ok(()),
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)
 }
 
 /// TDG.MR.REPORT creates a TDREPORT_STRUCT structure that contains the measurements/configuration
 /// information of the guest TD that called the function, measurements/configuration information
 /// of the Intel TDX module and a REPORTMACSTRUCT.
-pub fn get_report(report_addr: u64, data_addr: u64) -> Result<(), TdCallError> {
+pub fn get_report(report_gpa: &[u8], data_gpa: &[u8]) -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
         rax: TdcallNum::MrReport as u64,
-        rcx: report_addr,
-        rdx: data_addr,
+        rcx: report_gpa.as_ptr() as u64,
+        rdx: data_gpa.as_ptr() as u64,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => Ok(()),
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)
 }
 
 /// Verify a cryptographic REPORTMACSTRUCT that describes the contents of a TD,
 /// to determine that it was created on the current TEE on the current platform.
-pub fn verify_report(report_mac_addr: u64) -> Result<(), TdCallError> {
+pub fn verify_report(report_mac_gpa: &[u8]) -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
         rax: TdcallNum::MrVerifyreport as u64,
-        rcx: report_mac_addr,
+        rcx: report_mac_gpa.as_ptr() as u64,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => Ok(()),
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)
 }
 
 /// Accept a pending private page and initialize it to all-0 using the TD ephemeral private key.
-pub fn accept_page(sept_level: u64, addr: u64) -> Result<(), TdCallError> {
+/// # Safety
+/// The 'gpa' parameter must be a valid address.
+pub unsafe fn accept_page(sept_level: u64, gpa: &[u8]) -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
         rax: TdcallNum::MemPageAccept as u64,
-        rcx: sept_level | (addr << 12),
+        rcx: sept_level | ((gpa.as_ptr() as u64) << 12),
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => Ok(()),
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)
 }
 
 /// Read the GPA mapping and attributes of a TD private page.
-pub fn read_page_attr(phy_addr: u64) -> Result<PageAttr, TdCallError> {
+pub fn read_page_attr(gpa: &[u8]) -> Result<PageAttr, TdCallError> {
     let mut args = TdcallArgs {
         rax: TdcallNum::MemPageAttrRd as u64,
-        rcx: phy_addr,
+        rcx: gpa.as_ptr() as u64,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => {
-            let page_attr = PageAttr {
-                gpa_mapping: args.rcx,
-                gpa_attr: GpaAttrAll::from(args.rdx),
-            };
-            Ok(page_attr)
-        }
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)?;
+    let page_attr = PageAttr {
+        gpa_mapping: args.rcx,
+        gpa_attr: GpaAttrAll::from(args.rdx),
+    };
+    Ok(page_attr)
 }
 
 /// Write the attributes of a private page. Create or remove L2 page aliases as required.
@@ -485,16 +463,12 @@ pub fn write_page_attr(page_attr: PageAttr, attr_flags: u64) -> Result<PageAttr,
         r8: attr_flags,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => {
-            let page_attr = PageAttr {
-                gpa_mapping: args.rcx,
-                gpa_attr: GpaAttrAll::from(args.rdx),
-            };
-            Ok(page_attr)
-        }
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)?;
+    let page_attr = PageAttr {
+        gpa_mapping: args.rcx,
+        gpa_attr: GpaAttrAll::from(args.rdx),
+    };
+    Ok(page_attr)
 }
 
 /// Read a TD-scope metadata field (control structure field) of a TD.
@@ -504,10 +478,8 @@ pub fn read_td_metadata(field_identifier: u64) -> Result<u64, TdCallError> {
         rdx: field_identifier,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => Ok(args.r8),
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)?;
+    Ok(args.r8)
 }
 
 /// Write a TD-scope metadata field (control structure field) of a TD.
@@ -545,17 +517,13 @@ pub fn set_cpuidve(cpuidve_flag: u64) -> Result<(), TdCallError> {
         rcx: cpuidve_flag,
         ..Default::default()
     };
-    match td_call(&mut args) {
-        Ok(()) => Ok(()),
-        Err(res) => Err(res),
-    }
+    td_call(&mut args)
 }
 
 fn td_call(args: &mut TdcallArgs) -> Result<(), TdCallError> {
-    let td_call_result = unsafe { asm_td_call(args) };
-    if td_call_result == 0 {
-        Ok(())
-    } else {
-        Err(td_call_result.into())
+    let result = unsafe { asm_td_call(args) };
+    match result {
+        0 => Ok(()),
+        _ => Err(result.into()),
     }
 }

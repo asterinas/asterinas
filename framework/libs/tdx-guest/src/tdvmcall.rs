@@ -5,7 +5,7 @@
 //! resumes the TD via a SEAMCALL [TDH.VP.ENTER] invocation.
 extern crate alloc;
 
-use crate::{asm::asm_td_vmcall, tdcall::TdgVeInfo};
+use crate::asm::asm_td_vmcall;
 use alloc::fmt;
 use bitflags::bitflags;
 use core::fmt::Write;
@@ -16,7 +16,7 @@ use x86_64::{
 
 /// TDVMCALL Instruction Leaf Numbers Definition.
 #[repr(u64)]
-pub enum TdvmcallNum {
+pub enum TdVmcallNum {
     Cpuid = 0x0000a,
     Hlt = 0x0000c,
     Io = 0x0001e,
@@ -88,132 +88,121 @@ pub enum Operand {
     Immediate,
 }
 
+pub enum IoSize {
+    Size1 = 1,
+    Size2 = 2,
+    Size4 = 4,
+    Size8 = 8,
+}
+
 pub fn cpuid(eax: u32, ecx: u32) -> Result<CpuIdInfo, TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TdvmcallNum::Cpuid as u64,
+        r11: TdVmcallNum::Cpuid as u64,
         r12: eax as u64,
         r13: ecx as u64,
         ..Default::default()
     };
-    match td_vmcall(&mut args) {
-        Ok(()) => Ok(CpuIdInfo {
-            eax: args.r12 as usize,
-            ebx: args.r13 as usize,
-            ecx: args.r14 as usize,
-            edx: args.r15 as usize,
-        }),
-        Err(res) => Err(res),
-    }
+    td_vmcall(&mut args)?;
+    Ok(CpuIdInfo {
+        eax: args.r12 as usize,
+        ebx: args.r13 as usize,
+        ecx: args.r14 as usize,
+        edx: args.r15 as usize,
+    })
 }
 
 pub fn hlt() {
     let interrupt_blocked = !rflags::read().contains(RFlags::INTERRUPT_FLAG);
     let mut args = TdVmcallArgs {
-        r11: TdvmcallNum::Hlt as u64,
+        r11: TdVmcallNum::Hlt as u64,
         r12: interrupt_blocked as u64,
         ..Default::default()
     };
     let _ = td_vmcall(&mut args);
 }
 
-pub fn rdmsr(index: u32) -> Result<u64, TdVmcallError> {
+/// # Safety
+/// Make sure the index is valid.
+pub unsafe fn rdmsr(index: u32) -> Result<u64, TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TdvmcallNum::Rdmsr as u64,
+        r11: TdVmcallNum::Rdmsr as u64,
         r12: index as u64,
         ..Default::default()
     };
-    match td_vmcall(&mut args) {
-        Ok(()) => Ok(args.r11),
-        Err(res) => Err(res),
-    }
+    td_vmcall(&mut args)?;
+    Ok(args.r11)
 }
 
-pub fn wrmsr(index: u32, value: u64) -> Result<(), TdVmcallError> {
+/// # Safety
+/// Make sure the index and the corresponding value are valid.
+pub unsafe fn wrmsr(index: u32, value: u64) -> Result<(), TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TdvmcallNum::Wrmsr as u64,
+        r11: TdVmcallNum::Wrmsr as u64,
         r12: index as u64,
         r13: value,
         ..Default::default()
     };
-    match td_vmcall(&mut args) {
-        Ok(()) => Ok(()),
-        Err(res) => Err(res),
-    }
+    td_vmcall(&mut args)
 }
 
-/// Used to help perform WBINVD operation.
-pub fn wbinvd(wbinvd: u64) -> Result<(), TdVmcallError> {
+/// Used to help perform WBINVD or WBNOINVD operation.
+/// - cache_operation: 0: WBINVD, 1: WBNOINVD
+pub fn perform_cache_operation(cache_operation: u64) -> Result<(), TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TdvmcallNum::Wbinvd as u64,
-        r12: wbinvd,
+        r11: TdVmcallNum::Wbinvd as u64,
+        r12: cache_operation,
         ..Default::default()
     };
-    match td_vmcall(&mut args) {
-        Ok(()) => Ok(()),
-        Err(res) => Err(res),
-    }
+    td_vmcall(&mut args)
 }
 
-pub fn read_mmio(size: u64, mmio_addr: u64) -> Result<u64, TdVmcallError> {
-    match size {
-        1 | 2 | 4 | 8 => {}
-        _ => return Err(TdVmcallError::TdxInvalidOperand),
-    }
+/// # Safety
+/// Make sure the mmio address is valid.
+pub unsafe fn read_mmio(size: IoSize, mmio_gpa: &[u8]) -> Result<u64, TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TdvmcallNum::RequestMmio as u64,
-        r12: size,
+        r11: TdVmcallNum::RequestMmio as u64,
+        r12: size as u64,
         r13: 0,
-        r14: mmio_addr,
+        r14: mmio_gpa.as_ptr() as u64,
         ..Default::default()
     };
-    match td_vmcall(&mut args) {
-        Ok(()) => Ok(args.r11),
-        Err(res) => Err(res),
-    }
+    td_vmcall(&mut args)?;
+    Ok(args.r11)
 }
 
-pub fn write_mmio(size: u64, mmio_addr: u64, data: u64) -> Result<(), TdVmcallError> {
-    match size {
-        1 | 2 | 4 | 8 => {}
-        _ => {
-            return Err(TdVmcallError::TdxInvalidOperand);
-        }
-    }
+/// # Safety
+/// Make sure the mmio address is valid.
+pub unsafe fn write_mmio(size: IoSize, mmio_gpa: &[u8], data: u64) -> Result<(), TdVmcallError> {
     let mut args = TdVmcallArgs {
-        r11: TdvmcallNum::RequestMmio as u64,
-        r12: size,
+        r11: TdVmcallNum::RequestMmio as u64,
+        r12: size as u64,
         r13: 1,
-        r14: mmio_addr,
+        r14: mmio_gpa.as_ptr() as u64,
         r15: data,
         ..Default::default()
     };
-    match td_vmcall(&mut args) {
-        Ok(()) => Ok(()),
-        Err(res) => Err(res),
-    }
+    td_vmcall(&mut args)
 }
 
 macro_rules! io_read {
     ($port:expr, $ty:ty) => {{
         let mut args = TdVmcallArgs {
-            r11: TdvmcallNum::Io as u64,
+            r11: TdVmcallNum::Io as u64,
             r12: core::mem::size_of::<$ty>() as u64,
             r13: IO_READ,
             r14: $port as u64,
             ..Default::default()
         };
-        match td_vmcall(&mut args) {
-            Ok(()) => Ok(args.r11 as u32),
-            Err(res) => Err(res),
-        }
+        td_vmcall(&mut args)?;
+        Ok(args.r11 as u32)
     }};
 }
 
-pub fn io_read(size: usize, port: u16) -> Result<u32, TdVmcallError> {
+pub fn io_read(size: IoSize, port: u16) -> Result<u32, TdVmcallError> {
     match size {
-        1 => io_read!(port, u8),
-        2 => io_read!(port, u16),
-        4 => io_read!(port, u32),
+        IoSize::Size1 => io_read!(port, u8),
+        IoSize::Size2 => io_read!(port, u16),
+        IoSize::Size4 => io_read!(port, u32),
         _ => unreachable!(),
     }
 }
@@ -221,39 +210,36 @@ pub fn io_read(size: usize, port: u16) -> Result<u32, TdVmcallError> {
 macro_rules! io_write {
     ($port:expr, $byte:expr, $size:expr) => {{
         let mut args = TdVmcallArgs {
-            r11: TdvmcallNum::Io as u64,
+            r11: TdVmcallNum::Io as u64,
             r12: core::mem::size_of_val(&$byte) as u64,
             r13: IO_WRITE,
             r14: $port as u64,
             r15: $byte as u64,
             ..Default::default()
         };
-        match td_vmcall(&mut args) {
-            Ok(()) => Ok(()),
-            Err(res) => Err(res),
-        }
+        td_vmcall(&mut args)
     }};
 }
 
-pub fn io_write(size: usize, port: u16, byte: u32) -> Result<(), TdVmcallError> {
+pub fn io_write(size: IoSize, port: u16, byte: u32) -> Result<(), TdVmcallError> {
     match size {
-        1 => io_write!(port, byte, u8),
-        2 => io_write!(port, byte, u16),
-        4 => io_write!(port, byte, u32),
+        IoSize::Size1 => io_write!(port, byte, u8),
+        IoSize::Size2 => io_write!(port, byte, u16),
+        IoSize::Size4 => io_write!(port, byte, u32),
         _ => unreachable!(),
     }
 }
 
 fn td_vmcall(args: &mut TdVmcallArgs) -> Result<(), TdVmcallError> {
-    let td_vmcall_result = unsafe { asm_td_vmcall(args) };
-    if td_vmcall_result == 0 {
-        Ok(())
-    } else {
-        Err(td_vmcall_result.into())
+    let result = unsafe { asm_td_vmcall(args) };
+    match result {
+        0 => Ok(()),
+        _ => Err(result.into()),
     }
 }
 
 bitflags! {
+    /// LineSts: Line Status
     struct LineSts: u8 {
         const INPUT_FULL = 1;
         const OUTPUT_EMPTY = 1 << 5;
