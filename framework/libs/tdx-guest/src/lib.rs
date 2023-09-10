@@ -12,10 +12,9 @@ pub use self::tdcall::{get_veinfo, TdxVirtualExceptionType};
 pub use self::tdvmcall::print;
 
 use raw_cpuid::{native_cpuid::cpuid_count, CpuIdResult};
-use tdcall::{InitError, TdgVeInfo, TdgVpInfo};
-use tdvmcall::*;
+use tdcall::{InitError, TdgVpInfo};
 
-pub fn tdx_early_init() -> Result<TdgVpInfo, InitError> {
+pub fn init_tdx() -> Result<TdgVpInfo, InitError> {
     check_tdx_guest()?;
     Ok(tdcall::get_tdinfo()?)
 }
