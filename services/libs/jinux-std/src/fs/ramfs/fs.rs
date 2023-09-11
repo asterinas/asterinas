@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 use jinux_frame::sync::{RwLock, RwLockWriteGuard};
 use jinux_frame::vm::VmFrame;
+use jinux_rights::Full;
 use jinux_util::slot_vec::SlotVec;
 
 use super::*;
@@ -13,6 +14,7 @@ use crate::fs::utils::{
     DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
     Poller, SuperBlock, NAME_MAX,
 };
+use crate::vm::vmo::Vmo;
 
 /// A volatile file system whose data and metadata exists only in memory.
 pub struct RamFS {
@@ -495,6 +497,16 @@ impl Inode for RamInode {
         Ok(device_inode)
     }
 
+    fn mknod_with_pages(
+        &self,
+        name: &str,
+        mode: InodeMode,
+        device: Arc<dyn Device>,
+        _pages: &Vmo<Full>,
+    ) -> Result<Arc<dyn Inode>> {
+        self.mknod(name, mode, device)
+    }
+
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
@@ -526,6 +538,16 @@ impl Inode for RamInode {
         Ok(new_inode)
     }
 
+    fn create_with_pages(
+        &self,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+        _pages: &Vmo<Full>,
+    ) -> Result<Arc<dyn Inode>> {
+        self.create(name, type_, mode)
+    }
+
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
@@ -537,6 +559,15 @@ impl Inode for RamInode {
             .unwrap()
             .visit_entry(offset, visitor)?;
         Ok(cnt)
+    }
+
+    fn readdir_at_with_pages(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        _pages: &Vmo<Full>,
+    ) -> Result<usize> {
+        self.readdir_at(offset, visitor)
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
@@ -565,6 +596,10 @@ impl Inode for RamInode {
         Ok(())
     }
 
+    fn link_with_pages(&self, old: &Arc<dyn Inode>, name: &str, _pages: &Vmo<Full>) -> Result<()> {
+        self.link(old, name)
+    }
+
     fn unlink(&self, name: &str) -> Result<()> {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
@@ -583,6 +618,10 @@ impl Inode for RamInode {
         drop(self_inode);
         target.0.write().metadata.nlinks -= 1;
         Ok(())
+    }
+
+    fn unlink_with_pages(&self, name: &str, pages: &Vmo<Full>) -> Result<()> {
+        self.unlink(name)
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
@@ -616,6 +655,10 @@ impl Inode for RamInode {
         Ok(())
     }
 
+    fn rmdir_with_pages(&self, name: &str, _pages: &Vmo<Full>) -> Result<()> {
+        self.rmdir(name)
+    }
+
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
@@ -630,6 +673,10 @@ impl Inode for RamInode {
             .get_entry(name)
             .ok_or(Error::new(Errno::ENOENT))?;
         Ok(inode as _)
+    }
+
+    fn lookup_with_pages(&self, name: &str, _pages: &Vmo<Full>) -> Result<Arc<dyn Inode>> {
+        self.lookup(name)
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
@@ -719,6 +766,17 @@ impl Inode for RamInode {
         Ok(())
     }
 
+    fn rename_with_pages(
+        &self,
+        old_name: &str,
+        dir_pages: &Vmo<Full>,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        target_pages: &Vmo<Full>,
+    ) -> Result<()> {
+        self.rename(old_name, target, new_name)
+    }
+
     fn read_link(&self) -> Result<String> {
         if self.0.read().metadata.type_ != InodeType::SymLink {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
@@ -726,6 +784,10 @@ impl Inode for RamInode {
         let self_inode = self.0.read();
         let link = self_inode.inner.as_symlink().unwrap();
         Ok(String::from(link))
+    }
+
+    fn read_link_with_pages(&self, _pages: &Vmo<Full>) -> Result<String> {
+        self.read_link()
     }
 
     fn write_link(&self, target: &str) -> Result<()> {
@@ -738,6 +800,10 @@ impl Inode for RamInode {
         // Symlink's metadata.blocks should be 0, so just set the size.
         self_inode.metadata.size = target.len();
         Ok(())
+    }
+
+    fn write_link_with_pages(&self, target: &str, _pages: &Vmo<Full>) -> Result<()> {
+        self.write_link(target)
     }
 
     fn metadata(&self) -> Metadata {

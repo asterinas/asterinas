@@ -4,10 +4,12 @@ use bitflags::bitflags;
 use core::any::Any;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
+use jinux_rights::Full;
 
-use super::{DirentVisitor, FileSystem, IoEvents, IoctlCmd, Poller, SuperBlock};
+use super::{DirentVisitor, FileSystem, FsFlags, IoEvents, IoctlCmd, Poller, SuperBlock};
 use crate::fs::device::{Device, DeviceType};
 use crate::prelude::*;
+use crate::vm::vmo::Vmo;
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -245,58 +247,146 @@ pub trait Inode: Any + Sync + Send {
     fn set_mode(&self, mode: InodeMode);
 
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::EISDIR))
     }
 
     fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::EISDIR))
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::EISDIR))
     }
 
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::EISDIR))
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn create_with_pages(
+        &self,
+        name: &str,
+        type_: InodeType,
+        mode: InodeMode,
+        pages: &Vmo<Full>,
+    ) -> Result<Arc<dyn Inode>> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn mknod_with_pages(
+        &self,
+        name: &str,
+        mode: InodeMode,
+        dev: Arc<dyn Device>,
+        pages: &Vmo<Full>,
+    ) -> Result<Arc<dyn Inode>> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn readdir_at_with_pages(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        pages: &Vmo<Full>,
+    ) -> Result<usize> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn link_with_pages(&self, old: &Arc<dyn Inode>, name: &str, pages: &Vmo<Full>) -> Result<()> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn unlink(&self, name: &str) -> Result<()> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn unlink_with_pages(&self, name: &str, pages: &Vmo<Full>) -> Result<()> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn rmdir_with_pages(&self, name: &str, pages: &Vmo<Full>) -> Result<()> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn lookup_with_pages(&self, name: &str, pages: &Vmo<Full>) -> Result<Arc<dyn Inode>> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn rename_with_pages(
+        &self,
+        old_name: &str,
+        dir_pages: &Vmo<Full>,
+        target: &Arc<dyn Inode>,
+        new_name: &str,
+        target_pages: &Vmo<Full>,
+    ) -> Result<()> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::ENOTDIR))
     }
 
     fn read_link(&self) -> Result<String> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::EISDIR))
+    }
+
+    fn read_link_with_pages(&self, pages: &Vmo<Full>) -> Result<String> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::EISDIR))
     }
 
     fn write_link(&self, target: &str) -> Result<()> {
+        debug_assert!(self.fs().flags().contains(FsFlags::NO_PAGECACHE));
+        Err(Error::new(Errno::EISDIR))
+    }
+
+    fn write_link_with_pages(&self, target: &str, pages: &Vmo<Full>) -> Result<()> {
+        debug_assert!(!self.fs().flags().contains(FsFlags::NO_PAGECACHE));
         Err(Error::new(Errno::EISDIR))
     }
 

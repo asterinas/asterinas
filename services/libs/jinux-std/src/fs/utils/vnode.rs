@@ -151,49 +151,114 @@ impl Vnode {
     }
 
     pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
-        let inode = self.inner.read().inode.create(name, type_, mode)?;
+        let inner = self.inner.read();
+        let inode = match &inner.page_cache {
+            None => inner.inode.create(name, type_, mode)?,
+            Some(page_cache) => {
+                inner
+                    .inode
+                    .create_with_pages(name, type_, mode, page_cache.pages())?
+            }
+        };
         Self::new(inode)
     }
 
     pub fn mknod(&self, name: &str, mode: InodeMode, device: Arc<dyn Device>) -> Result<Self> {
-        let inode = self.inner.read().inode.mknod(name, mode, device)?;
+        let inner = self.inner.read();
+        let inode = match &inner.page_cache {
+            None => inner.inode.mknod(name, mode, device)?,
+            Some(page_cache) => {
+                inner
+                    .inode
+                    .mknod_with_pages(name, mode, device, page_cache.pages())?
+            }
+        };
         Self::new(inode)
     }
 
     pub fn lookup(&self, name: &str) -> Result<Self> {
-        let inode = self.inner.read().inode.lookup(name)?;
+        let inner = self.inner.read();
+        let inode = match &inner.page_cache {
+            None => inner.inode.lookup(name)?,
+            Some(page_cache) => inner.inode.lookup_with_pages(name, page_cache.pages())?,
+        };
         Self::new(inode)
     }
 
     pub fn link(&self, old: &Vnode, name: &str) -> Result<()> {
-        self.inner.read().inode.link(&old.inner.read().inode, name)
+        let inner = self.inner.read();
+        match &inner.page_cache {
+            None => inner.inode.link(&old.inner.read().inode, name),
+            Some(page_cache) => {
+                inner
+                    .inode
+                    .link_with_pages(&old.inner.read().inode, name, page_cache.pages())
+            }
+        }
     }
 
     pub fn unlink(&self, name: &str) -> Result<()> {
-        self.inner.read().inode.unlink(name)
+        let inner = self.inner.read();
+        match &inner.page_cache {
+            None => inner.inode.unlink(name),
+            Some(page_cache) => inner.inode.unlink_with_pages(name, page_cache.pages()),
+        }
     }
 
     pub fn rmdir(&self, name: &str) -> Result<()> {
-        self.inner.read().inode.rmdir(name)
+        let inner = self.inner.read();
+        match &inner.page_cache {
+            None => inner.inode.rmdir(name),
+            Some(page_cache) => inner.inode.rmdir_with_pages(name, page_cache.pages()),
+        }
     }
 
     pub fn rename(&self, old_name: &str, target: &Vnode, new_name: &str) -> Result<()> {
-        self.inner
-            .read()
-            .inode
-            .rename(old_name, &target.inner.read().inode, new_name)
+        let inner = self.inner.read();
+        let target_inner = target.inner.read();
+        match (&inner.page_cache, &target_inner.page_cache) {
+            (None, None) => inner.inode.rename(old_name, &target_inner.inode, new_name),
+            (Some(self_pages), Some(target_pages)) => inner.inode.rename_with_pages(
+                old_name,
+                self_pages.pages(),
+                &target_inner.inode,
+                new_name,
+                target_pages.pages(),
+            ),
+            _ => {
+                return_errno!(Errno::EXDEV);
+            }
+        }
     }
 
     pub fn read_link(&self) -> Result<String> {
-        self.inner.read().inode.read_link()
+        let inner = self.inner.read();
+        match &inner.page_cache {
+            None => inner.inode.read_link(),
+            Some(page_cache) => inner.inode.read_link_with_pages(page_cache.pages()),
+        }
     }
 
     pub fn write_link(&self, target: &str) -> Result<()> {
-        self.inner.write().inode.write_link(target)
+        let inner = self.inner.read();
+        match &inner.page_cache {
+            None => inner.inode.write_link(target),
+            Some(page_cache) => inner
+                .inode
+                .write_link_with_pages(target, page_cache.pages()),
+        }
     }
 
     pub fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        self.inner.read().inode.readdir_at(offset, visitor)
+        let inner = self.inner.read();
+        match &inner.page_cache {
+            None => inner.inode.readdir_at(offset, visitor),
+            Some(page_cache) => {
+                inner
+                    .inode
+                    .readdir_at_with_pages(offset, visitor, page_cache.pages())
+            }
+        }
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
