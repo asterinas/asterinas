@@ -102,8 +102,8 @@ fn mmap_filebacked_vmo(
     let page_cache_vmo = {
         let fs_resolver = current.fs().read();
         let dentry = fs_resolver.lookup_from_fd(fd)?;
-        let vnode = dentry.vnode();
-        vnode.page_cache().ok_or(Error::with_message(
+        let inode = dentry.inode();
+        inode.page_cache().ok_or(Error::with_message(
             Errno::EBADF,
             "File does not have page cache",
         ))?

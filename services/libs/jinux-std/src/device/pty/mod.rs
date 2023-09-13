@@ -27,7 +27,7 @@ pub fn init() -> Result<()> {
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),
     )?;
-    ptmx.write_link("pts/ptmx")?;
+    ptmx.inode().write_link("pts/ptmx")?;
     Ok(())
 }
 

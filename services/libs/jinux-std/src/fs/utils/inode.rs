@@ -1,18 +1,17 @@
-use alloc::string::String;
-use alloc::sync::Arc;
-use bitflags::bitflags;
-use core::any::Any;
 use core::time::Duration;
+use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use jinux_frame::vm::VmFrame;
+use jinux_rights::Full;
 
 use super::{DirentVisitor, FileSystem, IoctlCmd, SuperBlock};
 use crate::events::IoEvents;
 use crate::fs::device::{Device, DeviceType};
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::vm::vmo::Vmo;
 
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
 pub enum InodeType {
     NamedPipe = 0o010000,
     CharDevice = 0o020000,
@@ -236,6 +235,12 @@ pub trait Inode: Any + Sync + Send {
 
     fn metadata(&self) -> Metadata;
 
+    fn type_(&self) -> InodeType;
+
+    fn mode(&self) -> InodeMode;
+
+    fn set_mode(&self, mode: InodeMode);
+
     fn atime(&self) -> Duration;
 
     fn set_atime(&self, time: Duration);
@@ -243,8 +248,6 @@ pub trait Inode: Any + Sync + Send {
     fn mtime(&self) -> Duration;
 
     fn set_mtime(&self, time: Duration);
-
-    fn set_mode(&self, mode: InodeMode);
 
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         Err(Error::new(Errno::EISDIR))
@@ -254,11 +257,23 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::EISDIR))
     }
 
+    fn page_cache(&self) -> Option<Vmo<Full>> {
+        None
+    }
+
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
 
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
+    }
+
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
+    }
+
+    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
 
@@ -342,6 +357,59 @@ pub trait Inode: Any + Sync + Send {
 impl dyn Inode {
     pub fn downcast_ref<T: Inode>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
+    }
+
+    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
+        if !self.type_().support_read() {
+            return_errno!(Errno::EISDIR);
+        }
+
+        let file_len = self.len();
+        if buf.len() < file_len {
+            buf.resize(file_len, 0);
+        }
+        self.read_at(0, &mut buf[..file_len])
+    }
+
+    pub fn read_direct_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
+        if !self.type_().support_read() {
+            return_errno!(Errno::EISDIR);
+        }
+
+        let file_len = self.len();
+        if buf.len() < file_len {
+            buf.resize(file_len, 0);
+        }
+        self.read_direct_at(0, &mut buf[..file_len])
+    }
+
+    pub fn writer(&self, from_offset: usize) -> InodeWriter {
+        InodeWriter {
+            inner: self,
+            offset: from_offset,
+        }
+    }
+}
+
+pub struct InodeWriter<'a> {
+    inner: &'a dyn Inode,
+    offset: usize,
+}
+
+impl<'a> Write for InodeWriter<'a> {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        let write_len = self
+            .inner
+            .write_at(self.offset, buf)
+            .map_err(|_| IoError::new(IoErrorKind::WriteZero, "failed to write buffer"))?;
+        self.offset += write_len;
+        Ok(write_len)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
     }
 }
 

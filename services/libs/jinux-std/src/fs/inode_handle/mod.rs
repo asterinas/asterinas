@@ -26,9 +26,9 @@ impl InodeHandle_ {
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
         let mut offset = self.offset.lock();
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.vnode().read_direct_at(*offset, buf)?
+            self.dentry.inode().read_direct_at(*offset, buf)?
         } else {
-            self.dentry.vnode().read_at(*offset, buf)?
+            self.dentry.inode().read_at(*offset, buf)?
         };
 
         *offset += len;
@@ -38,12 +38,12 @@ impl InodeHandle_ {
     pub fn write(&self, buf: &[u8]) -> Result<usize> {
         let mut offset = self.offset.lock();
         if self.status_flags().contains(StatusFlags::O_APPEND) {
-            *offset = self.dentry.vnode().len();
+            *offset = self.dentry.inode_len();
         }
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.vnode().write_direct_at(*offset, buf)?
+            self.dentry.inode().write_direct_at(*offset, buf)?
         } else {
-            self.dentry.vnode().write_at(*offset, buf)?
+            self.dentry.inode().write_at(*offset, buf)?
         };
 
         *offset += len;
@@ -52,9 +52,9 @@ impl InodeHandle_ {
 
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.vnode().read_direct_to_end(buf)?
+            self.dentry.inode().read_direct_to_end(buf)?
         } else {
-            self.dentry.vnode().read_to_end(buf)?
+            self.dentry.inode().read_to_end(buf)?
         };
         Ok(len)
     }
@@ -69,7 +69,7 @@ impl InodeHandle_ {
                 off as isize
             }
             SeekFrom::End(off /* as isize */) => {
-                let file_size = self.dentry.vnode().len() as isize;
+                let file_size = self.dentry.inode_len() as isize;
                 assert!(file_size >= 0);
                 file_size
                     .checked_add(off)
@@ -94,7 +94,7 @@ impl InodeHandle_ {
     }
 
     pub fn len(&self) -> usize {
-        self.dentry.vnode().len()
+        self.dentry.inode_len()
     }
 
     pub fn access_mode(&self) -> AccessMode {
@@ -113,7 +113,7 @@ impl InodeHandle_ {
 
     pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let mut offset = self.offset.lock();
-        let read_cnt = self.dentry.vnode().readdir_at(*offset, visitor)?;
+        let read_cnt = self.dentry.inode().readdir_at(*offset, visitor)?;
         *offset += read_cnt;
         Ok(read_cnt)
     }

@@ -203,8 +203,8 @@ impl Backlog {
 }
 
 fn create_keyable_inode(dentry: &Arc<Dentry>) -> KeyableWeak<dyn Inode> {
-    let inode = dentry.inode();
-    KeyableWeak::from(inode)
+    let weak_inode = Arc::downgrade(dentry.inode());
+    KeyableWeak::from(weak_inode)
 }
 
 pub(super) fn unregister_backlog(addr: &UnixSocketAddrBound) {

@@ -66,6 +66,16 @@ impl Inode for Ptmx {
         self.metadata.clone()
     }
 
+    fn type_(&self) -> InodeType {
+        self.metadata.type_
+    }
+
+    fn mode(&self) -> InodeMode {
+        self.metadata.mode
+    }
+
+    fn set_mode(&self, mode: InodeMode) {}
+
     fn atime(&self) -> Duration {
         self.metadata.atime
     }
@@ -77,8 +87,6 @@ impl Inode for Ptmx {
     }
 
     fn set_mtime(&self, time: Duration) {}
-
-    fn set_mode(&self, mode: InodeMode) {}
 
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         Ok(())
@@ -92,7 +100,15 @@ impl Inode for Ptmx {
         Ok(0)
     }
 
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        Ok(0)
+    }
+
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        Ok(0)
+    }
+
+    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         Ok(0)
     }
 

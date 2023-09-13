@@ -1,7 +1,7 @@
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 
-use crate::fs::utils::{FileSystem, Inode, InodeMode, IoctlCmd, Metadata};
+use crate::fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata};
 use crate::prelude::*;
 
 use super::{ProcFS, ProcInodeInfo};
@@ -37,6 +37,18 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         self.info.metadata()
     }
 
+    fn type_(&self) -> InodeType {
+        InodeType::SymLink
+    }
+
+    fn mode(&self) -> InodeMode {
+        self.info.mode()
+    }
+
+    fn set_mode(&self, mode: InodeMode) {
+        self.info.set_mode(mode)
+    }
+
     fn atime(&self) -> Duration {
         self.info.atime()
     }
@@ -53,10 +65,6 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         self.info.set_mtime(time)
     }
 
-    fn set_mode(&self, mode: InodeMode) {
-        self.info.set_mode(mode)
-    }
-
     fn read_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
@@ -69,7 +77,15 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         Err(Error::new(Errno::EPERM))
     }
 
+    fn read_direct_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
+        Err(Error::new(Errno::EPERM))
+    }
+
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn write_direct_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 

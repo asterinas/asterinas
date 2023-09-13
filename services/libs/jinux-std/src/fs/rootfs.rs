@@ -12,7 +12,7 @@ use spin::Once;
 
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
 pub fn init(initramfs_buf: &[u8]) -> Result<()> {
-    init_root_mount()?;
+    init_root_mount();
 
     println!("[kernel] unpacking the initramfs.cpio.gz to rootfs ...");
     let fs = FsResolver::new();
@@ -52,7 +52,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         match metadata.file_type() {
             FileType::File => {
                 let dentry = parent.create(name, InodeType::File, mode)?;
-                entry.read_all(dentry.vnode().writer(0))?;
+                entry.read_all(dentry.inode().writer(0))?;
             }
             FileType::Dir => {
                 let _ = parent.create(name, InodeType::Dir, mode)?;
@@ -64,7 +64,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
                     entry.read_all(&mut link_data)?;
                     core::str::from_utf8(&link_data)?.to_string()
                 };
-                dentry.vnode().write_link(&link_content)?;
+                dentry.inode().write_link(&link_content)?;
             }
             type_ => {
                 panic!("unsupported file type = {:?} in initramfs", type_);
@@ -76,7 +76,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     proc_dentry.mount(ProcFS::new())?;
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
-    dev_dentry.mount(RamFS::new(false))?;
+    dev_dentry.mount(RamFS::new())?;
     println!("[kernel] rootfs is ready");
 
     Ok(())
@@ -84,14 +84,11 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
 
 static ROOT_MOUNT: Once<Arc<MountNode>> = Once::new();
 
-fn init_root_mount() -> Result<()> {
-    ROOT_MOUNT.try_call_once(|| -> Result<Arc<MountNode>> {
-        let rootfs = RamFS::new(true);
-        let root_mount = MountNode::new_root(rootfs)?;
-        Ok(root_mount)
-    })?;
-
-    Ok(())
+fn init_root_mount() {
+    ROOT_MOUNT.call_once(|| -> Arc<MountNode> {
+        let rootfs = RamFS::new();
+        MountNode::new_root(rootfs)
+    });
 }
 
 pub fn root_mount() -> &'static Arc<MountNode> {

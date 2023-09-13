@@ -18,15 +18,7 @@ impl PartialEq for UnixSocketAddrBound {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Abstract(l0), Self::Abstract(r0)) => l0 == r0,
-            (Self::Path(l0), Self::Path(r0)) => {
-                let Some(linode) = l0.inode().upgrade() else {
-                    return false;
-                };
-                let Some(rinode) = r0.inode().upgrade() else {
-                    return false;
-                };
-                Arc::ptr_eq(&linode, &rinode)
-            }
+            (Self::Path(l0), Self::Path(r0)) => Arc::ptr_eq(l0.inode(), r0.inode()),
             _ => false,
         }
     }
