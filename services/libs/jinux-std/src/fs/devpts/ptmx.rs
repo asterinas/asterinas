@@ -92,7 +92,15 @@ impl Inode for Ptmx {
         Ok(0)
     }
 
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        Ok(0)
+    }
+
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        Ok(0)
+    }
+
+    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         Ok(0)
     }
 

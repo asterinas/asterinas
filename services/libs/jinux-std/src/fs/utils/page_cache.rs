@@ -13,9 +13,9 @@ pub struct PageCache {
 }
 
 impl PageCache {
-    pub fn new(inode: &Arc<dyn Inode>) -> Result<Self> {
-        let manager = Arc::new(PageCacheManager::new(Arc::downgrade(inode)));
-        let pages = VmoOptions::<Full>::new(inode.len())
+    pub fn new(len: usize, backed_inode: Weak<dyn Inode>) -> Result<Self> {
+        let manager = Arc::new(PageCacheManager::new(backed_inode));
+        let pages = VmoOptions::<Full>::new(len)
             .flags(VmoFlags::RESIZABLE)
             .pager(manager.clone())
             .alloc()?;
@@ -72,7 +72,7 @@ impl Pager for PageCacheManager {
         let frame = if let Some(page) = pages.get(&page_idx) {
             page.frame()
         } else {
-            let page = if offset < self.backed_inode.upgrade().unwrap().metadata().size {
+            let page = if offset < self.backed_inode.upgrade().unwrap().len() {
                 let mut page = Page::alloc_zero()?;
                 self.backed_inode
                     .upgrade()

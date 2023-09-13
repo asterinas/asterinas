@@ -12,7 +12,7 @@ use spin::Once;
 
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
 pub fn init(initramfs_buf: &[u8]) -> Result<()> {
-    init_root_mount()?;
+    init_root_mount();
 
     println!("[kernel] unpacking the initramfs.cpio.gz to rootfs ...");
     let fs = FsResolver::new();
@@ -76,7 +76,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     proc_dentry.mount(ProcFS::new())?;
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
-    dev_dentry.mount(RamFS::new(false))?;
+    dev_dentry.mount(RamFS::new())?;
     println!("[kernel] rootfs is ready");
 
     Ok(())
@@ -84,14 +84,11 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
 
 static ROOT_MOUNT: Once<Arc<MountNode>> = Once::new();
 
-fn init_root_mount() -> Result<()> {
-    ROOT_MOUNT.try_call_once(|| -> Result<Arc<MountNode>> {
-        let rootfs = RamFS::new(true);
-        let root_mount = MountNode::new_root(rootfs)?;
-        Ok(root_mount)
-    })?;
-
-    Ok(())
+fn init_root_mount() {
+    ROOT_MOUNT.call_once(|| -> Arc<MountNode> {
+        let rootfs = RamFS::new();
+        MountNode::new_root(rootfs)
+    });
 }
 
 pub fn root_mount() -> &'static Arc<MountNode> {

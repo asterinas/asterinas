@@ -74,7 +74,15 @@ impl Inode for PtySlaveInode {
         self.device.read(buf)
     }
 
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.device.read(buf)
+    }
+
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        self.device.write(buf)
+    }
+
+    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         self.device.write(buf)
     }
 

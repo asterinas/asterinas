@@ -69,7 +69,15 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         Err(Error::new(Errno::EPERM))
     }
 
+    fn read_direct_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
+        Err(Error::new(Errno::EPERM))
+    }
+
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn write_direct_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 

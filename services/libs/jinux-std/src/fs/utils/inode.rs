@@ -1,16 +1,14 @@
-use alloc::string::String;
-use alloc::sync::Arc;
-use bitflags::bitflags;
-use core::any::Any;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
+use jinux_rights::Full;
 
 use super::{DirentVisitor, FileSystem, IoEvents, IoctlCmd, Poller, SuperBlock};
 use crate::fs::device::{Device, DeviceType};
 use crate::prelude::*;
+use crate::vm::vmo::Vmo;
 
 #[repr(u32)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
 pub enum InodeType {
     NamedPipe = 0o010000,
     CharDevice = 0o020000,
@@ -252,11 +250,23 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::EISDIR))
     }
 
+    fn page_cache(&self) -> Option<Vmo<Full>> {
+        None
+    }
+
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
 
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
+    }
+
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        Err(Error::new(Errno::EISDIR))
+    }
+
+    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
 
