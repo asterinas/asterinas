@@ -32,7 +32,7 @@ pub fn sys_readlinkat(
         let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
         current.fs().read().lookup_no_follow(&fs_path)?
     };
-    let linkpath = dentry.read_link()?;
+    let linkpath = dentry.inode().read_link()?;
     let bytes = linkpath.as_bytes();
     let write_len = bytes.len().min(usr_buf_len);
     write_bytes_to_user(usr_buf_addr, &bytes[..write_len])?;

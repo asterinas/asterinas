@@ -5,7 +5,7 @@ use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
 
-use super::{FileSystem, Inode, InodeMode, InodeType, Metadata, MountNode, Vnode, NAME_MAX};
+use super::{FileSystem, Inode, InodeMode, InodeType, Metadata, MountNode, NAME_MAX};
 
 lazy_static! {
     static ref DCACHE: Mutex<BTreeMap<DentryKey, Arc<Dentry>>> = Mutex::new(BTreeMap::new());
@@ -13,7 +13,7 @@ lazy_static! {
 
 /// The dentry cache to accelerate path lookup
 pub struct Dentry {
-    vnode: Vnode,
+    inode: Arc<dyn Inode>,
     name_and_parent: RwLock<Option<(String, Arc<Dentry>)>>,
     this: Weak<Dentry>,
     children: Mutex<Children>,
@@ -22,21 +22,21 @@ pub struct Dentry {
 }
 
 impl Dentry {
-    /// Create a new root dentry with the giving vnode and mount node.
+    /// Create a new root dentry with the giving inode and mount node.
     ///
     /// It is been created during the construction of MountNode struct. The MountNode
     /// struct holds an arc reference to this root dentry, while this dentry holds a
     /// weak reference to the MountNode struct.
-    pub(super) fn new_root(vnode: Vnode, mount: Weak<MountNode>) -> Arc<Self> {
-        let root = Self::new(vnode, DentryOptions::Root(mount));
+    pub(super) fn new_root(inode: Arc<dyn Inode>, mount: Weak<MountNode>) -> Arc<Self> {
+        let root = Self::new(inode, DentryOptions::Root(mount));
         DCACHE.lock().insert(root.key(), root.clone());
         root
     }
 
     /// Internal constructor.
-    fn new(vnode: Vnode, options: DentryOptions) -> Arc<Self> {
+    fn new(inode: Arc<dyn Inode>, options: DentryOptions) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
-            vnode,
+            inode,
             mount_node: match &options {
                 DentryOptions::Root(mount) => mount.clone(),
                 DentryOptions::Leaf(name_and_parent) => name_and_parent.1.mount_node.clone(),
@@ -129,9 +129,9 @@ impl Dentry {
         DentryKey::new(self)
     }
 
-    /// Get the vnode.
-    pub fn vnode(&self) -> &Vnode {
-        &self.vnode
+    /// Get the inode.
+    pub fn inode(&self) -> &Arc<dyn Inode> {
+        &self.inode
     }
 
     /// Get the DentryFlags.
@@ -164,13 +164,9 @@ impl Dentry {
         self.mount_node.upgrade().unwrap()
     }
 
-    pub fn inode(&self) -> Weak<dyn Inode> {
-        self.vnode.inode()
-    }
-
     /// Create a dentry by making inode.
     pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
-        if self.vnode.inode_type() != InodeType::Dir {
+        if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut children = self.children.lock();
@@ -179,9 +175,9 @@ impl Dentry {
         }
 
         let child = {
-            let vnode = self.vnode.create(name, type_, mode)?;
+            let inode = self.inode.create(name, type_, mode)?;
             let dentry = Self::new(
-                vnode,
+                inode,
                 DentryOptions::Leaf((String::from(name), self.this())),
             );
             children.insert_dentry(&dentry);
@@ -192,7 +188,7 @@ impl Dentry {
 
     /// Create a dentry by making a device inode.
     pub fn mknod(&self, name: &str, mode: InodeMode, device: Arc<dyn Device>) -> Result<Arc<Self>> {
-        if self.vnode.inode_type() != InodeType::Dir {
+        if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut children = self.children.lock();
@@ -201,9 +197,9 @@ impl Dentry {
         }
 
         let child = {
-            let vnode = self.vnode.mknod(name, mode, device)?;
+            let inode = self.inode.mknod(name, mode, device)?;
             let dentry = Self::new(
-                vnode,
+                inode,
                 DentryOptions::Leaf((String::from(name), self.this())),
             );
             children.insert_dentry(&dentry);
@@ -214,10 +210,10 @@ impl Dentry {
 
     /// Lookup a dentry.
     pub fn lookup(&self, name: &str) -> Result<Arc<Self>> {
-        if self.vnode.inode_type() != InodeType::Dir {
+        if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
-        if !self.vnode.inode_mode().is_executable() {
+        if !self.inode.mode().is_executable() {
             return_errno!(Errno::EACCES);
         }
         if name.len() > NAME_MAX {
@@ -232,9 +228,9 @@ impl Dentry {
                 match children.find_dentry(name) {
                     Some(dentry) => dentry.overlaid_dentry(),
                     None => {
-                        let vnode = self.vnode.lookup(name)?;
+                        let inode = self.inode.lookup(name)?;
                         let dentry = Self::new(
-                            vnode,
+                            inode,
                             DentryOptions::Leaf((String::from(name), self.this())),
                         );
                         children.insert_dentry(&dentry);
@@ -248,7 +244,7 @@ impl Dentry {
 
     /// Link a new name for the dentry by linking inode.
     pub fn link(&self, old: &Arc<Self>, name: &str) -> Result<()> {
-        if self.vnode.inode_type() != InodeType::Dir {
+        if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut children = self.children.lock();
@@ -258,10 +254,10 @@ impl Dentry {
         if !Arc::ptr_eq(&old.mount_node(), &self.mount_node()) {
             return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
         }
-        let old_vnode = old.vnode();
-        self.vnode.link(old_vnode, name)?;
+        let old_inode = old.inode();
+        self.inode.link(old_inode, name)?;
         let dentry = Self::new(
-            old_vnode.clone(),
+            old_inode.clone(),
             DentryOptions::Leaf((String::from(name), self.this())),
         );
         children.insert_dentry(&dentry);
@@ -270,42 +266,26 @@ impl Dentry {
 
     /// Delete a dentry by unlinking inode.
     pub fn unlink(&self, name: &str) -> Result<()> {
-        if self.vnode.inode_type() != InodeType::Dir {
+        if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut children = self.children.lock();
         let _ = children.find_dentry_with_checking_mountpoint(name)?;
-        self.vnode.unlink(name)?;
+        self.inode.unlink(name)?;
         children.delete_dentry(name);
         Ok(())
     }
 
     /// Delete a directory dentry by rmdiring inode.
     pub fn rmdir(&self, name: &str) -> Result<()> {
-        if self.vnode.inode_type() != InodeType::Dir {
+        if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         let mut children = self.children.lock();
         let _ = children.find_dentry_with_checking_mountpoint(name)?;
-        self.vnode.rmdir(name)?;
+        self.inode.rmdir(name)?;
         children.delete_dentry(name);
         Ok(())
-    }
-
-    /// Read symbolic link.
-    pub fn read_link(&self) -> Result<String> {
-        if self.vnode.inode_type() != InodeType::SymLink {
-            return_errno!(Errno::EINVAL);
-        }
-        self.vnode.read_link()
-    }
-
-    /// Write symbolic link.
-    pub fn write_link(&self, target: &str) -> Result<()> {
-        if self.vnode.inode_type() != InodeType::SymLink {
-            return_errno!(Errno::EINVAL);
-        }
-        self.vnode.write_link(target)
     }
 
     /// Rename a dentry to the new dentry by renaming inode.
@@ -313,8 +293,7 @@ impl Dentry {
         if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
             return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
         }
-        if self.vnode.inode_type() != InodeType::Dir || new_dir.vnode.inode_type() != InodeType::Dir
-        {
+        if self.inode.type_() != InodeType::Dir || new_dir.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
@@ -326,7 +305,7 @@ impl Dentry {
             let mut children = self.children.lock();
             let old_dentry = children.find_dentry_with_checking_mountpoint(old_name)?;
             let _ = children.find_dentry_with_checking_mountpoint(new_name)?;
-            self.vnode.rename(old_name, &self.vnode, new_name)?;
+            self.inode.rename(old_name, &self.inode, new_name)?;
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     children.delete_dentry(old_name);
@@ -346,7 +325,7 @@ impl Dentry {
                 write_lock_children_on_two_dentries(self, new_dir);
             let old_dentry = self_children.find_dentry_with_checking_mountpoint(old_name)?;
             let _ = new_dir_children.find_dentry_with_checking_mountpoint(new_name)?;
-            self.vnode.rename(old_name, &new_dir.vnode, new_name)?;
+            self.inode.rename(old_name, &new_dir.inode, new_name)?;
             match old_dentry.as_ref() {
                 Some(dentry) => {
                     self_children.delete_dentry(old_name);
@@ -369,7 +348,7 @@ impl Dentry {
     ///
     /// Return the mounted child mount.
     pub fn mount(&self, fs: Arc<dyn FileSystem>) -> Result<Arc<MountNode>> {
-        if self.vnode.inode_type() != InodeType::Dir {
+        if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if self.effective_parent().is_none() {
@@ -401,52 +380,52 @@ impl Dentry {
 
     /// Get the filesystem the inode belongs to
     pub fn fs(&self) -> Arc<dyn FileSystem> {
-        self.vnode.fs()
+        self.inode.fs()
     }
 
     /// Get the inode metadata
     pub fn inode_metadata(&self) -> Metadata {
-        self.vnode.metadata()
+        self.inode.metadata()
     }
 
     /// Get the inode type
     pub fn inode_type(&self) -> InodeType {
-        self.vnode.inode_type()
+        self.inode.type_()
     }
 
     /// Get the inode permission mode
     pub fn inode_mode(&self) -> InodeMode {
-        self.vnode.inode_mode()
+        self.inode.mode()
     }
 
     /// Set the inode permission mode
     pub fn set_inode_mode(&self, mode: InodeMode) {
-        self.vnode.set_inode_mode(mode)
+        self.inode.set_mode(mode)
     }
 
     /// Get the inode length
     pub fn inode_len(&self) -> usize {
-        self.vnode.len()
+        self.inode.len()
     }
 
     /// Get the access timestamp
     pub fn atime(&self) -> Duration {
-        self.vnode.atime()
+        self.inode.atime()
     }
 
     /// Set the access timestamp
     pub fn set_atime(&self, time: Duration) {
-        self.vnode.set_atime(time)
+        self.inode.set_atime(time)
     }
 
     /// Get the modified timestamp
     pub fn mtime(&self) -> Duration {
-        self.vnode.mtime()
+        self.inode.mtime()
     }
 
     /// Set the modified timestamp
     pub fn set_mtime(&self, time: Duration) {
-        self.vnode.set_mtime(time)
+        self.inode.set_mtime(time)
     }
 
     /// Get the absolute path.
@@ -482,7 +461,7 @@ impl Debug for Dentry {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("Dentry")
             .field("abs_path", &self.abs_path())
-            .field("vnode", &self.vnode)
+            .field("inode", &self.inode)
             .field("flags", &self.flags())
             .finish()
     }
@@ -537,7 +516,7 @@ impl Children {
     pub fn insert_dentry(&mut self, dentry: &Arc<Dentry>) {
         // Do not cache it in DCACHE and children if is not cacheable.
         // When we look up it from the parent, it will always be newly created.
-        if !dentry.vnode().is_dentry_cacheable() {
+        if !dentry.inode().is_dentry_cacheable() {
             return;
         }
 

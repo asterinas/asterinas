@@ -69,8 +69,8 @@ fn lookup_and_parse_ldso(
     };
     let ldso_elf = {
         let mut buf = Box::new([0u8; PAGE_SIZE]);
-        let vnode = ldso_file.vnode();
-        vnode.read_at(0, &mut *buf)?;
+        let inode = ldso_file.inode();
+        inode.read_at(0, &mut *buf)?;
         Elf::parse_elf(&*buf)?
     };
     Ok((ldso_file, ldso_elf))
@@ -250,8 +250,8 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     let virtual_addr = program_header.virtual_addr as usize;
     debug_assert!(file_offset % PAGE_SIZE == virtual_addr % PAGE_SIZE);
     let page_cache_vmo = {
-        let vnode = elf_file.vnode();
-        vnode.page_cache().ok_or(Error::with_message(
+        let inode = elf_file.inode();
+        inode.page_cache().ok_or(Error::with_message(
             Errno::ENOENT,
             "executable has no page cache",
         ))?

@@ -13,7 +13,6 @@ pub use ioctl::IoctlCmd;
 pub use mount::MountNode;
 pub use page_cache::PageCache;
 pub use status_flags::StatusFlags;
-pub use vnode::{Vnode, VnodeWriter};
 
 mod access_mode;
 mod channel;
@@ -28,7 +27,6 @@ mod ioctl;
 mod mount;
 mod page_cache;
 mod status_flags;
-mod vnode;
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
 pub enum SeekFrom {

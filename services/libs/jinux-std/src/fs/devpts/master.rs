@@ -46,6 +46,16 @@ impl Inode for PtyMasterInode {
         self.0.ptmx().metadata()
     }
 
+    fn type_(&self) -> InodeType {
+        self.0.ptmx().metadata().type_
+    }
+
+    fn mode(&self) -> InodeMode {
+        self.0.ptmx().metadata().mode
+    }
+
+    fn set_mode(&self, mode: InodeMode) {}
+
     fn atime(&self) -> Duration {
         self.0.ptmx().metadata().atime
     }
@@ -57,8 +67,6 @@ impl Inode for PtyMasterInode {
     }
 
     fn set_mtime(&self, time: Duration) {}
-
-    fn set_mode(&self, mode: InodeMode) {}
 
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         Ok(())
@@ -72,7 +80,15 @@ impl Inode for PtyMasterInode {
         self.0.read(buf)
     }
 
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.0.read(buf)
+    }
+
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         self.0.write(buf)
     }
 

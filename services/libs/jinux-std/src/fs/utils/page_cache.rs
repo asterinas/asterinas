@@ -1,6 +1,6 @@
 use super::Inode;
 use crate::prelude::*;
-use crate::vm::vmo::{Pager, Vmo, VmoFlags, VmoOptions};
+use crate::vm::vmo::{get_page_idx_range, Pager, Vmo, VmoFlags, VmoOptions};
 use jinux_rights::Full;
 
 use core::ops::Range;
@@ -13,24 +13,40 @@ pub struct PageCache {
 }
 
 impl PageCache {
-    pub fn new(inode: &Arc<dyn Inode>) -> Result<Self> {
-        let manager = Arc::new(PageCacheManager::new(Arc::downgrade(inode)));
-        let pages = VmoOptions::<Full>::new(inode.len())
+    /// Creates an empty size page cache associated with a new inode.
+    pub fn new(backed_inode: Weak<dyn Inode>) -> Result<Self> {
+        let manager = Arc::new(PageCacheManager::new(backed_inode));
+        let pages = VmoOptions::<Full>::new(0)
             .flags(VmoFlags::RESIZABLE)
             .pager(manager.clone())
             .alloc()?;
         Ok(Self { pages, manager })
     }
 
-    pub fn pages(&self) -> &Vmo<Full> {
-        &self.pages
+    /// Creates a page cache associated with an existing inode.
+    ///
+    /// The `capacity` is the initial cache size required by the inode.
+    /// It is usually used the same size as the inode.
+    pub fn with_capacity(capacity: usize, backed_inode: Weak<dyn Inode>) -> Result<Self> {
+        let manager = Arc::new(PageCacheManager::new(backed_inode));
+        let pages = VmoOptions::<Full>::new(capacity)
+            .flags(VmoFlags::RESIZABLE)
+            .pager(manager.clone())
+            .alloc()?;
+        Ok(Self { pages, manager })
+    }
+
+    /// Returns the Vmo object backed by inode.
+    // TODO: The capability is too high，restrict it to eliminate the possibility of misuse.
+    //       For example, the `resize` api should be forbidded.
+    pub fn pages(&self) -> Vmo<Full> {
+        self.pages.dup().unwrap()
     }
 
     /// Evict the data within a specified range from the page cache and persist
     /// them to the disk.
-    pub fn evict_range(&self, range: Range<usize>) {
-        // TODO: Implement this method.
-        warn!("pagecache: evict_range is not implemented");
+    pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
+        self.manager.evict_range(range)
     }
 }
 
@@ -49,11 +65,30 @@ struct PageCacheManager {
 }
 
 impl PageCacheManager {
-    pub fn new(inode: Weak<dyn Inode>) -> Self {
+    pub fn new(backed_inode: Weak<dyn Inode>) -> Self {
         Self {
             pages: Mutex::new(LruCache::unbounded()),
-            backed_inode: inode,
+            backed_inode,
         }
+    }
+
+    pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
+        let page_idx_range = get_page_idx_range(&range);
+        let mut pages = self.pages.lock();
+        for page_idx in page_idx_range {
+            if let Some(page) = pages.get_mut(&page_idx) {
+                if let PageState::Dirty = page.state() {
+                    self.backed_inode
+                        .upgrade()
+                        .unwrap()
+                        .write_page(page_idx, page.frame())?;
+                    page.set_state(PageState::UpToDate);
+                }
+            } else {
+                warn!("page {} is not in page cache, do nothing", page_idx);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -70,20 +105,18 @@ impl Pager for PageCacheManager {
         let page_idx = offset / PAGE_SIZE;
         let mut pages = self.pages.lock();
         let frame = if let Some(page) = pages.get(&page_idx) {
-            page.frame()
+            page.frame().clone()
         } else {
-            let page = if offset < self.backed_inode.upgrade().unwrap().metadata().size {
-                let mut page = Page::alloc_zero()?;
-                self.backed_inode
-                    .upgrade()
-                    .unwrap()
-                    .read_page(page_idx, &page.frame())?;
+            let backed_inode = self.backed_inode.upgrade().unwrap();
+            let page = if offset < backed_inode.len() {
+                let mut page = Page::alloc()?;
+                backed_inode.read_page(page_idx, page.frame())?;
                 page.set_state(PageState::UpToDate);
                 page
             } else {
                 Page::alloc_zero()?
             };
-            let frame = page.frame();
+            let frame = page.frame().clone();
             pages.put(page_idx, page);
             frame
         };
@@ -110,7 +143,7 @@ impl Pager for PageCacheManager {
                 self.backed_inode
                     .upgrade()
                     .unwrap()
-                    .write_page(page_idx, &page.frame())?
+                    .write_page(page_idx, page.frame())?
             }
         } else {
             warn!("page {} is not in page cache, do nothing", page_idx);
@@ -151,8 +184,8 @@ impl Page {
         })
     }
 
-    pub fn frame(&self) -> VmFrame {
-        self.frame.clone()
+    pub fn frame(&self) -> &VmFrame {
+        &self.frame
     }
 
     pub fn state(&self) -> &PageState {

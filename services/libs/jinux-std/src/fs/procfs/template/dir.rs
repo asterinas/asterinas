@@ -64,6 +64,18 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         self.info.metadata()
     }
 
+    fn type_(&self) -> InodeType {
+        InodeType::Dir
+    }
+
+    fn mode(&self) -> InodeMode {
+        self.info.mode()
+    }
+
+    fn set_mode(&self, mode: InodeMode) {
+        self.info.set_mode(mode)
+    }
+
     fn atime(&self) -> Duration {
         self.info.atime()
     }
@@ -78,10 +90,6 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
 
     fn set_mtime(&self, time: Duration) {
         self.info.set_mtime(time)
-    }
-
-    fn set_mode(&self, mode: InodeMode) {
-        self.info.set_mode(mode)
     }
 
     fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {

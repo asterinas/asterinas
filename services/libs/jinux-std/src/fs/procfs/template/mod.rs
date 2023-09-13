@@ -58,6 +58,10 @@ impl ProcInodeInfo {
         self.metadata.write().mtime = time;
     }
 
+    pub fn mode(&self) -> InodeMode {
+        self.metadata.read().mode
+    }
+
     pub fn set_mode(&self, mode: InodeMode) {
         self.metadata.write().mode = mode;
     }

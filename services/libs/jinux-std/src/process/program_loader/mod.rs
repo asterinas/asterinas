@@ -26,11 +26,11 @@ pub fn load_program_to_vm(
     recursion_limit: usize,
 ) -> Result<(String, ElfLoadInfo)> {
     let abs_path = elf_file.abs_path();
-    let vnode = elf_file.vnode();
+    let inode = elf_file.inode();
     let file_header = {
         // read the first page of file header
         let mut file_header_buffer = Box::new([0u8; PAGE_SIZE]);
-        vnode.read_at(0, &mut *file_header_buffer)?;
+        inode.read_at(0, &mut *file_header_buffer)?;
         file_header_buffer
     };
     if let Some(mut new_argv) = parse_shebang_line(&*file_header)? {

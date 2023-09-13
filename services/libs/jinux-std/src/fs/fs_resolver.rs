@@ -62,8 +62,8 @@ impl FsResolver {
         let follow_tail_link = !creation_flags.contains(CreationFlags::O_NOFOLLOW);
         let dentry = match self.lookup_inner(path, follow_tail_link) {
             Ok(dentry) => {
-                let vnode = dentry.vnode();
-                if vnode.inode_type() == InodeType::SymLink
+                let inode = dentry.inode();
+                if inode.type_() == InodeType::SymLink
                     && !status_flags.contains(StatusFlags::O_PATH)
                 {
                     return_errno_with_message!(Errno::ELOOP, "file is a symlink");
@@ -74,7 +74,7 @@ impl FsResolver {
                     return_errno_with_message!(Errno::EEXIST, "file exists");
                 }
                 if creation_flags.contains(CreationFlags::O_DIRECTORY)
-                    && vnode.inode_type() != InodeType::Dir
+                    && inode.type_() != InodeType::Dir
                 {
                     return_errno_with_message!(
                         Errno::ENOTDIR,
@@ -95,7 +95,7 @@ impl FsResolver {
                 if file_name.ends_with('/') {
                     return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
                 }
-                if !dir_dentry.vnode().inode_mode().is_writable() {
+                if !dir_dentry.inode_mode().is_writable() {
                     return_errno_with_message!(Errno::EACCES, "file cannot be created");
                 }
                 dir_dentry.create(&file_name, InodeType::File, inode_mode)?
@@ -177,7 +177,7 @@ impl FsResolver {
 
             // Iterate next dentry
             let next_dentry = dentry.lookup(next_name)?;
-            let next_type = next_dentry.vnode().inode_type();
+            let next_type = next_dentry.inode_type();
             let next_is_tail = path_remain.is_empty();
 
             // If next inode is a symlink, follow symlinks at most `SYMLINKS_MAX` times.
@@ -186,7 +186,7 @@ impl FsResolver {
                     return_errno_with_message!(Errno::ELOOP, "too many symlinks");
                 }
                 let link_path_remain = {
-                    let mut tmp_link_path = next_dentry.vnode().read_link()?;
+                    let mut tmp_link_path = next_dentry.inode().read_link()?;
                     if tmp_link_path.is_empty() {
                         return_errno_with_message!(Errno::ENOENT, "empty symlink");
                     }
@@ -275,9 +275,9 @@ impl FsResolver {
         // Dereference the tail symlinks if needed
         loop {
             match dir_dentry.lookup(base_name.trim_end_matches('/')) {
-                Ok(dentry) if dentry.vnode().inode_type() == InodeType::SymLink => {
+                Ok(dentry) if dentry.inode_type() == InodeType::SymLink => {
                     let link = {
-                        let mut link = dentry.vnode().read_link()?;
+                        let mut link = dentry.inode().read_link()?;
                         if link.is_empty() {
                             return_errno_with_message!(Errno::ENOENT, "invalid symlink");
                         }

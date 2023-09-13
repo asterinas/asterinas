@@ -46,7 +46,7 @@ pub fn sys_symlinkat(
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),
     )?;
-    new_dentry.write_link(&target)?;
+    new_dentry.inode().write_link(&target)?;
     Ok(SyscallReturn::Return(0))
 }
 

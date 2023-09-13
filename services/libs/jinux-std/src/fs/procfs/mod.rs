@@ -61,7 +61,7 @@ impl FileSystem for ProcFS {
     }
 
     fn flags(&self) -> FsFlags {
-        FsFlags::NO_PAGECACHE
+        FsFlags::empty()
     }
 }
 

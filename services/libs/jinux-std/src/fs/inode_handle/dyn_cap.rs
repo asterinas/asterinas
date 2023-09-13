@@ -11,14 +11,14 @@ impl InodeHandle<Rights> {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
-        let vnode = dentry.vnode();
-        if access_mode.is_readable() && !vnode.inode_mode().is_readable() {
+        let inode = dentry.inode();
+        if access_mode.is_readable() && !inode.mode().is_readable() {
             return_errno_with_message!(Errno::EACCES, "File is not readable");
         }
-        if access_mode.is_writable() && !vnode.inode_mode().is_writable() {
+        if access_mode.is_writable() && !inode.mode().is_writable() {
             return_errno_with_message!(Errno::EACCES, "File is not writable");
         }
-        if access_mode.is_writable() && vnode.inode_type() == InodeType::Dir {
+        if access_mode.is_writable() && inode.type_() == InodeType::Dir {
             return_errno_with_message!(Errno::EISDIR, "Directory cannot open to write");
         }
         let inner = Arc::new(InodeHandle_ {
@@ -75,15 +75,15 @@ impl FileLike for InodeHandle<Rights> {
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.dentry().vnode().poll(mask, poller)
+        self.dentry().inode().poll(mask, poller)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        self.dentry().vnode().ioctl(cmd, arg)
+        self.dentry().inode().ioctl(cmd, arg)
     }
 
     fn metadata(&self) -> Metadata {
-        self.dentry().vnode().metadata()
+        self.dentry().inode_metadata()
     }
 
     fn status_flags(&self) -> StatusFlags {
