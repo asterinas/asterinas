@@ -1,47 +1,39 @@
-use crate::prelude::*;
 use alloc::str;
-use alloc::string::String;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 use jinux_frame::sync::{RwLock, RwLockWriteGuard};
-use jinux_frame::vm::VmFrame;
+use jinux_frame::vm::{VmFrame, VmIo};
+use jinux_rights::Full;
 use jinux_util::slot_vec::SlotVec;
 
 use super::*;
 use crate::fs::device::Device;
 use crate::fs::utils::{
     DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
-    Poller, SuperBlock, NAME_MAX,
+    PageCache, Poller, SuperBlock, NAME_MAX,
 };
+use crate::prelude::*;
+use crate::vm::vmo::Vmo;
 
 /// A volatile file system whose data and metadata exists only in memory.
 pub struct RamFS {
     metadata: RwLock<SuperBlock>,
     root: Arc<RamInode>,
     inode_allocator: AtomicUsize,
-    flags: FsFlags,
 }
 
 impl RamFS {
-    pub fn new(use_pagecache: bool) -> Arc<Self> {
+    pub fn new() -> Arc<Self> {
         let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX);
         let root = Arc::new(RamInode(RwLock::new(Inode_::new_dir(
             ROOT_INO,
             InodeMode::from_bits_truncate(0o755),
             &sb,
         ))));
-        let flags = {
-            let mut flags = FsFlags::DENTRY_UNEVICTABLE;
-            if !use_pagecache {
-                flags |= FsFlags::NO_PAGECACHE;
-            }
-            flags
-        };
         let ramfs = Arc::new(Self {
             metadata: RwLock::new(sb),
             root,
             inode_allocator: AtomicUsize::new(ROOT_INO + 1),
-            flags,
         });
         let mut root = ramfs.root.0.write();
         root.inner
@@ -76,7 +68,7 @@ impl FileSystem for RamFS {
     }
 
     fn flags(&self) -> FsFlags {
-        self.flags
+        FsFlags::DENTRY_UNEVICTABLE
     }
 }
 
@@ -99,9 +91,14 @@ impl Inode_ {
         }
     }
 
-    pub fn new_file(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
+    pub fn new_file(
+        ino: usize,
+        mode: InodeMode,
+        sb: &SuperBlock,
+        weak_inode: Weak<RamInode>,
+    ) -> Self {
         Self {
-            inner: Inner::File,
+            inner: Inner::File(PageCache::new(0, weak_inode).unwrap()),
             metadata: Metadata::new_file(ino, mode, sb),
             this: Weak::default(),
             fs: Weak::default(),
@@ -110,7 +107,7 @@ impl Inode_ {
 
     pub fn new_symlink(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
         Self {
-            inner: Inner::SymLink(Str256::from("")),
+            inner: Inner::SymLink(String::from("")),
             metadata: Metadata::new_symlink(ino, mode, sb),
             this: Weak::default(),
             fs: Weak::default(),
@@ -160,13 +157,20 @@ impl Inode_ {
 #[allow(clippy::large_enum_variant)]
 enum Inner {
     Dir(DirEntry),
-    File,
-    SymLink(Str256),
+    File(PageCache),
+    SymLink(String),
     Device(Arc<dyn Device>),
     Socket,
 }
 
 impl Inner {
+    fn as_file(&self) -> Option<&PageCache> {
+        match self {
+            Inner::File(page_cache) => Some(page_cache),
+            _ => None,
+        }
+    }
+
     fn as_direntry(&self) -> Option<&DirEntry> {
         match self {
             Inner::Dir(dir_entry) => Some(dir_entry),
@@ -188,7 +192,7 @@ impl Inner {
         }
     }
 
-    fn as_symlink_mut(&mut self) -> Option<&mut Str256> {
+    fn as_symlink_mut(&mut self) -> Option<&mut String> {
         match self {
             Inner::SymLink(link) => Some(link),
             _ => None,
@@ -204,7 +208,7 @@ impl Inner {
 }
 
 struct DirEntry {
-    children: SlotVec<(Str256, Arc<RamInode>)>,
+    children: SlotVec<(String, Arc<RamInode>)>,
     this: Weak<RamInode>,
     parent: Weak<RamInode>,
 }
@@ -231,9 +235,7 @@ impl DirEntry {
         if name == "." || name == ".." {
             true
         } else {
-            self.children
-                .iter()
-                .any(|(child, _)| child == &Str256::from(name))
+            self.children.iter().any(|(child, _)| child == name)
         }
     }
 
@@ -245,16 +247,16 @@ impl DirEntry {
         } else {
             self.children
                 .idxes_and_items()
-                .find(|(_, (child, _))| child == &Str256::from(name))
+                .find(|(_, (child, _))| child == name)
                 .map(|(idx, (_, inode))| (idx + 2, inode.clone()))
         }
     }
 
     fn append_entry(&mut self, name: &str, inode: Arc<RamInode>) -> usize {
-        self.children.put((Str256::from(name), inode))
+        self.children.put((String::from(name), inode))
     }
 
-    fn remove_entry(&mut self, idx: usize) -> Option<(Str256, Arc<RamInode>)> {
+    fn remove_entry(&mut self, idx: usize) -> Option<(String, Arc<RamInode>)> {
         assert!(idx >= 2);
         self.children.remove(idx - 2)
     }
@@ -262,8 +264,8 @@ impl DirEntry {
     fn substitute_entry(
         &mut self,
         idx: usize,
-        new_entry: (Str256, Arc<RamInode>),
-    ) -> Option<(Str256, Arc<RamInode>)> {
+        new_entry: (String, Arc<RamInode>),
+    ) -> Option<(String, Arc<RamInode>)> {
         assert!(idx >= 2);
         self.children.put_at(idx - 2, new_entry)
     }
@@ -322,36 +324,6 @@ impl DirEntry {
     }
 }
 
-#[repr(C)]
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct Str256([u8; 256]);
-
-impl AsRef<str> for Str256 {
-    fn as_ref(&self) -> &str {
-        let len = self.0.iter().enumerate().find(|(_, &b)| b == 0).unwrap().0;
-        str::from_utf8(&self.0[0..len]).unwrap()
-    }
-}
-
-impl<'a> From<&'a str> for Str256 {
-    fn from(s: &'a str) -> Self {
-        let mut inner = [0u8; 256];
-        let len = if s.len() > NAME_MAX {
-            NAME_MAX
-        } else {
-            s.len()
-        };
-        inner[0..len].copy_from_slice(&s.as_bytes()[0..len]);
-        Str256(inner)
-    }
-}
-
-impl core::fmt::Debug for Str256 {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "{}", self.as_ref())
-    }
-}
-
 impl RamInode {
     fn new_dir(fs: &Arc<RamFS>, mode: InodeMode, parent: &Weak<Self>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| {
@@ -371,7 +343,12 @@ impl RamInode {
 
     fn new_file(fs: &Arc<RamFS>, mode: InodeMode) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| {
-            let inode = RamInode(RwLock::new(Inode_::new_file(fs.alloc_id(), mode, &fs.sb())));
+            let inode = RamInode(RwLock::new(Inode_::new_file(
+                fs.alloc_id(),
+                mode,
+                &fs.sb(),
+                weak_self.clone(),
+            )));
             inode.0.write().fs = Arc::downgrade(fs);
             inode.0.write().this = weak_self.clone();
             inode
@@ -430,18 +407,66 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn page_cache(&self) -> Option<Vmo<Full>> {
+        self.0
+            .read()
+            .inner
+            .as_file()
+            .map(|page_cache| page_cache.pages().dup().unwrap())
+    }
+
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         if let Some(device) = self.0.read().inner.as_device() {
             return device.read(buf);
         }
-        return_errno_with_message!(Errno::EOPNOTSUPP, "direct read is not supported");
+
+        let self_inode = self.0.read();
+        if let Some(page_cache) = self_inode.inner.as_file() {
+            let (offset, read_len) = {
+                let file_len = self_inode.metadata.size;
+                let start = file_len.min(offset);
+                let end = file_len.min(offset + buf.len());
+                (start, end - start)
+            };
+            page_cache
+                .pages()
+                .read_bytes(offset, &mut buf[..read_len])?;
+            return Ok(read_len);
+        }
+
+        return_errno_with_message!(Errno::EINVAL, "direct read is not supported");
     }
 
-    fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.read_at(offset, buf)
+    }
+
+    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         if let Some(device) = self.0.read().inner.as_device() {
             return device.write(buf);
         }
-        return_errno_with_message!(Errno::EOPNOTSUPP, "direct write is not supported");
+
+        let self_inode = self.0.read();
+        if let Some(page_cache) = self_inode.inner.as_file() {
+            let file_len = self_inode.metadata.size;
+            let new_len = offset + buf.len();
+            let should_expand_len = new_len > file_len;
+            if should_expand_len {
+                page_cache.pages().resize(new_len)?;
+            }
+            page_cache.pages().write_bytes(offset, buf)?;
+            if should_expand_len {
+                drop(self_inode);
+                self.resize(new_len);
+            }
+            return Ok(buf.len());
+        }
+
+        return_errno_with_message!(Errno::EINVAL, "write is not supported");
+    }
+
+    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        self.write_at(offset, buf)
     }
 
     fn len(&self) -> usize {
@@ -685,7 +710,7 @@ impl Inode for RamInode {
             let (idx, inode) = self_dir
                 .get_entry(old_name)
                 .ok_or(Error::new(Errno::ENOENT))?;
-            self_dir.substitute_entry(idx, (Str256::from(new_name), inode));
+            self_dir.substitute_entry(idx, (String::from(new_name), inode));
         } else {
             let (mut self_inode, mut target_inode) = write_lock_two_inodes(self, target);
             let self_dir = self_inode.inner.as_direntry_mut().unwrap();
@@ -734,7 +759,7 @@ impl Inode for RamInode {
         }
         let mut self_inode = self.0.write();
         let link = self_inode.inner.as_symlink_mut().unwrap();
-        *link = Str256::from(target);
+        *link = String::from(target);
         // Symlink's metadata.blocks should be 0, so just set the size.
         self_inode.metadata.size = target.len();
         Ok(())

@@ -69,7 +69,15 @@ impl Inode for PtyMasterInode {
         self.0.read(buf)
     }
 
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.0.read(buf)
+    }
+
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         self.0.write(buf)
     }
 

@@ -74,7 +74,15 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         Ok(len)
     }
 
+    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.read_at(offset, buf)
+    }
+
     fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+        Err(Error::new(Errno::EPERM))
+    }
+
+    fn write_direct_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 

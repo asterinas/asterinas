@@ -94,7 +94,7 @@ impl FileSystem for DevPts {
     }
 
     fn flags(&self) -> FsFlags {
-        FsFlags::NO_PAGECACHE
+        FsFlags::empty()
     }
 }
 

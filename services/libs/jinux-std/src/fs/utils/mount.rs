@@ -25,22 +25,22 @@ impl MountNode {
     ///
     /// It is allowed to create a mount node even if the fs has been provided to another
     /// mount node. It is the fs's responsibility to ensure the data consistency.
-    pub fn new_root(fs: Arc<dyn FileSystem>) -> Result<Arc<Self>> {
+    pub fn new_root(fs: Arc<dyn FileSystem>) -> Arc<Self> {
         Self::new(fs, None)
     }
 
     /// The internal constructor.
     ///
     /// Root mount node has no mountpoint which other mount nodes must have mountpoint.
-    fn new(fs: Arc<dyn FileSystem>, mountpoint: Option<Arc<Dentry>>) -> Result<Arc<Self>> {
-        let vnode = Vnode::new(fs.root_inode())?;
-        Ok(Arc::new_cyclic(|weak_self| Self {
+    fn new(fs: Arc<dyn FileSystem>, mountpoint: Option<Arc<Dentry>>) -> Arc<Self> {
+        let vnode = Vnode::new(fs.root_inode());
+        Arc::new_cyclic(|weak_self| Self {
             root_dentry: Dentry::new_root(vnode, weak_self.clone()),
             mountpoint_dentry: mountpoint,
             children: Mutex::new(BTreeMap::new()),
             fs,
             this: weak_self.clone(),
-        }))
+        })
     }
 
     /// Mount an fs on the mountpoint, it will create a new child mount node.
@@ -63,7 +63,7 @@ impl MountNode {
         }
 
         let key = mountpoint.key();
-        let child_mount = Self::new(fs, Some(mountpoint.clone()))?;
+        let child_mount = Self::new(fs, Some(mountpoint.clone()));
         self.children.lock().insert(key, child_mount.clone());
         Ok(child_mount)
     }
