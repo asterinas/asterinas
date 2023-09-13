@@ -1,0 +1,24 @@
+[package]
+name = "ext2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = [ "spin" ]
+jinux = [ "jinux-frame" ]
+
+[dependencies]
+log = "0.4"
+bitflags = "1.3"
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }
+int-to-c-enum = { path = "../../libs/int-to-c-enum" }
+bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
+block-io = { path = "../../libs/block-io" } 
+mem-storage = { path = "../../../framework/libs/mem-storage" }
+jinux-frame = { path = "../../../framework/jinux-frame", optional = true }
+spin = { version = "0.9", optional = true }
+
+[dev-dependencies]
+lazy_static = "1.4.0"

@@ -80,14 +80,6 @@ impl Inode for Ptmx {
 
     fn set_mode(&self, mode: InodeMode) {}
 
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Ok(())
-    }
-
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Ok(())
-    }
-
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         Ok(0)
     }

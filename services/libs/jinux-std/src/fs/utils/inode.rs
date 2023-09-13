@@ -1,5 +1,4 @@
 use core::time::Duration;
-use jinux_frame::vm::VmFrame;
 use jinux_rights::Full;
 
 use super::{DirentVisitor, FileSystem, IoEvents, IoctlCmd, Poller, SuperBlock};
@@ -241,14 +240,6 @@ pub trait Inode: Any + Sync + Send {
     fn set_mtime(&self, time: Duration);
 
     fn set_mode(&self, mode: InodeMode);
-
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
-    }
 
     fn page_cache(&self) -> Option<Vmo<Full>> {
         None

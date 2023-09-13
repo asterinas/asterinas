@@ -57,14 +57,6 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         self.info.set_mode(mode)
     }
 
-    fn read_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
-    fn write_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
-    }
-
     fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }

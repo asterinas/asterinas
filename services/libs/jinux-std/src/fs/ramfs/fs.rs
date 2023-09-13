@@ -396,17 +396,23 @@ impl RamInode {
     }
 }
 
+impl ext2::traits::PageIoObj for RamInode {
+    fn read_page(&self, _idx: usize, _page: &dyn MemStorage) -> ext2::error::Result<()> {
+        // do nothing
+        Ok(())
+    }
+
+    fn write_page(&self, _idx: usize, _page: &dyn MemStorage) -> ext2::error::Result<()> {
+        // do nothing
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        Inode::len(self)
+    }
+}
+
 impl Inode for RamInode {
-    fn read_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        // do nothing
-        Ok(())
-    }
-
-    fn write_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        // do nothing
-        Ok(())
-    }
-
     fn page_cache(&self) -> Option<Vmo<Full>> {
         self.0
             .read()

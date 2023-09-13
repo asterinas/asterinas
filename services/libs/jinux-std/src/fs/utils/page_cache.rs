@@ -1,10 +1,10 @@
-use super::Inode;
 use crate::prelude::*;
 use crate::vm::vmo::{Pager, Vmo, VmoFlags, VmoOptions};
-use jinux_rights::Full;
 
 use core::ops::Range;
+use ext2::traits::{PageCache as PageCacheTrait, PageIoObj};
 use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};
+use jinux_rights::Full;
 use lru::LruCache;
 
 pub struct PageCache {
@@ -13,7 +13,7 @@ pub struct PageCache {
 }
 
 impl PageCache {
-    pub fn new(len: usize, backed_inode: Weak<dyn Inode>) -> Result<Self> {
+    pub fn new(len: usize, backed_inode: Weak<dyn PageIoObj>) -> Result<Self> {
         let manager = Arc::new(PageCacheManager::new(backed_inode));
         let pages = VmoOptions::<Full>::new(len)
             .flags(VmoFlags::RESIZABLE)
@@ -43,16 +43,36 @@ impl Debug for PageCache {
     }
 }
 
+impl PageCacheTrait for PageCache {
+    fn new(size: usize, inode: Weak<dyn PageIoObj>) -> Box<dyn PageCacheTrait> {
+        Box::new(PageCache::new(size, inode).unwrap())
+    }
+
+    fn resize(&self, new_size: usize) -> ext2::error::Result<()> {
+        self.pages.resize(new_size).unwrap();
+        Ok(())
+    }
+
+    fn pages(&self) -> Box<dyn MemStorage> {
+        Box::new(self.pages.dup().unwrap())
+    }
+
+    fn evict_range(&self, range: Range<usize>) -> ext2::error::Result<()> {
+        self.evict_range(range);
+        Ok(())
+    }
+}
+
 struct PageCacheManager {
     pages: Mutex<LruCache<usize, Page>>,
-    backed_inode: Weak<dyn Inode>,
+    backed_inode: Weak<dyn PageIoObj>,
 }
 
 impl PageCacheManager {
-    pub fn new(inode: Weak<dyn Inode>) -> Self {
+    pub fn new(backed_inode: Weak<dyn PageIoObj>) -> Self {
         Self {
             pages: Mutex::new(LruCache::unbounded()),
-            backed_inode: inode,
+            backed_inode,
         }
     }
 }
@@ -72,7 +92,7 @@ impl Pager for PageCacheManager {
         let frame = if let Some(page) = pages.get(&page_idx) {
             page.frame()
         } else {
-            let page = if offset < self.backed_inode.upgrade().unwrap().metadata().size {
+            let page = if offset < self.backed_inode.upgrade().unwrap().len() {
                 let mut page = Page::alloc_zero()?;
                 self.backed_inode
                     .upgrade()

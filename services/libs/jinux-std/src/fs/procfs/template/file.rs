@@ -57,14 +57,6 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         self.info.set_mode(mode)
     }
 
-    fn read_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        unreachable!()
-    }
-
-    fn write_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        unreachable!()
-    }
-
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let data = self.inner.data()?;
         let start = data.len().min(offset);

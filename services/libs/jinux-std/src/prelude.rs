@@ -22,6 +22,7 @@ pub(crate) use jinux_frame::sync::{Mutex, MutexGuard, RwLock, SpinLock, SpinLock
 pub(crate) use jinux_frame::vm::Vaddr;
 pub(crate) use jinux_frame::{print, println};
 pub(crate) use log::{debug, error, info, trace, warn};
+pub(crate) use mem_storage::MemStorage;
 pub(crate) use pod::Pod;
 
 /// return current process

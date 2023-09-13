@@ -5,6 +5,7 @@ use core::ops::Range;
 use align_ext::AlignExt;
 use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec, VmIo};
 use jinux_rights::Rights;
+use mem_storage::{MemStorage, MemStorageIterator};
 
 use crate::prelude::*;
 
@@ -344,6 +345,37 @@ impl Vmo_ {
 
     pub fn flags(&self) -> VmoFlags {
         self.flags
+    }
+}
+
+impl<R: Send + Sync> MemStorage for Vmo<R> {
+    fn mem_areas_slice(
+        &self,
+        start: usize,
+        len: usize,
+        is_writable: bool,
+    ) -> mem_storage::Result<MemStorageIterator> {
+        let range = start..(start + len);
+        if is_writable {
+            self.check_rights(Rights::WRITE)
+                .map_err(|_| mem_storage::Error::AccessDenied)?;
+        } else {
+            self.check_rights(Rights::READ)
+                .map_err(|_| mem_storage::Error::AccessDenied)?;
+        }
+        let frames = self
+            .0
+            .ensure_all_pages_exist(&range, is_writable)
+            .map_err(|_| mem_storage::Error::NoMemory)?;
+        frames.mem_areas(is_writable)
+    }
+
+    fn mem_areas(&self, is_writable: bool) -> mem_storage::Result<MemStorageIterator> {
+        self.mem_areas_slice(0, self.size(), is_writable)
+    }
+
+    fn total_len(&self) -> usize {
+        self.size()
     }
 }
 

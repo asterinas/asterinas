@@ -134,6 +134,10 @@ impl Vnode {
         self.inode.readdir_at(offset, visitor)
     }
 
+    fn sync(&self) -> Result<()> {
+        self.inode.sync()
+    }
+
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.inode.poll(mask, poller)
     }
@@ -198,6 +202,14 @@ impl Vnode {
         VnodeWriter {
             inner: self,
             offset: from_offset,
+        }
+    }
+}
+
+impl Drop for Vnode {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.inode) == 1 {
+            self.inode.sync().unwrap();
         }
     }
 }

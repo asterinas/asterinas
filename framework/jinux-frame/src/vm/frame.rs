@@ -9,6 +9,7 @@ use crate::{arch::iommu, config::PAGE_SIZE, prelude::*, Error};
 use super::{frame_allocator, HasPaddr};
 use super::{Paddr, VmIo};
 
+use mem_storage::{MemArea, MemStorage, MemStorageIterator};
 use pod::Pod;
 
 /// A collection of page frames (physical memory pages).
@@ -200,6 +201,16 @@ impl VmIo for VmFrameVec {
             }
         }
         Ok(())
+    }
+}
+
+impl MemStorage for VmFrameVec {
+    fn mem_areas(&self, is_writable: bool) -> mem_storage::Result<MemStorageIterator> {
+        self.0.mem_areas(is_writable)
+    }
+
+    fn total_len(&self) -> usize {
+        self.0.total_len()
     }
 }
 
@@ -426,6 +437,21 @@ impl VmIo for VmFrame {
         let paddr = self.start_paddr() + offset;
         unsafe { core::ptr::write(super::paddr_to_vaddr(paddr) as *mut T, *new_val) };
         Ok(())
+    }
+}
+
+impl MemStorage for VmFrame {
+    fn mem_areas(&self, is_writable: bool) -> mem_storage::Result<MemStorageIterator> {
+        let mem_area = if is_writable {
+            unsafe { MemArea::from_raw_parts_mut(self.as_mut_ptr(), PAGE_SIZE) }
+        } else {
+            unsafe { MemArea::from_raw_parts(self.as_ptr(), PAGE_SIZE) }
+        };
+        Ok(MemStorageIterator::from_vec(vec![mem_area]))
+    }
+
+    fn total_len(&self) -> usize {
+        PAGE_SIZE
     }
 }
 

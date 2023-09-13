@@ -1,6 +1,7 @@
 pub mod device;
 pub mod devpts;
 pub mod epoll;
+pub mod ext2;
 pub mod file_handle;
 pub mod file_table;
 pub mod fs_resolver;
