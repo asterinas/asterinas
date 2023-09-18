@@ -35,6 +35,7 @@ members = [
     "services/libs/jinux-util",
     "services/libs/cpio-decoder",
     "services/libs/int-to-c-enum",
+    "services/libs/block-io",
 ]
 
 exclude = ["services/libs/comp-sys/controlled", "services/libs/comp-sys/cargo-component"]
