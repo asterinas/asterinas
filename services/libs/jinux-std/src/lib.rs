@@ -18,6 +18,7 @@
 #![feature(trait_alias)]
 #![feature(register_tool)]
 #![feature(trait_upcasting)]
+#![feature(int_roundings)]
 #![register_tool(component_access_control)]
 
 use crate::{

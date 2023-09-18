@@ -61,6 +61,7 @@ log = "0.4"
 getrandom = { version = "0.2.10", default-features = false, features = [
     "rdrand",
 ] }
+block-io = { path = "../block-io" }
 
 [dependencies.lazy_static]
 version = "1.0"

@@ -36,6 +36,7 @@ members = [
     "services/libs/cpio-decoder",
     "services/libs/int-to-c-enum",
     "services/libs/block-io",
+    "services/libs/ext2",
 ]
 
 exclude = ["services/libs/comp-sys/controlled", "services/libs/comp-sys/cargo-component"]

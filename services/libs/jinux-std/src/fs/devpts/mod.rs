@@ -7,7 +7,7 @@ use crate::prelude::*;
 
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
-use jinux_util::{id_allocator::IdAlloc, slot_vec::SlotVec};
+use jinux_util::{bitmap::BitMap as IdAlloc, slot_vec::SlotVec};
 
 use self::master::PtyMasterInode;
 use self::ptmx::Ptmx;

@@ -26,11 +26,16 @@ impl PageCache {
         &self.pages
     }
 
+    pub fn resize(&self, new_size: usize) -> Result<()> {
+        self.pages.resize(new_size)
+    }
+
     /// Evict the data within a specified range from the page cache and persist
     /// them to the disk.
-    pub fn evict_range(&self, range: Range<usize>) {
+    pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         // TODO: Implement this method.
         warn!("pagecache: evict_range is not implemented");
+        Ok(())
     }
 }
 
