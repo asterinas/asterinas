@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use core::ops::Range;
-use jinux_frame::vm::VmIo;
+use jinux_frame::GenericIo;
 use jinux_rights_proc::require;
 
 use jinux_rights::{Dup, Rights, TRightSet, TRights, Write};
@@ -144,7 +144,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     }
 }
 
-impl<R: TRights> VmIo for Vmo<TRightSet<R>> {
+impl<R: TRights> GenericIo for Vmo<TRightSet<R>> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
         self.0.read_bytes(offset, buf)?;

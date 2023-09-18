@@ -37,6 +37,7 @@ pub mod vm;
 pub use self::cpu::CpuLocal;
 pub use self::error::Error;
 pub use self::prelude::Result;
+pub use self::util::GenericIo;
 use alloc::vec::Vec;
 use arch::irq::{IrqCallbackHandle, IrqLine};
 use core::{mem, panic::PanicInfo};

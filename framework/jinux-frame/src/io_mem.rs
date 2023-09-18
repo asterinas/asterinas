@@ -2,7 +2,8 @@ use core::{mem::size_of, ops::Range};
 use pod::Pod;
 
 use crate::{
-    vm::{paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
+    util::GenericIo,
+    vm::{paddr_to_vaddr, HasPaddr, Paddr, Vaddr},
     Error, Result,
 };
 
@@ -12,7 +13,7 @@ pub struct IoMem {
     limit: usize,
 }
 
-impl VmIo for IoMem {
+impl GenericIo for IoMem {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> crate::Result<()> {
         self.check_range(offset, buf.len())?;
         unsafe {

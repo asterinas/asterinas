@@ -1,4 +1,4 @@
-use jinux_frame::{cpu::*, vm::VmIo};
+use jinux_frame::{cpu::*, GenericIo};
 
 use crate::vm::page_fault_handler::PageFaultHandler;
 use crate::{prelude::*, process::signal::signals::fault::FaultSignal};

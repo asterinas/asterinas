@@ -1,4 +1,4 @@
-use jinux_frame::vm::VmIo;
+use jinux_frame::GenericIo;
 
 use crate::process::posix_thread::PosixThreadExt;
 use crate::process::signal::constants::{SIGKILL, SIGSTOP};

@@ -139,7 +139,7 @@ mod test {
     use crate::vm::perms::VmPerms;
     use crate::vm::vmo::VmoRightsOp;
     use crate::vm::{vmar::ROOT_VMAR_HIGHEST_ADDR, vmo::VmoOptions};
-    use jinux_frame::vm::VmIo;
+    use jinux_frame::GenericIo;
     use jinux_rights::Full;
 
     #[test]

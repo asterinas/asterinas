@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use jinux_frame::vm::VmIo;
+use jinux_frame::GenericIo;
 pub mod net;
 
 /// copy bytes from user space of current process. The bytes len is the len of dest.

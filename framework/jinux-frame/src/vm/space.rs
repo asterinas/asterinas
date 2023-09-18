@@ -1,6 +1,7 @@
 use crate::arch::mm::PageTableFlags;
 use crate::config::PAGE_SIZE;
 use crate::sync::Mutex;
+use crate::util::GenericIo;
 use bitflags::bitflags;
 use core::ops::Range;
 
@@ -8,8 +9,6 @@ use super::VmFrameVec;
 use super::{is_page_aligned, Vaddr};
 use super::{MapArea, MemorySet};
 use crate::{prelude::*, Error};
-
-use super::VmIo;
 
 /// Virtual memory space.
 ///
@@ -130,7 +129,7 @@ impl Default for VmSpace {
     }
 }
 
-impl VmIo for VmSpace {
+impl GenericIo for VmSpace {
     fn read_bytes(&self, vaddr: usize, buf: &mut [u8]) -> Result<()> {
         self.memory_set.lock().read_bytes(vaddr, buf)
     }

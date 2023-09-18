@@ -1,9 +1,9 @@
 use crate::prelude::*;
-use pod::Pod;
 
 use inherit_methods_macro::inherit_methods;
+use pod::Pod;
 
-/// A trait that enables reading/writing data from/to a VM object,
+/// A trait that enables reading/writing data from/to an object,
 /// e.g., `VmSpace`, `VmFrameVec`, and `VmFrame`.
 ///
 /// # Concurrency
@@ -12,7 +12,7 @@ use inherit_methods_macro::inherit_methods;
 /// threads. In this case, if the results of concurrent reads or writes
 /// desire predictability or atomicity, the users should add extra mechanism
 /// for such properties.
-pub trait VmIo: Send + Sync {
+pub trait GenericIo: Send + Sync {
     /// Read a specified number of bytes at a specified offset into a given buffer.
     ///
     /// # No short reads
@@ -65,10 +65,10 @@ pub trait VmIo: Send + Sync {
     }
 }
 
-macro_rules! impl_vmio_pointer {
+macro_rules! impl_genericio_pointer {
     ($typ:ty,$from:tt) => {
         #[inherit_methods(from = $from)]
-        impl<T: VmIo> VmIo for $typ {
+        impl<T: GenericIo> GenericIo for $typ {
             fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()>;
             fn read_val<F: Pod>(&self, offset: usize) -> Result<F>;
             fn read_slice<F: Pod>(&self, offset: usize, slice: &mut [F]) -> Result<()>;
@@ -79,7 +79,7 @@ macro_rules! impl_vmio_pointer {
     };
 }
 
-impl_vmio_pointer!(&T, "(**self)");
-impl_vmio_pointer!(&mut T, "(**self)");
-impl_vmio_pointer!(Box<T>, "(**self)");
-impl_vmio_pointer!(Arc<T>, "(**self)");
+impl_genericio_pointer!(&T, "(**self)");
+impl_genericio_pointer!(&mut T, "(**self)");
+impl_genericio_pointer!(Box<T>, "(**self)");
+impl_genericio_pointer!(Arc<T>, "(**self)");

@@ -1,7 +1,7 @@
 use core::ops::Range;
 
 use crate::prelude::*;
-use jinux_frame::vm::VmIo;
+use jinux_frame::GenericIo;
 use jinux_rights::{Dup, Read, Rights, TRightSet, TRights};
 use jinux_rights_proc::require;
 
@@ -171,7 +171,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     }
 }
 
-impl<R: TRights> VmIo for Vmar<TRightSet<R>> {
+impl<R: TRights> GenericIo for Vmar<TRightSet<R>> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
         self.0.read(offset, buf)?;

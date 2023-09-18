@@ -4,10 +4,10 @@ use core::{
     ops::{BitAnd, BitOr, Not},
 };
 
-use crate::{arch::iommu, config::PAGE_SIZE, prelude::*, Error};
+use crate::{arch::iommu, config::PAGE_SIZE, prelude::*, util::GenericIo, Error};
 
+use super::Paddr;
 use super::{frame_allocator, HasPaddr};
-use super::{Paddr, VmIo};
 
 use pod::Pod;
 
@@ -155,7 +155,7 @@ impl IntoIterator for VmFrameVec {
     }
 }
 
-impl VmIo for VmFrameVec {
+impl GenericIo for VmFrameVec {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         let mut start = offset;
         let mut remain = buf.len();
@@ -394,7 +394,7 @@ impl VmFrame {
     }
 }
 
-impl VmIo for VmFrame {
+impl GenericIo for VmFrame {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         if offset >= PAGE_SIZE || buf.len() + offset > PAGE_SIZE {
             Err(Error::InvalidArgs)

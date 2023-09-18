@@ -1,5 +1,6 @@
 use core::ops::Range;
-use jinux_frame::vm::{Vaddr, VmIo};
+use jinux_frame::vm::Vaddr;
+use jinux_frame::GenericIo;
 use jinux_rights::Rights;
 
 use crate::prelude::*;
@@ -150,7 +151,7 @@ impl Vmar<Rights> {
     }
 }
 
-impl VmIo for Vmar<Rights> {
+impl GenericIo for Vmar<Rights> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
         self.0.read(offset, buf)?;

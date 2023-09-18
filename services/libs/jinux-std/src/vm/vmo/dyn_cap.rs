@@ -2,7 +2,7 @@ use core::ops::Range;
 
 use crate::prelude::*;
 
-use jinux_frame::vm::VmIo;
+use jinux_frame::GenericIo;
 
 use jinux_rights::{Rights, TRights};
 
@@ -149,7 +149,7 @@ impl Vmo<Rights> {
     }
 }
 
-impl VmIo for Vmo<Rights> {
+impl GenericIo for Vmo<Rights> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
         self.check_rights(Rights::READ)?;
         self.0.read_bytes(offset, buf)?;

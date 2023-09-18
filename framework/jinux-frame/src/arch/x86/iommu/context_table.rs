@@ -7,9 +7,10 @@ use pod::Pod;
 use crate::{
     bus::pci::PciDeviceLocation,
     config::PAGE_SIZE,
+    util::GenericIo,
     vm::{
         page_table::{PageTableConfig, PageTableError},
-        Paddr, PageTable, Vaddr, VmAllocOptions, VmFrame, VmFrameVec, VmIo,
+        Paddr, PageTable, Vaddr, VmAllocOptions, VmFrame, VmFrameVec,
     },
 };
 

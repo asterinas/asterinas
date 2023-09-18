@@ -3,7 +3,8 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec, VmIo};
+use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};
+use jinux_frame::GenericIo;
 use jinux_rights::Rights;
 
 use crate::prelude::*;

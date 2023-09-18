@@ -1,4 +1,4 @@
-use jinux_frame::{cpu::UserContext, user::UserSpace, vm::VmIo};
+use jinux_frame::{cpu::UserContext, user::UserSpace, GenericIo};
 
 use jinux_rights::Full;
 

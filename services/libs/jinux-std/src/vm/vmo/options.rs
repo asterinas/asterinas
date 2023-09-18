@@ -519,7 +519,7 @@ impl VmoChildType for VmoCowChild {}
 #[cfg(test)]
 mod test {
     use super::*;
-    use jinux_frame::vm::VmIo;
+    use jinux_frame::GenericIo;
     use jinux_rights::Full;
 
     #[test]

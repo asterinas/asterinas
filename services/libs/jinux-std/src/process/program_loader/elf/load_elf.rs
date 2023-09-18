@@ -14,7 +14,8 @@ use crate::{
 };
 use align_ext::AlignExt;
 use jinux_frame::task::Task;
-use jinux_frame::vm::{VmIo, VmPerm};
+use jinux_frame::vm::VmPerm;
+use jinux_frame::GenericIo;
 use jinux_rights::{Full, Rights};
 use xmas_elf::program::{self, ProgramHeader64};
 

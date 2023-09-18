@@ -1,7 +1,8 @@
 use core::fmt::Debug;
 use core::marker::PhantomData;
+use jinux_frame::vm::HasPaddr;
 use jinux_frame::vm::Paddr;
-use jinux_frame::vm::{HasPaddr, VmIo};
+use jinux_frame::GenericIo;
 use jinux_frame::Result;
 use jinux_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use jinux_rights_proc::require;
@@ -22,7 +23,7 @@ pub use typeflags_util::SetContain;
 /// 1. A safe pointer can only refer to a value of a POD type `T: Pod`,
 /// while raw pointers can do to a value of any type `T`.
 /// 2. A safe pointer can only refer to an address within a virtual memory object
-/// of type `M: VmIo` (e.g., VMAR and VMO), while raw pointers can do to
+/// of type `M: GenericIo` (e.g., VMAR and VMO), while raw pointers can do to
 /// an address within any virtual memory space.
 /// 3. A safe pointer only allows one to copy values to/from the target address,
 /// while a raw pointer allows one to borrow an immutable or mutable reference
@@ -50,10 +51,10 @@ pub use typeflags_util::SetContain;
 /// };
 /// ```
 ///
-/// The generic parameter `M` of `SafePtr<_, M, _>` must implement the `VmIo`
-/// trait. The most important `VmIo` types are `Vmar`, `Vmo`, `IoMem`, and
-/// `VmFrame`. The blanket implementations of `VmIo` also include pointer-like
-/// types that refer to a `VmIo` type. Some examples are `&Vmo`, `Box<Vmar>`,
+/// The generic parameter `M` of `SafePtr<_, M, _>` must implement the `GenericIo`
+/// trait. The most important `GenericIo` types are `Vmar`, `Vmo`, `IoMem`, and
+/// `VmFrame`. The blanket implementations of `GenericIo` also include pointer-like
+/// types that refer to a `GenericIo` type. Some examples are `&Vmo`, `Box<Vmar>`,
 /// and `Arc<IoMem>`.
 ///
 /// The safe pointer itself does not and cannot guarantee that its address is valid.
@@ -121,7 +122,7 @@ pub use typeflags_util::SetContain;
 ///     second: u32,
 /// }
 ///
-/// fn read_second_field<M: VmIo>(ptr: &SafePtr<Foo, M, _>) -> u32 {
+/// fn read_second_field<M: GenericIo>(ptr: &SafePtr<Foo, M, _>) -> u32 {
 ///     let field_ptr = ptr
 ///         .borrow_vm()
 ///         .byte_add(offset_of!(Foo, second) as usize)
@@ -136,7 +137,7 @@ pub use typeflags_util::SetContain;
 /// that of its containing struct.
 ///
 /// ```
-/// fn read_second_field<M: VmIo>(ptr: &SafePtr<Foo, M, _>) -> u32 {
+/// fn read_second_field<M: GenericIo>(ptr: &SafePtr<Foo, M, _>) -> u32 {
 ///     let field_ptr = field_ptr!(ptr, Foo, second);
 ///     field_ptr.read().unwrap()
 /// }
@@ -153,7 +154,7 @@ pub struct SafePtr<T, M, R = Full> {
     phantom: PhantomData<T>,
 }
 
-impl<T: Pod, M: VmIo> SafePtr<T, M> {
+impl<T: Pod, M: GenericIo> SafePtr<T, M> {
     /// Create a new instance.
     ///
     /// # Access rights
@@ -170,13 +171,13 @@ impl<T: Pod, M: VmIo> SafePtr<T, M> {
     }
 }
 
-impl<T: Pod, M: VmIo + HasPaddr> SafePtr<T, M> {
+impl<T: Pod, M: GenericIo + HasPaddr> SafePtr<T, M> {
     pub fn paddr(&self) -> Paddr {
         self.vm_obj.paddr() + self.offset
     }
 }
 
-impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
+impl<T: Pod, M: GenericIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
     // =============== Read and write methods ==============
 
     /// Read the value from the pointer.
@@ -359,7 +360,7 @@ impl<T, M: Debug, R> Debug for SafePtr<T, M, R> {
 macro_rules! field_ptr {
     ($ptr:expr, $type:ty, $($field:tt)+) => {{
         use jinux_frame::offset_of;
-        use jinux_frame::vm::VmIo;
+        use jinux_frame::GenericIo;
         use jinux_rights::Dup;
         use jinux_rights::TRightSet;
         use jinux_rights::TRights;
@@ -374,7 +375,7 @@ macro_rules! field_ptr {
         ) -> SafePtr<U, &M, TRightSet<R>>
         where
             T: Pod,
-            M: VmIo,
+            M: GenericIo,
             R: TRights,
             U: Pod,
         {

@@ -9,7 +9,6 @@ pub type Paddr = usize;
 mod frame;
 mod frame_allocator;
 pub(crate) mod heap_allocator;
-mod io;
 mod memory_set;
 mod offset;
 pub(crate) mod page_table;
@@ -18,7 +17,6 @@ mod space;
 use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
 
 pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
-pub use self::io::VmIo;
 pub use self::space::{VmMapOptions, VmPerm, VmSpace};
 
 pub use self::{

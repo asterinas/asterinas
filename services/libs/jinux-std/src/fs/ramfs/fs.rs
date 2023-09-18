@@ -2,7 +2,8 @@ use alloc::str;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 use jinux_frame::sync::{RwLock, RwLockWriteGuard};
-use jinux_frame::vm::{VmFrame, VmIo};
+use jinux_frame::vm::VmFrame;
+use jinux_frame::GenericIo;
 use jinux_rights::Full;
 use jinux_util::slot_vec::SlotVec;
 

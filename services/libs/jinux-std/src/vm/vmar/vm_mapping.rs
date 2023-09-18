@@ -1,7 +1,8 @@
 use crate::prelude::*;
 use core::ops::Range;
 use jinux_frame::sync::Mutex;
-use jinux_frame::vm::{VmFrame, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace};
+use jinux_frame::vm::{VmFrame, VmFrameVec, VmMapOptions, VmPerm, VmSpace};
+use jinux_frame::GenericIo;
 
 use crate::vm::{
     vmo::get_page_idx_range,
