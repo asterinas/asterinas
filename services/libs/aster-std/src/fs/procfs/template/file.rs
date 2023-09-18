@@ -1,4 +1,3 @@
-use aster_frame::vm::VmFrame;
 use core::time::Duration;
 
 use crate::fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata};
@@ -31,10 +30,16 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         self.info.size()
     }
 
-    fn resize(&self, _new_size: usize) {}
+    fn resize(&self, _new_size: usize) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
 
     fn metadata(&self) -> Metadata {
         self.info.metadata()
+    }
+
+    fn ino(&self) -> u64 {
+        self.info.ino()
     }
 
     fn type_(&self) -> InodeType {
@@ -63,14 +68,6 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
 
     fn set_mtime(&self, time: Duration) {
         self.info.set_mtime(time)
-    }
-
-    fn read_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        unreachable!()
-    }
-
-    fn write_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
-        unreachable!()
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {

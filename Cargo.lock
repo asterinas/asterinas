@@ -121,9 +121,12 @@ dependencies = [
  "aster-util",
  "bitflags 1.3.2",
  "component",
+ "int-to-c-enum",
  "lazy_static",
  "log",
+ "pod",
  "spin 0.9.8",
+ "static_assertions",
 ]
 
 [[package]]
@@ -270,10 +273,12 @@ dependencies = [
  "aster-util",
  "aster-virtio",
  "bitflags 1.3.2",
+ "bitvec",
  "controlled",
  "core2",
  "cpio-decoder",
  "getrandom",
+ "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
  "keyable-arc",
@@ -287,6 +292,7 @@ dependencies = [
  "ringbuf",
  "smoltcp",
  "spin 0.9.8",
+ "static_assertions",
  "tdx-guest",
  "time",
  "typeflags",

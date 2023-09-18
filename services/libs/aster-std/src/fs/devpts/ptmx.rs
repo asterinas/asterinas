@@ -65,10 +65,16 @@ impl Inode for Ptmx {
         self.metadata.size
     }
 
-    fn resize(&self, new_size: usize) {}
+    fn resize(&self, new_size: usize) -> Result<()> {
+        Ok(())
+    }
 
     fn metadata(&self) -> Metadata {
         self.metadata.clone()
+    }
+
+    fn ino(&self) -> u64 {
+        self.metadata.ino as _
     }
 
     fn type_(&self) -> InodeType {
@@ -92,14 +98,6 @@ impl Inode for Ptmx {
     }
 
     fn set_mtime(&self, time: Duration) {}
-
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Ok(())
-    }
-
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Ok(())
-    }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         Ok(0)

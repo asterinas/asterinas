@@ -1,0 +1,43 @@
+use crate::fs::ext2::{utils::Dirty, Ext2, SuperBlock as Ext2SuperBlock, MAGIC_NUM as EXT2_MAGIC};
+use crate::fs::utils::{FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX};
+use crate::prelude::*;
+
+use aster_frame::sync::RwMutexReadGuard;
+
+impl FileSystem for Ext2 {
+    fn sync(&self) -> Result<()> {
+        self.sync_all_inodes()?;
+        self.sync_metadata()?;
+        Ok(())
+    }
+
+    fn root_inode(&self) -> Arc<dyn Inode> {
+        self.root_inode().unwrap()
+    }
+
+    fn sb(&self) -> SuperBlock {
+        SuperBlock::from(self.super_block())
+    }
+
+    fn flags(&self) -> FsFlags {
+        FsFlags::empty()
+    }
+}
+
+impl From<RwMutexReadGuard<'_, Dirty<Ext2SuperBlock>>> for SuperBlock {
+    fn from(ext2_sb: RwMutexReadGuard<Dirty<Ext2SuperBlock>>) -> Self {
+        Self {
+            magic: EXT2_MAGIC as _,
+            bsize: ext2_sb.block_size(),
+            blocks: ext2_sb.total_blocks() as _,
+            bfree: ext2_sb.free_blocks() as _,
+            bavail: ext2_sb.free_blocks() as _,
+            files: ext2_sb.total_inodes() as _,
+            ffree: ext2_sb.free_inodes() as _,
+            fsid: 0, // TODO
+            namelen: NAME_MAX,
+            frsize: ext2_sb.fragment_size(),
+            flags: 0, // TODO
+        }
+    }
+}

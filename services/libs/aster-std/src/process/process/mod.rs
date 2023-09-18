@@ -64,7 +64,7 @@ pub struct Process {
     /// File table
     file_table: Arc<Mutex<FileTable>>,
     /// FsResolver
-    fs: Arc<RwLock<FsResolver>>,
+    fs: Arc<RwMutex<FsResolver>>,
     /// umask
     umask: Arc<RwLock<FileCreationMask>>,
     /// resource limits
@@ -84,7 +84,7 @@ impl Process {
         executable_path: String,
         process_vm: ProcessVm,
         file_table: Arc<Mutex<FileTable>>,
-        fs: Arc<RwLock<FsResolver>>,
+        fs: Arc<RwMutex<FsResolver>>,
         umask: Arc<RwLock<FileCreationMask>>,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
         resource_limits: ResourceLimits,
@@ -496,7 +496,7 @@ impl Process {
         &self.file_table
     }
 
-    pub fn fs(&self) -> &Arc<RwLock<FsResolver>> {
+    pub fn fs(&self) -> &Arc<RwMutex<FsResolver>> {
         &self.fs
     }
 
@@ -595,7 +595,7 @@ mod test {
             String::new(),
             ProcessVm::alloc(),
             Arc::new(Mutex::new(FileTable::new())),
-            Arc::new(RwLock::new(FsResolver::new())),
+            Arc::new(RwMutex::new(FsResolver::new())),
             Arc::new(RwLock::new(FileCreationMask::default())),
             Arc::new(Mutex::new(SigDispositions::default())),
             ResourceLimits::default(),

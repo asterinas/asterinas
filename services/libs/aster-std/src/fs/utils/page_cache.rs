@@ -1,4 +1,3 @@
-use super::Inode;
 use crate::prelude::*;
 use crate::vm::vmo::{get_page_idx_range, Pager, Vmo, VmoFlags, VmoOptions};
 use aster_rights::Full;
@@ -13,9 +12,9 @@ pub struct PageCache {
 }
 
 impl PageCache {
-    /// Creates an empty size page cache associated with a new inode.
-    pub fn new(backed_inode: Weak<dyn Inode>) -> Result<Self> {
-        let manager = Arc::new(PageCacheManager::new(backed_inode));
+    /// Creates an empty size page cache associated with a new backend.
+    pub fn new(backend: Weak<dyn PageCacheBackend>) -> Result<Self> {
+        let manager = Arc::new(PageCacheManager::new(backend));
         let pages = VmoOptions::<Full>::new(0)
             .flags(VmoFlags::RESIZABLE)
             .pager(manager.clone())
@@ -23,12 +22,12 @@ impl PageCache {
         Ok(Self { pages, manager })
     }
 
-    /// Creates a page cache associated with an existing inode.
+    /// Creates a page cache associated with an existing backend.
     ///
-    /// The `capacity` is the initial cache size required by the inode.
-    /// It is usually used the same size as the inode.
-    pub fn with_capacity(capacity: usize, backed_inode: Weak<dyn Inode>) -> Result<Self> {
-        let manager = Arc::new(PageCacheManager::new(backed_inode));
+    /// The `capacity` is the initial cache size required by the backend.
+    /// This size usually corresponds to the size of the backend.
+    pub fn with_capacity(capacity: usize, backend: Weak<dyn PageCacheBackend>) -> Result<Self> {
+        let manager = Arc::new(PageCacheManager::new(backend));
         let pages = VmoOptions::<Full>::new(capacity)
             .flags(VmoFlags::RESIZABLE)
             .pager(manager.clone())
@@ -36,7 +35,7 @@ impl PageCache {
         Ok(Self { pages, manager })
     }
 
-    /// Returns the Vmo object backed by inode.
+    /// Returns the Vmo object.
     // TODO: The capability is too high，restrict it to eliminate the possibility of misuse.
     //       For example, the `resize` api should be forbidded.
     pub fn pages(&self) -> Vmo<Full> {
@@ -44,9 +43,14 @@ impl PageCache {
     }
 
     /// Evict the data within a specified range from the page cache and persist
-    /// them to the disk.
+    /// them to the backend.
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         self.manager.evict_range(range)
+    }
+
+    /// Returns the backend.
+    pub fn backend(&self) -> Arc<dyn PageCacheBackend> {
+        self.manager.backend()
     }
 }
 
@@ -61,33 +65,36 @@ impl Debug for PageCache {
 
 struct PageCacheManager {
     pages: Mutex<LruCache<usize, Page>>,
-    backed_inode: Weak<dyn Inode>,
+    backend: Weak<dyn PageCacheBackend>,
 }
 
 impl PageCacheManager {
-    pub fn new(backed_inode: Weak<dyn Inode>) -> Self {
+    pub fn new(backend: Weak<dyn PageCacheBackend>) -> Self {
         Self {
             pages: Mutex::new(LruCache::unbounded()),
-            backed_inode,
+            backend,
         }
+    }
+
+    pub fn backend(&self) -> Arc<dyn PageCacheBackend> {
+        self.backend.upgrade().unwrap()
     }
 
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let page_idx_range = get_page_idx_range(&range);
         let mut pages = self.pages.lock();
-        for page_idx in page_idx_range {
-            if let Some(page) = pages.get_mut(&page_idx) {
+        for idx in page_idx_range {
+            if let Some(page) = pages.get_mut(&idx) {
                 if let PageState::Dirty = page.state() {
-                    self.backed_inode
-                        .upgrade()
-                        .unwrap()
-                        .write_page(page_idx, page.frame())?;
-                    page.set_state(PageState::UpToDate);
+                    let backend = self.backend();
+                    if idx < backend.npages() {
+                        backend.write_page(idx, page.frame())?;
+                        page.set_state(PageState::UpToDate);
+                    }
                 }
-            } else {
-                warn!("page {} is not in page cache, do nothing", page_idx);
             }
         }
+
         Ok(())
     }
 }
@@ -101,53 +108,50 @@ impl Debug for PageCacheManager {
 }
 
 impl Pager for PageCacheManager {
-    fn commit_page(&self, offset: usize) -> Result<VmFrame> {
-        let page_idx = offset / PAGE_SIZE;
+    fn commit_page(&self, idx: usize) -> Result<VmFrame> {
         let mut pages = self.pages.lock();
-        let frame = if let Some(page) = pages.get(&page_idx) {
+        let frame = if let Some(page) = pages.get(&idx) {
             page.frame().clone()
         } else {
-            let backed_inode = self.backed_inode.upgrade().unwrap();
-            let page = if offset < backed_inode.len() {
+            let backend = self.backend();
+            let page = if idx < backend.npages() {
                 let mut page = Page::alloc()?;
-                backed_inode.read_page(page_idx, page.frame())?;
+                backend.read_page(idx, page.frame())?;
                 page.set_state(PageState::UpToDate);
                 page
             } else {
                 Page::alloc_zero()?
             };
             let frame = page.frame().clone();
-            pages.put(page_idx, page);
+            pages.put(idx, page);
             frame
         };
+
         Ok(frame)
     }
 
-    fn update_page(&self, offset: usize) -> Result<()> {
-        let page_idx = offset / PAGE_SIZE;
+    fn update_page(&self, idx: usize) -> Result<()> {
         let mut pages = self.pages.lock();
-        if let Some(page) = pages.get_mut(&page_idx) {
+        if let Some(page) = pages.get_mut(&idx) {
             page.set_state(PageState::Dirty);
         } else {
-            error!("page {} is not in page cache", page_idx);
-            panic!();
+            warn!("The page {} is not in page cache", idx);
         }
+
         Ok(())
     }
 
-    fn decommit_page(&self, offset: usize) -> Result<()> {
-        let page_idx = offset / PAGE_SIZE;
+    fn decommit_page(&self, idx: usize) -> Result<()> {
         let mut pages = self.pages.lock();
-        if let Some(page) = pages.pop(&page_idx) {
+        if let Some(page) = pages.pop(&idx) {
             if let PageState::Dirty = page.state() {
-                self.backed_inode
-                    .upgrade()
-                    .unwrap()
-                    .write_page(page_idx, page.frame())?
+                let backend = self.backend();
+                if idx < backend.npages() {
+                    backend.write_page(idx, page.frame())?;
+                }
             }
-        } else {
-            warn!("page {} is not in page cache, do nothing", page_idx);
         }
+
         Ok(())
     }
 }
@@ -199,4 +203,14 @@ enum PageState {
     /// `Dirty` indicates a page which content has been updated and not written back to underlying disk.
     /// The page is available to read and write.
     Dirty,
+}
+
+/// This trait represents the backend for the page cache.
+pub trait PageCacheBackend: Sync + Send {
+    /// Reads a page from the backend.
+    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
+    /// Writes a page to the backend.
+    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
+    /// Returns the number of pages in the backend.
+    fn npages(&self) -> usize;
 }
