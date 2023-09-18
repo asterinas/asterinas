@@ -104,3 +104,25 @@ pub fn now_as_duration(clock_id: &ClockID) -> Result<Duration> {
         }
     }
 }
+
+/// Unix time measures time by the number of seconds that have elapsed since
+/// the Unix epoch, without adjustments made due to leap seconds.
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Pod)]
+pub struct UnixTime {
+    sec: u32,
+}
+
+impl From<Duration> for UnixTime {
+    fn from(duration: Duration) -> Self {
+        Self {
+            sec: duration.as_secs() as u32,
+        }
+    }
+}
+
+impl From<UnixTime> for Duration {
+    fn from(time: UnixTime) -> Self {
+        Duration::from_secs(time.sec as _)
+    }
+}

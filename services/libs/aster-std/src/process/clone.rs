@@ -379,13 +379,13 @@ fn clone_cpu_context(
 }
 
 fn clone_fs(
-    parent_fs: &Arc<RwLock<FsResolver>>,
+    parent_fs: &Arc<RwMutex<FsResolver>>,
     clone_flags: CloneFlags,
-) -> Arc<RwLock<FsResolver>> {
+) -> Arc<RwMutex<FsResolver>> {
     if clone_flags.contains(CloneFlags::CLONE_FS) {
         parent_fs.clone()
     } else {
-        Arc::new(RwLock::new(parent_fs.read().clone()))
+        Arc::new(RwMutex::new(parent_fs.read().clone()))
     }
 }
 

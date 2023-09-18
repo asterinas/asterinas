@@ -3,6 +3,7 @@ CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
+EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 SHELL := /bin/bash
 INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/sbin \
@@ -10,7 +11,8 @@ INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/tmp \
 	$(INITRAMFS)/opt \
 	$(INITRAMFS)/proc \
-	$(INITRAMFS)/dev
+	$(INITRAMFS)/dev \
+	$(INITRAMFS)/ext2
 INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/etc \
 	$(INITRAMFS)/lib/x86_64-linux-gnu \
@@ -90,7 +92,11 @@ endif
 	@echo "Generating the initramfs image..."
 	@(cd $(INITRAMFS); find . | cpio -o -H newc | gzip) > $@
 
-build: $(INITRAMFS_IMAGE)
+$(EXT2_IMAGE):
+	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
+	@mke2fs $(EXT2_IMAGE)
+
+build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE)
 
 clean:
 	@rm -rf $(BUILD_DIR)

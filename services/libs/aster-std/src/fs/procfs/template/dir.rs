@@ -58,10 +58,16 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         self.info.size()
     }
 
-    fn resize(&self, _new_size: usize) {}
+    fn resize(&self, _new_size: usize) -> Result<()> {
+        Err(Error::new(Errno::EISDIR))
+    }
 
     fn metadata(&self) -> Metadata {
         self.info.metadata()
+    }
+
+    fn ino(&self) -> u64 {
+        self.info.ino()
     }
 
     fn type_(&self) -> InodeType {

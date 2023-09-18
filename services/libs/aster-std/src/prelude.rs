@@ -13,7 +13,7 @@ pub(crate) use alloc::sync::Weak;
 pub(crate) use alloc::vec;
 pub(crate) use alloc::vec::Vec;
 pub(crate) use aster_frame::config::PAGE_SIZE;
-pub(crate) use aster_frame::sync::{Mutex, MutexGuard, RwLock, SpinLock, SpinLockGuard};
+pub(crate) use aster_frame::sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard};
 pub(crate) use aster_frame::vm::Vaddr;
 pub(crate) use bitflags::bitflags;
 pub(crate) use core::any::Any;

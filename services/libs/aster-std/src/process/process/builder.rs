@@ -23,7 +23,7 @@ pub struct ProcessBuilder<'a> {
     envp: Option<Vec<CString>>,
     process_vm: Option<ProcessVm>,
     file_table: Option<Arc<Mutex<FileTable>>>,
-    fs: Option<Arc<RwLock<FsResolver>>>,
+    fs: Option<Arc<RwMutex<FsResolver>>>,
     umask: Option<Arc<RwLock<FileCreationMask>>>,
     resource_limits: Option<ResourceLimits>,
     sig_dispositions: Option<Arc<Mutex<SigDispositions>>>,
@@ -64,7 +64,7 @@ impl<'a> ProcessBuilder<'a> {
         self
     }
 
-    pub fn fs(&mut self, fs: Arc<RwLock<FsResolver>>) -> &mut Self {
+    pub fn fs(&mut self, fs: Arc<RwMutex<FsResolver>>) -> &mut Self {
         self.fs = Some(fs);
         self
     }
@@ -142,7 +142,7 @@ impl<'a> ProcessBuilder<'a> {
             .unwrap();
 
         let fs = fs
-            .or_else(|| Some(Arc::new(RwLock::new(FsResolver::new()))))
+            .or_else(|| Some(Arc::new(RwMutex::new(FsResolver::new()))))
             .unwrap();
 
         let umask = umask

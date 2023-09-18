@@ -1,4 +1,3 @@
-use aster_frame::vm::VmFrame;
 use aster_rights::Full;
 use core::time::Duration;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
@@ -232,9 +231,11 @@ pub trait Inode: Any + Sync + Send {
         self.len() == 0
     }
 
-    fn resize(&self, new_size: usize);
+    fn resize(&self, new_size: usize) -> Result<()>;
 
     fn metadata(&self) -> Metadata;
+
+    fn ino(&self) -> u64;
 
     fn type_(&self) -> InodeType;
 
@@ -249,14 +250,6 @@ pub trait Inode: Any + Sync + Send {
     fn mtime(&self) -> Duration;
 
     fn set_mtime(&self, time: Duration);
-
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
-    }
-
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
-    }
 
     fn page_cache(&self) -> Option<Vmo<Full>> {
         None

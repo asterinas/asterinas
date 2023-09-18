@@ -19,6 +19,8 @@
 #![feature(register_tool)]
 #![feature(trait_upcasting)]
 #![feature(format_args_nl)]
+#![feature(int_roundings)]
+#![feature(step_trait)]
 #![register_tool(component_access_control)]
 
 use crate::{
@@ -73,6 +75,7 @@ fn init_thread() {
         current_thread!().tid()
     );
     net::lazy_init();
+    fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");

@@ -38,6 +38,10 @@ impl ProcInodeInfo {
         self.metadata.read().clone()
     }
 
+    pub fn ino(&self) -> u64 {
+        self.metadata.read().ino as _
+    }
+
     pub fn size(&self) -> usize {
         self.metadata.read().size
     }

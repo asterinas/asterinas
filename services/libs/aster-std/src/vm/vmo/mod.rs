@@ -154,7 +154,7 @@ impl VmoInner {
         }
         let frame = match &self.pager {
             None => VmAllocOptions::new(1).alloc_single()?,
-            Some(pager) => pager.commit_page(offset)?,
+            Some(pager) => pager.commit_page(page_idx)?,
         };
         self.insert_frame(page_idx, frame);
         Ok(())
@@ -164,7 +164,7 @@ impl VmoInner {
         let page_idx = offset / PAGE_SIZE;
         if self.committed_pages.remove(&page_idx).is_some() {
             if let Some(pager) = &self.pager {
-                pager.decommit_page(offset)?;
+                pager.decommit_page(page_idx)?;
             }
         }
         Ok(())
@@ -302,7 +302,7 @@ impl Vmo_ {
         if let Some(pager) = &self.inner.lock().pager {
             let page_idx_range = get_page_idx_range(&write_range);
             for page_idx in page_idx_range {
-                pager.update_page(page_idx * PAGE_SIZE)?;
+                pager.update_page(page_idx)?;
             }
         }
         Ok(())

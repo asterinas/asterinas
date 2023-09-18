@@ -11,7 +11,7 @@ use aster_frame::vm::VmFrame;
 /// Finally, when a frame is no longer needed (i.e., on decommits),
 /// the frame pager will also be notified.
 pub trait Pager: Send + Sync {
-    /// Ask the pager to provide a frame at a specified offset (in bytes).
+    /// Ask the pager to provide a frame at a specified index.
     ///
     /// After a page of a VMO is committed, the VMO shall not call this method
     /// again until the page is decommitted. But a robust implementation of
@@ -22,13 +22,10 @@ pub trait Pager: Send + Sync {
     /// and is to be committed again, then the pager is free to return
     /// whatever frame that may or may not be the same as the last time.
     ///
-    /// It is up to the pager to decide the range of valid offsets.
-    ///
-    /// The offset will be rounded down to page boundary.
-    fn commit_page(&self, offset: usize) -> Result<VmFrame>;
+    /// It is up to the pager to decide the range of valid indices.
+    fn commit_page(&self, idx: usize) -> Result<VmFrame>;
 
-    /// Notify the pager that the frame at a specified offset (in bytes)
-    /// has been updated.
+    /// Notify the pager that the frame at a specified index has been updated.
     ///
     /// Being aware of the updates allow the pager (e.g., an inode) to
     /// know which pages are dirty and only write back the _dirty_ pages back
@@ -38,12 +35,9 @@ pub trait Pager: Send + Sync {
     /// But a robust implementation of `Pager` should not make
     /// such an assumption for its correctness; instead, it should simply ignore the
     /// call or return an error.
-    ///
-    /// The offset will be rounded down to page boundary.
-    fn update_page(&self, offset: usize) -> Result<()>;
+    fn update_page(&self, idx: usize) -> Result<()>;
 
-    /// Notify the pager that the frame at the specified offset (in bytes)
-    /// has been decommitted.
+    /// Notify the pager that the frame at the specified index has been decommitted.
     ///
     /// Knowing that a frame is no longer needed, the pager (e.g., an inode)
     /// can free the frame after writing back its data to the disk.
@@ -52,7 +46,5 @@ pub trait Pager: Send + Sync {
     /// But a robust implementation of `Pager` should not make
     /// such an assumption for its correctness; instead, it should simply ignore the
     /// call or return an error.
-    ///
-    /// The offset will be rounded down to page boundary.
-    fn decommit_page(&self, offset: usize) -> Result<()>;
+    fn decommit_page(&self, idx: usize) -> Result<()>;
 }

@@ -3,7 +3,7 @@ use crate::prelude::*;
 use super::fs_resolver::{FsPath, FsResolver};
 use super::procfs::ProcFS;
 use super::ramfs::RamFS;
-use super::utils::{InodeMode, InodeType, MountNode};
+use super::utils::{FileSystem, InodeMode, InodeType, MountNode};
 
 use cpio_decoder::{CpioDecoder, FileType};
 use lending_iterator::LendingIterator;
@@ -77,8 +77,15 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
     dev_dentry.mount(RamFS::new())?;
+
     println!("[kernel] rootfs is ready");
 
+    Ok(())
+}
+
+pub fn mount_fs_at(fs: Arc<dyn FileSystem>, fs_path: &FsPath) -> Result<()> {
+    let target_dentry = FsResolver::new().lookup(fs_path)?;
+    target_dentry.mount(fs)?;
     Ok(())
 }
 
