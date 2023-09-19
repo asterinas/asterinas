@@ -255,20 +255,32 @@ impl VirtioPciTransport {
         common_device: PciCommonDevice,
     ) -> Result<Self, (PciDriverProbeError, PciCommonDevice)> {
         let device_type = match common_device.device_id().device_id {
-            0x1000 | 0x1041 => VirtioDeviceType::Network,
-            0x1001 | 0x1042 => VirtioDeviceType::Block,
-            0x1002 | 0x1043 => VirtioDeviceType::TraditionalMemoryBalloon,
-            0x1003 | 0x1044 => VirtioDeviceType::Console,
-            0x1004 | 0x1045 => VirtioDeviceType::ScsiHost,
-            0x1005 | 0x1046 => VirtioDeviceType::Entropy,
-            0x1009 | 0x104a => VirtioDeviceType::Transport9P,
-            0x1011 | 0x1052 => VirtioDeviceType::Input,
-            _ => {
-                warn!(
-                    "Unrecognized virtio-pci device id:{:?}",
-                    common_device.device_id().device_id
-                );
-                return Err((PciDriverProbeError::ConfigurationSpaceError, common_device));
+            0x1000 => VirtioDeviceType::Network,
+            0x1001 => VirtioDeviceType::Block,
+            0x1002 => VirtioDeviceType::TraditionalMemoryBalloon,
+            0x1003 => VirtioDeviceType::Console,
+            0x1004 => VirtioDeviceType::ScsiHost,
+            0x1005 => VirtioDeviceType::Entropy,
+            0x1009 => VirtioDeviceType::Transport9P,
+            id => {
+                if id <= 0x1040 {
+                    warn!(
+                        "Unrecognized virtio-pci device id:{:x?}",
+                        common_device.device_id().device_id
+                    );
+                    return Err((PciDriverProbeError::ConfigurationSpaceError, common_device));
+                }
+                let id = id - 0x1040;
+                match VirtioDeviceType::try_from(id as u8) {
+                    Ok(device) => device,
+                    Err(_) => {
+                        warn!(
+                            "Unrecognized virtio-pci device id:{:x?}",
+                            common_device.device_id().device_id
+                        );
+                        return Err((PciDriverProbeError::ConfigurationSpaceError, common_device));
+                    }
+                }
             }
         };
 
