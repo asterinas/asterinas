@@ -45,7 +45,8 @@ impl ListenStream {
                     if self.is_nonblocking() {
                         return_errno_with_message!(Errno::EAGAIN, "try accept again");
                     }
-                    poller.wait();
+                    // FIXME: deal with accept timeout
+                    poller.wait(None)?;
                 }
                 continue;
             };

@@ -252,7 +252,8 @@ impl LineDiscipline {
             };
             let revents = self.pollee.poll(IoEvents::IN, need_poller);
             if revents.is_empty() {
-                poller.as_ref().unwrap().wait();
+                // FIXME: deal with ldisc read timeout
+                poller.as_ref().unwrap().wait(None)?;
             }
         }
     }

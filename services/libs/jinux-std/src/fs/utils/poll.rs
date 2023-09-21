@@ -3,6 +3,7 @@ use crate::events::{Observer, Subject};
 use crate::prelude::*;
 
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use core::time::Duration;
 use jinux_frame::sync::WaitQueue;
 use keyable_arc::KeyableWeak;
 
@@ -157,8 +158,9 @@ impl Poller {
     }
 
     /// Wait until there are any interesting events happen since last `wait`.
-    pub fn wait(&self) {
-        self.inner.event_counter.read();
+    pub fn wait(&self, timeout: Option<&Duration>) -> Result<()> {
+        self.inner.event_counter.read(timeout)?;
+        Ok(())
     }
 
     fn observer(&self) -> Weak<dyn Observer<IoEvents>> {
@@ -202,20 +204,19 @@ impl EventCounter {
         }
     }
 
-    pub fn read(&self) -> usize {
-        self.wait_queue
-            .wait_until(
-                || {
-                    let val = self.counter.swap(0, Ordering::Relaxed);
-                    if val > 0 {
-                        Some(val)
-                    } else {
-                        None
-                    }
-                },
-                None,
-            )
-            .unwrap()
+    pub fn read(&self, timeout: Option<&Duration>) -> Result<usize> {
+        let val = self.wait_queue.wait_until(
+            || {
+                let val = self.counter.swap(0, Ordering::Relaxed);
+                if val > 0 {
+                    Some(val)
+                } else {
+                    None
+                }
+            },
+            timeout,
+        )?;
+        Ok(val)
     }
 
     pub fn write(&self) {

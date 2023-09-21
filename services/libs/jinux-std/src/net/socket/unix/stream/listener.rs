@@ -131,8 +131,9 @@ impl BacklogTable {
                 return_errno_with_message!(Errno::ECONNABORTED, "connection is aborted");
             }
 
+            // FIXME: deal with accept timeout
             if events.is_empty() {
-                poller.wait();
+                poller.wait(None)?;
             }
         }
     }

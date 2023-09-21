@@ -258,7 +258,8 @@ impl Socket for DatagramSocket {
                 if self.nonblocking() {
                     return_errno_with_message!(Errno::EAGAIN, "try to receive again");
                 }
-                poller.wait();
+                // FIXME: deal with recvfrom timeout
+                poller.wait(None)?;
             }
         }
     }
