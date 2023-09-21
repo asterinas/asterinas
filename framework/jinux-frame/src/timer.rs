@@ -2,7 +2,7 @@
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86::timer::{add_timeout_list, TimerCallback, TICK};
-use crate::sync::Mutex;
+use crate::sync::SpinLock;
 use crate::{config::TIMER_FREQ, prelude::*};
 use core::{sync::atomic::Ordering, time::Duration};
 
@@ -19,7 +19,7 @@ pub use crate::arch::x86::timer::read_monotonic_milli_seconds;
 /// in order to trigger the callback again.
 pub struct Timer {
     function: Arc<dyn Fn(Arc<Self>) + Send + Sync>,
-    inner: Mutex<TimerInner>,
+    inner: SpinLock<TimerInner>,
 }
 #[derive(Default)]
 struct TimerInner {
@@ -48,7 +48,7 @@ impl Timer {
     {
         Ok(Arc::new(Self {
             function: Arc::new(f),
-            inner: Mutex::new(TimerInner::default()),
+            inner: SpinLock::new(TimerInner::default()),
         }))
     }
 
@@ -57,7 +57,7 @@ impl Timer {
     /// If a timeout value is already set, the timeout value will be refreshed.
     ///
     pub fn set(self: Arc<Self>, timeout: Duration) {
-        let mut lock = self.inner.lock();
+        let mut lock = self.inner.lock_irq_disabled();
         match &lock.timer_callback {
             Some(callback) => {
                 callback.disable();
@@ -76,7 +76,7 @@ impl Timer {
     ///
     /// If the timer is not set, then the remaining timeout value is zero.
     pub fn remain(&self) -> Duration {
-        let lock = self.inner.lock();
+        let lock = self.inner.lock_irq_disabled();
         let tick_remain = {
             let tick = TICK.load(Ordering::SeqCst) as i64;
             lock.timeout_tick as i64 - tick
@@ -92,7 +92,7 @@ impl Timer {
 
     /// Clear the timeout value.
     pub fn clear(&self) {
-        let mut lock = self.inner.lock();
+        let mut lock = self.inner.lock_irq_disabled();
         if let Some(callback) = &lock.timer_callback {
             callback.disable();
         }

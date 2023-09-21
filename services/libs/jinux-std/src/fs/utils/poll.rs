@@ -203,14 +203,19 @@ impl EventCounter {
     }
 
     pub fn read(&self) -> usize {
-        self.wait_queue.wait_until(|| {
-            let val = self.counter.swap(0, Ordering::Relaxed);
-            if val > 0 {
-                Some(val)
-            } else {
-                None
-            }
-        })
+        self.wait_queue
+            .wait_until(
+                || {
+                    let val = self.counter.swap(0, Ordering::Relaxed);
+                    if val > 0 {
+                        Some(val)
+                    } else {
+                        None
+                    }
+                },
+                None,
+            )
+            .unwrap()
     }
 
     pub fn write(&self) {

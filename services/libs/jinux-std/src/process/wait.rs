@@ -26,46 +26,51 @@ pub fn wait_child_exit(
     wait_options: WaitOptions,
 ) -> Result<(Pid, ExitCode)> {
     let current = current!();
-    let (pid, exit_code) = current.waiting_children().wait_until(|| {
-        let children_lock = current.children().lock();
-        let unwaited_children = children_lock
-            .iter()
-            .filter(|(pid, child)| match child_filter {
-                ProcessFilter::Any => true,
-                ProcessFilter::WithPid(pid) => child.pid() == pid,
-                ProcessFilter::WithPgid(pgid) => child.pgid() == pgid,
-            })
-            .map(|(_, child)| child.clone())
-            .collect::<Vec<_>>();
-        // we need to drop the lock here, since reap child process need to acquire this lock again
-        drop(children_lock);
+    let (pid, exit_code) = current.waiting_children().wait_until(
+        || {
+            let unwaited_children = current
+                .children()
+                .lock()
+                .values()
+                .filter(|child| match child_filter {
+                    ProcessFilter::Any => true,
+                    ProcessFilter::WithPid(pid) => child.pid() == pid,
+                    ProcessFilter::WithPgid(pgid) => child.pgid() == pgid,
+                })
+                .cloned()
+                .collect::<Vec<_>>();
 
-        if unwaited_children.is_empty() {
-            return Some(Err(jinux_frame::Error::NoChild));
-        }
-
-        // return immediately if we find a zombie child
-        let zombie_child = unwaited_children.iter().find(|child| child.is_zombie());
-
-        if let Some(zombie_child) = zombie_child {
-            let zombie_pid = zombie_child.pid();
-            let exit_code = zombie_child.exit_code().unwrap();
-            if wait_options.contains(WaitOptions::WNOWAIT) {
-                // does not reap child, directly return
-                return Some(Ok((zombie_pid, exit_code)));
-            } else {
-                let exit_code = reap_zombie_child(&current, zombie_pid);
-                return Some(Ok((zombie_pid, exit_code)));
+            if unwaited_children.is_empty() {
+                return Some(Err(Error::with_message(
+                    Errno::ECHILD,
+                    "the process has no child to wait",
+                )));
             }
-        }
 
-        if wait_options.contains(WaitOptions::WNOHANG) {
-            return Some(Ok((0, 0)));
-        }
+            // return immediately if we find a zombie child
+            let zombie_child = unwaited_children.iter().find(|child| child.is_zombie());
 
-        // wait
-        None
-    })?;
+            if let Some(zombie_child) = zombie_child {
+                let zombie_pid = zombie_child.pid();
+                let exit_code = zombie_child.exit_code().unwrap();
+                if wait_options.contains(WaitOptions::WNOWAIT) {
+                    // does not reap child, directly return
+                    return Some(Ok((zombie_pid, exit_code)));
+                } else {
+                    let exit_code = reap_zombie_child(&current, zombie_pid);
+                    return Some(Ok((zombie_pid, exit_code)));
+                }
+            }
+
+            if wait_options.contains(WaitOptions::WNOHANG) {
+                return Some(Ok((0, 0)));
+            }
+
+            // wait
+            None
+        },
+        None,
+    )??;
 
     Ok((pid, exit_code as _))
 }

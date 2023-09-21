@@ -1,8 +1,12 @@
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use super::SpinLock;
+use crate::arch::timer::add_timeout_list;
+use crate::config::TIMER_FREQ;
+use crate::error::Error;
+use crate::prelude::*;
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
+use core::sync::atomic::{AtomicBool, Ordering};
+use core::time::Duration;
 
 use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
 
@@ -33,21 +37,57 @@ impl WaitQueue {
     ///
     /// By taking a condition closure, his wait-wakeup mechanism becomes
     /// more efficient and robust.
-    pub fn wait_until<F, R>(&self, mut cond: F) -> R
+    ///
+    /// The only error result is Error::TIMEOUT, which means the timeout is readched
+    /// and the condition returns false.
+    pub fn wait_until<F, R>(&self, mut cond: F, timeout: Option<&Duration>) -> Result<R>
     where
         F: FnMut() -> Option<R>,
     {
         if let Some(res) = cond() {
-            return res;
+            return Ok(res);
         }
 
         let waiter = Arc::new(Waiter::new());
         self.enqueue(&waiter);
+
+        let timer_callback = timeout.map(|timeout| {
+            let remaining_ticks = {
+                let ms_per_tick = 1000 / TIMER_FREQ;
+
+                // FIXME: We currently require 1000 to be a multiple of TIMER_FREQ, but
+                // this may not hold true in the future, because TIMER_FREQ can be greater
+                // than 1000. Then, the code need to be refactored.
+                debug_assert!(ms_per_tick * TIMER_FREQ == 1000);
+
+                // The ticks should be equal to or greater than timeout
+                (timeout.as_millis() as u64 + ms_per_tick - 1) / ms_per_tick
+            };
+
+            add_timeout_list(remaining_ticks, waiter.clone(), |timer_call_back| {
+                let waiter = timer_call_back
+                    .data()
+                    .downcast_ref::<Arc<Waiter>>()
+                    .unwrap();
+                waiter.wake_up();
+            })
+        });
+
         loop {
             if let Some(res) = cond() {
                 self.dequeue(&waiter);
-                return res;
+
+                if let Some(timer_callback) = timer_callback {
+                    timer_callback.cancel();
+                }
+
+                return Ok(res);
             };
+
+            if let Some(ref timer_callback) = timer_callback && timer_callback.is_expired() {
+                return Err(Error::TimeOut);
+            }
+
             waiter.wait();
         }
     }
@@ -91,7 +131,7 @@ impl WaitQueue {
 }
 
 struct Waiter {
-    /// Whether the
+    /// Whether the waiter is woken_up
     is_woken_up: AtomicBool,
     /// To respect different wait condition
     flag: WaiterFlag,

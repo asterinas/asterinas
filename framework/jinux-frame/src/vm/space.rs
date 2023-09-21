@@ -243,7 +243,7 @@ impl TryFrom<u64> for VmPerm {
     type Error = Error;
 
     fn try_from(value: u64) -> Result<Self> {
-        VmPerm::from_bits(value as u8).ok_or(Error::InvalidVmpermBits)
+        VmPerm::from_bits(value as u8).ok_or(Error::InvalidArgs)
     }
 }
 
