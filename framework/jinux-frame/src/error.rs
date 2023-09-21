@@ -6,7 +6,6 @@ pub enum Error {
     PageFault,
     AccessDenied,
     IoError,
-    InvalidVmpermBits,
     NotEnoughResources,
-    NoChild,
+    TimeOut,
 }

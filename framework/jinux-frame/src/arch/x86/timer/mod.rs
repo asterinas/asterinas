@@ -35,11 +35,14 @@ pub fn init() {
 }
 
 fn timer_callback(trap_frame: &TrapFrame) {
-    let current_ms = TICK.fetch_add(1, Ordering::SeqCst);
+    let current_ticks = TICK.fetch_add(1, Ordering::SeqCst);
     let mut timeout_list = TIMEOUT_LIST.get().unwrap().lock();
     let mut callbacks: Vec<Arc<TimerCallback>> = Vec::new();
     while let Some(t) = timeout_list.peek() {
-        if t.expire_ms <= current_ms && t.is_enable() {
+        if t.is_cancelled() {
+            // Just ignore the cancelled callback
+            timeout_list.pop();
+        } else if t.expire_ticks <= current_ticks && t.is_enable() {
             callbacks.push(timeout_list.pop().unwrap());
         } else {
             break;
@@ -57,23 +60,25 @@ fn timer_callback(trap_frame: &TrapFrame) {
 static TIMEOUT_LIST: Once<SpinLock<BinaryHeap<Arc<TimerCallback>>>> = Once::new();
 
 pub struct TimerCallback {
-    expire_ms: u64,
+    expire_ticks: u64,
     data: Arc<dyn Any + Send + Sync>,
     callback: Box<dyn Fn(&TimerCallback) + Send + Sync>,
     enable: AtomicBool,
+    is_cancelled: AtomicBool,
 }
 
 impl TimerCallback {
     fn new(
-        timeout_ms: u64,
+        timeout_ticks: u64,
         data: Arc<dyn Any + Send + Sync>,
         callback: Box<dyn Fn(&TimerCallback) + Send + Sync>,
     ) -> Self {
         Self {
-            expire_ms: timeout_ms,
+            expire_ticks: timeout_ticks,
             data,
             callback,
             enable: AtomicBool::new(true),
+            is_cancelled: AtomicBool::new(false),
         }
     }
 
@@ -94,11 +99,28 @@ impl TimerCallback {
     pub fn is_enable(&self) -> bool {
         self.enable.load(Ordering::Acquire)
     }
+
+    /// Whether the set timeout is reached
+    pub fn is_expired(&self) -> bool {
+        let current_tick = TICK.load(Ordering::Acquire);
+        self.expire_ticks <= current_tick
+    }
+
+    /// Cancel a timer callback. If the callback function has not been called,
+    /// it will never be called again.
+    pub fn cancel(&self) {
+        self.is_cancelled.store(true, Ordering::Release);
+    }
+
+    // Whether the timer callback is cancelled.
+    fn is_cancelled(&self) -> bool {
+        self.is_cancelled.load(Ordering::Acquire)
+    }
 }
 
 impl PartialEq for TimerCallback {
     fn eq(&self, other: &Self) -> bool {
-        self.expire_ms == other.expire_ms
+        self.expire_ticks == other.expire_ticks
     }
 }
 
@@ -112,7 +134,7 @@ impl PartialOrd for TimerCallback {
 
 impl Ord for TimerCallback {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.expire_ms.cmp(&other.expire_ms).reverse()
+        self.expire_ticks.cmp(&other.expire_ticks).reverse()
     }
 }
 

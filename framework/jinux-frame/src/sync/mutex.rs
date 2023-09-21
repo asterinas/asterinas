@@ -26,7 +26,7 @@ impl<T> Mutex<T> {
     ///
     /// This method runs in a block way until the mutex can be acquired.
     pub fn lock(&self) -> MutexGuard<T> {
-        self.queue.wait_until(|| self.try_lock())
+        self.queue.wait_until(|| self.try_lock(), None).unwrap()
     }
 
     /// Try Acquire the mutex immedidately.
