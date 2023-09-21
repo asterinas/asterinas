@@ -91,8 +91,7 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>) -> Result<usize> 
             return Ok(0);
         }
 
-        // FIXME: respect timeout parameter
-        poller.wait();
+        poller.wait(timeout.as_ref())?;
     }
 }
 

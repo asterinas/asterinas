@@ -151,7 +151,8 @@ impl InitStream {
             } else if self.is_nonblocking() {
                 return_errno_with_message!(Errno::EAGAIN, "try connect again");
             } else {
-                poller.wait();
+                // FIXME: deal with connecting timeout
+                poller.wait(None)?;
             }
         }
     }

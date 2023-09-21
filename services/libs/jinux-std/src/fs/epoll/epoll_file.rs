@@ -191,8 +191,7 @@ impl EpollFile {
                 }
             }
 
-            // FIXME: respect timeout parameter
-            poller.as_ref().unwrap().wait();
+            poller.as_ref().unwrap().wait(timeout)?;
         }
     }
 

@@ -152,7 +152,8 @@ impl<T: Copy> Producer<T> {
             }
             let events = self.poll(mask, Some(&poller));
             if events.is_empty() {
-                poller.wait();
+                // FIXME: should channel deal with timeout?
+                poller.wait(None)?;
             }
         }
     }
@@ -240,7 +241,8 @@ impl<T: Copy> Consumer<T> {
             }
             let events = self.poll(mask, Some(&poller));
             if events.is_empty() {
-                poller.wait();
+                // FIXME: should channel have timeout?
+                poller.wait(None)?;
             }
         }
     }
