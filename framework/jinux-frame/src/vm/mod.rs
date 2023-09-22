@@ -18,7 +18,7 @@ mod space;
 
 use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
 
-pub use self::dma::paddr_to_daddr;
+pub use self::dma::{paddr_to_daddr, DmaArea, DmaAreaPool};
 pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
 pub use self::io::VmIo;
 pub use self::space::{VmMapOptions, VmPerm, VmSpace};
