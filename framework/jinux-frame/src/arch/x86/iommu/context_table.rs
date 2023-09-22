@@ -8,12 +8,16 @@ use crate::{
     bus::pci::PciDeviceLocation,
     config::PAGE_SIZE,
     vm::{
+        dma::Daddr,
         page_table::{PageTableConfig, PageTableError},
-        Paddr, PageTable, Vaddr, VmAllocOptions, VmFrame, VmFrameVec, VmIo,
+        Paddr, PageTable, VmAllocOptions, VmFrame, VmFrameVec, VmIo,
     },
 };
 
-use super::second_stage::{PageTableEntry, PageTableFlags};
+use super::{
+    iova::{dealloc_iova, rmap_paddr},
+    second_stage::{PageTableEntry, PageTableFlags},
+};
 
 /// Bit 0 is `Present` bit, indicating whether this entry is present.
 /// Bit 63:12 is the context-table pointer pointing to this bus's context-table.
@@ -60,7 +64,7 @@ impl RootTable {
     pub fn map(
         &mut self,
         device: PciDeviceLocation,
-        vaddr: Vaddr,
+        daddr: Daddr,
         paddr: Paddr,
     ) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
@@ -68,23 +72,25 @@ impl RootTable {
         }
 
         self.get_or_create_context_table(device)
-            .map(device, vaddr, paddr & !(PAGE_SIZE - 1))?;
+            .map(device, daddr, paddr & !(PAGE_SIZE - 1))?;
 
+        rmap_paddr(paddr, daddr);
         Ok(())
     }
 
     pub fn unmap(
         &mut self,
         device: PciDeviceLocation,
-        vaddr: Vaddr,
+        daddr: Daddr,
     ) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
         self.get_or_create_context_table(device)
-            .unmap(device, vaddr)?;
+            .unmap(device, daddr)?;
 
+        dealloc_iova(device, daddr);
         Ok(())
     }
 
@@ -285,7 +291,7 @@ impl ContextTable {
     fn map(
         &mut self,
         device: PciDeviceLocation,
-        vaddr: Vaddr,
+        daddr: Daddr,
         paddr: Paddr,
     ) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
@@ -293,20 +299,20 @@ impl ContextTable {
         }
         self.get_or_create_page_table(device)
             .map(
-                vaddr,
+                daddr,
                 paddr,
                 PageTableFlags::WRITABLE | PageTableFlags::READABLE | PageTableFlags::LAST_PAGE,
             )
             .map_err(ContextTableError::ModificationError)
     }
 
-    fn unmap(&mut self, device: PciDeviceLocation, vaddr: Vaddr) -> Result<(), ContextTableError> {
+    fn unmap(&mut self, device: PciDeviceLocation, daddr: Daddr) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
         self.get_or_create_page_table(device)
-            .unmap(vaddr)
+            .unmap(daddr)
             .map_err(ContextTableError::ModificationError)
     }
 }

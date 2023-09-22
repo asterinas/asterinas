@@ -6,6 +6,7 @@ pub type Vaddr = usize;
 /// Physical addresses.
 pub type Paddr = usize;
 
+pub(crate) mod dma;
 mod frame;
 mod frame_allocator;
 pub(crate) mod heap_allocator;
@@ -17,6 +18,7 @@ mod space;
 
 use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
 
+pub use self::dma::paddr_to_daddr;
 pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
 pub use self::io::VmIo;
 pub use self::space::{VmMapOptions, VmPerm, VmSpace};

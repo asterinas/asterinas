@@ -242,9 +242,33 @@ impl<T: PageTableEntryTrait> PageTable<T> {
         Ok(())
     }
 
+    pub fn flags(&mut self, vaddr: Vaddr) -> Option<T::F> {
+        let last_entry = self.page_walk(vaddr, false)?;
+        Some(last_entry.flags())
+    }
+
     pub fn root_paddr(&self) -> Paddr {
         self.root_pa
     }
+}
+
+/// get page table from page table base register
+pub fn current_page_table() -> PageTable<PageTableEntry> {
+    #[cfg(target_arch = "x86_64")]
+    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
+
+    // TODO: Read and use different level page table.
+    // Safety: The page_directory_base is valid since it is read from PDBR.
+    // We only use this instance to do the page walk without creating.
+    let page_table: PageTable<PageTableEntry> = unsafe {
+        PageTable::from_paddr(
+            PageTableConfig {
+                address_width: AddressWidth::Level4PageTable,
+            },
+            page_directory_base.start_address().as_u64() as usize,
+        )
+    };
+    page_table
 }
 
 /// Read `ENTRY_COUNT` of PageTableEntry from an address
@@ -263,21 +287,7 @@ pub unsafe fn table_of<'a, T: PageTableEntryTrait>(pa: Paddr) -> Option<&'a mut 
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
 pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
-    #[cfg(target_arch = "x86_64")]
-    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
-
-    // TODO: Read and use different level page table.
-    // Safety: The page_directory_base is valid since it is read from PDBR.
-    // We only use this instance to do the page walk without creating.
-    let mut page_table: PageTable<PageTableEntry> = unsafe {
-        PageTable::from_paddr(
-            PageTableConfig {
-                address_width: AddressWidth::Level4PageTable,
-            },
-            page_directory_base.start_address().as_u64() as usize,
-        )
-    };
-    let page_directory_base = page_directory_base.start_address().as_u64() as usize;
+    let mut page_table = current_page_table();
     let last_entry = page_table.page_walk(vaddr, false)?;
     // FIXME: Support huge page
     Some(last_entry.paddr() + (vaddr & (PAGE_SIZE - 1)))

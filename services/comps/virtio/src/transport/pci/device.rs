@@ -8,7 +8,7 @@ use jinux_frame::{
     io_mem::IoMem,
     offset_of,
     trap::TrapFrame,
-    vm::VmFrame,
+    vm::{paddr_to_daddr, VmFrame},
 };
 
 use alloc::{boxed::Box, sync::Arc};
@@ -91,13 +91,13 @@ impl VirtioTransport for VirtioPciTransport {
             .write(&queue_size)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_desc)
-            .write(&(descriptor_ptr.paddr() as u64))
+            .write(&(paddr_to_daddr(descriptor_ptr.paddr()).unwrap() as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_driver)
-            .write(&(avail_ring_ptr.paddr() as u64))
+            .write(&(paddr_to_daddr(avail_ring_ptr.paddr()).unwrap() as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_device)
-            .write(&(used_ring_ptr.paddr() as u64))
+            .write(&(paddr_to_daddr(used_ring_ptr.paddr()).unwrap() as u64))
             .unwrap();
         // Enable queue
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_enable)

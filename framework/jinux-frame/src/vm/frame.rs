@@ -5,14 +5,23 @@ use core::{
 };
 
 use crate::{
-    arch::iommu,
+    arch::{
+        iommu::{self, iova::alloc_iova_continuous},
+        mm::PageTableFlags,
+    },
+    bus::pci::PciDeviceLocation,
     config::PAGE_SIZE,
     mem_storage::{MemArea, MemStorage, MemStorageIterator},
     prelude::*,
     Error,
 };
 
-use super::{frame_allocator, HasPaddr};
+use super::{
+    dma::{dma_type, DmaType},
+    frame_allocator,
+    page_table::current_page_table,
+    HasPaddr,
+};
 use super::{Paddr, VmIo};
 
 /// A collection of page frames (physical memory pages).
@@ -51,18 +60,42 @@ impl VmFrameVec {
             frame_list
         };
         if options.can_dma {
+            let mut page_table = current_page_table();
             for frame in frames.iter_mut() {
-                // Safety: The address is controlled by frame allocator.
-                unsafe {
-                    if let Err(err) = iommu::map(frame.start_paddr(), frame.start_paddr()) {
-                        match err {
-                            // do nothing
-                            iommu::IommuError::NoIommu => {}
-                            iommu::IommuError::ModificationError(err) => {
-                                panic!("iommu map error:{:?}", err)
+                let vaddr = super::paddr_to_vaddr(frame.start_paddr());
+                let flags = page_table.flags(vaddr).unwrap();
+                page_table
+                    .protect(vaddr, flags | PageTableFlags::NO_CACHE)
+                    .unwrap();
+            }
+            match dma_type() {
+                DmaType::Direct => {}
+                DmaType::Iommu => {
+                    // The page table of all devices is the same. So we can use any device ID.
+                    // FIXME: distinguish different device id.
+                    let device_id = PciDeviceLocation {
+                        bus: 0,
+                        device: 0,
+                        function: 0,
+                    };
+                    let iova_vec = alloc_iova_continuous(device_id, page_size).unwrap();
+                    // Safety: The address is controlled by frame allocator.
+                    for (index, frame) in frames.iter_mut().enumerate() {
+                        unsafe {
+                            if let Err(err) = iommu::map(iova_vec[index], frame.start_paddr()) {
+                                match err {
+                                    // do nothing
+                                    iommu::IommuError::NoIommu => {}
+                                    iommu::IommuError::ModificationError(err) => {
+                                        panic!("iommu map error:{:?}", err)
+                                    }
+                                }
                             }
                         }
                     }
+                }
+                DmaType::Tdx => {
+                    todo!()
                 }
             }
         }
@@ -388,13 +421,20 @@ impl Drop for VmFrame {
     fn drop(&mut self) {
         if self.need_dealloc() && Arc::strong_count(&self.frame_index) == 1 {
             if self.can_dma() {
-                if let Err(err) = iommu::unmap(self.start_paddr()) {
-                    match err {
-                        // do nothing
-                        iommu::IommuError::NoIommu => {}
-                        iommu::IommuError::ModificationError(err) => {
-                            panic!("iommu map error:{:?}", err)
+                match dma_type() {
+                    DmaType::Direct => {}
+                    DmaType::Iommu => {
+                        if let Err(err) = iommu::unmap(self.start_paddr()) {
+                            match err {
+                                iommu::IommuError::NoIommu => {}
+                                iommu::IommuError::ModificationError(err) => {
+                                    panic!("iommu map error:{:?}", err)
+                                }
+                            }
                         }
+                    }
+                    DmaType::Tdx => {
+                        todo!()
                     }
                 }
             }
