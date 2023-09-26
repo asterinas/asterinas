@@ -259,7 +259,7 @@ impl Socket for DatagramSocket {
                     return_errno_with_message!(Errno::EAGAIN, "try to receive again");
                 }
                 // FIXME: deal with recvfrom timeout
-                poller.wait(None)?;
+                poller.wait_interruptible(None)?;
             }
         }
     }

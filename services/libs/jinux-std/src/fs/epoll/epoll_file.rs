@@ -191,7 +191,7 @@ impl EpollFile {
                 }
             }
 
-            poller.as_ref().unwrap().wait(timeout)?;
+            poller.as_ref().unwrap().wait_interruptible(timeout)?;
         }
     }
 

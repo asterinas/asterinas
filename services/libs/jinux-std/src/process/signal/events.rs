@@ -117,6 +117,14 @@ impl SigQueueObserver {
     {
         Ok(self.wait_queue.wait_until(cond, timeout)?)
     }
+
+    pub fn wake_all(&self) {
+        self.wait_queue.wake_all();
+    }
+
+    pub fn wake_one(&self) {
+        self.wait_queue.wake_one();
+    }
 }
 
 impl Observer<SigEvents> for SigQueueObserver {

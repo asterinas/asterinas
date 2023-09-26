@@ -1,10 +1,11 @@
 use super::IoEvents;
 use crate::events::{Observer, Subject};
 use crate::prelude::*;
+use crate::process::signal::sig_mask::SigMask;
+use crate::process::signal::SigQueueObserver;
 
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use core::time::Duration;
-use jinux_frame::sync::WaitQueue;
 use keyable_arc::KeyableWeak;
 
 /// A pollee maintains a set of active events, which can be polled with
@@ -157,9 +158,15 @@ impl Poller {
         }
     }
 
-    /// Wait until there are any interesting events happen since last `wait`.
-    pub fn wait(&self, timeout: Option<&Duration>) -> Result<()> {
-        self.inner.event_counter.read(timeout)?;
+    /// Wait until there are any interesting events happen since last `wait`. The `wait`
+    /// can be interrupted by signal.
+    pub fn wait_interruptible(&self, timeout: Option<&Duration>) -> Result<()> {
+        self.inner.event_counter.read_interruptible(timeout)?;
+        Ok(())
+    }
+
+    pub fn wait_uninterruptible(&self, timeout: Option<&Duration>) -> Result<()> {
+        self.inner.event_counter.read_uninterruptible(timeout)?;
         Ok(())
     }
 
@@ -193,19 +200,25 @@ impl Drop for Poller {
 /// A counter for wait and wakeup.
 struct EventCounter {
     counter: AtomicUsize,
-    wait_queue: WaitQueue,
+    observer: Arc<SigQueueObserver>,
 }
 
 impl EventCounter {
     pub fn new() -> Self {
+        let observer = {
+            // FIXME: choose the suitable mask
+            let mask = SigMask::new_full();
+            SigQueueObserver::new(mask)
+        };
+
         Self {
             counter: AtomicUsize::new(0),
-            wait_queue: WaitQueue::new(),
+            observer,
         }
     }
 
-    pub fn read(&self, timeout: Option<&Duration>) -> Result<usize> {
-        let val = self.wait_queue.wait_until(
+    pub fn read_interruptible(&self, timeout: Option<&Duration>) -> Result<usize> {
+        self.observer.wait_until_interruptible(
             || {
                 let val = self.counter.swap(0, Ordering::Relaxed);
                 if val > 0 {
@@ -215,12 +228,25 @@ impl EventCounter {
                 }
             },
             timeout,
-        )?;
-        Ok(val)
+        )
+    }
+
+    pub fn read_uninterruptible(&self, timeout: Option<&Duration>) -> Result<usize> {
+        self.observer.wait_until_uninterruptible(
+            || {
+                let val = self.counter.swap(0, Ordering::Relaxed);
+                if val > 0 {
+                    Some(val)
+                } else {
+                    None
+                }
+            },
+            timeout,
+        )
     }
 
     pub fn write(&self) {
         self.counter.fetch_add(1, Ordering::Relaxed);
-        self.wait_queue.wake_one();
+        self.observer.wake_one();
     }
 }

@@ -58,7 +58,7 @@ impl ConnectedStream {
                     return_errno_with_message!(Errno::EAGAIN, "try to recv again");
                 }
                 // FIXME: deal with receive timeout
-                poller.wait(None)?;
+                poller.wait_interruptible(None)?;
             }
         }
     }

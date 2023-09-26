@@ -133,7 +133,7 @@ impl BacklogTable {
 
             // FIXME: deal with accept timeout
             if events.is_empty() {
-                poller.wait(None)?;
+                poller.wait_interruptible(None)?;
             }
         }
     }

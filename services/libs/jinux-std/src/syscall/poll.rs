@@ -91,7 +91,7 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>) -> Result<usize> 
             return Ok(0);
         }
 
-        poller.wait(timeout.as_ref())?;
+        poller.wait_interruptible(timeout.as_ref())?;
     }
 }
 

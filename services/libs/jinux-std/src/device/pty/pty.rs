@@ -106,7 +106,7 @@ impl FileLike for PtyMaster {
                 if events.is_empty() {
                     drop(input);
                     // FIXME: deal with pty read timeout
-                    poller.wait(None)?;
+                    poller.wait_interruptible(None)?;
                 }
                 continue;
             }
