@@ -9,9 +9,11 @@ use super::signal::sig_disposition::SigDispositions;
 use super::signal::sig_mask::SigMask;
 use super::signal::sig_queues::SigQueues;
 use super::signal::signals::Signal;
+use super::signal::{SigEvents, SigEventsFilter};
 use super::status::ProcessStatus;
 use super::{process_table, TermStatus};
 use crate::device::tty::get_n_tty;
+use crate::events::Observer;
 use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
 use crate::fs::utils::FileCreationMask;
@@ -261,6 +263,18 @@ impl Process {
 
     pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
         self.sig_queues.lock().dequeue(mask)
+    }
+
+    pub fn register_sigqueue_observer(
+        &self,
+        observer: Weak<dyn Observer<SigEvents>>,
+        filter: SigEventsFilter,
+    ) {
+        self.sig_queues.lock().register_observer(observer, filter);
+    }
+
+    pub fn unregiser_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
+        self.sig_queues.lock().unregister_observer(observer);
     }
 
     // ******************* Status ********************

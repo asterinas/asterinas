@@ -1,20 +1,21 @@
-use crate::{prelude::*, process::posix_thread::PosixThreadExt, thread::Thread};
+use crate::log_syscall_entry;
+use crate::prelude::*;
+use crate::process::signal::sig_mask::SigMask;
+use crate::process::signal::SigQueueObserver;
 
-use super::SyscallReturn;
+use super::{SyscallReturn, SYS_PAUSE};
 
 pub fn sys_pause() -> Result<SyscallReturn> {
-    loop {
-        let current_thread = current_thread!();
-        // check sig_queue of current thread and process,
-        // if there's any pending signal, break loop
-        let posix_thread = current_thread.as_posix_thread().unwrap();
-        if posix_thread.has_pending_signal() || current!().has_pending_signal() {
-            break;
-        }
-        // there's no pending signal, yield execution
-        // FIXME: set current thread interruptible here
-        Thread::yield_now();
-    }
-    // handle signal before returning to user space
-    return_errno_with_message!(Errno::ERESTART, "catch signal")
+    log_syscall_entry!(SYS_PAUSE);
+
+    let sigqueue_observer = {
+        // FIXME: like sleep, paused thread can only be interrupted by signals that will call signal
+        // handler or terminate current process
+        let sigmask = SigMask::new_full();
+        SigQueueObserver::new(sigmask)
+    };
+
+    sigqueue_observer.wait_until_interruptible(|| None, None)?;
+
+    unreachable!("[Internal Error] pause should always return EINTR");
 }

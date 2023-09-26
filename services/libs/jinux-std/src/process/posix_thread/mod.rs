@@ -1,4 +1,5 @@
 use crate::{
+    events::Observer,
     prelude::*,
     process::{
         do_exit_group,
@@ -10,7 +11,9 @@ use crate::{
 };
 
 use super::{
-    signal::{sig_mask::SigMask, sig_queues::SigQueues, signals::Signal},
+    signal::{
+        sig_mask::SigMask, sig_queues::SigQueues, signals::Signal, SigEvents, SigEventsFilter,
+    },
     Process,
 };
 
@@ -71,10 +74,6 @@ impl PosixThread {
         &self.sig_mask
     }
 
-    pub fn sig_queues(&self) -> &Mutex<SigQueues> {
-        &self.sig_queues
-    }
-
     pub fn has_pending_signal(&self) -> bool {
         self.sig_queues.lock().is_empty()
     }
@@ -85,6 +84,18 @@ impl PosixThread {
 
     pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
         self.sig_queues.lock().dequeue(mask)
+    }
+
+    pub fn register_sigqueue_observer(
+        &self,
+        observer: Weak<dyn Observer<SigEvents>>,
+        filter: SigEventsFilter,
+    ) {
+        self.sig_queues.lock().register_observer(observer, filter);
+    }
+
+    pub fn unregiser_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
+        self.sig_queues.lock().unregister_observer(observer);
     }
 
     pub fn sig_context(&self) -> &Mutex<Option<Vaddr>> {
