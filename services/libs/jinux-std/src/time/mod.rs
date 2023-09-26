@@ -4,6 +4,7 @@ use core::time::Duration;
 use crate::prelude::*;
 
 mod system_time;
+use jinux_frame::timer::read_monotonic_milli_seconds;
 pub use system_time::SystemTime;
 
 pub type clockid_t = i32;
@@ -70,3 +71,29 @@ impl From<timeval_t> for Duration {
 
 /// The various flags for setting POSIX.1b interval timers:
 pub const TIMER_ABSTIME: i32 = 0x01;
+
+pub fn now_as_duration(clock_id: &ClockID) -> Result<Duration> {
+    match clock_id {
+        ClockID::CLOCK_MONOTONIC
+        | ClockID::CLOCK_MONOTONIC_COARSE
+        | ClockID::CLOCK_MONOTONIC_RAW => {
+            let time_ms = read_monotonic_milli_seconds();
+
+            let seconds = time_ms / 1000;
+            let nanos = time_ms % 1000 * 1_000_000;
+            Ok(Duration::new(seconds, nanos as u32))
+        }
+        ClockID::CLOCK_REALTIME | ClockID::CLOCK_REALTIME_COARSE => {
+            let now = SystemTime::now();
+            now.duration_since(&SystemTime::UNIX_EPOCH)
+        }
+        _ => {
+            warn!(
+                "unsupported clock_id: {:?}, treat it as CLOCK_REALTIME",
+                clock_id
+            );
+            let now = SystemTime::now();
+            now.duration_since(&SystemTime::UNIX_EPOCH)
+        }
+    }
+}

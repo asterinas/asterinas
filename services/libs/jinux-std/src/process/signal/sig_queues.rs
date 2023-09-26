@@ -1,4 +1,5 @@
-use super::constants::*;
+use super::{constants::*, SigEvents, SigEventsFilter};
+use crate::events::{Observer, Subject};
 use crate::prelude::*;
 
 use super::sig_mask::SigMask;
@@ -9,6 +10,7 @@ pub struct SigQueues {
     count: usize,
     std_queues: Vec<Option<Box<dyn Signal>>>,
     rt_queues: Vec<VecDeque<Box<dyn Signal>>>,
+    subject: Subject<SigEvents, SigEventsFilter>,
 }
 
 impl SigQueues {
@@ -16,11 +18,12 @@ impl SigQueues {
         let count = 0;
         let std_queues = (0..COUNT_STD_SIGS).map(|_| None).collect();
         let rt_queues = (0..COUNT_RT_SIGS).map(|_| Default::default()).collect();
-        // let notifier = Notifier::new();
+        let subject = Subject::new();
         SigQueues {
             count,
             std_queues,
             rt_queues,
+            subject,
         }
     }
 
@@ -58,7 +61,7 @@ impl SigQueues {
             self.count += 1;
         }
 
-        // self.notifier.broadcast(&signum);
+        self.subject.notify_observers(&SigEvents::new(signum));
     }
 
     pub fn dequeue(&mut self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
@@ -133,6 +136,18 @@ impl SigQueues {
         debug_assert!(signum.is_real_time());
         let idx = (signum.as_u8() - MIN_RT_SIG_NUM) as usize;
         &mut self.rt_queues[idx]
+    }
+
+    pub fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<SigEvents>>,
+        filter: SigEventsFilter,
+    ) {
+        self.subject.register_observer(observer, filter);
+    }
+
+    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
+        self.subject.unregister_observer(observer);
     }
 }
 

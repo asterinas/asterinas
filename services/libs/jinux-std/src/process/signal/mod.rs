@@ -1,11 +1,14 @@
 pub mod c_types;
 pub mod constants;
+mod events;
 pub mod sig_action;
 pub mod sig_disposition;
 pub mod sig_mask;
 pub mod sig_num;
 pub mod sig_queues;
 pub mod signals;
+
+pub use events::{SigEvents, SigEventsFilter, SigQueueObserver};
 
 use core::mem;
 

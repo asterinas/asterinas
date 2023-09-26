@@ -2,13 +2,12 @@ use core::time::Duration;
 
 use super::SyscallReturn;
 use super::SYS_CLOCK_NANOSLEEP;
-use crate::{
-    log_syscall_entry,
-    prelude::*,
-    thread::Thread,
-    time::{clockid_t, timespec_t, ClockID, TIMER_ABSTIME},
-    util::{read_val_from_user, write_val_to_user},
-};
+use crate::log_syscall_entry;
+use crate::prelude::*;
+use crate::process::signal::sig_mask::SigMask;
+use crate::process::signal::SigQueueObserver;
+use crate::time::{clockid_t, now_as_duration, timespec_t, ClockID, TIMER_ABSTIME};
+use crate::util::{read_val_from_user, write_val_to_user};
 
 pub fn sys_clock_nanosleep(
     clockid: clockid_t,
@@ -25,20 +24,47 @@ pub fn sys_clock_nanosleep(
     } else {
         unreachable!()
     };
-    let request_timespec = read_val_from_user::<timespec_t>(request_timespec_addr)?;
+
+    let duration = {
+        let timespec = read_val_from_user::<timespec_t>(request_timespec_addr)?;
+        if abs_time {
+            todo!("deal with abs time");
+        }
+        Duration::from(timespec)
+    };
 
     debug!(
-        "clockid = {:?}, abs_time = {}, request_timespec = {:?}, remain timespec addr = 0x{:x}",
-        clock_id, abs_time, request_timespec, remain_timespec_addr
+        "clockid = {:?}, abs_time = {}, duration = {:?}, remain_timespec_addr = 0x{:x}",
+        clock_id, abs_time, duration, remain_timespec_addr
     );
-    // FIXME: do real sleep. Here we simply yield the execution of current thread since we does not have timeout support now.
-    // If the sleep is interrupted by a signal, this syscall should return error.
-    Thread::yield_now();
-    if remain_timespec_addr != 0 {
-        let remain_duration = Duration::new(0, 0);
-        let remain_timespec = timespec_t::from(remain_duration);
-        write_val_to_user(remain_timespec_addr, &remain_timespec)?;
-    }
 
-    Ok(SyscallReturn::Return(0))
+    let start_time = now_as_duration(&clock_id)?;
+
+    let sigqueue_observer = {
+        // FIXME: sleeping thread can only be interrupted by signals that will call signal handler or terminate
+        // current process. i.e., the signals that should be ignored will not interrupt sleeping thread.
+        let sigmask = SigMask::new_full();
+        SigQueueObserver::new(sigmask)
+    };
+
+    let res = sigqueue_observer.wait_until_interruptible(|| None, Some(&duration));
+    match res {
+        Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
+        Err(e) if e.error() == Errno::EINTR => {
+            let end_time = now_as_duration(&clock_id)?;
+
+            if end_time >= start_time + duration {
+                return Ok(SyscallReturn::Return(0));
+            }
+
+            if remain_timespec_addr != 0 {
+                let remaining_duration = (start_time + duration) - end_time;
+                let remaining_timespec = timespec_t::from(remaining_duration);
+                write_val_to_user(remain_timespec_addr, &remaining_timespec)?;
+            }
+
+            return_errno_with_message!(Errno::EINTR, "sleep was interrupted");
+        }
+        Ok(()) | Err(_) => unreachable!(),
+    }
 }
