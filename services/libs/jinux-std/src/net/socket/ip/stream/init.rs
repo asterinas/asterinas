@@ -152,7 +152,7 @@ impl InitStream {
                 return_errno_with_message!(Errno::EAGAIN, "try connect again");
             } else {
                 // FIXME: deal with connecting timeout
-                poller.wait(None)?;
+                poller.wait_interruptible(None)?;
             }
         }
     }
