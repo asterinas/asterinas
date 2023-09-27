@@ -3,7 +3,6 @@ use tdx_guest::{
     tdvmcall::{cpuid, hlt, rdmsr, wrmsr, IoSize},
     {serial_println, tdcall, tdvmcall, TdxVirtualExceptionType},
 };
-use trapframe::{GeneralRegs, TrapFrame};
 
 pub trait TdxTrapFrame {
     fn rax(&self) -> usize;
