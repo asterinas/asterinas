@@ -44,51 +44,48 @@ pub struct TrapInformation {
 }
 
 #[cfg(feature = "intel_tdx")]
-struct VeGeneralRegs<'a>(&'a mut GeneralRegs);
-
-#[cfg(feature = "intel_tdx")]
-impl TdxTrapFrame for VeGeneralRegs<'_> {
+impl TdxTrapFrame for GeneralRegs {
     fn rax(&self) -> usize {
-        self.0.rax
+        self.rax
     }
     fn set_rax(&mut self, rax: usize) {
-        self.0.rax = rax;
+        self.rax = rax;
     }
     fn rbx(&self) -> usize {
-        self.0.rbx
+        self.rbx
     }
     fn set_rbx(&mut self, rbx: usize) {
-        self.0.rbx = rbx;
+        self.rbx = rbx;
     }
     fn rcx(&self) -> usize {
-        self.0.rcx
+        self.rcx
     }
     fn set_rcx(&mut self, rcx: usize) {
-        self.0.rcx = rcx;
+        self.rcx = rcx;
     }
     fn rdx(&self) -> usize {
-        self.0.rdx
+        self.rdx
     }
     fn set_rdx(&mut self, rdx: usize) {
-        self.0.rdx = rdx;
+        self.rdx = rdx;
     }
     fn rsi(&self) -> usize {
-        self.0.rsi
+        self.rsi
     }
     fn set_rsi(&mut self, rsi: usize) {
-        self.0.rsi = rsi;
+        self.rsi = rsi;
     }
     fn rdi(&self) -> usize {
-        self.0.rdi
+        self.rdi
     }
     fn set_rdi(&mut self, rdi: usize) {
-        self.0.rdi = rdi;
+        self.rdi = rdi;
     }
     fn rip(&self) -> usize {
-        self.0.rip
+        self.rip
     }
     fn set_rip(&mut self, rip: usize) {
-        self.0.rip = rip;
+        self.rip = rip;
     }
 }
 
@@ -130,8 +127,7 @@ impl UserContextApiInternal for UserContext {
                     if *exception == VIRTUALIZATION_EXCEPTION {
                         let ve_info =
                             tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
-                        let mut ve_f = VeGeneralRegs(self.general_regs_mut());
-                        handle_virtual_exception(&mut ve_f, &ve_info);
+                        handle_virtual_exception(self.general_regs_mut(), &ve_info);
                         continue;
                     }
                     if exception.typ == CpuExceptionType::FaultOrTrap
