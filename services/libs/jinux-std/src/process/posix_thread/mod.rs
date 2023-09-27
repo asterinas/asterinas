@@ -3,7 +3,7 @@ use super::signal::sig_mask::SigMask;
 use super::signal::sig_num::SigNum;
 use super::signal::sig_queues::SigQueues;
 use super::signal::signals::Signal;
-use super::signal::{SigEvents, SigEventsFilter};
+use super::signal::{SigEvents, SigEventsFilter, SigStack};
 use super::{do_exit_group, Credentials, Process, TermStatus};
 use crate::events::Observer;
 use crate::prelude::*;
@@ -51,6 +51,7 @@ pub struct PosixThread {
     /// Signal handler ucontext address
     /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
     sig_context: Mutex<Option<Vaddr>>,
+    sig_stack: Mutex<Option<SigStack>>,
 }
 
 impl PosixThread {
@@ -150,6 +151,10 @@ impl PosixThread {
 
     pub fn sig_context(&self) -> &Mutex<Option<Vaddr>> {
         &self.sig_context
+    }
+
+    pub fn sig_stack(&self) -> &Mutex<Option<SigStack>> {
+        &self.sig_stack
     }
 
     pub fn robust_list(&self) -> &Mutex<Option<RobustListHead>> {
