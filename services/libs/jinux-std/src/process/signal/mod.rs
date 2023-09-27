@@ -8,30 +8,27 @@ pub mod sig_disposition;
 pub mod sig_mask;
 pub mod sig_num;
 pub mod sig_queues;
+mod sig_stack;
 pub mod signals;
 
 pub use events::{SigEvents, SigEventsFilter};
 pub use pauser::Pauser;
 pub use poll::{Pollee, Poller};
-
-use core::mem;
+pub use sig_stack::{SigStack, SigStackFlags, SigStackStatus};
 
 use align_ext::AlignExt;
-use jinux_frame::{cpu::UserContext, task::Task};
+use core::mem;
+use jinux_frame::cpu::UserContext;
+use jinux_frame::task::Task;
 
-use self::c_types::siginfo_t;
-use self::sig_mask::SigMask;
-use self::sig_num::SigNum;
-use crate::current_thread;
-use crate::process::posix_thread::PosixThreadExt;
-use crate::process::signal::c_types::ucontext_t;
-use crate::process::signal::sig_action::SigActionFlags;
+use super::posix_thread::{PosixThread, PosixThreadExt};
+use crate::prelude::*;
 use crate::process::{do_exit_group, TermStatus};
 use crate::util::{write_bytes_to_user, write_val_to_user};
-use crate::{
-    prelude::*,
-    process::signal::sig_action::{SigAction, SigDefaultAction},
-};
+use c_types::{siginfo_t, ucontext_t};
+use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
+use sig_mask::SigMask;
+use sig_num::SigNum;
 
 /// Handle pending signal for current process
 pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
@@ -134,19 +131,24 @@ pub fn handle_user_signal(
     // block signals in sigmask when running signal handler
     posix_thread.sig_mask().lock().block(mask.as_u64());
 
-    // Set up signal stack in user stack,
-    // to avoid corrupting user stack, we minus 128 first.
-    let mut user_rsp = context.rsp() as u64;
-    user_rsp -= 128;
+    // Set up signal stack.
+    let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(posix_thread) {
+        sp as u64
+    } else {
+        // just use user stack
+        context.rsp() as u64
+    };
+
+    // To avoid corrupting signal stack, we minus 128 first.
+    stack_pointer -= 128;
 
     // 1. write siginfo_t
-    user_rsp -= mem::size_of::<siginfo_t>() as u64;
-    write_val_to_user(user_rsp as _, &sig_info)?;
-    let siginfo_addr = user_rsp;
-    // debug!("siginfo_addr = 0x{:x}", siginfo_addr);
+    stack_pointer -= mem::size_of::<siginfo_t>() as u64;
+    write_val_to_user(stack_pointer as _, &sig_info)?;
+    let siginfo_addr = stack_pointer;
 
     // 2. write ucontext_t.
-    user_rsp = alloc_aligned_in_user_stack(user_rsp, mem::size_of::<ucontext_t>(), 16)?;
+    stack_pointer = alloc_aligned_in_user_stack(stack_pointer, mem::size_of::<ucontext_t>(), 16)?;
     let mut ucontext = ucontext_t {
         uc_sigmask: mask.as_u64(),
         ..Default::default()
@@ -159,18 +161,17 @@ pub fn handle_user_signal(
         ucontext.uc_link = 0;
     }
     // TODO: store fp regs in ucontext
-    write_val_to_user(user_rsp as _, &ucontext)?;
-    let ucontext_addr = user_rsp;
-    // Store the ucontext addr in sig context of current process.
+    write_val_to_user(stack_pointer as _, &ucontext)?;
+    let ucontext_addr = stack_pointer;
+    // Store the ucontext addr in sig context of current thread.
     *sig_context = Some(ucontext_addr as Vaddr);
-    // current.sig_context().lock().push_back(ucontext_addr as _);
 
     // 3. Set the address of the trampoline code.
     if flags.contains(SigActionFlags::SA_RESTORER) {
         // If contains SA_RESTORER flag, trampoline code is provided by libc in restorer_addr.
         // We just store restorer_addr on user stack to allow user code just to trampoline code.
-        user_rsp = write_u64_to_user_stack(user_rsp, restorer_addr as u64)?;
-        trace!("After set restorer addr: user_rsp = 0x{:x}", user_rsp);
+        stack_pointer = write_u64_to_user_stack(stack_pointer, restorer_addr as u64)?;
+        trace!("After set restorer addr: user_rsp = 0x{:x}", stack_pointer);
     } else {
         // Otherwise we create a trampoline.
         // FIXME: This may cause problems if we read old_context from rsp.
@@ -179,14 +180,14 @@ pub fn handle_user_signal(
             0x0f, 0x05, // syscall (call rt_sigreturn)
             0x90, // nop (for alignment)
         ];
-        user_rsp -= TRAMPOLINE.len() as u64;
-        let trampoline_rip = user_rsp;
-        write_bytes_to_user(user_rsp as Vaddr, TRAMPOLINE)?;
-        user_rsp = write_u64_to_user_stack(user_rsp, trampoline_rip)?;
+        stack_pointer -= TRAMPOLINE.len() as u64;
+        let trampoline_rip = stack_pointer;
+        write_bytes_to_user(stack_pointer as Vaddr, TRAMPOLINE)?;
+        stack_pointer = write_u64_to_user_stack(stack_pointer, trampoline_rip)?;
     }
     // 4. Set correct register values
     context.set_rip(handler_addr as _);
-    context.set_rsp(user_rsp as usize);
+    context.set_rsp(stack_pointer as usize);
     // parameters of signal handler
     context.set_rdi(sig_num.as_u8() as usize); // signal number
     if flags.contains(SigActionFlags::SA_SIGINFO) {
@@ -198,6 +199,34 @@ pub fn handle_user_signal(
     }
 
     Ok(())
+}
+
+/// Use an alternate signal stack, which was installed by sigaltstack.
+/// It the stack is already active, we just increase the handler counter and return None, since
+/// the stack pointer can be read from context.
+/// It the stack is not used by any handler, we will return the new sp in alternate signal stack.
+fn use_alternate_signal_stack(posix_thread: &PosixThread) -> Option<usize> {
+    let mut sig_stack = posix_thread.sig_stack().lock();
+
+    let Some(sig_stack) = &mut *sig_stack else {
+        return None;
+    };
+
+    if sig_stack.is_disabled() {
+        return None;
+    }
+
+    if sig_stack.is_active() {
+        // The stack is already active, so we just use sp in context.
+        sig_stack.increase_handler_counter();
+        return None;
+    }
+
+    sig_stack.increase_handler_counter();
+
+    // Make sp align at 16. FIXME: is this required?
+    let stack_pointer = (sig_stack.base() + sig_stack.size()).align_down(16);
+    Some(stack_pointer)
 }
 
 fn write_u64_to_user_stack(rsp: u64, value: u64) -> Result<u64> {

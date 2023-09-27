@@ -99,6 +99,7 @@ use self::setsid::sys_setsid;
 use self::setsockopt::sys_setsockopt;
 use self::setuid::sys_setuid;
 use self::shutdown::sys_shutdown;
+use self::sigaltstack::sys_sigaltstack;
 use self::socket::sys_socket;
 use self::socketpair::sys_socketpair;
 
@@ -185,6 +186,7 @@ mod setsid;
 mod setsockopt;
 mod setuid;
 mod shutdown;
+mod sigaltstack;
 mod socket;
 mod socketpair;
 mod stat;
@@ -316,6 +318,7 @@ define_syscall_nums!(
     SYS_SETFSUID = 122,
     SYS_SETFSGID = 123,
     SYS_GETSID = 124,
+    SYS_SIGALTSTACK = 131,
     SYS_STATFS = 137,
     SYS_FSTATFS = 138,
     SYS_PRCTL = 157,
@@ -491,6 +494,7 @@ pub fn syscall_dispatch(
         SYS_SETFSUID => syscall_handler!(1, sys_setfsuid, args),
         SYS_SETFSGID => syscall_handler!(1, sys_setfsgid, args),
         SYS_GETSID => syscall_handler!(1, sys_getsid, args),
+        SYS_SIGALTSTACK => syscall_handler!(2, sys_sigaltstack, args),
         SYS_STATFS => syscall_handler!(2, sys_statfs, args),
         SYS_FSTATFS => syscall_handler!(2, sys_fstatfs, args),
         SYS_PRCTL => syscall_handler!(5, sys_prctl, args),

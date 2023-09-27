@@ -92,7 +92,6 @@ impl PosixThreadBuilder {
         let thread = Arc::new_cyclic(|thread_ref| {
             let task = create_new_user_task(user_space, thread_ref.clone());
             let status = ThreadStatus::Init;
-            let sig_context = Mutex::new(None);
             let posix_thread = PosixThread {
                 process,
                 is_main_thread,
@@ -102,7 +101,8 @@ impl PosixThreadBuilder {
                 credentials,
                 sig_mask: Mutex::new(sig_mask),
                 sig_queues: Mutex::new(sig_queues),
-                sig_context,
+                sig_context: Mutex::new(None),
+                sig_stack: Mutex::new(None),
                 robust_list: Mutex::new(None),
             };
 
