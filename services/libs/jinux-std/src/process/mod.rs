@@ -1,6 +1,5 @@
 mod clone;
 mod exit;
-pub mod fifo_scheduler;
 pub mod posix_thread;
 #[allow(clippy::module_inception)]
 mod process;

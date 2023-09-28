@@ -1,4 +1,4 @@
-use jinux_frame::task::Task;
+use jinux_frame::task::TaskOptions;
 
 use crate::prelude::*;
 
@@ -11,15 +11,10 @@ pub trait KernelThreadExt {
     /// get the kernel_thread structure
     fn as_kernel_thread(&self) -> Option<&KernelThread>;
     /// create a new kernel thread structure, **NOT** run the thread.
-    fn new_kernel_thread<F>(task_fn: F) -> Arc<Thread>
-    where
-        F: Fn() + Send + Sync + 'static;
+    fn new_kernel_thread(thread_options: ThreadOptions) -> Arc<Thread>;
     /// create a new kernel thread structure, and then run the thread.
-    fn spawn_kernel_thread<F>(task_fn: F) -> Arc<Thread>
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        let thread = Self::new_kernel_thread(task_fn);
+    fn spawn_kernel_thread(thread_options: ThreadOptions) -> Arc<Thread> {
+        let thread = Self::new_kernel_thread(thread_options);
         thread.run();
         thread
     }
@@ -32,10 +27,8 @@ impl KernelThreadExt for Thread {
         self.data().downcast_ref::<KernelThread>()
     }
 
-    fn new_kernel_thread<F>(task_fn: F) -> Arc<Self>
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
+    fn new_kernel_thread(mut thread_options: ThreadOptions) -> Arc<Self> {
+        let task_fn = thread_options.take_func();
         let thread_fn = move || {
             task_fn();
             let current_thread = current_thread!();
@@ -44,7 +37,11 @@ impl KernelThreadExt for Thread {
         };
         let tid = allocate_tid();
         let thread = Arc::new_cyclic(|thread_ref| {
-            let task = Task::new(thread_fn, thread_ref.clone(), None).unwrap();
+            let weal_thread = thread_ref.clone();
+            let task = TaskOptions::new(thread_fn)
+                .data(weal_thread)
+                .build()
+                .unwrap();
             let status = ThreadStatus::Init;
             let kernel_thread = KernelThread;
             Thread::new(tid, task, kernel_thread, status)
@@ -63,5 +60,40 @@ impl KernelThreadExt for Thread {
                 Thread::yield_now();
             }
         }
+    }
+}
+
+/// Options to create or spawn a new thread.
+pub struct ThreadOptions {
+    func: Option<Box<dyn Fn() + Send + Sync>>,
+    priority: u16,
+}
+
+impl ThreadOptions {
+    pub fn new<F>(func: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        Self {
+            func: Some(Box::new(func)),
+            priority: 100,
+        }
+    }
+
+    pub fn func<F>(mut self, func: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        self.func = Some(Box::new(func));
+        self
+    }
+
+    fn take_func(&mut self) -> Box<dyn Fn() + Send + Sync> {
+        self.func.take().unwrap()
+    }
+
+    pub fn priority(mut self, priority: u16) -> Self {
+        self.priority = priority;
+        self
     }
 }
