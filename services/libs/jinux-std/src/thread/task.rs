@@ -1,6 +1,6 @@
 use jinux_frame::{
     cpu::UserContext,
-    task::Task,
+    task::{preempt, Task, TaskOptions},
     user::{UserContextApi, UserEvent, UserMode, UserSpace},
 };
 
@@ -50,13 +50,19 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
                 debug!("{} is suspended.", current_thread.tid());
                 handle_pending_signal(context).unwrap();
             }
+            // a preemption point after handling user event.
+            preempt();
         }
         debug!("exit user loop");
         // FIXME: This is a work around: exit in kernel task entry may be not called. Why this will happen?
         Task::current().exit();
     }
 
-    Task::new(user_task_entry, thread_ref, Some(user_space)).expect("spawn task failed")
+    TaskOptions::new(user_task_entry)
+        .data(thread_ref)
+        .user_space(Some(user_space))
+        .build()
+        .expect("spawn task failed")
 }
 
 fn handle_user_event(user_event: UserEvent, context: &mut UserContext) {

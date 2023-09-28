@@ -1,8 +1,8 @@
 use core::sync::atomic::AtomicUsize;
 
-use crate::cpu::CpuLocal;
 use crate::cpu_local;
 use crate::sync::Mutex;
+use crate::{cpu::CpuLocal, trap::disable_local};
 
 use core::sync::atomic::Ordering::Relaxed;
 
@@ -61,6 +61,23 @@ pub fn schedule() {
     if let Some(task) = fetch_task() {
         switch_to_task(task);
     }
+}
+
+pub fn preempt() {
+    // disable interrupts to avoid nested preemption.
+    let disable_irq = disable_local();
+    let Some(curr_task) = current_task() else {
+        return;
+    };
+    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
+    if !scheduler.should_preempt(&curr_task) {
+        return;
+    }
+    let Some(next_task) = scheduler.dequeue() else {
+        return;
+    };
+    drop(scheduler);
+    switch_to_task(next_task);
 }
 
 /// call this function to switch to other task

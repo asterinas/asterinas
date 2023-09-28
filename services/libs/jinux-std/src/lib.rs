@@ -22,7 +22,10 @@
 
 use crate::{
     prelude::*,
-    thread::{kernel_thread::KernelThreadExt, Thread},
+    thread::{
+        kernel_thread::{KernelThreadExt, ThreadOptions},
+        Thread,
+    },
 };
 use jinux_frame::{boot, exit_qemu, QemuExitCode};
 use process::Process;
@@ -40,6 +43,7 @@ pub mod fs;
 pub mod net;
 pub mod prelude;
 mod process;
+mod sched;
 pub mod syscall;
 pub mod thread;
 pub mod time;
@@ -49,7 +53,7 @@ pub mod vm;
 pub fn init() {
     driver::init();
     net::init();
-    process::fifo_scheduler::init();
+    sched::init();
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
 }
@@ -61,12 +65,12 @@ fn init_thread() {
     );
     net::lazy_init();
     // driver::pci::virtio::block::block_device_test();
-    let thread = Thread::spawn_kernel_thread(|| {
+    let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
         let current = current_thread!();
         let tid = current.tid();
         debug!("current tid = {}", tid);
-    });
+    }));
     thread.join();
     info!(
         "[jinux-std/lib.rs] spawn kernel thread, tid = {}",
@@ -103,7 +107,7 @@ fn init_thread() {
 /// first process never return
 #[controlled]
 pub fn run_first_process() -> ! {
-    Thread::spawn_kernel_thread(init_thread);
+    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread));
     unreachable!()
 }
 

@@ -2,7 +2,10 @@ use jinux_frame::timer::read_monotonic_milli_seconds;
 
 use crate::{
     prelude::*,
-    thread::{kernel_thread::KernelThreadExt, Thread},
+    thread::{
+        kernel_thread::{KernelThreadExt, ThreadOptions},
+        Thread,
+    },
 };
 
 use super::Iface;
@@ -67,5 +70,5 @@ pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
             }
         }
     };
-    Thread::spawn_kernel_thread(task_fn);
+    Thread::spawn_kernel_thread(ThreadOptions::new(task_fn));
 }

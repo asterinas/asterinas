@@ -17,6 +17,9 @@ pub trait Scheduler: Sync + Send {
     fn enqueue(&self, task: Arc<Task>);
 
     fn dequeue(&self) -> Option<Arc<Task>>;
+
+    /// Tells whether the given task should be preempted by other tasks in the queue.
+    fn should_preempt(&self, task: &Arc<Task>) -> bool;
 }
 
 pub struct GlobalScheduler {
@@ -37,6 +40,10 @@ impl GlobalScheduler {
     /// require the scheduler is not none
     pub fn enqueue(&mut self, task: Arc<Task>) {
         self.scheduler.unwrap().enqueue(task)
+    }
+
+    pub fn should_preempt(&self, task: &Arc<Task>) -> bool {
+        self.scheduler.unwrap().should_preempt(task)
     }
 }
 /// Set the global task scheduler.
