@@ -5,6 +5,8 @@ use crate::{prelude::*, Error};
 use core::fmt::Debug;
 use trapframe::TrapFrame;
 
+pub type IrqCallbackFunction = dyn Fn(&TrapFrame) + Sync + Send + 'static;
+
 /// An Interrupt ReQuest(IRQ) line. User can use `alloc` or `alloc_specific` to get specific IRQ line.
 ///
 /// The IRQ number is guaranteed to be external IRQ number and user can register callback functions to this IRQ resource.

@@ -3,16 +3,12 @@ use core::fmt::Debug;
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use log::{debug, error};
 
+use crate::bus::BusProbeError;
+
 use super::{device_info::PciDeviceId, PciCommonDevice};
 
 pub trait PciDevice: Sync + Send + Debug {
     fn device_id(&self) -> PciDeviceId;
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum PciDriverProbeError {
-    DeviceNotMatch,
-    ConfigurationSpaceError,
 }
 
 /// PCI device driver, PCI bus will pass the device through the `probe` function when a new device is registered.
@@ -29,7 +25,7 @@ pub trait PciDriver: Sync + Send + Debug {
     fn probe(
         &self,
         device: PciCommonDevice,
-    ) -> Result<Arc<dyn PciDevice>, (PciDriverProbeError, PciCommonDevice)>;
+    ) -> Result<Arc<dyn PciDevice>, (BusProbeError, PciCommonDevice)>;
 }
 
 /// The PCI bus used to register PCI devices. If a component wishes to drive a PCI device, it needs to provide the following:
@@ -56,7 +52,7 @@ impl PciBus {
                     continue;
                 }
                 Err((err, common_device)) => {
-                    if err != PciDriverProbeError::DeviceNotMatch {
+                    if err != BusProbeError::DeviceNotMatch {
                         error!("PCI device construction failed, reason: {:?}", err);
                     }
                     debug_assert!(device_id == *common_device.device_id());
@@ -79,7 +75,7 @@ impl PciBus {
                     return;
                 }
                 Err((err, common_device)) => {
-                    if err != PciDriverProbeError::DeviceNotMatch {
+                    if err != BusProbeError::DeviceNotMatch {
                         error!("PCI device construction failed, reason: {:?}", err);
                     }
                     debug_assert!(device_id == *common_device.device_id());
