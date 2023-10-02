@@ -635,6 +635,7 @@ dependencies = [
  "buddy_system_allocator",
  "cfg-if",
  "inherit-methods-macro",
+ "int-to-c-enum",
  "intrusive-collections",
  "lazy_static",
  "log",
