@@ -196,7 +196,7 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
     /// This method requires the Read right.
     #[require(R > Read)]
     pub fn read_slice(&self, slice: &mut [T]) -> Result<()> {
-        self.vm_obj.read_slice(0, slice)
+        self.vm_obj.read_slice(self.offset, slice)
     }
 
     /// Overwrite the value at the pointer.
@@ -216,7 +216,7 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
     /// This method requires the Write right.
     #[require(R > Write)]
     pub fn write_slice(&self, slice: &[T]) -> Result<()> {
-        self.vm_obj.write_slice(0, slice)
+        self.vm_obj.write_slice(self.offset, slice)
     }
 
     // =============== Address-related methods ==============
@@ -237,7 +237,7 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
         if count >= 0 {
             self.offset += offset as usize;
         } else {
-            self.offset -= (-offset) as usize;
+            self.offset -= offset as usize;
         }
     }
 
