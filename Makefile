@@ -56,7 +56,8 @@ export
 
 export JINUX_BOOT_PROTOCOL=$(BOOT_PROTOCOL)
 
-# GNU toolchain variables
+# Toolchain variables
+export CARGO := cargo
 export AS := as
 export CC := gcc
 export OBJCOPY := objcopy

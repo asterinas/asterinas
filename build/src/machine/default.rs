@@ -63,7 +63,9 @@ pub fn create_bootdev_image(
     // Find the setup header in the build script output directory.
     let out_dir = glob("target/x86_64-custom/debug/build/jinux-frame-*").unwrap();
     let header_bin = Path::new(out_dir.into_iter().next().unwrap().unwrap().as_path())
-        .join("out/linux_header.bin");
+        .join("out")
+        .join("bin")
+        .join("jinux-frame-x86-boot-setup.bin");
 
     // Deliver the kernel image to the boot directory.
     match protocol {
