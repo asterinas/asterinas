@@ -2,11 +2,9 @@
 // See https://www.kernel.org/doc/html/v5.6/x86/boot.html for
 // more information on the Linux x86 Boot Protocol.
 
-.intel_syntax noprefix
-
 // The section name is used by the build script to strip and make
 // the binary file.
-.section ".boot_compatibility_bin", "awx"
+.section ".boot_real_mode", "awx"
 
 // The Linux x86 Boot Protocol header.
 // 
@@ -68,7 +66,8 @@ kernel_info_offset:     .long 0
 .align 16
 real_gdtr:
         .word gdt_end - gdt - 1
-        .quad gdt
+        .long 0         # upper 32-bit address of GDT
+        .long gdt       # lower 32-bit address of GDT
 
 .align 16
 gdt:

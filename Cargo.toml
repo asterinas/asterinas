@@ -1,6 +1,6 @@
 [package]
 name = "jinux"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [[bin]]
@@ -22,6 +22,7 @@ jinux-framebuffer = { path = "services/comps/framebuffer" }
 members = [
     "build",
     "framework/jinux-frame",
+    "framework/jinux-frame/src/arch/x86/boot/linux_boot/setup",
     "framework/libs/align_ext",
     "services/comps/virtio",
     "services/comps/input",

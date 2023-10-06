@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "jinux"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "component",
  "jinux-frame",
@@ -658,6 +658,10 @@ dependencies = [
  "x86",
  "x86_64",
 ]
+
+[[package]]
+name = "jinux-frame-x86-boot-setup"
+version = "0.1.0"
 
 [[package]]
 name = "jinux-framebuffer"
