@@ -52,7 +52,13 @@ fn build_linux_setup_header() -> Result<(), Box<dyn Error + Send + Sync>> {
     let objcopy = std::env::var("OBJCOPY").unwrap();
     let mut cmd = std::process::Command::new(objcopy);
     cmd.arg("-O").arg("binary");
-    cmd.arg("-j").arg(".boot_real_mode");
+    cmd.arg("-j").arg(".header");
+    cmd.arg("-j").arg(".text");
+    cmd.arg("-j").arg(".rodata");
+    cmd.arg("-j").arg(".data");
+    cmd.arg("-j").arg(".bss");
+    cmd.arg("-j").arg(".eh_frame");
+    cmd.arg("-j").arg(".eh_frame_hdr");
     cmd.arg(elf_path.to_str().unwrap());
     cmd.arg(bin_path.to_str().unwrap());
     let output = cmd.output()?;

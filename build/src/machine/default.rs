@@ -42,61 +42,111 @@ pub fn create_bootdev_image(
     grub_cfg: String,
     protocol: GrubBootProtocol,
 ) -> PathBuf {
-    let dir = path.parent().unwrap();
-    let name = path.file_name().unwrap().to_str().unwrap().to_string();
-    let iso_path = dir.join(name + ".iso").to_str().unwrap().to_string();
+    let cwd = std::env::current_dir().unwrap();
+    let target_dir = path.parent().unwrap();
+    let out_dir = target_dir.join("boot_device");
 
-    // Clean up the image directory.
-    if Path::new("target/iso_root").exists() {
-        fs::remove_dir_all("target/iso_root").unwrap();
+    // Clear or make the out dir.
+    if out_dir.exists() {
+        fs::remove_dir_all(&out_dir).unwrap();
     }
-
-    // Copy the needed files into an ISO image.
-    fs::create_dir_all("target/iso_root/boot/grub").unwrap();
-
-    fs::copy(
-        "regression/build/initramfs.cpio.gz",
-        "target/iso_root/boot/initramfs.cpio.gz",
-    )
-    .unwrap();
+    fs::create_dir_all(&out_dir).unwrap();
 
     // Find the setup header in the build script output directory.
-    let out_dir = glob("target/x86_64-custom/debug/build/jinux-frame-*").unwrap();
-    let header_bin = Path::new(out_dir.into_iter().next().unwrap().unwrap().as_path())
+    let bs_out_dir = glob("target/x86_64-custom/debug/build/jinux-frame-*").unwrap();
+    let header_bin = Path::new(bs_out_dir.into_iter().next().unwrap().unwrap().as_path())
         .join("out")
         .join("bin")
         .join("jinux-frame-x86-boot-setup.bin");
 
-    // Deliver the kernel image to the boot directory.
-    match protocol {
+    let target_path = match protocol {
         GrubBootProtocol::Linux => {
             // Make the `zimage`-compatible kernel image and place it in the boot directory.
-            make_zimage(
-                &Path::new("target/iso_root/boot/jinux"),
-                &path.as_path(),
-                &header_bin.as_path(),
-            )
-            .unwrap();
+            let target_path = out_dir.join("jinuz");
+            make_zimage(&target_path, &path.as_path(), &header_bin.as_path()).unwrap();
+            target_path
         }
-        GrubBootProtocol::Multiboot | GrubBootProtocol::Multiboot2 => {
-            // Copy the kernel image into the boot directory.
-            fs::copy(&path, "target/iso_root/boot/jinux").unwrap();
-        }
-    }
+        GrubBootProtocol::Multiboot | GrubBootProtocol::Multiboot2 => path.clone(),
+    };
+    let target_name = target_path.file_name().unwrap().to_str().unwrap();
 
     // Write the grub.cfg file
-    fs::write("target/iso_root/boot/grub/grub.cfg", grub_cfg).unwrap();
+    let grub_cfg_path = out_dir.join("grub.cfg");
+    fs::write(&grub_cfg_path, grub_cfg).unwrap();
 
-    // Make the boot device .iso image.
-    let status = std::process::Command::new("grub-mkrescue")
+    // Make the boot device CDROM image.
+
+    // Firstly use `grub-mkrescue` to generate grub.img.
+    let grub_img_path = out_dir.join("grub.img");
+    let mut cmd = std::process::Command::new("grub-mkimage");
+    cmd.arg("--format=i386-pc")
+        .arg(format!("--prefix={}", out_dir.display()))
+        .arg(format!("--output={}", grub_img_path.display()));
+    // A embedded config file should be used to find the real config with menuentries.
+    cmd.arg("--config=build/grub/grub.cfg.embedded");
+    let grub_modules = &[
+        "linux",
+        "boot",
+        "multiboot",
+        "multiboot2",
+        "elf",
+        "loadenv",
+        "memdisk",
+        "biosdisk",
+        "iso9660",
+        "normal",
+        "loopback",
+        "chain",
+        "configfile",
+        "halt",
+        "help",
+        "ls",
+        "reboot",
+        "echo",
+        "test",
+        "sleep",
+        "true",
+        "vbe",
+        "vga",
+        "video_bochs",
+    ];
+    for module in grub_modules {
+        cmd.arg(module);
+    }
+    if !cmd.status().unwrap().success() {
+        panic!("Failed to run `{:?}`.", cmd);
+    }
+    // Secondly prepend grub.img with cdboot.img.
+    let cdboot_path = PathBuf::from("/usr/lib/grub/i386-pc/cdboot.img");
+    let mut grub_img = fs::read(cdboot_path).unwrap();
+    grub_img.append(&mut fs::read(&grub_img_path).unwrap());
+    fs::write(&grub_img_path, &grub_img).unwrap();
+
+    // Finally use the `genisoimage` command to generate the CDROM image.
+    let iso_path = out_dir.join(target_name.to_string() + ".iso");
+    let mut cmd = std::process::Command::new("genisoimage");
+    cmd.arg("-graft-points")
+        .arg("-quiet")
+        .arg("-R")
+        .arg("-no-emul-boot")
+        .arg("-boot-info-table")
+        .arg("-boot-load-size")
+        .arg("4")
+        .arg("-input-charset")
+        .arg("utf8")
+        .arg("-A")
+        .arg("jinux-grub2")
+        .arg("-b")
+        .arg(&grub_img_path)
         .arg("-o")
         .arg(&iso_path)
-        .arg("target/iso_root")
-        .status()
-        .unwrap();
-
-    if !status.success() {
-        panic!("Failed to create boot iso image.")
+        .arg(format!("boot/{}={}", target_name, target_path.display()))
+        .arg(format!("boot/grub/grub.cfg={}", grub_cfg_path.display()))
+        .arg(format!("boot/grub/grub.img={}", grub_img_path.display()))
+        .arg("boot/initramfs.cpio.gz=regression/build/initramfs.cpio.gz")
+        .arg(cwd.as_os_str());
+    if !cmd.status().unwrap().success() {
+        panic!("Failed to run `{:?}`.", cmd);
     }
 
     iso_path.into()
@@ -131,12 +181,15 @@ pub fn generate_grub_cfg(
     let buffer = match protocol {
         GrubBootProtocol::Multiboot => buffer
             .replace("#GRUB_CMD_KERNEL#", "multiboot")
+            .replace("#KERNEL_NAME#", "jinux")
             .replace("#GRUB_CMD_INITRAMFS#", "module --nounzip"),
         GrubBootProtocol::Multiboot2 => buffer
             .replace("#GRUB_CMD_KERNEL#", "multiboot2")
+            .replace("#KERNEL_NAME#", "jinux")
             .replace("#GRUB_CMD_INITRAMFS#", "module2 --nounzip"),
         GrubBootProtocol::Linux => buffer
             .replace("#GRUB_CMD_KERNEL#", "linux")
+            .replace("#KERNEL_NAME#", "jinuz")
             .replace("#GRUB_CMD_INITRAMFS#", "initrd"),
     };
 
