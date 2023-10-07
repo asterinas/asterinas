@@ -1,0 +1,7 @@
+search.fs_label grub root
+if [ -e /boot/grub/grub.cfg ]; then
+    set prefix=($root)/boot/grub
+    configfile /boot/grub/grub.cfg
+else
+    echo "Could not find a configuration file!"
+fi

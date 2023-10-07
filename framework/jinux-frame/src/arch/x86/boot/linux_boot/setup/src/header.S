@@ -4,7 +4,7 @@
 
 // The section name is used by the build script to strip and make
 // the binary file.
-.section ".boot_real_mode", "awx"
+.section ".header", "awx"
 
 // The Linux x86 Boot Protocol header.
 // 
@@ -19,7 +19,8 @@
 sentinel:               .byte 0xff, 0xff
 .org 0x01f1
 hdr:
-setup_sects:            .byte 0
+SETUP_SECTS = 4
+setup_sects:            .byte SETUP_SECTS
 root_flags:             .word 1
 syssize:                .long 0
 ram_size:               .word 0
@@ -27,7 +28,7 @@ vid_mode:               .word 0xfffd
 root_dev:               .word 0
 boot_flag:              .word 0xAA55
 jump:                   .byte 0xeb
-                        .byte start_of_setup-jump
+jump_addr:              .byte start_of_setup32-jump_addr
 magic:                  .ascii "HdrS"
                         .word 0x020f
 realmode_swtch:         .word 0, 0
@@ -35,7 +36,7 @@ start_sys_seg:          .word 0
                         .word 0
 type_of_loader:         .byte 0
 loadflags:              .byte (1 << 0)
-setup_move_size:        .word 0x8000
+setup_move_size:        .word 0
 code32_start:           .long 0x100000
 ramdisk_image:          .long 0
 ramdisk_size:           .long 0
@@ -62,53 +63,9 @@ kernel_info_offset:     .long 0
 
 // End of header.
 
-// Temporary real mode GDTR/GDT entries.
-.align 16
-real_gdtr:
-        .word gdt_end - gdt - 1
-        .long 0         # upper 32-bit address of GDT
-        .long gdt       # lower 32-bit address of GDT
-
-.align 16
-gdt:
-        .quad 0x0000000000000000 # 0:  null descriptor
-        .quad 0x00cf8a000000ffff # 8:  32-bit system segment (4k sys ex rw)
-        .quad 0x00cf9a000000ffff # 16:  32-bit code/data segment (4k sys ex rw)
-gdt_end:
-
-// 16-bit setup code starts here.
-.code16
-start_of_setup:
-// Enter 32-bit protected mode without paging.
-        // Disable interrupts.
-        cli
-        
-        // Enable a20 gate.
-        in al, 0x92
-        or al, 2
-        out 0x92, al
-
-        // Load GDT.
-        lgdt [real_gdtr]
-        mov eax, cr0
-        or eax, 1
-        mov cr0, eax
-
-        // Go to protected mode.
-        jmp start_of_setup32
-
 // 32-bit setup code starts here.
 .code32
 start_of_setup32:
-        // print to screen a debug message using out port 0x3f8.
-        mov dx, 0x3f8
-        mov al, 'H'
-        out dx, al
-        mov al, 'e'
-        out dx, al
-        mov al, 'l'
-        out dx, al
-        mov al, 'l'
-        out dx, al
-        mov al, 'o'
-        out dx, al
+.org 0x200 * SETUP_SECTS
+        .extern _rust_setup_entry
+        jmp _rust_setup_entry

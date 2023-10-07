@@ -13,6 +13,7 @@ pub mod machine;
 
 use std::{
     fs::OpenOptions,
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -101,25 +102,60 @@ pub const GDB_ARGS: &[&str] = &[
     "-S",
 ];
 
-fn main() {
-    let args = Args::parse();
-
-    if args.run_gdb_client {
-        let mut gdb_cmd = Command::new("gdb");
-        // Adding the debug symbols from the kernel image.
-        // Alternatively, use "file /usr/lib/grub/i386-pc/boot.image"
-        // to load symbols from GRUB.
-        gdb_cmd
-            .arg("-ex")
-            .arg(format!("file {}", args.path.display()));
-        // Set the architecture, otherwise GDB will complain about.
-        gdb_cmd.arg("-ex").arg("set arch i386:x86-64:intel");
+fn run_gdb_client(path: &PathBuf, gdb_grub: bool) {
+    let path = std::fs::canonicalize(path).unwrap();
+    let mut gdb_cmd = Command::new("gdb");
+    // Set the architecture, otherwise GDB will complain about.
+    gdb_cmd.arg("-ex").arg("set arch i386:x86-64:intel");
+    let grub_script = "/tmp/jinux-gdb-grub-script";
+    if gdb_grub {
+        // Load symbols from GRUB using the provided grub gdb script.
+        // Read the contents from /usr/lib/grub/i386-pc/gdb_grub and
+        // replace the lines containing "file kernel.exec" and
+        // "target remote :1234".
+        gdb_cmd.current_dir("/usr/lib/grub/i386-pc/");
+        let grub_script_content = include_str!("/usr/lib/grub/i386-pc/gdb_grub");
+        let lines = grub_script_content.lines().collect::<Vec<_>>();
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(grub_script)
+            .unwrap();
+        for line in lines {
+            if line.contains("target remote :1234") {
+                // Connect to the GDB server.
+                writeln!(f, "target remote /tmp/jinux-gdb-socket").unwrap();
+            } else {
+                writeln!(f, "{}", line).unwrap();
+            }
+        }
+        gdb_cmd.arg("-x").arg(grub_script);
+    } else {
+        // Load symbols from the kernel image.
+        gdb_cmd.arg("-ex").arg(format!("file {}", path.display()));
         // Connect to the GDB server.
         gdb_cmd
             .arg("-ex")
             .arg("target remote /tmp/jinux-gdb-socket");
-        println!("running:{:#?}", gdb_cmd);
-        gdb_cmd.status().unwrap();
+    }
+    // Connect to the GDB server and run.
+    println!("running:{:#?}", gdb_cmd);
+    gdb_cmd.status().unwrap();
+    if gdb_grub {
+        // Clean the temporary script file then return.
+        std::fs::remove_file(grub_script).unwrap();
+    }
+}
+
+fn main() {
+    let args = Args::parse();
+
+    if args.run_gdb_client {
+        let gdb_grub = args.boot_method.contains("grub");
+        // You should comment out this code if you want to debug gdb instead
+        // of the kernel because this argument is not exposed by runner CLI.
+        // let gdb_grub = gdb_grub && false;
+        run_gdb_client(&args.path, gdb_grub);
         return;
     }
 

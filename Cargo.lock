@@ -662,6 +662,10 @@ dependencies = [
 [[package]]
 name = "jinux-frame-x86-boot-setup"
 version = "0.1.0"
+dependencies = [
+ "spin 0.9.8",
+ "uart_16550",
+]
 
 [[package]]
 name = "jinux-framebuffer"
@@ -1391,6 +1395,17 @@ dependencies = [
 [[package]]
 name = "typeflags-util"
 version = "0.1.0"
+
+[[package]]
+name = "uart_16550"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dc00444796f6c71f47c85397a35e9c4dbf9901902ac02386940d178e2b78687"
+dependencies = [
+ "bitflags 1.3.2",
+ "rustversion",
+ "x86",
+]
 
 [[package]]
 name = "uefi-raw"
