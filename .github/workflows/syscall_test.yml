@@ -10,18 +10,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: jinuxdev/jinux:0.1.2
+    container: jinuxdev/jinux:0.2.0
     steps:
-      - run: echo "Running in jinuxdev/jinux:0.1.2"
+      - run: echo "Running in jinuxdev/jinux:0.2.0"
 
       - uses: actions/checkout@v3
 
       - name: Syscall Test (Multiboot2)
         id: syscall_test_mb2
-        run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 SKIP_GRUB_MENU=1 BOOT_METHOD=grub-multiboot2
+        run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 SKIP_GRUB_MENU=1 BOOT_METHOD=qemu-grub BOOT_PROTOCOL=multiboot2
 
       # TODO: include the integration tests for Multiboot/MicroVM/Linux boot methods, which are not ready yet.
 
       # - name: Syscall Test (Linux Boot Protocol)
       #  id: syscall_test_lbp
-      #  run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 SKIP_GRUB_MENU=1 BOOT_METHOD=grub-linux
+      #  run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 SKIP_GRUB_MENU=1 BOOT_METHOD=qemu-grub BOOT_PROTOCOL=linux

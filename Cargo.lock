@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "jinux"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "component",
  "jinux-frame",
@@ -620,16 +620,6 @@ dependencies = [
  "lazy_static",
  "log",
  "spin 0.9.8",
-]
-
-[[package]]
-name = "jinux-build"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "glob",
- "rand",
 ]
 
 [[package]]
@@ -729,6 +719,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "jinux-runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "glob",
+ "rand",
 ]
 
 [[package]]

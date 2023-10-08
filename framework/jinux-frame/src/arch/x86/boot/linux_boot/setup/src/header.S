@@ -4,7 +4,7 @@
 
 // The section name is used by the build script to strip and make
 // the binary file.
-.section ".header", "awx"
+.section ".header", "ax"
 
 // The Linux x86 Boot Protocol header.
 // 
@@ -56,8 +56,8 @@ hardware_subarch_data:  .quad 0
 payload_offset:         .long 0xabababab # at 0x248/4, to be filled by the runner
 payload_length:         .long 0xabababab # at 0x24c/4, to be filled by the runner
 setup_data:             .quad 0
-pref_address:           .quad 0
-init_size:              .long 0
+pref_address:           .quad 0x8000000 # 128MiB
+init_size:              .long 0x4000000 # 64MiB
 handover_offset:        .long 0
 kernel_info_offset:     .long 0
 

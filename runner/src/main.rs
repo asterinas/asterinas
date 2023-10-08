@@ -5,8 +5,9 @@
 //! The runner will generate the filesystem image for starting Jinux. If
 //! we should use the runner in the default mode, which invokes QEMU with
 //! a GRUB boot device image, the runner would be responsible for generating
-//! the and the boot device image. It also supports directly boot the
-//! kernel image without GRUB using the QEMU microvm mode.
+//! the appropriate kernel image and the boot device image. It also supports
+//! to directly boot the kernel image without GRUB using the QEMU microvm
+//! machine type.
 //!
 
 pub mod machine;
@@ -18,10 +19,22 @@ use std::{
     process::Command,
 };
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
-use crate::machine::{default, microvm};
+use crate::machine::{microvm, qemu_grub_efi};
 
+#[derive(Debug, Clone, Copy, PartialEq, ValueEnum)]
+enum BootMethod {
+    QemuGrub,
+    Microvm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, ValueEnum)]
+pub enum BootProtocol {
+    Multiboot,
+    Multiboot2,
+    Linux,
+}
 /// The CLI of this runner.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -36,12 +49,17 @@ struct Args {
 
     // Optional arguments.
     /// Boot method. Can be one of the following items:
-    ///  - `grub-multiboot`,
-    ///  - `grub-multiboot2`,
-    ///  - `grub-linux`,
-    ///  - `microvm-multiboot`.
-    #[arg(long, default_value = "grub-multiboot2")]
-    boot_method: String,
+    ///  - `qemu-grub`;
+    ///  - `microvm`.
+    #[arg(long, value_enum, default_value_t = BootMethod::QemuGrub)]
+    boot_method: BootMethod,
+
+    /// Boot protocol. Can be one of the following items:
+    ///  - `multiboot`;
+    ///  - `multiboot2`;
+    ///  - `linux`.
+    #[arg(long, value_enum, default_value_t = BootProtocol::Multiboot2)]
+    boot_protocol: BootProtocol,
 
     /// Enable KVM when running QEMU.
     #[arg(long, default_value_t = false)]
@@ -83,15 +101,12 @@ pub const COMMON_ARGS: &[&str] = &[
     "filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
 ];
 
-pub fn random_hostfwd_netdev_arg() -> String {
+pub fn random_hostfwd_ports() -> (u16, u16) {
     let start = 32768u16;
     let end = 61000u16;
     let port1 = rand::random::<u16>() % (end - 1 - start) + start;
     let port2 = rand::random::<u16>() % (end - port1) + port1;
-    format!(
-        "user,id=net01,hostfwd=tcp::{}-:22,hostfwd=tcp::{}-:8080",
-        port1, port2
-    )
+    (port1, port2)
 }
 
 pub const GDB_ARGS: &[&str] = &[
@@ -109,12 +124,13 @@ fn run_gdb_client(path: &PathBuf, gdb_grub: bool) {
     gdb_cmd.arg("-ex").arg("set arch i386:x86-64:intel");
     let grub_script = "/tmp/jinux-gdb-grub-script";
     if gdb_grub {
+        let grub_dir =
+            PathBuf::from(qemu_grub_efi::GRUB_LIB_PREFIX).join(qemu_grub_efi::GRUB_VERSION);
         // Load symbols from GRUB using the provided grub gdb script.
-        // Read the contents from /usr/lib/grub/i386-pc/gdb_grub and
-        // replace the lines containing "file kernel.exec" and
-        // "target remote :1234".
-        gdb_cmd.current_dir("/usr/lib/grub/i386-pc/");
-        let grub_script_content = include_str!("/usr/lib/grub/i386-pc/gdb_grub");
+        // Read the contents from `gdb_grub` and
+        // replace the lines containing "target remote :1234".
+        gdb_cmd.current_dir(&grub_dir);
+        let grub_script_content = std::fs::read_to_string(grub_dir.join("gdb_grub")).unwrap();
         let lines = grub_script_content.lines().collect::<Vec<_>>();
         let mut f = OpenOptions::new()
             .write(true)
@@ -122,7 +138,13 @@ fn run_gdb_client(path: &PathBuf, gdb_grub: bool) {
             .open(grub_script)
             .unwrap();
         for line in lines {
-            if line.contains("target remote :1234") {
+            if line.contains("file kernel.exec") {
+                writeln!(f, "{}", line).unwrap();
+                // A horrible hack on GRUB EFI debugging.
+                // https://stackoverflow.com/questions/43872078/debug-grub2-efi-image-running-on-qemu
+                // Please use our custom built debug OVMF image to confirm the entrypoint address.
+                writeln!(f, "add-symbol-file kernel.exec 0x0007E69F000").unwrap();
+            } else if line.contains("target remote :1234") {
                 // Connect to the GDB server.
                 writeln!(f, "target remote /tmp/jinux-gdb-socket").unwrap();
             } else {
@@ -151,10 +173,10 @@ fn main() {
     let args = Args::parse();
 
     if args.run_gdb_client {
-        let gdb_grub = args.boot_method.contains("grub");
-        // You should comment out this code if you want to debug gdb instead
+        let gdb_grub = args.boot_method == BootMethod::QemuGrub;
+        // You should comment out the next line if you want to debug grub instead
         // of the kernel because this argument is not exposed by runner CLI.
-        // let gdb_grub = gdb_grub && false;
+        let gdb_grub = gdb_grub && false;
         run_gdb_client(&args.path, gdb_grub);
         return;
     }
@@ -164,11 +186,19 @@ fn main() {
     qemu_cmd.args(COMMON_ARGS);
 
     qemu_cmd.arg("-netdev");
-    qemu_cmd.arg(random_hostfwd_netdev_arg().as_str());
+    let (port1, port2) = random_hostfwd_ports();
+    qemu_cmd.arg(format!(
+        "user,id=net01,hostfwd=tcp::{}-:22,hostfwd=tcp::{}-:8080",
+        port1, port2
+    ));
+    println!(
+        "[jinux-runner] Binding host ports to guest ports: ({} -> {}); ({} -> {}).",
+        port1, 22, port2, 8080
+    );
 
     if args.halt_for_gdb {
         if args.enable_kvm {
-            println!("Runner: Can't enable KVM when running QEMU as a GDB server. Abort.");
+            println!("[jinux-runner] Can't enable KVM when running QEMU as a GDB server. Abort.");
             return;
         }
         qemu_cmd.args(GDB_ARGS);
@@ -177,26 +207,26 @@ fn main() {
     if args.enable_kvm {
         qemu_cmd.arg("-enable-kvm");
     }
-    // Specify machine type
-    if args.boot_method == "microvm-multiboot" {
+    // Add machine-specific arguments
+    if args.boot_method == BootMethod::QemuGrub {
+        qemu_cmd.args(qemu_grub_efi::MACHINE_ARGS);
+    } else if args.boot_method == BootMethod::Microvm {
         qemu_cmd.args(microvm::MACHINE_ARGS);
-    } else {
-        qemu_cmd.args(default::MACHINE_ARGS);
     }
     // Add device arguments
-    if args.boot_method == "microvm-multiboot" {
+    if args.boot_method == BootMethod::Microvm {
         qemu_cmd.args(microvm::DEVICE_ARGS);
     } else if args.emulate_iommu {
-        qemu_cmd.args(default::IOMMU_DEVICE_ARGS);
+        qemu_cmd.args(qemu_grub_efi::IOMMU_DEVICE_ARGS);
     } else {
-        qemu_cmd.args(default::NOIOMMU_DEVICE_ARGS);
+        qemu_cmd.args(qemu_grub_efi::NOIOMMU_DEVICE_ARGS);
     }
 
     let fs_image = create_fs_image(args.path.as_path());
     qemu_cmd.arg("-drive");
     qemu_cmd.arg(fs_image);
 
-    if args.boot_method == "microvm-multiboot" {
+    if args.boot_method == BootMethod::Microvm {
         let image = microvm::create_bootdev_image(args.path);
         qemu_cmd.arg("-kernel");
         qemu_cmd.arg(image.as_os_str());
@@ -204,25 +234,25 @@ fn main() {
         qemu_cmd.arg(&args.kcmdline);
         qemu_cmd.arg("-initrd");
         qemu_cmd.arg("regression/build/initramfs.cpio.gz");
-    } else {
-        let boot_protocol = match args.boot_method.as_str() {
-            "grub-multiboot" => default::GrubBootProtocol::Multiboot,
-            "grub-multiboot2" => default::GrubBootProtocol::Multiboot2,
-            "grub-linux" => default::GrubBootProtocol::Linux,
-            _ => panic!("Unknown boot method: {}", args.boot_method),
-        };
-        let grub_cfg = default::generate_grub_cfg(
-            "build/grub/grub.cfg.template",
+    } else if args.boot_method == BootMethod::QemuGrub {
+        let grub_cfg = qemu_grub_efi::generate_grub_cfg(
+            "runner/grub/grub.cfg.template",
             &args.kcmdline,
             args.skip_grub_menu,
-            boot_protocol,
+            args.boot_protocol,
         );
-        let bootdev_image = default::create_bootdev_image(args.path, grub_cfg, boot_protocol);
+        let initramfs_path = PathBuf::from("regression/build/initramfs.cpio.gz");
+        let bootdev_image = qemu_grub_efi::create_bootdev_image(
+            args.path,
+            initramfs_path,
+            grub_cfg,
+            args.boot_protocol,
+        );
         qemu_cmd.arg("-cdrom");
         qemu_cmd.arg(bootdev_image.as_os_str());
     }
 
-    println!("running:{:#?}", qemu_cmd);
+    println!("[jinux-runner] Running: {:#?}", qemu_cmd);
 
     let exit_status = qemu_cmd.status().unwrap();
     if !exit_status.success() {

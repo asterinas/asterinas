@@ -22,7 +22,7 @@ Jinux is unique in practicing the principle of least privilege without sacrifici
 
 As a zero-cost, least-privilege OS, Jinux provides the best of both worlds: the performance of a monolithic kernel and the security of a microkernel. Like a monolithic kernel, the different parts of Jinux can communicate with the most efficient means, e.g., function calls and memory sharing. In the same spirit as a microkernel, the fundamental security properties of the OS depend on a minimum amount of code (i.e., Jinux Framework).
 
-## Build and test
+## Build, test and debug Jinux
 
 While most of the code is written in Rust, the project-scope build process is governed by Makefile. The development environment is managed with Docker. Please ensure Docker is installed and can be run without sudo privilege.
 
@@ -34,12 +34,12 @@ git clone [repository url]
 
 2. After downloading the source code, run the following command to pull the development image.
 ```bash
-docker pull jinuxdev/jinux:0.1.2
+docker pull jinuxdev/jinux:0.2.0
 ```
 
 3. Start the development container.
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v `pwd`:/root/jinux jinuxdev/jinux:0.1.2
+docker run -it --privileged --network=host --device=/dev/kvm -v `pwd`:/root/jinux jinuxdev/jinux:0.2.0
 ```
 
 **All build and test commands should be run inside the development container.**
@@ -90,11 +90,27 @@ Then, we can run the following script using the Jinux shell to run all syscall t
 /opt/syscall_test/run_syscall_test.sh
 ```
 
+### Debug
+
+To debug Jinux using [QEMU GDB remote debugging](https://qemu-project.gitlab.io/qemu/system/gdb.html), you could compile Jinux in debug mode, start a Jinux instance and run the GDB interactive shell in another terminal.
+
+To start a QEMU Jinux VM and wait for debugging connection:
+```bash
+make run GDB_SERVER=1 ENABLE_KVM=0
+```
+
+To get the GDB interactive shell:
+```bash
+make run GDB_CLIENT=1
+```
+
+Currently, the Jinux runner's debugging interface is exposed by unix socket. Thus there shouldn't be multiple debugging instances in the same container. To add debug symbols for the underlying infrastructures such as UEFI firmware or bootloader, please check the runner's source code for details.
+
 ## Code organization
 
 The codebase of Jinux is organized as below.
 
-* `build/`: creating a bootable Jinux kernel image along with an initramfs image. It also supports `cargo run` since it is the only package with `main()`.
+* `runner/`: creating a bootable Jinux kernel image along with an initramfs image. It also supports `cargo run` since it is the only package with `main()`.
 * `kernel/`: defining the entry point of the Jinux kernel.
 * `framework/`: the privileged half of Jinux (allowed to use `unsafe` keyword)
     * `jinux-frame`: providing the safe Rust abstractions for low-level resources like CPU, memory, interrupts, etc;
