@@ -76,6 +76,7 @@ fn init_thread() {
         "[jinux-std/lib.rs] spawn kernel thread, tid = {}",
         thread.tid()
     );
+    thread::work_queue::init();
 
     print_banner();
 

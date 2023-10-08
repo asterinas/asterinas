@@ -1,6 +1,6 @@
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
+use crate::cpu::CpuSet;
 use crate::prelude::*;
-use crate::task::processor::switch_to_task;
 use crate::user::UserSpace;
 use crate::vm::{VmAllocOptions, VmFrameVec};
 use spin::{Mutex, MutexGuard};
@@ -8,6 +8,7 @@ use spin::{Mutex, MutexGuard};
 use intrusive_collections::intrusive_adapter;
 use intrusive_collections::LinkedListAtomicLink;
 
+use super::add_task;
 use super::priority::Priority;
 use super::processor::{current_task, schedule};
 
@@ -65,6 +66,8 @@ pub struct Task {
     kstack: KernelStack,
     link: LinkedListAtomicLink,
     priority: Priority,
+    // TODO:: add multiprocessor support
+    cpu_affinity: CpuSet,
 }
 
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
@@ -100,7 +103,8 @@ impl Task {
     }
 
     pub fn run(self: &Arc<Self>) {
-        switch_to_task(self.clone());
+        add_task(self.clone());
+        schedule();
     }
 
     /// Returns the task status.
@@ -150,6 +154,7 @@ pub struct TaskOptions {
     data: Option<Box<dyn Any + Send + Sync>>,
     user_space: Option<Arc<UserSpace>>,
     priority: Priority,
+    cpu_affinity: CpuSet,
 }
 
 impl TaskOptions {
@@ -158,11 +163,13 @@ impl TaskOptions {
     where
         F: Fn() + Send + Sync + 'static,
     {
+        let cpu_affinity = CpuSet::new_full();
         Self {
             func: Some(Box::new(func)),
             data: None,
             user_space: None,
             priority: Priority::normal(),
+            cpu_affinity,
         }
     }
 
@@ -194,6 +201,11 @@ impl TaskOptions {
         self
     }
 
+    pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
+        self.cpu_affinity = cpu_affinity;
+        self
+    }
+
     /// Builds a new task but not run it immediately.
     pub fn build(self) -> Result<Arc<Task>> {
         /// all task will entering this function
@@ -216,7 +228,7 @@ impl TaskOptions {
             kstack: KernelStack::new()?,
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
-            //cpu_affinity: task_attrs.cpu_affinity,
+            cpu_affinity: self.cpu_affinity,
         };
 
         result.task_inner.lock().task_status = TaskStatus::Runnable;
@@ -253,6 +265,7 @@ impl TaskOptions {
             kstack: KernelStack::new()?,
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
+            cpu_affinity: self.cpu_affinity,
         };
 
         result.task_inner.lock().task_status = TaskStatus::Runnable;
@@ -261,7 +274,7 @@ impl TaskOptions {
             (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
 
         let arc_self = Arc::new(result);
-        switch_to_task(arc_self.clone());
+        arc_self.run();
         Ok(arc_self)
     }
 }

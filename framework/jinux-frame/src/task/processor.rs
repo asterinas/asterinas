@@ -87,7 +87,7 @@ pub fn preempt() {
 /// if current task status is exit, then it will not add to the scheduler
 ///
 /// before context switch, current task will switch to the next task
-pub fn switch_to_task(next_task: Arc<Task>) {
+fn switch_to_task(next_task: Arc<Task>) {
     if !PREEMPT_COUNT.is_preemptive() {
         panic!(
             "Calling schedule() while holding {} locks",
