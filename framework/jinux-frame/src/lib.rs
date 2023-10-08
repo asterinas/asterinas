@@ -9,7 +9,6 @@
 #![feature(core_intrinsics)]
 #![feature(new_uninit)]
 #![feature(strict_provenance)]
-//#![feature(link_llvm_intrinsics)]
 #![feature(const_trait_impl)]
 #![feature(generators)]
 #![feature(iter_from_generator)]

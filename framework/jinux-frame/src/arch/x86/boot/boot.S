@@ -4,6 +4,9 @@
 .section ".boot", "awx"
 .code32
 
+// With the 32-bit entry types we should go through a common paging and machine
+// state setup routine. Thus we make a mark of protocol used in each entrypoint
+// on the stack.
 ENTRYTYPE_MULTIBOOT     = 1
 ENTRYTYPE_MULTIBOOT2    = 2
 ENTRYTYPE_LINUX_32      = 3
@@ -122,6 +125,7 @@ PTE_GLOBAL      = (1 << 8)
     //       0xffff8000_40000000 ~ 0xffff8000_7fffffff
     //       0xffff8000_80000000 ~ 0xffff8000_bfffffff
     //       0xffff8000_c0000000 ~ 0xffff8000_ffffffff
+    //       0xffff8008_00000000 ~ 0xffff8008_3fffffff
     lea edi, [boot_pml4 + 0x100 * 8]
     lea eax, [boot_pdpt + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov dword ptr [edi], eax
@@ -158,6 +162,13 @@ PTE_GLOBAL      = (1 << 8)
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
+    // 1000 00000|000  100000|00 0000000|0 00000000 000
+    // PDPT: 0xffff8008_00000000 ~ 0xffff8008_3fffffff
+    lea edi, [boot_pdpt + 0x20 * 8]
+    lea eax, [boot_pd_32g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    mov dword ptr [edi], eax
+    mov dword ptr [edi + 4], 0
+
     // PDPT: 0xffffffff_80000000 ~ 0xffffffff_bfffffff
     lea edi, [boot_pdpt + 0x1fe * 8]
     lea eax, [boot_pd_0g_1g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
@@ -172,27 +183,25 @@ PTE_GLOBAL      = (1 << 8)
 
     // Page Directory: map to low 1 GiB * 4 space
     lea edi, [boot_pd]
-    lea eax, [boot_pt + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    mov eax, (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL | PTE_HUGE) // Map offset 0.
     mov ecx, 512 * 4 // (of entries in PD) * (number of PD)
-
 write_pd_entry:
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
-    add eax, 0x1000 // 4kiB
+    add eax, 0x200000 // +2MiB
     add edi, 8
     loop write_pd_entry
 
-    // Page Table: map to low 4 KiB * 1M space
-    lea edi, [boot_pt]
-    mov eax, 0x103 // Present, writable, global.
-    mov ecx, 512 * 512 * 4 // (of entries in PT) * (number of PT)
-
-write_pt_entry:
+    // Page Directory: map to 1 GiB space offset 32GiB
+    lea edi, [boot_pd_32g]
+    mov eax, (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL | PTE_HUGE) // Should +0x800000000 but this is 32-bit.
+    mov ecx, 512 // (of entries in PD)
+write_pd_32g_entry:
     mov dword ptr [edi], eax
-    mov dword ptr [edi + 4], 0
-    add eax, 0x1000 // 4KiB
+    mov dword ptr [edi + 4], 0x8 // Map offset 32GiB.
+    add eax, 0x200000 // +2MiB
     add edi, 8
-    loop write_pt_entry
+    loop write_pd_32g_entry
 
     jmp enable_long_mode
 
@@ -258,8 +267,8 @@ boot_pd_2g_3g:
     .skip 4096
 boot_pd_3g_4g:
     .skip 4096
-boot_pt:
-    .skip 4096 * 512 * 4
+boot_pd_32g:
+    .skip 4096
 boot_page_table_end:
 
 boot_stack_bottom:
@@ -299,11 +308,11 @@ long_mode:
     cmp rax, ENTRYTYPE_MULTIBOOT2
     je entry_type_multiboot2
     cmp rax, ENTRYTYPE_LINUX_32
-    je entry_type_pvh_elf
+    je entry_type_linux_32
     // Unreachable!
     jmp halt
 
-entry_type_pvh_elf:
+entry_type_linux_32:
     pop rdi // boot_params ptr
 
     // Clear the frame pointer to stop backtracing here.

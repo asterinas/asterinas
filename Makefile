@@ -1,6 +1,7 @@
 # Make arguments and their defaults
 AUTO_SYSCALL_TEST ?= 0
-BOOT_METHOD ?= grub-multiboot2
+BOOT_METHOD ?= qemu-grub
+BOOT_PROTOCOL ?= multiboot2
 BUILD_SYSCALL_TEST ?= 0
 EMULATE_IOMMU ?= 0
 ENABLE_KVM ?= 1
@@ -24,6 +25,7 @@ BUILD_SYSCALL_TEST := 1
 endif
 
 CARGO_KRUN_ARGS += --boot-method="$(BOOT_METHOD)"
+CARGO_KRUN_ARGS += --boot-protocol="$(BOOT_PROTOCOL)"
 
 ifeq ($(EMULATE_IOMMU), 1)
 CARGO_KRUN_ARGS += --emulate-iommu
@@ -54,12 +56,8 @@ endif
 # Pass make variables to all subdirectory makes
 export
 
-export JINUX_BOOT_PROTOCOL=$(BOOT_PROTOCOL)
-
-# Toolchain variables
+# Toolchain variables that are used when building the Linux setup header
 export CARGO := cargo
-export AS := as
-export CC := gcc
 export OBJCOPY := objcopy
 
 .PHONY: all setup build tools run test docs check clean

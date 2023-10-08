@@ -24,7 +24,7 @@ static CARGO_COMPONENT_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 });
 
 pub fn run_cargo_component(test_name: &str) -> String {
-    let root_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let target_dir = root_dir.join("target").join(test_name);
     let cwd = root_dir.join("tests").join(test_name);
     let output = cargo_clean(&cwd, &target_dir);
