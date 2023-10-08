@@ -1,7 +1,8 @@
 use super::endpoint::Endpoint;
-use crate::fs::utils::{IoEvents, Poller};
+use crate::events::IoEvents;
 use crate::net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd};
 use crate::prelude::*;
+use crate::process::signal::Poller;
 
 pub(super) struct Connected {
     local_endpoint: Arc<Endpoint>,

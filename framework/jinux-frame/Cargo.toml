@@ -20,6 +20,7 @@ trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "e886763" }
 inherit-methods-macro = { git = "https://github.com/jinzhao-dev/inherit-methods-macro", rev = "98f7e3e" }
 tdx-guest = { path = "../libs/tdx-guest", optional = true }
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
+static_assertions = "1.1.0"
 
 [target.x86_64-custom.dependencies]
 x86_64 = "0.14.2"

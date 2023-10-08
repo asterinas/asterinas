@@ -1,9 +1,10 @@
 use super::{
-    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
-    PageCache, Poller,
+    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata, PageCache,
 };
+use crate::events::IoEvents;
 use crate::fs::device::Device;
 use crate::prelude::*;
+use crate::process::signal::Poller;
 use crate::vm::vmo::Vmo;
 
 use alloc::string::String;

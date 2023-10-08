@@ -35,12 +35,12 @@ impl<T> RwMutex<T> {
 
     /// Acquire a read mutex, and if there is a writer, this thread will sleep in the wait queue.
     pub fn read(&self) -> RwMutexReadGuard<T> {
-        self.queue.wait_until(|| self.try_read(), None).unwrap()
+        self.queue.wait_until(|| self.try_read())
     }
 
     /// Acquire a write mutex, and if there is another writer or other readers, this thread will sleep in the wait queue.
     pub fn write(&self) -> RwMutexWriteGuard<T> {
-        self.queue.wait_until(|| self.try_write(), None).unwrap()
+        self.queue.wait_until(|| self.try_write())
     }
 
     /// Try acquire a read mutex and return immediately if it fails.

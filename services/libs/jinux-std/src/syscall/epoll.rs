@@ -1,8 +1,9 @@
 use core::time::Duration;
 
+use crate::events::IoEvents;
 use crate::fs::epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags};
 use crate::fs::file_table::FileDescripter;
-use crate::fs::utils::{CreationFlags, IoEvents};
+use crate::fs::utils::CreationFlags;
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::util::{read_val_from_user, write_val_to_user};

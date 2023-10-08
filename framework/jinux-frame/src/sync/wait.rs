@@ -1,8 +1,6 @@
 use super::SpinLock;
 use crate::arch::timer::add_timeout_list;
 use crate::config::TIMER_FREQ;
-use crate::error::Error;
-use crate::prelude::*;
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -37,15 +35,29 @@ impl WaitQueue {
     ///
     /// By taking a condition closure, his wait-wakeup mechanism becomes
     /// more efficient and robust.
-    ///
-    /// The only error result is Error::TIMEOUT, which means the timeout is readched
-    /// and the condition returns false.
-    pub fn wait_until<F, R>(&self, mut cond: F, timeout: Option<&Duration>) -> Result<R>
+    pub fn wait_until<F, R>(&self, cond: F) -> R
+    where
+        F: FnMut() -> Option<R>,
+    {
+        self.do_wait(cond, None).unwrap()
+    }
+
+    /// Wait until some condition returns Some(_), or a given timeout is reached. If
+    /// the condition does not becomes Some(_) before the timeout is reached, the
+    /// function will return None.
+    pub fn wait_until_or_timeout<F, R>(&self, cond: F, timeout: &Duration) -> Option<R>
+    where
+        F: FnMut() -> Option<R>,
+    {
+        self.do_wait(cond, Some(timeout))
+    }
+
+    fn do_wait<F, R>(&self, mut cond: F, timeout: Option<&Duration>) -> Option<R>
     where
         F: FnMut() -> Option<R>,
     {
         if let Some(res) = cond() {
-            return Ok(res);
+            return Some(res);
         }
 
         let waiter = Arc::new(Waiter::new());
@@ -53,12 +65,12 @@ impl WaitQueue {
 
         let timer_callback = timeout.map(|timeout| {
             let remaining_ticks = {
-                let ms_per_tick = 1000 / TIMER_FREQ;
-
                 // FIXME: We currently require 1000 to be a multiple of TIMER_FREQ, but
                 // this may not hold true in the future, because TIMER_FREQ can be greater
                 // than 1000. Then, the code need to be refactored.
-                debug_assert!(ms_per_tick * TIMER_FREQ == 1000);
+                const_assert!(1000 % TIMER_FREQ == 0);
+
+                let ms_per_tick = 1000 / TIMER_FREQ;
 
                 // The ticks should be equal to or greater than timeout
                 (timeout.as_millis() as u64 + ms_per_tick - 1) / ms_per_tick
@@ -81,11 +93,11 @@ impl WaitQueue {
                     timer_callback.cancel();
                 }
 
-                return Ok(res);
+                return Some(res);
             };
 
             if let Some(ref timer_callback) = timer_callback && timer_callback.is_expired() {
-                return Err(Error::TimeOut);
+                return None;
             }
 
             waiter.wait();

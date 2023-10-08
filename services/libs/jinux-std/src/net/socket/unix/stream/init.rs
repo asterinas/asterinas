@@ -1,9 +1,11 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::events::IoEvents;
 use crate::fs::fs_resolver::{split_path, FsPath};
-use crate::fs::utils::{Dentry, InodeMode, InodeType, IoEvents, Pollee, Poller};
+use crate::fs::utils::{Dentry, InodeMode, InodeType};
 use crate::net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound};
 use crate::prelude::*;
+use crate::process::signal::{Pollee, Poller};
 
 use super::connected::Connected;
 use super::endpoint::Endpoint;

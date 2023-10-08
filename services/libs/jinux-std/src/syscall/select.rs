@@ -1,7 +1,7 @@
 use core::time::Duration;
 
+use crate::events::IoEvents;
 use crate::fs::file_table::FileDescripter;
-use crate::fs::utils::IoEvents;
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::time::timeval_t;

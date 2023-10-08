@@ -5,9 +5,11 @@ use core::any::Any;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 
-use super::{DirentVisitor, FileSystem, IoEvents, IoctlCmd, Poller, SuperBlock};
+use super::{DirentVisitor, FileSystem, IoctlCmd, SuperBlock};
+use crate::events::IoEvents;
 use crate::fs::device::{Device, DeviceType};
 use crate::prelude::*;
+use crate::process::signal::Poller;
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

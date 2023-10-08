@@ -5,11 +5,12 @@ use super::process_group::ProcessGroup;
 use super::process_vm::user_heap::UserHeap;
 use super::process_vm::ProcessVm;
 use super::rlimit::ResourceLimits;
+use super::signal::constants::SIGCHLD;
 use super::signal::sig_disposition::SigDispositions;
 use super::signal::sig_mask::SigMask;
 use super::signal::sig_queues::SigQueues;
 use super::signal::signals::Signal;
-use super::signal::{SigEvents, SigEventsFilter};
+use super::signal::{Pauser, SigEvents, SigEventsFilter};
 use super::status::ProcessStatus;
 use super::{process_table, TermStatus};
 use crate::device::tty::get_n_tty;
@@ -20,7 +21,6 @@ use crate::fs::utils::FileCreationMask;
 use crate::prelude::*;
 use crate::thread::{allocate_tid, Thread};
 use crate::vm::vmar::Vmar;
-use jinux_frame::sync::WaitQueue;
 use jinux_rights::Full;
 
 pub use builder::ProcessBuilder;
@@ -35,8 +35,8 @@ pub struct Process {
     pid: Pid,
 
     process_vm: ProcessVm,
-    /// wait for child status changed
-    waiting_children: WaitQueue,
+    /// Wait for child status changed
+    children_pauser: Arc<Pauser>,
 
     // Mutable Part
     /// The executable path.
@@ -82,12 +82,20 @@ impl Process {
         sig_dispositions: Arc<Mutex<SigDispositions>>,
         resource_limits: ResourceLimits,
     ) -> Self {
+        let children_pauser = {
+            let mut sigset = SigMask::new_full();
+            // SIGCHID does not interrupt pauser. Child process will
+            // resume paused parent when doing exit.
+            sigset.remove_signal(SIGCHLD);
+            Pauser::new_with_sigset(sigset)
+        };
+
         Self {
             pid,
             threads: Mutex::new(threads),
             executable_path: RwLock::new(executable_path),
             process_vm,
-            waiting_children: WaitQueue::new(),
+            children_pauser,
             status: Mutex::new(ProcessStatus::Uninit),
             parent: Mutex::new(parent),
             children: Mutex::new(BTreeMap::new()),
@@ -190,8 +198,8 @@ impl Process {
         &self.children
     }
 
-    pub fn waiting_children(&self) -> &WaitQueue {
-        &self.waiting_children
+    pub fn children_pauser(&self) -> &Arc<Pauser> {
+        &self.children_pauser
     }
 
     // *********** Process group ***********
@@ -252,7 +260,7 @@ impl Process {
     }
 
     pub fn has_pending_signal(&self) -> bool {
-        self.sig_queues.lock().is_empty()
+        !self.sig_queues.lock().is_empty()
     }
 
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {

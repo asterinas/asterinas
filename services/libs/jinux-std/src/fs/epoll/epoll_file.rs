@@ -1,7 +1,8 @@
-use crate::events::Observer;
+use crate::events::{IoEvents, Observer};
 use crate::fs::file_handle::FileLike;
 use crate::fs::file_table::{FdEvents, FileDescripter};
-use crate::fs::utils::{IoEvents, IoctlCmd, Pollee, Poller};
+use crate::fs::utils::IoctlCmd;
+use crate::process::signal::{Pollee, Poller};
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
@@ -191,7 +192,11 @@ impl EpollFile {
                 }
             }
 
-            poller.as_ref().unwrap().wait_interruptible(timeout)?;
+            if let Some(timeout) = timeout {
+                poller.as_ref().unwrap().wait_timeout(timeout)?;
+            } else {
+                poller.as_ref().unwrap().wait()?;
+            }
         }
     }
 

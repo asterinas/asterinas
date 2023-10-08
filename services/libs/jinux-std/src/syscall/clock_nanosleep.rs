@@ -4,8 +4,7 @@ use super::SyscallReturn;
 use super::SYS_CLOCK_NANOSLEEP;
 use crate::log_syscall_entry;
 use crate::prelude::*;
-use crate::process::signal::sig_mask::SigMask;
-use crate::process::signal::SigQueueObserver;
+use crate::process::signal::Pauser;
 use crate::time::{clockid_t, now_as_duration, timespec_t, ClockID, TIMER_ABSTIME};
 use crate::util::{read_val_from_user, write_val_to_user};
 
@@ -40,14 +39,11 @@ pub fn sys_clock_nanosleep(
 
     let start_time = now_as_duration(&clock_id)?;
 
-    let sigqueue_observer = {
-        // FIXME: sleeping thread can only be interrupted by signals that will call signal handler or terminate
-        // current process. i.e., the signals that should be ignored will not interrupt sleeping thread.
-        let sigmask = SigMask::new_full();
-        SigQueueObserver::new(sigmask)
-    };
+    // FIXME: sleeping thread can only be interrupted by signals that will call signal handler or terminate
+    // current process. i.e., the signals that should be ignored will not interrupt sleeping thread.
+    let pauser = Pauser::new();
 
-    let res = sigqueue_observer.wait_until_interruptible(|| None, Some(&duration));
+    let res = pauser.pause_until_or_timeout(|| None, &duration);
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
         Err(e) if e.error() == Errno::EINTR => {

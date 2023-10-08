@@ -7,8 +7,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::fs::file_handle::FileLike;
 use crate::fs::utils::{
-    AccessMode, Dentry, DirentVisitor, InodeType, IoEvents, IoctlCmd, Metadata, Poller, SeekFrom,
-    StatusFlags,
+    AccessMode, Dentry, DirentVisitor, InodeType, IoctlCmd, Metadata, SeekFrom, StatusFlags,
 };
 use crate::prelude::*;
 use jinux_rights::Rights;

@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::fs::utils::{IoEvents, Poller};
+use crate::events::IoEvents;
 use crate::net::iface::Iface;
 use crate::net::iface::IpEndpoint;
 use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket};
@@ -8,6 +8,7 @@ use crate::net::poll_ifaces;
 use crate::net::socket::ip::always_some::AlwaysSome;
 use crate::net::socket::ip::common::{bind_socket, get_ephemeral_endpoint};
 use crate::prelude::*;
+use crate::process::signal::Poller;
 
 pub struct InitStream {
     inner: RwLock<Inner>,
@@ -152,7 +153,7 @@ impl InitStream {
                 return_errno_with_message!(Errno::EAGAIN, "try connect again");
             } else {
                 // FIXME: deal with connecting timeout
-                poller.wait_interruptible(None)?;
+                poller.wait()?;
             }
         }
     }

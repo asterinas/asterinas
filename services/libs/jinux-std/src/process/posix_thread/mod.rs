@@ -75,7 +75,7 @@ impl PosixThread {
     }
 
     pub fn has_pending_signal(&self) -> bool {
-        self.sig_queues.lock().is_empty()
+        !self.sig_queues.lock().is_empty()
     }
 
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {

@@ -1,4 +1,4 @@
-use crate::events::{Events, EventsFilter};
+use super::{Events, EventsFilter};
 
 crate::bitflags! {
     pub struct IoEvents: u32 {

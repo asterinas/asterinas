@@ -1,8 +1,9 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::events::IoEvents;
 use crate::net::iface::IpEndpoint;
+use crate::process::signal::Poller;
 use crate::{
-    fs::utils::{IoEvents, Poller},
     net::{
         iface::{AnyBoundSocket, RawTcpSocket},
         poll_ifaces,
@@ -58,7 +59,7 @@ impl ConnectedStream {
                     return_errno_with_message!(Errno::EAGAIN, "try to recv again");
                 }
                 // FIXME: deal with receive timeout
-                poller.wait_interruptible(None)?;
+                poller.wait()?;
             }
         }
     }
