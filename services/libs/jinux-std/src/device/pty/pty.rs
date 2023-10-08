@@ -19,7 +19,7 @@ const BUFFER_CAPACITY: usize = 4096;
 pub struct PtyMaster {
     ptmx: Arc<dyn Inode>,
     index: u32,
-    output: LineDiscipline,
+    output: Arc<LineDiscipline>,
     input: SpinLock<HeapRb<u8>>,
     /// The state of input buffer
     pollee: Pollee,

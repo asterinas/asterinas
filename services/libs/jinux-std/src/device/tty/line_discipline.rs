@@ -1,6 +1,8 @@
 use crate::fs::utils::{IoEvents, Pollee, Poller};
 use crate::process::signal::constants::{SIGINT, SIGQUIT};
 use crate::process::ProcessGroup;
+use crate::thread::work_queue::work_item::WorkItem;
+use crate::thread::work_queue::{submit_work_item, WorkPriority};
 use crate::{
     prelude::*,
     process::{signal::signals::kernel::KernelSignal, Pgid},
@@ -29,6 +31,10 @@ pub struct LineDiscipline {
     winsize: SpinLock<WinSize>,
     /// Pollee
     pollee: Pollee,
+    /// work item
+    work_item: Arc<WorkItem>,
+    /// Parameters used by a work item.
+    work_item_para: Arc<SpinLock<LineDisciplineWorkPara>>,
 }
 
 #[derive(Default)]
@@ -67,23 +73,27 @@ impl CurrentLine {
     }
 }
 
-impl Default for LineDiscipline {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl LineDiscipline {
     /// Create a new line discipline
-    pub fn new() -> Self {
-        Self {
-            current_line: SpinLock::new(CurrentLine::new()),
-            read_buffer: SpinLock::new(StaticRb::default()),
-            foreground: SpinLock::new(Weak::new()),
-            termios: SpinLock::new(KernelTermios::default()),
-            winsize: SpinLock::new(WinSize::default()),
-            pollee: Pollee::new(IoEvents::empty()),
-        }
+    pub fn new() -> Arc<Self> {
+        Arc::new_cyclic(|line_ref: &Weak<LineDiscipline>| {
+            let line_discipline = line_ref.clone();
+            let work_item = Arc::new(WorkItem::new(Box::new(move || {
+                if let Some(line_discipline) = line_discipline.upgrade() {
+                    line_discipline.update_readable_state_after();
+                }
+            })));
+            Self {
+                current_line: SpinLock::new(CurrentLine::new()),
+                read_buffer: SpinLock::new(StaticRb::default()),
+                foreground: SpinLock::new(Weak::new()),
+                termios: SpinLock::new(KernelTermios::default()),
+                winsize: SpinLock::new(WinSize::default()),
+                pollee: Pollee::new(IoEvents::empty()),
+                work_item,
+                work_item_para: Arc::new(SpinLock::new(LineDisciplineWorkPara::new())),
+            }
+        })
     }
 
     /// Push char to line discipline.
@@ -157,17 +167,40 @@ impl LineDiscipline {
             }
             _ => return,
         };
-        // FIXME: kernel_signal may sleep
-        foreground.kernel_signal(signal);
+        // `kernel_signal()` may cause sleep, so only construct parameters here.
+        self.work_item_para.lock_irq_disabled().kernel_signal = Some(signal);
     }
 
     fn update_readable_state(&self) {
         let buffer = self.read_buffer.lock_irq_disabled();
-        // FIXME: add/del events may sleep
+        let pollee = self.pollee.clone();
+        // add/del events may sleep, so only construct parameters here.
         if !buffer.is_empty() {
-            self.pollee.add_events(IoEvents::IN);
+            self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Add);
         } else {
-            self.pollee.del_events(IoEvents::IN);
+            self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Del);
+        }
+        submit_work_item(self.work_item.clone(), WorkPriority::High);
+    }
+
+    /// include all operations that may cause sleep, and processes by a work queue.
+    fn update_readable_state_after(&self) {
+        if let Some(signal) = self.work_item_para.lock_irq_disabled().kernel_signal.take() {
+            self.foreground
+                .lock()
+                .upgrade()
+                .unwrap()
+                .kernel_signal(signal)
+        };
+        if let Some(pollee_type) = self.work_item_para.lock_irq_disabled().pollee_type.take() {
+            match pollee_type {
+                PolleeType::Add => {
+                    self.pollee.add_events(IoEvents::IN);
+                }
+                PolleeType::Del => {
+                    self.pollee.del_events(IoEvents::IN);
+                }
+            }
         }
     }
 
@@ -392,4 +425,23 @@ fn meet_new_line(item: u8, termios: &KernelTermios) -> bool {
 /// The special char should not be read by reading process
 fn should_not_be_read(item: u8, termios: &KernelTermios) -> bool {
     item == *termios.get_special_char(CC_C_CHAR::VEOF)
+}
+
+enum PolleeType {
+    Add,
+    Del,
+}
+
+struct LineDisciplineWorkPara {
+    kernel_signal: Option<KernelSignal>,
+    pollee_type: Option<PolleeType>,
+}
+
+impl LineDisciplineWorkPara {
+    fn new() -> Self {
+        Self {
+            kernel_signal: None,
+            pollee_type: None,
+        }
+    }
 }

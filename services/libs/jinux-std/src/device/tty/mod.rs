@@ -25,7 +25,7 @@ pub struct Tty {
     /// tty_name
     name: CString,
     /// line discipline
-    ldisc: LineDiscipline,
+    ldisc: Arc<LineDiscipline>,
     /// driver
     driver: SpinLock<Weak<TtyDriver>>,
 }
