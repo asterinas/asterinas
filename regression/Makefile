@@ -17,6 +17,7 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/lib64 \
 	$(INITRAMFS)/bin \
 	$(INITRAMFS)/usr/bin \
+	$(INITRAMFS)/usr/sbin \
 	$(INITRAMFS)/regression \
 	$(INITRAMFS_EMPTY_DIRS)
 
@@ -44,6 +45,11 @@ $(INITRAMFS)/bin:
 $(INITRAMFS)/usr/bin: $(INITRAMFS)/bin
 	@mkdir -p $@
 	@cp /usr/bin/busybox $@
+
+# Copy nologin for user nobody.
+$(INITRAMFS)/usr/sbin: 
+	@mkdir -p $@
+	@cp /usr/sbin/nologin $@
 
 # Copy from apps.
 $(INITRAMFS)/regression:

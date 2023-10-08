@@ -211,6 +211,10 @@ COPY --from=busybox /root/busybox/busybox /bin/busybox
 # Add the path of jinux tools
 ENV PATH="/root/jinux/target/bin:${PATH}"
 
+# Copy etc files 
+RUN mkdir -p /opt/jinux/etc
+COPY tools/docker/etc /opt/jinux/etc
+
 VOLUME [ "/root/jinux" ]
 
 WORKDIR /root/jinux

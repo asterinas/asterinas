@@ -10,9 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: jinuxdev/jinux:0.2.1
+    container: jinuxdev/jinux:0.3.0
     steps:
-      - run: echo "Running in jinuxdev/jinux:0.2.1"
+      - run: echo "Running in jinuxdev/jinux:0.3.0"
 
       - uses: actions/checkout@v3
 
