@@ -18,7 +18,7 @@ pub struct RcuMonitor {
 }
 
 impl RcuMonitor {
-    pub fn new(num_cpus: u32) -> Self {
+    pub fn new(num_cpus: usize) -> Self {
         Self {
             is_monitoring: AtomicBool::new(false),
             state: SpinLock::new(State::new(num_cpus)),
@@ -89,7 +89,7 @@ struct State {
 }
 
 impl State {
-    pub fn new(num_cpus: u32) -> Self {
+    pub fn new(num_cpus: usize) -> Self {
         Self {
             current_gp: GracePeriod::new(num_cpus),
             next_callbacks: VecDeque::new(),
@@ -106,10 +106,10 @@ struct GracePeriod {
 }
 
 impl GracePeriod {
-    pub fn new(num_cpus: u32) -> Self {
+    pub fn new(num_cpus: usize) -> Self {
         Self {
             callbacks: Default::default(),
-            cpu_mask: AtomicBits::new_zeroes(num_cpus as usize),
+            cpu_mask: AtomicBits::new_zeroes(num_cpus),
             is_complete: false,
         }
     }

@@ -69,6 +69,10 @@ impl WaitQueue {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.waiters.lock_irq_disabled().is_empty()
+    }
+
     // Enqueue a waiter into current waitqueue. If waiter is exclusive, add to the back of waitqueue.
     // Otherwise, add to the front of waitqueue
     fn enqueue(&self, waiter: &Arc<Waiter>) {

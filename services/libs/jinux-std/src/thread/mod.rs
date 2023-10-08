@@ -16,6 +16,7 @@ pub mod kernel_thread;
 pub mod status;
 pub mod task;
 pub mod thread_table;
+pub mod work_queue;
 
 pub type Tid = u32;
 
@@ -62,7 +63,7 @@ impl Thread {
             .expect("[Internal Error] current thread cannot be None")
     }
 
-    /// Add inner task to the run queue of scheduler. Note this does not means the thread will run at once.
+    /// Run this thread at once.
     pub fn run(&self) {
         self.status.lock().set_running();
         self.task.run();

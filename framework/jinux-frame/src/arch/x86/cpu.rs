@@ -3,10 +3,13 @@
 use core::arch::x86_64::{_fxrstor, _fxsave};
 use core::fmt::Debug;
 
+use alloc::vec::Vec;
+use bitvec::{prelude::Lsb0, slice::IterOnes};
 use trapframe::{GeneralRegs, UserContext as RawUserContext};
 
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
+use bitvec::prelude::BitVec;
 use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
@@ -23,7 +26,65 @@ pub fn num_cpus() -> u32 {
 
 /// Returns the ID of this CPU.
 pub fn this_cpu() -> u32 {
-    todo!()
+    // FIXME: we only start one cpu now.
+    0
+}
+
+#[derive(Default)]
+pub struct CpuSet {
+    bitset: BitVec,
+}
+
+impl CpuSet {
+    pub fn new_full() -> Self {
+        let num_cpus = num_cpus();
+        let mut bitset = BitVec::with_capacity(num_cpus as usize);
+        bitset.resize(num_cpus as usize, true);
+        Self { bitset }
+    }
+
+    pub fn new_empty() -> Self {
+        let num_cpus = num_cpus();
+        let mut bitset = BitVec::with_capacity(num_cpus as usize);
+        bitset.resize(num_cpus as usize, false);
+        Self { bitset }
+    }
+
+    pub fn add(&mut self, cpu_id: u32) {
+        self.bitset.set(cpu_id as usize, true);
+    }
+
+    pub fn add_from_vec(&mut self, cpu_ids: Vec<u32>) {
+        for cpu_id in cpu_ids {
+            self.add(cpu_id)
+        }
+    }
+
+    pub fn add_all(&mut self) {
+        self.bitset.fill(true);
+    }
+
+    pub fn remove(&mut self, cpu_id: u32) {
+        self.bitset.set(cpu_id as usize, false);
+    }
+
+    pub fn remove_from_vec(&mut self, cpu_ids: Vec<u32>) {
+        for cpu_id in cpu_ids {
+            self.remove(cpu_id);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.bitset.fill(false);
+    }
+
+    pub fn contains(&self, cpu_id: u32) -> bool {
+        self.bitset.get(cpu_id as usize).as_deref() == Some(&true)
+    }
+
+    pub fn iter(&self) -> IterOnes<'_, usize, Lsb0> {
+        self.bitset.iter_ones()
+    }
 }
 
 /// Cpu context, including both general-purpose registers and floating-point registers.

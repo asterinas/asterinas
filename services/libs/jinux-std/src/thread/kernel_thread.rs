@@ -1,4 +1,5 @@
-use jinux_frame::task::TaskOptions;
+use jinux_frame::cpu::CpuSet;
+use jinux_frame::task::{Priority, TaskOptions};
 
 use crate::prelude::*;
 
@@ -66,7 +67,8 @@ impl KernelThreadExt for Thread {
 /// Options to create or spawn a new thread.
 pub struct ThreadOptions {
     func: Option<Box<dyn Fn() + Send + Sync>>,
-    priority: u16,
+    priority: Priority,
+    cpu_affinity: CpuSet,
 }
 
 impl ThreadOptions {
@@ -74,9 +76,11 @@ impl ThreadOptions {
     where
         F: Fn() + Send + Sync + 'static,
     {
+        let cpu_affinity = CpuSet::new_full();
         Self {
             func: Some(Box::new(func)),
-            priority: 100,
+            priority: Priority::normal(),
+            cpu_affinity,
         }
     }
 
@@ -92,8 +96,13 @@ impl ThreadOptions {
         self.func.take().unwrap()
     }
 
-    pub fn priority(mut self, priority: u16) -> Self {
+    pub fn priority(mut self, priority: Priority) -> Self {
         self.priority = priority;
+        self
+    }
+
+    pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
+        self.cpu_affinity = cpu_affinity;
         self
     }
 }
