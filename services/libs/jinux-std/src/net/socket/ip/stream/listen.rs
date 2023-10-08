@@ -1,9 +1,10 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::events::IoEvents;
 use crate::net::iface::{AnyUnboundSocket, BindPortConfig, IpEndpoint};
 
-use crate::fs::utils::{IoEvents, Poller};
 use crate::net::iface::{AnyBoundSocket, RawTcpSocket};
+use crate::process::signal::Poller;
 use crate::{net::poll_ifaces, prelude::*};
 
 use super::connected::ConnectedStream;
@@ -46,7 +47,7 @@ impl ListenStream {
                         return_errno_with_message!(Errno::EAGAIN, "try accept again");
                     }
                     // FIXME: deal with accept timeout
-                    poller.wait_interruptible(None)?;
+                    poller.wait()?;
                 }
                 continue;
             };

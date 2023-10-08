@@ -2,11 +2,13 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use jinux_rights_proc::require;
 use ringbuf::{HeapConsumer as HeapRbConsumer, HeapProducer as HeapRbProducer, HeapRb};
 
+use crate::events::IoEvents;
 use crate::events::Observer;
 use crate::prelude::*;
+use crate::process::signal::{Pollee, Poller};
 use jinux_rights::{Read, ReadOp, TRights, Write, WriteOp};
 
-use super::{IoEvents, Pollee, Poller, StatusFlags};
+use super::StatusFlags;
 
 /// A unidirectional communication channel, intended to implement IPC, e.g., pipe,
 /// unix domain sockets, etc.
@@ -153,7 +155,7 @@ impl<T: Copy> Producer<T> {
             let events = self.poll(mask, Some(&poller));
             if events.is_empty() {
                 // FIXME: should channel deal with timeout?
-                poller.wait_interruptible(None)?;
+                poller.wait()?;
             }
         }
     }
@@ -242,7 +244,7 @@ impl<T: Copy> Consumer<T> {
             let events = self.poll(mask, Some(&poller));
             if events.is_empty() {
                 // FIXME: should channel have timeout?
-                poller.wait_interruptible(None)?;
+                poller.wait()?;
             }
         }
     }

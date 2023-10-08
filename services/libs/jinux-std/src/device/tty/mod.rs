@@ -3,8 +3,10 @@ use spin::Once;
 use self::driver::TtyDriver;
 use self::line_discipline::LineDiscipline;
 use super::*;
-use crate::fs::utils::{IoEvents, IoctlCmd, Poller};
+use crate::events::IoEvents;
+use crate::fs::utils::IoctlCmd;
 use crate::prelude::*;
+use crate::process::signal::Poller;
 use crate::process::{process_table, ProcessGroup};
 use crate::util::{read_val_from_user, write_val_to_user};
 

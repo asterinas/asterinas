@@ -1,13 +1,12 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::events::IoEvents;
 use crate::fs::utils::StatusFlags;
 use crate::net::iface::IpEndpoint;
 
+use crate::process::signal::Poller;
 use crate::{
-    fs::{
-        file_handle::FileLike,
-        utils::{IoEvents, Poller},
-    },
+    fs::file_handle::FileLike,
     net::{
         iface::{AnyBoundSocket, AnyUnboundSocket, RawUdpSocket},
         poll_ifaces,
@@ -259,7 +258,7 @@ impl Socket for DatagramSocket {
                     return_errno_with_message!(Errno::EAGAIN, "try to receive again");
                 }
                 // FIXME: deal with recvfrom timeout
-                poller.wait_interruptible(None)?;
+                poller.wait()?;
             }
         }
     }

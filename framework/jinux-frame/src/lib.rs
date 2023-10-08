@@ -17,6 +17,8 @@
 #![feature(let_chains)]
 
 extern crate alloc;
+#[macro_use]
+extern crate static_assertions;
 
 pub mod arch;
 pub mod boot;

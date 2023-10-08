@@ -60,7 +60,7 @@ impl Timer {
         let mut lock = self.inner.lock_irq_disabled();
         match &lock.timer_callback {
             Some(callback) => {
-                callback.disable();
+                callback.cancel();
             }
             None => {}
         }
@@ -94,7 +94,7 @@ impl Timer {
     pub fn clear(&self) {
         let mut lock = self.inner.lock_irq_disabled();
         if let Some(callback) = &lock.timer_callback {
-            callback.disable();
+            callback.cancel();
         }
         lock.timeout_tick = 0;
         lock.start_tick = 0;

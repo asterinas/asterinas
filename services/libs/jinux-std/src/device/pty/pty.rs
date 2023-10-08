@@ -2,11 +2,13 @@ use alloc::format;
 use ringbuf::{ring_buffer::RbBase, HeapRb, Rb};
 
 use crate::device::tty::line_discipline::LineDiscipline;
+use crate::events::IoEvents;
 use crate::fs::device::{Device, DeviceId, DeviceType};
 use crate::fs::file_handle::FileLike;
 use crate::fs::fs_resolver::FsPath;
-use crate::fs::utils::{AccessMode, Inode, InodeMode, IoEvents, IoctlCmd, Pollee, Poller};
+use crate::fs::utils::{AccessMode, Inode, InodeMode, IoctlCmd};
 use crate::prelude::*;
+use crate::process::signal::{Pollee, Poller};
 use crate::util::{read_val_from_user, write_val_to_user};
 
 const PTS_DIR: &str = "/dev/pts";
@@ -106,7 +108,7 @@ impl FileLike for PtyMaster {
                 if events.is_empty() {
                     drop(input);
                     // FIXME: deal with pty read timeout
-                    poller.wait_interruptible(None)?;
+                    poller.wait()?;
                 }
                 continue;
             }

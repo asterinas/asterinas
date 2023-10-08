@@ -1,7 +1,9 @@
+use crate::events::IoEvents;
 use crate::fs::fs_resolver::{FsPath, FsResolver};
 use crate::fs::utils::Dentry;
-use crate::fs::utils::{InodeMode, InodeType, IoEvents, IoctlCmd, Poller};
+use crate::fs::utils::{InodeMode, InodeType, IoctlCmd};
 use crate::prelude::*;
+use crate::process::signal::Poller;
 
 /// The abstract of device
 pub trait Device: Sync + Send {

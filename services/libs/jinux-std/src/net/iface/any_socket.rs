@@ -1,7 +1,6 @@
-use crate::{
-    fs::utils::{IoEvents, Pollee, Poller},
-    prelude::*,
-};
+use crate::events::IoEvents;
+use crate::prelude::*;
+use crate::process::signal::{Pollee, Poller};
 
 use super::Iface;
 use super::{IpAddress, IpEndpoint};

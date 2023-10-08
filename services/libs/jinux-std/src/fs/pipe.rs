@@ -1,10 +1,9 @@
-use crate::events::Observer;
+use crate::events::{IoEvents, Observer};
 use crate::prelude::*;
+use crate::process::signal::Poller;
 
 use super::file_handle::FileLike;
-use super::utils::{
-    AccessMode, Consumer, InodeMode, InodeType, IoEvents, Metadata, Poller, Producer, StatusFlags,
-};
+use super::utils::{AccessMode, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags};
 
 pub struct PipeReader {
     consumer: Consumer<u8>,

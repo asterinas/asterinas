@@ -1,7 +1,5 @@
-use crate::fs::{
-    file_handle::FileLike,
-    utils::{IoEvents, Poller, StatusFlags},
-};
+use crate::events::IoEvents;
+use crate::fs::{file_handle::FileLike, utils::StatusFlags};
 use crate::net::socket::{
     util::{
         send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
@@ -10,6 +8,7 @@ use crate::net::socket::{
     Socket,
 };
 use crate::prelude::*;
+use crate::process::signal::Poller;
 
 use self::{connected::ConnectedStream, init::InitStream, listen::ListenStream};
 

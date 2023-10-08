@@ -1,5 +1,5 @@
 use super::file_table::FileDescripter;
-use super::utils::IoEvents;
+use crate::events::IoEvents;
 use crate::prelude::*;
 
 mod epoll_file;

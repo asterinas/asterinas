@@ -9,11 +9,9 @@ pub use direntry_vec::DirEntryVecExt;
 pub use file_creation_mask::FileCreationMask;
 pub use fs::{FileSystem, FsFlags, SuperBlock};
 pub use inode::{Inode, InodeMode, InodeType, Metadata};
-pub use io_events::IoEvents;
 pub use ioctl::IoctlCmd;
 pub use mount::MountNode;
 pub use page_cache::PageCache;
-pub use poll::{Pollee, Poller};
 pub use status_flags::StatusFlags;
 pub use vnode::{Vnode, VnodeWriter};
 
@@ -26,11 +24,9 @@ mod direntry_vec;
 mod file_creation_mask;
 mod fs;
 mod inode;
-mod io_events;
 mod ioctl;
 mod mount;
 mod page_cache;
-mod poll;
 mod status_flags;
 mod vnode;
 

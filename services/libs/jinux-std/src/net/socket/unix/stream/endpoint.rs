@@ -1,5 +1,7 @@
+use crate::events::IoEvents;
+use crate::process::signal::Poller;
 use crate::{
-    fs::utils::{Channel, Consumer, IoEvents, Poller, Producer, StatusFlags},
+    fs::utils::{Channel, Consumer, Producer, StatusFlags},
     net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd},
     prelude::*,
 };

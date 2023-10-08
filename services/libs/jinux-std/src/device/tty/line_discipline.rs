@@ -1,5 +1,6 @@
-use crate::fs::utils::{IoEvents, Pollee, Poller};
+use crate::events::IoEvents;
 use crate::process::signal::constants::{SIGINT, SIGQUIT};
+use crate::process::signal::{Pollee, Poller};
 use crate::process::ProcessGroup;
 use crate::thread::work_queue::work_item::WorkItem;
 use crate::thread::work_queue::{submit_work_item, WorkPriority};
@@ -253,7 +254,7 @@ impl LineDiscipline {
             let revents = self.pollee.poll(IoEvents::IN, need_poller);
             if revents.is_empty() {
                 // FIXME: deal with ldisc read timeout
-                poller.as_ref().unwrap().wait_interruptible(None)?;
+                poller.as_ref().unwrap().wait()?;
             }
         }
     }

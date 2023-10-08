@@ -1,10 +1,11 @@
 use core::cell::Cell;
 use core::time::Duration;
 
+use crate::events::IoEvents;
 use crate::fs::file_table::FileDescripter;
-use crate::fs::utils::{IoEvents, Poller};
 use crate::log_syscall_entry;
 use crate::prelude::*;
+use crate::process::signal::Poller;
 use crate::util::{read_val_from_user, write_val_to_user};
 
 use super::SyscallReturn;
@@ -91,7 +92,11 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>) -> Result<usize> 
             return Ok(0);
         }
 
-        poller.wait_interruptible(timeout.as_ref())?;
+        if let Some(timeout) = timeout.as_ref() {
+            poller.wait_timeout(timeout)?;
+        } else {
+            poller.wait()?;
+        }
     }
 }
 

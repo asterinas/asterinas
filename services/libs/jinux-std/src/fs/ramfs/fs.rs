@@ -1,4 +1,6 @@
+use crate::events::IoEvents;
 use crate::prelude::*;
+use crate::process::signal::Poller;
 use alloc::str;
 use alloc::string::String;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -10,8 +12,8 @@ use jinux_util::slot_vec::SlotVec;
 use super::*;
 use crate::fs::device::Device;
 use crate::fs::utils::{
-    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoEvents, IoctlCmd, Metadata,
-    Poller, SuperBlock, NAME_MAX,
+    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+    SuperBlock, NAME_MAX,
 };
 
 /// A volatile file system whose data and metadata exists only in memory.

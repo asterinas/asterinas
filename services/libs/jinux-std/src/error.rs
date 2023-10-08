@@ -187,7 +187,6 @@ impl From<jinux_frame::Error> for Error {
             jinux_frame::Error::IoError => Error::new(Errno::EIO),
             jinux_frame::Error::NotEnoughResources => Error::new(Errno::EBUSY),
             jinux_frame::Error::PageFault => Error::new(Errno::EFAULT),
-            jinux_frame::Error::TimeOut => Error::new(Errno::ETIME),
         }
     }
 }

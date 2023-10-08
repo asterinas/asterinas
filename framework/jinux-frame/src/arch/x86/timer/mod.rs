@@ -36,22 +36,28 @@ pub fn init() {
 
 fn timer_callback(trap_frame: &TrapFrame) {
     let current_ticks = TICK.fetch_add(1, Ordering::SeqCst);
-    let mut timeout_list = TIMEOUT_LIST.get().unwrap().lock();
-    let mut callbacks: Vec<Arc<TimerCallback>> = Vec::new();
-    while let Some(t) = timeout_list.peek() {
-        if t.is_cancelled() {
-            // Just ignore the cancelled callback
-            timeout_list.pop();
-        } else if t.expire_ticks <= current_ticks && t.is_enable() {
-            callbacks.push(timeout_list.pop().unwrap());
-        } else {
-            break;
+
+    let callbacks = {
+        let mut callbacks = Vec::new();
+        let mut timeout_list = TIMEOUT_LIST.get().unwrap().lock();
+
+        while let Some(t) = timeout_list.peek() {
+            if t.is_cancelled() {
+                // Just ignore the cancelled callback
+                timeout_list.pop();
+            } else if t.expire_ticks <= current_ticks {
+                callbacks.push(timeout_list.pop().unwrap());
+            } else {
+                break;
+            }
         }
-    }
-    drop(timeout_list);
+        callbacks
+    };
+
     for callback in callbacks {
-        callback.callback.call((&callback,));
+        (callback.callback)(&callback);
     }
+
     if APIC_TIMER_CALLBACK.is_completed() {
         APIC_TIMER_CALLBACK.get().unwrap().call(());
     }
@@ -63,7 +69,6 @@ pub struct TimerCallback {
     expire_ticks: u64,
     data: Arc<dyn Any + Send + Sync>,
     callback: Box<dyn Fn(&TimerCallback) + Send + Sync>,
-    enable: AtomicBool,
     is_cancelled: AtomicBool,
 }
 
@@ -77,27 +82,12 @@ impl TimerCallback {
             expire_ticks: timeout_ticks,
             data,
             callback,
-            enable: AtomicBool::new(true),
             is_cancelled: AtomicBool::new(false),
         }
     }
 
     pub fn data(&self) -> &Arc<dyn Any + Send + Sync> {
         &self.data
-    }
-
-    /// disable this timeout
-    pub fn disable(&self) {
-        self.enable.store(false, Ordering::Release)
-    }
-
-    /// enable this timeout
-    pub fn enable(&self) {
-        self.enable.store(false, Ordering::Release)
-    }
-
-    pub fn is_enable(&self) -> bool {
-        self.enable.load(Ordering::Acquire)
     }
 
     /// Whether the set timeout is reached

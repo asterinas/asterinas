@@ -1,21 +1,17 @@
 use crate::log_syscall_entry;
 use crate::prelude::*;
-use crate::process::signal::sig_mask::SigMask;
-use crate::process::signal::SigQueueObserver;
+use crate::process::signal::Pauser;
 
 use super::{SyscallReturn, SYS_PAUSE};
 
 pub fn sys_pause() -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_PAUSE);
 
-    let sigqueue_observer = {
-        // FIXME: like sleep, paused thread can only be interrupted by signals that will call signal
-        // handler or terminate current process
-        let sigmask = SigMask::new_full();
-        SigQueueObserver::new(sigmask)
-    };
+    // FIXME: like sleep, paused thread can only be interrupted by signals that will call signal
+    // handler or terminate current process
+    let pauser = Pauser::new();
 
-    sigqueue_observer.wait_until_interruptible(|| None, None)?;
+    pauser.pause_until(|| None)?;
 
     unreachable!("[Internal Error] pause should always return EINTR");
 }

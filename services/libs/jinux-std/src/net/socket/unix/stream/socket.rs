@@ -1,12 +1,14 @@
+use crate::events::IoEvents;
 use crate::fs::file_handle::FileLike;
 use crate::fs::fs_resolver::FsPath;
-use crate::fs::utils::{Dentry, InodeType, IoEvents, Poller, StatusFlags};
+use crate::fs::utils::{Dentry, InodeType, StatusFlags};
 use crate::net::socket::unix::addr::UnixSocketAddrBound;
 use crate::net::socket::unix::UnixSocketAddr;
 use crate::net::socket::util::send_recv_flags::SendRecvFlags;
 use crate::net::socket::util::sockaddr::SocketAddr;
 use crate::net::socket::{SockShutdownCmd, Socket};
 use crate::prelude::*;
+use crate::process::signal::Poller;
 
 use super::connected::Connected;
 use super::endpoint::Endpoint;

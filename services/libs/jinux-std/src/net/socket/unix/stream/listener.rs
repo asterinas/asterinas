@@ -1,9 +1,11 @@
 use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
+use crate::events::IoEvents;
 use crate::fs::file_handle::FileLike;
-use crate::fs::utils::{Dentry, Inode, IoEvents, Pollee, Poller};
+use crate::fs::utils::{Dentry, Inode};
 use crate::net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound};
 use crate::net::socket::SocketAddr;
 use crate::prelude::*;
+use crate::process::signal::{Pollee, Poller};
 use core::sync::atomic::{AtomicBool, Ordering};
 use keyable_arc::KeyableWeak;
 
@@ -133,7 +135,7 @@ impl BacklogTable {
 
             // FIXME: deal with accept timeout
             if events.is_empty() {
-                poller.wait_interruptible(None)?;
+                poller.wait()?;
             }
         }
     }
