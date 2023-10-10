@@ -107,7 +107,7 @@ impl LineDiscipline {
         // Raw mode
         if !termios.is_canonical_mode() {
             self.read_buffer.lock_irq_disabled().push_overwrite(item);
-            self.update_readable_state();
+            self.update_readable_state_deferred();
             return;
         }
 
@@ -147,7 +147,7 @@ impl LineDiscipline {
             self.output_char(item, &termios, echo_callback);
         }
 
-        self.update_readable_state();
+        self.update_readable_state_deferred();
     }
 
     fn may_send_signal_to_foreground(&self, termios: &KernelTermios, item: u8) {
@@ -173,6 +173,15 @@ impl LineDiscipline {
     }
 
     fn update_readable_state(&self) {
+        let buffer = self.read_buffer.lock_irq_disabled();
+        if !buffer.is_empty() {
+            self.pollee.add_events(IoEvents::IN);
+        } else {
+            self.pollee.del_events(IoEvents::IN);
+        }
+    }
+
+    fn update_readable_state_deferred(&self) {
         let buffer = self.read_buffer.lock_irq_disabled();
         let pollee = self.pollee.clone();
         // add/del events may sleep, so only construct parameters here.
