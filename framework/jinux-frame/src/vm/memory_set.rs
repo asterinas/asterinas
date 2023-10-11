@@ -6,7 +6,7 @@ use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
     config::{PAGE_SIZE, PHYS_OFFSET},
     vm::is_page_aligned,
-    vm::{VmFrame, VmFrameVec},
+    vm::{VmFrame, VmFrameVec, VmIo},
 };
 use crate::{prelude::*, Error};
 use alloc::collections::{btree_map::Entry, BTreeMap};
@@ -33,9 +33,7 @@ impl Clone for MapArea {
         let mut mapper = BTreeMap::new();
         for (&va, old) in &self.mapper {
             let new = frame_allocator::alloc(VmFrameFlags::empty()).unwrap();
-            unsafe {
-                new.as_slice().copy_from_slice(old.as_slice());
-            }
+            new.copy_from_frame(old);
             mapper.insert(va, new.clone());
         }
         Self {
@@ -117,8 +115,7 @@ impl MapArea {
                 let offset = current_start_address - va;
                 let copy_len = (va + PAGE_SIZE - current_start_address).min(remain);
                 let src = &data[processed..processed + copy_len];
-                let dst = unsafe { &mut pa.as_slice()[offset..(offset + copy_len)] };
-                dst.copy_from_slice(src);
+                pa.write_bytes(offset, src).unwrap();
                 processed += copy_len;
                 remain -= copy_len;
                 if remain == 0 {
@@ -138,8 +135,7 @@ impl MapArea {
                 let offset = start - va;
                 let copy_len = (va + PAGE_SIZE - start).min(remain);
                 let src = &mut data[processed..processed + copy_len];
-                let dst = unsafe { &pa.as_slice()[offset..(offset + copy_len)] };
-                src.copy_from_slice(dst);
+                pa.read_bytes(offset, src).unwrap();
                 processed += copy_len;
                 remain -= copy_len;
                 if remain == 0 {

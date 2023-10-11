@@ -4,12 +4,16 @@ use core::{
     ops::{BitAnd, BitOr, Not},
 };
 
-use crate::{arch::iommu, config::PAGE_SIZE, prelude::*, Error};
+use crate::{
+    arch::iommu,
+    config::PAGE_SIZE,
+    mem_storage::{MemArea, MemStorage, MemStorageIterator},
+    prelude::*,
+    Error,
+};
 
 use super::{frame_allocator, HasPaddr};
 use super::{Paddr, VmIo};
-
-use pod::Pod;
 
 /// A collection of page frames (physical memory pages).
 ///
@@ -155,51 +159,23 @@ impl IntoIterator for VmFrameVec {
     }
 }
 
+impl MemStorage for VmFrameVec {
+    fn mem_areas(&self, is_writable: bool) -> MemStorageIterator {
+        self.0.mem_areas(is_writable)
+    }
+
+    fn total_len(&self) -> usize {
+        self.0.total_len()
+    }
+}
+
 impl VmIo for VmFrameVec {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        let mut start = offset;
-        let mut remain = buf.len();
-        let mut processed = 0;
-        for pa in self.0.iter() {
-            if start >= PAGE_SIZE {
-                start -= PAGE_SIZE;
-            } else {
-                let copy_len = (PAGE_SIZE - start).min(remain);
-                let src = &mut buf[processed..processed + copy_len];
-                let dst = unsafe { &pa.as_slice()[start..src.len() + start] };
-                src.copy_from_slice(dst);
-                processed += copy_len;
-                remain -= copy_len;
-                start = 0;
-                if remain == 0 {
-                    break;
-                }
-            }
-        }
-        Ok(())
+        (self as &dyn MemStorage).read_bytes(offset, buf)
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        let mut start = offset;
-        let mut remain = buf.len();
-        let mut processed = 0;
-        for pa in self.0.iter() {
-            if start >= PAGE_SIZE {
-                start -= PAGE_SIZE;
-            } else {
-                let copy_len = (PAGE_SIZE - start).min(remain);
-                let src = &buf[processed..processed + copy_len];
-                let dst = unsafe { &mut pa.as_slice()[start..src.len() + start] };
-                dst.copy_from_slice(src);
-                processed += copy_len;
-                remain -= copy_len;
-                start = 0;
-                if remain == 0 {
-                    break;
-                }
-            }
-        }
-        Ok(())
+        (self as &dyn MemStorage).write_bytes(offset, buf)
     }
 }
 
@@ -364,17 +340,6 @@ impl VmFrame {
         (*self.frame_index).bitand(VmFrameFlags::all().bits().not())
     }
 
-    // FIXME: need a sound reason for creating a mutable reference
-    // for getting the content of the frame.
-    #[allow(clippy::mut_from_ref)]
-    #[allow(clippy::missing_safety_doc)]
-    pub unsafe fn as_slice(&self) -> &mut [u8] {
-        core::slice::from_raw_parts_mut(
-            super::paddr_to_vaddr(self.start_paddr()) as *mut u8,
-            PAGE_SIZE,
-        )
-    }
-
     pub fn as_ptr(&self) -> *const u8 {
         super::paddr_to_vaddr(self.start_paddr()) as *const u8
     }
@@ -394,38 +359,28 @@ impl VmFrame {
     }
 }
 
+impl MemStorage for VmFrame {
+    fn mem_areas(&self, is_writable: bool) -> MemStorageIterator {
+        let mem_area = if is_writable {
+            unsafe { MemArea::from_raw_parts_mut(self.as_mut_ptr(), PAGE_SIZE) }
+        } else {
+            unsafe { MemArea::from_raw_parts(self.as_ptr(), PAGE_SIZE) }
+        };
+        MemStorageIterator::from_vec(vec![mem_area])
+    }
+
+    fn total_len(&self) -> usize {
+        PAGE_SIZE
+    }
+}
+
 impl VmIo for VmFrame {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        if offset >= PAGE_SIZE || buf.len() + offset > PAGE_SIZE {
-            Err(Error::InvalidArgs)
-        } else {
-            let dst = unsafe { &self.as_slice()[offset..buf.len() + offset] };
-            buf.copy_from_slice(dst);
-            Ok(())
-        }
+        (self as &dyn MemStorage).read_bytes(offset, buf)
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        if offset >= PAGE_SIZE || buf.len() + offset > PAGE_SIZE {
-            Err(Error::InvalidArgs)
-        } else {
-            let dst = unsafe { &mut self.as_slice()[offset..buf.len() + offset] };
-            dst.copy_from_slice(buf);
-            Ok(())
-        }
-    }
-
-    /// Read a value of a specified type at a specified offset.
-    fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
-        let paddr = self.start_paddr() + offset;
-        Ok(unsafe { core::ptr::read(super::paddr_to_vaddr(paddr) as *const T) })
-    }
-
-    /// Write a value of a specified type at a specified offset.
-    fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
-        let paddr = self.start_paddr() + offset;
-        unsafe { core::ptr::write(super::paddr_to_vaddr(paddr) as *mut T, *new_val) };
-        Ok(())
+        (self as &dyn MemStorage).write_bytes(offset, buf)
     }
 }
 

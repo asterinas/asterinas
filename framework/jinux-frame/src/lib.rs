@@ -27,6 +27,7 @@ pub mod cpu;
 mod error;
 pub mod io_mem;
 pub mod logger;
+pub mod mem_storage;
 pub mod prelude;
 pub mod sync;
 pub mod task;
