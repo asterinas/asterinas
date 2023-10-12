@@ -98,29 +98,41 @@ impl LineDiscipline {
     }
 
     /// Push char to line discipline.
-    pub fn push_char<F: FnMut(&str)>(&self, mut item: u8, echo_callback: F) {
+    pub fn push_char<F: FnMut(&str)>(&self, ch: u8, echo_callback: F) {
         let termios = self.termios.lock_irq_disabled();
-        if termios.contains_icrnl() && item == b'\r' {
-            item = b'\n'
+
+        let ch = if termios.contains_icrnl() && ch == b'\r' {
+            b'\n'
+        } else {
+            ch
+        };
+
+        if self.may_send_signal_to_foreground(&termios, ch) {
+            // The char is already dealt with, so just return
+            return;
+        }
+
+        // Typically, a tty in raw mode does not echo. But the tty can also be in a cbreak mode,
+        // with ICANON closed and ECHO opened.
+        if termios.contain_echo() {
+            self.output_char(ch, &termios, echo_callback);
         }
 
         // Raw mode
         if !termios.is_canonical_mode() {
-            self.read_buffer.lock_irq_disabled().push_overwrite(item);
+            self.read_buffer.lock_irq_disabled().push_overwrite(ch);
             self.update_readable_state_deferred();
             return;
         }
 
         // Canonical mode
 
-        self.may_send_signal_to_foreground(&termios, item);
-
-        if item == *termios.get_special_char(CC_C_CHAR::VKILL) {
+        if ch == *termios.get_special_char(CC_C_CHAR::VKILL) {
             // Erase current line
             self.current_line.lock_irq_disabled().drain();
         }
 
-        if item == *termios.get_special_char(CC_C_CHAR::VERASE) {
+        if ch == *termios.get_special_char(CC_C_CHAR::VERASE) {
             // Type backspace
             let mut current_line = self.current_line.lock_irq_disabled();
             if !current_line.is_empty() {
@@ -128,48 +140,46 @@ impl LineDiscipline {
             }
         }
 
-        if meet_new_line(item, &termios) {
+        if is_line_terminator(ch, &termios) {
             // If a new line is met, all bytes in current_line will be moved to read_buffer
             let mut current_line = self.current_line.lock_irq_disabled();
-            current_line.push_char(item);
+            current_line.push_char(ch);
             let current_line_chars = current_line.drain();
             for char in current_line_chars {
                 self.read_buffer.lock_irq_disabled().push_overwrite(char);
             }
         }
 
-        if (0x20..0x7f).contains(&item) {
+        if is_printable_char(ch) {
             // Printable character
-            self.current_line.lock_irq_disabled().push_char(item);
-        }
-
-        if termios.contain_echo() {
-            self.output_char(item, &termios, echo_callback);
+            self.current_line.lock_irq_disabled().push_char(ch);
         }
 
         self.update_readable_state_deferred();
     }
 
-    fn may_send_signal_to_foreground(&self, termios: &KernelTermios, item: u8) {
-        if !termios.is_canonical_mode() || !termios.contains_isig() {
-            return;
+    fn may_send_signal_to_foreground(&self, termios: &KernelTermios, ch: u8) -> bool {
+        if !termios.contains_isig() {
+            return false;
         }
 
         let Some(foreground) = self.foreground.lock().upgrade() else {
-            return;
+            return false;
         };
 
-        let signal = match item {
+        let signal = match ch {
             item if item == *termios.get_special_char(CC_C_CHAR::VINTR) => {
                 KernelSignal::new(SIGINT)
             }
             item if item == *termios.get_special_char(CC_C_CHAR::VQUIT) => {
                 KernelSignal::new(SIGQUIT)
             }
-            _ => return,
+            _ => return false,
         };
         // `kernel_signal()` may cause sleep, so only construct parameters here.
         self.work_item_para.lock_irq_disabled().kernel_signal = Some(signal);
+
+        true
     }
 
     fn update_readable_state(&self) {
@@ -215,23 +225,19 @@ impl LineDiscipline {
     }
 
     // TODO: respect output flags
-    fn output_char<F: FnMut(&str)>(&self, item: u8, termios: &KernelTermios, mut echo_callback: F) {
-        match item {
+    fn output_char<F: FnMut(&str)>(&self, ch: u8, termios: &KernelTermios, mut echo_callback: F) {
+        match ch {
             b'\n' => echo_callback("\n"),
             b'\r' => echo_callback("\r\n"),
-            item if item == *termios.get_special_char(CC_C_CHAR::VERASE) => {
+            ch if ch == *termios.get_special_char(CC_C_CHAR::VERASE) => {
                 // write a space to overwrite current character
                 let backspace: &str = core::str::from_utf8(&[b'\x08', b' ', b'\x08']).unwrap();
                 echo_callback(backspace);
             }
-            item if (0x20..0x7f).contains(&item) => print!("{}", char::from(item)),
-            item if 0 < item && item < 0x20 && termios.contains_echo_ctl() => {
-                // The unprintable chars between 1-31 are mapped to ctrl characters between 65-95.
-                // e.g., 0x3 is mapped to 0x43, which is C. So, we will print ^C when 0x3 is met.
-                if 0 < item && item < 0x20 {
-                    let ctrl_char = format!("^{}", char::from(item + 0x40));
-                    echo_callback(&ctrl_char);
-                }
+            ch if is_printable_char(ch) => print!("{}", char::from(ch)),
+            ch if is_ctrl_char(ch) && termios.contains_echo_ctl() => {
+                let ctrl_char = format!("^{}", get_printable_char(ch));
+                echo_callback(&ctrl_char);
             }
             item => {}
         }
@@ -319,7 +325,7 @@ impl LineDiscipline {
                 let termios = self.termios.lock_irq_disabled();
                 if termios.is_canonical_mode() {
                     // canonical mode, read until meet new line
-                    if meet_new_line(next_char, &termios) {
+                    if is_line_terminator(next_char, &termios) {
                         if !should_not_be_read(next_char, &termios) {
                             *dst_i = next_char;
                             read_len += 1;
@@ -418,7 +424,7 @@ impl LineDiscipline {
     }
 }
 
-fn meet_new_line(item: u8, termios: &KernelTermios) -> bool {
+fn is_line_terminator(item: u8, termios: &KernelTermios) -> bool {
     if item == b'\n'
         || item == *termios.get_special_char(CC_C_CHAR::VEOF)
         || item == *termios.get_special_char(CC_C_CHAR::VEOL)
@@ -434,8 +440,25 @@ fn meet_new_line(item: u8, termios: &KernelTermios) -> bool {
 }
 
 /// The special char should not be read by reading process
-fn should_not_be_read(item: u8, termios: &KernelTermios) -> bool {
-    item == *termios.get_special_char(CC_C_CHAR::VEOF)
+fn should_not_be_read(ch: u8, termios: &KernelTermios) -> bool {
+    ch == *termios.get_special_char(CC_C_CHAR::VEOF)
+}
+
+fn is_printable_char(ch: u8) -> bool {
+    (0x20..0x7f).contains(&ch)
+}
+
+fn is_ctrl_char(ch: u8) -> bool {
+    if ch == b'\r' || ch == b'\n' {
+        return false;
+    }
+
+    (0..0x20).contains(&ch)
+}
+
+fn get_printable_char(ctrl_char: u8) -> u8 {
+    debug_assert!(is_ctrl_char(ctrl_char));
+    ctrl_char + b'A' - 1
 }
 
 enum PolleeType {

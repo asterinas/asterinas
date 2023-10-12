@@ -269,11 +269,7 @@ impl KernelTermios {
     }
 
     pub fn contains_isig(&self) -> bool {
-        // self.c_lflags.contains(C_LFLAGS::ISIG)
-
-        // FIXME: It seems that ash dose not respect ISIG (not very sure),
-        // so for ash, if tty is set cannonical mode, then ISIG is also open.
-        self.is_canonical_mode()
+        self.c_lflags.contains(C_LFLAGS::ISIG)
     }
 
     pub fn contain_echo(&self) -> bool {
@@ -281,11 +277,7 @@ impl KernelTermios {
     }
 
     pub fn contains_echo_ctl(&self) -> bool {
-        // self.c_lflags.contains(C_LFLAGS::ECHOCTL)
-
-        // FIXME: It seems that ash dose not contains ECHOCTL (not very sure),
-        // so for ash, it tty contains ECHO, then ECHOCTL is also open.
-        self.contain_echo()
+        self.c_lflags.contains(C_LFLAGS::ECHOCTL)
     }
 
     pub fn contains_iexten(&self) -> bool {
