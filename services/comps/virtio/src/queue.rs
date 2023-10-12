@@ -170,9 +170,10 @@ impl VirtQueue {
         let avail_slot = self.avail_idx & (self.queue_size - 1);
 
         {
-            let mut ring_ptr = field_ptr!(&self.avail, AvailRing, ring);
-            ring_ptr.byte_add(offset_of!(AvailRing, ring) as usize + avail_slot as usize * 2);
-            ring_ptr.cast::<u16>().write(&self.avail_idx).unwrap();
+            let ring_ptr: SafePtr<[u16; 64], &VmFrame> = field_ptr!(&self.avail, AvailRing, ring);
+            let mut ring_slot_ptr = ring_ptr.cast::<u16>();
+            ring_slot_ptr.add(avail_slot as usize);
+            ring_slot_ptr.write(&head).unwrap();
         }
         // write barrier
         fence(Ordering::SeqCst);
