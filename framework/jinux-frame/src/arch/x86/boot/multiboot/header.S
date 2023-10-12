@@ -12,6 +12,3 @@ multiboot_header:
     .long MB_MAGIC
     .long MB_FLAGS
     .long MB_CHECKSUM
-multiboot_entry:
-.global __multiboot_boot
-    jmp __multiboot_boot

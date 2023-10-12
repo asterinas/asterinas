@@ -22,8 +22,8 @@ entry_address_tag_start:
     .short 3
     .short 1                // Optional
     .long  entry_address_tag_end - entry_address_tag_start
-.extern __multiboot2_boot
-    .long __multiboot2_boot // entry_addr
+.extern __multiboot_boot
+    .long __multiboot_boot // entry_addr
 entry_address_tag_end:
 
     // Tag: information request

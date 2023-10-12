@@ -11,6 +11,9 @@ ENTRYTYPE_MULTIBOOT     = 1
 ENTRYTYPE_MULTIBOOT2    = 2
 ENTRYTYPE_LINUX_32      = 3
 
+MULTIBOOT_ENTRY_MAGIC   = 0x2BADB002
+MULTIBOOT2_ENTRY_MAGIC  = 0x36D76289
+
 // The Linux 32-bit Boot Protocol entry point.
 // Must be located at 0x100000, ABI immutable!
 .code32
@@ -40,7 +43,7 @@ __linux64_boot_tag:
     call rax
     jmp halt // unreachable here
 
-// The multiboot entry point.
+// The multiboot & multiboot2 entry point.
 .code32
 .global __multiboot_boot
 __multiboot_boot:
@@ -54,28 +57,19 @@ __multiboot_boot:
     push eax    // multiboot magic ptr
     push 0      // Upper 32-bits.
     push ebx    // multiboot info ptr
+    // Tell the entry type from eax
+    cmp eax, MULTIBOOT_ENTRY_MAGIC
+    je magic_is_mb
+    cmp eax, MULTIBOOT2_ENTRY_MAGIC
+    je magic_is_mb2
+    jmp halt     // Should not be reachable!
+magic_is_mb:
     push 0      // Upper 32-bits.
     push ENTRYTYPE_MULTIBOOT
-
     jmp initial_boot_setup
-
-// The multiboot2 entry point.
-.code32
-.global __multiboot2_boot
-__multiboot2_boot:
-    cli
-    cld
-
-    // Set the kernel call stack.
-    mov esp, offset boot_stack_top
-
-    push 0      // Upper 32-bits.
-    push eax    // multiboot magic ptr
-    push 0      // Upper 32-bits.
-    push ebx    // multiboot info ptr
+magic_is_mb2:
     push 0      // Upper 32-bits.
     push ENTRYTYPE_MULTIBOOT2
-
     jmp initial_boot_setup
 
 initial_boot_setup:
@@ -305,6 +299,8 @@ long_mode:
 
     // Call the corresponding Rust entrypoint according to the boot entrypoint
     pop rax
+    cmp rax, ENTRYTYPE_MULTIBOOT
+    je entry_type_multiboot
     cmp rax, ENTRYTYPE_MULTIBOOT2
     je entry_type_multiboot2
     cmp rax, ENTRYTYPE_LINUX_32
@@ -312,14 +308,28 @@ long_mode:
     // Unreachable!
     jmp halt
 
+.extern __linux64_boot
+.extern __multiboot_entry
+.extern __multiboot2_entry
+
 entry_type_linux_32:
     pop rdi // boot_params ptr
 
     // Clear the frame pointer to stop backtracing here.
     xor rbp, rbp
 
-.extern __linux64_boot
     lea  rax, [rip + __linux64_boot]  // jump into Rust code
+    call rax
+    jmp halt
+
+entry_type_multiboot:
+    pop rsi // the address of multiboot info
+    pop rdi // multiboot magic
+
+    // Clear the frame pointer to stop backtracing here.
+    xor rbp, rbp
+
+    lea  rax, [rip + __multiboot_entry]  // jump into Rust code
     call rax
     jmp halt
 
@@ -330,7 +340,6 @@ entry_type_multiboot2:
     // Clear the frame pointer to stop backtracing here.
     xor rbp, rbp
 
-.extern __multiboot2_entry
     lea  rax, [rip + __multiboot2_entry]  // jump into Rust code
     call rax
     jmp halt
