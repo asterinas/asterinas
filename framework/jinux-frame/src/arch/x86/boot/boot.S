@@ -177,25 +177,47 @@ PTE_GLOBAL      = (1 << 8)
 
     // Page Directory: map to low 1 GiB * 4 space
     lea edi, [boot_pd]
-    mov eax, (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL | PTE_HUGE) // Map offset 0.
+    lea eax, [boot_pt + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov ecx, 512 * 4 // (of entries in PD) * (number of PD)
 write_pd_entry:
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
-    add eax, 0x200000 // +2MiB
+    add eax, 0x1000 // +4KiB to next table
     add edi, 8
     loop write_pd_entry
 
     // Page Directory: map to 1 GiB space offset 32GiB
     lea edi, [boot_pd_32g]
-    mov eax, (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL | PTE_HUGE) // Should +0x800000000 but this is 32-bit.
+    lea eax, [boot_pt_32g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov ecx, 512 // (of entries in PD)
 write_pd_32g_entry:
     mov dword ptr [edi], eax
-    mov dword ptr [edi + 4], 0x8 // Map offset 32GiB.
-    add eax, 0x200000 // +2MiB
+    mov dword ptr [edi + 4], 0x0
+    add eax, 0x1000 // +4KiB to next table
     add edi, 8
     loop write_pd_32g_entry
+
+    // Page Table: map to low 1 GiB * 4 space
+    lea edi, [boot_pt]
+    mov eax, (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL) // Offset 0
+    mov ecx, 512 * 512 * 4 // (of entries in PT) * (number of PT) * (number of PD)
+write_pt_entry:
+    mov dword ptr [edi], eax
+    mov dword ptr [edi + 4], 0
+    add eax, 0x1000 // +4KiB
+    add edi, 8
+    loop write_pt_entry
+
+    // Page Table: map to 1 GiB space offset 32GiB
+    lea edi, [boot_pt_32g]
+    mov eax, (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL) // Offset 0x8_00000000 but should write to high 32bits
+    mov ecx, 512 * 512 // (of entries in PT) * (number of PT)
+write_pt_32g_entry:
+    mov dword ptr [edi], eax
+    mov dword ptr [edi + 4], 0x8 // Offset 0x8_00000000
+    add eax, 0x1000 // +4KiB
+    add edi, 8
+    loop write_pt_32g_entry
 
     jmp enable_long_mode
 
@@ -261,8 +283,12 @@ boot_pd_2g_3g:
     .skip 4096
 boot_pd_3g_4g:
     .skip 4096
+boot_pt:
+    .skip 4096 * 512 * 4
 boot_pd_32g:
     .skip 4096
+boot_pt_32g:
+    .skip 4096 * 512
 boot_page_table_end:
 
 boot_stack_bottom:
