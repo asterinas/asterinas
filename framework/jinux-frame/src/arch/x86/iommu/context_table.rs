@@ -6,7 +6,6 @@ use pod::Pod;
 
 use crate::{
     bus::pci::PciDeviceLocation,
-    config::PAGE_SIZE,
     vm::{
         page_table::{PageTableConfig, PageTableError},
         Paddr, PageTable, Vaddr, VmAllocOptions, VmFrame, VmFrameVec, VmIo,
@@ -61,14 +60,14 @@ impl RootTable {
         &mut self,
         device: PciDeviceLocation,
         vaddr: Vaddr,
-        paddr: Paddr,
+        frame: &VmFrame,
     ) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
         self.get_or_create_context_table(device)
-            .map(device, vaddr, paddr & !(PAGE_SIZE - 1))?;
+            .map(device, vaddr, frame)?;
 
         Ok(())
     }
@@ -262,7 +261,7 @@ impl ContextTable {
 
         if !bus_entry.present() {
             let table: PageTable<PageTableEntry> = PageTable::new(PageTableConfig {
-                address_width: crate::vm::page_table::AddressWidth::Level3PageTable,
+                address_width: crate::vm::page_table::AddressWidth::Level3,
             });
             let address = table.root_paddr();
             self.page_tables.insert(address, table);
@@ -286,7 +285,7 @@ impl ContextTable {
         &mut self,
         device: PciDeviceLocation,
         vaddr: Vaddr,
-        paddr: Paddr,
+        frame: &VmFrame,
     ) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
@@ -294,7 +293,7 @@ impl ContextTable {
         self.get_or_create_page_table(device)
             .map(
                 vaddr,
-                paddr,
+                frame,
                 PageTableFlags::WRITABLE | PageTableFlags::READABLE | PageTableFlags::LAST_PAGE,
             )
             .map_err(ContextTableError::ModificationError)

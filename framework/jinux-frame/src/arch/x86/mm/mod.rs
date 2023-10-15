@@ -45,6 +45,18 @@ pub fn tlb_flush(vaddr: Vaddr) {
     tlb::flush(VirtAddr::new(vaddr as u64));
 }
 
+pub const fn is_user_vaddr(vaddr: Vaddr) -> bool {
+    // FIXME: Support 3/5 level page table.
+    // 47 = 12(offset) + 4 * 9(index) - 1
+    (vaddr >> 47) == 0
+}
+
+pub const fn is_kernel_vaddr(vaddr: Vaddr) -> bool {
+    // FIXME: Support 3/5 level page table.
+    // 47 = 12(offset) + 4 * 9(index) - 1
+    ((vaddr >> 47) & 0x1) == 1
+}
+
 #[derive(Clone, Copy, Pod)]
 #[repr(C)]
 pub struct PageTableEntry(usize);

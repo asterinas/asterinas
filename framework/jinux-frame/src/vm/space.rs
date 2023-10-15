@@ -40,7 +40,7 @@ impl VmSpace {
     pub unsafe fn activate(&self) {
         #[cfg(target_arch = "x86_64")]
         crate::arch::x86::mm::activate_page_table(
-            self.memory_set.lock().pt.root_pa,
+            self.memory_set.lock().pt.root_paddr(),
             x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
         );
     }
