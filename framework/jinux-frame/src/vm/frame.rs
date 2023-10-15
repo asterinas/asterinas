@@ -50,7 +50,7 @@ impl VmFrameVec {
             for frame in frames.iter_mut() {
                 // Safety: The address is controlled by frame allocator.
                 unsafe {
-                    if let Err(err) = iommu::map(frame.start_paddr(), frame.start_paddr()) {
+                    if let Err(err) = iommu::map(frame.start_paddr(), frame) {
                         match err {
                             // do nothing
                             iommu::IommuError::NoIommu => {}

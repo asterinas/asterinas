@@ -3,14 +3,16 @@ use super::{
     frame_allocator, paddr_to_vaddr, VmAllocOptions, VmFrameVec, {Paddr, Vaddr},
 };
 use crate::{
-    arch::mm::{tlb_flush, PageTableEntry},
+    arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry},
     config::{ENTRY_COUNT, PAGE_SIZE},
+    sync::SpinLock,
     vm::VmFrame,
 };
 use alloc::{vec, vec::Vec};
 use core::{fmt::Debug, marker::PhantomData, mem::size_of};
 use log::trace;
 use pod::Pod;
+use spin::Once;
 
 pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
     fn new() -> Self;
@@ -89,11 +91,10 @@ pub struct PageTableConfig {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(usize)]
-#[allow(clippy::enum_variant_names)]
 pub enum AddressWidth {
-    Level3PageTable = 3,
-    Level4PageTable = 4,
-    Level5PageTable = 5,
+    Level3 = 3,
+    Level4 = 4,
+    Level5 = 5,
 }
 
 #[derive(Debug)]
@@ -104,43 +105,119 @@ pub enum PageTableError {
     /// 2. The mapping is already invalid before unmap operation.
     /// 3. The mapping is not exists before protect operation.
     InvalidModification,
+    InvalidVaddr,
 }
 
+pub static KERNEL_PAGE_TABLE: Once<SpinLock<PageTable<PageTableEntry, KernelMode>>> = Once::new();
+
+#[derive(Clone)]
+pub struct UserMode {}
+
+#[derive(Clone)]
+pub struct KernelMode {}
+
 #[derive(Clone, Debug)]
-pub struct PageTable<T: PageTableEntryTrait> {
-    pub root_pa: Paddr,
+pub struct PageTable<T: PageTableEntryTrait, M = UserMode> {
+    root_paddr: Paddr,
     /// store all the physical frame that the page table need to map all the frame e.g. the frame of the root_pa
     tables: Vec<VmFrame>,
     config: PageTableConfig,
-    _phantom: PhantomData<T>,
+    _phantom: PhantomData<(T, M)>,
 }
 
-impl<T: PageTableEntryTrait> PageTable<T> {
+impl<T: PageTableEntryTrait> PageTable<T, UserMode> {
     pub fn new(config: PageTableConfig) -> Self {
         let root_frame = frame_allocator::alloc_zero(VmFrameFlags::empty()).unwrap();
         Self {
-            root_pa: root_frame.start_paddr(),
+            root_paddr: root_frame.start_paddr(),
             tables: vec![root_frame],
             config,
             _phantom: PhantomData,
         }
     }
 
-    /// Create the page table structure according to the physical address, note that the created page table can only use the page_walk function without create.
+    pub fn map(
+        &mut self,
+        vaddr: Vaddr,
+        frame: &VmFrame,
+        flags: T::F,
+    ) -> Result<(), PageTableError> {
+        if is_kernel_vaddr(vaddr) {
+            return Err(PageTableError::InvalidVaddr);
+        }
+        // Safety:
+        // 1. The vaddr belongs to user mode program and does not affect the kernel mapping.
+        // 2. The area where the physical address islocated at untyped memory and does not affect kernel security.
+        unsafe { self.do_map(vaddr, frame.start_paddr(), flags) }
+    }
+
+    pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
+        if is_kernel_vaddr(vaddr) {
+            return Err(PageTableError::InvalidVaddr);
+        }
+        // Safety: The vaddr belongs to user mode program and does not affect the kernel mapping.
+        unsafe { self.do_unmap(vaddr) }
+    }
+
+    pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+        if is_kernel_vaddr(vaddr) {
+            return Err(PageTableError::InvalidVaddr);
+        }
+        // Safety: The vaddr belongs to user mode program and does not affect the kernel mapping.
+        unsafe { self.do_protect(vaddr, flags) }
+    }
+}
+
+impl<T: PageTableEntryTrait> PageTable<T, KernelMode> {
+    /// Mapping `vaddr` to `paddr` with flags. The `vaddr` should not be at the low address
+    ///  (memory belonging to the user mode program).
     ///
     /// # Safety
     ///
-    /// User should ensure the physical address is valid and only invoke the `page_walk` function without creating new PTE.
-    ///
-    pub unsafe fn from_paddr(config: PageTableConfig, paddr: Paddr) -> Self {
-        Self {
-            root_pa: paddr,
-            tables: Vec::new(),
-            config,
-            _phantom: PhantomData,
+    /// Modifying kernel mappings is considered unsafe, and incorrect operation may cause crashes.
+    /// User must take care of the consequences when using this API.
+    pub unsafe fn map(
+        &mut self,
+        vaddr: Vaddr,
+        paddr: Paddr,
+        flags: T::F,
+    ) -> Result<(), PageTableError> {
+        if is_user_vaddr(vaddr) {
+            return Err(PageTableError::InvalidVaddr);
         }
+        self.do_map(vaddr, paddr, flags)
     }
 
+    /// Unmap `vaddr`. The `vaddr` should not be at the low address
+    ///  (memory belonging to the user mode program).
+    ///
+    /// # Safety
+    ///
+    /// Modifying kernel mappings is considered unsafe, and incorrect operation may cause crashes.
+    /// User must take care of the consequences when using this API.
+    pub unsafe fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
+        if is_user_vaddr(vaddr) {
+            return Err(PageTableError::InvalidVaddr);
+        }
+        self.do_unmap(vaddr)
+    }
+
+    /// Modify the flags mapped at `vaddr`. The `vaddr` should not be at the low address
+    ///  (memory belonging to the user mode program).
+    ///
+    /// # Safety
+    ///
+    /// Modifying kernel mappings is considered unsafe, and incorrect operation may cause crashes.
+    /// User must take care of the consequences when using this API.
+    pub unsafe fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+        if is_user_vaddr(vaddr) {
+            return Err(PageTableError::InvalidVaddr);
+        }
+        self.do_protect(vaddr, flags)
+    }
+}
+
+impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     /// Add a new mapping directly in the root page table.
     ///
     /// # Safety
@@ -149,12 +226,23 @@ impl<T: PageTableEntryTrait> PageTable<T> {
     ///
     pub unsafe fn add_root_mapping(&mut self, index: usize, pte: &T) {
         debug_assert!((index + 1) * size_of::<T>() <= PAGE_SIZE);
-        // Safety: The root_pa is refer to the root of a valid page table.
-        let root_ptes: &mut [T] = table_of(self.root_pa).unwrap();
+        // Safety: The root_paddr is refer to the root of a valid page table.
+        let root_ptes: &mut [T] = table_of(self.root_paddr).unwrap();
         root_ptes[index] = *pte;
     }
 
-    pub fn map(&mut self, vaddr: Vaddr, paddr: Paddr, flags: T::F) -> Result<(), PageTableError> {
+    /// Mapping `vaddr` to `paddr` with flags.
+    ///
+    /// # Safety
+    ///
+    /// This function allows arbitrary modifications to the page table.
+    /// Incorrect modifications may cause the kernel to crash (e.g., changing the linear mapping.).
+    unsafe fn do_map(
+        &mut self,
+        vaddr: Vaddr,
+        paddr: Paddr,
+        flags: T::F,
+    ) -> Result<(), PageTableError> {
         let last_entry = self.page_walk(vaddr, true).unwrap();
         trace!(
             "Page Table: Map vaddr:{:x?}, paddr:{:x?}, flags:{:x?}",
@@ -181,7 +269,7 @@ impl<T: PageTableEntryTrait> PageTable<T> {
         // Safety: The offset does not exceed the value of PAGE_SIZE.
         // It only change the memory controlled by page table.
         let mut current: &mut T = unsafe {
-            &mut *(paddr_to_vaddr(self.root_pa + size_of::<T>() * T::page_index(vaddr, count))
+            &mut *(paddr_to_vaddr(self.root_paddr + size_of::<T>() * T::page_index(vaddr, count))
                 as *mut T)
         };
 
@@ -220,7 +308,13 @@ impl<T: PageTableEntryTrait> PageTable<T> {
         Some(current)
     }
 
-    pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
+    /// Unmap `vaddr`.
+    ///
+    /// # Safety
+    ///
+    /// This function allows arbitrary modifications to the page table.
+    /// Incorrect modifications may cause the kernel to crash (e.g., unmap the linear mapping.).
+    unsafe fn do_unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
         let last_entry = self.page_walk(vaddr, false).unwrap();
         trace!("Page Table: Unmap vaddr:{:x?}", vaddr);
         if last_entry.is_unused() && !last_entry.flags().is_present() {
@@ -231,7 +325,14 @@ impl<T: PageTableEntryTrait> PageTable<T> {
         Ok(())
     }
 
-    pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+    /// Modify the flags mapped at `vaddr`
+    ///
+    /// # Safety
+    ///
+    /// This function allows arbitrary modifications to the page table.
+    /// Incorrect modifications may cause the kernel to crash
+    /// (e.g., make the linear mapping visible to the user mode applications.).
+    unsafe fn do_protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
         let last_entry = self.page_walk(vaddr, false).unwrap();
         trace!("Page Table: Protect vaddr:{:x?}, flags:{:x?}", vaddr, flags);
         if last_entry.is_unused() || !last_entry.flags().is_present() {
@@ -243,7 +344,7 @@ impl<T: PageTableEntryTrait> PageTable<T> {
     }
 
     pub fn root_paddr(&self) -> Paddr {
-        self.root_pa
+        self.root_paddr
     }
 }
 
@@ -263,22 +364,25 @@ pub unsafe fn table_of<'a, T: PageTableEntryTrait>(pa: Paddr) -> Option<&'a mut 
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
 pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
-    #[cfg(target_arch = "x86_64")]
-    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
-
-    // TODO: Read and use different level page table.
-    // Safety: The page_directory_base is valid since it is read from PDBR.
-    // We only use this instance to do the page walk without creating.
-    let mut page_table: PageTable<PageTableEntry> = unsafe {
-        PageTable::from_paddr(
-            PageTableConfig {
-                address_width: AddressWidth::Level4PageTable,
-            },
-            page_directory_base.start_address().as_u64() as usize,
-        )
-    };
-    let page_directory_base = page_directory_base.start_address().as_u64() as usize;
+    let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+    // Although we bypass the unsafe APIs provided by KernelMode, the purpose here is
+    // only to obtain the corresponding physical address according to the mapping.
     let last_entry = page_table.page_walk(vaddr, false)?;
     // FIXME: Support huge page
     Some(last_entry.paddr() + (vaddr & (PAGE_SIZE - 1)))
+}
+
+pub fn init() {
+    KERNEL_PAGE_TABLE.call_once(|| {
+        #[cfg(target_arch = "x86_64")]
+        let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
+        SpinLock::new(PageTable {
+            root_paddr: page_directory_base.start_address().as_u64() as usize,
+            tables: Vec::new(),
+            config: PageTableConfig {
+                address_width: AddressWidth::Level4,
+            },
+            _phantom: PhantomData,
+        })
+    });
 }

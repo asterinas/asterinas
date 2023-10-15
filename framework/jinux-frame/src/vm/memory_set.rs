@@ -163,9 +163,9 @@ impl MemorySet {
             // TODO: check overlap
             if let Entry::Vacant(e) = self.areas.entry(area.start_va) {
                 let area = e.insert(area);
-                for (va, pa) in area.mapper.iter() {
-                    debug_assert!(pa.start_paddr() < PHYS_OFFSET);
-                    self.pt.map(*va, pa.start_paddr(), area.flags).unwrap();
+                for (va, frame) in area.mapper.iter() {
+                    debug_assert!(frame.start_paddr() < PHYS_OFFSET);
+                    self.pt.map(*va, frame, area.flags).unwrap();
                 }
             } else {
                 panic!(
@@ -191,7 +191,7 @@ impl MemorySet {
 
     pub fn new() -> Self {
         let mut page_table = PageTable::new(PageTableConfig {
-            address_width: super::page_table::AddressWidth::Level4PageTable,
+            address_width: super::page_table::AddressWidth::Level4,
         });
         let mapped_pte = crate::arch::mm::ALL_MAPPED_PTE.lock();
         for (index, pte) in mapped_pte.iter() {
@@ -300,7 +300,7 @@ impl fmt::Debug for MemorySet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("MemorySet")
             .field("areas", &self.areas)
-            .field("page_table_root", &self.pt.root_pa)
+            .field("page_table_root", &self.pt.root_paddr())
             .finish()
     }
 }

@@ -63,6 +63,7 @@ pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 pub(crate) fn init() {
     let memory_regions = crate::boot::memory_regions().to_owned();
     frame_allocator::init(&memory_regions);
+    page_table::init();
 
     let mut framebuffer_regions = Vec::new();
     for i in memory_regions.iter() {

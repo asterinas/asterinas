@@ -3,7 +3,7 @@ mod fault;
 mod remapping;
 mod second_stage;
 
-use crate::sync::Mutex;
+use crate::{sync::Mutex, vm::VmFrame};
 use log::info;
 use spin::Once;
 
@@ -12,7 +12,7 @@ use crate::{
     bus::pci::PciDeviceLocation,
     vm::{
         page_table::{PageTableConfig, PageTableError},
-        Paddr, PageTable, Vaddr,
+        PageTable, Vaddr,
     },
 };
 
@@ -27,7 +27,7 @@ pub enum IommuError {
 /// # Safety
 ///
 /// Mapping an incorrect address may lead to a kernel data leak.
-pub(crate) unsafe fn map(vaddr: Vaddr, paddr: Paddr) -> Result<(), IommuError> {
+pub(crate) unsafe fn map(vaddr: Vaddr, frame: &VmFrame) -> Result<(), IommuError> {
     let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);
     };
@@ -41,7 +41,7 @@ pub(crate) unsafe fn map(vaddr: Vaddr, paddr: Paddr) -> Result<(), IommuError> {
                 function: 0,
             },
             vaddr,
-            paddr,
+            frame,
         )
         .map_err(|err| match err {
             context_table::ContextTableError::InvalidDeviceId => unreachable!(),
@@ -78,7 +78,7 @@ pub(crate) fn init() -> Result<(), IommuError> {
     let mut root_table = RootTable::new();
     // For all PCI Device, use the same page table.
     let page_table: PageTable<PageTableEntry> = PageTable::new(PageTableConfig {
-        address_width: crate::vm::page_table::AddressWidth::Level3PageTable,
+        address_width: crate::vm::page_table::AddressWidth::Level3,
     });
     for table in PciDeviceLocation::all() {
         root_table.specify_device_page_table(table, page_table.clone())
