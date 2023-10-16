@@ -271,6 +271,7 @@ dependencies = [
  "core2",
  "cpio-decoder",
  "getrandom",
+ "getset",
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
@@ -728,6 +729,18 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi",
+]
+
+[[package]]
+name = "getset"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e45727250e75cc04ff2846a66397da8ef2b3db8e40e0cef4df67950a07621eb9"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

@@ -41,6 +41,8 @@ extern crate lru;
 extern crate controlled;
 #[macro_use]
 extern crate ktest;
+#[macro_use]
+extern crate getset;
 
 pub mod console;
 pub mod device;

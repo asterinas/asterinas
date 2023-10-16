@@ -149,7 +149,7 @@ pub enum Errno {
 }
 
 /// error used in this crate
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Error {
     errno: Errno,
     msg: Option<&'static str>,
@@ -167,7 +167,7 @@ impl Error {
         }
     }
 
-    pub fn error(&self) -> Errno {
+    pub const fn error(&self) -> Errno {
         self.errno
     }
 }

@@ -1,27 +1,36 @@
 use crate::events::IoEvents;
-use crate::fs::{file_handle::FileLike, utils::StatusFlags};
-use crate::net::iface::IpEndpoint;
-use crate::net::socket::{
-    util::{
-        send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
-        sock_options::SockOptionName, sockaddr::SocketAddr,
-    },
-    Socket,
+use crate::fs::file_handle::FileLike;
+use crate::fs::utils::StatusFlags;
+use crate::net::socket::ip::tcp_options::{
+    TcpCongestion, TcpMaxseg, TcpWindowClamp, DEFAULT_MAXSEG,
 };
+use crate::net::socket::options::{
+    SockOption, SocketError, SocketLinger, SocketOptions, SocketRecvBuf, SocketReuseAddr,
+    SocketReusePort, SocketSendBuf, MIN_RECVBUF, MIN_SENDBUF,
+};
+use crate::net::socket::util::{
+    send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd, sockaddr::SocketAddr,
+};
+use crate::net::socket::Socket;
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::{match_sock_option_mut, match_sock_option_ref};
 
-use self::{
-    connected::ConnectedStream, connecting::ConnectingStream, init::InitStream,
-    listen::ListenStream,
-};
+use connected::ConnectedStream;
+use connecting::ConnectingStream;
+use init::InitStream;
+use listen::ListenStream;
+use options::{TcpNoDelay, TcpOptions};
+use smoltcp::wire::IpEndpoint;
 
 mod connected;
 mod connecting;
 mod init;
 mod listen;
+pub mod options;
 
 pub struct StreamSocket {
+    options: RwLock<Options>,
     state: RwLock<State>,
 }
 
@@ -36,10 +45,26 @@ enum State {
     Listen(Arc<ListenStream>),
 }
 
+#[derive(Debug, Clone)]
+struct Options {
+    socket: SocketOptions,
+    tcp: TcpOptions,
+}
+
+impl Options {
+    fn new() -> Self {
+        let socket = SocketOptions::new_tcp();
+        let tcp = TcpOptions::new();
+        Options { socket, tcp }
+    }
+}
+
 impl StreamSocket {
     pub fn new(nonblocking: bool) -> Self {
+        let options = Options::new();
         let state = State::Init(InitStream::new(nonblocking));
         Self {
+            options: RwLock::new(options),
             state: RwLock::new(state),
         }
     }
@@ -180,7 +205,10 @@ impl Socket for StreamSocket {
 
         let accepted_socket = {
             let state = RwLock::new(State::Connected(connected_stream));
-            Arc::new(StreamSocket { state })
+            Arc::new(StreamSocket {
+                options: RwLock::new(Options::new()),
+                state,
+            })
         };
 
         let socket_addr = remote_endpoint.try_into()?;
@@ -222,10 +250,6 @@ impl Socket for StreamSocket {
         remote_endpoint.try_into()
     }
 
-    fn sock_option(&self, optname: &SockOptionName) -> Result<&[u8]> {
-        return_errno_with_message!(Errno::EINVAL, "getsockopt not implemented");
-    }
-
     fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         let connected_stream = match &*self.state.read() {
             State::Connected(connected_stream) => connected_stream.clone(),
@@ -253,5 +277,126 @@ impl Socket for StreamSocket {
             _ => return_errno_with_message!(Errno::EINVAL, "the socket is not connected"),
         };
         connected_stream.sendto(buf, flags)
+    }
+
+    fn option(&self, option: &mut dyn SockOption) -> Result<()> {
+        let options = self.options.read();
+        match_sock_option_mut!(option, {
+            // Socket Options
+            socket_errors: SocketError => {
+                let sock_errors = options.socket.sock_errors();
+                socket_errors.set_output(sock_errors);
+            },
+            socket_reuse_addr: SocketReuseAddr => {
+                let reuse_addr = options.socket.reuse_addr();
+                socket_reuse_addr.set_output(reuse_addr);
+            },
+            socket_send_buf: SocketSendBuf => {
+                let send_buf = options.socket.send_buf();
+                socket_send_buf.set_output(send_buf);
+            },
+            socket_recv_buf: SocketRecvBuf => {
+                let recv_buf = options.socket.recv_buf();
+                socket_recv_buf.set_output(recv_buf);
+            },
+            socket_reuse_port: SocketReusePort => {
+                let reuse_port = options.socket.reuse_port();
+                socket_reuse_port.set_output(reuse_port);
+            },
+            // Tcp Options
+            tcp_no_delay: TcpNoDelay => {
+                let no_delay = options.tcp.no_delay();
+                tcp_no_delay.set_output(no_delay);
+            },
+            tcp_congestion: TcpCongestion => {
+                let congestion = options.tcp.congestion();
+                tcp_congestion.set_output(congestion);
+            },
+            tcp_maxseg: TcpMaxseg => {
+                // It will always return the default MSS value defined above for an unconnected socket
+                // and always return the actual current MSS for a connected one.
+
+                // FIXME: how to get the current MSS?
+                let maxseg = match &*self.state.read() {
+                    State::Init(_) | State::Listen(_) | State::Connecting(_) => DEFAULT_MAXSEG,
+                    State::Connected(_) => options.tcp.maxseg(),
+                };
+                tcp_maxseg.set_output(maxseg);
+            },
+            tcp_window_clamp: TcpWindowClamp => {
+                let window_clamp = options.tcp.window_clamp();
+                tcp_window_clamp.set_output(window_clamp);
+            },
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "get unknown option")
+        });
+        Ok(())
+    }
+
+    fn set_option(&self, option: &dyn SockOption) -> Result<()> {
+        let mut options = self.options.write();
+        // FIXME: here we have only set the value of the option, without actually
+        // making any real modifications.
+        match_sock_option_ref!(option, {
+            // Socket options
+            socket_recv_buf: SocketRecvBuf => {
+                let recv_buf = socket_recv_buf.input().unwrap();
+                if *recv_buf <= MIN_RECVBUF {
+                    options.socket.set_recv_buf(MIN_RECVBUF);
+                } else{
+                    options.socket.set_recv_buf(*recv_buf);
+                }
+            },
+            socket_send_buf: SocketSendBuf => {
+                let send_buf = socket_send_buf.input().unwrap();
+                if *send_buf <= MIN_SENDBUF {
+                    options.socket.set_send_buf(MIN_SENDBUF);
+                } else {
+                    options.socket.set_send_buf(*send_buf);
+                }
+            },
+            socket_reuse_addr: SocketReuseAddr => {
+                let reuse_addr = socket_reuse_addr.input().unwrap();
+                options.socket.set_reuse_addr(*reuse_addr);
+            },
+            socket_reuse_port: SocketReusePort => {
+                let reuse_port = socket_reuse_port.input().unwrap();
+                options.socket.set_reuse_port(*reuse_port);
+            },
+            socket_linger: SocketLinger => {
+                let linger = socket_linger.input().unwrap();
+                options.socket.set_linger(*linger);
+            },
+            // Tcp options
+            tcp_no_delay: TcpNoDelay => {
+                let no_delay = tcp_no_delay.input().unwrap();
+                options.tcp.set_no_delay(*no_delay);
+            },
+            tcp_congestion: TcpCongestion => {
+                let congestion = tcp_congestion.input().unwrap();
+                options.tcp.set_congestion(*congestion);
+            },
+            tcp_maxseg: TcpMaxseg => {
+                const MIN_MAXSEG: u32 = 536;
+                const MAX_MAXSEG: u32 = 65535;
+                let maxseg = tcp_maxseg.input().unwrap();
+
+                if *maxseg < MIN_MAXSEG || *maxseg > MAX_MAXSEG {
+                    return_errno_with_message!(Errno::EINVAL, "New maxseg should be in allowed range.");
+                }
+
+                options.tcp.set_maxseg(*maxseg);
+            },
+            tcp_window_clamp: TcpWindowClamp => {
+                let window_clamp = tcp_window_clamp.input().unwrap();
+                let half_recv_buf = (options.socket.recv_buf()) / 2;
+                if *window_clamp <= half_recv_buf {
+                    options.tcp.set_window_clamp(half_recv_buf);
+                } else {
+                    options.tcp.set_window_clamp(*window_clamp);
+                }
+            },
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "set unknown option")
+        });
+        Ok(())
     }
 }
