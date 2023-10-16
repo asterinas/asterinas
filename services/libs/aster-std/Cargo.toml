@@ -67,6 +67,7 @@ getrandom = { version = "0.2.10", default-features = false, features = [
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 static_assertions = "1.1.0"
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
+getset = "0.1.2"
 
 [dependencies.lazy_static]
 version = "1.0"
