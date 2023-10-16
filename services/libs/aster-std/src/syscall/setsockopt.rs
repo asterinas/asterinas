@@ -1,34 +1,42 @@
-use crate::log_syscall_entry;
-use crate::net::socket::{SockOptionLevel, SockOptionName};
-use crate::util::read_bytes_from_user;
+use crate::util::net::{new_raw_socket_option, SockOptionLevel};
 use crate::{fs::file_table::FileDescripter, prelude::*};
+use crate::{get_socket_without_holding_filetable_lock, log_syscall_entry};
 
-use super::SyscallReturn;
-use super::SYS_SETSOCKOPT;
+use super::{SyscallReturn, SYS_SETSOCKOPT};
 
 pub fn sys_setsockopt(
     sockfd: FileDescripter,
     level: i32,
     optname: i32,
     optval: Vaddr,
-    optlen: usize,
+    optlen: u32,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SETSOCKOPT);
     let level = SockOptionLevel::try_from(level)?;
-    let sock_option_name = SockOptionName::try_from(optname)?;
     if optval == 0 {
         return_errno_with_message!(Errno::EINVAL, "optval is null pointer");
     }
-    let mut sock_opt_val = vec![0u8; optlen];
-    read_bytes_from_user(optval, &mut sock_opt_val)?;
 
-    debug!("level = {level:?}, sockfd = {sockfd}, optname = {sock_option_name:?}, optval = {sock_opt_val:?}");
+    debug!(
+        "level = {:?}, sockfd = {}, optname = {}, optval = {}",
+        level, sockfd, optname, optlen
+    );
+
     let current = current!();
-    let file_table = current.file_table().lock();
-    let socket = file_table
-        .get_file(sockfd)?
-        .as_socket()
-        .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the file is not socket"))?;
-    // TODO: do setsockopt
+    get_socket_without_holding_filetable_lock!(socket, current, sockfd);
+
+    let raw_option = {
+        let mut option = new_raw_socket_option(level, optname)?;
+
+        let vmar = current.root_vmar();
+        option.read_input(vmar, optval, optlen)?;
+
+        option
+    };
+
+    debug!("raw option: {:?}", raw_option);
+
+    socket.set_option(raw_option.as_sock_option())?;
+
     Ok(SyscallReturn::Return(0))
 }
