@@ -14,7 +14,9 @@ echo "Start network test......"
 ./unix_server &
 ./unix_client
 ./socketpair
+./sockoption
 ./listen_backlog
 ./send_buf_full
+
 
 echo "All network test passed"
