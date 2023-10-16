@@ -1,7 +1,12 @@
 mod addr;
+mod options;
 mod socket;
 
-pub use addr::{read_socket_addr_from_user, write_socket_addr_to_user, SaFamily};
+pub use addr::{
+    read_socket_addr_from_user, write_socket_addr_to_user, InetAddr, SaFamily, SockAddr,
+    SockAddrInet, SockAddrInet6, SockAddrUnix,
+};
+pub use options::{new_raw_socket_option, RawSockOption, SockOptionLevel};
 pub use socket::{Protocol, SockFlags, SockType, SOCK_TYPE_MASK};
 
 #[macro_export]
