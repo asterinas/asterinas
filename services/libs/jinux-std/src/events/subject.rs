@@ -34,7 +34,7 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
             observers.insert(observer, filter).is_none()
         };
         if is_new {
-            self.num_observers.fetch_add(1, Ordering::Release);
+            self.num_observers.fetch_add(1, Ordering::Relaxed);
         }
     }
 
