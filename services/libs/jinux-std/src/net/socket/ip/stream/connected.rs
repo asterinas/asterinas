@@ -92,10 +92,8 @@ impl ConnectedStream {
         }
     }
 
-    pub fn local_endpoint(&self) -> Result<IpEndpoint> {
-        self.bound_socket
-            .local_endpoint()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "does not has remote endpoint"))
+    pub fn local_endpoint(&self) -> IpEndpoint {
+        self.bound_socket.local_endpoint()
     }
 
     pub fn remote_endpoint(&self) -> Result<IpEndpoint> {

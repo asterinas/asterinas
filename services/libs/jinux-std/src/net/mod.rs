@@ -42,3 +42,13 @@ pub fn poll_ifaces() {
         iface.poll();
     }
 }
+
+fn get_localhost_iface() -> Arc<dyn Iface> {
+    let ifaces = IFACES.get().unwrap();
+    ifaces[1].clone()
+}
+
+fn get_virtio_iface() -> Arc<dyn Iface> {
+    let ifaces = IFACES.get().unwrap();
+    ifaces[0].clone()
+}

@@ -1,19 +1,18 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::Ipv4Address;
+use super::{util::BindConfig, Ipv4Address};
 use crate::prelude::*;
 use alloc::collections::btree_map::Entry;
 use keyable_arc::KeyableWeak;
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     phy::Device,
-    wire::IpCidr,
+    wire::{IpCidr, IpEndpoint},
 };
 
 use super::{
     any_socket::{AnyBoundSocket, AnyRawSocket, AnyUnboundSocket},
     time::get_network_timestamp,
-    util::BindPortConfig,
     Iface,
 };
 
@@ -99,7 +98,7 @@ impl IfaceCommon {
         &self,
         iface: Arc<dyn Iface>,
         socket: AnyUnboundSocket,
-        config: BindPortConfig,
+        config: BindConfig,
     ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, AnyUnboundSocket)> {
         let port = if let Some(port) = config.port() {
             port
@@ -109,7 +108,7 @@ impl IfaceCommon {
                 Err(e) => return Err((e, socket)),
             }
         };
-        if let Some(e) = self.bind_port(port, config.can_reuse()).err() {
+        if let Some(e) = self.bind_port(port, config.reuse_port()).err() {
             return Err((e, socket));
         }
         let socket_family = socket.socket_family();
@@ -119,7 +118,13 @@ impl IfaceCommon {
             AnyRawSocket::Tcp(tcp_socket) => sockets.add(tcp_socket),
             AnyRawSocket::Udp(udp_socket) => sockets.add(udp_socket),
         };
-        let bound_socket = AnyBoundSocket::new(iface, handle, port, pollee, socket_family);
+
+        let endpoint = IpEndpoint {
+            addr: config.ip_addr(),
+            port,
+        };
+
+        let bound_socket = AnyBoundSocket::new(iface, handle, endpoint, pollee, socket_family);
         self.insert_bound_socket(&bound_socket).unwrap();
         Ok(bound_socket)
     }

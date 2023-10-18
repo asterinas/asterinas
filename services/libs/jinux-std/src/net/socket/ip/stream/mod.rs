@@ -122,6 +122,7 @@ impl Socket for StreamSocket {
         let connected_stream = {
             let nonblocking = init_stream.is_nonblocking();
             let bound_socket = init_stream.bound_socket().unwrap();
+            let remote_endpoint = init_stream.remote_endpoint()?;
             Arc::new(ConnectedStream::new(
                 nonblocking,
                 bound_socket,
@@ -184,10 +185,10 @@ impl Socket for StreamSocket {
     fn addr(&self) -> Result<SocketAddr> {
         let state = self.state.read();
         let local_endpoint = match &*state {
-            State::Init(init_stream) => init_stream.local_endpoint(),
+            State::Init(init_stream) => init_stream.local_endpoint()?,
             State::Listen(listen_stream) => listen_stream.local_endpoint(),
             State::Connected(connected_stream) => connected_stream.local_endpoint(),
-        }?;
+        };
         local_endpoint.try_into()
     }
 

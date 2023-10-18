@@ -1,12 +1,12 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use smoltcp::wire::IpAddress;
+
 use crate::events::IoEvents;
-use crate::net::iface::Iface;
-use crate::net::iface::IpEndpoint;
-use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket};
-use crate::net::poll_ifaces;
+use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket, Iface, IpEndpoint};
 use crate::net::socket::ip::always_some::AlwaysSome;
 use crate::net::socket::ip::common::{bind_socket, get_ephemeral_endpoint};
+use crate::net::{get_localhost_iface, poll_ifaces};
 use crate::prelude::*;
 use crate::process::signal::Poller;
 
@@ -96,8 +96,7 @@ impl Inner {
     }
 
     fn local_endpoint(&self) -> Option<IpEndpoint> {
-        self.bound_socket()
-            .and_then(|socket| socket.local_endpoint())
+        self.bound_socket().map(|socket| socket.local_endpoint())
     }
 
     fn remote_endpoint(&self) -> Option<IpEndpoint> {
@@ -131,12 +130,21 @@ impl InitStream {
     }
 
     pub fn connect(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
+        let remote_endpoint = if remote_endpoint.addr.is_unspecified() {
+            // FIXME: this is a temporary solution, when trying to connect to `0.0.0.0`,
+            // sending connecting request to localhost.
+            let ip_addr = get_localhost_iface().ipv4_addr().unwrap();
+            IpEndpoint::new(IpAddress::Ipv4(ip_addr), remote_endpoint.port)
+        } else {
+            *remote_endpoint
+        };
+
         if !self.is_bound() {
             self.inner
                 .write()
-                .bind_to_ephemeral_endpoint(remote_endpoint)?
+                .bind_to_ephemeral_endpoint(&remote_endpoint)?
         }
-        self.inner.write().do_connect(*remote_endpoint)?;
+        self.inner.write().do_connect(remote_endpoint)?;
         // Wait until building connection
         let poller = Poller::new();
         loop {

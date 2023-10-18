@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::process::signal::{Pollee, Poller};
 
 use super::Iface;
-use super::{IpAddress, IpEndpoint};
+use super::IpEndpoint;
 
 pub type RawTcpSocket = smoltcp::socket::tcp::Socket<'static>;
 pub type RawUdpSocket = smoltcp::socket::udp::Socket<'static>;
@@ -81,7 +81,7 @@ impl AnyUnboundSocket {
 pub struct AnyBoundSocket {
     iface: Arc<dyn Iface>,
     handle: smoltcp::iface::SocketHandle,
-    port: u16,
+    endpoint: IpEndpoint,
     pollee: Pollee,
     socket_family: SocketFamily,
     weak_self: Weak<Self>,
@@ -91,26 +91,22 @@ impl AnyBoundSocket {
     pub(super) fn new(
         iface: Arc<dyn Iface>,
         handle: smoltcp::iface::SocketHandle,
-        port: u16,
+        endpoint: IpEndpoint,
         pollee: Pollee,
         socket_family: SocketFamily,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             iface,
             handle,
-            port,
+            endpoint,
             pollee,
             socket_family,
             weak_self: weak_self.clone(),
         })
     }
 
-    pub fn local_endpoint(&self) -> Option<IpEndpoint> {
-        let ip_addr = {
-            let ipv4_addr = self.iface.ipv4_addr()?;
-            IpAddress::Ipv4(ipv4_addr)
-        };
-        Some(IpEndpoint::new(ip_addr, self.port))
+    pub fn local_endpoint(&self) -> IpEndpoint {
+        self.endpoint
     }
 
     pub fn raw_with<T: smoltcp::socket::AnySocket<'static>, R, F: FnMut(&mut T) -> R>(
@@ -126,11 +122,11 @@ impl AnyBoundSocket {
     pub fn do_connect(&self, remote_endpoint: IpEndpoint) -> Result<()> {
         let mut sockets = self.iface.sockets();
         let socket = sockets.get_mut::<RawTcpSocket>(self.handle);
-        let port = self.port;
+
         let mut iface_inner = self.iface.iface_inner();
         let cx = iface_inner.context();
         socket
-            .connect(cx, remote_endpoint, port)
+            .connect(cx, remote_endpoint, self.endpoint)
             .map_err(|_| Error::with_message(Errno::ENOBUFS, "send connection request failed"))?;
         Ok(())
     }
@@ -176,7 +172,7 @@ impl Drop for AnyBoundSocket {
         self.close();
         self.iface.poll();
         self.iface.common().remove_socket(self.handle);
-        self.iface.common().release_port(self.port);
+        self.iface.common().release_port(self.endpoint.port);
         self.iface.common().remove_bound_socket(self.weak_ref());
     }
 }

@@ -1,7 +1,9 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use smoltcp::wire::IpListenEndpoint;
+
 use crate::events::IoEvents;
-use crate::net::iface::{AnyUnboundSocket, BindPortConfig, IpEndpoint};
+use crate::net::iface::{AnyUnboundSocket, BindConfig, IpEndpoint};
 
 use crate::net::iface::{AnyBoundSocket, RawTcpSocket};
 use crate::process::signal::Poller;
@@ -91,10 +93,8 @@ impl ListenStream {
         Some(backlog_socket)
     }
 
-    pub fn local_endpoint(&self) -> Result<IpEndpoint> {
-        self.bound_socket()
-            .local_endpoint()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "does not has remote endpoint"))
+    pub fn local_endpoint(&self) -> IpEndpoint {
+        self.bound_socket().local_endpoint()
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -129,21 +129,29 @@ struct BacklogSocket {
 
 impl BacklogSocket {
     fn new(bound_socket: &AnyBoundSocket) -> Result<Self> {
-        let local_endpoint = bound_socket.local_endpoint().ok_or(Error::with_message(
-            Errno::EINVAL,
-            "the socket is not bound",
-        ))?;
+        let local_endpoint = bound_socket.local_endpoint();
+
         let unbound_socket = AnyUnboundSocket::new_tcp();
         let bound_socket = {
             let iface = bound_socket.iface();
-            let bind_port_config = BindPortConfig::new(local_endpoint.port, true)?;
+            let bind_config = BindConfig::new(local_endpoint, true)?;
             iface
-                .bind_socket(unbound_socket, bind_port_config)
+                .bind_socket(unbound_socket, bind_config)
                 .map_err(|(e, _)| e)?
         };
+
+        let listen_endpoint: IpListenEndpoint = if local_endpoint.addr.is_unspecified() {
+            IpListenEndpoint {
+                addr: None,
+                port: local_endpoint.port,
+            }
+        } else {
+            local_endpoint.into()
+        };
+
         bound_socket.raw_with(|raw_tcp_socket: &mut RawTcpSocket| {
             raw_tcp_socket
-                .listen(local_endpoint)
+                .listen(listen_endpoint)
                 .map_err(|_| Error::with_message(Errno::EINVAL, "fail to listen"))
         })?;
         bound_socket.update_socket_state();

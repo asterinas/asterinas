@@ -1,4 +1,5 @@
 use jinux_frame::timer::read_monotonic_milli_seconds;
+use smoltcp::wire::{IpAddress, IpEndpoint};
 
 use crate::{
     prelude::*,
@@ -9,6 +10,34 @@ use crate::{
 };
 
 use super::Iface;
+
+pub struct BindConfig {
+    addr: IpAddress,
+    port_config: BindPortConfig,
+}
+
+impl BindConfig {
+    pub fn new(endpoint: IpEndpoint, reuse_port: bool) -> Result<Self> {
+        let IpEndpoint { addr, port } = endpoint;
+        let port_config = BindPortConfig::new(port, reuse_port)?;
+        Ok(Self { addr, port_config })
+    }
+
+    pub(super) fn ip_addr(&self) -> IpAddress {
+        self.addr
+    }
+
+    pub(super) fn reuse_port(&self) -> bool {
+        matches!(&self.port_config, BindPortConfig::CanReuse(_))
+    }
+
+    pub(super) fn port(&self) -> Option<u16> {
+        match &self.port_config {
+            BindPortConfig::CanReuse(port) | BindPortConfig::Specified(port) => Some(*port),
+            BindPortConfig::Ephemeral => None,
+        }
+    }
+}
 
 pub enum BindPortConfig {
     CanReuse(u16),
@@ -30,17 +59,6 @@ impl BindPortConfig {
             Self::Ephemeral
         };
         Ok(config)
-    }
-
-    pub(super) fn can_reuse(&self) -> bool {
-        matches!(self, Self::CanReuse(_))
-    }
-
-    pub(super) fn port(&self) -> Option<u16> {
-        match self {
-            Self::CanReuse(port) | Self::Specified(port) => Some(*port),
-            Self::Ephemeral => None,
-        }
     }
 }
 

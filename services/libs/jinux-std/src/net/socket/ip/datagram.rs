@@ -49,7 +49,7 @@ impl Inner {
         };
         let bound_socket =
             unbound_socket.try_take_with(|socket| bind_socket(socket, endpoint, false))?;
-        let bound_endpoint = bound_socket.local_endpoint().unwrap();
+        let bound_endpoint = bound_socket.local_endpoint();
         bound_socket.raw_with(|socket: &mut RawUdpSocket| {
             socket
                 .bind(bound_endpoint)
@@ -94,7 +94,7 @@ impl Inner {
 
     fn local_endpoint(&self) -> Option<IpEndpoint> {
         if let Inner::Bound { bound_socket, .. } = self {
-            bound_socket.local_endpoint()
+            Some(bound_socket.local_endpoint())
         } else {
             None
         }

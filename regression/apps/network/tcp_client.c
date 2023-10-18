@@ -8,10 +8,16 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <stdlib.h>
 #define PORT 8080
   
 int main(int argc, char const* argv[])
 {
+    if(argc < 2) {
+        perror("Server address is not provided.");
+        exit(EXIT_FAILURE);
+    }
+
     int status, valread, client_fd;
     struct sockaddr_in serv_addr;
     char* hello = "Hello from client";
@@ -26,7 +32,7 @@ int main(int argc, char const* argv[])
   
     // Convert IPv4 and IPv6 addresses from text to binary
     // form
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)
+    if (inet_pton(AF_INET, argv[1], &serv_addr.sin_addr)
         <= 0) {
         printf(
             "\nInvalid address/ Address not supported \n");
@@ -40,6 +46,24 @@ int main(int argc, char const* argv[])
         printf("\nConnection Failed \n");
         return -1;
     }
+
+    struct sockaddr_in peer_addr;
+    socklen_t peer_addr_len = sizeof(peer_addr);
+    if (getpeername(client_fd, (struct sockaddr*)&peer_addr, &peer_addr_len) == -1) {         
+        perror("Getpeername failed");            
+        exit(EXIT_FAILURE);
+    }
+
+    // Get peername
+    char peer_ip_addr[INET_ADDRSTRLEN];
+    if (inet_ntop(AF_INET, &(peer_addr.sin_addr), peer_ip_addr, INET_ADDRSTRLEN) == NULL) {
+        perror("inet_ntop failed");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Client: server IP address: %s\n", peer_ip_addr);
+    printf("Client: server port: %d\n", ntohs(peer_addr.sin_port));
+
     send(client_fd, hello, strlen(hello), 0);
     printf("Hello message sent\n");
     valread = read(client_fd, buffer, 1024);
