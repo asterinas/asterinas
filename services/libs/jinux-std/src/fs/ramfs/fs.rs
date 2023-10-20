@@ -698,7 +698,7 @@ impl Inode for RamInode {
         self_inode.dec_size();
         self_inode.dec_nlinks();
         drop(self_inode);
-        let mut target_inode = self.0.write();
+        let mut target_inode = target.0.write();
         target_inode.dec_nlinks();
         target_inode.dec_nlinks();
         Ok(())
