@@ -15,8 +15,6 @@
 // are filled by the loader and will be read by Jinux.
 
 .code16
-
-sentinel:               .byte 0xff, 0xff
 .org 0x01f1
 hdr:
 SETUP_SECTS = 4
@@ -56,8 +54,8 @@ hardware_subarch_data:  .quad 0
 payload_offset:         .long 0xabababab # at 0x248/4, to be filled by the runner
 payload_length:         .long 0xabababab # at 0x24c/4, to be filled by the runner
 setup_data:             .quad 0
-pref_address:           .quad 0x8000000 # 128MiB
-init_size:              .long 0x4000000 # 64MiB
+pref_address:           .quad 0
+init_size:              .long 0xabababab # at 0x260/4, to be filled by the runner
 handover_offset:        .long 0
 kernel_info_offset:     .long 0
 
@@ -66,6 +64,6 @@ kernel_info_offset:     .long 0
 // 32-bit setup code starts here.
 .code32
 start_of_setup32:
-.org 0x200 * SETUP_SECTS
+.org 0x200 * (SETUP_SECTS + 1)
         .extern _rust_setup_entry
         jmp _rust_setup_entry

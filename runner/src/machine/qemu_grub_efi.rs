@@ -199,6 +199,11 @@ fn make_zimage(path: &Path, kernel_path: &Path, header_path: &Path) -> std::io::
         0x24C, /* payload_length */
         &(kernel_len as u32).to_le_bytes(),
     );
+    fill_header_field(
+        &mut header,
+        0x260, /* init_size */
+        &((kernel_len + header_len) as u32).to_le_bytes(),
+    );
 
     let mut kernel_image = File::create(path)?;
     kernel_image.write_all(&header)?;
