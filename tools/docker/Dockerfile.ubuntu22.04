@@ -95,8 +95,14 @@ RUN source ./edksetup.sh \
 FROM build-base as build-grub
 
 RUN apt update && apt-get install -y --no-install-recommends \
+    autoconf \
+    automake \
+    autopoint \
     bison \
-    flex
+    flex \
+    gawk \
+    gettext \
+    pkg-config
 RUN apt clean && rm -rf /var/lib/apt/lists/*
 
 FROM build-grub as grub
@@ -107,12 +113,13 @@ FROM build-grub as grub
 # in the GRUB release. The Ubuntu release notoriously modifies the GRUB source code and enforce
 # EFI handover boot, which is deprecated. So we have to build GRUB from source.
 WORKDIR /root
-RUN wget -O grub.tar.xz https://ftp.gnu.org/gnu/grub/grub-2.06.tar.xz \
+RUN wget -O grub.tar.xz https://git.savannah.gnu.org/cgit/grub.git/snapshot/grub-grub-2.12-rc1.tar.gz \
     && mkdir /root/grub \
     && tar xf grub.tar.xz --strip-components=1 -C /root/grub \
     && rm grub.tar.xz
 WORKDIR /root/grub
-RUN ./configure --target=x86_64 --with-platform=efi --prefix=/usr/local/grub \
+RUN ./bootstrap \
+    && ./configure --target=x86_64 --with-platform=efi --prefix=/usr/local/grub \
     && make -j \
     && make install
 WORKDIR /root

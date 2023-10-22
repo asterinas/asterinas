@@ -34,12 +34,12 @@ git clone [repository url]
 
 2. After downloading the source code, run the following command to pull the development image.
 ```bash
-docker pull jinuxdev/jinux:0.2.0
+docker pull jinuxdev/jinux:0.2.1
 ```
 
 3. Start the development container.
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v `pwd`:/root/jinux jinuxdev/jinux:0.2.0
+docker run -it --privileged --network=host --device=/dev/kvm -v `pwd`:/root/jinux jinuxdev/jinux:0.2.1
 ```
 
 **All build and test commands should be run inside the development container.**

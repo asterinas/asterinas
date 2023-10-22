@@ -56,7 +56,7 @@ pub const IOMMU_DEVICE_ARGS: &[&str] = &[
     "ioh3420,id=pcie.0,chassis=1",
 ];
 
-pub const GRUB_LIB_PREFIX: &str = "/usr/lib/grub";
+pub const GRUB_PREFIX: &str = "/usr/local/grub";
 pub const GRUB_VERSION: &str = "x86_64-efi";
 
 pub fn create_bootdev_image(
@@ -109,7 +109,8 @@ pub fn create_bootdev_image(
 
     // Make the boot device CDROM image.
     let iso_path = target_dir.join(target_name.to_string() + ".iso");
-    let mut cmd = std::process::Command::new("grub-mkrescue");
+    let grub_mkrescue_bin = PathBuf::from(GRUB_PREFIX).join("bin").join("grub-mkrescue");
+    let mut cmd = std::process::Command::new(grub_mkrescue_bin.as_os_str());
     cmd.arg("--output").arg(&iso_path).arg(iso_root.as_os_str());
     if !cmd.status().unwrap().success() {
         panic!("Failed to run `{:?}`.", cmd);
