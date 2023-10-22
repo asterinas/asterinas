@@ -10,11 +10,11 @@
 //! machine type.
 //!
 
+pub mod gdb;
 pub mod machine;
 
 use std::{
     fs::OpenOptions,
-    io::Write,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -117,58 +117,6 @@ pub const GDB_ARGS: &[&str] = &[
     "-S",
 ];
 
-fn run_gdb_client(path: &PathBuf, gdb_grub: bool) {
-    let path = std::fs::canonicalize(path).unwrap();
-    let mut gdb_cmd = Command::new("gdb");
-    // Set the architecture, otherwise GDB will complain about.
-    gdb_cmd.arg("-ex").arg("set arch i386:x86-64:intel");
-    let grub_script = "/tmp/jinux-gdb-grub-script";
-    if gdb_grub {
-        let grub_dir =
-            PathBuf::from(qemu_grub_efi::GRUB_LIB_PREFIX).join(qemu_grub_efi::GRUB_VERSION);
-        // Load symbols from GRUB using the provided grub gdb script.
-        // Read the contents from `gdb_grub` and
-        // replace the lines containing "target remote :1234".
-        gdb_cmd.current_dir(&grub_dir);
-        let grub_script_content = std::fs::read_to_string(grub_dir.join("gdb_grub")).unwrap();
-        let lines = grub_script_content.lines().collect::<Vec<_>>();
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(grub_script)
-            .unwrap();
-        for line in lines {
-            if line.contains("file kernel.exec") {
-                writeln!(f, "{}", line).unwrap();
-                // A horrible hack on GRUB EFI debugging.
-                // https://stackoverflow.com/questions/43872078/debug-grub2-efi-image-running-on-qemu
-                // Please use our custom built debug OVMF image to confirm the entrypoint address.
-                writeln!(f, "add-symbol-file kernel.exec 0x0007E69F000").unwrap();
-            } else if line.contains("target remote :1234") {
-                // Connect to the GDB server.
-                writeln!(f, "target remote /tmp/jinux-gdb-socket").unwrap();
-            } else {
-                writeln!(f, "{}", line).unwrap();
-            }
-        }
-        gdb_cmd.arg("-x").arg(grub_script);
-    } else {
-        // Load symbols from the kernel image.
-        gdb_cmd.arg("-ex").arg(format!("file {}", path.display()));
-        // Connect to the GDB server.
-        gdb_cmd
-            .arg("-ex")
-            .arg("target remote /tmp/jinux-gdb-socket");
-    }
-    // Connect to the GDB server and run.
-    println!("running:{:#?}", gdb_cmd);
-    gdb_cmd.status().unwrap();
-    if gdb_grub {
-        // Clean the temporary script file then return.
-        std::fs::remove_file(grub_script).unwrap();
-    }
-}
-
 fn main() {
     let args = Args::parse();
 
@@ -177,7 +125,7 @@ fn main() {
         // You should comment out the next line if you want to debug grub instead
         // of the kernel because this argument is not exposed by runner CLI.
         let gdb_grub = gdb_grub && false;
-        run_gdb_client(&args.path, gdb_grub);
+        gdb::run_gdb_client(&args.path, gdb_grub);
         return;
     }
 
