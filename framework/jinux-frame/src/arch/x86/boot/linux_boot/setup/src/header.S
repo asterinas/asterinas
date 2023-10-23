@@ -16,7 +16,7 @@
 
 .code16
 .org 0x01f1
-hdr:
+hdr_start:
 SETUP_SECTS = 4
 setup_sects:            .byte SETUP_SECTS
 root_flags:             .word 1
@@ -26,7 +26,7 @@ vid_mode:               .word 0xfffd
 root_dev:               .word 0
 boot_flag:              .word 0xAA55
 jump:                   .byte 0xeb
-jump_addr:              .byte start_of_setup32-jump_addr
+jump_addr:              .byte hdr_end-jump_addr
 magic:                  .ascii "HdrS"
                         .word 0x020f
 realmode_swtch:         .word 0, 0
@@ -58,12 +58,12 @@ pref_address:           .quad 0
 init_size:              .long 0xabababab # at 0x260/4, to be filled by the runner
 handover_offset:        .long 0
 kernel_info_offset:     .long 0
-
+hdr_end:
 // End of header.
 
-// 32-bit setup code starts here.
+// 32-bit setup code starts here, and will be loaded at code32_start (0x100000).
 .code32
-start_of_setup32:
 .org 0x200 * (SETUP_SECTS + 1)
+start_of_setup32:
         .extern _rust_setup_entry
         jmp _rust_setup_entry

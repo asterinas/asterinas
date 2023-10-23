@@ -647,6 +647,7 @@ dependencies = [
  "volatile",
  "x86",
  "x86_64",
+ "xmas-elf",
 ]
 
 [[package]]
