@@ -30,5 +30,8 @@ aml = "0.16.3"
 multiboot2 = "0.16.0"
 rsdp = "2.0.0"
 
+[build-dependencies]
+xmas-elf = "0.8.0"
+
 [features]
 intel_tdx = ["dep:tdx-guest"]

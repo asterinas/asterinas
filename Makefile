@@ -58,7 +58,6 @@ export
 
 # Toolchain variables that are used when building the Linux setup header
 export CARGO := cargo
-export OBJCOPY := objcopy
 
 .PHONY: all setup build tools run test docs check clean
 
