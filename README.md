@@ -77,7 +77,7 @@ cargo component-check
 
 This command will build the syscall test binary and automatically run Jinux with the tests using QEMU.
 ```bash
-make run AUTO_SYSCALL_TEST=1
+make run AUTO_TEST=syscall
 ```
 
 Alternatively, if you wish to test it interactively inside a shell in Jinux.
