@@ -8,10 +8,10 @@ use core::arch::global_asm;
 global_asm!(include_str!("header.S"));
 
 #[no_mangle]
-pub extern "C" fn _rust_setup_entry() -> ! {
+pub extern "cdecl" fn _rust_setup_entry(boot_params_ptr: u32) -> ! {
     // safety: this init function is only called once
     unsafe { console::init() };
-    println!("Hello, world!");
+    println!("[setup] boot_params_ptr: {:#x}", boot_params_ptr);
     #[allow(clippy::empty_loop)]
     loop {}
 }

@@ -6,6 +6,10 @@ use std::{
 
 use xmas_elf::program::{ProgramHeader, SegmentData};
 
+// We chose the legacy setup sections to be 7 so that the setup header
+// is page-aligned and the legacy setup section size would be 0x1000.
+const LEGACY_SETUP_SECS: usize = 7;
+const LEGACY_SETUP_SEC_SIZE: usize = 0x200 * (LEGACY_SETUP_SECS + 1);
 const SETUP32_LMA: usize = 0x100000;
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -87,7 +91,7 @@ fn copy_to_raw_binary(out_dir: &Path) -> Result<(), Box<dyn Error + Send + Sync>
             return Err("Unexpected program header type".into());
         };
         if program.get_type().unwrap() == xmas_elf::program::Type::Load {
-            let dest_file_offset = program.virtual_addr as usize - SETUP32_LMA;
+            let dest_file_offset = program.virtual_addr as usize + LEGACY_SETUP_SEC_SIZE - SETUP32_LMA;
             bin_writer.seek(std::io::SeekFrom::End(0))?;
             let cur_file_offset = bin_writer.stream_position().unwrap() as usize;
             if cur_file_offset < dest_file_offset {

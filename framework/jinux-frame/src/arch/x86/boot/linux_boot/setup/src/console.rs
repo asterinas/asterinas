@@ -1,17 +1,16 @@
 use core::fmt::{self, Write};
 
-use spin::Once;
 use uart_16550::SerialPort;
 
 struct Stdout {
     serial_port: SerialPort,
 }
 
-static mut STDOUT: Once<Stdout> = Once::new();
+static mut STDOUT: Stdout = Stdout { serial_port: unsafe { SerialPort::new(0x0) } };
 
 /// safety: this function must only be called once
 pub unsafe fn init() {
-    STDOUT.call_once(|| Stdout::init());
+    STDOUT =  Stdout::init();
 }
 
 impl Stdout {
@@ -33,7 +32,7 @@ impl Write for Stdout {
 pub fn print(args: fmt::Arguments) {
     // safety: init() must be called before print() and there is no race condition
     unsafe {
-        STDOUT.get_mut().unwrap().write_fmt(args).unwrap();
+        STDOUT.write_fmt(args).unwrap();
     }
 }
 
