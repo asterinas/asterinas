@@ -7,4 +7,3 @@ edition = "2021"
 
 [dependencies]
 uart_16550 = "0.3.0"
-spin = "0.9.4"

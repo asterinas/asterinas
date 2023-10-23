@@ -2,9 +2,7 @@
 // See https://www.kernel.org/doc/html/v5.6/x86/boot.html for
 // more information on the Linux x86 Boot Protocol.
 
-// The section name is used by the build script to strip and make
-// the binary file.
-.section ".header", "ax"
+.section ".header", "a"
 
 // The Linux x86 Boot Protocol header.
 // 
@@ -14,11 +12,12 @@
 // Jinux will use only a few of these fields, and some of them
 // are filled by the loader and will be read by Jinux.
 
+CODE32_START = 0x100000
+
 .code16
 .org 0x01f1
 hdr_start:
-SETUP_SECTS = 4
-setup_sects:            .byte SETUP_SECTS
+setup_sects:            .byte 7 # so that the legacy setup could occupy a page
 root_flags:             .word 1
 syssize:                .long 0
 ram_size:               .word 0
@@ -35,7 +34,7 @@ start_sys_seg:          .word 0
 type_of_loader:         .byte 0
 loadflags:              .byte (1 << 0)
 setup_move_size:        .word 0
-code32_start:           .long 0x100000
+code32_start:           .long CODE32_START
 ramdisk_image:          .long 0
 ramdisk_size:           .long 0
 bootsect_kludge:        .long 0
@@ -61,9 +60,33 @@ kernel_info_offset:     .long 0
 hdr_end:
 // End of header.
 
-// 32-bit setup code starts here, and will be loaded at code32_start (0x100000).
+// 32-bit setup code starts here, and will be loaded at CODE32_START.
+.section ".header.text", "ax"
 .code32
-.org 0x200 * (SETUP_SECTS + 1)
+.global start_of_setup32
 start_of_setup32:
+        mov eax, offset stack_bottom
+        mov esp, eax
+        mov eax, offset halt
+        push eax                        # the return address
+        mov ebp, esp
+        add ebp, -4
+        push ebp
+        mov ebp, esp
+
         .extern _rust_setup_entry
-        jmp _rust_setup_entry
+        push esi                        # the boot_params pointer
+        call _rust_setup_entry
+
+        // Unreachable here.
+halt:
+        hlt
+        jmp halt
+
+// A small stack for the setup code.
+.section ".stack", "aw"
+SETUP_STACK_SIZE = 0x1000
+        .align 16
+        stack_top:
+        .skip SETUP_STACK_SIZE
+        stack_bottom:

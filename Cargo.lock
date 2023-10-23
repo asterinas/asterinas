@@ -654,7 +654,6 @@ dependencies = [
 name = "jinux-frame-x86-boot-setup"
 version = "0.1.0"
 dependencies = [
- "spin 0.9.8",
  "uart_16550",
 ]
 
