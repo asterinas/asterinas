@@ -78,16 +78,14 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
 }
 
 fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
-    acpi.call_once(|| {
-        BootloaderAcpiArg::Rsdp(
-            BOOT_PARAMS
-                .get()
-                .unwrap()
-                .acpi_rsdp_addr
-                .try_into()
-                .unwrap(),
-        )
-    });
+    let rsdp = BOOT_PARAMS.get().unwrap().acpi_rsdp_addr;
+    if rsdp == 0 {
+        acpi.call_once(|| BootloaderAcpiArg::NotProvided);
+    } else {
+        acpi.call_once(|| {
+            BootloaderAcpiArg::Rsdp(rsdp.try_into().expect("RSDP address overflowed!"))
+        });
+    }
 }
 
 fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {
@@ -133,10 +131,9 @@ extern "Rust" {
 }
 
 /// The entry point of Rust code called by the Linux 64-bit boot compatible bootloader.
-/// It is the ELF entrypoint.
 #[no_mangle]
-unsafe extern "sysv64" fn __linux64_boot(params: boot_params::BootParams) -> ! {
-    assert_eq!({ params.hdr.boot_flag }, boot_params::LINUX_BOOT_FLAG_MAGIC);
+unsafe extern "sysv64" fn __linux64_boot(params_ptr: *const boot_params::BootParams) -> ! {
+    let params = *params_ptr;
     assert_eq!({ params.hdr.header }, boot_params::LINUX_BOOT_HEADER_MAGIC);
     BOOT_PARAMS.call_once(|| params);
     crate::boot::register_boot_init_callbacks(

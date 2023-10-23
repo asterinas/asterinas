@@ -17,12 +17,16 @@ jobs:
 
       - uses: actions/checkout@v3
 
+      - name: Syscall Test (Multiboot)
+        id: syscall_test_mb
+        run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 SKIP_GRUB_MENU=1 BOOT_METHOD=qemu-grub BOOT_PROTOCOL=multiboot
+
       - name: Syscall Test (Multiboot2)
         id: syscall_test_mb2
         run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 SKIP_GRUB_MENU=1 BOOT_METHOD=qemu-grub BOOT_PROTOCOL=multiboot2
 
-      # TODO: include the integration tests for Multiboot/MicroVM/Linux boot methods, which are not ready yet.
+      - name: Syscall Test (Linux Boot Protocol)
+        id: syscall_test_lbp
+        run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 SKIP_GRUB_MENU=1 BOOT_METHOD=qemu-grub BOOT_PROTOCOL=linux
 
-      # - name: Syscall Test (Linux Boot Protocol)
-      #  id: syscall_test_lbp
-      #  run: RUSTFLAGS="-C opt-level=1" make run AUTO_SYSCALL_TEST=1 ENABLE_KVM=0 SKIP_GRUB_MENU=1 BOOT_METHOD=qemu-grub BOOT_PROTOCOL=linux
+      # TODO: include the integration tests for MicroVM, which is not ready yet.
