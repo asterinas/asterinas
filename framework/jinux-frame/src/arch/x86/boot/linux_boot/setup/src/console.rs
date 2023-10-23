@@ -6,11 +6,13 @@ struct Stdout {
     serial_port: SerialPort,
 }
 
-static mut STDOUT: Stdout = Stdout { serial_port: unsafe { SerialPort::new(0x0) } };
+static mut STDOUT: Stdout = Stdout {
+    serial_port: unsafe { SerialPort::new(0x0) },
+};
 
 /// safety: this function must only be called once
 pub unsafe fn init() {
-    STDOUT =  Stdout::init();
+    STDOUT = Stdout::init();
 }
 
 impl Stdout {

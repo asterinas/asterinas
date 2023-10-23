@@ -15,7 +15,7 @@ MULTIBOOT_ENTRY_MAGIC   = 0x2BADB002
 MULTIBOOT2_ENTRY_MAGIC  = 0x36D76289
 
 // The Linux 32-bit Boot Protocol entry point.
-// Must be located at 0x100000, ABI immutable!
+// Must be located at 0x8001000, ABI immutable!
 .code32
 .org 0x000
 .global __linux32_boot
@@ -34,7 +34,7 @@ __linux32_boot:
     jmp initial_boot_setup
 
 // The Linux 64-bit Boot Protocol entry point.
-// Must be located at 0x100200, ABI immutable!
+// Must be located at 0x8001200, ABI immutable!
 .code64
 .org 0x200
 .global __linux64_boot_tag

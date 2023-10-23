@@ -2,7 +2,8 @@ ENTRY(__multiboot_boot)
 OUTPUT_ARCH(i386:x86-64)
 OUTPUT_FORMAT(elf64-x86-64)
 
-KERNEL_LMA = 0x100000;
+KERNEL_LMA = 0x8000000;
+LINUX_32_ENTRY = 0x8001000;
 KERNEL_VMA = 0xffffffff80000000;
 
 SECTIONS
@@ -13,6 +14,9 @@ SECTIONS
     
     .multiboot_header       : { KEEP(*(.multiboot_header)) }
     .multiboot2_header      : { KEEP(*(.multiboot2_header)) }
+
+    . = LINUX_32_ENTRY;
+    
     .boot                   : { KEEP(*(.boot)) }
 
     . += KERNEL_VMA;

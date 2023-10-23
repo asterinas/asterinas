@@ -104,9 +104,42 @@ pub fn init() {
         BootloaderAcpiArg::Xsdt(addr) => unsafe {
             AcpiTables::from_rsdt(AcpiMemoryHandler {}, 1, addr).unwrap()
         },
-        BootloaderAcpiArg::NotExists => {
-            warn!("Not found ACPI table");
-            return;
+        BootloaderAcpiArg::NotProvided => {
+            // We search by ourselves if the bootloader decides not to provide a rsdp location.
+            let rsdp = unsafe { rsdp::Rsdp::search_for_on_bios(AcpiMemoryHandler {}) };
+            match rsdp {
+                Ok(map) => match map.validate() {
+                    Ok(_) => {
+                        if map.revision() > 0 {
+                            unsafe {
+                                AcpiTables::from_rsdt(
+                                    AcpiMemoryHandler {},
+                                    1,
+                                    map.xsdt_address() as usize,
+                                )
+                                .unwrap()
+                            }
+                        } else {
+                            unsafe {
+                                AcpiTables::from_rsdt(
+                                    AcpiMemoryHandler {},
+                                    0,
+                                    map.rsdt_address() as usize,
+                                )
+                                .unwrap()
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        warn!("ACPI info not found!");
+                        return;
+                    }
+                },
+                Err(_) => {
+                    warn!("ACPI info not found!");
+                    return;
+                }
+            }
         }
     };
 

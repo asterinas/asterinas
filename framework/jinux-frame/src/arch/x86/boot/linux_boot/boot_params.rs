@@ -6,6 +6,7 @@
 //! currently not needed by Jinux.
 //!
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct ScreenInfo {
     pub(super) orig_x: u8,             /* 0x00 */
@@ -48,6 +49,7 @@ pub(super) struct ScreenInfo {
     pub(super) _reserved: [u8; 2],   /* 0x3e */
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct ApmBiosInfo {
     pub(super) version: u16,
@@ -61,6 +63,7 @@ pub(super) struct ApmBiosInfo {
     pub(super) dseg_len: u16,
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct IstInfo {
     pub(super) signature: u32,
@@ -69,12 +72,14 @@ pub(super) struct IstInfo {
     pub(super) perf_level: u32,
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct SysDescTable {
     pub(super) length: u16,
     pub(super) table: [u8; 14],
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct OlpcOfwHeader {
     pub(super) ofw_magic: u32, /* OFW signature */
@@ -83,11 +88,13 @@ pub(super) struct OlpcOfwHeader {
     pub(super) irq_desc_table: u32,
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub(super) struct EdidInfo {
     pub(super) dummy: [u8; 128],
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub(super) struct EfiInfo {
     pub(super) efi_loader_signature: u32,
@@ -100,8 +107,6 @@ pub(super) struct EfiInfo {
     pub(super) efi_memmap_hi: u32,
 }
 
-/// Magic stored in SetupHeader.boot_flag.
-pub(super) const LINUX_BOOT_FLAG_MAGIC: u16 = 0xAA55;
 /// Magic stored in SetupHeader.header.
 pub(super) const LINUX_BOOT_HEADER_MAGIC: u32 = 0x53726448;
 
@@ -109,6 +114,7 @@ pub(super) const LINUX_BOOT_HEADER_MAGIC: u32 = 0x53726448;
 ///
 /// Originally defined in the linux source tree:
 /// `linux/arch/x86/include/uapi/asm/bootparam.h`
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct SetupHeader {
     pub(super) setup_sects: u8,
@@ -156,7 +162,7 @@ pub(super) struct SetupHeader {
 ///
 /// Originally defined in the linux source tree:
 /// `linux/arch/x86/include/asm/e820/types.h`
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(u32)]
 pub(super) enum E820Type {
     Ram = 1,
@@ -194,6 +200,7 @@ pub(super) enum E820Type {
     ReservedKern = 128,
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct BootE820Entry {
     pub(super) addr: u64,
@@ -203,6 +210,7 @@ pub(super) struct BootE820Entry {
 
 const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct EddDeviceParams {
     // TODO: We currently have no plans to support the edd device,
@@ -212,6 +220,7 @@ pub(super) struct EddDeviceParams {
     pub(super) _dummy: [u8; (0xeec - 0xd00) / 6 - 8],
 }
 
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct EddInfo {
     pub(super) device: u8,
@@ -230,6 +239,7 @@ const EDDMAXNR: usize = 6;
 ///
 /// Originally defined in the linux source tree:
 /// `linux/arch/x86/include/uapi/asm/bootparam.h`
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub(super) struct BootParams {
     pub(super) screen_info: ScreenInfo,        /* 0x000 */

@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 uart_16550 = "0.3.0"
+xmas-elf = "0.8.0"

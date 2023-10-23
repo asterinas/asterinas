@@ -3,7 +3,6 @@ use multiboot2::MemoryAreaType;
 use spin::Once;
 
 use crate::{
-    arch::x86::kernel::acpi::AcpiMemoryHandler,
     boot::{
         kcmdline::KCmdlineArg,
         memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
@@ -88,20 +87,7 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
 fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
     // The multiboot protocol does not contain RSDP address.
     // TODO: What about UEFI?
-    let rsdp = unsafe { rsdp::Rsdp::search_for_on_bios(AcpiMemoryHandler {}) };
-    match rsdp {
-        Ok(map) => match map.validate() {
-            Ok(_) => acpi.call_once(|| {
-                if map.revision() > 0 {
-                    BootloaderAcpiArg::Xsdt(map.xsdt_address() as usize)
-                } else {
-                    BootloaderAcpiArg::Rsdt(map.rsdt_address() as usize)
-                }
-            }),
-            Err(_) => acpi.call_once(|| BootloaderAcpiArg::NotExists),
-        },
-        Err(_) => acpi.call_once(|| BootloaderAcpiArg::NotExists),
-    };
+    acpi.call_once(|| BootloaderAcpiArg::NotProvided);
 }
 
 fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {
