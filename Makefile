@@ -1,5 +1,5 @@
 # Make arguments and their defaults
-AUTO_SYSCALL_TEST ?= 0
+AUTO_TEST ?= 0
 BOOT_METHOD ?= qemu-grub
 BOOT_PROTOCOL ?= multiboot2
 BUILD_SYSCALL_TEST ?= 0
@@ -8,21 +8,21 @@ ENABLE_KVM ?= 1
 GDB_CLIENT ?= 0
 GDB_SERVER ?= 0
 INTEL_TDX ?= 0
-SKIP_GRUB_MENU ?= 0
+SKIP_GRUB_MENU ?= 1
 # End of Make arguments
 
 KERNEL_CMDLINE := SHELL="/bin/sh" LOGNAME="root" HOME="/" USER="root" PATH="/bin" init=/usr/bin/busybox -- sh -l
-ifeq ($(AUTO_SYSCALL_TEST), 1)
+ifeq ($(AUTO_TEST), syscall)
+BUILD_SYSCALL_TEST := 1
 KERNEL_CMDLINE += /opt/syscall_test/run_syscall_test.sh
+endif
+ifeq ($(AUTO_TEST), dummy)
+KERNEL_CMDLINE += -c exit 0
 endif
 
 CARGO_KBUILD_ARGS :=
 
 CARGO_KRUN_ARGS := -- '$(KERNEL_CMDLINE)'
-
-ifeq ($(AUTO_SYSCALL_TEST), 1)
-BUILD_SYSCALL_TEST := 1
-endif
 
 CARGO_KRUN_ARGS += --boot-method="$(BOOT_METHOD)"
 CARGO_KRUN_ARGS += --boot-protocol="$(BOOT_PROTOCOL)"
