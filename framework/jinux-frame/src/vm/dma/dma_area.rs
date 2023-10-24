@@ -6,9 +6,9 @@ use super::{dma_area_pool::DmaAreaPool, dma_type, sync_frame_vec, DmaType};
 use crate::{
     arch::iommu::{self, iova::alloc_iova_continuous},
     bus::pci::PciDeviceLocation,
+    mem_storage::{MemStorage, MemStorageIterator},
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
-    vm::{VmFrameVec, VmIo},
-    Result,
+    vm::VmFrameVec,
 };
 
 /// `DmaArea` represents a set of incoherent DMA mappings. It does not disable cache on
@@ -142,14 +142,21 @@ pub struct DmaAreaReader<'a> {
     vm_frame_vec: RwLockReadGuard<'a, VmFrameVec>,
 }
 
+impl<'a> MemStorage for DmaAreaReader<'a> {
+    fn mem_areas(&self, is_writable: bool) -> MemStorageIterator {
+        assert!(!is_writable);
+        self.vm_frame_vec.mem_areas(is_writable)
+    }
+
+    fn total_len(&self) -> usize {
+        self.vm_frame_vec.total_len()
+    }
+}
+
 impl<'a> DmaAreaReader<'a> {
     fn new(vm_frame_vec: RwLockReadGuard<'a, VmFrameVec>) -> Self {
         sync_frame_vec(vm_frame_vec.deref());
         Self { vm_frame_vec }
-    }
-    pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        self.vm_frame_vec.read_bytes(offset, buf)?;
-        Ok(())
     }
 }
 
@@ -157,13 +164,20 @@ pub struct DmaAreaWriter<'a> {
     vm_frame_vec: RwLockWriteGuard<'a, VmFrameVec>,
 }
 
+impl<'a> MemStorage for DmaAreaWriter<'a> {
+    fn mem_areas(&self, is_writable: bool) -> MemStorageIterator {
+        assert!(is_writable);
+        self.vm_frame_vec.mem_areas(is_writable)
+    }
+
+    fn total_len(&self) -> usize {
+        self.vm_frame_vec.total_len()
+    }
+}
+
 impl<'a> DmaAreaWriter<'a> {
     fn new(vm_frame_vec: RwLockWriteGuard<'a, VmFrameVec>) -> Self {
         Self { vm_frame_vec }
-    }
-    pub fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        self.vm_frame_vec.write_bytes(offset, buf)?;
-        Ok(())
     }
 }
 

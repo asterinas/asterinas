@@ -11,7 +11,7 @@ use crate::{
     },
     bus::pci::PciDeviceLocation,
     config::PAGE_SIZE,
-    mem_storage::{MemArea, MemStorage, MemStorageIterator},
+    mem_storage::{MemArea, MemStorage, MemStorageIo, MemStorageIterator},
     prelude::*,
     Error,
 };

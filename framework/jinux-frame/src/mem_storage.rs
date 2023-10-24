@@ -1,9 +1,9 @@
-use crate::{prelude::*, vm::VmIo, Error};
+use crate::{prelude::*, Error};
 
 use core::marker::PhantomData;
 
 /// The MemStorage consists of several continuous memory areas.
-pub trait MemStorage: Send + Sync {
+pub trait MemStorage {
     /// Returns an iterator to iterate all the continuous memory areas.
     fn mem_areas(&self, is_writable: bool) -> MemStorageIterator;
 
@@ -112,7 +112,13 @@ impl dyn MemStorage {
     }
 }
 
-impl VmIo for dyn MemStorage {
+/// A trait that enables reading/writing data from/to the MemStorage object.
+pub trait MemStorageIo {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()>;
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
+}
+
+impl<T: ?Sized + MemStorage> MemStorageIo for T {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         if offset + buf.len() > self.total_len() {
             return Err(Error::InvalidArgs);
