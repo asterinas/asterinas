@@ -1,5 +1,5 @@
-# Make arguments and their defaults
-AUTO_TEST ?= 0
+# Make varaiables and defaults, you should refer to jinux-runner for more details
+AUTO_TEST ?= none
 BOOT_METHOD ?= qemu-grub
 BOOT_PROTOCOL ?= multiboot2
 BUILD_SYSCALL_TEST ?= 0
@@ -9,14 +9,14 @@ GDB_CLIENT ?= 0
 GDB_SERVER ?= 0
 INTEL_TDX ?= 0
 SKIP_GRUB_MENU ?= 1
-# End of Make arguments
+# End of setting up Make varaiables
 
 KERNEL_CMDLINE := SHELL="/bin/sh" LOGNAME="root" HOME="/" USER="root" PATH="/bin" init=/usr/bin/busybox -- sh -l
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
 KERNEL_CMDLINE += /opt/syscall_test/run_syscall_test.sh
 endif
-ifeq ($(AUTO_TEST), dummy)
+ifeq ($(AUTO_TEST), boot)
 KERNEL_CMDLINE += -c exit 0
 endif
 

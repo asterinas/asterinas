@@ -90,7 +90,7 @@ pub fn create_bootdev_image(
             let header_path = Path::new(bs_out_dir.into_iter().next().unwrap().unwrap().as_path())
                 .join("out")
                 .join("bin")
-                .join("jinux-frame-x86-boot-setup");
+                .join("jinux-frame-x86-boot-linux-setup");
             // Make the `bzImage`-compatible kernel image and place it in the boot directory.
             let target_path = iso_root.join("boot").join("jinuz");
             linux_boot::make_bzimage(&target_path, &jinux_path.as_path(), &header_path.as_path())

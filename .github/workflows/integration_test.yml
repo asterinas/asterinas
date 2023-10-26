@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - releases/*
 
 jobs:
   test:
@@ -19,11 +18,11 @@ jobs:
 
       - name: Boot Test (Multiboot)
         id: boot_test_mb
-        run: RUSTFLAGS="-C opt-level=1" make run AUTO_TEST=dummy ENABLE_KVM=0 BOOT_PROTOCOL=multiboot
+        run: RUSTFLAGS="-C opt-level=1" make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=multiboot
 
       - name: Boot Test (Multiboot2)
         id: boot_test_mb2
-        run: RUSTFLAGS="-C opt-level=1" make run AUTO_TEST=dummy ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2
+        run: RUSTFLAGS="-C opt-level=1" make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2
 
       - name: Syscall Test (Linux Boot Protocol)
         id: syscall_test_linux
