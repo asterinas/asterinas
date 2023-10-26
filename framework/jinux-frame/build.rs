@@ -32,7 +32,7 @@ fn build_linux_setup_header(
 
     let cargo = std::env::var("CARGO").unwrap();
     let mut cmd = std::process::Command::new(cargo);
-    cmd.arg("install").arg("jinux-frame-x86-boot-setup");
+    cmd.arg("install").arg("jinux-frame-x86-boot-linux-setup");
     cmd.arg("--debug");
     cmd.arg("--locked");
     cmd.arg("--path").arg(setup_crate_dir.to_str().unwrap());
@@ -51,7 +51,7 @@ fn build_linux_setup_header(
         std::io::stdout().write_all(&output.stdout).unwrap();
         std::io::stderr().write_all(&output.stderr).unwrap();
         return Err(format!(
-            "Failed to build linux x86 setup header::\n\tcommand `{:?}`\n\treturned {}",
+            "Failed to build linux x86 setup header:\n\tcommand `{:?}`\n\treturned {}",
             cmd, output.status
         )
         .into());

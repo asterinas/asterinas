@@ -1,5 +1,5 @@
 [package]
-name = "jinux-frame-x86-boot-setup"
+name = "jinux-frame-x86-boot-linux-setup"
 version = "0.1.0"
 edition = "2021"
 
