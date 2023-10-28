@@ -4,11 +4,14 @@ use crate::transport::VirtioTransport;
 
 use alloc::vec::Vec;
 use bitflags::bitflags;
-use core::sync::atomic::{fence, Ordering};
+use core::{
+    mem::size_of,
+    sync::atomic::{fence, Ordering},
+};
 use jinux_frame::{
     io_mem::IoMem,
     offset_of,
-    vm::{VmAllocOptions, VmFrame, VmFrameVec},
+    vm::{HasPaddr, VmAllocOptions, VmFrame, VmFrameVec},
 };
 use jinux_rights::{Dup, TRightSet, TRights, Write};
 use jinux_util::{field_ptr, safe_ptr::SafePtr};
@@ -66,40 +69,73 @@ impl VirtQueue {
             return Err(QueueError::InvalidArgs);
         }
 
-        let descriptor_ptr: SafePtr<Descriptor, VmFrame> = SafePtr::new(
-            VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                .unwrap()
-                .pop()
-                .unwrap(),
-            0,
-        );
-        let avail_ring_ptr: SafePtr<AvailRing, VmFrame> = SafePtr::new(
-            VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                .unwrap()
-                .pop()
-                .unwrap(),
-            0,
-        );
-        let used_ring_ptr: SafePtr<UsedRing, VmFrame> = SafePtr::new(
-            VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                .unwrap()
-                .pop()
-                .unwrap(),
-            0,
-        );
+        let (descriptor_ptr, avail_ring_ptr, used_ring_ptr) = if transport.is_legacy_version() {
+            // FIXME: How about pci legacy?
+            // Currently, we use one VmFrame to place the descriptors and avaliable rings, one VmFrame to place used rings
+            // because the virtio-mmio legacy required the address to be continuous. The max queue size is 128.
+            if size > 128 {
+                return Err(QueueError::InvalidArgs);
+            }
+            let desc_size = size_of::<Descriptor>() * size as usize;
+
+            let (page1, page2) = {
+                let mut continue_pages = VmFrameVec::allocate(
+                    VmAllocOptions::new(2)
+                        .uninit(false)
+                        .can_dma(true)
+                        .is_contiguous(true),
+                )
+                .unwrap();
+                let page1 = continue_pages.pop().unwrap();
+                let page2 = continue_pages.pop().unwrap();
+                if page1.paddr() > page2.paddr() {
+                    (page2, page1)
+                } else {
+                    (page1, page2)
+                }
+            };
+            let desc_frame_ptr: SafePtr<Descriptor, VmFrame> = SafePtr::new(page1, 0);
+            let mut avail_frame_ptr: SafePtr<AvailRing, VmFrame> = desc_frame_ptr.clone().cast();
+            avail_frame_ptr.byte_add(desc_size);
+            let used_frame_ptr: SafePtr<UsedRing, VmFrame> = SafePtr::new(page2, 0);
+            (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
+        } else {
+            if size > 256 {
+                return Err(QueueError::InvalidArgs);
+            }
+            (
+                SafePtr::new(
+                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
+                        .unwrap()
+                        .pop()
+                        .unwrap(),
+                    0,
+                ),
+                SafePtr::new(
+                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
+                        .unwrap()
+                        .pop()
+                        .unwrap(),
+                    0,
+                ),
+                SafePtr::new(
+                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
+                        .unwrap()
+                        .pop()
+                        .unwrap(),
+                    0,
+                ),
+            )
+        };
         debug!("queue_desc start paddr:{:x?}", descriptor_ptr.paddr());
         debug!("queue_driver start paddr:{:x?}", avail_ring_ptr.paddr());
         debug!("queue_device start paddr:{:x?}", used_ring_ptr.paddr());
 
-        transport
-            .set_queue(idx, size, &descriptor_ptr, &avail_ring_ptr, &used_ring_ptr)
-            .unwrap();
-
         let mut descs = Vec::with_capacity(size as usize);
-        descs.push(descriptor_ptr);
+        descs.push(descriptor_ptr.clone());
         for i in 0..size as usize {
             let mut desc = descs.get(i).unwrap().clone();
-            desc.offset(1);
+            desc.add(1);
             descs.push(desc);
         }
 
@@ -111,6 +147,9 @@ impl VirtQueue {
         }
         field_ptr!(&avail_ring_ptr, AvailRing, flags)
             .write(&(0u16))
+            .unwrap();
+        transport
+            .set_queue(idx, size, &descriptor_ptr, &avail_ring_ptr, &used_ring_ptr)
             .unwrap();
         Ok(VirtQueue {
             descs,

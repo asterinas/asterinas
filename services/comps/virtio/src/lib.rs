@@ -16,7 +16,7 @@ use device::{
     VirtioDeviceType,
 };
 use log::{error, warn};
-use transport::{pci::VIRTIO_PCI_DRIVER, DeviceStatus};
+use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};
 
 use crate::transport::VirtioTransport;
 
@@ -28,8 +28,7 @@ mod transport;
 fn virtio_component_init() -> Result<(), ComponentInitError> {
     // Find all devices and register them to the corresponding crate
     transport::init();
-    let pci_driver = VIRTIO_PCI_DRIVER.get().unwrap();
-    while let Some(mut transport) = pci_driver.pop_device_tranport() {
+    while let Some(mut transport) = pop_device_transport() {
         // Reset device
         transport.set_device_status(DeviceStatus::empty()).unwrap();
         // Set to acknowledge
@@ -45,7 +44,6 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
                 DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::FEATURES_OK,
             )
             .unwrap();
-        let transport = Box::new(transport);
         let device_type = transport.device_type();
         let res = match transport.device_type() {
             VirtioDeviceType::Block => BlockDevice::init(transport),
@@ -66,9 +64,18 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-fn negotiate_features(transport: &mut dyn VirtioTransport) {
-    let features = transport.device_features();
+fn pop_device_transport() -> Option<Box<dyn VirtioTransport>> {
+    if let Some(device) = VIRTIO_PCI_DRIVER.get().unwrap().pop_device_transport() {
+        return Some(Box::new(device));
+    }
+    if let Some(device) = VIRTIO_MMIO_DRIVER.get().unwrap().pop_device_transport() {
+        return Some(Box::new(device));
+    }
+    None
+}
 
+fn negotiate_features(transport: &mut Box<dyn VirtioTransport>) {
+    let features = transport.device_features();
     let mask = ((1u64 << 24) - 1) | (((1u64 << 24) - 1) << 50);
     let device_specified_features = features & mask;
     let device_support_features = match transport.device_type() {
@@ -105,5 +112,7 @@ bitflags! {
         const ORDER_PLATFORM        = 1 << 36;
         const SR_IOV                = 1 << 37;
         const NOTIFICATION_DATA     = 1 << 38;
+        const NOTIF_CONFIG_DATA     = 1 << 39;
+        const RING_RESET            = 1 << 40;
     }
 }

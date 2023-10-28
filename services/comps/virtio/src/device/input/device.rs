@@ -185,7 +185,9 @@ impl jinux_input::InputDevice for InputDevice {
     fn handle_irq(&self) -> Option<()> {
         // one interrupt may contains serval input, so it should loop
         loop {
-            let event = self.pop_pending_event()?;
+            let Some(event) = self.pop_pending_event() else {
+                return Some(());
+            };
             let dtype = match Decoder::decode(
                 event.event_type as usize,
                 event.code as usize,

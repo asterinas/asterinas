@@ -19,6 +19,7 @@ const VIRTIO_MMIO_MAGIC: u32 = 0x74726976;
 
 pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
+
 pub fn init() {
     // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
     iter_range(0xFEB0_0000..0xFEB0_4000);

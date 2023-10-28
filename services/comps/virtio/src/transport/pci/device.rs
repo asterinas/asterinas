@@ -1,13 +1,13 @@
 use jinux_frame::{
-    bus::pci::{
-        bus::{PciDevice, PciDriverProbeError},
-        capability::CapabilityData,
-        common_device::PciCommonDevice,
-        PciDeviceId,
+    bus::{
+        pci::{
+            bus::PciDevice, capability::CapabilityData, common_device::PciCommonDevice, PciDeviceId,
+        },
+        BusProbeError,
     },
     io_mem::IoMem,
     offset_of,
-    trap::TrapFrame,
+    trap::IrqCallbackFunction,
     vm::VmFrame,
 };
 
@@ -206,7 +206,7 @@ impl VirtioTransport for VirtioPciTransport {
     fn register_queue_callback(
         &mut self,
         index: u16,
-        func: Box<dyn Fn(&TrapFrame) + Send + Sync>,
+        func: Box<IrqCallbackFunction>,
         single_interrupt: bool,
     ) -> Result<(), VirtioTransportError> {
         if index >= self.num_queues() {
@@ -237,11 +237,16 @@ impl VirtioTransport for VirtioPciTransport {
 
     fn register_cfg_callback(
         &mut self,
-        func: Box<dyn Fn(&TrapFrame) + Send + Sync>,
+        func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError> {
         let (_, irq) = self.msix_manager.config_msix_irq();
         irq.on_active(func);
         Ok(())
+    }
+
+    fn is_legacy_version(&self) -> bool {
+        // TODO: Support legacy version
+        false
     }
 }
 
@@ -253,7 +258,7 @@ impl VirtioPciTransport {
     #[allow(clippy::result_large_err)]
     pub(super) fn new(
         common_device: PciCommonDevice,
-    ) -> Result<Self, (PciDriverProbeError, PciCommonDevice)> {
+    ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
         let device_type = match common_device.device_id().device_id {
             0x1000 => VirtioDeviceType::Network,
             0x1001 => VirtioDeviceType::Block,
@@ -268,7 +273,7 @@ impl VirtioPciTransport {
                         "Unrecognized virtio-pci device id:{:x?}",
                         common_device.device_id().device_id
                     );
-                    return Err((PciDriverProbeError::ConfigurationSpaceError, common_device));
+                    return Err((BusProbeError::ConfigurationSpaceError, common_device));
                 }
                 let id = id - 0x1040;
                 match VirtioDeviceType::try_from(id as u8) {
@@ -278,7 +283,7 @@ impl VirtioPciTransport {
                             "Unrecognized virtio-pci device id:{:x?}",
                             common_device.device_id().device_id
                         );
-                        return Err((PciDriverProbeError::ConfigurationSpaceError, common_device));
+                        return Err((BusProbeError::ConfigurationSpaceError, common_device));
                     }
                 }
             }
