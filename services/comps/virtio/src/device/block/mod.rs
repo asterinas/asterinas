@@ -14,19 +14,19 @@ pub static DEVICE_NAME: &str = "Virtio-Block";
 bitflags! {
     /// features for virtio block device
     pub(crate) struct BlkFeatures : u64{
+        const BARRIER       = 1 << 0;
         const SIZE_MAX      = 1 << 1;
         const SEG_MAX       = 1 << 2;
         const GEOMETRY      = 1 << 4;
         const RO            = 1 << 5;
         const BLK_SIZE      = 1 << 6;
+        const SCSI          = 1 << 7;
         const FLUSH         = 1 << 9;
         const TOPOLOGY      = 1 << 10;
         const CONFIG_WCE    = 1 << 11;
         const DISCARD       = 1 << 13;
         const WRITE_ZEROES  = 1 << 14;
-
     }
-
 }
 
 #[repr(C)]

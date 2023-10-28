@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 
 use alloc::boxed::Box;
-use jinux_frame::{io_mem::IoMem, trap::TrapFrame, vm::VmFrame};
+use jinux_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::VmFrame};
 use jinux_util::safe_ptr::SafePtr;
 
 use crate::{
@@ -9,8 +9,9 @@ use crate::{
     VirtioDeviceType,
 };
 
-use self::pci::virtio_pci_init;
+use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
 
+pub mod mmio;
 pub mod pci;
 
 /// The transport of virtio device. Virtio device can use this transport to:
@@ -72,6 +73,8 @@ pub trait VirtioTransport: Sync + Send + Debug {
     /// after it add buffers into the corresponding virtqueue.
     fn get_notify_ptr(&self, idx: u16) -> Result<SafePtr<u32, IoMem>, VirtioTransportError>;
 
+    fn is_legacy_version(&self) -> bool;
+
     // ====================Device interrupt APIs=====================
 
     /// Register queue interrupt callback. The transport will try to allocate single IRQ line if
@@ -79,14 +82,14 @@ pub trait VirtioTransport: Sync + Send + Debug {
     fn register_queue_callback(
         &mut self,
         index: u16,
-        func: Box<dyn Fn(&TrapFrame) + Send + Sync>,
+        func: Box<IrqCallbackFunction>,
         single_interrupt: bool,
     ) -> Result<(), VirtioTransportError>;
 
     /// Register configuration space change interrupt callback.
     fn register_cfg_callback(
         &mut self,
-        func: Box<dyn Fn(&TrapFrame) + Send + Sync>,
+        func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError>;
 }
 
@@ -128,4 +131,5 @@ bitflags::bitflags! {
 
 pub fn init() {
     virtio_pci_init();
+    virtio_mmio_init();
 }
