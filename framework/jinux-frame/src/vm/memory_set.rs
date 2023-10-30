@@ -1,18 +1,13 @@
-use super::{
-    frame::VmFrameFlags,
-    page_table::{PageTable, PageTableConfig},
-};
+use super::page_table::{PageTable, PageTableConfig};
 use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
     config::{PAGE_SIZE, PHYS_OFFSET},
     vm::is_page_aligned,
-    vm::{VmFrame, VmFrameVec, VmReader, VmWriter},
+    vm::{VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter},
 };
 use crate::{prelude::*, Error};
 use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::fmt;
-
-use super::frame_allocator;
 
 #[derive(Debug)]
 pub struct MapArea {
@@ -32,7 +27,7 @@ impl Clone for MapArea {
     fn clone(&self) -> Self {
         let mut mapper = BTreeMap::new();
         for (&va, old) in &self.mapper {
-            let new = frame_allocator::alloc(VmFrameFlags::empty()).unwrap();
+            let new = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
             new.copy_from_frame(old);
             mapper.insert(va, new.clone());
         }
@@ -97,7 +92,7 @@ impl MapArea {
         match self.mapper.entry(va) {
             Entry::Occupied(e) => e.get().start_paddr(),
             Entry::Vacant(e) => e
-                .insert(frame_allocator::alloc_zero(VmFrameFlags::empty()).unwrap())
+                .insert(VmAllocOptions::new(1).alloc_single().unwrap())
                 .start_paddr(),
         }
     }

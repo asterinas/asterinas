@@ -8,7 +8,7 @@ use crate::{
     bus::pci::PciDeviceLocation,
     vm::{
         page_table::{PageTableConfig, PageTableError},
-        Paddr, PageTable, Vaddr, VmAllocOptions, VmFrame, VmFrameVec, VmIo,
+        Paddr, PageTable, Vaddr, VmAllocOptions, VmFrame, VmIo,
     },
 };
 
@@ -48,10 +48,7 @@ pub enum ContextTableError {
 impl RootTable {
     pub fn new() -> Self {
         Self {
-            root_frame: VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false))
-                .unwrap()
-                .pop()
-                .unwrap(),
+            root_frame: VmAllocOptions::new(1).alloc_single().unwrap(),
             context_tables: BTreeMap::new(),
         }
     }
@@ -236,10 +233,7 @@ pub struct ContextTable {
 impl ContextTable {
     fn new() -> Self {
         Self {
-            entries_frame: VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false))
-                .unwrap()
-                .pop()
-                .unwrap(),
+            entries_frame: VmAllocOptions::new(1).alloc_single().unwrap(),
             page_tables: BTreeMap::new(),
         }
     }

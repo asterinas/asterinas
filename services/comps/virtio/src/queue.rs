@@ -11,7 +11,7 @@ use core::{
 use jinux_frame::{
     io_mem::IoMem,
     offset_of,
-    vm::{HasPaddr, VmAllocOptions, VmFrame, VmFrameVec},
+    vm::{HasPaddr, VmAllocOptions, VmFrame},
 };
 use jinux_rights::{Dup, TRightSet, TRights, Write};
 use jinux_util::{field_ptr, safe_ptr::SafePtr};
@@ -79,13 +79,11 @@ impl VirtQueue {
             let desc_size = size_of::<Descriptor>() * size as usize;
 
             let (page1, page2) = {
-                let mut continue_pages = VmFrameVec::allocate(
-                    VmAllocOptions::new(2)
-                        .uninit(false)
-                        .can_dma(true)
-                        .is_contiguous(true),
-                )
-                .unwrap();
+                let mut continue_pages = VmAllocOptions::new(2)
+                    .can_dma(true)
+                    .is_contiguous(true)
+                    .alloc()
+                    .unwrap();
                 let page1 = continue_pages.pop().unwrap();
                 let page2 = continue_pages.pop().unwrap();
                 if page1.paddr() > page2.paddr() {
@@ -105,24 +103,15 @@ impl VirtQueue {
             }
             (
                 SafePtr::new(
-                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                        .unwrap()
-                        .pop()
-                        .unwrap(),
+                    VmAllocOptions::new(1).can_dma(true).alloc_single().unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                        .unwrap()
-                        .pop()
-                        .unwrap(),
+                    VmAllocOptions::new(1).can_dma(true).alloc_single().unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                        .unwrap()
-                        .pop()
-                        .unwrap(),
+                    VmAllocOptions::new(1).can_dma(true).alloc_single().unwrap(),
                     0,
                 ),
             )
