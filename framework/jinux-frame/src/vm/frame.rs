@@ -1,6 +1,7 @@
 use alloc::vec;
 use core::{
     iter::Iterator,
+    marker::PhantomData,
     ops::{BitAnd, BitOr, Not},
 };
 
@@ -8,8 +9,6 @@ use crate::{arch::iommu, config::PAGE_SIZE, prelude::*, Error};
 
 use super::{frame_allocator, HasPaddr};
 use super::{Paddr, VmIo};
-
-use pod::Pod;
 
 /// A collection of page frames (physical memory pages).
 ///
@@ -157,47 +156,37 @@ impl IntoIterator for VmFrameVec {
 
 impl VmIo for VmFrameVec {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        let mut start = offset;
-        let mut remain = buf.len();
-        let mut processed = 0;
-        for pa in self.0.iter() {
-            if start >= PAGE_SIZE {
-                start -= PAGE_SIZE;
-            } else {
-                let copy_len = (PAGE_SIZE - start).min(remain);
-                let src = &mut buf[processed..processed + copy_len];
-                let dst = unsafe { &pa.as_slice()[start..src.len() + start] };
-                src.copy_from_slice(dst);
-                processed += copy_len;
-                remain -= copy_len;
-                start = 0;
-                if remain == 0 {
-                    break;
-                }
+        if buf.len() + offset > self.nbytes() {
+            return Err(Error::InvalidArgs);
+        }
+
+        let num_unread_pages = offset / PAGE_SIZE;
+        let mut start = offset % PAGE_SIZE;
+        let mut buf_writer: VmWriter = buf.into();
+        for frame in self.0.iter().skip(num_unread_pages) {
+            let read_len = frame.reader().skip(start).read(&mut buf_writer);
+            if read_len == 0 {
+                break;
             }
+            start = 0;
         }
         Ok(())
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        let mut start = offset;
-        let mut remain = buf.len();
-        let mut processed = 0;
-        for pa in self.0.iter() {
-            if start >= PAGE_SIZE {
-                start -= PAGE_SIZE;
-            } else {
-                let copy_len = (PAGE_SIZE - start).min(remain);
-                let src = &buf[processed..processed + copy_len];
-                let dst = unsafe { &mut pa.as_slice()[start..src.len() + start] };
-                dst.copy_from_slice(src);
-                processed += copy_len;
-                remain -= copy_len;
-                start = 0;
-                if remain == 0 {
-                    break;
-                }
+        if buf.len() + offset > self.nbytes() {
+            return Err(Error::InvalidArgs);
+        }
+
+        let num_unwrite_pages = offset / PAGE_SIZE;
+        let mut start = offset % PAGE_SIZE;
+        let mut buf_reader: VmReader = buf.into();
+        for frame in self.0.iter().skip(num_unwrite_pages) {
+            let write_len = frame.writer().skip(start).write(&mut buf_reader);
+            if write_len == 0 {
+                break;
             }
+            start = 0;
         }
         Ok(())
     }
@@ -364,17 +353,6 @@ impl VmFrame {
         (*self.frame_index).bitand(VmFrameFlags::all().bits().not())
     }
 
-    // FIXME: need a sound reason for creating a mutable reference
-    // for getting the content of the frame.
-    #[allow(clippy::mut_from_ref)]
-    #[allow(clippy::missing_safety_doc)]
-    pub unsafe fn as_slice(&self) -> &mut [u8] {
-        core::slice::from_raw_parts_mut(
-            super::paddr_to_vaddr(self.start_paddr()) as *mut u8,
-            PAGE_SIZE,
-        )
-    }
-
     pub fn as_ptr(&self) -> *const u8 {
         super::paddr_to_vaddr(self.start_paddr()) as *const u8
     }
@@ -387,6 +365,7 @@ impl VmFrame {
         if Arc::ptr_eq(&self.frame_index, &src.frame_index) {
             return;
         }
+
         // Safety: src and dst is not overlapped.
         unsafe {
             core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), PAGE_SIZE);
@@ -394,37 +373,36 @@ impl VmFrame {
     }
 }
 
+impl<'a> VmFrame {
+    /// Returns a reader to read data from it.
+    pub fn reader(&'a self) -> VmReader<'a> {
+        // Safety: the memory of the page is contiguous and is valid during `'a`.
+        unsafe { VmReader::from_raw_parts(self.as_ptr(), PAGE_SIZE) }
+    }
+
+    /// Returns a writer to write data into it.
+    pub fn writer(&'a self) -> VmWriter<'a> {
+        // Safety: the memory of the page is contiguous and is valid during `'a`.
+        unsafe { VmWriter::from_raw_parts_mut(self.as_mut_ptr(), PAGE_SIZE) }
+    }
+}
+
 impl VmIo for VmFrame {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        if offset >= PAGE_SIZE || buf.len() + offset > PAGE_SIZE {
-            Err(Error::InvalidArgs)
-        } else {
-            let dst = unsafe { &self.as_slice()[offset..buf.len() + offset] };
-            buf.copy_from_slice(dst);
-            Ok(())
+        if buf.len() + offset > PAGE_SIZE {
+            return Err(Error::InvalidArgs);
         }
+        let len = self.reader().skip(offset).read(&mut buf.into());
+        debug_assert!(len == buf.len());
+        Ok(())
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        if offset >= PAGE_SIZE || buf.len() + offset > PAGE_SIZE {
-            Err(Error::InvalidArgs)
-        } else {
-            let dst = unsafe { &mut self.as_slice()[offset..buf.len() + offset] };
-            dst.copy_from_slice(buf);
-            Ok(())
+        if buf.len() + offset > PAGE_SIZE {
+            return Err(Error::InvalidArgs);
         }
-    }
-
-    /// Read a value of a specified type at a specified offset.
-    fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
-        let paddr = self.start_paddr() + offset;
-        Ok(unsafe { core::ptr::read(super::paddr_to_vaddr(paddr) as *const T) })
-    }
-
-    /// Write a value of a specified type at a specified offset.
-    fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
-        let paddr = self.start_paddr() + offset;
-        unsafe { core::ptr::write(super::paddr_to_vaddr(paddr) as *mut T, *new_val) };
+        let len = self.writer().skip(offset).write(&mut buf.into());
+        debug_assert!(len == buf.len());
         Ok(())
     }
 }
@@ -443,9 +421,220 @@ impl Drop for VmFrame {
                     }
                 }
             }
+            // Safety: the frame index is valid.
             unsafe {
                 frame_allocator::dealloc(self.frame_index());
             }
         }
+    }
+}
+
+/// VmReader is a reader for reading data from a contiguous range of memory.
+///
+/// # Example
+///
+/// ```rust
+/// impl VmIo for VmFrame {
+///     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+///         if buf.len() + offset > PAGE_SIZE {
+///             return Err(Error::InvalidArgs);
+///         }
+///         let len = self.reader().skip(offset).read(&mut buf.into());
+///         debug_assert!(len == buf.len());
+///         Ok(())
+///     }
+/// }
+/// ```
+pub struct VmReader<'a> {
+    cursor: *const u8,
+    end: *const u8,
+    phantom: PhantomData<&'a [u8]>,
+}
+
+impl<'a> VmReader<'a> {
+    /// Constructs a VmReader from a pointer and a length.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the memory from `ptr` to `ptr.add(len)` is contiguous.
+    /// User must ensure the memory is valid during the entire period of `'a`.
+    pub const unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Self {
+        Self {
+            cursor: ptr,
+            end: ptr.add(len),
+            phantom: PhantomData,
+        }
+    }
+
+    /// Returns the number of bytes for the remaining data.
+    pub const fn remain(&self) -> usize {
+        // Safety: the end is equal to or greater than the cursor.
+        unsafe { self.end.sub_ptr(self.cursor) }
+    }
+
+    /// Returns if it has remaining data to read.
+    pub const fn has_remain(&self) -> bool {
+        self.remain() > 0
+    }
+
+    /// Limits the length of remaining data.
+    ///
+    /// This method ensures the postcondition of `self.remain() <= max_remain`.
+    pub const fn limit(&mut self, max_remain: usize) -> &mut Self {
+        if max_remain < self.remain() {
+            // Safety: the new end is less than the old end.
+            unsafe { self.end = self.cursor.add(max_remain) };
+        }
+        self
+    }
+
+    /// Skips the first `nbytes` bytes of data.
+    /// The length of remaining data is decreased accordingly.
+    ///
+    /// # Panic
+    ///
+    /// If `nbytes` is greater than `self.remain()`, then the method panics.
+    pub fn skip(&mut self, nbytes: usize) -> &mut Self {
+        assert!(nbytes <= self.remain());
+
+        // Safety: the new cursor is less than or equal to the end.
+        unsafe { self.cursor = self.cursor.add(nbytes) };
+        self
+    }
+
+    /// Reads all data into the writer until one of the two conditions is met:
+    /// 1. The reader has no remaining data.
+    /// 2. The writer has no available space.
+    ///
+    /// Returns the number of bytes read.
+    ///
+    /// It pulls the number of bytes data from the reader and
+    /// fills in the writer with the number of bytes.
+    pub fn read(&mut self, writer: &mut VmWriter<'_>) -> usize {
+        let copy_len = self.remain().min(writer.avail());
+        if copy_len == 0 {
+            return 0;
+        }
+
+        // Safety: the memory range is valid since `copy_len` is the minimum
+        // of the reader's remaining data and the writer's available space.
+        unsafe {
+            core::ptr::copy(self.cursor, writer.cursor, copy_len);
+            self.cursor = self.cursor.add(copy_len);
+            writer.cursor = writer.cursor.add(copy_len);
+        }
+        copy_len
+    }
+}
+
+impl<'a> From<&'a [u8]> for VmReader<'a> {
+    fn from(slice: &'a [u8]) -> Self {
+        // Safety: the range of memory is contiguous and is valid during `'a`.
+        unsafe { Self::from_raw_parts(slice.as_ptr(), slice.len()) }
+    }
+}
+
+/// VmWriter is a writer for writing data to a contiguous range of memory.
+///
+/// # Example
+///
+/// ```rust
+/// impl VmIo for VmFrame {
+///     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+///         if buf.len() + offset > PAGE_SIZE {
+///             return Err(Error::InvalidArgs);
+///         }
+///         let len = self.writer().skip(offset).write(&mut buf.into());
+///         debug_assert!(len == buf.len());
+///         Ok(())
+///     }
+/// }
+/// ```
+pub struct VmWriter<'a> {
+    cursor: *mut u8,
+    end: *mut u8,
+    phantom: PhantomData<&'a mut [u8]>,
+}
+
+impl<'a> VmWriter<'a> {
+    /// Constructs a VmWriter from a pointer and a length.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the memory from `ptr` to `ptr.add(len)` is contiguous.
+    /// User must ensure the memory is valid during the entire period of `'a`.
+    pub const unsafe fn from_raw_parts_mut(ptr: *mut u8, len: usize) -> Self {
+        Self {
+            cursor: ptr,
+            end: ptr.add(len),
+            phantom: PhantomData,
+        }
+    }
+
+    /// Returns the number of bytes for the available space.
+    pub const fn avail(&self) -> usize {
+        // Safety: the end is equal to or greater than the cursor.
+        unsafe { self.end.sub_ptr(self.cursor) }
+    }
+
+    /// Returns if it has avaliable space to write.
+    pub const fn has_avail(&self) -> bool {
+        self.avail() > 0
+    }
+
+    /// Limits the length of available space.
+    ///
+    /// This method ensures the postcondition of `self.avail() <= max_avail`.
+    pub const fn limit(&mut self, max_avail: usize) -> &mut Self {
+        if max_avail < self.avail() {
+            // Safety: the new end is less than the old end.
+            unsafe { self.end = self.cursor.add(max_avail) };
+        }
+        self
+    }
+
+    /// Skips the first `nbytes` bytes of data.
+    /// The length of available space is decreased accordingly.
+    ///
+    /// # Panic
+    ///
+    /// If `nbytes` is greater than `self.avail()`, then the method panics.
+    pub fn skip(&mut self, nbytes: usize) -> &mut Self {
+        assert!(nbytes <= self.avail());
+
+        // Safety: the new cursor is less than or equal to the end.
+        unsafe { self.cursor = self.cursor.add(nbytes) };
+        self
+    }
+
+    /// Writes data from the reader until one of the two conditions is met:
+    /// 1. The writer has no available space.
+    /// 2. The reader has no remaining data.
+    ///
+    /// Returns the number of bytes written.
+    ///
+    /// It pulls the number of bytes data from the reader and
+    /// fills in the writer with the number of bytes.
+    pub fn write(&mut self, reader: &mut VmReader<'_>) -> usize {
+        let copy_len = self.avail().min(reader.remain());
+        if copy_len == 0 {
+            return 0;
+        }
+
+        // Safety: the memory range is valid since `copy_len` is the minimum
+        // of the reader's remaining data and the writer's available space.
+        unsafe {
+            core::ptr::copy(reader.cursor, self.cursor, copy_len);
+            self.cursor = self.cursor.add(copy_len);
+            reader.cursor = reader.cursor.add(copy_len);
+        }
+        copy_len
+    }
+}
+
+impl<'a> From<&'a mut [u8]> for VmWriter<'a> {
+    fn from(slice: &'a mut [u8]) -> Self {
+        // Safety: the range of memory is contiguous and is valid during `'a`.
+        unsafe { Self::from_raw_parts_mut(slice.as_mut_ptr(), slice.len()) }
     }
 }
