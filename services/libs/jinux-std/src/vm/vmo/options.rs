@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};
+use jinux_frame::vm::{VmAllocOptions, VmFrame};
 use jinux_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 
@@ -143,9 +143,9 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
-        let mut vm_alloc_option = VmAllocOptions::new(frames_num);
-        vm_alloc_option.is_contiguous(true);
-        let frames = VmFrameVec::allocate(&vm_alloc_option)?;
+        let frames = VmAllocOptions::new(frames_num)
+            .is_contiguous(true)
+            .alloc()?;
         let mut committed_pages = BTreeMap::new();
         for (idx, frame) in frames.into_iter().enumerate() {
             committed_pages.insert(idx * PAGE_SIZE, frame);

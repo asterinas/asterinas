@@ -2,7 +2,7 @@ use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
 use crate::cpu::CpuSet;
 use crate::prelude::*;
 use crate::user::UserSpace;
-use crate::vm::{VmAllocOptions, VmFrameVec};
+use crate::vm::{VmAllocOptions, VmSegment};
 use spin::{Mutex, MutexGuard};
 
 use intrusive_collections::intrusive_adapter;
@@ -38,20 +38,20 @@ extern "C" {
 }
 
 pub struct KernelStack {
-    frame: VmFrameVec,
+    segment: VmSegment,
 }
 
 impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            frame: VmFrameVec::allocate(
-                VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).is_contiguous(true),
-            )?,
+            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE)
+                .is_contiguous(true)
+                .alloc_contiguous()?,
         })
     }
 
     pub fn end_paddr(&self) -> Paddr {
-        self.frame.get(self.frame.len() - 1).unwrap().end_paddr()
+        self.segment.end_paddr()
     }
 }
 
