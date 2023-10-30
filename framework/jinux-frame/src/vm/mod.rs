@@ -17,7 +17,7 @@ mod space;
 
 use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
 
-pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
+pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmWriter};
 pub use self::io::VmIo;
 pub use self::space::{VmMapOptions, VmPerm, VmSpace};
 

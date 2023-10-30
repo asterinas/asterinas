@@ -14,6 +14,8 @@
 #![feature(iter_from_generator)]
 #![feature(const_mut_refs)]
 #![feature(let_chains)]
+#![feature(ptr_sub_ptr)]
+#![feature(const_ptr_sub_ptr)]
 
 extern crate alloc;
 #[macro_use]
