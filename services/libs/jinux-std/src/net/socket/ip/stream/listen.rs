@@ -12,7 +12,9 @@ use super::connected::ConnectedStream;
 pub struct ListenStream {
     is_nonblocking: AtomicBool,
     backlog: usize,
-    /// Sockets also listening at LocalEndPoint when called `listen`
+    /// A bound socket held to ensure the TCP port cannot be released
+    bound_socket: Arc<AnyBoundSocket>,
+    /// Backlog sockets listening at the local endpoint
     backlog_sockets: RwLock<Vec<BacklogSocket>>,
 }
 
@@ -22,12 +24,11 @@ impl ListenStream {
         bound_socket: Arc<AnyBoundSocket>,
         backlog: usize,
     ) -> Result<Self> {
-        debug_assert!(backlog >= 1);
-        let backlog_socket = BacklogSocket::new(&bound_socket)?;
         let listen_stream = Self {
             is_nonblocking: AtomicBool::new(nonblocking),
             backlog,
-            backlog_sockets: RwLock::new(vec![backlog_socket]),
+            bound_socket,
+            backlog_sockets: RwLock::new(Vec::new()),
         };
         listen_stream.fill_backlog_sockets()?;
         Ok(listen_stream)
@@ -71,9 +72,8 @@ impl ListenStream {
         if backlog == current_backlog_len {
             return Ok(());
         }
-        let bound_socket = backlog_sockets[0].bound_socket.clone();
         for _ in current_backlog_len..backlog {
-            let backlog_socket = BacklogSocket::new(&bound_socket)?;
+            let backlog_socket = BacklogSocket::new(&self.bound_socket)?;
             backlog_sockets.push(backlog_socket);
         }
         Ok(())
@@ -128,7 +128,7 @@ struct BacklogSocket {
 }
 
 impl BacklogSocket {
-    fn new(bound_socket: &AnyBoundSocket) -> Result<Self> {
+    fn new(bound_socket: &Arc<AnyBoundSocket>) -> Result<Self> {
         let local_endpoint = bound_socket.local_endpoint().ok_or(Error::with_message(
             Errno::EINVAL,
             "the socket is not bound",
