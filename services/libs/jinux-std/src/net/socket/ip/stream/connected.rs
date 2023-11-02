@@ -77,19 +77,41 @@ impl ConnectedStream {
 
     pub fn sendto(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
         debug_assert!(flags.is_all_supported());
-        let mut sent_len = 0;
-        let buf_len = buf.len();
+
+        let poller = Poller::new();
         loop {
-            let len = self
-                .bound_socket
-                .raw_with(|socket: &mut RawTcpSocket| socket.send_slice(&buf[sent_len..]))
-                .map_err(|_| Error::with_message(Errno::ENOBUFS, "cannot send packet"))?;
-            poll_ifaces();
-            sent_len += len;
-            if sent_len == buf_len {
+            let sent_len = self.try_sendto(buf, flags)?;
+            if sent_len > 0 {
                 return Ok(sent_len);
             }
+            let events = self.bound_socket.poll(IoEvents::OUT, Some(&poller));
+            if events.contains(IoEvents::HUP) || events.contains(IoEvents::ERR) {
+                return_errno_with_message!(Errno::ENOBUFS, "fail to send packets");
+            }
+            if !events.contains(IoEvents::OUT) {
+                if self.is_nonblocking() {
+                    return_errno_with_message!(Errno::EAGAIN, "try to send again");
+                }
+                // FIXME: deal with send timeout
+                poller.wait()?;
+            }
         }
+    }
+
+    fn try_sendto(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+        let res = self
+            .bound_socket
+            .raw_with(|socket: &mut RawTcpSocket| socket.send_slice(buf))
+            .map_err(|_| Error::with_message(Errno::ENOBUFS, "cannot send packet"));
+        match res {
+            // We have to explicitly invoke `update_socket_state` when the send buffer becomes
+            // full. Note that smoltcp does not think it is an interface event, so calling
+            // `poll_ifaces` alone is not enough.
+            Ok(0) => self.bound_socket.update_socket_state(),
+            Ok(_) => poll_ifaces(),
+            _ => (),
+        };
+        res
     }
 
     pub fn local_endpoint(&self) -> Result<IpEndpoint> {

@@ -228,10 +228,11 @@ impl Socket for StreamSocket {
         if remote.is_some() {
             return_errno_with_message!(Errno::EINVAL, "tcp socked should not provide remote addr");
         }
-        let state = self.state.read();
-        match &*state {
-            State::Connected(connected_stream) => connected_stream.sendto(buf, flags),
-            _ => return_errno_with_message!(Errno::EINVAL, "cannot send"),
-        }
+
+        let connected_stream = match &*self.state.read() {
+            State::Connected(connected_stream) => connected_stream.clone(),
+            _ => return_errno_with_message!(Errno::EINVAL, "the socket is not connected"),
+        };
+        connected_stream.sendto(buf, flags)
     }
 }
