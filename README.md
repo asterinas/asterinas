@@ -94,6 +94,15 @@ cargo component-check
 
 ### Integration Test
 
+#### Regression Test
+
+This command will automatically run Jinux with the test binaries in `regression/apps` directory.
+```bash
+make run AUTO_TEST=regression
+```
+
+#### Syscall Test
+
 This command will build the syscall test binary and automatically run Jinux with the tests using QEMU.
 ```bash
 make run AUTO_TEST=syscall
