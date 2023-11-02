@@ -66,6 +66,7 @@ pub fn create_bootdev_image(
     initramfs_path: PathBuf,
     grub_cfg: String,
     protocol: BootProtocol,
+    release_mode: bool,
 ) -> PathBuf {
     let target_dir = jinux_path.parent().unwrap();
     let iso_root = target_dir.join("iso_root");
@@ -86,7 +87,11 @@ pub fn create_bootdev_image(
     let target_path = match protocol {
         BootProtocol::Linux => {
             // Find the setup header in the build script output directory.
-            let bs_out_dir = glob("target/x86_64-custom/debug/build/jinux-frame-*").unwrap();
+            let bs_out_dir = if release_mode {
+                glob("target/x86_64-custom/release/build/jinux-frame-*").unwrap()
+            } else {
+                glob("target/x86_64-custom/debug/build/jinux-frame-*").unwrap()
+            };
             let header_path = Path::new(bs_out_dir.into_iter().next().unwrap().unwrap().as_path())
                 .join("out")
                 .join("bin")

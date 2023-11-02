@@ -18,14 +18,14 @@ jobs:
 
       - name: Boot Test (Multiboot)
         id: boot_test_mb
-        run: RUSTFLAGS="-C opt-level=1" make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=multiboot
+        run: make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=multiboot RELEASE_MODE=1
 
       - name: Boot Test (Multiboot2)
         id: boot_test_mb2
-        run: RUSTFLAGS="-C opt-level=1" make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2
+        run: make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE_MODE=1
 
       - name: Syscall Test (Linux Boot Protocol)
         id: syscall_test_linux
-        run: RUSTFLAGS="-C opt-level=1" make run AUTO_TEST=syscall ENABLE_KVM=0 BOOT_PROTOCOL=linux
+        run: make run AUTO_TEST=syscall ENABLE_KVM=0 BOOT_PROTOCOL=linux RELEASE_MODE=1
 
       # TODO: include the integration tests for MicroVM, which is not ready yet.
