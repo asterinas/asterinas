@@ -22,6 +22,9 @@ ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
 INIT_CMDLINE += /opt/syscall_test/run_syscall_test.sh
 endif
+ifeq ($(AUTO_TEST), regression)
+INIT_CMDLINE += /regression/run_regression_test.sh
+endif
 ifeq ($(AUTO_TEST), boot)
 INIT_CMDLINE += -c exit 0
 endif
