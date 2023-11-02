@@ -1,5 +1,6 @@
 .text
 .global context_switch
+.code64
 context_switch: # (cur: *mut TaskContext, nxt: *TaskContext)
   # Save cur's register
   mov rax, [rsp] # return address
