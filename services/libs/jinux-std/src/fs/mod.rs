@@ -10,3 +10,4 @@ pub mod procfs;
 pub mod ramfs;
 pub mod rootfs;
 pub mod utils;
+pub mod exfat;
