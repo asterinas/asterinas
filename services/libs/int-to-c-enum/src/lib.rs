@@ -35,7 +35,7 @@
 //! ```
 //!
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 /// Error type for TryFromInt derive macro
 #[derive(Debug, Clone, Copy)]

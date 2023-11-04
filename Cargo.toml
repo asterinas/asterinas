@@ -24,22 +24,65 @@ members = [
     "framework/jinux-frame",
     "framework/jinux-frame/src/arch/x86/boot/linux_boot/setup",
     "framework/libs/align_ext",
-    "services/comps/virtio",
-    "services/comps/input",
+    "framework/libs/ktest",
+    "framework/libs/tdx-guest",
     "services/comps/block",
-    "services/comps/network",
     "services/comps/framebuffer",
+    "services/comps/input",
+    "services/comps/network",
     "services/comps/time",
-    "services/libs/jinux-std",
-    "services/libs/jinux-rights-proc",
-    "services/libs/typeflags",
-    "services/libs/typeflags-util",
-    "services/libs/jinux-util",
+    "services/comps/virtio",
     "services/libs/cpio-decoder",
     "services/libs/int-to-c-enum",
+    "services/libs/int-to-c-enum/derive",
+    "services/libs/jinux-rights",
+    "services/libs/jinux-rights-proc",
+    "services/libs/jinux-std",
+    "services/libs/jinux-util",
+    "services/libs/keyable-arc",
+    "services/libs/typeflags",
+    "services/libs/typeflags-util",
 ]
 
-exclude = ["services/libs/comp-sys/controlled", "services/libs/comp-sys/cargo-component"]
+exclude = [
+    "services/libs/comp-sys/cargo-component",
+    "services/libs/comp-sys/component",
+    "services/libs/comp-sys/component-macro",
+    "services/libs/comp-sys/controlled",
+]
+
+[workspace.metadata]
+
+usermode_testable = [
+    "runner",
+    "framework/libs/align_ext",
+    "framework/libs/ktest",
+    "services/libs/cpio-decoder",
+    "services/libs/int-to-c-enum",
+    "services/libs/int-to-c-enum/derive",
+    "services/libs/jinux-rights",
+    "services/libs/jinux-rights-proc",
+    "services/libs/keyable-arc",
+    "services/libs/typeflags",
+    "services/libs/typeflags-util",
+]
+
+ktest_testable = [
+    "framework/jinux-frame",
+    "framework/libs/tdx-guest",
+    "services/comps/block",
+    "services/comps/framebuffer",
+    "services/comps/input",
+    "services/comps/network",
+    "services/comps/time",
+    "services/comps/virtio",
+    "services/libs/jinux-std",
+    "services/libs/jinux-util",
+]
+
+untestable = [
+    "framework/jinux-frame/src/arch/x86/boot/linux_boot/setup",
+]
 
 [features]
 intel_tdx = ["jinux-frame/intel_tdx", "jinux-std/intel_tdx"]

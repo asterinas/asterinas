@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
-// The no_mangle macro need to remove the `forbid(unsafe_code)` macro. The bootloader needs the _start function
-// to be no mangle so that it can jump into the entry point.
+// The `no_mangle`` attribute for the `jinux_main` entrypoint requires the removal of safety check.
+// Please be aware that the kernel is not allowed to introduce any other unsafe operations.
 // #![forbid(unsafe_code)]
 extern crate jinux_frame;
 
@@ -19,9 +19,5 @@ pub fn jinux_main() -> ! {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    use jinux_frame::{exit_qemu, QemuExitCode};
-
-    println!("[panic]:{:#?}", info);
-    jinux_frame::panic_handler();
-    exit_qemu(QemuExitCode::Failed);
+    jinux_frame::panic_handler(info);
 }

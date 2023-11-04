@@ -20,6 +20,8 @@ jobs:
         id: ktest_unit_test
         run: make run KTEST=all ENABLE_KVM=0 RELEASE_MODE=1
 
-      # TODO: include the unit tests for the crates that supports cargo test.
+      - name: Usermode Unit test
+        id: usermode_unit_test
+        run: make test
 
       # TODO: add component check.

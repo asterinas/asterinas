@@ -6,25 +6,24 @@
 //! typeflags is used to define another declarive macro to define type set.
 //! It can be used as the following example.
 //! ```rust
+//! use typeflags::typeflags;
 //! typeflags! {
 //!     pub trait RightSet: u32 {
 //!          struct Read = 1 << 1;
 //!          struct Write = 1 << 2;
 //!     }
 //! }
-//! ```
-//! The code will generate a macro with the name as RightSet, we can use this macro to define typesets with different types.
-//! Usage example:
-//! ```rust
+//!
+//! // The above code will generate a macro with the name as RightSet, we can use this macro to define typesets with different types.
+//! // Usage example:
 //! type O = RightSet![];               // Nil
 //! type R = RightSet![Read];           // Cons<Read, Nil>
 //! type W = RightSet![Write];          // Cons<Write, Nil>
 //! type RW = RightSet![Read, Write];   // Cons<Write, Cons<Read, Nil>>
 //! type WR = RightSet![Write, Read];   // Cons<Write, Cons<Read, Nil>>
-//! ```
 //!
-//! Test Example
-//! ```rust
+//! // Test Example
+//! extern crate typeflags_util;
 //! use typeflags_util::*;
 //! assert_eq!(O::BITS, 0);
 //! assert_eq!(R::BITS, 2);
