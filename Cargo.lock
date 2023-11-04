@@ -479,6 +479,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "gimli"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fb8d784f27acf97159b40fc4db5ecd8aa23b9ad5ef69cdd136d3bc80665f0c0"
+
+[[package]]
 name = "glob"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -647,6 +653,7 @@ dependencies = [
  "static_assertions",
  "tdx-guest",
  "trapframe",
+ "unwinding",
  "volatile",
  "x86",
  "x86_64",
@@ -1445,6 +1452,15 @@ name = "unicode-ident"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
+
+[[package]]
+name = "unwinding"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37a19a21a537f635c16c7576f22d0f2f7d63353c1337ad4ce0d8001c7952a25b"
+dependencies = [
+ "gimli",
+]
 
 [[package]]
 name = "utf8parse"

@@ -21,19 +21,22 @@ SECTIONS
 
     . += KERNEL_VMA;
 
-    .text                   : AT(ADDR(.text) - KERNEL_VMA) { *(.text .text.*) }
+    .text                   : AT(ADDR(.text) - KERNEL_VMA) {
+        *(.text .text.*)
+        PROVIDE(__etext = .);
+    }
     .rodata                 : AT(ADDR(.rodata) - KERNEL_VMA) { *(.rodata .rodata.*) }
 
     .eh_frame_hdr           : AT(ADDR(.eh_frame_hdr) - KERNEL_VMA) {
-        __eh_frame_hdr = .;
-        KEEP(*(.eh_frame_hdr))
-        __eh_frame_hdr_end = .;
+        KEEP(*(.eh_frame_hdr .eh_frame_hdr.*))
     }
+    . = ALIGN(8);
     .eh_frame               : AT(ADDR(.eh_frame) - KERNEL_VMA) {
-        __eh_frame = .;
-        KEEP(*(.eh_frame))
-        __eh_frame_end = .;
+        PROVIDE(__eh_frame = .);
+        KEEP(*(.eh_frame .eh_frame.*))
     }
+
+    .gcc_except_table       : AT(ADDR(.gcc_except_table) - KERNEL_VMA) { *(.gcc_except_table .gcc_except_table.*) }
 
     .data.rel.ro            : AT(ADDR(.data.rel.ro) - KERNEL_VMA) { *(.data.rel.ro .data.rel.ro.*) }
     .dynamic                : AT(ADDR(.dynamic) - KERNEL_VMA) { *(.dynamic) }
