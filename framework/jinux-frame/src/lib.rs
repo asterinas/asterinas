@@ -19,6 +19,8 @@
 
 extern crate alloc;
 #[macro_use]
+extern crate ktest;
+#[macro_use]
 extern crate static_assertions;
 
 pub mod arch;
@@ -44,7 +46,7 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use arch::irq::{IrqCallbackHandle, IrqLine};
-use core::{mem, panic::PanicInfo};
+use core::mem;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
 use trapframe::TrapFrame;
@@ -108,35 +110,6 @@ pub(crate) const fn zero<T>() -> T {
     unsafe { mem::MaybeUninit::zeroed().assume_init() }
 }
 
-pub trait Testable {
-    fn run(&self);
-}
-
-impl<T> Testable for T
-where
-    T: Fn(),
-{
-    fn run(&self) {
-        print!("{}...\n", core::any::type_name::<T>());
-        self();
-        println!("[ok]");
-    }
-}
-
-pub fn test_runner(tests: &[&dyn Testable]) {
-    println!("Running {} tests", tests.len());
-    for test in tests {
-        test.run();
-    }
-    exit_qemu(QemuExitCode::Success);
-}
-
-pub fn test_panic_handler(info: &PanicInfo) -> ! {
-    println!("[failed]");
-    println!("Error: {}", info);
-    exit_qemu(QemuExitCode::Failed);
-}
-
 pub fn panic_handler() {
     // let mut fp: usize;
     // let stop = unsafe{
@@ -180,4 +153,12 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
         port.write(exit_code as u32);
     }
     unreachable!()
+}
+
+#[if_cfg_ktest]
+mod test {
+    #[ktest]
+    fn trivial_assertion() {
+        assert_eq!(0, 0);
+    }
 }

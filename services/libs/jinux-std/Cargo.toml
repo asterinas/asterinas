@@ -40,6 +40,7 @@ smoltcp = { version = "0.9.1", default-features = false, features = [
     "socket-raw",
     "socket-dhcpv4",
 ] }
+ktest = { path = "../../../framework/libs/ktest" }
 tdx-guest = { path = "../../../framework/libs/tdx-guest", optional = true }
 
 # parse elf file

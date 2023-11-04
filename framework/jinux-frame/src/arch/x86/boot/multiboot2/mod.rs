@@ -163,12 +163,6 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     memory_regions.call_once(move || non_overlapping_regions_from(regions.as_ref()));
 }
 
-// The entry point of kernel code, which should be defined by the package that
-// uses jinux-frame.
-extern "Rust" {
-    fn jinux_main() -> !;
-}
-
 /// The entry point of Rust code called by inline asm.
 #[no_mangle]
 unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
@@ -184,5 +178,5 @@ unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) 
         init_framebuffer_info,
         init_memory_regions,
     );
-    jinux_main();
+    crate::boot::call_jinux_main();
 }

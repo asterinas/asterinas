@@ -5,11 +5,13 @@
 
 # Update Cargo style versions (`version = "{version}"`) in file $1
 update_cargo_versions() {
+    echo "Updating file $1"
     sed -i "s/^version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\"$/version = \"${new_version}\"/g" $1
 }
 
 # Update Docker image versions (`jinuxdev/jinux:{version}`) in file $1
 update_image_versions() {
+    echo "Updating file $1"
     sed -i "s/jinuxdev\/jinux:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/jinuxdev\/jinux:${new_version}/g" $1
 }
 
@@ -37,8 +39,10 @@ update_image_versions ${JINUX_SRC_DIR}/README.md
 update_image_versions ${SCRIPT_DIR}/docker/README.md
 
 # Update Docker image versions in workflows
-update_image_versions ${JINUX_SRC_DIR}/.github/workflows/syscall_test.yml
-update_image_versions ${JINUX_SRC_DIR}/.github/workflows/cargo_check.yml
+WORKFLOWS=$(find "${JINUX_SRC_DIR}/.github/workflows/" -type f -name "*.yml")
+for workflow in $WORKFLOWS; do
+    update_image_versions $workflow
+done
 
 # Create or update VERSION
 echo "${new_version}" > ${VERSION_PATH}
