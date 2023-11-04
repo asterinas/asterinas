@@ -57,6 +57,8 @@ pub type WriteOp = TRights![Write];
 /// Example:
 ///
 /// ```rust
+/// use jinux_rights::{Rights, TRights, TRightSet};
+///
 /// pub struct Vmo<R=Rights>(R);
 ///
 /// impl<R:TRights> Vmo<TRightSet<R>>{

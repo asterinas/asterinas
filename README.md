@@ -56,9 +56,22 @@ make build
 make run
 ```
 
-### Unit Test  
+### Unit Test
 
-We can run unit tests if building succeeds. This is powered by our [ktest](framework/libs/ktest) framework.
+#### User mode unit test
+
+Many of our crates does not require running on bare metal environment and can be tested through the standard Cargo testing framework. A specific list of which crates can be tested with `cargo test` is listed in the `[workspace.metadata.usermode_testable]` entry in the `Cargo.toml` file of the root workspace.
+
+There is a tool `./tools/test/run_tests.py` to run all the user mode tests, and can be invoked through Make.
+```bash
+make test
+```
+
+Nevertheless, you could enter the directory of a specific crate and invoke `cargo test` to perform user mode unit tests and doctests.
+
+#### Kernel mode unit test
+
+We can run unit tests in kernel mode for crates like `jinux-frame` or `jinux-std`. This is powered by our [ktest](framework/libs/ktest) framework.
 ```bash
 make run KTEST=all
 ```
@@ -67,6 +80,8 @@ You could also specify tests in a crate or a subset of tests to run, as long as 
 ```bash
 make run KTEST=jinux-frame,jinux-std
 ```
+
+#### Component check
 
 If we want to check access control policy among components, install some standalone tools (e.g., `cargo-component`).
 ``` bash

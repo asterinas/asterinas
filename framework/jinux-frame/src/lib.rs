@@ -46,7 +46,7 @@ pub use self::error::Error;
 pub use self::prelude::Result;
 use alloc::vec::Vec;
 use arch::irq::{IrqCallbackHandle, IrqLine};
-use core::mem;
+use core::{mem, panic::PanicInfo};
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
 use trapframe::TrapFrame;
@@ -110,7 +110,22 @@ pub(crate) const fn zero<T>() -> T {
     unsafe { mem::MaybeUninit::zeroed().assume_init() }
 }
 
-pub fn panic_handler() {
+/// The panic handler provided by Jinux Frame.
+///
+/// The definition of the real panic handler is located at the kernel binary
+/// crate with the `#[panic_handler]` attribute. This function provides a
+/// default implementation of the panic handler, which can forwarded to by the
+/// kernel binary crate.
+///
+/// ```rust
+/// extern crate jinux_frame;
+/// #[panic_handler]
+/// fn panic(info: &PanicInfo) -> ! {
+///    jinux_frame::panic_handler(info);
+/// }
+/// ```
+pub fn panic_handler(info: &PanicInfo) -> ! {
+    println!("[panic]:{:#?}", info);
     // let mut fp: usize;
     // let stop = unsafe{
     //     Task::current().kstack.get_top()
@@ -130,6 +145,7 @@ pub fn panic_handler() {
     //     }
     //     println!("---END   BACKTRACE---");
     // }
+    exit_qemu(QemuExitCode::Failed);
 }
 
 /// The exit code of x86 QEMU isa debug device. In `qemu-system-x86_64` the

@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 /// An extension trait for Rust integer types, including `u8`, `u16`, `u32`,
 /// `u64`, and `usize`, to provide methods to make integers aligned to a
@@ -17,10 +17,11 @@ pub trait AlignExt {
     /// # Examples
     ///
     /// ```
-    /// assert!(align_up(12, 2), 12);
-    /// assert!(align_up(12, 4), 12);
-    /// assert!(align_up(12, 8), 16);
-    /// assert!(align_up(12, 16), 16);
+    /// use crate::align_ext::AlignExt;
+    /// assert_eq!(12usize.align_up(2), 12);
+    /// assert_eq!(12usize.align_up(4), 12);
+    /// assert_eq!(12usize.align_up(8), 16);
+    /// assert_eq!(12usize.align_up(16), 16);
     /// ```
     fn align_up(self, power_of_two: Self) -> Self;
 
@@ -34,10 +35,11 @@ pub trait AlignExt {
     /// # Examples
     ///
     /// ```
-    /// assert!(align_down(12, 2), 12);
-    /// assert!(align_down(12, 4), 12);
-    /// assert!(align_down(12, 8), 8);
-    /// assert!(align_down(12, 16), 0);
+    /// use crate::align_ext::AlignExt;
+    /// assert_eq!(12usize.align_down(2), 12);
+    /// assert_eq!(12usize.align_down(4), 12);
+    /// assert_eq!(12usize.align_down(8), 8);
+    /// assert_eq!(12usize.align_down(16), 0);
     /// ```
     fn align_down(self, power_of_two: Self) -> Self;
 }
