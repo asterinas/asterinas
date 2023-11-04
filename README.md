@@ -56,11 +56,16 @@ make build
 make run
 ```
 
-### Test  
+### Unit Test  
 
-We can run unit tests and integration tests if building succeeds.
+We can run unit tests if building succeeds. This is powered by our [ktest](framework/libs/ktest) framework.
 ```bash
-make test
+make run KTEST=all
+```
+
+You could also specify tests in a crate or a subset of tests to run, as long as you defined them well using cfg.
+```bash
+make run KTEST=jinux-frame,jinux-std
 ```
 
 If we want to check access control policy among components, install some standalone tools (e.g., `cargo-component`).
@@ -73,7 +78,7 @@ Then we can use the tool to check access control policy.
 cargo component-check
 ```
 
-### Syscall Test
+### Integration Test
 
 This command will build the syscall test binary and automatically run Jinux with the tests using QEMU.
 ```bash

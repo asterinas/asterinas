@@ -99,3 +99,24 @@ define_global_static_boot_arguments!(
 pub fn init() {
     call_all_boot_init_callbacks();
 }
+
+/// Call the framework-user defined entrypoint of the actual kernel.
+///
+/// Any kernel that uses the jinux-frame crate should define a function named
+/// `jinux_main` as the entrypoint.
+pub fn call_jinux_main() -> ! {
+    #[cfg(not(ktest))]
+    unsafe {
+        // The entry point of kernel code, which should be defined by the package that
+        // uses jinux-frame.
+        extern "Rust" {
+            fn jinux_main() -> !;
+        }
+        jinux_main();
+    }
+    #[cfg(ktest)]
+    {
+        crate::init();
+        ktest::do_ktests!();
+    }
+}

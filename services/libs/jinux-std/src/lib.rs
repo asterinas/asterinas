@@ -34,6 +34,8 @@ extern crate alloc;
 extern crate lru;
 #[macro_use]
 extern crate controlled;
+#[macro_use]
+extern crate ktest;
 
 pub mod device;
 pub mod driver;

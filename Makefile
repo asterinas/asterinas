@@ -8,6 +8,7 @@ ENABLE_KVM ?= 1
 GDB_CLIENT ?= 0
 GDB_SERVER ?= 0
 INTEL_TDX ?= 0
+KTEST ?= none
 SKIP_GRUB_MENU ?= 1
 RELEASE_MODE ?= 0
 # End of setting up Make varaiables
@@ -22,8 +23,8 @@ KERNEL_CMDLINE += -c exit 0
 endif
 
 CARGO_KBUILD_ARGS :=
-
-CARGO_KRUN_ARGS := 
+CARGO_KRUN_ARGS :=
+GLOBAL_RUSTC_FLAGS :=
 
 ifeq ($(RELEASE_MODE), 1)
 CARGO_KBUILD_ARGS += --release
@@ -60,6 +61,11 @@ CARGO_KBUILD_ARGS += --features intel_tdx
 CARGO_KRUN_ARGS += --features intel_tdx
 endif
 
+ifneq ($(KTEST), none)
+comma := ,
+GLOBAL_RUSTC_FLAGS += --cfg ktest --cfg ktest=\"$(subst $(comma),\" --cfg ktest=\",$(KTEST))\"
+endif
+
 ifeq ($(SKIP_GRUB_MENU), 1)
 CARGO_KRUN_ARGS += --skip-grub-menu
 endif
@@ -82,16 +88,16 @@ setup:
 
 build:
 	@make --no-print-directory -C regression
-	@cargo kbuild $(CARGO_KBUILD_ARGS)
+	@RUSTFLAGS="$(GLOBAL_RUSTC_FLAGS)" cargo kbuild $(CARGO_KBUILD_ARGS)
 
 tools:
 	@cd services/libs/comp-sys && cargo install --path cargo-component
 
 run: build
-	@cargo krun $(CARGO_KRUN_ARGS)
+	@RUSTFLAGS="$(GLOBAL_RUSTC_FLAGS)" cargo krun $(CARGO_KRUN_ARGS)
 
-test: build
-	@cargo ktest
+test:
+	@python3 ./tools/test/run_tests.py
 
 docs:
 	@cargo doc 								# Build Rust docs
