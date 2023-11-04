@@ -27,7 +27,10 @@ use crate::{
         Thread,
     },
 };
-use jinux_frame::{boot, exit_qemu, QemuExitCode};
+use jinux_frame::{
+    arch::qemu::{exit_qemu, QemuExitCode},
+    boot,
+};
 use process::Process;
 
 extern crate alloc;

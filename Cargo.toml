@@ -17,6 +17,18 @@ x86_64 = "0.14.2"
 jinux-time = { path = "services/comps/time" }
 jinux-framebuffer = { path = "services/comps/framebuffer" }
 
+[profile.dev]
+opt-level = 0
+debug = true
+lto = false
+panic = "unwind"
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = false
+panic = "unwind"
+
 [workspace]
 
 members = [

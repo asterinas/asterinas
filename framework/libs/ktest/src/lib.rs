@@ -21,6 +21,11 @@
 //!     fn trivial_assertion() {
 //!         assert_eq!(0, 0);
 //!     }
+//!     #[ktest]
+//!     #[should_panic]
+//!     fn failing_assertion() {
+//!         assert_eq!(0, 1);
+//!     }
 //! }
 //! ```
 //!
@@ -54,8 +59,8 @@
 //! a default conditional compilation setting:
 //! `#[cfg(all(ktest, any(ktest = "all", ktest = #crate_name)))]`
 //!
-//! Currently we do not support `#[should_panic]` attribute, and this feature will
-//! be added in the future.
+//! We do not support `#[should_panic]` attribute, but the implementation is quite
+//! slow currently. Use it with cautious.
 //!
 //! Doctest is not taken into consideration yet, and the interface is subject to
 //! change.
@@ -128,27 +133,43 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
         proc_macro2::Span::call_site(),
     );
 
+    let should_panic = input.attrs.iter().any(|attr| {
+        attr.path()
+            .segments
+            .iter()
+            .any(|segment| segment.ident == "should_panic")
+    });
+
+    let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
     let span = proc_macro::Span::call_site();
-    let source = span.source_file();
-    let crate_name = std::env::var("CARGO_PKG_NAME").unwrap();
-    let hint_str = format!(
-        "[{}] {}: {}()",
-        crate_name,
-        source.path().to_str().unwrap(),
-        fn_name
-    );
+    let source = span.source_file().path();
+    let source = source.to_str().unwrap();
+    let line = span.line();
+    let col = span.column();
 
     let register = quote! {
         struct #ktest_item_struct {
             fn_: fn() -> (),
-            hint: &'static str,
+            should_panic: bool,
+            module_path: &'static str,
+            fn_name: &'static str,
+            package: &'static str,
+            source: &'static str,
+            line: usize,
+            col: usize,
         }
         #[cfg(ktest)]
         #[used]
         #[link_section = ".ktest_array"]
         static #fn_ktest_item_name: #ktest_item_struct = #ktest_item_struct {
             fn_: #fn_name,
-            hint: #hint_str,
+            should_panic: #should_panic,
+            module_path: module_path!(),
+            fn_name: stringify!(#fn_name),
+            package: #package_name,
+            source: #source,
+            line: #line,
+            col: #col,
         };
     };
 
@@ -165,27 +186,70 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn do_ktests(_item: TokenStream) -> TokenStream {
     let body = quote! {
+        use crate::arch::qemu::{exit_qemu, QemuExitCode};
+
         struct KtestItem {
             fn_: fn() -> (),
-            hint: &'static str,
+            should_panic: bool,
+            module_path: &'static str,
+            fn_name: &'static str,
+            package: &'static str,
+            source: &'static str,
+            line: usize,
+            col: usize,
         };
         extern "C" {
             fn __ktest_array();
             fn __ktest_array_end();
-        }
+        };
         let item_size = core::mem::size_of::<KtestItem>() as u64;
         let l = (__ktest_array_end as u64 - __ktest_array as u64) / item_size;
         crate::println!("Running {} tests", l);
         for i in 0..l {
             unsafe {
-                let address = (__ktest_array as u64 + item_size * i) as *const u64;
-                let item = address as *const KtestItem;
-                crate::print!("{} ...", (*item).hint);
-                ((*item).fn_)();
+                let item_ptr = (__ktest_array as u64 + item_size * i) as *const u64;
+                let item = item_ptr as *const KtestItem;
+                crate::print!("[{}] test {}::{} ...", (*item).package, (*item).module_path, (*item).fn_name);
+                let test_result = unwinding::panic::catch_unwind((*item).fn_);
+                let print_failure_heading = || {
+                    crate::println!("\nfailures:\n");
+                    crate::println!("---- {}:{}:{} - {} ----", (*item).source, (*item).line, (*item).col, (*item).fn_name);
+                };
+                if !(*item).should_panic {
+                    match test_result {
+                        Ok(()) => {
+                            crate::println!(" ok");
+                        },
+                        Err(e) => {
+                            crate::println!(" FAILED");
+                            print_failure_heading();
+                            match e.downcast::<crate::panicking::PanicInfo>() {
+                                Ok(s) => {
+                                    crate::println!("[caught panic] {}", s);
+                                },
+                                Err(payload) => {
+                                    crate::println!("[caught panic] unknown panic payload: {:#?}", payload);
+                                },
+                            }
+                            exit_qemu(QemuExitCode::Failed);
+                        },
+                    }
+                } else {
+                    match test_result {
+                        Ok(()) => {
+                            crate::println!(" FAILED");
+                            print_failure_heading();
+                            crate::println!("test did not panic as expected");
+                            exit_qemu(QemuExitCode::Failed);
+                        },
+                        Err(_) => {
+                            crate::println!(" ok");
+                        },
+                    }
+                }
             }
-            crate::println!(" Ok!");
         }
-        crate::exit_qemu(crate::QemuExitCode::Success);
+        exit_qemu(QemuExitCode::Success);
     };
 
     TokenStream::from(body)

@@ -531,9 +531,6 @@ mod test {
     }
 
     #[ktest]
-    // FIXME: should_panic doesn't work with ktest, two negative makes a positive...
-    #[should_panic]
-    /// FIXME: alloc continuous frames is not supported now
     fn alloc_continuous_vmo() {
         let vmo = VmoOptions::<Full>::new(10 * PAGE_SIZE)
             .flags(VmoFlags::CONTIGUOUS)
