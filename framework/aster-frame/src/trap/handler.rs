@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use crate::{arch::irq::IRQ_LIST, cpu::CpuException};
 
 #[cfg(feature = "intel_tdx")]
@@ -71,6 +73,12 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
 }
 
 pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame) {
+    // For x86 CPUs, interrupts are not re-entrant. Local interrupts will be disabled when
+    // an interrupt handler is called (Unless interrupts are re-enabled in an interrupt handler).
+    //
+    // FIXME: For arch that supports re-entrant interrupts, we may need to record nested level here.
+    IN_INTERRUPT_CONTEXT.store(true, Ordering::Release);
+
     let irq_line = IRQ_LIST.get().unwrap().get(trap_frame.trap_num).unwrap();
     let callback_functions = irq_line.callback_list();
     for callback_function in callback_functions.iter() {
@@ -79,4 +87,16 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame) {
     if !CpuException::is_cpu_exception(trap_frame.trap_num as u16) {
         crate::arch::interrupts_ack();
     }
+
+    IN_INTERRUPT_CONTEXT.store(false, Ordering::Release);
+}
+
+static IN_INTERRUPT_CONTEXT: AtomicBool = AtomicBool::new(false);
+
+/// Returns whether we are in the interrupt context.
+///
+/// FIXME: Here we only take hardware irq into account. According to linux implementation, if
+/// we are in softirq context, or bottom half is disabled, this function also returns true.
+pub fn in_interrupt_context() -> bool {
+    IN_INTERRUPT_CONTEXT.load(Ordering::Acquire)
 }
