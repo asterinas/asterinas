@@ -4,7 +4,7 @@ use core::sync::atomic::AtomicUsize;
 
 use crate::cpu_local;
 use crate::sync::Mutex;
-use crate::{cpu::CpuLocal, trap::disable_local};
+use crate::trap::disable_local;
 
 use core::sync::atomic::Ordering::Relaxed;
 
