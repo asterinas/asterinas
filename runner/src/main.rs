@@ -80,6 +80,10 @@ struct Args {
     /// Run a GDB client instead of running the kernel.
     #[arg(long, default_value_t = false)]
     run_gdb_client: bool,
+
+    /// Run in the release mode.
+    #[arg(long, default_value_t = false)]
+    release_mode: bool,
 }
 
 pub const COMMON_ARGS: &[&str] = &[
@@ -119,7 +123,6 @@ pub const GDB_ARGS: &[&str] = &[
 
 fn main() {
     let args = Args::parse();
-
     if args.run_gdb_client {
         let gdb_grub = args.boot_method == BootMethod::QemuGrub;
         // You should comment out the next line if you want to debug grub instead
@@ -195,6 +198,7 @@ fn main() {
             initramfs_path,
             grub_cfg,
             args.boot_protocol,
+            args.release_mode,
         );
         qemu_cmd.arg("-cdrom");
         qemu_cmd.arg(bootdev_image.as_os_str());

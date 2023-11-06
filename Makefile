@@ -9,6 +9,7 @@ GDB_CLIENT ?= 0
 GDB_SERVER ?= 0
 INTEL_TDX ?= 0
 SKIP_GRUB_MENU ?= 1
+RELEASE_MODE ?= 0
 # End of setting up Make varaiables
 
 KERNEL_CMDLINE := SHELL="/bin/sh" LOGNAME="root" HOME="/" USER="root" PATH="/bin" init=/usr/bin/busybox -- sh -l
@@ -22,10 +23,20 @@ endif
 
 CARGO_KBUILD_ARGS :=
 
-CARGO_KRUN_ARGS := -- '$(KERNEL_CMDLINE)'
+CARGO_KRUN_ARGS := 
 
+ifeq ($(RELEASE_MODE), 1)
+CARGO_KBUILD_ARGS += --release
+CARGO_KRUN_ARGS += --release
+endif
+
+CARGO_KRUN_ARGS += -- '$(KERNEL_CMDLINE)'
 CARGO_KRUN_ARGS += --boot-method="$(BOOT_METHOD)"
 CARGO_KRUN_ARGS += --boot-protocol="$(BOOT_PROTOCOL)"
+
+ifeq ($(RELEASE_MODE), 1)
+CARGO_KRUN_ARGS += --release-mode
+endif
 
 ifeq ($(EMULATE_IOMMU), 1)
 CARGO_KRUN_ARGS += --emulate-iommu
