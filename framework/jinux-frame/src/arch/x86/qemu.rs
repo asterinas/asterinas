@@ -1,4 +1,4 @@
-//! QEMU isa debug device.
+//! Providing the ability to exit QEMU and return a value as debug result.
 
 /// The exit code of x86 QEMU isa debug device. In `qemu-system-x86_64` the
 /// exit code will be `(code << 1) | 1`. So you could never let QEMU invoke
@@ -12,11 +12,18 @@ pub enum QemuExitCode {
     Failed = 0x20,
 }
 
+/// Exit QEMU with the given exit code.
+///
+/// This function assumes that the kernel is run in QEMU with the following
+/// QEMU command line arguments that specifies the ISA debug exit device:
+/// `-device isa-debug-exit,iobase=0xf4,iosize=0x04`.
 pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
     use x86_64::instructions::port::Port;
+    let mut port = Port::new(0xf4);
 
+    // Safety: The write to the ISA debug exit port is safe and `0xf4` should
+    // be the port number.
     unsafe {
-        let mut port = Port::new(0xf4);
         port.write(exit_code as u32);
     }
     unreachable!()
