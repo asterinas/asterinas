@@ -3,9 +3,10 @@
 //!
 
 pub mod kcmdline;
+pub mod memory_region;
+
 use kcmdline::KCmdlineArg;
 
-pub mod memory_region;
 use self::memory_region::MemoryRegion;
 
 use alloc::{string::String, vec::Vec};
@@ -116,7 +117,16 @@ pub fn call_jinux_main() -> ! {
     }
     #[cfg(ktest)]
     {
+        use crate::arch::qemu::{exit_qemu, QemuExitCode};
+        use alloc::boxed::Box;
+        use core::any::Any;
         crate::init();
-        ktest::do_ktests!();
+        let fn_catch_unwind = &(unwinding::panic::catch_unwind::<(), fn()>
+            as fn(fn()) -> Result<(), Box<(dyn Any + Send + 'static)>>);
+        use ktest::runner::{run_ktests, KtestResult};
+        match run_ktests(crate::console::print, fn_catch_unwind) {
+            KtestResult::Ok => exit_qemu(QemuExitCode::Success),
+            KtestResult::Failed => exit_qemu(QemuExitCode::Failed),
+        }
     }
 }

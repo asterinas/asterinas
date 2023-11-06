@@ -82,7 +82,7 @@ fn invoke_ffi_init_funcs() {
     }
 }
 
-/// Unit test for the ktest framework and functions of the frame.
+/// Simple unit tests for the ktest framework.
 #[if_cfg_ktest]
 mod test {
     #[ktest]
@@ -94,5 +94,11 @@ mod test {
     #[should_panic]
     fn failing_assertion() {
         assert_eq!(0, 1);
+    }
+
+    #[ktest]
+    #[should_panic(expected = "expected panic message")]
+    fn expect_panic() {
+        panic!("expected panic message");
     }
 }

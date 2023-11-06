@@ -1,12 +1,17 @@
 //! # The kernel mode testing framework of Jinux.
 //!
 //! `ktest` stands for kernel-mode testing framework. Its goal is to provide a
-//! `cargo test`-like experience for any crates that depends on jinux-frame.
+//! `cargo test`-like experience for any `#![no_std]` bare metal crates.
 //!
-//! All the tests written in the source tree of the crates will be run using the
-//! `do_ktests!()` macro immediately after the initialization of jinux-frame.
-//! Thus you can use any feature provided by the frame including the heap
-//! allocator, etc.
+//! In Jinux, all the tests written in the source tree of the crates will be run
+//! immediately after the initialization of jinux-frame. Thus you can use any
+//! feature provided by the frame including the heap allocator, etc.
+//!
+//! By all means, ktest is an individule crate that only requires:
+//!  - a custom linker script section `.ktest_array`,
+//!  - and an alloc implementation.
+//! to work. And the frame happens to provide both of them. Thus, any crates depending
+//! on the frame can use ktest without any extra dependency.
 //!
 //! ## Usage
 //!
@@ -25,6 +30,11 @@
 //!     #[should_panic]
 //!     fn failing_assertion() {
 //!         assert_eq!(0, 1);
+//!     }
+//!     #[ktest]
+//!     #[should_panic(expected = "expected panic message")]
+//!     fn expect_panic() {
+//!         panic!("expected panic message");
 //!     }
 //! }
 //! ```
@@ -59,198 +69,153 @@
 //! a default conditional compilation setting:
 //! `#[cfg(all(ktest, any(ktest = "all", ktest = #crate_name)))]`
 //!
-//! We do not support `#[should_panic]` attribute, but the implementation is quite
-//! slow currently. Use it with cautious.
+//! We support the `#[should_panic]` attribute just in the same way as the standard
+//! library do, but the implementation is quite slow currently. Use it with cautious.
 //!
 //! Doctest is not taken into consideration yet, and the interface is subject to
 //! change.
 //!
-//! ## How it works
-//!
-//! The `ktest` framework is implemented using the procedural macro feature of Rust.
-//! The `ktest` attribute macro will generate a static fn pointer variable linked in
-//! the `.ktest_array` section. The `do_ktests!()` macro will iterate over all the
-//! static variables in the section and run the tests.
-//!
 
-#![feature(proc_macro_span)]
+#![no_std]
+#![feature(panic_info_message)]
 
-extern crate proc_macro2;
+pub mod runner;
 
-use proc_macro::TokenStream;
-use quote::quote;
-use rand::{distributions::Alphanumeric, Rng};
-use syn::{parse_macro_input, Ident, ItemFn, ItemMod};
+extern crate alloc;
+use alloc::{boxed::Box, string::String};
+use core::result::Result;
 
-/// The conditional compilation attribute macro to control the compilation of test
-/// modules.
-#[proc_macro_attribute]
-pub fn if_cfg_ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    // Assuming that the item is a module declearation, otherwise panics.
-    let input = parse_macro_input!(item as ItemMod);
+pub use ktest_proc_macro::{if_cfg_ktest, ktest};
 
-    let crate_name = std::env::var("CARGO_PKG_NAME").unwrap();
-
-    let output = quote! {
-        #[cfg(all(ktest, any(ktest = "all", ktest = #crate_name)))]
-        #input
-    };
-
-    TokenStream::from(output)
+#[derive(Clone, Debug)]
+pub struct PanicInfo {
+    pub message: String,
+    pub file: String,
+    pub line: usize,
+    pub col: usize,
 }
 
-/// The test attribute macro to mark a test function.
-#[proc_macro_attribute]
-pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    // Assuming that the item has type `fn() -> ()`, otherwise panics.
-    let input = parse_macro_input!(item as ItemFn);
-    assert!(
-        input.sig.inputs.is_empty(),
-        "ktest function should have no arguments"
-    );
-    assert!(
-        matches!(input.sig.output, syn::ReturnType::Default),
-        "ktest function should return `()`"
-    );
+impl core::fmt::Display for PanicInfo {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        writeln!(f, "Panicked at {}:{}:{}", self.file, self.line, self.col)?;
+        writeln!(f, "{}", self.message)
+    }
+}
 
-    // Generate a random identifier to avoid name conflicts.
-    let fn_id: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(8)
-        .map(char::from)
-        .collect();
+#[derive(Clone)]
+pub enum KtestError {
+    Panic(Box<PanicInfo>),
+    ShouldPanicButNoPanic,
+    ExpectedPanicNotMatch(&'static str, Box<PanicInfo>),
+    Unknown,
+}
 
-    let fn_name = &input.sig.ident;
-    let fn_ktest_item_name = Ident::new(
-        &format!("{}_ktest_item_{}", &input.sig.ident, &fn_id),
-        proc_macro2::Span::call_site(),
-    );
+#[derive(Clone)]
+pub struct KtestItemInfo {
+    pub module_path: &'static str,
+    pub fn_name: &'static str,
+    pub package: &'static str,
+    pub source: &'static str,
+    pub line: usize,
+    pub col: usize,
+}
 
-    // Since Rust does not support unamed structures, we have to generate a
-    // unique name for each test item structure.
-    let ktest_item_struct = Ident::new(
-        &format!("KtestItem{}", &fn_id),
-        proc_macro2::Span::call_site(),
-    );
+#[derive(Clone)]
+pub struct KtestItem {
+    fn_: fn() -> (),
+    should_panic: (bool, Option<&'static str>),
+    info: KtestItemInfo,
+}
 
-    let should_panic = input.attrs.iter().any(|attr| {
-        attr.path()
-            .segments
-            .iter()
-            .any(|segment| segment.ident == "should_panic")
-    });
+type CatchUnwindImpl = fn(f: fn() -> ()) -> Result<(), Box<dyn core::any::Any + Send>>;
 
-    let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
-    let span = proc_macro::Span::call_site();
-    let source = span.source_file().path();
-    let source = source.to_str().unwrap();
-    let line = span.line();
-    let col = span.column();
-
-    let register = quote! {
-        struct #ktest_item_struct {
-            fn_: fn() -> (),
-            should_panic: bool,
-            module_path: &'static str,
-            fn_name: &'static str,
-            package: &'static str,
-            source: &'static str,
-            line: usize,
-            col: usize,
+impl KtestItem {
+    pub const fn new(
+        fn_: fn() -> (),
+        should_panic: (bool, Option<&'static str>),
+        info: KtestItemInfo,
+    ) -> Self {
+        Self {
+            fn_,
+            should_panic,
+            info,
         }
-        #[cfg(ktest)]
-        #[used]
-        #[link_section = ".ktest_array"]
-        static #fn_ktest_item_name: #ktest_item_struct = #ktest_item_struct {
-            fn_: #fn_name,
-            should_panic: #should_panic,
-            module_path: module_path!(),
-            fn_name: stringify!(#fn_name),
-            package: #package_name,
-            source: #source,
-            line: #line,
-            col: #col,
-        };
-    };
+    }
 
-    let output = quote! {
-        #input
+    pub fn info(&self) -> &KtestItemInfo {
+        &self.info
+    }
 
-        #register
-    };
-
-    TokenStream::from(output)
+    /// Run the test with a given catch_unwind implementation.
+    pub fn run(&self, catch_unwind_impl: &CatchUnwindImpl) -> Result<(), KtestError> {
+        let test_result = catch_unwind_impl(self.fn_);
+        if !self.should_panic.0 {
+            // Should not panic.
+            match test_result {
+                Ok(()) => Ok(()),
+                Err(e) => match e.downcast::<PanicInfo>() {
+                    Ok(s) => Err(KtestError::Panic(s)),
+                    Err(_payload) => Err(KtestError::Unknown),
+                },
+            }
+        } else {
+            // Should panic.
+            match test_result {
+                Ok(()) => Err(KtestError::ShouldPanicButNoPanic),
+                Err(e) => match e.downcast::<PanicInfo>() {
+                    Ok(s) => {
+                        if let Some(expected) = self.should_panic.1 {
+                            if s.message == expected {
+                                Ok(())
+                            } else {
+                                Err(KtestError::ExpectedPanicNotMatch(expected, s))
+                            }
+                        } else {
+                            Ok(())
+                        }
+                    }
+                    Err(_payload) => Err(KtestError::Unknown),
+                },
+            }
+        }
+    }
 }
 
-/// The procedural macro to run all the tests.
-#[proc_macro]
-pub fn do_ktests(_item: TokenStream) -> TokenStream {
-    let body = quote! {
-        use crate::arch::qemu::{exit_qemu, QemuExitCode};
-
-        struct KtestItem {
-            fn_: fn() -> (),
-            should_panic: bool,
-            module_path: &'static str,
-            fn_name: &'static str,
-            package: &'static str,
-            source: &'static str,
-            line: usize,
-            col: usize,
-        };
+macro_rules! ktest_array {
+    () => {{
         extern "C" {
             fn __ktest_array();
             fn __ktest_array_end();
-        };
-        let item_size = core::mem::size_of::<KtestItem>() as u64;
-        let l = (__ktest_array_end as u64 - __ktest_array as u64) / item_size;
-        crate::println!("Running {} tests", l);
-        for i in 0..l {
-            unsafe {
-                let item_ptr = (__ktest_array as u64 + item_size * i) as *const u64;
-                let item = item_ptr as *const KtestItem;
-                crate::print!("[{}] test {}::{} ...", (*item).package, (*item).module_path, (*item).fn_name);
-                let test_result = unwinding::panic::catch_unwind((*item).fn_);
-                let print_failure_heading = || {
-                    crate::println!("\nfailures:\n");
-                    crate::println!("---- {}:{}:{} - {} ----", (*item).source, (*item).line, (*item).col, (*item).fn_name);
-                };
-                if !(*item).should_panic {
-                    match test_result {
-                        Ok(()) => {
-                            crate::println!(" ok");
-                        },
-                        Err(e) => {
-                            crate::println!(" FAILED");
-                            print_failure_heading();
-                            match e.downcast::<crate::panicking::PanicInfo>() {
-                                Ok(s) => {
-                                    crate::println!("[caught panic] {}", s);
-                                },
-                                Err(payload) => {
-                                    crate::println!("[caught panic] unknown panic payload: {:#?}", payload);
-                                },
-                            }
-                            exit_qemu(QemuExitCode::Failed);
-                        },
-                    }
-                } else {
-                    match test_result {
-                        Ok(()) => {
-                            crate::println!(" FAILED");
-                            print_failure_heading();
-                            crate::println!("test did not panic as expected");
-                            exit_qemu(QemuExitCode::Failed);
-                        },
-                        Err(_) => {
-                            crate::println!(" ok");
-                        },
-                    }
-                }
-            }
         }
-        exit_qemu(QemuExitCode::Success);
-    };
+        let item_size = core::mem::size_of::<KtestItem>();
+        let l = (__ktest_array_end as usize - __ktest_array as usize) / item_size;
+        // Safety: __ktest_array is a static section consisting of KtestItem.
+        unsafe { core::slice::from_raw_parts(__ktest_array as *const KtestItem, l) }
+    }};
+}
 
-    TokenStream::from(body)
+pub struct KtestIter {
+    index: usize,
+}
+
+impl KtestIter {
+    fn new() -> Self {
+        Self { index: 0 }
+    }
+}
+
+impl core::iter::Iterator for KtestIter {
+    type Item = KtestItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let Some(ktest_item) = ktest_array!().get(self.index) else {
+            return None;
+        };
+        self.index += 1;
+        Some(ktest_item.clone())
+    }
+}
+
+fn get_ktest_tests() -> (usize, KtestIter) {
+    (ktest_array!().len(), KtestIter::new())
 }

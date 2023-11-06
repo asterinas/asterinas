@@ -58,7 +58,7 @@ make run
 
 ### Unit Test
 
-#### User mode unit test
+#### User mode unit tests
 
 Many of our crates does not require running on bare metal environment and can be tested through the standard Cargo testing framework. A specific list of which crates can be tested with `cargo test` is listed in the `[workspace.metadata.usermode_testable]` entry in the `Cargo.toml` file of the root workspace.
 
@@ -69,7 +69,7 @@ make test
 
 Nevertheless, you could enter the directory of a specific crate and invoke `cargo test` to perform user mode unit tests and doctests.
 
-#### Kernel mode unit test
+#### Kernel mode unit tests
 
 We can run unit tests in kernel mode for crates like `jinux-frame` or `jinux-std`. This is powered by our [ktest](framework/libs/ktest) framework.
 ```bash
