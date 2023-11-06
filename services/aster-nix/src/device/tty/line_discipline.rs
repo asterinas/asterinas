@@ -8,7 +8,7 @@ use crate::process::signal::{Pollee, Poller};
 use crate::thread::work_queue::work_item::WorkItem;
 use crate::thread::work_queue::{submit_work_item, WorkPriority};
 use alloc::format;
-use aster_frame::trap::disable_local;
+use aster_frame::trap::{disable_local, in_interrupt_context};
 use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
 use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
@@ -122,7 +122,7 @@ impl LineDiscipline {
         // Raw mode
         if !termios.is_canonical_mode() {
             self.read_buffer.lock_irq_disabled().push_overwrite(ch);
-            self.update_readable_state_deferred();
+            self.update_readable_state();
             return;
         }
 
@@ -156,7 +156,7 @@ impl LineDiscipline {
             self.current_line.lock_irq_disabled().push_char(ch);
         }
 
-        self.update_readable_state_deferred();
+        self.update_readable_state();
     }
 
     fn may_send_signal(&self, termios: &KernelTermios, ch: u8) -> bool {
@@ -169,30 +169,36 @@ impl LineDiscipline {
             ch if ch == *termios.get_special_char(CC_C_CHAR::VQUIT) => KernelSignal::new(SIGQUIT),
             _ => return false,
         };
-        // `kernel_signal()` may cause sleep, so only construct parameters here.
-        self.work_item_para.lock_irq_disabled().kernel_signal = Some(signal);
+
+        if in_interrupt_context() {
+            // `kernel_signal()` may cause sleep, so only construct parameters here.
+            self.work_item_para.lock_irq_disabled().kernel_signal = Some(signal);
+        } else {
+            (self.send_signal)(signal);
+        }
 
         true
     }
 
     pub fn update_readable_state(&self) {
         let buffer = self.read_buffer.lock_irq_disabled();
+
+        if in_interrupt_context() {
+            // Add/Del events may sleep, so only construct parameters here.
+            if !buffer.is_empty() {
+                self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Add);
+            } else {
+                self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Del);
+            }
+            submit_work_item(self.work_item.clone(), WorkPriority::High);
+            return;
+        }
+
         if !buffer.is_empty() {
             self.pollee.add_events(IoEvents::IN);
         } else {
             self.pollee.del_events(IoEvents::IN);
         }
-    }
-
-    fn update_readable_state_deferred(&self) {
-        let buffer = self.read_buffer.lock_irq_disabled();
-        // add/del events may sleep, so only construct parameters here.
-        if !buffer.is_empty() {
-            self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Add);
-        } else {
-            self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Del);
-        }
-        submit_work_item(self.work_item.clone(), WorkPriority::High);
     }
 
     /// include all operations that may cause sleep, and processes by a work queue.
