@@ -76,6 +76,20 @@ export
 # Toolchain variables that are used when building the Linux setup header
 export CARGO := cargo
 
+# Maintain a list of usermode crates that can be tested with `cargo test`
+USERMODE_TESTABLE := \
+    runner \
+    framework/libs/align_ext \
+    framework/libs/ktest \
+    services/libs/cpio-decoder \
+    services/libs/int-to-c-enum \
+    services/libs/int-to-c-enum/derive \
+    services/libs/jinux-rights \
+    services/libs/jinux-rights-proc \
+    services/libs/keyable-arc \
+    services/libs/typeflags \
+    services/libs/typeflags-util
+
 .PHONY: all setup build tools run test docs check clean
 
 all: build
@@ -97,7 +111,9 @@ run: build
 	@RUSTFLAGS="$(GLOBAL_RUSTC_FLAGS)" cargo krun $(CARGO_KRUN_ARGS)
 
 test:
-	@python3 ./tools/test/run_tests.py
+	@for dir in $(USERMODE_TESTABLE); do \
+		(cd $$dir && cargo test) || exit 1; \
+	done
 
 docs:
 	@cargo doc 								# Build Rust docs
