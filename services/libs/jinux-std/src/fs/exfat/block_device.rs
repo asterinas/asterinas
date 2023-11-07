@@ -1,28 +1,26 @@
-
-use jinux_frame::boot::page_array::PageArray;
-use jinux_frame::vm::VmFrame;
 use jinux_frame::vm::VmIo;
-
+use crate::prelude::*;
+use alloc::fmt::Debug;
 /// A simple block device for Exfat.
 pub trait BlockDevice: Send + Sync + Any {
-    /// Returns the number of blocks.
-    fn blocks_count(&self) -> Bid;
+    ///Returns the number of blocks.
+    fn blocks_count(&self) -> usize;
 
     /// Reads a `[u8]` slice at `offset` from the block device.
     ///
     /// Returns how many bytes were read.
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize>;
 
-    /// Reads a block from the block device.
-    fn read_block(&self, bid: Bid, block: &VmFrame) -> Result<()>;
+    //Reads a block from the block device.
+    //fn read_block(&self, bid: Bid, block: &VmFrame) -> Result<()>;
 
     /// Writes a `[u8]` slice at `offset` into the block device.
     ///
     /// Returns how many bytes were written.
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize>;
 
-    /// Writes a block into the block device.
-    fn write_block(&self, bid: Bid, block: &VmFrame) -> Result<()>;
+    // rites a block into the block device.
+    //fn write_block(&self, bid: Bid, block: &VmFrame) -> Result<()>;
 }
 
 impl dyn BlockDevice {
@@ -33,7 +31,7 @@ impl dyn BlockDevice {
 
     /// Returns the number of bytes.
     pub fn bytes_count(&self) -> usize {
-        self.blocks_count().to_raw() as usize * self.block_size()
+        self.blocks_count() * self.block_size()
     }
 
     /// Returns the block_size.

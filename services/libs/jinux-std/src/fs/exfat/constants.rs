@@ -3,9 +3,9 @@ pub const EXFAT_CLUSTERS_UNTRACKED: u32 = !0;
 
 // Error handling 
 pub enum ExfatErrorMode {
-    ExfatErrorsCont,
-    ExfatErrorsPanic,
-    ExfatErrorsRo,
+    ErrorsCont,
+    ErrorsPanic,
+    ErrorsRo,
 }
 
 // NLS lossy flags
@@ -17,8 +17,8 @@ pub const EXFAT_HASH_BITS: u8 = 8;
 pub const EXFAT_HASH_SIZE: u32 = 1 << EXFAT_HASH_BITS;
 
 // Entry set indexes
-pub const ES_2_ENTRIES: usize = 2;
-pub const ES_ALL_ENTRIES: usize = 0;
+pub const ES_2_ENTRIES: u32 = 2;
+pub const ES_ALL_ENTRIES: u32 = 0;
 
 pub const ES_IDX_FILE: usize = 0;
 pub const ES_IDX_STREAM: usize = 1;
@@ -76,7 +76,7 @@ pub const ALLOC_POSSIBLE: u8 = 0x01;
 pub const ALLOC_FAT_CHAIN: u8 = 0x01;
 pub const ALLOC_NO_FAT_CHAIN: u8 = 0x03;
 
-pub const DENTRY_SIZE: u32 = 32; // directory entry size
+pub const DENTRY_SIZE: usize = 32; // directory entry size
 pub const DENTRY_SIZE_BITS: u32 = 5;
 // exFAT allows 8388608(256MB) directory entries
 pub const MAX_EXFAT_DENTRIES: u32 = 8388608;
@@ -116,7 +116,7 @@ pub const ATTR_VOLUME: u16 = 0x0008;
 pub const ATTR_SUBDIR: u16 = 0x0010;
 pub const ATTR_ARCHIVE: u16 = 0x0020;
 
-pub const ATTR_RWMASK: u16 = (ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME | ATTR_SUBDIR | ATTR_ARCHIVE);
+pub const ATTR_RWMASK: u16 = ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME | ATTR_SUBDIR | ATTR_ARCHIVE;
 
 
 pub const EXFAT_FILE_NAME_LEN: usize = 15;

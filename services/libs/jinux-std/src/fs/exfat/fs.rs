@@ -1,14 +1,17 @@
 use super::{block_device::BlockDevice, super_block::ExfatSuperBlock, inode::ExfatInode};
 
 use crate::{fs::{exfat::constants::*, utils::SuperBlock,utils::{FileSystem, Inode}}, return_errno, return_errno_with_message,prelude::*};
-use alloc::{boxed::Box, format};
-use jinux_frame::sync::RwLock;
+use alloc::boxed::Box;
+
+
 use log::warn;
 use super::super_block::ExfatBootSector;
 use super::utils::le16_to_cpu;
-use alloc::collections::BTreeMap;
-pub(super) use jinux_frame::vm::VmFrame;
+
+
 pub(super) use jinux_frame::vm::VmIo;
+use crate::fs::utils::FsFlags;
+use crate::fs::exfat::fat::ExfatChain;
 
 #[derive(Debug)]
 pub struct ExfatFS{
@@ -22,15 +25,16 @@ pub struct ExfatFS{
 impl ExfatFS{
     pub fn open(block_device:Box<dyn BlockDevice>) -> Result<Arc<Self>> {
         //Load the super_block
-        let super_block = Self::read_super_block(block_device)?;
+        let super_block = Self::read_super_block(block_device.as_ref())?;
         // TODO: if the main superblock is corrupted, should we load the backup?
         
         //Verify boot region
-        Self::verify_boot_region(block_device)?;
+        Self::verify_boot_region(block_device.as_ref())?;
 
         //TODO: Load Upcase Table
 
         //TODO: Load BitMap
+
 
         //TODO: Handle UTF-8
 
@@ -38,27 +42,28 @@ impl ExfatFS{
 
         //TODO: Init NLS Table
 
-        let root = read_root()?;
+        let root = Self::read_root(block_device.as_ref())?;
 
         //TODO: Insert root to inode hash table
-        ExfatFS{
-            block_device:block_device,
-            super_block:RwLock::new(super_block),
+
+        Ok(Arc::new(ExfatFS{
+            block_device,
+            super_block,
             root:Arc::new(root),
             
-        }
+        }))
     }
 
-    fn read_root() -> Result<ExfatInode> {
+    fn read_root(block_device:&dyn BlockDevice ) -> Result<ExfatInode> {
         todo!()
     }
 
     //TODO: Check boot signature and boot checksum.
-    fn verify_boot_region(block_device:Box<dyn BlockDevice>) -> Result<()> {
+    fn verify_boot_region(block_device:& dyn BlockDevice) -> Result<()> {
         todo!()
     }
 
-    fn read_super_block(block_device:Box<dyn BlockDevice>) -> Result<ExfatSuperBlock> {
+    fn read_super_block(block_device:& dyn BlockDevice) -> Result<ExfatSuperBlock> {
         let boot_sector = block_device.read_val::<ExfatBootSector>(0)?;
         /* check the validity of BOOT */
         if le16_to_cpu(boot_sector.signature) != BOOT_SIGNATURE {
@@ -87,29 +92,30 @@ impl ExfatFS{
 
         //FIXEME: Should I allocate memory for error message?
         if boot_sector.sector_size_bits < EXFAT_MIN_SECT_SIZE_BITS || boot_sector.sector_size_bits > EXFAT_MAX_SECT_SIZE_BITS {
-            return_errno_with_message!(Errno::EINVAL,&format!("bogus sector size bits : {}",boot_sector.sector_size_bits));
+            
+            return_errno_with_message!(Errno::EINVAL,"bogus sector size bits");
         }
 
         if boot_sector.sector_per_cluster_bits > EXFAT_MAX_SECT_SIZE_BITS {
-            return_errno_with_message!(Errno::EINVAL,&format!("bogus sector size bits per cluster : {}",boot_sector.sector_per_cluster_bits));
+            return_errno_with_message!(Errno::EINVAL,"bogus sector size bits per cluster");
         }
 
         let super_block = ExfatSuperBlock::try_from(boot_sector)?;
 
         /* check consistencies */
-        if u64(super_block.num_fat_sectors) << boot_sector.sector_size_bits < u64(super_block.num_clusters) * 4 {
+        if ((super_block.num_fat_sectors as u64) << boot_sector.sector_size_bits) < (super_block.num_clusters as u64) * 4 {
             return_errno_with_message!(Errno::EINVAL,"bogus fat length");
         }
 
-        if super_block.data_start_sector < u64(super_block.fat1_start_sector) + u64(super_block.num_fat_sectors * boot_sector.num_fats) {
+        if super_block.data_start_sector < super_block.fat1_start_sector + (super_block.num_fat_sectors as u64 * boot_sector.num_fats as u64) {
             return_errno_with_message!(Errno::EINVAL,"bogus data start vector");
         }
 
-        if super_block.vol_flags & VOLUME_DIRTY {
+        if (super_block.vol_flags & VOLUME_DIRTY as u32) != 0 {
             warn!("Volume was not properly unmounted. Some data may be corrupt. Please run fsck.")
         }
 
-        if super_block.vol_flags & MEDIA_FAILURE {
+        if (super_block.vol_flags & MEDIA_FAILURE as u32 ) != 0 {
             warn!("Medium has reported failures. Some data may be lost.")
         }
 
@@ -129,16 +135,20 @@ impl ExfatFS{
         self.block_device.as_ref()
     }
 
-    pub fn super_block(&self) -> ExFatSuperBlock {
+    pub fn super_block(&self) -> ExfatSuperBlock {
         self.super_block
     }
 
-    pub fn root_inode(&self) -> Result<Arc<Inode>> {
-        Err("Not implemented")
+    pub fn root_inode(&self) -> Result<Arc<ExfatInode>> {
+        unimplemented!()
     }
 
-    pub fn cluster_to_off(&self,cluster:u32) -> u64{
-        return ((u64(cluster - EXFAT_RESERVED_CLUSTERS) << self.super_block.sect_per_cluster_bits) + self.super_block.data_start_sector)*self.super_block.sector_size
+    pub fn cluster_to_off(&self,cluster:u32) -> usize{
+        (((((cluster - EXFAT_RESERVED_CLUSTERS) as u64) << self.super_block.sect_per_cluster_bits) + self.super_block.data_start_sector)*self.super_block.sector_size as u64) as usize
+    }
+
+    pub fn is_valid_cluster(&self,cluster:u32) -> bool {
+        cluster >= EXFAT_RESERVED_CLUSTERS && cluster < self.super_block.num_clusters
     }
 }
 
@@ -154,7 +164,7 @@ impl FileSystem for ExfatFS {
     }
 
     fn sb(&self) -> SuperBlock {
-        self.sb.read().clone()
+        unimplemented!()
     }
 
     fn flags(&self) -> FsFlags {
@@ -171,7 +181,7 @@ pub struct ExfatUniName {
 }
 
 pub struct ExfatDentryNameBuf<'a> {
-    name_buf: &[u8],
+    name_buf: &'a [u8],
 }
 
 //First empty entry hint information

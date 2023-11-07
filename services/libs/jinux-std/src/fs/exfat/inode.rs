@@ -1,14 +1,24 @@
-use std::fs::FileTimes;
+use crate::fs::exfat::fat::ExfatChain;
 
+use crate::fs::exfat::fs::ExfatFS;
 use crate::fs::utils::{Inode, InodeType};
-use crate::fs::exfat::fs;
-use crate::return_errno_with_message;
+
 use super::dentry::ExfatDentry;
 use core::time::Duration;
-
+use jinux_frame::vm::VmFrame;
+use jinux_rights::Full;
+use crate::fs::utils::InodeMode;
+use crate::fs::utils::DirentVisitor;
+use crate::events::IoEvents;
+use crate::process::signal::Poller;
+use crate::vm::vmo::Vmo;
+use crate::fs::device::Device;
+use alloc::string::String;
+use crate::fs::utils::IoctlCmd;
+use crate::prelude::*;
 //In-memory rust object that represents a file or folder.
 #[derive(Default,Debug,Clone)]
-pub struct ExfatInode<'a>{
+pub struct ExfatInode{
     dir: ExfatChain,
     entry: i32,
     type_: u8,  
@@ -29,9 +39,9 @@ pub struct ExfatInode<'a>{
     ctime: Duration,
 
     //exFAT uses UTF-16 encoding, rust use utf-8 for string processing.
-    namebuf: ExfatDentryNameBuf,
+    //namebuf: ExfatDentryNameBuf,
     //TODO: should use weak ptr
-    fs: &'a ExfatFS
+    fs: Weak<ExfatFS>
 
     // hint_bmap: ExfatHint,
     // hint_stat: ExfatHint,
@@ -52,18 +62,25 @@ pub struct ExfatInode<'a>{
 
 
 impl TryFrom<&[ExfatDentry]> for ExfatInode {
+    type Error = crate::error::Error;
     fn try_from(dentries: &[ExfatDentry]) -> Result<Self>{
-        let ret:ExfatInode;
-        //dentry 0 must be file/dir dentry
-        if let ExfatDentry::File(dentry) = dentries[0] {
-            ret.type_ = dentry.dentry_type
-        } else {
-            return_errno_with_message!(Errno::EINVAL,"Not a file dentry")
-        }
-        //dentry 1 must be stream
-        //dentry 2 
+        unimplemented!()
+        // let mut ret:ExfatInode;
+        // //dentry 0 must be file/dir dentry
+        // if let ExfatDentry::File(dentry) = dentries[0] {
+        //     ret.type_ = dentry.dentry_type;
+        //     ret.attr = dentry.attribute;
+        //     //TODO: handle time conversion from DOS format.
+        //     todo!("Implement time conversion");
+        //     todo!("Read Name buf");
+        //     todo!("Read Stream dentry")
+        // } else {
+        //     return_errno_with_message!(Errno::EINVAL,"Not a file dentry")
+        // }
+        
     }
 }
+
 
 
 impl Inode for ExfatInode{
@@ -112,11 +129,11 @@ impl Inode for ExfatInode{
     }
 
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn page_cache(&self) -> Option<Vmo<Full>> {
@@ -124,67 +141,67 @@ impl Inode for ExfatInode{
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOTDIR))
+        todo!()
     }
 
     fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOTDIR))
+        todo!()
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        Err(Error::new(Errno::ENOTDIR))
+        todo!()
     }
 
     fn link(&self, old: &Arc<dyn Inode>, name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
+        todo!()
     }
 
     fn unlink(&self, name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
+        todo!()
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
+        todo!()
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOTDIR))
+        todo!()
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
+        todo!()
     }
 
     fn read_link(&self) -> Result<String> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn write_link(&self, target: &str) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        Err(Error::new(Errno::EISDIR))
+        todo!()
     }
 
     fn sync(&self) -> Result<()> {
-        Ok(())
+        todo!()
     }
 
     fn poll(&self, mask: IoEvents, _poller: Option<&Poller>) -> IoEvents {

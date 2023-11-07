@@ -1,5 +1,6 @@
 use super::{utils::*, constants::{EXFAT_RESERVED_CLUSTERS, DENTRY_SIZE_BITS, VOLUME_DIRTY, MEDIA_FAILURE, EXFAT_FIRST_CLUSTER, EXFAT_CLUSTERS_UNTRACKED}};
-
+use pod::Pod;
+use crate::prelude::*;
 
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -37,43 +38,43 @@ pub struct ExfatSuperBlock {
     pub cluster_search_ptr: u32,
     /// number of used clusters
     pub used_clusters: u32,
-    
 }
 
-impl TryFrom(ExfatBootSector) for ExfatSuperBlock {
+impl TryFrom<ExfatBootSector> for ExfatSuperBlock {
+    type Error = crate::error::Error;
     fn try_from(sector:ExfatBootSector) -> Result<ExfatSuperBlock> {
 
         let mut block = ExfatSuperBlock{
             
-            sect_per_cluster_bits: sector.sector_per_cluster_bits,
-            sect_per_cluster: 1<<sector.sector_per_cluster_bits,
+            sect_per_cluster_bits: sector.sector_per_cluster_bits as u32,
+            sect_per_cluster: 1<<sector.sector_per_cluster_bits as u32,
             
-            cluster_size_bits: sector.sector_per_cluster_bits + sector.sector_size_bits,
-            cluster_size: 1 << (sector.sector_per_cluster_bits + sector.sector_size_bits),
+            cluster_size_bits: (sector.sector_per_cluster_bits + sector.sector_size_bits) as u32,
+            cluster_size: 1 << (sector.sector_per_cluster_bits + sector.sector_size_bits) as u32,
             
             sector_size: 1<<sector.sector_size_bits,
             num_fat_sectors: le32_to_cpu(sector.fat_length),
-            fat1_start_sector: le32_to_cpu(sector.fat_offset),
-            fat2_start_sector: le32_to_cpu(sector.fat_offset),
+            fat1_start_sector: le32_to_cpu(sector.fat_offset) as u64,
+            fat2_start_sector: le32_to_cpu(sector.fat_offset) as u64,
             
-            data_start_sector: le32_to_cpu(sector.cluster_offset),
+            data_start_sector: le32_to_cpu(sector.cluster_offset) as u64,
             num_sectors: le64_to_cpu(sector.vol_length),
             num_clusters: le32_to_cpu(sector.cluster_count) + EXFAT_RESERVED_CLUSTERS,
             
             root_dir: le32_to_cpu(sector.root_cluster),
             
-            vol_flags: le16_to_cpu(sector.vol_flags),
-            vol_flags_persistent: sector.vol_flags & (VOLUME_DIRTY | MEDIA_FAILURE),
+            vol_flags: le16_to_cpu(sector.vol_flags) as u32,
+            vol_flags_persistent: (sector.vol_flags & (VOLUME_DIRTY | MEDIA_FAILURE)) as u32,
 
             cluster_search_ptr: EXFAT_FIRST_CLUSTER,
             used_clusters: EXFAT_CLUSTERS_UNTRACKED,
             
-            dentries_per_clu:  1 << (sector.sector_per_cluster_bits + sector.sector_size_bits - DENTRY_SIZE_BITS),
+            dentries_per_clu:  1 << ((sector.sector_per_cluster_bits + sector.sector_size_bits) as u32 - DENTRY_SIZE_BITS),
         };
 
         
         if block.num_fat_sectors == 2{
-            block.fat2_start_sector += block.num_fat_sectors;
+            block.fat2_start_sector += block.num_fat_sectors as u64;
         }
 
         Ok(block)
@@ -87,7 +88,7 @@ pub const BOOTSEC_FS_NAME_LEN: usize = 8;
 pub const BOOTSEC_OLDBPB_LEN: usize = 53;
 // EXFAT: Main and Backup Boot Sector (512 bytes)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug,Pod,Default)]
+#[derive(Clone, Copy, Debug,Pod)]
 pub(super) struct ExfatBootSector {
     pub jmp_boot: [u8; BOOTSEC_JUMP_BOOT_LEN],
     pub fs_name: [u8; BOOTSEC_FS_NAME_LEN],
