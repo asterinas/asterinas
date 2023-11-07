@@ -203,7 +203,6 @@ Jinux is under active development. The list below summarizes the progress of imp
 
 ## License
 
-The Jinux project is dual-licensed under Apache 2.0 and MIT terms.
-
-See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT), and
-[COPYRIGHT](COPYRIGHT) for details.
+The Jinux project is proudly released as a free software
+under the license of [GNU General Public License version 2](LICENSE-GPL).
+See [COPYRIGHT](COPYRIGHT) for details.

@@ -1,18 +1,9 @@
-Short version for non-lawyers:
-
-The Jinux project is dual-licensed under Apache 2.0 and MIT terms.
-
-
-Longer version:
+The Jinux project licensed under the GNU General Public License version 2.
 
 Copyrights in the Jinux project are retained by their contributors. No
 copyright assignment is required to contribute to the Jinux project.
+For full authorship information, see the version control history.
 
-Some files include explicit copyright notices and/or license notices.
-For full authorship information, see the version control history or
-<http://thanks.the-jinux-website-in-the-future>.
-
-Except as otherwise noted (below and/or in individual files), Jinux is
-licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
-<http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-<LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
+Please note that certain files or directories within the Jinux project may 
+contain explicit copyright notices and/or license notices differ
+from the project's general license terms.
