@@ -1,12 +1,6 @@
 use crate::prelude::*;
 use intrusive_collections::LinkedList;
-use jinux_frame::task::{set_scheduler, Scheduler, Task, TaskAdapter};
-
-pub fn init() {
-    let preempt_scheduler = Box::new(PreemptScheduler::new());
-    let scheduler = Box::<PreemptScheduler>::leak(preempt_scheduler);
-    set_scheduler(scheduler);
-}
+use jinux_frame::task::{Scheduler, Task, TaskAdapter};
 
 /// The preempt scheduler
 ///
@@ -14,7 +8,7 @@ pub fn init() {
 /// are always prioritized during scheduling.
 /// Normal tasks are placed in the `normal_tasks` queue and are only
 /// scheduled for execution when there are no real-time tasks.
-struct PreemptScheduler {
+pub struct PreemptScheduler {
     /// Tasks with a priority of less than 100 are regarded as real-time tasks.
     real_time_tasks: SpinLock<LinkedList<TaskAdapter>>,
     /// Tasks with a priority greater than or equal to 100 are regarded as normal tasks.
