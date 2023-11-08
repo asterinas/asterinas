@@ -60,9 +60,8 @@ make run
 
 #### User mode unit tests
 
-Many of our crates does not require running on bare metal environment and can be tested through the standard Cargo testing framework. A specific list of which crates can be tested with `cargo test` is listed in the `[workspace.metadata.usermode_testable]` entry in the `Cargo.toml` file of the root workspace.
+Many of our crates does not require running on bare metal environment and can be tested through the standard Cargo testing framework. A specific list of which crates can be tested with `cargo test` is listed in the `Makefile` of the root workspace, and by using Make you can test all these crates together.
 
-There is a tool `./tools/test/run_tests.py` to run all the user mode tests, and can be invoked through Make.
 ```bash
 make test
 ```
@@ -73,12 +72,12 @@ Nevertheless, you could enter the directory of a specific crate and invoke `carg
 
 We can run unit tests in kernel mode for crates like `jinux-frame` or `jinux-std`. This is powered by our [ktest](framework/libs/ktest) framework.
 ```bash
-make run KTEST=all
+make run KTEST=1
 ```
 
-You could also specify tests in a crate or a subset of tests to run, as long as you defined them well using cfg.
+You could also specify tests in a crate or a subset of tests to run.
 ```bash
-make run KTEST=jinux-frame,jinux-std
+make run KTEST=1 KTEST_WHITELIST=failing_assertion,jinux_frame::test::expect_panic KTEST_CRATES=jinux-frame
 ```
 
 #### Component check

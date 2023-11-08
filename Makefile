@@ -8,18 +8,22 @@ ENABLE_KVM ?= 1
 GDB_CLIENT ?= 0
 GDB_SERVER ?= 0
 INTEL_TDX ?= 0
-KTEST ?= none
+KTEST ?= 0
+KTEST_CRATES ?= all
+KTEST_WHITELIST ?=
 SKIP_GRUB_MENU ?= 1
 RELEASE_MODE ?= 0
 # End of setting up Make varaiables
 
-KERNEL_CMDLINE := SHELL="/bin/sh" LOGNAME="root" HOME="/" USER="root" PATH="/bin" init=/usr/bin/busybox -- sh -l
+KERNEL_CMDLINE := SHELL="/bin/sh" LOGNAME="root" HOME="/" USER="root" PATH="/bin" init=/usr/bin/busybox
+KERNEL_CMDLINE += ktest.whitelist="$(KTEST_WHITELIST)"
+INIT_CMDLINE := sh -l
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
-KERNEL_CMDLINE += /opt/syscall_test/run_syscall_test.sh
+INIT_CMDLINE += /opt/syscall_test/run_syscall_test.sh
 endif
 ifeq ($(AUTO_TEST), boot)
-KERNEL_CMDLINE += -c exit 0
+INIT_CMDLINE += -c exit 0
 endif
 
 CARGO_KBUILD_ARGS :=
@@ -31,7 +35,7 @@ CARGO_KBUILD_ARGS += --release
 CARGO_KRUN_ARGS += --release
 endif
 
-CARGO_KRUN_ARGS += -- '$(KERNEL_CMDLINE)'
+CARGO_KRUN_ARGS += -- '$(KERNEL_CMDLINE) -- $(INIT_CMDLINE)'
 CARGO_KRUN_ARGS += --boot-method="$(BOOT_METHOD)"
 CARGO_KRUN_ARGS += --boot-protocol="$(BOOT_PROTOCOL)"
 
@@ -61,9 +65,9 @@ CARGO_KBUILD_ARGS += --features intel_tdx
 CARGO_KRUN_ARGS += --features intel_tdx
 endif
 
-ifneq ($(KTEST), none)
+ifeq ($(KTEST), 1)
 comma := ,
-GLOBAL_RUSTC_FLAGS += --cfg ktest --cfg ktest=\"$(subst $(comma),\" --cfg ktest=\",$(KTEST))\"
+GLOBAL_RUSTC_FLAGS += --cfg ktest --cfg ktest=\"$(subst $(comma),\" --cfg ktest=\",$(KTEST_CRATES))\"
 endif
 
 ifeq ($(SKIP_GRUB_MENU), 1)
@@ -81,6 +85,7 @@ USERMODE_TESTABLE := \
     runner \
     framework/libs/align_ext \
     framework/libs/ktest \
+    framework/libs/ktest-proc-macro \
     services/libs/cpio-decoder \
     services/libs/int-to-c-enum \
     services/libs/int-to-c-enum/derive \

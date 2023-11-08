@@ -118,13 +118,38 @@ pub fn call_jinux_main() -> ! {
     #[cfg(ktest)]
     {
         use crate::arch::qemu::{exit_qemu, QemuExitCode};
-        use alloc::boxed::Box;
+        use alloc::{boxed::Box, string::ToString};
         use core::any::Any;
         crate::init();
         let fn_catch_unwind = &(unwinding::panic::catch_unwind::<(), fn()>
             as fn(fn()) -> Result<(), Box<(dyn Any + Send + 'static)>>);
+        // Parse the whitelist from the kernel command line.
+        let mut paths = None;
+        let args = kernel_cmdline().get_module_args("ktest");
+        if let Some(args) = args {
+            for options in args {
+                match options {
+                    kcmdline::ModuleArg::KeyVal(key, val) => {
+                        if key.to_str().unwrap() == "whitelist" && val.to_str().unwrap() != "" {
+                            let paths_str = val.to_str().unwrap();
+                            paths = Some(
+                                paths_str
+                                    .split(',')
+                                    .map(|s| s.to_string())
+                                    .collect::<Vec<_>>(),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         use ktest::runner::{run_ktests, KtestResult};
-        match run_ktests(crate::console::print, fn_catch_unwind) {
+        match run_ktests(
+            &crate::console::print,
+            fn_catch_unwind,
+            paths.map(|v| v.into_iter()),
+        ) {
             KtestResult::Ok => exit_qemu(QemuExitCode::Success),
             KtestResult::Failed => exit_qemu(QemuExitCode::Failed),
         }
