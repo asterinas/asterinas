@@ -13,7 +13,7 @@ jinux-rights = { path = "../../libs/jinux-rights" }
 align_ext = { path = "../../../framework/libs/align_ext" }
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 bytes = { version = "1.4.0", default-features = false }
-pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
 bitflags = "1.3"
 spin = "0.9.4"
 ringbuf = { version = "0.3.2", default-features = false, features = ["alloc"] }

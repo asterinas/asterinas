@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 jinux-frame = { path = "../../../framework/jinux-frame" }
-pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
 typeflags-util = { path = "../typeflags-util" }
 jinux-rights-proc = { path = "../jinux-rights-proc" }
 jinux-rights = { path = "../jinux-rights" }

@@ -18,7 +18,7 @@ jinux-frame = { path = "../../../framework/jinux-frame" }
 jinux-util = { path = "../../libs/jinux-util" }
 jinux-rights = { path = "../../libs/jinux-rights" }
 typeflags-util = { path = "../../libs/typeflags-util" }
-pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
