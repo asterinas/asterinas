@@ -4,7 +4,7 @@ use alloc::{boxed::Box, string::ToString};
 use core::ffi::c_void;
 
 use crate::arch::qemu::{exit_qemu, QemuExitCode};
-use crate::{print, println};
+use crate::{early_print, early_println};
 use log::error;
 
 extern crate cfg_if;
@@ -36,8 +36,8 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     // If the exception is not caught (e.g. by ktest) and resumed,
     // then print the information and abort.
     error!("Uncaught panic!");
-    println!("{}", info);
-    println!("printing stack trace:");
+    early_println!("{}", info);
+    early_println!("printing stack trace:");
     print_stack_trace();
     abort();
 }
@@ -51,7 +51,7 @@ fn print_stack_trace() {
         data.counter += 1;
         let pc = _Unwind_GetIP(unwind_ctx);
         let fde_initial_address = _Unwind_FindEnclosingFunction(pc as *mut c_void) as usize;
-        println!(
+        early_println!(
             "{:4}: fn {:#18x} - pc {:#18x} / registers:",
             data.counter, fde_initial_address, pc,
         );
@@ -67,11 +67,11 @@ fn print_stack_trace() {
                 }
             }
             if i % 4 == 0 {
-                print!("\n    ");
+                early_print!("\n    ");
             }
-            print!(" {} {:#18x};", reg_name, reg_i);
+            early_print!(" {} {:#18x};", reg_name, reg_i);
         }
-        print!("\n\n");
+        early_print!("\n\n");
         UnwindReasonCode::NO_REASON
     }
     let mut data = CallbackData { counter: 0 };
