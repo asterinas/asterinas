@@ -18,6 +18,7 @@
 #![feature(trait_alias)]
 #![feature(register_tool)]
 #![feature(trait_upcasting)]
+#![feature(format_args_nl)]
 #![register_tool(component_access_control)]
 
 use crate::{
@@ -40,6 +41,7 @@ extern crate controlled;
 #[macro_use]
 extern crate ktest;
 
+pub mod console;
 pub mod device;
 pub mod driver;
 pub mod error;
