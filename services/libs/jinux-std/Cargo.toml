@@ -12,6 +12,7 @@ pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
 jinux-input = { path = "../../comps/input" }
 jinux-block = { path = "../../comps/block" }
 jinux-network = { path = "../../comps/network" }
+jinux-console = { path = "../../comps/console" }
 jinux-time = { path = "../../comps/time" }
 jinux-virtio = { path = "../../comps/virtio" }
 jinux-rights = { path = "../jinux-rights" }

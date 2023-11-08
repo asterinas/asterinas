@@ -2,6 +2,7 @@ use crate::queue::QueueError;
 use int_to_c_enum::TryFromInt;
 
 pub mod block;
+pub mod console;
 pub mod input;
 pub mod network;
 
