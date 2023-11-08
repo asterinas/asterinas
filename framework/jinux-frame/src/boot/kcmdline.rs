@@ -13,6 +13,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
+use log::warn;
 
 #[derive(PartialEq, Debug)]
 struct InitprocArgs {
@@ -82,7 +83,8 @@ impl From<&str> for KCmdlineArg {
         // by the analysis over the Backus–Naur form syntax tree.
         for arg in split_arg(cmdline) {
             // FIXME: The -kernel option in QEMU seems to add this string to the command line, which we skip for now.
-            if arg.starts_with("target/x86_64-custom/debug/jinux") {
+            if arg.starts_with("target/x86_64-custom/") {
+                warn!("Found kcmdline: {:?}, skipped for now.", arg);
                 continue;
             }
             // Cmdline => KernelArg "--" InitArg

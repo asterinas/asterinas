@@ -28,4 +28,6 @@ jobs:
         id: syscall_test_linux
         run: make run AUTO_TEST=syscall ENABLE_KVM=0 BOOT_PROTOCOL=linux RELEASE_MODE=1
 
-      # TODO: include the integration tests for MicroVM, which is not ready yet.
+      - name: Syscall Test (MicroVM)
+        id: syscall_test_microvm
+        run: make run AUTO_TEST=syscall ENABLE_KVM=0 BOOT_METHOD=microvm RELEASE_MODE=1
