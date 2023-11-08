@@ -5,14 +5,14 @@ pub fn print(args: Arguments) {
 }
 
 #[macro_export]
-macro_rules! print {
+macro_rules! early_print {
   ($fmt: literal $(, $($arg: tt)+)?) => {
     $crate::console::print(format_args!($fmt $(, $($arg)+)?))
   }
 }
 
 #[macro_export]
-macro_rules! println {
+macro_rules! early_println {
   ($fmt: literal $(, $($arg: tt)+)?) => {
     $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
   }
