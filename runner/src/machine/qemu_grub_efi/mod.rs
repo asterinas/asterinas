@@ -43,6 +43,10 @@ pub const NOIOMMU_DEVICE_ARGS: &[&str] = &[
     "virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
     "-device",
     "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
+    "-device",
+    "virtio-serial-pci,disable-legacy=on,disable-modern=off",
+    "-device",
+    "virtconsole,chardev=mux",
 ];
 
 pub const IOMMU_DEVICE_ARGS: &[&str] = &[
@@ -52,6 +56,10 @@ pub const IOMMU_DEVICE_ARGS: &[&str] = &[
     "virtio-keyboard-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
     "-device",
     "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device",
+    "virtio-serial-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device",
+    "virtconsole,chardev=mux",
     "-device",
     "intel-iommu,intremap=on,device-iotlb=on",
     "-device",

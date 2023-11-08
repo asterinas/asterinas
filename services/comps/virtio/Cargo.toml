@@ -14,6 +14,7 @@ align_ext = { path = "../../../framework/libs/align_ext" }
 jinux-input = { path = "../input" }
 jinux-block = { path = "../block" }
 jinux-network = { path = "../network" }
+jinux-console = { path = "../console" }
 jinux-frame = { path = "../../../framework/jinux-frame" }
 jinux-util = { path = "../../libs/jinux-util" }
 jinux-rights = { path = "../../libs/jinux-rights" }
@@ -21,6 +22,7 @@ typeflags-util = { path = "../../libs/typeflags-util" }
 pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
+bit_field = "0.10.1"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 smoltcp = { version = "0.9.1", default-features = false, features = [
     "alloc",
