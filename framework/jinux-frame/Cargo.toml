@@ -11,12 +11,12 @@ cfg-if = "1.0"
 spin = "0.9.4"
 volatile = { version = "0.4.5", features = ["unstable"] }
 buddy_system_allocator = "0.9.0"
-pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
 align_ext = { path = "../libs/align_ext" }
 intrusive-collections = "0.9.5"
 log = "0.4"
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
-trapframe = { git = "https://github.com/sdww0/trapframe-rs", rev = "e886763" }
+trapframe = { git = "https://github.com/jinzhao-dev/trapframe-rs", rev = "9758a83" }
 inherit-methods-macro = { git = "https://github.com/jinzhao-dev/inherit-methods-macro", rev = "98f7e3e" }
 tdx-guest = { path = "../libs/tdx-guest", optional = true }
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
