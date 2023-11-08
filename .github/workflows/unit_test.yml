@@ -18,7 +18,7 @@ jobs:
 
       - name: Ktest Unit Test
         id: ktest_unit_test
-        run: make run KTEST=all ENABLE_KVM=0 RELEASE_MODE=1
+        run: make run KTEST=1 ENABLE_KVM=0 RELEASE_MODE=1
 
       - name: Usermode Unit test
         id: usermode_unit_test

@@ -56,18 +56,26 @@
 //!
 //! Rust cfg is used to control the compilation of the test module. In cooperation
 //! with the `ktest` framework, the Makefile will set the `RUSTFLAGS` environment
-//! variable to pass the cfgs to all rustc invocations. To run the tests, you need
-//! to pass a list of cfgs to the Makefile, e.g.:
+//! variable to pass the cfgs to all rustc invocations. To run the tests, you simply
+//! need to set a list of cfgs by specifying `KTEST=1` to the Makefile, e.g.:
 //!
 //! ```bash
-//! make run KTEST=jinux-frame,jinux-std,align_ext,tdx-guest
+//! make run KTEST=1
 //! ```
 //!
-//! It is flexible to specify the cfgs for running the tests. The cfg value is not
-//! limited to crate names, enabling your imagination to configure running any subsets
-//! of tests in any crates. And to ease development, `#[if_cfg_ktest]` is expanded to
-//! a default conditional compilation setting:
-//! `#[cfg(all(ktest, any(ktest = "all", ktest = #crate_name)))]`
+//! Also, you can run a subset of tests by specifying the `KTEST_WHITELIST` variable.
+//! This is achieved by a whitelist filter on the test name.
+//!
+//! ```bash
+//! make run KTEST=1 KTEST_WHITELIST=failing_assertion,jinux_frame::test::expect_panic
+//! ```
+//!
+//! `KTEST_CRATES` variable is used to specify in which crates the tests to be run.
+//! This is achieved by conditionally compiling the test module using the `#[cfg]`.
+//!
+//! ```bash
+//! make run KTEST=1 KTEST_CRATES=jinux-frame
+//! ``
 //!
 //! We support the `#[should_panic]` attribute just in the same way as the standard
 //! library do, but the implementation is quite slow currently. Use it with cautious.
@@ -76,10 +84,12 @@
 //! change.
 //!
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![feature(panic_info_message)]
 
+pub mod path;
 pub mod runner;
+pub mod tree;
 
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
@@ -110,7 +120,7 @@ pub enum KtestError {
     Unknown,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct KtestItemInfo {
     pub module_path: &'static str,
     pub fn_name: &'static str,
@@ -120,7 +130,7 @@ pub struct KtestItemInfo {
     pub col: usize,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct KtestItem {
     fn_: fn() -> (),
     should_panic: (bool, Option<&'static str>),
@@ -214,8 +224,4 @@ impl core::iter::Iterator for KtestIter {
         self.index += 1;
         Some(ktest_item.clone())
     }
-}
-
-fn get_ktest_tests() -> (usize, KtestIter) {
-    (ktest_array!().len(), KtestIter::new())
 }
