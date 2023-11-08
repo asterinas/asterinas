@@ -4,7 +4,7 @@ use core::ops::{Deref, DerefMut};
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
-use crate::task::{disable_preempt, DisablePreemptGuard};
+use crate::task::DisablePreemptGuard;
 use crate::trap::disable_local;
 use crate::trap::DisabledLocalIrqGuard;
 
@@ -126,7 +126,7 @@ impl<T> RwLock<T> {
 
     /// Try acquire a read lock without disabling the local IRQs.
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
-        let guard = disable_preempt();
+        let guard = DisablePreemptGuard::lock();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER) == 0 {
             Some(RwLockReadGuard {
@@ -141,7 +141,7 @@ impl<T> RwLock<T> {
 
     /// Try acquire a write lock without disabling the local IRQs.
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
-        let guard = disable_preempt();
+        let guard = DisablePreemptGuard::lock();
         if self
             .lock
             .compare_exchange(0, WRITER, Acquire, Relaxed)
@@ -246,7 +246,9 @@ impl<'a, T> RwLockWriteGuard<'a, T> {
         let inner = self.inner;
         let inner_guard = match &mut self.inner_guard {
             InnerGuard::IrqGuard(irq_guard) => InnerGuard::IrqGuard(irq_guard.transfer_to()),
-            InnerGuard::PreemptGuard(preempt_guard) => InnerGuard::PreemptGuard(disable_preempt()),
+            InnerGuard::PreemptGuard(preempt_guard) => {
+                InnerGuard::PreemptGuard(DisablePreemptGuard::lock())
+            }
         };
         drop(self);
         RwLockReadGuard { inner, inner_guard }

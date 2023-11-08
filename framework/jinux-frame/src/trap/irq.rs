@@ -1,5 +1,5 @@
 use crate::arch::irq::{self, IrqCallbackHandle, NOT_USING_IRQ};
-use crate::task::{disable_preempt, DisablePreemptGuard};
+use crate::task::DisablePreemptGuard;
 use crate::{prelude::*, Error};
 
 use core::fmt::Debug;
@@ -124,7 +124,7 @@ impl DisabledLocalIrqGuard {
         if was_enabled {
             irq::disable_local();
         }
-        let preempt_guard = disable_preempt();
+        let preempt_guard = DisablePreemptGuard::hard_irq();
         Self {
             was_enabled,
             preempt_guard,
@@ -138,7 +138,7 @@ impl DisabledLocalIrqGuard {
         self.was_enabled = false;
         Self {
             was_enabled,
-            preempt_guard: disable_preempt(),
+            preempt_guard: DisablePreemptGuard::hard_irq(),
         }
     }
 }
