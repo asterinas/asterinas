@@ -4,7 +4,7 @@ use crate::config::REAL_TIME_TASK_PRI;
 /// Similar to Linux, a larger value represents a lower priority,
 /// with a range of 0 to 139. Priorities ranging from 0 to 99 are considered real-time,
 /// while those ranging from 100 to 139 are considered normal.
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Priority(u16);
 
 impl Priority {
@@ -43,5 +43,17 @@ impl Priority {
 
     pub const fn is_real_time(&self) -> bool {
         self.0 < REAL_TIME_TASK_PRI
+    }
+}
+
+impl PartialOrd for Priority {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        self.0.partial_cmp(&other.0).map(|ord| ord.reverse())
+    }
+}
+
+impl Ord for Priority {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.0.cmp(&other.0).reverse()
     }
 }
