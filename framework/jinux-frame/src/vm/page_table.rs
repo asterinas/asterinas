@@ -156,7 +156,7 @@ impl<T: PageTableEntryTrait> PageTable<T, UserMode> {
         unsafe { self.do_unmap(vaddr) }
     }
 
-    pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+    pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<T::F, PageTableError> {
         if is_kernel_vaddr(vaddr) {
             return Err(PageTableError::InvalidVaddr);
         }
@@ -201,12 +201,13 @@ impl<T: PageTableEntryTrait> PageTable<T, KernelMode> {
 
     /// Modify the flags mapped at `vaddr`. The `vaddr` should not be at the low address
     ///  (memory belonging to the user mode program).
+    /// If the modification succeeds, it will return the old flags of `vaddr`.
     ///
     /// # Safety
     ///
     /// Modifying kernel mappings is considered unsafe, and incorrect operation may cause crashes.
     /// User must take care of the consequences when using this API.
-    pub unsafe fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+    pub unsafe fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<T::F, PageTableError> {
         if is_user_vaddr(vaddr) {
             return Err(PageTableError::InvalidVaddr);
         }
@@ -319,22 +320,28 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         Ok(())
     }
 
-    /// Modify the flags mapped at `vaddr`
+    /// Modify the flags mapped at `vaddr`.
+    /// If the modification succeeds, it will return the old flags of `vaddr`.
     ///
     /// # Safety
     ///
     /// This function allows arbitrary modifications to the page table.
     /// Incorrect modifications may cause the kernel to crash
     /// (e.g., make the linear mapping visible to the user mode applications.).
-    unsafe fn do_protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+    unsafe fn do_protect(&mut self, vaddr: Vaddr, new_flags: T::F) -> Result<T::F, PageTableError> {
         let last_entry = self.page_walk(vaddr, false).unwrap();
-        trace!("Page Table: Protect vaddr:{:x?}, flags:{:x?}", vaddr, flags);
-        if last_entry.is_unused() || !last_entry.flags().is_present() {
+        let old_flags = last_entry.flags();
+        trace!(
+            "Page Table: Protect vaddr:{:x?}, flags:{:x?}",
+            vaddr,
+            new_flags
+        );
+        if last_entry.is_unused() || !old_flags.is_present() {
             return Err(PageTableError::InvalidModification);
         }
-        last_entry.update(last_entry.paddr(), flags);
+        last_entry.update(last_entry.paddr(), new_flags);
         tlb_flush(vaddr);
-        Ok(())
+        Ok(old_flags)
     }
 
     pub fn root_paddr(&self) -> Paddr {
