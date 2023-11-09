@@ -70,12 +70,26 @@ pub struct Task {
     cpu_affinity: CpuSet,
 }
 
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        self as *const _ == other as *const _
+    }
+}
+
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
+    pub need_resched: bool,
+
+    // For O(1) scheduler
+    // pub avg_sleep_time: u64,
+    pub dyn_prio: Priority,
+    pub first_time_slice: bool,
+    pub time_slice: u64,
+    pub active: bool,
 }
 
 impl Task {
@@ -134,6 +148,51 @@ impl Task {
 
     pub fn is_real_time(&self) -> bool {
         self.priority.is_real_time()
+        // todo: replaced with the dynamic one?
+    }
+
+    pub fn priority(&self) -> Priority {
+        self.priority
+    }
+
+    pub fn dyn_prio(&self) -> Priority {
+        self.inner_exclusive_access().dyn_prio
+    }
+
+    pub fn set_dyn_prio(&self, dyn_prio: Priority) {
+        self.inner_exclusive_access().dyn_prio = dyn_prio;
+    }
+
+    pub fn set_need_resched(&self) {
+        self.inner_exclusive_access().need_resched = true;
+    }
+
+    pub fn need_resched(&self) -> bool {
+        self.inner_exclusive_access().need_resched
+    }
+
+    pub fn deny_first_time_slice(&self) {
+        self.inner_exclusive_access().first_time_slice = false;
+    }
+
+    pub fn is_first_time_slice(&self) -> bool {
+        self.inner_exclusive_access().first_time_slice
+    }
+
+    pub fn set_time_slice(&self, time_slice: u64) {
+        self.inner_exclusive_access().time_slice = time_slice;
+    }
+
+    pub fn time_slice(&self) -> u64 {
+        self.inner_exclusive_access().time_slice
+    }
+
+    pub fn set_active(&self, active_or_expired: bool) {
+        self.inner_exclusive_access().active = active_or_expired;
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.inner_exclusive_access().active
     }
 }
 
@@ -146,6 +205,20 @@ pub enum TaskStatus {
     Sleeping,
     /// The task has exited.
     Exited,
+}
+
+impl TaskStatus {
+    pub fn is_runnable(&self) -> bool {
+        self == &TaskStatus::Runnable
+    }
+
+    pub fn is_sleeping(&self) -> bool {
+        self == &TaskStatus::Sleeping
+    }
+
+    pub fn is_exited(&self) -> bool {
+        self == &TaskStatus::Exited
+    }
 }
 
 /// Options to create or spawn a new task.
@@ -223,6 +296,12 @@ impl TaskOptions {
             task_inner: Mutex::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
+                need_resched: false,
+                dyn_prio: self.priority, // todo: calculate the dynamic priority
+                // avg_sleep_time: 0,
+                time_slice: 0,
+                first_time_slice: true,
+                active: false,
             }),
             exit_code: 0,
             kstack: KernelStack::new()?,
@@ -260,6 +339,12 @@ impl TaskOptions {
             task_inner: Mutex::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
+                need_resched: false,
+                dyn_prio: self.priority, // todo: calculate the dynamic priority
+                // avg_sleep_time: 0, // ?
+                time_slice: 0,
+                first_time_slice: true,
+                active: false,
             }),
             exit_code: 0,
             kstack: KernelStack::new()?,
