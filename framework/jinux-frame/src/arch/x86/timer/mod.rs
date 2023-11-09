@@ -12,6 +12,7 @@ use trapframe::TrapFrame;
 use crate::arch::x86::kernel;
 use crate::config::TIMER_FREQ;
 use crate::sync::SpinLock;
+use crate::task::scheduler_tick;
 use crate::trap::IrqLine;
 
 use self::apic::APIC_TIMER_CALLBACK;
@@ -65,6 +66,8 @@ fn timer_callback(trap_frame: &TrapFrame) {
     if APIC_TIMER_CALLBACK.is_completed() {
         APIC_TIMER_CALLBACK.get().unwrap().call(());
     }
+
+    scheduler_tick(current_ticks);
 }
 
 static TIMEOUT_LIST: Once<SpinLock<BinaryHeap<Arc<TimerCallback>>>> = Once::new();

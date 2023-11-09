@@ -66,27 +66,30 @@ fn panic_if_not_preemptible() {
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
 pub fn schedule() {
     // todo: preempt_disable
-    if let Some(task) = fetch_task() {
-        panic_if_not_preemptible();
-        switch_to_task(task);
+    let task = fetch_task();
+    if task.is_none() {
+        return;
+    };
+    let task = task.unwrap();
+    // panic_if_not_preemptible();
+    switch_to_task(task);
+}
+
+fn cur_should_be_preempted() -> bool {
+    if let Some(cur_task) = current_task() && cur_task.status().is_runnable() {
+        return GLOBAL_SCHEDULER
+            .lock_irq_disabled()
+            .should_preempt(&cur_task);
     }
+    false
 }
 
 pub fn preempt() {
     // disable interrupts to avoid nested preemption.
     let disable_irq = disable_local();
-    let Some(curr_task) = current_task() else {
-        return;
-    };
-    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(&curr_task) {
-        return;
+    if cur_should_be_preempted() {
+        schedule();
     }
-    let Some(next_task) = scheduler.dequeue() else {
-        return;
-    };
-    drop(scheduler);
-    switch_to_task(next_task);
 }
 
 /// call this function to switch to other task
@@ -120,4 +123,20 @@ fn switch_to_task(next_task: Arc<Task>) {
     unsafe {
         context_switch(current_task_cx_ptr, next_task_cx_ptr);
     }
+}
+
+/// Called by the timer handler every TICK.
+///
+/// # Arguments
+///
+/// * `cur_tick` - The current tick count.
+pub(crate) fn scheduler_tick(cur_tick: u64) {
+    let processor = PROCESSOR.lock();
+    let Some(cur_task) = processor.current() else {
+        return;
+    };
+    // update_cpu_clock(p, rq, now);
+    GLOBAL_SCHEDULER
+        .lock_irq_disabled()
+        .tick(cur_task.clone(), cur_tick);
 }
