@@ -133,3 +133,7 @@ pub const FAT_ENT_SIZE_BITS:u32 = 2;
 pub const EXFAT_TZ_VALID: u8 = 1<<7;
 
 pub const EXFAT_FILE_MIMIMUM_DENTRY: usize = 3;
+
+// UpcaseTable pub constants
+pub const UPCASE_MANDATORY_SIZE: usize = 128;
+pub const UNICODE_SIZE: usize = 2;

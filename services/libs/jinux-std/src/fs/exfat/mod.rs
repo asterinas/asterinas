@@ -7,3 +7,4 @@ mod fs;
 mod block_device;
 mod utils;
 mod fat;
+mod upcase_table;

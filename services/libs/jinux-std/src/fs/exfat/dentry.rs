@@ -126,8 +126,10 @@ impl ExfatFS{
         let primary_dentry = self.get_dentry(parent_dir, entry)?;
 
         let mut status = ExfatValidateDentryMode::Started;
+        // only implemented get dentries for a file now?
         if let ExfatDentry::File(file_dentry) = primary_dentry {
 
+            // read all the secondary dentries or the exact num as _type
             let num_entries : usize = if _type == ES_ALL_ENTRIES {
                 file_dentry.num_secondary as usize + 1
             } else {
@@ -156,6 +158,7 @@ impl ExfatFS{
         unimplemented!();
     }
 
+    /// read the {entry}th DENTRY after the position in 'parent_dir'(now only the cluster info valid?)
     pub fn get_dentry(&self,parent_dir:&ExfatChain,entry:u32) -> Result<ExfatDentry> {
         if parent_dir.dir == DIR_DELETED {
             return_errno_with_message!(Errno::EIO,"access to deleted dentry")
@@ -175,6 +178,7 @@ impl ExfatFS{
 
 
     ///return the offset of the specified entry.
+    /// get the physical address of the {entry}th DENTRY after the position in 'parent_dir'
     fn find_dentry_location(&self,parent_dir:&ExfatChain,entry:u32) -> Result<usize> {
         let off = (entry as usize) * (DENTRY_SIZE);
         let mut cur_cluster = parent_dir.dir;

@@ -49,8 +49,11 @@ impl From<FatValue> for u32 {
 // Directory pub structures 
 #[derive(Default,Debug,Clone)]
 pub struct ExfatChain {
+    // current cluster number
     pub dir: u32,
+    // what about this??? never used???
     pub size: u32,
+    // way of addressing(use FAT or not)
     pub flags: u8,
 }
 
