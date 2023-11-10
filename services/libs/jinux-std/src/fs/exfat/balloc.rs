@@ -1,19 +1,24 @@
 use crate::prelude::*;
-use bitvec::prelude::BitVec;
+use bitvec::prelude::*;
 use super::{fs::ExfatFS, dentry::{ExfatDentryIterator, ExfatDentry, ExfatBitmapDentry}, fat::ExfatChain, constants::{ALLOC_FAT_CHAIN, EXFAT_RESERVED_CLUSTERS, EXFAT_EOF_CLUSTER}};
 
-pub struct ExfatBitmap<'a>{
+
+#[derive(Debug,Default)]
+pub struct ExfatBitmap{
     /// start cluster of allocation bitmap
     map_cluster:u32,
     // TODO: use jinux_util::bitmap
     bitvec:BitVec<u8>,
-    fs:&'a ExfatFS
+    fs:Weak<ExfatFS>
 }
 
-impl<'a> ExfatBitmap<'a>{
-    pub fn load_bitmap(fs:&'a ExfatFS) -> Result<Self> {
-        let exfat_dentry_iterator = ExfatDentryIterator::from(fs,0,ExfatChain{
-            dir:fs.super_block().root_dir,
+impl ExfatBitmap{
+
+    
+    pub fn load_bitmap(fs:Weak<ExfatFS>) -> Result<Self> {
+        let root_dir = fs.upgrade().unwrap().super_block().root_dir;
+        let exfat_dentry_iterator = ExfatDentryIterator::from(fs.clone(),0,ExfatChain{
+            dir:root_dir,
             size:0,
             flags:ALLOC_FAT_CHAIN
         });
@@ -30,10 +35,14 @@ impl<'a> ExfatBitmap<'a>{
         return_errno!(Errno::EINVAL)
     }
 
-    fn allocate_bitmap(fs:&'a ExfatFS,dentry:&ExfatBitmapDentry) -> Result<Self> {
+    fn fs(&self) -> Arc<ExfatFS> {
+        self.fs.upgrade().unwrap()
+    }
+
+    fn allocate_bitmap(fs:Weak<ExfatFS>,dentry:&ExfatBitmapDentry) -> Result<Self> {
 
         let mut buf = vec![0;dentry.size as usize];
-        fs.block_device().read_at(fs.cluster_to_off(dentry.start_cluster), &mut buf)?;
+        fs.upgrade().unwrap().block_device().read_at(fs.upgrade().unwrap().cluster_to_off(dentry.start_cluster), &mut buf)?;
         
         Ok(ExfatBitmap{
             map_cluster:dentry.start_cluster,
@@ -51,7 +60,7 @@ impl<'a> ExfatBitmap<'a>{
     }
 
     fn set_bitmap(&mut self,cluster:u32, bit:bool, sync:bool) -> Result<()> {
-        if !self.fs.is_valid_cluster(cluster) {
+        if !self.fs().is_valid_cluster(cluster) {
             return_errno!(Errno::EINVAL)
         }
 
@@ -67,19 +76,19 @@ impl<'a> ExfatBitmap<'a>{
         let bytes:&[u8] = self.bitvec.as_raw_slice();
         let byte = bytes[byte_off];
         
-        let byte_off_on_disk = self.fs.cluster_to_off(self.map_cluster) + byte_off;
+        let byte_off_on_disk = self.fs().cluster_to_off(self.map_cluster) + byte_off;
         
-        let _ = self.fs.block_device().write_at(byte_off_on_disk, &[byte]);
+        let _ = self.fs().block_device().write_at(byte_off_on_disk, &[byte]);
         Ok(())
     }
 
     //Return the first free cluster
     pub fn find_free_bitmap(&self,cluster:u32) -> Result<u32>{
-        if !self.fs.is_valid_cluster(cluster) {
+        if !self.fs().is_valid_cluster(cluster) {
             return_errno!(Errno::EINVAL)
         }
 
-        for i in cluster..self.fs.super_block().num_clusters {
+        for i in cluster..self.fs().super_block().num_clusters {
             if self.bitvec.get(i as usize).is_none() {
                 return Ok(i);
             }

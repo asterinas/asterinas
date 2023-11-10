@@ -1,13 +1,11 @@
-use super::{block_device::BlockDevice, super_block::ExfatSuperBlock, inode::ExfatInode};
+use super::{block_device::BlockDevice, super_block::ExfatSuperBlock, inode::ExfatInode, balloc::ExfatBitmap};
 
 use crate::{fs::{exfat::constants::*, utils::SuperBlock,utils::{FileSystem, Inode}}, return_errno, return_errno_with_message,prelude::*};
 use alloc::boxed::Box;
 
-
 use log::warn;
 use super::super_block::ExfatBootSector;
 use super::utils::le16_to_cpu;
-
 
 pub(super) use jinux_frame::vm::VmIo;
 use crate::fs::utils::FsFlags;
@@ -18,6 +16,7 @@ pub struct ExfatFS{
     block_device: Box<dyn BlockDevice>,
     super_block: ExfatSuperBlock,
     root: Arc<ExfatInode>,
+    bitmap: Arc<ExfatBitmap>
     //TODO: Should add a no_std hashmap crate like hashbrown.
     //inode_cache : HashMap<Arc<ExfatInode>>
 }
@@ -26,15 +25,28 @@ impl ExfatFS{
     pub fn open(block_device:Box<dyn BlockDevice>) -> Result<Arc<Self>> {
         //Load the super_block
         let super_block = Self::read_super_block(block_device.as_ref())?;
+
+        let mut exfat_fs = Arc::new(ExfatFS{
+            block_device,
+            super_block,
+            root:Arc::new(ExfatInode::default()),
+            bitmap:Arc::new(ExfatBitmap::default())
+        });
+
+        
         // TODO: if the main superblock is corrupted, should we load the backup?
         
         //Verify boot region
-        Self::verify_boot_region(block_device.as_ref())?;
-
+        Self::verify_boot_region(exfat_fs.block_device())?;
+        
         //TODO: Load Upcase Table
 
-        //TODO: Load BitMap
+        let bitmap = ExfatBitmap::load_bitmap(Arc::downgrade(&exfat_fs))?;
+        let root: ExfatInode = Self::read_root(exfat_fs.block_device())?;
 
+        let fs_mut = Arc::get_mut(&mut exfat_fs).unwrap();
+        fs_mut.bitmap = Arc::new(bitmap);
+        fs_mut.root = Arc::new(root);
 
         //TODO: Handle UTF-8
 
@@ -42,16 +54,9 @@ impl ExfatFS{
 
         //TODO: Init NLS Table
 
-        let root = Self::read_root(block_device.as_ref())?;
-
         //TODO: Insert root to inode hash table
 
-        Ok(Arc::new(ExfatFS{
-            block_device,
-            super_block,
-            root:Arc::new(root),
-            
-        }))
+        Ok(exfat_fs)
     }
 
     fn read_root(block_device:&dyn BlockDevice ) -> Result<ExfatInode> {
@@ -156,11 +161,11 @@ impl ExfatFS{
 impl FileSystem for ExfatFS {
     fn sync(&self) -> Result<()> {
         // TODO:Sync
-        todo!()
+        todo!();
     }
 
     fn root_inode(&self) -> Arc<dyn Inode> {
-        self.root.clone()
+        todo!();
     }
 
     fn sb(&self) -> SuperBlock {
@@ -180,9 +185,7 @@ pub struct ExfatUniName {
     name_len: u8,
 }
 
-pub struct ExfatDentryNameBuf<'a> {
-    name_buf: &'a [u8],
-}
+
 
 //First empty entry hint information
 pub struct ExfatHintFemp {

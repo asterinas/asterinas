@@ -129,3 +129,7 @@ pub const EXFAT_MIN_TIMESTAMP_SECS: u64 = 315532800;
 pub const EXFAT_MAX_TIMESTAMP_SECS: u64 = 4354819199;
 pub const FAT_ENT_SIZE:u32 = 4;
 pub const FAT_ENT_SIZE_BITS:u32 = 2;
+
+pub const EXFAT_TZ_VALID: u8 = 1<<7;
+
+pub const EXFAT_FILE_MIMIMUM_DENTRY: usize = 3;

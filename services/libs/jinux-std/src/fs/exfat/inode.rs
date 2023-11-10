@@ -2,90 +2,225 @@ use crate::fs::exfat::fat::ExfatChain;
 
 use crate::fs::exfat::fs::ExfatFS;
 use crate::fs::utils::{Inode, InodeType};
+use crate::time::now_as_duration;
 
+use super::constants::*;
 use super::dentry::ExfatDentry;
+use super::utils::{convert_dos_time_to_duration, le16_to_cpu};
+use crate::events::IoEvents;
+use crate::fs::device::Device;
+use crate::fs::utils::DirentVisitor;
+use crate::fs::utils::InodeMode;
+use crate::fs::utils::IoctlCmd;
+use crate::prelude::*;
+use crate::process::signal::Poller;
+use crate::vm::vmo::Vmo;
+use alloc::string::String;
 use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 use jinux_rights::Full;
-use crate::fs::utils::InodeMode;
-use crate::fs::utils::DirentVisitor;
-use crate::events::IoEvents;
-use crate::process::signal::Poller;
-use crate::vm::vmo::Vmo;
-use crate::fs::device::Device;
-use alloc::string::String;
-use crate::fs::utils::IoctlCmd;
-use crate::prelude::*;
+
+use crate::time::ClockID;
+
+#[derive(Default, Debug)]
+pub struct ExfatDentryName(Vec<u16>);
+
+impl ExfatDentryName {
+    pub fn push(&mut self, value: u16) {
+        self.0.push(value);
+    }
+
+    pub fn from(name: &str) -> Self {
+        ExfatDentryName {
+            0: name.encode_utf16().collect(),
+        }
+    }
+
+    pub fn new() -> Self {
+        ExfatDentryName { 0: Vec::new() }
+    }
+
+    pub fn is_name_valid(&self) -> bool{
+        //TODO:verify the name
+        true
+
+    }
+}
+
+impl ToString for ExfatDentryName {
+    fn to_string(&self) -> String {
+        String::from_utf16_lossy(&self.0)
+    }
+}
+
 //In-memory rust object that represents a file or folder.
-#[derive(Default,Debug,Clone)]
-pub struct ExfatInode{
-    dir: ExfatChain,
-    entry: i32,
-    type_: u8,  
+#[derive(Default, Debug)]
+pub struct ExfatInode {
+    parent_dir: ExfatChain,
+    parent_entry: u32,
+
+    type_: u16,
+
     attr: u16,
     start_cluster: u32,
+
     flags: u8,
     version: u32,
 
-    i_size_ondisk: u64,
-    i_size_aligned: u64,
-    i_pos: u64,
+    //Logical size
+    size: usize,
+    //Allocated size
+    capacity: usize,
 
     //Usefor for folders
-    num_subdirs: u32,
+    //num_subdirs: u32,
 
     atime: Duration,
     mtime: Duration,
     ctime: Duration,
 
     //exFAT uses UTF-16 encoding, rust use utf-8 for string processing.
-    //namebuf: ExfatDentryNameBuf,
-    //TODO: should use weak ptr
+    name: ExfatDentryName,
+
     fs: Weak<ExfatFS>
-
-    // hint_bmap: ExfatHint,
-    // hint_stat: ExfatHint,
-    // hint_femp: ExfatHintFemp,
-
-    // cache_lru_lock: SpinLock,
-    // cache_lru: ListHead,
-    // nr_caches: i32,
-    // cache_valid_id: u32,
-
-    
-    // i_hash_fat: HlistNode,
-    // truncate_lock: RwSemaphore,
-    
-    // vfs_inode: Inode,
-    // i_crtime: Timespec,
 }
 
-
-impl TryFrom<&[ExfatDentry]> for ExfatInode {
-    type Error = crate::error::Error;
-    fn try_from(dentries: &[ExfatDentry]) -> Result<Self>{
-        unimplemented!()
-        // let mut ret:ExfatInode;
-        // //dentry 0 must be file/dir dentry
-        // if let ExfatDentry::File(dentry) = dentries[0] {
-        //     ret.type_ = dentry.dentry_type;
-        //     ret.attr = dentry.attribute;
-        //     //TODO: handle time conversion from DOS format.
-        //     todo!("Implement time conversion");
-        //     todo!("Read Name buf");
-        //     todo!("Read Stream dentry")
-        // } else {
-        //     return_errno_with_message!(Errno::EINVAL,"Not a file dentry")
-        // }
-        
+impl ExfatInode {
+    pub fn fs(&self) -> Arc<ExfatFS> {
+        self.fs.upgrade().unwrap()
     }
+
+    fn alloc_inode(fs: Arc<ExfatFS>, name: &str, type_: InodeType) -> Result<Arc<Self>> {
+        unimplemented!()
+    }
+
+    fn lookup_inode(&self, name: &str) {}
+
+    fn iterate_inode(&self) {}
+
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        unimplemented!();
+    }
+
+    fn allocate_size_up_to(&self, offset: usize) -> Result<()> {
+        unimplemented!();
+    }
+
+    fn update_dentry(&self) -> Result<()> {
+        unimplemented!();
+    }
+
+    fn write_at(&mut self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        if offset + buf.len() > self.capacity {
+            self.allocate_size_up_to(offset + buf.len())?;
+        }
+
+        if offset + buf.len() > self.size {
+            self.size = offset + buf.len();
+        }
+        let now = now_as_duration(&ClockID::CLOCK_REALTIME)?;
+
+        self.mtime = now;
+        self.atime = now;
+        unimplemented!();
+    }
+
+    fn read_inode(fs: Arc<ExfatFS>, p_dir: ExfatChain, entry: u32) -> Result<Arc<Self>> {
+        let dentry = fs.get_dentry(&p_dir, entry)?;
+        if let ExfatDentry::File(file) = dentry {
+
+            let type_ = if (file.attribute & ATTR_SUBDIR) != 0 {
+                TYPE_DIR
+            } else {
+                TYPE_FILE
+            };
+
+            let ctime = convert_dos_time_to_duration(
+                file.create_tz,
+                file.create_date,
+                file.create_time,
+                file.create_time_cs,
+            )?;
+            let mtime = convert_dos_time_to_duration(
+                file.modify_tz,
+                file.modify_date,
+                file.modify_time,
+                file.modify_time_cs,
+            )?;
+            let atime = convert_dos_time_to_duration(
+                file.access_tz,
+                file.access_date,
+                file.access_time,
+                0,
+            )?;
+
+            let dentry_set = fs.get_dentry_set(&p_dir, entry, ES_ALL_ENTRIES)?;
+
+            if dentry_set.len() < EXFAT_FILE_MIMIMUM_DENTRY {
+                return_errno_with_message!(Errno::EINVAL, "Invalid dentry length")
+            }
+
+            //STREAM Dentry must immediately follows file dentry
+            if let ExfatDentry::Stream(stream) = dentry_set[1] {
+                let size = stream.valid_size as usize;
+                let start_cluster = stream.start_cluster;
+                //Read name from dentry
+                let name = Self::read_name_from_dentry_set(&dentry_set);
+                if !name.is_name_valid() {
+                    return_errno_with_message!(Errno::EINVAL, "Invalid name")
+                }
+
+                let fs_weak = Arc::downgrade(&fs);
+
+                return Ok(Arc::new(ExfatInode {
+                    parent_dir: p_dir,
+                    parent_entry: entry,
+                    type_: type_,
+                    attr: file.attribute,
+                    size,
+                    start_cluster,
+                    flags: 0,
+                    version: 0,
+                    capacity: 0,
+                    atime,
+                    mtime,
+                    ctime,
+                    name,
+                    fs: fs_weak,
+                }));
+            } else {
+                return_errno_with_message!(Errno::EINVAL, "Invalid stream dentry")
+            }
+        }
+        return_errno_with_message!(Errno::EINVAL,"Invalid file dentry")
+    }
+
+    fn read_name_from_dentry_set(dentry_set: &[ExfatDentry]) -> ExfatDentryName {
+        let mut name: ExfatDentryName = ExfatDentryName::new();
+        for i in 2..dentry_set.len() {
+            if let ExfatDentry::Name(name_dentry) = dentry_set[i] {
+                for character in name_dentry.unicode_0_14 {
+                    if character == 0 {
+                        return name;
+                    } else {
+                        name.push(le16_to_cpu(character));
+                    }
+                }
+            } else {
+                //End of name dentry
+                break;
+            }
+        }
+        name
+    }
+
+
+    
 }
 
-
-
-impl Inode for ExfatInode{
+impl Inode for ExfatInode {
     fn len(&self) -> usize {
-        todo!()
+        self.size as usize
     }
 
     fn resize(&self, new_size: usize) {
@@ -109,7 +244,7 @@ impl Inode for ExfatInode{
     }
 
     fn atime(&self) -> core::time::Duration {
-        todo!()
+        self.atime
     }
 
     fn set_atime(&self, time: core::time::Duration) {
@@ -117,7 +252,7 @@ impl Inode for ExfatInode{
     }
 
     fn mtime(&self) -> core::time::Duration {
-        todo!()
+        self.mtime
     }
 
     fn set_mtime(&self, time: core::time::Duration) {
@@ -125,7 +260,7 @@ impl Inode for ExfatInode{
     }
 
     fn fs(&self) -> alloc::sync::Arc<dyn crate::fs::utils::FileSystem> {
-        todo!()
+        self.fs()
     }
 
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
@@ -208,7 +343,6 @@ impl Inode for ExfatInode{
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }
-
 
     /// Returns whether a VFS dentry for this inode should be put into the dentry cache.
     ///

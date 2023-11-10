@@ -55,15 +55,15 @@ pub enum ExfatValidateDentryMode {
 	GetBenignSecEntry,
 }
 
-pub struct ExfatDentryIterator<'a>{
-    fs: &'a ExfatFS,
+pub struct ExfatDentryIterator{
+    fs: Weak<ExfatFS>,
     entry: u32,
     chain: ExfatChain,
     has_error : bool
 }
 
-impl<'a> ExfatDentryIterator<'a> {
-    pub fn from(fs: &'a ExfatFS,entry: u32, chain: ExfatChain) -> Self {
+impl ExfatDentryIterator {
+    pub fn from(fs: Weak<ExfatFS>,entry: u32, chain: ExfatChain) -> Self {
             Self{
                 fs,
                 entry,
@@ -73,14 +73,14 @@ impl<'a> ExfatDentryIterator<'a> {
         }
 }
 
-impl<'a> Iterator for ExfatDentryIterator<'a> {
+impl Iterator for ExfatDentryIterator {
     type Item = Result<ExfatDentry>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.chain.dir == EXFAT_EOF_CLUSTER || self.has_error{
             None
         } else {
-            let dentry_result = self.fs.get_dentry(&self.chain, self.entry);
+            let dentry_result = self.fs.upgrade().unwrap().get_dentry(&self.chain, self.entry);
 
             //Should stop iterating if the result is Err. 
             if dentry_result.is_err() {
@@ -88,15 +88,14 @@ impl<'a> Iterator for ExfatDentryIterator<'a> {
                 return Some(dentry_result);
             }
 
-
             //Stop iterating if the dentry is unused
             match dentry_result.unwrap() {
                 ExfatDentry::UnUsed => None,
                 dentry => {
                     // Instead of calling get_dentry directly, update the chain and entry of the iterator to reduce the read of FAT table. 
-                    if self.entry + 1 == self.fs.super_block().dentries_per_clu {
+                    if self.entry + 1 == self.fs.upgrade().unwrap().super_block().dentries_per_clu {
                         self.entry = 0;
-                        let next_fat = self.fs.get_next_fat(self.chain.dir);
+                        let next_fat = self.fs.upgrade().unwrap().get_next_fat(self.chain.dir);
                         if next_fat.is_err() {
                             self.has_error = true;
                             return Some(Result::Err(next_fat.unwrap_err()));
@@ -252,9 +251,9 @@ pub struct ExfatStreamDentry {
 #[repr(C, packed)]
 #[derive(Clone,Debug,Default,Copy,Pod)]
 pub struct ExfatNameDentry {
-    dentry_type: u8,
-    flags: u8,
-    unicode_0_14: [u16; EXFAT_FILE_NAME_LEN],
+    pub(super) dentry_type: u8,
+    pub(super) flags: u8,
+    pub(super) unicode_0_14: [u16; EXFAT_FILE_NAME_LEN],
 }
 
 #[repr(C, packed)]
