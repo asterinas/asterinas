@@ -6,10 +6,13 @@ use lending_iterator::LendingIterator;
 fn test_decoder() {
     use std::process::{Command, Stdio};
 
+    let manifest_path = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_path = std::path::Path::new(manifest_path.as_str());
+
     // Prepare the cpio buffer
     let buffer = {
         let mut find_process = Command::new("find")
-            .arg(".")
+            .arg(manifest_path.as_os_str())
             .stdout(Stdio::piped())
             .spawn()
             .expect("find command is not started");
@@ -26,38 +29,35 @@ fn test_decoder() {
     };
 
     let mut decoder = CpioDecoder::new(buffer.as_slice());
-    // 1st entry
+    // 1st entry must be the root entry
     let entry = {
         let entry_result = decoder.next().unwrap();
         entry_result.unwrap()
     };
-    assert!(entry.name() == ".");
-    assert!(entry.metadata().file_type() == FileType::Dir);
-    assert!(entry.metadata().ino() > 0);
-    // 2nd entry
-    let entry = {
-        let entry_result = decoder.next().unwrap();
-        entry_result.unwrap()
-    };
-    assert!(entry.name() == "src");
+    assert_eq!(entry.name(), manifest_path.as_os_str());
     assert!(entry.metadata().file_type() == FileType::Dir);
     assert!(entry.metadata().ino() > 0);
 
-    // 3rd entry
-    let mut entry = {
-        let entry_result = decoder.next().unwrap();
-        entry_result.unwrap()
-    };
-    assert!(
-        entry.name() == "src/lib.rs"
-            || entry.name() == "src/test.rs"
-            || entry.name() == "src/error.rs"
-    );
-    assert!(entry.metadata().file_type() == FileType::File);
-    assert!(entry.metadata().ino() > 0);
-    assert!(entry.metadata().size() > 0);
-    let mut buffer: Vec<u8> = Vec::new();
-    assert!(entry.read_all(&mut buffer).is_ok());
+    // Other entries
+    while let Some(decode_result) = decoder.next() {
+        let mut entry = decode_result.unwrap();
+        assert!(entry.metadata().ino() > 0);
+        if entry.name() == manifest_path.join("src").as_os_str() {
+            assert!(entry.metadata().file_type() == FileType::Dir);
+            assert!(entry.metadata().ino() > 0);
+        } else if entry.name() == manifest_path.join("src").join("lib.rs").as_os_str()
+            || entry.name() == manifest_path.join("src").join("test.rs").as_os_str()
+            || entry.name() == manifest_path.join("src").join("error.rs").as_os_str()
+            || entry.name() == manifest_path.join("Cargo.toml").as_os_str()
+        {
+            assert!(entry.metadata().file_type() == FileType::File);
+            assert!(entry.metadata().size() > 0);
+            let mut buffer: Vec<u8> = Vec::new();
+            assert!(entry.read_all(&mut buffer).is_ok());
+        } else {
+            panic!("unexpected entry: {:?}", entry.name());
+        }
+    }
 }
 
 #[test]

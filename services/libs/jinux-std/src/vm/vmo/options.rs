@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};
+use jinux_frame::vm::{VmAllocOptions, VmFrame};
 use jinux_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 
@@ -143,9 +143,9 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
-        let mut vm_alloc_option = VmAllocOptions::new(frames_num);
-        vm_alloc_option.is_contiguous(true);
-        let frames = VmFrameVec::allocate(&vm_alloc_option)?;
+        let frames = VmAllocOptions::new(frames_num)
+            .is_contiguous(true)
+            .alloc()?;
         let mut committed_pages = BTreeMap::new();
         for (idx, frame) in frames.into_iter().enumerate() {
             committed_pages.insert(idx * PAGE_SIZE, frame);
@@ -516,13 +516,13 @@ impl VmoChildType for VmoSliceChild {}
 pub struct VmoCowChild;
 impl VmoChildType for VmoCowChild {}
 
-#[cfg(test)]
+#[if_cfg_ktest]
 mod test {
     use super::*;
     use jinux_frame::vm::VmIo;
     use jinux_rights::Full;
 
-    #[test]
+    #[ktest]
     fn alloc_vmo() {
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
         assert!(vmo.size() == PAGE_SIZE);
@@ -530,9 +530,7 @@ mod test {
         assert!(vmo.read_val::<usize>(0).unwrap() == 0);
     }
 
-    #[test]
-    #[should_panic]
-    /// FIXME: alloc continuous frames is not supported now
+    #[ktest]
     fn alloc_continuous_vmo() {
         let vmo = VmoOptions::<Full>::new(10 * PAGE_SIZE)
             .flags(VmoFlags::CONTIGUOUS)
@@ -541,7 +539,7 @@ mod test {
         assert!(vmo.size() == 10 * PAGE_SIZE);
     }
 
-    #[test]
+    #[ktest]
     fn write_and_read() {
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
         let val = 42u8;
@@ -555,7 +553,7 @@ mod test {
         assert!(read_val == 0x78563412)
     }
 
-    #[test]
+    #[ktest]
     fn slice_child() {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
         let parent_dup = parent.dup().unwrap();
@@ -570,7 +568,7 @@ mod test {
         assert!(parent.read_val::<u32>(99).unwrap() == 0x1234);
     }
 
-    #[test]
+    #[ktest]
     fn cow_child() {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
         let parent_dup = parent.dup().unwrap();
@@ -596,7 +594,7 @@ mod test {
         assert!(cow_child.read_val::<u32>(PAGE_SIZE + 10).unwrap() == 12345);
     }
 
-    #[test]
+    #[ktest]
     fn resize() {
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE)
             .flags(VmoFlags::RESIZABLE)

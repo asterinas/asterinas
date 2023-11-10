@@ -1,7 +1,4 @@
-use super::{
-    frame::VmFrameFlags,
-    frame_allocator, paddr_to_vaddr, VmAllocOptions, VmFrameVec, {Paddr, Vaddr},
-};
+use super::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions};
 use crate::{
     arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry},
     config::{ENTRY_COUNT, PAGE_SIZE},
@@ -127,7 +124,7 @@ pub struct PageTable<T: PageTableEntryTrait, M = UserMode> {
 
 impl<T: PageTableEntryTrait> PageTable<T, UserMode> {
     pub fn new(config: PageTableConfig) -> Self {
-        let root_frame = frame_allocator::alloc_zero(VmFrameFlags::empty()).unwrap();
+        let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
         Self {
             root_paddr: root_frame.start_paddr(),
             tables: vec![root_frame],
@@ -279,10 +276,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
                     return None;
                 }
                 // Create next table
-                let frame = VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false))
-                    .unwrap()
-                    .pop()
-                    .unwrap();
+                let frame = VmAllocOptions::new(1).alloc_single().unwrap();
                 // Default flags: read, write, user, present
                 let flags = T::F::new()
                     .set_present(true)

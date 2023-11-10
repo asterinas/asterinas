@@ -13,6 +13,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
+use log::warn;
 
 #[derive(PartialEq, Debug)]
 struct InitprocArgs {
@@ -21,11 +22,17 @@ struct InitprocArgs {
     envp: Vec<CString>,
 }
 
+#[derive(PartialEq, Debug, Clone)]
+pub enum ModuleArg {
+    Arg(CString),
+    KeyVal(CString, CString),
+}
+
 /// The struct to store the parsed kernel command-line arguments.
 #[derive(Debug)]
 pub struct KCmdlineArg {
     initproc: InitprocArgs,
-    module_args: BTreeMap<String, Vec<CString>>,
+    module_args: BTreeMap<String, Vec<ModuleArg>>,
 }
 
 // Define get APIs.
@@ -43,7 +50,7 @@ impl KCmdlineArg {
         &self.initproc.envp
     }
     /// Get the argument vector of a kernel module.
-    pub fn get_module_args(&self, module: &str) -> Option<&Vec<CString>> {
+    pub fn get_module_args(&self, module: &str) -> Option<&Vec<ModuleArg>> {
         self.module_args.get(module)
     }
 }
@@ -82,7 +89,8 @@ impl From<&str> for KCmdlineArg {
         // by the analysis over the Backus–Naur form syntax tree.
         for arg in split_arg(cmdline) {
             // FIXME: The -kernel option in QEMU seems to add this string to the command line, which we skip for now.
-            if arg.starts_with("target/x86_64-custom/debug/jinux") {
+            if arg.starts_with("target/x86_64-custom/") {
+                warn!("Found kcmdline: {:?}, skipped for now.", arg);
                 continue;
             }
             // Cmdline => KernelArg "--" InitArg
@@ -119,9 +127,12 @@ impl From<&str> for KCmdlineArg {
             };
             if let Some(modname) = node {
                 let modarg = if let Some(v) = value {
-                    CString::new(option.to_string() + "=" + v).unwrap()
+                    ModuleArg::KeyVal(
+                        CString::new(option.to_string()).unwrap(),
+                        CString::new(v).unwrap(),
+                    )
                 } else {
-                    CString::new(option).unwrap()
+                    ModuleArg::Arg(CString::new(option).unwrap())
                 };
                 result
                     .module_args

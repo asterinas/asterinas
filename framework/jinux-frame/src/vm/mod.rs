@@ -12,13 +12,15 @@ pub(crate) mod heap_allocator;
 mod io;
 mod memory_set;
 mod offset;
+mod options;
 pub(crate) mod page_table;
 mod space;
 
 use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
 
-pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
+pub use self::frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter};
 pub use self::io::VmIo;
+pub use self::options::VmAllocOptions;
 pub use self::space::{VmMapOptions, VmPerm, VmSpace};
 
 pub use self::{

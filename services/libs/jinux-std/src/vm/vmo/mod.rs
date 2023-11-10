@@ -153,10 +153,7 @@ impl VmoInner {
             return Ok(());
         }
         let frame = match &self.pager {
-            None => {
-                let vm_alloc_option = VmAllocOptions::new(1);
-                VmFrameVec::allocate(&vm_alloc_option)?.pop().unwrap()
-            }
+            None => VmAllocOptions::new(1).alloc_single()?,
             Some(pager) => pager.commit_page(offset)?,
         };
         self.insert_frame(page_idx, frame);
@@ -205,8 +202,7 @@ impl VmoInner {
 
         if page_idx >= inherited_frames.len() {
             if self.is_cow {
-                let options = VmAllocOptions::new(1);
-                return Ok(VmFrameVec::allocate(&options)?.pop().unwrap());
+                return Ok(VmAllocOptions::new(1).alloc_single()?);
             }
             return_errno_with_message!(Errno::EINVAL, "the page is not inherited from parent");
         }
@@ -217,10 +213,7 @@ impl VmoInner {
             return Ok(inherited_frame);
         }
 
-        let frame = {
-            let options = VmAllocOptions::new(1);
-            VmFrameVec::allocate(&options)?.pop().unwrap()
-        };
+        let frame = VmAllocOptions::new(1).alloc_single()?;
         frame.copy_from_frame(&inherited_frame);
         Ok(frame)
     }
