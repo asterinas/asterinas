@@ -1,5 +1,5 @@
 use crate::fs::file_handle::FileLike;
-use crate::net::socket::ip::{DatagramSocket, StreamSocket};
+use crate::net::socket::ip::{DatagramSocket, StreamSocket /*, RawSocket*/};
 use crate::net::socket::unix::UnixStreamSocket;
 use crate::util::net::{Protocol, SaFamily, SockFlags, SockType, SOCK_TYPE_MASK};
 use crate::{log_syscall_entry, prelude::*};
@@ -30,6 +30,9 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
         (SaFamily::AF_INET, SockType::SOCK_DGRAM, Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP) => {
             Arc::new(DatagramSocket::new(nonblocking)) as Arc<dyn FileLike>
         }
+        // (SaFamily::AF_INET, SockType::SOCK_RAW, _) => {
+        //     Arc::new(RawSocket::new(nonblocking, protocol)) as Arc<dyn FileLike>
+        // }
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };
     let fd = {

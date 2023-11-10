@@ -7,7 +7,7 @@ use super::{IpAddress, IpEndpoint};
 
 pub type RawTcpSocket = smoltcp::socket::tcp::Socket<'static>;
 pub type RawUdpSocket = smoltcp::socket::udp::Socket<'static>;
-pub type RawSocket = smoltcp::socket::raw::Socket<'static>;
+pub type RawIpSocket = smoltcp::socket::raw::Socket<'static>;
 pub type RawSocketHandle = smoltcp::iface::SocketHandle;
 
 pub struct AnyUnboundSocket {
@@ -19,7 +19,7 @@ pub struct AnyUnboundSocket {
 pub(super) enum AnyRawSocket {
     Tcp(RawTcpSocket),
     Udp(RawUdpSocket),
-    Raw(RawSocket),
+    Raw(RawIpSocket),
 }
 
 pub(super) enum SocketFamily {
@@ -57,6 +57,25 @@ impl AnyUnboundSocket {
         };
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Udp(raw_udp_socket),
+            pollee: Pollee::new(IoEvents::empty()),
+        }
+    }
+
+    pub fn new_raw(ip_version: smoltcp::wire::IpVersion, ip_protocol: smoltcp::wire::IpProtocol) -> Self {
+        let raw_socket = {
+            let metadata = smoltcp::socket::raw::PacketMetadata::EMPTY;
+            let rx_buffer = smoltcp::socket::raw::PacketBuffer::new(
+                vec![metadata; RAW_METADATA_LEN],
+                vec![0u8; RAW_RECEIVE_PAYLOAD_LEN],
+            );
+            let tx_buffer = smoltcp::socket::raw::PacketBuffer::new(
+                vec![metadata; RAW_METADATA_LEN],
+                vec![0u8; RAW_RECEIVE_PAYLOAD_LEN],
+            );
+            RawIpSocket::new(ip_version, ip_protocol, rx_buffer, tx_buffer)
+        };
+        AnyUnboundSocket {
+            socket_family: AnyRawSocket::Raw(raw_socket),
             pollee: Pollee::new(IoEvents::empty()),
         }
     }
@@ -153,7 +172,7 @@ impl AnyBoundSocket {
                 update_udp_socket_state(udp_socket, pollee);
             }
             SocketFamily::Raw => {
-                let raw_socket = sockets.get::<RawSocket>(*handle);
+                let raw_socket = sockets.get::<RawIpSocket>(*handle);
                 update_raw_socket_state(raw_socket, pollee);
             }
         }
@@ -233,7 +252,7 @@ fn update_udp_socket_state(socket: &RawUdpSocket, pollee: &Pollee) {
     }
 }
 
-fn update_raw_socket_state(socket: &RawSocket, pollee: &Pollee) {
+fn update_raw_socket_state(socket: &RawIpSocket, pollee: &Pollee) {
     if socket.can_recv() {
         pollee.add_events(IoEvents::IN);
     } else {
@@ -255,3 +274,8 @@ const SEND_BUF_LEN: usize = 65536;
 const UDP_METADATA_LEN: usize = 256;
 const UDP_SEND_PAYLOAD_LEN: usize = 65536;
 const UDP_RECEIVE_PAYLOAD_LEN: usize = 65536;
+
+// For RAW
+const RAW_METADATA_LEN: usize = 256;
+const RAW_SEND_PAYLOAD_LEN: usize = 65536;
+const RAW_RECEIVE_PAYLOAD_LEN: usize = 65536;
