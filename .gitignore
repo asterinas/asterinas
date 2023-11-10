@@ -21,3 +21,5 @@ qemu.log
 
 # packet dump file
 virtio-net.pcap
+
+.vscode/

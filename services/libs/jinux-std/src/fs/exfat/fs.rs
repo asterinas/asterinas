@@ -3,7 +3,6 @@ use super::{block_device::BlockDevice, super_block::ExfatSuperBlock, inode::Exfa
 use crate::{fs::{exfat::constants::*, utils::SuperBlock,utils::{FileSystem, Inode}}, return_errno, return_errno_with_message,prelude::*};
 use alloc::boxed::Box;
 
-use log::warn;
 use super::super_block::ExfatBootSector;
 use super::utils::le16_to_cpu;
 
@@ -29,7 +28,7 @@ impl ExfatFS{
         let mut exfat_fs = Arc::new(ExfatFS{
             block_device,
             super_block,
-            root:Arc::new(ExfatInode::default()),
+            root:ExfatInode::new(),
             bitmap:Arc::new(ExfatBitmap::default())
         });
 

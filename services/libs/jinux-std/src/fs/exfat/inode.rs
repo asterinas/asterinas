@@ -1,8 +1,7 @@
 use crate::fs::exfat::fat::ExfatChain;
 
 use crate::fs::exfat::fs::ExfatFS;
-use crate::fs::utils::{Inode, InodeType};
-use crate::time::now_as_duration;
+use crate::fs::utils::{Inode, InodeType, PageCache};
 
 use super::constants::*;
 use super::dentry::ExfatDentry;
@@ -17,10 +16,8 @@ use crate::process::signal::Poller;
 use crate::vm::vmo::Vmo;
 use alloc::string::String;
 use core::time::Duration;
-use jinux_frame::vm::VmFrame;
+use jinux_frame::vm::{VmFrame, VmIo};
 use jinux_rights::Full;
-
-use crate::time::ClockID;
 
 #[derive(Default, Debug)]
 pub struct ExfatDentryName(Vec<u16>);
@@ -54,7 +51,7 @@ impl ToString for ExfatDentryName {
 }
 
 //In-memory rust object that represents a file or folder.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct ExfatInode {
     parent_dir: ExfatChain,
     parent_entry: u32,
@@ -82,48 +79,37 @@ pub struct ExfatInode {
     //exFAT uses UTF-16 encoding, rust use utf-8 for string processing.
     name: ExfatDentryName,
 
+    page_cache:PageCache,
+
     fs: Weak<ExfatFS>
 }
 
 impl ExfatInode {
+
+    pub(super) fn new() -> Arc<Self> {
+        let inode = Arc::new_cyclic(|weak_self| Self {
+            parent_dir: ExfatChain::default(),
+            parent_entry: 0,
+            type_: 0,
+            attr: 0,
+            size:0,
+            start_cluster:0,
+            flags: 0,
+            version: 0,
+            capacity: 0,
+            atime:Duration::default(),
+            mtime:Duration::default(),
+            ctime:Duration::default(),
+            name:ExfatDentryName::default(),
+            fs: Weak::default(),
+            page_cache:PageCache::new(weak_self.clone() as _).unwrap()
+        });
+        inode
+    }
     pub fn fs(&self) -> Arc<ExfatFS> {
         self.fs.upgrade().unwrap()
     }
 
-    fn alloc_inode(fs: Arc<ExfatFS>, name: &str, type_: InodeType) -> Result<Arc<Self>> {
-        unimplemented!()
-    }
-
-    fn lookup_inode(&self, name: &str) {}
-
-    fn iterate_inode(&self) {}
-
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        unimplemented!();
-    }
-
-    fn allocate_size_up_to(&self, offset: usize) -> Result<()> {
-        unimplemented!();
-    }
-
-    fn update_dentry(&self) -> Result<()> {
-        unimplemented!();
-    }
-
-    fn write_at(&mut self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        if offset + buf.len() > self.capacity {
-            self.allocate_size_up_to(offset + buf.len())?;
-        }
-
-        if offset + buf.len() > self.size {
-            self.size = offset + buf.len();
-        }
-        let now = now_as_duration(&ClockID::CLOCK_REALTIME)?;
-
-        self.mtime = now;
-        self.atime = now;
-        unimplemented!();
-    }
 
     fn read_inode(fs: Arc<ExfatFS>, p_dir: ExfatChain, entry: u32) -> Result<Arc<Self>> {
         let dentry = fs.get_dentry(&p_dir, entry)?;
@@ -164,6 +150,7 @@ impl ExfatInode {
             if let ExfatDentry::Stream(stream) = dentry_set[1] {
                 let size = stream.valid_size as usize;
                 let start_cluster = stream.start_cluster;
+                let flags = stream.flags;
                 //Read name from dentry
                 let name = Self::read_name_from_dentry_set(&dentry_set);
                 if !name.is_name_valid() {
@@ -172,14 +159,14 @@ impl ExfatInode {
 
                 let fs_weak = Arc::downgrade(&fs);
 
-                return Ok(Arc::new(ExfatInode {
+                return Ok(Arc::new_cyclic(|weak_self|ExfatInode {
                     parent_dir: p_dir,
                     parent_entry: entry,
                     type_: type_,
                     attr: file.attribute,
                     size,
                     start_cluster,
-                    flags: 0,
+                    flags: flags,
                     version: 0,
                     capacity: 0,
                     atime,
@@ -187,6 +174,7 @@ impl ExfatInode {
                     ctime,
                     name,
                     fs: fs_weak,
+                    page_cache:PageCache::new(weak_self.clone() as _).unwrap()
                 }));
             } else {
                 return_errno_with_message!(Errno::EINVAL, "Invalid stream dentry")
@@ -214,6 +202,13 @@ impl ExfatInode {
         name
     }
 
+    pub fn resize(&self,new_size:usize) -> Result<()> {
+        todo!()
+    }
+
+    pub fn page_cache(&self) -> &PageCache {
+        &self.page_cache
+    }
 
     
 }
@@ -232,7 +227,11 @@ impl Inode for ExfatInode {
     }
 
     fn type_(&self) -> crate::fs::utils::InodeType {
-        todo!()
+        match self.type_{
+            TYPE_FILE => InodeType::File,
+            TYPE_DIR => InodeType::Dir,
+            _ => todo!()
+        }
     }
 
     fn mode(&self) -> crate::fs::utils::InodeMode {
@@ -271,12 +270,24 @@ impl Inode for ExfatInode {
         todo!()
     }
 
+
     fn page_cache(&self) -> Option<Vmo<Full>> {
-        None
+        Some(self.page_cache().pages().dup().unwrap())
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        todo!()
+        if self.type_() != InodeType::File {
+            return_errno!(Errno::EISDIR)
+        }
+        let (off,read_len) = {
+            let file_size = self.len();
+            let start = file_size.min(offset);
+            let end = file_size.min(offset + buf.len());
+            (start,end - start)
+        };
+        self.page_cache.pages().read_bytes(offset, &mut buf[..read_len])?;
+
+        Ok(read_len)
     }
 
     fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
@@ -284,7 +295,21 @@ impl Inode for ExfatInode {
     }
 
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        todo!()
+        if self.type_() != InodeType::File {
+            return_errno!(Errno::EISDIR)
+        }
+
+        let file_size = self.len();
+        let new_size = offset + buf.len();
+        if new_size > file_size {
+            self.page_cache.pages().resize(new_size)?;
+        }
+        self.page_cache.pages().write_bytes(offset, buf)?;
+        if new_size > file_size {
+            self.resize(new_size)?;
+        }
+
+        Ok(buf.len())
     }
 
     fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
