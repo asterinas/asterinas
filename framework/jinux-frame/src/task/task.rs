@@ -72,7 +72,7 @@ pub struct Task {
 
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
-        self as *const _ == other as *const _
+        core::ptr::eq(self, other)
     }
 }
 

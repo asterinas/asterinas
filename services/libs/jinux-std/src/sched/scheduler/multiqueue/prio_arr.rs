@@ -18,7 +18,7 @@ pub struct PriorityArray {
 
 impl PartialEq for PriorityArray {
     fn eq(&self, other: &Self) -> bool {
-        self as *const _ == other as *const _
+        core::ptr::eq(self, other)
     }
 }
 
@@ -27,7 +27,6 @@ impl Default for PriorityArray {
         Self {
             nr_active: 0,
             queue: (0..MAX_PRIORITY)
-                .into_iter()
                 .map(|_| LinkedList::new(TaskAdapter::new()))
                 .collect(),
             bitmap: Bitmap::new(),
@@ -68,7 +67,7 @@ impl PriorityArray {
         if found && self.queue[idx].is_empty() {
             self.bitmap.set(idx, false);
         }
-        return found;
+        found
     }
 
     /// Remove a task from the queue
@@ -94,7 +93,7 @@ impl PriorityArray {
             let idx = task.dyn_prio().get() as usize;
             self.queue[idx].push_back(task.clone());
         }
-        return found;
+        found
     }
 
     /// Pick the next task to run from the active queues in a Round-Robin manner

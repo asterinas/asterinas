@@ -48,7 +48,7 @@ impl Priority {
 
 impl PartialOrd for Priority {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        self.0.partial_cmp(&other.0).map(|ord| ord.reverse())
+        Some(self.cmp(other))
     }
 }
 

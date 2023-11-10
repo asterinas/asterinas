@@ -1,7 +1,7 @@
 mod scheduler;
 
 use crate::prelude::*;
-use jinux_frame::task::{set_scheduler, Scheduler};
+use jinux_frame::task::set_scheduler;
 use scheduler::vanilla::PreemptScheduler;
 // use scheduler::multiqueue::MultiQueueScheduler;
 

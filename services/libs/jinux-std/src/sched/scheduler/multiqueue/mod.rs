@@ -78,9 +78,9 @@ impl Scheduler for MultiQueueScheduler {
     /// Update all the scheduling statistics stuff.
     /// (sleep average calculation, priority modifiers, etc.)
     fn activate(&self, task: Arc<Task>) {
+        // todo!("activate a task into runqueue");
         self.rq.lock_irq_disabled().activate(task);
         // around line 1039
-        todo!("activate a task into runqueue");
         self.nr_running.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -99,6 +99,9 @@ impl Scheduler for MultiQueueScheduler {
     }
 
     fn should_preempt(&self, task: &Arc<Task>) -> bool {
+        if task.need_resched() {
+            return true;
+        }
         todo!()
     }
 
