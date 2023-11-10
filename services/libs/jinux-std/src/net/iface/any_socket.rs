@@ -7,6 +7,7 @@ use super::{IpAddress, IpEndpoint};
 
 pub type RawTcpSocket = smoltcp::socket::tcp::Socket<'static>;
 pub type RawUdpSocket = smoltcp::socket::udp::Socket<'static>;
+pub type RawSocket = smoltcp::socket::raw::Socket<'static>;
 pub type RawSocketHandle = smoltcp::iface::SocketHandle;
 
 pub struct AnyUnboundSocket {
@@ -18,11 +19,13 @@ pub struct AnyUnboundSocket {
 pub(super) enum AnyRawSocket {
     Tcp(RawTcpSocket),
     Udp(RawUdpSocket),
+    Raw(RawSocket),
 }
 
 pub(super) enum SocketFamily {
     Tcp,
     Udp,
+    Raw,
 }
 
 impl AnyUnboundSocket {
@@ -66,6 +69,7 @@ impl AnyUnboundSocket {
         match &self.socket_family {
             AnyRawSocket::Tcp(_) => SocketFamily::Tcp,
             AnyRawSocket::Udp(_) => SocketFamily::Udp,
+            AnyRawSocket::Raw(_) => SocketFamily::Raw,
         }
     }
 
@@ -148,6 +152,10 @@ impl AnyBoundSocket {
                 let udp_socket = sockets.get::<RawUdpSocket>(*handle);
                 update_udp_socket_state(udp_socket, pollee);
             }
+            SocketFamily::Raw => {
+                let raw_socket = sockets.get::<RawSocket>(*handle);
+                update_raw_socket_state(raw_socket, pollee);
+            }
         }
     }
 
@@ -167,6 +175,8 @@ impl AnyBoundSocket {
         match self.socket_family {
             SocketFamily::Tcp => self.raw_with(|socket: &mut RawTcpSocket| socket.close()),
             SocketFamily::Udp => self.raw_with(|socket: &mut RawUdpSocket| socket.close()),
+            SocketFamily::Raw => {},
+            // FIXME: smoltcp does not provide a close() interface for RawSocket. should check whether it is safe not to call close()
         }
     }
 }
@@ -210,6 +220,20 @@ fn update_tcp_socket_state(socket: &RawTcpSocket, pollee: &Pollee) {
 }
 
 fn update_udp_socket_state(socket: &RawUdpSocket, pollee: &Pollee) {
+    if socket.can_recv() {
+        pollee.add_events(IoEvents::IN);
+    } else {
+        pollee.del_events(IoEvents::IN);
+    }
+
+    if socket.can_send() {
+        pollee.add_events(IoEvents::OUT);
+    } else {
+        pollee.del_events(IoEvents::OUT);
+    }
+}
+
+fn update_raw_socket_state(socket: &RawSocket, pollee: &Pollee) {
     if socket.can_recv() {
         pollee.add_events(IoEvents::IN);
     } else {

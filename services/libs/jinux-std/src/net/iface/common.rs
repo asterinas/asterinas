@@ -118,6 +118,7 @@ impl IfaceCommon {
         let handle = match socket.raw_socket_family() {
             AnyRawSocket::Tcp(tcp_socket) => sockets.add(tcp_socket),
             AnyRawSocket::Udp(udp_socket) => sockets.add(udp_socket),
+            AnyRawSocket::Raw(raw_socket) => sockets.add(raw_socket),
         };
         let bound_socket = AnyBoundSocket::new(iface, handle, port, pollee, socket_family);
         self.insert_bound_socket(&bound_socket).unwrap();
