@@ -43,7 +43,7 @@ fn timer_callback(trap_frame: &TrapFrame) {
 
     let callbacks = {
         let mut callbacks = Vec::new();
-        let mut timeout_list = TIMEOUT_LIST.get().unwrap().lock();
+        let mut timeout_list = TIMEOUT_LIST.get().unwrap().lock_irq_disabled();
 
         while let Some(t) = timeout_list.peek() {
             if t.is_cancelled() {
@@ -147,7 +147,11 @@ where
         Box::new(callback),
     );
     let arc = Arc::new(timer_callback);
-    TIMEOUT_LIST.get().unwrap().lock().push(arc.clone());
+    TIMEOUT_LIST
+        .get()
+        .unwrap()
+        .lock_irq_disabled()
+        .push(arc.clone());
     arc
 }
 
