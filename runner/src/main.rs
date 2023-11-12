@@ -79,10 +79,6 @@ struct Args {
     /// Run a GDB client instead of running the kernel.
     #[arg(long, default_value_t = false)]
     run_gdb_client: bool,
-
-    /// Run in the release mode.
-    #[arg(long, default_value_t = false)]
-    release_mode: bool,
 }
 
 pub const COMMON_ARGS: &[&str] = &[
@@ -201,7 +197,6 @@ fn main() {
             initramfs_path,
             grub_cfg,
             args.boot_protocol,
-            args.release_mode,
         );
         qemu_cmd.arg("-cdrom");
         qemu_cmd.arg(bootdev_image.as_os_str());

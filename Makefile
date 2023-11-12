@@ -44,10 +44,6 @@ CARGO_KRUN_ARGS += -- '$(KERNEL_CMDLINE) -- $(INIT_CMDLINE)'
 CARGO_KRUN_ARGS += --boot-method="$(BOOT_METHOD)"
 CARGO_KRUN_ARGS += --boot-protocol="$(BOOT_PROTOCOL)"
 
-ifeq ($(RELEASE_MODE), 1)
-CARGO_KRUN_ARGS += --release-mode
-endif
-
 ifeq ($(EMULATE_IOMMU), 1)
 CARGO_KRUN_ARGS += --emulate-iommu
 endif
@@ -89,6 +85,7 @@ export CARGO := cargo
 USERMODE_TESTABLE := \
     runner \
     framework/libs/align_ext \
+	framework/libs/boot-trojan/builder \
     framework/libs/ktest \
     framework/libs/ktest-proc-macro \
     services/libs/cpio-decoder \

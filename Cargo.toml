@@ -36,6 +36,8 @@ members = [
     "framework/aster-frame",
     "framework/aster-frame/src/arch/x86/boot/linux_boot/setup",
     "framework/libs/align_ext",
+    "framework/libs/boot-trojan/builder",
+    "framework/libs/boot-trojan/trojan",
     "framework/libs/ktest",
     "framework/libs/tdx-guest",
     "services/comps/block",
