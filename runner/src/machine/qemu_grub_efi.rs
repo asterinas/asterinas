@@ -1,4 +1,4 @@
-mod linux_boot;
+use aster_boot_trojan_builder::{build_linux_setup_header_from_trojan, make_bzimage};
 
 use std::{
     fs,
@@ -7,8 +7,6 @@ use std::{
 };
 
 use crate::BootProtocol;
-
-use glob::glob;
 
 macro_rules! ovmf_prefix {
     () => {
@@ -70,13 +68,12 @@ pub const GRUB_PREFIX: &str = "/usr/local/grub";
 pub const GRUB_VERSION: &str = "x86_64-efi";
 
 pub fn create_bootdev_image(
-    atser_path: PathBuf,
+    aster_path: PathBuf,
     initramfs_path: PathBuf,
     grub_cfg: String,
     protocol: BootProtocol,
-    release_mode: bool,
 ) -> PathBuf {
-    let target_dir = atser_path.parent().unwrap();
+    let target_dir = aster_path.parent().unwrap();
     let iso_root = target_dir.join("iso_root");
 
     // Clear or make the iso dir.
@@ -94,26 +91,22 @@ pub fn create_bootdev_image(
 
     let target_path = match protocol {
         BootProtocol::Linux => {
-            // Find the setup header in the build script output directory.
-            let bs_out_dir = if release_mode {
-                glob("target/x86_64-custom/release/build/aster-frame-*").unwrap()
-            } else {
-                glob("target/x86_64-custom/debug/build/aster-frame-*").unwrap()
-            };
-            let header_path = Path::new(bs_out_dir.into_iter().next().unwrap().unwrap().as_path())
-                .join("out")
-                .join("bin")
-                .join("aster-frame-x86-boot-linux-setup");
+            let trojan_install_dir = Path::new("target/-boot-trojan");
+            build_linux_setup_header_from_trojan(
+                Path::new("framework/libs/boot-trojan/trojan"),
+                trojan_install_dir,
+            )
+            .unwrap();
+            let header_path = trojan_install_dir.join("bin").join("aster-boot-trojan");
             // Make the `bzImage`-compatible kernel image and place it in the boot directory.
             let target_path = iso_root.join("boot").join("asterinaz");
-            linux_boot::make_bzimage(&target_path, &atser_path.as_path(), &header_path.as_path())
-                .unwrap();
+            make_bzimage(&target_path, &aster_path.as_path(), &header_path.as_path()).unwrap();
             target_path
         }
         BootProtocol::Multiboot | BootProtocol::Multiboot2 => {
             // Copy the kernel image to the boot directory.
             let target_path = iso_root.join("boot").join("atserinas");
-            fs::copy(&atser_path, &target_path).unwrap();
+            fs::copy(&aster_path, &target_path).unwrap();
             target_path
         }
     };

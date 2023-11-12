@@ -2,22 +2,19 @@
 // See https://www.kernel.org/doc/html/v5.6/x86/boot.html for
 // more information on the Linux x86 Boot Protocol.
 
-.section ".header", "a"
-
-// The Linux x86 Boot Protocol header.
-// 
 // Some of the fields filled with a 0xab* values should be filled
 // by the runner, which is the only tool after building and can
 // access the info of the payload.
 // Asterinas will use only a few of these fields, and some of them
 // are filled by the loader and will be read by Asterinas.
 
+.section ".header", "a"
 CODE32_START = 0x100000
-
+SETUP_SECTS = 7         # so that the legacy setup could occupy a page
 .code16
 .org 0x01f1
 hdr_start:
-setup_sects:            .byte 7 # so that the legacy setup could occupy a page
+setup_sects:            .byte SETUP_SECTS
 root_flags:             .word 1
 syssize:                .long 0
 ram_size:               .word 0
@@ -46,47 +43,15 @@ initrd_addr_max:        .long 0x7fffffff
 kernel_alignment:       .long 0x1000000
 relocatable_kernel:     .byte 0
 min_alignment:          .byte 0x10
-xloadflags:             .word 0 # none of the flags supported
+xloadflags:             .word 0b01111 # all handover protocols except kexec
 cmdline_size:           .long 4096-1
 hardware_subarch:       .long 0
 hardware_subarch_data:  .quad 0
 payload_offset:         .long 0xabababab # at 0x248/4, to be filled by the runner
 payload_length:         .long 0xabababab # at 0x24c/4, to be filled by the runner
 setup_data:             .quad 0
-pref_address:           .quad 0
+pref_address:           .quad CODE32_START - 0x200 * (SETUP_SECTS + 1);
 init_size:              .long 0xabababab # at 0x260/4, to be filled by the runner
-handover_offset:        .long 0
+handover_offset:        .long start_of_setup32
 kernel_info_offset:     .long 0
 hdr_end:
-// End of header.
-
-// 32-bit setup code starts here, and will be loaded at CODE32_START.
-.section ".header.text", "ax"
-.code32
-.global start_of_setup32
-start_of_setup32:
-        mov eax, offset stack_bottom
-        mov esp, eax
-        mov eax, offset halt
-        push eax                        # the return address
-        mov ebp, esp
-        add ebp, -4
-        push ebp
-        mov ebp, esp
-
-        .extern _rust_setup_entry
-        push esi                        # the boot_params pointer
-        call _rust_setup_entry
-
-        // Unreachable here.
-halt:
-        hlt
-        jmp halt
-
-// A small stack for the setup code.
-.section ".stack", "aw"
-SETUP_STACK_SIZE = 0x1000
-        .align 16
-        stack_top:
-        .skip SETUP_STACK_SIZE
-        stack_bottom:

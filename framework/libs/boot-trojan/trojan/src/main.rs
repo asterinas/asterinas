@@ -9,6 +9,8 @@ use core::arch::{asm, global_asm};
 
 global_asm!(include_str!("header.S"));
 
+global_asm!(include_str!("setup.S"));
+
 unsafe fn call_aster_entrypoint(entrypoint: u32, boot_params_ptr: u32) -> ! {
     asm!("mov esi, {}", in(reg) boot_params_ptr);
     asm!("mov eax, {}", in(reg) entrypoint);

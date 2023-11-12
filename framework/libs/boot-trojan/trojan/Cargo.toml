@@ -1,5 +1,5 @@
 [package]
-name = "aster-frame-x86-boot-linux-setup"
+name = "aster-boot-trojan"
 version = "0.1.0"
 edition = "2021"
 
