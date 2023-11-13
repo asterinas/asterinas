@@ -1,11 +1,10 @@
-use super::preempt_stat;
 use crate::trap::disable_local;
 use crate::{sync::Mutex, task::in_atomic};
 
 use super::{
-    scheduler::{fetch_task, GLOBAL_SCHEDULER},
-    task::{context_switch, TaskContext},
-    Task, TaskStatus,
+    preempt::preempt_stat,
+    scheduler::GLOBAL_SCHEDULER,
+    task::{context_switch, Task, TaskContext},
 };
 use alloc::sync::Arc;
 use lazy_static::lazy_static;
@@ -22,7 +21,7 @@ impl Processor {
             idle_task_cx: TaskContext::default(),
         }
     }
-    fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
+    fn idle_task_ctx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
     pub fn take_current(&mut self) -> Option<Arc<Task>> {
@@ -48,33 +47,53 @@ pub fn current_task() -> Option<Arc<Task>> {
     PROCESSOR.lock().current()
 }
 
-pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
-    PROCESSOR.lock().get_idle_task_cx_ptr()
+pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
+    PROCESSOR.lock().idle_task_ctx_ptr()
 }
 
 fn panic_if_not_preemptible() {
-    if !in_atomic() {
+    let cur_task = current_task();
+    if !in_atomic() || cur_task.is_none() || cur_task.unwrap().status().is_exited() {
         return;
     }
     let (nr_lock, nr_soft_irq, nr_hard_irq, active) = preempt_stat();
     panic!(
-        "The CPU could not be preempted: it was holding {} locks, {} hard irqs, {} soft irqs with active as {}.",
+        "The CPU could not be preempted: it was holding {} locks, {} hard irqs, {} soft irqs with active flag as {}.",
         nr_lock, nr_hard_irq, nr_soft_irq, active
     );
 }
 
-/// call this function to switch to other task by using GLOBAL_SCHEDULER
+/// Switch to the next task selected by GLOBAL_SCHEDULER if it should.
 pub fn schedule() {
-    // todo: preempt_disable
-    let task = fetch_task();
-    if task.is_none() {
-        return;
+    // let disable_irq = disable_local();
+    let processor = PROCESSOR.lock();
+    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
+    let mut should_switch = true;
+    if let Some(cur_task) = processor.current() && cur_task.status().is_runnable() {
+        should_switch = scheduler.should_preempt(&cur_task)
     };
-    let task = task.unwrap();
-    // panic_if_not_preemptible();
-    switch_to_task(task);
+    if !should_switch {
+        return;
+    }
+    let _ = should_switch;
+
+    let next_task = scheduler.fetch_next();
+    drop(scheduler);
+    drop(processor);
+
+    match next_task {
+        None => {
+            // todo: idle_balance across cpus
+        }
+        Some(next_task) => {
+            // todo: update the current_task.sleep_avg
+            // panic_if_not_preemptible();
+            switch_to(next_task);
+        }
+    }
 }
 
+#[warn(deprecated)]
 fn cur_should_be_preempted() -> bool {
     if let Some(cur_task) = current_task() && cur_task.status().is_runnable() {
         return GLOBAL_SCHEDULER
@@ -84,6 +103,7 @@ fn cur_should_be_preempted() -> bool {
     false
 }
 
+#[warn(deprecated)]
 pub fn preempt() {
     // disable interrupts to avoid nested preemption.
     let disable_irq = disable_local();
@@ -92,36 +112,30 @@ pub fn preempt() {
     }
 }
 
-/// call this function to switch to other task
+/// Switch to the given next task.
+/// - If current task is none, then it will use the default task context
+/// and it will not return to this function again.
+/// - If current task status is exit, then it will not add to the scheduler.
 ///
-/// if current task is none, then it will use the default task context and it will not return to this function again
-///
-/// if current task status is exit, then it will not add to the scheduler
-///
-/// before context switch, current task will switch to the next task
-fn switch_to_task(next_task: Arc<Task>) {
-    // here was a preemptible check => may cause bug?(panic)
-
-    let current_task_option = current_task();
-    let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
-    let current_task: Arc<Task>;
-    let current_task_cx_ptr = match current_task_option {
-        None => PROCESSOR.lock().get_idle_task_cx_ptr(),
-        Some(current_task) => {
-            if current_task.status() == TaskStatus::Runnable {
+/// After context switch, the current task of the processor
+/// will be switched to the given next task.
+fn switch_to(next_task: Arc<Task>) {
+    let current_task_ctx = match current_task() {
+        None => get_idle_task_ctx_ptr(),
+        Some(cur_task) => {
+            if cur_task.status().is_runnable() {
                 GLOBAL_SCHEDULER
                     .lock_irq_disabled()
-                    .enqueue(current_task.clone());
+                    .enqueue(cur_task.clone());
             }
-            &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
+            &mut cur_task.inner_exclusive_access().ctx as *mut TaskContext
         }
     };
 
-    // change the current task to the next task
-
-    PROCESSOR.lock().current = Some(next_task.clone());
+    let next_task_ctx = &next_task.inner_ctx() as *const TaskContext;
+    PROCESSOR.lock().current = Some(next_task);
     unsafe {
-        context_switch(current_task_cx_ptr, next_task_cx_ptr);
+        context_switch(current_task_ctx, next_task_ctx);
     }
 }
 

@@ -78,11 +78,18 @@ impl RunQueue {
     fn swap_to_refill_active(&mut self) {
         debug_assert!(self.active.empty());
         core::mem::swap(&mut self.active, &mut self.expired);
+        self.first_expired_timestamp = 0;
     }
 
     pub fn activate(&mut self, task: Arc<Task>) {
-        task.set_active(true);
-        self.active.enqueue_task(task);
+        if task.time_slice() > 0 {
+            task.clear_need_resched();
+            task.set_active(true);
+            self.active.enqueue_task(task);
+        } else {
+            // yielded or preempted task
+            self.expire_without_tick(task);
+        }
     }
 
     /// pick the next task to run from the active queues
@@ -99,14 +106,15 @@ impl RunQueue {
     }
 
     pub fn expire(&mut self, task: Arc<Task>, cur_tick: u64) {
-        self._expire(task);
+        self.expire_without_tick(task);
         if self.first_expired_timestamp == 0 {
             self.first_expired_timestamp = cur_tick;
         }
     }
 
-    fn _expire(&mut self, task: Arc<Task>) {
+    pub fn expire_without_tick(&mut self, task: Arc<Task>) {
         debug_assert!(self.active.empty() || !self.active.dequeue_task(&task));
+        task.clear_need_resched();
         self.expired.enqueue_task(task.clone());
         task.set_active(false);
     }

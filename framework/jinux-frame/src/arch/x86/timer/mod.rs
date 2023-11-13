@@ -41,6 +41,7 @@ pub fn init() {
 
 fn timer_callback(trap_frame: &TrapFrame) {
     let current_ticks = TICK.fetch_add(1, Ordering::SeqCst);
+    scheduler_tick(current_ticks);
 
     let callbacks = {
         let mut callbacks = Vec::new();
@@ -66,8 +67,6 @@ fn timer_callback(trap_frame: &TrapFrame) {
     if APIC_TIMER_CALLBACK.is_completed() {
         APIC_TIMER_CALLBACK.get().unwrap().call(());
     }
-
-    scheduler_tick(current_ticks);
 }
 
 static TIMEOUT_LIST: Once<SpinLock<BinaryHeap<Arc<TimerCallback>>>> = Once::new();

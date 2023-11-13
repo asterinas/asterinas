@@ -88,6 +88,7 @@ impl Scheduler for MultiQueueScheduler {
         match self.rq.lock_irq_disabled().next_task() {
             Some(task) => {
                 if task.need_resched() {
+                    self.rq.lock_irq_disabled().expire_without_tick(task);
                     self.fetch_next()
                 } else {
                     self.nr_running.fetch_sub(1, Ordering::SeqCst);
@@ -99,10 +100,10 @@ impl Scheduler for MultiQueueScheduler {
     }
 
     fn should_preempt(&self, task: &Arc<Task>) -> bool {
-        if task.need_resched() {
+        if task.need_resched() || !task.status().is_runnable() {
             return true;
         }
-        todo!()
+        todo!("if there is a higher priority task in the runqueue")
     }
 
     /// `task_running_tick()`

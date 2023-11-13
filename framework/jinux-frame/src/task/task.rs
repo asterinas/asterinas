@@ -167,6 +167,10 @@ impl Task {
         self.inner_exclusive_access().need_resched = true;
     }
 
+    pub fn clear_need_resched(&self) {
+        self.inner_exclusive_access().need_resched = false;
+    }
+
     pub fn need_resched(&self) -> bool {
         self.inner_exclusive_access().need_resched
     }

@@ -1,6 +1,7 @@
 use jinux_frame::{
     cpu::UserContext,
-    task::{preempt, Task, TaskOptions},
+    task::{schedule, Task, TaskOptions},
+    trap::disable_local,
     user::{UserContextApi, UserEvent, UserMode, UserSpace},
 };
 
@@ -51,7 +52,8 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
                 handle_pending_signal(context).unwrap();
             }
             // a preemption point after handling user event.
-            preempt();
+            let disable_irq = disable_local();
+            schedule();
         }
         debug!("exit user loop");
         // FIXME: This is a work around: exit in kernel task entry may be not called. Why this will happen?
