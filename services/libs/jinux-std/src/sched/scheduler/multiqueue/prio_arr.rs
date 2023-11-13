@@ -3,8 +3,11 @@ use bitmaps::Bitmap;
 use intrusive_collections::LinkedList;
 use jinux_frame::task::{Priority, Task, TaskAdapter};
 
-const MAX_PRIORITY: usize = Priority::lowest().get() as usize + 1;
+const MIN_PRIORITY: usize = Priority::highest().get() as usize;
+const MAX_PRIORITY: usize = Priority::lowest().get() as usize;
+const NUM_PRIORITY: usize = MAX_PRIORITY - MIN_PRIORITY + 1;
 
+/// Task queues indexed by numeric priorities
 pub struct PriorityArray {
     /// total number of tasks in the queue
     nr_active: usize,
@@ -13,7 +16,7 @@ pub struct PriorityArray {
     queue: Vec<LinkedList<TaskAdapter>>,
 
     /// bitmap of non-empty queues
-    bitmap: Bitmap<MAX_PRIORITY>,
+    bitmap: Bitmap<NUM_PRIORITY>,
 }
 
 impl PartialEq for PriorityArray {
@@ -21,14 +24,17 @@ impl PartialEq for PriorityArray {
         core::ptr::eq(self, other)
     }
 }
+impl Eq for PriorityArray {}
 
 impl Default for PriorityArray {
     fn default() -> Self {
+        let queue: Vec<_> = (MIN_PRIORITY..(MAX_PRIORITY + 1))
+            .map(|_| LinkedList::new(TaskAdapter::new()))
+            .collect();
+        debug_assert!(queue.len() == NUM_PRIORITY);
         Self {
             nr_active: 0,
-            queue: (0..MAX_PRIORITY)
-                .map(|_| LinkedList::new(TaskAdapter::new()))
-                .collect(),
+            queue,
             bitmap: Bitmap::new(),
         }
     }
