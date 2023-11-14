@@ -16,7 +16,7 @@ lazy_static! {
 pub trait Scheduler: Sync + Send {
     fn activate(&self, task: Arc<Task>);
 
-    fn fetch_next(&self) -> Option<Arc<Task>>;
+    fn pick_next_task(&self) -> Option<Arc<Task>>;
 
     /// Tells whether the given task should be preempted by other tasks in the queue.
     fn should_preempt(&self, task: &Arc<Task>) -> bool;
@@ -27,7 +27,16 @@ pub trait Scheduler: Sync + Send {
     ///
     /// * `task` - the task to charge, must be held by the processor, and not in runqueue
     /// * `cur_tick` - the current tick
-    fn tick(&self, task: &Arc<Task>, cur_tick: u64); // or mutable self ref?
+    ///
+    /// # Returns
+    ///
+    /// `true` if the `task` need a rescudule.
+    fn tick(&self, task: &Arc<Task>, cur_tick: u64) -> bool; // or mutable self ref?
+
+    /// Modify states before yielding the current task.
+    fn before_yield(&self, cur_task: &Arc<Task>) {
+        cur_task.set_need_resched();
+    }
 }
 
 pub struct GlobalScheduler {
@@ -43,7 +52,7 @@ impl GlobalScheduler {
     /// dequeue a task using scheduler
     /// require the scheduler is not none
     pub fn fetch_next(&mut self) -> Option<Arc<Task>> {
-        self.scheduler.unwrap().fetch_next()
+        self.scheduler.unwrap().pick_next_task()
     }
     /// enqueue a task using scheduler
     /// require the scheduler is not none
@@ -55,8 +64,12 @@ impl GlobalScheduler {
         self.scheduler.unwrap().should_preempt(task)
     }
 
-    pub fn tick(&self, task: Arc<Task>, cur_tick: u64) {
-        self.scheduler.unwrap().tick(&task, cur_tick);
+    pub fn tick(&self, task: Arc<Task>, cur_tick: u64) -> bool {
+        self.scheduler.unwrap().tick(&task, cur_tick)
+    }
+
+    pub fn before_yield(&self, task: Arc<Task>) {
+        self.scheduler.unwrap().before_yield(&task)
     }
 }
 

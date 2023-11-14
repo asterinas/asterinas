@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
 use crate::cpu::CpuSet;
 use crate::prelude::*;
@@ -10,7 +12,7 @@ use intrusive_collections::LinkedListAtomicLink;
 
 use super::add_task;
 use super::priority::Priority;
-use super::processor::{current_task, schedule};
+use super::processor::{current_task, schedule, yield_now};
 
 core::arch::global_asm!(include_str!("switch.S"));
 
@@ -76,6 +78,15 @@ impl PartialEq for Task {
     }
 }
 
+impl Debug for Task {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Task")
+            .field("priority", &self.priority.get())
+            .field("addr", &(self as *const _ as usize))
+            .finish()
+    }
+}
+
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
@@ -113,7 +124,7 @@ impl Task {
     /// Note that this method cannot be simply named "yield" as the name is
     /// a Rust keyword.
     pub fn yield_now() {
-        schedule();
+        yield_now();
     }
 
     pub fn run(self: &Arc<Self>) {

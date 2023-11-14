@@ -29,7 +29,8 @@ impl MultiQueueScheduler {
         todo!("calculate time slice")
     }
 
-    fn tick_rt(&self, task: &Arc<Task>, cur_tick: u64) {
+    /// `task_tick()` for real-time tasks
+    fn tick_rt(&self, task: &Arc<Task>, cur_tick: u64) -> bool {
         debug_assert!(task.is_real_time());
         todo!("tick real-time task")
     }
@@ -45,7 +46,8 @@ impl MultiQueueScheduler {
         }
     }
 
-    fn tick_normal(&self, task: &Arc<Task>, cur_tick: u64) {
+    /// `task_tick()` for normal tasks
+    fn tick_normal(&self, task: &Arc<Task>, cur_tick: u64) -> bool {
         debug_assert!(!task.is_real_time());
         let mut rq = self.rq.lock_irq_disabled();
         task.set_time_slice(task.time_slice() - 1);
@@ -53,6 +55,7 @@ impl MultiQueueScheduler {
             task.set_need_resched();
             self.recharge_task(task);
 
+            // todo: not readd the task back to runqueue here, since the context switch will do it
             if interactive::is_interactive(task) && !rq.expired_starving() {
                 rq.activate(task.clone());
                 if task.priority() > rq.best_expired_prio {
@@ -61,8 +64,10 @@ impl MultiQueueScheduler {
             } else {
                 rq.expire(task.clone(), cur_tick);
             }
+            true
         } else {
             rq.roundrobin_requeue(task);
+            false
         }
     }
 }
@@ -84,12 +89,12 @@ impl Scheduler for MultiQueueScheduler {
         self.nr_running.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn fetch_next(&self) -> Option<Arc<Task>> {
+    fn pick_next_task(&self) -> Option<Arc<Task>> {
         match self.rq.lock_irq_disabled().next_task() {
             Some(task) => {
                 if task.need_resched() {
                     self.rq.lock_irq_disabled().expire_without_tick(task);
-                    self.fetch_next()
+                    self.pick_next_task()
                 } else {
                     self.nr_running.fetch_sub(1, Ordering::SeqCst);
                     Some(task)
@@ -107,17 +112,17 @@ impl Scheduler for MultiQueueScheduler {
     }
 
     /// `task_running_tick()`
-    fn tick(&self, task: &Arc<Task>, cur_tick: u64) {
+    fn tick(&self, task: &Arc<Task>, cur_tick: u64) -> bool {
         if !task.is_active() {
             // if the task has been expired
             task.set_need_resched();
-            return;
+            return true;
         }
 
         if task.is_real_time() {
-            self.tick_rt(task, cur_tick);
+            self.tick_rt(task, cur_tick)
         } else {
-            self.tick_normal(task, cur_tick);
+            self.tick_normal(task, cur_tick)
         }
     }
 }

@@ -12,7 +12,7 @@ use trapframe::TrapFrame;
 use crate::arch::x86::kernel;
 use crate::config::TIMER_FREQ;
 use crate::sync::SpinLock;
-use crate::task::scheduler_tick;
+use crate::task::{schedule, scheduler_tick};
 use crate::trap::IrqLine;
 
 use self::apic::APIC_TIMER_CALLBACK;
@@ -41,7 +41,6 @@ pub fn init() {
 
 fn timer_callback(trap_frame: &TrapFrame) {
     let current_ticks = TICK.fetch_add(1, Ordering::SeqCst);
-    scheduler_tick(current_ticks);
 
     let callbacks = {
         let mut callbacks = Vec::new();
@@ -66,6 +65,10 @@ fn timer_callback(trap_frame: &TrapFrame) {
 
     if APIC_TIMER_CALLBACK.is_completed() {
         APIC_TIMER_CALLBACK.get().unwrap().call(());
+    }
+
+    if scheduler_tick(current_ticks) {
+        schedule();
     }
 }
 

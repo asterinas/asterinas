@@ -51,6 +51,13 @@ pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
     PROCESSOR.lock().idle_task_ctx_ptr()
 }
 
+pub fn yield_now() {
+    if let Some(cur_task) = current_task() {
+        GLOBAL_SCHEDULER.lock_irq_disabled().before_yield(cur_task);
+    }
+    schedule();
+}
+
 fn panic_if_not_preemptible() {
     let cur_task = current_task();
     if !in_atomic() || cur_task.is_none() || cur_task.unwrap().status().is_exited() {
@@ -78,6 +85,8 @@ pub fn schedule() {
     let _ = should_switch;
 
     let next_task = scheduler.fetch_next();
+    // use crate::println;
+    // println!("should_switch: {}, cur_task: {:?}, next_task: {:?}", should_switch, processor.current(), next_task);
     drop(scheduler);
     drop(processor);
 
@@ -144,13 +153,17 @@ fn switch_to(next_task: Arc<Task>) {
 /// # Arguments
 ///
 /// * `cur_tick` - The current tick count.
-pub(crate) fn scheduler_tick(cur_tick: u64) {
+///
+/// # Returns
+///
+/// `true` if need a reschedule
+pub(crate) fn scheduler_tick(cur_tick: u64) -> bool {
     let processor = PROCESSOR.lock();
     let Some(cur_task) = processor.current() else {
-        return;
+        return true;
     };
     // update_cpu_clock(p, rq, now);
     GLOBAL_SCHEDULER
         .lock_irq_disabled()
-        .tick(cur_task.clone(), cur_tick);
+        .tick(cur_task.clone(), cur_tick)
 }
