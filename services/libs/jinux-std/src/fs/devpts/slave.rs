@@ -1,4 +1,5 @@
 use crate::events::IoEvents;
+use crate::fs::inode_handle::FileIo;
 use crate::prelude::*;
 use crate::process::signal::Poller;
 

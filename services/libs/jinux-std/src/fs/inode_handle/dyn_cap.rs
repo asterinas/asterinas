@@ -21,8 +21,16 @@ impl InodeHandle<Rights> {
         if access_mode.is_writable() && inode.type_() == InodeType::Dir {
             return_errno_with_message!(Errno::EISDIR, "Directory cannot open to write");
         }
+
+        let file_io = if let Some(device) = inode.as_device() {
+            device.open()?
+        } else {
+            None
+        };
+
         let inner = Arc::new(InodeHandle_ {
             dentry,
+            file_io,
             offset: Mutex::new(0),
             access_mode,
             status_flags: AtomicU32::new(status_flags.bits()),
@@ -42,6 +50,7 @@ impl InodeHandle<Rights> {
         if !self.1.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "File is not readable");
         }
+
         self.0.read_to_end(buf)
     }
 
@@ -75,11 +84,11 @@ impl FileLike for InodeHandle<Rights> {
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.dentry().inode().poll(mask, poller)
+        self.0.poll(mask, poller)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        self.dentry().inode().ioctl(cmd, arg)
+        self.0.ioctl(cmd, arg)
     }
 
     fn metadata(&self) -> Metadata {
@@ -109,6 +118,6 @@ impl FileLike for InodeHandle<Rights> {
     }
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {
-        self.dentry().vnode().as_device()
+        self.dentry().inode().as_device()
     }
 }
