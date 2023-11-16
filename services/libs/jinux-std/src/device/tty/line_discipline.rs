@@ -1,13 +1,10 @@
 use crate::events::IoEvents;
+use crate::prelude::*;
 use crate::process::signal::constants::{SIGINT, SIGQUIT};
+use crate::process::signal::signals::kernel::KernelSignal;
 use crate::process::signal::{Pollee, Poller};
-use crate::process::ProcessGroup;
 use crate::thread::work_queue::work_item::WorkItem;
 use crate::thread::work_queue::{submit_work_item, WorkPriority};
-use crate::{
-    prelude::*,
-    process::{signal::signals::kernel::KernelSignal, Pgid},
-};
 use alloc::format;
 use jinux_frame::trap::disable_local;
 use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
@@ -24,8 +21,6 @@ pub struct LineDiscipline {
     current_line: SpinLock<CurrentLine>,
     /// The read buffer
     read_buffer: SpinLock<StaticRb<u8, BUFFER_CAPACITY>>,
-    /// The foreground process group
-    foreground: SpinLock<Weak<ProcessGroup>>,
     /// termios
     termios: SpinLock<KernelTermios>,
     /// Windows size,
@@ -87,7 +82,6 @@ impl LineDiscipline {
             Self {
                 current_line: SpinLock::new(CurrentLine::new()),
                 read_buffer: SpinLock::new(StaticRb::default()),
-                foreground: SpinLock::new(Weak::new()),
                 termios: SpinLock::new(KernelTermios::default()),
                 winsize: SpinLock::new(WinSize::default()),
                 pollee: Pollee::new(IoEvents::empty()),
@@ -98,7 +92,15 @@ impl LineDiscipline {
     }
 
     /// Push char to line discipline.
-    pub fn push_char<F: FnMut(&str)>(&self, ch: u8, echo_callback: F) {
+    pub fn push_char<
+        F1: Fn() -> Option<Arc<dyn Fn(KernelSignal) + Send + Sync>>,
+        F2: FnMut(&str),
+    >(
+        &self,
+        ch: u8,
+        may_send_signal: F1,
+        echo_callback: F2,
+    ) {
         let termios = self.termios.lock_irq_disabled();
 
         let ch = if termios.contains_icrnl() && ch == b'\r' {
@@ -107,7 +109,7 @@ impl LineDiscipline {
             ch
         };
 
-        if self.may_send_signal_to_foreground(&termios, ch) {
+        if self.may_send_signal(&termios, ch, may_send_signal) {
             // The char is already dealt with, so just return
             return;
         }
@@ -158,31 +160,32 @@ impl LineDiscipline {
         self.update_readable_state_deferred();
     }
 
-    fn may_send_signal_to_foreground(&self, termios: &KernelTermios, ch: u8) -> bool {
-        if !termios.contains_isig() {
+    fn may_send_signal<F: Fn() -> Option<Arc<dyn Fn(KernelSignal) + Send + Sync>>>(
+        &self,
+        termios: &KernelTermios,
+        ch: u8,
+        may_send_signal: F,
+    ) -> bool {
+        if !termios.is_canonical_mode() || !termios.contains_isig() {
             return false;
         }
 
-        let Some(foreground) = self.foreground.lock().upgrade() else {
+        let Some(send_signal) = may_send_signal() else {
             return false;
         };
 
         let signal = match ch {
-            item if item == *termios.get_special_char(CC_C_CHAR::VINTR) => {
-                KernelSignal::new(SIGINT)
-            }
-            item if item == *termios.get_special_char(CC_C_CHAR::VQUIT) => {
-                KernelSignal::new(SIGQUIT)
-            }
+            ch if ch == *termios.get_special_char(CC_C_CHAR::VINTR) => KernelSignal::new(SIGINT),
+            ch if ch == *termios.get_special_char(CC_C_CHAR::VQUIT) => KernelSignal::new(SIGQUIT),
             _ => return false,
         };
         // `kernel_signal()` may cause sleep, so only construct parameters here.
-        self.work_item_para.lock_irq_disabled().kernel_signal = Some(signal);
+        self.work_item_para.lock_irq_disabled().kernel_signal = Some((send_signal, signal));
 
         true
     }
 
-    fn update_readable_state(&self) {
+    pub fn update_readable_state(&self) {
         let buffer = self.read_buffer.lock_irq_disabled();
         if !buffer.is_empty() {
             self.pollee.add_events(IoEvents::IN);
@@ -193,7 +196,6 @@ impl LineDiscipline {
 
     fn update_readable_state_deferred(&self) {
         let buffer = self.read_buffer.lock_irq_disabled();
-        let pollee = self.pollee.clone();
         // add/del events may sleep, so only construct parameters here.
         if !buffer.is_empty() {
             self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Add);
@@ -205,12 +207,10 @@ impl LineDiscipline {
 
     /// include all operations that may cause sleep, and processes by a work queue.
     fn update_readable_state_after(&self) {
-        if let Some(signal) = self.work_item_para.lock_irq_disabled().kernel_signal.take() {
-            self.foreground
-                .lock()
-                .upgrade()
-                .unwrap()
-                .kernel_signal(signal)
+        if let Some((send_signal, signal)) =
+            self.work_item_para.lock_irq_disabled().kernel_signal.take()
+        {
+            send_signal(signal);
         };
         if let Some(pollee_type) = self.work_item_para.lock_irq_disabled().pollee_type.take() {
             match pollee_type {
@@ -243,42 +243,33 @@ impl LineDiscipline {
         }
     }
 
-    /// read all bytes buffered to dst, return the actual read length.
-    pub fn read(&self, dst: &mut [u8]) -> Result<usize> {
+    pub fn read<F: Fn() -> bool>(&self, buf: &mut [u8], belongs_to_foreground: F) -> Result<usize> {
         let mut poller = None;
         loop {
-            let res = self.try_read(dst);
-            match res {
-                Ok(read_len) => {
-                    return Ok(read_len);
+            if !belongs_to_foreground() {
+                init_poller(&mut poller);
+                if self.poll(IoEvents::IN, poller.as_ref()).is_empty() {
+                    poller.as_ref().unwrap().wait()?
                 }
-                Err(e) => {
-                    if e.error() != Errno::EAGAIN {
-                        return Err(e);
-                    }
-                }
+                continue;
             }
 
-            // Wait for read event
-            let need_poller = if poller.is_none() {
-                poller = Some(Poller::new());
-                poller.as_ref()
-            } else {
-                None
-            };
-            let revents = self.pollee.poll(IoEvents::IN, need_poller);
-            if revents.is_empty() {
-                // FIXME: deal with ldisc read timeout
-                poller.as_ref().unwrap().wait()?;
+            let res = self.try_read(buf);
+            match res {
+                Ok(len) => return Ok(len),
+                Err(e) if e.error() != Errno::EAGAIN => return Err(e),
+                Err(_) => {
+                    init_poller(&mut poller);
+                    if self.poll(IoEvents::IN, poller.as_ref()).is_empty() {
+                        poller.as_ref().unwrap().wait()?
+                    }
+                }
             }
         }
     }
 
-    pub fn try_read(&self, dst: &mut [u8]) -> Result<usize> {
-        if !self.current_can_read() {
-            return_errno!(Errno::EAGAIN);
-        }
-
+    /// read all bytes buffered to dst, return the actual read length.
+    fn try_read(&self, dst: &mut [u8]) -> Result<usize> {
         let (vmin, vtime) = {
             let termios = self.termios.lock_irq_disabled();
             let vmin = *termios.get_special_char(CC_C_CHAR::VMIN);
@@ -326,7 +317,8 @@ impl LineDiscipline {
                 if termios.is_canonical_mode() {
                     // canonical mode, read until meet new line
                     if is_line_terminator(next_char, &termios) {
-                        if !should_not_be_read(next_char, &termios) {
+                        // The eof should not be read
+                        if !is_eof(next_char, &termios) {
                             *dst_i = next_char;
                             read_len += 1;
                         }
@@ -366,31 +358,6 @@ impl LineDiscipline {
     /// write bytes to buffer, if flush to console, then write the content to console
     pub fn write(&self, src: &[u8], flush_to_console: bool) -> Result<usize> {
         todo!()
-    }
-
-    /// Determine whether current process can read the line discipline. If current belongs to the foreground process group.
-    /// or the foreground process group is None, returns true.
-    fn current_can_read(&self) -> bool {
-        let current = current!();
-        let Some(foreground) = self.foreground.lock_irq_disabled().upgrade() else {
-            return true;
-        };
-        foreground.contains_process(current.pid())
-    }
-
-    /// set foreground process group
-    pub fn set_fg(&self, foreground: Weak<ProcessGroup>) {
-        *self.foreground.lock_irq_disabled() = foreground;
-        // Some background processes may be waiting on the wait queue, when set_fg, the background processes may be able to read.
-        self.update_readable_state();
-    }
-
-    /// get foreground process group id
-    pub fn fg_pgid(&self) -> Option<Pgid> {
-        self.foreground
-            .lock_irq_disabled()
-            .upgrade()
-            .map(|foreground| foreground.pgid())
     }
 
     /// whether there is buffered data
@@ -439,8 +406,7 @@ fn is_line_terminator(item: u8, termios: &KernelTermios) -> bool {
     false
 }
 
-/// The special char should not be read by reading process
-fn should_not_be_read(ch: u8, termios: &KernelTermios) -> bool {
+fn is_eof(ch: u8, termios: &KernelTermios) -> bool {
     ch == *termios.get_special_char(CC_C_CHAR::VEOF)
 }
 
@@ -461,13 +427,22 @@ fn get_printable_char(ctrl_char: u8) -> u8 {
     ctrl_char + b'A' - 1
 }
 
+fn init_poller(poller: &mut Option<Poller>) {
+    if poller.is_some() {
+        return;
+    }
+
+    *poller = Some(Poller::new());
+}
+
 enum PolleeType {
     Add,
     Del,
 }
 
 struct LineDisciplineWorkPara {
-    kernel_signal: Option<KernelSignal>,
+    #[allow(clippy::type_complexity)]
+    kernel_signal: Option<(Arc<dyn Fn(KernelSignal) + Send + Sync>, KernelSignal)>,
     pollee_type: Option<PolleeType>,
 }
 
