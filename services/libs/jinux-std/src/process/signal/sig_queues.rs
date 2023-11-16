@@ -81,8 +81,11 @@ impl SigQueues {
         // POSIX leaves unspecified which to deliver first if there are multiple
         // pending standard signals. So we are free to define our own. The
         // principle is to give more urgent signals higher priority (like SIGKILL).
+
+        // FIXME: the gvisor pty_test JobControlTest::ReleaseTTY requires that
+        // the SIGHUP signal should be handled before SIGCONT.
         const ORDERED_STD_SIGS: [SigNum; COUNT_STD_SIGS] = [
-            SIGKILL, SIGTERM, SIGSTOP, SIGCONT, SIGSEGV, SIGILL, SIGHUP, SIGINT, SIGQUIT, SIGTRAP,
+            SIGKILL, SIGTERM, SIGSTOP, SIGSEGV, SIGILL, SIGHUP, SIGCONT, SIGINT, SIGQUIT, SIGTRAP,
             SIGABRT, SIGBUS, SIGFPE, SIGUSR1, SIGUSR2, SIGPIPE, SIGALRM, SIGSTKFLT, SIGCHLD,
             SIGTSTP, SIGTTIN, SIGTTOU, SIGURG, SIGXCPU, SIGXFSZ, SIGVTALRM, SIGPROF, SIGWINCH,
             SIGIO, SIGPWR, SIGSYS,
