@@ -37,9 +37,11 @@ pub fn do_exit_group(term_status: TermStatus) {
     // Move children to the init process
     if !is_init_process(&current) {
         if let Some(init_process) = get_init_process() {
+            let mut init_children = init_process.children().lock();
             for (_, child_process) in current.children().lock().extract_if(|_, _| true) {
-                child_process.set_parent(Arc::downgrade(&init_process));
-                init_process.add_child(child_process);
+                let mut parent = child_process.parent.lock();
+                init_children.insert(child_process.pid(), child_process.clone());
+                *parent = Arc::downgrade(&init_process);
             }
         }
     }
@@ -56,7 +58,7 @@ const INIT_PROCESS_PID: Pid = 1;
 
 /// Get the init process
 fn get_init_process() -> Option<Arc<Process>> {
-    process_table::pid_to_process(INIT_PROCESS_PID)
+    process_table::get_process(&INIT_PROCESS_PID)
 }
 
 fn is_init_process(process: &Process) -> bool {

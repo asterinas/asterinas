@@ -275,15 +275,31 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
             .file_table(child_file_table)
             .fs(child_fs)
             .umask(child_umask)
-            .sig_dispositions(child_sig_dispositions)
-            .process_group(current.process_group().unwrap());
+            .sig_dispositions(child_sig_dispositions);
 
         process_builder.build()?
     };
 
-    current!().add_child(child.clone());
-    process_table::add_process(child.clone());
+    // Adds child to parent's process group, and parent's child processes.
+    let process_group = current!().process_group().unwrap();
 
+    let mut process_table_mut = process_table::process_table_mut();
+    let mut group_inner = process_group.inner.lock();
+    let mut child_group_mut = child.process_group.lock();
+    let mut children_mut = current.children().lock();
+
+    children_mut.insert(child.pid(), child.clone());
+
+    group_inner.processes.insert(child.pid(), child.clone());
+    *child_group_mut = Arc::downgrade(&process_group);
+
+    process_table_mut.insert(child.pid(), child.clone());
+    drop(process_table_mut);
+    drop(group_inner);
+    drop(child_group_mut);
+    drop(children_mut);
+
+    // Deals with clone flags
     let child_thread = thread_table::tid_to_thread(child_tid).unwrap();
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
