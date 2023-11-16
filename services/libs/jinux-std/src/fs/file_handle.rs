@@ -1,8 +1,8 @@
 //! Opend File Handle
 
-use crate::events::Observer;
+use crate::events::{IoEvents, Observer};
 use crate::fs::device::Device;
-use crate::fs::utils::{AccessMode, IoEvents, IoctlCmd, Metadata, Poller, SeekFrom, StatusFlags};
+use crate::fs::utils::{AccessMode, IoctlCmd, Metadata, SeekFrom, StatusFlags};
 use crate::net::socket::Socket;
 use crate::prelude::*;
 use crate::process::signal::Poller;

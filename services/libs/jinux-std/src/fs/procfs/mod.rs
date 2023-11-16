@@ -91,7 +91,7 @@ impl DirOps for RootDirOps {
             SelfSymOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
             let process_ref =
-                process_table::pid_to_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
+                process_table::get_process(&pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
             PidDirOps::new_inode(process_ref, this_ptr.clone())
         } else {
             return_errno!(Errno::ENOENT);

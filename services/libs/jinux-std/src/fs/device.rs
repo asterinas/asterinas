@@ -1,33 +1,21 @@
-use crate::events::IoEvents;
 use crate::fs::fs_resolver::{FsPath, FsResolver};
 use crate::fs::utils::Dentry;
-use crate::fs::utils::{InodeMode, InodeType, IoctlCmd};
+use crate::fs::utils::{InodeMode, InodeType};
 use crate::prelude::*;
-use crate::process::signal::Poller;
+
+use super::inode_handle::FileIo;
 
 /// The abstract of device
-pub trait Device: Sync + Send {
+pub trait Device: Sync + Send + FileIo {
     /// Return the device type.
     fn type_(&self) -> DeviceType;
 
     /// Return the device ID.
     fn id(&self) -> DeviceId;
 
-    /// Read from the device.
-    fn read(&self, buf: &mut [u8]) -> Result<usize>;
-
-    /// Write to the device.
-    fn write(&self, buf: &[u8]) -> Result<usize>;
-
-    /// Poll on the device.
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
-    }
-
-    /// Ioctl on the device.
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+    /// Open a device.
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        Ok(None)
     }
 }
 
