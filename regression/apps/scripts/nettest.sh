@@ -11,4 +11,11 @@ echo "Start net test......"
 ./unix_client
 ./socketpair
 
+# ./epoll_server &
+# ./epoll_client
+
+./select_server &
+./select_client
+
+
 echo "All net test passed"

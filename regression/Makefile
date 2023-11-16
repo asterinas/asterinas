@@ -56,10 +56,16 @@ $(INITRAMFS_EMPTY_DIRS):
 $(INITRAMFS)/opt/syscall_test:
 	@make --no-print-directory -C syscall_test
 
+$(INITRAMFS)/opt/redis:
+	@make --no-print-directory -C redis
+
+
 # If the BUILD_SYSCALL_TEST variable is set, we should depend on the
 # sub make output to do incremental building.
 ifeq ($(BUILD_SYSCALL_TEST), 1)
 $(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS) $(INITRAMFS)/opt/syscall_test
+else ifeq ($(BUILD_REDIS), 1)
+$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS) $(INITRAMFS)/opt/redis
 else
 $(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS)
 endif
