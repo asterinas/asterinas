@@ -539,3 +539,97 @@ pub fn current() -> Arc<Process> {
         panic!("[Internal error]The current thread does not belong to a process");
     }
 }
+
+#[if_cfg_ktest]
+mod test {
+    use super::*;
+
+    fn new_process(parent: Option<Arc<Process>>) -> Arc<Process> {
+        crate::fs::rootfs::init_root_mount();
+        let pid = allocate_tid();
+        let parent = if let Some(parent) = parent {
+            Arc::downgrade(&parent)
+        } else {
+            Weak::new()
+        };
+        Arc::new(Process::new(
+            pid,
+            parent,
+            vec![],
+            String::new(),
+            ProcessVm::alloc(),
+            Arc::new(Mutex::new(FileTable::new())),
+            Arc::new(RwLock::new(FsResolver::new())),
+            Arc::new(RwLock::new(FileCreationMask::default())),
+            Arc::new(Mutex::new(SigDispositions::default())),
+            ResourceLimits::default(),
+        ))
+    }
+
+    fn new_process_in_session(parent: Option<Arc<Process>>) -> Arc<Process> {
+        let mut group_table_mut = process_table::group_table_mut();
+        let mut session_table_mut = process_table::session_table_mut();
+
+        let process = new_process(parent);
+        // Creates new group
+        let group = ProcessGroup::new(process.clone());
+        *process.process_group.lock() = Arc::downgrade(&group);
+
+        // Creates new session
+        let sess = Session::new(group.clone());
+        group.inner.lock().session = Arc::downgrade(&sess);
+        sess.inner.lock().leader = Some(process.clone());
+
+        group_table_mut.insert(group.pgid(), group);
+        session_table_mut.insert(sess.sid(), sess);
+
+        process
+    }
+
+    fn remove_session_and_group(process: Arc<Process>) {
+        let mut session_table_mut = process_table::session_table_mut();
+        let mut group_table_mut = process_table::group_table_mut();
+        if let Some(sess) = process.session() {
+            session_table_mut.remove(&sess.sid());
+        }
+
+        if let Some(group) = process.process_group() {
+            group_table_mut.remove(&group.pgid());
+        }
+    }
+
+    #[ktest]
+    fn init_process() {
+        let process = new_process(None);
+        assert!(process.process_group().is_none());
+        assert!(process.session().is_none());
+    }
+
+    #[ktest]
+    fn init_process_in_session() {
+        let process = new_process_in_session(None);
+        assert!(process.is_group_leader());
+        assert!(process.is_session_leader());
+        remove_session_and_group(process);
+    }
+
+    #[ktest]
+    fn to_new_session() {
+        let process = new_process_in_session(None);
+        let sess = process.session().unwrap();
+        sess.inner.lock().leader = None;
+
+        assert!(!process.is_session_leader());
+        assert!(process
+            .to_new_session()
+            .is_err_and(|e| e.error() == Errno::EPERM));
+
+        let group = process.process_group().unwrap();
+        group.inner.lock().leader = None;
+        assert!(!process.is_group_leader());
+
+        assert!(process
+            .to_new_session()
+            .is_err_and(|e| e.error() == Errno::EPERM));
+    }
+}
