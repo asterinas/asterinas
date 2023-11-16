@@ -1,4 +1,4 @@
-use aster_boot_trojan_builder::{build_linux_setup_header_from_trojan, make_bzimage};
+use aster_boot_trojan_builder::make_bzimage;
 
 use std::{
     fs,
@@ -91,16 +91,17 @@ pub fn create_bootdev_image(
 
     let target_path = match protocol {
         BootProtocol::Linux => {
-            let trojan_install_dir = Path::new("target/-boot-trojan");
-            build_linux_setup_header_from_trojan(
-                Path::new("framework/libs/boot-trojan/trojan"),
-                trojan_install_dir,
-            )
-            .unwrap();
-            let header_path = trojan_install_dir.join("bin").join("aster-boot-trojan");
+            let trojan_src = Path::new("framework/libs/boot-trojan/trojan");
+            let trojan_out = Path::new("target/aster-boot-trojan");
             // Make the `bzImage`-compatible kernel image and place it in the boot directory.
             let target_path = iso_root.join("boot").join("asterinaz");
-            make_bzimage(&target_path, &aster_path.as_path(), &header_path.as_path()).unwrap();
+            println!("[aster-runner] Building bzImage.");
+            make_bzimage(
+                &target_path,
+                &aster_path.as_path(),
+                &trojan_src,
+                &trojan_out,
+            );
             target_path
         }
         BootProtocol::Multiboot | BootProtocol::Multiboot2 => {

@@ -1,26 +1,12 @@
 #![no_std]
 #![no_main]
 
+mod arch;
 mod boot_params;
 mod console;
 mod loader;
 
-use core::arch::{asm, global_asm};
-
-global_asm!(include_str!("header.S"));
-
-global_asm!(include_str!("setup.S"));
-
-unsafe fn call_aster_entrypoint(entrypoint: u32, boot_params_ptr: u32) -> ! {
-    asm!("mov esi, {}", in(reg) boot_params_ptr);
-    asm!("mov eax, {}", in(reg) entrypoint);
-    asm!("jmp eax");
-
-    unreachable!();
-}
-
-#[no_mangle]
-pub extern "cdecl" fn _rust_setup_entry(boot_params_ptr: u32) -> ! {
+fn trojan_entry(boot_params_ptr: u32) -> ! {
     // Safety: this init function is only called once.
     unsafe { console::init() };
     println!("[setup] boot_params_ptr: {:#x}", boot_params_ptr);
@@ -36,7 +22,7 @@ pub extern "cdecl" fn _rust_setup_entry(boot_params_ptr: u32) -> ! {
     println!("[setup] entrypoint: {:#x}", entrypoint);
 
     // Safety: the entrypoint and the ptr is valid.
-    unsafe { call_aster_entrypoint(entrypoint, boot_params_ptr) };
+    unsafe { arch::call_aster_entrypoint(entrypoint.into(), boot_params_ptr.into()) };
 }
 
 #[panic_handler]

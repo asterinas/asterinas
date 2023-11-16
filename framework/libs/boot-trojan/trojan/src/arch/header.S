@@ -3,8 +3,7 @@
 // more information on the Linux x86 Boot Protocol.
 
 // Some of the fields filled with a 0xab* values should be filled
-// by the runner, which is the only tool after building and can
-// access the info of the payload.
+// by the torjan builder.
 // Asterinas will use only a few of these fields, and some of them
 // are filled by the loader and will be read by Asterinas.
 
@@ -47,11 +46,11 @@ xloadflags:             .word 0b01111 # all handover protocols except kexec
 cmdline_size:           .long 4096-1
 hardware_subarch:       .long 0
 hardware_subarch_data:  .quad 0
-payload_offset:         .long 0xabababab # at 0x248/4, to be filled by the runner
-payload_length:         .long 0xabababab # at 0x24c/4, to be filled by the runner
+payload_offset:         .long 0xabababab # at 0x248/4, to be filled by the builder
+payload_length:         .long 0xabababab # at 0x24c/4, to be filled by the builder
 setup_data:             .quad 0
 pref_address:           .quad CODE32_START - 0x200 * (SETUP_SECTS + 1);
-init_size:              .long 0xabababab # at 0x260/4, to be filled by the runner
-handover_offset:        .long start_of_setup32
+init_size:              .long 0xabababab # at 0x260/4, to be filled by the builder
+handover_offset:        .long CODE32_START
 kernel_info_offset:     .long 0
 hdr_end:

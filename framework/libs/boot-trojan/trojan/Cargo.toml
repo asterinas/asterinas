@@ -6,5 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+cfg-if = "1.0.0"
 uart_16550 = "0.3.0"
 xmas-elf = "0.8.0"
