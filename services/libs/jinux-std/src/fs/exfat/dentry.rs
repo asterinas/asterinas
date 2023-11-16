@@ -6,9 +6,10 @@ use crate::prelude::*;
 use super::fat::FatTrait;
 use super::fs:: ExfatFS;
 use super::fat::ExfatChain;
+use super::inode::ExfatDentryName;
+use super::utils::{calc_checksum_16, le16_to_cpu};
 
 use crate::fs::exfat::fat::FatValue;
-
 pub enum ExfatDentry {
     File(ExfatFileDentry),
     Stream(ExfatStreamDentry),
@@ -20,6 +21,21 @@ pub enum ExfatDentry {
     GenericSecondary(ExfatGenericSecondaryDentry),
     Deleted,
     UnUsed
+}
+
+impl ExfatDentry {
+    fn to_le_bytes(&self) -> &[u8]{
+        match self{
+            ExfatDentry::File(file) => file.as_bytes(),
+            ExfatDentry::Stream(stream) => stream.as_bytes(),
+            ExfatDentry::Name(name) => name.as_bytes(),
+            ExfatDentry::Bitmap(bitmap) => bitmap.as_bytes(),
+            ExfatDentry::Upcase(upcase) => upcase.as_bytes(),
+            ExfatDentry::VendorExt(vendor_ext) => vendor_ext.as_bytes(),
+            ExfatDentry::GenericSecondary(secondary) => secondary.as_bytes(),
+            _ => &[0;DENTRY_SIZE],
+        }
+    }
 }
 
 impl TryFrom<&[u8]> for ExfatDentry {
@@ -71,6 +87,40 @@ impl ExfatDentryIterator {
                 has_error:false
             }
         }
+}
+
+pub fn update_checksum_for_dentry_set(dentry_set:&mut[ExfatDentry]) {
+    let mut checksum = 0u16;
+    let mut type_ = CS_DIR_ENTRY as i32;
+    for i in ES_IDX_FILE..dentry_set.len() {
+        let dentry = &dentry_set[i];
+        
+        checksum = calc_checksum_16(dentry.to_le_bytes(),checksum, type_);
+        type_ = CS_DEFAULT as i32;
+    }
+    if let ExfatDentry::File(mut file) = dentry_set[ES_IDX_FILE] {
+        file.checksum = checksum;
+        dentry_set[ES_IDX_FILE] = ExfatDentry::File(file);
+    }
+}
+
+pub fn read_name_from_dentry_set(dentry_set: &[ExfatDentry]) -> ExfatDentryName {
+    let mut name: ExfatDentryName = ExfatDentryName::new();
+    for i in ES_IDX_FIRST_FILENAME..dentry_set.len() {
+        if let ExfatDentry::Name(name_dentry) = dentry_set[i] {
+            for character in name_dentry.unicode_0_14 {
+                if character == 0 {
+                    return name;
+                } else {
+                    name.push(le16_to_cpu(character));
+                }
+            }
+        } else {
+            //End of name dentry
+            break;
+        }
+    }
+    name
 }
 
 impl Iterator for ExfatDentryIterator {
@@ -153,9 +203,21 @@ impl ExfatFS{
 
     }
 
-    //TODO: Validate the status of dentry by using a state machine.
+    pub fn put_dentry_set(&self,dentry_set:&[ExfatDentry],parent_dir:&ExfatChain,entry:u32,sync:bool) -> Result<()>{
+        let dentry_offset = self.find_dentry_location(parent_dir, entry)?;
+        let mut buf = vec![];
+        for dentry in dentry_set.iter() {
+            buf.extend_from_slice(dentry.to_le_bytes());
+        }
+        let dentry_offset = self.find_dentry_location(parent_dir, entry)?;
+        self.block_device().write_bytes(dentry_offset, &buf)?;
+        Ok(())
+    }
+
+    
     fn validate_dentry(&self,dentry:&ExfatDentry, status:ExfatValidateDentryMode) -> Result<ExfatValidateDentryMode>{
-        unimplemented!();
+        //TODO: Validate the status of dentry by using a state machine.
+        return Ok(status);
     }
 
     /// read the {entry}th DENTRY after the position in 'parent_dir'(now only the cluster info valid?)

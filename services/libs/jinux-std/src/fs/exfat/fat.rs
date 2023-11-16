@@ -1,7 +1,5 @@
 use core::mem::size_of;
 
-use jinux_frame::vm::VmIo;
-
 use super::constants::*;
 use super::fs::ExfatFS;
 use crate::prelude::*;
@@ -57,15 +55,6 @@ pub struct ExfatChain {
     pub flags: u8,
 }
 
-impl VmIo for ExfatChain{
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> jinux_frame::Result<()> {
-        todo!()
-    }
-
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> jinux_frame::Result<()> {
-        todo!()
-    }
-}
 
 impl FatTrait for ExfatFS {
     

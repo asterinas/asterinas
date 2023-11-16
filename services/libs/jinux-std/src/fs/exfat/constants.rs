@@ -1,12 +1,5 @@
-pub const EXFAT_ROOT_INO: u64 = 1;
+pub const EXFAT_ROOT_INO: usize = 1;
 pub const EXFAT_CLUSTERS_UNTRACKED: u32 = !0;
-
-// Error handling 
-pub enum ExfatErrorMode {
-    ErrorsCont,
-    ErrorsPanic,
-    ErrorsRo,
-}
 
 // NLS lossy flags
 pub const NLS_NAME_NO_LOSSY: u8 = 0;

@@ -1,7 +1,7 @@
 use core::time::Duration;
-use crate::prelude::*;
-use super::constants::EXFAT_TZ_VALID;
-
+use crate::{prelude::*, fs::utils::InodeMode};
+use super::{constants::*, fs::ExfatMountOptions};
+use time::{ PrimitiveDateTime, Time};
 
 #[cfg(target_arch = "x86_64")]
 pub fn le16_to_cpu(a:u16) -> u16{
@@ -13,9 +13,34 @@ pub fn le32_to_cpu(a:u32) -> u32{
     a
 }
 
+
+#[cfg(target_arch = "x86_64")]
+pub fn cpu_to_le32(a:u32) -> u32{
+    a
+}
+
 #[cfg(target_arch = "x86_64")]
 pub fn le64_to_cpu(a:u64) -> u64{
     a
+}
+
+
+#[cfg(target_arch = "x86_64")]
+pub fn cpu_to_le64(a:u64) -> u64{
+    a
+}
+
+pub fn calc_checksum_16(data:&[u8], prev_checksum:u16, type_:i32) -> u16
+{
+    let mut result = prev_checksum;
+	for (pos,&value) in data.iter().enumerate() {
+        //Ignore the checksum field
+		if type_ == CS_DIR_ENTRY as i32 && (pos == 2 || pos == 3) {
+			continue;
+        }
+		result = ((result << 15) | (result >> 1)) + (value as u16);
+	}
+	return result;
 }
 
 //time_cs has the unit of 10ms,from 0~1990ms.
@@ -39,8 +64,15 @@ pub fn convert_dos_time_to_duration(time_zone:u8,date:u16,time:u16,time_cs:u8) -
         return_errno!(Errno::EINVAL)
     }
 
-    //FIXME: Should use unix date
-    let mut sec = day_result.unwrap().to_julian_day() as u64 * 24 * 3600 + hour as u64 * 3600 + minute as u64 * 60 + second as u64;    
+    let time_result = Time::from_hms(hour as u8, minute as u8, second as u8);
+    if time_result.is_err() {
+        return_errno!(Errno::EINVAL)
+    }
+
+    let date_time = PrimitiveDateTime::new(day_result.unwrap(),time_result.unwrap());
+
+    let mut sec = date_time.assume_utc().unix_timestamp() as u64;
+    
     let mut nano_sec:u32 = 0;
     if time_cs != 0 {
         const NSEC_PER_MSEC : u32 = 1000000;
@@ -83,4 +115,19 @@ fn ajust_time_zone(sec:u64,time_zone:u8) -> u64 {
 fn time_zone_sec(x:u8)->u64{
     //Each time zone represents 15 minutes.
     x as u64 * 15 * 60
+}
+
+ /* Convert attribute bits and a mask to the UNIX mode. */
+ pub fn make_mode(mount_option:ExfatMountOptions,mode:InodeMode,attr:u16) ->InodeMode{
+    let mut ret = mode.bits();
+    if (attr & ATTR_READONLY) !=0 && (attr & ATTR_SUBDIR) == 0 {
+        ret = mode.bits() & !(InodeMode::S_IWGRP | InodeMode::S_IWUSR | InodeMode::S_IWUSR).bits();
+    }
+
+    if (attr & ATTR_SUBDIR) != 0 {
+        return InodeMode::from_bits(ret & !mount_option.fs_dmask).unwrap();
+    } else {
+        return InodeMode::from_bits(ret & !mount_option.fs_fmask).unwrap();
+    }
+
 }

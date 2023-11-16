@@ -13,7 +13,6 @@ pub struct ExfatBitmap{
 }
 
 impl ExfatBitmap{
-
     
     pub fn load_bitmap(fs:Weak<ExfatFS>) -> Result<Self> {
         let root_dir = fs.upgrade().unwrap().super_block().root_dir;

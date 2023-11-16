@@ -1,4 +1,4 @@
-use jinux_frame::vm::VmIo;
+use jinux_frame::vm::{VmIo, VmFrame};
 use crate::prelude::*;
 use alloc::fmt::Debug;
 /// A simple block device for Exfat.
@@ -12,16 +12,24 @@ pub trait BlockDevice: Send + Sync + Any {
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize>;
 
     //Reads a block from the block device.
-    //fn read_block(&self, bid: Bid, block: &VmFrame) -> Result<()>;
+    fn read_block(&self, bid: usize, block: &VmFrame) -> Result<()>;
+
+    //Reads a block from the block device.
+    fn read_page(&self, bid: usize, block: &VmFrame) -> Result<()>;
 
     /// Writes a `[u8]` slice at `offset` into the block device.
     ///
     /// Returns how many bytes were written.
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize>;
 
-    // rites a block into the block device.
-    //fn write_block(&self, bid: Bid, block: &VmFrame) -> Result<()>;
+    // Writes a block into the block device.
+    fn write_block(&self, bid: usize, block: &VmFrame) -> Result<()>;
+
+    //Reads a block from the block device.
+    fn write_page(&self, bid: usize, block: &VmFrame) -> Result<()>;
 }
+
+pub const BLOCK_SIZE : usize = 512;
 
 impl dyn BlockDevice {
     /// Downcast to the specific type.
@@ -36,8 +44,13 @@ impl dyn BlockDevice {
 
     /// Returns the block_size.
     pub fn block_size(&self) -> usize {
-        512
+        //TODO: block size should be the same as the sector size.
+        BLOCK_SIZE
     }
+}
+
+pub fn is_block_aligned(offset: usize) -> bool {
+    offset % BLOCK_SIZE == 0
 }
 
 impl Debug for dyn BlockDevice {

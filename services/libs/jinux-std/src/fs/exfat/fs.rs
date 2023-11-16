@@ -1,4 +1,6 @@
-use super::{block_device::BlockDevice, super_block::ExfatSuperBlock, inode::ExfatInode, balloc::ExfatBitmap};
+use core::sync::atomic::AtomicUsize;
+
+use super::{block_device::BlockDevice, super_block::ExfatSuperBlock, inode::ExfatInode, balloc::ExfatBitmap, upcase_table::ExfatUpcaseTable};
 
 use crate::{fs::{exfat::constants::*, utils::SuperBlock,utils::{FileSystem, Inode}}, return_errno, return_errno_with_message,prelude::*};
 use alloc::boxed::Box;
@@ -15,13 +17,18 @@ pub struct ExfatFS{
     block_device: Box<dyn BlockDevice>,
     super_block: ExfatSuperBlock,
     root: Arc<ExfatInode>,
-    bitmap: Arc<ExfatBitmap>
+    bitmap: Arc<ExfatBitmap>,
+    upcase_table: Arc<ExfatUpcaseTable>,
+    mount_option:ExfatMountOptions,
+
+    //Used for inode allocation.
+    highest_inode_number:AtomicUsize
     //TODO: Should add a no_std hashmap crate like hashbrown.
     //inode_cache : HashMap<Arc<ExfatInode>>
 }
 
 impl ExfatFS{
-    pub fn open(block_device:Box<dyn BlockDevice>) -> Result<Arc<Self>> {
+    pub fn open(block_device:Box<dyn BlockDevice>,mount_option:ExfatMountOptions) -> Result<Arc<Self>> {
         //Load the super_block
         let super_block = Self::read_super_block(block_device.as_ref())?;
 
@@ -29,38 +36,47 @@ impl ExfatFS{
             block_device,
             super_block,
             root:ExfatInode::new(),
-            bitmap:Arc::new(ExfatBitmap::default())
+            bitmap:Arc::new(ExfatBitmap::default()),
+            upcase_table:Arc::new(ExfatUpcaseTable::empty()),
+            mount_option,
+            highest_inode_number:AtomicUsize::new((EXFAT_ROOT_INO + 1)as usize )
         });
 
-        
         // TODO: if the main superblock is corrupted, should we load the backup?
         
         //Verify boot region
         Self::verify_boot_region(exfat_fs.block_device())?;
         
-        //TODO: Load Upcase Table
+        let upcase_table = ExfatUpcaseTable::load_upcase_table(Arc::downgrade(&exfat_fs))?;
 
         let bitmap = ExfatBitmap::load_bitmap(Arc::downgrade(&exfat_fs))?;
-        let root: ExfatInode = Self::read_root(exfat_fs.block_device())?;
+        let root = ExfatFS::read_root(exfat_fs.clone())?;
 
         let fs_mut = Arc::get_mut(&mut exfat_fs).unwrap();
         fs_mut.bitmap = Arc::new(bitmap);
-        fs_mut.root = Arc::new(root);
+        fs_mut.root = root;
+        fs_mut.upcase_table = Arc::new(upcase_table);
 
         //TODO: Handle UTF-8
 
         //TODO: Init Inode Hash Table.
 
         //TODO: Init NLS Table
+       
 
         //TODO: Insert root to inode hash table
 
         Ok(exfat_fs)
     }
 
-    fn read_root(block_device:&dyn BlockDevice ) -> Result<ExfatInode> {
-        todo!()
+    pub(super) fn alloc_inode_number(&self) -> usize {
+        self.highest_inode_number.fetch_add(1, core::sync::atomic::Ordering::SeqCst)
     }
+
+    fn read_root(fs:Arc<ExfatFS>) -> Result<Arc<ExfatInode>> {
+        ExfatInode::read_inode(fs.clone(),ExfatChain { dir: fs.super_block.root_dir, size: 0, flags: ALLOC_FAT_CHAIN },0,EXFAT_ROOT_INO)
+    }
+
 
     //TODO: Check boot signature and boot checksum.
     fn verify_boot_region(block_device:& dyn BlockDevice) -> Result<()> {
@@ -154,6 +170,14 @@ impl ExfatFS{
     pub fn is_valid_cluster(&self,cluster:u32) -> bool {
         cluster >= EXFAT_RESERVED_CLUSTERS && cluster < self.super_block.num_clusters
     }
+
+    pub fn set_volume_dirty(&mut self) {
+        todo!();
+    }
+
+    pub fn mount_option(&self) -> ExfatMountOptions{
+        self.mount_option.clone()
+    }
 }
 
 
@@ -198,19 +222,28 @@ pub struct ExfatHint {
     eidx_or_off: u32,
 }
 
-// Mount options
-// pub struct ExfatMountOptions {
-//     fs_uid: uid_t,
-//     fs_gid: gid_t,
-//     fs_fmask: u16,
-//     fs_dmask: u16,
-//     allow_utime: u16,
-//     iocharset: *mut c_char,
-//     errors: ExfatErrorMode,
-//     utf8: bool,
-//     sys_tz: bool,
-//     discard: bool,
-//     keep_last_dots: bool,
-//     time_offset: i32,
-// }
+#[derive(Clone,Debug)]
+// Error handling 
+pub enum ExfatErrorMode {
+    ErrorsCont,
+    ErrorsPanic,
+    ErrorsRo,
+}
+
+#[derive(Clone,Debug)]
+//Mount options
+pub struct ExfatMountOptions {
+    pub(super) fs_uid: usize,
+    pub(super) fs_gid: usize,
+    pub(super) fs_fmask: u16,
+    pub(super) fs_dmask: u16,
+    pub(super) allow_utime: u16,
+    pub(super) iocharset: String,
+    pub(super) errors: ExfatErrorMode,
+    pub(super) utf8: bool,
+    pub(super) sys_tz: bool,
+    pub(super) discard: bool,
+    pub(super) keep_last_dots: bool,
+    pub(super) time_offset: i32,
+}
 
