@@ -7,6 +7,7 @@ use std::{cmp::PartialOrd, convert::From, ops::Sub};
 // is page-aligned and the legacy setup section size would be 0x1000.
 pub const LEGACY_SETUP_SECS: usize = 7;
 pub const LEGACY_SETUP_SEC_SIZE: usize = 0x200 * (LEGACY_SETUP_SECS + 1);
+
 pub const SETUP32_LMA: usize = 0x100000;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]

@@ -2,13 +2,13 @@ mod mapping;
 mod pe_header;
 
 use std::{
-    error::Error,
+    ffi::OsStr,
     fs::File,
-    io::{Read, Seek, Write},
-    path::Path,
+    io::{Read, Write},
+    path::{Path, PathBuf},
 };
 
-use xmas_elf::program::{ProgramHeader, SegmentData};
+use xmas_elf::program::SegmentData;
 
 use mapping::{TrojanFileOffset, TrojanVA};
 
@@ -22,18 +22,15 @@ fn trojan_to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
     let elf = xmas_elf::ElfFile::new(&elf_file).unwrap();
     let mut bin = Vec::<u8>::new();
 
-    for ph in elf.program_iter() {
-        let ProgramHeader::Ph32(program) = ph else {
-            panic!("Unexpected program header type");
-        };
+    for program in elf.program_iter() {
         if program.get_type().unwrap() == xmas_elf::program::Type::Load {
             let SegmentData::Undefined(header_data) = program.get_data(&elf).unwrap() else {
                 panic!("Unexpected segment data type");
             };
             let dst_file_offset = usize::from(TrojanFileOffset::from(TrojanVA::from(
-                program.virtual_addr as usize,
+                program.virtual_addr() as usize,
             )));
-            let dst_file_length = program.file_size as usize;
+            let dst_file_length = program.file_size() as usize;
             if bin.len() < dst_file_offset + dst_file_length {
                 bin.resize(dst_file_offset + dst_file_length, 0);
             }
@@ -64,7 +61,7 @@ fn fill_header_field(header: &mut [u8], offset: usize, value: &[u8]) {
 fn fill_legacy_header_fields(
     header: &mut [u8],
     kernel_len: usize,
-    header_len: usize,
+    trojan_len: usize,
     payload_offset: TrojanVA,
 ) {
     fill_header_field(
@@ -82,84 +79,98 @@ fn fill_legacy_header_fields(
     fill_header_field(
         header,
         0x260, /* init_size */
-        &((header_len + kernel_len) as u32).to_le_bytes(),
+        &((trojan_len + kernel_len) as u32).to_le_bytes(),
     );
 }
 
-pub fn make_bzimage(path: &Path, kernel_path: &Path, header_path: &Path) -> std::io::Result<()> {
-    let mut header_elf_file = Vec::new();
-    File::open(header_path)?.read_to_end(&mut header_elf_file)?;
-    let mut header = trojan_to_flat_binary(&header_elf_file);
-    // Pad the Linux boot header to let the payload starts with 8-byte alignment.
-    header.resize((header.len() + 7) & !7, 0x00);
+pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_out: &Path) {
+    #[cfg(feature = "trojan64")]
+    let trojan = build_trojan_with_arch(trojan_src, trojan_out, "x86_64-unknown-none".as_ref());
+
+    #[cfg(not(feature = "trojan64"))]
+    let trojan = {
+        let arch = trojan_src.join("x86_64-i386_pm-none.json");
+        build_trojan_with_arch(trojan_src, trojan_out, arch.as_os_str())
+    };
+
+    let mut trojan_elf = Vec::new();
+    File::open(trojan)
+        .unwrap()
+        .read_to_end(&mut trojan_elf)
+        .unwrap();
+    let mut trojan = trojan_to_flat_binary(&trojan_elf);
+    // Pad the header with 8-byte alignment.
+    trojan.resize((trojan.len() + 7) & !7, 0x00);
 
     let mut kernel = Vec::new();
-    File::open(kernel_path)?.read_to_end(&mut kernel)?;
+    File::open(kernel_path)
+        .unwrap()
+        .read_to_end(&mut kernel)
+        .unwrap();
     let payload = kernel;
 
-    let header_len = header.len();
+    let trojan_len = trojan.len();
     let payload_len = payload.len();
-    let payload_offset = TrojanFileOffset::from(header_len);
-    fill_legacy_header_fields(&mut header, payload_len, header_len, payload_offset.into());
+    let payload_offset = TrojanFileOffset::from(trojan_len);
+    fill_legacy_header_fields(&mut trojan, payload_len, trojan_len, payload_offset.into());
 
-    let mut kernel_image = File::create(path)?;
-    kernel_image.write_all(&header)?;
-    kernel_image.write_all(&payload)?;
+    let mut kernel_image = File::create(path).unwrap();
+    kernel_image.write_all(&trojan).unwrap();
+    kernel_image.write_all(&payload).unwrap();
 
-    let image_size = header_len + payload_len;
+    let image_size = trojan_len + payload_len;
 
     // Since the Linux boot header starts at 0x1f1, we can write the PE/COFF header directly to the
     // start of the file without overwriting the Linux boot header.
-    let pe_header = pe_header::make_pe_coff_header(&header_elf_file, image_size);
+    let pe_header = pe_header::make_pe_coff_header(&trojan_elf, image_size);
     assert!(
         pe_header.header_at_zero.len() <= 0x1f1,
         "PE/COFF header is too large"
     );
 
-    // FIXME: Oops, EFI hanover stucks, so I removed the pe header to let grub go through the legacy path.
-    kernel_image.seek(std::io::SeekFrom::Start(0))?;
-    // kernel_image.write_all(&pe_header.header_at_zero)?;
-    kernel_image.seek(std::io::SeekFrom::Start(
-        usize::from(pe_header.relocs.0) as u64
-    ))?;
-    // kernel_image.write_all(&pe_header.relocs.1)?;
-
-    Ok(())
+    #[cfg(feature = "trojan64")]
+    {
+        use std::io::{Seek, SeekFrom};
+        kernel_image.seek(SeekFrom::Start(0)).unwrap();
+        kernel_image.write_all(&pe_header.header_at_zero).unwrap();
+        kernel_image
+            .seek(SeekFrom::Start(usize::from(pe_header.relocs.0) as u64))
+            .unwrap();
+        kernel_image.write_all(&pe_header.relocs.1).unwrap();
+    }
 }
 
-pub fn build_linux_setup_header_from_trojan(
-    source_dir: &Path,
-    out_dir: &Path,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Build the setup header to ELF.
-    let target_json = source_dir.join("x86_64-i386_protected_mode.json");
-
+fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &OsStr) -> PathBuf {
     let cargo = std::env::var("CARGO").unwrap();
     let mut cmd = std::process::Command::new(cargo);
-    cmd.arg("install").arg("aster-boot-trojan");
-    cmd.arg("--debug");
-    cmd.arg("--locked");
-    cmd.arg("--path").arg(source_dir.to_str().unwrap());
-    cmd.arg("--target").arg(target_json.as_os_str());
-    cmd.arg("-Zbuild-std=core,compiler_builtins");
+    cmd.arg("build");
+    cmd.arg("--package").arg("aster-boot-trojan");
+    cmd.arg("--manifest-path")
+        .arg(source_dir.join("Cargo.toml").as_os_str());
+    cmd.arg("--target").arg(arch);
+    cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
     cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
-    // Specify the installation root.
-    cmd.arg("--root").arg(out_dir.as_os_str());
     // Specify the build target directory to avoid cargo running
     // into a deadlock reading the workspace files.
     cmd.arg("--target-dir").arg(out_dir.as_os_str());
     cmd.env_remove("RUSTFLAGS");
     cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
-    let output = cmd.output()?;
-    if !output.status.success() {
-        std::io::stdout().write_all(&output.stdout).unwrap();
-        std::io::stderr().write_all(&output.stderr).unwrap();
-        return Err(format!(
+    let mut child = cmd.spawn().unwrap();
+    let status = child.wait().unwrap();
+    if !status.success() {
+        panic!(
             "Failed to build linux x86 setup header:\n\tcommand `{:?}`\n\treturned {}",
-            cmd, output.status
-        )
-        .into());
+            cmd, status
+        );
     }
 
-    Ok(())
+    // If the arch is a builtin target rather than json, the path operation works as well.
+    let arch_name = Path::new(arch).file_stem().unwrap().to_str().unwrap();
+
+    let trojan_artifact = out_dir
+        .join(arch_name)
+        .join("debug")
+        .join("aster-boot-trojan");
+
+    trojan_artifact.to_owned()
 }
