@@ -76,8 +76,7 @@ int main(){
 
 
         readfds = fds;
-
-        if( select(fdmax + 1 , &readfds, NULL, NULL, NULL) < 0) perror("error at select");
+        if( syscall(23,fdmax + 1 , &readfds, NULL, NULL, NULL) < 0) perror("error at select");
         
         for( int fd = 0; fd < (fdmax + 1); fd++){
             

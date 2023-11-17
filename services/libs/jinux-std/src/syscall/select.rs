@@ -19,7 +19,7 @@ pub fn sys_select(
     timeval_addr: Vaddr,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SELECT);
-
+    error!("select");
     if nfds < 0 || nfds as usize > FD_SETSIZE {
         return_errno_with_message!(Errno::EINVAL, "nfds is negative or exceeds the FD_SETSIZE");
     }
@@ -43,7 +43,7 @@ pub fn sys_select(
         let timeval = read_val_from_user::<timeval_t>(timeval_addr)?;
         Some(Duration::from(timeval))
     };
-
+    
     debug!(
         "nfds = {}, readfds = {:?}, writefds = {:?}, exceptfds = {:?}, timeout = {:?}",
         nfds, readfds, writefds, exceptfds, timeout
