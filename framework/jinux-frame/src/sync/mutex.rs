@@ -31,7 +31,13 @@ impl<T> Mutex<T> {
 
     /// Try Acquire the mutex immedidately.
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        self.acquire_lock().then_some(MutexGuard { mutex: self })
+        // Cannot be reduced to `then_some`, or the possible dropping of the temporary
+        // guard will cause an unexpected unlock.
+        //
+        // TODO: Remove the lint suppression when the false positive warning is fixed
+        // upstream.
+        #[allow(clippy::unnecessary_lazy_evaluations)]
+        self.acquire_lock().then(|| MutexGuard { mutex: self })
     }
 
     /// Release the mutex and wake up one thread which is blocked on this mutex.
