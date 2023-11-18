@@ -157,7 +157,7 @@ impl DatagramSocket {
             ))
     }
 
-    pub fn nonblocking(&self) -> bool {
+    pub fn is_nonblocking(&self) -> bool {
         self.nonblocking.load(Ordering::SeqCst)
     }
 
@@ -189,7 +189,7 @@ impl FileLike for DatagramSocket {
     }
 
     fn status_flags(&self) -> StatusFlags {
-        if self.nonblocking() {
+        if self.is_nonblocking() {
             StatusFlags::O_NONBLOCK
         } else {
             StatusFlags::empty()
@@ -254,7 +254,7 @@ impl Socket for DatagramSocket {
             }
             let events = self.inner.read().poll(IoEvents::IN, Some(&poller));
             if !events.contains(IoEvents::IN) {
-                if self.nonblocking() {
+                if self.is_nonblocking() {
                     return_errno_with_message!(Errno::EAGAIN, "try to receive again");
                 }
                 // FIXME: deal with recvfrom timeout
