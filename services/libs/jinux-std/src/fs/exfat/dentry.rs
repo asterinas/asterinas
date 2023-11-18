@@ -270,17 +270,18 @@ impl ExfatFS{
 
 #[repr(C, packed)]
 #[derive(Clone,Debug,Default,Copy,Pod)]
+// For files & directorys
 pub struct ExfatFileDentry {
-    pub(super) dentry_type: u8,
+    pub(super) dentry_type: u8,                     // 0x85
     //Number of Secondary directory entries.
-    pub(super) num_secondary: u8,
+    pub(super) num_secondary: u8,                   // 2 to 18 (1 StreamDentry + rest NameDentry)
      //Calculated on file and secondary entries.
-    pub(super) checksum: u16,
+    pub(super) checksum: u16,                       // checksum of all directory entries in the given set excluding this field 
 
     pub(super) attribute: u16,
     pub(super) reserved1: u16,
 
-    pub(super) create_time: u16,
+    pub(super) create_time: u16,                    // all rests are times
     pub(super) create_date: u16,
 
     pub(super) modify_time: u16,
@@ -301,25 +302,27 @@ pub struct ExfatFileDentry {
 
 #[repr(C, packed)]
 #[derive(Clone,Debug,Default,Copy,Pod)]
+// MUST be immediately follow the FileDentry (the second dentry in a dentry set)
 pub struct ExfatStreamDentry {
-    pub(super) dentry_type: u8,
-    pub(super) flags: u8,
+    pub(super) dentry_type: u8,     // 0xC0
+    pub(super) flags: u8,           // bit0: AllocationPossible (must be 1); bit1: NoFatChain (=1 <=> contiguous)
     pub(super) reserved1: u8,
-    pub(super) name_len: u8,
-    pub(super) name_hash: u16,
+    pub(super) name_len: u8,        // file name length (in Unicode - 2 bytes)
+    pub(super) name_hash: u16,      // something like checksum for file name (calculated in bytes)
     pub(super) reserved2: u16,
-    pub(super) valid_size: u64,
+    pub(super) valid_size: u64,     // file current size
     pub(super) reserved3: u32,
-    pub(super) start_cluster: u32,
-    pub(super) size: u64,
+    pub(super) start_cluster: u32,  // file start cluster
+    pub(super) size: u64,           // file maximum size (not used in init a inode?)
 }
 
 #[repr(C, packed)]
 #[derive(Clone,Debug,Default,Copy,Pod)]
+// MUST be immediately follow the StreamDentry in the number of NameLength/15 rounded up
 pub struct ExfatNameDentry {
-    pub(super) dentry_type: u8,
-    pub(super) flags: u8,
-    pub(super) unicode_0_14: [u16; EXFAT_FILE_NAME_LEN],
+    pub(super) dentry_type: u8,                             // 0xC1
+    pub(super) flags: u8,                                   // first two bits must be zero
+    pub(super) unicode_0_14: [u16; EXFAT_FILE_NAME_LEN],    // 15 (or less) characters of file name
 }
 
 #[repr(C, packed)]

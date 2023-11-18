@@ -8,7 +8,8 @@ use crate::fs::utils::{Inode, InodeType, PageCache, Metadata};
 use super::block_device::is_block_aligned;
 use super::constants::*;
 use super::dentry::{ExfatDentry, update_checksum_for_dentry_set};
-use super::utils::{convert_dos_time_to_duration,convert_duration_to_dos_time};
+use super::utils::{convert_dos_time_to_duration, convert_duration_to_dos_time};
+use super::fat::{FatValue, FatTrait};
 use crate::events::IoEvents;
 use crate::fs::device::Device;
 use crate::fs::utils::DirentVisitor;
@@ -245,17 +246,124 @@ impl ExfatInode {
         Ok(self.fs().cluster_to_off(cluster) / sector_size + sec_offset)
     }
 
+    // allocate clusters in fat mode, return the first allocated cluster id
+    fn alloc_cluster_fat(&self, num_to_be_allocated:u32, sync_bitmap:bool) -> Result<u32> {
+        let fs = self.fs.upgrade().unwrap();
+        let bitmap = fs.bitmap().upgrade().unwrap();
+        let sb = fs.super_block();
+        let mut alloc_start_cluster = 0;
+        let mut prev_cluster = 0;
+        let mut cur_cluster = EXFAT_FIRST_CLUSTER;
+        for i in 0..num_to_be_allocated {
+            cur_cluster = bitmap.find_next_free_cluster(cur_cluster)?;
+            //bitmap.set_bitmap_used(cur_cluster, sync_bitmap);
+            if i == 0 {
+                alloc_start_cluster = cur_cluster;
+            }
+            else {
+                fs.set_next_fat(prev_cluster, FatValue::Data(cur_cluster))?;
+            }
+            prev_cluster = cur_cluster;
+        }
+        fs.set_next_fat(prev_cluster, FatValue::EndOfChain)?;
+        Ok(alloc_start_cluster)
+    }
+
+
     //Get the cluster id from the logical cluster id in the inode.
     //exFAT do not support holes in the file, so new clusters need to be allocated.
     fn get_or_allocate_cluster_on_disk(&self,cluster:u32,create:bool) -> Result<u32> {
-        todo!()
+        let fs = self.fs.upgrade().unwrap();
+        let sb = fs.super_block();
+        let cur_cluster_num = (self.size_on_disk + sb.cluster_size as usize - 1) >> sb.cluster_size_bits;
+        if cluster >= cur_cluster_num as u32 {
+            if create {
+                self.alloc_cluster(cluster - cur_cluster_num as u32 + 1, true)?;
+            }
+            else {
+                return_errno_with_message!(Errno::EINVAL, "invaild cluster id");
+            }
+        }
+        let mut cluster_id = self.start_cluster;
+        if self.flags == ALLOC_POSSIBLE|ALLOC_NO_FAT_CHAIN {
+            cluster_id += cluster;
+        }
+        else {
+            for i in 0..cluster {
+                let fat_value =  fs.get_next_fat(cluster_id)?;
+                match fat_value {
+                    FatValue::Data(new_id) => { cluster_id = new_id; }
+                    _ => { return_errno_with_message!(Errno::EINVAL, "invaild fat entry"); }
+                }
+            }
+        }
+        Ok(cluster_id)
     }
 
+    // append clusters at the end of file, return the first allocated cluster
     fn alloc_cluster(&self,num_to_be_allocated:u32,sync_bitmap:bool) -> Result<u32> {
-        todo!()
-        //TODO:Find free cluster in bitmap
+        let fs = self.fs.upgrade().unwrap();
+        let bitmap = fs.bitmap().upgrade().unwrap();
+        let sb = fs.super_block();
+        let cur_cluster_num = (self.size_on_disk + sb.cluster_size as usize - 1) >> sb.cluster_size_bits;
+        let no_fat_chain: bool = self.flags == ALLOC_POSSIBLE|ALLOC_NO_FAT_CHAIN;
+        let mut alloc_start_cluster: u32;
 
-        //TODO:Update the corresponding FAT Table
+        // if current capacity is 0(no start_cluster), this means we can choose a allocation type
+        // first try continuous allocation
+        // if no continuous available, turn to fat allocation
+        if cur_cluster_num == 0 {
+            // search for a continuous chunk big enough
+            let search_result = bitmap.find_next_free_cluster_chunk_opt(EXFAT_FIRST_CLUSTER, num_to_be_allocated);
+            match search_result {
+                Result::Ok(start_cluster) => {
+                    alloc_start_cluster = start_cluster;
+                    //bitmap.set_bitmap_used_chunk(start_cluster, num_to_be_allocated, sync_bitmap);
+                    //self.start_cluster = alloc_start_cluster;
+                    //self.flags = ALLOC_POSSIBLE|ALLOC_NO_FAT_CHAIN;
+                    return Ok(alloc_start_cluster);
+                }
+                _ => {
+                    // no continuous chunk available, use fat table
+                    alloc_start_cluster = self.alloc_cluster_fat(num_to_be_allocated, sync_bitmap)?;
+                    //self.start_cluster = alloc_start_cluster;
+                    //self.flags = ALLOC_POSSIBLE|ALLOC_FAT_CHAIN;
+                    return Ok(alloc_start_cluster);
+                }
+            }
+        }
+        // append the exist clusters
+        let mut trans_from_no_fat = false;
+        if no_fat_chain {
+            // first, check for if there are enough following clusters.
+            // if not, we can give up continuous allocation and turn to fat allocation
+            alloc_start_cluster = self.start_cluster + cur_cluster_num as u32;
+            let ok_to_append = bitmap.is_cluster_chunk_free(alloc_start_cluster, num_to_be_allocated)?;
+            if ok_to_append {
+                //bitmap.set_bitmap_used_chunk(alloc_start_cluster, num_to_be_allocated, sync_bitmap);
+                return Ok(alloc_start_cluster);
+            }
+            else {
+                // fill in fat for already allocated part
+                for i in 0..cur_cluster_num - 1 {
+                    fs.set_next_fat(self.start_cluster + i as u32, FatValue::Data(self.start_cluster + i as u32 + 1))?;
+                }
+                fs.set_next_fat(self.start_cluster + cur_cluster_num  as u32 - 1, FatValue::EndOfChain)?;
+                //self.flags = ALLOC_POSSIBLE|ALLOC_FAT_CHAIN;
+                trans_from_no_fat = true;
+            }
+        }
+        // fat allocation (2 possibilty: originally fat allocation; transformed from continuous allocation)
+        let cur_end_cluster: u32;
+        if trans_from_no_fat {
+            cur_end_cluster = self.start_cluster + cur_cluster_num as u32 - 1;
+        }
+        else {
+            cur_end_cluster = self.get_or_allocate_cluster_on_disk(cur_cluster_num as u32 - 1, false)?;
+        }
+        alloc_start_cluster = self.alloc_cluster_fat(num_to_be_allocated, sync_bitmap)?;
+        fs.set_next_fat(cur_end_cluster, FatValue::Data(alloc_start_cluster))?;
+        return Ok(alloc_start_cluster);
     }
 
 
@@ -345,7 +453,40 @@ impl ExfatInode {
 
     
     pub fn resize(&self,new_size:usize) -> Result<()> {
-        todo!()
+        let no_fat_chain: bool = self.flags == ALLOC_POSSIBLE|ALLOC_NO_FAT_CHAIN;
+        let fs = self.fs.upgrade().unwrap();
+        let bitmap = fs.bitmap().upgrade().unwrap();
+        let sb = fs.super_block();
+        let cur_cluster_num = (self.size_on_disk + sb.cluster_size as usize - 1) >> sb.cluster_size_bits;
+        let need_cluster_num= (new_size + sb.cluster_size as usize - 1) >> sb.cluster_size_bits;
+        if need_cluster_num > cur_cluster_num {
+            // need to allocate new clusters
+            let alloc_num = need_cluster_num - cur_cluster_num;
+            self.alloc_cluster(alloc_num as u32, true)?;
+        }
+        else if need_cluster_num < cur_cluster_num {
+            let trunc_num = cur_cluster_num - need_cluster_num;
+            // need to truncate exist clusters
+            let new_end_cluster = self.get_or_allocate_cluster_on_disk(need_cluster_num as u32 - 1, false)?;
+            if no_fat_chain {
+                //bitmap.set_bitmap_unused_chunk(new_end_cluster + 1, trunc_num as u32, true)?;
+            }
+            else {
+                let mut prev_cluster = new_end_cluster;
+                for i in 0..trunc_num {
+                    match fs.get_next_fat(prev_cluster)? {
+                        FatValue::Data(cur_cluster) => { 
+                            //bitmap.set_bitmap_unused(cur_cluster, true)?;
+                            prev_cluster = cur_cluster;
+                        }
+                        _ => return_errno_with_message!(Errno::EINVAL, "Invalid fat entry")
+                    }
+                }
+                fs.set_next_fat(new_end_cluster, FatValue::EndOfChain)?;
+            }
+        }
+        //self.size_on_disk = new_size;
+        Ok(())
     }
 
     fn page_cache(&self) -> &PageCache {
