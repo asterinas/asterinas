@@ -21,7 +21,7 @@ use super::second_stage::{PageTableEntry, PageTableFlags};
 pub struct RootEntry(u128);
 
 impl RootEntry {
-    pub const fn present(&self) -> bool {
+    pub const fn is_present(&self) -> bool {
         // Bit 0
         (self.0 & 0b1) != 0
     }
@@ -94,7 +94,7 @@ impl RootTable {
             .read_val::<RootEntry>(device_id.bus as usize * size_of::<RootEntry>())
             .unwrap();
 
-        if !bus_entry.present() {
+        if !bus_entry.is_present() {
             let table = ContextTable::new();
             let address = table.paddr();
             self.context_tables.insert(address, table);
@@ -128,7 +128,7 @@ impl RootTable {
                     * size_of::<ContextEntry>(),
             )
             .unwrap();
-        if bus_entry.present() {
+        if bus_entry.is_present() {
             warn!("IOMMU: Overwritting the existing device page table");
         }
         let address = page_table.root_paddr();
@@ -200,13 +200,13 @@ impl ContextEntry {
         ((self.0 & 0b1100) >> 2) as u64
     }
 
-    /// Enables or disables recording/reporting of qualified non-recoverable faults.
-    pub const fn fault_process_disable(&self) -> bool {
+    /// Whether need to record/report qualified non-recoverable faults.
+    pub const fn need_fault_process(&self) -> bool {
         // Bit 1
-        (self.0 & 0b10) != 0
+        (self.0 & 0b10) == 0
     }
 
-    pub const fn present(&self) -> bool {
+    pub const fn is_present(&self) -> bool {
         // Bit 0
         (self.0 & 0b1) != 0
     }
@@ -253,7 +253,7 @@ impl ContextTable {
             )
             .unwrap();
 
-        if !bus_entry.present() {
+        if !bus_entry.is_present() {
             let table: PageTable<PageTableEntry> = PageTable::new(PageTableConfig {
                 address_width: crate::vm::page_table::AddressWidth::Level3,
             });
