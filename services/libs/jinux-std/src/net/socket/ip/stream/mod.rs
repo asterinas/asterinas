@@ -38,7 +38,7 @@ enum State {
 
 impl StreamSocket {
     pub fn new(nonblocking: bool) -> Self {
-        let state = State::Init(Arc::new(InitStream::new(nonblocking)));
+        let state = State::Init(InitStream::new(nonblocking));
         Self {
             state: RwLock::new(state),
         }
@@ -71,7 +71,7 @@ impl StreamSocket {
             }
         };
 
-        let connecting = Arc::new(init_stream.connect(remote_endpoint)?);
+        let connecting = init_stream.connect(remote_endpoint)?;
         *state = State::Connecting(connecting.clone());
         Ok(connecting)
     }
@@ -139,12 +139,10 @@ impl Socket for StreamSocket {
         let connecting_stream = self.do_connect(&remote_endpoint)?;
         match connecting_stream.wait_conn() {
             Ok(connected_stream) => {
-                let connected_stream = Arc::new(connected_stream);
                 *self.state.write() = State::Connected(connected_stream);
                 Ok(())
             }
             Err((err, init_stream)) => {
-                let init_stream = Arc::new(init_stream);
                 *self.state.write() = State::Init(init_stream);
                 Err(err)
             }
@@ -164,7 +162,7 @@ impl Socket for StreamSocket {
             State::Connected(_) => return_errno_with_message!(Errno::EINVAL, "cannot listen"),
         };
 
-        let listener = Arc::new(init_stream.listen(backlog)?);
+        let listener = init_stream.listen(backlog)?;
         *state = State::Listen(listener);
         Ok(())
     }
@@ -181,7 +179,7 @@ impl Socket for StreamSocket {
         };
 
         let accepted_socket = {
-            let state = RwLock::new(State::Connected(Arc::new(connected_stream)));
+            let state = RwLock::new(State::Connected(connected_stream));
             Arc::new(StreamSocket { state })
         };
 

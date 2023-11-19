@@ -1,8 +1,8 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
+use crate::events::{IoEvents, Observer};
 use crate::net::iface::IpEndpoint;
-use crate::process::signal::Poller;
+use crate::process::signal::{Pollee, Poller};
 use crate::{
     net::{
         iface::{AnyBoundSocket, RawTcpSocket},
@@ -16,6 +16,7 @@ pub struct ConnectedStream {
     nonblocking: AtomicBool,
     bound_socket: Arc<AnyBoundSocket>,
     remote_endpoint: IpEndpoint,
+    pollee: Pollee,
 }
 
 impl ConnectedStream {
@@ -23,12 +24,18 @@ impl ConnectedStream {
         is_nonblocking: bool,
         bound_socket: Arc<AnyBoundSocket>,
         remote_endpoint: IpEndpoint,
-    ) -> Self {
-        Self {
+        pollee: Pollee,
+    ) -> Arc<Self> {
+        let connected = Arc::new(Self {
             nonblocking: AtomicBool::new(is_nonblocking),
             bound_socket,
             remote_endpoint,
-        }
+            pollee,
+        });
+        connected
+            .bound_socket
+            .set_observer(Arc::downgrade(&connected) as _);
+        connected
     }
 
     pub fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -50,7 +57,7 @@ impl ConnectedStream {
                 let remote_endpoint = self.remote_endpoint()?;
                 return Ok((recv_len, remote_endpoint));
             }
-            let events = self.bound_socket.poll(IoEvents::IN, Some(&poller));
+            let events = self.poll(IoEvents::IN, Some(&poller));
             if events.contains(IoEvents::HUP) || events.contains(IoEvents::ERR) {
                 return_errno_with_message!(Errno::ENOTCONN, "recv packet fails");
             }
@@ -71,7 +78,7 @@ impl ConnectedStream {
                 .recv_slice(buf)
                 .map_err(|_| Error::with_message(Errno::ENOTCONN, "fail to recv packet"))
         });
-        self.bound_socket.update_socket_state();
+        self.update_io_events();
         res
     }
 
@@ -84,7 +91,7 @@ impl ConnectedStream {
             if sent_len > 0 {
                 return Ok(sent_len);
             }
-            let events = self.bound_socket.poll(IoEvents::OUT, Some(&poller));
+            let events = self.poll(IoEvents::OUT, Some(&poller));
             if events.contains(IoEvents::HUP) || events.contains(IoEvents::ERR) {
                 return_errno_with_message!(Errno::ENOBUFS, "fail to send packets");
             }
@@ -104,10 +111,10 @@ impl ConnectedStream {
             .raw_with(|socket: &mut RawTcpSocket| socket.send_slice(buf))
             .map_err(|_| Error::with_message(Errno::ENOBUFS, "cannot send packet"));
         match res {
-            // We have to explicitly invoke `update_socket_state` when the send buffer becomes
+            // We have to explicitly invoke `update_io_events` when the send buffer becomes
             // full. Note that smoltcp does not think it is an interface event, so calling
             // `poll_ifaces` alone is not enough.
-            Ok(0) => self.bound_socket.update_socket_state(),
+            Ok(0) => self.update_io_events(),
             Ok(_) => poll_ifaces(),
             _ => (),
         };
@@ -125,7 +132,25 @@ impl ConnectedStream {
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.bound_socket.poll(mask, poller)
+        self.pollee.poll(mask, poller)
+    }
+
+    fn update_io_events(&self) {
+        self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
+            let pollee = &self.pollee;
+
+            if socket.can_recv() {
+                pollee.add_events(IoEvents::IN);
+            } else {
+                pollee.del_events(IoEvents::IN);
+            }
+
+            if socket.can_send() {
+                pollee.add_events(IoEvents::OUT);
+            } else {
+                pollee.del_events(IoEvents::OUT);
+            }
+        });
     }
 
     pub fn is_nonblocking(&self) -> bool {
@@ -134,5 +159,11 @@ impl ConnectedStream {
 
     pub fn set_nonblocking(&self, nonblocking: bool) {
         self.nonblocking.store(nonblocking, Ordering::Relaxed);
+    }
+}
+
+impl Observer<()> for ConnectedStream {
+    fn on_events(&self, _: &()) {
+        self.update_io_events();
     }
 }

@@ -113,13 +113,12 @@ impl IfaceCommon {
             return Err((e, socket));
         }
         let socket_family = socket.socket_family();
-        let pollee = socket.pollee();
         let mut sockets = self.sockets.lock_irq_disabled();
         let handle = match socket.raw_socket_family() {
             AnyRawSocket::Tcp(tcp_socket) => sockets.add(tcp_socket),
             AnyRawSocket::Udp(udp_socket) => sockets.add(udp_socket),
         };
-        let bound_socket = AnyBoundSocket::new(iface, handle, port, pollee, socket_family);
+        let bound_socket = AnyBoundSocket::new(iface, handle, port, socket_family);
         self.insert_bound_socket(&bound_socket).unwrap();
         Ok(bound_socket)
     }
@@ -140,7 +139,7 @@ impl IfaceCommon {
         if has_events {
             self.bound_sockets.read().iter().for_each(|bound_socket| {
                 if let Some(bound_socket) = bound_socket.upgrade() {
-                    bound_socket.update_socket_state();
+                    bound_socket.on_iface_events();
                 }
             });
         }
