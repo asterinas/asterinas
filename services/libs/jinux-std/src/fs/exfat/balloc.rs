@@ -122,7 +122,7 @@ impl ExfatBitmap{
             Ok(start_index + EXFAT_RESERVED_CLUSTERS)
         }
         else {
-            return_errno!(Errno::EINVAL)
+            return_errno!(Errno::ENOSPC)
         }
     }
 
@@ -235,7 +235,7 @@ impl ExfatBitmap{
                 Ok(result_bit_index + EXFAT_RESERVED_CLUSTERS)
             }
             else {
-                return_errno!(Errno::EINVAL)
+                return_errno!(Errno::ENOSPC)
             }
         }
         else {

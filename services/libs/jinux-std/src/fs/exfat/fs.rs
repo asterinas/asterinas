@@ -1,4 +1,4 @@
-use core::sync::atomic::AtomicUsize;
+use core::{sync::atomic::AtomicUsize};
 
 use super::{block_device::BlockDevice, super_block::ExfatSuperBlock, inode::ExfatInode, balloc::ExfatBitmap, upcase_table::ExfatUpcaseTable};
 
@@ -16,15 +16,22 @@ use crate::fs::exfat::fat::ExfatChain;
 pub struct ExfatFS{
     block_device: Box<dyn BlockDevice>,
     super_block: ExfatSuperBlock,
-    root: Arc<ExfatInode>,
-    bitmap: Arc<ExfatBitmap>,
-    upcase_table: Arc<ExfatUpcaseTable>,
-    mount_option:ExfatMountOptions,
 
+    root: Arc<ExfatInode>,
+    
+    bitmap: Arc<Mutex<ExfatBitmap>>,
+
+    upcase_table: Arc<ExfatUpcaseTable>,
+
+    mount_option:ExfatMountOptions,
     //Used for inode allocation.
-    highest_inode_number:AtomicUsize
+    highest_inode_number:AtomicUsize,
     //TODO: Should add a no_std hashmap crate like hashbrown.
     //inode_cache : HashMap<Arc<ExfatInode>>
+
+    //We need to hold the mutex before accessing bitmap or inode, otherwise there will be deadlocks.
+    mutex: Mutex<()>
+
 }
 
 impl ExfatFS{
@@ -35,11 +42,12 @@ impl ExfatFS{
         let mut exfat_fs = Arc::new(ExfatFS{
             block_device,
             super_block,
-            root:ExfatInode::new(),
-            bitmap:Arc::new(ExfatBitmap::default()),
+            root:Arc::new(ExfatInode::default()),
+            bitmap:Arc::new(Mutex::new(ExfatBitmap::default())),
             upcase_table:Arc::new(ExfatUpcaseTable::empty()),
             mount_option,
-            highest_inode_number:AtomicUsize::new((EXFAT_ROOT_INO + 1)as usize )
+            highest_inode_number:AtomicUsize::new((EXFAT_ROOT_INO + 1)as usize),
+            mutex:Mutex::new(())
         });
 
         // TODO: if the main superblock is corrupted, should we load the backup?
@@ -53,7 +61,7 @@ impl ExfatFS{
         let root = ExfatFS::read_root(exfat_fs.clone())?;
 
         let fs_mut = Arc::get_mut(&mut exfat_fs).unwrap();
-        fs_mut.bitmap = Arc::new(bitmap);
+        fs_mut.bitmap = Arc::new(Mutex::new(bitmap));
         fs_mut.root = root;
         fs_mut.upcase_table = Arc::new(upcase_table);
 
@@ -159,27 +167,31 @@ impl ExfatFS{
         self.super_block
     }
 
-    pub fn bitmap(&self) -> Weak<ExfatBitmap> {
-        Arc::downgrade(&self.bitmap)
+    pub fn bitmap(&self) -> Arc<Mutex<ExfatBitmap>> {
+        self.bitmap.clone()
     }
 
-    pub fn root_inode(&self) -> Result<Arc<ExfatInode>> {
-        unimplemented!()
+    pub fn root_inode(&self) -> Arc<ExfatInode> {
+        self.root.clone()
     }
 
-    pub fn cluster_to_off(&self,cluster:u32) -> usize{
+    pub(super) fn lock(&self) -> MutexGuard<'_, ()>{
+        self.mutex.lock()
+    }
+
+    pub(super) fn cluster_to_off(&self,cluster:u32) -> usize{
         (((((cluster - EXFAT_RESERVED_CLUSTERS) as u64) << self.super_block.sect_per_cluster_bits) + self.super_block.data_start_sector)*self.super_block.sector_size as u64) as usize
     }
 
-    pub fn is_valid_cluster(&self,cluster:u32) -> bool {
+    pub(super) fn is_valid_cluster(&self,cluster:u32) -> bool {
         cluster >= EXFAT_RESERVED_CLUSTERS && cluster < self.super_block.num_clusters
     }
 
-    pub fn is_valid_cluster_chunk(&self,start_cluster:u32, cluster_num:u32) -> bool {
+    pub(super) fn is_valid_cluster_chunk(&self,start_cluster:u32, cluster_num:u32) -> bool {
         start_cluster >= EXFAT_RESERVED_CLUSTERS && start_cluster + cluster_num - 1 < self.super_block.num_clusters
     }
 
-    pub fn set_volume_dirty(&mut self) {
+    pub(super) fn set_volume_dirty(&mut self) {
         todo!();
     }
 
@@ -191,7 +203,7 @@ impl ExfatFS{
 
 impl FileSystem for ExfatFS {
     fn sync(&self) -> Result<()> {
-        // TODO:Sync
+        // TODO:Should sync all inodes in the file system.
         todo!();
     }
 
