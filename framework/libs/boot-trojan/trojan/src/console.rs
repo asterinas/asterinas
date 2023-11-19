@@ -1,4 +1,4 @@
-use core::fmt::{self, Write};
+use core::fmt::Write;
 
 use uart_16550::SerialPort;
 
@@ -17,37 +17,45 @@ pub unsafe fn init() {
 
 impl Stdout {
     /// safety: this function must only be called once
-    pub unsafe fn init() -> Self {
+    unsafe fn init() -> Self {
         let mut serial_port = unsafe { SerialPort::new(0x3F8) };
         serial_port.init();
         Self { serial_port }
     }
 }
 
-impl Write for Stdout {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
+impl Stdout {
+    fn write_str(&mut self, s: &str) {
         self.serial_port.write_str(s).unwrap();
-        Ok(())
+    }
+
+    fn write_char(&mut self, c: char) {
+        self.serial_port.send(c as u8);
     }
 }
 
-pub fn print(args: fmt::Arguments) {
-    // safety: init() must be called before print() and there is no race condition
-    unsafe {
-        STDOUT.write_fmt(args).unwrap();
+/// Safety: init() must be called before print() and there should be no race condition
+pub unsafe fn print(s: &str) {
+    STDOUT.write_str(s);
+}
+
+/// Safety: init() must be called before print_char() and there should be no race condition
+pub unsafe fn print_char(c: char) {
+    STDOUT.write_char(c);
+}
+
+// Safety: init() must be called before print_hex() and there should be no race condition
+pub unsafe fn print_hex(n: usize) {
+    print("0x");
+    let mut n = n;
+    for _ in 0..16 {
+        let digit = (n & 0xf) as u8;
+        n >>= 4;
+        let c = if digit < 10 {
+            (b'0' + digit) as char
+        } else {
+            (b'a' + digit - 10) as char
+        };
+        print_char(c);
     }
-}
-
-#[macro_export]
-macro_rules! print {
-  ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::console::print(format_args!($fmt $(, $($arg)+)?))
-  }
-}
-
-#[macro_export]
-macro_rules! println {
-  ($fmt: literal $(, $($arg: tt)+)?) => {
-    $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
-  }
 }

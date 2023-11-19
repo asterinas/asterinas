@@ -2,7 +2,6 @@ mod mapping;
 mod pe_header;
 
 use std::{
-    ffi::OsStr,
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -85,12 +84,15 @@ fn fill_legacy_header_fields(
 
 pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_out: &Path) {
     #[cfg(feature = "trojan64")]
-    let trojan = build_trojan_with_arch(trojan_src, trojan_out, "x86_64-unknown-none".as_ref());
+    let trojan = build_trojan_with_arch(trojan_src, trojan_out, &TrojanBuildArch::X86_64);
 
     #[cfg(not(feature = "trojan64"))]
     let trojan = {
-        let arch = trojan_src.join("x86_64-i386_pm-none.json");
-        build_trojan_with_arch(trojan_src, trojan_out, arch.as_os_str())
+        let arch = trojan_src
+            .join("x86_64-i386_pm-none.json")
+            .canonicalize()
+            .unwrap();
+        build_trojan_with_arch(trojan_src, trojan_out, &TrojanBuildArch::Other(arch))
     };
 
     let mut trojan_elf = Vec::new();
@@ -140,14 +142,32 @@ pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_o
     }
 }
 
-fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &OsStr) -> PathBuf {
+// We need a custom target file for i386 but not for x86_64.
+// The compiler may warn us the X86_64 enum variant is not constructed
+// when we are building for i386, but we can ignore it.
+#[allow(dead_code)]
+enum TrojanBuildArch {
+    X86_64,
+    Other(PathBuf),
+}
+
+fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildArch) -> PathBuf {
+    if !out_dir.exists() {
+        std::fs::create_dir_all(&out_dir).unwrap();
+    }
+    let out_dir = std::fs::canonicalize(out_dir).unwrap();
+
     let cargo = std::env::var("CARGO").unwrap();
     let mut cmd = std::process::Command::new(cargo);
+    cmd.current_dir(source_dir);
     cmd.arg("build");
+    // Relocations are fewer in release mode, saving header real-estate.
+    cmd.arg("--release");
     cmd.arg("--package").arg("aster-boot-trojan");
-    cmd.arg("--manifest-path")
-        .arg(source_dir.join("Cargo.toml").as_os_str());
-    cmd.arg("--target").arg(arch);
+    cmd.arg("--target").arg(match arch {
+        TrojanBuildArch::X86_64 => "x86_64-unknown-none",
+        TrojanBuildArch::Other(path) => path.to_str().unwrap(),
+    });
     cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
     cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
     // Specify the build target directory to avoid cargo running
@@ -155,6 +175,7 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &OsStr) -> Pa
     cmd.arg("--target-dir").arg(out_dir.as_os_str());
     cmd.env_remove("RUSTFLAGS");
     cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
+
     let mut child = cmd.spawn().unwrap();
     let status = child.wait().unwrap();
     if !status.success() {
@@ -164,12 +185,15 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &OsStr) -> Pa
         );
     }
 
-    // If the arch is a builtin target rather than json, the path operation works as well.
-    let arch_name = Path::new(arch).file_stem().unwrap().to_str().unwrap();
+    // Return the path to the trojan binary.
+    let arch_name = match arch {
+        TrojanBuildArch::X86_64 => "x86_64-unknown-none",
+        TrojanBuildArch::Other(path) => path.file_stem().unwrap().to_str().unwrap(),
+    };
 
     let trojan_artifact = out_dir
         .join(arch_name)
-        .join("debug")
+        .join("release")
         .join("aster-boot-trojan");
 
     trojan_artifact.to_owned()

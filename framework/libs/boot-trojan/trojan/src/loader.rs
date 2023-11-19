@@ -24,6 +24,6 @@ pub fn load_elf(file: &[u8]) -> u32 {
         }
     }
 
-    // Return the Linux 32-bit Boot Protocol entry point defined by Asterinas.
-    0x8001000
+    // Return the Linux Boot Protocol entry point defined by Asterinas.
+    crate::arch::ASTER_ENTRY_POINT
 }

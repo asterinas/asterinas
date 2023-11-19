@@ -1,4 +1,4 @@
-ENTRY(start_of_setup64)
+ENTRY(efi_handover_setup_entry)
 OUTPUT_ARCH(i386:x86-64)
 OUTPUT_FORMAT(elf64-x86-64)
 
@@ -17,7 +17,6 @@ SECTIONS
     .setup                  : { KEEP(*(.setup)) }
 
     .text                   : { *(.text .text.*) }
-    .rodata                 : { *(.rodata .rodata.*) }
 
     .data                   : { *(.data .data.*) }
     .bss                    : {
@@ -25,6 +24,15 @@ SECTIONS
         *(.bss .bss.*) *(COMMON)
         PROVIDE(__bss_end = .);
     }
+
+    .got.plt                : {
+        *(.got.plt .got.plt.*)
+    }
+    .dynamic                : {
+        *(.dynamic .dynamic.*)
+    }
+
+    .rodata                 : { *(.rodata .rodata.*) }
 
     .eh_frame               : {
         *(.eh_frame .eh_frame.*)
@@ -36,4 +44,10 @@ SECTIONS
     .rela.dyn               : {
         *(.rela.dyn .rela.dyn.*)
     }
+
+    .rela.plt               : {
+        *(.rela.plt .rela.plt.*)
+    }
+
+    .comment                : { *(.comment) }
 }

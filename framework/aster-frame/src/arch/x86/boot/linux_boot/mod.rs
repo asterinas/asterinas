@@ -1,8 +1,8 @@
 //! The Linux 64-bit Boot Protocol supporting module.
 //!
 
-mod boot_params;
-use boot_params::E820Type;
+extern crate linux_boot_params;
+use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
 
 use crate::boot::{
     kcmdline::KCmdlineArg,
@@ -16,7 +16,7 @@ use core::ffi::CStr;
 
 use spin::Once;
 
-static BOOT_PARAMS: Once<boot_params::BootParams> = Once::new();
+static BOOT_PARAMS: Once<BootParams> = Once::new();
 
 fn init_bootloader_name(bootloader_name: &'static Once<String>) {
     let hdr = &BOOT_PARAMS.get().unwrap().hdr;
@@ -140,9 +140,9 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
 
 /// The entry point of Rust code called by the Linux 64-bit boot compatible bootloader.
 #[no_mangle]
-unsafe extern "sysv64" fn __linux64_boot(params_ptr: *const boot_params::BootParams) -> ! {
+unsafe extern "sysv64" fn __linux64_boot(params_ptr: *const BootParams) -> ! {
     let params = *params_ptr;
-    assert_eq!({ params.hdr.header }, boot_params::LINUX_BOOT_HEADER_MAGIC);
+    assert_eq!({ params.hdr.header }, LINUX_BOOT_HEADER_MAGIC);
     BOOT_PARAMS.call_once(|| params);
     crate::boot::register_boot_init_callbacks(
         init_bootloader_name,

@@ -1,0 +1,9 @@
+[target.x86_64-unknown-none]
+rustflags = [
+    "-Ccode-model=kernel",
+    "-Crelocation-model=pie",
+    "-Ctarget-feature=+crt-static",
+    "-Zplt=yes",
+    "-Zrelax-elf-relocations=yes",
+    "-Zrelro-level=full",
+]
