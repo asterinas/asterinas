@@ -1,10 +1,10 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
+use crate::events::{IoEvents, Observer};
 use crate::net::iface::{AnyUnboundSocket, BindPortConfig, IpEndpoint};
 
 use crate::net::iface::{AnyBoundSocket, RawTcpSocket};
-use crate::process::signal::Poller;
+use crate::process::signal::{Pollee, Poller};
 use crate::{net::poll_ifaces, prelude::*};
 
 use super::connected::ConnectedStream;
@@ -16,6 +16,7 @@ pub struct ListenStream {
     bound_socket: Arc<AnyBoundSocket>,
     /// Backlog sockets listening at the local endpoint
     backlog_sockets: RwLock<Vec<BacklogSocket>>,
+    pollee: Pollee,
 }
 
 impl ListenStream {
@@ -23,18 +24,24 @@ impl ListenStream {
         nonblocking: bool,
         bound_socket: Arc<AnyBoundSocket>,
         backlog: usize,
-    ) -> Result<Self> {
-        let listen_stream = Self {
+        pollee: Pollee,
+    ) -> Result<Arc<Self>> {
+        let listen_stream = Arc::new(Self {
             is_nonblocking: AtomicBool::new(nonblocking),
             backlog,
             bound_socket,
             backlog_sockets: RwLock::new(Vec::new()),
-        };
+            pollee,
+        });
         listen_stream.fill_backlog_sockets()?;
+        listen_stream.pollee.reset_events();
+        listen_stream
+            .bound_socket
+            .set_observer(Arc::downgrade(&listen_stream) as _);
         Ok(listen_stream)
     }
 
-    pub fn accept(&self) -> Result<(ConnectedStream, IpEndpoint)> {
+    pub fn accept(&self) -> Result<(Arc<ConnectedStream>, IpEndpoint)> {
         // wait to accept
         let poller = Poller::new();
         loop {
@@ -42,8 +49,8 @@ impl ListenStream {
             let accepted_socket = if let Some(accepted_socket) = self.try_accept() {
                 accepted_socket
             } else {
-                let events = self.poll(IoEvents::IN | IoEvents::OUT, Some(&poller));
-                if !events.contains(IoEvents::IN) && !events.contains(IoEvents::OUT) {
+                let events = self.poll(IoEvents::IN, Some(&poller));
+                if !events.contains(IoEvents::IN) {
                     if self.is_nonblocking() {
                         return_errno_with_message!(Errno::EAGAIN, "try accept again");
                     }
@@ -57,7 +64,12 @@ impl ListenStream {
                 let BacklogSocket {
                     bound_socket: backlog_socket,
                 } = accepted_socket;
-                ConnectedStream::new(false, backlog_socket, remote_endpoint)
+                ConnectedStream::new(
+                    false,
+                    backlog_socket,
+                    remote_endpoint,
+                    Pollee::new(IoEvents::empty()),
+                )
             };
             return Ok((connected_stream, remote_endpoint));
         }
@@ -88,6 +100,7 @@ impl ListenStream {
             backlog_sockets.remove(index)
         };
         self.fill_backlog_sockets().unwrap();
+        self.update_io_events();
         Some(backlog_socket)
     }
 
@@ -98,20 +111,23 @@ impl ListenStream {
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        let backlog_sockets = self.backlog_sockets.read();
-        for backlog_socket in backlog_sockets.iter() {
-            if backlog_socket.is_active() {
-                return IoEvents::IN;
-            } else {
-                // regiser poller to the backlog socket
-                backlog_socket.poll(mask, poller);
-            }
-        }
-        IoEvents::empty()
+        self.pollee.poll(mask, poller)
     }
 
     fn bound_socket(&self) -> Arc<AnyBoundSocket> {
         self.backlog_sockets.read()[0].bound_socket.clone()
+    }
+
+    fn update_io_events(&self) {
+        // The lock should be held to avoid data races
+        let backlog_sockets = self.backlog_sockets.read();
+
+        let can_accept = backlog_sockets.iter().any(|socket| socket.is_active());
+        if can_accept {
+            self.pollee.add_events(IoEvents::IN);
+        } else {
+            self.pollee.del_events(IoEvents::IN);
+        }
     }
 
     pub fn is_nonblocking(&self) -> bool {
@@ -120,6 +136,12 @@ impl ListenStream {
 
     pub fn set_nonblocking(&self, nonblocking: bool) {
         self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
+    }
+}
+
+impl Observer<()> for ListenStream {
+    fn on_events(&self, _: &()) {
+        self.update_io_events();
     }
 }
 
@@ -146,7 +168,6 @@ impl BacklogSocket {
                 .listen(local_endpoint)
                 .map_err(|_| Error::with_message(Errno::EINVAL, "fail to listen"))
         })?;
-        bound_socket.update_socket_state();
         Ok(Self { bound_socket })
     }
 
@@ -158,9 +179,5 @@ impl BacklogSocket {
     fn remote_endpoint(&self) -> Option<IpEndpoint> {
         self.bound_socket
             .raw_with(|socket: &mut RawTcpSocket| socket.remote_endpoint())
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.bound_socket.poll(mask, poller)
     }
 }

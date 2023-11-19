@@ -7,6 +7,7 @@ use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket};
 use crate::net::socket::ip::always_some::AlwaysSome;
 use crate::net::socket::ip::common::{bind_socket, get_ephemeral_endpoint};
 use crate::prelude::*;
+use crate::process::signal::Pollee;
 use crate::process::signal::Poller;
 
 use super::connecting::ConnectingStream;
@@ -15,6 +16,7 @@ use super::listen::ListenStream;
 pub struct InitStream {
     inner: RwLock<Inner>,
     is_nonblocking: AtomicBool,
+    pollee: Pollee,
 }
 
 enum Inner {
@@ -23,6 +25,11 @@ enum Inner {
 }
 
 impl Inner {
+    fn new() -> Inner {
+        let unbound_socket = Box::new(AnyUnboundSocket::new_tcp());
+        Inner::Unbound(AlwaysSome::new(unbound_socket))
+    }
+
     fn is_bound(&self) -> bool {
         match self {
             Self::Unbound(_) => false,
@@ -38,7 +45,6 @@ impl Inner {
         };
         let bound_socket =
             unbound_socket.try_take_with(|raw_socket| bind_socket(raw_socket, endpoint, false))?;
-        bound_socket.update_socket_state();
         *self = Inner::Bound(AlwaysSome::new(bound_socket));
         Ok(())
     }
@@ -52,13 +58,6 @@ impl Inner {
         match self {
             Inner::Bound(bound_socket) => Some(bound_socket),
             Inner::Unbound(_) => None,
-        }
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        match self {
-            Inner::Bound(bound_socket) => bound_socket.poll(mask, poller),
-            Inner::Unbound(unbound_socket) => unbound_socket.poll(mask, poller),
         }
     }
 
@@ -76,28 +75,36 @@ impl Inner {
 }
 
 impl InitStream {
-    pub fn new(nonblocking: bool) -> Self {
-        let socket = Box::new(AnyUnboundSocket::new_tcp());
-        let inner = Inner::Unbound(AlwaysSome::new(socket));
-        Self {
+    // FIXME: In Linux we have the `POLLOUT` event for a newly created socket, while calling
+    // `write()` on it triggers `SIGPIPE`/`EPIPE`. No documentation found yet, but confirmed by
+    // experimentation and Linux source code.
+    pub fn new(nonblocking: bool) -> Arc<Self> {
+        Arc::new(Self {
+            inner: RwLock::new(Inner::new()),
             is_nonblocking: AtomicBool::new(nonblocking),
-            inner: RwLock::new(inner),
-        }
+            pollee: Pollee::new(IoEvents::empty()),
+        })
     }
 
-    pub fn new_bound(nonblocking: bool, bound_socket: Arc<AnyBoundSocket>) -> Self {
+    pub fn new_bound(
+        nonblocking: bool,
+        bound_socket: Arc<AnyBoundSocket>,
+        pollee: Pollee,
+    ) -> Arc<Self> {
+        bound_socket.set_observer(Weak::<()>::new());
         let inner = Inner::Bound(AlwaysSome::new(bound_socket));
-        Self {
+        Arc::new(Self {
             is_nonblocking: AtomicBool::new(nonblocking),
             inner: RwLock::new(inner),
-        }
+            pollee,
+        })
     }
 
     pub fn bind(&self, endpoint: IpEndpoint) -> Result<()> {
         self.inner.write().bind(endpoint)
     }
 
-    pub fn connect(&self, remote_endpoint: &IpEndpoint) -> Result<ConnectingStream> {
+    pub fn connect(&self, remote_endpoint: &IpEndpoint) -> Result<Arc<ConnectingStream>> {
         if !self.inner.read().is_bound() {
             self.inner
                 .write()
@@ -107,16 +114,22 @@ impl InitStream {
             self.is_nonblocking(),
             self.inner.read().bound_socket().unwrap().clone(),
             *remote_endpoint,
+            self.pollee.clone(),
         )
     }
 
-    pub fn listen(&self, backlog: usize) -> Result<ListenStream> {
+    pub fn listen(&self, backlog: usize) -> Result<Arc<ListenStream>> {
         let bound_socket = if let Some(bound_socket) = self.inner.read().bound_socket() {
             bound_socket.clone()
         } else {
             return_errno_with_message!(Errno::EINVAL, "cannot listen without bound")
         };
-        ListenStream::new(self.is_nonblocking(), bound_socket, backlog)
+        ListenStream::new(
+            self.is_nonblocking(),
+            bound_socket,
+            backlog,
+            self.pollee.clone(),
+        )
     }
 
     pub fn local_endpoint(&self) -> Result<IpEndpoint> {
@@ -127,7 +140,7 @@ impl InitStream {
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.inner.read().poll(mask, poller)
+        self.pollee.poll(mask, poller)
     }
 
     pub fn is_nonblocking(&self) -> bool {

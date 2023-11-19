@@ -1,6 +1,5 @@
-use crate::events::IoEvents;
+use crate::events::Observer;
 use crate::prelude::*;
-use crate::process::signal::{Pollee, Poller};
 
 use super::Iface;
 use super::{IpAddress, IpEndpoint};
@@ -11,7 +10,6 @@ pub type RawSocketHandle = smoltcp::iface::SocketHandle;
 
 pub struct AnyUnboundSocket {
     socket_family: AnyRawSocket,
-    pollee: Pollee,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -32,10 +30,8 @@ impl AnyUnboundSocket {
             let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; SEND_BUF_LEN]);
             RawTcpSocket::new(rx_buffer, tx_buffer)
         };
-        let pollee = Pollee::new(IoEvents::empty());
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Tcp(raw_tcp_socket),
-            pollee,
         }
     }
 
@@ -54,7 +50,6 @@ impl AnyUnboundSocket {
         };
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Udp(raw_udp_socket),
-            pollee: Pollee::new(IoEvents::empty()),
         }
     }
 
@@ -68,22 +63,14 @@ impl AnyUnboundSocket {
             AnyRawSocket::Udp(_) => SocketFamily::Udp,
         }
     }
-
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
-    }
-
-    pub(super) fn pollee(&self) -> Pollee {
-        self.pollee.clone()
-    }
 }
 
 pub struct AnyBoundSocket {
     iface: Arc<dyn Iface>,
     handle: smoltcp::iface::SocketHandle,
     port: u16,
-    pollee: Pollee,
     socket_family: SocketFamily,
+    observer: RwLock<Weak<dyn Observer<()>>>,
     weak_self: Weak<Self>,
 }
 
@@ -92,17 +79,34 @@ impl AnyBoundSocket {
         iface: Arc<dyn Iface>,
         handle: smoltcp::iface::SocketHandle,
         port: u16,
-        pollee: Pollee,
         socket_family: SocketFamily,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             iface,
             handle,
             port,
-            pollee,
             socket_family,
+            observer: RwLock::new(Weak::<()>::new()),
             weak_self: weak_self.clone(),
         })
+    }
+
+    pub(super) fn on_iface_events(&self) {
+        if let Some(observer) = Weak::upgrade(&*self.observer.read()) {
+            observer.on_events(&())
+        }
+    }
+
+    /// Set the observer whose `on_events` will be called when certain iface events happen. After
+    /// setting, the new observer will fire once immediately to avoid missing any events.
+    ///
+    /// If there is an existing observer, due to race conditions, this function does not guarentee
+    /// that the old observer will never be called after the setting. Users should be aware of this
+    /// and proactively handle the race conditions if necessary.
+    pub fn set_observer(&self, handler: Weak<dyn Observer<()>>) {
+        *self.observer.write() = handler;
+
+        self.on_iface_events();
     }
 
     pub fn local_endpoint(&self) -> Option<IpEndpoint> {
@@ -135,28 +139,8 @@ impl AnyBoundSocket {
         Ok(())
     }
 
-    pub fn update_socket_state(&self) {
-        let handle = &self.handle;
-        let pollee = &self.pollee;
-        let sockets = self.iface().sockets();
-        match self.socket_family {
-            SocketFamily::Tcp => {
-                let socket = sockets.get::<RawTcpSocket>(*handle);
-                update_tcp_socket_state(socket, pollee);
-            }
-            SocketFamily::Udp => {
-                let udp_socket = sockets.get::<RawUdpSocket>(*handle);
-                update_udp_socket_state(udp_socket, pollee);
-            }
-        }
-    }
-
     pub fn iface(&self) -> &Arc<dyn Iface> {
         &self.iface
-    }
-
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
     }
 
     pub(super) fn weak_ref(&self) -> Weak<Self> {
@@ -178,34 +162,6 @@ impl Drop for AnyBoundSocket {
         self.iface.common().remove_socket(self.handle);
         self.iface.common().release_port(self.port);
         self.iface.common().remove_bound_socket(self.weak_ref());
-    }
-}
-
-fn update_tcp_socket_state(socket: &RawTcpSocket, pollee: &Pollee) {
-    if socket.can_recv() {
-        pollee.add_events(IoEvents::IN);
-    } else {
-        pollee.del_events(IoEvents::IN);
-    }
-
-    if socket.can_send() {
-        pollee.add_events(IoEvents::OUT);
-    } else {
-        pollee.del_events(IoEvents::OUT);
-    }
-}
-
-fn update_udp_socket_state(socket: &RawUdpSocket, pollee: &Pollee) {
-    if socket.can_recv() {
-        pollee.add_events(IoEvents::IN);
-    } else {
-        pollee.del_events(IoEvents::IN);
-    }
-
-    if socket.can_send() {
-        pollee.add_events(IoEvents::OUT);
-    } else {
-        pollee.del_events(IoEvents::OUT);
     }
 }
 

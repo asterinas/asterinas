@@ -1,10 +1,10 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
+use crate::events::{IoEvents, Observer};
 use crate::fs::utils::StatusFlags;
 use crate::net::iface::IpEndpoint;
 
-use crate::process::signal::Poller;
+use crate::process::signal::{Pollee, Poller};
 use crate::{
     fs::file_handle::FileLike,
     net::{
@@ -27,21 +27,63 @@ pub struct DatagramSocket {
 }
 
 enum Inner {
-    Unbound(AlwaysSome<Box<AnyUnboundSocket>>),
+    Unbound(AlwaysSome<UnboundDatagram>),
     Bound(Arc<BoundDatagram>),
+}
+
+struct UnboundDatagram {
+    unbound_socket: Box<AnyUnboundSocket>,
+    pollee: Pollee,
+}
+
+impl UnboundDatagram {
+    fn new() -> Self {
+        Self {
+            unbound_socket: Box::new(AnyUnboundSocket::new_udp()),
+            pollee: Pollee::new(IoEvents::empty()),
+        }
+    }
+
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.pollee.poll(mask, poller)
+    }
+
+    fn bind(self, endpoint: IpEndpoint) -> core::result::Result<Arc<BoundDatagram>, (Error, Self)> {
+        let bound_socket = match bind_socket(self.unbound_socket, endpoint, false) {
+            Ok(bound_socket) => bound_socket,
+            Err((err, unbound_socket)) => {
+                return Err((
+                    err,
+                    Self {
+                        unbound_socket,
+                        pollee: self.pollee,
+                    },
+                ))
+            }
+        };
+        let bound_endpoint = bound_socket.local_endpoint().unwrap();
+        bound_socket.raw_with(|socket: &mut RawUdpSocket| {
+            socket.bind(bound_endpoint).unwrap();
+        });
+        Ok(BoundDatagram::new(bound_socket, self.pollee))
+    }
 }
 
 struct BoundDatagram {
     bound_socket: Arc<AnyBoundSocket>,
     remote_endpoint: RwLock<Option<IpEndpoint>>,
+    pollee: Pollee,
 }
 
 impl BoundDatagram {
-    fn new(bound_socket: Arc<AnyBoundSocket>) -> Arc<Self> {
-        Arc::new(Self {
+    fn new(bound_socket: Arc<AnyBoundSocket>, pollee: Pollee) -> Arc<Self> {
+        let bound = Arc::new(Self {
             bound_socket,
             remote_endpoint: RwLock::new(None),
-        })
+            pollee,
+        });
+        bound.bound_socket.set_observer(Arc::downgrade(&bound) as _);
+        bound
     }
 
     fn remote_endpoint(&self) -> Result<IpEndpoint> {
@@ -94,11 +136,31 @@ impl BoundDatagram {
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.bound_socket.poll(mask, poller)
+        self.pollee.poll(mask, poller)
     }
 
-    fn update_socket_state(&self) {
-        self.bound_socket.update_socket_state();
+    fn update_io_events(&self) {
+        self.bound_socket.raw_with(|socket: &mut RawUdpSocket| {
+            let pollee = &self.pollee;
+
+            if socket.can_recv() {
+                pollee.add_events(IoEvents::IN);
+            } else {
+                pollee.del_events(IoEvents::IN);
+            }
+
+            if socket.can_send() {
+                pollee.add_events(IoEvents::OUT);
+            } else {
+                pollee.del_events(IoEvents::OUT);
+            }
+        });
+    }
+}
+
+impl Observer<()> for BoundDatagram {
+    fn on_events(&self, _: &()) {
+        self.update_io_events();
     }
 }
 
@@ -108,25 +170,15 @@ impl Inner {
     }
 
     fn bind(&mut self, endpoint: IpEndpoint) -> Result<Arc<BoundDatagram>> {
-        if self.is_bound() {
-            return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
-        }
-        let unbound_socket = match self {
-            Inner::Unbound(unbound_socket) => unbound_socket,
-            _ => unreachable!(),
+        let unbound = match self {
+            Inner::Unbound(unbound) => unbound,
+            Inner::Bound(..) => return_errno_with_message!(
+                Errno::EINVAL,
+                "the socket is already bound to an address"
+            ),
         };
-        let bound_socket =
-            unbound_socket.try_take_with(|socket| bind_socket(socket, endpoint, false))?;
-        let bound_endpoint = bound_socket.local_endpoint().unwrap();
-        bound_socket.raw_with(|socket: &mut RawUdpSocket| {
-            socket
-                .bind(bound_endpoint)
-                .map_err(|_| Error::with_message(Errno::EINVAL, "cannot bind socket"))
-        })?;
-        let bound = BoundDatagram::new(bound_socket);
+        let bound = unbound.try_take_with(|unbound| unbound.bind(endpoint))?;
         *self = Inner::Bound(bound.clone());
-        // Once the socket is bound, we should update the socket state at once.
-        bound.update_socket_state();
         Ok(bound)
     }
 
@@ -140,7 +192,7 @@ impl Inner {
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         match self {
-            Inner::Unbound(unbound_socket) => unbound_socket.poll(mask, poller),
+            Inner::Unbound(unbound) => unbound.poll(mask, poller),
             Inner::Bound(bound) => bound.poll(mask, poller),
         }
     }
@@ -148,9 +200,9 @@ impl Inner {
 
 impl DatagramSocket {
     pub fn new(nonblocking: bool) -> Self {
-        let udp_socket = Box::new(AnyUnboundSocket::new_udp());
+        let unbound = UnboundDatagram::new();
         Self {
-            inner: RwLock::new(Inner::Unbound(AlwaysSome::new(udp_socket))),
+            inner: RwLock::new(Inner::Unbound(AlwaysSome::new(unbound))),
             nonblocking: AtomicBool::new(nonblocking),
         }
     }
