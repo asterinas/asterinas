@@ -1,7 +1,11 @@
 //! In the trojan, VA - SETUP32_LMA == FileOffset - LEGACY_SETUP_SEC_SIZE.
 //! And the addresses are specified in the ELF file.
 
-use std::{cmp::PartialOrd, convert::From, ops::Sub};
+use std::{
+    cmp::PartialOrd,
+    convert::From,
+    ops::{Add, Sub},
+};
 
 // We chose the legacy setup sections to be 7 so that the setup header
 // is page-aligned and the legacy setup section size would be 0x1000.
@@ -40,6 +44,16 @@ impl Sub for TrojanVA {
     }
 }
 
+impl Add<usize> for TrojanVA {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self {
+            addr: self.addr + rhs,
+        }
+    }
+}
+
 impl From<usize> for TrojanFileOffset {
     fn from(offset: usize) -> Self {
         Self { offset }
@@ -57,6 +71,16 @@ impl Sub for TrojanFileOffset {
 
     fn sub(self, rhs: Self) -> Self::Output {
         self.offset - rhs.offset
+    }
+}
+
+impl Add<usize> for TrojanFileOffset {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Self {
+            offset: self.offset + rhs,
+        }
     }
 }
 

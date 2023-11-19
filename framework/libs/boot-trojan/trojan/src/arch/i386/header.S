@@ -42,7 +42,7 @@ initrd_addr_max:        .long 0x7fffffff
 kernel_alignment:       .long 0x1000000
 relocatable_kernel:     .byte 0
 min_alignment:          .byte 0x10
-xloadflags:             .word 0b01111 # all handover protocols except kexec
+xloadflags:             .word 0
 cmdline_size:           .long 4096-1
 hardware_subarch:       .long 0
 hardware_subarch_data:  .quad 0
@@ -51,6 +51,6 @@ payload_length:         .long 0xabababab # at 0x24c/4, to be filled by the build
 setup_data:             .quad 0
 pref_address:           .quad CODE32_START - 0x200 * (SETUP_SECTS + 1);
 init_size:              .long 0xabababab # at 0x260/4, to be filled by the builder
-handover_offset:        .long CODE32_START
+handover_offset:        .long 0
 kernel_info_offset:     .long 0
 hdr_end:

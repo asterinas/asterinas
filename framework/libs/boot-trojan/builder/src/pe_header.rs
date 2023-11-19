@@ -104,6 +104,42 @@ struct Pe32PlusOptHdr {
     data_dirs: u32,      // number of data dir entries
 }
 
+#[derive(Zeroable, Pod, Serialize, Clone, Copy)]
+#[repr(C, packed)]
+struct Pe32PlusOptDataDirEnt {
+    /// The RVA is the address of the table relative to the base address of the image when the table is loaded.
+    rva: u32,
+    size: u32,
+}
+
+impl Pe32PlusOptDataDirEnt {
+    fn none() -> Self {
+        Self { rva: 0, size: 0 }
+    }
+}
+
+/// The data directories in the PE32+ optional header.
+///
+/// The `data_dirs` number field in the PE32+ optional header is just an illusion that you can choose to have a
+/// subset of the data directories. The actual number of data directories is fixed to 16 and you can only ignore
+/// data directories at the end of the list. We ignore data directories after the 8th as what Linux do.
+#[derive(Zeroable, Pod, Serialize, Clone, Copy)]
+#[repr(C, packed)]
+struct Pe32PlusOptDataDirs {
+    export_table: Pe32PlusOptDataDirEnt,
+    import_table: Pe32PlusOptDataDirEnt,
+    resource_table: Pe32PlusOptDataDirEnt,
+    exception_table: Pe32PlusOptDataDirEnt,
+    certificate_table: Pe32PlusOptDataDirEnt,
+    base_relocation_table: Pe32PlusOptDataDirEnt,
+}
+
+impl Pe32PlusOptDataDirs {
+    fn num_dirs() -> usize {
+        size_of::<Self>() / size_of::<Pe32PlusOptDataDirEnt>()
+    }
+}
+
 // The `flags` field choices in the PE section header.
 // Excluding the alignment flags, which is not bitflags.
 bitflags::bitflags! {
@@ -163,49 +199,48 @@ struct PeSectionHdr {
 }
 
 struct TrojanSectionAddrInfo {
-    pub setup: Range<TrojanVA>,
     pub text: Range<TrojanVA>,
+    pub data: Range<TrojanVA>,
+    pub bss: Range<TrojanVA>,
+    /// All the readonly but loaded sections.
+    pub rodata: Range<TrojanVA>,
 }
 
 impl TrojanSectionAddrInfo {
     fn from(elf: &xmas_elf::ElfFile) -> Self {
-        let mut setup_start = None;
-        let mut setup_end = None;
         let mut text_start = None;
         let mut text_end = None;
-        for section in elf.section_iter() {
-            match elf.get_shstr(section.name()) {
-                Ok(s) => {
-                    if s == ".setup" {
-                        setup_start = Some(section.address() as usize);
-                        setup_end = Some(section.address() as usize + section.size() as usize);
-                    } else if s == ".text" {
-                        text_start = Some(section.address() as usize);
-                        text_end = Some(section.address() as usize + section.size() as usize);
-                    }
-                }
-                Err(e) => {
-                    panic!("Error: {:#?}", e);
+        let mut data_start = None;
+        let mut data_end = None;
+        let mut bss_start = None;
+        let mut bss_end = None;
+        let mut rodata_start = None;
+        let mut rodata_end = None;
+        for program in elf.program_iter() {
+            if program.get_type().unwrap() == xmas_elf::program::Type::Load {
+                let offset = TrojanVA::from(program.virtual_addr() as usize);
+                let length = program.mem_size() as usize;
+                if program.flags().is_execute() {
+                    text_start = Some(offset);
+                    text_end = Some(offset + length);
+                } else if program.flags().is_write() {
+                    data_start = Some(offset);
+                    data_end = Some(offset + program.file_size() as usize);
+                    bss_start = Some(offset + program.file_size() as usize);
+                    bss_end = Some(offset + length);
+                } else if program.flags().is_read() {
+                    rodata_start = Some(offset);
+                    rodata_end = Some(offset + length);
                 }
             }
         }
-        assert!(
-            matches!(setup_start, Some(SETUP32_LMA)),
-            "setup_start: {:#x?}",
-            setup_start
-        );
+
         Self {
-            setup: TrojanVA::from(setup_start.unwrap())..TrojanVA::from(setup_end.unwrap()),
             text: TrojanVA::from(text_start.unwrap())..TrojanVA::from(text_end.unwrap()),
+            data: TrojanVA::from(data_start.unwrap())..TrojanVA::from(data_end.unwrap()),
+            bss: TrojanVA::from(bss_start.unwrap())..TrojanVA::from(bss_end.unwrap()),
+            rodata: TrojanVA::from(rodata_start.unwrap())..TrojanVA::from(rodata_end.unwrap()),
         }
-    }
-
-    fn setup_virt_size(&self) -> usize {
-        self.setup.end - self.setup.start
-    }
-
-    fn setup_file_size(&self) -> usize {
-        TrojanFileOffset::from(self.setup.end) - TrojanFileOffset::from(self.setup.start)
     }
 
     fn text_virt_size(&self) -> usize {
@@ -214,6 +249,26 @@ impl TrojanSectionAddrInfo {
 
     fn text_file_size(&self) -> usize {
         TrojanFileOffset::from(self.text.end) - TrojanFileOffset::from(self.text.start)
+    }
+
+    fn data_virt_size(&self) -> usize {
+        self.data.end - self.data.start
+    }
+
+    fn data_file_size(&self) -> usize {
+        TrojanFileOffset::from(self.data.end) - TrojanFileOffset::from(self.data.start)
+    }
+
+    fn bss_virt_size(&self) -> usize {
+        self.bss.end - self.bss.start
+    }
+
+    fn rodata_virt_size(&self) -> usize {
+        self.rodata.end - self.rodata.start
+    }
+
+    fn rodata_file_size(&self) -> usize {
+        TrojanFileOffset::from(self.rodata.end) - TrojanFileOffset::from(self.rodata.start)
     }
 }
 
@@ -226,11 +281,16 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
     let elf = xmas_elf::ElfFile::new(setup_elf).unwrap();
     let mut bin = Vec::<u8>::new();
 
+    // The EFI application loader requires a relocation section.
+    let relocs = vec![];
+    // The place where we put the stub, must be after the legacy header and before 0x1000.
+    let reloc_offset = TrojanFileOffset::from(0x500);
+
     // PE header
-    let pe_hdr = PeHdr {
+    let mut pe_hdr = PeHdr {
         magic: PE_MAGIC,
         machine: PeMachineType::Amd64 as u16,
-        sections: 3, // please set this field according to the number of sections added in the pe header
+        sections: 0, // this field will be modified later
         timestamp: 0,
         symbol_table: 0,
         symbols: 1, // I don't know why, Linux header.S says it's 1
@@ -271,33 +331,27 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
         heap_size_req: 0,
         heap_size: 0,
         loader_flags: 0,
-        data_dirs: 0,
+        data_dirs: Pe32PlusOptDataDirs::num_dirs() as u32,
+    };
+
+    let pe_opt_hdr_data_dirs = Pe32PlusOptDataDirs {
+        export_table: Pe32PlusOptDataDirEnt::none(),
+        import_table: Pe32PlusOptDataDirEnt::none(),
+        resource_table: Pe32PlusOptDataDirEnt::none(),
+        exception_table: Pe32PlusOptDataDirEnt::none(),
+        certificate_table: Pe32PlusOptDataDirEnt::none(),
+        base_relocation_table: Pe32PlusOptDataDirEnt {
+            rva: usize::from(reloc_offset) as u32,
+            size: relocs.len() as u32,
+        },
     };
 
     let addr_info = TrojanSectionAddrInfo::from(&elf);
 
     // PE section headers
-    let pe_setup_hdr = PeSectionHdr {
-        name: [b'.', b's', b'e', b't', b'u', b'p', 0, 0],
-        virtual_size: addr_info.setup_virt_size() as u32,
-        virtual_address: usize::from(addr_info.setup.start) as u32,
-        raw_data_size: addr_info.setup_file_size() as u32,
-        data_addr: usize::from(TrojanFileOffset::from(addr_info.setup.start)) as u32,
-        relocs: 0,
-        line_numbers: 0,
-        num_relocs: 0,
-        num_lin_numbers: 0,
-        flags: (PeSectionHdrFlags::CNT_CODE
-            | PeSectionHdrFlags::MEM_READ
-            | PeSectionHdrFlags::MEM_EXECUTE
-            | PeSectionHdrFlags::MEM_DISCARDABLE)
-            .bits
-            | PeSectionHdrFlagsAlign::_16Bytes as u32,
-    };
-    // The EFI application loader requires a relocation section
-    let reloc_offset = TrojanFileOffset::from(0x500); // must be after the legacy header and before 0x1000
-    let relocs = vec![];
-    let pe_reloc_hdr = PeSectionHdr {
+    let mut sec_hdrs = Vec::<PeSectionHdr>::new();
+    // .reloc
+    sec_hdrs.push(PeSectionHdr {
         name: [b'.', b'r', b'e', b'l', b'o', b'c', 0, 0],
         virtual_size: relocs.len() as u32,
         virtual_address: usize::from(TrojanVA::from(reloc_offset)) as u32,
@@ -312,8 +366,9 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
             | PeSectionHdrFlags::MEM_DISCARDABLE)
             .bits
             | PeSectionHdrFlagsAlign::_1Bytes as u32,
-    };
-    let pe_text_hdr = PeSectionHdr {
+    });
+    // .text
+    sec_hdrs.push(PeSectionHdr {
         name: [b'.', b't', b'e', b'x', b't', 0, 0, 0],
         virtual_size: addr_info.text_virt_size() as u32,
         virtual_address: usize::from(addr_info.text.start) as u32,
@@ -328,7 +383,55 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
             | PeSectionHdrFlags::MEM_EXECUTE)
             .bits
             | PeSectionHdrFlagsAlign::_16Bytes as u32,
-    };
+    });
+    // .data
+    sec_hdrs.push(PeSectionHdr {
+        name: [b'.', b'd', b'a', b't', b'a', 0, 0, 0],
+        virtual_size: addr_info.data_virt_size() as u32,
+        virtual_address: usize::from(addr_info.data.start) as u32,
+        raw_data_size: addr_info.data_file_size() as u32,
+        data_addr: usize::from(TrojanFileOffset::from(addr_info.data.start)) as u32,
+        relocs: 0,
+        line_numbers: 0,
+        num_relocs: 0,
+        num_lin_numbers: 0,
+        flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
+            | PeSectionHdrFlags::MEM_READ
+            | PeSectionHdrFlags::MEM_WRITE)
+            .bits
+            | PeSectionHdrFlagsAlign::_16Bytes as u32,
+    });
+    // .bss
+    sec_hdrs.push(PeSectionHdr {
+        name: [b'.', b'b', b's', b's', 0, 0, 0, 0],
+        virtual_size: addr_info.bss_virt_size() as u32,
+        virtual_address: usize::from(addr_info.bss.start) as u32,
+        raw_data_size: 0,
+        data_addr: 0,
+        relocs: 0,
+        line_numbers: 0,
+        num_relocs: 0,
+        num_lin_numbers: 0,
+        flags: (PeSectionHdrFlags::CNT_UNINITIALIZED_DATA
+            | PeSectionHdrFlags::MEM_READ
+            | PeSectionHdrFlags::MEM_WRITE)
+            .bits
+            | PeSectionHdrFlagsAlign::_16Bytes as u32,
+    });
+    // .rodata
+    sec_hdrs.push(PeSectionHdr {
+        name: [b'.', b'r', b'o', b'd', b'a', b't', b'a', 0],
+        virtual_size: addr_info.rodata_virt_size() as u32,
+        virtual_address: usize::from(addr_info.rodata.start) as u32,
+        raw_data_size: addr_info.rodata_file_size() as u32,
+        data_addr: usize::from(TrojanFileOffset::from(addr_info.rodata.start)) as u32,
+        relocs: 0,
+        line_numbers: 0,
+        num_relocs: 0,
+        num_lin_numbers: 0,
+        flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA | PeSectionHdrFlags::MEM_READ).bits
+            | PeSectionHdrFlagsAlign::_16Bytes as u32,
+    });
 
     // Write the MS-DOS header
     bin.extend_from_slice(&MZ_MAGIC.to_le_bytes());
@@ -338,13 +441,15 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
     bin.extend_from_slice(&(0x3cu32 + size_of::<u32>() as u32).to_le_bytes());
 
     // Write the PE header
+    pe_hdr.sections = sec_hdrs.len() as u16;
     bin.extend_from_slice(bytemuck::bytes_of(&pe_hdr));
     // Write the PE32+ optional header
     bin.extend_from_slice(bytemuck::bytes_of(&pe_opt_hdr));
+    bin.extend_from_slice(bytemuck::bytes_of(&pe_opt_hdr_data_dirs));
     // Write the PE section headers
-    bin.extend_from_slice(bytemuck::bytes_of(&pe_setup_hdr));
-    bin.extend_from_slice(bytemuck::bytes_of(&pe_reloc_hdr));
-    bin.extend_from_slice(bytemuck::bytes_of(&pe_text_hdr));
+    for sec_hdr in sec_hdrs {
+        bin.extend_from_slice(bytemuck::bytes_of(&sec_hdr));
+    }
 
     TrojanPeCoffHeaderBuf {
         header_at_zero: bin,

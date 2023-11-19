@@ -10,7 +10,7 @@ use std::{fs::OpenOptions, io::Write, path::PathBuf, process::Command};
 /// When debugging grub, the OVMF firmware will load the grub kernel at an
 /// address unknown at the moment. You should use the debug message from our
 /// custom built OVMF firmware and read the entrypoint address
-/// (often `0x0007E685000`). Then use the following GDB command to load symbols:
+/// (often `0x0007E684000`). Then use the following GDB command to load symbols:
 /// `dynamic_load_symbols ${ENTRY_ADDRESS}`.
 /// During each run, the address is unlikely to change. But the address will
 /// depend on the versions of grub or OVMF.

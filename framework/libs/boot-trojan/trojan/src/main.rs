@@ -1,32 +1,48 @@
 #![no_std]
 #![no_main]
 
+use linux_boot_params::BootParams;
+
 mod arch;
-mod boot_params;
 mod console;
 mod loader;
 
-fn trojan_entry(boot_params_ptr: u32) -> ! {
+use console::{print, print_hex};
+
+/// The entrypoint of the trojan. The architecture-specific entrypoint will call this function.
+///
+/// The loaded address of the CODE32_START should be passed in as `loaded_base`, since the trojan
+/// may be loaded at any address, and offsets in the header are not position-independent.
+fn trojan_entry(loaded_base: usize, boot_params_ptr: usize) -> ! {
     // Safety: this init function is only called once.
     unsafe { console::init() };
-    println!("[setup] boot_params_ptr: {:#x}", boot_params_ptr);
+    unsafe {
+        print("[setup] bzImage loaded at ");
+        print_hex(loaded_base);
+        print("\n");
+    }
 
-    let payload_offset = unsafe { boot_params::get_payload_offset(boot_params_ptr) };
-    let payload_length = unsafe { boot_params::get_payload_length(boot_params_ptr) };
+    // Safety: the boot_params_ptr is a valid pointer to be borrowed.
+    let boot_params = unsafe { &*(boot_params_ptr as *const BootParams) };
+    let hdr = &boot_params.hdr;
+    let payload_offset = loaded_base + hdr.payload_offset as usize;
+    let payload_length = hdr.payload_length as usize;
     let payload = unsafe {
         core::slice::from_raw_parts_mut(payload_offset as *mut u8, payload_length as usize)
     };
 
-    println!("[setup] loading ELF payload...");
+    unsafe {
+        print("[setup] loading ELF payload at ");
+        print_hex(payload_offset);
+        print("...\n");
+    }
     let entrypoint = loader::load_elf(payload);
-    println!("[setup] entrypoint: {:#x}", entrypoint);
 
+    unsafe {
+        print("[setup] jumping to payload entrypoint at ");
+        print_hex(entrypoint as usize);
+        print("...\n");
+    }
     // Safety: the entrypoint and the ptr is valid.
-    unsafe { arch::call_aster_entrypoint(entrypoint.into(), boot_params_ptr.into()) };
-}
-
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    println!("panic: {:?}", info);
-    loop {}
+    unsafe { arch::call_aster_entrypoint(entrypoint.into(), boot_params_ptr.try_into().unwrap()) };
 }
