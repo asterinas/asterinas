@@ -4,7 +4,7 @@ use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use jinux_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
 use jinux_network::{
     buffer::{RxBuffer, TxBuffer},
-    EthernetAddr, NetDeviceIrqHandler, VirtioNetError,
+    AnyNetworkDevice, EthernetAddr, NetDeviceIrqHandler, VirtioNetError,
 };
 use jinux_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
@@ -86,7 +86,7 @@ impl NetworkDevice {
 
         /// Interrupt handler if network device receives some packet
         fn handle_network_event(_: &TrapFrame) {
-            jinux_network::handle_recv_irq(&(super::DEVICE_NAME.to_string()));
+            jinux_network::handle_recv_irq(super::DEVICE_NAME);
         }
 
         device
@@ -169,7 +169,7 @@ fn queue_to_network_error(err: QueueError) -> VirtioNetError {
     }
 }
 
-impl jinux_network::NetworkDevice for NetworkDevice {
+impl AnyNetworkDevice for NetworkDevice {
     fn mac_addr(&self) -> EthernetAddr {
         self.mac_addr
     }

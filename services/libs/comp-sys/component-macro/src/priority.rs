@@ -119,7 +119,7 @@ fn is_component(package: &JsonValue) -> bool {
 }
 
 /// Get all the components name, this function will also check if the Components.toml contain all the components.
-fn get_components_name(workspace_root: &String, packages: &JsonValue) -> Vec<String> {
+fn get_components_name(workspace_root: &str, packages: &JsonValue) -> Vec<String> {
     let file_components_name = read_component_file(workspace_root);
     let mut comps_name = Vec::new();
     for package in packages.members() {
