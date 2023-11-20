@@ -93,15 +93,15 @@ impl CpuSet {
 pub struct UserContext {
     user_context: RawUserContext,
     fp_regs: FpRegs,
-    trap_information: TrapInformation,
+    cpu_exception_info: CpuExceptionInfo,
 }
 
 #[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
-pub struct TrapInformation {
-    pub cr2: usize,
+pub struct CpuExceptionInfo {
     pub id: usize,
-    pub err: usize,
+    pub error_code: usize,
+    pub page_fault_addr: usize,
 }
 
 #[cfg(feature = "intel_tdx")]
@@ -159,8 +159,8 @@ impl UserContext {
         &mut self.user_context.general
     }
 
-    pub fn trap_information(&self) -> &TrapInformation {
-        &self.trap_information
+    pub fn trap_information(&self) -> &CpuExceptionInfo {
+        &self.cpu_exception_info
     }
 
     pub fn fp_regs(&self) -> &FpRegs {
@@ -209,10 +209,10 @@ impl UserContextApiInternal for UserContext {
 
         crate::arch::irq::enable_local();
         if self.user_context.trap_num as u16 != SYSCALL_TRAPNUM {
-            self.trap_information = TrapInformation {
-                cr2: unsafe { x86::controlregs::cr2() },
+            self.cpu_exception_info = CpuExceptionInfo {
+                page_fault_addr: unsafe { x86::controlregs::cr2() },
                 id: self.user_context.trap_num,
-                err: self.user_context.error_code,
+                error_code: self.user_context.error_code,
             };
             UserEvent::Exception
         } else {
