@@ -111,7 +111,7 @@ impl InputDevice {
 
         fn handle_input(_: &TrapFrame) {
             debug!("Handle Virtio input interrupt");
-            let device = jinux_input::get_device(&(super::DEVICE_NAME.to_string())).unwrap();
+            let device = jinux_input::get_device(super::DEVICE_NAME).unwrap();
             device.handle_irq().unwrap();
         }
 

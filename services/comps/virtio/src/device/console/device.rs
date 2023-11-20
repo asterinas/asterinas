@@ -112,14 +112,14 @@ impl ConsoleDevice {
             callbacks: SpinLock::new(Vec::new()),
         };
 
-        let mut recv_lock = device.receive_queue.lock();
-        recv_lock
+        let mut receive_queue = device.receive_queue.lock();
+        receive_queue
             .add(&[], &[device.buffer.lock().as_mut()])
             .unwrap();
-        if recv_lock.should_notify() {
-            recv_lock.notify();
+        if receive_queue.should_notify() {
+            receive_queue.notify();
         }
-        drop(recv_lock);
+        drop(receive_queue);
         device
             .transport
             .register_queue_callback(RECV0_QUEUE_INDEX, Box::new(handle_console_input), false)
@@ -137,9 +137,7 @@ impl ConsoleDevice {
 }
 
 fn handle_console_input(_: &TrapFrame) {
-    jinux_console::get_device(&DEVICE_NAME.to_string())
-        .unwrap()
-        .handle_irq();
+    jinux_console::get_device(DEVICE_NAME).unwrap().handle_irq();
 }
 
 fn config_space_change(_: &TrapFrame) {

@@ -95,7 +95,7 @@ impl BlockDevice {
             .unwrap();
 
         fn handle_block_device(_: &TrapFrame) {
-            jinux_block::get_device(&(super::DEVICE_NAME.to_string()))
+            jinux_block::get_device(super::DEVICE_NAME)
                 .unwrap()
                 .handle_irq();
         }

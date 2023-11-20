@@ -25,7 +25,7 @@ pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {
     COMPONENT
         .get()
         .unwrap()
-        .console_table
+        .console_device_table
         .lock()
         .insert(name, device);
 }
@@ -34,15 +34,15 @@ pub fn get_device(str: &str) -> Option<Arc<dyn AnyConsoleDevice>> {
     COMPONENT
         .get()
         .unwrap()
-        .console_table
+        .console_device_table
         .lock()
         .get(str)
         .cloned()
 }
 
 pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
-    let consoles = COMPONENT.get().unwrap().console_table.lock();
-    consoles
+    let console_devs = COMPONENT.get().unwrap().console_device_table.lock();
+    console_devs
         .iter()
         .map(|(name, device)| (name.clone(), device.clone()))
         .collect()
@@ -59,13 +59,13 @@ fn component_init() -> Result<(), ComponentInitError> {
 
 #[derive(Debug)]
 struct Component {
-    console_table: SpinLock<BTreeMap<String, Arc<dyn AnyConsoleDevice>>>,
+    console_device_table: SpinLock<BTreeMap<String, Arc<dyn AnyConsoleDevice>>>,
 }
 
 impl Component {
     pub fn init() -> Result<Self, ComponentInitError> {
         Ok(Self {
-            console_table: SpinLock::new(BTreeMap::new()),
+            console_device_table: SpinLock::new(BTreeMap::new()),
         })
     }
 }

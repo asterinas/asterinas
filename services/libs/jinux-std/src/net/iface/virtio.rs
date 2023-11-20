@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use jinux_frame::sync::SpinLock;
-use jinux_network::NetworkDevice;
+use jinux_network::AnyNetworkDevice;
 use jinux_virtio::device::network::DEVICE_NAME;
 use smoltcp::{
     iface::{Config, Routes, SocketHandle, SocketSet},
@@ -11,7 +11,7 @@ use smoltcp::{
 use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
 
 pub struct IfaceVirtio {
-    driver: Arc<SpinLock<Box<dyn NetworkDevice>>>,
+    driver: Arc<SpinLock<Box<dyn AnyNetworkDevice>>>,
     common: IfaceCommon,
     dhcp_handle: SocketHandle,
     weak_self: Weak<Self>,
@@ -19,7 +19,7 @@ pub struct IfaceVirtio {
 
 impl IfaceVirtio {
     pub fn new() -> Arc<Self> {
-        let virtio_net = jinux_network::get_device(&(DEVICE_NAME).to_string()).unwrap();
+        let virtio_net = jinux_network::get_device(DEVICE_NAME).unwrap();
         let interface = {
             let mac_addr = virtio_net.lock().mac_addr();
             let ip_addr = IpCidr::new(wire::IpAddress::Ipv4(wire::Ipv4Address::UNSPECIFIED), 0);
