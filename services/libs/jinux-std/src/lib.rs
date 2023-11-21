@@ -27,13 +27,18 @@ use crate::{
         Thread,
     },
 };
-use jinux_frame::{boot, exit_qemu, QemuExitCode};
+use jinux_frame::{
+    arch::qemu::{exit_qemu, QemuExitCode},
+    boot,
+};
 use process::Process;
 
 extern crate alloc;
 extern crate lru;
 #[macro_use]
 extern crate controlled;
+#[macro_use]
+extern crate ktest;
 
 pub mod device;
 pub mod driver;

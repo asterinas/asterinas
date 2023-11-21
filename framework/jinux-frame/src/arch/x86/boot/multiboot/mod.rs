@@ -332,12 +332,6 @@ struct MemoryEntry {
     memory_type: MemoryAreaType,
 }
 
-// The entry point of kernel code, which should be defined by the package that
-// uses jinux-frame.
-extern "Rust" {
-    fn jinux_main() -> !;
-}
-
 static MB1_INFO: Once<&'static MultibootLegacyInfo> = Once::new();
 
 /// The entry point of Rust code called by inline asm.
@@ -353,5 +347,5 @@ unsafe extern "sysv64" fn __multiboot_entry(boot_magic: u32, boot_params: u64) -
         init_framebuffer_info,
         init_memory_regions,
     );
-    jinux_main();
+    crate::boot::call_jinux_main();
 }
