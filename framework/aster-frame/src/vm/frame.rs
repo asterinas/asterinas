@@ -530,6 +530,11 @@ impl<'a> VmReader<'a> {
         unsafe { self.end.sub_ptr(self.cursor) }
     }
 
+    /// Returns the cursor pointer, which refers to the address of the next byte to read.
+    pub const fn cursor(&self) -> *const u8 {
+        self.cursor
+    }
+
     /// Returns if it has remaining data to read.
     pub const fn has_remain(&self) -> bool {
         self.remain() > 0
@@ -633,6 +638,11 @@ impl<'a> VmWriter<'a> {
     pub const fn avail(&self) -> usize {
         // Safety: the end is equal to or greater than the cursor.
         unsafe { self.end.sub_ptr(self.cursor) }
+    }
+
+    /// Returns the cursor pointer, which refers to the address of the next byte to write.
+    pub const fn cursor(&self) -> *mut u8 {
+        self.cursor
     }
 
     /// Returns if it has avaliable space to write.

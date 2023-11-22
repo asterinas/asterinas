@@ -13,6 +13,8 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use aster_frame::sync::SpinLock;
+use aster_frame::vm::VmReader;
+use aster_frame::vm::VmWriter;
 use component::init_component;
 use component::ComponentInitError;
 use spin::Once;
@@ -20,8 +22,8 @@ use spin::Once;
 pub const BLK_SIZE: usize = 512;
 
 pub trait BlockDevice: Send + Sync + Any + Debug {
-    fn read_block(&self, block_id: usize, buf: &mut [u8]);
-    fn write_block(&self, block_id: usize, buf: &[u8]);
+    fn read_block(&self, block_id: usize, buf: &[VmWriter]);
+    fn write_block(&self, block_id: usize, buf: &[VmReader]);
     fn handle_irq(&self);
 }
 
