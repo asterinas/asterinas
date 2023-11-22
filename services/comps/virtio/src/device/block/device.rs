@@ -1,13 +1,18 @@
-use core::hint::spin_loop;
+use core::{hint::spin_loop, mem::size_of};
 
 use alloc::{boxed::Box, string::ToString, sync::Arc};
-use aster_frame::{io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
+use aster_frame::{
+    io_mem::IoMem,
+    sync::SpinLock,
+    trap::TrapFrame,
+    vm::{VmAllocOptions, VmFrame, VmIo, VmReader, VmWriter},
+};
 use aster_util::safe_ptr::SafePtr;
 use log::info;
-use pod::Pod;
 
 use crate::{
-    device::block::{BlkReq, BlkResp, ReqType, RespStatus, BLK_SIZE},
+    device::block::{BlkReq, BlkResp, ReqType, RespStatus},
     device::VirtioDeviceError,
     queue::VirtQueue,
     transport::VirtioTransport,
@@ -20,28 +25,60 @@ pub struct BlockDevice {
     config: SafePtr<VirtioBlkConfig, IoMem>,
     queue: SpinLock<VirtQueue>,
     transport: Box<dyn VirtioTransport>,
+    /// Block requests, we use VmFrame to store the requests so that
+    /// it can pass to the `add_vm` function
+    block_requests: VmFrame,
+    /// Block responses, we use VmFrame to store the requests so that
+    /// it can pass to the `add_vm` function
+    block_responses: VmFrame,
+    id_allocator: SpinLock<Vec<u8>>,
 }
 
 impl BlockDevice {
     /// read data from block device, this function is blocking
     /// FIEME: replace slice with a more secure data structure to use dma mapping.
-    pub fn read(&self, block_id: usize, buf: &mut [u8]) {
-        assert_eq!(buf.len(), BLK_SIZE);
+    pub fn read(&self, block_id: usize, buf: &[VmWriter]) {
+        // FIXME: Handling cases without id.
+        let id = self.id_allocator.lock().pop().unwrap() as usize;
         let req = BlkReq {
             type_: ReqType::In as _,
             reserved: 0,
             sector: block_id as u64,
         };
-        let mut resp = BlkResp::default();
+        let resp = BlkResp::default();
+        self.block_requests
+            .write_val(id * size_of::<BlkReq>(), &req)
+            .unwrap();
+        self.block_responses
+            .write_val(id * size_of::<BlkResp>(), &resp)
+            .unwrap();
+        let req = self
+            .block_requests
+            .reader()
+            .skip(id * size_of::<BlkReq>())
+            .limit(size_of::<BlkReq>());
+        let resp = self
+            .block_responses
+            .writer()
+            .skip(id * size_of::<BlkResp>())
+            .limit(size_of::<BlkResp>());
+
+        let mut outputs: Vec<&VmWriter<'_>> = buf.iter().collect();
+        outputs.push(&resp);
         let mut queue = self.queue.lock_irq_disabled();
         let token = queue
-            .add(&[req.as_bytes()], &[buf, resp.as_bytes_mut()])
+            .add_vm(&[&req], outputs.as_slice())
             .expect("add queue failed");
         queue.notify();
         while !queue.can_pop() {
             spin_loop();
         }
         queue.pop_used_with_token(token).expect("pop used failed");
+        let resp: BlkResp = self
+            .block_responses
+            .read_val(id * size_of::<BlkResp>())
+            .unwrap();
+        self.id_allocator.lock().push(id as u8);
         match RespStatus::try_from(resp.status).unwrap() {
             RespStatus::Ok => {}
             _ => panic!("io error in block device"),
@@ -49,27 +86,51 @@ impl BlockDevice {
     }
     /// write data to block device, this function is blocking
     /// FIEME: replace slice with a more secure data structure to use dma mapping.
-    pub fn write(&self, block_id: usize, buf: &[u8]) {
-        assert_eq!(buf.len(), BLK_SIZE);
+    pub fn write(&self, block_id: usize, buf: &[VmReader]) {
+        // FIXME: Handling cases without id.
+        let id = self.id_allocator.lock().pop().unwrap() as usize;
         let req = BlkReq {
             type_: ReqType::Out as _,
             reserved: 0,
             sector: block_id as u64,
         };
-        let mut resp = BlkResp::default();
+        let resp = BlkResp::default();
+        self.block_requests
+            .write_val(id * size_of::<BlkReq>(), &req)
+            .unwrap();
+        self.block_responses
+            .write_val(id * size_of::<BlkResp>(), &resp)
+            .unwrap();
+        let req = self
+            .block_requests
+            .reader()
+            .skip(id * size_of::<BlkReq>())
+            .limit(size_of::<BlkReq>());
+        let resp = self
+            .block_responses
+            .writer()
+            .skip(id * size_of::<BlkResp>())
+            .limit(size_of::<BlkResp>());
+
         let mut queue = self.queue.lock_irq_disabled();
+        let mut inputs: Vec<&VmReader<'_>> = buf.iter().collect();
+        inputs.insert(0, &req);
         let token = queue
-            .add(&[req.as_bytes(), buf], &[resp.as_bytes_mut()])
+            .add_vm(inputs.as_slice(), &[&resp])
             .expect("add queue failed");
         queue.notify();
         while !queue.can_pop() {
             spin_loop();
         }
         queue.pop_used_with_token(token).expect("pop used failed");
-        let st = resp.status;
-        match RespStatus::try_from(st).unwrap() {
+        let resp: BlkResp = self
+            .block_responses
+            .read_val(id * size_of::<BlkResp>())
+            .unwrap();
+        self.id_allocator.lock().push(id as u8);
+        match RespStatus::try_from(resp.status).unwrap() {
             RespStatus::Ok => {}
-            _ => panic!("io error in block device:{:?}", st),
+            _ => panic!("io error in block device:{:?}", resp.status),
         };
     }
 
@@ -85,6 +146,9 @@ impl BlockDevice {
             config,
             queue: SpinLock::new(queue),
             transport,
+            block_requests: VmAllocOptions::new(1).alloc_single().unwrap(),
+            block_responses: VmAllocOptions::new(1).alloc_single().unwrap(),
+            id_allocator: SpinLock::new((0..64).collect()),
         };
 
         device
@@ -121,11 +185,11 @@ impl BlockDevice {
 }
 
 impl aster_block::BlockDevice for BlockDevice {
-    fn read_block(&self, block_id: usize, buf: &mut [u8]) {
+    fn read_block(&self, block_id: usize, buf: &[VmWriter]) {
         self.read(block_id, buf);
     }
 
-    fn write_block(&self, block_id: usize, buf: &[u8]) {
+    fn write_block(&self, block_id: usize, buf: &[VmReader]) {
         self.write(block_id, buf);
     }
 

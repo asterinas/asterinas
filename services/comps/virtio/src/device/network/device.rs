@@ -61,7 +61,7 @@ impl NetworkDevice {
         for i in 0..QUEUE_SIZE {
             let mut rx_buffer = RxBuffer::new(RX_BUFFER_LEN, size_of::<VirtioNetHdr>());
             // FIEME: Replace rx_buffer with VM segment-based data structure to use dma mapping.
-            let token = recv_queue.add(&[], &[rx_buffer.buf_mut()])?;
+            let token = recv_queue.add_buf(&[], &[rx_buffer.buf_mut()])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
         }
@@ -111,7 +111,7 @@ impl NetworkDevice {
     fn add_rx_buffer(&mut self, mut rx_buffer: RxBuffer) -> Result<(), VirtioNetError> {
         let token = self
             .recv_queue
-            .add(&[], &[rx_buffer.buf_mut()])
+            .add_buf(&[], &[rx_buffer.buf_mut()])
             .map_err(queue_to_network_error)?;
         assert!(self.rx_buffers.put_at(token as usize, rx_buffer).is_none());
         if self.recv_queue.should_notify() {
@@ -143,7 +143,7 @@ impl NetworkDevice {
         let header = VirtioNetHdr::default();
         let token = self
             .send_queue
-            .add(&[header.as_bytes(), tx_buffer.buf()], &[])
+            .add_buf(&[header.as_bytes(), tx_buffer.buf()], &[])
             .map_err(queue_to_network_error)?;
 
         if self.send_queue.should_notify() {
