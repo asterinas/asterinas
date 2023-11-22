@@ -63,6 +63,7 @@ getrandom = { version = "0.2.10", default-features = false, features = [
     "rdrand",
 ] }
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
+hashbrown = "0.14"
 
 [dependencies.lazy_static]
 version = "1.0"

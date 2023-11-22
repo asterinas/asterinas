@@ -16,6 +16,7 @@ pub enum FatValue {
 pub trait FatTrait{
     fn get_next_fat(&self,cluster:u32) -> Result<FatValue>;
     fn set_next_fat(&self,cluster:u32,value:FatValue) -> Result<()>;
+    //Useful for FAT32, not useful for exFAT, since bitmap has the final decision.
     fn find_free_fat(&self,start_cluster:u32, end_cluster:u32) -> Result<u32>;
     fn count_free_fat(&self,end_cluster:u32) -> Result<u32>;
 }

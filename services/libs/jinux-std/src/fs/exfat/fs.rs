@@ -12,6 +12,8 @@ pub(super) use jinux_frame::vm::VmIo;
 use crate::fs::utils::FsFlags;
 use crate::fs::exfat::fat::ExfatChain;
 
+use hashbrown::HashMap;
+
 #[derive(Debug)]
 pub struct ExfatFS{
     block_device: Box<dyn BlockDevice>,
@@ -26,8 +28,10 @@ pub struct ExfatFS{
     mount_option:ExfatMountOptions,
     //Used for inode allocation.
     highest_inode_number:AtomicUsize,
-    //TODO: Should add a no_std hashmap crate like hashbrown.
-    //inode_cache : HashMap<Arc<ExfatInode>>
+
+    //inodes are indexed by their position.
+    //TODO:use concurrent hashmap.
+    inodes : RwLock<HashMap<usize,Arc<ExfatInode>>>,
 
     //We need to hold the mutex before accessing bitmap or inode, otherwise there will be deadlocks.
     mutex: Mutex<()>
@@ -47,6 +51,7 @@ impl ExfatFS{
             upcase_table:Arc::new(ExfatUpcaseTable::empty()),
             mount_option,
             highest_inode_number:AtomicUsize::new((EXFAT_ROOT_INO + 1)as usize),
+            inodes:RwLock::new(HashMap::new()),
             mutex:Mutex::new(())
         });
 
@@ -62,23 +67,28 @@ impl ExfatFS{
 
         let fs_mut = Arc::get_mut(&mut exfat_fs).unwrap();
         fs_mut.bitmap = Arc::new(Mutex::new(bitmap));
-        fs_mut.root = root;
+        fs_mut.root = root.clone();
         fs_mut.upcase_table = Arc::new(upcase_table);
 
         //TODO: Handle UTF-8
 
-        //TODO: Init Inode Hash Table.
-
         //TODO: Init NLS Table
        
-
-        //TODO: Insert root to inode hash table
+        exfat_fs.inodes.write().insert(root.pos(), root.clone());
 
         Ok(exfat_fs)
     }
 
     pub(super) fn alloc_inode_number(&self) -> usize {
         self.highest_inode_number.fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub(super) fn find_opened_inode(&self,pos:usize) -> Option<Arc<ExfatInode>> {
+        self.inodes.read().get(&pos).cloned()
+    }
+
+    pub(super) fn insert_inode(&self,inode:Arc<ExfatInode>) -> Option<Arc<ExfatInode>> {
+        self.inodes.write().insert(inode.pos(), inode)
     }
 
     fn read_root(fs:Arc<ExfatFS>) -> Result<Arc<ExfatInode>> {

@@ -30,6 +30,10 @@ pub fn cpu_to_le64(a:u64) -> u64{
     a
 }
 
+pub fn make_pos(cluster:u32,entry:u32) -> usize {
+    (cluster as usize) << 32usize | (entry as usize & 0xffffffffusize)
+}
+
 pub fn calc_checksum_16(data:&[u8], prev_checksum:u16, type_:i32) -> u16
 {
     let mut result = prev_checksum;

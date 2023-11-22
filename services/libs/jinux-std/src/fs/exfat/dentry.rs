@@ -71,23 +71,7 @@ pub enum ExfatValidateDentryMode {
 	GetBenignSecEntry,
 }
 
-pub struct ExfatDentryIterator{
-    fs: Weak<ExfatFS>,
-    entry: u32,
-    chain: ExfatChain,
-    has_error : bool
-}
 
-impl ExfatDentryIterator {
-    pub fn from(fs: Weak<ExfatFS>,entry: u32, chain: ExfatChain) -> Self {
-            Self{
-                fs,
-                entry,
-                chain,
-                has_error:false
-            }
-        }
-}
 
 pub fn update_checksum_for_dentry_set(dentry_set:&mut[ExfatDentry]) {
     let mut checksum = 0u16;
@@ -123,6 +107,28 @@ pub fn read_name_from_dentry_set(dentry_set: &[ExfatDentry]) -> ExfatDentryName 
     name
 }
 
+pub struct ExfatDentryIterator{
+    fs: Weak<ExfatFS>,
+    entry: u32,
+    chain: ExfatChain,
+    has_error : bool
+}
+
+impl ExfatDentryIterator {
+    pub fn from(fs: Weak<ExfatFS>,entry: u32, chain: ExfatChain) -> Self {
+            Self{
+                fs,
+                entry,
+                chain,
+                has_error:false
+            }
+        }
+    pub fn chain_and_entry(&self) -> (ExfatChain,u32) {
+        (self.chain.clone(),self.entry)
+    }
+
+}
+
 impl Iterator for ExfatDentryIterator {
     type Item = Result<ExfatDentry>;
 
@@ -145,12 +151,16 @@ impl Iterator for ExfatDentryIterator {
                     // Instead of calling get_dentry directly, update the chain and entry of the iterator to reduce the read of FAT table. 
                     if self.entry + 1 == self.fs.upgrade().unwrap().super_block().dentries_per_clu {
                         self.entry = 0;
-                        let next_fat = self.fs.upgrade().unwrap().get_next_fat(self.chain.dir);
-                        if next_fat.is_err() {
-                            self.has_error = true;
-                            return Some(Result::Err(next_fat.unwrap_err()));
+                        if (self.chain.flags & ALLOC_NO_FAT_CHAIN) != 0 {
+                            self.chain.dir = self.chain.dir + 1
+                        } else {
+                            let next_fat = self.fs.upgrade().unwrap().get_next_fat(self.chain.dir);
+                            if next_fat.is_err() {
+                                self.has_error = true;
+                                return Some(Result::Err(next_fat.unwrap_err()));
+                            }
+                            self.chain.dir = next_fat.unwrap().into()
                         }
-                        self.chain.dir = next_fat.unwrap().into()
                     } else {
                         self.entry += 1;
                     }
@@ -245,7 +255,7 @@ impl ExfatFS{
         let off = (entry as usize) * (DENTRY_SIZE);
         let mut cur_cluster = parent_dir.dir;
         let mut cluster_offset : u32 = (off >> self.super_block().cluster_size_bits).try_into().unwrap();
-        if parent_dir.flags == ALLOC_NO_FAT_CHAIN {
+        if (parent_dir.flags & ALLOC_NO_FAT_CHAIN) != 0 {
             cur_cluster += cluster_offset;
         } else {
             // The target cluster should be in the {cluster_offset}th cluster.
