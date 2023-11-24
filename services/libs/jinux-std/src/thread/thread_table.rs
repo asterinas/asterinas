@@ -15,6 +15,6 @@ pub fn remove_thread(tid: Tid) {
     THREAD_TABLE.lock().remove(&tid);
 }
 
-pub fn tid_to_thread(tid: Tid) -> Option<Arc<Thread>> {
+pub fn get_thread(tid: Tid) -> Option<Arc<Thread>> {
     THREAD_TABLE.lock().get(&tid).cloned()
 }

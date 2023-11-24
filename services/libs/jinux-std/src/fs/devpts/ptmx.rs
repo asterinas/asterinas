@@ -148,14 +148,14 @@ impl Device for Inner {
 
 impl FileIo for Inner {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        unreachable!()
+        return_errno_with_message!(Errno::EINVAL, "cannot read ptmx");
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        unreachable!()
+        return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        unreachable!()
+        IoEvents::empty()
     }
 }

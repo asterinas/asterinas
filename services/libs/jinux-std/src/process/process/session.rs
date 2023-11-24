@@ -44,7 +44,7 @@ impl Session {
     ///
     /// The caller needs to ensure that the group does not belong to any session, and the caller
     /// should set the leader process after creating the session.
-    pub(super) fn new(group: Arc<ProcessGroup>) -> Arc<Self> {
+    pub(in crate::process) fn new(group: Arc<ProcessGroup>) -> Arc<Self> {
         let sid = group.pgid();
         let inner = {
             let mut process_groups = BTreeMap::new();
@@ -68,12 +68,12 @@ impl Session {
     }
 
     /// Returns the leader process.
-    pub(super) fn leader(&self) -> Option<Arc<Process>> {
+    pub fn leader(&self) -> Option<Arc<Process>> {
         self.inner.lock().leader.clone()
     }
 
     /// Returns whether `self` contains the `process_group`
-    pub(super) fn contains_process_group(
+    pub(in crate::process) fn contains_process_group(
         self: &Arc<Self>,
         process_group: &Arc<ProcessGroup>,
     ) -> bool {
@@ -83,10 +83,14 @@ impl Session {
             .contains_key(&process_group.pgid())
     }
 
-    /// Sets terminal as the controlling terminal of the session.
+    /// Sets terminal as the controlling terminal of the session. The `get_terminal` method
+    /// should set the session for the terminal and returns the session.
     ///
     /// If the session already has controlling terminal, this method will return `Err(EPERM)`.
-    pub fn set_terminal<F: Fn() -> Result<Arc<dyn Terminal>>>(&self, terminal: F) -> Result<()> {
+    pub fn set_terminal<F>(&self, get_terminal: F) -> Result<()>
+    where
+        F: Fn() -> Result<Arc<dyn Terminal>>,
+    {
         let mut inner = self.inner.lock();
 
         if inner.terminal.is_some() {
@@ -96,7 +100,7 @@ impl Session {
             );
         }
 
-        let terminal = terminal()?;
+        let terminal = get_terminal()?;
         inner.terminal = Some(terminal);
         Ok(())
     }
@@ -104,7 +108,10 @@ impl Session {
     /// Releases the controlling terminal of the session.
     ///
     /// If the session does not have controlling terminal, this method will return `ENOTTY`.
-    pub fn release_terminal<F: Fn() -> Result<()>>(&self, release_session: F) -> Result<()> {
+    pub fn release_terminal<F>(&self, release_session: F) -> Result<()>
+    where
+        F: Fn(&Arc<dyn Terminal>) -> Result<()>,
+    {
         let mut inner = self.inner.lock();
         if inner.terminal.is_none() {
             return_errno_with_message!(
@@ -113,7 +120,8 @@ impl Session {
             );
         }
 
-        release_session()?;
+        let terminal = inner.terminal.as_ref().unwrap();
+        release_session(terminal)?;
         inner.terminal = None;
         Ok(())
     }

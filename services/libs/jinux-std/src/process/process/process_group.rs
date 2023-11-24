@@ -1,7 +1,6 @@
 use super::{Pgid, Pid, Process, Session};
 use crate::prelude::*;
-use crate::process::signal::signals::kernel::KernelSignal;
-use crate::process::signal::signals::user::UserSignal;
+use crate::process::signal::signals::Signal;
 
 /// `ProcessGroup` represents a set of processes. Each `ProcessGroup` has a unique
 /// identifier `pgid`.
@@ -37,7 +36,7 @@ impl ProcessGroup {
     /// id. The process will become the leading process of the new process group.
     ///
     /// The caller needs to ensure that the process does not belong to any group.
-    pub(super) fn new(process: Arc<Process>) -> Arc<Self> {
+    pub(in crate::process) fn new(process: Arc<Process>) -> Arc<Self> {
         let pid = process.pid();
 
         let inner = {
@@ -57,7 +56,7 @@ impl ProcessGroup {
     }
 
     /// Returns whether self contains a process with `pid`.
-    pub(super) fn contains_process(&self, pid: Pid) -> bool {
+    pub(in crate::process) fn contains_process(&self, pid: Pid) -> bool {
         self.inner.lock().processes.contains_key(&pid)
     }
 
@@ -66,22 +65,15 @@ impl ProcessGroup {
         self.pgid
     }
 
-    /// Sends kernel signal to all processes in the group
-    pub fn kernel_signal(&self, signal: KernelSignal) {
+    /// Broadcasts signal to all processes in the group.
+    pub fn broadcast_signal(&self, signal: impl Signal + Clone + 'static) {
         for process in self.inner.lock().processes.values() {
-            process.enqueue_signal(Box::new(signal));
-        }
-    }
-
-    /// Sends user signal to all processes in the group
-    pub fn user_signal(&self, signal: UserSignal) {
-        for process in self.inner.lock().processes.values() {
-            process.enqueue_signal(Box::new(signal));
+            process.enqueue_signal(Box::new(signal.clone()));
         }
     }
 
     /// Returns the leader process.
-    pub(super) fn leader(&self) -> Option<Arc<Process>> {
+    pub fn leader(&self) -> Option<Arc<Process>> {
         self.inner.lock().leader.clone()
     }
 

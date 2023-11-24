@@ -34,14 +34,14 @@ impl Device for TtyDevice {
 
 impl FileIo for TtyDevice {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        unreachable!()
+        return_errno_with_message!(Errno::EINVAL, "cannot read tty device");
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        unreachable!()
+        return_errno_with_message!(Errno::EINVAL, "cannot write tty device");
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        unreachable!()
+        IoEvents::empty()
     }
 }

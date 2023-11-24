@@ -16,8 +16,8 @@ pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_TGKILL);
     let sig_num = SigNum::from_u8(sig_num);
     info!("tgid = {}, pid = {}, sig_num = {:?}", tgid, tid, sig_num);
-    let target_thread = thread_table::tid_to_thread(tid)
-        .ok_or(Error::with_message(Errno::EINVAL, "Invalid pid"))?;
+    let target_thread =
+        thread_table::get_thread(tid).ok_or(Error::with_message(Errno::EINVAL, "Invalid pid"))?;
     let posix_thread = target_thread.as_posix_thread().unwrap();
     let pid = posix_thread.process().pid();
     if pid != tgid {
