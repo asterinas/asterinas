@@ -42,7 +42,7 @@ pub fn do_sys_kill(filter: ProcessFilter, sig_num: SigNum) -> Result<()> {
         }
         ProcessFilter::WithPgid(pgid) => {
             if let Some(process_group) = process_table::get_process_group(&pgid) {
-                process_group.user_signal(signal);
+                process_group.broadcast_signal(signal);
             } else {
                 return_errno_with_message!(Errno::ESRCH, "No such process group in process table");
             }

@@ -2,6 +2,7 @@ use alloc::format;
 use ringbuf::{ring_buffer::RbBase, HeapRb, Rb};
 
 use crate::device::tty::line_discipline::LineDiscipline;
+use crate::device::tty::new_job_control_and_ldisc;
 use crate::events::IoEvents;
 use crate::fs::device::{Device, DeviceId, DeviceType};
 use crate::fs::devpts::DevPts;
@@ -9,7 +10,6 @@ use crate::fs::fs_resolver::FsPath;
 use crate::fs::inode_handle::FileIo;
 use crate::fs::utils::{AccessMode, Inode, InodeMode, IoctlCmd};
 use crate::prelude::*;
-use crate::process::signal::signals::kernel::KernelSignal;
 use crate::process::signal::{Pollee, Poller};
 use crate::process::{JobControl, Terminal};
 use crate::util::{read_val_from_user, write_val_to_user};
@@ -25,7 +25,7 @@ pub struct PtyMaster {
     index: u32,
     output: Arc<LineDiscipline>,
     input: SpinLock<HeapRb<u8>>,
-    job_control: JobControl,
+    job_control: Arc<JobControl>,
     /// The state of input buffer
     pollee: Pollee,
     weak_self: Weak<Self>,
@@ -33,12 +33,13 @@ pub struct PtyMaster {
 
 impl PtyMaster {
     pub fn new(ptmx: Arc<dyn Inode>, index: u32) -> Arc<Self> {
-        Arc::new_cyclic(|weak_ref| PtyMaster {
+        let (job_control, ldisc) = new_job_control_and_ldisc();
+        Arc::new_cyclic(move |weak_ref| PtyMaster {
             ptmx,
             index,
-            output: LineDiscipline::new(),
+            output: ldisc,
             input: SpinLock::new(HeapRb::new(BUFFER_CAPACITY)),
-            job_control: JobControl::new(),
+            job_control,
             pollee: Pollee::new(IoEvents::OUT),
             weak_self: weak_ref.clone(),
         })
@@ -123,26 +124,13 @@ impl FileIo for PtyMaster {
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        let may_send_signal = || {
-            let Some(foreground) = self.foreground() else {
-                return None;
-            };
-
-            let send_signal = move |signal: KernelSignal| {
-                foreground.kernel_signal(signal);
-            };
-
-            Some(Arc::new(send_signal) as Arc<dyn Fn(KernelSignal) + Send + Sync>)
-        };
-
         let mut input = self.input.lock();
         for character in buf {
-            self.output
-                .push_char(*character, may_send_signal, |content| {
-                    for byte in content.as_bytes() {
-                        input.push_overwrite(*byte);
-                    }
-                });
+            self.output.push_char(*character, |content| {
+                for byte in content.as_bytes() {
+                    input.push_overwrite(*byte);
+                }
+            });
         }
 
         self.update_state(&input);
@@ -332,9 +320,8 @@ impl Terminal for PtySlave {
 
 impl FileIo for PtySlave {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.master()
-            .output
-            .read(buf, || self.job_control.current_belongs_to_foreground())
+        self.job_control.wait_until_in_foreground()?;
+        self.master().output.read(buf)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {

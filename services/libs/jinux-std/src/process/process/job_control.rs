@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::process::signal::constants::{SIGCONT, SIGHUP};
 use crate::process::signal::signals::kernel::KernelSignal;
+use crate::process::signal::Pauser;
 use crate::process::{ProcessGroup, Session};
 
 /// The job control for terminals like tty and pty.
@@ -11,6 +12,7 @@ use crate::process::{ProcessGroup, Session};
 pub struct JobControl {
     foreground: SpinLock<Weak<ProcessGroup>>,
     session: SpinLock<Weak<Session>>,
+    pauser: Arc<Pauser>,
 }
 
 impl JobControl {
@@ -19,6 +21,7 @@ impl JobControl {
         Self {
             foreground: SpinLock::new(Weak::new()),
             session: SpinLock::new(Weak::new()),
+            pauser: Pauser::new(),
         }
     }
 
@@ -60,6 +63,7 @@ impl JobControl {
         let session = current.session().unwrap();
         *self.session.lock() = Arc::downgrade(&session);
 
+        self.pauser.resume_all();
         Ok(())
     }
 
@@ -73,8 +77,8 @@ impl JobControl {
         };
 
         if let Some(foreground) = self.foreground() {
-            foreground.kernel_signal(KernelSignal::new(SIGHUP));
-            foreground.kernel_signal(KernelSignal::new(SIGCONT));
+            foreground.broadcast_signal(KernelSignal::new(SIGHUP));
+            foreground.broadcast_signal(KernelSignal::new(SIGCONT));
         }
 
         Ok(())
@@ -115,16 +119,33 @@ impl JobControl {
         }
 
         *self.foreground.lock() = Arc::downgrade(process_group);
+        self.pauser.resume_all();
         Ok(())
     }
 
-    /// Determines whether current process belongs to the foreground process group. If
+    /// Wait until the current process is the foreground process group. If
     /// the foreground process group is None, returns true.
     ///
     /// # Panic
     ///
     /// This function should only be called in process context.
-    pub fn current_belongs_to_foreground(&self) -> bool {
+    pub fn wait_until_in_foreground(&self) -> Result<()> {
+        // Fast path
+        if self.current_belongs_to_foreground() {
+            return Ok(());
+        }
+
+        // Slow path
+        self.pauser.pause_until(|| {
+            if self.current_belongs_to_foreground() {
+                Some(())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn current_belongs_to_foreground(&self) -> bool {
         let Some(foreground) = self.foreground() else {
             return true;
         };

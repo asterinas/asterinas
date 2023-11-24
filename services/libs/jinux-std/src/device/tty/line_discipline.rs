@@ -16,6 +16,8 @@ use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
 
 const BUFFER_CAPACITY: usize = 4096;
 
+pub type LdiscSignalSender = Arc<dyn Fn(KernelSignal) + Send + Sync + 'static>;
+
 pub struct LineDiscipline {
     /// current line
     current_line: SpinLock<CurrentLine>,
@@ -27,6 +29,8 @@ pub struct LineDiscipline {
     winsize: SpinLock<WinSize>,
     /// Pollee
     pollee: Pollee,
+    /// Used to send signal for foreground processes, when some char comes.
+    send_signal: LdiscSignalSender,
     /// work item
     work_item: Arc<WorkItem>,
     /// Parameters used by a work item.
@@ -71,8 +75,8 @@ impl CurrentLine {
 
 impl LineDiscipline {
     /// Create a new line discipline
-    pub fn new() -> Arc<Self> {
-        Arc::new_cyclic(|line_ref: &Weak<LineDiscipline>| {
+    pub fn new(send_signal: LdiscSignalSender) -> Arc<Self> {
+        Arc::new_cyclic(move |line_ref: &Weak<LineDiscipline>| {
             let line_discipline = line_ref.clone();
             let work_item = Arc::new(WorkItem::new(Box::new(move || {
                 if let Some(line_discipline) = line_discipline.upgrade() {
@@ -85,6 +89,7 @@ impl LineDiscipline {
                 termios: SpinLock::new(KernelTermios::default()),
                 winsize: SpinLock::new(WinSize::default()),
                 pollee: Pollee::new(IoEvents::empty()),
+                send_signal,
                 work_item,
                 work_item_para: Arc::new(SpinLock::new(LineDisciplineWorkPara::new())),
             }
@@ -92,15 +97,7 @@ impl LineDiscipline {
     }
 
     /// Push char to line discipline.
-    pub fn push_char<
-        F1: Fn() -> Option<Arc<dyn Fn(KernelSignal) + Send + Sync>>,
-        F2: FnMut(&str),
-    >(
-        &self,
-        ch: u8,
-        may_send_signal: F1,
-        echo_callback: F2,
-    ) {
+    pub fn push_char<F2: FnMut(&str)>(&self, ch: u8, echo_callback: F2) {
         let termios = self.termios.lock_irq_disabled();
 
         let ch = if termios.contains_icrnl() && ch == b'\r' {
@@ -109,7 +106,7 @@ impl LineDiscipline {
             ch
         };
 
-        if self.may_send_signal(&termios, ch, may_send_signal) {
+        if self.may_send_signal(&termios, ch) {
             // The char is already dealt with, so just return
             return;
         }
@@ -160,19 +157,10 @@ impl LineDiscipline {
         self.update_readable_state_deferred();
     }
 
-    fn may_send_signal<F: Fn() -> Option<Arc<dyn Fn(KernelSignal) + Send + Sync>>>(
-        &self,
-        termios: &KernelTermios,
-        ch: u8,
-        may_send_signal: F,
-    ) -> bool {
+    fn may_send_signal(&self, termios: &KernelTermios, ch: u8) -> bool {
         if !termios.is_canonical_mode() || !termios.contains_isig() {
             return false;
         }
-
-        let Some(send_signal) = may_send_signal() else {
-            return false;
-        };
 
         let signal = match ch {
             ch if ch == *termios.get_special_char(CC_C_CHAR::VINTR) => KernelSignal::new(SIGINT),
@@ -180,7 +168,7 @@ impl LineDiscipline {
             _ => return false,
         };
         // `kernel_signal()` may cause sleep, so only construct parameters here.
-        self.work_item_para.lock_irq_disabled().kernel_signal = Some((send_signal, signal));
+        self.work_item_para.lock_irq_disabled().kernel_signal = Some(signal);
 
         true
     }
@@ -207,10 +195,8 @@ impl LineDiscipline {
 
     /// include all operations that may cause sleep, and processes by a work queue.
     fn update_readable_state_after(&self) {
-        if let Some((send_signal, signal)) =
-            self.work_item_para.lock_irq_disabled().kernel_signal.take()
-        {
-            send_signal(signal);
+        if let Some(signal) = self.work_item_para.lock_irq_disabled().kernel_signal.take() {
+            (self.send_signal)(signal);
         };
         if let Some(pollee_type) = self.work_item_para.lock_irq_disabled().pollee_type.take() {
             match pollee_type {
@@ -243,23 +229,14 @@ impl LineDiscipline {
         }
     }
 
-    pub fn read<F: Fn() -> bool>(&self, buf: &mut [u8], belongs_to_foreground: F) -> Result<usize> {
-        let mut poller = None;
+    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
         loop {
-            if !belongs_to_foreground() {
-                init_poller(&mut poller);
-                if self.poll(IoEvents::IN, poller.as_ref()).is_empty() {
-                    poller.as_ref().unwrap().wait()?
-                }
-                continue;
-            }
-
             let res = self.try_read(buf);
             match res {
                 Ok(len) => return Ok(len),
                 Err(e) if e.error() != Errno::EAGAIN => return Err(e),
                 Err(_) => {
-                    init_poller(&mut poller);
+                    let poller = Some(Poller::new());
                     if self.poll(IoEvents::IN, poller.as_ref()).is_empty() {
                         poller.as_ref().unwrap().wait()?
                     }
@@ -427,14 +404,6 @@ fn get_printable_char(ctrl_char: u8) -> u8 {
     ctrl_char + b'A' - 1
 }
 
-fn init_poller(poller: &mut Option<Poller>) {
-    if poller.is_some() {
-        return;
-    }
-
-    *poller = Some(Poller::new());
-}
-
 enum PolleeType {
     Add,
     Del,
@@ -442,7 +411,7 @@ enum PolleeType {
 
 struct LineDisciplineWorkPara {
     #[allow(clippy::type_complexity)]
-    kernel_signal: Option<(Arc<dyn Fn(KernelSignal) + Send + Sync>, KernelSignal)>,
+    kernel_signal: Option<KernelSignal>,
     pollee_type: Option<PolleeType>,
 }
 

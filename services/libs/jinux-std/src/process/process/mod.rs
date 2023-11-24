@@ -151,6 +151,8 @@ impl Process {
 
         let process = process_builder.build()?;
 
+        // Lock order: session table -> group table -> process table -> group of process
+        // -> group inner -> session inner
         let mut session_table_mut = process_table::session_table_mut();
         let mut group_table_mut = process_table::group_table_mut();
         let mut process_table_mut = process_table::process_table_mut();
@@ -290,10 +292,11 @@ impl Process {
         }
 
         let session = self.session().unwrap();
-        let mut session_inner = session.inner.lock();
-        let mut self_group_mut = self.process_group.lock();
-        let mut group_table_mut = process_table::group_table_mut();
+
+        // Lock order: session table -> group table -> group of process -> group inner -> session inner
         let mut session_table_mut = process_table::session_table_mut();
+        let mut group_table_mut = process_table::group_table_mut();
+        let mut self_group_mut = self.process_group.lock();
 
         if session_table_mut.contains_key(&self.pid) {
             return_errno_with_message!(Errno::EPERM, "cannot create new session");
@@ -303,12 +306,10 @@ impl Process {
             return_errno_with_message!(Errno::EPERM, "cannot create process group");
         }
 
-        // Removes the process from session.
-        session_inner.remove_process(self);
-
         // Removes the process from old group
-        if let Some(old_group) = self.process_group() {
+        if let Some(old_group) = self_group_mut.upgrade() {
             let mut group_inner = old_group.inner.lock();
+            let mut session_inner = session.inner.lock();
             group_inner.remove_process(&self.pid);
             *self_group_mut = Weak::new();
 
@@ -334,6 +335,10 @@ impl Process {
         new_group_inner.session = Arc::downgrade(&new_session);
         new_session.inner.lock().leader = Some(self.clone());
         session_table_mut.insert(new_session.sid(), new_session.clone());
+
+        // Removes the process from session.
+        let mut session_inner = session.inner.lock();
+        session_inner.remove_process(self);
 
         Ok(new_session)
     }
@@ -386,13 +391,14 @@ impl Process {
     /// The new group will be added to the same session as the process.
     fn to_new_group(self: &Arc<Self>) -> Result<()> {
         let session = self.session().unwrap();
-        let mut session_inner = session.inner.lock();
-        let mut self_group_mut = self.process_group.lock();
+        // Lock order: group table -> group of process -> group inner -> session inner
         let mut group_table_mut = process_table::group_table_mut();
+        let mut self_group_mut = self.process_group.lock();
 
         // Removes the process from old group
-        if let Some(old_group) = self.process_group() {
+        if let Some(old_group) = self_group_mut.upgrade() {
             let mut group_inner = old_group.inner.lock();
+            let mut session_inner = session.inner.lock();
             group_inner.remove_process(&self.pid);
             *self_group_mut = Weak::new();
 
@@ -406,15 +412,18 @@ impl Process {
 
         // Creates a new process group. Adds the new group to group table and session.
         let new_group = ProcessGroup::new(self.clone());
+
+        let mut new_group_inner = new_group.inner.lock();
+        let mut session_inner = session.inner.lock();
+
         *self_group_mut = Arc::downgrade(&new_group);
 
         group_table_mut.insert(new_group.pgid(), new_group.clone());
 
+        new_group_inner.session = Arc::downgrade(&session);
         session_inner
             .process_groups
             .insert(new_group.pgid(), new_group.clone());
-        let mut new_group_inner = new_group.inner.lock();
-        new_group_inner.session = Arc::downgrade(&session);
 
         Ok(())
     }
@@ -423,20 +432,33 @@ impl Process {
     ///
     /// The caller needs to ensure that the process and the group belongs to the same session.
     fn to_specified_group(self: &Arc<Process>, group: &Arc<ProcessGroup>) -> Result<()> {
-        let mut self_group_mut = self.process_group.lock();
+        // Lock order: group table -> group of process -> group inner (small pgid -> big pgid)
         let mut group_table_mut = process_table::group_table_mut();
-        let mut group_inner = group.inner.lock();
+        let mut self_group_mut = self.process_group.lock();
 
         // Removes the process from old group
-        if let Some(old_group) = self.process_group() {
-            let mut group_inner = old_group.inner.lock();
-            group_inner.remove_process(&self.pid);
+        let mut group_inner = if let Some(old_group) = self_group_mut.upgrade() {
+            // Lock order: group with smaller pgid first
+            let (mut old_group_inner, group_inner) = match old_group.pgid().cmp(&group.pgid()) {
+                core::cmp::Ordering::Equal => return Ok(()),
+                core::cmp::Ordering::Less => (old_group.inner.lock(), group.inner.lock()),
+                core::cmp::Ordering::Greater => {
+                    let group_inner = group.inner.lock();
+                    let old_group_inner = old_group.inner.lock();
+                    (old_group_inner, group_inner)
+                }
+            };
+            old_group_inner.remove_process(&self.pid);
             *self_group_mut = Weak::new();
 
-            if group_inner.is_empty() {
+            if old_group_inner.is_empty() {
                 group_table_mut.remove(&old_group.pgid());
             }
-        }
+
+            group_inner
+        } else {
+            group.inner.lock()
+        };
 
         // Adds the process to the specified group
         group_inner.processes.insert(self.pid, self.clone());
@@ -567,8 +589,10 @@ mod test {
     }
 
     fn new_process_in_session(parent: Option<Arc<Process>>) -> Arc<Process> {
-        let mut group_table_mut = process_table::group_table_mut();
+        // Lock order: session table -> group table -> group of process -> group inner
+        // -> session inner
         let mut session_table_mut = process_table::session_table_mut();
+        let mut group_table_mut = process_table::group_table_mut();
 
         let process = new_process(parent);
         // Creates new group
@@ -587,6 +611,7 @@ mod test {
     }
 
     fn remove_session_and_group(process: Arc<Process>) {
+        // Lock order: session table -> group table
         let mut session_table_mut = process_table::session_table_mut();
         let mut group_table_mut = process_table::group_table_mut();
         if let Some(sess) = process.session() {

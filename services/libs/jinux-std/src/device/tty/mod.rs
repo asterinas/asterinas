@@ -33,7 +33,7 @@ pub struct Tty {
     name: CString,
     /// line discipline
     ldisc: Arc<LineDiscipline>,
-    job_control: JobControl,
+    job_control: Arc<JobControl>,
     /// driver
     driver: SpinLock<Weak<TtyDriver>>,
     weak_self: Weak<Self>,
@@ -41,10 +41,11 @@ pub struct Tty {
 
 impl Tty {
     pub fn new(name: CString) -> Arc<Self> {
-        Arc::new_cyclic(|weak_ref| Tty {
+        let (job_control, ldisc) = new_job_control_and_ldisc();
+        Arc::new_cyclic(move |weak_ref| Tty {
             name,
-            ldisc: LineDiscipline::new(),
-            job_control: JobControl::new(),
+            ldisc,
+            job_control,
             driver: SpinLock::new(Weak::new()),
             weak_self: weak_ref.clone(),
         })
@@ -55,27 +56,14 @@ impl Tty {
     }
 
     pub fn receive_char(&self, ch: u8) {
-        let may_send_signal = || {
-            let Some(foreground) = self.foreground() else {
-                return None;
-            };
-
-            let send_signal = move |signal: KernelSignal| {
-                foreground.kernel_signal(signal);
-            };
-
-            Some(Arc::new(send_signal) as Arc<dyn Fn(KernelSignal) + Send + Sync>)
-        };
-
-        self.ldisc
-            .push_char(ch, may_send_signal, |content| print!("{}", content));
+        self.ldisc.push_char(ch, |content| print!("{}", content));
     }
 }
 
 impl FileIo for Tty {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.ldisc
-            .read(buf, || self.job_control.current_belongs_to_foreground())
+        self.job_control.wait_until_in_foreground()?;
+        self.ldisc.read(buf)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
@@ -187,6 +175,25 @@ impl Device for Tty {
     }
 }
 
+pub fn new_job_control_and_ldisc() -> (Arc<JobControl>, Arc<LineDiscipline>) {
+    let job_control = Arc::new(JobControl::new());
+
+    let send_signal = {
+        let cloned_job_control = job_control.clone();
+        move |signal: KernelSignal| {
+            let Some(foreground) = cloned_job_control.foreground() else {
+                return;
+            };
+
+            foreground.broadcast_signal(signal);
+        }
+    };
+
+    let ldisc = LineDiscipline::new(Arc::new(send_signal));
+
+    (job_control, ldisc)
+}
+
 pub fn get_n_tty() -> &'static Arc<Tty> {
     N_TTY.get().unwrap()
 }
@@ -198,8 +205,13 @@ pub fn open_ntty_as_controlling_terminal(process: &Process) -> Result<()> {
 
     let session = &process.session().unwrap();
     let process_group = process.process_group().unwrap();
-    tty.job_control.set_session(session);
+
+    session.set_terminal(|| {
+        tty.job_control.set_session(session);
+        Ok(tty.clone())
+    })?;
+
     tty.job_control.set_foreground(Some(&process_group))?;
 
-    session.set_terminal(|| Ok(tty.clone()))
+    Ok(())
 }

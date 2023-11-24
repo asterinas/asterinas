@@ -63,13 +63,13 @@ pub trait Terminal: Send + Sync + FileIo {
             return_errno_with_message!(Errno::EPERM, "current process is not session leader");
         }
 
-        let terminal = || {
+        let get_terminal = || {
             self.job_control().set_current_session()?;
             Ok(self.arc_self())
         };
 
         let session = current!().session().unwrap();
-        session.set_terminal(terminal)
+        session.set_terminal(get_terminal)
     }
 
     /// Releases the terminal from the session of current process if the terminal is the controlling
@@ -91,7 +91,7 @@ pub trait Terminal: Send + Sync + FileIo {
             return Ok(());
         }
 
-        let release_session = || self.job_control().release_current_session();
+        let release_session = |_: &Arc<dyn Terminal>| self.job_control().release_current_session();
 
         let session = current.session().unwrap();
         session.release_terminal(release_session)
