@@ -33,11 +33,7 @@ impl<T> Mutex<T> {
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
         // guard will cause an unexpected unlock.
-        //
-        // TODO: Remove the lint suppression when the false positive warning is fixed
-        // upstream.
-        #[allow(clippy::unnecessary_lazy_evaluations)]
-        self.acquire_lock().then(|| MutexGuard { mutex: self })
+        self.acquire_lock().then(|| MutexGuard::new(self))
     }
 
     /// Release the mutex and wake up one thread which is blocked on this mutex.
@@ -66,8 +62,15 @@ impl<T: fmt::Debug> fmt::Debug for Mutex<T> {
 unsafe impl<T: Send> Send for Mutex<T> {}
 unsafe impl<T: Send> Sync for Mutex<T> {}
 
+#[clippy::has_significant_drop]
 pub struct MutexGuard<'a, T> {
     mutex: &'a Mutex<T>,
+}
+
+impl<'a, T> MutexGuard<'a, T> {
+    fn new(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
+        MutexGuard { mutex }
+    }
 }
 
 impl<'a, T> Deref for MutexGuard<'a, T> {
