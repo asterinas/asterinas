@@ -275,5 +275,6 @@ pub struct ExfatMountOptions {
     pub(super) discard: bool,
     pub(super) keep_last_dots: bool,
     pub(super) time_offset: i32,
+    pub(super) zero_size_dir: bool,
 }
 

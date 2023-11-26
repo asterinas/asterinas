@@ -4,12 +4,13 @@ use crate::fs::exfat::fat::ExfatChain;
 use crate::fs::exfat::fs::ExfatFS;
 use crate::fs::exfat::utils::make_mode;
 use crate::fs::utils::{Inode, InodeType, PageCache, Metadata};
+use crate::time::now_as_duration;
 
 use super::balloc::ExfatBitmap;
 use super::block_device::is_block_aligned;
 use super::constants::*;
-use super::dentry::{ExfatDentry, update_checksum_for_dentry_set};
-use super::utils::{convert_dos_time_to_duration, convert_duration_to_dos_time, make_pos};
+use super::dentry::{ExfatDentry, update_checksum_for_dentry_set, ExfatFileDentry, ExfatStreamDentry, ExfatNameDentry};
+use super::utils::{convert_dos_time_to_duration, convert_duration_to_dos_time, make_pos, calc_checksum_16};
 use super::fat::{FatValue, FatTrait};
 use crate::events::IoEvents;
 use crate::fs::device::Device;
@@ -30,10 +31,21 @@ pub struct ExfatDentryName(Vec<u16>);
 
 impl ExfatDentryName {
     pub fn push(&mut self, value: u16) {
+        //TODO: should use upcase table.
         self.0.push(value);
     }
 
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn hash(&self) -> u16{
+        let bytes = self.0.iter().map(|character| character.to_le_bytes()).flatten().collect::<Vec<u8>>();
+        return calc_checksum_16(&bytes, 0, CS_DEFAULT)
+    }
+
     pub fn from(name: &str) -> Self {
+        //TODO: should use upcase table.
         ExfatDentryName {
             0: name.encode_utf16().collect(),
         }
@@ -43,10 +55,20 @@ impl ExfatDentryName {
         ExfatDentryName { 0: Vec::new() }
     }
 
+    pub fn to_dentries(&self) -> Vec<ExfatDentry> {
+        let mut name_dentries = Vec::new();
+        for start in (0..self.0.len()).step_by(EXFAT_FILE_NAME_LEN) {
+            let end = (start+EXFAT_FILE_NAME_LEN).min(self.0.len());
+            let mut name:[u16;EXFAT_FILE_NAME_LEN] = [0;EXFAT_FILE_NAME_LEN];
+            name.copy_from_slice(&self.0[start..end]);
+            name_dentries.push(ExfatDentry::Name(ExfatNameDentry { dentry_type: EXFAT_NAME, flags: 0, unicode_0_14: name }))
+        }
+        name_dentries
+    }
+
     pub(super) fn is_name_valid(&self) -> bool{
         //TODO:verify the name
         true
-
     }
 }
 
@@ -68,31 +90,8 @@ impl ExfatInode{
         self.0.read().pos()
     }
 
-     //The caller of the function should give a unique ino to assign to the inode.
-     pub(super) fn read_inode(fs: Arc<ExfatFS>, p_dir: ExfatChain, _entry: u32, ino: usize) -> Result<Arc<Self>> {
-
-        let mut dir = p_dir;
-        let mut entry = _entry;
-
-        //We need to skip empty or deleted dentery.
-        let mut iter = ExfatDentryIterator::from(Arc::downgrade(&fs),entry,dir);
-        loop {
-            let dentry_result = iter.next();
-            if dentry_result.is_none() {
-                return_errno_with_message!(Errno::ENOENT,"Inode data not available")
-            }
-
-            let dentry = dentry_result.unwrap()?;
-
-            if let ExfatDentry::File(file) = dentry {
-                let (_dir,_entry) = iter.chain_and_entry();
-                dir = _dir;
-                entry = _entry;
-                break;
-            }
-        }
-
-        let dentry_set = fs.get_dentry_set(&dir, entry, ES_ALL_ENTRIES)?;
+    fn get_inode_from_dentry_set(fs: Arc<ExfatFS>, dir: ExfatChain, entry: u32, ino: usize,dentry_set:Vec<ExfatDentry>) -> Result<Arc<ExfatInode>>{
+        
         if let ExfatDentry::File(file) = dentry_set[ES_IDX_FILE] {
             let type_ = if (file.attribute & ATTR_SUBDIR) != 0 {
                 TYPE_DIR
@@ -172,7 +171,36 @@ impl ExfatInode{
                 return_errno_with_message!(Errno::EINVAL, "Invalid stream dentry")
             }
         }
-        return_errno_with_message!(Errno::EINVAL,"Invalid file dentry")
+
+        return_errno_with_message!(Errno::EINVAL, "Invalid file dentry")
+    }
+
+     //The caller of the function should give a unique ino to assign to the inode.
+     pub(super) fn read_inode(fs: Arc<ExfatFS>, p_dir: ExfatChain, _entry: u32, ino: usize) -> Result<Arc<Self>> {
+
+        let mut dir = p_dir;
+        let mut entry = _entry;
+
+        //We need to skip empty or deleted dentery.
+        let mut iter = ExfatDentryIterator::from(Arc::downgrade(&fs),entry,dir);
+        loop {
+            let dentry_result = iter.next();
+            if dentry_result.is_none() {
+                return_errno_with_message!(Errno::ENOENT,"Inode data not available")
+            }
+
+            let dentry = dentry_result.unwrap()?;
+
+            if let ExfatDentry::File(file) = dentry {
+                let (_dir,_entry) = iter.chain_and_entry();
+                dir = _dir;
+                entry = _entry;
+                break;
+            }
+        }
+
+        let dentry_set = fs.get_dentry_set(&dir, entry, ES_ALL_ENTRIES)?;
+        Self::get_inode_from_dentry_set(fs, dir, entry, ino, dentry_set)
     }
 }
 
@@ -198,7 +226,6 @@ pub struct ExfatInodeInner{
     //Logical size
     size_on_disk: usize,
     
-
     atime: Duration,
     mtime: Duration,
     ctime: Duration,
@@ -298,19 +325,19 @@ impl ExfatInodeInner {
                 
                 file_dentry.attribute = self.make_attr();
 
-                let create_time = convert_duration_to_dos_time(self.ctime);
+                let create_time = convert_duration_to_dos_time(self.ctime)?;
                 file_dentry.create_tz = create_time.0;
                 file_dentry.create_date = create_time.1;
                 file_dentry.create_time = create_time.2;
                 file_dentry.create_time_cs = create_time.3;
 
-                let modify_time = convert_duration_to_dos_time(self.mtime);
+                let modify_time = convert_duration_to_dos_time(self.mtime)?;
                 file_dentry.modify_tz = modify_time.0;
                 file_dentry.modify_date = modify_time.1;
                 file_dentry.modify_time = modify_time.2;
                 file_dentry.modify_time_cs = modify_time.3;
 
-                let access_time = convert_duration_to_dos_time(self.atime);
+                let access_time = convert_duration_to_dos_time(self.atime)?;
                 file_dentry.access_tz = access_time.0;
                 file_dentry.access_date = access_time.1;
                 file_dentry.access_time = access_time.2;
@@ -565,12 +592,145 @@ impl ExfatInodeInner {
         Ok(())
     }
 
+    fn is_dir_sync(&self) -> bool {
+        todo!()
+    }
+
     fn type_(&self) -> InodeType {
         match self.type_{
             TYPE_FILE => InodeType::File,
             TYPE_DIR => InodeType::Dir,
             _ => todo!()
         }
+    }
+
+    //Find empty dentry. If not found, expand the clusterchain.
+    fn find_empty_dentry(&mut self,num_dentries:usize) -> Result<usize> {
+        let fs = self.fs();
+        let mut iter = ExfatDentryIterator::from(Arc::downgrade(&fs),0,ExfatChain { dir: self.start_cluster, size: 0, flags: self.flags });
+
+        let mut cont_unused = 0;
+        let mut entry_id = 0;
+        loop {
+            let dentry_result = iter.next();
+            if dentry_result.is_none() {
+                break;
+            }
+
+            let dentry = dentry_result.unwrap()?;
+            
+            match dentry{
+                ExfatDentry::UnUsed | ExfatDentry::Deleted => {
+                    cont_unused += 1;
+                },
+                _ => {
+                    cont_unused = 0;
+                }
+            }
+            if cont_unused >= num_dentries {
+                return Ok(entry_id - (num_dentries - 1))
+            }
+            entry_id += 1;
+        }
+
+        //Empty entries not found, allocate new cluster
+        if (self.size_on_disk / DENTRY_SIZE) as u32 >= MAX_EXFAT_DENTRIES {
+            return_errno!(Errno::ENOSPC)
+        }
+
+        let cluster_size = fs.super_block().cluster_size as usize;
+        let cluster_to_be_allocated = (num_dentries * DENTRY_SIZE + cluster_size - 1) / cluster_size;
+
+        self.alloc_cluster(cluster_to_be_allocated as u32, self.is_dir_sync())?;
+
+        Ok(entry_id)
+
+    }
+
+
+    fn build_dentries(name:&str,type_:InodeType,mode: InodeMode,name_dentries:usize) -> Result<Vec<ExfatDentry>>{
+        let attrs = {
+            if type_ == InodeType::Dir {
+                ATTR_SUBDIR
+            } else {
+                0
+            }
+        };
+
+        let current_time = now_as_duration(&crate::time::ClockID::CLOCK_REALTIME)?;
+        let dos_time = convert_duration_to_dos_time(current_time)?;
+
+        let mut dentries = Vec::new();
+        let file_dentry = ExfatDentry::File(ExfatFileDentry{
+            dentry_type: EXFAT_FILE,
+            num_secondary:(name_dentries + 1) as u8,
+            checksum:0,
+            attribute:attrs,
+            reserved1:0,
+            create_tz:dos_time.0,
+            create_date:dos_time.1,
+            create_time:dos_time.2,
+            create_time_cs:dos_time.3,
+            modify_tz:dos_time.0,
+            modify_date:dos_time.1,
+            modify_time:dos_time.2,
+            modify_time_cs:dos_time.3,
+            access_tz:dos_time.0,
+            access_date:dos_time.1,
+            access_time:dos_time.2,
+            reserved2:[0;7]
+        });
+
+        let name = ExfatDentryName::from(name);
+
+        let stream_dentry = ExfatDentry::Stream(ExfatStreamDentry{
+            dentry_type: EXFAT_STREAM,
+            flags:ALLOC_POSSIBLE,
+            reserved1:0,
+            name_len :name.0.len() as u8,
+            name_hash:name.hash(),
+            reserved2:0,
+            valid_size:0,
+            reserved3:0,
+            start_cluster:0,
+            size:0
+        });
+
+        let mut name_dentires = name.to_dentries();
+
+        dentries.push(file_dentry);
+        dentries.push(stream_dentry);
+        dentries.append(&mut name_dentires);
+
+        update_checksum_for_dentry_set(&mut dentries);
+        Ok(dentries)
+        
+    }
+
+
+    fn add_entry(&mut self,name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<ExfatInode>>{
+        if name.len() > MAX_NAME_LENGTH {
+            return_errno!(Errno::ENAMETOOLONG)
+        }
+
+        //TODO: remove trailing periods of pathname.
+        //Do not allow creation of files with names ending with period(s).
+
+        let name_dentries = (name.len() + EXFAT_FILE_NAME_LEN - 1) / EXFAT_FILE_NAME_LEN;
+        let num_dentries = name_dentries + 2; // FILE Entry + Stream Entry + Name Entry
+        let entry = self.find_empty_dentry(num_dentries)? as u32;
+        
+        if type_.is_directory() && !self.fs().mount_option().zero_size_dir {
+            //We need to resize the directory so that it contains at least 1 cluster if zero_size_dir is not enabled. 
+        }
+
+        let dentries = Self::build_dentries(name, type_, mode, name_dentries)?;
+
+        let chain = ExfatChain { dir: self.start_cluster, size: 0, flags: self.flags };
+        self.fs().put_dentry_set(&dentries, &chain, entry, self.is_dir_sync())?;
+
+        ExfatInode::get_inode_from_dentry_set(self.fs(), chain, entry, self.fs().alloc_inode_number(), dentries)
+
     }
 
     fn readdir_at(&mut self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<(Arc<ExfatInode>,usize)> {
@@ -670,7 +830,6 @@ impl Inode for ExfatInode {
         self.0.read().fs()
     }
 
-    //FIXME:When blocksize is not equal to page_size, the function will not work correctly.
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         let mut inner = self.0.write();
         let bid = inner.locked_get_or_allocate_sector_id(idx, false,true)?;
@@ -682,7 +841,11 @@ impl Inode for ExfatInode {
     fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         let mut inner = self.0.write();
         let bid = inner.locked_get_or_allocate_sector_id(idx, true,true)?;
+
+        //FIXME: We may need to truncate the file if write_page fails?
         inner.fs().block_device().write_page(bid, frame)?;
+
+
         Ok(())
     }
 
@@ -748,7 +911,10 @@ impl Inode for ExfatInode {
         let new_size = offset + buf.len();
         if new_size > file_size {
             inner.page_cache.pages().resize(new_size)?;
+            //TODO:We need to fill the page cache with 0.
         }
+
+        //FIXME: Should we resize before writing to page cache?
         inner.page_cache.pages().write_bytes(offset, buf)?;
         if new_size > file_size {
             inner.locked_resize(new_size)?;
@@ -778,6 +944,8 @@ impl Inode for ExfatInode {
             inner.locked_resize(end_offset)?;
         }
 
+        //TODO: We need to write nil to extented space.
+
         let block_size = inner.fs().super_block().sector_size as usize;
 
         let mut buf_offset = 0;
@@ -795,7 +963,13 @@ impl Inode for ExfatInode {
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        todo!()
+        let mut inner = self.0.write();
+        
+        let fs = inner.fs();
+        let guard = fs.lock();
+
+        //TODO: Should we judge if the file already exists?
+        Ok(inner.add_entry(name,type_,mode)?)
     }
 
     fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {

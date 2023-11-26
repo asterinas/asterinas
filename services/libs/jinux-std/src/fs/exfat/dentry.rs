@@ -75,12 +75,12 @@ pub enum ExfatValidateDentryMode {
 
 pub fn update_checksum_for_dentry_set(dentry_set:&mut[ExfatDentry]) {
     let mut checksum = 0u16;
-    let mut type_ = CS_DIR_ENTRY as i32;
+    let mut type_ = CS_DIR_ENTRY;
     for i in ES_IDX_FILE..dentry_set.len() {
         let dentry = &dentry_set[i];
         
         checksum = calc_checksum_16(dentry.to_le_bytes(),checksum, type_);
-        type_ = CS_DEFAULT as i32;
+        type_ = CS_DEFAULT;
     }
     if let ExfatDentry::File(mut file) = dentry_set[ES_IDX_FILE] {
         file.checksum = checksum;
@@ -215,12 +215,20 @@ impl ExfatFS{
 
     pub fn put_dentry_set(&self,dentry_set:&[ExfatDentry],parent_dir:&ExfatChain,entry:u32,sync:bool) -> Result<()>{
         let dentry_offset = self.find_dentry_location(parent_dir, entry)?;
-        let mut buf = vec![];
-        for dentry in dentry_set.iter() {
-            buf.extend_from_slice(dentry.to_le_bytes());
+
+        
+        if (parent_dir.flags & ALLOC_NO_FAT_CHAIN) != 0 {
+            let mut buf = vec![];
+            for dentry in dentry_set.iter() {
+                buf.extend_from_slice(dentry.to_le_bytes());
+            }
+
+            self.block_device().write_bytes(dentry_offset, &buf)?;
+        } else {
+            //TODO: Should iterate over all clusters.
+            
+
         }
-        let dentry_offset = self.find_dentry_location(parent_dir, entry)?;
-        self.block_device().write_bytes(dentry_offset, &buf)?;
         Ok(())
     }
 
@@ -242,7 +250,7 @@ impl ExfatFS{
 
         let mut buf:[u8;DENTRY_SIZE] = [0;DENTRY_SIZE];
 
-        //FIXME: Should I maintain a page cache for the whole filesystem?
+        //TODO: Should I maintain a page cache for the whole filesystem?
         self.block_device().read_bytes(dentry_offset, & mut buf)?;
 
         ExfatDentry::try_from(buf.as_bytes())
@@ -291,12 +299,14 @@ pub struct ExfatFileDentry {
     pub(super) attribute: u16,
     pub(super) reserved1: u16,
 
-    pub(super) create_time: u16,                    // all rests are times
+    //Create time, however, ctime in unix metadata means ***change time***. 
+    pub(super) create_time: u16,                    
     pub(super) create_date: u16,
 
     pub(super) modify_time: u16,
     pub(super) modify_date: u16,
 
+    //The timestamp for access_time has double seconds granularity.
     pub(super) access_time: u16,
     pub(super) access_date: u16,
 
