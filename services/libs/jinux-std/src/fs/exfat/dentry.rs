@@ -148,21 +148,27 @@ impl Iterator for ExfatDentryIterator {
             match dentry_result.unwrap() {
                 ExfatDentry::UnUsed => None,
                 dentry => {
+                    let mut increasement: u32 = 1;
+                    if let ExfatDentry::File(primary_dentry) = dentry {
+                        increasement += primary_dentry.num_secondary as u32;
+                    }
                     // Instead of calling get_dentry directly, update the chain and entry of the iterator to reduce the read of FAT table. 
-                    if self.entry + 1 == self.fs.upgrade().unwrap().super_block().dentries_per_clu {
-                        self.entry = 0;
-                        if (self.chain.flags & ALLOC_NO_FAT_CHAIN) != 0 {
-                            self.chain.dir = self.chain.dir + 1
-                        } else {
+                    self.entry += increasement;
+                    let dentries_per_clu = self.fs.upgrade().unwrap().super_block().dentries_per_clu;
+                    let no_fat_chain = self.chain.flags == ALLOC_NO_FAT_CHAIN;
+                    while self.entry >= dentries_per_clu {
+                        self.entry -= dentries_per_clu;
+                        if no_fat_chain {
+                            self.chain.dir += 1;
+                        }
+                        else {
                             let next_fat = self.fs.upgrade().unwrap().get_next_fat(self.chain.dir);
                             if next_fat.is_err() {
                                 self.has_error = true;
                                 return Some(Result::Err(next_fat.unwrap_err()));
                             }
-                            self.chain.dir = next_fat.unwrap().into()
+                            self.chain.dir = next_fat.unwrap().into();
                         }
-                    } else {
-                        self.entry += 1;
                     }
                     Some(Ok(dentry))
                 }
@@ -232,10 +238,53 @@ impl ExfatFS{
         Ok(())
     }
 
-    
+    // Valid terminal state include: GetNameEntry, GetBenignSecEntry
     fn validate_dentry(&self,dentry:&ExfatDentry, status:ExfatValidateDentryMode) -> Result<ExfatValidateDentryMode>{
         //TODO: Validate the status of dentry by using a state machine.
-        return Ok(status);
+        match status {
+            ExfatValidateDentryMode::Started => {
+                match dentry {
+                    ExfatDentry::File(_) => 
+                                        {return Ok(ExfatValidateDentryMode::GetFileEntry);}
+                    _ => {return_errno!(Errno::EINVAL)}
+                }
+            }
+            ExfatValidateDentryMode::GetFileEntry => {
+                match dentry {
+                    ExfatDentry::Stream(_) =>
+                                        {return Ok(ExfatValidateDentryMode::GetStreamEntry);}
+                    _ => {return_errno!(Errno::EINVAL)}
+                }
+            }
+            ExfatValidateDentryMode::GetStreamEntry => {
+                match dentry {
+                    ExfatDentry::Name(_) =>
+                                        {return Ok(ExfatValidateDentryMode::GetNameEntry);}
+                    _ => {return_errno!(Errno::EINVAL)}
+                }
+            }
+            ExfatValidateDentryMode::GetNameEntry => {
+                match dentry {
+                    ExfatDentry::Name(_) =>
+                                        {return Ok(ExfatValidateDentryMode::GetNameEntry);}
+                    ExfatDentry::VendorExt(_) =>
+                                        {return Ok(ExfatValidateDentryMode::GetBenignSecEntry);}
+                    ExfatDentry::VendorAlloc(_) =>
+                                        {return Ok(ExfatValidateDentryMode::GetBenignSecEntry);}
+                    _ => {return_errno!(Errno::EINVAL)}
+                }
+            }
+            ExfatValidateDentryMode::GetBenignSecEntry => {
+                match dentry {
+                    ExfatDentry::VendorExt(_) =>
+                                        {return Ok(ExfatValidateDentryMode::GetBenignSecEntry);}
+                    ExfatDentry::VendorAlloc(_) =>
+                                        {return Ok(ExfatValidateDentryMode::GetBenignSecEntry);}
+                    _ => {return_errno!(Errno::EINVAL)}
+                }
+            }
+            _ => {return_errno!(Errno::EINVAL)}
+        }
     }
 
     /// read the {entry}th DENTRY after the position in 'parent_dir'(now only the cluster info valid?)
@@ -296,7 +345,7 @@ pub struct ExfatFileDentry {
      //Calculated on file and secondary entries.
     pub(super) checksum: u16,                       // checksum of all directory entries in the given set excluding this field 
 
-    pub(super) attribute: u16,
+    pub(super) attribute: u16,                      // bit0: read-only; bit1: hidden; bit2: system; bit4: directory; bit5: archive
     pub(super) reserved1: u16,
 
     //Create time, however, ctime in unix metadata means ***change time***. 
