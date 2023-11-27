@@ -20,7 +20,6 @@ pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use jinux_frame::config::PAGE_SIZE;
 pub(crate) use jinux_frame::sync::{Mutex, MutexGuard, RwLock, SpinLock, SpinLockGuard};
 pub(crate) use jinux_frame::vm::Vaddr;
-pub(crate) use jinux_frame::{print, println};
 pub(crate) use log::{debug, error, info, trace, warn};
 pub(crate) use pod::Pod;
 
@@ -43,6 +42,7 @@ macro_rules! current_thread {
 pub(crate) use crate::current;
 pub(crate) use crate::current_thread;
 pub(crate) use crate::error::{Errno, Error};
+pub(crate) use crate::{print, println};
 pub(crate) use lazy_static::lazy_static;
 pub(crate) type Result<T> = core::result::Result<T, Error>;
 pub(crate) use crate::{return_errno, return_errno_with_message};

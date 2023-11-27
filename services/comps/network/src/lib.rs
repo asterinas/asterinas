@@ -35,7 +35,7 @@ pub enum VirtioNetError {
     Unknown,
 }
 
-pub trait NetworkDevice: Send + Sync + Any + Debug {
+pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
     // ================Device Information=================
 
     fn mac_addr(&self) -> EthernetAddr;
@@ -54,33 +54,33 @@ pub trait NetworkDevice: Send + Sync + Any + Debug {
 
 pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;
 
-pub fn register_device(name: String, device: Arc<SpinLock<Box<dyn NetworkDevice>>>) {
+pub fn register_device(name: String, device: Arc<SpinLock<Box<dyn AnyNetworkDevice>>>) {
     COMPONENT
         .get()
         .unwrap()
-        .devices
+        .network_device_table
         .lock()
         .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
 }
 
-pub fn get_device(str: &String) -> Option<Arc<SpinLock<Box<dyn NetworkDevice>>>> {
-    let lock = COMPONENT.get().unwrap().devices.lock();
+pub fn get_device(str: &str) -> Option<Arc<SpinLock<Box<dyn AnyNetworkDevice>>>> {
+    let lock = COMPONENT.get().unwrap().network_device_table.lock();
     let Some((_, device)) = lock.get(str) else {
         return None;
     };
     Some(device.clone())
 }
 
-pub fn register_recv_callback(name: &String, callback: impl NetDeviceIrqHandler) {
-    let lock = COMPONENT.get().unwrap().devices.lock();
+pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
+    let lock = COMPONENT.get().unwrap().network_device_table.lock();
     let Some((callbacks, _)) = lock.get(name) else {
         return;
     };
     callbacks.lock().push(Arc::new(callback));
 }
 
-pub fn handle_recv_irq(name: &String) {
-    let lock = COMPONENT.get().unwrap().devices.lock();
+pub fn handle_recv_irq(name: &str) {
+    let lock = COMPONENT.get().unwrap().network_device_table.lock();
     let Some((callbacks, _)) = lock.get(name) else {
         return;
     };
@@ -92,12 +92,11 @@ pub fn handle_recv_irq(name: &String) {
 }
 
 pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
-    let lock = COMPONENT.get().unwrap().devices.lock();
-    let mut vec = Vec::new();
-    for (name, (_, device)) in lock.iter() {
-        vec.push((name.clone(), device.clone()));
-    }
-    vec
+    let network_devs = COMPONENT.get().unwrap().network_device_table.lock();
+    network_devs
+        .iter()
+        .map(|(name, (_, device))| (name.clone(), device.clone()))
+        .collect()
 }
 
 static COMPONENT: Once<Component> = Once::new();
@@ -113,17 +112,18 @@ fn init() -> Result<(), ComponentInitError> {
 }
 
 type NetDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>>;
-type NetworkDeviceRef = Arc<SpinLock<Box<dyn NetworkDevice>>>;
+type NetworkDeviceRef = Arc<SpinLock<Box<dyn AnyNetworkDevice>>>;
 
 struct Component {
     /// Device list, the key is device name, value is (callbacks, device);
-    devices: SpinLock<BTreeMap<String, (NetDeviceIrqHandlerListRef, NetworkDeviceRef)>>,
+    network_device_table:
+        SpinLock<BTreeMap<String, (NetDeviceIrqHandlerListRef, NetworkDeviceRef)>>,
 }
 
 impl Component {
     pub fn init() -> Result<Self, ComponentInitError> {
         Ok(Self {
-            devices: SpinLock::new(BTreeMap::new()),
+            network_device_table: SpinLock::new(BTreeMap::new()),
         })
     }
 }

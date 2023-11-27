@@ -3,10 +3,10 @@ use smoltcp::{phy, time::Instant};
 
 use crate::{
     buffer::{RxBuffer, TxBuffer},
-    NetworkDevice,
+    AnyNetworkDevice,
 };
 
-impl phy::Device for dyn NetworkDevice {
+impl phy::Device for dyn AnyNetworkDevice {
     type RxToken<'a> = RxToken;
     type TxToken<'a> = TxToken<'a>;
 
@@ -43,7 +43,7 @@ impl phy::RxToken for RxToken {
     }
 }
 
-pub struct TxToken<'a>(&'a mut dyn NetworkDevice);
+pub struct TxToken<'a>(&'a mut dyn AnyNetworkDevice);
 
 impl<'a> phy::TxToken for TxToken<'a> {
     fn consume<R, F>(self, len: usize, f: F) -> R

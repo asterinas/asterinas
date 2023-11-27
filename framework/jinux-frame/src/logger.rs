@@ -1,4 +1,4 @@
-use crate::{config::DEFAULT_LOG_LEVEL, println};
+use crate::{config::DEFAULT_LOG_LEVEL, early_println};
 
 use log::{Metadata, Record};
 
@@ -13,7 +13,7 @@ impl log::Log for Logger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            println!("[{}]: {}", record.level(), record.args());
+            early_println!("[{}]: {}", record.level(), record.args());
         }
     }
 

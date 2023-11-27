@@ -39,6 +39,7 @@ members = [
     "framework/libs/ktest",
     "framework/libs/tdx-guest",
     "services/comps/block",
+    "services/comps/console",
     "services/comps/framebuffer",
     "services/comps/input",
     "services/comps/network",

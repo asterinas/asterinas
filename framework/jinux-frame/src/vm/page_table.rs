@@ -63,10 +63,10 @@ pub trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
 
     fn update(&mut self, paddr: Paddr, flags: Self::F);
 
-    /// To determine whether the PTE is unused, it usually checks whether it is 0.
+    /// To determine whether the PTE is used, it usually checks whether it is 0.
     ///
     /// The page table will first use this value to determine whether a new page needs to be created to complete the mapping.
-    fn is_unused(&self) -> bool;
+    fn is_used(&self) -> bool;
 
     /// Clear the PTE and reset it to the initial state, which is usually 0.
     fn clear(&mut self);
@@ -248,7 +248,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
             paddr,
             flags
         );
-        if !last_entry.is_unused() && last_entry.flags().is_present() {
+        if last_entry.is_used() && last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.update(paddr, flags);
@@ -312,7 +312,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     unsafe fn do_unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
         let last_entry = self.page_walk(vaddr, false).unwrap();
         trace!("Page Table: Unmap vaddr:{:x?}", vaddr);
-        if last_entry.is_unused() && !last_entry.flags().is_present() {
+        if !last_entry.is_used() && !last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.clear();
@@ -336,7 +336,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
             vaddr,
             new_flags
         );
-        if last_entry.is_unused() || !old_flags.is_present() {
+        if !last_entry.is_used() || !old_flags.is_present() {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.update(last_entry.paddr(), new_flags);

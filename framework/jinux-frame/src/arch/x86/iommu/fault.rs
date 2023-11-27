@@ -69,7 +69,7 @@ impl FaultEventRegisters {
 pub struct FaultRecording(u128);
 
 impl FaultRecording {
-    pub fn fault(&self) -> bool {
+    pub fn is_fault(&self) -> bool {
         self.0 & (1 << 127) != 0
     }
 
@@ -143,7 +143,7 @@ impl FaultRecording {
 impl Debug for FaultRecording {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("FaultRecording")
-            .field("Fault", &self.fault())
+            .field("Fault", &self.is_fault())
             .field("Request type", &self.request_type())
             .field("Address type", &self.address_type())
             .field("Source identifier", &self.source_identifier())

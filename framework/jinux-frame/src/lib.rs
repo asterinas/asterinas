@@ -55,9 +55,10 @@ pub fn init() {
     #[cfg(feature = "intel_tdx")]
     let td_info = init_tdx().unwrap();
     #[cfg(feature = "intel_tdx")]
-    println!(
+    early_println!(
         "td gpaw: {}, td attributes: {:?}\nTDX guest is initialized",
-        td_info.gpaw, td_info.attributes
+        td_info.gpaw,
+        td_info.attributes
     );
     vm::heap_allocator::init();
     boot::init();
