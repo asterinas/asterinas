@@ -16,7 +16,7 @@ pub struct InitStream {
 }
 
 enum Inner {
-    Unbound(AlwaysSome<AnyUnboundSocket>),
+    Unbound(AlwaysSome<Box<AnyUnboundSocket>>),
     Bound(AlwaysSome<Arc<AnyBoundSocket>>),
     Connecting {
         bound_socket: Arc<AnyBoundSocket>,
@@ -114,7 +114,7 @@ impl Inner {
 
 impl InitStream {
     pub fn new(nonblocking: bool) -> Self {
-        let socket = AnyUnboundSocket::new_tcp();
+        let socket = Box::new(AnyUnboundSocket::new_tcp());
         let inner = Inner::Unbound(AlwaysSome::new(socket));
         Self {
             is_nonblocking: AtomicBool::new(nonblocking),

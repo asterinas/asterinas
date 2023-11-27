@@ -133,7 +133,7 @@ impl BacklogSocket {
             Errno::EINVAL,
             "the socket is not bound",
         ))?;
-        let unbound_socket = AnyUnboundSocket::new_tcp();
+        let unbound_socket = Box::new(AnyUnboundSocket::new_tcp());
         let bound_socket = {
             let iface = bound_socket.iface();
             let bind_port_config = BindPortConfig::new(local_endpoint.port, true)?;
