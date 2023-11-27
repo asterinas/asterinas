@@ -383,6 +383,11 @@ impl Dentry {
         self.inode.fs()
     }
 
+    /// Flushes all changes made to data and metadata to the device.
+    pub fn sync(&self) -> Result<()> {
+        self.inode.sync()
+    }
+
     /// Get the inode metadata
     pub fn inode_metadata(&self) -> Metadata {
         self.inode.metadata()
