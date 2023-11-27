@@ -101,6 +101,18 @@ impl MountNode {
         self.mountpoint_dentry.as_ref()
     }
 
+    /// Flushes all pending filesystem metadata and cached file data to the device.
+    pub fn sync(&self) -> Result<()> {
+        let children = self.children.lock();
+        for child in children.values() {
+            child.sync()?;
+        }
+        drop(children);
+
+        self.fs.sync()?;
+        Ok(())
+    }
+
     /// Try to get the parent mount node.
     pub fn parent(&self) -> Option<Arc<Self>> {
         self.mountpoint_dentry

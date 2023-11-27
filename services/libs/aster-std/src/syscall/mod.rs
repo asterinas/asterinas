@@ -17,6 +17,7 @@ use crate::syscall::exit::sys_exit;
 use crate::syscall::exit_group::sys_exit_group;
 use crate::syscall::fcntl::sys_fcntl;
 use crate::syscall::fork::sys_fork;
+use crate::syscall::fsync::sys_fsync;
 use crate::syscall::futex::sys_futex;
 use crate::syscall::getcwd::sys_getcwd;
 use crate::syscall::getdents64::sys_getdents64;
@@ -59,6 +60,7 @@ use crate::syscall::setpgid::sys_setpgid;
 use crate::syscall::stat::{sys_fstat, sys_fstatat, sys_lstat, sys_stat};
 use crate::syscall::statfs::{sys_fstatfs, sys_statfs};
 use crate::syscall::symlink::{sys_symlink, sys_symlinkat};
+use crate::syscall::sync::sys_sync;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::time::sys_time;
 use crate::syscall::umask::sys_umask;
@@ -123,6 +125,7 @@ mod exit;
 mod exit_group;
 mod fcntl;
 mod fork;
+mod fsync;
 mod futex;
 mod getcwd;
 mod getdents64;
@@ -192,6 +195,7 @@ mod socketpair;
 mod stat;
 mod statfs;
 mod symlink;
+mod sync;
 mod tgkill;
 mod time;
 mod umask;
@@ -283,6 +287,7 @@ define_syscall_nums!(
     SYS_KILL = 62,
     SYS_UNAME = 63,
     SYS_FCNTL = 72,
+    SYS_FSYNC = 74,
     SYS_GETCWD = 79,
     SYS_CHDIR = 80,
     SYS_FCHDIR = 81,
@@ -323,6 +328,7 @@ define_syscall_nums!(
     SYS_FSTATFS = 138,
     SYS_PRCTL = 157,
     SYS_ARCH_PRCTL = 158,
+    SYS_SYNC = 162,
     SYS_GETTID = 186,
     SYS_TIME = 201,
     SYS_FUTEX = 202,
@@ -459,6 +465,7 @@ pub fn syscall_dispatch(
         SYS_KILL => syscall_handler!(2, sys_kill, args),
         SYS_UNAME => syscall_handler!(1, sys_uname, args),
         SYS_FCNTL => syscall_handler!(3, sys_fcntl, args),
+        SYS_FSYNC => syscall_handler!(1, sys_fsync, args),
         SYS_GETCWD => syscall_handler!(2, sys_getcwd, args),
         SYS_CHDIR => syscall_handler!(1, sys_chdir, args),
         SYS_FCHDIR => syscall_handler!(1, sys_fchdir, args),
@@ -499,6 +506,7 @@ pub fn syscall_dispatch(
         SYS_FSTATFS => syscall_handler!(2, sys_fstatfs, args),
         SYS_PRCTL => syscall_handler!(5, sys_prctl, args),
         SYS_ARCH_PRCTL => syscall_handler!(2, sys_arch_prctl, args, context),
+        SYS_SYNC => syscall_handler!(0, sys_sync),
         SYS_GETTID => syscall_handler!(0, sys_gettid),
         SYS_TIME => syscall_handler!(1, sys_time, args),
         SYS_FUTEX => syscall_handler!(6, sys_futex, args),
