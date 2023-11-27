@@ -98,9 +98,9 @@ impl IfaceCommon {
     pub(super) fn bind_socket(
         &self,
         iface: Arc<dyn Iface>,
-        socket: AnyUnboundSocket,
+        socket: Box<AnyUnboundSocket>,
         config: BindPortConfig,
-    ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, AnyUnboundSocket)> {
+    ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Box<AnyUnboundSocket>)> {
         let port = if let Some(port) = config.port() {
             port
         } else {

@@ -27,7 +27,7 @@ pub struct DatagramSocket {
 }
 
 enum Inner {
-    Unbound(AlwaysSome<AnyUnboundSocket>),
+    Unbound(AlwaysSome<Box<AnyUnboundSocket>>),
     Bound(Arc<BoundDatagram>),
 }
 
@@ -148,7 +148,7 @@ impl Inner {
 
 impl DatagramSocket {
     pub fn new(nonblocking: bool) -> Self {
-        let udp_socket = AnyUnboundSocket::new_udp();
+        let udp_socket = Box::new(AnyUnboundSocket::new_udp());
         Self {
             inner: RwLock::new(Inner::Unbound(AlwaysSome::new(udp_socket))),
             nonblocking: AtomicBool::new(nonblocking),
@@ -176,16 +176,17 @@ impl DatagramSocket {
     }
 
     fn try_bind_empheral(&self, remote_endpoint: &IpEndpoint) -> Result<Arc<BoundDatagram>> {
+        // Fast path
         if let Inner::Bound(bound) = &*self.inner.read() {
             return Ok(bound.clone());
         }
 
+        // Slow path
         let mut inner = self.inner.write();
         if let Inner::Bound(bound) = &*inner {
-            Ok(bound.clone())
-        } else {
-            inner.bind_to_ephemeral_endpoint(remote_endpoint)
+            return Ok(bound.clone());
         }
+        inner.bind_to_ephemeral_endpoint(remote_endpoint)
     }
 }
 

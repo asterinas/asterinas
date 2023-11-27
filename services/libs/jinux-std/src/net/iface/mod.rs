@@ -37,9 +37,9 @@ pub trait Iface: internal::IfaceInternal + Send + Sync {
     /// See discussion at https://github.com/smoltcp-rs/smoltcp/issues/779.
     fn bind_socket(
         &self,
-        socket: AnyUnboundSocket,
+        socket: Box<AnyUnboundSocket>,
         config: BindPortConfig,
-    ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, AnyUnboundSocket)> {
+    ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Box<AnyUnboundSocket>)> {
         let common = self.common();
         let socket_type_inner = socket.socket_family();
         common.bind_socket(self.arc_self(), socket, config)
