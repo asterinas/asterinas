@@ -59,11 +59,14 @@ impl FsResolver {
         let access_mode = AccessMode::from_u32(flags)?;
         let inode_mode = InodeMode::from_bits_truncate(mode);
 
-        let follow_tail_link = !creation_flags.contains(CreationFlags::O_NOFOLLOW);
+        let follow_tail_link = !(creation_flags.contains(CreationFlags::O_NOFOLLOW)
+            || creation_flags.contains(CreationFlags::O_CREAT)
+                && creation_flags.contains(CreationFlags::O_EXCL));
         let dentry = match self.lookup_inner(path, follow_tail_link) {
             Ok(dentry) => {
                 let inode = dentry.inode();
                 if inode.type_() == InodeType::SymLink
+                    && creation_flags.contains(CreationFlags::O_NOFOLLOW)
                     && !status_flags.contains(StatusFlags::O_PATH)
                 {
                     return_errno_with_message!(Errno::ELOOP, "file is a symlink");

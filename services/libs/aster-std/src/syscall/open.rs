@@ -28,7 +28,8 @@ pub fn sys_openat(
     let file_handle = {
         let pathname = pathname.to_string_lossy();
         let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
-        let inode_handle = current.fs().read().open(&fs_path, flags, mode)?;
+        let mask_mode = mode & !current.umask().read().get();
+        let inode_handle = current.fs().read().open(&fs_path, flags, mask_mode)?;
         Arc::new(inode_handle)
     };
     let mut file_table = current.file_table().lock();

@@ -25,6 +25,6 @@ impl FileCreationMask {
 
 impl Default for FileCreationMask {
     fn default() -> Self {
-        Self(0o777)
+        Self(0o022)
     }
 }

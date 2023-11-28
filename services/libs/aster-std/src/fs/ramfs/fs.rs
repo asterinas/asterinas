@@ -621,15 +621,12 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EPERM, "old is a dir");
         }
         let mut self_inode = self.0.write();
-        if self_inode.inner.as_direntry().unwrap().contains_entry(name) {
+        let self_dir = self_inode.inner.as_direntry_mut().unwrap();
+        if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exist");
         }
 
-        self_inode
-            .inner
-            .as_direntry_mut()
-            .unwrap()
-            .append_entry(name, old.0.read().this.upgrade().unwrap());
+        self_dir.append_entry(name, old.0.read().this.upgrade().unwrap());
         self_inode.inc_size();
         drop(self_inode);
         old.0.write().inc_nlinks();
@@ -660,8 +657,11 @@ impl Inode for RamInode {
         if self.0.read().metadata.type_ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
-        if name == "." || name == ".." {
-            return_errno_with_message!(Errno::EISDIR, "rmdir on . or ..");
+        if name == "." {
+            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
+        }
+        if name == ".." {
+            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
         }
         let mut self_inode = self.0.write();
         let self_dir = self_inode.inner.as_direntry_mut().unwrap();
@@ -724,65 +724,101 @@ impl Inode for RamInode {
         if new_name == "." || new_name == ".." {
             return_errno_with_message!(Errno::EISDIR, "new_name is . or ..");
         }
-        let src_inode = self.lookup(old_name)?;
-        if src_inode.metadata().ino == target.metadata().ino {
-            return_errno_with_message!(Errno::EINVAL, "target is a descendant of old");
-        }
-        if let Ok(dst_inode) = target.lookup(new_name) {
-            if src_inode.metadata().ino == dst_inode.metadata().ino {
-                return Ok(());
-            }
-            match (src_inode.metadata().type_, dst_inode.metadata().type_) {
-                (InodeType::Dir, InodeType::Dir) => {
-                    let dst_inode = dst_inode.downcast_ref::<RamInode>().unwrap();
-                    if !dst_inode
-                        .0
-                        .read()
-                        .inner
-                        .as_direntry()
-                        .unwrap()
-                        .is_empty_children()
-                    {
-                        return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
+
+        // Perform necessary checks to ensure that `dst_inode` can be replaced by `src_inode`.
+        let check_replace_inode =
+            |src_inode: &Arc<RamInode>, dst_inode: &Arc<RamInode>| -> Result<()> {
+                if src_inode.metadata().ino == dst_inode.metadata().ino {
+                    return Ok(());
+                }
+
+                match (src_inode.metadata().type_, dst_inode.metadata().type_) {
+                    (InodeType::Dir, InodeType::Dir) => {
+                        if !dst_inode
+                            .0
+                            .read()
+                            .inner
+                            .as_direntry()
+                            .unwrap()
+                            .is_empty_children()
+                        {
+                            return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
+                        }
                     }
+                    (InodeType::Dir, _) => {
+                        return_errno_with_message!(Errno::ENOTDIR, "old is not dir");
+                    }
+                    (_, InodeType::Dir) => {
+                        return_errno_with_message!(Errno::EISDIR, "new is dir");
+                    }
+                    _ => {}
                 }
-                (InodeType::Dir, _) => {
-                    return_errno_with_message!(Errno::ENOTDIR, "old is not dir");
-                }
-                (_, InodeType::Dir) => {
-                    return_errno_with_message!(Errno::EISDIR, "new is dir");
-                }
-                _ => {}
-            }
-        }
+                Ok(())
+            };
+
+        // Rename in the same directory
         if self.metadata().ino == target.metadata().ino {
             let mut self_inode = self.0.write();
             let self_dir = self_inode.inner.as_direntry_mut().unwrap();
-            let (idx, inode) = self_dir
+            let (src_idx, src_inode) = self_dir
                 .get_entry(old_name)
                 .ok_or(Error::new(Errno::ENOENT))?;
-            self_dir.substitute_entry(idx, (CStr256::from(new_name), inode));
-        } else {
+            let is_dir = src_inode.0.read().metadata.type_ == InodeType::Dir;
+
+            if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
+                check_replace_inode(&src_inode, &dst_inode)?;
+                self_dir.remove_entry(dst_idx);
+                self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+                self_inode.dec_size();
+                if is_dir {
+                    self_inode.dec_nlinks();
+                }
+            } else {
+                self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+            }
+        }
+        // Or rename across different directories
+        else {
             let (mut self_inode, mut target_inode) = write_lock_two_inodes(self, target);
+            let self_inode_arc = self_inode.this.upgrade().unwrap();
+            let target_inode_arc = target_inode.this.upgrade().unwrap();
             let self_dir = self_inode.inner.as_direntry_mut().unwrap();
-            let (idx, src_inode) = self_dir
+            let (src_idx, src_inode) = self_dir
                 .get_entry(old_name)
                 .ok_or(Error::new(Errno::ENOENT))?;
-            self_dir.remove_entry(idx);
-            target_inode
-                .inner
-                .as_direntry_mut()
-                .unwrap()
-                .append_entry(new_name, src_inode.clone());
-            self_inode.dec_size();
-            target_inode.inc_size();
-            if src_inode.0.read().metadata.type_ == InodeType::Dir {
-                self_inode.dec_nlinks();
-                target_inode.inc_nlinks();
+            // Avoid renaming a directory to a subdirectory of itself
+            if Arc::ptr_eq(&src_inode, &target_inode_arc) {
+                return_errno!(Errno::EINVAL);
+            }
+            let is_dir = src_inode.0.read().metadata.type_ == InodeType::Dir;
+
+            let target_dir = target_inode.inner.as_direntry_mut().unwrap();
+            if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
+                // Avoid renaming a subdirectory to a directory.
+                if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
+                    return_errno!(Errno::ENOTEMPTY);
+                }
+                check_replace_inode(&src_inode, &dst_inode)?;
+                self_dir.remove_entry(src_idx);
+                target_dir.remove_entry(dst_idx);
+                target_dir.append_entry(new_name, src_inode.clone());
+                self_inode.dec_size();
+                if is_dir {
+                    self_inode.dec_nlinks();
+                }
+            } else {
+                self_dir.remove_entry(src_idx);
+                target_dir.append_entry(new_name, src_inode.clone());
+                self_inode.dec_size();
+                target_inode.inc_size();
+                if is_dir {
+                    self_inode.dec_nlinks();
+                    target_inode.inc_nlinks();
+                }
             }
             drop(self_inode);
             drop(target_inode);
-            if src_inode.0.read().metadata.type_ == InodeType::Dir {
+            if is_dir {
                 src_inode
                     .0
                     .write()

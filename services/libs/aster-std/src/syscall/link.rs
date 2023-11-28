@@ -37,11 +37,8 @@ pub fn sys_linkat(
             return_errno_with_message!(Errno::ENOENT, "oldpath is empty");
         }
         let new_pathname = new_pathname.to_string_lossy();
-        if new_pathname.ends_with('/') {
-            return_errno_with_message!(Errno::EPERM, "newpath is dir");
-        }
-        if new_pathname.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "newpath is empty");
+        if new_pathname.ends_with('/') || new_pathname.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "newpath is dir or is empty");
         }
 
         let old_fs_path = FsPath::new(old_dirfd, old_pathname.as_ref())?;

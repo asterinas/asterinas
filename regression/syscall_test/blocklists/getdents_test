@@ -1,0 +1,11 @@
+GetdentsTest/0.VerifyEntries
+GetdentsTest/0.VerifyPadding
+GetdentsTest/0.SmallDir
+GetdentsTest/0.LargeDir
+GetdentsTest/0.PartialBuffer
+GetdentsTest/0.ProcSelfFd
+GetdentsTest/0.NotDir
+GetdentsTest/0.SeekResetsCursor
+GetdentsTest/0.Issue128ProcSeekEnd
+GetdentsTest/1.PartialBuffer
+GetdentsTest/1.ProcSelfFd

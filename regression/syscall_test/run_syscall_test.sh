@@ -1,6 +1,7 @@
 #!/bin/sh
 
 SCRIPT_DIR=$(dirname "$0")
+TEST_TMP_DIR=${SYSCALL_TEST_DIR:-/tmp}
 TEST_BIN_DIR=$SCRIPT_DIR/tests
 BLOCKLIST_DIR=$SCRIPT_DIR/blocklists
 FAIL_CASES=$SCRIPT_DIR/fail_cases
@@ -24,8 +25,11 @@ get_blocklist_subtests(){
 
 run_one_test(){
     echo -e "Run Test Case: $1"
+    # The gvisor test framework utilizes the "TEST_TMPDIR" environment variable to dictate the directory's location.
+    export TEST_TMPDIR=$TEST_TMP_DIR
     ret=0
     if [ -f $TEST_BIN_DIR/$1 ]; then
+        rm -rf $TEST_TMP_DIR/*
         get_blocklist_subtests $1
         $TEST_BIN_DIR/$1 --gtest_filter=-$BLOCK
         ret=$?

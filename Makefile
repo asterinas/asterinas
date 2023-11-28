@@ -12,6 +12,7 @@ KTEST ?= 0
 KTEST_CRATES ?= all
 KTEST_WHITELIST ?=
 SKIP_GRUB_MENU ?= 1
+SYSCALL_TEST_DIR ?= /tmp
 RELEASE_MODE ?= 0
 # End of setting up Make varaiables
 
@@ -20,6 +21,7 @@ KERNEL_CMDLINE += ktest.whitelist="$(KTEST_WHITELIST)"
 INIT_CMDLINE := sh -l
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
+KERNEL_CMDLINE += SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)
 INIT_CMDLINE += /opt/syscall_test/run_syscall_test.sh
 endif
 ifeq ($(AUTO_TEST), regression)
