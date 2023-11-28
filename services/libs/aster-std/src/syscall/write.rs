@@ -23,6 +23,10 @@ pub fn sys_write(
     let current = current!();
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;
+    if user_buf_len == 0 {
+        return Ok(SyscallReturn::Return(0));
+    }
+
     let mut buffer = vec![0u8; user_buf_len];
     read_bytes_from_user(user_buf_ptr, &mut buffer)?;
     debug!("write content = {:?}", buffer);

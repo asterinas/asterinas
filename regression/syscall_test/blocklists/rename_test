@@ -1,0 +1,7 @@
+RenameTest.RootToAnything
+RenameTest.AnythingToRoot
+RenameTest.FailsWithDots
+RenameTest.FailsWhenOldParentNotWritable
+RenameTest.FailsWhenNewParentNotWritable
+RenameTest.OverwriteFailsWhenNewParentNotWritable
+RenameTest.FileDoesNotExistWhenNewParentNotExecutable
