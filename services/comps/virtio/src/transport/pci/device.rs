@@ -8,7 +8,7 @@ use jinux_frame::{
     io_mem::IoMem,
     offset_of,
     trap::IrqCallbackFunction,
-    vm::VmFrame,
+    vm::DmaCoherent,
 };
 
 use alloc::{boxed::Box, sync::Arc};
@@ -70,9 +70,9 @@ impl VirtioTransport for VirtioPciTransport {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, VmFrame>,
-        avail_ring_ptr: &SafePtr<AvailRing, VmFrame>,
-        used_ring_ptr: &SafePtr<UsedRing, VmFrame>,
+        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
+        avail_ring_ptr: &SafePtr<AvailRing, DmaCoherent>,
+        used_ring_ptr: &SafePtr<UsedRing, DmaCoherent>,
     ) -> Result<(), VirtioTransportError> {
         if idx >= self.num_queues() {
             return Err(VirtioTransportError::InvalidArgs);
