@@ -51,6 +51,7 @@ impl From<DeviceType> for InodeType {
         match type_ {
             DeviceType::CharDevice => InodeType::CharDevice,
             DeviceType::BlockDevice => InodeType::BlockDevice,
+            DeviceType::MiscDevice => InodeType::CharDevice,
         }
     }
 }

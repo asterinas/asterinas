@@ -33,6 +33,7 @@ impl Debug for dyn Device {
 pub enum DeviceType {
     CharDevice,
     BlockDevice,
+    MiscDevice,
 }
 
 /// Device Id
