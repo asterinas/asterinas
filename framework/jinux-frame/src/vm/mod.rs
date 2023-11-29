@@ -19,7 +19,7 @@ mod space;
 
 use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
 
-pub use self::dma::{DmaCoherent, HasDaddr};
+pub use self::dma::{DmaCoherent, DmaDirection, DmaStream, HasDaddr};
 pub use self::frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter};
 pub use self::io::VmIo;
 pub use self::options::VmAllocOptions;

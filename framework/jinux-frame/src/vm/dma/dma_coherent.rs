@@ -158,3 +158,82 @@ impl HasPaddr for DmaCoherent {
         self.inner.vm_segment.start_paddr()
     }
 }
+
+#[if_cfg_ktest]
+mod test {
+    use super::*;
+    use crate::vm::VmAllocOptions;
+    use alloc::vec;
+
+    #[ktest]
+    fn map_with_coherent_device() {
+        let vm_segment = VmAllocOptions::new(1)
+            .is_contiguous(true)
+            .alloc_contiguous()
+            .unwrap();
+        let dma_coherent = DmaCoherent::map(vm_segment.clone(), true).unwrap();
+        assert!(dma_coherent.paddr() == vm_segment.paddr());
+    }
+
+    #[ktest]
+    fn map_with_incoherent_device() {
+        let vm_segment = VmAllocOptions::new(1)
+            .is_contiguous(true)
+            .alloc_contiguous()
+            .unwrap();
+        let dma_coherent = DmaCoherent::map(vm_segment.clone(), false).unwrap();
+        assert!(dma_coherent.paddr() == vm_segment.paddr());
+        let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+        assert!(page_table
+            .flags(paddr_to_vaddr(vm_segment.paddr()))
+            .unwrap()
+            .contains(PageTableFlags::NO_CACHE))
+    }
+
+    #[ktest]
+    fn duplicate_map() {
+        let vm_segment_parent = VmAllocOptions::new(2)
+            .is_contiguous(true)
+            .alloc_contiguous()
+            .unwrap();
+        let vm_segment_child = vm_segment_parent.range(0..1);
+        let dma_coherent_parent = DmaCoherent::map(vm_segment_parent, false);
+        let dma_coherent_child = DmaCoherent::map(vm_segment_child, false);
+        assert!(dma_coherent_child.is_err());
+    }
+
+    #[ktest]
+    fn read_and_write() {
+        let vm_segment = VmAllocOptions::new(2)
+            .is_contiguous(true)
+            .alloc_contiguous()
+            .unwrap();
+        let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
+
+        let buf_write = vec![1u8; 2 * PAGE_SIZE];
+        dma_coherent.write_bytes(0, &buf_write).unwrap();
+        let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
+        dma_coherent.read_bytes(0, &mut buf_read).unwrap();
+        assert_eq!(buf_write, buf_read);
+    }
+
+    #[ktest]
+    fn reader_and_wirter() {
+        let vm_segment = VmAllocOptions::new(2)
+            .is_contiguous(true)
+            .alloc_contiguous()
+            .unwrap();
+        let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
+
+        let buf_write = vec![1u8; PAGE_SIZE];
+        let mut writer = dma_coherent.writer();
+        writer.write(&mut buf_write.as_slice().into());
+        writer.write(&mut buf_write.as_slice().into());
+
+        let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
+        let buf_write = vec![1u8; 2 * PAGE_SIZE];
+        let mut reader = dma_coherent.reader();
+        reader.read(&mut buf_read.as_mut_slice().into());
+        assert_eq!(buf_read, buf_write);
+    }
+}
