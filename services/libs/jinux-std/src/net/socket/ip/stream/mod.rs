@@ -1,5 +1,6 @@
 use crate::events::IoEvents;
 use crate::fs::{file_handle::FileLike, utils::StatusFlags};
+use crate::net::iface::IpEndpoint;
 use crate::net::socket::{
     util::{
         send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
@@ -10,9 +11,13 @@ use crate::net::socket::{
 use crate::prelude::*;
 use crate::process::signal::Poller;
 
-use self::{connected::ConnectedStream, init::InitStream, listen::ListenStream};
+use self::{
+    connected::ConnectedStream, connecting::ConnectingStream, init::InitStream,
+    listen::ListenStream,
+};
 
 mod connected;
+mod connecting;
 mod init;
 mod listen;
 
@@ -23,6 +28,8 @@ pub struct StreamSocket {
 enum State {
     // Start state
     Init(Arc<InitStream>),
+    // Intermediate state
+    Connecting(Arc<ConnectingStream>),
     // Final State 1
     Connected(Arc<ConnectedStream>),
     // Final State 2
@@ -40,6 +47,7 @@ impl StreamSocket {
     fn is_nonblocking(&self) -> bool {
         match &*self.state.read() {
             State::Init(init) => init.is_nonblocking(),
+            State::Connecting(connecting) => connecting.is_nonblocking(),
             State::Connected(connected) => connected.is_nonblocking(),
             State::Listen(listen) => listen.is_nonblocking(),
         }
@@ -48,9 +56,24 @@ impl StreamSocket {
     fn set_nonblocking(&self, nonblocking: bool) {
         match &*self.state.read() {
             State::Init(init) => init.set_nonblocking(nonblocking),
+            State::Connecting(connecting) => connecting.set_nonblocking(nonblocking),
             State::Connected(connected) => connected.set_nonblocking(nonblocking),
             State::Listen(listen) => listen.set_nonblocking(nonblocking),
         }
+    }
+
+    fn do_connect(&self, remote_endpoint: &IpEndpoint) -> Result<Arc<ConnectingStream>> {
+        let mut state = self.state.write();
+        let init_stream = match &*state {
+            State::Init(init_stream) => init_stream,
+            State::Listen(_) | State::Connecting(_) | State::Connected(_) => {
+                return_errno_with_message!(Errno::EINVAL, "cannot connect")
+            }
+        };
+
+        let connecting = Arc::new(init_stream.connect(remote_endpoint)?);
+        *state = State::Connecting(connecting.clone());
+        Ok(connecting)
     }
 }
 
@@ -72,6 +95,7 @@ impl FileLike for StreamSocket {
         let state = self.state.read();
         match &*state {
             State::Init(init) => init.poll(mask, poller),
+            State::Connecting(connecting) => connecting.poll(mask, poller),
             State::Connected(connected) => connected.poll(mask, poller),
             State::Listen(listen) => listen.poll(mask, poller),
         }
@@ -112,44 +136,37 @@ impl Socket for StreamSocket {
     fn connect(&self, sockaddr: SocketAddr) -> Result<()> {
         let remote_endpoint = sockaddr.try_into()?;
 
-        let init_stream = match &*self.state.read() {
-            State::Init(init_stream) => init_stream.clone(),
-            _ => return_errno_with_message!(Errno::EINVAL, "cannot connect"),
-        };
-
-        init_stream.connect(&remote_endpoint)?;
-
-        let connected_stream = {
-            let nonblocking = init_stream.is_nonblocking();
-            let bound_socket = init_stream.bound_socket().unwrap();
-            Arc::new(ConnectedStream::new(
-                nonblocking,
-                bound_socket,
-                remote_endpoint,
-            ))
-        };
-        *self.state.write() = State::Connected(connected_stream);
-        Ok(())
+        let connecting_stream = self.do_connect(&remote_endpoint)?;
+        match connecting_stream.wait_conn() {
+            Ok(connected_stream) => {
+                let connected_stream = Arc::new(connected_stream);
+                *self.state.write() = State::Connected(connected_stream);
+                Ok(())
+            }
+            Err((err, init_stream)) => {
+                let init_stream = Arc::new(init_stream);
+                *self.state.write() = State::Init(init_stream);
+                Err(err)
+            }
+        }
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
         let mut state = self.state.write();
-        match &*state {
-            State::Init(init_stream) => {
-                if !init_stream.is_bound() {
-                    return_errno_with_message!(Errno::EINVAL, "cannot listen without bound");
-                }
-                let nonblocking = init_stream.is_nonblocking();
-                let bound_socket = init_stream.bound_socket().unwrap();
-                let listener = Arc::new(ListenStream::new(nonblocking, bound_socket, backlog)?);
-                *state = State::Listen(listener);
-                Ok(())
+        let init_stream = match &*state {
+            State::Init(init_stream) => init_stream,
+            State::Connecting(connecting_stream) => {
+                return_errno_with_message!(Errno::EINVAL, "cannot listen for a connecting stream")
             }
             State::Listen(listen_stream) => {
                 return_errno_with_message!(Errno::EINVAL, "cannot listen for a listening stream")
             }
-            _ => return_errno_with_message!(Errno::EINVAL, "cannot listen"),
-        }
+            State::Connected(_) => return_errno_with_message!(Errno::EINVAL, "cannot listen"),
+        };
+
+        let listener = Arc::new(init_stream.listen(backlog)?);
+        *state = State::Listen(listener);
+        Ok(())
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
@@ -185,6 +202,7 @@ impl Socket for StreamSocket {
         let state = self.state.read();
         let local_endpoint = match &*state {
             State::Init(init_stream) => init_stream.local_endpoint(),
+            State::Connecting(connecting_stream) => connecting_stream.local_endpoint(),
             State::Listen(listen_stream) => listen_stream.local_endpoint(),
             State::Connected(connected_stream) => connected_stream.local_endpoint(),
         }?;
@@ -194,7 +212,10 @@ impl Socket for StreamSocket {
     fn peer_addr(&self) -> Result<SocketAddr> {
         let state = self.state.read();
         let remote_endpoint = match &*state {
-            State::Init(init_stream) => init_stream.remote_endpoint(),
+            State::Init(init_stream) => {
+                return_errno_with_message!(Errno::EINVAL, "init socket does not have peer")
+            }
+            State::Connecting(connecting_stream) => connecting_stream.remote_endpoint(),
             State::Listen(listen_stream) => {
                 return_errno_with_message!(Errno::EINVAL, "listening socket does not have peer")
             }
