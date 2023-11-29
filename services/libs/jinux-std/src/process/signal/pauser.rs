@@ -55,23 +55,24 @@ use super::{SigEvents, SigEventsFilter};
 /// ```
 pub struct Pauser {
     wait_queue: WaitQueue,
-    sigset: SigMask,
+    sig_mask: SigMask,
     is_interrupted: AtomicBool,
 }
 
 impl Pauser {
-    /// Create a new `Pauser`. The `Pauser` can be interrupted by all signals.
+    /// Create a new `Pauser`. The `Pauser` can be interrupted by all signals except that
+    /// are blocked by current thread.
     pub fn new() -> Arc<Self> {
-        Self::new_with_sigset(SigMask::new_full())
+        Self::new_with_mask(SigMask::new_empty())
     }
 
-    /// Create a new `Pauser`, the `Pauser` can only be interrupted by signals
-    /// in `sigset`.
-    pub fn new_with_sigset(sigset: SigMask) -> Arc<Self> {
+    /// Create a new `Pauser`, the `Pauser` will ignore signals that are in `sig_mask` and
+    /// blocked by current thread.
+    pub fn new_with_mask(sig_mask: SigMask) -> Arc<Self> {
         let wait_queue = WaitQueue::new();
         Arc::new(Self {
             wait_queue,
-            sigset,
+            sig_mask,
             is_interrupted: AtomicBool::new(false),
         })
     }
@@ -106,20 +107,25 @@ impl Pauser {
     {
         self.is_interrupted.store(false, Ordering::Release);
 
-        // Register observers on sigqueues
-
+        // Register observer on sigqueue
         let observer = Arc::downgrade(self) as Weak<dyn Observer<SigEvents>>;
-        let filter = SigEventsFilter::new(self.sigset);
-
-        let current = current!();
-        current.register_sigqueue_observer(observer.clone(), filter);
+        let filter = {
+            let sig_mask = {
+                let current_thread = current_thread!();
+                let poxis_thread = current_thread.as_posix_thread().unwrap();
+                let mut current_sigmask = *poxis_thread.sig_mask().lock();
+                current_sigmask.block(self.sig_mask.as_u64());
+                current_sigmask
+            };
+            SigEventsFilter::new(sig_mask)
+        };
 
         let current_thread = current_thread!();
         let posix_thread = current_thread.as_posix_thread().unwrap();
         posix_thread.register_sigqueue_observer(observer.clone(), filter);
 
         // Some signal may come before we register observer, so we do another check here.
-        if posix_thread.has_pending_signal() || current.has_pending_signal() {
+        if posix_thread.has_pending_signal() {
             self.is_interrupted.store(true, Ordering::Release);
         }
 
@@ -148,7 +154,6 @@ impl Pauser {
             self.wait_queue.wait_until(cond)
         };
 
-        current.unregiser_sigqueue_observer(&observer);
         posix_thread.unregiser_sigqueue_observer(&observer);
 
         match res {

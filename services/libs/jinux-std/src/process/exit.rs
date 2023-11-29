@@ -48,7 +48,7 @@ pub fn do_exit_group(term_status: TermStatus) {
 
     if let Some(parent) = current.parent() {
         // Notify parent
-        let signal = Box::new(KernelSignal::new(SIGCHLD));
+        let signal = KernelSignal::new(SIGCHLD);
         parent.enqueue_signal(signal);
         parent.children_pauser().resume_all();
     }

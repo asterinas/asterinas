@@ -420,8 +420,16 @@ impl Vmar_ {
     }
 
     pub fn write(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        let write_start = self.base + offset;
-        let write_end = buf.len() + write_start;
+        let write_start = self
+            .base
+            .checked_add(offset)
+            .ok_or_else(|| Error::with_message(Errno::EFAULT, "Arithmetic Overflow"))?;
+
+        let write_end = buf
+            .len()
+            .checked_add(write_start)
+            .ok_or_else(|| Error::with_message(Errno::EFAULT, "Arithmetic Overflow"))?;
+
         // if the write range is in child vmar
         for (child_vmar_base, child_vmar) in &self.inner.lock().child_vmar_s {
             let child_vmar_end = *child_vmar_base + child_vmar.size;
