@@ -1,7 +1,8 @@
-use jinux_frame::{cpu::*, vm::VmIo};
-
+use crate::prelude::*;
+use crate::process::signal::signals::fault::FaultSignal;
 use crate::vm::page_fault_handler::PageFaultHandler;
-use crate::{prelude::*, process::signal::signals::fault::FaultSignal};
+use jinux_frame::cpu::*;
+use jinux_frame::vm::VmIo;
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(context: &UserContext) {
@@ -56,7 +57,7 @@ fn handle_page_fault(trap_info: &CpuExceptionInfo) {
 /// generate a fault signal for current process.
 fn generate_fault_signal(trap_info: &CpuExceptionInfo) {
     let current = current!();
-    let signal = Box::new(FaultSignal::new(trap_info));
+    let signal = FaultSignal::new(trap_info);
     current.enqueue_signal(signal);
 }
 

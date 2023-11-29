@@ -4,9 +4,12 @@ use core::mem;
 use jinux_frame::cpu::GeneralRegs;
 use jinux_util::{read_union_fields, union_read_ptr::UnionReadPtr};
 
-use crate::{prelude::*, process::Pid};
+use crate::{
+    prelude::*,
+    process::{Pid, Uid},
+};
 
-use super::{sig_num::SigNum, signals::user::Uid};
+use super::sig_num::SigNum;
 
 pub type sigset_t = u64;
 // FIXME: this type should be put at suitable place

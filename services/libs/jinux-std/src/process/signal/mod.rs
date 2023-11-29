@@ -37,67 +37,68 @@ use crate::{
 pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
     let current = current!();
     let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-    let pid = current.pid();
-    let sig_mask = *posix_thread.sig_mask().lock();
+
     // We first deal with signal in current thread, then signal in current process.
-    let signal = if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
-        Some(signal)
-    } else {
-        current.dequeue_signal(&sig_mask)
+    let signal = {
+        let posix_thread = current_thread.as_posix_thread().unwrap();
+        let sig_mask = *posix_thread.sig_mask().lock();
+        if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
+            signal
+        } else {
+            return Ok(());
+        }
     };
-    if let Some(signal) = signal {
-        let sig_num = signal.num();
-        trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
-        let sig_action = current.sig_dispositions().lock().get(sig_num);
-        trace!("sig action: {:x?}", sig_action);
-        match sig_action {
-            SigAction::Ign => {
-                trace!("Ignore signal {:?}", sig_num);
-            }
-            SigAction::User {
-                handler_addr,
-                flags,
-                restorer_addr,
-                mask,
-            } => handle_user_signal(
-                sig_num,
-                handler_addr,
-                flags,
-                restorer_addr,
-                mask,
-                context,
-                signal.to_info(),
-            )?,
-            SigAction::Dfl => {
-                let sig_default_action = SigDefaultAction::from_signum(sig_num);
-                trace!("sig_default_action: {:?}", sig_default_action);
-                match sig_default_action {
-                    SigDefaultAction::Core | SigDefaultAction::Term => {
-                        warn!(
-                            "{:?}: terminating on signal {}",
-                            current.executable_path(),
-                            sig_num.sig_name()
-                        );
-                        do_exit_group(TermStatus::Killed(sig_num));
-                        // We should exit current here, since we cannot restore a valid status from trap now.
-                        Task::current().exit();
+
+    let sig_num = signal.num();
+    trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
+    let sig_action = current.sig_dispositions().lock().get(sig_num);
+    trace!("sig action: {:x?}", sig_action);
+    match sig_action {
+        SigAction::Ign => {
+            trace!("Ignore signal {:?}", sig_num);
+        }
+        SigAction::User {
+            handler_addr,
+            flags,
+            restorer_addr,
+            mask,
+        } => handle_user_signal(
+            sig_num,
+            handler_addr,
+            flags,
+            restorer_addr,
+            mask,
+            context,
+            signal.to_info(),
+        )?,
+        SigAction::Dfl => {
+            let sig_default_action = SigDefaultAction::from_signum(sig_num);
+            trace!("sig_default_action: {:?}", sig_default_action);
+            match sig_default_action {
+                SigDefaultAction::Core | SigDefaultAction::Term => {
+                    warn!(
+                        "{:?}: terminating on signal {}",
+                        current.executable_path(),
+                        sig_num.sig_name()
+                    );
+                    do_exit_group(TermStatus::Killed(sig_num));
+                    // We should exit current here, since we cannot restore a valid status from trap now.
+                    Task::current().exit();
+                }
+                SigDefaultAction::Ign => {}
+                SigDefaultAction::Stop => {
+                    let mut status = current_thread.status().lock();
+                    if status.is_running() {
+                        status.set_stopped();
                     }
-                    SigDefaultAction::Ign => {}
-                    SigDefaultAction::Stop => {
-                        let mut status = current_thread.status().lock();
-                        if status.is_running() {
-                            status.set_stopped();
-                        }
-                        drop(status);
+                    drop(status);
+                }
+                SigDefaultAction::Cont => {
+                    let mut status = current_thread.status().lock();
+                    if status.is_stopped() {
+                        status.set_running();
                     }
-                    SigDefaultAction::Cont => {
-                        let mut status = current_thread.status().lock();
-                        if status.is_stopped() {
-                            status.set_running();
-                        }
-                        drop(status);
-                    }
+                    drop(status);
                 }
             }
         }
@@ -120,6 +121,7 @@ pub fn handle_user_signal(
     debug!("restorer_addr = 0x{:x}", restorer_addr);
     // FIXME: How to respect flags?
     if flags.contains_unsupported_flag() {
+        println!("flags = {:?}", flags);
         panic!("Unsupported Signal flags");
     }
     if !flags.contains(SigActionFlags::SA_NODEFER) {

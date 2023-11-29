@@ -66,9 +66,13 @@ impl ProcessGroup {
     }
 
     /// Broadcasts signal to all processes in the group.
+    ///
+    /// This method should only be used to broadcast fault signal and kernel signal.
+    ///
+    /// TODO: do more check to forbid user signal
     pub fn broadcast_signal(&self, signal: impl Signal + Clone + 'static) {
         for process in self.inner.lock().processes.values() {
-            process.enqueue_signal(Box::new(signal.clone()));
+            process.enqueue_signal(signal.clone());
         }
     }
 
