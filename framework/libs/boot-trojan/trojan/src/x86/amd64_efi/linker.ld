@@ -42,7 +42,9 @@ SECTIONS
     }
 
     .rela.dyn               : {
+        PROVIDE(__rela_dyn_start = .);
         *(.rela.dyn .rela.dyn.*)
+        PROVIDE(__rela_dyn_end = .);
     }
 
     .rela.plt               : {

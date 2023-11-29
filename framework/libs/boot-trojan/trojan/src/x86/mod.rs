@@ -1,11 +1,13 @@
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
-        mod x86_64;
-        pub use x86_64::*;
+        mod amd64_efi;
+        pub use amd64_efi::*;
     } else if #[cfg(target_arch = "x86")] {
-        mod i386;
-        pub use i386::*;
+        mod legacy_i386;
+        pub use legacy_i386::*;
     } else {
         compile_error!("Unsupported target_arch");
     }
 }
+
+pub mod relocation;
