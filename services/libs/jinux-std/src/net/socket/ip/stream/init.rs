@@ -4,11 +4,13 @@ use crate::events::IoEvents;
 use crate::net::iface::Iface;
 use crate::net::iface::IpEndpoint;
 use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket};
-use crate::net::poll_ifaces;
 use crate::net::socket::ip::always_some::AlwaysSome;
 use crate::net::socket::ip::common::{bind_socket, get_ephemeral_endpoint};
 use crate::prelude::*;
 use crate::process::signal::Poller;
+
+use super::connecting::ConnectingStream;
+use super::listen::ListenStream;
 
 pub struct InitStream {
     inner: RwLock<Inner>,
@@ -18,17 +20,13 @@ pub struct InitStream {
 enum Inner {
     Unbound(AlwaysSome<Box<AnyUnboundSocket>>),
     Bound(AlwaysSome<Arc<AnyBoundSocket>>),
-    Connecting {
-        bound_socket: Arc<AnyBoundSocket>,
-        remote_endpoint: IpEndpoint,
-    },
 }
 
 impl Inner {
     fn is_bound(&self) -> bool {
         match self {
             Self::Unbound(_) => false,
-            Self::Bound(..) | Self::Connecting { .. } => true,
+            Self::Bound(_) => true,
         }
     }
 
@@ -50,39 +48,16 @@ impl Inner {
         self.bind(endpoint)
     }
 
-    fn do_connect(&mut self, new_remote_endpoint: IpEndpoint) -> Result<()> {
-        match self {
-            Inner::Unbound(_) => return_errno_with_message!(Errno::EINVAL, "the socket is invalid"),
-            Inner::Connecting {
-                bound_socket,
-                remote_endpoint,
-            } => {
-                *remote_endpoint = new_remote_endpoint;
-                bound_socket.do_connect(new_remote_endpoint)?;
-            }
-            Inner::Bound(bound_socket) => {
-                bound_socket.do_connect(new_remote_endpoint)?;
-                *self = Inner::Connecting {
-                    bound_socket: bound_socket.take(),
-                    remote_endpoint: new_remote_endpoint,
-                };
-            }
-        }
-        Ok(())
-    }
-
     fn bound_socket(&self) -> Option<&Arc<AnyBoundSocket>> {
         match self {
             Inner::Bound(bound_socket) => Some(bound_socket),
-            Inner::Connecting { bound_socket, .. } => Some(bound_socket),
-            _ => None,
+            Inner::Unbound(_) => None,
         }
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         match self {
             Inner::Bound(bound_socket) => bound_socket.poll(mask, poller),
-            Inner::Connecting { bound_socket, .. } => bound_socket.poll(mask, poller),
             Inner::Unbound(unbound_socket) => unbound_socket.poll(mask, poller),
         }
     }
@@ -90,25 +65,13 @@ impl Inner {
     fn iface(&self) -> Option<Arc<dyn Iface>> {
         match self {
             Inner::Bound(bound_socket) => Some(bound_socket.iface().clone()),
-            Inner::Connecting { bound_socket, .. } => Some(bound_socket.iface().clone()),
-            _ => None,
+            Inner::Unbound(_) => None,
         }
     }
 
     fn local_endpoint(&self) -> Option<IpEndpoint> {
         self.bound_socket()
             .and_then(|socket| socket.local_endpoint())
-    }
-
-    fn remote_endpoint(&self) -> Option<IpEndpoint> {
-        if let Inner::Connecting {
-            remote_endpoint, ..
-        } = self
-        {
-            Some(*remote_endpoint)
-        } else {
-            None
-        }
     }
 }
 
@@ -122,40 +85,38 @@ impl InitStream {
         }
     }
 
-    pub fn is_bound(&self) -> bool {
-        self.inner.read().is_bound()
+    pub fn new_bound(nonblocking: bool, bound_socket: Arc<AnyBoundSocket>) -> Self {
+        let inner = Inner::Bound(AlwaysSome::new(bound_socket));
+        Self {
+            is_nonblocking: AtomicBool::new(nonblocking),
+            inner: RwLock::new(inner),
+        }
     }
 
     pub fn bind(&self, endpoint: IpEndpoint) -> Result<()> {
         self.inner.write().bind(endpoint)
     }
 
-    pub fn connect(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
-        if !self.is_bound() {
+    pub fn connect(&self, remote_endpoint: &IpEndpoint) -> Result<ConnectingStream> {
+        if !self.inner.read().is_bound() {
             self.inner
                 .write()
                 .bind_to_ephemeral_endpoint(remote_endpoint)?
         }
-        self.inner.write().do_connect(*remote_endpoint)?;
-        // Wait until building connection
-        let poller = Poller::new();
-        loop {
-            poll_ifaces();
-            let events = self
-                .inner
-                .read()
-                .poll(IoEvents::OUT | IoEvents::IN, Some(&poller));
-            if events.contains(IoEvents::IN) || events.contains(IoEvents::OUT) {
-                return Ok(());
-            } else if !events.is_empty() {
-                return_errno_with_message!(Errno::ECONNREFUSED, "connect refused");
-            } else if self.is_nonblocking() {
-                return_errno_with_message!(Errno::EAGAIN, "try connect again");
-            } else {
-                // FIXME: deal with connecting timeout
-                poller.wait()?;
-            }
-        }
+        ConnectingStream::new(
+            self.is_nonblocking(),
+            self.inner.read().bound_socket().unwrap().clone(),
+            *remote_endpoint,
+        )
+    }
+
+    pub fn listen(&self, backlog: usize) -> Result<ListenStream> {
+        let bound_socket = if let Some(bound_socket) = self.inner.read().bound_socket() {
+            bound_socket.clone()
+        } else {
+            return_errno_with_message!(Errno::EINVAL, "cannot listen without bound")
+        };
+        ListenStream::new(self.is_nonblocking(), bound_socket, backlog)
     }
 
     pub fn local_endpoint(&self) -> Result<IpEndpoint> {
@@ -165,19 +126,8 @@ impl InitStream {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "does not has local endpoint"))
     }
 
-    pub fn remote_endpoint(&self) -> Result<IpEndpoint> {
-        self.inner
-            .read()
-            .remote_endpoint()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "does not has remote endpoint"))
-    }
-
-    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.inner.read().poll(mask, poller)
-    }
-
-    pub fn bound_socket(&self) -> Option<Arc<AnyBoundSocket>> {
-        self.inner.read().bound_socket().map(Clone::clone)
     }
 
     pub fn is_nonblocking(&self) -> bool {
