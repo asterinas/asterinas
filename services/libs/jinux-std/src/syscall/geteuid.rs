@@ -1,9 +1,15 @@
-use crate::{log_syscall_entry, prelude::*, syscall::SYS_GETEUID};
-
-use super::SyscallReturn;
+use super::{SyscallReturn, SYS_GETEUID};
+use crate::log_syscall_entry;
+use crate::prelude::*;
+use crate::process::credentials;
 
 pub fn sys_geteuid() -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_GETEUID);
-    // TODO: geteuid only return a fake euid now"
-    Ok(SyscallReturn::Return(0))
+
+    let euid = {
+        let credentials = credentials();
+        credentials.euid()
+    };
+
+    Ok(SyscallReturn::Return(euid.as_u32() as _))
 }

@@ -3,15 +3,17 @@ use jinux_frame::{cpu::UserContext, user::UserSpace};
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     prelude::*,
-    process::{process_vm::ProcessVm, program_loader::load_program_to_vm, Process},
+    process::{process_vm::ProcessVm, program_loader::load_program_to_vm, Credentials, Process},
     thread::{Thread, Tid},
 };
 
 use super::{builder::PosixThreadBuilder, name::ThreadName, PosixThread};
 pub trait PosixThreadExt {
     fn as_posix_thread(&self) -> Option<&PosixThread>;
+    #[allow(clippy::too_many_arguments)]
     fn new_posix_thread_from_executable(
         tid: Tid,
+        credentials: Credentials,
         process_vm: &ProcessVm,
         fs_resolver: &FsResolver,
         executable_path: &str,
@@ -25,6 +27,7 @@ impl PosixThreadExt for Thread {
     /// This function should only be called when launch shell()
     fn new_posix_thread_from_executable(
         tid: Tid,
+        credentials: Credentials,
         process_vm: &ProcessVm,
         fs_resolver: &FsResolver,
         executable_path: &str,
@@ -45,7 +48,7 @@ impl PosixThreadExt for Thread {
         cpu_ctx.set_rsp(elf_load_info.user_stack_top() as _);
         let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
         let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
-        let thread_builder = PosixThreadBuilder::new(tid, user_space)
+        let thread_builder = PosixThreadBuilder::new(tid, user_space, credentials)
             .thread_name(thread_name)
             .process(process);
         Ok(thread_builder.build())
