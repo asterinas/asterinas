@@ -5,7 +5,6 @@ INITRAMFS := $(BUILD_DIR)/initramfs
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 SHELL := /bin/bash
 INITRAMFS_EMPTY_DIRS := \
-	$(INITRAMFS)/etc \
 	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/root \
 	$(INITRAMFS)/tmp \
@@ -13,6 +12,7 @@ INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/proc \
 	$(INITRAMFS)/dev
 INITRAMFS_ALL_DIRS := \
+	$(INITRAMFS)/etc \
 	$(INITRAMFS)/lib/x86_64-linux-gnu \
 	$(INITRAMFS)/lib64 \
 	$(INITRAMFS)/bin \
@@ -35,6 +35,11 @@ $(INITRAMFS)/lib/x86_64-linux-gnu:
 $(INITRAMFS)/lib64:
 	@mkdir -p $@
 	@cp -L /lib64/ld-linux-x86-64.so.2 $@
+
+$(INITRAMFS)/etc:
+	@mkdir -p $@
+	@cp $(CUR_DIR)/etc/passwd $@
+	@cp $(CUR_DIR)/etc/group $@
 
 # Install busybox into /bin and /usr/bin.
 $(INITRAMFS)/bin:
