@@ -1,4 +1,4 @@
-use core::fmt::Write;
+use core::fmt::{self, Write};
 
 use uart_16550::SerialPort;
 
@@ -17,45 +17,73 @@ pub unsafe fn init() {
 
 impl Stdout {
     /// safety: this function must only be called once
-    unsafe fn init() -> Self {
+    pub unsafe fn init() -> Self {
         let mut serial_port = unsafe { SerialPort::new(0x3F8) };
         serial_port.init();
         Self { serial_port }
     }
 }
 
-impl Stdout {
-    fn write_str(&mut self, s: &str) {
+impl Write for Stdout {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
         self.serial_port.write_str(s).unwrap();
-    }
-
-    fn write_char(&mut self, c: char) {
-        self.serial_port.send(c as u8);
+        Ok(())
     }
 }
 
-/// Safety: init() must be called before print() and there should be no race condition
-pub unsafe fn print(s: &str) {
-    STDOUT.write_str(s);
+/// This is used when dyn Trait is not supported or fmt::Arguments is fragile to use in PIE.
+///
+/// Safety: init() must be called before print_str() and there should be no race conditions.
+pub unsafe fn print_str(s: &str) {
+    STDOUT.write_str(s).unwrap();
 }
 
-/// Safety: init() must be called before print_char() and there should be no race condition
-pub unsafe fn print_char(c: char) {
-    STDOUT.write_char(c);
+unsafe fn print_char(c: char) {
+    STDOUT.serial_port.send(c as u8);
 }
 
-// Safety: init() must be called before print_hex() and there should be no race condition
-pub unsafe fn print_hex(n: usize) {
-    print("0x");
-    let mut n = n;
-    for _ in 0..16 {
-        let digit = (n & 0xf) as u8;
-        n >>= 4;
-        let c = if digit < 10 {
-            (b'0' + digit) as char
+/// This is used when dyn Trait is not supported or fmt::Arguments is fragile to use in PIE.
+///
+/// Safety: init() must be called before print_hex() and there should be no race conditions.
+pub unsafe fn print_hex(n: u64) {
+    print_str("0x");
+    for i in (0..16).rev() {
+        let digit = (n >> (i * 4)) & 0xf;
+        if digit < 10 {
+            print_char((b'0' + digit as u8) as char);
         } else {
-            (b'a' + digit - 10) as char
-        };
-        print_char(c);
+            print_char((b'A' + (digit - 10) as u8) as char);
+        }
     }
 }
+
+// TODO: Figure out why fmt::Arguments wont work even if relocations are applied.
+// We just settle on simple print functions for now.
+/*--------------------------------------------------------------------------------------------------
+
+/// Glue code for print!() and println!() macros.
+///
+/// Safety: init() must be called before print_fmt() and there should be no race conditions.
+pub unsafe fn print_fmt(args: fmt::Arguments) {
+    STDOUT.write_fmt(args).unwrap();
+}
+
+#[macro_export]
+macro_rules! print {
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        unsafe {
+            $crate::console::print_fmt(format_args!($fmt $(, $($arg)+)?))
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! println {
+    ($fmt: literal $(, $($arg: tt)+)?) => {
+        unsafe {
+            $crate::console::print_fmt(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
+        }
+    }
+}
+
+ *------------------------------------------------------------------------------------------------*/

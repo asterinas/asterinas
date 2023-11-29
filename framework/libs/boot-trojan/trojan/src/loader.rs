@@ -18,6 +18,20 @@ pub fn load_elf(file: &[u8]) -> u32 {
                     program.mem_size as usize,
                 )
             };
+            /* crate::println!(
+                "[setup loader debug] loading ELF segment at {:#x}, size = {:#x}",
+                program.physical_addr,
+                program.mem_size,
+            ); */
+            #[cfg(feature = "debug_print")]
+            unsafe {
+                use crate::console::{print_hex, print_str};
+                print_str("[setup loader debug] loading ELF segment at ");
+                print_hex(program.physical_addr as u64);
+                print_str(", size = ");
+                print_hex(program.mem_size as u64);
+                print_str("\n");
+            }
             dst_slice[..program.file_size as usize].copy_from_slice(header_data);
             let zero_slice = &mut dst_slice[program.file_size as usize..];
             zero_slice.fill(0);
@@ -25,5 +39,5 @@ pub fn load_elf(file: &[u8]) -> u32 {
     }
 
     // Return the Linux Boot Protocol entry point defined by Asterinas.
-    crate::arch::ASTER_ENTRY_POINT
+    crate::x86::ASTER_ENTRY_POINT
 }

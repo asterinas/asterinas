@@ -157,12 +157,16 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildA
     }
     let out_dir = std::fs::canonicalize(out_dir).unwrap();
 
+    // Relocations are fewer in release mode. But with release mode it crashes.
+    let profile = "debug";
+
     let cargo = std::env::var("CARGO").unwrap();
     let mut cmd = std::process::Command::new(cargo);
     cmd.current_dir(source_dir);
     cmd.arg("build");
-    // Relocations are fewer in release mode, saving header real-estate.
-    cmd.arg("--release");
+    if profile == "release" {
+        cmd.arg("--release");
+    }
     cmd.arg("--package").arg("aster-boot-trojan");
     cmd.arg("--target").arg(match arch {
         TrojanBuildArch::X86_64 => "x86_64-unknown-none",
@@ -193,7 +197,7 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildA
 
     let trojan_artifact = out_dir
         .join(arch_name)
-        .join("release")
+        .join(profile)
         .join("aster-boot-trojan");
 
     trojan_artifact.to_owned()
