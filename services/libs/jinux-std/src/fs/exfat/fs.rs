@@ -1,67 +1,84 @@
-use core::{sync::atomic::AtomicUsize};
+use core::{ops::Range, sync::atomic::AtomicUsize};
 
-use super::{block_device::BlockDevice, super_block::ExfatSuperBlock, inode::ExfatInode, balloc::ExfatBitmap, upcase_table::ExfatUpcaseTable};
+use super::{
+    bitmap::{ExfatBitmap, EXFAT_RESERVED_CLUSTERS},
+    block_device::BlockDevice,
+    fat::{ClusterID, FatChainFlags},
+    inode::ExfatInode,
+    super_block::ExfatSuperBlock,
+    upcase_table::ExfatUpcaseTable,
+};
 
-use crate::{fs::{exfat::constants::*, utils::SuperBlock,utils::{FileSystem, Inode}}, return_errno, return_errno_with_message,prelude::*};
+use crate::{
+    fs::{
+        exfat::{constants::*, inode::Ino},
+        utils::SuperBlock,
+        utils::{FileSystem, Inode},
+    },
+    prelude::*,
+    return_errno, return_errno_with_message,
+};
 use alloc::boxed::Box;
 
 use super::super_block::ExfatBootSector;
-use super::utils::le16_to_cpu;
 
-pub(super) use jinux_frame::vm::VmIo;
-use crate::fs::utils::FsFlags;
 use crate::fs::exfat::fat::ExfatChain;
+use crate::fs::utils::FsFlags;
+pub(super) use jinux_frame::vm::VmIo;
 
 use hashbrown::HashMap;
 
 #[derive(Debug)]
-pub struct ExfatFS{
+pub struct ExfatFS {
     block_device: Box<dyn BlockDevice>,
     super_block: ExfatSuperBlock,
 
     root: Arc<ExfatInode>,
-    
+
     bitmap: Arc<Mutex<ExfatBitmap>>,
 
     upcase_table: Arc<ExfatUpcaseTable>,
 
-    mount_option:ExfatMountOptions,
+    mount_option: ExfatMountOptions,
     //Used for inode allocation.
-    highest_inode_number:AtomicUsize,
+    highest_inode_number: AtomicUsize,
 
     //inodes are indexed by their position.
     //TODO:use concurrent hashmap.
-    inodes : RwLock<HashMap<usize,Arc<ExfatInode>>>,
+    inodes: RwLock<HashMap<usize, Arc<ExfatInode>>>,
 
-    //We need to hold the mutex before accessing bitmap or inode, otherwise there will be deadlocks.
-    mutex: Mutex<()>
-
+    //A global lock, We need to hold the mutex before accessing bitmap or inode, otherwise there will be deadlocks.
+    mutex: Mutex<()>,
 }
 
-impl ExfatFS{
-    pub fn open(block_device:Box<dyn BlockDevice>,mount_option:ExfatMountOptions) -> Result<Arc<Self>> {
+pub const EXFAT_ROOT_INO: Ino = 1;
+
+impl ExfatFS {
+    pub fn open(
+        block_device: Box<dyn BlockDevice>,
+        mount_option: ExfatMountOptions,
+    ) -> Result<Arc<Self>> {
         //Load the super_block
         let super_block = Self::read_super_block(block_device.as_ref())?;
 
-        let mut exfat_fs = Arc::new(ExfatFS{
+        let mut exfat_fs = Arc::new(ExfatFS {
             block_device,
             super_block,
-            root:Arc::new(ExfatInode::default()),
-            bitmap:Arc::new(Mutex::new(ExfatBitmap::default())),
-            upcase_table:Arc::new(ExfatUpcaseTable::empty()),
+            root: Arc::new(ExfatInode::default()),
+            bitmap: Arc::new(Mutex::new(ExfatBitmap::default())),
+            upcase_table: Arc::new(ExfatUpcaseTable::empty()),
             mount_option,
-            highest_inode_number:AtomicUsize::new((EXFAT_ROOT_INO + 1)as usize),
-            inodes:RwLock::new(HashMap::new()),
-            mutex:Mutex::new(())
+            highest_inode_number: AtomicUsize::new(EXFAT_ROOT_INO + 1),
+            inodes: RwLock::new(HashMap::new()),
+            mutex: Mutex::new(()),
         });
 
         // TODO: if the main superblock is corrupted, should we load the backup?
-        
+
         //Verify boot region
         Self::verify_boot_region(exfat_fs.block_device())?;
-        
-        let upcase_table = ExfatUpcaseTable::load_upcase_table(Arc::downgrade(&exfat_fs))?;
 
+        let upcase_table = ExfatUpcaseTable::load_upcase_table(Arc::downgrade(&exfat_fs))?;
         let bitmap = ExfatBitmap::load_bitmap(Arc::downgrade(&exfat_fs))?;
         let root = ExfatFS::read_root(exfat_fs.clone())?;
 
@@ -73,103 +90,117 @@ impl ExfatFS{
         //TODO: Handle UTF-8
 
         //TODO: Init NLS Table
-       
-        exfat_fs.inodes.write().insert(root.pos(), root.clone());
+
+        exfat_fs
+            .inodes
+            .write()
+            .insert(root.hash_index(), root.clone());
 
         Ok(exfat_fs)
     }
 
     pub(super) fn alloc_inode_number(&self) -> usize {
-        self.highest_inode_number.fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        self.highest_inode_number
+            .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
     }
 
-    pub(super) fn find_opened_inode(&self,pos:usize) -> Option<Arc<ExfatInode>> {
+    pub(super) fn find_opened_inode(&self, pos: usize) -> Option<Arc<ExfatInode>> {
         self.inodes.read().get(&pos).cloned()
     }
 
-    pub(super) fn insert_inode(&self,inode:Arc<ExfatInode>) -> Option<Arc<ExfatInode>> {
-        self.inodes.write().insert(inode.pos(), inode)
+    pub(super) fn insert_inode(&self, inode: Arc<ExfatInode>) -> Option<Arc<ExfatInode>> {
+        self.inodes.write().insert(inode.hash_index(), inode)
     }
 
-    fn read_root(fs:Arc<ExfatFS>) -> Result<Arc<ExfatInode>> {
-        ExfatInode::read_inode(fs.clone(),ExfatChain { dir: fs.super_block.root_dir, size: 0, flags: ALLOC_FAT_CHAIN },0,EXFAT_ROOT_INO)
+    fn read_root(fs: Arc<ExfatFS>) -> Result<Arc<ExfatInode>> {
+        ExfatInode::read_from(
+            fs.clone(),
+            (
+                ExfatChain::new(
+                    Arc::downgrade(&fs),
+                    fs.super_block.root_dir,
+                    FatChainFlags::ALLOC_POSSIBLE,
+                ),
+                0,
+            ),
+            EXFAT_ROOT_INO,
+        )
     }
 
-
-    //TODO: Check boot signature and boot checksum.
-    fn verify_boot_region(block_device:& dyn BlockDevice) -> Result<()> {
-        todo!()
+    fn verify_boot_region(block_device: &dyn BlockDevice) -> Result<()> {
+        //TODO: Check boot signature and boot checksum.
+        Ok(())
     }
 
-    fn read_super_block(block_device:& dyn BlockDevice) -> Result<ExfatSuperBlock> {
+    fn read_super_block(block_device: &dyn BlockDevice) -> Result<ExfatSuperBlock> {
         let boot_sector = block_device.read_val::<ExfatBootSector>(0)?;
         /* check the validity of BOOT */
-        if le16_to_cpu(boot_sector.signature) != BOOT_SIGNATURE {
-            return_errno_with_message!(Errno::EINVAL,"invalid boot record signature");
+        if boot_sector.signature != BOOT_SIGNATURE {
+            return_errno_with_message!(Errno::EINVAL, "invalid boot record signature");
         }
-      
+
         if !boot_sector.fs_name.eq(STR_EXFAT.as_bytes()) {
-            return_errno_with_message!(Errno::EINVAL,"invalid fs name");
+            return_errno_with_message!(Errno::EINVAL, "invalid fs name");
         }
 
         /*
-	    * must_be_zero field must be filled with zero to prevent mounting
-	    * from FAT volume.
-	    */
-        if boot_sector.must_be_zero.iter().any(|&x| x!=0) {
+         * must_be_zero field must be filled with zero to prevent mounting
+         * from FAT volume.
+         */
+        if boot_sector.must_be_zero.iter().any(|&x| x != 0) {
             return_errno!(Errno::EINVAL);
         }
 
         if boot_sector.num_fats != 1 && boot_sector.num_fats != 2 {
-            return_errno_with_message!(Errno::EINVAL,"bogus number of FAT structure");
+            return_errno_with_message!(Errno::EINVAL, "bogus number of FAT structure");
         }
 
-        /*
-	    * sect_size_bits could be at least 9 and at most 12.
-	    */
-
-        //FIXEME: Should I allocate memory for error message?
-        if boot_sector.sector_size_bits < EXFAT_MIN_SECT_SIZE_BITS || boot_sector.sector_size_bits > EXFAT_MAX_SECT_SIZE_BITS {
-            
-            return_errno_with_message!(Errno::EINVAL,"bogus sector size bits");
+        // sect_size_bits could be at least 9 and at most 12.
+        if boot_sector.sector_size_bits < EXFAT_MIN_SECT_SIZE_BITS
+            || boot_sector.sector_size_bits > EXFAT_MAX_SECT_SIZE_BITS
+        {
+            return_errno_with_message!(Errno::EINVAL, "bogus sector size bits");
         }
 
-        if boot_sector.sector_per_cluster_bits > EXFAT_MAX_SECT_SIZE_BITS {
-            return_errno_with_message!(Errno::EINVAL,"bogus sector size bits per cluster");
+        if boot_sector.sector_per_cluster_bits + boot_sector.sector_size_bits > 25 {
+            return_errno_with_message!(Errno::EINVAL, "bogus sector size bits per cluster");
         }
 
         let super_block = ExfatSuperBlock::try_from(boot_sector)?;
 
         /* check consistencies */
-        if ((super_block.num_fat_sectors as u64) << boot_sector.sector_size_bits) < (super_block.num_clusters as u64) * 4 {
-            return_errno_with_message!(Errno::EINVAL,"bogus fat length");
+        if ((super_block.num_fat_sectors as u64) << boot_sector.sector_size_bits)
+            < (super_block.num_clusters as u64) * 4
+        {
+            return_errno_with_message!(Errno::EINVAL, "bogus fat length");
         }
 
-        if super_block.data_start_sector < super_block.fat1_start_sector + (super_block.num_fat_sectors as u64 * boot_sector.num_fats as u64) {
-            return_errno_with_message!(Errno::EINVAL,"bogus data start vector");
+        if super_block.data_start_sector
+            < super_block.fat1_start_sector
+                + (super_block.num_fat_sectors as u64 * boot_sector.num_fats as u64)
+        {
+            return_errno_with_message!(Errno::EINVAL, "bogus data start vector");
         }
 
         if (super_block.vol_flags & VOLUME_DIRTY as u32) != 0 {
             warn!("Volume was not properly unmounted. Some data may be corrupt. Please run fsck.")
         }
 
-        if (super_block.vol_flags & MEDIA_FAILURE as u32 ) != 0 {
+        if (super_block.vol_flags & MEDIA_FAILURE as u32) != 0 {
             warn!("Medium has reported failures. Some data may be lost.")
         }
 
-        Self::calibrate_blocksize(&super_block,1 << boot_sector.sector_size_bits)?;
+        Self::calibrate_blocksize(&super_block, 1 << boot_sector.sector_size_bits)?;
 
         Ok(super_block)
-
-
     }
 
-    fn calibrate_blocksize(super_block:&ExfatSuperBlock,logical_sec:u32) -> Result<()> {
+    fn calibrate_blocksize(super_block: &ExfatSuperBlock, logical_sec: u32) -> Result<()> {
         //TODO: logical_sect should be larger than block_size.
         Ok(())
     }
 
-    pub fn block_device(&self) -> &dyn BlockDevice{
+    pub fn block_device(&self) -> &dyn BlockDevice {
         self.block_device.as_ref()
     }
 
@@ -185,31 +216,40 @@ impl ExfatFS{
         self.root.clone()
     }
 
-    pub(super) fn lock(&self) -> MutexGuard<'_, ()>{
+    pub fn sector_size(&self) -> usize {
+        self.super_block.sector_size as usize
+    }
+
+    pub(super) fn lock(&self) -> MutexGuard<'_, ()> {
         self.mutex.lock()
     }
 
-    pub(super) fn cluster_to_off(&self,cluster:u32) -> usize{
-        (((((cluster - EXFAT_RESERVED_CLUSTERS) as u64) << self.super_block.sect_per_cluster_bits) + self.super_block.data_start_sector)*self.super_block.sector_size as u64) as usize
+    pub fn cluster_size(&self) -> usize {
+        self.super_block.cluster_size as usize
     }
 
-    pub(super) fn is_valid_cluster(&self,cluster:u32) -> bool {
+    pub(super) fn cluster_to_off(&self, cluster: u32) -> usize {
+        (((((cluster - EXFAT_RESERVED_CLUSTERS) as u64) << self.super_block.sect_per_cluster_bits)
+            + self.super_block.data_start_sector)
+            * self.super_block.sector_size as u64) as usize
+    }
+
+    pub(super) fn is_valid_cluster(&self, cluster: u32) -> bool {
         cluster >= EXFAT_RESERVED_CLUSTERS && cluster < self.super_block.num_clusters
     }
 
-    pub(super) fn is_valid_cluster_chunk(&self,start_cluster:u32, cluster_num:u32) -> bool {
-        start_cluster >= EXFAT_RESERVED_CLUSTERS && start_cluster + cluster_num - 1 < self.super_block.num_clusters
+    pub(super) fn is_cluster_range_valid(&self, clusters: Range<ClusterID>) -> bool {
+        clusters.start >= EXFAT_RESERVED_CLUSTERS && clusters.end < self.super_block.num_clusters
     }
 
     pub(super) fn set_volume_dirty(&mut self) {
         todo!();
     }
 
-    pub fn mount_option(&self) -> ExfatMountOptions{
+    pub fn mount_option(&self) -> ExfatMountOptions {
         self.mount_option.clone()
     }
 }
-
 
 impl FileSystem for ExfatFS {
     fn sync(&self) -> Result<()> {
@@ -230,37 +270,15 @@ impl FileSystem for ExfatFS {
     }
 }
 
-    
-// Name pub structures
-pub struct ExfatUniName {
-    name: [u16; MAX_NAME_LENGTH + 3],
-    name_hash: u16,
-    name_len: u8,
-}
-
-
-
-//First empty entry hint information
-pub struct ExfatHintFemp {
-    eidx: i32,
-    count: i32,
-    cur: ExfatChain,
-}
-
-pub struct ExfatHint {
-    clu: u32,
-    eidx_or_off: u32,
-}
-
-#[derive(Clone,Debug)]
-// Error handling 
+#[derive(Clone, Debug)]
+// Error handling
 pub enum ExfatErrorMode {
-    ErrorsCont,
-    ErrorsPanic,
-    ErrorsRo,
+    Continue,
+    Panic,
+    ReadOnly,
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 //Mount options
 pub struct ExfatMountOptions {
     pub(super) fs_uid: usize,
@@ -277,4 +295,3 @@ pub struct ExfatMountOptions {
     pub(super) time_offset: i32,
     pub(super) zero_size_dir: bool,
 }
-

@@ -1,6 +1,7 @@
 pub mod device;
 pub mod devpts;
 pub mod epoll;
+pub mod exfat;
 pub mod file_handle;
 pub mod file_table;
 pub mod fs_resolver;
@@ -10,4 +11,3 @@ pub mod procfs;
 pub mod ramfs;
 pub mod rootfs;
 pub mod utils;
-pub mod exfat;

@@ -1,35 +1,35 @@
-use jinux_frame::vm::{VmIo, VmFrame};
 use crate::prelude::*;
 use alloc::fmt::Debug;
+use jinux_frame::vm::{VmFrame, VmIo};
 /// A simple block device for Exfat.
 pub trait BlockDevice: Send + Sync + Any {
-    ///Returns the number of blocks.
-    fn blocks_count(&self) -> usize;
+    ///Returns the number of sectors.
+    fn sectors_count(&self) -> usize;
 
     /// Reads a `[u8]` slice at `offset` from the block device.
     ///
     /// Returns how many bytes were read.
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize>;
 
-    //Reads a block from the block device.
-    fn read_block(&self, bid: usize, block: &VmFrame) -> Result<()>;
+    //Reads a sector from the block device.
+    fn read_sector(&self, sector_id: usize, sector: &VmFrame) -> Result<()>;
 
-    //Reads a block from the block device.
-    fn read_page(&self, bid: usize, block: &VmFrame) -> Result<()>;
+    //Reads a page from the block device.
+    fn read_page(&self, page_id: usize, page: &VmFrame) -> Result<()>;
 
     /// Writes a `[u8]` slice at `offset` into the block device.
     ///
     /// Returns how many bytes were written.
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize>;
 
-    // Writes a block into the block device.
-    fn write_block(&self, bid: usize, block: &VmFrame) -> Result<()>;
+    // Writes a sector into the block device.
+    fn write_sector(&self, sector_id: usize, sector: &VmFrame) -> Result<()>;
 
-    //Reads a block from the block device.
-    fn write_page(&self, bid: usize, block: &VmFrame) -> Result<()>;
+    //Writes a page into the block device.
+    fn write_page(&self, page_id: usize, page: &VmFrame) -> Result<()>;
 }
 
-pub const BLOCK_SIZE : usize = 512;
+pub const SECTOR_SIZE: usize = 512;
 
 impl dyn BlockDevice {
     /// Downcast to the specific type.
@@ -39,24 +39,24 @@ impl dyn BlockDevice {
 
     /// Returns the number of bytes.
     pub fn bytes_count(&self) -> usize {
-        self.blocks_count() * self.block_size()
+        self.sectors_count() * self.sector_size()
     }
 
     /// Returns the block_size.
-    pub fn block_size(&self) -> usize {
+    pub fn sector_size(&self) -> usize {
         //TODO: block size should be the same as the sector size.
-        BLOCK_SIZE
+        SECTOR_SIZE
     }
 }
 
 pub fn is_block_aligned(offset: usize) -> bool {
-    offset % BLOCK_SIZE == 0
+    offset % SECTOR_SIZE == 0
 }
 
 impl Debug for dyn BlockDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("BlockDevice")
-            .field("blocks_count", &self.blocks_count())
+            .field("blocks_count", &self.sectors_count())
             .finish()
     }
 }

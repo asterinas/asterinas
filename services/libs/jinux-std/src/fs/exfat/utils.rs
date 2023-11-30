@@ -1,137 +1,128 @@
-use core::time::Duration;
-use crate::{prelude::*, fs::utils::InodeMode};
-use super::{constants::*, fs::ExfatMountOptions};
-use time::{ PrimitiveDateTime, Time};
+use crate::prelude::*;
+use core::{ops::Range, time::Duration};
+use time::{PrimitiveDateTime, Time};
 
-#[cfg(target_arch = "x86_64")]
-pub fn le16_to_cpu(a:u16) -> u16{
-    a
+pub fn make_hash_index(cluster: u32, offset: u32) -> usize {
+    (cluster as usize) << 32usize | (offset as usize & 0xffffffffusize)
 }
 
-#[cfg(target_arch = "x86_64")]
-pub fn le32_to_cpu(a:u32) -> u32{
-    a
+pub fn calc_checksum_32(data: &[u8]) -> u32 {
+    let mut checksum: u32 = 0;
+    for &value in data {
+        checksum = (checksum << 31) | ((checksum >> 1) + value as u32);
+    }
+    checksum
 }
 
-
-#[cfg(target_arch = "x86_64")]
-pub fn cpu_to_le32(a:u32) -> u32{
-    a
-}
-
-#[cfg(target_arch = "x86_64")]
-pub fn le64_to_cpu(a:u64) -> u64{
-    a
-}
-
-
-#[cfg(target_arch = "x86_64")]
-pub fn cpu_to_le64(a:u64) -> u64{
-    a
-}
-
-pub fn make_pos(cluster:u32,entry:u32) -> usize {
-    (cluster as usize) << 32usize | (entry as usize & 0xffffffffusize)
-}
-
-pub fn calc_checksum_16(data:&[u8], prev_checksum:u16, type_:u8) -> u16
-{
+///Calculating checksum, ignoring certarin bytes in the range
+pub fn calc_checksum_16(data: &[u8], ignore: core::ops::Range<usize>, prev_checksum: u16) -> u16 {
     let mut result = prev_checksum;
-	for (pos,&value) in data.iter().enumerate() {
+    for (pos, &value) in data.iter().enumerate() {
         //Ignore the checksum field
-		if type_ == CS_DIR_ENTRY && (pos == 2 || pos == 3) {
-			continue;
+        if ignore.contains(&pos) {
+            continue;
         }
-		result = ((result << 15) | (result >> 1)) + (value as u16);
-	}
-	return result;
+        result = ((result << 15) | (result >> 1)) + (value as u16);
+    }
+    result
 }
 
-//time_cs has the unit of 10ms,from 0~1990ms.
-pub fn convert_dos_time_to_duration(time_zone:u8,date:u16,time:u16,time_cs:u8) -> Result<core::time::Duration>{
-    let year = 1980 + (date >> 9) as u32;
-    let month_result = time::Month::try_from(((date >>5) & 0x000F) as u8);
-    if month_result.is_err() {
-        return_errno!(Errno::EINVAL)
-    }
-
-    let month = month_result.unwrap();
-
-    let day = date & 0x001F;
-
-    let hour = time >> 11;
-    let minute = (time>>5) * 0x003F;
-    let second = (time & 0x001F) << 1;
-
-    let day_result = time::Date::from_calendar_date(year as i32, month, day as u8);
-    if day_result.is_err() {
-        return_errno!(Errno::EINVAL)
-    }
-
-    let time_result = Time::from_hms(hour as u8, minute as u8, second as u8);
-    if time_result.is_err() {
-        return_errno!(Errno::EINVAL)
-    }
-
-    let date_time = PrimitiveDateTime::new(day_result.unwrap(),time_result.unwrap());
-
-    let mut sec = date_time.assume_utc().unix_timestamp() as u64;
-    
-    let mut nano_sec:u32 = 0;
-    if time_cs != 0 {
-        const NSEC_PER_MSEC : u32 = 1000000;
-        sec += time_cs as u64 / 100;
-        nano_sec = (time_cs as u32 %100 ) * 10 * NSEC_PER_MSEC;
-    }
-
-    /* Adjust timezone to UTC0. */
-    if (time_zone & EXFAT_TZ_VALID) != 0u8 {
-        sec = ajust_time_zone(sec, time_zone & (!EXFAT_TZ_VALID));
-    } else {
-        //TODO: Use mount info for timezone adjustment.
-    }
-
-    Ok(Duration::new(sec, nano_sec))
+pub fn get_value_from_range(value: u16, range: Range<usize>) -> u16 {
+    (value >> range.start) & (1 << ((range.end - range.start) - 1))
 }
 
+const DOUBLE_SECOND_RANGE: Range<usize> = 0..5;
+const MINUTE_RANGE: Range<usize> = 5..11;
+const HOUR_RANGE: Range<usize> = 11..16;
+const DAY_RANGE: Range<usize> = 0..5;
+const MONTH_RANGE: Range<usize> = 5..9;
+const YEAR_RANGE: Range<usize> = 9..16;
 
-pub fn convert_duration_to_dos_time(duration: Duration) -> Result<(u8,u16,u16,u8)> {
-    unimplemented!();
+const EXFAT_TIME_ZONE_VALID: u8 = 1 << 7;
 
-    // let sec = duration.as_secs();
-    // let nano_sec = duration.subsec_nanos();
-
-    // let time:u16;
-    // let date:u16;
-    // let time_cs:u8;
-
-    // (EXFAT_TZ_VALID,time,date,time_cs)
+#[derive(Default, Debug)]
+pub struct DosTimestamp {
+    //Time stamp at the precesion of double seconds.
+    pub(super) time: u16,
+    pub(super) date: u16,
+    //Prececid time in 10ms.
+    pub(super) increament_10ms: u8,
+    pub(super) utc_offset: u8,
 }
 
-fn ajust_time_zone(sec:u64,time_zone:u8) -> u64 {
-    if time_zone <= 0x3F {
-        sec + time_zone_sec(time_zone)
-    } else {
-        sec + time_zone_sec(0x80 as u8 - time_zone)
-    }
-}
-
-fn time_zone_sec(x:u8)->u64{
-    //Each time zone represents 15 minutes.
-    x as u64 * 15 * 60
-}
-
- /* Convert attribute bits and a mask to the UNIX mode. */
- pub fn make_mode(mount_option:ExfatMountOptions,mode:InodeMode,attr:u16) ->InodeMode{
-    let mut ret = mode.bits();
-    if (attr & ATTR_READONLY) !=0 && (attr & ATTR_SUBDIR) == 0 {
-        ret = mode.bits() & !(InodeMode::S_IWGRP | InodeMode::S_IWUSR | InodeMode::S_IWUSR).bits();
+impl DosTimestamp {
+    pub fn new(time: u16, date: u16, increament_10ms: u8, utc_offset: u8) -> Result<Self> {
+        let time = Self {
+            time,
+            date,
+            increament_10ms,
+            utc_offset,
+        };
+        time.to_duration()?;
+        Ok(time)
     }
 
-    if (attr & ATTR_SUBDIR) != 0 {
-        return InodeMode::from_bits(ret & !mount_option.fs_dmask).unwrap();
-    } else {
-        return InodeMode::from_bits(ret & !mount_option.fs_fmask).unwrap();
+    pub fn from_duration(duration: Duration) -> Result<Self> {
+        todo!()
     }
 
+    pub fn to_duration(&self) -> Result<Duration> {
+        let year = 1980 + get_value_from_range(self.date, YEAR_RANGE) as u32;
+        let month_result =
+            time::Month::try_from(get_value_from_range(self.date, MONTH_RANGE) as u8);
+        if month_result.is_err() {
+            return_errno!(Errno::EINVAL)
+        }
+
+        let month = month_result.unwrap();
+
+        let day = get_value_from_range(self.date, DAY_RANGE);
+
+        let hour = get_value_from_range(self.time, HOUR_RANGE);
+        let minute = get_value_from_range(self.time, HOUR_RANGE);
+        let second = get_value_from_range(self.time, DOUBLE_SECOND_RANGE) * 2;
+
+        let day_result = time::Date::from_calendar_date(year as i32, month, day as u8);
+        if day_result.is_err() {
+            return_errno!(Errno::EINVAL)
+        }
+
+        let time_result = Time::from_hms(hour as u8, minute as u8, second as u8);
+        if time_result.is_err() {
+            return_errno!(Errno::EINVAL)
+        }
+
+        let date_time = PrimitiveDateTime::new(day_result.unwrap(), time_result.unwrap());
+
+        let mut sec = date_time.assume_utc().unix_timestamp() as u64;
+
+        let mut nano_sec: u32 = 0;
+        if self.increament_10ms != 0 {
+            const NSEC_PER_MSEC: u32 = 1000000;
+            sec += self.increament_10ms as u64 / 100;
+            nano_sec = (self.increament_10ms as u32 % 100) * 10 * NSEC_PER_MSEC;
+        }
+
+        /* Adjust timezone to UTC0. */
+        if (self.utc_offset & EXFAT_TIME_ZONE_VALID) != 0u8 {
+            sec = Self::ajust_time_zone(sec, self.utc_offset & (!EXFAT_TIME_ZONE_VALID));
+        } else {
+            //TODO: Use mount info for timezone adjustment.
+        }
+
+        Ok(Duration::new(sec, nano_sec))
+    }
+
+    fn ajust_time_zone(sec: u64, time_zone: u8) -> u64 {
+        if time_zone <= 0x3F {
+            sec + Self::time_zone_sec(time_zone)
+        } else {
+            sec + Self::time_zone_sec(0x80_u8 - time_zone)
+        }
+    }
+
+    fn time_zone_sec(x: u8) -> u64 {
+        //Each time zone represents 15 minutes.
+        x as u64 * 15 * 60
+    }
 }
