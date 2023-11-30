@@ -12,10 +12,12 @@ uart_16550 = "0.3.0"
 xmas-elf = "0.8.0"
 
 [target.x86_64-unknown-none.dependencies]
+bitflags = "2.4.1"
 log = "0.4.20"
 uefi = "0.26.0"
 uefi-services = "0.23.0"
+x86_64 = "0.14.11"
 
 [features]
-default = ["debug_print"]
+default = []
 debug_print = []

@@ -11,12 +11,14 @@ pub fn get_image_loaded_offset() -> isize {
     start_of_setup32 as isize - START_OF_SETUP32_VA as isize
 }
 
+#[allow(unused)]
 struct Elf64Rela {
     r_offset: u64,
     r_info: u64,
     r_addend: i64,
 }
 
+#[allow(unused)]
 fn get_rela_array() -> &'static [Elf64Rela] {
     extern "C" {
         fn __rela_dyn_start();
@@ -59,6 +61,7 @@ const R_X86_64_RELATIVE: u32 = 8;
 /// This function will modify the memory pointed by the relocations. And the Rust memory safety
 /// mechanisms are not aware of these kind of modification. Failure to do relocations will cause
 /// dyn Trait objects to break.
+#[allow(unused)]
 pub unsafe fn apply_rela_dyn_relocations() {
     let image_loaded_offset = get_image_loaded_offset();
     let relas = get_rela_array();
