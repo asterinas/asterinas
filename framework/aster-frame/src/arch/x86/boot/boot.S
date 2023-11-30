@@ -39,9 +39,14 @@ __linux32_boot:
 .org 0x200
 .global __linux64_boot_tag
 __linux64_boot_tag:
-    lea  rax, [rip + __linux64_boot]  // jump into Rust code
-    call rax
-    jmp halt // unreachable here
+    // We switch back to 32-bit mode to call the 32-bit entry point.
+    lgdt [boot_gdtr]
+    mov eax, 0xb002b002 // magic for boot_params
+    mov ebx, esi        // struct boot_params *
+    sub rsp, 8
+    mov dword ptr [rsp], offset __linux32_boot
+    mov dword ptr [rsp + 4], 24
+    retf
 
 // The multiboot & multiboot2 entry point.
 .code32

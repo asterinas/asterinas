@@ -6,7 +6,7 @@ fn main() {
     let linker_script = if target_arch == "x86_64-unknown-none" {
         source_dir.join("src/x86/amd64_efi/linker.ld")
     } else if target_arch == "x86_64-i386_pm-none" {
-        source_dir.join("src/arch/legacy_i386/linker.ld")
+        source_dir.join("src/x86/legacy_i386/linker.ld")
     } else {
         panic!("Unsupported target_arch: {}", target_arch);
     };
