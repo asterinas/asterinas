@@ -87,7 +87,7 @@ impl VmSpace {
         let page_size = (range.end - range.start) / PAGE_SIZE;
         let mut inner = self.memory_set.lock();
         for i in 0..page_size {
-            inner.unmap(start_va)?;
+            inner.unmap_one_page(start_va)?;
             start_va += PAGE_SIZE;
         }
         Ok(())

@@ -174,15 +174,10 @@ impl MemorySet {
         }
     }
 
-    pub fn unmap(&mut self, va: Vaddr) -> Result<()> {
-        if let Some(area) = self.areas.remove(&va) {
-            for (va, _) in area.mapper.iter() {
-                self.pt.unmap(*va).unwrap();
-            }
-            Ok(())
-        } else {
-            Err(Error::PageFault)
-        }
+    pub fn unmap_one_page(&mut self, va: Vaddr) -> Result<()> {
+        self.pt.unmap(va).unwrap();
+        self.areas.remove(&va);
+        Ok(())
     }
 
     pub fn clear(&mut self) {
