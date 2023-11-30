@@ -4,7 +4,7 @@ use crate::fs::inode_handle::FileIo;
 use crate::fs::utils::IoctlCmd;
 use crate::process::signal::Poller;
 use crate::util::{read_val_from_user, write_val_to_user};
-use tdx_guest::tdcall::get_report;
+use tdx_guest::tdcall::{get_report, TdCallError};
 
 const TDX_REPORTDATA_LEN: usize = 64;
 const TDX_REPORT_LEN: usize = 1024;
@@ -24,9 +24,10 @@ impl Device for TdxGuest {
     }
 
     fn id(&self) -> DeviceId {
-        DeviceId::new(10, 0)
+        DeviceId::new(0xa, 0x7b)
     }
 }
+
 impl FileIo for TdxGuest {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Read operation not supported")
@@ -39,8 +40,42 @@ impl FileIo for TdxGuest {
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         match cmd {
             IoctlCmd::TDXGETREPORT => {
-                let tdx_report: TdxReportRequest = read_val_from_user(arg)?;
-                get_report(&tdx_report.tdreport, &tdx_report.reportdata).unwrap();
+                let mut tdx_report: TdxReportRequest = read_val_from_user(arg)?;
+                match get_report(&mut tdx_report.tdreport, &tdx_report.reportdata) {
+                    Ok(_) => {}
+                    Err(err) => match err {
+                        TdCallError::TdxNoValidVeInfo => {
+                            return_errno_with_message!(
+                                Errno::EINVAL,
+                                "TdCallError::TdxNoValidVeInfo"
+                            )
+                        }
+                        TdCallError::TdxOperandInvalid => {
+                            return_errno_with_message!(
+                                Errno::EINVAL,
+                                "TdCallError::TdxOperandInvalid"
+                            )
+                        }
+                        TdCallError::TdxPageAlreadyAccepted => {
+                            return_errno_with_message!(
+                                Errno::EINVAL,
+                                "TdCallError::TdxPageAlreadyAccepted"
+                            )
+                        }
+                        TdCallError::TdxPageSizeMismatch => {
+                            return_errno_with_message!(
+                                Errno::EINVAL,
+                                "TdCallError::TdxPageSizeMismatch"
+                            )
+                        }
+                        TdCallError::TdxOperandBusy => {
+                            return_errno_with_message!(Errno::EBUSY, "TdCallError::TdxOperandBusy")
+                        }
+                        TdCallError::Other => {
+                            return_errno_with_message!(Errno::EAGAIN, "TdCallError::Other")
+                        }
+                    },
+                };
                 write_val_to_user(arg, &tdx_report)?;
                 Ok(0)
             }
