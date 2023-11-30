@@ -77,12 +77,6 @@ impl VmSpace {
         Ok(options.addr.unwrap())
     }
 
-    /// determine whether a vaddr is already mapped
-    pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
-        let memory_set = self.memory_set.lock();
-        memory_set.is_mapped(vaddr)
-    }
-
     /// Unmaps the physical memory pages within the VM address range.
     ///
     /// The range is allowed to contain gaps, where no physical memory pages

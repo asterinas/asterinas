@@ -157,19 +157,6 @@ impl MemorySet {
         }
     }
 
-    /// determine whether a Vaddr is in a mapped area
-    pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
-        for (start_address, map_area) in self.areas.iter() {
-            if *start_address > vaddr {
-                break;
-            }
-            if *start_address <= vaddr && vaddr < *start_address + map_area.mapped_size() {
-                return true;
-            }
-        }
-        false
-    }
-
     pub fn new() -> Self {
         let mut page_table = PageTable::new(PageTableConfig {
             address_width: super::page_table::AddressWidth::Level4,

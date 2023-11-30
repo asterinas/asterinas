@@ -363,7 +363,7 @@ impl VmMappingInner {
         };
 
         // cow child allows unmapping the mapped page
-        if vmo.is_cow_child() && vm_space.is_mapped(map_addr) {
+        if vmo.is_cow_child() && self.mapped_pages.contains(&page_idx) {
             vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
         }
 
@@ -375,7 +375,7 @@ impl VmMappingInner {
     fn unmap_one_page(&mut self, vm_space: &VmSpace, page_idx: usize) -> Result<()> {
         let map_addr = self.page_map_addr(page_idx);
         let range = map_addr..(map_addr + PAGE_SIZE);
-        if vm_space.is_mapped(map_addr) {
+        if self.mapped_pages.contains(&page_idx) {
             vm_space.unmap(&range)?;
         }
         self.mapped_pages.remove(&page_idx);
@@ -415,7 +415,7 @@ impl VmMappingInner {
         for page_idx in start_page..end_page {
             self.page_perms.insert(page_idx, perm);
             let page_addr = self.page_map_addr(page_idx);
-            if vm_space.is_mapped(page_addr) {
+            if self.mapped_pages.contains(&page_idx) {
                 // if the page is already mapped, we will modify page table
                 let perm = VmPerm::from(perms);
                 let page_range = page_addr..(page_addr + PAGE_SIZE);
