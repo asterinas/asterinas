@@ -24,20 +24,30 @@ pub trait InputDevice: Send + Sync + Any + Debug {
 }
 
 pub fn register_device(name: String, device: Arc<dyn InputDevice>) {
-    COMPONENT.get().unwrap().devices.lock().insert(name, device);
+    COMPONENT
+        .get()
+        .unwrap()
+        .input_device_table
+        .lock()
+        .insert(name, device);
 }
 
-pub fn get_device(str: &String) -> Option<Arc<dyn InputDevice>> {
-    COMPONENT.get().unwrap().devices.lock().get(str).cloned()
+pub fn get_device(str: &str) -> Option<Arc<dyn InputDevice>> {
+    COMPONENT
+        .get()
+        .unwrap()
+        .input_device_table
+        .lock()
+        .get(str)
+        .cloned()
 }
 
 pub fn all_devices() -> Vec<(String, Arc<dyn InputDevice>)> {
-    let lock = COMPONENT.get().unwrap().devices.lock();
-    let mut vec = Vec::new();
-    for (name, device) in lock.iter() {
-        vec.push((name.clone(), device.clone()));
-    }
-    vec
+    let input_devs = COMPONENT.get().unwrap().input_device_table.lock();
+    input_devs
+        .iter()
+        .map(|(name, device)| (name.clone(), device.clone()))
+        .collect()
 }
 
 static COMPONENT: Once<Component> = Once::new();
@@ -51,13 +61,13 @@ fn component_init() -> Result<(), ComponentInitError> {
 
 #[derive(Debug)]
 struct Component {
-    devices: SpinLock<BTreeMap<String, Arc<dyn InputDevice>>>,
+    input_device_table: SpinLock<BTreeMap<String, Arc<dyn InputDevice>>>,
 }
 
 impl Component {
     pub fn init() -> Result<Self, ComponentInitError> {
         Ok(Self {
-            devices: SpinLock::new(BTreeMap::new()),
+            input_device_table: SpinLock::new(BTreeMap::new()),
         })
     }
 }

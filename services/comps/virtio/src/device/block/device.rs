@@ -24,6 +24,7 @@ pub struct BlockDevice {
 
 impl BlockDevice {
     /// read data from block device, this function is blocking
+    /// FIEME: replace slice with a more secure data structure to use dma mapping.
     pub fn read(&self, block_id: usize, buf: &mut [u8]) {
         assert_eq!(buf.len(), BLK_SIZE);
         let req = BlkReq {
@@ -47,6 +48,7 @@ impl BlockDevice {
         };
     }
     /// write data to block device, this function is blocking
+    /// FIEME: replace slice with a more secure data structure to use dma mapping.
     pub fn write(&self, block_id: usize, buf: &[u8]) {
         assert_eq!(buf.len(), BLK_SIZE);
         let req = BlkReq {
@@ -95,7 +97,7 @@ impl BlockDevice {
             .unwrap();
 
         fn handle_block_device(_: &TrapFrame) {
-            jinux_block::get_device(&(super::DEVICE_NAME.to_string()))
+            jinux_block::get_device(super::DEVICE_NAME)
                 .unwrap()
                 .handle_irq();
         }

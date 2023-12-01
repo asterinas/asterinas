@@ -77,12 +77,14 @@ use self::connect::sys_connect;
 use self::execve::sys_execveat;
 use self::getpeername::sys_getpeername;
 use self::getrandom::sys_getrandom;
+use self::getsid::sys_getsid;
 use self::getsockname::sys_getsockname;
 use self::getsockopt::sys_getsockopt;
 use self::listen::sys_listen;
 use self::pread64::sys_pread64;
 use self::recvfrom::sys_recvfrom;
 use self::sendto::sys_sendto;
+use self::setsid::sys_setsid;
 use self::setsockopt::sys_setsockopt;
 use self::shutdown::sys_shutdown;
 use self::socket::sys_socket;
@@ -119,6 +121,7 @@ mod getpgrp;
 mod getpid;
 mod getppid;
 mod getrandom;
+mod getsid;
 mod getsockname;
 mod getsockopt;
 mod gettid;
@@ -155,6 +158,7 @@ mod sendto;
 mod set_robust_list;
 mod set_tid_address;
 mod setpgid;
+mod setsid;
 mod setsockopt;
 mod shutdown;
 mod socket;
@@ -274,6 +278,8 @@ define_syscall_nums!(
     SYS_SETPGID = 109,
     SYS_GETPPID = 110,
     SYS_GETPGRP = 111,
+    SYS_SETSID = 112,
+    SYS_GETSID = 124,
     SYS_STATFS = 137,
     SYS_FSTATFS = 138,
     SYS_PRCTL = 157,
@@ -435,6 +441,8 @@ pub fn syscall_dispatch(
         SYS_SETPGID => syscall_handler!(2, sys_setpgid, args),
         SYS_GETPPID => syscall_handler!(0, sys_getppid),
         SYS_GETPGRP => syscall_handler!(0, sys_getpgrp),
+        SYS_SETSID => syscall_handler!(0, sys_setsid),
+        SYS_GETSID => syscall_handler!(1, sys_getsid, args),
         SYS_STATFS => syscall_handler!(2, sys_statfs, args),
         SYS_FSTATFS => syscall_handler!(2, sys_fstatfs, args),
         SYS_PRCTL => syscall_handler!(5, sys_prctl, args),

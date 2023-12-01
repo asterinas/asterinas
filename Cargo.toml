@@ -17,6 +17,18 @@ x86_64 = "0.14.2"
 jinux-time = { path = "services/comps/time" }
 jinux-framebuffer = { path = "services/comps/framebuffer" }
 
+[profile.dev]
+opt-level = 0
+debug = true
+lto = false
+panic = "unwind"
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = false
+panic = "unwind"
+
 [workspace]
 
 members = [
@@ -24,22 +36,33 @@ members = [
     "framework/jinux-frame",
     "framework/jinux-frame/src/arch/x86/boot/linux_boot/setup",
     "framework/libs/align_ext",
-    "services/comps/virtio",
-    "services/comps/input",
+    "framework/libs/ktest",
+    "framework/libs/tdx-guest",
     "services/comps/block",
-    "services/comps/network",
+    "services/comps/console",
     "services/comps/framebuffer",
+    "services/comps/input",
+    "services/comps/network",
     "services/comps/time",
-    "services/libs/jinux-std",
-    "services/libs/jinux-rights-proc",
-    "services/libs/typeflags",
-    "services/libs/typeflags-util",
-    "services/libs/jinux-util",
+    "services/comps/virtio",
     "services/libs/cpio-decoder",
     "services/libs/int-to-c-enum",
+    "services/libs/int-to-c-enum/derive",
+    "services/libs/jinux-rights",
+    "services/libs/jinux-rights-proc",
+    "services/libs/jinux-std",
+    "services/libs/jinux-util",
+    "services/libs/keyable-arc",
+    "services/libs/typeflags",
+    "services/libs/typeflags-util",
 ]
 
-exclude = ["services/libs/comp-sys/controlled", "services/libs/comp-sys/cargo-component"]
+exclude = [
+    "services/libs/comp-sys/cargo-component",
+    "services/libs/comp-sys/component",
+    "services/libs/comp-sys/component-macro",
+    "services/libs/comp-sys/controlled",
+]
 
 [features]
 intel_tdx = ["jinux-frame/intel_tdx", "jinux-std/intel_tdx"]

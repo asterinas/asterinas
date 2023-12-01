@@ -9,7 +9,8 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
+itertools = "0.10.5"
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = {version = "1.0.90"}
-itertools = "0.10.5"
+syn = { version = "1.0.90" }
+typeflags-util = { path = "../typeflags-util" }

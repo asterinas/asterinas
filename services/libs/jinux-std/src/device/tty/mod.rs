@@ -2,23 +2,28 @@ use spin::Once;
 
 use self::driver::TtyDriver;
 use self::line_discipline::LineDiscipline;
-use super::*;
 use crate::events::IoEvents;
+use crate::fs::device::{Device, DeviceId, DeviceType};
+use crate::fs::inode_handle::FileIo;
 use crate::fs::utils::IoctlCmd;
 use crate::prelude::*;
+use crate::process::signal::signals::kernel::KernelSignal;
 use crate::process::signal::Poller;
-use crate::process::{process_table, ProcessGroup};
+use crate::process::{JobControl, Process, Terminal};
 use crate::util::{read_val_from_user, write_val_to_user};
 
+mod device;
 pub mod driver;
 pub mod line_discipline;
 pub mod termio;
+
+pub use device::TtyDevice;
 
 static N_TTY: Once<Arc<Tty>> = Once::new();
 
 pub(super) fn init() {
     let name = CString::new("console").unwrap();
-    let tty = Arc::new(Tty::new(name));
+    let tty = Tty::new(name);
     N_TTY.call_once(|| tty);
     driver::init();
 }
@@ -28,44 +33,36 @@ pub struct Tty {
     name: CString,
     /// line discipline
     ldisc: Arc<LineDiscipline>,
+    job_control: Arc<JobControl>,
     /// driver
     driver: SpinLock<Weak<TtyDriver>>,
+    weak_self: Weak<Self>,
 }
 
 impl Tty {
-    pub fn new(name: CString) -> Self {
-        Tty {
+    pub fn new(name: CString) -> Arc<Self> {
+        let (job_control, ldisc) = new_job_control_and_ldisc();
+        Arc::new_cyclic(move |weak_ref| Tty {
             name,
-            ldisc: LineDiscipline::new(),
+            ldisc,
+            job_control,
             driver: SpinLock::new(Weak::new()),
-        }
-    }
-
-    /// Set foreground process group
-    pub fn set_fg(&self, process_group: Weak<ProcessGroup>) {
-        self.ldisc.set_fg(process_group);
+            weak_self: weak_ref.clone(),
+        })
     }
 
     pub fn set_driver(&self, driver: Weak<TtyDriver>) {
         *self.driver.lock_irq_disabled() = driver;
     }
 
-    pub fn receive_char(&self, item: u8) {
-        self.ldisc.push_char(item, |content| print!("{}", content));
+    pub fn receive_char(&self, ch: u8) {
+        self.ldisc.push_char(ch, |content| print!("{}", content));
     }
 }
 
-impl Device for Tty {
-    fn type_(&self) -> DeviceType {
-        DeviceType::CharDevice
-    }
-
-    fn id(&self) -> DeviceId {
-        // Same value with Linux
-        DeviceId::new(5, 0)
-    }
-
+impl FileIo for Tty {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
+        self.job_control.wait_until_in_foreground()?;
         self.ldisc.read(buf)
     }
 
@@ -92,23 +89,28 @@ impl Device for Tty {
                 Ok(0)
             }
             IoctlCmd::TIOCGPGRP => {
-                let Some(fg_pgid) = self.ldisc.fg_pgid() else {
-                    return_errno_with_message!(Errno::ENOENT, "No fg process group")
+                let Some(foreground) = self.foreground() else {
+                    return_errno_with_message!(Errno::ESRCH, "No fg process group")
                 };
+                let fg_pgid = foreground.pgid();
                 debug!("fg_pgid = {}", fg_pgid);
                 write_val_to_user(arg, &fg_pgid)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSPGRP => {
                 // Set the process group id of fg progress group
-                let pgid = read_val_from_user::<i32>(arg)?;
-                if pgid < 0 {
-                    return_errno_with_message!(Errno::EINVAL, "invalid pgid");
-                }
-                match process_table::pgid_to_process_group(pgid as u32) {
-                    None => self.ldisc.set_fg(Weak::new()),
-                    Some(process_group) => self.ldisc.set_fg(Arc::downgrade(&process_group)),
-                }
+                let pgid = {
+                    let pgid: i32 = read_val_from_user(arg)?;
+                    if pgid < 0 {
+                        return_errno_with_message!(Errno::EINVAL, "negative pgid");
+                    }
+                    pgid as u32
+                };
+
+                self.set_foreground(&pgid)?;
+                // Some background processes may be waiting on the wait queue,
+                // when set_fg, the background processes may be able to read.
+                self.ldisc.update_readable_state();
                 Ok(0)
             }
             IoctlCmd::TCSETS => {
@@ -143,12 +145,73 @@ impl Device for Tty {
                 self.ldisc.set_window_size(winsize);
                 Ok(0)
             }
+            IoctlCmd::TIOCSCTTY => {
+                self.set_current_session()?;
+                Ok(0)
+            }
             _ => todo!(),
         }
     }
 }
 
-/// FIXME: should we maintain a static console?
+impl Terminal for Tty {
+    fn arc_self(&self) -> Arc<dyn Terminal> {
+        self.weak_self.upgrade().unwrap() as _
+    }
+
+    fn job_control(&self) -> &JobControl {
+        &self.job_control
+    }
+}
+
+impl Device for Tty {
+    fn type_(&self) -> DeviceType {
+        DeviceType::CharDevice
+    }
+
+    fn id(&self) -> DeviceId {
+        // The same value as /dev/console in linux.
+        DeviceId::new(88, 0)
+    }
+}
+
+pub fn new_job_control_and_ldisc() -> (Arc<JobControl>, Arc<LineDiscipline>) {
+    let job_control = Arc::new(JobControl::new());
+
+    let send_signal = {
+        let cloned_job_control = job_control.clone();
+        move |signal: KernelSignal| {
+            let Some(foreground) = cloned_job_control.foreground() else {
+                return;
+            };
+
+            foreground.broadcast_signal(signal);
+        }
+    };
+
+    let ldisc = LineDiscipline::new(Arc::new(send_signal));
+
+    (job_control, ldisc)
+}
+
 pub fn get_n_tty() -> &'static Arc<Tty> {
     N_TTY.get().unwrap()
+}
+
+/// Open `N_TTY` as the controlling terminal for the process. This method should
+/// only be called when creating the init process.
+pub fn open_ntty_as_controlling_terminal(process: &Process) -> Result<()> {
+    let tty = get_n_tty();
+
+    let session = &process.session().unwrap();
+    let process_group = process.process_group().unwrap();
+
+    session.set_terminal(|| {
+        tty.job_control.set_session(session);
+        Ok(tty.clone())
+    })?;
+
+    tty.job_control.set_foreground(Some(&process_group))?;
+
+    Ok(())
 }

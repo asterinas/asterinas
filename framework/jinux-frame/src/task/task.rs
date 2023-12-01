@@ -1,8 +1,10 @@
+use crate::arch::mm::PageTableFlags;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
 use crate::cpu::CpuSet;
 use crate::prelude::*;
 use crate::user::UserSpace;
-use crate::vm::{VmAllocOptions, VmFrameVec};
+use crate::vm::page_table::KERNEL_PAGE_TABLE;
+use crate::vm::{VmAllocOptions, VmSegment};
 use spin::{Mutex, MutexGuard};
 
 use intrusive_collections::intrusive_adapter;
@@ -38,20 +40,58 @@ extern "C" {
 }
 
 pub struct KernelStack {
-    frame: VmFrameVec,
+    segment: VmSegment,
+    old_guard_page_flag: Option<PageTableFlags>,
 }
 
 impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            frame: VmFrameVec::allocate(
-                VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).is_contiguous(true),
-            )?,
+            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE)
+                .is_contiguous(true)
+                .alloc_contiguous()?,
+            old_guard_page_flag: None,
+        })
+    }
+
+    /// Generate a kernel stack with a guard page.
+    /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
+    pub fn new_with_guard_page() -> Result<Self> {
+        let stack_segment = VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1)
+            .is_contiguous(true)
+            .alloc_contiguous()?;
+        let unpresent_flag = PageTableFlags::empty();
+        let old_guard_page_flag = Self::protect_guard_page(&stack_segment, unpresent_flag);
+        Ok(Self {
+            segment: stack_segment,
+            old_guard_page_flag: Some(old_guard_page_flag),
         })
     }
 
     pub fn end_paddr(&self) -> Paddr {
-        self.frame.get(self.frame.len() - 1).unwrap().end_paddr()
+        self.segment.end_paddr()
+    }
+
+    pub fn has_guard_page(&self) -> bool {
+        self.old_guard_page_flag.is_some()
+    }
+
+    fn protect_guard_page(stack_segment: &VmSegment, flags: PageTableFlags) -> PageTableFlags {
+        let mut kernel_pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
+        let guard_page_vaddr = {
+            let guard_page_paddr = stack_segment.start_paddr();
+            crate::vm::paddr_to_vaddr(guard_page_paddr)
+        };
+        // Safety: The protected address must be the address of guard page hence it should be safe and valid.
+        unsafe { kernel_pt.protect(guard_page_vaddr, flags).unwrap() }
+    }
+}
+
+impl Drop for KernelStack {
+    fn drop(&mut self) {
+        if self.has_guard_page() {
+            Self::protect_guard_page(&self.segment, self.old_guard_page_flag.unwrap());
+        }
     }
 }
 
@@ -225,7 +265,7 @@ impl TaskOptions {
                 ctx: TaskContext::default(),
             }),
             exit_code: 0,
-            kstack: KernelStack::new()?,
+            kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
             cpu_affinity: self.cpu_affinity,
@@ -262,7 +302,7 @@ impl TaskOptions {
                 ctx: TaskContext::default(),
             }),
             exit_code: 0,
-            kstack: KernelStack::new()?,
+            kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
             cpu_affinity: self.cpu_affinity,

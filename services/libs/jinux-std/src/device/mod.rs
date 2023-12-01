@@ -12,6 +12,8 @@ pub use pty::{PtyMaster, PtySlave};
 pub use random::Random;
 pub use urandom::Urandom;
 
+use self::tty::get_n_tty;
+
 /// Init the device node in fs, must be called after mounting rootfs.
 pub fn init() -> Result<()> {
     let null = Arc::new(null::Null);
@@ -19,7 +21,9 @@ pub fn init() -> Result<()> {
     let zero = Arc::new(zero::Zero);
     add_node(zero, "zero")?;
     tty::init();
-    let tty = tty::get_n_tty().clone();
+    let console = get_n_tty().clone();
+    add_node(console, "console")?;
+    let tty = Arc::new(tty::TtyDevice);
     add_node(tty, "tty")?;
     let random = Arc::new(random::Random);
     add_node(random, "random")?;

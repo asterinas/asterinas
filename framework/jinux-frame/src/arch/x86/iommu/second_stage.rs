@@ -68,7 +68,7 @@ impl PageTableFlagsTrait for PageTableFlags {
     }
 
     fn is_present(&self) -> bool {
-        true
+        self.contains(Self::WRITABLE) || self.contains(Self::READABLE)
     }
 
     fn writable(&self) -> bool {
@@ -137,8 +137,8 @@ impl PageTableEntryTrait for PageTableEntry {
         PageTableFlags::from_bits_truncate(self.0)
     }
 
-    fn is_unused(&self) -> bool {
-        self.paddr() == 0
+    fn is_used(&self) -> bool {
+        self.paddr() != 0
     }
 
     fn update(&mut self, paddr: crate::vm::Paddr, flags: Self::F) {

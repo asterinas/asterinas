@@ -56,12 +56,31 @@ make build
 make run
 ```
 
-### Test  
+### Unit Test
 
-We can run unit tests and integration tests if building succeeds.
+#### User mode unit tests
+
+Many of our crates does not require running on bare metal environment and can be tested through the standard Cargo testing framework. A specific list of which crates can be tested with `cargo test` is listed in the `Makefile` of the root workspace, and by using Make you can test all these crates together.
+
 ```bash
 make test
 ```
+
+Nevertheless, you could enter the directory of a specific crate and invoke `cargo test` to perform user mode unit tests and doctests.
+
+#### Kernel mode unit tests
+
+We can run unit tests in kernel mode for crates like `jinux-frame` or `jinux-std`. This is powered by our [ktest](framework/libs/ktest) framework.
+```bash
+make run KTEST=1
+```
+
+You could also specify tests in a crate or a subset of tests to run.
+```bash
+make run KTEST=1 KTEST_WHITELIST=failing_assertion,jinux_frame::test::expect_panic KTEST_CRATES=jinux-frame
+```
+
+#### Component check
 
 If we want to check access control policy among components, install some standalone tools (e.g., `cargo-component`).
 ``` bash
@@ -73,7 +92,7 @@ Then we can use the tool to check access control policy.
 cargo component-check
 ```
 
-### Syscall Test
+### Integration Test
 
 This command will build the syscall test binary and automatically run Jinux with the tests using QEMU.
 ```bash
@@ -203,7 +222,6 @@ Jinux is under active development. The list below summarizes the progress of imp
 
 ## License
 
-The Jinux project is dual-licensed under Apache 2.0 and MIT terms.
-
-See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT), and
-[COPYRIGHT](COPYRIGHT) for details.
+The Jinux project is proudly released as a free software
+under the license of [GNU General Public License version 2](LICENSE-GPL).
+See [COPYRIGHT](COPYRIGHT) for details.

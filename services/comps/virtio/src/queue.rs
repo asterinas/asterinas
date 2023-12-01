@@ -11,7 +11,7 @@ use core::{
 use jinux_frame::{
     io_mem::IoMem,
     offset_of,
-    vm::{HasPaddr, VmAllocOptions, VmFrame, VmFrameVec},
+    vm::{DmaCoherent, VmAllocOptions},
 };
 use jinux_rights::{Dup, TRightSet, TRights, Write};
 use jinux_util::{field_ptr, safe_ptr::SafePtr};
@@ -33,11 +33,11 @@ pub enum QueueError {
 #[derive(Debug)]
 pub struct VirtQueue {
     /// Descriptor table
-    descs: Vec<SafePtr<Descriptor, VmFrame>>,
+    descs: Vec<SafePtr<Descriptor, DmaCoherent>>,
     /// Available ring
-    avail: SafePtr<AvailRing, VmFrame>,
+    avail: SafePtr<AvailRing, DmaCoherent>,
     /// Used ring
-    used: SafePtr<UsedRing, VmFrame>,
+    used: SafePtr<UsedRing, DmaCoherent>,
     /// point to notify address
     notify: SafePtr<u32, IoMem>,
 
@@ -78,26 +78,22 @@ impl VirtQueue {
             }
             let desc_size = size_of::<Descriptor>() * size as usize;
 
-            let (page1, page2) = {
-                let mut continue_pages = VmFrameVec::allocate(
-                    VmAllocOptions::new(2)
-                        .uninit(false)
-                        .can_dma(true)
-                        .is_contiguous(true),
-                )
-                .unwrap();
-                let page1 = continue_pages.pop().unwrap();
-                let page2 = continue_pages.pop().unwrap();
-                if page1.paddr() > page2.paddr() {
-                    (page2, page1)
-                } else {
-                    (page1, page2)
-                }
+            let (seg1, seg2) = {
+                let continue_segment = VmAllocOptions::new(2)
+                    .is_contiguous(true)
+                    .alloc_contiguous()
+                    .unwrap();
+                let seg1 = continue_segment.range(0..1);
+                let seg2 = continue_segment.range(1..2);
+                (seg1, seg2)
             };
-            let desc_frame_ptr: SafePtr<Descriptor, VmFrame> = SafePtr::new(page1, 0);
-            let mut avail_frame_ptr: SafePtr<AvailRing, VmFrame> = desc_frame_ptr.clone().cast();
+            let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
+                SafePtr::new(DmaCoherent::map(seg1, true).unwrap(), 0);
+            let mut avail_frame_ptr: SafePtr<AvailRing, DmaCoherent> =
+                desc_frame_ptr.clone().cast();
             avail_frame_ptr.byte_add(desc_size);
-            let used_frame_ptr: SafePtr<UsedRing, VmFrame> = SafePtr::new(page2, 0);
+            let used_frame_ptr: SafePtr<UsedRing, DmaCoherent> =
+                SafePtr::new(DmaCoherent::map(seg2, true).unwrap(), 0);
             (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
         } else {
             if size > 256 {
@@ -105,24 +101,36 @@ impl VirtQueue {
             }
             (
                 SafePtr::new(
-                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                        .unwrap()
-                        .pop()
-                        .unwrap(),
+                    DmaCoherent::map(
+                        VmAllocOptions::new(1)
+                            .is_contiguous(true)
+                            .alloc_contiguous()
+                            .unwrap(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                        .unwrap()
-                        .pop()
-                        .unwrap(),
+                    DmaCoherent::map(
+                        VmAllocOptions::new(1)
+                            .is_contiguous(true)
+                            .alloc_contiguous()
+                            .unwrap(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                        .unwrap()
-                        .pop()
-                        .unwrap(),
+                    DmaCoherent::map(
+                        VmAllocOptions::new(1)
+                            .is_contiguous(true)
+                            .alloc_contiguous()
+                            .unwrap(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
             )
@@ -131,8 +139,11 @@ impl VirtQueue {
         debug!("queue_driver start paddr:{:x?}", avail_ring_ptr.paddr());
         debug!("queue_device start paddr:{:x?}", used_ring_ptr.paddr());
 
+        transport
+            .set_queue(idx, size, &descriptor_ptr, &avail_ring_ptr, &used_ring_ptr)
+            .unwrap();
         let mut descs = Vec::with_capacity(size as usize);
-        descs.push(descriptor_ptr.clone());
+        descs.push(descriptor_ptr);
         for i in 0..size as usize {
             let mut desc = descs.get(i).unwrap().clone();
             desc.add(1);
@@ -147,9 +158,6 @@ impl VirtQueue {
         }
         field_ptr!(&avail_ring_ptr, AvailRing, flags)
             .write(&(0u16))
-            .unwrap();
-        transport
-            .set_queue(idx, size, &descriptor_ptr, &avail_ring_ptr, &used_ring_ptr)
             .unwrap();
         Ok(VirtQueue {
             descs,
@@ -169,6 +177,13 @@ impl VirtQueue {
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
     pub fn add(&mut self, inputs: &[&[u8]], outputs: &[&mut [u8]]) -> Result<u16, QueueError> {
+        // FIXME: use `DmaSteam` for inputs and outputs. Now because the upper device driver lacks the
+        // ability to safely construct DmaStream from slice, slice is still used here.
+        // pub fn add(
+        //     &mut self,
+        //     inputs: &[&DmaStream],
+        //     outputs: &[&mut DmaStream],
+        // ) -> Result<u16, QueueError> {
         if inputs.is_empty() && outputs.is_empty() {
             return Err(QueueError::InvalidArgs);
         }
@@ -209,7 +224,8 @@ impl VirtQueue {
         let avail_slot = self.avail_idx & (self.queue_size - 1);
 
         {
-            let ring_ptr: SafePtr<[u16; 64], &VmFrame> = field_ptr!(&self.avail, AvailRing, ring);
+            let ring_ptr: SafePtr<[u16; 64], &DmaCoherent> =
+                field_ptr!(&self.avail, AvailRing, ring);
             let mut ring_slot_ptr = ring_ptr.cast::<u16>();
             ring_slot_ptr.add(avail_slot as usize);
             ring_slot_ptr.write(&head).unwrap();
@@ -352,7 +368,9 @@ pub struct Descriptor {
 
 #[inline]
 #[allow(clippy::type_complexity)]
-fn set_buf(ptr: &SafePtr<Descriptor, &VmFrame, TRightSet<TRights![Dup, Write]>>, buf: &[u8]) {
+fn set_buf(ptr: &SafePtr<Descriptor, &DmaCoherent, TRightSet<TRights![Dup, Write]>>, buf: &[u8]) {
+    // FIXME: use `DmaSteam` for buf. Now because the upper device driver lacks the
+    // ability to safely construct DmaStream from slice, slice is still used here.
     let va = buf.as_ptr() as usize;
     let pa = jinux_frame::vm::vaddr_to_paddr(va).unwrap();
     field_ptr!(ptr, Descriptor, addr)

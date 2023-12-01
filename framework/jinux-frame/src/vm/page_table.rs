@@ -1,7 +1,4 @@
-use super::{
-    frame::VmFrameFlags,
-    frame_allocator, paddr_to_vaddr, VmAllocOptions, VmFrameVec, {Paddr, Vaddr},
-};
+use super::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions};
 use crate::{
     arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry},
     config::{ENTRY_COUNT, PAGE_SIZE},
@@ -66,10 +63,10 @@ pub trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
 
     fn update(&mut self, paddr: Paddr, flags: Self::F);
 
-    /// To determine whether the PTE is unused, it usually checks whether it is 0.
+    /// To determine whether the PTE is used, it usually checks whether it is 0.
     ///
     /// The page table will first use this value to determine whether a new page needs to be created to complete the mapping.
-    fn is_unused(&self) -> bool;
+    fn is_used(&self) -> bool;
 
     /// Clear the PTE and reset it to the initial state, which is usually 0.
     fn clear(&mut self);
@@ -116,6 +113,11 @@ pub struct UserMode {}
 #[derive(Clone)]
 pub struct KernelMode {}
 
+/// The page table used by iommu maps the device address
+/// space to the physical address space.
+#[derive(Clone)]
+pub struct DeviceMode {}
+
 #[derive(Clone, Debug)]
 pub struct PageTable<T: PageTableEntryTrait, M = UserMode> {
     root_paddr: Paddr,
@@ -127,7 +129,7 @@ pub struct PageTable<T: PageTableEntryTrait, M = UserMode> {
 
 impl<T: PageTableEntryTrait> PageTable<T, UserMode> {
     pub fn new(config: PageTableConfig) -> Self {
-        let root_frame = frame_allocator::alloc_zero(VmFrameFlags::empty()).unwrap();
+        let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
         Self {
             root_paddr: root_frame.start_paddr(),
             tables: vec![root_frame],
@@ -159,7 +161,7 @@ impl<T: PageTableEntryTrait> PageTable<T, UserMode> {
         unsafe { self.do_unmap(vaddr) }
     }
 
-    pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+    pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<T::F, PageTableError> {
         if is_kernel_vaddr(vaddr) {
             return Err(PageTableError::InvalidVaddr);
         }
@@ -204,16 +206,49 @@ impl<T: PageTableEntryTrait> PageTable<T, KernelMode> {
 
     /// Modify the flags mapped at `vaddr`. The `vaddr` should not be at the low address
     ///  (memory belonging to the user mode program).
+    /// If the modification succeeds, it will return the old flags of `vaddr`.
     ///
     /// # Safety
     ///
     /// Modifying kernel mappings is considered unsafe, and incorrect operation may cause crashes.
     /// User must take care of the consequences when using this API.
-    pub unsafe fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+    pub unsafe fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<T::F, PageTableError> {
         if is_user_vaddr(vaddr) {
             return Err(PageTableError::InvalidVaddr);
         }
         self.do_protect(vaddr, flags)
+    }
+}
+
+impl<T: PageTableEntryTrait> PageTable<T, DeviceMode> {
+    pub fn new(config: PageTableConfig) -> Self {
+        let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
+        Self {
+            root_paddr: root_frame.start_paddr(),
+            tables: vec![root_frame],
+            config,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Mapping directly from a virtual address to a physical address.
+    /// The virtual address should be in the device address space.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the given paddr is a valid one (e.g. from the VmSegment).
+    pub unsafe fn map_with_paddr(
+        &mut self,
+        vaddr: Vaddr,
+        paddr: Paddr,
+        flags: T::F,
+    ) -> Result<(), PageTableError> {
+        self.do_map(vaddr, paddr, flags)
+    }
+
+    pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
+        // Safety: the `vaddr` is in the device address space.
+        unsafe { self.do_unmap(vaddr) }
     }
 }
 
@@ -250,7 +285,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
             paddr,
             flags
         );
-        if !last_entry.is_unused() && last_entry.flags().is_present() {
+        if last_entry.is_used() && last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.update(paddr, flags);
@@ -279,10 +314,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
                     return None;
                 }
                 // Create next table
-                let frame = VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false))
-                    .unwrap()
-                    .pop()
-                    .unwrap();
+                let frame = VmAllocOptions::new(1).alloc_single().unwrap();
                 // Default flags: read, write, user, present
                 let flags = T::F::new()
                     .set_present(true)
@@ -317,7 +349,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     unsafe fn do_unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
         let last_entry = self.page_walk(vaddr, false).unwrap();
         trace!("Page Table: Unmap vaddr:{:x?}", vaddr);
-        if last_entry.is_unused() && !last_entry.flags().is_present() {
+        if !last_entry.is_used() && !last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.clear();
@@ -325,22 +357,33 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         Ok(())
     }
 
-    /// Modify the flags mapped at `vaddr`
+    /// Modify the flags mapped at `vaddr`.
+    /// If the modification succeeds, it will return the old flags of `vaddr`.
     ///
     /// # Safety
     ///
     /// This function allows arbitrary modifications to the page table.
     /// Incorrect modifications may cause the kernel to crash
     /// (e.g., make the linear mapping visible to the user mode applications.).
-    unsafe fn do_protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<(), PageTableError> {
+    unsafe fn do_protect(&mut self, vaddr: Vaddr, new_flags: T::F) -> Result<T::F, PageTableError> {
         let last_entry = self.page_walk(vaddr, false).unwrap();
-        trace!("Page Table: Protect vaddr:{:x?}, flags:{:x?}", vaddr, flags);
-        if last_entry.is_unused() || !last_entry.flags().is_present() {
+        let old_flags = last_entry.flags();
+        trace!(
+            "Page Table: Protect vaddr:{:x?}, flags:{:x?}",
+            vaddr,
+            new_flags
+        );
+        if !last_entry.is_used() || !old_flags.is_present() {
             return Err(PageTableError::InvalidModification);
         }
-        last_entry.update(last_entry.paddr(), flags);
+        last_entry.update(last_entry.paddr(), new_flags);
         tlb_flush(vaddr);
-        Ok(())
+        Ok(old_flags)
+    }
+
+    pub fn flags(&mut self, vaddr: Vaddr) -> Option<T::F> {
+        let last_entry = self.page_walk(vaddr, false)?;
+        Some(last_entry.flags())
     }
 
     pub fn root_paddr(&self) -> Paddr {

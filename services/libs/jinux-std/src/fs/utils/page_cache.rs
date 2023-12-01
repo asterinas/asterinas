@@ -4,7 +4,7 @@ use crate::vm::vmo::{get_page_idx_range, Pager, Vmo, VmoFlags, VmoOptions};
 use jinux_rights::Full;
 
 use core::ops::Range;
-use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec};
+use jinux_frame::vm::{VmAllocOptions, VmFrame};
 use lru::LruCache;
 
 pub struct PageCache {
@@ -160,12 +160,7 @@ struct Page {
 
 impl Page {
     pub fn alloc() -> Result<Self> {
-        let frame = {
-            let mut vm_alloc_option = VmAllocOptions::new(1);
-            vm_alloc_option.uninit(true);
-            let mut frames = VmFrameVec::allocate(&vm_alloc_option)?;
-            frames.pop().unwrap()
-        };
+        let frame = VmAllocOptions::new(1).uninit(true).alloc_single()?;
         Ok(Self {
             frame,
             state: PageState::Uninit,
@@ -173,11 +168,7 @@ impl Page {
     }
 
     pub fn alloc_zero() -> Result<Self> {
-        let frame = {
-            let vm_alloc_option = VmAllocOptions::new(1);
-            let mut frames = VmFrameVec::allocate(&vm_alloc_option)?;
-            frames.pop().unwrap()
-        };
+        let frame = VmAllocOptions::new(1).alloc_single()?;
         Ok(Self {
             frame,
             state: PageState::Dirty,

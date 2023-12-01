@@ -1,6 +1,7 @@
 //! Opend File Handle
 
 use crate::events::{IoEvents, Observer};
+use crate::fs::device::Device;
 use crate::fs::utils::{AccessMode, IoctlCmd, Metadata, SeekFrom, StatusFlags};
 use crate::net::socket::Socket;
 use crate::prelude::*;
@@ -71,6 +72,10 @@ pub trait FileLike: Send + Sync + Any {
     }
 
     fn as_socket(&self) -> Option<&dyn Socket> {
+        None
+    }
+
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
         None
     }
 }

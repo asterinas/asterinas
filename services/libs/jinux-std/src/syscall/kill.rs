@@ -34,15 +34,15 @@ pub fn do_sys_kill(filter: ProcessFilter, sig_num: SigNum) -> Result<()> {
             }
         }
         ProcessFilter::WithPid(pid) => {
-            if let Some(process) = process_table::pid_to_process(pid) {
+            if let Some(process) = process_table::get_process(&pid) {
                 process.enqueue_signal(Box::new(signal));
             } else {
                 return_errno_with_message!(Errno::ESRCH, "No such process in process table");
             }
         }
         ProcessFilter::WithPgid(pgid) => {
-            if let Some(process_group) = process_table::pgid_to_process_group(pgid) {
-                process_group.user_signal(signal);
+            if let Some(process_group) = process_table::get_process_group(&pgid) {
+                process_group.broadcast_signal(signal);
             } else {
                 return_errno_with_message!(Errno::ESRCH, "No such process group in process table");
             }

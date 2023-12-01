@@ -4,7 +4,7 @@ use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use jinux_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
 use jinux_network::{
     buffer::{RxBuffer, TxBuffer},
-    EthernetAddr, NetDeviceIrqHandler, VirtioNetError,
+    AnyNetworkDevice, EthernetAddr, NetDeviceIrqHandler, VirtioNetError,
 };
 use jinux_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
@@ -60,6 +60,7 @@ impl NetworkDevice {
         let mut rx_buffers = SlotVec::new();
         for i in 0..QUEUE_SIZE {
             let mut rx_buffer = RxBuffer::new(RX_BUFFER_LEN, size_of::<VirtioNetHdr>());
+            // FIEME: Replace rx_buffer with VM segment-based data structure to use dma mapping.
             let token = recv_queue.add(&[], &[rx_buffer.buf_mut()])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
@@ -86,7 +87,7 @@ impl NetworkDevice {
 
         /// Interrupt handler if network device receives some packet
         fn handle_network_event(_: &TrapFrame) {
-            jinux_network::handle_recv_irq(&(super::DEVICE_NAME.to_string()));
+            jinux_network::handle_recv_irq(super::DEVICE_NAME);
         }
 
         device
@@ -106,6 +107,7 @@ impl NetworkDevice {
     }
 
     /// Add a rx buffer to recv queue
+    /// FIEME: Replace rx_buffer with VM segment-based data structure to use dma mapping.
     fn add_rx_buffer(&mut self, mut rx_buffer: RxBuffer) -> Result<(), VirtioNetError> {
         let token = self
             .recv_queue
@@ -136,6 +138,7 @@ impl NetworkDevice {
     }
 
     /// Send a packet to network. Return until the request completes.
+    /// FIEME: Replace tx_buffer with VM segment-based data structure to use dma mapping.
     fn send(&mut self, tx_buffer: TxBuffer) -> Result<(), VirtioNetError> {
         let header = VirtioNetHdr::default();
         let token = self
@@ -169,7 +172,7 @@ fn queue_to_network_error(err: QueueError) -> VirtioNetError {
     }
 }
 
-impl jinux_network::NetworkDevice for NetworkDevice {
+impl AnyNetworkDevice for NetworkDevice {
     fn mac_addr(&self) -> EthernetAddr {
         self.mac_addr
     }

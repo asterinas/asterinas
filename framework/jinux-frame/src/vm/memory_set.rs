@@ -1,18 +1,13 @@
-use super::{
-    frame::VmFrameFlags,
-    page_table::{PageTable, PageTableConfig},
-};
+use super::page_table::{PageTable, PageTableConfig, UserMode};
 use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
     config::{PAGE_SIZE, PHYS_OFFSET},
     vm::is_page_aligned,
-    vm::{VmFrame, VmFrameVec},
+    vm::{VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter},
 };
 use crate::{prelude::*, Error};
 use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::fmt;
-
-use super::frame_allocator;
 
 #[derive(Debug)]
 pub struct MapArea {
@@ -32,10 +27,8 @@ impl Clone for MapArea {
     fn clone(&self) -> Self {
         let mut mapper = BTreeMap::new();
         for (&va, old) in &self.mapper {
-            let new = frame_allocator::alloc(VmFrameFlags::empty()).unwrap();
-            unsafe {
-                new.as_slice().copy_from_slice(old.as_slice());
-            }
+            let new = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
+            new.copy_from_frame(old);
             mapper.insert(va, new.clone());
         }
         Self {
@@ -99,7 +92,7 @@ impl MapArea {
         match self.mapper.entry(va) {
             Entry::Occupied(e) => e.get().start_paddr(),
             Entry::Vacant(e) => e
-                .insert(frame_allocator::alloc_zero(VmFrameFlags::empty()).unwrap())
+                .insert(VmAllocOptions::new(1).alloc_single().unwrap())
                 .start_paddr(),
         }
     }
@@ -110,18 +103,12 @@ impl MapArea {
 
     pub fn write_data(&mut self, addr: usize, data: &[u8]) {
         let mut current_start_address = addr;
-        let mut remain = data.len();
-        let mut processed = 0;
+        let mut buf_reader: VmReader = data.into();
         for (va, pa) in self.mapper.iter() {
             if current_start_address >= *va && current_start_address < va + PAGE_SIZE {
                 let offset = current_start_address - va;
-                let copy_len = (va + PAGE_SIZE - current_start_address).min(remain);
-                let src = &data[processed..processed + copy_len];
-                let dst = unsafe { &mut pa.as_slice()[offset..(offset + copy_len)] };
-                dst.copy_from_slice(src);
-                processed += copy_len;
-                remain -= copy_len;
-                if remain == 0 {
+                let _ = pa.writer().skip(offset).write(&mut buf_reader);
+                if !buf_reader.has_remain() {
                     return;
                 }
                 current_start_address = va + PAGE_SIZE;
@@ -131,18 +118,12 @@ impl MapArea {
 
     pub fn read_data(&self, addr: usize, data: &mut [u8]) {
         let mut start = addr;
-        let mut remain = data.len();
-        let mut processed = 0;
+        let mut buf_writer: VmWriter = data.into();
         for (va, pa) in self.mapper.iter() {
             if start >= *va && start < va + PAGE_SIZE {
                 let offset = start - va;
-                let copy_len = (va + PAGE_SIZE - start).min(remain);
-                let src = &mut data[processed..processed + copy_len];
-                let dst = unsafe { &pa.as_slice()[offset..(offset + copy_len)] };
-                src.copy_from_slice(dst);
-                processed += copy_len;
-                remain -= copy_len;
-                if remain == 0 {
+                let _ = pa.reader().skip(offset).read(&mut buf_writer);
+                if !buf_writer.has_avail() {
                     return;
                 }
                 start = va + PAGE_SIZE;
@@ -190,7 +171,7 @@ impl MemorySet {
     }
 
     pub fn new() -> Self {
-        let mut page_table = PageTable::new(PageTableConfig {
+        let mut page_table = PageTable::<PageTableEntry, UserMode>::new(PageTableConfig {
             address_width: super::page_table::AddressWidth::Level4,
         });
         let mapped_pte = crate::arch::mm::ALL_MAPPED_PTE.lock();

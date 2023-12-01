@@ -20,17 +20,17 @@ pub fn handle_exception(context: &UserContext) {
     }
 }
 
-fn handle_page_fault(trap_info: &TrapInformation) {
+fn handle_page_fault(trap_info: &CpuExceptionInfo) {
     const PAGE_NOT_PRESENT_ERROR_MASK: usize = 0x1 << 0;
     const WRITE_ACCESS_MASK: usize = 0x1 << 1;
-    let page_fault_addr = trap_info.cr2 as Vaddr;
+    let page_fault_addr = trap_info.page_fault_addr as Vaddr;
     trace!(
         "page fault error code: 0x{:x}, Page fault address: 0x{:x}",
-        trap_info.err,
+        trap_info.error_code,
         page_fault_addr
     );
-    let not_present = trap_info.err & PAGE_NOT_PRESENT_ERROR_MASK == 0;
-    let write = trap_info.err & WRITE_ACCESS_MASK != 0;
+    let not_present = trap_info.error_code & PAGE_NOT_PRESENT_ERROR_MASK == 0;
+    let write = trap_info.error_code & WRITE_ACCESS_MASK != 0;
     if not_present || write {
         // If page is not present or due to write access, we should ask the vmar try to commit this page
         let current = current!();
@@ -54,7 +54,7 @@ fn handle_page_fault(trap_info: &TrapInformation) {
 }
 
 /// generate a fault signal for current process.
-fn generate_fault_signal(trap_info: &TrapInformation) {
+fn generate_fault_signal(trap_info: &CpuExceptionInfo) {
     let current = current!();
     let signal = Box::new(FaultSignal::new(trap_info));
     current.enqueue_signal(signal);
@@ -65,12 +65,12 @@ macro_rules! log_trap_common {
         trace!(
             "[Trap][{}][err = {}]",
             stringify!($exception_name),
-            $trap_info.err
+            $trap_info.error_code
         )
     };
 }
 
-fn log_trap_info(exception: &CpuException, trap_info: &TrapInformation) {
+fn log_trap_info(exception: &CpuException, trap_info: &CpuExceptionInfo) {
     match *exception {
         DIVIDE_BY_ZERO => log_trap_common!(DIVIDE_BY_ZERO, trap_info),
         DEBUG => log_trap_common!(DEBUG, trap_info),
@@ -90,8 +90,8 @@ fn log_trap_info(exception: &CpuException, trap_info: &TrapInformation) {
             trace!(
                 "[Trap][{}][page fault addr = 0x{:x}, err = {}]",
                 stringify!(PAGE_FAULT),
-                trap_info.cr2,
-                trap_info.err
+                trap_info.page_fault_addr,
+                trap_info.error_code
             );
         }
         // 15 reserved
@@ -109,7 +109,7 @@ fn log_trap_info(exception: &CpuException, trap_info: &TrapInformation) {
         _ => {
             info!(
                 "[Trap][Unknown trap type][id = {}, err = {}]",
-                trap_info.id, trap_info.err
+                trap_info.id, trap_info.error_code
             );
         }
     }

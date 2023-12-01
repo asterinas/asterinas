@@ -1,25 +1,19 @@
-use jinux_frame::{cpu::UserContext, user::UserSpace, vm::VmIo};
-
+use super::posix_thread::{PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName};
+use super::process_vm::ProcessVm;
+use super::signal::sig_disposition::SigDispositions;
+use super::{process_table, Process, ProcessBuilder};
+use crate::current_thread;
+use crate::fs::file_table::FileTable;
+use crate::fs::fs_resolver::FsResolver;
+use crate::fs::utils::FileCreationMask;
+use crate::prelude::*;
+use crate::thread::{allocate_tid, thread_table, Thread, Tid};
+use crate::util::write_val_to_user;
+use crate::vm::vmar::Vmar;
+use jinux_frame::cpu::UserContext;
+use jinux_frame::user::UserSpace;
+use jinux_frame::vm::VmIo;
 use jinux_rights::Full;
-
-use crate::{
-    current_thread,
-    fs::file_table::FileTable,
-    fs::{fs_resolver::FsResolver, utils::FileCreationMask},
-    prelude::*,
-    process::{
-        posix_thread::{PosixThreadBuilder, PosixThreadExt, ThreadName},
-        process_table,
-    },
-    thread::{allocate_tid, thread_table, Thread, Tid},
-    util::write_val_to_user,
-    vm::vmar::Vmar,
-};
-
-use super::{
-    posix_thread::PosixThread, process_vm::ProcessVm, signal::sig_disposition::SigDispositions,
-    Process, ProcessBuilder,
-};
 
 bitflags! {
     pub struct CloneFlags: u32 {
@@ -275,16 +269,13 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
             .file_table(child_file_table)
             .fs(child_fs)
             .umask(child_umask)
-            .sig_dispositions(child_sig_dispositions)
-            .process_group(current.process_group().unwrap());
+            .sig_dispositions(child_sig_dispositions);
 
         process_builder.build()?
     };
 
-    current!().add_child(child.clone());
-    process_table::add_process(child.clone());
-
-    let child_thread = thread_table::tid_to_thread(child_tid).unwrap();
+    // Deals with clone flags
+    let child_thread = thread_table::get_thread(child_tid).unwrap();
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
@@ -296,6 +287,10 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
         clone_args.child_tidptr,
         clone_flags,
     )?;
+
+    // Sets parent process and group for child process.
+    set_parent_and_group(&current, &child);
+
     Ok(child)
 }
 
@@ -413,4 +408,20 @@ fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
         warn!("CLONE_SYSVSEM is not supported now");
     }
     Ok(())
+}
+
+fn set_parent_and_group(parent: &Arc<Process>, child: &Arc<Process>) {
+    let process_group = parent.process_group().unwrap();
+
+    let mut process_table_mut = process_table::process_table_mut();
+    let mut group_inner = process_group.inner.lock();
+    let mut child_group_mut = child.process_group.lock();
+    let mut children_mut = parent.children().lock();
+
+    children_mut.insert(child.pid(), child.clone());
+
+    group_inner.processes.insert(child.pid(), child.clone());
+    *child_group_mut = Arc::downgrade(&process_group);
+
+    process_table_mut.insert(child.pid(), child.clone());
 }

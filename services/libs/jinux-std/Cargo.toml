@@ -8,10 +8,11 @@ edition = "2021"
 [dependencies]
 jinux-frame = { path = "../../../framework/jinux-frame" }
 align_ext = { path = "../../../framework/libs/align_ext" }
-pod = { git = "https://github.com/jinzhao-dev/pod", rev = "71e59ec" }
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
 jinux-input = { path = "../../comps/input" }
 jinux-block = { path = "../../comps/block" }
 jinux-network = { path = "../../comps/network" }
+jinux-console = { path = "../../comps/console" }
 jinux-time = { path = "../../comps/time" }
 jinux-virtio = { path = "../../comps/virtio" }
 jinux-rights = { path = "../jinux-rights" }
@@ -40,6 +41,7 @@ smoltcp = { version = "0.9.1", default-features = false, features = [
     "socket-raw",
     "socket-dhcpv4",
 ] }
+ktest = { path = "../../../framework/libs/ktest" }
 tdx-guest = { path = "../../../framework/libs/tdx-guest", optional = true }
 
 # parse elf file

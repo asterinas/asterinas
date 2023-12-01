@@ -12,8 +12,8 @@ use alloc::boxed::Box;
 use bitflags::bitflags;
 use component::ComponentInitError;
 use device::{
-    block::device::BlockDevice, input::device::InputDevice, network::device::NetworkDevice,
-    VirtioDeviceType,
+    block::device::BlockDevice, console::device::ConsoleDevice, input::device::InputDevice,
+    network::device::NetworkDevice, VirtioDeviceType,
 };
 use log::{error, warn};
 use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};
@@ -49,6 +49,7 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
             VirtioDeviceType::Block => BlockDevice::init(transport),
             VirtioDeviceType::Input => InputDevice::init(transport),
             VirtioDeviceType::Network => NetworkDevice::init(transport),
+            VirtioDeviceType::Console => ConsoleDevice::init(transport),
             _ => {
                 warn!("[Virtio]: Found unimplemented device:{:?}", device_type);
                 Ok(())
@@ -82,6 +83,7 @@ fn negotiate_features(transport: &mut Box<dyn VirtioTransport>) {
         VirtioDeviceType::Network => NetworkDevice::negotiate_features(device_specified_features),
         VirtioDeviceType::Block => BlockDevice::negotiate_features(device_specified_features),
         VirtioDeviceType::Input => InputDevice::negotiate_features(device_specified_features),
+        VirtioDeviceType::Console => ConsoleDevice::negotiate_features(device_specified_features),
         _ => device_specified_features,
     };
     let mut support_feature = Feature::from_bits_truncate(features);

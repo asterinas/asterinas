@@ -19,6 +19,10 @@ pub const DEVICE_ARGS: &[&str] = &[
     "virtio-keyboard-device",
     "-device",
     "virtio-net-device,netdev=net01",
+    "-device",
+    "virtio-serial-device",
+    "-device",
+    "virtconsole,chardev=mux",
 ];
 
 pub fn create_bootdev_image(path: PathBuf) -> PathBuf {

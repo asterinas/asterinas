@@ -222,7 +222,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -374,7 +374,7 @@ dependencies = [
  "proc-macro-error",
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -481,8 +481,14 @@ checksum = "ba330b70a5341d3bc730b8e205aaee97ddab5d9c448c4f51a7c2d924266fa8f9"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
+
+[[package]]
+name = "gimli"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fb8d784f27acf97159b40fc4db5ecd8aa23b9ad5ef69cdd136d3bc80665f0c0"
 
 [[package]]
 name = "glob"
@@ -577,7 +583,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -633,6 +639,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "jinux-console"
+version = "0.1.0"
+dependencies = [
+ "bitflags 1.3.2",
+ "component",
+ "jinux-frame",
+ "jinux-util",
+ "log",
+ "spin 0.9.8",
+]
+
+[[package]]
 name = "jinux-frame"
 version = "0.1.0"
 dependencies = [
@@ -644,9 +662,11 @@ dependencies = [
  "bitvec",
  "buddy_system_allocator",
  "cfg-if",
+ "gimli",
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
+ "ktest",
  "lazy_static",
  "log",
  "multiboot2",
@@ -656,6 +676,7 @@ dependencies = [
  "static_assertions",
  "tdx-guest",
  "trapframe",
+ "unwinding",
  "volatile",
  "x86",
  "x86_64",
@@ -760,6 +781,7 @@ dependencies = [
  "int-to-c-enum",
  "intrusive-collections",
  "jinux-block",
+ "jinux-console",
  "jinux-frame",
  "jinux-input",
  "jinux-network",
@@ -769,6 +791,7 @@ dependencies = [
  "jinux-util",
  "jinux-virtio",
  "keyable-arc",
+ "ktest",
  "lazy_static",
  "lending-iterator",
  "libflate",
@@ -814,11 +837,13 @@ name = "jinux-virtio"
 version = "0.1.0"
 dependencies = [
  "align_ext",
+ "bit_field",
  "bitflags 1.3.2",
  "bytes",
  "component",
  "int-to-c-enum",
  "jinux-block",
+ "jinux-console",
  "jinux-frame",
  "jinux-input",
  "jinux-network",
@@ -841,6 +866,24 @@ checksum = "078e285eafdfb6c4b434e0d31e8cfcb5115b651496faca5749b88fafd4f23bfd"
 [[package]]
 name = "keyable-arc"
 version = "0.1.0"
+
+[[package]]
+name = "ktest"
+version = "0.1.0"
+dependencies = [
+ "ktest-proc-macro",
+ "owo-colors",
+]
+
+[[package]]
+name = "ktest-proc-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rand",
+ "syn 2.0.29",
+]
 
 [[package]]
 name = "lazy_static"
@@ -1012,6 +1055,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
+name = "owo-colors"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1b04fb49957986fdce4d6ee7a65027d55d4b6d2265e5848bbb507b58ccfdb6f"
+
+[[package]]
 name = "paste"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1020,7 +1069,7 @@ checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
 [[package]]
 name = "pod"
 version = "0.1.0"
-source = "git+https://github.com/jinzhao-dev/pod?rev=71e59ec#71e59ec1ddf6562e8a928f609f2048a69a5297b0"
+source = "git+https://github.com/jinzhao-dev/pod?rev=d7dba56#d7dba56cc202a10d483b60aba4f734b1f49cb37b"
 dependencies = [
  "pod-derive",
 ]
@@ -1028,7 +1077,7 @@ dependencies = [
 [[package]]
 name = "pod-derive"
 version = "0.1.0"
-source = "git+https://github.com/jinzhao-dev/pod?rev=71e59ec#71e59ec1ddf6562e8a928f609f2048a69a5297b0"
+source = "git+https://github.com/jinzhao-dev/pod?rev=d7dba56#d7dba56cc202a10d483b60aba4f734b1f49cb37b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1073,9 +1122,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.66"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18fb31db3f9bddb2ea821cde30a9f70117e3f119938b5ee630b7403aa6e2ead9"
+checksum = "134c189feb4956b20f6f547d2cf727d4c0fe06722b20a0eec87ed445a97f92da"
 dependencies = [
  "unicode-ident",
 ]
@@ -1102,9 +1151,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.32"
+version = "1.0.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50f3b39ccfb720540debaa0164757101c08ecb8d326b15358ce76a62c7e85965"
+checksum = "5267fca4496028628a95160fc423a33e8b2e6af8a5302579e322e4b520293cae"
 dependencies = [
  "proc-macro2",
 ]
@@ -1290,9 +1339,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.28"
+version = "2.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04361975b3f5e348b2189d8dc55bc942f278b2d482a6a0365de5bdd62d351567"
+checksum = "c324c494eba9d92503e6f1ef2e6df781e78f6a7705a0202d9801b198807d518a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1332,7 +1381,7 @@ checksum = "090198534930841fab3a5d1bb637cde49e339654e606195f8d9c76eeb081dc96"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.28",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -1389,7 +1438,7 @@ dependencies = [
 [[package]]
 name = "trapframe"
 version = "0.9.0"
-source = "git+https://github.com/sdww0/trapframe-rs?rev=e886763#e8867631def557939be5107f2be6c8d909d72431"
+source = "git+https://github.com/jinzhao-dev/trapframe-rs?rev=9758a83#9758a83f769c8f4df35413c7ad28ef42c270187e"
 dependencies = [
  "log",
  "pod",
@@ -1405,6 +1454,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+ "typeflags-util",
 ]
 
 [[package]]
@@ -1444,6 +1494,15 @@ name = "unicode-ident"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
+
+[[package]]
+name = "unwinding"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37a19a21a537f635c16c7576f22d0f2f7d63353c1337ad4ce0d8001c7952a25b"
+dependencies = [
+ "gimli",
+]
 
 [[package]]
 name = "utf8parse"

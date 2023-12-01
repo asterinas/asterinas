@@ -1,4 +1,8 @@
+use crate::device::PtyMaster;
+use crate::events::IoEvents;
+use crate::fs::inode_handle::FileIo;
 use crate::prelude::*;
+use crate::process::signal::Poller;
 
 use super::*;
 
@@ -14,12 +18,14 @@ const PTMX_MINOR_NUM: u32 = 2;
 pub struct Ptmx {
     inner: Inner,
     metadata: Metadata,
-    fs: Weak<DevPts>,
 }
+
+#[derive(Clone)]
+struct Inner(Weak<DevPts>);
 
 impl Ptmx {
     pub fn new(sb: &SuperBlock, fs: Weak<DevPts>) -> Arc<Self> {
-        let inner = Inner;
+        let inner = Inner(fs);
         Arc::new(Self {
             metadata: Metadata::new_device(
                 PTMX_INO,
@@ -28,20 +34,19 @@ impl Ptmx {
                 &inner,
             ),
             inner,
-            fs,
         })
     }
 
     /// The open method for ptmx.
     ///
     /// Creates a master and slave pair and returns the master inode.
-    pub fn open(&self) -> Result<Arc<PtyMasterInode>> {
+    pub fn open(&self) -> Result<Arc<PtyMaster>> {
         let (master, _) = self.devpts().create_master_slave_pair()?;
         Ok(master)
     }
 
     pub fn devpts(&self) -> Arc<DevPts> {
-        self.fs.upgrade().unwrap()
+        self.inner.0.upgrade().unwrap()
     }
 
     pub fn device_type(&self) -> DeviceType {
@@ -119,9 +124,11 @@ impl Inode for Ptmx {
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.devpts()
     }
-}
 
-struct Inner;
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        Some(Arc::new(self.inner.clone()))
+    }
+}
 
 impl Device for Inner {
     fn type_(&self) -> DeviceType {
@@ -132,13 +139,23 @@ impl Device for Inner {
         DeviceId::new(PTMX_MAJOR_NUM, PTMX_MINOR_NUM)
     }
 
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        let devpts = self.0.upgrade().unwrap();
+        let (master, _) = devpts.create_master_slave_pair()?;
+        Ok(Some(master as _))
+    }
+}
+
+impl FileIo for Inner {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        // do nothing because it should not be used to read.
-        Ok(0)
+        return_errno_with_message!(Errno::EINVAL, "cannot read ptmx");
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        // do nothing because it should not be used to write.
-        Ok(buf.len())
+        return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
+    }
+
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        IoEvents::empty()
     }
 }

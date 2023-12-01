@@ -6,19 +6,23 @@ pub type Vaddr = usize;
 /// Physical addresses.
 pub type Paddr = usize;
 
+pub(crate) mod dma;
 mod frame;
 mod frame_allocator;
 pub(crate) mod heap_allocator;
 mod io;
 mod memory_set;
 mod offset;
+mod options;
 pub(crate) mod page_table;
 mod space;
 
 use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
 
-pub use self::frame::{VmAllocOptions, VmFrame, VmFrameVec, VmFrameVecIter};
+pub use self::dma::{DmaCoherent, DmaDirection, DmaStream, HasDaddr};
+pub use self::frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter};
 pub use self::io::VmIo;
+pub use self::options::VmAllocOptions;
 pub use self::space::{VmMapOptions, VmPerm, VmSpace};
 
 pub use self::{
@@ -64,6 +68,7 @@ pub(crate) fn init() {
     let memory_regions = crate::boot::memory_regions().to_owned();
     frame_allocator::init(&memory_regions);
     page_table::init();
+    dma::init();
 
     let mut framebuffer_regions = Vec::new();
     for i in memory_regions.iter() {

@@ -79,6 +79,7 @@ impl InputDevice {
             .expect("create status virtqueue failed");
 
         for (i, event) in event_buf.as_mut().iter_mut().enumerate() {
+            // FIEME: replace slice with a more secure data structure to use dma mapping.
             let token = event_queue.add(&[], &[event.as_bytes_mut()]);
             match token {
                 Ok(value) => {
@@ -111,7 +112,7 @@ impl InputDevice {
 
         fn handle_input(_: &TrapFrame) {
             debug!("Handle Virtio input interrupt");
-            let device = jinux_input::get_device(&(super::DEVICE_NAME.to_string())).unwrap();
+            let device = jinux_input::get_device(super::DEVICE_NAME).unwrap();
             device.handle_irq().unwrap();
         }
 
@@ -144,6 +145,7 @@ impl InputDevice {
             }
             let event = &mut self.event_buf.lock()[token as usize];
             // requeue
+            // FIEME: replace slice with a more secure data structure to use dma mapping.
             if let Ok(new_token) = lock.add(&[], &[event.as_bytes_mut()]) {
                 // This only works because nothing happen between `pop_used` and `add` that affects
                 // the list of free descriptors in the queue, so `add` reuses the descriptor which

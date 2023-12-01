@@ -4,6 +4,7 @@ std = { name = "jinux-std" }
 virtio = { name = "jinux-virtio" }
 input = { name = "jinux-input" }
 block = { name = "jinux-block" }
+console = { name = "jinux-console" }
 time = { name = "jinux-time" }
 framebuffer = { name = "jinux-framebuffer" }
 network = { name = "jinux-network" }

@@ -27,7 +27,7 @@ impl FileTable {
     pub fn new_with_stdio() -> Self {
         let mut table = SlotVec::new();
         let fs_resolver = FsResolver::new();
-        let tty_path = FsPath::new(AT_FDCWD, "/dev/tty").expect("cannot find tty");
+        let tty_path = FsPath::new(AT_FDCWD, "/dev/console").expect("cannot find tty");
         let stdin = {
             let flags = AccessMode::O_RDONLY as u32;
             let mode = InodeMode::S_IRUSR;

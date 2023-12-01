@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 
 use alloc::boxed::Box;
-use jinux_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::VmFrame};
+use jinux_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::DmaCoherent};
 use jinux_util::safe_ptr::SafePtr;
 
 use crate::{
@@ -61,9 +61,9 @@ pub trait VirtioTransport: Sync + Send + Debug {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, VmFrame>,
-        avail_ring_ptr: &SafePtr<AvailRing, VmFrame>,
-        used_ring_ptr: &SafePtr<UsedRing, VmFrame>,
+        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
+        avail_ring_ptr: &SafePtr<AvailRing, DmaCoherent>,
+        used_ring_ptr: &SafePtr<UsedRing, DmaCoherent>,
     ) -> Result<(), VirtioTransportError>;
 
     /// The max queue size of one virtqueue.

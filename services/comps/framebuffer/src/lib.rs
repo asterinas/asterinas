@@ -35,9 +35,7 @@ pub(crate) fn init() {
         let page_size = size / PAGE_SIZE;
 
         let start_paddr = framebuffer.address;
-        let io_mem =
-            IoMem::new(start_paddr..(start_paddr + jinux_frame::config::PAGE_SIZE * page_size))
-                .unwrap();
+        let io_mem = todo!("IoMem is private for components now, should fix it.");
 
         let mut buffer: Vec<u8> = Vec::with_capacity(size);
         for _ in 0..size {

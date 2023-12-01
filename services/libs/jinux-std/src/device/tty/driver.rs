@@ -9,7 +9,9 @@ use crate::{
 pub static TTY_DRIVER: Once<Arc<TtyDriver>> = Once::new();
 
 pub(super) fn init() {
-    register_console_input_callback(&serial_input_callback);
+    for (_, device) in jinux_console::all_devices() {
+        device.register_callback(&console_input_callback)
+    }
     let tty_driver = Arc::new(TtyDriver::new());
     // FIXME: install n_tty into tty_driver?
     let n_tty = get_n_tty();
@@ -63,6 +65,13 @@ impl TtyDriver {
         for tty in &*self.ttys.lock_irq_disabled() {
             tty.receive_char(item);
         }
+    }
+}
+
+fn console_input_callback(items: &[u8]) {
+    let tty_driver = get_tty_driver();
+    for item in items {
+        tty_driver.receive_char(*item);
     }
 }
 

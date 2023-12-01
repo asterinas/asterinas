@@ -124,12 +124,6 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     memory_regions.call_once(|| regions);
 }
 
-// The entry point of kernel code, which should be defined by the package that
-// uses jinux-frame.
-extern "Rust" {
-    fn jinux_main() -> !;
-}
-
 /// The entry point of Rust code called by the Linux 64-bit boot compatible bootloader.
 #[no_mangle]
 unsafe extern "sysv64" fn __linux64_boot(params_ptr: *const boot_params::BootParams) -> ! {
@@ -144,5 +138,5 @@ unsafe extern "sysv64" fn __linux64_boot(params_ptr: *const boot_params::BootPar
         init_framebuffer_info,
         init_memory_regions,
     );
-    jinux_main();
+    crate::boot::call_jinux_main();
 }

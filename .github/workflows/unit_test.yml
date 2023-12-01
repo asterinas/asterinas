@@ -1,0 +1,27 @@
+name: Unit test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: jinuxdev/jinux:0.2.1
+    steps:
+      - run: echo "Running in jinuxdev/jinux:0.2.1"
+
+      - uses: actions/checkout@v3
+
+      - name: Ktest Unit Test
+        id: ktest_unit_test
+        run: make run KTEST=1 ENABLE_KVM=0 RELEASE_MODE=1
+
+      - name: Usermode Unit test
+        id: usermode_unit_test
+        run: make test
+
+      # TODO: add component check.
