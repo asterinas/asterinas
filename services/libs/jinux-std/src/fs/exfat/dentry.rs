@@ -1,7 +1,7 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec, VmIo};
+use jinux_frame::vm::{VmAllocOptions, VmFrame, VmIo};
 
 use crate::fs::utils::{InodeMode, InodeType};
 use crate::prelude::*;
@@ -463,9 +463,7 @@ impl ExfatDentryIterator {
             return_errno!(Errno::EINVAL)
         }
 
-        let buffer = VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))?
-            .pop()
-            .unwrap();
+        let buffer = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
         chain.read_page((offset).align_down(PAGE_SIZE), &buffer)?;
 
         Ok(Self {

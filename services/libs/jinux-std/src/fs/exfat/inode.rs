@@ -25,7 +25,7 @@ pub(super) use align_ext::AlignExt;
 use alloc::string::String;
 use core::cmp::Ordering;
 use core::time::Duration;
-use jinux_frame::vm::{VmAllocOptions, VmFrame, VmFrameVec, VmIo};
+use jinux_frame::vm::{VmAllocOptions, VmFrame, VmIo};
 use jinux_rights::Full;
 
 ///Inode number
@@ -967,10 +967,7 @@ impl Inode for ExfatInode {
             .decommit(offset..offset + read_len)?;
 
         let mut buf_offset = 0;
-        let frame = VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-            .unwrap()
-            .pop()
-            .unwrap();
+        let frame = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
 
         for bid in offset / sector_size..(offset + read_len) / sector_size {
             inner.read_sector(bid, &frame)?;
@@ -1030,11 +1027,7 @@ impl Inode for ExfatInode {
         let mut buf_offset = 0;
         for bid in offset / block_size..(end_offset) / block_size {
             let frame = {
-                let frame =
-                    VmFrameVec::allocate(VmAllocOptions::new(1).uninit(false).can_dma(true))
-                        .unwrap()
-                        .pop()
-                        .unwrap();
+                let frame = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
                 frame.write_bytes(0, &buf[buf_offset..buf_offset + block_size])?;
                 frame
             };
