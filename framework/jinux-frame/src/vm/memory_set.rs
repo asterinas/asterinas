@@ -1,11 +1,11 @@
 use super::page_table::{PageTable, PageTableConfig};
+use crate::prelude::*;
 use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
     config::{PAGE_SIZE, PHYS_OFFSET},
     vm::is_page_aligned,
-    vm::{VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter},
+    vm::{VmAllocOptions, VmFrame, VmFrameVec},
 };
-use crate::{prelude::*, Error};
 use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::fmt;
 
@@ -100,36 +100,6 @@ impl MapArea {
     pub fn unmap(&mut self, va: Vaddr) -> Option<VmFrame> {
         self.mapper.remove(&va)
     }
-
-    pub fn write_data(&mut self, addr: usize, data: &[u8]) {
-        let mut current_start_address = addr;
-        let mut buf_reader: VmReader = data.into();
-        for (va, pa) in self.mapper.iter() {
-            if current_start_address >= *va && current_start_address < va + PAGE_SIZE {
-                let offset = current_start_address - va;
-                let _ = pa.writer().skip(offset).write(&mut buf_reader);
-                if !buf_reader.has_remain() {
-                    return;
-                }
-                current_start_address = va + PAGE_SIZE;
-            }
-        }
-    }
-
-    pub fn read_data(&self, addr: usize, data: &mut [u8]) {
-        let mut start = addr;
-        let mut buf_writer: VmWriter = data.into();
-        for (va, pa) in self.mapper.iter() {
-            if start >= *va && start < va + PAGE_SIZE {
-                let offset = start - va;
-                let _ = pa.reader().skip(offset).read(&mut buf_writer);
-                if !buf_writer.has_avail() {
-                    return;
-                }
-                start = va + PAGE_SIZE;
-            }
-        }
-    }
 }
 
 impl Default for MemorySet {
@@ -181,55 +151,6 @@ impl MemorySet {
     }
 
     pub fn clear(&mut self) {}
-
-    pub fn write_bytes(&mut self, addr: usize, data: &[u8]) -> Result<()> {
-        let mut current_addr = addr;
-        let mut remain = data.len();
-        let start_write = false;
-        let mut offset = 0usize;
-        for (va, area) in self.areas.iter_mut() {
-            if current_addr >= *va && current_addr < area.size + va {
-                if !area.flags.contains(PageTableFlags::WRITABLE) {
-                    return Err(Error::PageFault);
-                }
-                let write_len = remain.min(area.size + va - current_addr);
-                area.write_data(current_addr, &data[offset..(offset + write_len)]);
-                offset += write_len;
-                remain -= write_len;
-                // remain -= (va.0 + area.size - current_addr).min(remain);
-                if remain == 0 {
-                    return Ok(());
-                }
-                current_addr = va + area.size;
-            } else if start_write {
-                return Err(Error::PageFault);
-            }
-        }
-        Err(Error::PageFault)
-    }
-
-    pub fn read_bytes(&self, addr: usize, data: &mut [u8]) -> Result<()> {
-        let mut current_addr = addr;
-        let mut remain = data.len();
-        let mut offset = 0usize;
-        let start_read = false;
-        for (va, area) in self.areas.iter() {
-            if current_addr >= *va && current_addr < area.size + va {
-                let read_len = remain.min(area.size + va - current_addr);
-                area.read_data(current_addr, &mut data[offset..(offset + read_len)]);
-                remain -= read_len;
-                offset += read_len;
-                // remain -= (va.0 + area.size - current_addr).min(remain);
-                if remain == 0 {
-                    return Ok(());
-                }
-                current_addr = va + area.size;
-            } else if start_read {
-                return Err(Error::PageFault);
-            }
-        }
-        Err(Error::PageFault)
-    }
 
     pub fn protect(&mut self, addr: Vaddr, flags: PageTableFlags) {
         let va = addr;

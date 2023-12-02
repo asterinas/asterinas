@@ -44,8 +44,7 @@ fn handle_page_fault(trap_info: &CpuExceptionInfo) {
         } else {
             // ensure page fault is successfully handled
             // FIXME: this check can be removed
-            let vm_space = root_vmar.vm_space();
-            let _: u8 = vm_space.read_val(page_fault_addr).unwrap();
+            let _: u8 = root_vmar.read_val(page_fault_addr).unwrap();
         }
     } else {
         // Otherwise, the page fault cannot be handled

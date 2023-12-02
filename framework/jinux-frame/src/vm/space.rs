@@ -9,8 +9,6 @@ use super::{is_page_aligned, Vaddr};
 use super::{MapArea, MemorySet};
 use crate::{prelude::*, Error};
 
-use super::VmIo;
-
 /// Virtual memory space.
 ///
 /// A virtual memory space (`VmSpace`) can be created and assigned to a user space so that
@@ -120,16 +118,6 @@ impl VmSpace {
 impl Default for VmSpace {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl VmIo for VmSpace {
-    fn read_bytes(&self, vaddr: usize, buf: &mut [u8]) -> Result<()> {
-        self.memory_set.lock().read_bytes(vaddr, buf)
-    }
-
-    fn write_bytes(&self, vaddr: usize, buf: &[u8]) -> Result<()> {
-        self.memory_set.lock().write_bytes(vaddr, buf)
     }
 }
 
