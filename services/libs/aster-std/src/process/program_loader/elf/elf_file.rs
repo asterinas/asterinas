@@ -111,7 +111,7 @@ impl Elf {
 
     // An offset to be subtracted from ELF vaddr for PIE
     pub fn base_load_address_offset(&self) -> u64 {
-        let phdr = self.program_headers.get(0).unwrap();
+        let phdr = self.program_headers.first().unwrap();
         phdr.virtual_addr - phdr.offset
     }
 }

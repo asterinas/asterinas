@@ -17,7 +17,6 @@
 #![feature(linked_list_remove)]
 #![feature(trait_alias)]
 #![feature(register_tool)]
-#![feature(trait_upcasting)]
 #![feature(format_args_nl)]
 #![feature(int_roundings)]
 #![feature(step_trait)]

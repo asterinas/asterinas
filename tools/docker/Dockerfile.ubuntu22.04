@@ -121,7 +121,7 @@ FROM build-ovmf as ovmf
 
 # Fetch and build OVMF from the EDK2 official source
 WORKDIR /root
-RUN git clone --depth 1 --branch edk2-stable202308 --recurse-submodules --shallow-submodules https://github.com/tianocore/edk2.git
+RUN git clone --depth 1 --branch edk2-stable202311 --recurse-submodules --shallow-submodules https://github.com/tianocore/edk2.git
 WORKDIR /root/edk2
 RUN source ./edksetup.sh \
     && make -C BaseTools \
@@ -208,7 +208,9 @@ RUN apt update && apt-get install -y --no-install-recommends \
     cpuid \
     file \
     gdb \
+    grub-efi-amd64 \
     grub-efi-amd64-bin \
+    grub-efi-amd64-dbg \
     libpixman-1-dev     `# running dependency for QEMU` \
     mtools              `# used by grub-mkrescue` \
     net-tools \

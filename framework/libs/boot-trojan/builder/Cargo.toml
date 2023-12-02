@@ -12,5 +12,5 @@ serde = { version = "1.0.192", features = ["derive"] }
 xmas-elf = "0.9.1"
 
 [features]
-default = []
+default = ["trojan64"]
 trojan64 = []

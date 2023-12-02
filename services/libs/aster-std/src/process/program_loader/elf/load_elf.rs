@@ -199,12 +199,14 @@ fn base_map_addr(elf: &Elf, root_vmar: &Vmar<Full>) -> Result<Vaddr> {
         .program_headers
         .iter()
         .filter_map(|program_header| {
-            if let Ok(type_) = program_header.get_type() && type_ == program::Type::Load {
-            let ph_max_addr = program_header.virtual_addr + program_header.mem_size;
-            Some(ph_max_addr as usize)
-        } else {
-            None
-        }
+            if let Ok(type_) = program_header.get_type()
+                && type_ == program::Type::Load
+            {
+                let ph_max_addr = program_header.virtual_addr + program_header.mem_size;
+                Some(ph_max_addr as usize)
+            } else {
+                None
+            }
         })
         .max()
         .ok_or(Error::with_message(
