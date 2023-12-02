@@ -194,6 +194,12 @@ impl VmMapping {
         Ok(())
     }
 
+    pub fn clear(&self) -> Result<()> {
+        let parent = self.parent.upgrade().unwrap();
+        let vm_space = parent.vm_space();
+        self.inner.lock().clear(vm_space)
+    }
+
     pub fn is_destroyed(&self) -> bool {
         self.inner.lock().is_destroyed
     }
@@ -394,6 +400,17 @@ impl VmMappingInner {
         if may_destroy && *range == self.range() {
             self.is_destroyed = false;
         }
+        Ok(())
+    }
+
+    fn clear(&mut self, vm_space: &VmSpace) -> Result<()> {
+        for page_idx in self.mapped_pages.iter() {
+            let map_addr = self.page_map_addr(*page_idx);
+            let range = map_addr..(map_addr + PAGE_SIZE);
+            vm_space.unmap(&range)?;
+        }
+        self.mapped_pages.clear();
+        self.page_perms.clear();
         Ok(())
     }
 

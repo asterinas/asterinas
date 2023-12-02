@@ -265,6 +265,9 @@ impl Vmar_ {
         }
         self.vm_space.clear();
         let mut inner = self.inner.lock();
+        for vm_mapping in inner.vm_mappings.values() {
+            vm_mapping.clear()?;
+        }
         inner.child_vmar_s.clear();
         inner.vm_mappings.clear();
         inner.free_regions.clear();

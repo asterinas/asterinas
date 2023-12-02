@@ -180,14 +180,7 @@ impl MemorySet {
         Ok(())
     }
 
-    pub fn clear(&mut self) {
-        for area in self.areas.values_mut() {
-            for (va, _) in area.mapper.iter() {
-                self.pt.unmap(*va).unwrap();
-            }
-        }
-        self.areas.clear();
-    }
+    pub fn clear(&mut self) {}
 
     pub fn write_bytes(&mut self, addr: usize, data: &[u8]) -> Result<()> {
         let mut current_addr = addr;

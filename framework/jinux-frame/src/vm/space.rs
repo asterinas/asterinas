@@ -95,7 +95,6 @@ impl VmSpace {
 
     /// clear all mappings
     pub fn clear(&self) {
-        self.memory_set.lock().clear();
         #[cfg(target_arch = "x86_64")]
         x86_64::instructions::tlb::flush_all();
     }
