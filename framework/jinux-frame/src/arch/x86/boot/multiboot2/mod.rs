@@ -149,6 +149,16 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         __kernel_end as usize - __kernel_start as usize,
         MemoryRegionType::Kernel,
     ));
+    // Add the ap boot region.
+    extern "C" {
+        fn __ap_boot_start();
+        fn __ap_boot_end();
+    }
+    regions.push(MemoryRegion::new(
+        __ap_boot_start as usize,
+        __ap_boot_end as usize - __ap_boot_start as usize,
+        MemoryRegionType::Reserved,
+    ));
     // Add the boot module region since Grub does not specify it.
     let mb2_module_tag = MB2_INFO.get().unwrap().module_tags();
     for m in mb2_module_tag {

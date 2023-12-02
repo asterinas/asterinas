@@ -6,6 +6,9 @@ pub const USER_STACK_SIZE: usize = PAGE_SIZE * 4;
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
 pub const KERNEL_HEAP_SIZE: usize = PAGE_SIZE * 256;
 
+/// The startup address of application processors, which can
+/// be set to an unused address below 0x100000.
+pub const AP_BOOT_START_PA: usize = 0x8000;
 pub const KERNEL_OFFSET: usize = 0xffffffff80000000;
 
 pub const PHYS_OFFSET: usize = 0xFFFF800000000000;

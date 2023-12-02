@@ -270,6 +270,7 @@ gdt_end:
 .align 4096
 
 boot_page_table_start:
+.global boot_pml4
 boot_pml4:
     .skip 4096
 boot_pdpt:

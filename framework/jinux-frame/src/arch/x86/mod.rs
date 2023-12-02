@@ -8,6 +8,7 @@ pub(crate) mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
+mod smp;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
 pub(crate) mod timer;
@@ -41,6 +42,7 @@ pub(crate) fn after_all_init() {
     }
     // Some driver like serial may use PIC
     kernel::pic::init();
+    smp::init();
 }
 
 pub(crate) fn interrupts_ack() {
