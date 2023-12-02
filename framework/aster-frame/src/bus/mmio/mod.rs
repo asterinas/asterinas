@@ -34,7 +34,7 @@ fn iter_range(range: Range<usize>) {
     let mut io_apic = if is_ioapic2 {
         io_apics.get(1).unwrap().lock()
     } else {
-        io_apics.get(0).unwrap().lock()
+        io_apics.first().unwrap().lock()
     };
     let mut device_count = 0;
     while current > range.start {

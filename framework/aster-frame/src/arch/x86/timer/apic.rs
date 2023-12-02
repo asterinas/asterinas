@@ -102,7 +102,7 @@ fn init_periodic_mode() {
     let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
     let mut irq = IrqLine::alloc_specific(super::TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
     irq.on_active(init_function);
-    let mut io_apic = IO_APIC.get().unwrap().get(0).unwrap().lock();
+    let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
     debug_assert_eq!(io_apic.interrupt_base(), 0);
     io_apic.enable(2, irq.clone()).unwrap();
     drop(io_apic);
@@ -133,7 +133,7 @@ fn init_periodic_mode() {
                 return;
             }
         }
-        let mut io_apic = IO_APIC.get().unwrap().get(0).unwrap().lock();
+        let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
         io_apic.disable(2).unwrap();
         drop(io_apic);
         // stop APIC Timer, get the number of tick we need

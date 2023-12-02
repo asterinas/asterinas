@@ -64,7 +64,9 @@ pub const IOMMU_DEVICE_ARGS: &[&str] = &[
     "ioh3420,id=pcie.0,chassis=1",
 ];
 
-pub const GRUB_PREFIX: &str = "/usr/local/grub";
+// To test legacy boot, use the following:
+// pub const GRUB_PREFIX: &str = "/usr/local/grub";
+pub const GRUB_PREFIX: &str = "/usr";
 pub const GRUB_VERSION: &str = "x86_64-efi";
 
 pub fn create_bootdev_image(

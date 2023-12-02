@@ -122,15 +122,21 @@ fn do_select(
         let fd = poll_fd.fd().unwrap();
         let revents = poll_fd.revents().get();
         let (readable, writable, except) = convert_events_to_rwe(&revents);
-        if let Some(ref mut fds) = readfds && readable {
+        if let Some(ref mut fds) = readfds
+            && readable
+        {
             fds.set(fd)?;
             total_revents += 1;
         }
-        if let Some(ref mut fds) = writefds && writable {
+        if let Some(ref mut fds) = writefds
+            && writable
+        {
             fds.set(fd)?;
             total_revents += 1;
         }
-        if let Some(ref mut fds) = exceptfds && except {
+        if let Some(ref mut fds) = exceptfds
+            && except
+        {
             fds.set(fd)?;
             total_revents += 1;
         }

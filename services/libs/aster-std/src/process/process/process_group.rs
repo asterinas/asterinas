@@ -21,7 +21,9 @@ impl Inner {
             return;
         };
 
-        if let Some(leader) = &self.leader && Arc::ptr_eq(leader, &process) {
+        if let Some(leader) = &self.leader
+            && Arc::ptr_eq(leader, &process)
+        {
             self.leader = None;
         }
     }

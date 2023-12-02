@@ -158,7 +158,7 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildA
     let out_dir = std::fs::canonicalize(out_dir).unwrap();
 
     // Relocations are fewer in release mode. But with release mode it crashes.
-    let profile = "debug";
+    let profile = "release";
 
     let cargo = std::env::var("CARGO").unwrap();
     let mut cmd = std::process::Command::new(cargo);

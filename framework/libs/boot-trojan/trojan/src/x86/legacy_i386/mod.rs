@@ -8,6 +8,8 @@ global_asm!(include_str!("setup.S"));
 
 use crate::console::{print_hex, print_str};
 
+pub const JINUX_ENTRY_POINT: u32 = 0x8001000;
+
 #[export_name = "_trojan_entry_32"]
 extern "cdecl" fn trojan_entry(boot_params_ptr: u32) -> ! {
     // Safety: this init function is only called once.
@@ -27,12 +29,7 @@ extern "cdecl" fn trojan_entry(boot_params_ptr: u32) -> ! {
     crate::loader::load_elf(payload);
 
     // Safety: the entrypoint and the ptr is valid.
-    unsafe {
-        call_jinux_entrypoint(
-            super::JINUX_ENTRY_POINT,
-            boot_params_ptr.try_into().unwrap(),
-        )
-    };
+    unsafe { call_jinux_entrypoint(JINUX_ENTRY_POINT, boot_params_ptr.try_into().unwrap()) };
 }
 
 pub const ASTER_ENTRY_POINT: u32 = 0x8001000;

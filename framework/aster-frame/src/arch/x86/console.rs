@@ -55,7 +55,7 @@ pub(crate) fn callback_init() {
         crate::arch::x86::kernel::pic::allocate_irq(4).unwrap()
     } else {
         let irq = IrqLine::alloc().unwrap();
-        let mut io_apic = IO_APIC.get().unwrap().get(0).unwrap().lock();
+        let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
         io_apic.enable(4, irq.clone()).unwrap();
         irq
     };

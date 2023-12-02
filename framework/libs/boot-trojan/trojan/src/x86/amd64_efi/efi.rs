@@ -120,5 +120,12 @@ fn efi_phase_runtime(
         }
     }
 
+    unsafe {
+        use crate::console::{print_hex, print_str};
+        print_str("[EFI stub] Entering Jinux entrypoint at ");
+        print_hex(super::JINUX_ENTRY_POINT as u64);
+        print_str("\n");
+    }
+
     unsafe { super::call_jinux_entrypoint(super::JINUX_ENTRY_POINT, boot_params_ptr as u64) }
 }
