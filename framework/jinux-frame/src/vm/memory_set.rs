@@ -19,8 +19,6 @@ pub struct MapArea {
 
 pub struct MemorySet {
     pub pt: PageTable<PageTableEntry>,
-    /// all the map area, sort by the start virtual address
-    areas: BTreeMap<Vaddr, MapArea>,
 }
 
 impl Clone for MapArea {
@@ -112,17 +110,9 @@ impl MemorySet {
     pub fn map(&mut self, area: MapArea) {
         if area.size > 0 {
             // TODO: check overlap
-            if let Entry::Vacant(e) = self.areas.entry(area.start_va) {
-                let area = e.insert(area);
-                for (va, frame) in area.mapper.iter() {
-                    debug_assert!(frame.start_paddr() < PHYS_OFFSET);
-                    self.pt.map(*va, frame, area.flags).unwrap();
-                }
-            } else {
-                panic!(
-                    "MemorySet::map: MapArea starts from {:#x?} is existed!",
-                    area.start_va
-                );
+            for (va, frame) in area.mapper.iter() {
+                debug_assert!(frame.start_paddr() < PHYS_OFFSET);
+                self.pt.map(*va, frame, area.flags).unwrap();
             }
         }
     }
@@ -138,15 +128,11 @@ impl MemorySet {
                 page_table.add_root_mapping(*index, pte);
             }
         }
-        Self {
-            pt: page_table,
-            areas: BTreeMap::new(),
-        }
+        Self { pt: page_table }
     }
 
     pub fn unmap_one_page(&mut self, va: Vaddr) -> Result<()> {
         self.pt.unmap(va).unwrap();
-        self.areas.remove(&va);
         Ok(())
     }
 
@@ -160,11 +146,7 @@ impl MemorySet {
 
 impl Clone for MemorySet {
     fn clone(&self) -> Self {
-        let mut ms = Self::new();
-        for area in self.areas.values() {
-            ms.map(area.clone());
-        }
-        ms
+        Self::new()
     }
 }
 impl Drop for MemorySet {
@@ -176,7 +158,6 @@ impl Drop for MemorySet {
 impl fmt::Debug for MemorySet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("MemorySet")
-            .field("areas", &self.areas)
             .field("page_table_root", &self.pt.root_paddr())
             .finish()
     }
