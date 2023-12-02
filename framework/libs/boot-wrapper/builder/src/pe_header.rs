@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use std::{mem::size_of, ops::Range};
 
-use crate::mapping::{TrojanFileOffset, TrojanVA, LEGACY_SETUP_SEC_SIZE, SETUP32_LMA};
+use crate::mapping::{WrapperFileOffset, WrapperVA, LEGACY_SETUP_SEC_SIZE, SETUP32_LMA};
 
 // The MS-DOS header.
 const MZ_MAGIC: u16 = 0x5a4d; // "MZ"
@@ -199,11 +199,11 @@ struct PeSectionHdr {
 }
 
 struct TrojanSectionAddrInfo {
-    pub text: Range<TrojanVA>,
-    pub data: Range<TrojanVA>,
-    pub bss: Range<TrojanVA>,
+    pub text: Range<WrapperVA>,
+    pub data: Range<WrapperVA>,
+    pub bss: Range<WrapperVA>,
     /// All the readonly but loaded sections.
-    pub rodata: Range<TrojanVA>,
+    pub rodata: Range<WrapperVA>,
 }
 
 impl TrojanSectionAddrInfo {
@@ -218,7 +218,7 @@ impl TrojanSectionAddrInfo {
         let mut rodata_end = None;
         for program in elf.program_iter() {
             if program.get_type().unwrap() == xmas_elf::program::Type::Load {
-                let offset = TrojanVA::from(program.virtual_addr() as usize);
+                let offset = WrapperVA::from(program.virtual_addr() as usize);
                 let length = program.mem_size() as usize;
                 if program.flags().is_execute() {
                     text_start = Some(offset);
@@ -236,10 +236,10 @@ impl TrojanSectionAddrInfo {
         }
 
         Self {
-            text: TrojanVA::from(text_start.unwrap())..TrojanVA::from(text_end.unwrap()),
-            data: TrojanVA::from(data_start.unwrap())..TrojanVA::from(data_end.unwrap()),
-            bss: TrojanVA::from(bss_start.unwrap())..TrojanVA::from(bss_end.unwrap()),
-            rodata: TrojanVA::from(rodata_start.unwrap())..TrojanVA::from(rodata_end.unwrap()),
+            text: WrapperVA::from(text_start.unwrap())..WrapperVA::from(text_end.unwrap()),
+            data: WrapperVA::from(data_start.unwrap())..WrapperVA::from(data_end.unwrap()),
+            bss: WrapperVA::from(bss_start.unwrap())..WrapperVA::from(bss_end.unwrap()),
+            rodata: WrapperVA::from(rodata_start.unwrap())..WrapperVA::from(rodata_end.unwrap()),
         }
     }
 
@@ -248,7 +248,7 @@ impl TrojanSectionAddrInfo {
     }
 
     fn text_file_size(&self) -> usize {
-        TrojanFileOffset::from(self.text.end) - TrojanFileOffset::from(self.text.start)
+        WrapperFileOffset::from(self.text.end) - WrapperFileOffset::from(self.text.start)
     }
 
     fn data_virt_size(&self) -> usize {
@@ -256,7 +256,7 @@ impl TrojanSectionAddrInfo {
     }
 
     fn data_file_size(&self) -> usize {
-        TrojanFileOffset::from(self.data.end) - TrojanFileOffset::from(self.data.start)
+        WrapperFileOffset::from(self.data.end) - WrapperFileOffset::from(self.data.start)
     }
 
     fn bss_virt_size(&self) -> usize {
@@ -268,13 +268,13 @@ impl TrojanSectionAddrInfo {
     }
 
     fn rodata_file_size(&self) -> usize {
-        TrojanFileOffset::from(self.rodata.end) - TrojanFileOffset::from(self.rodata.start)
+        WrapperFileOffset::from(self.rodata.end) - WrapperFileOffset::from(self.rodata.start)
     }
 }
 
 pub struct TrojanPeCoffHeaderBuf {
     pub header_at_zero: Vec<u8>,
-    pub relocs: (TrojanFileOffset, Vec<u8>),
+    pub relocs: (WrapperFileOffset, Vec<u8>),
 }
 
 pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> TrojanPeCoffHeaderBuf {
@@ -284,7 +284,7 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
     // The EFI application loader requires a relocation section.
     let relocs = vec![];
     // The place where we put the stub, must be after the legacy header and before 0x1000.
-    let reloc_offset = TrojanFileOffset::from(0x500);
+    let reloc_offset = WrapperFileOffset::from(0x500);
 
     // PE header
     let mut pe_hdr = PeHdr {
@@ -354,7 +354,7 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
     sec_hdrs.push(PeSectionHdr {
         name: [b'.', b'r', b'e', b'l', b'o', b'c', 0, 0],
         virtual_size: relocs.len() as u32,
-        virtual_address: usize::from(TrojanVA::from(reloc_offset)) as u32,
+        virtual_address: usize::from(WrapperVA::from(reloc_offset)) as u32,
         raw_data_size: relocs.len() as u32,
         data_addr: usize::from(reloc_offset) as u32,
         relocs: 0,
@@ -373,7 +373,7 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
         virtual_size: addr_info.text_virt_size() as u32,
         virtual_address: usize::from(addr_info.text.start) as u32,
         raw_data_size: addr_info.text_file_size() as u32,
-        data_addr: usize::from(TrojanFileOffset::from(addr_info.text.start)) as u32,
+        data_addr: usize::from(WrapperFileOffset::from(addr_info.text.start)) as u32,
         relocs: 0,
         line_numbers: 0,
         num_relocs: 0,
@@ -390,7 +390,7 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
         virtual_size: addr_info.data_virt_size() as u32,
         virtual_address: usize::from(addr_info.data.start) as u32,
         raw_data_size: addr_info.data_file_size() as u32,
-        data_addr: usize::from(TrojanFileOffset::from(addr_info.data.start)) as u32,
+        data_addr: usize::from(WrapperFileOffset::from(addr_info.data.start)) as u32,
         relocs: 0,
         line_numbers: 0,
         num_relocs: 0,
@@ -424,7 +424,7 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> Trojan
         virtual_size: addr_info.rodata_virt_size() as u32,
         virtual_address: usize::from(addr_info.rodata.start) as u32,
         raw_data_size: addr_info.rodata_file_size() as u32,
-        data_addr: usize::from(TrojanFileOffset::from(addr_info.rodata.start)) as u32,
+        data_addr: usize::from(WrapperFileOffset::from(addr_info.rodata.start)) as u32,
         relocs: 0,
         line_numbers: 0,
         num_relocs: 0,

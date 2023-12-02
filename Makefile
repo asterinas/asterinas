@@ -85,8 +85,8 @@ export CARGO := cargo
 USERMODE_TESTABLE := \
     runner \
     framework/libs/align_ext \
-	framework/libs/boot-trojan/builder \
-	framework/libs/boot-trojan/linux-boot-params \
+	framework/libs/boot-wrapper/builder \
+	framework/libs/boot-wrapper/linux-boot-params \
     framework/libs/ktest \
     framework/libs/ktest-proc-macro \
     services/libs/cpio-decoder \
