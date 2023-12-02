@@ -61,6 +61,9 @@ struct Args {
     #[arg(long, value_enum, default_value_t = BootProtocol::Multiboot2)]
     boot_protocol: BootProtocol,
 
+    #[arg(long, default_value_t = 1)]
+    smp: u16,
+
     /// Enable KVM when running QEMU.
     #[arg(long, default_value_t = false)]
     enable_kvm: bool,
@@ -148,6 +151,9 @@ fn main() {
         "[jinux-runner] Binding host ports to guest ports: ({} -> {}); ({} -> {}).",
         port1, 22, port2, 8080
     );
+
+    qemu_cmd.arg("-smp");
+    qemu_cmd.arg(args.smp.to_string());
 
     if args.halt_for_gdb {
         if args.enable_kvm {

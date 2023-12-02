@@ -12,6 +12,7 @@ KTEST ?= 0
 KTEST_CRATES ?= all
 KTEST_WHITELIST ?=
 SKIP_GRUB_MENU ?= 1
+SMP ?= 1
 RELEASE_MODE ?= 0
 # End of setting up Make varaiables
 
@@ -38,6 +39,7 @@ endif
 CARGO_KRUN_ARGS += -- '$(KERNEL_CMDLINE) -- $(INIT_CMDLINE)'
 CARGO_KRUN_ARGS += --boot-method="$(BOOT_METHOD)"
 CARGO_KRUN_ARGS += --boot-protocol="$(BOOT_PROTOCOL)"
+CARGO_KRUN_ARGS += --smp=$(SMP)
 
 ifeq ($(RELEASE_MODE), 1)
 CARGO_KRUN_ARGS += --release-mode
