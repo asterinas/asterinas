@@ -118,7 +118,7 @@ impl MemorySet {
     }
 
     pub fn new() -> Self {
-        let mut page_table = PageTable::new(PageTableConfig {
+        let mut page_table = PageTable::<PageTableEntry, UserMode>::new(PageTableConfig {
             address_width: super::page_table::AddressWidth::Level4,
         });
         let mapped_pte = crate::arch::mm::ALL_MAPPED_PTE.lock();

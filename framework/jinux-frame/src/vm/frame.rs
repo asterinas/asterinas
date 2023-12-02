@@ -5,7 +5,7 @@ use core::{
     ops::{BitAnd, BitOr, Not, Range},
 };
 
-use crate::{arch::iommu, config::PAGE_SIZE, prelude::*, Error};
+use crate::{config::PAGE_SIZE, prelude::*, Error};
 
 use super::{frame_allocator, HasPaddr};
 use super::{Paddr, VmIo};
@@ -172,7 +172,6 @@ impl<'a> Iterator for VmFrameVecIter<'a> {
 bitflags::bitflags! {
     pub(crate) struct VmFrameFlags : usize{
         const NEED_DEALLOC =    1 << 63;
-        const CAN_DMA =         1 << 62;
     }
 }
 
@@ -231,14 +230,6 @@ impl VmFrame {
     pub fn zero(&self) {
         // Safety: The range of memory is valid for writes of one page data.
         unsafe { core::ptr::write_bytes(self.as_mut_ptr(), 0, PAGE_SIZE) }
-    }
-
-    /// Returns whether the page frame is accessible by DMA.
-    ///
-    /// In a TEE environment, DMAable pages are untrusted pages shared with
-    /// the VMM.
-    pub fn can_dma(&self) -> bool {
-        (*self.frame_index & VmFrameFlags::CAN_DMA.bits()) != 0
     }
 
     fn need_dealloc(&self) -> bool {
@@ -306,17 +297,6 @@ impl VmIo for VmFrame {
 impl Drop for VmFrame {
     fn drop(&mut self) {
         if self.need_dealloc() && Arc::strong_count(&self.frame_index) == 1 {
-            if self.can_dma() {
-                if let Err(err) = iommu::unmap(self.start_paddr()) {
-                    match err {
-                        // do nothing
-                        iommu::IommuError::NoIommu => {}
-                        iommu::IommuError::ModificationError(err) => {
-                            panic!("iommu map error:{:?}", err)
-                        }
-                    }
-                }
-            }
             // Safety: the frame index is valid.
             unsafe {
                 frame_allocator::dealloc_single(self.frame_index());
@@ -442,14 +422,6 @@ impl VmSegment {
         unsafe { core::ptr::write_bytes(self.as_mut_ptr(), 0, self.nbytes()) }
     }
 
-    /// Returns whether the page frames is accessible by DMA.
-    ///
-    /// In a TEE environment, DMAable pages are untrusted pages shared with
-    /// the VMM.
-    pub fn can_dma(&self) -> bool {
-        (self.inner.start_frame_index & VmFrameFlags::CAN_DMA.bits()) != 0
-    }
-
     fn need_dealloc(&self) -> bool {
         (self.inner.start_frame_index & VmFrameFlags::NEED_DEALLOC.bits()) != 0
     }
@@ -504,17 +476,6 @@ impl VmIo for VmSegment {
 impl Drop for VmSegment {
     fn drop(&mut self) {
         if self.need_dealloc() && Arc::strong_count(&self.inner) == 1 {
-            if self.can_dma() {
-                if let Err(err) = iommu::unmap(self.inner.start_paddr()) {
-                    match err {
-                        // do nothing
-                        iommu::IommuError::NoIommu => {}
-                        iommu::IommuError::ModificationError(err) => {
-                            panic!("iommu map error:{:?}", err)
-                        }
-                    }
-                }
-            }
             // Safety: the range of contiguous page frames is valid.
             unsafe {
                 frame_allocator::dealloc_contiguous(

@@ -113,6 +113,11 @@ pub struct UserMode {}
 #[derive(Clone)]
 pub struct KernelMode {}
 
+/// The page table used by iommu maps the device address
+/// space to the physical address space.
+#[derive(Clone)]
+pub struct DeviceMode {}
+
 #[derive(Clone, Debug)]
 pub struct PageTable<T: PageTableEntryTrait, M = UserMode> {
     root_paddr: Paddr,
@@ -212,6 +217,38 @@ impl<T: PageTableEntryTrait> PageTable<T, KernelMode> {
             return Err(PageTableError::InvalidVaddr);
         }
         self.do_protect(vaddr, flags)
+    }
+}
+
+impl<T: PageTableEntryTrait> PageTable<T, DeviceMode> {
+    pub fn new(config: PageTableConfig) -> Self {
+        let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
+        Self {
+            root_paddr: root_frame.start_paddr(),
+            tables: vec![root_frame],
+            config,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Mapping directly from a virtual address to a physical address.
+    /// The virtual address should be in the device address space.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the given paddr is a valid one (e.g. from the VmSegment).
+    pub unsafe fn map_with_paddr(
+        &mut self,
+        vaddr: Vaddr,
+        paddr: Paddr,
+        flags: T::F,
+    ) -> Result<(), PageTableError> {
+        self.do_map(vaddr, paddr, flags)
+    }
+
+    pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
+        // Safety: the `vaddr` is in the device address space.
+        unsafe { self.do_unmap(vaddr) }
     }
 }
 
@@ -342,6 +379,11 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         last_entry.update(last_entry.paddr(), new_flags);
         tlb_flush(vaddr);
         Ok(old_flags)
+    }
+
+    pub fn flags(&mut self, vaddr: Vaddr) -> Option<T::F> {
+        let last_entry = self.page_walk(vaddr, false)?;
+        Some(last_entry.flags())
     }
 
     pub fn root_paddr(&self) -> Paddr {

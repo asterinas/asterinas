@@ -1,4 +1,4 @@
-use crate::{arch::iommu, prelude::*, Error};
+use crate::{prelude::*, Error};
 
 use super::{frame::VmFrameFlags, frame_allocator, VmFrame, VmFrameVec, VmSegment};
 
@@ -13,7 +13,6 @@ pub struct VmAllocOptions {
     nframes: usize,
     is_contiguous: bool,
     uninit: bool,
-    can_dma: bool,
 }
 
 impl VmAllocOptions {
@@ -23,7 +22,6 @@ impl VmAllocOptions {
             nframes,
             is_contiguous: false,
             uninit: false,
-            can_dma: false,
         }
     }
 
@@ -46,16 +44,6 @@ impl VmAllocOptions {
         self
     }
 
-    /// Sets whether the pages can be accessed by devices through
-    /// Direct Memory Access (DMA).
-    ///
-    /// In a TEE environment, DMAable pages are untrusted pages shared with
-    /// the VMM.
-    pub fn can_dma(&mut self, can_dma: bool) -> &mut Self {
-        self.can_dma = can_dma;
-        self
-    }
-
     /// Allocate a collection of page frames according to the given options.
     pub fn alloc(&self) -> Result<VmFrameVec> {
         let flags = self.flags();
@@ -68,12 +56,6 @@ impl VmAllocOptions {
             }
             VmFrameVec(frame_list)
         };
-        if self.can_dma {
-            for frame in frames.0.iter() {
-                // Safety: the frame is controlled by frame allocator
-                unsafe { map_frame(frame) };
-            }
-        }
         if !self.uninit {
             frames.zero();
         }
@@ -88,10 +70,6 @@ impl VmAllocOptions {
         }
 
         let frame = frame_allocator::alloc_single(self.flags()).ok_or(Error::NoMemory)?;
-        if self.can_dma {
-            // Safety: the frame is controlled by frame allocator
-            unsafe { map_frame(&frame) };
-        }
         if !self.uninit {
             frame.zero();
         }
@@ -109,10 +87,6 @@ impl VmAllocOptions {
 
         let segment =
             frame_allocator::alloc_contiguous(self.nframes, self.flags()).ok_or(Error::NoMemory)?;
-        if self.can_dma {
-            // Safety: the segment is controlled by frame allocator
-            unsafe { map_segment(&segment) };
-        }
         if !self.uninit {
             segment.zero();
         }
@@ -121,39 +95,6 @@ impl VmAllocOptions {
     }
 
     fn flags(&self) -> VmFrameFlags {
-        let mut flags = VmFrameFlags::empty();
-        if self.can_dma {
-            flags.insert(VmFrameFlags::CAN_DMA);
-        }
-        flags
+        VmFrameFlags::empty()
     }
-}
-
-/// Iommu map for the `VmFrame`.
-///
-/// # Safety
-///
-/// The address should be controlled by frame allocator.
-unsafe fn map_frame(frame: &VmFrame) {
-    let Err(err) = iommu::map(frame.start_paddr(), frame) else {
-        return;
-    };
-
-    match err {
-        // do nothing
-        iommu::IommuError::NoIommu => {}
-        iommu::IommuError::ModificationError(err) => {
-            panic!("iommu map error:{:?}", err)
-        }
-    }
-}
-
-/// Iommu map for the `VmSegment`.
-///
-/// # Safety
-///
-/// The address should be controlled by frame allocator.
-unsafe fn map_segment(segment: &VmSegment) {
-    // TODO: Support to map a VmSegment.
-    panic!("VmSegment do not support DMA");
 }
