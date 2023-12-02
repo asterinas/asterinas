@@ -1,7 +1,7 @@
 // This is enforced in the linker script.
 const START_OF_SETUP32_VA: usize = 0x100000;
 
-/// The trojan is a position-independent executable. We can get the loaded base
+/// The wrapper is a position-independent executable. We can get the loaded base
 /// address from the symbol.
 #[inline]
 pub fn get_image_loaded_offset() -> isize {

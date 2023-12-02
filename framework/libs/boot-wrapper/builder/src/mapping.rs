@@ -1,5 +1,7 @@
-//! In the trojan, VA - SETUP32_LMA == FileOffset - LEGACY_SETUP_SEC_SIZE.
+//! In the wrapper, VA - SETUP32_LMA == FileOffset - LEGACY_SETUP_SEC_SIZE.
 //! And the addresses are specified in the ELF file.
+//!
+//! This module centralizes the conversion between VA and FileOffset.
 
 use std::{
     cmp::PartialOrd,
@@ -15,28 +17,28 @@ pub const LEGACY_SETUP_SEC_SIZE: usize = 0x200 * (LEGACY_SETUP_SECS + 1);
 pub const SETUP32_LMA: usize = 0x100000;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
-pub struct TrojanVA {
+pub struct WrapperVA {
     addr: usize,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
-pub struct TrojanFileOffset {
+pub struct WrapperFileOffset {
     offset: usize,
 }
 
-impl From<usize> for TrojanVA {
+impl From<usize> for WrapperVA {
     fn from(addr: usize) -> Self {
         Self { addr }
     }
 }
 
-impl From<TrojanVA> for usize {
-    fn from(va: TrojanVA) -> Self {
+impl From<WrapperVA> for usize {
+    fn from(va: WrapperVA) -> Self {
         va.addr
     }
 }
 
-impl Sub for TrojanVA {
+impl Sub for WrapperVA {
     type Output = usize;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -44,7 +46,7 @@ impl Sub for TrojanVA {
     }
 }
 
-impl Add<usize> for TrojanVA {
+impl Add<usize> for WrapperVA {
     type Output = Self;
 
     fn add(self, rhs: usize) -> Self::Output {
@@ -54,19 +56,19 @@ impl Add<usize> for TrojanVA {
     }
 }
 
-impl From<usize> for TrojanFileOffset {
+impl From<usize> for WrapperFileOffset {
     fn from(offset: usize) -> Self {
         Self { offset }
     }
 }
 
-impl From<TrojanFileOffset> for usize {
-    fn from(offset: TrojanFileOffset) -> Self {
+impl From<WrapperFileOffset> for usize {
+    fn from(offset: WrapperFileOffset) -> Self {
         offset.offset
     }
 }
 
-impl Sub for TrojanFileOffset {
+impl Sub for WrapperFileOffset {
     type Output = usize;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -74,7 +76,7 @@ impl Sub for TrojanFileOffset {
     }
 }
 
-impl Add<usize> for TrojanFileOffset {
+impl Add<usize> for WrapperFileOffset {
     type Output = Self;
 
     fn add(self, rhs: usize) -> Self::Output {
@@ -84,16 +86,16 @@ impl Add<usize> for TrojanFileOffset {
     }
 }
 
-impl From<TrojanVA> for TrojanFileOffset {
-    fn from(va: TrojanVA) -> Self {
+impl From<WrapperVA> for WrapperFileOffset {
+    fn from(va: WrapperVA) -> Self {
         Self {
             offset: va.addr + LEGACY_SETUP_SEC_SIZE - SETUP32_LMA,
         }
     }
 }
 
-impl From<TrojanFileOffset> for TrojanVA {
-    fn from(offset: TrojanFileOffset) -> Self {
+impl From<WrapperFileOffset> for WrapperVA {
+    fn from(offset: WrapperFileOffset) -> Self {
         Self {
             addr: offset.offset + SETUP32_LMA - LEGACY_SETUP_SEC_SIZE,
         }

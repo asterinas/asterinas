@@ -1,4 +1,4 @@
-use aster_boot_trojan_builder::make_bzimage;
+use aster_boot_wrapper_builder::make_bzimage;
 
 use std::{
     fs,
@@ -93,8 +93,8 @@ pub fn create_bootdev_image(
 
     let target_path = match protocol {
         BootProtocol::Linux => {
-            let trojan_src = Path::new("framework/libs/boot-trojan/trojan");
-            let trojan_out = Path::new("target/aster-boot-trojan");
+            let trojan_src = Path::new("framework/libs/boot-wrapper/wrapper");
+            let trojan_out = Path::new("target/aster-boot-wrapper");
             // Make the `bzImage`-compatible kernel image and place it in the boot directory.
             let target_path = iso_root.join("boot").join("asterinaz");
             println!("[aster-runner] Building bzImage.");

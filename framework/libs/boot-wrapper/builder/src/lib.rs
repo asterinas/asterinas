@@ -1,3 +1,15 @@
+//! The linux boot wrapper builder.
+//!
+//! This crate is responsible for building the bzImage. It contains methods to build
+//! the wrapper binary and methods to build the bzImage.
+//!
+//! We should build the jinux kernel as a ELF file, and feed it to the builder to
+//! generate the bzImage. The builder will generate the PE/COFF header for the wrapper
+//! and concatenate it to the ELF file to make the bzImage.
+//!
+//! The wrapper should be built into the ELF target and we convert it to a flat binary
+//! in the builder.
+
 mod mapping;
 mod pe_header;
 
@@ -9,7 +21,7 @@ use std::{
 
 use xmas_elf::program::SegmentData;
 
-use mapping::{TrojanFileOffset, TrojanVA};
+use mapping::{WrapperFileOffset, WrapperVA};
 
 /// We need a flat binary which satisfies PA delta == File delta, and objcopy
 /// does not satisfy us well, so we should parse the ELF and do our own
@@ -26,7 +38,7 @@ fn trojan_to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
             let SegmentData::Undefined(header_data) = program.get_data(&elf).unwrap() else {
                 panic!("Unexpected segment data type");
             };
-            let dst_file_offset = usize::from(TrojanFileOffset::from(TrojanVA::from(
+            let dst_file_offset = usize::from(WrapperFileOffset::from(WrapperVA::from(
                 program.virtual_addr() as usize,
             )));
             let dst_file_length = program.file_size() as usize;
@@ -61,7 +73,7 @@ fn fill_legacy_header_fields(
     header: &mut [u8],
     kernel_len: usize,
     trojan_len: usize,
-    payload_offset: TrojanVA,
+    payload_offset: WrapperVA,
 ) {
     fill_header_field(
         header,
@@ -84,10 +96,10 @@ fn fill_legacy_header_fields(
 
 pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_out: &Path) {
     #[cfg(feature = "trojan64")]
-    let trojan = build_trojan_with_arch(trojan_src, trojan_out, &TrojanBuildArch::X86_64);
+    let wrapper = build_trojan_with_arch(trojan_src, trojan_out, &TrojanBuildArch::X86_64);
 
     #[cfg(not(feature = "trojan64"))]
-    let trojan = {
+    let wrapper = {
         let arch = trojan_src
             .join("x86_64-i386_pm-none.json")
             .canonicalize()
@@ -96,13 +108,13 @@ pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_o
     };
 
     let mut trojan_elf = Vec::new();
-    File::open(trojan)
+    File::open(wrapper)
         .unwrap()
         .read_to_end(&mut trojan_elf)
         .unwrap();
-    let mut trojan = trojan_to_flat_binary(&trojan_elf);
+    let mut wrapper = trojan_to_flat_binary(&trojan_elf);
     // Pad the header with 8-byte alignment.
-    trojan.resize((trojan.len() + 7) & !7, 0x00);
+    wrapper.resize((wrapper.len() + 7) & !7, 0x00);
 
     let mut kernel = Vec::new();
     File::open(kernel_path)
@@ -111,13 +123,13 @@ pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_o
         .unwrap();
     let payload = kernel;
 
-    let trojan_len = trojan.len();
+    let trojan_len = wrapper.len();
     let payload_len = payload.len();
-    let payload_offset = TrojanFileOffset::from(trojan_len);
-    fill_legacy_header_fields(&mut trojan, payload_len, trojan_len, payload_offset.into());
+    let payload_offset = WrapperFileOffset::from(trojan_len);
+    fill_legacy_header_fields(&mut wrapper, payload_len, trojan_len, payload_offset.into());
 
     let mut kernel_image = File::create(path).unwrap();
-    kernel_image.write_all(&trojan).unwrap();
+    kernel_image.write_all(&wrapper).unwrap();
     kernel_image.write_all(&payload).unwrap();
 
     let image_size = trojan_len + payload_len;
@@ -151,13 +163,17 @@ enum TrojanBuildArch {
     Other(PathBuf),
 }
 
+/// Build the trojan binary.
+///
+/// It will return the path to the built trojan binary.
 fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildArch) -> PathBuf {
     if !out_dir.exists() {
         std::fs::create_dir_all(&out_dir).unwrap();
     }
     let out_dir = std::fs::canonicalize(out_dir).unwrap();
 
-    // Relocations are fewer in release mode. But with release mode it crashes.
+    // Relocations are fewer in release mode. That's why the release mode is more stable than
+    // the debug mode.
     let profile = "release";
 
     let cargo = std::env::var("CARGO").unwrap();
@@ -167,7 +183,7 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildA
     if profile == "release" {
         cmd.arg("--release");
     }
-    cmd.arg("--package").arg("aster-boot-trojan");
+    cmd.arg("--package").arg("aster-boot-wrapper");
     cmd.arg("--target").arg(match arch {
         TrojanBuildArch::X86_64 => "x86_64-unknown-none",
         TrojanBuildArch::Other(path) => path.to_str().unwrap(),
@@ -189,7 +205,7 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildA
         );
     }
 
-    // Return the path to the trojan binary.
+    // Get the path to the wrapper binary.
     let arch_name = match arch {
         TrojanBuildArch::X86_64 => "x86_64-unknown-none",
         TrojanBuildArch::Other(path) => path.file_stem().unwrap().to_str().unwrap(),
@@ -198,7 +214,7 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildA
     let trojan_artifact = out_dir
         .join(arch_name)
         .join(profile)
-        .join("aster-boot-trojan");
+        .join("aster-boot-wrapper");
 
     trojan_artifact.to_owned()
 }
