@@ -778,6 +778,9 @@ impl ExfatInodeInner {
 
     // only valid for directory, check if the dir is empty
     fn is_empty_dir(&self) -> Result<bool> {
+        if !self.inode_type.is_directory() {
+            return_errno!(Errno::ENOTDIR)
+        }
         let iterator = ExfatDentryIterator::new(self.start_chain.clone(), 0, Some(self.size))?;
 
         for dentry_result in iterator {
@@ -1124,7 +1127,67 @@ impl Inode for ExfatInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        todo!()
+        let Some(target_) = target.downcast_ref::<ExfatInode>() else {
+            return_errno!(Errno::EINVAL)
+        };
+        let mut self_inner = self.0.write();
+        let mut target_inner = target_.0.write();
+
+        if !self_inner.inode_type.is_directory() || !target_inner.inode_type.is_directory() {
+            return_errno!(Errno::ENOTDIR)
+        }
+
+        let fs = self_inner.fs();
+        let guard = fs.lock();
+
+        // read 'old_name' file or dir and its dentries
+        let (old_inode, old_offset, old_len) = self_inner.lookup_by_name(old_name)?;
+
+        // 'new_name' exists in 'target', should we report this?
+        let mut exist_inode: Arc<ExfatInode> = ExfatInode::default().into();
+        let mut exits_offset: usize = 0;
+        let mut exits_len: usize = 0;
+        let need_to_remove_exist =
+            if let Ok((node, offset, len)) = target_inner.lookup_by_name(new_name) {
+                exist_inode = node;
+                exits_offset = offset;
+                exits_len = len;
+                // check for a corner case here
+                // if 'old_name' represents a directory, the exist 'new_name' must represents a empty directory.
+                if self_inner.inode_type.is_directory() && !exist_inode.0.read().is_empty_dir()? {
+                    return_errno!(Errno::ENOTEMPTY)
+                }
+                true
+            } else {
+                false
+            };
+
+        // copy the dentries
+        let new_inode = target_inner.add_entry(new_name, old_inode.type_(), old_inode.mode())?;
+        let mut new_inode_inner = new_inode.0.write();
+        let old_inode_inner = old_inode.0.read();
+        new_inode_inner.start_chain = ExfatChain::new(
+            Arc::downgrade(&fs),
+            old_inode_inner.start_chain.cluster_id(),
+            old_inode_inner.start_chain.flags(),
+        );
+        new_inode_inner.size = old_inode_inner.size;
+        new_inode_inner.size_allocated = old_inode_inner.size_allocated;
+        new_inode_inner.write_inode(true)?;
+
+        // delete 'old_name' dentries
+        self_inner.delete_dentry_set(old_offset, old_len)?;
+
+        // remove the exist 'new_name' file(include file contents and dentries)
+        if need_to_remove_exist {
+            exist_inode.resize(0);
+            exist_inode
+                .0
+                .write()
+                .delete_dentry_set(exits_offset, exits_len)?;
+        }
+
+        Ok(())
     }
 
     fn read_link(&self) -> Result<String> {
