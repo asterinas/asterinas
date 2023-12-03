@@ -23,6 +23,8 @@ pub const DEVICE_ARGS: &[&str] = &[
     "virtio-serial-device",
     "-device",
     "virtconsole,chardev=mux",
+    "-device",
+    "vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3",
 ];
 
 pub fn create_bootdev_image(path: PathBuf) -> PathBuf {

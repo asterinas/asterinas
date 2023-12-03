@@ -43,6 +43,8 @@ smoltcp = { version = "0.9.1", default-features = false, features = [
 ] }
 ktest = { path = "../../../framework/libs/ktest" }
 tdx-guest = { path = "../../../framework/libs/tdx-guest", optional = true }
+# used for test in mod driver
+component = {path="../../libs/comp-sys/component"}
 
 # parse elf file
 xmas-elf = "0.8.0"

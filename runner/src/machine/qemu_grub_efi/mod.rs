@@ -47,6 +47,8 @@ pub const NOIOMMU_DEVICE_ARGS: &[&str] = &[
     "virtio-serial-pci,disable-legacy=on,disable-modern=off",
     "-device",
     "virtconsole,chardev=mux",
+    "-device",
+    "vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off"
 ];
 
 pub const IOMMU_DEVICE_ARGS: &[&str] = &[
@@ -64,6 +66,8 @@ pub const IOMMU_DEVICE_ARGS: &[&str] = &[
     "intel-iommu,intremap=on,device-iotlb=on",
     "-device",
     "ioh3420,id=pcie.0,chassis=1",
+    "-device",
+    "vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
 ];
 
 pub const GRUB_PREFIX: &str = "/usr/local/grub";

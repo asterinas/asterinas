@@ -3,6 +3,7 @@
 use crate::transport::VirtioTransport;
 
 use alloc::vec::Vec;
+use core::hint::spin_loop;
 use bitflags::bitflags;
 use core::{
     mem::size_of,
@@ -18,7 +19,7 @@ use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use log::debug;
 use pod::Pod;
 
-#[derive(Debug)]
+#[derive(Debug,Copy,Clone,Eq,PartialEq)]
 pub enum QueueError {
     InvalidArgs,
     BufferTooSmall,
@@ -190,7 +191,6 @@ impl VirtQueue {
         if inputs.len() + outputs.len() + self.num_used as usize > self.queue_size as usize {
             return Err(QueueError::BufferTooSmall);
         }
-
         // allocate descriptors from free list
         let head = self.free_head;
         let mut last = self.free_head;
@@ -354,6 +354,28 @@ impl VirtQueue {
     /// notify that there are available rings
     pub fn notify(&mut self) {
         self.notify.write(&self.queue_idx).unwrap();
+    }
+
+    /// Add the given buffers to the virtqueue, notifies the device, blocks until the device uses
+    /// them, then pops them.
+    ///
+    /// This assumes that the device isn't processing any other buffers at the same time.
+    pub fn add_notify_wait_pop<'a>(
+        &mut self, inputs: &[&[u8]], outputs: &[&mut [u8]]
+    ) -> Result<(u16, u32), QueueError> {
+        let token = self.add(inputs, outputs)?;
+
+        // Notify the queue.
+        if self.should_notify() {
+            self.notify();
+        }
+
+        // Wait until there is at least one element in the used ring.
+        while !self.can_pop() {
+            spin_loop();
+        }
+
+        self.pop_used()
     }
 }
 
