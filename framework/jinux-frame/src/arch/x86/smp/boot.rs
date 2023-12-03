@@ -45,6 +45,7 @@ use crate::{
         timer::read_monotonic_milli_seconds,
     },
     config::{AP_BOOT_START_PA, KERNEL_OFFSET, KERNEL_STACK_SIZE, PAGE_SIZE},
+    cpu::{self, CPUID},
     early_println,
     sync::SpinLock,
     vm::{paddr_to_vaddr, VmAllocOptions, VmSegment},
@@ -123,13 +124,14 @@ pub(crate) fn boot_all_aps() {
 #[no_mangle]
 #[allow(clippy::empty_loop)]
 fn ap_entry(local_apic_id: u32) -> ! {
+    cpu::init(local_apic_id);
     let ap_boot_info = AP_BOOT_INFO.get().unwrap().lock_irq_disabled();
     ap_boot_info
         .get(&local_apic_id)
         .unwrap()
         .is_started
         .store(true, Ordering::Release);
-    early_println!("hello from processor {}", local_apic_id);
+    early_println!("hello from processor {}", CPUID.get().unwrap());
     drop(ap_boot_info);
     loop {}
 }

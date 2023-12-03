@@ -19,6 +19,7 @@ use log::{info, warn};
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
     console::init();
+    crate::cpu::init(0);
 }
 
 pub(crate) fn after_all_init() {

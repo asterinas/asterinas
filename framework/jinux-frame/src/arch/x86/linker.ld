@@ -75,6 +75,20 @@ SECTIONS
         __ktest_array_end = .;
     }
 
+    . = ALIGN(0x1000);
+    __cpu_local_start = .;
+    .cpu_local              : AT(ADDR(.cpu_local) - KERNEL_VMA) {  
+        KEEP(*(SORT(.cpu_local)))
+    }
+    . = ALIGN(0x1000);
+    __cpu_local_end = .;
+
+    /* Reserve a section with size __cpu_local_end-__cpu_local_start filled with zeroes */
+    __bsp_local_start = .;
+    . += __cpu_local_end - __cpu_local_start;
+    . = ALIGN(0x1000);
+    __bsp_local_end = .;
+
     .tdata                  : AT(ADDR(.tdata) - KERNEL_VMA) { *(.tdata .tdata.*) }
     .tbss                   : AT(ADDR(.tbss) - KERNEL_VMA) { *(.tbss .tbss.*) }
 
