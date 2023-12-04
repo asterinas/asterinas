@@ -53,6 +53,8 @@ fn do_sys_mmap(
         addr, len, vm_perm, option, fd, offset
     );
 
+    check_option(&option)?;
+
     let len = len.align_up(PAGE_SIZE);
 
     if offset % PAGE_SIZE != 0 {
@@ -80,6 +82,11 @@ fn do_sys_mmap(
             // TODO: support MAP_32BIT. MAP_32BIT requires the map range to be below 2GB
             warn!("MAP_32BIT is not supported");
         }
+
+        if option.typ() == MMapType::Shared {
+            options = options.is_shared(true);
+        }
+
         options
     };
     let map_addr = vm_map_options.build()?;
@@ -121,6 +128,14 @@ fn alloc_filebacked_vmo(
         // FIXME: map shared vmo can exceed parent range, but slice child cannot
         VmoChildOptions::new_slice_rights(page_cache_vmo, offset..(offset + len)).alloc()
     }
+}
+
+fn check_option(option: &MMapOptions) -> Result<()> {
+    if option.typ() == MMapType::File {
+        return_errno_with_message!(Errno::EINVAL, "Invalid mmap type");
+    }
+
+    Ok(())
 }
 
 // Definition of MMap flags, conforming to the linux mmap interface:

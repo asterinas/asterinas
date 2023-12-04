@@ -15,6 +15,7 @@ TESTS ?= \
 	link_test \
 	lseek_test \
 	mkdir_test \
+	mmap_test \
 	open_create_test \
 	open_test \
 	pty_test \
