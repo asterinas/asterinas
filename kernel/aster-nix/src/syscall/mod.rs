@@ -22,6 +22,7 @@ use self::{
     listen::sys_listen,
     pread64::sys_pread64,
     recvfrom::sys_recvfrom,
+    rt_sigsuspend::sys_rt_sigsuspend,
     sendto::sys_sendto,
     setfsgid::sys_setfsgid,
     setfsuid::sys_setfsuid,
@@ -191,6 +192,7 @@ mod rmdir;
 mod rt_sigaction;
 mod rt_sigprocmask;
 mod rt_sigreturn;
+mod rt_sigsuspend;
 mod sched_yield;
 mod select;
 mod sendto;
@@ -352,6 +354,7 @@ define_syscall_nums!(
     SYS_SETFSUID = 122,
     SYS_SETFSGID = 123,
     SYS_GETSID = 124,
+    SYS_RT_SIGSUSPEND = 130,
     SYS_SIGALTSTACK = 131,
     SYS_STATFS = 137,
     SYS_FSTATFS = 138,
@@ -544,6 +547,7 @@ pub fn syscall_dispatch(
         SYS_SETFSUID => syscall_handler!(1, sys_setfsuid, args),
         SYS_SETFSGID => syscall_handler!(1, sys_setfsgid, args),
         SYS_GETSID => syscall_handler!(1, sys_getsid, args),
+        SYS_RT_SIGSUSPEND => syscall_handler!(2, sys_rt_sigsuspend, args),
         SYS_SIGALTSTACK => syscall_handler!(2, sys_sigaltstack, args),
         SYS_STATFS => syscall_handler!(2, sys_statfs, args),
         SYS_FSTATFS => syscall_handler!(2, sys_fstatfs, args),

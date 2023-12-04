@@ -150,7 +150,7 @@ provided by Linux on x86-64 architecture.
 | 127     | rt_sigpending    | ❌              |
 | 128     | rt_sigtimedwait  | ❌              |
 | 129     | rt_sigqueueinfo  | ❌              |
-| 130     | rt_sigsuspend    | ❌              |
+| 130     | rt_sigsuspend    | ✅              |
 | 131     | sigaltstack      | ✅              |
 | 132     | utime            | ❌              |
 | 133     | mknod            | ❌              |
