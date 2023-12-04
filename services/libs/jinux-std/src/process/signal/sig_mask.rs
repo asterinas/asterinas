@@ -1,6 +1,9 @@
-use super::{constants::MIN_STD_SIG_NUM, sig_num::SigNum};
+use super::constants::MIN_STD_SIG_NUM;
+use super::sig_num::SigNum;
+use crate::prelude::*;
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Pod)]
+#[repr(C)]
 pub struct SigMask {
     bits: u64,
 }
