@@ -81,6 +81,7 @@ mod rt_sigreturn;
 mod rt_sigsuspend;
 mod sched_yield;
 mod select;
+mod sendfile;
 mod sendto;
 mod set_get_priority;
 mod set_robust_list;

@@ -60,7 +60,7 @@ provided by Linux on x86-64 architecture.
 | 37      | alarm            | ✅              |
 | 38      | setitimer        | ❌              |
 | 39      | getpid           | ✅              |
-| 40      | sendfile         | ❌              |
+| 40      | sendfile         | ✅              |
 | 41      | socket           | ✅              |
 | 42      | connect          | ✅              |
 | 43      | accept           | ✅              |

@@ -74,6 +74,7 @@ use crate::syscall::{
     rt_sigsuspend::sys_rt_sigsuspend,
     sched_yield::sys_sched_yield,
     select::sys_select,
+    sendfile::sys_sendfile,
     sendto::sys_sendto,
     set_get_priority::{sys_get_priority, sys_set_priority},
     set_robust_list::sys_set_robust_list,
@@ -142,6 +143,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_NANOSLEEP = 35         => sys_nanosleep(args[..2]);
     SYS_ALARM = 37             => sys_alarm(args[..1]);
     SYS_GETPID = 39            => sys_getpid(args[..0]);
+    SYS_SENDFILE = 40          => sys_sendfile(args[..4]);
     SYS_SOCKET = 41            => sys_socket(args[..3]);
     SYS_CONNECT = 42           => sys_connect(args[..3]);
     SYS_ACCEPT = 43            => sys_accept(args[..3]);
