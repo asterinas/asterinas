@@ -160,7 +160,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// The method requires the Read right.
     pub fn fork_from<R1>(vmar: &Vmar<R1>) -> Result<Self> {
         vmar.check_rights(Rights::READ)?;
-        let vmar_ = vmar.0.new_cow_root()?;
+        let vmar_ = vmar.0.new_fork_root()?;
         Ok(Vmar(vmar_, TRightSet(R::new())))
     }
 
