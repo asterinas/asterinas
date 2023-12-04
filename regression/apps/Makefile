@@ -19,6 +19,7 @@ TEST_APPS := \
 	hello_c \
 	hello_pie \
 	hello_world \
+	mmap \
 	mongoose \
 	network \
 	pthread \

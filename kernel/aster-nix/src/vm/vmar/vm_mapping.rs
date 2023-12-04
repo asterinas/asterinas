@@ -24,6 +24,10 @@ pub struct VmMapping {
     parent: Weak<Vmar_>,
     /// The mapped vmo. The mapped vmo is with dynamic capability.
     vmo: Vmo<Rights>,
+    /// Whether the mapping is shared among processes
+    /// TODO: support file-backed shared mappings.
+    /// only anonyous memory can be mapped shared now.
+    is_shared: bool,
 }
 
 impl VmMapping {
@@ -34,6 +38,7 @@ impl VmMapping {
             inner: Mutex::new(inner),
             parent: self.parent.clone(),
             vmo,
+            is_shared: self.is_shared,
         })
     }
 }
@@ -73,6 +78,7 @@ impl VmMapping {
             offset,
             align,
             can_overwrite,
+            is_shared,
         } = option;
         let Vmar(parent_vmar, _) = parent;
         let vmo_size = vmo.size();
@@ -102,6 +108,7 @@ impl VmMapping {
             inner: Mutex::new(vm_mapping_inner),
             parent: Arc::downgrade(&parent_vmar),
             vmo: vmo.to_dyn(),
+            is_shared,
         })
     }
 
@@ -274,13 +281,17 @@ impl VmMapping {
         Ok(())
     }
 
-    pub(super) fn new_cow(&self, new_parent: &Arc<Vmar_>) -> Result<VmMapping> {
+    pub(super) fn new_fork(&self, new_parent: &Arc<Vmar_>) -> Result<VmMapping> {
         let VmMapping { inner, vmo, .. } = self;
 
         let child_vmo = {
             let parent_vmo = vmo.dup().unwrap();
             let vmo_size = parent_vmo.size();
-            VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?
+            if self.is_shared {
+                VmoChildOptions::new_slice_rights(parent_vmo, 0..vmo_size).alloc()?
+            } else {
+                VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?
+            }
         };
 
         let new_inner = {
@@ -299,6 +310,7 @@ impl VmMapping {
             inner: Mutex::new(new_inner),
             parent: Arc::downgrade(new_parent),
             vmo: child_vmo,
+            is_shared: self.is_shared,
         })
     }
 
@@ -614,6 +626,8 @@ pub struct VmarMapOptions<R1, R2> {
     offset: Option<usize>,
     align: usize,
     can_overwrite: bool,
+    // Whether the mapping is mapped with `MAP_SHARED`
+    is_shared: bool,
 }
 
 impl<R1, R2> VmarMapOptions<R1, R2> {
@@ -634,6 +648,7 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
             offset: None,
             align: PAGE_SIZE,
             can_overwrite: false,
+            is_shared: false,
         }
     }
 
@@ -700,6 +715,17 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
     /// set.
     pub fn can_overwrite(mut self, can_overwrite: bool) -> Self {
         self.can_overwrite = can_overwrite;
+        self
+    }
+
+    /// Sets whether the mapping can be shared with other process.
+    ///
+    /// The default value is false.
+    ///
+    /// If this value is set to true, the mapping will be shared with child
+    /// process (by creating slice child vmo) when forking.
+    pub fn is_shared(mut self, is_shared: bool) -> Self {
+        self.is_shared = is_shared;
         self
     }
 

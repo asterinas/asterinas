@@ -706,16 +706,16 @@ impl Vmar_ {
         Ok(())
     }
 
-    pub(super) fn new_cow_root(self: &Arc<Self>) -> Result<Arc<Self>> {
+    pub(super) fn new_fork_root(self: &Arc<Self>) -> Result<Arc<Self>> {
         if self.parent.upgrade().is_some() {
             return_errno_with_message!(Errno::EINVAL, "can only dup cow vmar for root vmar");
         }
 
-        self.new_cow(None)
+        self.new_fork(None)
     }
 
     /// Create a new vmar by creating cow child for all mapped vmos.
-    fn new_cow(&self, parent: Option<&Arc<Vmar_>>) -> Result<Arc<Self>> {
+    fn new_fork(&self, parent: Option<&Arc<Vmar_>>) -> Result<Arc<Self>> {
         let new_vmar_ = {
             let vmar_inner = VmarInner::new();
             // If this is not a root `Vmar`, we clone the `VmSpace` from parent.
@@ -742,7 +742,7 @@ impl Vmar_ {
 
         // Clone child vmars.
         for (child_vmar_base, child_vmar_) in &inner.child_vmar_s {
-            let new_child_vmar = child_vmar_.new_cow(Some(&new_vmar_))?;
+            let new_child_vmar = child_vmar_.new_fork(Some(&new_vmar_))?;
             new_vmar_
                 .inner
                 .lock()
@@ -752,7 +752,7 @@ impl Vmar_ {
 
         // Clone vm mappings.
         for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
-            let new_mapping = Arc::new(vm_mapping.new_cow(&new_vmar_)?);
+            let new_mapping = Arc::new(vm_mapping.new_fork(&new_vmar_)?);
             new_vmar_
                 .inner
                 .lock()
