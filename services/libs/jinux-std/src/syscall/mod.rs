@@ -74,6 +74,7 @@ use jinux_frame::cpu::UserContext;
 use self::accept::sys_accept;
 use self::bind::sys_bind;
 use self::connect::sys_connect;
+use self::eventfd::{sys_eventfd, sys_eventfd2};
 use self::execve::sys_execveat;
 use self::getpeername::sys_getpeername;
 use self::getrandom::sys_getrandom;
@@ -105,6 +106,7 @@ mod connect;
 mod constants;
 mod dup;
 mod epoll;
+mod eventfd;
 mod execve;
 mod exit;
 mod exit_group;
@@ -308,6 +310,8 @@ define_syscall_nums!(
     SYS_FCHMODAT = 268,
     SYS_SET_ROBUST_LIST = 273,
     SYS_UTIMENSAT = 280,
+    SYS_EVENTFD = 284,
+    SYS_EVENTFD2 = 290,
     SYS_EPOLL_CREATE1 = 291,
     SYS_PIPE2 = 293,
     SYS_PRLIMIT64 = 302,
@@ -471,6 +475,8 @@ pub fn syscall_dispatch(
         SYS_FCHMODAT => syscall_handler!(3, sys_fchmodat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_UTIMENSAT => syscall_handler!(4, sys_utimensat, args),
+        SYS_EVENTFD => syscall_handler!(1, sys_eventfd, args),
+        SYS_EVENTFD2 => syscall_handler!(2, sys_eventfd2, args),
         SYS_EPOLL_CREATE1 => syscall_handler!(1, sys_epoll_create1, args),
         SYS_PIPE2 => syscall_handler!(2, sys_pipe2, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
