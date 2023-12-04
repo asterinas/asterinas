@@ -11,6 +11,7 @@ TESTS ?= \
 	chown_test \
 	chroot_test \
 	epoll_test \
+	eventfd_test \
 	fsync_test \
 	getdents_test \
 	link_test \

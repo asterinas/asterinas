@@ -11,6 +11,7 @@ REGRESSION_BUILD_DIR ?= $(INITRAMFS)/regression
 # These test apps are sorted by name
 TEST_APPS := \
 	execve \
+	eventfd2 \
 	fork \
 	fork_c \
 	getpid \

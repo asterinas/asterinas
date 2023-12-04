@@ -5,15 +5,38 @@
 use aster_frame::cpu::UserContext;
 
 use self::{
-    accept::sys_accept, alarm::sys_alarm, bind::sys_bind, connect::sys_connect,
-    execve::sys_execveat, getgroups::sys_getgroups, getpeername::sys_getpeername,
-    getrandom::sys_getrandom, getresgid::sys_getresgid, getresuid::sys_getresuid,
-    getsid::sys_getsid, getsockname::sys_getsockname, getsockopt::sys_getsockopt,
-    listen::sys_listen, pread64::sys_pread64, recvfrom::sys_recvfrom, sendto::sys_sendto,
-    setfsgid::sys_setfsgid, setfsuid::sys_setfsuid, setgid::sys_setgid, setgroups::sys_setgroups,
-    setregid::sys_setregid, setresgid::sys_setresgid, setresuid::sys_setresuid,
-    setreuid::sys_setreuid, setsid::sys_setsid, setsockopt::sys_setsockopt, setuid::sys_setuid,
-    shutdown::sys_shutdown, sigaltstack::sys_sigaltstack, socket::sys_socket,
+    accept::sys_accept,
+    alarm::sys_alarm,
+    bind::sys_bind,
+    connect::sys_connect,
+    eventfd::{sys_eventfd, sys_eventfd2},
+    execve::sys_execveat,
+    getgroups::sys_getgroups,
+    getpeername::sys_getpeername,
+    getrandom::sys_getrandom,
+    getresgid::sys_getresgid,
+    getresuid::sys_getresuid,
+    getsid::sys_getsid,
+    getsockname::sys_getsockname,
+    getsockopt::sys_getsockopt,
+    listen::sys_listen,
+    pread64::sys_pread64,
+    recvfrom::sys_recvfrom,
+    sendto::sys_sendto,
+    setfsgid::sys_setfsgid,
+    setfsuid::sys_setfsuid,
+    setgid::sys_setgid,
+    setgroups::sys_setgroups,
+    setregid::sys_setregid,
+    setresgid::sys_setresgid,
+    setresuid::sys_setresuid,
+    setreuid::sys_setreuid,
+    setsid::sys_setsid,
+    setsockopt::sys_setsockopt,
+    setuid::sys_setuid,
+    shutdown::sys_shutdown,
+    sigaltstack::sys_sigaltstack,
+    socket::sys_socket,
     socketpair::sys_socketpair,
 };
 use crate::{
@@ -115,6 +138,7 @@ mod connect;
 mod constants;
 mod dup;
 mod epoll;
+mod eventfd;
 mod execve;
 mod exit;
 mod exit_group;
@@ -363,6 +387,8 @@ define_syscall_nums!(
     SYS_SET_ROBUST_LIST = 273,
     SYS_UTIMENSAT = 280,
     SYS_EPOLL_PWAIT = 281,
+    SYS_EVENTFD = 284,
+    SYS_EVENTFD2 = 290,
     SYS_EPOLL_CREATE1 = 291,
     SYS_PIPE2 = 293,
     SYS_PRLIMIT64 = 302,
@@ -553,6 +579,8 @@ pub fn syscall_dispatch(
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_UTIMENSAT => syscall_handler!(4, sys_utimensat, args),
         SYS_EPOLL_PWAIT => syscall_handler!(5, sys_epoll_pwait, args),
+        SYS_EVENTFD => syscall_handler!(1, sys_eventfd, args),
+        SYS_EVENTFD2 => syscall_handler!(2, sys_eventfd2, args),
         SYS_EPOLL_CREATE1 => syscall_handler!(1, sys_epoll_create1, args),
         SYS_PIPE2 => syscall_handler!(2, sys_pipe2, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
