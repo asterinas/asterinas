@@ -10,7 +10,7 @@ pub fn sys_sendfile(
     out_fd: FileDescripter,
     in_fd: FileDescripter,
     offset_ptr: Vaddr,
-    count: usize,
+    mut count: usize,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SENDFILE);
 
@@ -27,24 +27,45 @@ pub fn sys_sendfile(
         out_fd, in_fd, offset, count
     );
 
+    if (count as isize) < 0 {
+        return_errno_with_message!(Errno::EINVAL, "count cannot be negative");
+    }
+
     let (out_file, in_file) = {
         let current = current!();
         let file_table = current.file_table().lock();
         let out_file = file_table.get_file(out_fd)?.clone();
+        // FIXME: the in_file must support mmap-like operations (i.e., it cannot be a socket).
         let in_file = file_table.get_file(in_fd)?.clone();
         (out_file, in_file)
     };
 
-    if let Some(offset) = offset {
-        in_file.seek(SeekFrom::Start(offset as usize))?;
-    }
-
-    if count == 0 {
-        return Ok(SyscallReturn::Return(0));
+    const MAX_COUNT: usize = 0x7ffff000;
+    if count > MAX_COUNT {
+        count = MAX_COUNT;
     }
 
     let mut buffer = vec![0u8; count];
-    let read_len = in_file.read(&mut buffer)?;
+
+    let old_off = if offset.is_some() {
+        let off = in_file.seek(SeekFrom::Current(0))?;
+        Some(off)
+    } else {
+        None
+    };
+
+    let read_len = {
+        if let Some(offset) = offset {
+            in_file.seek(SeekFrom::Start(offset as usize))?;
+        }
+        in_file.read(&mut buffer)?
+    };
+
+    if let Some(old_off) = old_off {
+        let new_off = in_file.seek(SeekFrom::Current(0))?;
+        write_val_to_user(offset_ptr, &(new_off as isize))?;
+        in_file.seek(SeekFrom::Start(old_off))?;
+    }
 
     if read_len == 0 {
         return Ok(SyscallReturn::Return(0));
