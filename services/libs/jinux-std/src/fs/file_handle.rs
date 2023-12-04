@@ -48,7 +48,7 @@ pub trait FileLike: Send + Sync + Any {
     }
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "seek is not supported");
+        return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
     }
 
     fn clean_for_close(&self) -> Result<()> {

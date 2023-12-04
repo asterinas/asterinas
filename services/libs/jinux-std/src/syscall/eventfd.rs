@@ -1,6 +1,12 @@
-//! `eventfd()` creates an "eventfd object" (we name it as `EventFile`) that can be used as an
-//! event wait/notify mechanism. The EventFile contains a u64 integer counter. The detailed info
-//! about this syscall can be viewed on `man 2 eventfd`.
+//! `eventfd()` creates an "eventfd object" (we name it as `EventFile`) which serves as a
+//! mechanism for event wait/notify.
+//!
+//! `EventFile` holds a u64 integer counter. Writing to `EventFile` increments the counter
+//! by the written value. Reading from EventFile returns the current counter value and
+//! resets it (It is also possible to only read 1, depending on whether the `EFD_SEMAPHORE`
+//! flag is set.). The read/write operations may be blocked based on certain requirements.
+//!
+//! For more detailed information about this syscall, refer to the man 2 eventfd documentation.
 
 use super::{SyscallReturn, SYS_EVENTFD, SYS_EVENTFD2};
 use crate::events::{IoEvents, Observer};
