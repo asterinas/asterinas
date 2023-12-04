@@ -22,9 +22,12 @@ pub fn sys_write(
         fd, user_buf_ptr, user_buf_len
     );
 
-    let current = current!();
-    let file_table = current.file_table().lock();
-    let file = file_table.get_file(fd)?;
+    let file = {
+        let current = current!();
+        let file_table = current.file_table().lock();
+        file_table.get_file(fd)?.clone()
+    };
+
     if user_buf_len == 0 {
         return Ok(SyscallReturn::Return(0));
     }
