@@ -24,6 +24,7 @@ TESTS ?= \
 	pty_test \
 	read_test \
 	rename_test \
+	sendfile_test \
 	stat_test \
 	statfs_test \
 	symlink_test \
