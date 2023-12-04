@@ -134,7 +134,7 @@ pub fn sys_epoll_wait(
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
-#[repr(C)]
+#[repr(C, packed)]
 struct c_epoll_event {
     events: u32,
     data: u64,
