@@ -72,8 +72,8 @@ fn mmap_anonymous_vmo(
     debug_assert!(offset == 0);
 
     // TODO: implement features presented by other flags.
-    if option.typ() != MMapType::Private && option.typ() != MMapType::Shared {
-        panic!("Unsupported mmap flags {:?} now", option);
+    if option.typ() == MMapType::File || option.typ() == MMapType::SharedValidate {
+        return_errno_with_message!(Errno::EINVAL, "invalid mmap type");
     }
 
     let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
