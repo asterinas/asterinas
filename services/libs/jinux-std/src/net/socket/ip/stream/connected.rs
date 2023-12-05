@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
+use crate::events::{IoEvents, Observer};
 use crate::net::iface::IpEndpoint;
 use crate::process::signal::Poller;
 use crate::{
@@ -126,6 +126,17 @@ impl ConnectedStream {
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.bound_socket.poll(mask, poller)
+    }
+
+    pub fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        self.bound_socket.register_observer(observer, mask);
+    }
+
+    pub fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        self.bound_socket.unregister_observer(observer)
     }
 
     pub fn is_nonblocking(&self) -> bool {

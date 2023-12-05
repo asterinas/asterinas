@@ -1,9 +1,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
-use crate::net::iface::Iface;
-use crate::net::iface::IpEndpoint;
-use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket};
+use crate::events::{IoEvents, Observer};
+use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket, Iface, IpEndpoint};
 use crate::net::poll_ifaces;
 use crate::net::socket::ip::always_some::AlwaysSome;
 use crate::net::socket::ip::common::{bind_socket, get_ephemeral_endpoint};
@@ -84,6 +82,27 @@ impl Inner {
             Inner::Bound(bound_socket) => bound_socket.poll(mask, poller),
             Inner::Connecting { bound_socket, .. } => bound_socket.poll(mask, poller),
             Inner::Unbound(unbound_socket) => unbound_socket.poll(mask, poller),
+        }
+    }
+
+    fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        match self {
+            Inner::Unbound(unbound_socket) => unbound_socket.register_observer(observer, mask),
+            Inner::Bound(bound_socket) => bound_socket.register_observer(observer, mask),
+            Inner::Connecting { bound_socket, .. } => {
+                bound_socket.register_observer(observer, mask)
+            }
+        }
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        match self {
+            Inner::Unbound(unbound_socket) => unbound_socket.unregister_observer(observer),
+            Inner::Bound(bound_socket) => bound_socket.unregister_observer(observer),
+            Inner::Connecting { bound_socket, .. } => bound_socket.unregister_observer(observer),
         }
     }
 
@@ -174,6 +193,17 @@ impl InitStream {
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.inner.read().poll(mask, poller)
+    }
+
+    pub(super) fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        self.inner.read().register_observer(observer, mask);
+    }
+
+    pub(super) fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        self.inner.read().unregister_observer(observer)
     }
 
     pub fn bound_socket(&self) -> Option<Arc<AnyBoundSocket>> {
