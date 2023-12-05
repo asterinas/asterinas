@@ -616,9 +616,7 @@ mod test {
             .alloc()
             .unwrap();
 
-        let cow_child = VmoChildOptions::new_cow(vmo, 0..PAGE_SIZE)
-            .alloc()
-            .unwrap();
+        let cow_child = VmoChildOptions::new_cow(vmo, 0..PAGE_SIZE).alloc().unwrap();
 
         cow_child.resize(2 * PAGE_SIZE).unwrap();
         assert_eq!(cow_child.size(), 2 * PAGE_SIZE);

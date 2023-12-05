@@ -68,11 +68,11 @@ fn mmap_anonymous_vmo(
     perms: VmPerms,
     option: MMapOptions,
 ) -> Result<Vaddr> {
-    assert!(option.flags().contains(MMapFlags::MAP_ANONYMOUS));
+    debug_assert!(option.flags().contains(MMapFlags::MAP_ANONYMOUS));
     debug_assert!(offset == 0);
 
     // TODO: implement features presented by other flags.
-    if option.typ() != MMapType::Private {
+    if option.typ() != MMapType::Private && option.typ() != MMapType::Shared {
         panic!("Unsupported mmap flags {:?} now", option);
     }
 
@@ -84,6 +84,9 @@ fn mmap_anonymous_vmo(
     let mut vmar_map_options = root_vmar.new_map(vmo, perms)?;
     if option.flags().contains(MMapFlags::MAP_FIXED) {
         vmar_map_options = vmar_map_options.offset(addr).can_overwrite(true);
+    }
+    if option.typ() == MMapType::Shared {
+        vmar_map_options = vmar_map_options.is_shared(true);
     }
     let map_addr = vmar_map_options.build()?;
     debug!("map addr = 0x{:x}", map_addr);
