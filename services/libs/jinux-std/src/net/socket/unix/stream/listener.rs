@@ -1,5 +1,7 @@
-use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
-use crate::events::IoEvents;
+use super::connected::Connected;
+use super::endpoint::Endpoint;
+use super::UnixStreamSocket;
+use crate::events::{IoEvents, Observer};
 use crate::fs::file_handle::FileLike;
 use crate::fs::utils::{Dentry, Inode};
 use crate::net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound};
@@ -62,6 +64,21 @@ impl Listener {
         let addr = self.addr();
         let backlog = BACKLOG_TABLE.get_backlog(addr).unwrap();
         backlog.poll(mask, poller)
+    }
+
+    pub(super) fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        let addr = self.addr();
+        let backlog = BACKLOG_TABLE.get_backlog(addr).unwrap();
+        backlog.register_observer(observer, mask);
+    }
+
+    pub(super) fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        let addr = self.addr();
+        let backlog = BACKLOG_TABLE.get_backlog(addr).unwrap();
+        backlog.unregister_observer(observer)
     }
 }
 
@@ -199,6 +216,19 @@ impl Backlog {
         // Lock to avoid any events may change pollee state when we poll
         let _lock = self.incoming_endpoints.lock();
         self.pollee.poll(mask, poller)
+    }
+
+    fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        self.pollee.register_observer(observer, mask);
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        self.pollee
+            .unregister_observer(observer)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "cannot unregister observer"))
     }
 }
 

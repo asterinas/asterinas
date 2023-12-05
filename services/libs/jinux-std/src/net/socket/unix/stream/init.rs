@@ -1,11 +1,10 @@
-use core::sync::atomic::{AtomicBool, Ordering};
-
-use crate::events::IoEvents;
+use crate::events::{IoEvents, Observer};
 use crate::fs::fs_resolver::{split_path, FsPath};
 use crate::fs::utils::{Dentry, InodeMode, InodeType};
 use crate::net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound};
 use crate::prelude::*;
 use crate::process::signal::{Pollee, Poller};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::connected::Connected;
 use super::endpoint::Endpoint;
@@ -81,6 +80,19 @@ impl Init {
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
+    }
+
+    pub(super) fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        self.pollee.register_observer(observer, mask);
+    }
+
+    pub(super) fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        self.pollee
+            .unregister_observer(observer)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "cannot unregister observer"))
     }
 }
 
