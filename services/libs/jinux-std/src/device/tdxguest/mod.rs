@@ -1,4 +1,5 @@
 use super::*;
+use crate::error::Error;
 use crate::events::IoEvents;
 use crate::fs::inode_handle::FileIo;
 use crate::fs::utils::IoctlCmd;
@@ -28,6 +29,29 @@ impl Device for TdxGuest {
     }
 }
 
+impl From<TdCallError> for Error {
+    fn from(err: TdCallError) -> Self {
+        match err {
+            TdCallError::TdxNoValidVeInfo => {
+                Error::with_message(Errno::EINVAL, "TdCallError::TdxNoValidVeInfo")
+            }
+            TdCallError::TdxOperandInvalid => {
+                Error::with_message(Errno::EINVAL, "TdCallError::TdxOperandInvalid")
+            }
+            TdCallError::TdxPageAlreadyAccepted => {
+                Error::with_message(Errno::EINVAL, "TdCallError::TdxPageAlreadyAccepted")
+            }
+            TdCallError::TdxPageSizeMismatch => {
+                Error::with_message(Errno::EINVAL, "TdCallError::TdxPageSizeMismatch")
+            }
+            TdCallError::TdxOperandBusy => {
+                Error::with_message(Errno::EBUSY, "TdCallError::TdxOperandBusy")
+            }
+            TdCallError::Other => Error::with_message(Errno::EAGAIN, "TdCallError::Other"),
+        }
+    }
+}
+
 impl FileIo for TdxGuest {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Read operation not supported")
@@ -43,38 +67,7 @@ impl FileIo for TdxGuest {
                 let mut tdx_report: TdxReportRequest = read_val_from_user(arg)?;
                 match get_report(&mut tdx_report.tdreport, &tdx_report.reportdata) {
                     Ok(_) => {}
-                    Err(err) => match err {
-                        TdCallError::TdxNoValidVeInfo => {
-                            return_errno_with_message!(
-                                Errno::EINVAL,
-                                "TdCallError::TdxNoValidVeInfo"
-                            )
-                        }
-                        TdCallError::TdxOperandInvalid => {
-                            return_errno_with_message!(
-                                Errno::EINVAL,
-                                "TdCallError::TdxOperandInvalid"
-                            )
-                        }
-                        TdCallError::TdxPageAlreadyAccepted => {
-                            return_errno_with_message!(
-                                Errno::EINVAL,
-                                "TdCallError::TdxPageAlreadyAccepted"
-                            )
-                        }
-                        TdCallError::TdxPageSizeMismatch => {
-                            return_errno_with_message!(
-                                Errno::EINVAL,
-                                "TdCallError::TdxPageSizeMismatch"
-                            )
-                        }
-                        TdCallError::TdxOperandBusy => {
-                            return_errno_with_message!(Errno::EBUSY, "TdCallError::TdxOperandBusy")
-                        }
-                        TdCallError::Other => {
-                            return_errno_with_message!(Errno::EAGAIN, "TdCallError::Other")
-                        }
-                    },
+                    Err(err) => return Err(err.into()),
                 };
                 write_val_to_user(arg, &tdx_report)?;
                 Ok(0)
