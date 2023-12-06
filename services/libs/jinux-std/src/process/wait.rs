@@ -61,9 +61,10 @@ pub fn wait_child_exit(
             }
         }
 
-        if wait_options.contains(WaitOptions::WNOHANG) {
-            return Some(Ok((0, 0)));
-        }
+        // Temporary ignores WNOHANG. See https://github.com/jinzhao-dev/jinux/issues/530.
+        // if wait_options.contains(WaitOptions::WNOHANG) {
+        //     return Some(Ok((0, 0)));
+        // }
 
         // wait
         None
