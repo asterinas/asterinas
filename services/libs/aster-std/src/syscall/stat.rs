@@ -53,12 +53,18 @@ pub fn sys_fstatat(
         "dirfd = {}, filename = {:?}, stat_buf_ptr = 0x{:x}, flags = {:?}",
         dirfd, filename, stat_buf_ptr, flags
     );
+
+    if filename.is_empty() {
+        if !flags.contains(StatFlags::AT_EMPTY_PATH) {
+            return_errno_with_message!(Errno::ENOENT, "path is empty");
+        }
+        // In this case, the behavior of fstatat() is similar to that of fstat().
+        return self::sys_fstat(dirfd, stat_buf_ptr);
+    }
+
     let current = current!();
     let dentry = {
         let filename = filename.to_string_lossy();
-        if filename.is_empty() && !flags.contains(StatFlags::AT_EMPTY_PATH) {
-            return_errno_with_message!(Errno::ENOENT, "path is empty");
-        }
         let fs_path = FsPath::new(dirfd, filename.as_ref())?;
         let fs = current.fs().read();
         if flags.contains(StatFlags::AT_SYMLINK_NOFOLLOW) {
