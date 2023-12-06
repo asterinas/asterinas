@@ -3,8 +3,10 @@ use core::time::Duration;
 
 use crate::prelude::*;
 
+use jinux_time::read_monotonic_time;
+
 mod system_time;
-use jinux_frame::timer::read_monotonic_milli_seconds;
+
 pub use system_time::SystemTime;
 
 pub type clockid_t = i32;
@@ -76,13 +78,8 @@ pub fn now_as_duration(clock_id: &ClockID) -> Result<Duration> {
     match clock_id {
         ClockID::CLOCK_MONOTONIC
         | ClockID::CLOCK_MONOTONIC_COARSE
-        | ClockID::CLOCK_MONOTONIC_RAW => {
-            let time_ms = read_monotonic_milli_seconds();
-
-            let seconds = time_ms / 1000;
-            let nanos = time_ms % 1000 * 1_000_000;
-            Ok(Duration::new(seconds, nanos as u32))
-        }
+        | ClockID::CLOCK_MONOTONIC_RAW
+        | ClockID::CLOCK_BOOTTIME => Ok(read_monotonic_time()),
         ClockID::CLOCK_REALTIME | ClockID::CLOCK_REALTIME_COARSE => {
             let now = SystemTime::now();
             now.duration_since(&SystemTime::UNIX_EPOCH)
