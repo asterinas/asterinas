@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 jinux-frame = { path = "../../../framework/jinux-frame" }
+jinux-util = { path = "../../libs/jinux-util" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 spin = "0.9.4"

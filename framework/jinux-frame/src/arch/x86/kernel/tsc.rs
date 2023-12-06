@@ -1,11 +1,23 @@
+use core::sync::atomic::AtomicU64;
 use x86::cpuid::cpuid;
+
+/// The frequency of tsc. The unit is Hz.
+pub(crate) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
+
+const TSC_DEADLINE_MODE_SUPPORT: u32 = 1 << 24;
+
+/// Determine if the current system supports tsc_deadline mode.
+pub fn is_tsc_deadline_mode_supported() -> bool {
+    let cpuid = cpuid!(1);
+    (cpuid.ecx & TSC_DEADLINE_MODE_SUPPORT) > 0
+}
 
 /// Determine TSC frequency via CPUID. If the CPU does not support calculating TSC frequency by
 /// CPUID, the function will return None. The unit of the return value is KHz.
 ///
 /// Ref: function `native_calibrate_tsc` in linux `arch/x86/kernel/tsc.c`
 ///
-pub fn tsc_freq() -> Option<u32> {
+pub fn determine_tsc_freq_via_cpuid() -> Option<u32> {
     // Check the max cpuid supported
     let cpuid = cpuid!(0);
     let max_cpuid = cpuid.eax;

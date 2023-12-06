@@ -2,15 +2,30 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-use component::{init_component, ComponentInitError};
-use core::sync::atomic::Ordering::Relaxed;
-use rtc::{get_cmos, is_updating, read, CENTURY_REGISTER};
+extern crate alloc;
 
+use alloc::sync::Arc;
+use component::{init_component, ComponentInitError};
+use core::{sync::atomic::Ordering::Relaxed, time::Duration};
+use jinux_frame::sync::Mutex;
+use spin::Once;
+
+use clocksource::ClockSource;
+use rtc::{get_cmos, is_updating, CENTURY_REGISTER};
+
+pub use clocksource::Instant;
+
+mod clocksource;
 mod rtc;
+mod tsc;
+
+pub const NANOS_PER_SECOND: u32 = 1_000_000_000;
+pub static VDSO_DATA_UPDATE: Once<Arc<dyn Fn(Instant, u64) + Sync + Send>> = Once::new();
 
 #[init_component]
 fn time_init() -> Result<(), ComponentInitError> {
     rtc::init();
+    tsc::init();
     Ok(())
 }
 
@@ -23,6 +38,7 @@ pub struct SystemTime {
     pub hour: u8,
     pub minute: u8,
     pub second: u8,
+    pub nanos: u64,
 }
 
 impl SystemTime {
@@ -35,6 +51,7 @@ impl SystemTime {
             hour: 0,
             minute: 0,
             second: 0,
+            nanos: 0,
         }
     }
 
@@ -88,7 +105,55 @@ impl SystemTime {
     }
 }
 
+pub(crate) static READ_TIME: Mutex<SystemTime> = Mutex::new(SystemTime::zero());
+pub(crate) static START_TIME: Once<SystemTime> = Once::new();
+
 /// get real time
 pub fn get_real_time() -> SystemTime {
     read()
+}
+
+pub fn read() -> SystemTime {
+    update_time();
+    *READ_TIME.lock()
+}
+
+/// read year,month,day and other data
+/// ref: https://wiki.osdev.org/CMOS#Reading_All_RTC_Time_and_Date_Registers
+fn update_time() {
+    let mut last_time: SystemTime;
+
+    let mut lock = READ_TIME.lock();
+
+    lock.update_from_rtc();
+
+    last_time = *lock;
+
+    lock.update_from_rtc();
+
+    while *lock != last_time {
+        last_time = *lock;
+        lock.update_from_rtc();
+    }
+    let register_b: u8 = get_cmos(0x0B);
+
+    lock.convert_bcd_to_binary(register_b);
+    lock.convert_12_hour_to_24_hour(register_b);
+    lock.modify_year();
+}
+
+/// Return the `START_TIME`, which is the actual time when doing calibrate.
+pub fn read_start_time() -> SystemTime {
+    *START_TIME.get().unwrap()
+}
+
+/// Return the monotonic time from the tsc clocksource.
+pub fn read_monotonic_time() -> Duration {
+    let instant = tsc::read_instant();
+    Duration::new(instant.secs(), instant.nanos())
+}
+
+/// Return the tsc clocksource.
+pub fn default_clocksource() -> Arc<ClockSource> {
+    tsc::CLOCK.get().unwrap().clone()
 }

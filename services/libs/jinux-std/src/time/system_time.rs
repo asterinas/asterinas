@@ -1,7 +1,8 @@
 use core::time::Duration;
+use jinux_time::{read_monotonic_time, read_start_time};
+use time::{Date, Month, PrimitiveDateTime, Time};
 
 use crate::prelude::*;
-use time::{Date, Month, PrimitiveDateTime, Time};
 
 /// This struct corresponds to `SystemTime` in Rust std.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -25,9 +26,13 @@ impl SystemTime {
 
     /// Returns the current system time
     pub fn now() -> Self {
-        let system_time = jinux_time::get_real_time();
+        let start = read_start_time();
+
         // The get real time result should always be valid
-        convert_system_time(system_time).unwrap()
+        convert_system_time(start)
+            .unwrap()
+            .checked_add(read_monotonic_time())
+            .unwrap()
     }
 
     /// Add a duration to self. If the result does not exceed inner bounds return Some(t), else return None.
@@ -73,7 +78,12 @@ fn convert_system_time(system_time: jinux_time::SystemTime) -> Result<SystemTime
         Ok(date) => date,
         Err(_) => return_errno_with_message!(Errno::EINVAL, "Invalid system date"),
     };
-    let time_ = match Time::from_hms(system_time.hour, system_time.minute, system_time.second) {
+    let time_ = match Time::from_hms_nano(
+        system_time.hour,
+        system_time.minute,
+        system_time.second,
+        system_time.nanos.try_into().unwrap(),
+    ) {
         Ok(time_) => time_,
         Err(_) => return_errno_with_message!(Errno::EINVAL, "Invalid system time"),
     };
