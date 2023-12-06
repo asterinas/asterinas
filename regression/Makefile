@@ -31,6 +31,12 @@ $(INITRAMFS)/lib/x86_64-linux-gnu:
 	@cp -L /lib/x86_64-linux-gnu/libm.so.6 $@
 	@cp -L /lib/x86_64-linux-gnu/libgcc_s.so.1 $@
 	@cp -L /lib/x86_64-linux-gnu/libpthread.so.0 $@
+	@# TODO: use a custom compiled vdso.so file in the future.
+	@git clone https://github.com/jinzhao-dev/linux_vdso.git
+	@cd ./linux_vdso && git checkout 2a6d2db 2>/dev/null
+	@cp -L ./linux_vdso/vdso64.so $@
+	@rm -rf ./linux_vdso 
+
 
 $(INITRAMFS)/lib64:
 	@mkdir -p $@
