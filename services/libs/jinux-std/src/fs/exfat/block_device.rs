@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use alloc::fmt::Debug;
-use jinux_frame::vm::{VmFrame, VmIo};
+use jinux_frame::vm::{VmFrame, VmIo, VmSegment};
 /// A simple block device for Exfat.
 pub trait BlockDevice: Send + Sync + Any {
     ///Returns the number of sectors.
@@ -84,5 +84,57 @@ impl VmIo for dyn BlockDevice {
             return Err(jinux_frame::Error::IoError);
         }
         Ok(())
+    }
+}
+
+pub struct ExfatMemoryDisk(VmSegment);
+
+impl ExfatMemoryDisk {
+    pub fn new(segment: VmSegment) -> Self {
+        Self(segment)
+    }
+}
+
+impl BlockDevice for ExfatMemoryDisk {
+    fn sectors_count(&self) -> usize {
+        self.0.nframes() * (PAGE_SIZE / SECTOR_SIZE)
+    }
+
+    fn read_sector(&self, sector_id: usize, sector: &VmFrame) -> Result<()> {
+        let mut buf = vec![0; SECTOR_SIZE];
+        self.0.read_bytes(sector_id * SECTOR_SIZE, &mut buf)?;
+        sector.write_bytes(0, &buf)?;
+        Ok(())
+    }
+
+    fn read_page(&self, page_id: usize, page: &VmFrame) -> Result<()> {
+        let mut buf = vec![0; PAGE_SIZE];
+        self.0.read_bytes(page_id * PAGE_SIZE, &mut buf)?;
+        page.write_bytes(0, &buf)?;
+        Ok(())
+    }
+
+    fn write_sector(&self, sector_id: usize, sector: &VmFrame) -> Result<()> {
+        let mut buf = vec![0; SECTOR_SIZE];
+        sector.read_bytes(0, &mut buf)?;
+        self.0.write_bytes(sector_id * SECTOR_SIZE, &buf)?;
+        Ok(())
+    }
+
+    fn write_page(&self, page_id: usize, page: &VmFrame) -> Result<()> {
+        let mut buf = vec![0; PAGE_SIZE];
+        page.read_bytes(0, &mut buf)?;
+        self.0.write_bytes(page_id * PAGE_SIZE, &buf)?;
+        Ok(())
+    }
+
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.0.read_bytes(offset, buf)?;
+        Ok(buf.len())
+    }
+
+    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        self.0.write_bytes(offset, buf)?;
+        Ok(buf.len())
     }
 }

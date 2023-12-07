@@ -127,21 +127,21 @@ impl ExfatValidateDentryMode {
                 if matches!(dentry, ExfatDentry::File(_)) {
                     Ok(ExfatValidateDentryMode::GetFile)
                 } else {
-                    return_errno!(Errno::EINVAL)
+                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine.")
                 }
             }
             ExfatValidateDentryMode::GetFile => {
                 if matches!(dentry, ExfatDentry::Stream(_)) {
                     Ok(ExfatValidateDentryMode::GetStream)
                 } else {
-                    return_errno!(Errno::EINVAL)
+                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine.")
                 }
             }
             ExfatValidateDentryMode::GetStream => {
                 if matches!(dentry, ExfatDentry::Name(_)) {
                     Ok(ExfatValidateDentryMode::GetName(0))
                 } else {
-                    return_errno!(Errno::EINVAL)
+                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine.")
                 }
             }
             ExfatValidateDentryMode::GetName(count) => {
@@ -153,7 +153,7 @@ impl ExfatValidateDentryMode {
                 {
                     Ok(ExfatValidateDentryMode::GetBenignSecondary)
                 } else {
-                    return_errno!(Errno::EINVAL)
+                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine.")
                 }
             }
             ExfatValidateDentryMode::GetBenignSecondary => {
@@ -163,7 +163,7 @@ impl ExfatValidateDentryMode {
                 {
                     Ok(ExfatValidateDentryMode::GetBenignSecondary)
                 } else {
-                    return_errno!(Errno::EINVAL)
+                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine.")
                 }
             }
         }
@@ -191,8 +191,11 @@ impl ExfatDentrySet {
     /// Name dentry index.
     const ES_IDX_FIRST_FILENAME: usize = 2;
 
-    pub(super) fn new(dentries: Vec<ExfatDentry>) -> Result<Self> {
-        let dentry_set = ExfatDentrySet { dentries };
+    pub(super) fn new(dentries: Vec<ExfatDentry>, should_checksum_match: bool) -> Result<Self> {
+        let mut dentry_set = ExfatDentrySet { dentries };
+        if !should_checksum_match {
+            dentry_set.update_checksum();
+        }
         dentry_set.validate_dentry_set()?;
         Ok(dentry_set)
     }
@@ -255,7 +258,7 @@ impl ExfatDentrySet {
         dentries.push(stream_dentry);
         dentries.append(&mut name_dentries);
 
-        ExfatDentrySet::new(dentries)
+        Self::new(dentries, false)
     }
 
     pub(super) fn read_from(pos: &ExfatChainPosition) -> Result<Self> {
@@ -267,7 +270,7 @@ impl ExfatDentrySet {
             let mut dentries = Vec::<ExfatDentry>::with_capacity(num_secondary + 1);
             dentries.push(primary_dentry);
 
-            let mut dentry_bytes = Vec::<u8>::with_capacity(num_secondary * DENTRY_SIZE);
+            let mut dentry_bytes = vec![0; num_secondary * DENTRY_SIZE];
 
             pos.0.read_at(pos.1 + DENTRY_SIZE, &mut dentry_bytes)?;
 
@@ -277,7 +280,7 @@ impl ExfatDentrySet {
                 dentries.push(dentry);
             }
 
-            Self::new(dentries)
+            Self::new(dentries, true)
         } else {
             return_errno_with_message!(Errno::EIO, "invalid dentry type")
         }
@@ -289,14 +292,14 @@ impl ExfatDentrySet {
     }
 
     pub(super) fn len(&self) -> usize {
-        self.dentries.len() * DENTRY_SIZE
+        self.dentries.len()
     }
 
     fn to_le_bytes(&self) -> Vec<u8> {
         // It may be slow to copy at the granularity of byte.
         //self.dentries.iter().map(|dentry| dentry.to_le_bytes()).flatten().collect::<Vec<u8>>()
 
-        let mut bytes = Vec::<u8>::with_capacity(self.dentries.len() * DENTRY_SIZE);
+        let mut bytes = vec![0; self.dentries.len() * DENTRY_SIZE];
         for (i, dentry) in self.dentries.iter().enumerate() {
             let dentry_bytes = dentry.to_le_bytes();
             let (_, to_write) = bytes.split_at_mut(i * DENTRY_SIZE);
@@ -318,7 +321,7 @@ impl ExfatDentrySet {
         }
 
         if !matches!(status, ExfatValidateDentryMode::GetName(_))
-            || !matches!(status, ExfatValidateDentryMode::GetBenignSecondary)
+            && !matches!(status, ExfatValidateDentryMode::GetBenignSecondary)
         {
             return_errno_with_message!(Errno::EINVAL, "dentries not enough")
         }
@@ -411,33 +414,6 @@ impl Checksum for ExfatDentrySet {
     }
 }
 
-/* How can I implement checksum?
-pub enum ObjectWithChecksum<T:Checksum>  {
-    ChecksumMatched(T),
-    ChecksumUnmatched(T)
-}
-
-impl<T> ObjectWithChecksum<T:Checksum> {
-    pub fn verify(&self) -> ObjectWithChecksum<T>{
-        match self {
-            ObjectWithChecksum::ChecksumUnMatched(t) => {if t.verify_checksum() {ObjectWithChecksum::ChecksumMatched(t)} else {self}},
-            _ => self
-        }
-    }
-
-    pub fn is_checksum_matched(&self) -> bool{
-        matches!(self,ObjectWithChecksum::ChecksumMatched)
-    }
-
-    pub fn update(&mut self) -> ObjectWithChecksum::ChecksumMatched {
-        match self {
-            ObjectWithChecksum::ChecksumUnMatched(t) => {t.update_checksum(); ObjectWithChecksum::ChecksumMatched(t)},
-            _ => self
-        }
-    }
-}
-*/
-
 pub struct ExfatDentryIterator {
     ///The position of current cluster
     chain: ExfatChain,
@@ -451,20 +427,23 @@ pub struct ExfatDentryIterator {
 
     has_error: bool,
     previous_error: Option<Error>,
+    read_eof: bool,
 }
 
 impl ExfatDentryIterator {
     pub fn new(chain: ExfatChain, offset: usize, size: Option<usize>) -> Result<Self> {
         if size.is_some() && size.unwrap() % DENTRY_SIZE != 0 {
-            return_errno!(Errno::EINVAL)
+            return_errno_with_message!(Errno::EINVAL, "remaining size unaligned to dentry size")
         }
 
         if offset % DENTRY_SIZE != 0 {
-            return_errno!(Errno::EINVAL)
+            return_errno_with_message!(Errno::EINVAL, "dentry offset unaligned to dentry size")
         }
 
+        let (chain, offset) = chain.walk_to_cluster_at_offset(offset)?;
+
         let buffer = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
-        chain.read_page((offset).align_down(PAGE_SIZE), &buffer)?;
+        chain.read_page(offset.align_down(PAGE_SIZE), &buffer)?;
 
         Ok(Self {
             chain,
@@ -473,6 +452,7 @@ impl ExfatDentryIterator {
             size,
             has_error: false,
             previous_error: None,
+            read_eof: false,
         })
     }
 
@@ -482,7 +462,12 @@ impl ExfatDentryIterator {
 
     fn read_next_page(&mut self) -> Result<()> {
         if self.entry as usize * DENTRY_SIZE == self.chain.cluster_size() {
-            self.chain = self.chain.walk(1)?;
+            let chain = self.chain.walk(1);
+            if chain.is_err() {
+                self.read_eof = true;
+                return Err(chain.unwrap_err());
+            }
+            self.chain = chain.unwrap();
             self.entry = 0;
         }
         self.chain.read_page(
@@ -500,11 +485,9 @@ impl Iterator for ExfatDentryIterator {
         if self.has_error {
             if self.previous_error.is_some() {
                 //TODO:Can be optimized
-                let next_eof = self.chain.is_next_cluster_eof();
-                if next_eof.is_ok() && next_eof.unwrap() {
+                if self.read_eof {
                     return None;
                 }
-
                 let result = self.previous_error.clone().unwrap();
                 return Some(Err(result));
             }
@@ -743,7 +726,9 @@ impl ExfatName {
         for start in (0..self.0.len()).step_by(EXFAT_FILE_NAME_LEN) {
             let end = (start + EXFAT_FILE_NAME_LEN).min(self.0.len());
             let mut name: [u16; EXFAT_FILE_NAME_LEN] = [0; EXFAT_FILE_NAME_LEN];
-            name.copy_from_slice(&self.0[start..end]);
+
+            name[..end - start].copy_from_slice(&self.0[start..end]);
+
             name_dentries.push(ExfatDentry::Name(ExfatNameDentry {
                 dentry_type: EXFAT_NAME,
                 flags: 0,

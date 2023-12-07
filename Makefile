@@ -133,3 +133,6 @@ clean:
 	@cargo clean
 	@cd docs && mdbook clean
 	@make --no-print-directory -C regression clean
+
+filetest:
+	@make run KTEST=1 KTEST_WHITELIST=jinux_std::fs::exfat::test::test_new_exfat,jinux_std::fs::exfat::test::test_create_and_list_file KTEST_CRATES=jinux-std

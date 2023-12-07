@@ -1,5 +1,7 @@
 pub const EXFAT_CLUSTERS_UNTRACKED: u32 = !0;
 
+pub const ROOT_INODE_HASH: usize = 0;
+
 // NLS lossy flags
 pub const NLS_NAME_NO_LOSSY: u8 = 0;
 pub const NLS_NAME_LOSSY: u8 = 1;

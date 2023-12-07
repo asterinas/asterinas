@@ -18,6 +18,7 @@ pub enum FatValue {
 pub const EXFAT_EOF_CLUSTER: ClusterID = 0xFFFFFFFF;
 pub const EXFAT_BAD_CLUSTER: ClusterID = 0xFFFFFFF7;
 pub const EXFAT_FREE_CLUSTER: ClusterID = 0;
+
 pub const FAT_ENTRY_SIZE: usize = size_of::<ClusterID>();
 
 impl From<ClusterID> for FatValue {
@@ -42,7 +43,6 @@ impl From<FatValue> for ClusterID {
     }
 }
 
-//FIXME: Should we implement fat as a trait of file system, or as a member of file system?
 pub trait FatTrait {
     fn read_next_fat(&self, cluster: ClusterID) -> Result<FatValue>;
     fn write_next_fat(&self, cluster: ClusterID, value: FatValue) -> Result<()>;
@@ -99,7 +99,6 @@ bitflags! {
     }
 }
 
-// Directory pub structures
 #[derive(Debug, Clone, Default)]
 pub struct ExfatChain {
     // current clusterID
@@ -163,6 +162,30 @@ impl ExfatChain {
         self.fs().is_valid_cluster(self.current)
     }
 
+    pub fn count_clusters(&self) -> Result<u32> {
+        if self.flags.contains(FatChainFlags::FAT_CHAIN_NOT_IN_USE) {
+            return_errno_with_message!(
+                Errno::EIO,
+                "Unable to count clusters when FAT table not in use."
+            )
+        } else {
+            let mut cluster = self.current;
+            let mut cnt = 1;
+            loop {
+                let fat = self.fs().read_next_fat(cluster)?;
+                match fat {
+                    FatValue::Next(next_fat) => {
+                        cluster = next_fat;
+                        cnt += 1;
+                    }
+                    _ => {
+                        return Ok(cnt);
+                    }
+                }
+            }
+        }
+    }
+
     //The destination cluster must be a valid cluster.
     pub fn walk(&self, steps: u32) -> Result<ExfatChain> {
         let mut result_cluster = self.current;
@@ -184,8 +207,11 @@ impl ExfatChain {
 
     ///Offset must be inside this cluster
     pub fn read_page(&self, offset: usize, page: &VmFrame) -> Result<()> {
-        if offset + PAGE_SIZE >= self.cluster_size() {
-            return_errno_with_message!(Errno::EINVAL, "wrong offset")
+        if offset + PAGE_SIZE > self.cluster_size() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "ExfatChain failed to read page: out of boundary."
+            )
         }
 
         let physical_offset = self.physical_cluster_start_offset() + offset;
@@ -196,8 +222,11 @@ impl ExfatChain {
 
     ///Offset must be inside this cluster
     pub fn write_page(&self, offset: usize, page: &VmFrame) -> Result<()> {
-        if offset + PAGE_SIZE >= self.cluster_size() {
-            return_errno_with_message!(Errno::EINVAL, "wrong offset")
+        if offset + PAGE_SIZE > self.cluster_size() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "ExfatChain failed to read page: out of boundary."
+            )
         }
 
         let physical_offset = self.physical_cluster_start_offset() + offset;

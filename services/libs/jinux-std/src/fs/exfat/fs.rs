@@ -3,7 +3,7 @@ use core::{ops::Range, sync::atomic::AtomicUsize};
 use super::{
     bitmap::{ExfatBitmap, EXFAT_RESERVED_CLUSTERS},
     block_device::BlockDevice,
-    fat::{ClusterID, FatChainFlags},
+    fat::ClusterID,
     inode::ExfatInode,
     super_block::ExfatSuperBlock,
     upcase_table::ExfatUpcaseTable,
@@ -16,13 +16,12 @@ use crate::{
         utils::{FileSystem, Inode},
     },
     prelude::*,
-    return_errno, return_errno_with_message,
+    return_errno_with_message,
 };
 use alloc::boxed::Box;
 
 use super::super_block::ExfatBootSector;
 
-use crate::fs::exfat::fat::ExfatChain;
 use crate::fs::utils::FsFlags;
 pub(super) use jinux_frame::vm::VmIo;
 
@@ -33,22 +32,19 @@ pub struct ExfatFS {
     block_device: Box<dyn BlockDevice>,
     super_block: ExfatSuperBlock,
 
-    root: Arc<ExfatInode>,
+    bitmap: Arc<SpinLock<ExfatBitmap>>,
 
-    bitmap: Arc<Mutex<ExfatBitmap>>,
-
-    upcase_table: Arc<ExfatUpcaseTable>,
+    upcase_table: Arc<SpinLock<ExfatUpcaseTable>>,
 
     mount_option: ExfatMountOptions,
     //Used for inode allocation.
     highest_inode_number: AtomicUsize,
 
-    //inodes are indexed by their position.
-    //TODO:use concurrent hashmap.
+    //inodes are indexed by their hash_value.
     inodes: RwLock<HashMap<usize, Arc<ExfatInode>>>,
 
     //A global lock, We need to hold the mutex before accessing bitmap or inode, otherwise there will be deadlocks.
-    mutex: Mutex<()>,
+    mutex: SpinLock<()>,
 }
 
 pub const EXFAT_ROOT_INO: Ino = 1;
@@ -61,16 +57,15 @@ impl ExfatFS {
         //Load the super_block
         let super_block = Self::read_super_block(block_device.as_ref())?;
 
-        let mut exfat_fs = Arc::new(ExfatFS {
+        let exfat_fs = Arc::new(ExfatFS {
             block_device,
             super_block,
-            root: Arc::new(ExfatInode::default()),
-            bitmap: Arc::new(Mutex::new(ExfatBitmap::default())),
-            upcase_table: Arc::new(ExfatUpcaseTable::empty()),
+            bitmap: Arc::new(SpinLock::new(ExfatBitmap::default())),
+            upcase_table: Arc::new(SpinLock::new(ExfatUpcaseTable::empty())),
             mount_option,
             highest_inode_number: AtomicUsize::new(EXFAT_ROOT_INO + 1),
             inodes: RwLock::new(HashMap::new()),
-            mutex: Mutex::new(()),
+            mutex: SpinLock::new(()),
         });
 
         // TODO: if the main superblock is corrupted, should we load the backup?
@@ -80,21 +75,16 @@ impl ExfatFS {
 
         let upcase_table = ExfatUpcaseTable::load_upcase_table(Arc::downgrade(&exfat_fs))?;
         let bitmap = ExfatBitmap::load_bitmap(Arc::downgrade(&exfat_fs))?;
-        let root = ExfatFS::read_root(exfat_fs.clone())?;
+        let root = ExfatFS::build_root(Arc::downgrade(&exfat_fs))?;
 
-        let fs_mut = Arc::get_mut(&mut exfat_fs).unwrap();
-        fs_mut.bitmap = Arc::new(Mutex::new(bitmap));
-        fs_mut.root = root.clone();
-        fs_mut.upcase_table = Arc::new(upcase_table);
+        *exfat_fs.bitmap.lock() = bitmap;
+        *exfat_fs.upcase_table.lock() = upcase_table;
 
         //TODO: Handle UTF-8
 
         //TODO: Init NLS Table
 
-        exfat_fs
-            .inodes
-            .write()
-            .insert(root.hash_index(), root.clone());
+        exfat_fs.inodes.write().insert(root.hash_index(), root);
 
         Ok(exfat_fs)
     }
@@ -112,19 +102,8 @@ impl ExfatFS {
         self.inodes.write().insert(inode.hash_index(), inode)
     }
 
-    fn read_root(fs: Arc<ExfatFS>) -> Result<Arc<ExfatInode>> {
-        ExfatInode::read_from(
-            fs.clone(),
-            (
-                ExfatChain::new(
-                    Arc::downgrade(&fs),
-                    fs.super_block.root_dir,
-                    FatChainFlags::ALLOC_POSSIBLE,
-                ),
-                0,
-            ),
-            EXFAT_ROOT_INO,
-        )
+    fn build_root(fs: Weak<ExfatFS>) -> Result<Arc<ExfatInode>> {
+        ExfatInode::build_root_inode(fs)
     }
 
     fn verify_boot_region(block_device: &dyn BlockDevice) -> Result<()> {
@@ -148,7 +127,10 @@ impl ExfatFS {
          * from FAT volume.
          */
         if boot_sector.must_be_zero.iter().any(|&x| x != 0) {
-            return_errno!(Errno::EINVAL);
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "must_be_zero field must be filled with zero"
+            );
         }
 
         if boot_sector.num_fats != 1 && boot_sector.num_fats != 2 {
@@ -208,19 +190,19 @@ impl ExfatFS {
         self.super_block
     }
 
-    pub fn bitmap(&self) -> Arc<Mutex<ExfatBitmap>> {
+    pub fn bitmap(&self) -> Arc<SpinLock<ExfatBitmap>> {
         self.bitmap.clone()
     }
 
     pub fn root_inode(&self) -> Arc<ExfatInode> {
-        self.root.clone()
+        self.inodes.read().get(&ROOT_INODE_HASH).unwrap().clone()
     }
 
     pub fn sector_size(&self) -> usize {
         self.super_block.sector_size as usize
     }
 
-    pub(super) fn lock(&self) -> MutexGuard<'_, ()> {
+    pub(super) fn lock(&self) -> SpinLockGuard<'_, ()> {
         self.mutex.lock()
     }
 
@@ -258,7 +240,7 @@ impl FileSystem for ExfatFS {
     }
 
     fn root_inode(&self) -> Arc<dyn Inode> {
-        todo!();
+        self.root_inode()
     }
 
     fn sb(&self) -> SuperBlock {
@@ -270,15 +252,16 @@ impl FileSystem for ExfatFS {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 // Error handling
 pub enum ExfatErrorMode {
+    #[default]
     Continue,
     Panic,
     ReadOnly,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 //Mount options
 pub struct ExfatMountOptions {
     pub(super) fs_uid: usize,

@@ -38,14 +38,14 @@ impl ExfatBitmap {
             }
         }
 
-        return_errno!(Errno::EINVAL)
+        return_errno_with_message!(Errno::EINVAL, "Unable to find bitmap")
     }
 
     fn fs(&self) -> Arc<ExfatFS> {
         self.fs.upgrade().unwrap()
     }
 
-    fn get(&self, bit: usize) -> bool {
+    fn used(&self, bit: usize) -> bool {
         *(self.bitvec.get(bit).unwrap())
     }
 
@@ -117,7 +117,7 @@ impl ExfatBitmap {
             .fs()
             .is_cluster_range_valid(search_start_cluster..search_start_cluster + cluster_num)
         {
-            return_errno!(Errno::EINVAL)
+            return_errno_with_message!(Errno::ENOSPC, "Exceeds full capacity")
         }
 
         let mut cur_index = search_start_cluster - EXFAT_RESERVED_CLUSTERS;
@@ -126,10 +126,10 @@ impl ExfatBitmap {
         let mut range_start_index: ClusterID;
 
         while cur_index < search_end_index {
-            if self.get(cur_index as usize) {
+            if !self.used(cur_index as usize) {
                 range_start_index = cur_index;
                 let mut cnt = 0;
-                while cnt < cluster_num && cur_index < end_index && self.get(cur_index as usize) {
+                while cnt < cluster_num && cur_index < end_index && !self.used(cur_index as usize) {
                     cnt += 1;
                     cur_index += 1;
                 }
@@ -152,7 +152,7 @@ impl ExfatBitmap {
             .fs()
             .is_cluster_range_valid(search_start_cluster..search_start_cluster + cluster_num)
         {
-            return_errno!(Errno::EINVAL)
+            return_errno!(Errno::ENOSPC)
         }
 
         let bytes: &[BitStore] = self.bitvec.as_raw_slice();
