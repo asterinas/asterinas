@@ -6,7 +6,7 @@ use crate::fs::utils::{Inode, InodeType, Metadata, PageCache};
 use crate::time::now_as_duration;
 
 use super::bitmap::ExfatBitmap;
-use super::block_device::is_block_aligned;
+use super::block_device::{is_block_aligned, SECTOR_SIZE};
 use super::constants::*;
 use super::dentry::{Checksum, ExfatDentry, ExfatDentrySet, ExfatName, DENTRY_SIZE};
 use super::fat::{
@@ -989,10 +989,11 @@ impl Inode for ExfatInode {
 
     //What if block_size is not equal to page size?
     fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        let sector_size = self.0.read().fs().sector_size();
-        let mut inner = self.0.write();
-        let sector_id =
-            inner.lock_and_get_or_allocate_sector_id(idx * PAGE_SIZE / sector_size, true)?;
+        let inner = self.0.read();
+        let sector_size = inner.fs().sector_size();
+        //FIXME: dead lock may occur here.
+
+        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / SECTOR_SIZE)?;
 
         //FIXME: We may need to truncate the file if write_page fails?
         inner
@@ -1044,6 +1045,7 @@ impl Inode for ExfatInode {
             let end = file_size.min(offset + buf.len()).align_down(sector_size);
             (start, end - start)
         };
+
         inner
             .page_cache()
             .pages()
@@ -1061,23 +1063,24 @@ impl Inode for ExfatInode {
     }
 
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        let mut inner = self.0.write();
-        if inner.inode_type.is_directory() {
-            return_errno!(Errno::EISDIR)
+        {
+            let mut inner = self.0.write();
+            if inner.inode_type.is_directory() {
+                return_errno!(Errno::EISDIR)
+            }
+
+            let file_size = inner.size;
+            let new_size = offset + buf.len();
+            if new_size > file_size {
+                inner.lock_and_resize(new_size)?;
+                inner.page_cache.pages().resize(new_size)?;
+
+                inner.size = new_size;
+                //TODO:We need to fill the page cache with 0.
+            }
         }
 
-        let file_size = self.len();
-        let new_size = offset + buf.len();
-        if new_size > file_size {
-            inner.page_cache.pages().resize(new_size)?;
-            //TODO:We need to fill the page cache with 0.
-        }
-
-        //FIXME: Should we resize before writing to page cache?
-        inner.page_cache.pages().write_bytes(offset, buf)?;
-        if new_size > file_size {
-            inner.lock_and_resize(new_size)?;
-        }
+        self.0.read().page_cache.pages().write_bytes(offset, buf)?;
 
         Ok(buf.len())
     }
@@ -1101,9 +1104,10 @@ impl Inode for ExfatInode {
         if end_offset > file_size {
             inner.page_cache.pages().resize(end_offset)?;
             inner.lock_and_resize(end_offset)?;
+            inner.size = end_offset;
         }
 
-        //TODO: We need to write nil to extented space.
+        //TODO: We need to write 0 to extented space.
 
         let block_size = inner.fs().sector_size();
 

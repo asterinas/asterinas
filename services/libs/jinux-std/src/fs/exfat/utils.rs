@@ -72,12 +72,13 @@ impl DosTimestamp {
 
         let date_time = date_time_result.unwrap();
 
-        let time = ((date_time.hour() as u16) << 11)
-            | ((date_time.minute() as u16) << 6)
+        let time = ((date_time.hour() as u16) << HOUR_RANGE.start)
+            | ((date_time.minute() as u16) << MINUTE_RANGE.start)
             | ((date_time.second() as u16) >> 1);
-        let date = (((date_time.year() - 1980) as u16) << 9)
-            | ((date_time.month() as u16) << 5)
-            | (date_time.day() as u16);
+        let date = (((date_time.year() - 1980) as u16) << YEAR_RANGE.start)
+            | ((date_time.month() as u16) << MONTH_RANGE.start)
+            | ((date_time.day() as u16) << DAY_RANGE.start);
+
         const NSEC_PER_10MSEC: u32 = 10000000;
         let increament_10ms =
             (date_time.second() as u32 % 2 * 100 + date_time.nanosecond() / NSEC_PER_10MSEC) as u8;
