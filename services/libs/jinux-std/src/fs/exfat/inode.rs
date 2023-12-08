@@ -1130,11 +1130,17 @@ impl Inode for ExfatInode {
         if !inner.inode_type.is_directory() {
             return_errno!(Errno::ENOTDIR)
         }
+        if name.len() > MAX_NAME_LENGTH {
+            return_errno!(Errno::ENAMETOOLONG)
+        }
 
         let fs = inner.fs();
         let guard = fs.lock();
 
-        //TODO: Should we judge if the file already exists?
+        if inner.lookup_by_name(name).is_ok() {
+            return_errno!(Errno::EEXIST)
+        }
+
         Ok(inner.add_entry(name, type_, mode)?)
     }
 
@@ -1161,7 +1167,13 @@ impl Inode for ExfatInode {
 
     fn unlink(&self, name: &str) -> Result<()> {
         let mut inner = self.0.write();
-        if inner.inode_type.is_directory() {
+        if !inner.inode_type.is_directory() {
+            return_errno!(Errno::ENOTDIR)
+        }
+        if name.len() > MAX_NAME_LENGTH {
+            return_errno!(Errno::ENAMETOOLONG)
+        }
+        if name == "." || name == ".." {
             return_errno!(Errno::EISDIR)
         }
 
@@ -1183,6 +1195,15 @@ impl Inode for ExfatInode {
         let mut inner = self.0.write();
         if !inner.inode_type.is_directory() {
             return_errno!(Errno::ENOTDIR)
+        }
+        if name == "." {
+            return_errno_with_message!(Errno::EINVAL, "rmdir on .")
+        }
+        if name == ".." {
+            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..")
+        }
+        if name.len() > MAX_NAME_LENGTH {
+            return_errno!(Errno::ENAMETOOLONG)
         }
 
         let fs = inner.fs();
@@ -1209,6 +1230,10 @@ impl Inode for ExfatInode {
             return_errno!(Errno::ENOTDIR)
         }
 
+        if name.len() > MAX_NAME_LENGTH {
+            return_errno!(Errno::ENAMETOOLONG)
+        }
+
         let fs = inner.fs();
         let guard = fs.lock();
 
@@ -1217,6 +1242,13 @@ impl Inode for ExfatInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
+        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+            return_errno!(Errno::EISDIR);
+        }
+        if old_name.len() > MAX_NAME_LENGTH || new_name.len() > MAX_NAME_LENGTH {
+            return_errno!(Errno::ENAMETOOLONG)
+        }
+
         let Some(target_) = target.downcast_ref::<ExfatInode>() else {
             return_errno!(Errno::EINVAL)
         };
