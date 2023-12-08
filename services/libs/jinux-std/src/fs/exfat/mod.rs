@@ -14,8 +14,34 @@ pub use inode::ExfatInode;
 
 static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../../../exfat.img");
 
+use crate::fs::exfat::{block_device::ExfatMemoryDisk, fs::ExfatMountOptions};
+use crate::prelude::*;
+use alloc::boxed::Box;
+use jinux_frame::vm::{VmAllocOptions, VmIo, VmSegment};
+
+fn new_vm_segment_from_image() -> Result<VmSegment> {
+    let vm_segment = VmAllocOptions::new(EXFAT_IMAGE.len() / PAGE_SIZE)
+        .is_contiguous(true)
+        .alloc_contiguous()?;
+
+    vm_segment.write_bytes(0, EXFAT_IMAGE)?;
+    Ok(vm_segment)
+}
+
+pub fn load_exfat() -> Arc<ExfatFS> {
+    let vm_segment = new_vm_segment_from_image().unwrap();
+
+    let disk = ExfatMemoryDisk::new(vm_segment);
+    let mount_option = ExfatMountOptions::default();
+
+    let fs = ExfatFS::open(Box::new(disk), mount_option);
+
+    assert!(fs.is_ok(), "Fs failed to init:{:?}", fs.unwrap_err());
+
+    fs.unwrap()
+}
+
 mod test {
-    use super::{block_device::ExfatMemoryDisk, fs::ExfatMountOptions, *};
     use crate::{
         fs::{
             exfat::block_device::SECTOR_SIZE,
@@ -23,31 +49,8 @@ mod test {
         },
         prelude::*,
     };
-    use alloc::boxed::Box;
-    use jinux_frame::vm::{VmAllocOptions, VmIo, VmSegment};
 
-    fn new_vm_segment_from_image() -> Result<VmSegment> {
-        let vm_segment = VmAllocOptions::new(EXFAT_IMAGE.len() / PAGE_SIZE)
-            .is_contiguous(true)
-            .alloc_contiguous()?;
-
-        vm_segment.write_bytes(0, EXFAT_IMAGE)?;
-        Ok(vm_segment)
-    }
-
-    fn load_exfat() -> Arc<ExfatFS> {
-        let vm_segment = new_vm_segment_from_image().unwrap();
-
-        let disk = ExfatMemoryDisk::new(vm_segment);
-        let mount_option = ExfatMountOptions::default();
-
-        let fs = ExfatFS::open(Box::new(disk), mount_option);
-
-        assert!(fs.is_ok(), "Fs failed to init:{:?}", fs.unwrap_err());
-
-        fs.unwrap()
-    }
-
+    use super::load_exfat;
     fn create_file(parent: Arc<dyn Inode>, filename: &str) -> Arc<dyn Inode> {
         let create_result = parent.create(
             filename,
@@ -100,6 +103,35 @@ mod test {
 
             info!("Successfully creating and reading {} files", file_id + 1);
         }
+
+        //Test skiped readdir.
+        let mut sub_inodes: Vec<String> = Vec::new();
+        let _ = root.readdir_at(file_names.len() / 3, &mut sub_inodes);
+
+        assert!(sub_inodes.len() == file_names.len() - file_names.len() / 3);
+    }
+
+    #[ktest]
+    fn test_mkdir() {
+        let fs = load_exfat();
+        let root = fs.root_inode() as Arc<dyn Inode>;
+        let folder_name = "sub";
+        let create_result = root.create(
+            folder_name,
+            crate::fs::utils::InodeType::Dir,
+            InodeMode::all(),
+        );
+
+        assert!(
+            create_result.is_ok(),
+            "Fs failed to create: {:?}",
+            create_result.unwrap_err()
+        );
+
+        let mut sub_dirs: Vec<String> = Vec::new();
+        let _ = root.readdir_at(0, &mut sub_dirs);
+        assert!(sub_dirs.len() == 1);
+        assert!(sub_dirs[0] == folder_name);
     }
 
     #[ktest]

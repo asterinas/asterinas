@@ -235,8 +235,10 @@ impl ExfatFS {
 
 impl FileSystem for ExfatFS {
     fn sync(&self) -> Result<()> {
-        // TODO:Should sync all inodes in the file system.
-        todo!();
+        for inode in self.inodes.read().values() {
+            inode.sync()?;
+        }
+        Ok(())
     }
 
     fn root_inode(&self) -> Arc<dyn Inode> {
@@ -244,7 +246,7 @@ impl FileSystem for ExfatFS {
     }
 
     fn sb(&self) -> SuperBlock {
-        unimplemented!()
+        SuperBlock::new(BOOT_SIGNATURE as u64, self.sector_size(), MAX_NAME_LENGTH)
     }
 
     fn flags(&self) -> FsFlags {

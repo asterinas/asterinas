@@ -73,6 +73,9 @@ impl ExfatInode {
     }
 
     fn count_num_subdir(start_chain: ExfatChain, size: usize) -> Result<usize> {
+        if start_chain.cluster_id() == 0 {
+            return Ok(0);
+        }
         //FIXME:What if there are some invalid dentries in volume?
         let iterator = ExfatDentryIterator::new(start_chain, 0, Some(size))?;
         let mut cnt = 0;
@@ -124,7 +127,7 @@ impl ExfatInode {
                 ctime,
                 num_subdir,
                 name,
-                page_cache: PageCache::new(weak_self.clone() as _).unwrap(),
+                page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
                 fs: fs_weak,
             }))
         }))
@@ -214,7 +217,7 @@ impl ExfatInode {
                 ctime,
                 num_subdir,
                 name,
-                page_cache: PageCache::new(weak_self.clone() as _).unwrap(),
+                page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
                 fs: fs_weak,
             }))
         }))
@@ -334,10 +337,8 @@ impl ExfatInodeInner {
     }
 
     pub fn make_mode(&self) -> InodeMode {
-        self.attr.make_mode(
-            self.fs().mount_option(),
-            InodeMode::from_bits(0o777).unwrap(),
-        )
+        self.attr
+            .make_mode(self.fs().mount_option(), InodeMode::all())
     }
 
     //Should lock the file system before calling this function.
@@ -774,6 +775,7 @@ impl ExfatInodeInner {
         let pos = self
             .start_chain
             .walk_to_cluster_at_offset(entry as usize * DENTRY_SIZE)?;
+
         dentry_set.write_at(&pos)?;
 
         self.num_subdir += 1;
@@ -928,9 +930,9 @@ impl Inode for ExfatInode {
             size: inner.size,
             blk_size,
             blocks: (inner.size + blk_size - 1) / blk_size,
-            atime: inner.atime.as_duration().unwrap(),
-            mtime: inner.mtime.as_duration().unwrap(),
-            ctime: inner.ctime.as_duration().unwrap(),
+            atime: inner.atime.as_duration().unwrap_or_default(),
+            mtime: inner.mtime.as_duration().unwrap_or_default(),
+            ctime: inner.ctime.as_duration().unwrap_or_default(),
             type_: inner.inode_type,
             mode: inner.make_mode(),
             nlinks: inner.num_subdir as usize,
@@ -955,19 +957,19 @@ impl Inode for ExfatInode {
     }
 
     fn atime(&self) -> Duration {
-        self.0.read().atime.as_duration().unwrap()
+        self.0.read().atime.as_duration().unwrap_or_default()
     }
 
     fn set_atime(&self, time: Duration) {
-        self.0.write().atime = DosTimestamp::from_duration(time).unwrap();
+        self.0.write().atime = DosTimestamp::from_duration(time).unwrap_or_default();
     }
 
     fn mtime(&self) -> Duration {
-        self.0.read().mtime.as_duration().unwrap()
+        self.0.read().mtime.as_duration().unwrap_or_default()
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.0.write().mtime = DosTimestamp::from_duration(time).unwrap();
+        self.0.write().mtime = DosTimestamp::from_duration(time).unwrap_or_default();
     }
 
     fn fs(&self) -> alloc::sync::Arc<dyn crate::fs::utils::FileSystem> {
@@ -1005,7 +1007,7 @@ impl Inode for ExfatInode {
     }
 
     fn page_cache(&self) -> Option<Vmo<Full>> {
-        Some(self.0.read().page_cache().pages().dup().unwrap())
+        Some(self.0.read().page_cache().pages())
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
@@ -1071,6 +1073,7 @@ impl Inode for ExfatInode {
 
             let file_size = inner.size;
             let new_size = offset + buf.len();
+
             if new_size > file_size {
                 inner.lock_and_resize(new_size)?;
                 inner.page_cache.pages().resize(new_size)?;
@@ -1148,13 +1151,38 @@ impl Inode for ExfatInode {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at(&self, dir_cnt: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let inner = self.0.read();
+
+        if dir_cnt >= inner.num_subdir as usize {
+            return Ok(0);
+        }
+
+        struct EmptyVistor {}
+        impl DirentVisitor for EmptyVistor {
+            fn visit(
+                &mut self,
+                name: &str,
+                ino: u64,
+                type_: InodeType,
+                offset: usize,
+            ) -> Result<()> {
+                Ok(())
+            }
+        }
+        let mut empty_visitor = EmptyVistor {};
+
+        let mut offset = 0;
 
         let fs = inner.fs();
         let guard = fs.lock();
-        let mut offset = 0;
-        for i in 0..inner.num_subdir {
+
+        for i in 0..dir_cnt {
+            let (_, next_offset) = inner.read_single_dir(offset, &mut empty_visitor)?;
+            offset = next_offset;
+        }
+
+        for i in dir_cnt as u32..inner.num_subdir {
             let (_, next_offset) = inner.read_single_dir(offset, visitor)?;
             offset = next_offset;
         }

@@ -443,7 +443,9 @@ impl ExfatDentryIterator {
         let (chain, offset) = chain.walk_to_cluster_at_offset(offset)?;
 
         let buffer = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
-        chain.read_page(offset.align_down(PAGE_SIZE), &buffer)?;
+        if chain.cluster_id() != 0 {
+            chain.read_page(offset.align_down(PAGE_SIZE), &buffer)?;
+        }
 
         Ok(Self {
             chain,
@@ -494,6 +496,10 @@ impl Iterator for ExfatDentryIterator {
             return None;
         }
 
+        if self.chain.cluster_id() == 0 {
+            return None;
+        }
+
         if self.size.is_some() && self.size.unwrap() == 0 {
             return None;
         }
@@ -519,7 +525,7 @@ impl Iterator for ExfatDentryIterator {
 
         //Read next page if we reach the page boundary
         if (self.size.is_none() || self.size.unwrap() != 0)
-            && self.entry as usize * DENTRY_SIZE % PAGE_SIZE == 0
+            && (self.entry as usize * DENTRY_SIZE % PAGE_SIZE == 0)
         {
             let load_page_result = self.read_next_page();
             if load_page_result.is_err() {

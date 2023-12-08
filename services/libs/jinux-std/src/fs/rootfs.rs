@@ -1,3 +1,4 @@
+use crate::fs::exfat::load_exfat;
 use crate::prelude::*;
 
 use super::fs_resolver::{FsPath, FsResolver};
@@ -77,6 +78,14 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
     dev_dentry.mount(RamFS::new())?;
+    // Mount ExfatFS
+    let exfat_dentry = fs.root().clone().create(
+        "exfat",
+        InodeType::Dir,
+        InodeMode::from_bits_truncate(InodeMode::all()),
+    )?;
+    exfat_dentry.mount(load_exfat())?;
+
     println!("[kernel] rootfs is ready");
 
     Ok(())
