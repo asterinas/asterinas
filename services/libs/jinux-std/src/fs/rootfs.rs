@@ -82,7 +82,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     let exfat_dentry = fs.root().clone().create(
         "exfat",
         InodeType::Dir,
-        InodeMode::from_bits_truncate(InodeMode::all()),
+        InodeMode::from_bits_truncate(0o777),
     )?;
     exfat_dentry.mount(load_exfat())?;
 
