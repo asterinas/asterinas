@@ -1,10 +1,10 @@
-use crate::{log_syscall_entry, prelude::*};
-use align_ext::AlignExt;
-use jinux_frame::early_println;
 use super::SyscallReturn;
 use crate::syscall::SYS_MPROTECT;
 use crate::vm::perms::VmPerms;
 
+use crate::{log_syscall_entry, prelude::*};
+use align_ext::AlignExt;
+use jinux_frame::early_println;
 //test for addr align
 pub fn is_align(i: usize) -> Result<()> {
     if i % PAGE_SIZE != 0 {
