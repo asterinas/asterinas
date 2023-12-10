@@ -1,3 +1,7 @@
+
+use align_ext::AlignExt;
+use jinux_frame::early_println;
+
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use align_ext::AlignExt;
@@ -14,10 +18,10 @@ pub fn sys_munmap(addr: Vaddr, len: usize) -> Result<SyscallReturn> {
     let len = len.align_up(PAGE_SIZE);
     debug!("unmap range = 0x{:x} - 0x{:x}", addr, addr + len);
     //test for addr overflow
-    match addr.checked_add(len) {
+    match addr.checked_add(len){
         //Some(_)=>early_println!("checked {:?}", addr.checked_add(len)),
-        Some(_) => (),
-        None => {
+        Some(_)=>(),
+        None =>{
             early_println!("overflow!");
             return Err(Error::with_message(Errno::EADDRNOTAVAIL, "Overflow!"));
         }
