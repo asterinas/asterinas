@@ -6,6 +6,7 @@ use super::{
     fs::ExfatFS,
 };
 use crate::{fs::exfat::fat::FatChainFlags, prelude::*};
+use align_ext::AlignExt;
 use bitvec::prelude::*;
 
 //TODO:use u64
@@ -18,6 +19,7 @@ pub struct ExfatBitmap {
     chain: ExfatChain,
     // TODO: use jinux_util::bitmap
     bitvec: BitVec<BitStore>,
+    free_cluster_num: u32,
     fs: Weak<ExfatFS>,
 }
 
@@ -57,9 +59,16 @@ impl ExfatBitmap {
         );
         let mut buf = vec![0; dentry.size as usize];
         chain.read_at(0, &mut buf)?;
+        let mut free_cluster_num = 0;
+        for idx in 0..fs.upgrade().unwrap().super_block().num_clusters - EXFAT_RESERVED_CLUSTERS {
+            if (buf[idx as usize/ 8] & (1 << (idx % 8))) == 0 {
+                free_cluster_num += 1;
+            }
+        }
         Ok(ExfatBitmap {
             chain,
             bitvec: BitVec::from_slice(&buf),
+            free_cluster_num,
             fs,
         })
     }
@@ -121,7 +130,7 @@ impl ExfatBitmap {
         }
 
         let mut cur_index = search_start_cluster - EXFAT_RESERVED_CLUSTERS;
-        let end_index = self.fs().super_block().num_clusters;
+        let end_index = self.fs().super_block().num_clusters - EXFAT_RESERVED_CLUSTERS;
         let search_end_index = end_index - cluster_num + 1;
         let mut range_start_index: ClusterID;
 
@@ -160,7 +169,7 @@ impl ExfatBitmap {
         let start_cluster_index = search_start_cluster - EXFAT_RESERVED_CLUSTERS;
         let mut cur_unit_index = start_cluster_index / unit_size;
         let mut cur_unit_offset = start_cluster_index % unit_size;
-        let total_cluster_num = self.fs().super_block().num_clusters;
+        let total_cluster_num = self.fs().super_block().num_clusters - EXFAT_RESERVED_CLUSTERS;
         let complete_unit_num = total_cluster_num / unit_size;
         let rest_cluster_num = total_cluster_num % unit_size;
         let mut head_cluster_num;
@@ -266,6 +275,10 @@ impl ExfatBitmap {
         }
     }
 
+    pub fn free_clusters(&self) -> u32 {
+        return self.free_cluster_num;
+    }
+
     fn set_bitmap_range(
         &mut self,
         clusters: Range<ClusterID>,
@@ -281,15 +294,23 @@ impl ExfatBitmap {
                 .set((cluster_id - EXFAT_RESERVED_CLUSTERS) as usize, bit);
         }
 
-        self.write_bitmap_range_to_disk(clusters, sync)?;
+        self.write_bitmap_range_to_disk(clusters.clone(), sync)?;
+        
+        if bit {
+            self.free_cluster_num -= clusters.len() as u32;
+        }
+        else {
+            self.free_cluster_num += clusters.len() as u32;
+        }
         Ok(())
     }
 
     fn write_bitmap_range_to_disk(&self, clusters: Range<ClusterID>, sync: bool) -> Result<()> {
+        let unit_size = core::mem::size_of::<BitStore>() * 8;
         let start_byte_off: usize =
-            (clusters.start - EXFAT_RESERVED_CLUSTERS) as usize / core::mem::size_of::<BitStore>();
+            (clusters.start - EXFAT_RESERVED_CLUSTERS) as usize / unit_size;
         let end_byte_off: usize =
-            (clusters.end - EXFAT_RESERVED_CLUSTERS) as usize / core::mem::size_of::<BitStore>();
+            ((clusters.end - EXFAT_RESERVED_CLUSTERS) as usize).align_up(unit_size) / unit_size;
 
         let bytes: &[BitStore] = self.bitvec.as_raw_slice();
         let byte_chunk = &bytes[start_byte_off..end_byte_off];

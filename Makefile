@@ -135,4 +135,4 @@ clean:
 	@make --no-print-directory -C regression clean
 
 filetest:
-	@make run KTEST=1 KTEST_WHITELIST=jinux_std::fs::exfat::test::test_new_exfat,jinux_std::fs::exfat::test::test_create_and_list_file,jinux_std::fs::exfat::test::test_write_and_read_file,jinux_std::fs::exfat::test::test_write_and_read_file_direct,jinux_std::fs::exfat::test::test_interleaved_write,jinux_std::fs::exfat::test::test_mkdir,jinux_std::fs::exfat::test::test_bitmap_modify_bit,jinux_std::fs::exfat::test::test_bitmap_modify_chunk,test_bitmap_find KTEST_CRATES=jinux-std
+	@make run KTEST=1 KTEST_WHITELIST=jinux_std::fs::exfat::test::test_new_exfat,jinux_std::fs::exfat::test::test_create_and_list_file,jinux_std::fs::exfat::test::test_write_and_read_file,jinux_std::fs::exfat::test::test_write_and_read_file_direct,jinux_std::fs::exfat::test::test_interleaved_write,jinux_std::fs::exfat::test::test_mkdir,jinux_std::fs::exfat::test::test_bitmap_modify_bit,jinux_std::fs::exfat::test::test_bitmap_modify_chunk,test_bitmap_find,test_resize_single KTEST_CRATES=jinux-std
