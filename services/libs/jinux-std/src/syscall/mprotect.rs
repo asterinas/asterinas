@@ -14,6 +14,15 @@ pub fn is_align(i: usize) -> Result<()> {
     Ok(())
 }
 
+
+
+pub fn is_align(i: usize) -> Result<()> {
+    if i % PAGE_SIZE != 0 {
+        return Err(Error::with_message(Errno::EFAULT, "Alignment error")); // 使用字符串作为错误信息
+    }
+    Ok(())
+}
+
 pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MPROTECT);
     let vm_perms = VmPerms::from_bits_truncate(perms as u32);
@@ -35,7 +44,6 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64) -> Result<SyscallReturn
             return Err(Error::with_message(Errno::EADDRNOTAVAIL, "Overflow!"));
         }
     }
-
     let range = addr..(addr + len);
     root_vmar.protect(vm_perms, range)?;
     Ok(SyscallReturn::Return(0))

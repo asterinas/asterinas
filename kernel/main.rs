@@ -15,3 +15,4 @@ pub fn main() -> ! {
     jinux_std::init();
     jinux_std::run_first_process();
 }
+
