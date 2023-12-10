@@ -9,6 +9,7 @@ C_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(C_SRCS:%.c=%))
 ASM_SRCS := $(wildcard *.s)
 ASM_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(ASM_SRCS:%.s=%))
 CC := gcc
+
 C_FLAGS :=
 
 .PHONY: all

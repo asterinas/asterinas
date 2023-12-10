@@ -6,7 +6,7 @@
 extern crate jinux_frame;
 
 use jinux_frame::early_println;
-
+use jinux_std::syscall::mprotect;
 #[export_name = "jinux_main"]
 pub fn main() -> ! {
     jinux_frame::init();
@@ -15,3 +15,4 @@ pub fn main() -> ! {
     jinux_std::init();
     jinux_std::run_first_process();
 }
+
