@@ -1,7 +1,6 @@
 use crate::{log_syscall_entry, prelude::*};
 use align_ext::AlignExt;
 use jinux_frame::early_println;
-
 use super::SyscallReturn;
 use crate::syscall::SYS_MPROTECT;
 use crate::vm::perms::VmPerms;
@@ -10,15 +9,6 @@ use crate::vm::perms::VmPerms;
 pub fn is_align(i: usize) -> Result<()> {
     if i % PAGE_SIZE != 0 {
         return Err(Error::with_message(Errno::EFAULT, "Alignment error"));
-    }
-    Ok(())
-}
-
-
-
-pub fn is_align(i: usize) -> Result<()> {
-    if i % PAGE_SIZE != 0 {
-        return Err(Error::with_message(Errno::EFAULT, "Alignment error")); // 使用字符串作为错误信息
     }
     Ok(())
 }
