@@ -105,17 +105,13 @@ impl ListenStream {
     }
 
     pub fn local_endpoint(&self) -> Result<IpEndpoint> {
-        self.bound_socket()
+        self.bound_socket
             .local_endpoint()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "does not has remote endpoint"))
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
-    }
-
-    fn bound_socket(&self) -> Arc<AnyBoundSocket> {
-        self.backlog_sockets.read()[0].bound_socket.clone()
     }
 
     fn update_io_events(&self) {
