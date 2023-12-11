@@ -210,6 +210,10 @@ impl ExfatFS {
         self.super_block.cluster_size as usize
     }
 
+    pub fn free_clusters(&self) -> u32 {
+        self.bitmap.lock().free_clusters()
+    }
+
     pub(super) fn cluster_to_off(&self, cluster: u32) -> usize {
         (((((cluster - EXFAT_RESERVED_CLUSTERS) as u64) << self.super_block.sect_per_cluster_bits)
             + self.super_block.data_start_sector)
@@ -221,7 +225,7 @@ impl ExfatFS {
     }
 
     pub(super) fn is_cluster_range_valid(&self, clusters: Range<ClusterID>) -> bool {
-        clusters.start >= EXFAT_RESERVED_CLUSTERS && clusters.end < self.super_block.num_clusters
+        clusters.start >= EXFAT_RESERVED_CLUSTERS && clusters.end <= self.super_block.num_clusters
     }
 
     pub(super) fn set_volume_dirty(&mut self) {
