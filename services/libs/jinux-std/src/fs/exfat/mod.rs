@@ -136,6 +136,26 @@ mod test {
     }
 
     #[ktest]
+    fn test_unlink() {
+        let fs = load_exfat();
+        let root = fs.root_inode() as Arc<dyn Inode>;
+        let file_name = "a.txt";
+        let a_inode = create_file(root.clone(), file_name);
+        let _ = a_inode.write_at(8192, &[0, 1, 2, 3, 4]);
+
+        let unlink_result = root.unlink(file_name);
+        assert!(
+            unlink_result.is_ok(),
+            "Fs failed to unlink: {:?}",
+            unlink_result.unwrap_err()
+        );
+
+        let mut sub_dirs: Vec<String> = Vec::new();
+        let _ = root.readdir_at(0, &mut sub_dirs);
+        assert!(sub_dirs.len() == 0);
+    }
+
+    #[ktest]
     fn test_write_and_read_file_direct() {
         let fs = load_exfat();
         let root = fs.root_inode() as Arc<dyn Inode>;

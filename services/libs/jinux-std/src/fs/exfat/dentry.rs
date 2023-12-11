@@ -425,7 +425,6 @@ pub struct ExfatDentryIterator {
     ///Remaining size that can be iterated. If none, iterate through the whole cluster chain.
     size: Option<usize>,
 
-    has_error: bool,
     previous_error: Option<Error>,
     read_eof: bool,
 }
@@ -443,7 +442,7 @@ impl ExfatDentryIterator {
         let (chain, offset) = chain.walk_to_cluster_at_offset(offset)?;
 
         let buffer = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
-        if chain.cluster_id() != 0 {
+        if chain.is_current_cluster_valid() {
             chain.read_page(offset.align_down(PAGE_SIZE), &buffer)?;
         }
 
@@ -452,7 +451,6 @@ impl ExfatDentryIterator {
             entry: (offset / DENTRY_SIZE) as u32,
             buffer,
             size,
-            has_error: false,
             previous_error: None,
             read_eof: false,
         })
@@ -484,19 +482,15 @@ impl Iterator for ExfatDentryIterator {
     type Item = Result<ExfatDentry>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.has_error {
-            if self.previous_error.is_some() {
-                //TODO:Can be optimized
-                if self.read_eof {
-                    return None;
-                }
-                let result = self.previous_error.clone().unwrap();
-                return Some(Err(result));
+        if self.previous_error.is_some() {
+            if self.read_eof {
+                return None;
             }
-            return None;
+            let result = self.previous_error.clone().unwrap();
+            return Some(Err(result));
         }
 
-        if self.chain.cluster_id() == 0 {
+        if !self.chain.is_current_cluster_valid() {
             return None;
         }
 
@@ -514,7 +508,6 @@ impl Iterator for ExfatDentryIterator {
         let dentry_result = ExfatDentry::try_from(dentry_buf.as_bytes());
 
         if dentry_result.is_err() {
-            self.has_error = true;
             return Some(Err(dentry_result.unwrap_err()));
         }
 
@@ -529,7 +522,6 @@ impl Iterator for ExfatDentryIterator {
         {
             let load_page_result = self.read_next_page();
             if load_page_result.is_err() {
-                self.has_error = true;
                 self.previous_error = Some(load_page_result.unwrap_err());
             }
         }
