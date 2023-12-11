@@ -44,8 +44,8 @@ pub fn load_exfat() -> Arc<ExfatFS> {
 mod test {
     use crate::{
         fs::{
-            exfat::block_device::SECTOR_SIZE,
             exfat::bitmap::EXFAT_RESERVED_CLUSTERS,
+            exfat::block_device::SECTOR_SIZE,
             utils::{Inode, InodeMode},
         },
         prelude::*,
@@ -253,8 +253,10 @@ mod test {
         let total_bits_len = 1000;
         let initial_free_clusters = bitmap.free_clusters();
 
-        let range_result = bitmap.find_next_free_cluster_range(EXFAT_RESERVED_CLUSTERS, total_bits_len);
-        assert!(range_result.is_ok(),
+        let range_result =
+            bitmap.find_next_free_cluster_range(EXFAT_RESERVED_CLUSTERS, total_bits_len);
+        assert!(
+            range_result.is_ok(),
             "Fail to get a free range with {:?} clusters",
             total_bits_len
         );
@@ -265,31 +267,40 @@ mod test {
             let relative_idx = (i * p) % total_bits_len;
             let idx = range_start_cluster + relative_idx;
             let res1 = bitmap.is_cluster_free(idx);
-            assert!(res1.is_ok() && res1.unwrap() == true,
+            assert!(
+                res1.is_ok() && res1.unwrap(),
                 "Cluster idx {:?} is set before set",
-                relative_idx);
-            
+                relative_idx
+            );
+
             let res2 = bitmap.set_bitmap_used(idx, true);
-            assert!(res2.is_ok() && bitmap.free_clusters() == initial_free_clusters - 1,
+            assert!(
+                res2.is_ok() && bitmap.free_clusters() == initial_free_clusters - 1,
                 "Set cluster idx {:?} failed",
-                relative_idx);
-            
+                relative_idx
+            );
+
             let res3 = bitmap.is_cluster_free(idx);
-            assert!(res3.is_ok() && res3.unwrap() == false,
+            assert!(
+                res3.is_ok() && !res3.unwrap(),
                 "Cluster idx {:?} is unset after set",
-                relative_idx);
+                relative_idx
+            );
 
             let res4 = bitmap.set_bitmap_unused(idx, true);
-            assert!(res4.is_ok() && bitmap.free_clusters() == initial_free_clusters,
+            assert!(
+                res4.is_ok() && bitmap.free_clusters() == initial_free_clusters,
                 "Clear cluster idx {:?} failed",
-                relative_idx);
+                relative_idx
+            );
 
             let res5 = bitmap.is_cluster_free(idx);
-            assert!(res5.is_ok() && res5.unwrap() == true,
+            assert!(
+                res5.is_ok() && res5.unwrap(),
                 "Cluster idx {:?} is still set after clear",
-                relative_idx);
+                relative_idx
+            );
         }
-
     }
 
     #[ktest]
@@ -300,44 +311,58 @@ mod test {
         let total_bits_len = 1000;
         let initial_free_clusters = bitmap.free_clusters();
 
-        let range_result = bitmap.find_next_free_cluster_range(EXFAT_RESERVED_CLUSTERS, total_bits_len);
-        assert!(range_result.is_ok(),
+        let range_result =
+            bitmap.find_next_free_cluster_range(EXFAT_RESERVED_CLUSTERS, total_bits_len);
+        assert!(
+            range_result.is_ok(),
             "Fail to get a free range with {:?} clusters",
             total_bits_len
         );
-        
+
         let range_start_idx = range_result.unwrap().start;
         let mut chunk_size = 1;
         let mut start_idx: u32 = range_start_idx;
         let mut end_idx = range_start_idx + 1;
         while end_idx <= range_start_idx + total_bits_len {
             let res1 = bitmap.set_bitmap_range_used(start_idx..end_idx, true);
-            assert!(res1.is_ok() && bitmap.free_clusters() == initial_free_clusters - chunk_size,
+            assert!(
+                res1.is_ok() && bitmap.free_clusters() == initial_free_clusters - chunk_size,
                 "Set cluster chunk [{:?}, {:?}) failed",
-                start_idx, end_idx);
-            
+                start_idx,
+                end_idx
+            );
+
             for idx in start_idx..end_idx {
                 let res = bitmap.is_cluster_free(idx);
-                assert!(res.is_ok() && res.unwrap() == false,
-                "Cluster {:?} in chunk [{:?}, {:?}) is unset",
-                idx, start_idx, end_idx);
+                assert!(
+                    res.is_ok() && !res.unwrap(),
+                    "Cluster {:?} in chunk [{:?}, {:?}) is unset",
+                    idx,
+                    start_idx,
+                    end_idx
+                );
             }
 
             let res2 = bitmap.set_bitmap_range_unused(start_idx..end_idx, true);
-            assert!(res2.is_ok() && bitmap.free_clusters() == initial_free_clusters,
+            assert!(
+                res2.is_ok() && bitmap.free_clusters() == initial_free_clusters,
                 "Clear cluster chunk [{:?}, {:?}) failed",
-                start_idx, end_idx);
-            
+                start_idx,
+                end_idx
+            );
+
             let res3 = bitmap.is_cluster_range_free(start_idx..end_idx);
-            assert!(res3.is_ok() && res3.unwrap() == true,
+            assert!(
+                res3.is_ok() && res3.unwrap(),
                 "Some bit in cluster chunk [{:?}, {:?}) is still set after clear",
-                start_idx, end_idx);
+                start_idx,
+                end_idx
+            );
 
             chunk_size += 1;
             start_idx = end_idx;
             end_idx = start_idx + chunk_size;
         }
-        
     }
 
     #[ktest]
@@ -347,8 +372,10 @@ mod test {
         let mut bitmap = bitmap_binding.lock();
         let total_bits_len = 1000;
 
-        let range_result = bitmap.find_next_free_cluster_range(EXFAT_RESERVED_CLUSTERS, total_bits_len);
-        assert!(range_result.is_ok(),
+        let range_result =
+            bitmap.find_next_free_cluster_range(EXFAT_RESERVED_CLUSTERS, total_bits_len);
+        assert!(
+            range_result.is_ok(),
             "Fail to get a free range with {:?} clusters",
             total_bits_len
         );
@@ -358,7 +385,7 @@ mod test {
         let mut start_idx;
         let mut end_idx = range_start_idx + 1;
         // 010010001000010000010000001...
-        // chunk_size = k, relative_start_idx =(k-1)*(k+2)/2 
+        // chunk_size = k, relative_start_idx =(k-1)*(k+2)/2
         while end_idx <= range_start_idx + total_bits_len {
             let _ = bitmap.set_bitmap_used(end_idx, true);
             chunk_size += 1;
@@ -368,9 +395,11 @@ mod test {
 
         for k in 1..chunk_size {
             let start_idx_k = bitmap.find_next_free_cluster_range(range_start_idx, k);
-            assert!(start_idx_k.is_ok() && 
-                start_idx_k.clone().unwrap().start == (k - 1) * (k + 2) / 2 + range_start_idx && 
-                start_idx_k.unwrap().end == (k * k + 3 * k - 2) / 2 + range_start_idx,
+            assert!(
+                start_idx_k.is_ok()
+                    && start_idx_k.clone().unwrap().start
+                        == (k - 1) * (k + 2) / 2 + range_start_idx
+                    && start_idx_k.unwrap().end == (k * k + 3 * k - 2) / 2 + range_start_idx,
                 "Fail to find chunk size {:?}",
                 k
             );
@@ -378,9 +407,11 @@ mod test {
 
         for k in 1..chunk_size {
             let start_idx_k = bitmap.find_next_free_cluster_range_fast(range_start_idx, k);
-            assert!(start_idx_k.is_ok() && 
-                start_idx_k.clone().unwrap().start == (k - 1) * (k + 2) / 2 + range_start_idx && 
-                start_idx_k.unwrap().end == (k * k + 3 * k - 2) / 2 + range_start_idx,
+            assert!(
+                start_idx_k.is_ok()
+                    && start_idx_k.clone().unwrap().start
+                        == (k - 1) * (k + 2) / 2 + range_start_idx
+                    && start_idx_k.unwrap().end == (k * k + 3 * k - 2) / 2 + range_start_idx,
                 "Fail to find chunk size {:?} with fast",
                 k
             );
@@ -401,16 +432,22 @@ mod test {
             alloc_clusters += 1;
             info!("alloc_clusters = {:?}", alloc_clusters);
             f.resize(alloc_clusters as usize * cluster_size);
-            assert!(fs.free_clusters() == initial_free_clusters - alloc_clusters,
-                "Fail to linearly expand file to {:?} clusters", alloc_clusters);
+            assert!(
+                fs.free_clusters() == initial_free_clusters - alloc_clusters,
+                "Fail to linearly expand file to {:?} clusters",
+                alloc_clusters
+            );
         }
         // here alloc_clusters == max_clusters
-        
+
         while alloc_clusters > 0 {
             alloc_clusters -= 1;
             f.resize(alloc_clusters as usize * cluster_size);
-            assert!(fs.free_clusters() == initial_free_clusters - alloc_clusters,
-                "Fail to linearly shrink file to {:?} clusters", alloc_clusters);
+            assert!(
+                fs.free_clusters() == initial_free_clusters - alloc_clusters,
+                "Fail to linearly shrink file to {:?} clusters",
+                alloc_clusters
+            );
         }
 
         alloc_clusters = 1;
@@ -418,8 +455,12 @@ mod test {
         let mut step = 1;
         while alloc_clusters <= max_clusters {
             f.resize(alloc_clusters as usize * cluster_size);
-            assert!(fs.free_clusters() == initial_free_clusters - alloc_clusters,
-                "Fail to expand file from {:?} clusters to {:?} clusters", old_alloc_clusters, alloc_clusters);
+            assert!(
+                fs.free_clusters() == initial_free_clusters - alloc_clusters,
+                "Fail to expand file from {:?} clusters to {:?} clusters",
+                old_alloc_clusters,
+                alloc_clusters
+            );
             old_alloc_clusters = alloc_clusters;
             step += 1;
             alloc_clusters += step;
@@ -429,26 +470,35 @@ mod test {
             alloc_clusters -= step;
             step -= 1;
             f.resize(alloc_clusters as usize * cluster_size);
-            assert!(fs.free_clusters() == initial_free_clusters - alloc_clusters,
-                "Fail to shrink file from {:?} clusters to {:?} clusters", old_alloc_clusters, alloc_clusters);
+            assert!(
+                fs.free_clusters() == initial_free_clusters - alloc_clusters,
+                "Fail to shrink file from {:?} clusters to {:?} clusters",
+                old_alloc_clusters,
+                alloc_clusters
+            );
             old_alloc_clusters = alloc_clusters;
         }
         assert!(alloc_clusters == 0);
 
-        
         // Try to allocate a file larger than remaining spaces. This will fail without changing the remaining space.
-        f.resize(initial_free_clusters as usize  * cluster_size + 1);
-        assert!(fs.free_clusters() == initial_free_clusters,
-            "Fail to deal with a memeory overflow allocation");
-        
-        // Try to allocate a file of exactly the same size as the remaining spaces. This will succeed. 
+        f.resize(initial_free_clusters as usize * cluster_size + 1);
+        assert!(
+            fs.free_clusters() == initial_free_clusters,
+            "Fail to deal with a memeory overflow allocation"
+        );
+
+        // Try to allocate a file of exactly the same size as the remaining spaces. This will succeed.
         f.resize(initial_free_clusters as usize * cluster_size);
-        assert!(fs.free_clusters() == 0,
-            "Fail to deal with a exact allocation");
-        
+        assert!(
+            fs.free_clusters() == 0,
+            "Fail to deal with a exact allocation"
+        );
+
         // Free the file just allocated. This will also succeed.
         f.resize(0);
-        assert!(fs.free_clusters() == initial_free_clusters,
-            "Fail to free a large chunk");
+        assert!(
+            fs.free_clusters() == initial_free_clusters,
+            "Fail to free a large chunk"
+        );
     }
 }

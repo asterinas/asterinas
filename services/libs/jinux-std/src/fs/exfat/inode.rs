@@ -541,7 +541,7 @@ impl ExfatInodeInner {
             let current_end = start_cluster + num_clusters;
             let clusters = current_end..(current_end + num_to_be_allocated);
             let check_result = bitmap.is_cluster_range_free(clusters.clone());
-            if check_result.is_ok() && check_result.unwrap() == true {
+            if check_result.is_ok() && check_result.unwrap() {
                 // Considering that the following clusters may be out of range, we should deal with this error here(just turn to fat allocation)
                 bitmap.set_bitmap_range_used(clusters, sync_bitmap)?;
                 return Ok(start_cluster);
@@ -628,7 +628,7 @@ impl ExfatInodeInner {
                 self.alloc_cluster(new_num_clusters - num_clusters, sync)?;
             }
             Ordering::Less => {
-                self.free_tailing_cluster(num_clusters - new_num_clusters, sync)?;                
+                self.free_tailing_cluster(num_clusters - new_num_clusters, sync)?;
                 if new_size < self.size {
                     //Valid data is truncated.
                     self.size = new_size;

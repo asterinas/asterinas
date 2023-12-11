@@ -61,7 +61,7 @@ impl ExfatBitmap {
         chain.read_at(0, &mut buf)?;
         let mut free_cluster_num = 0;
         for idx in 0..fs.upgrade().unwrap().super_block().num_clusters - EXFAT_RESERVED_CLUSTERS {
-            if (buf[idx as usize/ 8] & (1 << (idx % 8))) == 0 {
+            if (buf[idx as usize / 8] & (1 << (idx % 8))) == 0 {
                 free_cluster_num += 1;
             }
         }
@@ -276,7 +276,7 @@ impl ExfatBitmap {
     }
 
     pub fn free_clusters(&self) -> u32 {
-        return self.free_cluster_num;
+        self.free_cluster_num
     }
 
     fn set_bitmap_range(
@@ -295,20 +295,19 @@ impl ExfatBitmap {
         }
 
         self.write_bitmap_range_to_disk(clusters.clone(), sync)?;
-        
+
         if bit {
             self.free_cluster_num -= clusters.len() as u32;
-        }
-        else {
+        } else {
             self.free_cluster_num += clusters.len() as u32;
         }
         Ok(())
     }
 
     fn write_bitmap_range_to_disk(&self, clusters: Range<ClusterID>, sync: bool) -> Result<()> {
+        const BYTES_PER_BIT: usize = 8;
         let unit_size = core::mem::size_of::<BitStore>() * 8;
-        let start_byte_off: usize =
-            (clusters.start - EXFAT_RESERVED_CLUSTERS) as usize / unit_size;
+        let start_byte_off: usize = (clusters.start - EXFAT_RESERVED_CLUSTERS) as usize / unit_size;
         let end_byte_off: usize =
             ((clusters.end - EXFAT_RESERVED_CLUSTERS) as usize).align_up(unit_size) / unit_size;
 
