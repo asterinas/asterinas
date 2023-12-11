@@ -12,6 +12,7 @@ use bitvec::prelude::*;
 //TODO:use u64
 type BitStore = u8;
 pub(super) const EXFAT_RESERVED_CLUSTERS: u32 = 2;
+const BITS_PER_BYTE: usize = 8;
 
 #[derive(Debug, Default)]
 pub struct ExfatBitmap {
@@ -19,6 +20,7 @@ pub struct ExfatBitmap {
     chain: ExfatChain,
     // TODO: use jinux_util::bitmap
     bitvec: BitVec<BitStore>,
+
     free_cluster_num: u32,
     fs: Weak<ExfatFS>,
 }
@@ -61,7 +63,7 @@ impl ExfatBitmap {
         chain.read_at(0, &mut buf)?;
         let mut free_cluster_num = 0;
         for idx in 0..fs.upgrade().unwrap().super_block().num_clusters - EXFAT_RESERVED_CLUSTERS {
-            if (buf[idx as usize/ 8] & (1 << (idx % 8))) == 0 {
+            if (buf[idx as usize / BITS_PER_BYTE] & (1 << (idx % BITS_PER_BYTE as u32))) == 0 {
                 free_cluster_num += 1;
             }
         }
@@ -99,7 +101,7 @@ impl ExfatBitmap {
 
     pub fn is_cluster_range_free(&self, clusters: Range<ClusterID>) -> Result<bool> {
         if !self.fs().is_cluster_range_valid(clusters.clone()) {
-            return_errno!(Errno::EINVAL)
+            return_errno_with_message!(Errno::EINVAL, "invalid cluster ranges.")
         }
 
         for id in clusters {
@@ -126,7 +128,7 @@ impl ExfatBitmap {
             .fs()
             .is_cluster_range_valid(search_start_cluster..search_start_cluster + cluster_num)
         {
-            return_errno_with_message!(Errno::ENOSPC, "Exceeds full capacity")
+            return_errno_with_message!(Errno::ENOSPC, "free contigous clusters not avalable")
         }
 
         let mut cur_index = search_start_cluster - EXFAT_RESERVED_CLUSTERS;
@@ -165,7 +167,7 @@ impl ExfatBitmap {
         }
 
         let bytes: &[BitStore] = self.bitvec.as_raw_slice();
-        let unit_size: u32 = 8 * core::mem::size_of::<BitStore>() as u32;
+        let unit_size: u32 = (BITS_PER_BYTE * core::mem::size_of::<BitStore>()) as u32;
         let start_cluster_index = search_start_cluster - EXFAT_RESERVED_CLUSTERS;
         let mut cur_unit_index = start_cluster_index / unit_size;
         let mut cur_unit_offset = start_cluster_index % unit_size;
@@ -276,7 +278,7 @@ impl ExfatBitmap {
     }
 
     pub fn free_clusters(&self) -> u32 {
-        return self.free_cluster_num;
+        self.free_cluster_num
     }
 
     fn set_bitmap_range(
@@ -286,7 +288,7 @@ impl ExfatBitmap {
         sync: bool,
     ) -> Result<()> {
         if !self.fs().is_cluster_range_valid(clusters.clone()) {
-            return_errno!(Errno::EINVAL)
+            return_errno_with_message!(Errno::EINVAL, "invalid cluster ranges.")
         }
 
         for cluster_id in clusters.clone() {
@@ -307,9 +309,8 @@ impl ExfatBitmap {
     }
 
     fn write_bitmap_range_to_disk(&self, clusters: Range<ClusterID>, sync: bool) -> Result<()> {
-        let unit_size = core::mem::size_of::<BitStore>() * 8;
-        let start_byte_off: usize =
-            (clusters.start - EXFAT_RESERVED_CLUSTERS) as usize / unit_size;
+        let unit_size = core::mem::size_of::<BitStore>() * BITS_PER_BYTE;
+        let start_byte_off: usize = (clusters.start - EXFAT_RESERVED_CLUSTERS) as usize / unit_size;
         let end_byte_off: usize =
             ((clusters.end - EXFAT_RESERVED_CLUSTERS) as usize).align_up(unit_size) / unit_size;
 

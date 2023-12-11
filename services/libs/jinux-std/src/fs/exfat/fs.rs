@@ -221,7 +221,7 @@ impl ExfatFS {
     }
 
     pub(super) fn is_valid_cluster(&self, cluster: u32) -> bool {
-        cluster >= EXFAT_RESERVED_CLUSTERS && cluster < self.super_block.num_clusters
+        cluster >= EXFAT_RESERVED_CLUSTERS && cluster <= self.super_block.num_clusters
     }
 
     pub(super) fn is_cluster_range_valid(&self, clusters: Range<ClusterID>) -> bool {

@@ -28,7 +28,7 @@ pub fn calc_checksum_16(data: &[u8], ignore: core::ops::Range<usize>, prev_check
 }
 
 pub fn get_value_from_range(value: u16, range: Range<usize>) -> u16 {
-    (value >> range.start) & (1 << ((range.end - range.start) - 1))
+    (value >> range.start) & ((1 << (range.end - range.start)) - 1)
 }
 
 const DOUBLE_SECOND_RANGE: Range<usize> = 0..5;
