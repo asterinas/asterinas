@@ -290,18 +290,19 @@ impl ExfatBitmap {
         }
 
         for cluster_id in clusters.clone() {
-            self.bitvec
-                .set((cluster_id - EXFAT_RESERVED_CLUSTERS) as usize, bit);
+            let index = (cluster_id - EXFAT_RESERVED_CLUSTERS) as usize;
+            let old_bit = self.used(index);
+            self.bitvec.set(index, bit);
+            if old_bit == false && bit == true {
+                self.free_cluster_num -= 1;
+            }
+            else if old_bit == true && bit == false{
+                self.free_cluster_num += 1;
+            }
         }
 
         self.write_bitmap_range_to_disk(clusters.clone(), sync)?;
         
-        if bit {
-            self.free_cluster_num -= clusters.len() as u32;
-        }
-        else {
-            self.free_cluster_num += clusters.len() as u32;
-        }
         Ok(())
     }
 
