@@ -104,7 +104,7 @@ impl DosTimestamp {
         let day = get_value_from_range(self.date, DAY_RANGE);
 
         let hour = get_value_from_range(self.time, HOUR_RANGE);
-        let minute = get_value_from_range(self.time, HOUR_RANGE);
+        let minute = get_value_from_range(self.time, MINUTE_RANGE);
         let second = get_value_from_range(self.time, DOUBLE_SECOND_RANGE) * 2;
 
         let day_result = time::Date::from_calendar_date(year as i32, month, day as u8);
