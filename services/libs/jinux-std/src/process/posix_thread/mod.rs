@@ -10,6 +10,7 @@ use crate::prelude::*;
 use crate::process::signal::constants::SIGCONT;
 use crate::thread::{thread_table, Tid};
 use crate::util::write_val_to_user;
+use alloc::collections::BinaryHeap;
 use futex::futex_wake;
 use jinux_rights::{ReadOp, WriteOp};
 use robust_list::wake_robust_futex;
@@ -19,11 +20,13 @@ pub mod futex;
 mod name;
 mod posix_thread_ext;
 mod robust_list;
+mod timer;
 
 pub use builder::PosixThreadBuilder;
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::PosixThreadExt;
 pub use robust_list::RobustListHead;
+pub use timer::Timer;
 
 pub struct PosixThread {
     // Immutable part
@@ -42,6 +45,8 @@ pub struct PosixThread {
 
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
+
+    timers: Mutex<BinaryHeap<Timer>>,
 
     // signal
     /// blocked signals
@@ -127,6 +132,10 @@ impl PosixThread {
         }
 
         return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
+    }
+
+    pub fn timers(&self) -> &Mutex<BinaryHeap<Timer>> {
+        &self.timers
     }
 
     pub(in crate::process) fn enqueue_signal(&self, signal: Box<dyn Signal>) {
@@ -219,6 +228,10 @@ impl PosixThread {
             // If the thread is not main thread. We don't remove main thread.
             // Main thread are removed when the whole process is reaped.
             thread_table::remove_thread(tid);
+        }
+
+        for alarm in self.timers.lock().iter() {
+            alarm.cancel();
         }
 
         if self.is_main_thread() || self.is_last_thread() {

@@ -72,6 +72,7 @@ use crate::syscall::writev::sys_writev;
 use jinux_frame::cpu::UserContext;
 
 use self::accept::sys_accept;
+use self::alarm::sys_alarm;
 use self::bind::sys_bind;
 use self::connect::sys_connect;
 use self::execve::sys_execveat;
@@ -105,6 +106,7 @@ use self::socketpair::sys_socketpair;
 
 mod accept;
 mod access;
+mod alarm;
 mod arch_prctl;
 mod bind;
 mod brk;
@@ -261,6 +263,7 @@ define_syscall_nums!(
     SYS_DUP = 32,
     SYS_DUP2 = 33,
     SYS_PAUSE = 34,
+    SYS_ALARM = 37,
     SYS_GETPID = 39,
     SYS_SOCKET = 41,
     SYS_CONNECT = 42,
@@ -437,6 +440,7 @@ pub fn syscall_dispatch(
         SYS_DUP => syscall_handler!(1, sys_dup, args),
         SYS_DUP2 => syscall_handler!(2, sys_dup2, args),
         SYS_PAUSE => syscall_handler!(0, sys_pause),
+        SYS_ALARM => syscall_handler!(1, sys_alarm, args),
         SYS_GETPID => syscall_handler!(0, sys_getpid),
         SYS_SOCKET => syscall_handler!(3, sys_socket, args),
         SYS_CONNECT => syscall_handler!(3, sys_connect, args),

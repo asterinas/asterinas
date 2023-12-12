@@ -1,3 +1,4 @@
+use alloc::collections::BinaryHeap;
 use jinux_frame::user::UserSpace;
 
 use crate::{
@@ -99,6 +100,7 @@ impl PosixThreadBuilder {
                 set_child_tid: Mutex::new(set_child_tid),
                 clear_child_tid: Mutex::new(clear_child_tid),
                 credentials,
+                timers: Mutex::new(BinaryHeap::new()),
                 sig_mask: Mutex::new(sig_mask),
                 sig_queues: Mutex::new(sig_queues),
                 sig_context: Mutex::new(None),
