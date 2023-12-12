@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
+use crate::events::{IoEvents, Observer};
 use crate::net::iface::IpEndpoint;
 use crate::process::signal::Poller;
 use crate::{
@@ -50,7 +50,7 @@ impl ConnectedStream {
                 let remote_endpoint = self.remote_endpoint()?;
                 return Ok((recv_len, remote_endpoint));
             }
-            let events = self.bound_socket.poll(IoEvents::IN, Some(&poller));
+            let events: IoEvents = self.bound_socket.poll(IoEvents::IN, Some(&poller));
             if events.contains(IoEvents::HUP) || events.contains(IoEvents::ERR) {
                 return_errno_with_message!(Errno::ENOTCONN, "recv packet fails");
             }
@@ -134,5 +134,16 @@ impl ConnectedStream {
 
     pub fn set_nonblocking(&self, nonblocking: bool) {
         self.nonblocking.store(nonblocking, Ordering::Relaxed);
+    }
+
+    pub fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        self.bound_socket.register_observer(observer, mask);
+    }
+
+    pub fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        self.bound_socket.unregister_observer(observer)
     }
 }

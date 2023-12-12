@@ -1,4 +1,4 @@
-use crate::events::IoEvents;
+use crate::events::{IoEvents, Observer};
 use crate::fs::{file_handle::FileLike, utils::StatusFlags};
 use crate::net::socket::{
     util::{
@@ -57,6 +57,7 @@ impl StreamSocket {
 impl FileLike for StreamSocket {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         // FIXME: set correct flags
+        error!("I am reading packet");
         let flags = SendRecvFlags::empty();
         let (recv_len, _) = self.recvfrom(buf, flags)?;
         Ok(recv_len)
@@ -96,6 +97,30 @@ impl FileLike for StreamSocket {
 
     fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
+    }
+
+    fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        match &*self.state.read() {
+            State::Init(init) => init.register_observer(observer, mask),
+            State::Listen(listen) => listen.register_observer(observer, mask),
+            State::Connected(connected) => connected.register_observer(observer, mask),
+        }
+        Ok(())
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        match &*self.state.read() {
+            State::Init(init_stream) => init_stream.unregister_observer(observer),
+            State::Listen(listen_stream) => listen_stream.unregister_observer(observer),
+            State::Connected(connected_stream) => connected_stream.unregister_observer(observer),
+        }
     }
 }
 

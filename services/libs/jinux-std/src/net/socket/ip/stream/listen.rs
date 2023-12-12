@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
+use crate::events::{IoEvents, Observer};
 use crate::net::iface::{AnyUnboundSocket, BindPortConfig, IpEndpoint};
 
 use crate::net::iface::{AnyBoundSocket, RawTcpSocket};
@@ -110,6 +110,26 @@ impl ListenStream {
         IoEvents::empty()
     }
 
+    pub(super) fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        let backlog_sockets = self.backlog_sockets.read();
+        for backlog_socket in backlog_sockets.iter() {
+            backlog_socket
+                .bound_socket
+                .register_observer(observer.clone(), mask);
+        }
+    }
+
+    pub(super) fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        let backlog_sockets = self.backlog_sockets.read();
+        for backlog_socket in backlog_sockets.iter() {
+            backlog_socket.bound_socket.unregister_observer(observer)?;
+        }
+        Ok(observer.clone())
+    }
+
     fn bound_socket(&self) -> Arc<AnyBoundSocket> {
         self.backlog_sockets.read()[0].bound_socket.clone()
     }
@@ -121,6 +141,8 @@ impl ListenStream {
     pub fn set_nonblocking(&self, nonblocking: bool) {
         self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
+
+ 
 }
 
 struct BacklogSocket {
@@ -163,4 +185,6 @@ impl BacklogSocket {
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.bound_socket.poll(mask, poller)
     }
+
+    
 }
