@@ -75,7 +75,7 @@ use crate::syscall::write::sys_write;
 use crate::syscall::writev::sys_writev;
 use aster_frame::cpu::UserContext;
 
-use self::accept::sys_accept;
+use self::accept::{sys_accept, sys_accept4};
 use self::bind::sys_bind;
 use self::connect::sys_connect;
 use self::execve::sys_execveat;
@@ -355,6 +355,7 @@ define_syscall_nums!(
     SYS_FCHMODAT = 268,
     SYS_SET_ROBUST_LIST = 273,
     SYS_UTIMENSAT = 280,
+    SYS_ACCEPT4 = 288,
     SYS_EPOLL_CREATE1 = 291,
     SYS_PIPE2 = 293,
     SYS_PRLIMIT64 = 302,
@@ -533,6 +534,7 @@ pub fn syscall_dispatch(
         SYS_FCHMODAT => syscall_handler!(3, sys_fchmodat, args),
         SYS_SET_ROBUST_LIST => syscall_handler!(2, sys_set_robust_list, args),
         SYS_UTIMENSAT => syscall_handler!(4, sys_utimensat, args),
+        SYS_ACCEPT4 => syscall_handler!(4, sys_accept4, args),
         SYS_EPOLL_CREATE1 => syscall_handler!(1, sys_epoll_create1, args),
         SYS_PIPE2 => syscall_handler!(2, sys_pipe2, args),
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
