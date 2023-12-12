@@ -58,7 +58,7 @@ impl Timer {
     ///
     /// If a timeout value is already set, the timeout value will be refreshed.
     ///
-    pub fn set(self: Arc<Self>, timeout: Duration) {
+    pub fn set(self: &Arc<Self>, timeout: Duration) {
         let mut lock = self.inner.lock_irq_disabled();
         match &lock.timer_callback {
             Some(callback) => {

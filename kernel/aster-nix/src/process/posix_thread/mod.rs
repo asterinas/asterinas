@@ -26,11 +26,13 @@ pub mod futex;
 mod name;
 mod posix_thread_ext;
 mod robust_list;
+mod timer;
 
 pub use builder::PosixThreadBuilder;
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::PosixThreadExt;
 pub use robust_list::RobustListHead;
+pub use timer::RealTimer;
 
 pub struct PosixThread {
     // Immutable part
@@ -50,10 +52,13 @@ pub struct PosixThread {
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
 
-    // signal
-    /// blocked signals
+    /// The timer counts down in real (i.e., wall clock) time
+    real_timer: Mutex<RealTimer>,
+
+    // Signal
+    /// Blocked signals
     sig_mask: Mutex<SigMask>,
-    /// thread-directed sigqueue
+    /// Thread-directed sigqueue
     sig_queues: Mutex<SigQueues>,
     /// Signal handler ucontext address
     /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
@@ -114,12 +119,12 @@ impl PosixThread {
             let receiver_sid = self.process().session().unwrap().sid();
             if receiver_sid == sender.sid() {
                 return Ok(());
-            } else {
-                return_errno_with_message!(
-                    Errno::EPERM,
-                    "sigcont requires that sender and receiver belongs to the same session"
-                );
             }
+
+            return_errno_with_message!(
+                Errno::EPERM,
+                "sigcont requires that sender and receiver belongs to the same session"
+            );
         }
 
         let (receiver_ruid, receiver_suid) = {
@@ -139,6 +144,10 @@ impl PosixThread {
         }
 
         return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
+    }
+
+    pub fn real_timer(&self) -> &Mutex<RealTimer> {
+        &self.real_timer
     }
 
     pub(in crate::process) fn enqueue_signal(&self, signal: Box<dyn Signal>) {
@@ -232,6 +241,8 @@ impl PosixThread {
             // Main thread are removed when the whole process is reaped.
             thread_table::remove_thread(tid);
         }
+
+        self.real_timer.lock().clear();
 
         if self.is_main_thread() || self.is_last_thread() {
             // exit current process.
