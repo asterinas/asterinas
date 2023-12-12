@@ -302,6 +302,57 @@ mod test {
     }
 
     #[ktest]
+    fn test_rename() {
+        let fs = load_exfat();
+        let root = fs.root_inode() as Arc<dyn Inode>;
+        let file_name = "hi.txt";
+        let a_inode = create_file(root.clone(), file_name);
+        let _ = a_inode.write_at(8192, &[0, 1, 2, 3, 4]);
+
+        let new_name = "hello.txt";
+        let rename_result = root.rename(file_name, &root.clone(), new_name);
+        assert!(
+            rename_result.is_ok(),
+            "Fs failed to rename: {:?}",
+            rename_result.unwrap_err()
+        );
+
+        let mut sub_dirs: Vec<String> = Vec::new();
+        let _ = root.readdir_at(0, &mut sub_dirs);
+        assert!(sub_dirs.len() == 1 && sub_dirs[0].eq(new_name));
+
+        let sub_folder_name = "test";
+        let sub_folder = root
+            .create(
+                sub_folder_name,
+                crate::fs::utils::InodeType::Dir,
+                InodeMode::all(),
+            )
+            .unwrap();
+
+        let sub_file_name = "a.txt";
+
+        create_file(sub_folder.clone(), sub_file_name);
+        let rename_result = sub_folder.rename(sub_file_name, &root.clone(), sub_file_name);
+        assert!(
+            rename_result.is_ok(),
+            "Fs failed to rename: {:?}",
+            rename_result.unwrap_err()
+        );
+
+        sub_dirs.clear();
+        let _ = root.readdir_at(0, &mut sub_dirs);
+        sub_dirs.sort();
+
+        assert!(
+            sub_dirs.len() == 3
+                && sub_dirs[0].eq(sub_file_name)
+                && sub_dirs[1].eq(new_name)
+                && sub_dirs[2].eq(sub_folder_name)
+        );
+    }
+
+    #[ktest]
     fn test_write_and_read_file_direct() {
         let fs = load_exfat();
         let root = fs.root_inode() as Arc<dyn Inode>;
