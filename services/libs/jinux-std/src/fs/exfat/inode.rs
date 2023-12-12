@@ -9,9 +9,7 @@ use super::bitmap::ExfatBitmap;
 use super::block_device::{is_block_aligned, SECTOR_SIZE};
 use super::constants::*;
 use super::dentry::{Checksum, ExfatDentry, ExfatDentrySet, ExfatName, DENTRY_SIZE};
-use super::fat::{
-    ClusterID, ExfatChainPosition, FatChainFlags, FatTrait, FatValue, EXFAT_FREE_CLUSTER,
-};
+use super::fat::{ClusterID, ExfatChainPosition, FatChainFlags, FatTrait, FatValue};
 use super::fs::{ExfatMountOptions, EXFAT_ROOT_INO};
 use super::utils::{make_hash_index, DosTimestamp};
 use crate::events::IoEvents;
@@ -814,8 +812,6 @@ impl ExfatInodeInner {
         let physical_cluster = self.get_physical_cluster((offset / cluster_size) as u32)?;
         let cluster_off = (offset % cluster_size) as u32;
 
-        //FIXME: we need to skip deleted dentries..
-
         let ino = fs.alloc_inode_number();
         let dentry_position_start = self.start_chain.walk_to_cluster_at_offset(offset)?;
         let child_inode = ExfatInode::read_from(
@@ -825,6 +821,7 @@ impl ExfatInodeInner {
             ino,
         )?;
         let dentry_position = child_inode.0.read().dentry_set_position.clone();
+
         if let Some(inode) = fs.find_opened_inode(make_hash_index(
             dentry_position.0.cluster_id(),
             dentry_position.1 as u32,
@@ -859,15 +856,19 @@ impl ExfatInodeInner {
 
     // look up a target with "name", cur inode represent a dir
     // return (target inode, dentries start offset, dentries len)
-
+    // No inode should hold the write lock.
     fn lookup_by_name(&self, name: &str) -> Result<(Arc<ExfatInode>, usize, usize)> {
         let sub_dir = self.num_subdir;
         let mut names: Vec<String> = vec![];
         let mut offset = 0;
+
         for i in 0..sub_dir {
             let (inode, next) = self.read_single_dir(offset, &mut names)?;
+
             if names.last().unwrap().eq(name) {
-                return Ok((inode, offset, next - offset));
+                let pos = inode.0.read().dentry_entry;
+                let size = inode.0.read().dentry_set_size;
+                return Ok((inode, pos as usize * DENTRY_SIZE, size));
             }
             offset = next;
         }
@@ -928,6 +929,7 @@ impl ExfatInodeInner {
             buf[buf_offset] &= 0x7F;
         }
         self.start_chain.write_at(offset, &buf)?;
+        self.num_subdir -= 1;
         Ok(())
     }
 }
@@ -1306,35 +1308,34 @@ impl Inode for ExfatInode {
         }
 
         let Some(target_) = target.downcast_ref::<ExfatInode>() else {
-            return_errno!(Errno::EINVAL)
+            return_errno_with_message!(Errno::EINVAL, "not an exfat inode")
         };
 
         let fs = self.0.read().fs();
         let guard = fs.lock();
 
         //There will be no deadlocks since the whole fs is locked.
-        let mut self_inner = self.0.write();
-        let mut target_inner = target_.0.write();
 
-        if !self_inner.inode_type.is_directory() || !target_inner.inode_type.is_directory() {
+        if !self.0.read().inode_type.is_directory() || !target_.0.read().inode_type.is_directory() {
             return_errno!(Errno::ENOTDIR)
         }
 
         // read 'old_name' file or dir and its dentries
-        let (old_inode, old_offset, old_len) = self_inner.lookup_by_name(old_name)?;
+        let (old_inode, old_offset, old_len) = self.0.read().lookup_by_name(old_name)?;
 
-        // 'new_name' exists in 'target', should we report this?
         let mut exist_inode: Arc<ExfatInode> = ExfatInode::default().into();
-        let mut exits_offset: usize = 0;
-        let mut exits_len: usize = 0;
+        let mut exist_offset: usize = 0;
+        let mut exist_len: usize = 0;
         let need_to_remove_exist =
-            if let Ok((node, offset, len)) = target_inner.lookup_by_name(new_name) {
+            if let Ok((node, offset, len)) = target_.0.read().lookup_by_name(new_name) {
                 exist_inode = node;
-                exits_offset = offset;
-                exits_len = len;
+                exist_offset = offset;
+                exist_len = len;
                 // check for a corner case here
                 // if 'old_name' represents a directory, the exist 'new_name' must represents a empty directory.
-                if self_inner.inode_type.is_directory() && !exist_inode.0.read().is_empty_dir()? {
+                if old_inode.0.read().inode_type.is_directory()
+                    && !exist_inode.0.read().is_empty_dir()?
+                {
                     return_errno!(Errno::ENOTEMPTY)
                 }
                 true
@@ -1343,7 +1344,12 @@ impl Inode for ExfatInode {
             };
 
         // copy the dentries
-        let new_inode = target_inner.add_entry(new_name, old_inode.type_(), old_inode.mode())?;
+        let new_inode =
+            target_
+                .0
+                .write()
+                .add_entry(new_name, old_inode.type_(), old_inode.mode())?;
+
         let mut new_inode_inner = new_inode.0.write();
         let old_inode_inner = old_inode.0.read();
         new_inode_inner.start_chain = ExfatChain::new(
@@ -1356,15 +1362,16 @@ impl Inode for ExfatInode {
         new_inode_inner.write_inode(true)?;
 
         // delete 'old_name' dentries
-        self_inner.delete_dentry_set(old_offset, old_len)?;
+        self.0.write().delete_dentry_set(old_offset, old_len)?;
 
         // remove the exist 'new_name' file(include file contents and dentries)
         if need_to_remove_exist {
+            fs.evice_inode(exist_inode.hash_index());
             exist_inode.0.write().resize(0)?;
             exist_inode
                 .0
                 .write()
-                .delete_dentry_set(exits_offset, exits_len)?;
+                .delete_dentry_set(exist_offset, exist_len)?;
         }
 
         Ok(())

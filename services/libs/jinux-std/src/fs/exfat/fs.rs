@@ -98,6 +98,10 @@ impl ExfatFS {
         self.inodes.read().get(&pos).cloned()
     }
 
+    pub(super) fn evice_inode(&self, pos: usize) {
+        let _ = self.inodes.write().remove(&pos);
+    }
+
     pub(super) fn insert_inode(&self, inode: Arc<ExfatInode>) -> Option<Arc<ExfatInode>> {
         self.inodes.write().insert(inode.hash_index(), inode)
     }
