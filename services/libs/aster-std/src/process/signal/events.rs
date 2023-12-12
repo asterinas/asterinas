@@ -1,4 +1,4 @@
-use crate::events::{Events, EventsFilter};
+use crate::events::{Events, EventsSelector};
 use crate::prelude::*;
 
 use super::sig_mask::SigMask;
@@ -16,16 +16,16 @@ impl SigEvents {
 impl Events for SigEvents {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SigEventsFilter(SigMask);
+pub struct SigEventsSelector(SigMask);
 
-impl SigEventsFilter {
+impl SigEventsSelector {
     pub fn new(mask: SigMask) -> Self {
         Self(mask)
     }
 }
 
-impl EventsFilter<SigEvents> for SigEventsFilter {
-    fn filter(&self, event: &SigEvents) -> bool {
+impl EventsSelector<SigEvents> for SigEventsSelector {
+    fn select(&self, event: &SigEvents) -> bool {
         !self.0.contains(event.0)
     }
 }

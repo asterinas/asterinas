@@ -8,7 +8,7 @@ use crate::prelude::*;
 use crate::process::posix_thread::PosixThreadExt;
 
 use super::sig_mask::SigMask;
-use super::{SigEvents, SigEventsFilter};
+use super::{SigEvents, SigEventsSelector};
 
 /// A `Pauser` allows pausing the execution of the current thread until certain conditions are reached.
 ///
@@ -109,7 +109,7 @@ impl Pauser {
 
         // Register observer on sigqueue
         let observer = Arc::downgrade(self) as Weak<dyn Observer<SigEvents>>;
-        let filter = {
+        let selector = {
             let sig_mask = {
                 let current_thread = current_thread!();
                 let poxis_thread = current_thread.as_posix_thread().unwrap();
@@ -117,12 +117,12 @@ impl Pauser {
                 current_sigmask.block(self.sig_mask.as_u64());
                 current_sigmask
             };
-            SigEventsFilter::new(sig_mask)
+            SigEventsSelector::new(sig_mask)
         };
 
         let current_thread = current_thread!();
         let posix_thread = current_thread.as_posix_thread().unwrap();
-        posix_thread.register_sigqueue_observer(observer.clone(), filter);
+        posix_thread.register_sigqueue_observer(observer.clone(), selector);
 
         // Some signal may come before we register observer, so we do another check here.
         if posix_thread.has_pending_signal() {

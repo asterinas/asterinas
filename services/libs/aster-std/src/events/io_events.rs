@@ -1,4 +1,4 @@
-use super::{Events, EventsFilter};
+use super::{Events, EventsSelector};
 
 crate::bitflags! {
     pub struct IoEvents: u32 {
@@ -16,8 +16,8 @@ crate::bitflags! {
 
 impl Events for IoEvents {}
 
-impl EventsFilter<IoEvents> for IoEvents {
-    fn filter(&self, events: &IoEvents) -> bool {
+impl EventsSelector<IoEvents> for IoEvents {
+    fn select(&self, events: &IoEvents) -> bool {
         self.intersects(*events)
     }
 }

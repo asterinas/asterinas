@@ -9,34 +9,34 @@ pub trait Events: Copy + Clone + Send + Sync + 'static {}
 
 impl Events for () {}
 
-/// A trait to filter events.
+/// A trait to select events.
 ///
-/// # The no-op event filter
+/// # The no-op event selector
 ///
-/// The unit type `()` can serve as a no-op event filter.
-/// It implements `EventsFilter<E>` for any events type `E`,
-/// with a `filter` method that always returns `true`.
-/// If the `F` type of `Subject<E, F>` is not specified explicitly,
-/// then the unit type `()` is chosen as the event filter.
+/// The unit type `()` can serve as a no-op event selector.
+/// It implements `EventsSelector<E>` for any events type `E`,
+/// with a `select` method that always returns `true`.
+/// If the `S` type of `Subject<E, S>` is not specified explicitly,
+/// then the unit type `()` is chosen as the event selector.
 ///
-/// # Per-object event filter
+/// # Per-object event selector
 ///
-/// Any `Option<F: EventsFilter>` is also an event filter thanks to
-/// the blanket implementations the `EventsFilter` trait.
-/// By using `Option<F: EventsFilter>`, we can decide, on a per-observer basis,
-/// if an observer needs an event filter.
-pub trait EventsFilter<E: Events>: Send + Sync + 'static {
-    fn filter(&self, event: &E) -> bool;
+/// Any `Option<S: EventsSelector>` is also an event selector thanks to
+/// the blanket implementations the `EventsSelector` trait.
+/// By using `Option<S: EventsSelector>`, we can decide, on a per-observer basis,
+/// if an observer needs an event selector.
+pub trait EventsSelector<E: Events>: Send + Sync + 'static {
+    fn select(&self, event: &E) -> bool;
 }
 
-impl<E: Events> EventsFilter<E> for () {
-    fn filter(&self, _events: &E) -> bool {
+impl<E: Events> EventsSelector<E> for () {
+    fn select(&self, _events: &E) -> bool {
         true
     }
 }
 
-impl<E: Events, F: EventsFilter<E>> EventsFilter<E> for Option<F> {
-    fn filter(&self, events: &E) -> bool {
-        self.as_ref().map_or(true, |f| f.filter(events))
+impl<E: Events, S: EventsSelector<E>> EventsSelector<E> for Option<S> {
+    fn select(&self, events: &E) -> bool {
+        self.as_ref().map_or(true, |f| f.select(events))
     }
 }

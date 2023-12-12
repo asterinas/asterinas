@@ -11,7 +11,7 @@ pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
 
-pub use events::{SigEvents, SigEventsFilter};
+pub use events::{SigEvents, SigEventsSelector};
 pub use pauser::Pauser;
 pub use poll::{Pollee, Poller};
 pub use sig_stack::{SigStack, SigStackFlags, SigStackStatus};

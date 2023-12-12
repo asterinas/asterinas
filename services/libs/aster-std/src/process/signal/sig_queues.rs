@@ -1,4 +1,4 @@
-use super::{constants::*, SigEvents, SigEventsFilter};
+use super::{constants::*, SigEvents, SigEventsSelector};
 use crate::events::{Observer, Subject};
 use crate::prelude::*;
 
@@ -10,7 +10,7 @@ pub struct SigQueues {
     count: usize,
     std_queues: Vec<Option<Box<dyn Signal>>>,
     rt_queues: Vec<VecDeque<Box<dyn Signal>>>,
-    subject: Subject<SigEvents, SigEventsFilter>,
+    subject: Subject<SigEvents, SigEventsSelector>,
 }
 
 impl SigQueues {
@@ -144,9 +144,9 @@ impl SigQueues {
     pub fn register_observer(
         &self,
         observer: Weak<dyn Observer<SigEvents>>,
-        filter: SigEventsFilter,
+        selector: SigEventsSelector,
     ) {
-        self.subject.register_observer(observer, filter);
+        self.subject.register_observer(observer, selector);
     }
 
     pub fn unregister_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {

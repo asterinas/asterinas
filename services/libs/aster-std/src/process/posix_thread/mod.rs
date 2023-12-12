@@ -3,7 +3,7 @@ use super::signal::sig_mask::SigMask;
 use super::signal::sig_num::SigNum;
 use super::signal::sig_queues::SigQueues;
 use super::signal::signals::Signal;
-use super::signal::{SigEvents, SigEventsFilter, SigStack};
+use super::signal::{SigEvents, SigEventsSelector, SigStack};
 use super::{do_exit_group, Credentials, Process, TermStatus};
 use crate::events::Observer;
 use crate::prelude::*;
@@ -140,9 +140,9 @@ impl PosixThread {
     pub fn register_sigqueue_observer(
         &self,
         observer: Weak<dyn Observer<SigEvents>>,
-        filter: SigEventsFilter,
+        selector: SigEventsSelector,
     ) {
-        self.sig_queues.lock().register_observer(observer, filter);
+        self.sig_queues.lock().register_observer(observer, selector);
     }
 
     pub fn unregiser_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
