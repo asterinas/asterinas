@@ -308,7 +308,7 @@ provided by Linux on x86-64 architecture.
 | 285     | fallocate        | ❌              |
 | 286     | timerfd_settime  | ❌              |
 | 287     | timerfd_gettime  | ❌              |
-| 288     | accept4          | ❌              |
+| 288     | accept4          | ✅              |
 | 289     | signalfd4        | ❌              |
 | 290     | eventfd2         | ✅              |
 | 291     | epoll_create1    | ✅              |
