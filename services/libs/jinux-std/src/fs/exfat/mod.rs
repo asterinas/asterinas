@@ -46,7 +46,6 @@ mod test {
         fs::{
             exfat::bitmap::EXFAT_RESERVED_CLUSTERS,
             exfat::block_device::SECTOR_SIZE,
-            exfat::bitmap::EXFAT_RESERVED_CLUSTERS,
             utils::{Inode, InodeMode},
         },
         prelude::*,
@@ -137,7 +136,7 @@ mod test {
     }
 
     #[ktest]
-    fn test_unlink() {
+    fn test_unlink_single() {
         let fs = load_exfat();
         let root = fs.root_inode() as Arc<dyn Inode>;
         let file_name = "a.txt";
@@ -154,6 +153,152 @@ mod test {
         let mut sub_dirs: Vec<String> = Vec::new();
         let _ = root.readdir_at(0, &mut sub_dirs);
         assert!(sub_dirs.len() == 0);
+
+        // Followings are some invalid unlink call. These should return with an error.
+        let unlink_fail_result1 = root.unlink(".");
+        assert!(
+            unlink_fail_result1.is_err(),
+            "Fs deal with unlink(.) incorrectly"
+        );
+
+        let unlink_fail_result2 = root.unlink("..");
+        assert!(
+            unlink_fail_result2.is_err(),
+            "Fs deal with unlink(..) incorrectly"
+        );
+
+        let folder_name = "sub";
+        let _ = root.create(
+            folder_name,
+            crate::fs::utils::InodeType::Dir,
+            InodeMode::all()
+        );
+        let unlink_fail_result3 = root.unlink(folder_name);
+        assert!(
+            unlink_fail_result3.is_err(),
+            "Fs deal with unlink a folder incorrectly"
+        );
+    }
+
+    #[ktest]
+    fn test_unlink_multiple() {
+        let file_num: u32 = 30;// This shouldn't be too large, better not allocate new clusters for root dir
+        let mut file_names: Vec<String> = (0..file_num).map(|x| x.to_string()).collect();
+        file_names.sort();
+
+        let fs = load_exfat();
+        let cluster_size = fs.cluster_size();
+        let root = fs.root_inode() as Arc<dyn Inode>;
+        let mut free_clusters_before_create: Vec<u32> = Vec::new();
+        for (file_id, file_name) in file_names.iter().enumerate() {
+            free_clusters_before_create.push(fs.free_clusters());
+            let inode = create_file(root.clone(), file_name);
+            if fs.free_clusters() >= file_id as u32 + 1 {
+                let _ = inode.write_at(file_id * cluster_size, &[0, 1, 2, 3, 4]);
+            }
+        }
+
+        let mut reverse_names = file_names.clone();
+        reverse_names.reverse();
+        for (file_id, file_name) in reverse_names.iter().enumerate() {
+            let id = file_num as usize - 1 - file_id;
+            let unlink_result = root.unlink(file_name);
+            assert!(
+                unlink_result.is_ok() && fs.free_clusters() == free_clusters_before_create[id],
+                "Fail to unlink file {:?}",
+                id
+            );
+
+            let mut sub_inodes: Vec<String> = Vec::new();
+
+            let read_result = root.readdir_at(0, &mut sub_inodes);
+            assert!(
+                read_result.is_ok(),
+                "Fs failed to readdir after unlink {:?}: {:?}",
+                id, read_result.unwrap_err()
+            );
+
+            assert!(read_result.unwrap() == id);
+            assert!(sub_inodes.len() == id);
+
+            sub_inodes.sort();
+
+            for i in 0..sub_inodes.len() {
+                assert!(sub_inodes[i].cmp(&file_names[i]).is_eq())
+            }
+        }
+    }
+
+    #[ktest]
+    fn test_rmdir() {
+        let fs = load_exfat();
+        let root = fs.root_inode() as Arc<dyn Inode>;
+        let folder_name = "sub";
+        let _ = root.create(
+            folder_name,
+            crate::fs::utils::InodeType::Dir,
+            InodeMode::all()
+        );
+        let rmdir_result = root.rmdir(folder_name);
+        assert!(
+            rmdir_result.is_ok(),
+            "Fs failed to rmdir: {:?}",
+            rmdir_result.unwrap_err()
+        );
+
+        let mut sub_dirs: Vec<String> = Vec::new();
+        let _ = root.readdir_at(0, &mut sub_dirs);
+        assert!(sub_dirs.len() == 0);
+
+        // Followings are some invalid unlink call. These should return with an error.
+        let rmdir_fail_result1 = root.rmdir(".");
+        assert!(
+            rmdir_fail_result1.is_err(),
+            "Fs deal with rmdir(.) incorrectly"
+        );
+
+        let rmdir_fail_result2 = root.rmdir("..");
+        assert!(
+            rmdir_fail_result2.is_err(),
+            "Fs deal with rmdir(..) incorrectly"
+        );
+
+        let file_name = "a.txt";
+        let _ = root.create(
+            file_name,
+            crate::fs::utils::InodeType::File,
+            InodeMode::all()
+        );
+        let rmdir_fail_result3 = root.rmdir(file_name);
+        assert!(
+            rmdir_fail_result3.is_err(),
+            "Fs deal with rmdir to a file incorrectly"
+        );
+
+        let parent_name = "parent";
+        let child_name = "child.txt";
+        let parent_inode = root.create(
+            parent_name,
+            crate::fs::utils::InodeType::Dir,
+            InodeMode::all()
+        ).unwrap();
+        let _ = parent_inode.create(
+            child_name,
+            crate::fs::utils::InodeType::File,
+            InodeMode::all()
+        );
+        let rmdir_fail_result4 = root.rmdir(parent_name);
+        assert!(
+            rmdir_fail_result4.is_err(),
+            "Fs deal with rmdir to a no empty directory incorrectly"
+        );
+        // However, after we remove child file, parent directory is removable.
+        let _ = parent_inode.unlink(child_name);
+        let rmdir_result1 = root.rmdir(parent_name);
+        assert!(
+            rmdir_result1.is_ok(),
+            "Fs failed to remove an empty directory"
+        );
     }
 
     #[ktest]

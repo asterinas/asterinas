@@ -10,7 +10,7 @@ use super::block_device::{is_block_aligned, SECTOR_SIZE};
 use super::constants::*;
 use super::dentry::{Checksum, ExfatDentry, ExfatDentrySet, ExfatName, DENTRY_SIZE};
 use super::fat::{
-    ClusterID, ExfatChainPosition, FatChainFlags, FatTrait, FatValue, EXFAT_FREE_CLUSTER,
+    ClusterID, ExfatChainPosition, FatChainFlags, FatTrait, FatValue,
 };
 use super::fs::{ExfatMountOptions, EXFAT_ROOT_INO};
 use super::utils::{make_hash_index, DosTimestamp};
@@ -928,6 +928,9 @@ impl ExfatInodeInner {
             buf[buf_offset] &= 0x7F;
         }
         self.start_chain.write_at(offset, &buf)?;
+        
+        self.num_subdir -= 1;
+        // FIXME: We must make sure that there are no spare tailing clusters in a directory.
         Ok(())
     }
 }
@@ -1322,6 +1325,7 @@ impl Inode for ExfatInode {
 
         // read 'old_name' file or dir and its dentries
         let (old_inode, old_offset, old_len) = self_inner.lookup_by_name(old_name)?;
+        let old_inode_inner = old_inode.0.read();
 
         // 'new_name' exists in 'target', should we report this?
         let mut exist_inode: Arc<ExfatInode> = ExfatInode::default().into();
@@ -1334,7 +1338,7 @@ impl Inode for ExfatInode {
                 exits_len = len;
                 // check for a corner case here
                 // if 'old_name' represents a directory, the exist 'new_name' must represents a empty directory.
-                if self_inner.inode_type.is_directory() && !exist_inode.0.read().is_empty_dir()? {
+                if old_inode_inner.inode_type.is_directory() && !exist_inode.0.read().is_empty_dir()? {
                     return_errno!(Errno::ENOTEMPTY)
                 }
                 true
@@ -1345,7 +1349,6 @@ impl Inode for ExfatInode {
         // copy the dentries
         let new_inode = target_inner.add_entry(new_name, old_inode.type_(), old_inode.mode())?;
         let mut new_inode_inner = new_inode.0.write();
-        let old_inode_inner = old_inode.0.read();
         new_inode_inner.start_chain = ExfatChain::new(
             Arc::downgrade(&fs),
             old_inode_inner.start_chain.cluster_id(),
