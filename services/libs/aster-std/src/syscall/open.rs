@@ -2,6 +2,7 @@ use crate::fs::{
     file_handle::FileLike,
     file_table::FileDescripter,
     fs_resolver::{FsPath, AT_FDCWD},
+    utils::CreationFlags,
 };
 use crate::log_syscall_entry;
 use crate::prelude::*;
@@ -33,7 +34,11 @@ pub fn sys_openat(
         Arc::new(inode_handle)
     };
     let mut file_table = current.file_table().lock();
-    let fd = file_table.insert(file_handle);
+    let fd = {
+        let is_close_on_exec =
+            CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC);
+        file_table.insert(file_handle, is_close_on_exec)
+    };
     Ok(SyscallReturn::Return(fd as _))
 }
 
