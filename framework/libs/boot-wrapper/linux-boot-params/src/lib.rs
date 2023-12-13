@@ -1,3 +1,5 @@
+#![feature(offset_of)]
+
 //! The Linux Boot Protocol boot_params definition.
 //!
 //! The bootloader will deliver the address of the `BootParams` struct
@@ -290,4 +292,81 @@ pub struct BootParams {
     pub _pad8: [u8; 48],                            /* 0xcd0 */
     pub eddbuf: [EddInfo; EDDMAXNR],                /* 0xd00 */
     pub _pad9: [u8; 276],                           /* 0xeec */
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use core::mem::offset_of;
+
+    #[test]
+    fn test_screen_info_offsets() {
+        assert_eq!(offset_of!(ScreenInfo, orig_x), 0x00);
+        assert_eq!(offset_of!(ScreenInfo, orig_y), 0x01);
+        assert_eq!(offset_of!(ScreenInfo, ext_mem_k), 0x02);
+        assert_eq!(offset_of!(ScreenInfo, orig_video_page), 0x04);
+        assert_eq!(offset_of!(ScreenInfo, orig_video_mode), 0x06);
+        assert_eq!(offset_of!(ScreenInfo, orig_video_cols), 0x07);
+        assert_eq!(offset_of!(ScreenInfo, flags), 0x08);
+        assert_eq!(offset_of!(ScreenInfo, unused2), 0x09);
+        assert_eq!(offset_of!(ScreenInfo, orig_video_ega_bx), 0x0a);
+        assert_eq!(offset_of!(ScreenInfo, unused3), 0x0c);
+        assert_eq!(offset_of!(ScreenInfo, orig_video_lines), 0x0e);
+        assert_eq!(offset_of!(ScreenInfo, orig_video_is_vga), 0x0f);
+        assert_eq!(offset_of!(ScreenInfo, orig_video_points), 0x10);
+        assert_eq!(offset_of!(ScreenInfo, lfb_width), 0x12);
+        assert_eq!(offset_of!(ScreenInfo, lfb_height), 0x14);
+        assert_eq!(offset_of!(ScreenInfo, lfb_depth), 0x16);
+        assert_eq!(offset_of!(ScreenInfo, lfb_base), 0x18);
+        assert_eq!(offset_of!(ScreenInfo, lfb_size), 0x1c);
+        assert_eq!(offset_of!(ScreenInfo, cl_magic), 0x20);
+        assert_eq!(offset_of!(ScreenInfo, cl_offset), 0x22);
+        assert_eq!(offset_of!(ScreenInfo, lfb_linelength), 0x24);
+        assert_eq!(offset_of!(ScreenInfo, red_size), 0x26);
+        assert_eq!(offset_of!(ScreenInfo, red_pos), 0x27);
+        assert_eq!(offset_of!(ScreenInfo, green_size), 0x28);
+        assert_eq!(offset_of!(ScreenInfo, green_pos), 0x29);
+        assert_eq!(offset_of!(ScreenInfo, blue_size), 0x2a);
+        assert_eq!(offset_of!(ScreenInfo, blue_pos), 0x2b);
+        assert_eq!(offset_of!(ScreenInfo, rsvd_size), 0x2c);
+        assert_eq!(offset_of!(ScreenInfo, rsvd_pos), 0x2d);
+        assert_eq!(offset_of!(ScreenInfo, vesapm_seg), 0x2e);
+        assert_eq!(offset_of!(ScreenInfo, vesapm_off), 0x30);
+        assert_eq!(offset_of!(ScreenInfo, pages), 0x32);
+        assert_eq!(offset_of!(ScreenInfo, vesa_attributes), 0x34);
+        assert_eq!(offset_of!(ScreenInfo, capabilities), 0x36);
+        assert_eq!(offset_of!(ScreenInfo, ext_lfb_base), 0x3a);
+    }
+
+    #[test]
+    fn test_boot_params_offsets() {
+        assert_eq!(offset_of!(BootParams, screen_info), 0x000);
+        assert_eq!(offset_of!(BootParams, apm_bios_info), 0x040);
+        assert_eq!(offset_of!(BootParams, tboot_addr), 0x058);
+        assert_eq!(offset_of!(BootParams, ist_info), 0x060);
+        assert_eq!(offset_of!(BootParams, acpi_rsdp_addr), 0x070);
+        assert_eq!(offset_of!(BootParams, hd0_info), 0x080);
+        assert_eq!(offset_of!(BootParams, hd1_info), 0x090);
+        assert_eq!(offset_of!(BootParams, sys_desc_table), 0x0a0);
+        assert_eq!(offset_of!(BootParams, olpc_ofw_header), 0x0b0);
+        assert_eq!(offset_of!(BootParams, ext_ramdisk_image), 0x0c0);
+        assert_eq!(offset_of!(BootParams, ext_ramdisk_size), 0x0c4);
+        assert_eq!(offset_of!(BootParams, ext_cmd_line_ptr), 0x0c8);
+        assert_eq!(offset_of!(BootParams, cc_blob_address), 0x13c);
+        assert_eq!(offset_of!(BootParams, edid_info), 0x140);
+        assert_eq!(offset_of!(BootParams, efi_info), 0x1c0);
+        assert_eq!(offset_of!(BootParams, alt_mem_k), 0x1e0);
+        assert_eq!(offset_of!(BootParams, scratch), 0x1e4);
+        assert_eq!(offset_of!(BootParams, e820_entries), 0x1e8);
+        assert_eq!(offset_of!(BootParams, eddbuf_entries), 0x1e9);
+        assert_eq!(offset_of!(BootParams, edd_mbr_sig_buf_entries), 0x1ea);
+        assert_eq!(offset_of!(BootParams, kbd_status), 0x1eb);
+        assert_eq!(offset_of!(BootParams, secure_boot), 0x1ec);
+        assert_eq!(offset_of!(BootParams, sentinel), 0x1ef);
+        assert_eq!(offset_of!(BootParams, hdr), 0x1f1);
+        assert_eq!(offset_of!(BootParams, edd_mbr_sig_buffer), 0x290);
+        assert_eq!(offset_of!(BootParams, e820_table), 0x2d0);
+        assert_eq!(offset_of!(BootParams, eddbuf), 0xd00);
+    }
 }
