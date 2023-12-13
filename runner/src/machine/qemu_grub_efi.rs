@@ -1,4 +1,4 @@
-use aster_boot_wrapper_builder::make_bzimage;
+use aster_boot_wrapper_builder::{make_bzimage, BzImageType};
 
 use std::{
     fs,
@@ -64,9 +64,13 @@ pub const IOMMU_DEVICE_ARGS: &[&str] = &[
     "ioh3420,id=pcie.0,chassis=1",
 ];
 
-// To test legacy boot, use the following:
-// pub const GRUB_PREFIX: &str = "/usr/local/grub";
+/// The default GRUB tools used.
 pub const GRUB_PREFIX: &str = "/usr";
+/// The GRUB version that defaults to use EFI handover. Which is the Debian APT version.
+pub const GRUB_PREFIX_EFI_HANDOVER: &str = "/usr";
+/// The GRUB version that uses Loadfile2 and has a fallback to use legacy boot. Which is the custom built upstream 2.12 verion.
+pub const GRUB_PREFIX_EFI_AND_LEGACY: &str = "/usr/local/grub";
+
 pub const GRUB_VERSION: &str = "x86_64-efi";
 
 pub fn create_bootdev_image(
@@ -92,17 +96,23 @@ pub fn create_bootdev_image(
     .unwrap();
 
     let target_path = match protocol {
-        BootProtocol::Linux => {
-            let trojan_src = Path::new("framework/libs/boot-wrapper/wrapper");
-            let trojan_out = Path::new("target/aster-boot-wrapper");
+        BootProtocol::LinuxLegacy32 | BootProtocol::LinuxEfiHandover64 => {
+            let image_type = match protocol {
+                BootProtocol::LinuxLegacy32 => BzImageType::Legacy32,
+                BootProtocol::LinuxEfiHandover64 => BzImageType::Efi64,
+                _ => unreachable!(),
+            };
+            let wrapper_src = Path::new("framework/libs/boot-wrapper/wrapper");
+            let wrapper_out = Path::new("target/aster-boot-wrapper");
             // Make the `bzImage`-compatible kernel image and place it in the boot directory.
             let target_path = iso_root.join("boot").join("asterinaz");
             println!("[aster-runner] Building bzImage.");
             make_bzimage(
                 &target_path,
                 &aster_path.as_path(),
-                &trojan_src,
-                &trojan_out,
+                image_type,
+                &wrapper_src,
+                &wrapper_out,
             );
             target_path
         }
@@ -121,7 +131,13 @@ pub fn create_bootdev_image(
 
     // Make the boot device CDROM image.
     let iso_path = target_dir.join(target_name.to_string() + ".iso");
-    let grub_mkrescue_bin = PathBuf::from(GRUB_PREFIX).join("bin").join("grub-mkrescue");
+    let grub_mkrescue_bin = match protocol {
+        BootProtocol::LinuxLegacy32 => PathBuf::from(GRUB_PREFIX_EFI_AND_LEGACY),
+        BootProtocol::LinuxEfiHandover64 => PathBuf::from(GRUB_PREFIX_EFI_HANDOVER),
+        BootProtocol::Multiboot | BootProtocol::Multiboot2 => PathBuf::from(GRUB_PREFIX),
+    }
+    .join("bin")
+    .join("grub-mkrescue");
     let mut cmd = std::process::Command::new(grub_mkrescue_bin.as_os_str());
     cmd.arg("--output").arg(&iso_path).arg(iso_root.as_os_str());
     if !cmd.status().unwrap().success() {
@@ -166,7 +182,7 @@ pub fn generate_grub_cfg(
             .replace("#GRUB_CMD_KERNEL#", "multiboot2")
             .replace("#KERNEL#", "/boot/atserinas")
             .replace("#GRUB_CMD_INITRAMFS#", "module2 --nounzip"),
-        BootProtocol::Linux => buffer
+        BootProtocol::LinuxLegacy32 | BootProtocol::LinuxEfiHandover64 => buffer
             .replace("#GRUB_CMD_KERNEL#", "linux")
             .replace("#KERNEL#", "/boot/asterinaz")
             .replace("#GRUB_CMD_INITRAMFS#", "initrd"),

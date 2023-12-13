@@ -7,6 +7,8 @@ use std::{fs::OpenOptions, io::Write, path::PathBuf, process::Command};
 ///
 /// If argument `gdb_grub` is set true, it will run GRUB's gdb script.
 ///
+/// Make sure to set GRUB_PREFIX to the actual GRUB you are using.
+///
 /// When debugging grub, the OVMF firmware will load the grub kernel at an
 /// address unknown at the moment. You should use the debug message from our
 /// custom built OVMF firmware and read the entrypoint address

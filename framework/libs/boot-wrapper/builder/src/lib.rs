@@ -3,7 +3,7 @@
 //! This crate is responsible for building the bzImage. It contains methods to build
 //! the wrapper binary and methods to build the bzImage.
 //!
-//! We should build the jinux kernel as a ELF file, and feed it to the builder to
+//! We should build the asterinas kernel as a ELF file, and feed it to the builder to
 //! generate the bzImage. The builder will generate the PE/COFF header for the wrapper
 //! and concatenate it to the ELF file to make the bzImage.
 //!
@@ -15,7 +15,7 @@ mod pe_header;
 
 use std::{
     fs::File,
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -29,7 +29,7 @@ use mapping::{WrapperFileOffset, WrapperVA};
 ///
 /// Interstingly, the resulting binary should be the same as the memory
 /// dump of the kernel setup header when it's loaded by the bootloader.
-fn trojan_to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
+fn wrapper_to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
     let elf = xmas_elf::ElfFile::new(&elf_file).unwrap();
     let mut bin = Vec::<u8>::new();
 
@@ -72,7 +72,7 @@ fn fill_header_field(header: &mut [u8], offset: usize, value: &[u8]) {
 fn fill_legacy_header_fields(
     header: &mut [u8],
     kernel_len: usize,
-    trojan_len: usize,
+    wrapper_len: usize,
     payload_offset: WrapperVA,
 ) {
     fill_header_field(
@@ -90,29 +90,44 @@ fn fill_legacy_header_fields(
     fill_header_field(
         header,
         0x260, /* init_size */
-        &((trojan_len + kernel_len) as u32).to_le_bytes(),
+        &((wrapper_len + kernel_len) as u32).to_le_bytes(),
     );
 }
 
-pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_out: &Path) {
-    #[cfg(feature = "trojan64")]
-    let wrapper = build_trojan_with_arch(trojan_src, trojan_out, &TrojanBuildArch::X86_64);
+/// The type of the bzImage that we are building through `make_bzimage`.
+///
+/// Currently, Legacy32 and Efi64 are mutually exclusive.
+pub enum BzImageType {
+    Legacy32,
+    Efi64,
+}
 
-    #[cfg(not(feature = "trojan64"))]
-    let wrapper = {
-        let arch = trojan_src
-            .join("x86_64-i386_pm-none.json")
-            .canonicalize()
-            .unwrap();
-        build_trojan_with_arch(trojan_src, trojan_out, &TrojanBuildArch::Other(arch))
+pub fn make_bzimage(
+    image_path: &Path,
+    kernel_path: &Path,
+    image_type: BzImageType,
+    wrapper_src: &Path,
+    wrapper_out: &Path,
+) {
+    let wrapper = match image_type {
+        BzImageType::Legacy32 => {
+            let arch = wrapper_src
+                .join("x86_64-i386_pm-none.json")
+                .canonicalize()
+                .unwrap();
+            build_wrapper_with_arch(wrapper_src, wrapper_out, &WrapperBuildArch::Other(arch))
+        }
+        BzImageType::Efi64 => {
+            build_wrapper_with_arch(wrapper_src, wrapper_out, &WrapperBuildArch::X86_64)
+        }
     };
 
-    let mut trojan_elf = Vec::new();
+    let mut wrapper_elf = Vec::new();
     File::open(wrapper)
         .unwrap()
-        .read_to_end(&mut trojan_elf)
+        .read_to_end(&mut wrapper_elf)
         .unwrap();
-    let mut wrapper = trojan_to_flat_binary(&trojan_elf);
+    let mut wrapper = wrapper_to_flat_binary(&wrapper_elf);
     // Pad the header with 8-byte alignment.
     wrapper.resize((wrapper.len() + 7) & !7, 0x00);
 
@@ -123,28 +138,32 @@ pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_o
         .unwrap();
     let payload = kernel;
 
-    let trojan_len = wrapper.len();
+    let wrapper_len = wrapper.len();
     let payload_len = payload.len();
-    let payload_offset = WrapperFileOffset::from(trojan_len);
-    fill_legacy_header_fields(&mut wrapper, payload_len, trojan_len, payload_offset.into());
+    let payload_offset = WrapperFileOffset::from(wrapper_len);
+    fill_legacy_header_fields(
+        &mut wrapper,
+        payload_len,
+        wrapper_len,
+        payload_offset.into(),
+    );
 
-    let mut kernel_image = File::create(path).unwrap();
+    let mut kernel_image = File::create(image_path).unwrap();
     kernel_image.write_all(&wrapper).unwrap();
     kernel_image.write_all(&payload).unwrap();
 
-    let image_size = trojan_len + payload_len;
+    let image_size = wrapper_len + payload_len;
 
-    // Since the Linux boot header starts at 0x1f1, we can write the PE/COFF header directly to the
-    // start of the file without overwriting the Linux boot header.
-    let pe_header = pe_header::make_pe_coff_header(&trojan_elf, image_size);
-    assert!(
-        pe_header.header_at_zero.len() <= 0x1f1,
-        "PE/COFF header is too large"
-    );
+    if matches!(image_type, BzImageType::Efi64) {
+        // Write the PE/COFF header to the start of the file.
+        // Since the Linux boot header starts at 0x1f1, we can write the PE/COFF header directly to the
+        // start of the file without overwriting the Linux boot header.
+        let pe_header = pe_header::make_pe_coff_header(&wrapper_elf, image_size);
+        assert!(
+            pe_header.header_at_zero.len() <= 0x1f1,
+            "PE/COFF header is too large"
+        );
 
-    #[cfg(feature = "trojan64")]
-    {
-        use std::io::{Seek, SeekFrom};
         kernel_image.seek(SeekFrom::Start(0)).unwrap();
         kernel_image.write_all(&pe_header.header_at_zero).unwrap();
         kernel_image
@@ -154,19 +173,15 @@ pub fn make_bzimage(path: &Path, kernel_path: &Path, trojan_src: &Path, trojan_o
     }
 }
 
-// We need a custom target file for i386 but not for x86_64.
-// The compiler may warn us the X86_64 enum variant is not constructed
-// when we are building for i386, but we can ignore it.
-#[allow(dead_code)]
-enum TrojanBuildArch {
+enum WrapperBuildArch {
     X86_64,
     Other(PathBuf),
 }
 
-/// Build the trojan binary.
+/// Build the wrapper binary.
 ///
-/// It will return the path to the built trojan binary.
-fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildArch) -> PathBuf {
+/// It will return the path to the built wrapper binary.
+fn build_wrapper_with_arch(source_dir: &Path, out_dir: &Path, arch: &WrapperBuildArch) -> PathBuf {
     if !out_dir.exists() {
         std::fs::create_dir_all(&out_dir).unwrap();
     }
@@ -185,8 +200,8 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildA
     }
     cmd.arg("--package").arg("aster-boot-wrapper");
     cmd.arg("--target").arg(match arch {
-        TrojanBuildArch::X86_64 => "x86_64-unknown-none",
-        TrojanBuildArch::Other(path) => path.to_str().unwrap(),
+        WrapperBuildArch::X86_64 => "x86_64-unknown-none",
+        WrapperBuildArch::Other(path) => path.to_str().unwrap(),
     });
     cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
     cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
@@ -207,14 +222,14 @@ fn build_trojan_with_arch(source_dir: &Path, out_dir: &Path, arch: &TrojanBuildA
 
     // Get the path to the wrapper binary.
     let arch_name = match arch {
-        TrojanBuildArch::X86_64 => "x86_64-unknown-none",
-        TrojanBuildArch::Other(path) => path.file_stem().unwrap().to_str().unwrap(),
+        WrapperBuildArch::X86_64 => "x86_64-unknown-none",
+        WrapperBuildArch::Other(path) => path.file_stem().unwrap().to_str().unwrap(),
     };
 
-    let trojan_artifact = out_dir
+    let wrapper_artifact = out_dir
         .join(arch_name)
         .join(profile)
         .join("aster-boot-wrapper");
 
-    trojan_artifact.to_owned()
+    wrapper_artifact.to_owned()
 }
