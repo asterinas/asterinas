@@ -32,7 +32,8 @@ enum BootMethod {
 pub enum BootProtocol {
     Multiboot,
     Multiboot2,
-    Linux,
+    LinuxLegacy32,
+    LinuxEfiHandover64,
 }
 /// The CLI of this runner.
 #[derive(Parser, Debug)]
@@ -56,7 +57,8 @@ struct Args {
     /// Boot protocol. Can be one of the following items:
     ///  - `multiboot`;
     ///  - `multiboot2`;
-    ///  - `linux`.
+    ///  - `linux-legacy32`;
+    ///  - `linux-efi-handover64`.
     #[arg(long, value_enum, default_value_t = BootProtocol::Multiboot2)]
     boot_protocol: BootProtocol,
 
