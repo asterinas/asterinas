@@ -35,7 +35,8 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
     let fd = {
         let current = current!();
         let mut file_table = current.file_table().lock();
-        file_table.insert(file_like)
+        let is_close_on_exec = sock_flags.contains(SockFlags::SOCK_CLOEXEC);
+        file_table.insert(file_like, is_close_on_exec)
     };
     Ok(SyscallReturn::Return(fd as _))
 }

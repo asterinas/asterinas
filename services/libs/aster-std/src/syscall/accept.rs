@@ -18,7 +18,7 @@ pub fn sys_accept(
     write_socket_addr_to_user(&socket_addr, sockaddr_ptr, addrlen_ptr)?;
     let fd = {
         let mut file_table = current.file_table().lock();
-        file_table.insert(connected_socket)
+        file_table.insert(connected_socket, false)
     };
     Ok(SyscallReturn::Return(fd as _))
 }

@@ -12,7 +12,8 @@ pub fn sys_dup(old_fd: FileDescripter) -> Result<SyscallReturn> {
     let current = current!();
     let mut file_table = current.file_table().lock();
     let file = file_table.get_file(old_fd)?.clone();
-    let new_fd = file_table.insert(file);
+    // The two file descriptors do not share the close-on-exec flag.
+    let new_fd = file_table.insert(file, false);
     Ok(SyscallReturn::Return(new_fd as _))
 }
 
@@ -24,7 +25,8 @@ pub fn sys_dup2(old_fd: FileDescripter, new_fd: FileDescripter) -> Result<Syscal
     let mut file_table = current.file_table().lock();
     let file = file_table.get_file(old_fd)?.clone();
     if old_fd != new_fd {
-        if let Some(old_file) = file_table.insert_at(new_fd, file) {
+        // The two file descriptors do not share the close-on-exec flag.
+        if let Some(old_file) = file_table.insert_at(new_fd, file, false) {
             // If the file descriptor `new_fd` was previously open, close it silently.
             let _ = old_file.clean_for_close();
         }

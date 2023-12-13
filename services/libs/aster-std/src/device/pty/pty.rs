@@ -181,7 +181,8 @@ impl FileIo for PtyMaster {
 
                 let fd = {
                     let mut file_table = current.file_table().lock();
-                    file_table.insert(slave)
+                    // TODO: deal with the O_CLOEXEC flag
+                    file_table.insert(slave, false)
                 };
                 Ok(fd)
             }

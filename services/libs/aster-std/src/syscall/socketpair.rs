@@ -31,8 +31,9 @@ pub fn sys_socketpair(domain: i32, type_: i32, protocol: i32, sv: Vaddr) -> Resu
     let socket_fds = {
         let current = current!();
         let mut filetable = current.file_table().lock();
-        let fd_a = filetable.insert(socket_a);
-        let fd_b = filetable.insert(socket_b);
+        let is_close_on_exec = sock_flags.contains(SockFlags::SOCK_CLOEXEC);
+        let fd_a = filetable.insert(socket_a, is_close_on_exec);
+        let fd_b = filetable.insert(socket_b, is_close_on_exec);
         SocketFds(fd_a, fd_b)
     };
 
