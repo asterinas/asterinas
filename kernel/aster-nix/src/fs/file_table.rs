@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::cell::Cell;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::slot_vec::SlotVec;
 
@@ -49,20 +49,26 @@ impl FileTable {
             let mode = InodeMode::S_IWUSR;
             fs_resolver.open(&tty_path, flags, mode.bits()).unwrap()
         };
-        table.put(FileTableEntry::new(Arc::new(stdin), false));
-        table.put(FileTableEntry::new(Arc::new(stdout), false));
-        table.put(FileTableEntry::new(Arc::new(stderr), false));
+        table.put(FileTableEntry::new(Arc::new(stdin), FdFlags::empty()));
+        table.put(FileTableEntry::new(Arc::new(stdout), FdFlags::empty()));
+        table.put(FileTableEntry::new(Arc::new(stderr), FdFlags::empty()));
         Self {
             table,
             subject: Subject::new(),
         }
     }
 
-    pub fn dup(&mut self, fd: FileDescripter, new_fd: FileDescripter) -> Result<FileDescripter> {
-        let entry = self.table.get(fd as usize).map_or_else(
-            || return_errno_with_message!(Errno::ENOENT, "No such file"),
-            |e| Ok(e.clone()),
-        )?;
+    pub fn dup(
+        &mut self,
+        fd: FileDescripter,
+        new_fd: FileDescripter,
+        flags: FdFlags,
+    ) -> Result<FileDescripter> {
+        let file = self
+            .table
+            .get(fd as usize)
+            .map(|entry| entry.file.clone())
+            .ok_or(Error::with_message(Errno::ENOENT, "No such file"))?;
 
         // Get the lowest-numbered available fd equal to or greater than `new_fd`.
         let get_min_free_fd = || -> usize {
@@ -80,12 +86,13 @@ impl FileTable {
         };
 
         let min_free_fd = get_min_free_fd();
+        let entry = FileTableEntry::new(file, flags);
         self.table.put_at(min_free_fd, entry);
         Ok(min_free_fd as FileDescripter)
     }
 
-    pub fn insert(&mut self, item: Arc<dyn FileLike>) -> FileDescripter {
-        let entry = FileTableEntry::new(item, false);
+    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDescripter {
+        let entry = FileTableEntry::new(item, flags);
         self.table.put(entry) as FileDescripter
     }
 
@@ -93,8 +100,9 @@ impl FileTable {
         &mut self,
         fd: FileDescripter,
         item: Arc<dyn FileLike>,
+        flags: FdFlags,
     ) -> Option<Arc<dyn FileLike>> {
-        let entry = FileTableEntry::new(item, false);
+        let entry = FileTableEntry::new(item, FdFlags::empty());
         let entry = self.table.put_at(fd as usize, entry);
         if entry.is_some() {
             let events = FdEvents::Close(fd);
@@ -120,6 +128,29 @@ impl FileTable {
             .table
             .idxes_and_items()
             .map(|(idx, _)| idx as FileDescripter)
+            .collect();
+        for fd in closed_fds {
+            let entry = self.table.remove(fd as usize).unwrap();
+            let events = FdEvents::Close(fd);
+            self.notify_fd_events(&events);
+            entry.notify_fd_events(&events);
+            closed_files.push(entry.file);
+        }
+        closed_files
+    }
+
+    pub fn close_files_on_exec(&mut self) -> Vec<Arc<dyn FileLike>> {
+        let mut closed_files = Vec::new();
+        let closed_fds: Vec<FileDescripter> = self
+            .table
+            .idxes_and_items()
+            .filter_map(|(idx, entry)| {
+                if entry.flags().contains(FdFlags::CLOEXEC) {
+                    Some(idx as FileDescripter)
+                } else {
+                    None
+                }
+            })
             .collect();
         for fd in closed_fds {
             let entry = self.table.remove(fd as usize).unwrap();
@@ -196,21 +227,29 @@ impl Events for FdEvents {}
 
 pub struct FileTableEntry {
     file: Arc<dyn FileLike>,
-    close_on_exec: Cell<bool>,
+    flags: AtomicU8,
     subject: Subject<FdEvents>,
 }
 
 impl FileTableEntry {
-    pub fn new(file: Arc<dyn FileLike>, close_on_exec: bool) -> Self {
+    pub fn new(file: Arc<dyn FileLike>, flags: FdFlags) -> Self {
         Self {
             file,
-            close_on_exec: Cell::new(close_on_exec),
+            flags: AtomicU8::new(flags.bits()),
             subject: Subject::new(),
         }
     }
 
     pub fn file(&self) -> &Arc<dyn FileLike> {
         &self.file
+    }
+
+    pub fn flags(&self) -> FdFlags {
+        FdFlags::from_bits(self.flags.load(Ordering::Relaxed)).unwrap()
+    }
+
+    pub fn set_flags(&self, flags: FdFlags) {
+        self.flags.store(flags.bits(), Ordering::Relaxed);
     }
 
     pub fn register_observer(&self, epoll: Weak<dyn Observer<FdEvents>>) {
@@ -230,8 +269,15 @@ impl Clone for FileTableEntry {
     fn clone(&self) -> Self {
         Self {
             file: self.file.clone(),
-            close_on_exec: self.close_on_exec.clone(),
+            flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             subject: Subject::new(),
         }
+    }
+}
+
+bitflags! {
+    pub struct FdFlags: u8 {
+        /// Close on exec
+        const CLOEXEC = 1;
     }
 }

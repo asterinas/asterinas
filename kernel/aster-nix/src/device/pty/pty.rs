@@ -10,6 +10,7 @@ use crate::{
     fs::{
         device::{Device, DeviceId, DeviceType},
         devpts::DevPts,
+        file_table::FdFlags,
         fs_resolver::FsPath,
         inode_handle::FileIo,
         utils::{AccessMode, Inode, InodeMode, IoctlCmd},
@@ -189,7 +190,8 @@ impl FileIo for PtyMaster {
 
                 let fd = {
                     let mut file_table = current.file_table().lock();
-                    file_table.insert(slave)
+                    // TODO: deal with the O_CLOEXEC flag
+                    file_table.insert(slave, FdFlags::empty())
                 };
                 Ok(fd)
             }

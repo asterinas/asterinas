@@ -4,8 +4,9 @@ use super::{SyscallReturn, SYS_OPENAT};
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::FileDescripter,
+        file_table::{FdFlags, FileDescripter},
         fs_resolver::{FsPath, AT_FDCWD},
+        utils::CreationFlags,
     },
     log_syscall_entry,
     prelude::*,
@@ -35,7 +36,15 @@ pub fn sys_openat(
         Arc::new(inode_handle)
     };
     let mut file_table = current.file_table().lock();
-    let fd = file_table.insert(file_handle);
+    let fd = {
+        let fd_flags =
+            if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
+                FdFlags::CLOEXEC
+            } else {
+                FdFlags::empty()
+            };
+        file_table.insert(file_handle, fd_flags)
+    };
     Ok(SyscallReturn::Return(fd as _))
 }
 
