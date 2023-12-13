@@ -2,7 +2,7 @@
 
 use super::{SyscallReturn, SYS_SOCKET};
 use crate::{
-    fs::file_handle::FileLike,
+    fs::{file_handle::FileLike, file_table::FdFlags},
     log_syscall_entry,
     net::socket::{
         ip::{DatagramSocket, StreamSocket},
@@ -42,7 +42,12 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
     let fd = {
         let current = current!();
         let mut file_table = current.file_table().lock();
-        file_table.insert(file_like)
+        let fd_flags = if sock_flags.contains(SockFlags::SOCK_CLOEXEC) {
+            FdFlags::CLOEXEC
+        } else {
+            FdFlags::empty()
+        };
+        file_table.insert(file_like, fd_flags)
     };
     Ok(SyscallReturn::Return(fd as _))
 }

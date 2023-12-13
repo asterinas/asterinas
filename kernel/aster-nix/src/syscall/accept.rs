@@ -2,7 +2,7 @@
 
 use super::{SyscallReturn, SYS_ACCEPT};
 use crate::{
-    fs::file_table::FileDescripter,
+    fs::file_table::{FdFlags, FileDescripter},
     log_syscall_entry,
     prelude::*,
     util::net::{get_socket_from_fd, write_socket_addr_to_user},
@@ -24,7 +24,7 @@ pub fn sys_accept(
     let connected_fd = {
         let current = current!();
         let mut file_table = current.file_table().lock();
-        file_table.insert(connected_socket)
+        file_table.insert(connected_socket, FdFlags::empty())
     };
     Ok(SyscallReturn::Return(connected_fd as _))
 }

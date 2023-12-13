@@ -2,7 +2,10 @@
 
 use super::{SyscallReturn, SYS_FCNTL};
 use crate::{
-    fs::{file_table::FileDescripter, utils::StatusFlags},
+    fs::{
+        file_table::{FdFlags, FileDescripter},
+        utils::StatusFlags,
+    },
     log_syscall_entry,
     prelude::*,
 };
@@ -12,18 +15,37 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
     let fcntl_cmd = FcntlCmd::try_from(cmd)?;
     debug!("fd = {}, cmd = {:?}, arg = {}", fd, fcntl_cmd, arg);
     match fcntl_cmd {
-        FcntlCmd::F_DUPFD_CLOEXEC => {
-            // FIXME: deal with the cloexec flag
+        FcntlCmd::F_DUPFD => {
             let current = current!();
             let mut file_table = current.file_table().lock();
-            let new_fd = file_table.dup(fd, arg as FileDescripter)?;
+            let new_fd = file_table.dup(fd, arg as FileDescripter, FdFlags::empty())?;
             Ok(SyscallReturn::Return(new_fd as _))
         }
+        FcntlCmd::F_DUPFD_CLOEXEC => {
+            let current = current!();
+            let mut file_table = current.file_table().lock();
+            let new_fd = file_table.dup(fd, arg as FileDescripter, FdFlags::CLOEXEC)?;
+            Ok(SyscallReturn::Return(new_fd as _))
+        }
+        FcntlCmd::F_GETFD => {
+            let current = current!();
+            let file_table = current.file_table().lock();
+            let entry = file_table.get_entry(fd)?;
+            let fd_flags = entry.flags();
+            Ok(SyscallReturn::Return(fd_flags.bits() as _))
+        }
         FcntlCmd::F_SETFD => {
-            if arg != 1 {
-                panic!("Unknown setfd argument");
-            }
-            // TODO: Set cloexec
+            let flags = {
+                if arg > u8::MAX.into() {
+                    return_errno_with_message!(Errno::EINVAL, "invalid fd flags");
+                }
+                FdFlags::from_bits(arg as u8)
+                    .ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?
+            };
+            let current = current!();
+            let file_table = current.file_table().lock();
+            let entry = file_table.get_entry(fd)?;
+            entry.set_flags(flags);
             Ok(SyscallReturn::Return(0))
         }
         FcntlCmd::F_GETFL => {
@@ -60,7 +82,6 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
             file.set_status_flags(new_status_flags)?;
             Ok(SyscallReturn::Return(0))
         }
-        _ => todo!(),
     }
 }
 

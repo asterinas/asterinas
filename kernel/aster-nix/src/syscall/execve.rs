@@ -106,6 +106,12 @@ fn do_execve(
 
     let current = current!();
 
+    // Ensure that the file descriptors with the close-on-exec flag are closed.
+    let closed_files = current.file_table().lock().close_files_on_exec();
+    for file in closed_files {
+        file.clean_for_close()?;
+    }
+
     debug!("load program to root vmar");
     let (new_executable_path, elf_load_info) = {
         let fs_resolver = &*current.fs().read();
