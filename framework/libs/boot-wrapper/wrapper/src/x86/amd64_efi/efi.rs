@@ -39,7 +39,7 @@ extern "sysv64" fn efi_handover_entry(
 fn efi_phase_boot(
     handle: Handle,
     system_table: SystemTable<Boot>,
-    boot_params: *mut BootParams,
+    boot_params_ptr: *mut BootParams,
 ) -> ! {
     // Safety: this init function is only called once.
     unsafe { crate::console::init() };
@@ -50,7 +50,7 @@ fn efi_phase_boot(
     uefi_services::println!("[EFI stub] Relocations applied.");
 
     uefi_services::println!("[EFI stub] Loading payload.");
-    let payload = unsafe { crate::get_payload(&*boot_params) };
+    let payload = unsafe { crate::get_payload(&*boot_params_ptr) };
     crate::loader::load_elf(payload);
 
     uefi_services::println!("[EFI stub] Exiting EFI boot services.");
@@ -63,7 +63,7 @@ fn efi_phase_boot(
     };
     let (system_table, memory_map) = system_table.exit_boot_services(memory_type);
 
-    efi_phase_runtime(system_table, memory_map, boot_params);
+    efi_phase_runtime(system_table, memory_map, boot_params_ptr);
 }
 
 fn efi_phase_runtime(
@@ -75,36 +75,10 @@ fn efi_phase_runtime(
         crate::console::print_str("[EFI stub] Entered runtime services.\n");
     }
 
-    let boot_params = unsafe { &mut *boot_params_ptr };
-
-    // Write memory map to e820 table in boot_params.
-    let e820_table = &mut boot_params.e820_table;
-    let mut e820_entries = 0;
-    for md in memory_map.entries() {
-        if e820_entries >= e820_table.len() || e820_entries >= 128 {
-            break;
-        }
-        e820_table[e820_entries] = linux_boot_params::BootE820Entry {
-            addr: md.phys_start as u64,
-            size: md.page_count as u64 * 4096,
-            typ: match md.ty {
-                uefi::table::boot::MemoryType::CONVENTIONAL => linux_boot_params::E820Type::Ram,
-                uefi::table::boot::MemoryType::RESERVED => linux_boot_params::E820Type::Reserved,
-                uefi::table::boot::MemoryType::ACPI_RECLAIM => linux_boot_params::E820Type::Acpi,
-                uefi::table::boot::MemoryType::ACPI_NON_VOLATILE => {
-                    linux_boot_params::E820Type::Nvs
-                }
-                _ => linux_boot_params::E820Type::Reserved,
-            },
-        };
-        e820_entries += 1;
-    }
-    boot_params.e820_entries = e820_entries as u8;
-
     #[cfg(feature = "debug_print")]
     unsafe {
         use crate::console::{print_hex, print_str};
-        print_str("[EFI stub debug] Memory map:\n");
+        print_str("[EFI stub debug] EFI Memory map:\n");
         for md in memory_map.entries() {
             // crate::println!("    [{:#x}] {:#x} ({:#x})", md.ty.0, md.phys_start, md.page_count);
             print_str("    [");
@@ -119,6 +93,32 @@ fn efi_phase_runtime(
             print_str("}\n");
         }
     }
+
+    let boot_params = unsafe { &mut *boot_params_ptr };
+
+    // Write memory map to e820 table in boot_params.
+    let e820_table = &mut boot_params.e820_table;
+    let mut e820_entries = 0usize;
+    for md in memory_map.entries() {
+        if e820_entries >= e820_table.len() || e820_entries >= 128 {
+            break;
+        }
+        e820_table[e820_entries] = linux_boot_params::BootE820Entry {
+            addr: md.phys_start as u64,
+            size: md.page_count as u64 * 4096,
+            typ: match md.ty {
+                uefi::table::boot::MemoryType::CONVENTIONAL => linux_boot_params::E820Type::Ram,
+                uefi::table::boot::MemoryType::RESERVED => linux_boot_params::E820Type::Reserved,
+                uefi::table::boot::MemoryType::ACPI_RECLAIM => linux_boot_params::E820Type::Acpi,
+                uefi::table::boot::MemoryType::ACPI_NON_VOLATILE => {
+                    linux_boot_params::E820Type::Nvs
+                }
+                _ => linux_boot_params::E820Type::Unusable,
+            },
+        };
+        e820_entries += 1;
+    }
+    boot_params.e820_entries = e820_entries as u8;
 
     unsafe {
         use crate::console::{print_hex, print_str};

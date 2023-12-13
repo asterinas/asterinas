@@ -24,15 +24,13 @@ jobs:
         id: boot_test_mb2
         run: make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE_MODE=1
 
-      # FIXME: Syscall test under Linux Boot Protocol fails at JobControlTest
-      # We should re-enable syscall tests after fixing the bug.
+      - name: Boot Test (MicroVM)
+        id: boot_test_microvm
+        run: make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_METHOD=microvm RELEASE_MODE=1
+
       - name: Boot Test (Linux Boot Protocol)
         id: boot_test_linux
         run: make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=linux RELEASE_MODE=1
-
-      - name: Regression Test (Multiboot2)
-        id: regression_test_linux
-        run: make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE_MODE=1
 
       - name: Syscall Test (MicroVM)
         id: syscall_test_microvm
@@ -45,3 +43,7 @@ jobs:
       - name: Syscall Test at Ext2 (MicroVM)
         id: syscall_test_at_ext2_microvm
         run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=0 BOOT_METHOD=microvm RELEASE_MODE=1
+        
+      - name: Regression Test (Linux Boot Protocol)
+        id: regression_test_linux
+        run: make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_PROTOCOL=linux RELEASE_MODE=1

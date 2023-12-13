@@ -6,7 +6,9 @@ use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
 
 use crate::boot::{
     kcmdline::KCmdlineArg,
-    memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+    memory_region::{
+        non_overlapping_regions_from, MemoryRegion, MemoryRegionType,
+    },
     BootloaderAcpiArg, BootloaderFramebufferArg,
 };
 use spin::Once;

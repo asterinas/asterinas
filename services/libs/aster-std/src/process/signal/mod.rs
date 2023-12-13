@@ -14,7 +14,7 @@ pub mod signals;
 pub use events::{SigEvents, SigEventsFilter};
 pub use pauser::Pauser;
 pub use poll::{Pollee, Poller};
-pub use sig_stack::{SigStack, SigStackFlags, SigStackStatus};
+pub use sig_stack::{SigStack, SigStackFlags};
 
 use align_ext::AlignExt;
 use aster_frame::cpu::UserContext;

@@ -12,6 +12,7 @@ unsafe fn memcpy(dst: *mut u8, src: *const u8, size: usize) {
     }
 }
 
+/// Load the kernel ELF payload to memory.
 pub fn load_elf(file: &[u8]) {
     let elf = xmas_elf::ElfFile::new(file).unwrap();
 
