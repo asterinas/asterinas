@@ -5,7 +5,9 @@ use spin::Once;
 use crate::{
     boot::{
         kcmdline::KCmdlineArg,
-        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        memory_region::{
+            non_overlapping_regions_from, MemoryRegion, MemoryRegionType,
+        },
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     config::PHYS_OFFSET,

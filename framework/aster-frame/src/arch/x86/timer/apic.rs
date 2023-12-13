@@ -56,7 +56,7 @@ fn init_tsc_mode() {
 fn determine_tsc_freq_via_pit() -> u64 {
     let mut irq = IrqLine::alloc_specific(super::TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
     irq.on_active(pit_callback);
-    let mut io_apic = IO_APIC.get().unwrap().get(0).unwrap().lock();
+    let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
     debug_assert_eq!(io_apic.interrupt_base(), 0);
     io_apic.enable(2, irq.clone()).unwrap();
     drop(io_apic);
@@ -87,7 +87,7 @@ fn determine_tsc_freq_via_pit() -> u64 {
                 IN_TIME += 1;
                 return;
             }
-            let mut io_apic = IO_APIC.get().unwrap().get(0).unwrap().lock();
+            let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
             io_apic.disable(2).unwrap();
             drop(io_apic);
             let tsc_count = _rdtsc();

@@ -158,16 +158,37 @@ impl Credentials_ {
             return Ok(());
         }
 
-        if let Some(ruid) = ruid && *ruid != self.ruid() && *ruid != self.euid() && (!ruid_may_be_old_suid || *ruid != self.suid()) {
-            return_errno_with_message!(Errno::EPERM, "ruid can only be one of old ruid, old euid (and old suid).");
+        if let Some(ruid) = ruid
+            && *ruid != self.ruid()
+            && *ruid != self.euid()
+            && (!ruid_may_be_old_suid || *ruid != self.suid())
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "ruid can only be one of old ruid, old euid (and old suid)."
+            );
         }
 
-        if let Some(euid) = euid && *euid != self.ruid() && *euid != self.euid() && *euid != self.suid() {
-            return_errno_with_message!(Errno::EPERM, "euid can only be one of old ruid, old euid and old suid.")
+        if let Some(euid) = euid
+            && *euid != self.ruid()
+            && *euid != self.euid()
+            && *euid != self.suid()
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "euid can only be one of old ruid, old euid and old suid."
+            )
         }
 
-        if let Some(suid) = suid && *suid != self.ruid() && *suid != self.euid() && *suid != self.suid() {
-            return_errno_with_message!(Errno::EPERM, "suid can only be one of old ruid, old euid and old suid.")
+        if let Some(suid) = suid
+            && *suid != self.ruid()
+            && *suid != self.euid()
+            && *suid != self.suid()
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "suid can only be one of old ruid, old euid and old suid."
+            )
         }
 
         Ok(())
@@ -291,16 +312,37 @@ impl Credentials_ {
             return Ok(());
         }
 
-        if let Some(rgid) = rgid && *rgid != self.rgid() && *rgid != self.egid() && (!rgid_may_be_old_sgid || *rgid != self.sgid()) {
-            return_errno_with_message!(Errno::EPERM, "rgid can only be one of old rgid, old egid (and old sgid).");
+        if let Some(rgid) = rgid
+            && *rgid != self.rgid()
+            && *rgid != self.egid()
+            && (!rgid_may_be_old_sgid || *rgid != self.sgid())
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "rgid can only be one of old rgid, old egid (and old sgid)."
+            );
         }
 
-        if let Some(egid) = egid && *egid != self.rgid() && *egid != self.egid() && *egid != self.sgid() {
-            return_errno_with_message!(Errno::EPERM, "egid can only be one of old rgid, old egid and old sgid.")
+        if let Some(egid) = egid
+            && *egid != self.rgid()
+            && *egid != self.egid()
+            && *egid != self.sgid()
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "egid can only be one of old rgid, old egid and old sgid."
+            )
         }
 
-        if let Some(sgid) = sgid && *sgid != self.rgid() && *sgid != self.egid() && *sgid != self.sgid() {
-            return_errno_with_message!(Errno::EPERM, "sgid can only be one of old rgid, old egid and old sgid.")
+        if let Some(sgid) = sgid
+            && *sgid != self.rgid()
+            && *sgid != self.egid()
+            && *sgid != self.sgid()
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "sgid can only be one of old rgid, old egid and old sgid."
+            )
         }
 
         Ok(())

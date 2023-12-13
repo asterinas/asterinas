@@ -101,12 +101,17 @@ impl PosixThread {
             return Ok(());
         }
 
-        if let Some(signum) = signum && *signum == SIGCONT {
+        if let Some(signum) = signum
+            && *signum == SIGCONT
+        {
             let receiver_sid = self.process().session().unwrap().sid();
             if receiver_sid == sender.sid() {
-                return Ok(())
+                return Ok(());
             } else {
-                return_errno_with_message!(Errno::EPERM, "sigcont requires that sender and receiver belongs to the same session");
+                return_errno_with_message!(
+                    Errno::EPERM,
+                    "sigcont requires that sender and receiver belongs to the same session"
+                );
             }
         }
 
