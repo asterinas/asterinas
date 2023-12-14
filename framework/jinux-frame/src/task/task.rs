@@ -142,6 +142,8 @@ impl Task {
         schedule();
     }
 
+    /// Enqueues the thread into run queue. The thread may not be scheduled to
+    /// run at once.
     pub fn run(self: &Arc<Self>) {
         add_task(self.clone());
         schedule();
