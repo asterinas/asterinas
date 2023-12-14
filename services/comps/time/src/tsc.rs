@@ -13,7 +13,7 @@ use crate::{START_TIME, VDSO_DATA_UPDATE};
 /// A instance of TSC clocksource.
 pub static CLOCK: Once<Arc<ClockSource>> = Once::new();
 
-const MAX_DELAY_SECS: u64 = 60;
+const MAX_DELAY_SECS: u64 = 100;
 
 /// Init tsc clocksource module.
 pub(super) fn init() {
@@ -62,10 +62,11 @@ fn update_clocksource(timer: Arc<Timer>) {
 fn init_timer() {
     let timer = Timer::new(update_clocksource).unwrap();
     // The initial timer should be set as `clock.max_delay_secs() >> 1` or something much smaller than `max_delay_secs`.
-    // This is because the initialization of this timer occurs during system startup.
-    // Afterwards, the system will undergo additional initialization processes, during which time interrupts are disabled.
+    // This is because the initialization of this timer occurs during system startup,
+    // and the system will also undergo other initialization processes, during which time interrupts are disabled.
     // This results in the actual trigger time of the timer being delayed by about 5 seconds compared to the set time.
-    // TODO: This is a temporary handle, and should be modified in the future.
+    // If without KVM, the delayed time will be larger.
+    // TODO: This is a temporary solution, and should be modified in the future.
     timer.set(Duration::from_secs(
         CLOCK.get().unwrap().max_delay_secs() >> 1,
     ));

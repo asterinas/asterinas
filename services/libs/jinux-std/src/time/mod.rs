@@ -14,7 +14,7 @@ pub type time_t = i64;
 pub type suseconds_t = i64;
 pub type clock_t = i64;
 
-#[derive(Debug, Copy, Clone, TryFromInt)]
+#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
 pub enum ClockID {
     CLOCK_REALTIME = 0,
@@ -26,6 +26,16 @@ pub enum ClockID {
     CLOCK_MONOTONIC_COARSE = 6,
     CLOCK_BOOTTIME = 7,
 }
+
+/// A list of all supported clock IDs for time-related functions.
+pub const ALL_SUPPORTED_CLOCK_IDS: [ClockID; 6] = [
+    ClockID::CLOCK_REALTIME,
+    ClockID::CLOCK_REALTIME_COARSE,
+    ClockID::CLOCK_MONOTONIC,
+    ClockID::CLOCK_MONOTONIC_COARSE,
+    ClockID::CLOCK_MONOTONIC_RAW,
+    ClockID::CLOCK_BOOTTIME,
+];
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
