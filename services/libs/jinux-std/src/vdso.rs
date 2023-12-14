@@ -6,7 +6,7 @@
 //! necessary time-related information, and a Virtual Memory Object (VMO) that encapsulates both the data and the
 //! VDSO routines. The VMO is intended to be mapped into the address space of every user space process for efficient access.
 //!
-//! The module is initialized with `init`, which sets up the `START_SEC_COUNT` and prepares the VDSO instance for
+//! The module is initialized with `init`, which sets up the `START_SECS_COUNT` and prepares the VDSO instance for
 //! use. It also hooks up the VDSO data update routine to the time management subsystem for periodic updates.
 
 use alloc::boxed::Box;
@@ -20,7 +20,7 @@ use spin::Once;
 
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-    time::{ClockID, SystemTime},
+    time::{ClockID, SystemTime, ALL_SUPPORTED_CLOCK_IDS},
     vm::vmo::{Vmo, VmoOptions},
 };
 
@@ -28,7 +28,7 @@ const CLOCK_TAI: usize = 11;
 const VDSO_BASES: usize = CLOCK_TAI + 1;
 const DEFAULT_CLOCK_MODE: VdsoClockMode = VdsoClockMode::Tsc;
 
-static START_SEC_COUNT: Once<u64> = Once::new();
+static START_SECS_COUNT: Once<u64> = Once::new();
 static VDSO: Once<Arc<Vdso>> = Once::new();
 
 #[derive(Debug, Copy, Clone)]
@@ -46,15 +46,15 @@ enum VdsoClockMode {
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
 struct VdsoInstant {
-    sec: u64,
-    nanos_mult: u64,
+    secs: u64,
+    nanos_lshift: u64,
 }
 
 impl VdsoInstant {
     const fn zero() -> Self {
         Self {
-            sec: 0,
-            nanos_mult: 0,
+            secs: 0,
+            nanos_lshift: 0,
         }
     }
 }
@@ -124,23 +124,27 @@ impl VdsoData {
         self.shift = coeff.shift();
     }
 
-    fn update_clock_instant(&mut self, clockid: usize, sec: u64, nanos_mult: u64) {
-        self.basetime[clockid].sec = sec;
-        self.basetime[clockid].nanos_mult = nanos_mult;
+    fn update_clock_instant(&mut self, clockid: usize, secs: u64, nanos_lshift: u64) {
+        self.basetime[clockid].secs = secs;
+        self.basetime[clockid].nanos_lshift = nanos_lshift;
     }
 
     fn update_instant(&mut self, instant: Instant, instant_cycles: u64) {
         self.last_cycles = instant_cycles;
-        self.update_clock_instant(
-            ClockID::CLOCK_REALTIME as usize,
-            instant.secs() + START_SEC_COUNT.get().unwrap(),
-            instant.nanos() as u64 * self.mult as u64,
-        );
-        self.update_clock_instant(
-            ClockID::CLOCK_MONOTONIC as usize,
-            instant.secs(),
-            instant.nanos() as u64 * self.mult as u64,
-        );
+        const REALTIME_IDS: [ClockID; 2] =
+            [ClockID::CLOCK_REALTIME, ClockID::CLOCK_REALTIME_COARSE];
+        for clock_id in ALL_SUPPORTED_CLOCK_IDS {
+            let secs = if REALTIME_IDS.contains(&clock_id) {
+                instant.secs() + START_SECS_COUNT.get().unwrap()
+            } else {
+                instant.secs()
+            };
+            self.update_clock_instant(
+                clock_id as usize,
+                secs,
+                (instant.nanos() as u64) << self.shift as u64,
+            );
+        }
     }
 }
 
@@ -196,9 +200,13 @@ impl Vdso {
     fn update_instant(&self, instant: Instant, instant_cycles: u64) {
         self.data.lock().update_instant(instant, instant_cycles);
 
+        // Update begins.
         self.vmo.write_val(0x80, &1).unwrap();
-        self.update_vmo_instant(ClockID::CLOCK_REALTIME);
-        self.update_vmo_instant(ClockID::CLOCK_MONOTONIC);
+        self.vmo.write_val(0x88, &instant_cycles).unwrap();
+        for clock_id in ALL_SUPPORTED_CLOCK_IDS {
+            self.update_vmo_instant(clock_id);
+        }
+        // Update finishes.
         self.vmo.write_val(0x80, &0).unwrap();
     }
 
@@ -206,13 +214,16 @@ impl Vdso {
     fn update_vmo_instant(&self, clockid: ClockID) {
         let clock_index = clockid as usize;
         let secs_offset = 0xA0 + clock_index * 0x10;
-        let nanos_mult_offset = 0xA8 + clock_index * 0x10;
+        let nanos_lshift_offset = 0xA8 + clock_index * 0x10;
         let data = self.data.lock();
         self.vmo
-            .write_val(secs_offset, &data.basetime[clock_index].sec)
+            .write_val(secs_offset, &data.basetime[clock_index].secs)
             .unwrap();
         self.vmo
-            .write_val(nanos_mult_offset, &data.basetime[clock_index].nanos_mult)
+            .write_val(
+                nanos_lshift_offset,
+                &data.basetime[clock_index].nanos_lshift,
+            )
             .unwrap();
     }
 }
@@ -222,11 +233,11 @@ fn update_vdso_instant(instant: Instant, instant_cycles: u64) {
     VDSO.get().unwrap().update_instant(instant, instant_cycles);
 }
 
-/// Init `START_SEC_COUNT`, which is used to record the seconds passed since 1970-01-01 00:00:00.
-fn init_start_sec_count() {
+/// Init `START_SECS_COUNT`, which is used to record the seconds passed since 1970-01-01 00:00:00.
+fn init_start_secs_count() {
     let now = SystemTime::now();
     let time_duration = now.duration_since(&SystemTime::UNIX_EPOCH).unwrap();
-    START_SEC_COUNT.call_once(|| time_duration.as_secs());
+    START_SECS_COUNT.call_once(|| time_duration.as_secs());
 }
 
 fn init_vdso() {
@@ -236,7 +247,7 @@ fn init_vdso() {
 
 /// Init vdso module.
 pub(super) fn init() {
-    init_start_sec_count();
+    init_start_secs_count();
     init_vdso();
     jinux_time::VDSO_DATA_UPDATE.call_once(|| Arc::new(update_vdso_instant));
 }
