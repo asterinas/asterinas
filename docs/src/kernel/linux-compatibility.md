@@ -336,6 +336,7 @@ provided by Linux on x86-64 architecture.
 | 313	  | finit_module     | ❌              |
 | 318	  | getrandom        | ✅              |
 | 322	  | execveat         | ✅              |
+| 435	  | clone3           | ✅              |
 
 ## File Systems
 

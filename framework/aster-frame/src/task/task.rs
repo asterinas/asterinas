@@ -161,6 +161,7 @@ impl Task {
         schedule();
     }
 
+    /// Runs the task.
     pub fn run(self: &Arc<Self>) {
         add_task(self.clone());
         schedule();

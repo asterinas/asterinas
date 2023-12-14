@@ -59,6 +59,7 @@ bitflags! {
 #[derive(Debug, Clone, Copy)]
 pub struct CloneArgs {
     new_sp: u64,
+    stack_size: usize,
     parent_tidptr: Vaddr,
     child_tidptr: Vaddr,
     tls: u64,
@@ -66,9 +67,12 @@ pub struct CloneArgs {
 }
 
 impl CloneArgs {
-    pub const fn default() -> Self {
+    /// Clone Args for syscall fork.
+    /// TODO: set the correct values
+    pub const fn for_fork() -> Self {
         CloneArgs {
             new_sp: 0,
+            stack_size: 0,
             parent_tidptr: 0,
             child_tidptr: 0,
             tls: 0,
@@ -78,6 +82,7 @@ impl CloneArgs {
 
     pub const fn new(
         new_sp: u64,
+        stack_size: usize,
         parent_tidptr: Vaddr,
         child_tidptr: Vaddr,
         tls: u64,
@@ -85,6 +90,7 @@ impl CloneArgs {
     ) -> Self {
         CloneArgs {
             new_sp,
+            stack_size,
             parent_tidptr,
             child_tidptr,
             tls,
@@ -121,43 +127,28 @@ impl CloneFlags {
     }
 }
 
-/// Clone a child thread. Without schedule it to run.
-pub fn clone_child(parent_context: UserContext, clone_args: CloneArgs) -> Result<Tid> {
+/// Clone a child thread or child process.
+///
+/// FIXME: currently, the child process or thread will be scheduled to run at once,
+/// but this may not be the expected bahavior.
+pub fn clone_child(parent_context: &UserContext, clone_args: CloneArgs) -> Result<Tid> {
     clone_args.clone_flags.check_unsupported_flags()?;
     if clone_args.clone_flags.contains(CloneFlags::CLONE_THREAD) {
         let child_thread = clone_child_thread(parent_context, clone_args)?;
-        let child_tid = child_thread.tid();
-        debug!(
-            "*********schedule child thread, current tid = {}, child pid = {}**********",
-            current_thread!().tid(),
-            child_tid
-        );
         child_thread.run();
-        debug!(
-            "*********return to parent thread, current tid = {}, child pid = {}*********",
-            current_thread!().tid(),
-            child_tid
-        );
+
+        let child_tid = child_thread.tid();
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(parent_context, clone_args)?;
-        let child_pid = child_process.pid();
-        debug!(
-            "*********schedule child process, current pid = {}, child pid = {}**********",
-            current!().pid(),
-            child_pid
-        );
         child_process.run();
-        debug!(
-            "*********return to parent process, current pid = {}, child pid = {}*********",
-            current!().pid(),
-            child_pid
-        );
+
+        let child_pid = child_process.pid();
         Ok(child_pid)
     }
 }
 
-fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Result<Arc<Thread>> {
+fn clone_child_thread(parent_context: &UserContext, clone_args: CloneArgs) -> Result<Arc<Thread>> {
     let clone_flags = clone_args.clone_flags;
     let current = current!();
     debug_assert!(clone_flags.contains(CloneFlags::CLONE_VM));
@@ -170,6 +161,7 @@ fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Res
         let child_cpu_context = clone_cpu_context(
             parent_context,
             clone_args.new_sp,
+            clone_args.stack_size,
             clone_args.tls,
             clone_flags,
         );
@@ -215,7 +207,10 @@ fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Res
     Ok(child_thread)
 }
 
-fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Result<Arc<Process>> {
+fn clone_child_process(
+    parent_context: &UserContext,
+    clone_args: CloneArgs,
+) -> Result<Arc<Process>> {
     let current = current!();
     let parent = Arc::downgrade(&current);
     let clone_flags = clone_args.clone_flags;
@@ -231,6 +226,7 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
         let child_cpu_context = clone_cpu_context(
             parent_context,
             clone_args.new_sp,
+            clone_args.stack_size,
             clone_args.tls,
             clone_flags,
         );
@@ -368,12 +364,13 @@ fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<Pr
 }
 
 fn clone_cpu_context(
-    parent_context: UserContext,
+    parent_context: &UserContext,
     new_sp: u64,
+    stack_size: usize,
     tls: u64,
     clone_flags: CloneFlags,
 ) -> UserContext {
-    let mut child_context = parent_context;
+    let mut child_context = *parent_context;
     // The return value of child thread is zero
     child_context.set_syscall_ret(0);
 
@@ -382,7 +379,14 @@ fn clone_cpu_context(
         debug_assert!(new_sp != 0);
     }
     if new_sp != 0 {
-        child_context.set_stack_pointer(new_sp as usize);
+        // If stack size is not 0, the `new_sp` points to the BOTTOMMOST byte of stack.
+        if stack_size != 0 {
+            child_context.set_stack_pointer(new_sp as usize + stack_size);
+        }
+        // If stack size is 0, the new_sp points to the TOPMOST byte of stack.
+        else {
+            child_context.set_stack_pointer(new_sp as usize);
+        }
     }
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
         child_context.set_tls_pointer(tls as usize);
