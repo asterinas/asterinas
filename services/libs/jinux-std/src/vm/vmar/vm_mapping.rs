@@ -9,6 +9,7 @@ use crate::vm::{
 };
 
 use super::{is_intersected, Vmar, Vmar_};
+use crate::util::interval::NonOverlap;
 use crate::vm::perms::VmPerms;
 use crate::vm::vmar::Rights;
 use crate::vm::vmo::VmoRightsOp;
@@ -54,6 +55,12 @@ struct VmMappingInner {
     /// This map can be filled when mapping a vmo to vmar and can be modified when call mprotect.
     /// We keep the options in case the page is not committed(or create copy on write mappings) and will further need these options.
     page_perms: BTreeMap<usize, VmPerm>,
+}
+
+impl NonOverlap<usize> for Arc<VmMapping> {
+    fn range(&self) -> Range<usize> {
+        self.map_to_addr()..self.map_to_addr() + self.map_size()
+    }
 }
 
 impl VmMapping {
@@ -260,10 +267,6 @@ impl VmMapping {
             parent: Arc::downgrade(new_parent),
             vmo: child_vmo,
         })
-    }
-
-    pub fn range(&self) -> Range<usize> {
-        self.map_to_addr()..self.map_to_addr() + self.map_size()
     }
 
     /// Trim a range from the mapping.

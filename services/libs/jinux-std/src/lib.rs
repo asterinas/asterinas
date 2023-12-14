@@ -20,6 +20,7 @@
 #![feature(trait_upcasting)]
 #![feature(format_args_nl)]
 #![register_tool(component_access_control)]
+#![feature(btree_cursors)]
 
 use crate::{
     prelude::*,
