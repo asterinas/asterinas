@@ -12,7 +12,7 @@ use crate::syscall::{
     chown::{sys_chown, sys_fchown, sys_fchownat, sys_lchown},
     chroot::sys_chroot,
     clock_gettime::sys_clock_gettime,
-    clone::sys_clone,
+    clone::{sys_clone, sys_clone3},
     close::sys_close,
     connect::sys_connect,
     dup::{sys_dup, sys_dup2},
@@ -248,4 +248,5 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut context);
+    SYS_CLONE3 = 435           => sys_clone3(args[..2], &context);
 }
