@@ -1,0 +1,11 @@
+[package]
+name = "cpio-decoder"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+int-to-c-enum = { path = "../../libs/int-to-c-enum" }
+core2 = { version = "0.4", default_features = false, features = ["alloc"] }
+lending-iterator = "0.1.7"

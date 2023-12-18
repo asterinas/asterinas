@@ -1,0 +1,10 @@
+[components]
+foo = { name = "foo" }
+bar = { name = "bar" }
+
+[whitelist]
+[whitelist.foo.foo_add]
+bar = true
+
+[whitelist.foo.FOO_ITEM]
+bar = true

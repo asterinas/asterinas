@@ -1,0 +1,9 @@
+[book]
+authors = ["Tate, Hongliang Tian"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Jinux: A Secure, Fast, and Modern OS in Rust"
+
+[rust]
+edition = "2021"

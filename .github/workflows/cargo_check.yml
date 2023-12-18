@@ -1,0 +1,21 @@
+name: Cargo check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: jinuxdev/jinux:0.2.1
+    steps:
+      - run: echo "Running in jinuxdev/jinux:0.2.1"
+
+      - uses: actions/checkout@v3
+
+      - name: Check
+        id: check
+        run: make check

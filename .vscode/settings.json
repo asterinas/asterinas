@@ -1,0 +1,11 @@
+{
+    "rust-analyzer.check.allTargets": false,
+    "rust-analyzer.cargo.target": "x86_64-custom.json",
+    "rust-analyzer.check.extraArgs": [
+        "--target",
+        "x86_64-custom.json",
+        "-Zbuild-std=core,alloc,compiler_builtins",
+        "-Zbuild-std-features=compiler-builtins-mem"
+    ],
+    "rust-analyzer.showUnlinkedFileNotification": false
+}
