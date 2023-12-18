@@ -12,6 +12,8 @@ pub mod qemu;
 pub(crate) mod tdx_guest;
 pub(crate) mod timer;
 
+use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
+
 use kernel::apic::ioapic;
 use log::{info, warn};
 
@@ -48,6 +50,17 @@ pub(crate) fn interrupts_ack() {
     if let Some(apic) = kernel::apic::APIC_INSTANCE.get() {
         apic.lock().eoi();
     }
+}
+
+/// Return the frequency of TSC. The unit is Hz.
+pub fn tsc_freq() -> u64 {
+    kernel::tsc::TSC_FREQ.load(Ordering::Acquire)
+}
+
+/// Reads the current value of the processor’s time-stamp counter (TSC).
+pub fn read_tsc() -> u64 {
+    // Safety: It is safe to read a time-related counter.
+    unsafe { _rdtsc() }
 }
 
 fn enable_common_cpu_features() {

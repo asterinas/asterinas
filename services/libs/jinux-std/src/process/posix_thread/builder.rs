@@ -5,7 +5,7 @@ use crate::{
     process::{
         posix_thread::name::ThreadName,
         signal::{sig_mask::SigMask, sig_queues::SigQueues},
-        Process,
+        Credentials, Process,
     },
     thread::{status::ThreadStatus, task::create_new_user_task, thread_table, Thread, Tid},
 };
@@ -18,6 +18,7 @@ pub struct PosixThreadBuilder {
     tid: Tid,
     user_space: Arc<UserSpace>,
     process: Weak<Process>,
+    credentials: Credentials,
 
     // Optional part
     thread_name: Option<ThreadName>,
@@ -29,11 +30,12 @@ pub struct PosixThreadBuilder {
 }
 
 impl PosixThreadBuilder {
-    pub fn new(tid: Tid, user_space: Arc<UserSpace>) -> Self {
+    pub fn new(tid: Tid, user_space: Arc<UserSpace>, credentials: Credentials) -> Self {
         Self {
             tid,
             user_space,
             process: Weak::new(),
+            credentials,
             thread_name: None,
             set_child_tid: 0,
             clear_child_tid: 0,
@@ -79,6 +81,7 @@ impl PosixThreadBuilder {
             tid,
             user_space,
             process,
+            credentials,
             thread_name,
             set_child_tid,
             clear_child_tid,
@@ -89,16 +92,17 @@ impl PosixThreadBuilder {
         let thread = Arc::new_cyclic(|thread_ref| {
             let task = create_new_user_task(user_space, thread_ref.clone());
             let status = ThreadStatus::Init;
-            let sig_context = Mutex::new(None);
             let posix_thread = PosixThread {
                 process,
                 is_main_thread,
                 name: Mutex::new(thread_name),
                 set_child_tid: Mutex::new(set_child_tid),
                 clear_child_tid: Mutex::new(clear_child_tid),
+                credentials,
                 sig_mask: Mutex::new(sig_mask),
                 sig_queues: Mutex::new(sig_queues),
-                sig_context,
+                sig_context: Mutex::new(None),
+                sig_stack: Mutex::new(None),
                 robust_list: Mutex::new(None),
             };
 

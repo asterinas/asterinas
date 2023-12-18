@@ -12,5 +12,5 @@ typeflags-util = { path = "../typeflags-util" }
 jinux-rights-proc = { path = "../jinux-rights-proc" }
 jinux-rights = { path = "../jinux-rights" }
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
-
+ktest = { path = "../../../framework/libs/ktest" }
 [features]

@@ -1,13 +1,10 @@
-use jinux_frame::vm::VmIo;
-
+use super::{SyscallReturn, SYS_RT_SIGPROCMASK};
+use crate::log_syscall_entry;
+use crate::prelude::*;
 use crate::process::posix_thread::PosixThreadExt;
 use crate::process::signal::constants::{SIGKILL, SIGSTOP};
-use crate::{
-    log_syscall_entry,
-    prelude::*,
-    process::signal::sig_mask::SigMask,
-    syscall::{SyscallReturn, SYS_RT_SIGPROCMASK},
-};
+use crate::process::signal::sig_mask::SigMask;
+use jinux_frame::vm::VmIo;
 
 pub fn sys_rt_sigprocmask(
     how: u32,

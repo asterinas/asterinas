@@ -1,9 +1,15 @@
-use crate::{log_syscall_entry, prelude::*, syscall::SYS_GETGID};
-
-use super::SyscallReturn;
+use super::{SyscallReturn, SYS_GETGID};
+use crate::log_syscall_entry;
+use crate::prelude::*;
+use crate::process::credentials;
 
 pub fn sys_getgid() -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_GETGID);
-    // TODO: getgid only return a fake gid now"
-    Ok(SyscallReturn::Return(0))
+
+    let gid = {
+        let credentials = credentials();
+        credentials.rgid()
+    };
+
+    Ok(SyscallReturn::Return(gid.as_u32() as _))
 }

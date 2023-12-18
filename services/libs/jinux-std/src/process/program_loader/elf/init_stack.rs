@@ -323,7 +323,7 @@ impl InitStack {
     }
 }
 
-pub fn init_aux_vec(elf: &Elf, elf_map_addr: Vaddr) -> Result<AuxVec> {
+pub fn init_aux_vec(elf: &Elf, elf_map_addr: Vaddr, vdso_text_base: Vaddr) -> Result<AuxVec> {
     let mut aux_vec = AuxVec::new();
     aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
     let ph_addr = if elf.is_shared_object() {
@@ -341,6 +341,7 @@ pub fn init_aux_vec(elf: &Elf, elf_map_addr: Vaddr) -> Result<AuxVec> {
         elf.entry_point()
     };
     aux_vec.set(AuxKey::AT_ENTRY, elf_entry as u64)?;
+    aux_vec.set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)?;
     Ok(aux_vec)
 }
 

@@ -1,7 +1,7 @@
 use super::posix_thread::{PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName};
 use super::process_vm::ProcessVm;
 use super::signal::sig_disposition::SigDispositions;
-use super::{process_table, Process, ProcessBuilder};
+use super::{credentials, process_table, Credentials, Process, ProcessBuilder};
 use crate::current_thread;
 use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
@@ -176,7 +176,13 @@ fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Res
     let child_tid = allocate_tid();
     let child_thread = {
         let is_main_thread = child_tid == current.pid();
-        let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space)
+
+        let credentials = {
+            let credentials = credentials();
+            Credentials::new_from(&credentials)
+        };
+
+        let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
             .process(Arc::downgrade(&current))
             .sig_mask(sig_mask)
             .is_main_thread(is_main_thread);
@@ -255,7 +261,13 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
         let child_elf_path = current.executable_path();
         let child_thread_builder = {
             let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
-            PosixThreadBuilder::new(child_tid, child_user_space)
+
+            let credentials = {
+                let credentials = credentials();
+                Credentials::new_from(&credentials)
+            };
+
+            PosixThreadBuilder::new(child_tid, child_user_space, credentials)
                 .thread_name(Some(child_thread_name))
                 .sig_mask(child_sig_mask)
         };

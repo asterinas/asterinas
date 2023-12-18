@@ -2,10 +2,10 @@ use crate::arch::mm::PageTableFlags;
 use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
 use crate::cpu::CpuSet;
 use crate::prelude::*;
+use crate::sync::{Mutex, MutexGuard};
 use crate::user::UserSpace;
 use crate::vm::page_table::KERNEL_PAGE_TABLE;
 use crate::vm::{VmAllocOptions, VmSegment};
-use spin::{Mutex, MutexGuard};
 
 use intrusive_collections::intrusive_adapter;
 use intrusive_collections::LinkedListAtomicLink;

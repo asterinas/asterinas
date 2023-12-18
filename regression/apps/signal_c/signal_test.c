@@ -265,11 +265,82 @@ int test_sigchld() {
         // child process
         printf("create a new proces successfully (pid = %d)\n", getpid());
         fflush(stdout);
+        exit(0);
     } else {
         // parent process
         wait(NULL);
         printf("sigchld = %d\n", sigchld);
         fflush(stdout);
+    }
+    return 0;
+}
+
+// ============================================================================
+// Test handle signal on alternate signal stack
+// ============================================================================
+
+#define MAX_ALTSTACK_RECURSION_LEVEL    2
+
+stack_t g_old_ss;
+
+static void handle_sigpipe(int num, siginfo_t *info, void *context) {
+    static volatile int recursion_level = 0;
+    printf("Hello from SIGPIPE signal handler on the alternate signal stack (recursion_level = %d)\n",
+           recursion_level);
+
+    // save old_ss to check if we are on stack
+    stack_t old_ss;
+    sigaltstack(NULL, &old_ss);
+    g_old_ss = old_ss;
+
+    recursion_level++;
+    if (recursion_level <= MAX_ALTSTACK_RECURSION_LEVEL) {
+        raise(SIGPIPE);
+    }
+    recursion_level--;
+}
+
+#define SIGSTACKSIZE (4*4096)
+
+int test_sigaltstack() {
+    static char stack[SIGSTACKSIZE];
+    stack_t expected_ss = {
+        .ss_size = SIGSTACKSIZE,
+        .ss_sp = stack,
+        .ss_flags = 0,
+    };
+    if (sigaltstack(&expected_ss, NULL) < 0) {
+        THROW_ERROR("failed to call sigaltstack");
+    }
+    stack_t actual_ss;
+    if (sigaltstack(NULL, &actual_ss) < 0) {
+        THROW_ERROR("failed to call sigaltstack");
+    }
+    if (actual_ss.ss_size != expected_ss.ss_size
+            || actual_ss.ss_sp != expected_ss.ss_sp
+            || actual_ss.ss_flags != expected_ss.ss_flags) {
+        THROW_ERROR("failed to check the signal stack after set");
+    }
+
+    struct sigaction new_action, old_action;
+    memset(&new_action, 0, sizeof(struct sigaction));
+    memset(&old_action, 0, sizeof(struct sigaction));
+    new_action.sa_sigaction = handle_sigpipe;
+    new_action.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK;
+    if (sigaction(SIGPIPE, &new_action, &old_action) < 0) {
+        THROW_ERROR("registering new signal handler failed");
+    }
+    if (old_action.sa_handler != SIG_DFL) {
+        THROW_ERROR("unexpected old sig handler");
+    }
+
+    raise(SIGPIPE);
+    if (g_old_ss.ss_flags != SS_ONSTACK) {
+        THROW_ERROR("check stack flags failed");
+    }
+
+    if (sigaction(SIGPIPE, &old_action, NULL) < 0) {
+        THROW_ERROR("restoring old signal handler failed");
     }
     return 0;
 }
@@ -280,5 +351,6 @@ int main() {
     test_handle_sigfpe();
     test_handle_sigsegv();
     test_sigchld();
+    test_sigaltstack();
     return 0;
 }

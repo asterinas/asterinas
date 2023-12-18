@@ -26,6 +26,6 @@ impl SigEventsFilter {
 
 impl EventsFilter<SigEvents> for SigEventsFilter {
     fn filter(&self, event: &SigEvents) -> bool {
-        self.0.contains(event.0)
+        !self.0.contains(event.0)
     }
 }

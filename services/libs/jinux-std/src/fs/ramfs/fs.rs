@@ -488,7 +488,7 @@ impl Inode for RamInode {
             return device.write(buf);
         }
 
-        let self_inode = self.0.read();
+        let self_inode = self.0.upread();
         let Some(page_cache) = self_inode.inner.as_file() else {
             return_errno_with_message!(Errno::EISDIR, "write is not supported");
         };

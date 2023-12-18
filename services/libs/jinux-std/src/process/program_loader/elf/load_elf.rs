@@ -31,6 +31,7 @@ pub fn load_elf_to_vm(
     fs_resolver: &FsResolver,
     argv: Vec<CString>,
     envp: Vec<CString>,
+    vdso_text_base: Vaddr,
 ) -> Result<ElfLoadInfo> {
     let elf = Elf::parse_elf(file_header)?;
 
@@ -40,9 +41,15 @@ pub fn load_elf_to_vm(
         None
     };
 
-    process_vm.clear();
-
-    match init_and_map_vmos(process_vm, ldso, &elf, &elf_file, argv, envp) {
+    match init_and_map_vmos(
+        process_vm,
+        ldso,
+        &elf,
+        &elf_file,
+        argv,
+        envp,
+        vdso_text_base,
+    ) {
         Ok(elf_load_info) => Ok(elf_load_info),
         Err(e) => {
             // Since the process_vm is cleared, the process cannot return to user space again,
@@ -91,6 +98,7 @@ fn init_and_map_vmos(
     elf_file: &Dentry,
     argv: Vec<CString>,
     envp: Vec<CString>,
+    vdso_text_base: Vaddr,
 ) -> Result<ElfLoadInfo> {
     let root_vmar = process_vm.root_vmar();
 
@@ -102,7 +110,7 @@ fn init_and_map_vmos(
     };
 
     let map_addr = map_segment_vmos(elf, root_vmar, elf_file)?;
-    let mut aux_vec = init_aux_vec(elf, map_addr)?;
+    let mut aux_vec = init_aux_vec(elf, map_addr, vdso_text_base)?;
     let mut init_stack = InitStack::new_default_config(argv, envp);
     init_stack.init(root_vmar, elf, &ldso_load_info, &mut aux_vec)?;
     let entry_point = if let Some(ldso_load_info) = ldso_load_info {

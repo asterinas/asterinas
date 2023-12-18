@@ -46,6 +46,7 @@ pub enum AuxKey {
     /* 28...30 not used */
     AT_EXECFN = 31, /* filename of program */
     AT_SYSINFO = 32,
+    AT_SYSINFO_EHDR = 33, /* the start address of the page containing the VDSO */
 }
 
 impl AuxKey {
