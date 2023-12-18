@@ -1,7 +1,6 @@
 use super::SyscallReturn;
 use crate::syscall::SYS_MPROTECT;
 use crate::vm::perms::VmPerms;
-
 use crate::{log_syscall_entry, prelude::*};
 use align_ext::AlignExt;
 use jinux_frame::early_println;

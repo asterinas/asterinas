@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/syscall.h> 
-
 #ifndef SYS_mprotect 
 #error SYS_mprotect unavailable on this system
 #endif
