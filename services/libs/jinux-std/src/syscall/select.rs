@@ -11,6 +11,68 @@ use super::poll::{do_poll, PollFd};
 use super::SyscallReturn;
 use super::SYS_SELECT;
 
+
+pub fn sys_pselect6(
+    nfds: FileDescripter,
+    readfds_addr: Vaddr,
+    writefds_addr: Vaddr,
+    exceptfds_addr: Vaddr,
+    timeval_addr: Vaddr,
+    _unused: Vaddr,
+) -> Result<SyscallReturn> {
+    log_syscall_entry!(SYS_SELECT);
+    error!("pselect");
+    if nfds < 0 || nfds as usize > FD_SETSIZE {
+        return_errno_with_message!(Errno::EINVAL, "nfds is negative or exceeds the FD_SETSIZE");
+    }
+
+    let get_fdset = |fdset_addr: Vaddr| -> Result<Option<FdSet>> {
+        let fdset = if fdset_addr == 0 {
+            None
+        } else {
+            let fdset = read_val_from_user::<FdSet>(fdset_addr)?;
+            Some(fdset)
+        };
+        Ok(fdset)
+    };
+    let mut readfds = get_fdset(readfds_addr)?;
+    let mut writefds = get_fdset(writefds_addr)?;
+    let mut exceptfds = get_fdset(exceptfds_addr)?;
+
+    let timeout = if timeval_addr == 0 {
+        None
+    } else {
+        let timeval = read_val_from_user::<timeval_t>(timeval_addr)?;
+        Some(Duration::from(timeval))
+    };
+    
+    debug!(
+        "nfds = {}, readfds = {:?}, writefds = {:?}, exceptfds = {:?}, timeout = {:?}",
+        nfds, readfds, writefds, exceptfds, timeout
+    );
+
+    let num_revents = do_select(
+        nfds,
+        readfds.as_mut(),
+        writefds.as_mut(),
+        exceptfds.as_mut(),
+        timeout,
+    )?;
+
+    let set_fdset = |fdset_addr: Vaddr, fdset: Option<FdSet>| -> Result<()> {
+        if let Some(fdset) = fdset {
+            debug_assert!(fdset_addr != 0);
+            write_val_to_user(fdset_addr, &fdset)?;
+        }
+        Ok(())
+    };
+    set_fdset(readfds_addr, readfds)?;
+    set_fdset(writefds_addr, writefds)?;
+    set_fdset(exceptfds_addr, exceptfds)?;
+
+    Ok(SyscallReturn::Return(num_revents as _))
+}
+
 pub fn sys_select(
     nfds: FileDescripter,
     readfds_addr: Vaddr,

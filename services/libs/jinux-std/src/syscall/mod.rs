@@ -82,6 +82,7 @@ use self::getsockopt::sys_getsockopt;
 use self::listen::sys_listen;
 use self::pread64::sys_pread64;
 use self::recvfrom::sys_recvfrom;
+use self::select::sys_pselect6;
 use self::sendto::sys_sendto;
 use self::setsockopt::sys_setsockopt;
 use self::shutdown::sys_shutdown;
@@ -300,6 +301,7 @@ define_syscall_nums!(
     SYS_SYMLINKAT = 266,
     SYS_READLINKAT = 267,
     SYS_FCHMODAT = 268,
+    SYS_PSELECT6 = 270,
     SYS_SET_ROBUST_LIST = 273,
     SYS_UTIMENSAT = 280,
     SYS_EPOLL_CREATE1 = 291,
@@ -465,9 +467,11 @@ pub fn syscall_dispatch(
         SYS_UTIMENSAT => syscall_handler!(4, sys_utimensat, args),
         SYS_EPOLL_CREATE1 => syscall_handler!(1, sys_epoll_create1, args),
         SYS_PIPE2 => syscall_handler!(2, sys_pipe2, args),
+        
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
         SYS_GETRANDOM => syscall_handler!(3, sys_getrandom, args),
         SYS_EXECVEAT => syscall_handler!(5, sys_execveat, args, context),
+        SYS_PSELECT6 => syscall_handler!(6, sys_pselect6, args),
         _ => {
             warn!("Unimplemented syscall number: {}", syscall_number);
             return_errno_with_message!(Errno::ENOSYS, "Syscall was unimplemented");

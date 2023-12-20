@@ -57,7 +57,6 @@ impl StreamSocket {
 impl FileLike for StreamSocket {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         // FIXME: set correct flags
-        error!("I am reading packet");
         let flags = SendRecvFlags::empty();
         let (recv_len, _) = self.recvfrom(buf, flags)?;
         Ok(recv_len)

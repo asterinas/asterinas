@@ -1,52 +1,56 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <string.h>
+#include <stdlib.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <sys/types.h>
+#include <netdb.h>
+#include <arpa/inet.h>
 
-#define DEFAULT_PORT 4564
+#define PORT 4444
 
-int main(int argc, char *argv[]) {
-	int connfd = 0;
-	int cLen = 0;
-	struct sockaddr_in client;
+int main()
+{
 	
+	int sockfd, ret, n;
+	struct sockaddr_in serverAddr;
+	char buffer[100];
 
-	client.sin_family = AF_INET;
-	client.sin_port = htons(DEFAULT_PORT);
-	client.sin_addr.s_addr = inet_addr("127.0.0.1");
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if(sockfd < 0) perror("error in socket\n");
 
-	connfd = socket(AF_INET, SOCK_STREAM, 0);
 
-	if(connfd < 0) {
-		perror("socket");
-		return -2;
+	memset(&serverAddr, '\0', sizeof(serverAddr));
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(PORT);
+	serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+
+	ret = connect(sockfd, (struct sockaddr*)&serverAddr, sizeof(serverAddr));
+	if(ret < 0) perror("error in connect\n");
+
+
+	int requests = 20;
+
+	while(requests -- > 0)
+	{
+
+		bzero(buffer, 100);
+		
+		sprintf(buffer, "%d", requests+1);
+		n = send(sockfd, &buffer, strlen(buffer), 0);
+
+		bzero(buffer, 100);
+		// n = recv(sockfd, &buffer, 100, 0);
+		n = read(sockfd, &buffer, 100);
+
+		printf("Factorial returned by Server : %s\n\n", buffer);
+
 	}
+	
+	close(sockfd);
 
-	if(connect(connfd, (struct sockaddr*)&client, sizeof(client)) < 0) {
-		perror("connect");
-		return -3;
-	}
-
-	char buffer[1024];
-	bzero(buffer, sizeof(buffer));
-	recv(connfd, buffer, 1024, 0);
-	printf("recv: %s\n", buffer);
-	bzero(buffer, sizeof(buffer));
-	strcpy(buffer, "this is client!\n");
-	send(connfd, buffer, 1024, 0);
-	while(1) {
-		bzero(buffer, sizeof(buffer));
-		scanf("%s", buffer);
-		int p = strlen(buffer);
-		buffer[p] = '\0';
-		send(connfd, buffer, 1024, 0);
-		printf("I have send buffer\n");
-	}
-	close(connfd);
 	return 0;
 }

@@ -11,10 +11,8 @@
 #include <sys/time.h>
 #include <time.h>
 
-#define LOG_FILE_NAME "2d2.txt"
-FILE *filedis = NULL;
 
-#define PORT 4564
+#define PORT 4444
 
 long long factorial(long long n){
 
@@ -64,26 +62,24 @@ int main(){
     fd_set fds, readfds;
     FD_ZERO(&fds);
     FD_SET(sockfd, &fds);
-    if( filedis == NULL)filedis = fopen( LOG_FILE_NAME, "w");
+
     int fdmax = sockfd;
 
-
-	double time_spent = 0.0;
-	clock_t begin = clock();
 
 
     while(1){
 
 
         readfds = fds;
-        if( syscall(23,fdmax + 1 , &readfds, NULL, NULL, NULL) < 0) perror("error at select");
+
+        if( select(fdmax + 1 , &readfds, NULL, NULL, NULL) < 0)perror("error at select");
         
         for( int fd = 0; fd < (fdmax + 1); fd++){
             
             if( FD_ISSET( fd, &readfds)){  // check if this fd is ready for reading
 
                 if( fd == sockfd){    // request for new connection
-
+                    
                     newSocket = accept(sockfd, (struct sockaddr*)&clienAddr, &addr_size);
                     if(newSocket < 0){
                         exit(1);
@@ -92,9 +88,6 @@ int main(){
                     char *IP = inet_ntoa(clienAddr.sin_addr);
                     int PORT_NO = ntohs(clienAddr.sin_port);
                     
-
-                    fprintf(filedis, "IP : %s  PORT : %d\n", IP, PORT_NO);
-                    
                     printf("Connection accepted from IP : %s: and PORT : %d\n", IP, PORT_NO);
 
                     FD_SET(newSocket, &fds);
@@ -102,12 +95,14 @@ int main(){
 
 
                 }else{   // some client is sending data
+                    printf("recv/ write fd : %d\n", fd);
 
                     bzero(mssg, 100);
-                    int numbytes = recv( fd, &mssg, sizeof(mssg), 0);
+                    // int numbytes = recv( fd, &mssg, sizeof(mssg), 0);
+                     int numbytes = read( fd, &mssg, sizeof(mssg));
+
 
                     long long num = atoi(mssg);
-                    fprintf(filedis, "INTEGER : %lld  FACTORIAL : %lld\n", num , factorial(num));
                     sprintf(mssg, "%lld", factorial(num));
 
                     send(fd, &mssg, sizeof(mssg), 0);
@@ -120,9 +115,6 @@ int main(){
     }
     
     
-    clock_t end = clock();
-	time_spent += (double)(end - begin) / CLOCKS_PER_SEC;
-    printf("The elapsed time is %f seconds", time_spent);
 
     close(sockfd);
 
