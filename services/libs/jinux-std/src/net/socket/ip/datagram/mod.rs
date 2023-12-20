@@ -1,25 +1,27 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::{IoEvents, Observer};
+use crate::events::IoEvents;
 use crate::fs::utils::StatusFlags;
 use crate::net::iface::IpEndpoint;
 
-use crate::process::signal::{Pollee, Poller};
+use crate::process::signal::Poller;
 use crate::{
     fs::file_handle::FileLike,
-    net::{
-        iface::{AnyBoundSocket, AnyUnboundSocket, RawUdpSocket},
-        poll_ifaces,
-        socket::{
-            util::{send_recv_flags::SendRecvFlags, sockaddr::SocketAddr},
-            Socket,
-        },
+    net::socket::{
+        util::{send_recv_flags::SendRecvFlags, sockaddr::SocketAddr},
+        Socket,
     },
     prelude::*,
 };
 
+use self::bound::BoundDatagram;
+use self::unbound::UnboundDatagram;
+
 use super::always_some::AlwaysSome;
-use super::common::{bind_socket, get_ephemeral_endpoint};
+use super::common::get_ephemeral_endpoint;
+
+mod bound;
+mod unbound;
 
 pub struct DatagramSocket {
     nonblocking: AtomicBool,
@@ -29,139 +31,6 @@ pub struct DatagramSocket {
 enum Inner {
     Unbound(AlwaysSome<UnboundDatagram>),
     Bound(Arc<BoundDatagram>),
-}
-
-struct UnboundDatagram {
-    unbound_socket: Box<AnyUnboundSocket>,
-    pollee: Pollee,
-}
-
-impl UnboundDatagram {
-    fn new() -> Self {
-        Self {
-            unbound_socket: Box::new(AnyUnboundSocket::new_udp()),
-            pollee: Pollee::new(IoEvents::empty()),
-        }
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
-    }
-
-    fn bind(self, endpoint: IpEndpoint) -> core::result::Result<Arc<BoundDatagram>, (Error, Self)> {
-        let bound_socket = match bind_socket(self.unbound_socket, endpoint, false) {
-            Ok(bound_socket) => bound_socket,
-            Err((err, unbound_socket)) => {
-                return Err((
-                    err,
-                    Self {
-                        unbound_socket,
-                        pollee: self.pollee,
-                    },
-                ))
-            }
-        };
-        let bound_endpoint = bound_socket.local_endpoint().unwrap();
-        bound_socket.raw_with(|socket: &mut RawUdpSocket| {
-            socket.bind(bound_endpoint).unwrap();
-        });
-        Ok(BoundDatagram::new(bound_socket, self.pollee))
-    }
-}
-
-struct BoundDatagram {
-    bound_socket: Arc<AnyBoundSocket>,
-    remote_endpoint: RwLock<Option<IpEndpoint>>,
-    pollee: Pollee,
-}
-
-impl BoundDatagram {
-    fn new(bound_socket: Arc<AnyBoundSocket>, pollee: Pollee) -> Arc<Self> {
-        let bound = Arc::new(Self {
-            bound_socket,
-            remote_endpoint: RwLock::new(None),
-            pollee,
-        });
-        bound.bound_socket.set_observer(Arc::downgrade(&bound) as _);
-        bound
-    }
-
-    fn remote_endpoint(&self) -> Result<IpEndpoint> {
-        if let Some(endpoint) = *self.remote_endpoint.read() {
-            Ok(endpoint)
-        } else {
-            return_errno_with_message!(Errno::EINVAL, "remote endpoint is not specified")
-        }
-    }
-
-    fn set_remote_endpoint(&self, endpoint: IpEndpoint) {
-        *self.remote_endpoint.write() = Some(endpoint);
-    }
-
-    fn local_endpoint(&self) -> Result<IpEndpoint> {
-        if let Some(endpoint) = self.bound_socket.local_endpoint() {
-            Ok(endpoint)
-        } else {
-            return_errno_with_message!(Errno::EINVAL, "socket does not bind to local endpoint")
-        }
-    }
-
-    fn try_recvfrom(&self, buf: &mut [u8], flags: &SendRecvFlags) -> Result<(usize, IpEndpoint)> {
-        poll_ifaces();
-        let recv_slice = |socket: &mut RawUdpSocket| match socket.recv_slice(buf) {
-            Err(smoltcp::socket::udp::RecvError::Exhausted) => {
-                return_errno_with_message!(Errno::EAGAIN, "recv buf is empty")
-            }
-            Ok((len, remote_endpoint)) => Ok((len, remote_endpoint)),
-        };
-        self.bound_socket.raw_with(recv_slice)
-    }
-
-    fn try_sendto(
-        &self,
-        buf: &[u8],
-        remote: Option<IpEndpoint>,
-        flags: SendRecvFlags,
-    ) -> Result<usize> {
-        let remote_endpoint = remote
-            .or_else(|| self.remote_endpoint().ok())
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "udp should provide remote addr"))?;
-        let send_slice = |socket: &mut RawUdpSocket| match socket.send_slice(buf, remote_endpoint) {
-            Err(_) => return_errno_with_message!(Errno::ENOBUFS, "send udp packet fails"),
-            Ok(()) => Ok(buf.len()),
-        };
-        let len = self.bound_socket.raw_with(send_slice)?;
-        poll_ifaces();
-        Ok(len)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
-    }
-
-    fn update_io_events(&self) {
-        self.bound_socket.raw_with(|socket: &mut RawUdpSocket| {
-            let pollee = &self.pollee;
-
-            if socket.can_recv() {
-                pollee.add_events(IoEvents::IN);
-            } else {
-                pollee.del_events(IoEvents::IN);
-            }
-
-            if socket.can_send() {
-                pollee.add_events(IoEvents::OUT);
-            } else {
-                pollee.del_events(IoEvents::OUT);
-            }
-        });
-    }
-}
-
-impl Observer<()> for BoundDatagram {
-    fn on_events(&self, _: &()) {
-        self.update_io_events();
-    }
 }
 
 impl Inner {
