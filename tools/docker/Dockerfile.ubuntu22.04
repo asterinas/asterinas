@@ -14,6 +14,44 @@ RUN apt update && apt-get install -y --no-install-recommends \
     wget \
     gnupg
 
+#= Build benchmark =========================================================
+FROM build-base as build-benchmarks
+
+# Download the source files of benchmarks
+WORKDIR /root
+RUN apt install -y automake \
+    libtool \
+    pkg-config
+RUN wget https://github.com/akopytov/sysbench/archive/1.0.20.tar.gz \
+    && tar -zxvf 1.0.20.tar.gz \
+    && rm 1.0.20.tar.gz
+RUN git clone https://github.com/nicktehrany/membench.git
+RUN git clone https://github.com/esnet/iperf.git
+
+# Build sysbench
+WORKDIR /root/sysbench-1.0.20
+RUN ./autogen.sh \
+    && ./configure --without-mysql --prefix=/usr/local/benchmark/sysbench \
+    && make -j \
+    && make install
+
+# Build membench
+WORKDIR /root/membench
+RUN make -j \ 
+    && mkdir /usr/local/benchmark/membench \
+    && cp membench /usr/local/benchmark/membench/
+
+# Build iperf
+WORKDIR /root/iperf
+RUN ./configure --prefix=/usr/local/benchmark/iperf \
+    && make -j \
+    && make install
+ 
+WORKDIR /root
+RUN rm -rf sysbench-1.0.20 \
+    membench \
+    iperf
+
 #= Build syscall test =========================================================
 
 FROM build-base as build-bazel
@@ -207,6 +245,9 @@ RUN ln -sf /usr/share/grub/unicode.pf2 /usr/local/grub/share/grub/unicode.pf2
 
 # Install Busybox built from the previous stages
 COPY --from=busybox /root/busybox/busybox /bin/busybox
+
+# Install benchmarks built from the previous stages
+COPY --from=build-benchmarks /usr/local/benchmark /usr/local/benchmark
 
 # Add the path of jinux tools
 ENV PATH="/root/jinux/target/bin:${PATH}"

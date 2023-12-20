@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "jinux"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "component",
  "jinux-frame",
