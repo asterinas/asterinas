@@ -55,6 +55,7 @@ pub mod syscall;
 pub mod thread;
 pub mod time;
 mod util;
+pub(crate) mod vdso;
 pub mod vm;
 
 pub fn init() {
@@ -63,6 +64,7 @@ pub fn init() {
     sched::init();
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
+    vdso::init();
 }
 
 fn init_thread() {

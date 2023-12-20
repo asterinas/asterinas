@@ -1,21 +1,18 @@
-use crate::{
-    events::Observer,
-    prelude::*,
-    process::{
-        do_exit_group,
-        posix_thread::{futex::futex_wake, robust_list::wake_robust_futex},
-        TermStatus,
-    },
-    thread::{thread_table, Tid},
-    util::write_val_to_user,
-};
-
-use super::{
-    signal::{
-        sig_mask::SigMask, sig_queues::SigQueues, signals::Signal, SigEvents, SigEventsFilter,
-    },
-    Process,
-};
+use super::kill::SignalSenderIds;
+use super::signal::sig_mask::SigMask;
+use super::signal::sig_num::SigNum;
+use super::signal::sig_queues::SigQueues;
+use super::signal::signals::Signal;
+use super::signal::{SigEvents, SigEventsFilter, SigStack};
+use super::{do_exit_group, Credentials, Process, TermStatus};
+use crate::events::Observer;
+use crate::prelude::*;
+use crate::process::signal::constants::SIGCONT;
+use crate::thread::{thread_table, Tid};
+use crate::util::write_val_to_user;
+use futex::futex_wake;
+use jinux_rights::{ReadOp, WriteOp};
+use robust_list::wake_robust_futex;
 
 mod builder;
 pub mod futex;
@@ -43,6 +40,9 @@ pub struct PosixThread {
 
     robust_list: Mutex<Option<RobustListHead>>,
 
+    /// Process credentials. At the kernel level, credentials are a per-thread attribute.
+    credentials: Credentials,
+
     // signal
     /// blocked signals
     sig_mask: Mutex<SigMask>,
@@ -51,6 +51,7 @@ pub struct PosixThread {
     /// Signal handler ucontext address
     /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
     sig_context: Mutex<Option<Vaddr>>,
+    sig_stack: Mutex<Option<SigStack>>,
 }
 
 impl PosixThread {
@@ -78,7 +79,57 @@ impl PosixThread {
         !self.sig_queues.lock().is_empty()
     }
 
-    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+    /// Returns whether the signal is blocked by the thread.
+    pub(in crate::process) fn has_signal_blocked(&self, signal: &dyn Signal) -> bool {
+        let mask = self.sig_mask.lock();
+        mask.contains(signal.num())
+    }
+
+    /// Checks whether the signal can be delivered to the thread.
+    ///
+    /// For a signal can be delivered to the thread, the sending thread must either
+    /// be privileged, or the real or effective user ID of the sending thread must equal
+    /// the real or saved set-user-ID of the target thread.
+    ///
+    /// For SIGCONT, the sending and receiving processes should belong to the same session.
+    pub(in crate::process) fn check_signal_perm(
+        &self,
+        signum: Option<&SigNum>,
+        sender: &SignalSenderIds,
+    ) -> Result<()> {
+        if sender.euid().is_root() {
+            return Ok(());
+        }
+
+        if let Some(signum) = signum && *signum == SIGCONT {
+            let receiver_sid = self.process().session().unwrap().sid();
+            if receiver_sid == sender.sid() {
+                return Ok(())
+            } else {
+                return_errno_with_message!(Errno::EPERM, "sigcont requires that sender and receiver belongs to the same session");
+            }
+        }
+
+        let (receiver_ruid, receiver_suid) = {
+            let credentials = self.credentials();
+            (credentials.ruid(), credentials.suid())
+        };
+
+        // FIXME: further check the below code to ensure the behavior is same as Linux. According
+        // to man(2) kill, the real or effective user ID of the sending process must equal the
+        // real or saved set-user-ID of the target process.
+        if sender.ruid() == receiver_ruid
+            || sender.ruid() == receiver_suid
+            || sender.euid() == receiver_ruid
+            || sender.euid() == receiver_suid
+        {
+            return Ok(());
+        }
+
+        return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
+    }
+
+    pub(in crate::process) fn enqueue_signal(&self, signal: Box<dyn Signal>) {
         self.sig_queues.lock().enqueue(signal);
     }
 
@@ -100,6 +151,10 @@ impl PosixThread {
 
     pub fn sig_context(&self) -> &Mutex<Option<Vaddr>> {
         &self.sig_context
+    }
+
+    pub fn sig_stack(&self) -> &Mutex<Option<SigStack>> {
+        &self.sig_stack
     }
 
     pub fn robust_list(&self) -> &Mutex<Option<RobustListHead>> {
@@ -176,5 +231,15 @@ impl PosixThread {
         debug!("perform futex wake");
         futex_wake(Arc::as_ptr(&self.process()) as Vaddr, 1)?;
         Ok(())
+    }
+
+    /// Gets the read-only credentials of the thread.
+    pub(in crate::process) fn credentials(&self) -> Credentials<ReadOp> {
+        self.credentials.dup().restrict()
+    }
+
+    /// Gets the write-only credentials of the thread.
+    pub(in crate::process) fn credentials_mut(&self) -> Credentials<WriteOp> {
+        self.credentials.dup().restrict()
     }
 }

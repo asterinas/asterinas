@@ -1,55 +1,45 @@
-use core::arch::x86_64::_rdtsc;
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use alloc::sync::Arc;
+use core::arch::x86_64::_rdtsc;
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
 use log::info;
 use spin::Once;
 use trapframe::TrapFrame;
-use x86::cpuid::cpuid;
 use x86::msr::{wrmsr, IA32_TSC_DEADLINE};
 
 use crate::arch::kernel::apic::ioapic::IO_APIC;
+use crate::arch::kernel::tsc::is_tsc_deadline_mode_supported;
+use crate::arch::x86::kernel::apic::{DivideConfig, APIC_INSTANCE};
+use crate::arch::x86::kernel::tsc::{determine_tsc_freq_via_cpuid, TSC_FREQ};
+use crate::config::TIMER_FREQ;
 use crate::trap::IrqLine;
-use crate::{
-    arch::x86::kernel::{
-        apic::{DivideConfig, APIC_INSTANCE},
-        tsc::tsc_freq,
-    },
-    config::TIMER_FREQ,
-};
 
 pub fn init() {
-    if tsc_mode_support() {
-        info!("[Timer]: Enable APIC-TSC deadline mode.");
-        tsc_mode_init();
+    init_tsc_freq();
+    if is_tsc_deadline_mode_supported() {
+        info!("[Timer]: Enable APIC TSC deadline mode.");
+        init_tsc_mode();
     } else {
-        info!("[Timer]: Enable APIC-periodic mode.");
-        periodic_mode_init();
+        info!("[Timer]: Enable APIC periodic mode.");
+        init_periodic_mode();
     }
-}
-
-fn tsc_mode_support() -> bool {
-    let tsc_rate = tsc_freq();
-    if tsc_rate.is_none() {
-        return false;
-    }
-    let cpuid = cpuid!(0x1);
-    // bit 24
-    cpuid.ecx & 0x100_0000 != 0
 }
 
 pub(super) static APIC_TIMER_CALLBACK: Once<Arc<dyn Fn() + Sync + Send>> = Once::new();
 
-fn tsc_mode_init() {
+fn init_tsc_freq() {
+    let tsc_freq = determine_tsc_freq_via_cpuid()
+        .map_or(determine_tsc_freq_via_pit(), |freq| freq as u64 * 1000);
+    TSC_FREQ.store(tsc_freq, Ordering::Relaxed);
+    info!("TSC frequency:{:?} Hz", tsc_freq);
+}
+
+fn init_tsc_mode() {
     let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
     // Enable tsc deadline mode.
     apic_lock.set_lvt_timer(super::TIMER_IRQ_NUM.load(Ordering::Relaxed) as u64 | (1 << 18));
-
-    let tsc_step = {
-        let tsc_rate = tsc_freq().unwrap() as u64;
-        info!("TSC frequency:{:?} Hz", tsc_rate * 1000);
-        tsc_rate * 1000 / TIMER_FREQ
-    };
+    drop(apic_lock);
+    let tsc_step = TSC_FREQ.load(Ordering::Relaxed) / TIMER_FREQ;
 
     let callback = move || unsafe {
         let tsc_value = _rdtsc();
@@ -61,7 +51,54 @@ fn tsc_mode_init() {
     APIC_TIMER_CALLBACK.call_once(|| Arc::new(callback));
 }
 
-fn periodic_mode_init() {
+/// When kernel cannot get the TSC frequency from CPUID, it can leverage
+/// the PIT to calculate this frequency.
+fn determine_tsc_freq_via_pit() -> u64 {
+    let mut irq = IrqLine::alloc_specific(super::TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
+    irq.on_active(pit_callback);
+    let mut io_apic = IO_APIC.get().unwrap().get(0).unwrap().lock();
+    debug_assert_eq!(io_apic.interrupt_base(), 0);
+    io_apic.enable(2, irq.clone()).unwrap();
+    drop(io_apic);
+
+    super::pit::init();
+
+    x86_64::instructions::interrupts::enable();
+    static IS_FINISH: AtomicBool = AtomicBool::new(false);
+    static FREQUENCY: AtomicU64 = AtomicU64::new(0);
+    while !IS_FINISH.load(Ordering::Acquire) {
+        x86_64::instructions::hlt();
+    }
+    x86_64::instructions::interrupts::disable();
+    drop(irq);
+    return FREQUENCY.load(Ordering::Acquire);
+
+    fn pit_callback(trap_frame: &TrapFrame) {
+        static mut IN_TIME: u64 = 0;
+        static mut TSC_FIRST_COUNT: u64 = 0;
+        // Set a certain times of callbacks to calculate the frequency.
+        const CALLBACK_TIMES: u64 = TIMER_FREQ / 10;
+        unsafe {
+            if IN_TIME < CALLBACK_TIMES || IS_FINISH.load(Ordering::Acquire) {
+                // drop the first entry, since it may not be the time we want
+                if IN_TIME == 0 {
+                    TSC_FIRST_COUNT = _rdtsc();
+                }
+                IN_TIME += 1;
+                return;
+            }
+            let mut io_apic = IO_APIC.get().unwrap().get(0).unwrap().lock();
+            io_apic.disable(2).unwrap();
+            drop(io_apic);
+            let tsc_count = _rdtsc();
+            let freq = (tsc_count - TSC_FIRST_COUNT) * (TIMER_FREQ / CALLBACK_TIMES);
+            FREQUENCY.store(freq, Ordering::Release);
+        }
+        IS_FINISH.store(true, Ordering::Release);
+    }
+}
+
+fn init_periodic_mode() {
     let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
     let mut irq = IrqLine::alloc_specific(super::TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
     irq.on_active(init_function);
@@ -108,7 +145,6 @@ fn periodic_mode_init() {
         apic_lock.set_timer_init_count(ticks);
         apic_lock.set_lvt_timer(super::TIMER_IRQ_NUM.load(Ordering::Relaxed) as u64 | (1 << 17));
         apic_lock.set_timer_div_config(DivideConfig::Divide64);
-
         info!(
             "APIC Timer ticks count:{:x}, remain ticks: {:x},Timer Freq:{} Hz",
             ticks, remain_ticks, TIMER_FREQ

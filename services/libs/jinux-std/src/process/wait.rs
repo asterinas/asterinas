@@ -80,9 +80,33 @@ fn reap_zombie_child(process: &Process, pid: Pid) -> u32 {
     for thread in &*child_process.threads().lock() {
         thread_table::remove_thread(thread.tid());
     }
-    process_table::remove_process(child_process.pid());
-    if let Some(process_group) = child_process.process_group() {
-        process_group.remove_process(child_process.pid());
+
+    // Lock order: session table -> group table -> process table -> group of process
+    // -> group inner -> session inner
+    let mut session_table_mut = process_table::session_table_mut();
+    let mut group_table_mut = process_table::group_table_mut();
+    let mut process_table_mut = process_table::process_table_mut();
+
+    let mut child_group_mut = child_process.process_group.lock();
+
+    let process_group = child_group_mut.upgrade().unwrap();
+    let mut group_inner = process_group.inner.lock();
+    let session = group_inner.session.upgrade().unwrap();
+    let mut session_inner = session.inner.lock();
+
+    group_inner.remove_process(&child_process.pid());
+    session_inner.remove_process(&child_process);
+    *child_group_mut = Weak::new();
+
+    if group_inner.is_empty() {
+        group_table_mut.remove(&process_group.pgid());
+        session_inner.remove_process_group(&process_group.pgid());
+
+        if session_inner.is_empty() {
+            session_table_mut.remove(&session.sid());
+        }
     }
+
+    process_table_mut.remove(&child_process.pid());
     child_process.exit_code().unwrap()
 }

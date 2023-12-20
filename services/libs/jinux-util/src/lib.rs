@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+pub mod coeff;
 pub mod dup;
 pub mod id_allocator;
 pub mod safe_ptr;

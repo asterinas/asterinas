@@ -75,8 +75,12 @@ use self::accept::sys_accept;
 use self::bind::sys_bind;
 use self::connect::sys_connect;
 use self::execve::sys_execveat;
+use self::getgroups::sys_getgroups;
 use self::getpeername::sys_getpeername;
 use self::getrandom::sys_getrandom;
+use self::getresgid::sys_getresgid;
+use self::getresuid::sys_getresuid;
+use self::getsid::sys_getsid;
 use self::getsockname::sys_getsockname;
 use self::getsockopt::sys_getsockopt;
 use self::listen::sys_listen;
@@ -84,8 +88,19 @@ use self::pread64::sys_pread64;
 use self::recvfrom::sys_recvfrom;
 use self::select::sys_pselect6;
 use self::sendto::sys_sendto;
+use self::setfsgid::sys_setfsgid;
+use self::setfsuid::sys_setfsuid;
+use self::setgid::sys_setgid;
+use self::setgroups::sys_setgroups;
+use self::setregid::sys_setregid;
+use self::setresgid::sys_setresgid;
+use self::setresuid::sys_setresuid;
+use self::setreuid::sys_setreuid;
+use self::setsid::sys_setsid;
 use self::setsockopt::sys_setsockopt;
+use self::setuid::sys_setuid;
 use self::shutdown::sys_shutdown;
+use self::sigaltstack::sys_sigaltstack;
 use self::socket::sys_socket;
 use self::socketpair::sys_socketpair;
 
@@ -115,11 +130,15 @@ mod getdents64;
 mod getegid;
 mod geteuid;
 mod getgid;
+mod getgroups;
 mod getpeername;
 mod getpgrp;
 mod getpid;
 mod getppid;
 mod getrandom;
+mod getresgid;
+mod getresuid;
+mod getsid;
 mod getsockname;
 mod getsockopt;
 mod gettid;
@@ -155,9 +174,20 @@ mod select;
 mod sendto;
 mod set_robust_list;
 mod set_tid_address;
+mod setfsgid;
+mod setfsuid;
+mod setgid;
+mod setgroups;
 mod setpgid;
+mod setregid;
+mod setresgid;
+mod setresuid;
+mod setreuid;
+mod setsid;
 mod setsockopt;
+mod setuid;
 mod shutdown;
+mod sigaltstack;
 mod socket;
 mod socketpair;
 mod stat;
@@ -270,11 +300,26 @@ define_syscall_nums!(
     SYS_GETTIMEOFDAY = 96,
     SYS_GETUID = 102,
     SYS_GETGID = 104,
+    SYS_SETUID = 105,
+    SYS_SETGID = 106,
     SYS_GETEUID = 107,
     SYS_GETEGID = 108,
     SYS_SETPGID = 109,
     SYS_GETPPID = 110,
     SYS_GETPGRP = 111,
+    SYS_SETSID = 112,
+    SYS_SETREUID = 113,
+    SYS_SETREGID = 114,
+    SYS_GETGROUPS = 115,
+    SYS_SETGROUPS = 116,
+    SYS_SETRESUID = 117,
+    SYS_GETRESUID = 118,
+    SYS_SETRESGID = 119,
+    SYS_GETRESGID = 120,
+    SYS_SETFSUID = 122,
+    SYS_SETFSGID = 123,
+    SYS_GETSID = 124,
+    SYS_SIGALTSTACK = 131,
     SYS_STATFS = 137,
     SYS_FSTATFS = 138,
     SYS_PRCTL = 157,
@@ -432,11 +477,26 @@ pub fn syscall_dispatch(
         SYS_GETTIMEOFDAY => syscall_handler!(1, sys_gettimeofday, args),
         SYS_GETUID => syscall_handler!(0, sys_getuid),
         SYS_GETGID => syscall_handler!(0, sys_getgid),
+        SYS_SETUID => syscall_handler!(1, sys_setuid, args),
+        SYS_SETGID => syscall_handler!(1, sys_setgid, args),
         SYS_GETEUID => syscall_handler!(0, sys_geteuid),
         SYS_GETEGID => syscall_handler!(0, sys_getegid),
         SYS_SETPGID => syscall_handler!(2, sys_setpgid, args),
         SYS_GETPPID => syscall_handler!(0, sys_getppid),
         SYS_GETPGRP => syscall_handler!(0, sys_getpgrp),
+        SYS_SETSID => syscall_handler!(0, sys_setsid),
+        SYS_SETREUID => syscall_handler!(2, sys_setreuid, args),
+        SYS_SETREGID => syscall_handler!(2, sys_setregid, args),
+        SYS_GETGROUPS => syscall_handler!(2, sys_getgroups, args),
+        SYS_SETGROUPS => syscall_handler!(2, sys_setgroups, args),
+        SYS_SETRESUID => syscall_handler!(3, sys_setresuid, args),
+        SYS_GETRESUID => syscall_handler!(3, sys_getresuid, args),
+        SYS_SETRESGID => syscall_handler!(3, sys_setresgid, args),
+        SYS_GETRESGID => syscall_handler!(3, sys_getresgid, args),
+        SYS_SETFSUID => syscall_handler!(1, sys_setfsuid, args),
+        SYS_SETFSGID => syscall_handler!(1, sys_setfsgid, args),
+        SYS_GETSID => syscall_handler!(1, sys_getsid, args),
+        SYS_SIGALTSTACK => syscall_handler!(2, sys_sigaltstack, args),
         SYS_STATFS => syscall_handler!(2, sys_statfs, args),
         SYS_FSTATFS => syscall_handler!(2, sys_fstatfs, args),
         SYS_PRCTL => syscall_handler!(5, sys_prctl, args),
@@ -483,6 +543,11 @@ pub fn syscall_dispatch(
 macro_rules! log_syscall_entry {
     ($syscall_name: tt) => {
         let syscall_name_str = stringify!($syscall_name);
-        info!("[SYSCALL][id={}][{}]", $syscall_name, syscall_name_str);
+        let pid = $crate::current!().pid();
+        let tid = $crate::current_thread!().tid();
+        info!(
+            "[pid={}][tid={}][id={}][{}]",
+            pid, tid, $syscall_name, syscall_name_str
+        );
     };
 }

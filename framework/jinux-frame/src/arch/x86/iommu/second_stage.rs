@@ -68,7 +68,7 @@ impl PageTableFlagsTrait for PageTableFlags {
     }
 
     fn is_present(&self) -> bool {
-        true
+        self.contains(Self::WRITABLE) || self.contains(Self::READABLE)
     }
 
     fn writable(&self) -> bool {

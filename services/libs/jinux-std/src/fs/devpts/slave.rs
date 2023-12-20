@@ -1,4 +1,5 @@
 use crate::events::IoEvents;
+use crate::fs::inode_handle::FileIo;
 use crate::prelude::*;
 use crate::process::signal::Poller;
 
@@ -106,5 +107,9 @@ impl Inode for PtySlaveInode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
+    }
+
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        Some(self.device.clone())
     }
 }

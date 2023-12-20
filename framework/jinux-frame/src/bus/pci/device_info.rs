@@ -83,6 +83,16 @@ impl PciDeviceLocation {
             }
         })
     }
+
+    /// The page table of all devices is the same. So we can use any device ID.
+    /// FIXME: distinguish different device id.
+    pub fn zero() -> Self {
+        Self {
+            bus: 0,
+            device: 0,
+            function: 0,
+        }
+    }
 }
 
 impl PciDeviceLocation {

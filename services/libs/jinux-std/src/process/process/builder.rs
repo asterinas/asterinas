@@ -1,12 +1,11 @@
 use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
 use crate::fs::utils::FileCreationMask;
-use crate::process::posix_thread::PosixThreadBuilder;
-use crate::process::process_group::ProcessGroup;
-use crate::process::process_table;
+use crate::process::posix_thread::{PosixThreadBuilder, PosixThreadExt};
 use crate::process::process_vm::ProcessVm;
 use crate::process::rlimit::ResourceLimits;
-use crate::process::{posix_thread::PosixThreadExt, signal::sig_disposition::SigDispositions};
+use crate::process::signal::sig_disposition::SigDispositions;
+use crate::process::Credentials;
 use crate::thread::Thread;
 
 use super::{Pid, Process};
@@ -23,12 +22,12 @@ pub struct ProcessBuilder<'a> {
     argv: Option<Vec<CString>>,
     envp: Option<Vec<CString>>,
     process_vm: Option<ProcessVm>,
-    process_group: Option<Arc<ProcessGroup>>,
     file_table: Option<Arc<Mutex<FileTable>>>,
     fs: Option<Arc<RwLock<FsResolver>>>,
     umask: Option<Arc<RwLock<FileCreationMask>>>,
     resource_limits: Option<ResourceLimits>,
     sig_dispositions: Option<Arc<Mutex<SigDispositions>>>,
+    credentials: Option<Credentials>,
 }
 
 impl<'a> ProcessBuilder<'a> {
@@ -41,12 +40,12 @@ impl<'a> ProcessBuilder<'a> {
             argv: None,
             envp: None,
             process_vm: None,
-            process_group: None,
             file_table: None,
             fs: None,
             umask: None,
             resource_limits: None,
             sig_dispositions: None,
+            credentials: None,
         }
     }
 
@@ -57,11 +56,6 @@ impl<'a> ProcessBuilder<'a> {
 
     pub fn process_vm(&mut self, process_vm: ProcessVm) -> &mut Self {
         self.process_vm = Some(process_vm);
-        self
-    }
-
-    pub fn process_group(&mut self, process_group: Arc<ProcessGroup>) -> &mut Self {
-        self.process_group = Some(process_group);
         self
     }
 
@@ -100,17 +94,24 @@ impl<'a> ProcessBuilder<'a> {
         self
     }
 
+    pub fn credentials(&mut self, credentials: Credentials) -> &mut Self {
+        self.credentials = Some(credentials);
+        self
+    }
+
     fn check_build(&self) -> Result<()> {
         if self.main_thread_builder.is_some() {
             debug_assert!(self.parent.upgrade().is_some());
             debug_assert!(self.argv.is_none());
             debug_assert!(self.envp.is_none());
+            debug_assert!(self.credentials.is_none());
         }
 
         if self.main_thread_builder.is_none() {
             debug_assert!(self.parent.upgrade().is_none());
             debug_assert!(self.argv.is_some());
             debug_assert!(self.envp.is_some());
+            debug_assert!(self.credentials.is_some());
         }
 
         Ok(())
@@ -126,19 +127,15 @@ impl<'a> ProcessBuilder<'a> {
             argv,
             envp,
             process_vm,
-            process_group,
             file_table,
             fs,
             umask,
             resource_limits,
             sig_dispositions,
+            credentials,
         } = self;
 
         let process_vm = process_vm.or_else(|| Some(ProcessVm::alloc())).unwrap();
-
-        let process_group_ref = process_group
-            .as_ref()
-            .map_or_else(Weak::new, Arc::downgrade);
 
         let file_table = file_table
             .or_else(|| Some(Arc::new(Mutex::new(FileTable::new_with_stdio()))))
@@ -168,7 +165,6 @@ impl<'a> ProcessBuilder<'a> {
                 threads,
                 executable_path.to_string(),
                 process_vm,
-                process_group_ref,
                 file_table,
                 fs,
                 umask,
@@ -183,6 +179,7 @@ impl<'a> ProcessBuilder<'a> {
         } else {
             Thread::new_posix_thread_from_executable(
                 pid,
+                credentials.unwrap(),
                 process.vm(),
                 &process.fs().read(),
                 executable_path,
@@ -193,15 +190,6 @@ impl<'a> ProcessBuilder<'a> {
         };
 
         process.threads().lock().push(thread);
-
-        if let Some(process_group) = process_group {
-            process_group.add_process(process.clone());
-        } else {
-            let new_process_group = Arc::new(ProcessGroup::new(process.clone()));
-            let pgid = new_process_group.pgid();
-            process.set_process_group(Arc::downgrade(&new_process_group));
-            process_table::add_process_group(new_process_group);
-        }
 
         process.set_runnable();
 

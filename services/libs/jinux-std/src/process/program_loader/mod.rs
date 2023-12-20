@@ -4,11 +4,36 @@ mod shebang;
 use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
 use crate::fs::utils::Dentry;
 use crate::prelude::*;
+use crate::vdso::vdso_vmo;
+use crate::vm::perms::VmPerms;
 
 use self::elf::{load_elf_to_vm, ElfLoadInfo};
 use self::shebang::parse_shebang_line;
 
 use super::process_vm::ProcessVm;
+
+/// Map the vdso vmo to the corresponding virtual memory address.
+pub fn map_vdso_to_vm(process_vm: &ProcessVm) -> Vaddr {
+    let root_vmar = process_vm.root_vmar();
+    let vdso_vmo = vdso_vmo();
+
+    let options = root_vmar
+        .new_map(vdso_vmo.dup().unwrap(), VmPerms::empty())
+        .unwrap()
+        .size(5 * PAGE_SIZE);
+    let vdso_data_base = options.build().unwrap();
+    let vdso_text_base = vdso_data_base + 0x4000;
+
+    let data_perms = VmPerms::READ | VmPerms::WRITE;
+    let text_perms = VmPerms::READ | VmPerms::EXEC;
+    root_vmar
+        .protect(data_perms, vdso_data_base..vdso_data_base + PAGE_SIZE)
+        .unwrap();
+    root_vmar
+        .protect(text_perms, vdso_text_base..vdso_text_base + PAGE_SIZE)
+        .unwrap();
+    vdso_text_base
+}
 
 /// Load an executable to root vmar, including loading programe image, preparing heap and stack,
 /// initializing argv, envp and aux tables.
@@ -53,8 +78,18 @@ pub fn load_program_to_vm(
             recursion_limit - 1,
         );
     }
-    let elf_load_info =
-        load_elf_to_vm(process_vm, &*file_header, elf_file, fs_resolver, argv, envp)?;
+    process_vm.clear();
+    let vdso_text_base = map_vdso_to_vm(process_vm);
+    let elf_load_info = load_elf_to_vm(
+        process_vm,
+        &*file_header,
+        elf_file,
+        fs_resolver,
+        argv,
+        envp,
+        vdso_text_base,
+    )?;
+
     Ok((abs_path, elf_load_info))
 }
 

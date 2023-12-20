@@ -8,7 +8,7 @@ mergeable:
       - do: commit
         message:
           # `akucxy@163.com` belongs to `@Js2xxx`, who has not yet obtained his PKU email.
-          regex: ^((.*(@antgroup\.com|@alibaba-inc\.com|@intel\.com|@pku\.edu\.cn|@stu\.pku\.edu\.cn))|akucxy@163\.com)$
+          regex: ^((.*(@antgroup\.com|@alibaba-inc\.com|@intel\.com|@pku\.edu\.cn|@stu\.pku\.edu\.cn|@zgclab\.edu\.cn|@mail\.zgclab\.edu\.cn))|akucxy@163\.com)$
           message: Check if the author emails belong to Ant Group or its partners
           message_type: author_email
           skip_merge: false # If true, will skip commit with message that includes 'Merge'

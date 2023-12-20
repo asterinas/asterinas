@@ -488,7 +488,7 @@ impl Inode for RamInode {
             return device.write(buf);
         }
 
-        let self_inode = self.0.read();
+        let self_inode = self.0.upread();
         let Some(page_cache) = self_inode.inner.as_file() else {
             return_errno_with_message!(Errno::EISDIR, "write is not supported");
         };
@@ -572,6 +572,10 @@ impl Inode for RamInode {
             .append_entry(name, device_inode.clone());
         self_inode.inc_size();
         Ok(device_inode)
+    }
+
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        self.0.read().inner.as_device().cloned()
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {

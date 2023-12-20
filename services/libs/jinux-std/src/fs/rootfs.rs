@@ -84,7 +84,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
 
 static ROOT_MOUNT: Once<Arc<MountNode>> = Once::new();
 
-fn init_root_mount() {
+pub fn init_root_mount() {
     ROOT_MOUNT.call_once(|| -> Arc<MountNode> {
         let rootfs = RamFS::new();
         MountNode::new_root(rootfs)

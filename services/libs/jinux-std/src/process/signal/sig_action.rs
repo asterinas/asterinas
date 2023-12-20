@@ -103,7 +103,6 @@ impl SigActionFlags {
         self.intersects(
             SigActionFlags::SA_NOCLDSTOP
                 | SigActionFlags::SA_NOCLDWAIT
-                | SigActionFlags::SA_ONSTACK
                 | SigActionFlags::SA_RESETHAND,
         )
     }

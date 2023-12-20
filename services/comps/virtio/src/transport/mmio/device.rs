@@ -10,7 +10,7 @@ use jinux_frame::{
     offset_of,
     sync::RwLock,
     trap::IrqCallbackFunction,
-    vm::VmFrame,
+    vm::DmaCoherent,
 };
 use jinux_rights::{ReadOp, WriteOp};
 use jinux_util::{field_ptr, safe_ptr::SafePtr};
@@ -94,9 +94,9 @@ impl VirtioTransport for VirtioMmioTransport {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, VmFrame>,
-        driver_ptr: &SafePtr<AvailRing, VmFrame>,
-        device_ptr: &SafePtr<UsedRing, VmFrame>,
+        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
+        driver_ptr: &SafePtr<AvailRing, DmaCoherent>,
+        device_ptr: &SafePtr<UsedRing, DmaCoherent>,
     ) -> Result<(), VirtioTransportError> {
         field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
             .write(&(idx as u32))

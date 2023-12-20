@@ -23,6 +23,15 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     debug_assert!(sig_context_addr == context.rsp() as Vaddr);
 
     let ucontext = read_val_from_user::<ucontext_t>(sig_context_addr)?;
+
+    // If the sig stack is active and used by current handler, decrease handler counter.
+    if let Some(sig_stack) = posix_thread.sig_stack().lock().as_mut() {
+        let rsp = context.rsp();
+        if rsp >= sig_stack.base() && rsp <= sig_stack.base() + sig_stack.size() {
+            sig_stack.decrease_handler_counter();
+        }
+    }
+
     // Set previous ucontext address
     if ucontext.uc_link == 0 {
         *sig_context = None;
@@ -33,5 +42,6 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;
     posix_thread.sig_mask().lock().unblock(sig_mask);
+
     Ok(SyscallReturn::NoReturn)
 }

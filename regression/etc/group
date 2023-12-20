@@ -1,0 +1,10 @@
+## 
+# User group file.
+#
+# There is one entry per line, with the following format:
+#   group_name:password:GID:user_list
+#
+# See the group(5) man page for additional information about this file.
+##
+root:x:0:
+nogroup:x:65534:

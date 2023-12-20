@@ -1,6 +1,7 @@
-use crate::process::signal::{c_types::siginfo_t, constants::SI_KERNEL, sig_num::SigNum};
-
 use super::Signal;
+use crate::process::signal::c_types::siginfo_t;
+use crate::process::signal::constants::SI_KERNEL;
+use crate::process::signal::sig_num::SigNum;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KernelSignal {

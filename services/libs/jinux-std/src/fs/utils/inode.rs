@@ -51,6 +51,7 @@ impl From<DeviceType> for InodeType {
         match type_ {
             DeviceType::CharDevice => InodeType::CharDevice,
             DeviceType::BlockDevice => InodeType::BlockDevice,
+            DeviceType::MiscDevice => InodeType::CharDevice,
         }
     }
 }
@@ -283,6 +284,10 @@ pub trait Inode: Any + Sync + Send {
 
     fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
+    }
+
+    fn as_device(&self) -> Option<Arc<dyn Device>> {
+        None
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {

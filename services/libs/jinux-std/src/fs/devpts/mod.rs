@@ -1,3 +1,4 @@
+use crate::device::PtyMaster;
 use crate::fs::device::{Device, DeviceId, DeviceType};
 use crate::fs::utils::{
     DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
@@ -9,11 +10,9 @@ use core::time::Duration;
 use jinux_frame::vm::VmFrame;
 use jinux_util::{id_allocator::IdAlloc, slot_vec::SlotVec};
 
-use self::master::PtyMasterInode;
 use self::ptmx::Ptmx;
 use self::slave::PtySlaveInode;
 
-mod master;
 mod ptmx;
 mod slave;
 
@@ -52,7 +51,7 @@ impl DevPts {
     }
 
     /// Create the master and slave pair.
-    fn create_master_slave_pair(&self) -> Result<(Arc<PtyMasterInode>, Arc<PtySlaveInode>)> {
+    fn create_master_slave_pair(&self) -> Result<(Arc<PtyMaster>, Arc<PtySlaveInode>)> {
         let index = self
             .index_alloc
             .lock()
@@ -61,17 +60,16 @@ impl DevPts {
 
         let (master, slave) = crate::device::new_pty_pair(index as u32, self.root.ptmx.clone())?;
 
-        let master_inode = PtyMasterInode::new(master);
         let slave_inode = PtySlaveInode::new(slave, self.this.clone());
         self.root.add_slave(index.to_string(), slave_inode.clone());
 
-        Ok((master_inode, slave_inode))
+        Ok((master, slave_inode))
     }
 
     /// Remove the slave from fs.
     ///
     /// This is called when the master is being dropped.
-    fn remove_slave(&self, index: u32) -> Option<Arc<PtySlaveInode>> {
+    pub fn remove_slave(&self, index: u32) -> Option<Arc<PtySlaveInode>> {
         let removed_slave = self.root.remove_slave(&index.to_string());
         if removed_slave.is_some() {
             self.index_alloc.lock().free(index as usize);
@@ -241,7 +239,7 @@ impl Inode for RootInode {
         let inode = match name {
             "." | ".." => self.fs().root_inode(),
             // Call the "open" method of ptmx to create a master and slave pair.
-            "ptmx" => self.ptmx.open()?,
+            "ptmx" => self.ptmx.clone(),
             slave => self
                 .slaves
                 .read()

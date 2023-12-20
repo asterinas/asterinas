@@ -7,8 +7,9 @@ use pod::Pod;
 use crate::{
     bus::pci::PciDeviceLocation,
     vm::{
-        page_table::{PageTableConfig, PageTableError},
-        Paddr, PageTable, Vaddr, VmAllocOptions, VmFrame, VmIo,
+        dma::Daddr,
+        page_table::{DeviceMode, PageTableConfig, PageTableError},
+        Paddr, PageTable, VmAllocOptions, VmFrame, VmIo,
     },
 };
 
@@ -53,18 +54,22 @@ impl RootTable {
         }
     }
 
-    pub fn map(
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the given paddr is a valid one.
+    pub unsafe fn map(
         &mut self,
         device: PciDeviceLocation,
-        vaddr: Vaddr,
-        frame: &VmFrame,
+        daddr: Daddr,
+        paddr: Paddr,
     ) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
         self.get_or_create_context_table(device)
-            .map(device, vaddr, frame)?;
+            .map(device, daddr, paddr)?;
 
         Ok(())
     }
@@ -72,14 +77,14 @@ impl RootTable {
     pub fn unmap(
         &mut self,
         device: PciDeviceLocation,
-        vaddr: Vaddr,
+        daddr: Daddr,
     ) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
         self.get_or_create_context_table(device)
-            .unmap(device, vaddr)?;
+            .unmap(device, daddr)?;
 
         Ok(())
     }
@@ -117,7 +122,7 @@ impl RootTable {
     pub fn specify_device_page_table(
         &mut self,
         device_id: PciDeviceLocation,
-        page_table: PageTable<PageTableEntry>,
+        page_table: PageTable<PageTableEntry, DeviceMode>,
     ) {
         let context_table = self.get_or_create_context_table(device_id);
 
@@ -227,7 +232,7 @@ pub enum AddressWidth {
 pub struct ContextTable {
     /// Total 32 devices, each device has 8 functions.
     entries_frame: VmFrame,
-    page_tables: BTreeMap<Paddr, PageTable<PageTableEntry>>,
+    page_tables: BTreeMap<Paddr, PageTable<PageTableEntry, DeviceMode>>,
 }
 
 impl ContextTable {
@@ -245,7 +250,7 @@ impl ContextTable {
     fn get_or_create_page_table(
         &mut self,
         device: PciDeviceLocation,
-    ) -> &mut PageTable<PageTableEntry> {
+    ) -> &mut PageTable<PageTableEntry, DeviceMode> {
         let bus_entry = self
             .entries_frame
             .read_val::<ContextEntry>(
@@ -254,9 +259,10 @@ impl ContextTable {
             .unwrap();
 
         if !bus_entry.is_present() {
-            let table: PageTable<PageTableEntry> = PageTable::new(PageTableConfig {
-                address_width: crate::vm::page_table::AddressWidth::Level3,
-            });
+            let table: PageTable<PageTableEntry, DeviceMode> =
+                PageTable::<PageTableEntry, DeviceMode>::new(PageTableConfig {
+                    address_width: crate::vm::page_table::AddressWidth::Level3,
+                });
             let address = table.root_paddr();
             self.page_tables.insert(address, table);
             let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
@@ -275,31 +281,35 @@ impl ContextTable {
         }
     }
 
-    fn map(
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the given paddr is a valid one.
+    unsafe fn map(
         &mut self,
         device: PciDeviceLocation,
-        vaddr: Vaddr,
-        frame: &VmFrame,
+        daddr: Daddr,
+        paddr: Paddr,
     ) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
         self.get_or_create_page_table(device)
-            .map(
-                vaddr,
-                frame,
+            .map_with_paddr(
+                daddr,
+                paddr,
                 PageTableFlags::WRITABLE | PageTableFlags::READABLE | PageTableFlags::LAST_PAGE,
             )
             .map_err(ContextTableError::ModificationError)
     }
 
-    fn unmap(&mut self, device: PciDeviceLocation, vaddr: Vaddr) -> Result<(), ContextTableError> {
+    fn unmap(&mut self, device: PciDeviceLocation, daddr: Daddr) -> Result<(), ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
         self.get_or_create_page_table(device)
-            .unmap(vaddr)
+            .unmap(daddr)
             .map_err(ContextTableError::ModificationError)
     }
 }

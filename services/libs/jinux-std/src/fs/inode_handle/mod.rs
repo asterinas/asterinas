@@ -5,11 +5,14 @@ mod static_cap;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use crate::events::IoEvents;
+use crate::fs::device::Device;
 use crate::fs::file_handle::FileLike;
 use crate::fs::utils::{
     AccessMode, Dentry, DirentVisitor, InodeType, IoctlCmd, Metadata, SeekFrom, StatusFlags,
 };
 use crate::prelude::*;
+use crate::process::signal::Poller;
 use jinux_rights::Rights;
 
 #[derive(Debug)]
@@ -17,6 +20,10 @@ pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
 
 struct InodeHandle_ {
     dentry: Arc<Dentry>,
+    /// `file_io` is Similar to `file_private` field in `file` structure in linux. If
+    /// `file_io` is Some, typical file operations including `read`, `write`, `poll`,
+    /// `ioctl` will be provided by `file_io`, instead of `dentry`.
+    file_io: Option<Arc<dyn FileIo>>,
     offset: Mutex<usize>,
     access_mode: AccessMode,
     status_flags: AtomicU32,
@@ -25,6 +32,11 @@ struct InodeHandle_ {
 impl InodeHandle_ {
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
         let mut offset = self.offset.lock();
+
+        if let Some(ref file_io) = self.file_io {
+            return file_io.read(buf);
+        }
+
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
             self.dentry.inode().read_direct_at(*offset, buf)?
         } else {
@@ -37,6 +49,11 @@ impl InodeHandle_ {
 
     pub fn write(&self, buf: &[u8]) -> Result<usize> {
         let mut offset = self.offset.lock();
+
+        if let Some(ref file_io) = self.file_io {
+            return file_io.write(buf);
+        }
+
         if self.status_flags().contains(StatusFlags::O_APPEND) {
             *offset = self.dentry.inode_len();
         }
@@ -51,6 +68,10 @@ impl InodeHandle_ {
     }
 
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
+        if self.file_io.is_some() {
+            return_errno_with_message!(Errno::EINVAL, "file io does not support read to end");
+        }
+
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
             self.dentry.inode().read_direct_to_end(buf)?
         } else {
@@ -117,6 +138,22 @@ impl InodeHandle_ {
         *offset += read_cnt;
         Ok(read_cnt)
     }
+
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        if let Some(ref file_io) = self.file_io {
+            return file_io.poll(mask, poller);
+        }
+
+        self.dentry.inode().poll(mask, poller)
+    }
+
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        if let Some(ref file_io) = self.file_io {
+            return file_io.ioctl(cmd, arg);
+        }
+
+        self.dentry.inode().ioctl(cmd, arg)
+    }
 }
 
 impl Debug for InodeHandle_ {
@@ -134,5 +171,17 @@ impl Debug for InodeHandle_ {
 impl<R> InodeHandle<R> {
     pub fn dentry(&self) -> &Arc<Dentry> {
         &self.0.dentry
+    }
+}
+
+pub trait FileIo: Send + Sync + 'static {
+    fn read(&self, buf: &mut [u8]) -> Result<usize>;
+
+    fn write(&self, buf: &[u8]) -> Result<usize>;
+
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents;
+
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
     }
 }

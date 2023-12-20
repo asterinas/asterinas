@@ -2,16 +2,18 @@ use alloc::format;
 use ringbuf::{ring_buffer::RbBase, HeapRb, Rb};
 
 use crate::device::tty::line_discipline::LineDiscipline;
+use crate::device::tty::new_job_control_and_ldisc;
 use crate::events::IoEvents;
 use crate::fs::device::{Device, DeviceId, DeviceType};
-use crate::fs::file_handle::FileLike;
+use crate::fs::devpts::DevPts;
 use crate::fs::fs_resolver::FsPath;
+use crate::fs::inode_handle::FileIo;
 use crate::fs::utils::{AccessMode, Inode, InodeMode, IoctlCmd};
 use crate::prelude::*;
 use crate::process::signal::{Pollee, Poller};
+use crate::process::{JobControl, Terminal};
 use crate::util::{read_val_from_user, write_val_to_user};
 
-const PTS_DIR: &str = "/dev/pts";
 const BUFFER_CAPACITY: usize = 4096;
 
 /// Pesudo terminal master.
@@ -23,19 +25,24 @@ pub struct PtyMaster {
     index: u32,
     output: Arc<LineDiscipline>,
     input: SpinLock<HeapRb<u8>>,
+    job_control: Arc<JobControl>,
     /// The state of input buffer
     pollee: Pollee,
+    weak_self: Weak<Self>,
 }
 
 impl PtyMaster {
-    pub fn new(ptmx: Arc<dyn Inode>, index: u32) -> Self {
-        Self {
+    pub fn new(ptmx: Arc<dyn Inode>, index: u32) -> Arc<Self> {
+        let (job_control, ldisc) = new_job_control_and_ldisc();
+        Arc::new_cyclic(move |weak_ref| PtyMaster {
             ptmx,
             index,
-            output: LineDiscipline::new(),
+            output: ldisc,
             input: SpinLock::new(HeapRb::new(BUFFER_CAPACITY)),
+            job_control,
             pollee: Pollee::new(IoEvents::OUT),
-        }
+            weak_self: weak_ref.clone(),
+        })
     }
 
     pub fn index(&self) -> u32 {
@@ -46,14 +53,10 @@ impl PtyMaster {
         &self.ptmx
     }
 
-    pub(super) fn slave_push_byte(&self, byte: u8) {
+    pub(super) fn slave_push_char(&self, ch: u8) {
         let mut input = self.input.lock_irq_disabled();
-        input.push_overwrite(byte);
+        input.push_overwrite(ch);
         self.update_state(&input);
-    }
-
-    pub(super) fn slave_read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.output.read(buf)
     }
 
     pub(super) fn slave_poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -87,7 +90,7 @@ impl PtyMaster {
     }
 }
 
-impl FileLike for PtyMaster {
+impl FileIo for PtyMaster {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         // TODO: deal with nonblocking read
         if buf.is_empty() {
@@ -122,7 +125,6 @@ impl FileLike for PtyMaster {
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
         let mut input = self.input.lock();
-
         for character in buf {
             self.output.push_char(*character, |content| {
                 for byte in content.as_bytes() {
@@ -193,29 +195,35 @@ impl FileLike for PtyMaster {
                 self.output.set_window_size(winsize);
                 Ok(0)
             }
-            IoctlCmd::TIOCSCTTY => {
-                // TODO: reimplement when adding session.
-                let foreground = {
-                    let current = current!();
-                    let process_group = current.process_group().unwrap();
-                    Arc::downgrade(&process_group)
-                };
-                self.output.set_fg(foreground);
-                Ok(0)
-            }
             IoctlCmd::TIOCGPGRP => {
-                let Some(fg_pgid) = self.output.fg_pgid() else {
+                let Some(foreground) = self.foreground() else {
                     return_errno_with_message!(
                         Errno::ESRCH,
                         "the foreground process group does not exist"
                     );
                 };
+                let fg_pgid = foreground.pgid();
                 write_val_to_user(arg, &fg_pgid)?;
                 Ok(0)
             }
+            IoctlCmd::TIOCSPGRP => {
+                let pgid = {
+                    let pgid: i32 = read_val_from_user(arg)?;
+                    if pgid < 0 {
+                        return_errno_with_message!(Errno::EINVAL, "negative pgid");
+                    }
+                    pgid as u32
+                };
+
+                self.set_foreground(&pgid)?;
+                Ok(0)
+            }
+            IoctlCmd::TIOCSCTTY => {
+                self.set_current_session()?;
+                Ok(0)
+            }
             IoctlCmd::TIOCNOTTY => {
-                // TODO: reimplement when adding session.
-                self.output.set_fg(Weak::new());
+                self.release_current_session()?;
                 Ok(0)
             }
             IoctlCmd::FIONREAD => {
@@ -246,15 +254,47 @@ impl FileLike for PtyMaster {
     }
 }
 
-pub struct PtySlave(Arc<PtyMaster>);
+impl Terminal for PtyMaster {
+    fn arc_self(&self) -> Arc<dyn Terminal> {
+        self.weak_self.upgrade().unwrap() as _
+    }
+
+    fn job_control(&self) -> &JobControl {
+        &self.job_control
+    }
+}
+
+impl Drop for PtyMaster {
+    fn drop(&mut self) {
+        let fs = self.ptmx.fs();
+        let devpts = fs.downcast_ref::<DevPts>().unwrap();
+
+        let index = self.index;
+        devpts.remove_slave(index);
+    }
+}
+
+pub struct PtySlave {
+    master: Weak<PtyMaster>,
+    job_control: JobControl,
+    weak_self: Weak<Self>,
+}
 
 impl PtySlave {
-    pub fn new(master: Arc<PtyMaster>) -> Self {
-        PtySlave(master)
+    pub fn new(master: &Arc<PtyMaster>) -> Arc<Self> {
+        Arc::new_cyclic(|weak_ref| PtySlave {
+            master: Arc::downgrade(master),
+            job_control: JobControl::new(),
+            weak_self: weak_ref.clone(),
+        })
     }
 
     pub fn index(&self) -> u32 {
-        self.0.index()
+        self.master().index()
+    }
+
+    fn master(&self) -> Arc<PtyMaster> {
+        self.master.upgrade().unwrap()
     }
 }
 
@@ -266,50 +306,91 @@ impl Device for PtySlave {
     fn id(&self) -> crate::fs::device::DeviceId {
         DeviceId::new(88, self.index())
     }
+}
 
+impl Terminal for PtySlave {
+    fn arc_self(&self) -> Arc<dyn Terminal> {
+        self.weak_self.upgrade().unwrap() as _
+    }
+
+    fn job_control(&self) -> &JobControl {
+        &self.job_control
+    }
+}
+
+impl FileIo for PtySlave {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.0.slave_read(buf)
+        self.job_control.wait_until_in_foreground()?;
+        self.master().output.read(buf)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
+        let master = self.master();
         for ch in buf {
             // do we need to add '\r' here?
             if *ch == b'\n' {
-                self.0.slave_push_byte(b'\r');
-                self.0.slave_push_byte(b'\n');
+                master.slave_push_char(b'\r');
+                master.slave_push_char(b'\n');
             } else {
-                self.0.slave_push_byte(*ch);
+                master.slave_push_char(*ch);
             }
         }
         Ok(buf.len())
+    }
+
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.master().slave_poll(mask, poller)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         match cmd {
             IoctlCmd::TCGETS
             | IoctlCmd::TCSETS
-            | IoctlCmd::TIOCGPGRP
             | IoctlCmd::TIOCGPTN
             | IoctlCmd::TIOCGWINSZ
-            | IoctlCmd::TIOCSWINSZ => self.0.ioctl(cmd, arg),
+            | IoctlCmd::TIOCSWINSZ => self.master().ioctl(cmd, arg),
+            IoctlCmd::TIOCGPGRP => {
+                if !self.is_controlling_terminal() {
+                    return_errno_with_message!(Errno::ENOTTY, "slave is not controlling terminal");
+                }
+
+                let Some(foreground) = self.foreground() else {
+                    return_errno_with_message!(
+                        Errno::ESRCH,
+                        "the foreground process group does not exist"
+                    );
+                };
+
+                let fg_pgid = foreground.pgid();
+                write_val_to_user(arg, &fg_pgid)?;
+                Ok(0)
+            }
+            IoctlCmd::TIOCSPGRP => {
+                let pgid = {
+                    let pgid: i32 = read_val_from_user(arg)?;
+                    if pgid < 0 {
+                        return_errno_with_message!(Errno::EINVAL, "negative pgid");
+                    }
+                    pgid as u32
+                };
+
+                self.set_foreground(&pgid)?;
+                Ok(0)
+            }
             IoctlCmd::TIOCSCTTY => {
-                // TODO:
+                self.set_current_session()?;
                 Ok(0)
             }
             IoctlCmd::TIOCNOTTY => {
-                // TODO:
+                self.release_current_session()?;
                 Ok(0)
             }
             IoctlCmd::FIONREAD => {
-                let buffer_len = self.0.slave_buf_len() as i32;
+                let buffer_len = self.master().slave_buf_len() as i32;
                 write_val_to_user(arg, &buffer_len)?;
                 Ok(0)
             }
             _ => Ok(0),
         }
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.0.slave_poll(mask, poller)
     }
 }

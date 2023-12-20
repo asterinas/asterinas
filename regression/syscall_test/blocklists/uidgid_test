@@ -1,0 +1,4 @@
+UidGidRootTest.Setgid
+UidGidRootTest.SetgidNotFromThreadGroupLeader
+UidGidRootTest.Setregid
+UidGidRootTest.Setresgid
