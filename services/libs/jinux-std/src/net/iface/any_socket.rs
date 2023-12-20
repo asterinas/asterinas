@@ -193,20 +193,6 @@ fn update_tcp_socket_state(socket: &RawTcpSocket, pollee: &Pollee) {
     } else {
         pollee.del_events(IoEvents::OUT);
     }
-
-    if socket.may_recv() {
-        pollee.del_events(IoEvents::RDHUP);
-    } else {
-        // The receice half was closed
-        pollee.add_events(IoEvents::RDHUP);
-    }
-
-    if socket.is_open() {
-        pollee.del_events(IoEvents::HUP);
-    } else {
-        // The socket is closed
-        pollee.add_events(IoEvents::HUP);
-    }
 }
 
 fn update_udp_socket_state(socket: &RawUdpSocket, pollee: &Pollee) {
