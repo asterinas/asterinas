@@ -3,7 +3,6 @@
 #![feature(const_mut_refs)]
 #![feature(const_ptr_sub_ptr)]
 #![feature(const_trait_impl)]
-#![feature(core_intrinsics)]
 #![feature(coroutines)]
 #![feature(fn_traits)]
 #![feature(iter_from_coroutine)]
