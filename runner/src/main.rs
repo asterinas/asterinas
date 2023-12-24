@@ -209,15 +209,14 @@ fn main() {
     println!("[jinux-runner] Running: {:#?}", qemu_cmd);
 
     let exit_status = qemu_cmd.status().unwrap();
-    if !exit_status.success() {
-        // FIXME: Exit code manipulation is not needed when using non-x86 QEMU
-        let qemu_exit_code = exit_status.code().unwrap();
-        let kernel_exit_code = qemu_exit_code >> 1;
-        match kernel_exit_code {
-            0x10 /*jinux_frame::QemuExitCode::Success*/ => { std::process::exit(0); },
-            0x20 /*jinux_frame::QemuExitCode::Failed*/ => { std::process::exit(1); },
-            _ => { std::process::exit(qemu_exit_code) },
-        }
+
+    // FIXME: Exit code manipulation is not needed when using non-x86 QEMU
+    let qemu_exit_code = exit_status.code().unwrap();
+    let kernel_exit_code = qemu_exit_code >> 1;
+    match kernel_exit_code {
+        0x10 /* jinux_frame::QemuExitCode::Success */ => { std::process::exit(0); },
+        0x20 /* jinux_frame::QemuExitCode::Failed */ => { std::process::exit(1); },
+        _ /* unknown, e.g., a triple fault */ => { std::process::exit(2) },
     }
 }
 
