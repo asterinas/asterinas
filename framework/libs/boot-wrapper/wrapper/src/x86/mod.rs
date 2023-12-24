@@ -8,4 +8,5 @@ cfg_if::cfg_if! {
     }
 }
 
+pub mod paging;
 pub mod relocation;

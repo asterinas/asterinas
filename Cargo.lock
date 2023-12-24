@@ -130,6 +130,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-boot-wrapper"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.4.1",
+ "cfg-if",
+ "linux_boot_params",
+ "log",
+ "uart_16550",
+ "uefi",
+ "uefi-services",
+ "x86_64",
+ "xmas-elf 0.8.0",
+]
+
+[[package]]
+name = "aster-boot-wrapper-builder"
+version = "0.1.0"
+dependencies = [
+ "bitflags 1.3.2",
+ "bytemuck",
+ "serde",
+ "xmas-elf 0.9.1",
+]
+
+[[package]]
 name = "aster-console"
 version = "0.1.0"
 dependencies = [
@@ -159,6 +184,7 @@ dependencies = [
  "intrusive-collections",
  "ktest",
  "lazy_static",
+ "linux_boot_params",
  "log",
  "multiboot2",
  "pod",
@@ -171,14 +197,6 @@ dependencies = [
  "volatile",
  "x86",
  "x86_64",
-]
-
-[[package]]
-name = "aster-frame-x86-boot-linux-setup"
-version = "0.1.0"
-dependencies = [
- "uart_16550",
- "xmas-elf",
 ]
 
 [[package]]
@@ -250,10 +268,10 @@ name = "aster-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aster-boot-wrapper-builder",
  "clap",
- "glob",
  "rand",
- "xmas-elf",
+ "xmas-elf 0.8.0",
 ]
 
 [[package]]
@@ -299,7 +317,7 @@ dependencies = [
  "typeflags-util",
  "virtio-input-decoder",
  "vte",
- "xmas-elf",
+ "xmas-elf 0.8.0",
 ]
 
 [[package]]
@@ -353,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "asterinas"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "aster-frame",
  "aster-framebuffer",
@@ -954,16 +972,6 @@ dependencies = [
  "core2",
  "hashbrown 0.13.2",
  "rle-decode-fast",
-]
-
-[[package]]
-name = "linux-boot-wrapper-builder"
-version = "0.1.0"
-dependencies = [
- "bitflags 1.3.2",
- "bytemuck",
- "serde",
- "xmas-elf 0.9.1",
 ]
 
 [[package]]

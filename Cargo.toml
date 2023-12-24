@@ -34,7 +34,6 @@ panic = "unwind"
 members = [
     "runner",
     "framework/aster-frame",
-    "framework/aster-frame/src/arch/x86/boot/linux_boot/setup",
     "framework/libs/align_ext",
     "framework/libs/boot-wrapper/builder",
     "framework/libs/boot-wrapper/linux-boot-params",
