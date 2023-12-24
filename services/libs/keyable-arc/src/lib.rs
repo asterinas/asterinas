@@ -179,7 +179,7 @@ impl<T: ?Sized> From<KeyableArc<T>> for Arc<T> {
 
 impl<T: ?Sized> PartialEq for KeyableArc<T> {
     fn eq(&self, other: &Self) -> bool {
-        Arc::as_ptr(&self.0) == Arc::as_ptr(&other.0)
+        core::ptr::eq(Arc::as_ptr(&self.0), Arc::as_ptr(&other.0))
     }
 }
 
@@ -270,7 +270,7 @@ impl<T: ?Sized> KeyableWeak<T> {
 
 impl<T: ?Sized> PartialEq for KeyableWeak<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.as_ptr() == other.0.as_ptr()
+        core::ptr::eq(self.0.as_ptr(), other.0.as_ptr())
     }
 }
 

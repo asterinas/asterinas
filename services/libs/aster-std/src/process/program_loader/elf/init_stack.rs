@@ -140,8 +140,8 @@ impl InitStack {
     fn adjust_stack_alignment(
         &mut self,
         root_vmar: &Vmar<Full>,
-        envp_pointers: &Vec<u64>,
-        argv_pointers: &Vec<u64>,
+        envp_pointers: &[u64],
+        argv_pointers: &[u64],
         aux_vec: &AuxVec,
     ) -> Result<()> {
         // ensure 8-byte alignment
