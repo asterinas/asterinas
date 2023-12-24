@@ -4,12 +4,13 @@
 .section ".boot", "awx"
 .code32
 
-// With the 32-bit entry types we should go through a common paging and machine
-// state setup routine. Thus we make a mark of protocol used in each entrypoint
+// With every entry types we could go through common paging or machine
+// state setup routines. Thus we make a mark of protocol used in each entrypoint
 // on the stack.
 ENTRYTYPE_MULTIBOOT     = 1
 ENTRYTYPE_MULTIBOOT2    = 2
 ENTRYTYPE_LINUX_32      = 3
+ENTRYTYPE_LINUX_64      = 4
 
 MULTIBOOT_ENTRY_MAGIC   = 0x2BADB002
 MULTIBOOT2_ENTRY_MAGIC  = 0x36D76289
@@ -39,14 +40,13 @@ __linux32_boot:
 .org 0x200
 .global __linux64_boot_tag
 __linux64_boot_tag:
-    // We switch back to 32-bit mode to call the 32-bit entry point.
-    lgdt [boot_gdtr]
-    mov eax, 0xb002b002 // magic for boot_params
-    mov ebx, esi        // struct boot_params *
-    sub rsp, 8
-    mov dword ptr [rsp], offset __linux32_boot
-    mov dword ptr [rsp + 4], 24
-    retf
+    // Set the kernel call stack.
+    lea rsp, [boot_stack_top]
+    push rsi    // boot_params ptr from the loader
+    push ENTRYTYPE_LINUX_64
+
+    // Here RSP/RIP are still using low address.
+    jmp long_mode_in_low_address
 
 // The multiboot & multiboot2 entry point.
 .code32
@@ -274,6 +274,7 @@ gdt_end:
 // The page tables and the stack
 .align 4096
 
+.global boot_page_table_start
 boot_page_table_start:
 boot_pml4:
     .skip 4096
@@ -296,6 +297,7 @@ boot_pt_32g:
     .skip 4096 * 512
 boot_page_table_end:
 
+.global boot_stack_top
 boot_stack_bottom:
     .skip 0x40000
 boot_stack_top:
@@ -335,21 +337,22 @@ long_mode:
     cmp rax, ENTRYTYPE_MULTIBOOT2
     je entry_type_multiboot2
     cmp rax, ENTRYTYPE_LINUX_32
-    je entry_type_linux_32
+    je entry_type_linux
+    cmp rax, ENTRYTYPE_LINUX_64
+    je entry_type_linux
     // Unreachable!
     jmp halt
 
-.extern __linux64_boot
+.extern __linux_boot
 .extern __multiboot_entry
 .extern __multiboot2_entry
 
-entry_type_linux_32:
+entry_type_linux:
     pop rdi // boot_params ptr
 
-    // Clear the frame pointer to stop backtracing here.
     xor rbp, rbp
 
-    lea  rax, [rip + __linux64_boot]  // jump into Rust code
+    lea  rax, [rip + __linux_boot]  // jump into Rust code
     call rax
     jmp halt
 
@@ -357,7 +360,6 @@ entry_type_multiboot:
     pop rsi // the address of multiboot info
     pop rdi // multiboot magic
 
-    // Clear the frame pointer to stop backtracing here.
     xor rbp, rbp
 
     lea  rax, [rip + __multiboot_entry]  // jump into Rust code
@@ -368,7 +370,6 @@ entry_type_multiboot2:
     pop rsi // the address of multiboot info
     pop rdi // multiboot magic
 
-    // Clear the frame pointer to stop backtracing here.
     xor rbp, rbp
 
     lea  rax, [rip + __multiboot2_entry]  // jump into Rust code

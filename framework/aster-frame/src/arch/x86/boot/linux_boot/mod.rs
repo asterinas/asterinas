@@ -138,9 +138,9 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     memory_regions.call_once(|| non_overlapping_regions_from(regions.as_ref()));
 }
 
-/// The entry point of Rust code called by the Linux 64-bit boot compatible bootloader.
+/// The entry point of of the Rust code portion of Asterinas.
 #[no_mangle]
-unsafe extern "sysv64" fn __linux64_boot(params_ptr: *const BootParams) -> ! {
+unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     let params = *params_ptr;
     assert_eq!({ params.hdr.header }, LINUX_BOOT_HEADER_MAGIC);
     BOOT_PARAMS.call_once(|| params);

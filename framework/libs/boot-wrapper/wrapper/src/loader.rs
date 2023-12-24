@@ -18,7 +18,9 @@ pub fn load_elf(file: &[u8]) {
 
     for ph in elf.program_iter() {
         let ProgramHeader::Ph64(program) = ph else {
-            panic!("[setup] Unexpected program header type! Asterinas should be 64-bit ELF binary.");
+            panic!(
+                "[setup] Unexpected program header type! Asterinas should be 64-bit ELF binary."
+            );
         };
         if program.get_type().unwrap() == xmas_elf::program::Type::Load {
             load_segment(&elf, program);
