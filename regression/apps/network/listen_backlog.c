@@ -27,7 +27,7 @@ static int new_connected_socket(struct sockaddr_in *addr)
 {
     int sockfd;
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    sockfd = socket(PF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         perror("new_connected_socket: socket");
         return -1;

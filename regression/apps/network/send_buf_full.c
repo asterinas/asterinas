@@ -31,7 +31,7 @@ static int new_connected_socket(struct sockaddr_in *addr)
 {
     int sockfd;
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    sockfd = socket(PF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         perror("new_connected_socket: socket");
         return -1;
@@ -199,8 +199,7 @@ int test_full_send_buffer(struct sockaddr_in *addr)
 
         // Ensure that the parent executes send() first, then the child
         // executes recv().
-        for (i = 0; i < 10; ++i)
-            sched_yield();
+        sleep(1);
 
         fprintf(stderr, "Start receiving...\n");
         recv_len = receive_all(recvfd);
@@ -262,8 +261,6 @@ out_listen:
 int main(void)
 {
     struct sockaddr_in addr;
-    int backlog;
-    int err = 0;
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(8080);

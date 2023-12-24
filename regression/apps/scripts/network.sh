@@ -4,7 +4,9 @@ set -e
 
 NETTEST_DIR=/regression/network
 cd ${NETTEST_DIR}
+
 echo "Start network test......"
+
 ./tcp_server &
 ./tcp_client
 ./udp_server &
@@ -12,5 +14,7 @@ echo "Start network test......"
 ./unix_server &
 ./unix_client
 ./socketpair
+./listen_backlog
+./send_buf_full
 
 echo "All network test passed"
