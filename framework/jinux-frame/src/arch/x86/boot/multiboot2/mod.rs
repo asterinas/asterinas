@@ -141,16 +141,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     }
 
     // Add the kernel region since Grub does not specify it.
-    // These are physical addresses provided by the linker script.
-    extern "C" {
-        fn __kernel_start();
-        fn __kernel_end();
-    }
-    regions.push(MemoryRegion::new(
-        __kernel_start as usize,
-        __kernel_end as usize - __kernel_start as usize,
-        MemoryRegionType::Kernel,
-    ));
+    regions.push(MemoryRegion::kernel());
 
     // Add the boot module region since Grub does not specify it.
     let mb2_module_tag = mb2_info.module_tags();

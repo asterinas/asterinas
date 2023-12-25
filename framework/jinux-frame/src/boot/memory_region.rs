@@ -40,6 +40,23 @@ impl MemoryRegion {
         MemoryRegion { base, len, typ }
     }
 
+    /// Construct a memory region where kernel sections are loaded.
+    ///
+    /// Most boot protocols do not mark the place where the kernel loads as unusable. In this case,
+    /// we need to explicitly construct and append this memory region.
+    pub fn kernel() -> Self {
+        // These are physical addresses provided by the linker script.
+        extern "C" {
+            fn __kernel_start();
+            fn __kernel_end();
+        }
+        MemoryRegion {
+            base: __kernel_start as usize,
+            len: __kernel_end as usize - __kernel_start as usize,
+            typ: MemoryRegionType::Kernel,
+        }
+    }
+
     /// The physical address of the base of the region.
     pub fn base(&self) -> usize {
         self.base

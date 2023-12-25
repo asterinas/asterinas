@@ -6,7 +6,7 @@ use boot_params::E820Type;
 
 use crate::boot::{
     kcmdline::KCmdlineArg,
-    memory_region::{MemoryRegion, MemoryRegionType},
+    memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
     BootloaderAcpiArg, BootloaderFramebufferArg,
 };
 use crate::{config::PHYS_OFFSET, vm::paddr_to_vaddr};
@@ -114,6 +114,8 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     let mut regions = Vec::<MemoryRegion>::new();
 
     let boot_params = BOOT_PARAMS.get().unwrap();
+
+    // Add regions from E820.
     let num_entries = boot_params.e820_entries as usize;
     for e820_entry in &boot_params.e820_table[0..num_entries] {
         regions.push(MemoryRegion::new(
@@ -123,7 +125,17 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         ));
     }
 
-    memory_regions.call_once(|| regions);
+    // Add the kernel region.
+    regions.push(MemoryRegion::kernel());
+
+    // Add the initramfs region.
+    regions.push(MemoryRegion::new(
+        boot_params.hdr.ramdisk_image as usize,
+        boot_params.hdr.ramdisk_size as usize,
+        MemoryRegionType::Module,
+    ));
+
+    memory_regions.call_once(|| non_overlapping_regions_from(regions.as_ref()));
 }
 
 /// The entry point of Rust code called by the Linux 64-bit boot compatible bootloader.
