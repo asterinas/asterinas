@@ -29,11 +29,9 @@ impl BoundDatagram {
     }
 
     pub fn remote_endpoint(&self) -> Result<IpEndpoint> {
-        if let Some(endpoint) = *self.remote_endpoint.read() {
-            Ok(endpoint)
-        } else {
-            return_errno_with_message!(Errno::EINVAL, "remote endpoint is not specified")
-        }
+        self.remote_endpoint
+            .read()
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "remote endpoint is not specified"))
     }
 
     pub fn set_remote_endpoint(&self, endpoint: IpEndpoint) {
@@ -41,11 +39,9 @@ impl BoundDatagram {
     }
 
     pub fn local_endpoint(&self) -> Result<IpEndpoint> {
-        if let Some(endpoint) = self.bound_socket.local_endpoint() {
-            Ok(endpoint)
-        } else {
-            return_errno_with_message!(Errno::EINVAL, "socket does not bind to local endpoint")
-        }
+        self.bound_socket.local_endpoint().ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "socket does not bind to local endpoint")
+        })
     }
 
     pub fn try_recvfrom(
@@ -54,11 +50,10 @@ impl BoundDatagram {
         flags: &SendRecvFlags,
     ) -> Result<(usize, IpEndpoint)> {
         poll_ifaces();
-        let recv_slice = |socket: &mut RawUdpSocket| match socket.recv_slice(buf) {
-            Err(smoltcp::socket::udp::RecvError::Exhausted) => {
-                return_errno_with_message!(Errno::EAGAIN, "recv buf is empty")
-            }
-            Ok((len, remote_endpoint)) => Ok((len, remote_endpoint)),
+        let recv_slice = |socket: &mut RawUdpSocket| {
+            socket
+                .recv_slice(buf)
+                .map_err(|_| Error::with_message(Errno::EAGAIN, "recv buf is empty"))
         };
         self.bound_socket.raw_with(recv_slice)
     }
@@ -72,9 +67,11 @@ impl BoundDatagram {
         let remote_endpoint = remote
             .or_else(|| self.remote_endpoint().ok())
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "udp should provide remote addr"))?;
-        let send_slice = |socket: &mut RawUdpSocket| match socket.send_slice(buf, remote_endpoint) {
-            Err(_) => return_errno_with_message!(Errno::ENOBUFS, "send udp packet fails"),
-            Ok(()) => Ok(buf.len()),
+        let send_slice = |socket: &mut RawUdpSocket| {
+            socket
+                .send_slice(buf, remote_endpoint)
+                .map(|_| buf.len())
+                .map_err(|_| Error::with_message(Errno::EAGAIN, "send udp packet fails"))
         };
         let len = self.bound_socket.raw_with(send_slice)?;
         poll_ifaces();
