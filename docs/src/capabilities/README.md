@@ -20,12 +20,12 @@ capabilities in a limited fashion, mostly as a means to limit the access from
 external users (e.g., via syscall), rather than a mechanism to enforce advanced
 security policies internally (e.g., module-level isolation).
 
-So we ask this question: is it possible to use capabilities as a _ubitiquous_ security primitive throughout Jinux to enhance the security and robustness of the
+So we ask this question: is it possible to use capabilities as a _ubitiquous_ security primitive throughout Asterinas to enhance the security and robustness of the
 OS? Specifically, we propose a new principle called "_everything is a capability_".
 Here, "everything" refers to any type of OS resource, internal or external alike.
 In traditional OSes, treating everything as a capability is unrewarding 
 because (1) capabilities themselves are unreliable due to memory safety problems
-, and (2) capabilities are no free lunch as they incur memory and CPU overheads. But these arguments may no longer stand in a well-designed Rust OS like Jinux.
+, and (2) capabilities are no free lunch as they incur memory and CPU overheads. But these arguments may no longer stand in a well-designed Rust OS like Asterinas.
 Because the odds of memory safety bugs are minimized and 
 advanced Rust features like type-level programming allow us to implement
 capabilities as a zero-cost abstraction.

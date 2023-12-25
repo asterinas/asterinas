@@ -1,4 +1,4 @@
-//! The system time of jinux
+//! The system time of Asterinas.
 #![no_std]
 #![forbid(unsafe_code)]
 

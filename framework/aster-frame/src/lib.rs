@@ -1,4 +1,4 @@
-//! The framework part of Jinux.
+//! The framework part of Asterinas.
 #![feature(alloc_error_handler)]
 #![feature(const_maybe_uninit_zeroed)]
 #![feature(const_mut_refs)]

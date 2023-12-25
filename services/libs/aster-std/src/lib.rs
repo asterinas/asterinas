@@ -1,4 +1,4 @@
-//! The std library of jinux
+//! The std library of Asterinas.
 #![no_std]
 #![forbid(unsafe_code)]
 #![allow(dead_code)]

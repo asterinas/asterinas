@@ -60,7 +60,7 @@ macro_rules! define_global_static_boot_arguments {
         ///
         /// For the introduction of a new boot protocol, the entry point could be a novel
         /// one. The entry point function should register all the boot initialization
-        /// methods before `jinux_main` is called. A boot initialization method takes a
+        /// methods before `aster_main` is called. A boot initialization method takes a
         /// reference of the global static boot information variable and initialize it,
         /// so that the boot information it represents could be accessed in the kernel
         /// anywhere.
@@ -104,16 +104,16 @@ pub fn init() {
 /// Call the framework-user defined entrypoint of the actual kernel.
 ///
 /// Any kernel that uses the aster-frame crate should define a function named
-/// `jinux_main` as the entrypoint.
-pub fn call_jinux_main() -> ! {
+/// `aster_main` as the entrypoint.
+pub fn call_aster_main() -> ! {
     #[cfg(not(ktest))]
     unsafe {
         // The entry point of kernel code, which should be defined by the package that
         // uses aster-frame.
         extern "Rust" {
-            fn jinux_main() -> !;
+            fn aster_main() -> !;
         }
-        jinux_main();
+        aster_main();
     }
     #[cfg(ktest)]
     {

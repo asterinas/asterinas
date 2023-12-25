@@ -1,4 +1,4 @@
-//! The block devices of jinux
+//! The block devices of Asterinas.
 #![no_std]
 #![forbid(unsafe_code)]
 #![feature(fn_traits)]

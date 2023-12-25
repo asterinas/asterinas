@@ -31,7 +31,7 @@ find . -name "*shell_cmd*"
 mkdir foo
 rmdir foo 
 
-echo "Hello world from jinux" > hello.txt
+echo "Hello world from asterinas" > hello.txt
 rm hello.txt
 
 cd ..

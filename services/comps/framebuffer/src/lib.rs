@@ -1,4 +1,4 @@
-//! The framebuffer of jinux
+//! The framebuffer of Asterinas.
 #![no_std]
 #![forbid(unsafe_code)]
 #![feature(strict_provenance)]

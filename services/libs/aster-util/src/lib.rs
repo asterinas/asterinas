@@ -1,4 +1,4 @@
-//! The util of jinux
+//! The util of Asterinas.
 #![no_std]
 #![forbid(unsafe_code)]
 
