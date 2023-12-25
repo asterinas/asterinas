@@ -111,9 +111,10 @@ impl From<E820Type> for MemoryRegionType {
 }
 
 fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
-    let boot_params = &BOOT_PARAMS.get().unwrap();
-    let num_entries = boot_params.e820_entries as usize;
     let mut regions = Vec::<MemoryRegion>::new();
+
+    let boot_params = BOOT_PARAMS.get().unwrap();
+    let num_entries = boot_params.e820_entries as usize;
     for e820_entry in &boot_params.e820_table[0..num_entries] {
         regions.push(MemoryRegion::new(
             e820_entry.addr as usize,
@@ -121,6 +122,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
             e820_entry.typ.into(),
         ));
     }
+
     memory_regions.call_once(|| regions);
 }
 
