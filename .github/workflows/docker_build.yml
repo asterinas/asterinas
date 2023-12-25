@@ -36,6 +36,6 @@ jobs:
           file: ./tools/docker/Dockerfile.ubuntu22.04
           platforms: linux/amd64
           push: true
-          tags: jinuxdev/jinux:${{ steps.fetch-versions.outputs.aster_version }}
+          tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}
           build-args: |
-            "JINUX_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"

@@ -21,7 +21,7 @@ pub fn run_gdb_client(path: &PathBuf, gdb_grub: bool) {
     let mut gdb_cmd = Command::new("gdb");
     // Set the architecture, otherwise GDB will complain about.
     gdb_cmd.arg("-ex").arg("set arch i386:x86-64:intel");
-    let grub_script = "/tmp/jinux-gdb-grub-script";
+    let grub_script = "/tmp/aster-gdb-grub-script";
     if gdb_grub {
         let grub_dir = PathBuf::from(qemu_grub_efi::GRUB_PREFIX)
             .join("lib")
@@ -41,7 +41,7 @@ pub fn run_gdb_client(path: &PathBuf, gdb_grub: bool) {
         for line in lines {
             if line.contains("target remote :1234") {
                 // Connect to the GDB server.
-                writeln!(f, "target remote /tmp/jinux-gdb-socket").unwrap();
+                writeln!(f, "target remote /tmp/aster-gdb-socket").unwrap();
             } else {
                 writeln!(f, "{}", line).unwrap();
             }
@@ -53,7 +53,7 @@ pub fn run_gdb_client(path: &PathBuf, gdb_grub: bool) {
         // Connect to the GDB server.
         gdb_cmd
             .arg("-ex")
-            .arg("target remote /tmp/jinux-gdb-socket");
+            .arg("target remote /tmp/aster-gdb-socket");
     }
     // Connect to the GDB server and run.
     println!("running:{:#?}", gdb_cmd);

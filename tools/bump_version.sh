@@ -9,10 +9,10 @@ update_cargo_versions() {
     sed -i "s/^version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\"$/version = \"${new_version}\"/g" $1
 }
 
-# Update Docker image versions (`jinuxdev/jinux:{version}`) in file $1
+# Update Docker image versions (`asterinas/asterinas:{version}`) in file $1
 update_image_versions() {
     echo "Updating file $1"
-    sed -i "s/jinuxdev\/jinux:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/jinuxdev\/jinux:${new_version}/g" $1
+    sed -i "s/asterinas\/asterinas:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/asterinas\/asterinas:${new_version}/g" $1
 }
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )

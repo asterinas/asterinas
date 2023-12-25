@@ -1,6 +1,6 @@
 # Asterinas Development Docker Images
 
-Asterinas development Docker images are provided to facilitate developing and testing Asterinas project. These images can be found in the [jinuxdev/jinux](https://hub.docker.com/r/jinuxdev/jinux/) repository on DockerHub.
+Asterinas development Docker images are provided to facilitate developing and testing Asterinas project. These images can be found in the [asterinas/asterinas](https://hub.docker.com/r/asterinas/asterinas/) repository on DockerHub.
 
 ## Building Docker Images
 
@@ -9,8 +9,8 @@ To build a Docker image for Asterinas and test it on your local machine, navigat
 ```bash
 docker buildx build \
     -f tools/docker/Dockerfile.ubuntu22.04 \
-    --build-arg JINUX_RUST_VERSION=$RUST_VERSION \
-    -t jinuxdev/jinux:$ASTER_VERSION \
+    --build-arg ASTER_RUST_VERSION=$RUST_VERSION \
+    -t asterinas/asterinas:$ASTER_VERSION \
     .
 ```
 
