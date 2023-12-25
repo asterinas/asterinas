@@ -1,8 +1,8 @@
 use core::hint::spin_loop;
 
 use alloc::{boxed::Box, string::ToString, sync::Arc};
-use jinux_frame::{io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
-use jinux_util::safe_ptr::SafePtr;
+use aster_frame::{io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
+use aster_util::safe_ptr::SafePtr;
 use log::info;
 use pod::Pod;
 
@@ -97,7 +97,7 @@ impl BlockDevice {
             .unwrap();
 
         fn handle_block_device(_: &TrapFrame) {
-            jinux_block::get_device(super::DEVICE_NAME)
+            aster_block::get_device(super::DEVICE_NAME)
                 .unwrap()
                 .handle_irq();
         }
@@ -107,7 +107,7 @@ impl BlockDevice {
         }
         device.transport.finish_init();
 
-        jinux_block::register_device(super::DEVICE_NAME.to_string(), Arc::new(device));
+        aster_block::register_device(super::DEVICE_NAME.to_string(), Arc::new(device));
 
         Ok(())
     }
@@ -120,7 +120,7 @@ impl BlockDevice {
     }
 }
 
-impl jinux_block::BlockDevice for BlockDevice {
+impl aster_block::BlockDevice for BlockDevice {
     fn read_block(&self, block_id: usize, buf: &mut [u8]) {
         self.read(block_id, buf);
     }

@@ -1,5 +1,5 @@
 [package]
-name = "jinux-network"
+name = "aster-network"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,9 +7,9 @@ edition = "2021"
 
 [dependencies]
 component = { path = "../../libs/comp-sys/component" }
-jinux-frame = { path = "../../../framework/jinux-frame" }
-jinux-util = { path = "../../libs/jinux-util" }
-jinux-rights = { path = "../../libs/jinux-rights" }
+aster-frame = { path = "../../../framework/aster-frame" }
+aster-util = { path = "../../libs/aster-util" }
+aster-rights = { path = "../../libs/aster-rights" }
 align_ext = { path = "../../../framework/libs/align_ext" }
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 bytes = { version = "1.4.0", default-features = false }

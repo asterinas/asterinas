@@ -1,5 +1,5 @@
 use alloc::{sync::Arc, vec::Vec};
-use jinux_frame::{
+use aster_frame::{
     bus::{
         mmio::{
             bus::{MmioDevice, MmioDriver},

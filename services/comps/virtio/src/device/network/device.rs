@@ -1,12 +1,12 @@
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
-use jinux_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
-use jinux_network::{
+use aster_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
+use aster_network::{
     buffer::{RxBuffer, TxBuffer},
     AnyNetworkDevice, EthernetAddr, NetDeviceIrqHandler, VirtioNetError,
 };
-use jinux_util::{field_ptr, slot_vec::SlotVec};
+use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
 use pod::Pod;
 use smoltcp::phy::{DeviceCapabilities, Medium};
@@ -87,7 +87,7 @@ impl NetworkDevice {
 
         /// Interrupt handler if network device receives some packet
         fn handle_network_event(_: &TrapFrame) {
-            jinux_network::handle_recv_irq(super::DEVICE_NAME);
+            aster_network::handle_recv_irq(super::DEVICE_NAME);
         }
 
         device
@@ -99,7 +99,7 @@ impl NetworkDevice {
             .register_queue_callback(QUEUE_RECV, Box::new(handle_network_event), false)
             .unwrap();
 
-        jinux_network::register_device(
+        aster_network::register_device(
             super::DEVICE_NAME.to_string(),
             Arc::new(SpinLock::new(Box::new(device))),
         );

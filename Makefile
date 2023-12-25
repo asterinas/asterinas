@@ -92,8 +92,8 @@ USERMODE_TESTABLE := \
     services/libs/cpio-decoder \
     services/libs/int-to-c-enum \
     services/libs/int-to-c-enum/derive \
-    services/libs/jinux-rights \
-    services/libs/jinux-rights-proc \
+    services/libs/aster-rights \
+    services/libs/aster-rights-proc \
     services/libs/keyable-arc \
     services/libs/typeflags \
     services/libs/typeflags-util

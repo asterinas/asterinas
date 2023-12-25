@@ -2,9 +2,9 @@
 //!
 //! Use `init` to initialize this module.
 use alloc::sync::Arc;
+use aster_frame::arch::{read_tsc, x86::tsc_freq};
+use aster_frame::timer::Timer;
 use core::time::Duration;
-use jinux_frame::arch::{read_tsc, x86::tsc_freq};
-use jinux_frame::timer::Timer;
 use spin::Once;
 
 use crate::clocksource::{ClockSource, Instant};

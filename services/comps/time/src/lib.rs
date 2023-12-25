@@ -5,9 +5,9 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
+use aster_frame::sync::Mutex;
 use component::{init_component, ComponentInitError};
 use core::{sync::atomic::Ordering::Relaxed, time::Duration};
-use jinux_frame::sync::Mutex;
 use spin::Once;
 
 use clocksource::ClockSource;

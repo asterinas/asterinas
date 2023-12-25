@@ -1,9 +1,9 @@
 use core::hint::spin_loop;
 
 use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
-use jinux_console::{AnyConsoleDevice, ConsoleCallback};
-use jinux_frame::{config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
-use jinux_util::safe_ptr::SafePtr;
+use aster_console::{AnyConsoleDevice, ConsoleCallback};
+use aster_frame::{config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
+use aster_util::safe_ptr::SafePtr;
 use log::debug;
 
 use crate::{
@@ -130,14 +130,14 @@ impl ConsoleDevice {
             .unwrap();
         device.transport.finish_init();
 
-        jinux_console::register_device(DEVICE_NAME.to_string(), Arc::new(device));
+        aster_console::register_device(DEVICE_NAME.to_string(), Arc::new(device));
 
         Ok(())
     }
 }
 
 fn handle_console_input(_: &TrapFrame) {
-    jinux_console::get_device(DEVICE_NAME).unwrap().handle_irq();
+    aster_console::get_device(DEVICE_NAME).unwrap().handle_irq();
 }
 
 fn config_space_change(_: &TrapFrame) {

@@ -1,13 +1,13 @@
 use core::fmt::Debug;
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use jinux_frame::{
+use aster_frame::{
     io_mem::IoMem,
     sync::RwLock,
     trap::{IrqCallbackFunction, IrqLine, TrapFrame},
 };
-use jinux_rights::{ReadOp, TRightSet, WriteOp};
-use jinux_util::safe_ptr::SafePtr;
+use aster_rights::{ReadOp, TRightSet, WriteOp};
+use aster_util::safe_ptr::SafePtr;
 
 /// Multiplexing Irqs. The two interrupt types (configuration space change and queue interrupt)
 /// of the virtio-mmio device share the same IRQ, so `MultiplexIrq` are used to distinguish them.

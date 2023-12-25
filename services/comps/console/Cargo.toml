@@ -1,5 +1,5 @@
 [package]
-name = "jinux-console"
+name = "aster-console"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 bitflags = "1.3"
 spin = "0.9.4"
-jinux-frame = { path = "../../../framework/jinux-frame" }
-jinux-util = { path = "../../libs/jinux-util" }
+aster-frame = { path = "../../../framework/aster-frame" }
+aster-util = { path = "../../libs/aster-util" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 

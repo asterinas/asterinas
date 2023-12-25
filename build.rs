@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let linker_script_path = if target == "x86_64" {
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("framework")
-            .join("jinux-frame")
+            .join("aster-frame")
             .join("src")
             .join("arch")
             .join("x86")

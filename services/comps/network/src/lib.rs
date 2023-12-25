@@ -13,14 +13,14 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use aster_frame::sync::SpinLock;
+use aster_util::safe_ptr::Pod;
 use buffer::RxBuffer;
 use buffer::TxBuffer;
 use component::init_component;
 use component::ComponentInitError;
 use core::any::Any;
 use core::fmt::Debug;
-use jinux_frame::sync::SpinLock;
-use jinux_util::safe_ptr::Pod;
 use smoltcp::phy;
 use spin::Once;
 

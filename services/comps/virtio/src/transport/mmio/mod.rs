@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use jinux_frame::bus::mmio::MMIO_BUS;
+use aster_frame::bus::mmio::MMIO_BUS;
 use spin::Once;
 
 use self::driver::VirtioMmioDriver;

@@ -1,4 +1,4 @@
-use jinux_frame::{
+use aster_frame::{
     bus::{
         pci::{
             bus::PciDevice, capability::CapabilityData, common_device::PciCommonDevice, PciDeviceId,
@@ -12,8 +12,8 @@ use jinux_frame::{
 };
 
 use alloc::{boxed::Box, sync::Arc};
+use aster_util::{field_ptr, safe_ptr::SafePtr};
 use core::fmt::Debug;
-use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use log::{info, warn};
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};
