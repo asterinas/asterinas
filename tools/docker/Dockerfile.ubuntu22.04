@@ -182,15 +182,15 @@ RUN make defconfig \
     && sed -i "s/# CONFIG_FEATURE_SH_STANDALONE is not set/CONFIG_FEATURE_SH_STANDALONE=y/g" .config \
     && make -j
 
-#= The final stages to produce the Jinux development image ====================
+#= The final stages to produce the Asterinas development image ====================
 
 FROM build-base as rust
 
 # Install Rust
 ENV PATH="/root/.cargo/bin:${PATH}"
-ARG JINUX_RUST_VERSION
+ARG ASTER_RUST_VERSION
 RUN curl https://sh.rustup.rs -sSf | \
-        sh -s -- --default-toolchain ${JINUX_RUST_VERSION} -y \
+        sh -s -- --default-toolchain ${ASTER_RUST_VERSION} -y \
     && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \
     && cargo -V \
     && rustup component add rust-src rustc-dev llvm-tools-preview
@@ -202,7 +202,7 @@ RUN cargo install \
 
 FROM rust
 
-# Install all Jinux dependent packages
+# Install all Asterinas dependent packages
 RUN apt update && apt-get install -y --no-install-recommends \
     cpio \
     cpuid \
@@ -226,7 +226,7 @@ RUN apt clean && rm -rf /var/lib/apt/lists/*
 
 # Prepare the system call test suite
 COPY --from=syscall_test /root/syscall_test/build/syscall_test_bins /root/syscall_test_bins
-ENV JINUX_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
+ENV ASTER_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
 
 # Install QEMU built from the previous stages
 COPY --from=qemu /usr/local/qemu /usr/local/qemu
@@ -249,9 +249,9 @@ COPY --from=busybox /root/busybox/busybox /bin/busybox
 # Install benchmarks built from the previous stages
 COPY --from=build-benchmarks /usr/local/benchmark /usr/local/benchmark
 
-# Add the path of jinux tools
-ENV PATH="/root/jinux/target/bin:${PATH}"
+# Add the path of Asterinas tools
+ENV PATH="/root/asterinas/target/bin:${PATH}"
 
-VOLUME [ "/root/jinux" ]
+VOLUME [ "/root/asterinas" ]
 
-WORKDIR /root/jinux
+WORKDIR /root/asterinas

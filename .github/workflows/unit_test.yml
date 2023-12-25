@@ -10,9 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: jinuxdev/jinux:0.2.2
+    container: asterinas/asterinas:0.2.2
     steps:
-      - run: echo "Running in jinuxdev/jinux:0.2.2"
+      - run: echo "Running in asterinas/asterinas:0.2.2"
 
       - uses: actions/checkout@v3
 

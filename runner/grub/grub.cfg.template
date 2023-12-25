@@ -7,7 +7,7 @@
 set timeout_style=#GRUB_TIMEOUT_STYLE#
 set timeout=#GRUB_TIMEOUT#
 
-menuentry 'jinux' {
+menuentry 'asterinas' {
     #GRUB_CMD_KERNEL# #KERNEL# #KERNEL_COMMAND_LINE#
     #GRUB_CMD_INITRAMFS# /boot/initramfs.cpio.gz
     boot
