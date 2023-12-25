@@ -1,4 +1,4 @@
-//! The console device of jinux
+//! The console device of Asterinas.
 #![no_std]
 #![forbid(unsafe_code)]
 #![feature(fn_traits)]

@@ -1,4 +1,4 @@
-//！This crate defines the require procedural macros to implement capability for jinux.
+//！This crate defines the require procedural macros to implement capability for Asterinas.
 //! When use this crate, typeflags and typeflags-util should also be added as dependency.
 //!
 //! The require macro are used to ensure that an object has the enough capability to call the function.

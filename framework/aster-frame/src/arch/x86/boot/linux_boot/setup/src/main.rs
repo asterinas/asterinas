@@ -9,7 +9,7 @@ use core::arch::{asm, global_asm};
 
 global_asm!(include_str!("header.S"));
 
-unsafe fn call_jinux_entrypoint(entrypoint: u32, boot_params_ptr: u32) -> ! {
+unsafe fn call_aster_entrypoint(entrypoint: u32, boot_params_ptr: u32) -> ! {
     asm!("mov esi, {}", in(reg) boot_params_ptr);
     asm!("mov eax, {}", in(reg) entrypoint);
     asm!("jmp eax");
@@ -34,7 +34,7 @@ pub extern "cdecl" fn _rust_setup_entry(boot_params_ptr: u32) -> ! {
     println!("[setup] entrypoint: {:#x}", entrypoint);
 
     // Safety: the entrypoint and the ptr is valid.
-    unsafe { call_jinux_entrypoint(entrypoint, boot_params_ptr) };
+    unsafe { call_aster_entrypoint(entrypoint, boot_params_ptr) };
 }
 
 #[panic_handler]

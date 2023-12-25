@@ -1,4 +1,4 @@
-//！This crate defines the procedural macro typeflags to implement capability for jinux.
+//！This crate defines the procedural macro typeflags to implement capability for Asterinas.
 //! When using this crate, typeflags-util should also be added as dependency.
 //! This is due to typeflgas is a proc-macro crate, which is only allowed to export proc-macro interfaces.
 //! So we leave the common type-level operations and structures defined in typeflags-util.

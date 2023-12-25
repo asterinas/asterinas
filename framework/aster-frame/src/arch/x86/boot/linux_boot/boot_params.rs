@@ -3,7 +3,7 @@
 //! The bootloader will deliver the address of the `BootParams` struct
 //! as the argument of the kernel entrypoint. So we must define a Linux
 //! ABI compatible struct in Rust, despite that most of the fields are
-//! currently not needed by Jinux.
+//! currently not needed by Asterinas.
 //!
 
 #[derive(Copy, Clone, Debug)]

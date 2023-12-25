@@ -1,9 +1,9 @@
-//! # The kernel mode testing framework of Jinux.
+//! # The kernel mode testing framework of Asterinas.
 //!
 //! `ktest` stands for kernel-mode testing framework. Its goal is to provide a
 //! `cargo test`-like experience for any `#![no_std]` bare metal crates.
 //!
-//! In Jinux, all the tests written in the source tree of the crates will be run
+//! In Asterinas, all the tests written in the source tree of the crates will be run
 //! immediately after the initialization of aster-frame. Thus you can use any
 //! feature provided by the frame including the heap allocator, etc.
 //!

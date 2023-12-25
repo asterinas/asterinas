@@ -1,6 +1,6 @@
 //! The module to parse kernel command-line arguments.
 //!
-//! The format of the Jinux command line string conforms
+//! The format of the Asterinas command line string conforms
 //! to the Linux kernel command line rules:
 //!
 //! https://www.kernel.org/doc/html/v6.4/admin-guide/kernel-parameters.html

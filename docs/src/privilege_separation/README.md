@@ -1,15 +1,15 @@
 # Privilege Separation
 
-One fundamental design goal of Jinux is to support _privilege separation_, i.e., the separation between the privileged OS core and the unprivileged OS components. The privileged portion is allowed to use `unsafe` keyword to carry out dangerous tasks like accessing CPU registers, manipulating stack frames, and doing MMIO or PIO. In contrast, the unprivileged portion, which forms the majority of the OS, must be free from `unsafe` code. With privilege separation, the memory safety of Jinux can be boiled down to the correctness of the privileged OS core, regardless of the correctness of the unprivileged OS components, thus reducing the size of TCB  significantly.
+One fundamental design goal of Asterinas is to support _privilege separation_, i.e., the separation between the privileged OS core and the unprivileged OS components. The privileged portion is allowed to use `unsafe` keyword to carry out dangerous tasks like accessing CPU registers, manipulating stack frames, and doing MMIO or PIO. In contrast, the unprivileged portion, which forms the majority of the OS, must be free from `unsafe` code. With privilege separation, the memory safety of Asterinas can be boiled down to the correctness of the privileged OS core, regardless of the correctness of the unprivileged OS components, thus reducing the size of TCB  significantly.
 
 To put privilege separation into perspective, let's compare the architectures
-of the monolithic kernels, microkernels, and Jinux.
+of the monolithic kernels, microkernels, and Asterinas.
 
 ![Arch comparison](../images/arch_comparison.png)
 
 The diagram above highlights the characteristics of different OS architectures 
 in terms of communication overheads and the TCB for memory safety.
-Thanks to privilege separation, Jinux promises the benefit of being _as safe as a microkernel and as fast as a monolithic kernel_.
+Thanks to privilege separation, Asterinas promises the benefit of being _as safe as a microkernel and as fast as a monolithic kernel_.
 
 Privilege separation is an interesting research problem, prompting us to 
 answer a series of technical questions.

@@ -1,6 +1,6 @@
 # Zero-Cost Capabilities
 
-To strengthen the security of Jinux, we aim to implement all kinds of OS resources
+To strengthen the security of Asterinas, we aim to implement all kinds of OS resources
 as capabilities. As the capabilities are going to be used throughout the OS,
 it is highly desirable to minimize their costs. For this purpose,
 we want to implement capabilities as a _zero-cost abstraction_.

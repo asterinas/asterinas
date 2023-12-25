@@ -9,8 +9,8 @@
 // Some of the fields filled with a 0xab* values should be filled
 // by the runner, which is the only tool after building and can
 // access the info of the payload.
-// Jinux will use only a few of these fields, and some of them
-// are filled by the loader and will be read by Jinux.
+// Asterinas will use only a few of these fields, and some of them
+// are filled by the loader and will be read by Asterinas.
 
 CODE32_START = 0x100000
 

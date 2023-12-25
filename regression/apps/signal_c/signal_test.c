@@ -184,7 +184,7 @@ int test_handle_sigfpe() {
     c = div_maybe_zero(a, b);
     fxsave(y);
 
-    // jinux does not save and restore fpregs now, so we emit this check.
+    // Asterinas does not save and restore fpregs now, so we emit this check.
     // if (memcmp(x, y, 512) != 0) {
     //     THROW_ERROR("floating point registers are modified");
     // }

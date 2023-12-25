@@ -14,7 +14,7 @@
 
 # Introduction
 
-This document describes Jinux, a secure, fast, and modern OS written in Rust.
+This document describes Asterinas, a secure, fast, and modern OS written in Rust.
 
 As the project is a work in progress, this document is by no means complete.
 Despite the incompleteness, this evolving document serves several important purposes:
@@ -50,7 +50,7 @@ OSes, e.g., [Kerla](https://github.com/nuta/kerla),
 and [zCore](https://github.com/rcore-os/zCore). Despite their varying degrees of
 success, none of them are general-purpose, industrial-strength OSes that are or
 will ever be competitive with Linux. Eventually, a winner will emerge out of this
-market of Rust OSes, and Jinux is our bet for this competition.
+market of Rust OSes, and Asterinas is our bet for this competition.
 
 Second, Rust OSes are a perfect fit for
 [Trusted Execution Environments (TEEs)](https://en.wikipedia.org/wiki/Trusted_execution_environment).
@@ -79,24 +79,24 @@ relational databases:
 [Oracle and IBM are losing ground as Chinese vendors catch up with their US counterparts](https://www.theregister.com/2022/07/06/international_database_vendors_are_losing/).
 Can such success stories be repeated in the field of OSes? I think so.
 There are some China's home-grown OSes like [openKylin](https://www.openkylin.top/index.php?lang=en), but all of them are based on Linux and lack a self-developed
-OS _kernel_. The long-term goal of Jinux is to fill this key missing core of the home-grown OSes.
+OS _kernel_. The long-term goal of Asterinas is to fill this key missing core of the home-grown OSes.
 
 ## Architecture Overview
 
-Here is an overview of the architecture of Jinux.
+Here is an overview of the architecture of Asterinas.
 
 ![architecture overview](images/arch_overview.png)
 
 ## Features
 
-**1. Security by design.** Security is our top priority in the design of Jinux. As such, we adopt the widely acknowledged security best practice of [least privilege principle](https://en.wikipedia.org/wiki/Principle_of_least_privilege) and enforce it in a fashion that leverages the full strengths of Rust. To do so, we partition Jinux into two halves: a _privileged_ OS core and _unprivileged_ OS components. All OS components are written entirely in _safe_ Rust and only the privileged OS core
+**1. Security by design.** Security is our top priority in the design of Asterinas. As such, we adopt the widely acknowledged security best practice of [least privilege principle](https://en.wikipedia.org/wiki/Principle_of_least_privilege) and enforce it in a fashion that leverages the full strengths of Rust. To do so, we partition Asterinas into two halves: a _privileged_ OS core and _unprivileged_ OS components. All OS components are written entirely in _safe_ Rust and only the privileged OS core
 is allowed to have _unsafe_ Rust code. Furthermore, we propose the idea of _everything-is-a-capability_, which elevates the status of [capabilities](https://en.wikipedia.org/wiki/Capability-based_security) to the level of a ubiquitous security primitive used throughout the OS. We make novel use of Rust's advanced features (e.g., [type-level programming](https://willcrichton.net/notes/type-level-programming/)) to make capabilities more accessible and efficient. The net result is improved security and uncompromised performance.
 
-**2. Trustworthy OS-level virtualization.** OS-level virtualization mechanisms (like Linux's cgroups and namespaces) enable containers, a more lightweight and arguably more popular alternative to virtual machines (VMs). But there is one problem with containers: they are not as secure as VMs (see [StackExchange](https://security.stackexchange.com/questions/169642/what-makes-docker-more-secure-than-vms-or-bare-metal), [LWN](https://lwn.net/Articles/796700/), and [AWS](https://docs.aws.amazon.com/AmazonECS/latest/bestpracticesguide/security-tasks-containers.html)). There is a real risk that malicious containers may exploit privilege escalation bugs in the OS kernel to attack the host. [A study](https://dl.acm.org/doi/10.1145/3274694.3274720) found that 11 out of 88 kernel exploits are effective in breaking the container sandbox. The seemingly inherent insecurity of OS kernels leads to a new breed of container implementations (e.g., [Kata](https://katacontainers.io/) and [gVisor](https://gvisor.dev/)) that are based on VMs, instead of kernels, for isolation and sandboxing. We argue that this unfortunate retreat from OS-level virtualization to VM-based one is unwarranted---if the OS kernels are secure enough. And this is exactly what we plan to achieve with Jinux. We aim to provide a trustworthy OS-level virtualization mechanism on Jinux.
+**2. Trustworthy OS-level virtualization.** OS-level virtualization mechanisms (like Linux's cgroups and namespaces) enable containers, a more lightweight and arguably more popular alternative to virtual machines (VMs). But there is one problem with containers: they are not as secure as VMs (see [StackExchange](https://security.stackexchange.com/questions/169642/what-makes-docker-more-secure-than-vms-or-bare-metal), [LWN](https://lwn.net/Articles/796700/), and [AWS](https://docs.aws.amazon.com/AmazonECS/latest/bestpracticesguide/security-tasks-containers.html)). There is a real risk that malicious containers may exploit privilege escalation bugs in the OS kernel to attack the host. [A study](https://dl.acm.org/doi/10.1145/3274694.3274720) found that 11 out of 88 kernel exploits are effective in breaking the container sandbox. The seemingly inherent insecurity of OS kernels leads to a new breed of container implementations (e.g., [Kata](https://katacontainers.io/) and [gVisor](https://gvisor.dev/)) that are based on VMs, instead of kernels, for isolation and sandboxing. We argue that this unfortunate retreat from OS-level virtualization to VM-based one is unwarranted---if the OS kernels are secure enough. And this is exactly what we plan to achieve with Asterinas. We aim to provide a trustworthy OS-level virtualization mechanism on Asterinas.
 
-**3. Fast user-mode development.** Traditional OS kernels like Linux are hard to develop, test, and debug. Kernel development involves countless rounds of programming, failing, and rebooting on bare-metal or virtual machines. This way of life is unproductive and painful. Such a pain point is also recognized and partially addressed by [research work](https://www.usenix.org/conference/fast21/presentation/miller), but we think we can do more. In this spirit, we design the OS core to provide high-level APIs that are largely independent of the underlying hardware and implement it with two targets: one target is as part of a regular OS in kernel space and the other is as a library OS in user space. This way, all the OS components of Jinux, which are stacked above the OS core, can be developed, tested, and debugged in user space, which is more friendly to developers than kernel space.
+**3. Fast user-mode development.** Traditional OS kernels like Linux are hard to develop, test, and debug. Kernel development involves countless rounds of programming, failing, and rebooting on bare-metal or virtual machines. This way of life is unproductive and painful. Such a pain point is also recognized and partially addressed by [research work](https://www.usenix.org/conference/fast21/presentation/miller), but we think we can do more. In this spirit, we design the OS core to provide high-level APIs that are largely independent of the underlying hardware and implement it with two targets: one target is as part of a regular OS in kernel space and the other is as a library OS in user space. This way, all the OS components of Asterinas, which are stacked above the OS core, can be developed, tested, and debugged in user space, which is more friendly to developers than kernel space.
 
-**4. High-fidelity Linux ABI.** An OS without usable applications is useless. So we believe it is important for Jinux to fit in an established and thriving ecosystem of software, such as the one around Linux. This is why we conclude that Jinux should aim at implementing high-fidelity Linux ABI, including the system calls, the proc file system, etc.
+**4. High-fidelity Linux ABI.** An OS without usable applications is useless. So we believe it is important for Asterinas to fit in an established and thriving ecosystem of software, such as the one around Linux. This is why we conclude that Asterinas should aim at implementing high-fidelity Linux ABI, including the system calls, the proc file system, etc.
 
 **5. TEEs as top-tier targets.** (Todo)
 

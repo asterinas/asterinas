@@ -22,7 +22,7 @@ Here are some of the elements in PCI-based Virtio devices that may involve `unsa
 ### Privileged part
 
 ```rust
-// file: jinux-core-libs/pci-io-port/lib.rs
+// file: aster-core-libs/pci-io-port/lib.rs
 use x86::IoPort;
 
 /// The I/O port to write an address in the PCI 
@@ -49,7 +49,7 @@ pub const PCI_DATA_PORT: IoPort<u32> = {
 ### Unprivileged part
 
 ```rust
-// file: jinux-comps/pci/lib.rs
+// file: aster-comps/pci/lib.rs
 use pci_io_port::{PCI_ADDR_PORT, PCI_DATA_PORT};
 
 /// The PCI configuration space, which enables the discovery,
@@ -128,7 +128,7 @@ pub struct PciCapabilities {
 Most code of Virtio drivers can be unprivileged thanks to the abstractions of `VmPager` and `VmCell` provided by the OS core.
 
 ```rust
-// file: jinux-comp-libs/virtio/transport.rs
+// file: aster-comp-libs/virtio/transport.rs
 
 /// The transport layer for configuring a Virtio device.
 pub struct VirtioTransport {

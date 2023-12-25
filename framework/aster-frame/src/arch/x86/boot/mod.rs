@@ -1,4 +1,4 @@
-//! The x86 boot module defines the entrypoints of Jinux and
+//! The x86 boot module defines the entrypoints of Asterinas and
 //! the corresponding headers for different x86 boot protocols.
 //!
 //! We directly support
@@ -9,7 +9,7 @@
 //!
 //! without any additional configurations.
 //!
-//! Jinux diffrentiates the boot protocol by the entry point
+//! Asterinas diffrentiates the boot protocol by the entry point
 //! chosen by the boot loader. In each entry point function,
 //! the universal callback registeration method from
 //! `crate::boot` will be called. Thus the initialization of

@@ -1,7 +1,7 @@
 //! The content of this crate is from another project CapComp.
 //! This crate defines common type level operations, like SameAsOp, and Bool type operations.
 //! Besides, this crate defines operations to deal with type sets, like SetContain and SetInclude.
-//! When use jinux-typeflags or aster-rights-poc, this crate should also be added as a dependency.
+//! When use typeflags or aster-rights-poc, this crate should also be added as a dependency.
 #![no_std]
 pub mod assert;
 pub mod bool;

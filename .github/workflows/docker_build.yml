@@ -26,7 +26,7 @@ jobs:
       - name: Fetch versions in the repo
         id: fetch-versions
         run: |
-          echo "jinux_version=$( cat VERSION )" >> "$GITHUB_OUTPUT"
+          echo "aster_version=$( cat VERSION )" >> "$GITHUB_OUTPUT"
           echo "rust_version=$( grep -m1 -o 'nightly-[0-9]\+-[0-9]\+-[0-9]\+' rust-toolchain.toml )" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
@@ -36,6 +36,6 @@ jobs:
           file: ./tools/docker/Dockerfile.ubuntu22.04
           platforms: linux/amd64
           push: true
-          tags: jinuxdev/jinux:${{ steps.fetch-versions.outputs.jinux_version }}
+          tags: jinuxdev/jinux:${{ steps.fetch-versions.outputs.aster_version }}
           build-args: |
             "JINUX_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
