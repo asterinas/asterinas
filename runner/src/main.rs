@@ -1,8 +1,8 @@
-//! jinux-runner is the Jinux runner script to ease the pain of running
-//! and testing Jinux inside a QEMU VM. It should be built and run as the
+//! aster-runner is the Asterinas runner script to ease the pain of running
+//! and testing Asterinas inside a QEMU VM. It should be built and run as the
 //! cargo runner: https://doc.rust-lang.org/cargo/reference/config.html
 //!
-//! The runner will generate the filesystem image for starting Jinux. If
+//! The runner will generate the filesystem image for starting Asterinas. If
 //! we should use the runner in the default mode, which invokes QEMU with
 //! a GRUB boot device image, the runner would be responsible for generating
 //! the appropriate kernel image and the boot device image. It also supports
@@ -40,7 +40,7 @@ pub enum BootProtocol {
 #[command(author, version, about, long_about = None)]
 struct Args {
     // Positional arguments.
-    /// The Jinux binary path.
+    /// The Asterinas binary path.
     path: PathBuf,
 
     /// Provide the kernel commandline, which specifies
@@ -117,7 +117,7 @@ pub fn random_hostfwd_ports() -> (u16, u16) {
 
 pub const GDB_ARGS: &[&str] = &[
     "-chardev",
-    "socket,path=/tmp/jinux-gdb-socket,server=on,wait=off,id=gdb0",
+    "socket,path=/tmp/aster-gdb-socket,server=on,wait=off,id=gdb0",
     "-gdb",
     "chardev:gdb0",
     "-S",
@@ -145,13 +145,13 @@ fn main() {
         port1, port2
     ));
     println!(
-        "[jinux-runner] Binding host ports to guest ports: ({} -> {}); ({} -> {}).",
+        "[aster-runner] Binding host ports to guest ports: ({} -> {}); ({} -> {}).",
         port1, 22, port2, 8080
     );
 
     if args.halt_for_gdb {
         if args.enable_kvm {
-            println!("[jinux-runner] Can't enable KVM when running QEMU as a GDB server. Abort.");
+            println!("[aster-runner] Can't enable KVM when running QEMU as a GDB server. Abort.");
             return;
         }
         qemu_cmd.args(GDB_ARGS);
@@ -206,7 +206,7 @@ fn main() {
         qemu_cmd.arg(bootdev_image.as_os_str());
     }
 
-    println!("[jinux-runner] Running: {:#?}", qemu_cmd);
+    println!("[aster-runner] Running: {:#?}", qemu_cmd);
 
     let exit_status = qemu_cmd.status().unwrap();
     if !exit_status.success() {

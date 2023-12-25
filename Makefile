@@ -1,4 +1,4 @@
-# Make varaiables and defaults, you should refer to jinux-runner for more details
+# Make varaiables and defaults, you should refer to aster-runner for more details
 AUTO_TEST ?= none
 BOOT_METHOD ?= qemu-grub
 BOOT_PROTOCOL ?= multiboot2
