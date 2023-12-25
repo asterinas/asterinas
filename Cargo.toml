@@ -1,10 +1,10 @@
 [package]
-name = "jinux"
+name = "asterinas"
 version = "0.2.2"
 edition = "2021"
 
 [[bin]]
-name = "jinux"
+name = "asterinas"
 path = "kernel/main.rs"
 
 [dependencies]

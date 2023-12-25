@@ -335,6 +335,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "asterinas"
+version = "0.2.2"
+dependencies = [
+ "aster-frame",
+ "aster-framebuffer",
+ "aster-std",
+ "aster-time",
+ "component",
+ "x86_64",
+]
+
+[[package]]
 name = "atomic-polyfill"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -822,18 +834,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
 dependencies = [
  "either",
-]
-
-[[package]]
-name = "jinux"
-version = "0.2.2"
-dependencies = [
- "aster-frame",
- "aster-framebuffer",
- "aster-std",
- "aster-time",
- "component",
- "x86_64",
 ]
 
 [[package]]
