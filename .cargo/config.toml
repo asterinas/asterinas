@@ -1,6 +1,6 @@
 
 [target.'cfg(target_os = "none")']
-runner = "cargo run --package jinux-runner --"
+runner = "cargo run --package aster-runner --"
 
 [alias]
 kcheck = "check --target x86_64-custom.json -Zbuild-std=core,alloc,compiler_builtins -Zbuild-std-features=compiler-builtins-mem"

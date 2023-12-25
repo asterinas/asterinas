@@ -70,13 +70,13 @@ pub const GRUB_PREFIX: &str = "/usr/local/grub";
 pub const GRUB_VERSION: &str = "x86_64-efi";
 
 pub fn create_bootdev_image(
-    jinux_path: PathBuf,
+    atser_path: PathBuf,
     initramfs_path: PathBuf,
     grub_cfg: String,
     protocol: BootProtocol,
     release_mode: bool,
 ) -> PathBuf {
-    let target_dir = jinux_path.parent().unwrap();
+    let target_dir = atser_path.parent().unwrap();
     let iso_root = target_dir.join("iso_root");
 
     // Clear or make the iso dir.
@@ -105,15 +105,15 @@ pub fn create_bootdev_image(
                 .join("bin")
                 .join("aster-frame-x86-boot-linux-setup");
             // Make the `bzImage`-compatible kernel image and place it in the boot directory.
-            let target_path = iso_root.join("boot").join("jinuz");
-            linux_boot::make_bzimage(&target_path, &jinux_path.as_path(), &header_path.as_path())
+            let target_path = iso_root.join("boot").join("asterinaz");
+            linux_boot::make_bzimage(&target_path, &atser_path.as_path(), &header_path.as_path())
                 .unwrap();
             target_path
         }
         BootProtocol::Multiboot | BootProtocol::Multiboot2 => {
             // Copy the kernel image to the boot directory.
-            let target_path = iso_root.join("boot").join("jinux");
-            fs::copy(&jinux_path, &target_path).unwrap();
+            let target_path = iso_root.join("boot").join("atserinas");
+            fs::copy(&atser_path, &target_path).unwrap();
             target_path
         }
     };
@@ -164,15 +164,15 @@ pub fn generate_grub_cfg(
     let buffer = match protocol {
         BootProtocol::Multiboot => buffer
             .replace("#GRUB_CMD_KERNEL#", "multiboot")
-            .replace("#KERNEL#", "/boot/jinux")
+            .replace("#KERNEL#", "/boot/atserinas")
             .replace("#GRUB_CMD_INITRAMFS#", "module --nounzip"),
         BootProtocol::Multiboot2 => buffer
             .replace("#GRUB_CMD_KERNEL#", "multiboot2")
-            .replace("#KERNEL#", "/boot/jinux")
+            .replace("#KERNEL#", "/boot/atserinas")
             .replace("#GRUB_CMD_INITRAMFS#", "module2 --nounzip"),
         BootProtocol::Linux => buffer
             .replace("#GRUB_CMD_KERNEL#", "linux")
-            .replace("#KERNEL#", "/boot/jinuz")
+            .replace("#KERNEL#", "/boot/asterinaz")
             .replace("#GRUB_CMD_INITRAMFS#", "initrd"),
     };
 
