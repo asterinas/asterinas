@@ -47,7 +47,7 @@ fn header_to_raw_binary(elf_file: &[u8]) -> Vec<u8> {
 /// This function sould be used when generating the Linux x86 Boot setup header.
 /// Some fields in the Linux x86 Boot setup header should be filled after assembled.
 /// And the filled fields must have the bytes with values of 0xAB. See
-/// `framework/jinux-frame/src/arch/x86/boot/linux_boot/setup/src/header.S` for more
+/// `framework/aster-frame/src/arch/x86/boot/linux_boot/setup/src/header.S` for more
 /// info on this mechanism.
 fn fill_header_field(header: &mut [u8], offset: usize, value: &[u8]) {
     let size = value.len();

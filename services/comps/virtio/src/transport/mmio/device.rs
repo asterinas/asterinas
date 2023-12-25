@@ -1,6 +1,5 @@
 use alloc::{boxed::Box, sync::Arc};
-use core::mem::size_of;
-use jinux_frame::{
+use aster_frame::{
     bus::mmio::{
         bus::MmioDevice,
         device::{MmioCommonDevice, VirtioMmioVersion},
@@ -12,8 +11,9 @@ use jinux_frame::{
     trap::IrqCallbackFunction,
     vm::DmaCoherent,
 };
-use jinux_rights::{ReadOp, WriteOp};
-use jinux_util::{field_ptr, safe_ptr::SafePtr};
+use aster_rights::{ReadOp, WriteOp};
+use aster_util::{field_ptr, safe_ptr::SafePtr};
+use core::mem::size_of;
 use log::warn;
 
 use crate::{
@@ -33,7 +33,7 @@ pub struct VirtioMmioDevice {
 pub struct VirtioMmioTransport {
     layout: SafePtr<VirtioMmioLayout, IoMem>,
     device: Arc<VirtioMmioDevice>,
-    common_device: jinux_frame::bus::mmio::device::MmioCommonDevice,
+    common_device: aster_frame::bus::mmio::device::MmioCommonDevice,
     multiplex: Arc<RwLock<MultiplexIrq>>,
 }
 

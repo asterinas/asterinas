@@ -1,13 +1,13 @@
 # template
 [components]
-std = { name = "jinux-std" }
-virtio = { name = "jinux-virtio" }
-input = { name = "jinux-input" }
-block = { name = "jinux-block" }
-console = { name = "jinux-console" }
-time = { name = "jinux-time" }
-framebuffer = { name = "jinux-framebuffer" }
-network = { name = "jinux-network" }
+std = { name = "aster-std" }
+virtio = { name = "aster-virtio" }
+input = { name = "aster-input" }
+block = { name = "aster-block" }
+console = { name = "aster-console" }
+time = { name = "aster-time" }
+framebuffer = { name = "aster-framebuffer" }
+network = { name = "aster-network" }
 main = { name = "jinux" }
 
 [whitelist]

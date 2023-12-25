@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use component::init_component;
 use component::ComponentInitError;
 
-use jinux_frame::sync::SpinLock;
+use aster_frame::sync::SpinLock;
 use spin::Once;
 use virtio_input_decoder::DecodeType;
 

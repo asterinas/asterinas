@@ -12,9 +12,9 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use aster_frame::sync::SpinLock;
 use component::init_component;
 use component::ComponentInitError;
-use jinux_frame::sync::SpinLock;
 use spin::Once;
 
 pub const BLK_SIZE: usize = 512;

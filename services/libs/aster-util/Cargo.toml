@@ -1,0 +1,16 @@
+[package]
+name = "aster-util"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aster-frame = { path = "../../../framework/aster-frame" }
+pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
+typeflags-util = { path = "../typeflags-util" }
+aster-rights-proc = { path = "../aster-rights-proc" }
+aster-rights = { path = "../aster-rights" }
+bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
+ktest = { path = "../../../framework/libs/ktest" }
+[features]

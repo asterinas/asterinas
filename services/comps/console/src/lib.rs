@@ -8,8 +8,8 @@ extern crate alloc;
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
+use aster_frame::sync::SpinLock;
 use component::{init_component, ComponentInitError};
-use jinux_frame::sync::SpinLock;
 use spin::Once;
 
 pub type ConsoleCallback = dyn Fn(&[u8]) + Send + Sync;

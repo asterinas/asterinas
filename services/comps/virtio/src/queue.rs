@@ -3,18 +3,18 @@
 use crate::transport::VirtioTransport;
 
 use alloc::vec::Vec;
+use aster_frame::{
+    io_mem::IoMem,
+    offset_of,
+    vm::{DmaCoherent, VmAllocOptions},
+};
+use aster_rights::{Dup, TRightSet, TRights, Write};
+use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use core::{
     mem::size_of,
     sync::atomic::{fence, Ordering},
 };
-use jinux_frame::{
-    io_mem::IoMem,
-    offset_of,
-    vm::{DmaCoherent, VmAllocOptions},
-};
-use jinux_rights::{Dup, TRightSet, TRights, Write};
-use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use log::debug;
 use pod::Pod;
 
@@ -372,7 +372,7 @@ fn set_buf(ptr: &SafePtr<Descriptor, &DmaCoherent, TRightSet<TRights![Dup, Write
     // FIXME: use `DmaSteam` for buf. Now because the upper device driver lacks the
     // ability to safely construct DmaStream from slice, slice is still used here.
     let va = buf.as_ptr() as usize;
-    let pa = jinux_frame::vm::vaddr_to_paddr(va).unwrap();
+    let pa = aster_frame::vm::vaddr_to_paddr(va).unwrap();
     field_ptr!(ptr, Descriptor, addr)
         .write(&(pa as u64))
         .unwrap();

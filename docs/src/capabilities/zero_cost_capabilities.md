@@ -351,7 +351,7 @@ mod test {
 
 ### Implement access rights with typeflags
 
-The `Jinux-rights/lib.rs` file implements access rights.
+The `aster-rights/lib.rs` file implements access rights.
 
 ```rust
 //! Access rights.
@@ -376,7 +376,7 @@ typeflags! {
 }
 ```
 
-The `Jinux-rights-proc/lib.rs` file implements the `require` procedural macro.
+The `aster-rights-proc/lib.rs` file implements the `require` procedural macro.
 See the channel capability example later for how `require` is used.
 
 ```rust

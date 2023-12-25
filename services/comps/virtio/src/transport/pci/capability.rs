@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use jinux_frame::bus::pci::{
+use aster_frame::bus::pci::{
     capability::vendor::CapabilityVndrData,
     cfg_space::{Bar, IoBar, MemoryBar},
     common_device::BarManager,

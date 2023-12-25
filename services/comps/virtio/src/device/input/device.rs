@@ -7,9 +7,9 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
+use aster_frame::{io_mem::IoMem, offset_of, sync::SpinLock, trap::TrapFrame};
+use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
-use jinux_frame::{io_mem::IoMem, offset_of, sync::SpinLock, trap::TrapFrame};
-use jinux_util::{field_ptr, safe_ptr::SafePtr};
 use log::{debug, info};
 use pod::Pod;
 use virtio_input_decoder::{DecodeType, Decoder};
@@ -112,7 +112,7 @@ impl InputDevice {
 
         fn handle_input(_: &TrapFrame) {
             debug!("Handle Virtio input interrupt");
-            let device = jinux_input::get_device(super::DEVICE_NAME).unwrap();
+            let device = aster_input::get_device(super::DEVICE_NAME).unwrap();
             device.handle_irq().unwrap();
         }
 
@@ -131,7 +131,7 @@ impl InputDevice {
 
         device.transport.finish_init();
 
-        jinux_input::register_device(super::DEVICE_NAME.to_string(), Arc::new(device));
+        aster_input::register_device(super::DEVICE_NAME.to_string(), Arc::new(device));
 
         Ok(())
     }
@@ -183,7 +183,7 @@ impl InputDevice {
     }
 }
 
-impl jinux_input::InputDevice for InputDevice {
+impl aster_input::InputDevice for InputDevice {
     fn handle_irq(&self) -> Option<()> {
         // one interrupt may contains serval input, so it should loop
         loop {

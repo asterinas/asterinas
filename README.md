@@ -70,14 +70,14 @@ Nevertheless, you could enter the directory of a specific crate and invoke `carg
 
 #### Kernel mode unit tests
 
-We can run unit tests in kernel mode for crates like `jinux-frame` or `jinux-std`. This is powered by our [ktest](framework/libs/ktest) framework.
+We can run unit tests in kernel mode for crates like `aster-frame` or `aster-std`. This is powered by our [ktest](framework/libs/ktest) framework.
 ```bash
 make run KTEST=1
 ```
 
 You could also specify tests in a crate or a subset of tests to run.
 ```bash
-make run KTEST=1 KTEST_WHITELIST=failing_assertion,jinux_frame::test::expect_panic KTEST_CRATES=jinux-frame
+make run KTEST=1 KTEST_WHITELIST=failing_assertion,aster_frame::test::expect_panic KTEST_CRATES=aster-frame
 ```
 
 #### Component check
@@ -141,12 +141,12 @@ The codebase of Jinux is organized as below.
 * `runner/`: creating a bootable Jinux kernel image along with an initramfs image. It also supports `cargo run` since it is the only package with `main()`.
 * `kernel/`: defining the entry point of the Jinux kernel.
 * `framework/`: the privileged half of Jinux (allowed to use `unsafe` keyword)
-    * `jinux-frame`: providing the safe Rust abstractions for low-level resources like CPU, memory, interrupts, etc;
+    * `aster-frame`: providing the safe Rust abstractions for low-level resources like CPU, memory, interrupts, etc;
     * `libs`: Privileged libraries.
 * `services/`: the unprivileged half of Jinux (not allowed to use `unsafe` directly), implementing most of the OS functionalities.
     * `comps/`: Jinux OS components;
     * `libs/`: Jinux OS libraries;
-        * `jinux-std`: this is where system calls are implemented. Currently, this crate is too big. It will eventually be decomposed into smaller crates.
+        * `aster-std`: this is where system calls are implemented. Currently, this crate is too big. It will eventually be decomposed into smaller crates.
 * `tests/`: providing integration tests written in Rust.
 * `regression/`: providing user-space tests written in C.
 * `docs/`: The Jinux book (needs a major update).

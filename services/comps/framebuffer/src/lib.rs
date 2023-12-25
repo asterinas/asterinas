@@ -6,13 +6,13 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use aster_frame::{boot, config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo};
 use component::{init_component, ComponentInitError};
 use core::{
     fmt,
     ops::{Index, IndexMut},
 };
 use font8x8::UnicodeFonts;
-use jinux_frame::{boot, config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo};
 use spin::Once;
 
 #[init_component]
@@ -28,7 +28,7 @@ pub(crate) fn init() {
         let framebuffer = boot::framebuffer_arg();
         let mut writer = None;
         let mut size = 0;
-        for i in jinux_frame::vm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
+        for i in aster_frame::vm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
             size = i.len() as usize;
         }
 

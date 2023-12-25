@@ -26,8 +26,8 @@
 
 pub mod device;
 use crate::transport::VirtioTransport;
-use jinux_frame::io_mem::IoMem;
-use jinux_util::safe_ptr::SafePtr;
+use aster_frame::io_mem::IoMem;
+use aster_util::safe_ptr::SafePtr;
 use pod::Pod;
 
 pub static DEVICE_NAME: &str = "Virtio-Input";

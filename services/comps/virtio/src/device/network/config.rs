@@ -1,7 +1,7 @@
+use aster_frame::io_mem::IoMem;
+use aster_network::EthernetAddr;
+use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
-use jinux_frame::io_mem::IoMem;
-use jinux_network::EthernetAddr;
-use jinux_util::safe_ptr::SafePtr;
 use pod::Pod;
 
 use crate::transport::VirtioTransport;

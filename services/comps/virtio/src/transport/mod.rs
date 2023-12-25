@@ -1,8 +1,8 @@
 use core::fmt::Debug;
 
 use alloc::boxed::Box;
-use jinux_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::DmaCoherent};
-use jinux_util::safe_ptr::SafePtr;
+use aster_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::DmaCoherent};
+use aster_util::safe_ptr::SafePtr;
 
 use crate::{
     queue::{AvailRing, Descriptor, UsedRing},

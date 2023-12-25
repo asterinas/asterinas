@@ -1,5 +1,5 @@
-use jinux_frame::io_mem::IoMem;
-use jinux_util::safe_ptr::SafePtr;
+use aster_frame::io_mem::IoMem;
+use aster_util::safe_ptr::SafePtr;
 use pod::Pod;
 
 use crate::transport::pci::capability::VirtioPciCpabilityType;

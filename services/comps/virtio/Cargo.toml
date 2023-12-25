@@ -1,5 +1,5 @@
 [package]
-name = "jinux-virtio"
+name = "aster-virtio"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,13 +11,13 @@ spin = "0.9.4"
 virtio-input-decoder = "0.1.4"
 bytes = { version = "1.4.0", default-features = false }
 align_ext = { path = "../../../framework/libs/align_ext" }
-jinux-input = { path = "../input" }
-jinux-block = { path = "../block" }
-jinux-network = { path = "../network" }
-jinux-console = { path = "../console" }
-jinux-frame = { path = "../../../framework/jinux-frame" }
-jinux-util = { path = "../../libs/jinux-util" }
-jinux-rights = { path = "../../libs/jinux-rights" }
+aster-input = { path = "../input" }
+aster-block = { path = "../block" }
+aster-network = { path = "../network" }
+aster-console = { path = "../console" }
+aster-frame = { path = "../../../framework/aster-frame" }
+aster-util = { path = "../../libs/aster-util" }
+aster-rights = { path = "../../libs/aster-rights" }
 typeflags-util = { path = "../../libs/typeflags-util" }
 pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
 component = { path = "../../libs/comp-sys/component" }
