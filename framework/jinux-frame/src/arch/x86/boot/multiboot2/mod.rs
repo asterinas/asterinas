@@ -106,10 +106,10 @@ impl From<MemoryAreaType> for MemoryRegionType {
 fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     let mut regions = Vec::<MemoryRegion>::new();
 
+    let mb2_info = MB2_INFO.get().unwrap();
+
     // Add the regions returned by Grub.
-    let memory_regions_tag = MB2_INFO
-        .get()
-        .unwrap()
+    let memory_regions_tag = mb2_info
         .memory_map_tag()
         .expect("Memory region not found from the Multiboot2 header!");
     let num_memory_regions = memory_regions_tag.memory_areas().len();
@@ -124,7 +124,8 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         );
         regions.push(region);
     }
-    if let Some(Ok(fb_tag)) = MB2_INFO.get().unwrap().framebuffer_tag() {
+
+    if let Some(Ok(fb_tag)) = mb2_info.framebuffer_tag() {
         // Add the framebuffer region since Grub does not specify it.
         let fb = BootloaderFramebufferArg {
             address: fb_tag.address() as usize,
@@ -138,6 +139,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
             MemoryRegionType::Framebuffer,
         ));
     }
+
     // Add the kernel region since Grub does not specify it.
     // These are physical addresses provided by the linker script.
     extern "C" {
@@ -149,12 +151,13 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         __kernel_end as usize - __kernel_start as usize,
         MemoryRegionType::Kernel,
     ));
+
     // Add the boot module region since Grub does not specify it.
-    let mb2_module_tag = MB2_INFO.get().unwrap().module_tags();
-    for m in mb2_module_tag {
+    let mb2_module_tag = mb2_info.module_tags();
+    for module in mb2_module_tag {
         regions.push(MemoryRegion::new(
-            m.start_address() as usize,
-            m.module_size() as usize,
+            module.start_address() as usize,
+            module.module_size() as usize,
             MemoryRegionType::Module,
         ));
     }

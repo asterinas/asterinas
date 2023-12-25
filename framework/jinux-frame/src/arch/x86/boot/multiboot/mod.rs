@@ -103,12 +103,12 @@ fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg
 fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     let mut regions = Vec::<MemoryRegion>::new();
 
-    // Add the regions in the multiboot protocol.
     let info = MB1_INFO.get().unwrap();
+
+    // Add the regions in the multiboot protocol.
     let start = info.memory_map_addr as usize;
     let length = info.memory_map_len as usize;
     let mut current = start;
-
     while current < start + length {
         let entry = unsafe { &*(paddr_to_vaddr(current) as *const MemoryEntry) };
         let start = entry.base_addr;
@@ -134,6 +134,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
         MemoryRegionType::Framebuffer,
     ));
+
     // Add the kernel region.
     // These are physical addresses provided by the linker script.
     extern "C" {
