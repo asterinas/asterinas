@@ -39,7 +39,7 @@ $(INITRAMFS)/lib/x86_64-linux-gnu:
 	@cp -L /lib/x86_64-linux-gnu/libz.so.1 $@
 	@cp -L /usr/local/benchmark/iperf/lib/libiperf.so.0 $@
 	@# TODO: use a custom compiled vdso.so file in the future.
-	@git clone https://github.com/jinzhao-dev/linux_vdso.git
+	@git clone https://github.com/asterinas/linux_vdso.git
 	@cd ./linux_vdso && git checkout 2a6d2db 2>/dev/null
 	@cp -L ./linux_vdso/vdso64.so $@
 	@rm -rf ./linux_vdso 

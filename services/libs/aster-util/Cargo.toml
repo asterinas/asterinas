@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 aster-frame = { path = "../../../framework/aster-frame" }
-pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
+pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 typeflags-util = { path = "../typeflags-util" }
 aster-rights-proc = { path = "../aster-rights-proc" }
 aster-rights = { path = "../aster-rights" }

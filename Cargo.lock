@@ -796,7 +796,7 @@ dependencies = [
 [[package]]
 name = "inherit-methods-macro"
 version = "0.1.0"
-source = "git+https://github.com/jinzhao-dev/inherit-methods-macro?rev=98f7e3e#98f7e3eb9efdac98faf5a7076f154f30894b9b02"
+source = "git+https://github.com/asterinas/inherit-methods-macro?rev=98f7e3e#98f7e3eb9efdac98faf5a7076f154f30894b9b02"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -918,7 +918,7 @@ checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 [[package]]
 name = "libflate"
 version = "1.4.0"
-source = "git+https://github.com/jinzhao-dev/libflate?rev=b781da6#b781da6b6841e380f4cfa3529d5070afad56ea32"
+source = "git+https://github.com/asterinas/libflate?rev=b781da6#b781da6b6841e380f4cfa3529d5070afad56ea32"
 dependencies = [
  "adler32",
  "core2",
@@ -929,7 +929,7 @@ dependencies = [
 [[package]]
 name = "libflate_lz77"
 version = "1.2.0"
-source = "git+https://github.com/jinzhao-dev/libflate?rev=b781da6#b781da6b6841e380f4cfa3529d5070afad56ea32"
+source = "git+https://github.com/asterinas/libflate?rev=b781da6#b781da6b6841e380f4cfa3529d5070afad56ea32"
 dependencies = [
  "core2",
  "hashbrown 0.13.2",
@@ -1059,7 +1059,7 @@ checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
 [[package]]
 name = "pod"
 version = "0.1.0"
-source = "git+https://github.com/jinzhao-dev/pod?rev=d7dba56#d7dba56cc202a10d483b60aba4f734b1f49cb37b"
+source = "git+https://github.com/asterinas/pod?rev=d7dba56#d7dba56cc202a10d483b60aba4f734b1f49cb37b"
 dependencies = [
  "pod-derive",
 ]
@@ -1067,7 +1067,7 @@ dependencies = [
 [[package]]
 name = "pod-derive"
 version = "0.1.0"
-source = "git+https://github.com/jinzhao-dev/pod?rev=d7dba56#d7dba56cc202a10d483b60aba4f734b1f49cb37b"
+source = "git+https://github.com/asterinas/pod?rev=d7dba56#d7dba56cc202a10d483b60aba4f734b1f49cb37b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1428,7 +1428,7 @@ dependencies = [
 [[package]]
 name = "trapframe"
 version = "0.9.0"
-source = "git+https://github.com/jinzhao-dev/trapframe-rs?rev=9758a83#9758a83f769c8f4df35413c7ad28ef42c270187e"
+source = "git+https://github.com/asterinas/trapframe-rs?rev=2f37590#2f375901398508edb554deb2f84749153a59bb4a"
 dependencies = [
  "log",
  "pod",

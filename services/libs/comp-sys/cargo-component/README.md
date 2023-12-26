@@ -1,5 +1,5 @@
 ## Overview
-The crate contains cargo-component, a cargo subcommand to enable component-level access control in Asterinas. For more info about Asterinas component system, see the [RFC](https://github.com/jinzhao-dev/Asterinas/issues/58). The implementation mainly follows [rust clippy](https://github.com/rust-lang/rust-clippy). Internally, this tool will call `cargo check` to compile the whole project and bases the analysis on MIR.
+The crate contains cargo-component, a cargo subcommand to enable component-level access control in Asterinas. For more info about Asterinas component system, see the [RFC](https://github.com/asterinas/Asterinas/issues/58). The implementation mainly follows [rust clippy](https://github.com/rust-lang/rust-clippy). Internally, this tool will call `cargo check` to compile the whole project and bases the analysis on MIR.
 
 ## install
 After running `make setup` for Asterinas, this crate can be created with cargo.
