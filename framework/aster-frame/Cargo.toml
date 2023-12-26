@@ -13,17 +13,17 @@ bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 buddy_system_allocator = "0.9.0"
 cfg-if = "1.0"
 gimli = { version = "0.28", default-features = false, features = ["read-core"] }
-inherit-methods-macro = { git = "https://github.com/jinzhao-dev/inherit-methods-macro", rev = "98f7e3e" }
+inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
 int-to-c-enum = { path = "../../services/libs/int-to-c-enum" }
 intrusive-collections = "0.9.5"
 ktest = { path = "../libs/ktest" }
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
 log = "0.4"
-pod = { git = "https://github.com/jinzhao-dev/pod", rev = "d7dba56" }
+pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 spin = "0.9.4"
 static_assertions = "1.1.0"
 tdx-guest = { path = "../libs/tdx-guest", optional = true }
-trapframe = { git = "https://github.com/jinzhao-dev/trapframe-rs", rev = "9758a83" }
+trapframe = { git = "https://github.com/asterinas/trapframe-rs", rev = "2f37590" }
 unwinding = { version = "0.2.1", default-features = false, features = ["fde-static", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = { version = "0.4.5", features = ["unstable"] }
 
