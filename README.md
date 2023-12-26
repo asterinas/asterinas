@@ -231,6 +231,5 @@ Asterinas is under active development. The list below summarizes the progress of
 
 ## License
 
-The Asterinas project is proudly released as a free software
-under the license of [GNU General Public License version 2](LICENSE-GPL).
+The Asterinas project is released under the license of [Mozilla Public License Version 2.0](LICENSE-MPL).
 See [COPYRIGHT](COPYRIGHT) for details.
