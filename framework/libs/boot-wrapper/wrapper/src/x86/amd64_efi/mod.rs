@@ -1,4 +1,6 @@
 mod efi;
+mod paging;
+mod relocation;
 
 use core::arch::{asm, global_asm};
 

@@ -6,7 +6,8 @@ use uefi::{
 
 use linux_boot_params::BootParams;
 
-use crate::x86::paging::{Ia32eFlags, PageNumber, PageTableCreator};
+use super::paging::{Ia32eFlags, PageNumber, PageTableCreator};
+use super::relocation::apply_rela_dyn_relocations;
 
 #[export_name = "efi_stub_entry"]
 extern "sysv64" fn efi_stub_entry(handle: Handle, mut system_table: SystemTable<Boot>) -> ! {
@@ -47,7 +48,7 @@ fn efi_phase_boot(
     unsafe { crate::console::init() };
 
     // Safety: this is the right time to apply relocations.
-    unsafe { crate::x86::relocation::apply_rela_dyn_relocations() };
+    unsafe { apply_rela_dyn_relocations() };
 
     uefi_services::println!("[EFI stub] Relocations applied.");
 

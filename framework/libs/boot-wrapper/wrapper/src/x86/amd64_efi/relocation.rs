@@ -1,15 +1,4 @@
-// This is enforced in the linker script.
-const START_OF_SETUP32_VA: usize = 0x100000;
-
-/// The wrapper is a position-independent executable. We can get the loaded base
-/// address from the symbol.
-#[inline]
-pub fn get_image_loaded_offset() -> isize {
-    extern "C" {
-        fn start_of_setup32();
-    }
-    start_of_setup32 as isize - START_OF_SETUP32_VA as isize
-}
+use crate::x86::get_image_loaded_offset;
 
 struct Elf64Rela {
     r_offset: u64,

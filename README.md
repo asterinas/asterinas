@@ -42,12 +42,12 @@ git clone [repository url]
 
 2. After downloading the source code, run the following command to pull the development image.
 ```bash
-docker pull asterinas/asterinas:0.2.3
+docker pull asterinas/asterinas:0.3.0
 ```
 
 3. Start the development container.
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v `pwd`:/root/asterinas asterinas/asterinas:0.2.3
+docker run -it --privileged --network=host --device=/dev/kvm -v `pwd`:/root/asterinas asterinas/asterinas:0.3.0
 ```
 
 **All build and test commands should be run inside the development container.**

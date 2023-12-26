@@ -17,8 +17,8 @@ extern "cdecl" fn trojan_entry(boot_params_ptr: u32) -> ! {
 
     // println!("[setup] bzImage loaded at {:#x}", x86::relocation::get_image_loaded_offset());
     unsafe {
-        print_str("[setup] bzImage loaded at ");
-        print_hex(crate::x86::relocation::get_image_loaded_offset() as u64);
+        print_str("[setup] bzImage loaded offset: ");
+        print_hex(crate::x86::get_image_loaded_offset() as u64);
         print_str("\n");
     }
 
@@ -31,8 +31,6 @@ extern "cdecl" fn trojan_entry(boot_params_ptr: u32) -> ! {
     // Safety: the entrypoint and the ptr is valid.
     unsafe { call_aster_entrypoint(ASTER_ENTRY_POINT, boot_params_ptr.try_into().unwrap()) };
 }
-
-pub const ASTER_ENTRY_POINT: u32 = 0x8001000;
 
 unsafe fn call_aster_entrypoint(entrypoint: u32, boot_params_ptr: u32) -> ! {
     asm!("mov esi, {}", in(reg) boot_params_ptr);

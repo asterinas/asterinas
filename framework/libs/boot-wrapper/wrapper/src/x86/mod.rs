@@ -8,5 +8,15 @@ cfg_if::cfg_if! {
     }
 }
 
-pub mod paging;
-pub mod relocation;
+// This is enforced in the linker script of the wrapper.
+const START_OF_SETUP32_VA: usize = 0x100000;
+
+/// The wrapper is a position-independent executable. We can get the loaded base
+/// address from the symbol.
+#[inline]
+pub fn get_image_loaded_offset() -> isize {
+    extern "C" {
+        fn start_of_setup32();
+    }
+    start_of_setup32 as isize - START_OF_SETUP32_VA as isize
+}
