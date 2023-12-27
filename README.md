@@ -1,8 +1,16 @@
-# Asterinas
+<p align="center">
+    <img src="docs/src/images/logo_en.svg" alt="asterinas-logo" width="620"><br>
+    A safe, fast, and general-purpose OS kernel written in Rust and compatible with Linux
+</p>
 
-Asterinas is a _secure_, _fast_, and _general-purpose_ OS kernel, written in Rust and providing Linux-compatible ABI.
+## Introducing Asterinas
 
-Asterinas is designed and implemented with an emphasis on security, rendering it highly attractive for usage scenarios where Linux ABI is indispensable, but Linux itself is deemed insecure given its sheer size of TCB and its nature of being memory unsafe. An instance of such usage is employing Asterinas as the guest OS for VM TEEs (e.g., [AMD SEV](https://www.amd.com/en/developer/sev.html) and [Intel TDX](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html)).
+Asterinas is aimed to be a drop-in replacement of Linux but more _memory safe_ and _developer friendly_.
+
+1. Asterinas is more memory safe than Linux as it is written in pure [Rust](https://www.rust-lang.org/) and constraints the scope of unsafe Rust to a well-defined and minimal Trusted Computing Base (TCB). This is what we call the [framekernel]() architecture.
+2. Asterinas is more developer friendly than Linux as it allows the kernel developers to use a more productive programming language (Rust), leverage a purpose-built toolkit ([OSDK]()), and enjoy the flexibility of either releasing their kernel modules as open source or keeping them as proprietary (thanks to [MPL](LICENSE-MPL)).
+
+Thanks to its high assurance of memory safety, Asterinas is highly attractive for usage scenarios where Linux ABI is indispensable, but Linux itself is deemed insecure given its sheer size of TCB and its nature of being memory unsafe. An instance of such usage is employing Asterinas as the guest OS for VM TEEs (e.g., [AMD SEV](https://www.amd.com/en/developer/sev.html) and [Intel TDX](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html)).
 
 ## What's unique about Asterinas
 
