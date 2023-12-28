@@ -1,14 +1,11 @@
+use super::RawSocketOption;
 use crate::net::socket::options::{
-    SockOption, SocketError, SocketLinger, SocketRecvBuf, SocketReuseAddr, SocketReusePort,
-    SocketSendBuf,
+    Error, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
 };
 use crate::prelude::*;
 use crate::vm::vmar::Vmar;
-use crate::{impl_raw_sock_option, impl_raw_sock_option_get_only};
+use crate::{impl_raw_sock_option_get_only, impl_raw_socket_option};
 use aster_rights::Full;
-
-use super::utils::{read_bool, read_linger, write_bool, write_errors, write_linger};
-use super::RawSockOption;
 
 /// Socket level options.
 ///
@@ -17,7 +14,7 @@ use super::RawSockOption;
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
-enum SocketOptionName {
+enum CSocketOptionName {
     DEBUG = 1,
     REUSEADDR = 2,
     TYPE = 3,
@@ -39,22 +36,22 @@ enum SocketOptionName {
     SNDTIMEO_NEW = 67,
 }
 
-pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSockOption>> {
-    let name = SocketOptionName::try_from(name)?;
+pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
+    let name = CSocketOptionName::try_from(name)?;
     match name {
-        SocketOptionName::SNDBUF => Ok(Box::new(SocketSendBuf::new())),
-        SocketOptionName::RCVBUF => Ok(Box::new(SocketRecvBuf::new())),
-        SocketOptionName::REUSEADDR => Ok(Box::new(SocketReuseAddr::new())),
-        SocketOptionName::ERROR => Ok(Box::new(SocketError::new())),
-        SocketOptionName::REUSEPORT => Ok(Box::new(SocketReusePort::new())),
-        SocketOptionName::LINGER => Ok(Box::new(SocketLinger::new())),
+        CSocketOptionName::SNDBUF => Ok(Box::new(SendBuf::new())),
+        CSocketOptionName::RCVBUF => Ok(Box::new(RecvBuf::new())),
+        CSocketOptionName::REUSEADDR => Ok(Box::new(ReuseAddr::new())),
+        CSocketOptionName::ERROR => Ok(Box::new(Error::new())),
+        CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
+        CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         _ => todo!(),
     }
 }
 
-impl_raw_sock_option!(SocketSendBuf);
-impl_raw_sock_option!(SocketRecvBuf);
-impl_raw_sock_option!(SocketReuseAddr, read_bool, write_bool);
-impl_raw_sock_option_get_only!(SocketError, write_errors);
-impl_raw_sock_option!(SocketReusePort, read_bool, write_bool);
-impl_raw_sock_option!(SocketLinger, read_linger, write_linger);
+impl_raw_socket_option!(SendBuf);
+impl_raw_socket_option!(RecvBuf);
+impl_raw_socket_option!(ReuseAddr);
+impl_raw_sock_option_get_only!(Error);
+impl_raw_socket_option!(ReusePort);
+impl_raw_socket_option!(Linger);

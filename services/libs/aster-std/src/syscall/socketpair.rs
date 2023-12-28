@@ -1,6 +1,6 @@
 use crate::fs::file_table::FileDescripter;
 use crate::net::socket::unix::UnixStreamSocket;
-use crate::util::net::{Protocol, SaFamily, SockFlags, SockType, SOCK_TYPE_MASK};
+use crate::util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK};
 use crate::util::write_val_to_user;
 use crate::{log_syscall_entry, prelude::*};
 
@@ -9,7 +9,7 @@ use super::SYS_SOCKETPAIR;
 
 pub fn sys_socketpair(domain: i32, type_: i32, protocol: i32, sv: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SOCKETPAIR);
-    let domain = SaFamily::try_from(domain)?;
+    let domain = CSocketAddrFamily::try_from(domain)?;
     let sock_type = SockType::try_from(type_ & SOCK_TYPE_MASK)?;
     let sock_flags = SockFlags::from_bits_truncate(type_ & !SOCK_TYPE_MASK);
     let protocol = Protocol::try_from(protocol)?;
@@ -21,7 +21,9 @@ pub fn sys_socketpair(domain: i32, type_: i32, protocol: i32, sv: Vaddr) -> Resu
     // TODO: deal with all sock_flags and protocol
     let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let (socket_a, socket_b) = match (domain, sock_type) {
-        (SaFamily::AF_UNIX, SockType::SOCK_STREAM) => UnixStreamSocket::new_pair(nonblocking)?,
+        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM) => {
+            UnixStreamSocket::new_pair(nonblocking)?
+        }
         _ => return_errno_with_message!(
             Errno::EAFNOSUPPORT,
             "cannot create socket pair for this family"

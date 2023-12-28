@@ -1,18 +1,14 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::events::IoEvents;
+use crate::fs::file_handle::FileLike;
 use crate::fs::utils::StatusFlags;
 use crate::net::iface::IpEndpoint;
-
+use crate::net::socket::util::send_recv_flags::SendRecvFlags;
+use crate::net::socket::util::socket_addr::SocketAddr;
+use crate::net::socket::Socket;
+use crate::prelude::*;
 use crate::process::signal::Poller;
-use crate::{
-    fs::file_handle::FileLike,
-    net::socket::{
-        util::{send_recv_flags::SendRecvFlags, sockaddr::SocketAddr},
-        Socket,
-    },
-    prelude::*,
-};
 
 use self::bound::BoundDatagram;
 use self::unbound::UnboundDatagram;
@@ -129,7 +125,7 @@ impl FileLike for DatagramSocket {
         self.inner.read().poll(mask, poller)
     }
 
-    fn as_socket(&self) -> Option<&dyn Socket> {
+    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
         Some(self)
     }
 
@@ -152,14 +148,14 @@ impl FileLike for DatagramSocket {
 }
 
 impl Socket for DatagramSocket {
-    fn bind(&self, sockaddr: SocketAddr) -> Result<()> {
-        let endpoint = sockaddr.try_into()?;
+    fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
+        let endpoint = socket_addr.try_into()?;
         self.inner.write().bind(endpoint)?;
         Ok(())
     }
 
-    fn connect(&self, sockaddr: SocketAddr) -> Result<()> {
-        let endpoint = sockaddr.try_into()?;
+    fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
+        let endpoint = socket_addr.try_into()?;
         let bound = self.try_bind_empheral(&endpoint)?;
         bound.set_remote_endpoint(endpoint);
         Ok(())

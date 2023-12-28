@@ -1,9 +1,10 @@
 use crate::{fs::file_handle::FileLike, prelude::*};
 
-use self::options::SockOption;
+use self::options::SocketOption;
+pub use self::util::options::LingerOption;
 pub use self::util::send_recv_flags::SendRecvFlags;
 pub use self::util::shutdown_cmd::SockShutdownCmd;
-pub use self::util::sockaddr::SocketAddr;
+pub use self::util::socket_addr::SocketAddr;
 
 pub mod ip;
 pub mod options;
@@ -12,13 +13,13 @@ mod util;
 
 /// Operations defined on a socket.
 pub trait Socket: FileLike + Send + Sync {
-    /// Assign the address specified by sockaddr to the socket
-    fn bind(&self, sockaddr: SocketAddr) -> Result<()> {
+    /// Assign the address specified by socket_addr to the socket
+    fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "bind not implemented");
     }
 
     /// Build connection for a given address
-    fn connect(&self, sockaddr: SocketAddr) -> Result<()> {
+    fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "connect not implemented");
     }
 
@@ -47,13 +48,14 @@ pub trait Socket: FileLike + Send + Sync {
         return_errno_with_message!(Errno::EINVAL, "getpeername not implemented");
     }
 
-    /// Get options on the socket
-    fn option(&self, option: &mut dyn SockOption) -> Result<()> {
+    /// Get options on the socket. The resulted option will put in the `option` parameter, if
+    /// this method returns success.
+    fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "getsockopt not implemented");
     }
 
-    /// Set options on the socket
-    fn set_option(&self, option: &dyn SockOption) -> Result<()> {
+    /// Set options on the socket.
+    fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "setsockopt not implemented");
     }
 
