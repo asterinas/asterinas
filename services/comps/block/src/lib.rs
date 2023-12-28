@@ -28,7 +28,6 @@
 #![forbid(unsafe_code)]
 #![feature(fn_traits)]
 #![feature(step_trait)]
-#![feature(trait_upcasting)]
 #![allow(dead_code)]
 
 extern crate alloc;
