@@ -1,5 +1,5 @@
 use crate::fs::utils::Dentry;
-use crate::net::socket::util::sockaddr::SocketAddr;
+use crate::net::socket::util::socket_addr::SocketAddr;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -132,8 +132,9 @@ impl FileTable {
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn get_socket(&self, sockfd: FileDescripter) -> Result<&dyn Socket> {
-        self.get_file(sockfd)?
+    pub fn get_socket(&self, sockfd: FileDescripter) -> Result<Arc<dyn Socket>> {
+        let file_like = self.get_file(sockfd)?.clone();
+        file_like
             .as_socket()
             .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the fd is not a socket"))
     }

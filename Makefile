@@ -98,7 +98,7 @@ USERMODE_TESTABLE := \
     services/libs/typeflags \
     services/libs/typeflags-util
 
-.PHONY: all setup build tools run test docs check clean
+.PHONY: all setup build tools run test docs check clean update_initramfs
 
 all: build
 
@@ -136,3 +136,7 @@ clean:
 	@cargo clean
 	@cd docs && mdbook clean
 	@make --no-print-directory -C regression clean
+
+update_initramfs:
+	@make --no-print-directory -C regression clean
+	@make --no-print-directory -C regression

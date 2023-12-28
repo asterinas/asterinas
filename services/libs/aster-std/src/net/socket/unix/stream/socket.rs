@@ -5,7 +5,7 @@ use crate::fs::utils::{Dentry, InodeType, StatusFlags};
 use crate::net::socket::unix::addr::UnixSocketAddrBound;
 use crate::net::socket::unix::UnixSocketAddr;
 use crate::net::socket::util::send_recv_flags::SendRecvFlags;
-use crate::net::socket::util::sockaddr::SocketAddr;
+use crate::net::socket::util::socket_addr::SocketAddr;
 use crate::net::socket::{SockShutdownCmd, Socket};
 use crate::prelude::*;
 use crate::process::signal::Poller;
@@ -78,7 +78,7 @@ impl UnixStreamSocket {
 }
 
 impl FileLike for UnixStreamSocket {
-    fn as_socket(&self) -> Option<&dyn Socket> {
+    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
         Some(self)
     }
 
@@ -132,8 +132,8 @@ impl FileLike for UnixStreamSocket {
 }
 
 impl Socket for UnixStreamSocket {
-    fn bind(&self, sockaddr: SocketAddr) -> Result<()> {
-        let addr = UnixSocketAddr::try_from(sockaddr)?;
+    fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
+        let addr = UnixSocketAddr::try_from(socket_addr)?;
 
         let init = match &*self.0.read() {
             State::Init(init) => init.clone(),
@@ -147,9 +147,9 @@ impl Socket for UnixStreamSocket {
         init.bind(&addr)
     }
 
-    fn connect(&self, sockaddr: SocketAddr) -> Result<()> {
+    fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
         let remote_addr = {
-            let unix_socket_addr = UnixSocketAddr::try_from(sockaddr)?;
+            let unix_socket_addr = UnixSocketAddr::try_from(socket_addr)?;
             match unix_socket_addr {
                 UnixSocketAddr::Abstract(abstract_name) => {
                     UnixSocketAddrBound::Abstract(abstract_name)

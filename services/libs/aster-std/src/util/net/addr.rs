@@ -5,16 +5,16 @@ use crate::prelude::*;
 use crate::util::{read_bytes_from_user, read_val_from_user, write_val_to_user};
 
 pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<SocketAddr> {
-    debug_assert!(addr_len >= core::mem::size_of::<SockAddr>());
-    let sockaddr: SockAddr = read_val_from_user(addr)?;
+    debug_assert!(addr_len >= core::mem::size_of::<CSocketAddr>());
+    let sockaddr: CSocketAddr = read_val_from_user(addr)?;
     let socket_addr = match sockaddr.sa_family()? {
-        SaFamily::AF_UNSPEC => {
+        CSocketAddrFamily::AF_UNSPEC => {
             return_errno_with_message!(Errno::EINVAL, "the socket addr family is unspecified")
         }
-        SaFamily::AF_UNIX => {
-            debug_assert!(addr_len >= core::mem::size_of::<SockAddr>());
+        CSocketAddrFamily::AF_UNIX => {
+            debug_assert!(addr_len >= core::mem::size_of::<CSocketAddr>());
             let sa_family: u16 = read_val_from_user(addr)?;
-            debug_assert!(sa_family == SaFamily::AF_UNIX as u16);
+            debug_assert!(sa_family == CSocketAddrFamily::AF_UNIX as u16);
 
             let bytes = {
                 let bytes_len = addr_len - core::mem::size_of::<u16>();
@@ -37,14 +37,14 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
 
             SocketAddr::Unix(unix_socket_addr)
         }
-        SaFamily::AF_INET => {
-            debug_assert!(addr_len >= core::mem::size_of::<SockAddrInet>());
-            let sock_addr_in: SockAddrInet = read_val_from_user(addr)?;
+        CSocketAddrFamily::AF_INET => {
+            debug_assert!(addr_len >= core::mem::size_of::<CSocketAddrInet>());
+            let sock_addr_in: CSocketAddrInet = read_val_from_user(addr)?;
             SocketAddr::from(sock_addr_in)
         }
-        SaFamily::AF_INET6 => {
-            debug_assert!(addr_len >= core::mem::size_of::<SockAddrInet6>());
-            let sock_addr_in6: SockAddrInet6 = read_val_from_user(addr)?;
+        CSocketAddrFamily::AF_INET6 => {
+            debug_assert!(addr_len >= core::mem::size_of::<CSocketAddrInet6>());
+            let sock_addr_in6: CSocketAddrInet6 = read_val_from_user(addr)?;
             todo!()
         }
         _ => {
@@ -66,16 +66,16 @@ pub fn write_socket_addr_to_user(
     let max_len = read_val_from_user::<i32>(addrlen_ptr)? as usize;
     let write_size = match socket_addr {
         SocketAddr::Unix(path) => {
-            let sock_addr_unix = SockAddrUnix::try_from(path)?;
-            let write_size = core::mem::size_of::<SockAddrUnix>();
+            let sock_addr_unix = CSocketAddrUnix::try_from(path)?;
+            let write_size = core::mem::size_of::<CSocketAddrUnix>();
             debug_assert!(max_len >= write_size);
             write_val_to_user(dest, &sock_addr_unix)?;
             write_size as i32
         }
         SocketAddr::IPv4(addr, port) => {
-            let in_addr = InetAddr::from(*addr);
-            let sock_addr_in = SockAddrInet::new(*port, in_addr);
-            let write_size = core::mem::size_of::<SockAddrInet>();
+            let in_addr = CInetAddr::from(*addr);
+            let sock_addr_in = CSocketAddrInet::new(*port, in_addr);
+            let write_size = core::mem::size_of::<CSocketAddrInet>();
             debug_assert!(max_len >= write_size);
             write_val_to_user(dest, &sock_addr_in)?;
             write_size as i32
@@ -91,34 +91,34 @@ pub fn write_socket_addr_to_user(
 /// PlaceHolder
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-pub struct SockAddr {
+pub struct CSocketAddr {
     sa_family: u16, // SaFamily
     sa_data: [u8; 14],
 }
 
-impl SockAddr {
-    pub fn sa_family(&self) -> Result<SaFamily> {
-        Ok(SaFamily::try_from(self.sa_family as i32)?)
+impl CSocketAddr {
+    pub fn sa_family(&self) -> Result<CSocketAddrFamily> {
+        Ok(CSocketAddrFamily::try_from(self.sa_family as i32)?)
     }
 }
 
-const SOCK_ADDR_UNIX_LEN: usize = 108;
+const SOCKET_ADDR_UNIX_LEN: usize = 108;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub struct SockAddrUnix {
+pub struct CSocketAddrUnix {
     sun_family: u16, // Always SaFamily::AF_UNIX
-    sun_path: [u8; SOCK_ADDR_UNIX_LEN],
+    sun_path: [u8; SOCKET_ADDR_UNIX_LEN],
 }
 
 /// IPv4 4-byte address
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub struct InetAddr {
+pub struct CInetAddr {
     s_addr: [u8; 4],
 }
 
-impl InetAddr {
+impl CInetAddr {
     pub fn as_bytes(&self) -> &[u8] {
         &self.s_addr
     }
@@ -133,11 +133,11 @@ impl InetAddr {
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-pub struct PortNum {
+pub struct CPortNum {
     port: [u8; 2],
 }
 
-impl PortNum {
+impl CPortNum {
     pub fn as_u16(&self) -> u16 {
         u16::from_be_bytes(self.port)
     }
@@ -151,22 +151,22 @@ impl PortNum {
 /// IPv4 socket address
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub struct SockAddrInet {
+pub struct CSocketAddrInet {
     /// always SaFamily::AF_INET
     sin_family: u16,
     /// Port number
-    sin_port_t: PortNum,
+    sin_port_t: CPortNum,
     /// IPv4 address
-    sin_addr: InetAddr,
+    sin_addr: CInetAddr,
     /// Pad to size of 'SockAddr' structure (16 bytes)
     _pad: [u8; 8],
 }
 
-impl SockAddrInet {
-    pub fn new(port: u16, addr: InetAddr) -> Self {
-        let port = PortNum::from_u16(port);
+impl CSocketAddrInet {
+    pub fn new(port: u16, addr: CInetAddr) -> Self {
+        let port = CPortNum::from_u16(port);
         Self {
-            sin_family: SaFamily::AF_INET as _,
+            sin_family: CSocketAddrFamily::AF_INET as _,
             sin_port_t: port,
             sin_addr: addr,
             _pad: [0u8; 8],
@@ -176,11 +176,11 @@ impl SockAddrInet {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub struct Inet6Addr {
+pub struct CInet6Addr {
     s6_addr: [u8; 16],
 }
 
-impl Inet6Addr {
+impl CInet6Addr {
     pub fn as_bytes(&self) -> &[u8] {
         &self.s6_addr
     }
@@ -189,15 +189,15 @@ impl Inet6Addr {
 /// IPv6 socket address
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub struct SockAddrInet6 {
+pub struct CSocketAddrInet6 {
     /// always SaFamily::AF_INET6
     sin6_family: u16,
     /// Port number
-    sin6_port: PortNum,
+    sin6_port: CPortNum,
     /// IPv6 flow information
     sin6_flowinfo: u32,
     /// IPv6 address
-    sin6_addr: Inet6Addr,
+    sin6_addr: CInet6Addr,
     // Scope ID
     sin6_scope_id: u32,
 }
@@ -206,7 +206,7 @@ pub struct SockAddrInet6 {
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
-pub enum SaFamily {
+pub enum CSocketAddrFamily {
     AF_UNSPEC = 0,
     AF_UNIX = 1, /* Unix domain sockets 		*/
     //AF_LOCAL	1	/* POSIX name for AF_UNIX	*/
@@ -263,40 +263,40 @@ pub enum SaFamily {
     AF_MAX = 46, /* For now.. */
 }
 
-impl From<InetAddr> for Ipv4Address {
-    fn from(value: InetAddr) -> Self {
+impl From<CInetAddr> for Ipv4Address {
+    fn from(value: CInetAddr) -> Self {
         let addr = value.as_bytes();
         Ipv4Address::from_bytes(addr)
     }
 }
 
-impl From<Ipv4Address> for InetAddr {
+impl From<Ipv4Address> for CInetAddr {
     fn from(value: Ipv4Address) -> Self {
         let bytes = value.as_bytes();
-        InetAddr::from_bytes(bytes)
+        CInetAddr::from_bytes(bytes)
     }
 }
 
-impl From<SockAddrInet> for SocketAddr {
-    fn from(value: SockAddrInet) -> Self {
+impl From<CSocketAddrInet> for SocketAddr {
+    fn from(value: CSocketAddrInet) -> Self {
         let port = value.sin_port_t.as_u16();
         let addr = Ipv4Address::from(value.sin_addr);
         SocketAddr::IPv4(addr, port)
     }
 }
 
-impl TryFrom<&UnixSocketAddr> for SockAddrUnix {
+impl TryFrom<&UnixSocketAddr> for CSocketAddrUnix {
     type Error = Error;
 
     fn try_from(value: &UnixSocketAddr) -> Result<Self> {
-        let mut sun_path = [0u8; SOCK_ADDR_UNIX_LEN];
+        let mut sun_path = [0u8; SOCKET_ADDR_UNIX_LEN];
         match value {
             UnixSocketAddr::Path(path) => {
                 let bytes = path.as_bytes();
-                let copy_len = bytes.len().min(SOCK_ADDR_UNIX_LEN - 1);
+                let copy_len = bytes.len().min(SOCKET_ADDR_UNIX_LEN - 1);
                 sun_path[..copy_len].copy_from_slice(&bytes[..copy_len]);
-                Ok(SockAddrUnix {
-                    sun_family: SaFamily::AF_UNIX as u16,
+                Ok(CSocketAddrUnix {
+                    sun_family: CSocketAddrFamily::AF_UNIX as u16,
                     sun_path,
                 })
             }

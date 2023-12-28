@@ -1,12 +1,10 @@
-use crate::impl_raw_sock_option;
-use crate::net::socket::ip::tcp_options::{TcpCongestion, TcpMaxseg, TcpNoDelay, TcpWindowClamp};
+use super::RawSocketOption;
+use crate::impl_raw_socket_option;
+use crate::net::socket::ip::stream::options::{Congestion, MaxSegment, NoDelay, WindowClamp};
 use crate::prelude::*;
-use crate::util::net::options::SockOption;
+use crate::util::net::options::SocketOption;
 use crate::vm::vmar::Vmar;
 use aster_rights::Full;
-
-use super::utils::{read_bool, read_congestion, write_bool, write_congestion};
-use super::RawSockOption;
 
 /// Sock options for tcp socket.
 ///
@@ -15,7 +13,7 @@ use super::RawSockOption;
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
-pub enum TcpOptionName {
+pub enum CTcpOptionName {
     NODELAY = 1,       /* Turn off Nagle's algorithm. */
     MAXSEG = 2,        /* Limit MSS */
     CORK = 3,          /* Never send partially complete segments */
@@ -25,18 +23,18 @@ pub enum TcpOptionName {
     CONGESTION = 13,   /* Congestion control algorithm */
 }
 
-pub fn new_tcp_option(name: i32) -> Result<Box<dyn RawSockOption>> {
-    let name = TcpOptionName::try_from(name)?;
+pub fn new_tcp_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
+    let name = CTcpOptionName::try_from(name)?;
     match name {
-        TcpOptionName::NODELAY => Ok(Box::new(TcpNoDelay::new())),
-        TcpOptionName::CONGESTION => Ok(Box::new(TcpCongestion::new())),
-        TcpOptionName::MAXSEG => Ok(Box::new(TcpMaxseg::new())),
-        TcpOptionName::WINDOW_CLAMP => Ok(Box::new(TcpWindowClamp::new())),
+        CTcpOptionName::NODELAY => Ok(Box::new(NoDelay::new())),
+        CTcpOptionName::CONGESTION => Ok(Box::new(Congestion::new())),
+        CTcpOptionName::MAXSEG => Ok(Box::new(MaxSegment::new())),
+        CTcpOptionName::WINDOW_CLAMP => Ok(Box::new(WindowClamp::new())),
         _ => todo!(),
     }
 }
 
-impl_raw_sock_option!(TcpNoDelay, read_bool, write_bool);
-impl_raw_sock_option!(TcpCongestion, read_congestion, write_congestion);
-impl_raw_sock_option!(TcpMaxseg);
-impl_raw_sock_option!(TcpWindowClamp);
+impl_raw_socket_option!(NoDelay);
+impl_raw_socket_option!(Congestion);
+impl_raw_socket_option!(MaxSegment);
+impl_raw_socket_option!(WindowClamp);

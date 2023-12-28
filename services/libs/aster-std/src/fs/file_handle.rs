@@ -71,7 +71,7 @@ pub trait FileLike: Send + Sync + Any {
         return_errno_with_message!(Errno::EINVAL, "unregister_observer is not supported")
     }
 
-    fn as_socket(&self) -> Option<&dyn Socket> {
+    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
         None
     }
 
