@@ -74,12 +74,12 @@ pub const GRUB_PREFIX_EFI_AND_LEGACY: &str = "/usr/local/grub";
 pub const GRUB_VERSION: &str = "x86_64-efi";
 
 pub fn create_bootdev_image(
-    aster_path: PathBuf,
+    kernel_elf_path: PathBuf,
     initramfs_path: PathBuf,
     grub_cfg: String,
     protocol: BootProtocol,
 ) -> PathBuf {
-    let target_dir = aster_path.parent().unwrap();
+    let target_dir = kernel_elf_path.parent().unwrap();
     let iso_root = target_dir.join("iso_root");
 
     // Clear or make the iso dir.
@@ -102,24 +102,24 @@ pub fn create_bootdev_image(
                 BootProtocol::LinuxEfiHandover64 => BzImageType::Efi64,
                 _ => unreachable!(),
             };
-            let wrapper_src = Path::new("framework/libs/linux-bzimage/setup");
-            let wrapper_out = Path::new("target/linux-bzimage-setup");
+            let setup_src = Path::new("framework/libs/linux-bzimage/setup");
+            let setup_out_dir = Path::new("target/linux-bzimage-setup");
             // Make the `bzImage`-compatible kernel image and place it in the boot directory.
             let target_path = iso_root.join("boot").join("asterinaz");
             println!("[aster-runner] Building bzImage.");
             make_bzimage(
                 &target_path,
-                &aster_path.as_path(),
                 image_type,
-                &wrapper_src,
-                &wrapper_out,
+                &kernel_elf_path.as_path(),
+                &setup_src,
+                &setup_out_dir,
             );
             target_path
         }
         BootProtocol::Multiboot | BootProtocol::Multiboot2 => {
             // Copy the kernel image to the boot directory.
             let target_path = iso_root.join("boot").join("atserinas");
-            fs::copy(&aster_path, &target_path).unwrap();
+            fs::copy(&kernel_elf_path, &target_path).unwrap();
             target_path
         }
     };

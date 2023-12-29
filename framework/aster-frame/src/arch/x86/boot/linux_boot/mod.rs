@@ -1,7 +1,6 @@
 //! The Linux 64-bit Boot Protocol supporting module.
 //!
 
-extern crate linux_boot_params;
 use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
 
 use crate::boot::{
@@ -138,7 +137,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     memory_regions.call_once(|| non_overlapping_regions_from(regions.as_ref()));
 }
 
-/// The entry point of of the Rust code portion of Asterinas.
+/// The entry point of the Rust code portion of Asterinas.
 #[no_mangle]
 unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     let params = *params_ptr;

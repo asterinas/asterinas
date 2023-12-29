@@ -1,17 +1,5 @@
 use xmas_elf::program::{ProgramHeader, SegmentData};
 
-/// TODO: remove this and use copy_from_slice instead
-///
-/// We use a custom memcpy because the standard library's compiler's builtin memcpy
-/// fails for some unknown reason.
-unsafe fn memcpy(dst: *mut u8, src: *const u8, size: usize) {
-    let mut i = 0;
-    while i < size {
-        *dst.add(i) = *src.add(i);
-        i += 1;
-    }
-}
-
 /// Load the kernel ELF payload to memory.
 pub fn load_elf(file: &[u8]) {
     let elf = xmas_elf::ElfFile::new(file).unwrap();
@@ -61,4 +49,17 @@ fn load_segment(file: &xmas_elf::ElfFile, program: &xmas_elf::program::ProgramHe
     }
     let zero_slice = &mut dst_slice[program.file_size as usize..];
     zero_slice.fill(0);
+}
+
+/// TODO: remove this and use copy_from_slice instead
+///
+/// We use a custom memcpy because the standard library's compiler's builtin memcpy
+/// fails for some unknown reason. Sometimes that will result in "Unknown OPCode"
+/// machine error.
+unsafe fn memcpy(dst: *mut u8, src: *const u8, size: usize) {
+    let mut i = 0;
+    while i < size {
+        *dst.add(i) = *src.add(i);
+        i += 1;
+    }
 }
