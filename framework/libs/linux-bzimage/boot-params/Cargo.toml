@@ -1,5 +1,5 @@
 [package]
-name = "linux_boot_params"
+name = "linux-boot-params"
 version = "0.1.0"
 edition = "2021"
 

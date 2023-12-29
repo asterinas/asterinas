@@ -1,4 +1,4 @@
-use aster_boot_wrapper_builder::{make_bzimage, BzImageType};
+use linux_bzimage_builder::{make_bzimage, BzImageType};
 
 use std::{
     fs,
@@ -102,8 +102,8 @@ pub fn create_bootdev_image(
                 BootProtocol::LinuxEfiHandover64 => BzImageType::Efi64,
                 _ => unreachable!(),
             };
-            let wrapper_src = Path::new("framework/libs/boot-wrapper/wrapper");
-            let wrapper_out = Path::new("target/aster-boot-wrapper");
+            let wrapper_src = Path::new("framework/libs/linux-bzimage/setup");
+            let wrapper_out = Path::new("target/linux-bzimage-setup");
             // Make the `bzImage`-compatible kernel image and place it in the boot directory.
             let target_path = iso_root.join("boot").join("asterinaz");
             println!("[aster-runner] Building bzImage.");

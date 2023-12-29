@@ -10,7 +10,7 @@ align_ext = { path = "../libs/align_ext" }
 bit_field = "0.10.1"
 bitflags = "1.3"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
-linux_boot_params = { path = "../libs/boot-wrapper/linux-boot-params" }
+linux-boot-params = { path = "../libs/linux-bzimage/boot-params" }
 buddy_system_allocator = "0.9.0"
 cfg-if = "1.0"
 gimli = { version = "0.28", default-features = false, features = ["read-core"] }

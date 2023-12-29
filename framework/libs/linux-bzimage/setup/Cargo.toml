@@ -1,5 +1,5 @@
 [package]
-name = "aster-boot-wrapper"
+name = "linux-bzimage-setup"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 cfg-if = "1.0.0"
-linux_boot_params = { path = "../linux-boot-params" }
+linux-boot-params = { path = "../boot-params" }
 uart_16550 = "0.3.0"
 xmas-elf = "0.8.0"
 

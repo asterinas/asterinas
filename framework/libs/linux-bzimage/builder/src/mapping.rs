@@ -1,4 +1,4 @@
-//! In the wrapper, VA - SETUP32_LMA == FileOffset - LEGACY_SETUP_SEC_SIZE.
+//! In the setup, VA - SETUP32_LMA == FileOffset - LEGACY_SETUP_SEC_SIZE.
 //! And the addresses are specified in the ELF file.
 //!
 //! This module centralizes the conversion between VA and FileOffset.
@@ -17,28 +17,28 @@ pub const LEGACY_SETUP_SEC_SIZE: usize = 0x200 * (LEGACY_SETUP_SECS + 1);
 pub const SETUP32_LMA: usize = 0x100000;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
-pub struct WrapperVA {
+pub struct SetupVA {
     addr: usize,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
-pub struct WrapperFileOffset {
+pub struct SetupFileOffset {
     offset: usize,
 }
 
-impl From<usize> for WrapperVA {
+impl From<usize> for SetupVA {
     fn from(addr: usize) -> Self {
         Self { addr }
     }
 }
 
-impl From<WrapperVA> for usize {
-    fn from(va: WrapperVA) -> Self {
+impl From<SetupVA> for usize {
+    fn from(va: SetupVA) -> Self {
         va.addr
     }
 }
 
-impl Sub for WrapperVA {
+impl Sub for SetupVA {
     type Output = usize;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -46,7 +46,7 @@ impl Sub for WrapperVA {
     }
 }
 
-impl Add<usize> for WrapperVA {
+impl Add<usize> for SetupVA {
     type Output = Self;
 
     fn add(self, rhs: usize) -> Self::Output {
@@ -56,19 +56,19 @@ impl Add<usize> for WrapperVA {
     }
 }
 
-impl From<usize> for WrapperFileOffset {
+impl From<usize> for SetupFileOffset {
     fn from(offset: usize) -> Self {
         Self { offset }
     }
 }
 
-impl From<WrapperFileOffset> for usize {
-    fn from(offset: WrapperFileOffset) -> Self {
+impl From<SetupFileOffset> for usize {
+    fn from(offset: SetupFileOffset) -> Self {
         offset.offset
     }
 }
 
-impl Sub for WrapperFileOffset {
+impl Sub for SetupFileOffset {
     type Output = usize;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -76,7 +76,7 @@ impl Sub for WrapperFileOffset {
     }
 }
 
-impl Add<usize> for WrapperFileOffset {
+impl Add<usize> for SetupFileOffset {
     type Output = Self;
 
     fn add(self, rhs: usize) -> Self::Output {
@@ -86,16 +86,16 @@ impl Add<usize> for WrapperFileOffset {
     }
 }
 
-impl From<WrapperVA> for WrapperFileOffset {
-    fn from(va: WrapperVA) -> Self {
+impl From<SetupVA> for SetupFileOffset {
+    fn from(va: SetupVA) -> Self {
         Self {
             offset: va.addr + LEGACY_SETUP_SEC_SIZE - SETUP32_LMA,
         }
     }
 }
 
-impl From<WrapperFileOffset> for WrapperVA {
-    fn from(offset: WrapperFileOffset) -> Self {
+impl From<SetupFileOffset> for SetupVA {
+    fn from(offset: SetupFileOffset) -> Self {
         Self {
             addr: offset.offset + SETUP32_LMA - LEGACY_SETUP_SEC_SIZE,
         }

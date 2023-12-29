@@ -10,8 +10,8 @@ use crate::console::{print_hex, print_str};
 
 pub const ASTER_ENTRY_POINT: u32 = 0x8001000;
 
-#[export_name = "_trojan_entry_32"]
-extern "cdecl" fn trojan_entry(boot_params_ptr: u32) -> ! {
+#[export_name = "_bzimage_entry_32"]
+extern "cdecl" fn bzimage_entry(boot_params_ptr: u32) -> ! {
     // Safety: this init function is only called once.
     unsafe { crate::console::init() };
 

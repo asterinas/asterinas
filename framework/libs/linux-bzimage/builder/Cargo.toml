@@ -1,5 +1,5 @@
 [package]
-name = "aster-boot-wrapper-builder"
+name = "linux-bzimage-builder"
 version = "0.1.0"
 edition = "2021"
 

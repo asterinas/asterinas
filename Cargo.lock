@@ -130,31 +130,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aster-boot-wrapper"
-version = "0.1.0"
-dependencies = [
- "bitflags 2.4.1",
- "cfg-if",
- "linux_boot_params",
- "log",
- "uart_16550",
- "uefi",
- "uefi-services",
- "x86_64",
- "xmas-elf 0.8.0",
-]
-
-[[package]]
-name = "aster-boot-wrapper-builder"
-version = "0.1.0"
-dependencies = [
- "bitflags 1.3.2",
- "bytemuck",
- "serde",
- "xmas-elf 0.9.1",
-]
-
-[[package]]
 name = "aster-console"
 version = "0.1.0"
 dependencies = [
@@ -184,7 +159,7 @@ dependencies = [
  "intrusive-collections",
  "ktest",
  "lazy_static",
- "linux_boot_params",
+ "linux-boot-params",
  "log",
  "multiboot2",
  "pod",
@@ -268,8 +243,8 @@ name = "aster-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aster-boot-wrapper-builder",
  "clap",
+ "linux-bzimage-builder",
  "rand",
  "xmas-elf 0.8.0",
 ]
@@ -975,8 +950,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "linux_boot_params"
+name = "linux-boot-params"
 version = "0.1.0"
+
+[[package]]
+name = "linux-bzimage-builder"
+version = "0.1.0"
+dependencies = [
+ "bitflags 1.3.2",
+ "bytemuck",
+ "serde",
+ "xmas-elf 0.9.1",
+]
+
+[[package]]
+name = "linux-bzimage-setup"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.4.1",
+ "cfg-if",
+ "linux-boot-params",
+ "log",
+ "uart_16550",
+ "uefi",
+ "uefi-services",
+ "x86_64",
+ "xmas-elf 0.8.0",
+]
 
 [[package]]
 name = "lock_api"
