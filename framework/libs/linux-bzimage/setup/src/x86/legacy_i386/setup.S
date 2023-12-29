@@ -12,9 +12,10 @@ start_of_setup32:
     push ebp
     mov ebp, esp
 
-.extern _trojan_entry_32
+// The rust entrypoint of the bzImage
+.extern _bzimage_entry_32
     push esi                        # the boot_params pointer
-    call _trojan_entry_32
+    call _bzimage_entry_32
 
     // Unreachable here.
 halt:

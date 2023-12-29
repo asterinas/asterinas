@@ -1,13 +1,14 @@
-//! The linux boot wrapper builder.
+//! The linux bzImage builder.
 //!
 //! This crate is responsible for building the bzImage. It contains methods to build
-//! the wrapper binary and methods to build the bzImage.
+//! the setup binary (with source provided in another crate) and methods to build the
+//! bzImage from the setup binary and the kernel ELF.
 //!
-//! We should build the asterinas kernel as a ELF file, and feed it to the builder to
-//! generate the bzImage. The builder will generate the PE/COFF header for the wrapper
-//! and concatenate it to the ELF file to make the bzImage.
+//! We should build the asterinas kernel as an ELF file, and feed it to the builder to
+//! generate the bzImage. The builder will generate the PE/COFF header for the setup
+//! code and concatenate it to the ELF file to make the bzImage.
 //!
-//! The wrapper should be built into the ELF target and we convert it to a flat binary
+//! The setup code should be built into the ELF target and we convert it to a flat binary
 //! in the builder.
 
 mod mapping;
@@ -21,15 +22,15 @@ use std::{
 
 use xmas_elf::program::SegmentData;
 
-use mapping::{WrapperFileOffset, WrapperVA};
+use mapping::{SetupFileOffset, SetupVA};
 
-/// We need a flat binary which satisfies PA delta == File delta, and objcopy
-/// does not satisfy us well, so we should parse the ELF and do our own
-/// objcopy job.
+/// We need a flat binary which satisfies PA delta == File offset delta,
+/// and objcopy does not satisfy us well, so we should parse the ELF and
+/// do our own objcopy job.
 ///
 /// Interstingly, the resulting binary should be the same as the memory
 /// dump of the kernel setup header when it's loaded by the bootloader.
-fn wrapper_to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
+fn to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
     let elf = xmas_elf::ElfFile::new(&elf_file).unwrap();
     let mut bin = Vec::<u8>::new();
 
@@ -38,7 +39,7 @@ fn wrapper_to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
             let SegmentData::Undefined(header_data) = program.get_data(&elf).unwrap() else {
                 panic!("Unexpected segment data type");
             };
-            let dst_file_offset = usize::from(WrapperFileOffset::from(WrapperVA::from(
+            let dst_file_offset = usize::from(SetupFileOffset::from(SetupVA::from(
                 program.virtual_addr() as usize,
             )));
             let dst_file_length = program.file_size() as usize;
@@ -72,8 +73,8 @@ fn fill_header_field(header: &mut [u8], offset: usize, value: &[u8]) {
 fn fill_legacy_header_fields(
     header: &mut [u8],
     kernel_len: usize,
-    wrapper_len: usize,
-    payload_offset: WrapperVA,
+    setup_len: usize,
+    payload_offset: SetupVA,
 ) {
     fill_header_field(
         header,
@@ -90,7 +91,7 @@ fn fill_legacy_header_fields(
     fill_header_field(
         header,
         0x260, /* init_size */
-        &((wrapper_len + kernel_len) as u32).to_le_bytes(),
+        &((setup_len + kernel_len) as u32).to_le_bytes(),
     );
 }
 
@@ -106,30 +107,28 @@ pub fn make_bzimage(
     image_path: &Path,
     kernel_path: &Path,
     image_type: BzImageType,
-    wrapper_src: &Path,
-    wrapper_out: &Path,
+    setup_src: &Path,
+    setup_out: &Path,
 ) {
-    let wrapper = match image_type {
+    let setup = match image_type {
         BzImageType::Legacy32 => {
-            let arch = wrapper_src
+            let arch = setup_src
                 .join("x86_64-i386_pm-none.json")
                 .canonicalize()
                 .unwrap();
-            build_wrapper_with_arch(wrapper_src, wrapper_out, &WrapperBuildArch::Other(arch))
+            build_setup_with_arch(setup_src, setup_out, &SetupBuildArch::Other(arch))
         }
-        BzImageType::Efi64 => {
-            build_wrapper_with_arch(wrapper_src, wrapper_out, &WrapperBuildArch::X86_64)
-        }
+        BzImageType::Efi64 => build_setup_with_arch(setup_src, setup_out, &SetupBuildArch::X86_64),
     };
 
-    let mut wrapper_elf = Vec::new();
-    File::open(wrapper)
+    let mut setup_elf = Vec::new();
+    File::open(setup)
         .unwrap()
-        .read_to_end(&mut wrapper_elf)
+        .read_to_end(&mut setup_elf)
         .unwrap();
-    let mut wrapper = wrapper_to_flat_binary(&wrapper_elf);
+    let mut setup = to_flat_binary(&setup_elf);
     // Pad the header with 8-byte alignment.
-    wrapper.resize((wrapper.len() + 7) & !7, 0x00);
+    setup.resize((setup.len() + 7) & !7, 0x00);
 
     let mut kernel = Vec::new();
     File::open(kernel_path)
@@ -138,27 +137,22 @@ pub fn make_bzimage(
         .unwrap();
     let payload = kernel;
 
-    let wrapper_len = wrapper.len();
+    let setup_len = setup.len();
     let payload_len = payload.len();
-    let payload_offset = WrapperFileOffset::from(wrapper_len);
-    fill_legacy_header_fields(
-        &mut wrapper,
-        payload_len,
-        wrapper_len,
-        payload_offset.into(),
-    );
+    let payload_offset = SetupFileOffset::from(setup_len);
+    fill_legacy_header_fields(&mut setup, payload_len, setup_len, payload_offset.into());
 
     let mut kernel_image = File::create(image_path).unwrap();
-    kernel_image.write_all(&wrapper).unwrap();
+    kernel_image.write_all(&setup).unwrap();
     kernel_image.write_all(&payload).unwrap();
 
-    let image_size = wrapper_len + payload_len;
+    let image_size = setup_len + payload_len;
 
     if matches!(image_type, BzImageType::Efi64) {
         // Write the PE/COFF header to the start of the file.
         // Since the Linux boot header starts at 0x1f1, we can write the PE/COFF header directly to the
         // start of the file without overwriting the Linux boot header.
-        let pe_header = pe_header::make_pe_coff_header(&wrapper_elf, image_size);
+        let pe_header = pe_header::make_pe_coff_header(&setup_elf, image_size);
         assert!(
             pe_header.header_at_zero.len() <= 0x1f1,
             "PE/COFF header is too large"
@@ -173,15 +167,15 @@ pub fn make_bzimage(
     }
 }
 
-enum WrapperBuildArch {
+enum SetupBuildArch {
     X86_64,
     Other(PathBuf),
 }
 
-/// Build the wrapper binary.
+/// Build the setup binary.
 ///
-/// It will return the path to the built wrapper binary.
-fn build_wrapper_with_arch(source_dir: &Path, out_dir: &Path, arch: &WrapperBuildArch) -> PathBuf {
+/// It will return the path to the built setup binary.
+fn build_setup_with_arch(source_dir: &Path, out_dir: &Path, arch: &SetupBuildArch) -> PathBuf {
     if !out_dir.exists() {
         std::fs::create_dir_all(&out_dir).unwrap();
     }
@@ -198,10 +192,10 @@ fn build_wrapper_with_arch(source_dir: &Path, out_dir: &Path, arch: &WrapperBuil
     if profile == "release" {
         cmd.arg("--release");
     }
-    cmd.arg("--package").arg("aster-boot-wrapper");
+    cmd.arg("--package").arg("linux-bzimage-setup");
     cmd.arg("--target").arg(match arch {
-        WrapperBuildArch::X86_64 => "x86_64-unknown-none",
-        WrapperBuildArch::Other(path) => path.to_str().unwrap(),
+        SetupBuildArch::X86_64 => "x86_64-unknown-none",
+        SetupBuildArch::Other(path) => path.to_str().unwrap(),
     });
     cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
     cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
@@ -220,16 +214,16 @@ fn build_wrapper_with_arch(source_dir: &Path, out_dir: &Path, arch: &WrapperBuil
         );
     }
 
-    // Get the path to the wrapper binary.
+    // Get the path to the setup binary.
     let arch_name = match arch {
-        WrapperBuildArch::X86_64 => "x86_64-unknown-none",
-        WrapperBuildArch::Other(path) => path.file_stem().unwrap().to_str().unwrap(),
+        SetupBuildArch::X86_64 => "x86_64-unknown-none",
+        SetupBuildArch::Other(path) => path.file_stem().unwrap().to_str().unwrap(),
     };
 
-    let wrapper_artifact = out_dir
+    let setup_artifact = out_dir
         .join(arch_name)
         .join(profile)
-        .join("aster-boot-wrapper");
+        .join("linux-bzimage-setup");
 
-    wrapper_artifact.to_owned()
+    setup_artifact.to_owned()
 }

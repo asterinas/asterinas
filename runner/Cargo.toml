@@ -7,6 +7,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.32"
 clap = { version = "4.3.19", features = ["derive"] }
-aster-boot-wrapper-builder = { path = "../framework/libs/boot-wrapper/builder" }
+linux-bzimage-builder = { path = "../framework/libs/linux-bzimage/builder" }
 rand = "0.8.5"
 xmas-elf = "0.8.0"

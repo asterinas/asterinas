@@ -8,10 +8,10 @@ cfg_if::cfg_if! {
     }
 }
 
-// This is enforced in the linker script of the wrapper.
+// This is enforced in the linker script of the setup.
 const START_OF_SETUP32_VA: usize = 0x100000;
 
-/// The wrapper is a position-independent executable. We can get the loaded base
+/// The setup is a position-independent executable. We can get the loaded base
 /// address from the symbol.
 #[inline]
 pub fn get_image_loaded_offset() -> isize {
