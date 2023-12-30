@@ -172,10 +172,6 @@ impl Waiter {
         self.is_woken_up.store(false, Ordering::SeqCst);
     }
 
-    pub fn is_woken_up(&self) -> bool {
-        self.is_woken_up.load(Ordering::SeqCst)
-    }
-
     pub fn wake_up(&self) {
         if let Ok(false) =
             self.is_woken_up
