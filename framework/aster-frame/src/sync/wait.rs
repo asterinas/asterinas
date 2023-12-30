@@ -164,12 +164,12 @@ impl Waiter {
 
     /// make self into wait status until be called wake up
     pub fn wait(&self) {
-        self.is_woken_up.store(false, Ordering::SeqCst);
         self.task.inner_exclusive_access().task_status = TaskStatus::Sleeping;
         while !self.is_woken_up.load(Ordering::SeqCst) {
             schedule();
         }
         self.task.inner_exclusive_access().task_status = TaskStatus::Runnable;
+        self.is_woken_up.store(false, Ordering::SeqCst);
     }
 
     pub fn is_woken_up(&self) -> bool {
