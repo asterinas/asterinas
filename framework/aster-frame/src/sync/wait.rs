@@ -99,7 +99,8 @@ impl WaitQueue {
             if let Some(ref timer_callback) = timer_callback
                 && timer_callback.is_expired()
             {
-                return None;
+                self.dequeue(&waiter);
+                return cond();
             }
 
             waiter.wait();
