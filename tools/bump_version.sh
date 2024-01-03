@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# SPDX-License-Identifier: MPL-2.0
+
 # This script is used to update Asterinas version numbers in all relevant files in the repository.
 # Usage: ./tools/bump_version.sh <new_version>
 
