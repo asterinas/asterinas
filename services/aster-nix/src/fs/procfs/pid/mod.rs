@@ -6,6 +6,7 @@ use crate::fs::utils::{DirEntryVecExt, Inode};
 use crate::prelude::*;
 use crate::process::Process;
 
+use self::cmdline::CmdlineFileOps;
 use self::comm::CommFileOps;
 use self::exe::ExeSymOps;
 use self::fd::FdDirOps;
@@ -13,6 +14,7 @@ use super::template::{
     DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFileBuilder, ProcSymBuilder, SymOps,
 };
 
+mod cmdline;
 mod comm;
 mod exe;
 mod fd;
@@ -50,6 +52,7 @@ impl DirOps for PidDirOps {
             "exe" => ExeSymOps::new_inode(self.0.clone(), this_ptr.clone()),
             "comm" => CommFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -69,6 +72,9 @@ impl DirOps for PidDirOps {
         });
         cached_children.put_entry_if_not_found("fd", || {
             FdDirOps::new_inode(self.0.clone(), this_ptr.clone())
-        })
+        });
+        cached_children.put_entry_if_not_found("cmdline", || {
+            CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
     }
 }
