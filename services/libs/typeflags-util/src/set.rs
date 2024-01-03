@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Common types and traits to deal with type-level sets
 
 use core::marker::PhantomData;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::events::{IoEvents, Observer};
 use crate::fs::file_handle::FileLike;
 use crate::fs::file_table::{FdEvents, FileDescripter};

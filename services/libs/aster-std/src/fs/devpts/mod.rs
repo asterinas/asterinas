@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::device::PtyMaster;
 use crate::fs::device::{Device, DeviceId, DeviceType};
 use crate::fs::utils::{

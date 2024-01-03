@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::config::{KERNEL_HEAP_SIZE, PAGE_SIZE};
 use crate::prelude::*;
 use crate::sync::SpinLock;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The process status
 
 use super::TermStatus;

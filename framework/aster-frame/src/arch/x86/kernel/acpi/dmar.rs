@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::{fmt::Debug, mem::size_of, slice::Iter};
 
 use acpi::{sdt::Signature, AcpiTable};

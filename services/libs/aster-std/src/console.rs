@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! `print` and `println` macros
 //!
 //! FIXME: It will print to all `virtio-console` devices, which is not a good choice.

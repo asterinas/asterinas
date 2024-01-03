@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_time::{read_monotonic_time, read_start_time};
 use core::time::Duration;
 use time::{Date, Month, PrimitiveDateTime, Time};

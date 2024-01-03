@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::utils::Dentry;
 use crate::net::socket::util::sockaddr::SocketAddr;
 use crate::prelude::*;

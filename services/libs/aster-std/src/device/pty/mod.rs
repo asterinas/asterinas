@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::devpts::DevPts;
 use crate::fs::fs_resolver::{FsPath, FsResolver};
 use crate::fs::utils::{Dentry, Inode, InodeMode, InodeType};

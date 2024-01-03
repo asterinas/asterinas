@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 /// This trait is a _fallible_ version of `Clone`.
 ///
 /// If any object of a type `T` is duplicable, then `T` should implement

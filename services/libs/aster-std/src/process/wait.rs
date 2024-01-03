@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::{prelude::*, process::process_table, thread::thread_table};
 
 use super::{process_filter::ProcessFilter, ExitCode, Pid, Process};

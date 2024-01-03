@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The implementation of robust list is from occlum.
 
 use crate::{

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::prelude::*;

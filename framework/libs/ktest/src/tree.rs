@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The source module tree of ktests.
 //!
 //! In the `KtestTree`, the root is abstract, and the children of the root are the

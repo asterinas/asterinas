@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::file_table::FileDescripter;
 use crate::get_socket_without_holding_filetable_lock;
 use crate::log_syscall_entry;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::config::REAL_TIME_TASK_PRI;
 
 /// The priority of a task.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use linux_bzimage_builder::{make_bzimage, BzImageType};
 
 use std::{

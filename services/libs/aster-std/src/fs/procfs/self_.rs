@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::*;
 
 /// Represents the inode at `/proc/self`.

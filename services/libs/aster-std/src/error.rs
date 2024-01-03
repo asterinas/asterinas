@@ -1,4 +1,6 @@
-/// Errno. Copied from Occlum
+// SPDX-License-Identifier: MPL-2.0
+
+/// Error number.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Errno {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #![feature(rustc_private)]
 
 extern crate rustc_ast;

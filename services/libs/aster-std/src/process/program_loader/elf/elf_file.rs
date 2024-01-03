@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 /// A wrapper of xmas_elf's elf parsing
 use xmas_elf::{
     header::{self, Header, HeaderPt1, HeaderPt2, HeaderPt2_, Machine_, Type_},

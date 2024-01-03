@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use alloc::vec::Vec;
 use aster_frame::{bus::pci::capability::msix::CapabilityMsixData, trap::IrqLine};
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use proc_macro2::{TokenStream, TokenTree};
 use quote::{ToTokens, TokenStreamExt};
 use syn::parse::Parse;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::events::Observer;
 use crate::fs::file_table::FdEvents;
 use crate::fs::utils::{DirEntryVecExt, Inode};

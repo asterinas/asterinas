@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::process::{credentials_mut, Uid};

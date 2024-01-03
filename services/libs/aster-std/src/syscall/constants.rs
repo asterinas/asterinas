@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! constants used in syscall
 
 /// LONGEST ALLOWED FILENAME

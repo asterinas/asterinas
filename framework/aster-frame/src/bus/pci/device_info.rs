@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::iter;
 
 use crate::arch::pci::{PCI_ADDRESS_PORT, PCI_DATA_PORT};

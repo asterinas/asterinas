@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::log_syscall_entry;
 use crate::{
     fs::{file_table::FileDescripter, inode_handle::InodeHandle},

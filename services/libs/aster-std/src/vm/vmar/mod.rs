@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Virtual Memory Address Regions (VMARs).
 
 mod dyn_cap;

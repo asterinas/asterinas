@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use acpi::{fadt::Fadt, sdt::Signature};
 use x86_64::instructions::port::{ReadOnlyAccess, WriteOnlyAccess};
 

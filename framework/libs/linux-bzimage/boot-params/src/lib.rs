@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The definition of Linux Boot Protocol boot_params struct.
 //!
 //! The bootloader will deliver the address of the `BootParams` struct

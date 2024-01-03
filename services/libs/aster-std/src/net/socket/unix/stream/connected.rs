@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::endpoint::Endpoint;
 use crate::events::IoEvents;
 use crate::net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd};

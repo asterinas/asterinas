@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! User space.
 
 use crate::cpu::UserContext;

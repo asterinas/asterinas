@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! PCI bus io port
 
 use super::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};

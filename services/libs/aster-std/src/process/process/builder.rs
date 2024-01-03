@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
 use crate::fs::utils::FileCreationMask;

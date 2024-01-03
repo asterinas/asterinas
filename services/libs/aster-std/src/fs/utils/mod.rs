@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! VFS components
 
 pub use access_mode::AccessMode;

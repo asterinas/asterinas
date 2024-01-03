@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! A safe Rust Ext2 filesystem.
 //!
 //! The Second Extended File System(Ext2) is a major rewrite of the Ext filesystem.

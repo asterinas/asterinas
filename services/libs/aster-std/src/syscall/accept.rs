@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::util::net::write_socket_addr_to_user;
 use crate::{fs::file_table::FileDescripter, prelude::*};
 use crate::{get_socket_without_holding_filetable_lock, log_syscall_entry};

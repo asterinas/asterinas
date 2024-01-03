@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::net::socket::SendRecvFlags;
 use crate::util::net::write_socket_addr_to_user;
 use crate::util::write_bytes_to_user;

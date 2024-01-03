@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 pub mod capability;
 pub mod common_cfg;
 pub mod device;

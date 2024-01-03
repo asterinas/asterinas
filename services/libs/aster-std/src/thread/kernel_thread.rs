@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_frame::cpu::CpuSet;
 use aster_frame::task::{Priority, TaskOptions};
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::blocks_hole::BlocksHoleDesc;
 use super::dir::{DirEntry, DirEntryReader, DirEntryWriter};
 use super::fs::Ext2;

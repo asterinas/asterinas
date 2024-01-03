@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This crate provides a derive macro named TryFromInt. This macro can be used to automatically implement TryFrom trait
 //! for [C-like enums](https://doc.rust-lang.org/stable/rust-by-example/custom_types/enum/c_like.html).
 //!

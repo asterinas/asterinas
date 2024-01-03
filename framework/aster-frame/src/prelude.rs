@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The prelude.
 
 pub type Result<T> = core::result::Result<T, crate::error::Error>;

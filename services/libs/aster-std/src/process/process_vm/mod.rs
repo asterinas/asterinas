@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This module defines the UserVm of a process.
 //! The UserSpace of a process only contains the virtual-physical memory mapping.
 //! But we cannot know which vaddr is user heap, which vaddr is mmap areas.

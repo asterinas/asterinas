@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::collections::{BTreeMap, HashSet};
 use std::{env, fs, io, path::PathBuf};
 

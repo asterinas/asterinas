@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::events::{Events, Observer, Subject};
 use crate::net::socket::Socket;
 use crate::prelude::*;

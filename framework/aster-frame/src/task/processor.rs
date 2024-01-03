@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::sync::atomic::AtomicUsize;
 
 use crate::cpu_local;

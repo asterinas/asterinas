@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::Events;
 
 /// An observer for events.

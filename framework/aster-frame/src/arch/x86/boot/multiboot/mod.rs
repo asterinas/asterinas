@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use alloc::{string::String, vec::Vec};
 use multiboot2::MemoryAreaType;
 use spin::Once;

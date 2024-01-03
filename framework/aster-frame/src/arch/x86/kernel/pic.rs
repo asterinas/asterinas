@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::arch::x86::device::io_port::{IoPort, WriteOnlyAccess};
 use crate::trap::IrqLine;
 use core::sync::atomic::Ordering::Relaxed;

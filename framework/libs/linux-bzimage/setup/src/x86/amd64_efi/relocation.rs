@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::x86::get_image_loaded_offset;
 
 struct Elf64Rela {

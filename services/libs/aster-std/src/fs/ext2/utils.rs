@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::prelude::*;
 
 use core::ops::MulAssign;

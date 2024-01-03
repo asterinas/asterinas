@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use alloc::collections::VecDeque;
 use core::sync::atomic::{
     AtomicBool,

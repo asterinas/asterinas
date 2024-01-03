@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::hint::spin_loop;
 
 use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
