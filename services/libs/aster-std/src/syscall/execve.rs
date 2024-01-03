@@ -152,6 +152,10 @@ fn read_cstring_vec(
     max_string_number: usize,
     max_string_len: usize,
 ) -> Result<Vec<CString>> {
+    if array_ptr == 0 {
+        return Ok(Vec::new());
+    }
+
     let mut res = Vec::new();
     let mut read_addr = array_ptr;
     let mut find_null = false;

@@ -1,7 +1,10 @@
-TESTS ?= chmod_test fsync_test getdents_test link_test lseek_test mkdir_test \
-		open_create_test open_test pty_test read_test rename_test stat_test \
-		statfs_test symlink_test sync_test uidgid_test unlink_test \
-		vdso_clock_gettime_test write_test
+TESTS ?= chmod_test exec_test fsync_test getdents_test link_test lseek_test mkdir_test \
+	open_create_test open_test pty_test read_test rename_test stat_test statfs_test \
+	symlink_test sync_test uidgid_test unlink_test vdso_clock_gettime_test write_test
+	
+
+TEST_ATTACHMENTS := exec_assert_closed_workload exec_basic_workload exec_proc_exe_workload \
+	exec_state_workload exit_script priority_execve sigaltstack_check
 
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
@@ -19,9 +22,12 @@ BLOCK_LIST := $(CUR_DIR)/blocklists
 
 .PHONY: all clean
 
-all: $(TESTS)
+all: $(TESTS) $(TEST_ATTACHMENTS)
 
 $(TESTS): $(BIN_DIR) $(TARGET_DIR)
+	@cp -f $</$@ $(TARGET_DIR)/tests
+
+$(TEST_ATTACHMENTS): $(BIN_DIR) $(TARGET_DIR)
 	@cp -f $</$@ $(TARGET_DIR)/tests
 
 ifndef ASTER_PREBUILT_SYSCALL_TEST
@@ -33,6 +39,9 @@ $(BIN_DIR): $(SRC_DIR)
 	@rm -rf $@ && mkdir -p $@
 	@cd $(SRC_DIR) && bazel build --test_tag_filters=native //test/syscalls/...
 	@cp $(SRC_DIR)/bazel-bin/test/syscalls/linux/*_test $@
+	@for file in $(TEST_ATTACHMENTS); do \
+		cp -f $(SRC_DIR)/bazel-bin/test/syscalls/linux/$$file $@; \
+	done
 
 $(SRC_DIR):
 	@rm -rf $@ && mkdir -p $@

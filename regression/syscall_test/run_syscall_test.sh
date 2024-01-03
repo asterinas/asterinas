@@ -31,7 +31,7 @@ run_one_test(){
     if [ -f $TEST_BIN_DIR/$1 ]; then
         rm -rf $TEST_TMP_DIR/*
         get_blocklist_subtests $1
-        $TEST_BIN_DIR/$1 --gtest_filter=-$BLOCK
+        cd $TEST_BIN_DIR && ./$1 --gtest_filter=-$BLOCK
         ret=$?
     else
         echo -e "Warning: $1 test does not exit"
