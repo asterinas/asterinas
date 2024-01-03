@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This module provide a instance of `ClockSource` based on TSC.
 //!
 //! Use `init` to initialize this module.

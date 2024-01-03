@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::prelude::*;
 
 /// User-provided signal stack. `SigStack` is per-thread, and each thread can have

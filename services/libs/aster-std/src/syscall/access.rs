@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::{constants::*, SyscallReturn};
 use crate::{log_syscall_entry, prelude::*, syscall::SYS_ACCESS, util::read_cstring_from_user};
 

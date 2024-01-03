@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::fmt::{self, Write};
 
 use uart_16550::SerialPort;

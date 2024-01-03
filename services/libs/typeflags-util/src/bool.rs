@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Type level bools
 
 pub use core::ops::BitAnd as And;

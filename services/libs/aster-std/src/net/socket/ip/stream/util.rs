@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, CopyGetters, Setters)]

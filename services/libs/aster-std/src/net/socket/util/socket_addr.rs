@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::net::iface::{IpAddress, Ipv4Address};
 use crate::net::iface::{IpEndpoint, IpListenEndpoint};
 use crate::net::socket::unix::UnixSocketAddr;

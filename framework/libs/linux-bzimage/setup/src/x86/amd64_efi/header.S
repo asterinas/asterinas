@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
 // The compatibility file for the Linux x86 Boot Protocol.
 // See https://www.kernel.org/doc/html/v5.6/x86/boot.html for
 // more information on the Linux x86 Boot Protocol.

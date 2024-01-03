@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::sync::atomic::{Ordering::Relaxed, AtomicBool};
 
 use component::init_component;

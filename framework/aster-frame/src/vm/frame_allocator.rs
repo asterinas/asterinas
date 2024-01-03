@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use align_ext::AlignExt;
 use alloc::vec::Vec;
 use buddy_system_allocator::FrameAllocator;

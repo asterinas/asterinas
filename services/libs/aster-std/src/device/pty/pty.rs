@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use alloc::format;
 use ringbuf::{ring_buffer::RbBase, HeapRb, Rb};
 

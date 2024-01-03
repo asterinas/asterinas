@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
 // This is the GNU Multiboot 2 header.
 // Reference: https://www.gnu.org/software/grub/manual/multiboot2/html_node/Index.html//Index
 .section ".multiboot2_header", "a"

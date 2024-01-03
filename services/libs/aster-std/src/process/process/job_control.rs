@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::prelude::*;
 use crate::process::signal::constants::{SIGCONT, SIGHUP};
 use crate::process::signal::signals::kernel::KernelSignal;

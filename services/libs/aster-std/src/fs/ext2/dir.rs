@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::inode::{FileType, MAX_FNAME_LEN};
 use super::prelude::*;
 

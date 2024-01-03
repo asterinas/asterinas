@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The Linux 64-bit Boot Protocol supporting module.
 //!
 

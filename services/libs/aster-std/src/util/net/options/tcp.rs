@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::RawSocketOption;
 use crate::impl_raw_socket_option;
 use crate::net::socket::ip::stream::options::{Congestion, MaxSegment, NoDelay, WindowClamp};

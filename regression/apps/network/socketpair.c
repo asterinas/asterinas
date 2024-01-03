@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #include <stdio.h>
 #include <sys/socket.h>
 #include <stdlib.h>

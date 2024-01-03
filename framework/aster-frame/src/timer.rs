@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Timer.
 
 #[cfg(target_arch = "x86_64")]

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::fs::Ext2;
 use super::inode::{Inode, InodeDesc, RawInode};
 use super::prelude::*;

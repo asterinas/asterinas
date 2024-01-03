@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_frame::cpu::{CpuException, CpuExceptionInfo};
 use aster_frame::cpu::{
     ALIGNMENT_CHECK, BOUND_RANGE_EXCEEDED, DIVIDE_BY_ZERO, GENERAL_PROTECTION_FAULT,

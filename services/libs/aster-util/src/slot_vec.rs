@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use alloc::vec::Vec;
 
 /// SlotVec is the variant of Vector.

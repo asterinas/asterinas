@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #[macro_export]
 macro_rules! impl_socket_options {
     ($(

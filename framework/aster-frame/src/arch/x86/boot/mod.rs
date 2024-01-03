@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The x86 boot module defines the entrypoints of Asterinas and
 //! the corresponding headers for different x86 boot protocols.
 //!

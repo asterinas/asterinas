@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! A safe Rust CPIO (the newc format) decoder.
 //!
 //! # Example

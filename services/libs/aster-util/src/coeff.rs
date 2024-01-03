@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This module provides an abstraction `Coeff` to server for efficient and accurate calculation
 //! of fraction multiplication.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_frame::vm::Paddr;
 use aster_frame::vm::{HasPaddr, VmIo};
 use aster_frame::Result;

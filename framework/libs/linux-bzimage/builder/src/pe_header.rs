@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Big zImage PE/COFF header generation.
 //!
 //! The definition of the PE/COFF header is in the Microsoft PE/COFF specification:

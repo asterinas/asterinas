@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::{constants::*, SigEvents, SigEventsFilter};
 use crate::events::{Observer, Subject};
 use crate::prelude::*;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::prelude::*;
 use crate::sync::SpinLock;
 use crate::task::Task;

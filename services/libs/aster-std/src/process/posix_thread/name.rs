@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::prelude::*;
 
 pub const MAX_THREAD_NAME_LEN: usize = 16;

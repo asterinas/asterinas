@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use alloc::{
     collections::{vec_deque, BTreeMap, VecDeque},
     string::{String, ToString},

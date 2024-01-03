@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 // Modified from input.rs in virtio-drivers project
 //
 // MIT License

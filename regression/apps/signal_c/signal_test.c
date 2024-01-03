@@ -1,4 +1,6 @@
-// This test file is from occlum, to test whether we implement signal correctly.
+// SPDX-License-Identifier: MPL-2.0
+
+// This test file is from occlum signal test.
 
 #define _GNU_SOURCE
 #include <sys/types.h>

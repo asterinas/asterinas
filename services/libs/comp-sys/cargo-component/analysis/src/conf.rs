@@ -1,3 +1,6 @@
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// Copyright (C) 2023-2024 Ant Group.
+
 use std::collections::{BTreeMap, HashSet};
 use std::{env, fs, io, path::PathBuf};
 

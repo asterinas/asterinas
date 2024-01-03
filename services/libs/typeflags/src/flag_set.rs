@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use itertools::Itertools;
 use proc_macro2::{Ident, TokenStream};
 use quote::{quote, TokenStreamExt};

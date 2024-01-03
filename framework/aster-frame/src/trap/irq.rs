@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::arch::irq::{self, IrqCallbackHandle, NOT_USING_IRQ};
 use crate::task::{disable_preempt, DisablePreemptGuard};
 use crate::{prelude::*, Error};

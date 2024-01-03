@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use alloc::sync::Weak;
 
 use super::worker_pool::{WorkerPool, WorkerScheduler};

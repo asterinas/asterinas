@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::{error::Error, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {

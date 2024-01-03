@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 pub mod apic;
 pub mod hpet;
 pub mod pit;

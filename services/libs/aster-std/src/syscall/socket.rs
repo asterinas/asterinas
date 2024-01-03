@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::file_handle::FileLike;
 use crate::net::socket::ip::{DatagramSocket, StreamSocket};
 use crate::net::socket::unix::UnixStreamSocket;

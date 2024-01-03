@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_frame::arch::x86::device::cmos::{get_century_register, CMOS_ADDRESS, CMOS_DATA};
 use core::sync::atomic::AtomicU8;
 use core::sync::atomic::Ordering::Relaxed;

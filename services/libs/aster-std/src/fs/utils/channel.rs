@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_rights_proc::require;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use ringbuf::{HeapConsumer as HeapRbConsumer, HeapProducer as HeapRbProducer, HeapRb};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_frame::timer::read_monotonic_milli_seconds;
 
 use crate::{

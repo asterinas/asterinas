@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use self::common::IfaceCommon;
 use crate::prelude::*;
 use smoltcp::iface::SocketSet;
