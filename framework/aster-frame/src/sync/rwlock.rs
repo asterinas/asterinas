@@ -4,7 +4,7 @@ use core::ops::{Deref, DerefMut};
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release};
 
-use crate::task::{disable_preempt, DisablePreemptGuard};
+use crate::task::DisablePreemptGuard;
 use crate::trap::disable_local;
 use crate::trap::DisabledLocalIrqGuard;
 
@@ -315,7 +315,7 @@ impl<T> RwLock<T> {
     /// method over the `try_read_irq_disabled` method as it has a higher
     /// efficiency.
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
-        let guard = disable_preempt();
+        let guard = DisablePreemptGuard::new();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(RwLockReadGuard {
@@ -339,7 +339,7 @@ impl<T> RwLock<T> {
     /// method over the `try_write_irq_disabled` method as it has a higher
     /// efficiency.
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
-        let guard = disable_preempt();
+        let guard = DisablePreemptGuard::new();
         if self
             .lock
             .compare_exchange(0, WRITER, Acquire, Relaxed)
@@ -365,7 +365,7 @@ impl<T> RwLock<T> {
     /// method over the `try_upread_irq_disabled` method as it has a higher
     /// efficiency.
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T>> {
-        let guard = disable_preempt();
+        let guard = DisablePreemptGuard::new();
         let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
             return Some(RwLockUpgradeableGuard {

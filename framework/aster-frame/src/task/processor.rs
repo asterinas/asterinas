@@ -1,15 +1,12 @@
-use core::sync::atomic::AtomicUsize;
-
-use crate::cpu_local;
-use crate::sync::Mutex;
-use crate::{cpu::CpuLocal, trap::disable_local};
-
-use core::sync::atomic::Ordering::Relaxed;
+use crate::task::preempt::{activate_preempt, deactivate_preempt};
+use crate::task::scheduler::fetch_task;
+use crate::trap::disable_local;
+use crate::{arch::timer::register_scheduler_tick, sync::SpinLock};
 
 use super::{
-    scheduler::{fetch_task, GLOBAL_SCHEDULER},
-    task::{context_switch, TaskContext},
-    Task, TaskStatus,
+    preempt::{in_atomic, panic_if_in_atomic, preemptible},
+    scheduler::{add_task, locked_global_scheduler},
+    task::{context_switch, NeedResched, Task, TaskContext},
 };
 use alloc::sync::Arc;
 use lazy_static::lazy_static;
@@ -21,12 +18,13 @@ pub struct Processor {
 
 impl Processor {
     pub fn new() -> Self {
+        register_scheduler_tick(scheduler_tick);
         Self {
             current: None,
             idle_task_cx: TaskContext::default(),
         }
     }
-    fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
+    fn idle_task_ctx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
     pub fn take_current(&mut self) -> Option<Arc<Task>> {
@@ -36,152 +34,144 @@ impl Processor {
         self.current.as_ref().map(Arc::clone)
     }
     pub fn set_current_task(&mut self, task: Arc<Task>) {
-        self.current = Some(task.clone());
+        self.current = Some(task);
     }
 }
 
 lazy_static! {
-    static ref PROCESSOR: Mutex<Processor> = Mutex::new(Processor::new());
+    static ref PROCESSOR: SpinLock<Processor> = SpinLock::new(Processor::new());
 }
 
 pub fn take_current_task() -> Option<Arc<Task>> {
-    PROCESSOR.lock().take_current()
+    PROCESSOR.lock_irq_disabled().take_current()
 }
 
 pub fn current_task() -> Option<Arc<Task>> {
+    PROCESSOR.lock_irq_disabled().current()
+}
+
+#[inline]
+fn current_task_without_irq_disabling() -> Option<Arc<Task>> {
     PROCESSOR.lock().current()
 }
 
-pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
-    PROCESSOR.lock().get_idle_task_cx_ptr()
+pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
+    PROCESSOR.lock_irq_disabled().idle_task_ctx_ptr()
+}
+/// Irq disabled version of `get_idle_task_ctx_ptr`.
+fn idle_task_ctx_ptr() -> *mut TaskContext {
+    PROCESSOR.lock().idle_task_ctx_ptr()
 }
 
-/// call this function to switch to other task by using GLOBAL_SCHEDULER
+/// Yields execution so that another task may be scheduled.
+/// Unlike in Linux, this will not change the task's status into runnable.
+///
+/// Note that this method cannot be simply named "yield" as the name is
+/// a Rust keyword.
+pub fn yield_now() {
+    if let Some(ref cur_task) = current_task() {
+        locked_global_scheduler(false).before_yield(cur_task);
+    }
+    schedule();
+}
+
+pub fn yield_to(task: Arc<Task>) {
+    if let Some(ref cur_task) = current_task() {
+        locked_global_scheduler(false).yield_to(cur_task, task);
+    } else {
+        add_task(task, false);
+    }
+    schedule();
+}
+
+/// Switch to the next task selected by the global scheduler if it should.
 pub fn schedule() {
-    if let Some(task) = fetch_task() {
-        switch_to_task(task);
+    if !preemptible() {
+        // panic!("[schedule] not preemptible");
+        return;
+    }
+    deactivate_preempt();
+
+    if should_preempt_cur_task() {
+        switch_to_next();
+    } else {
+        activate_preempt();
     }
 }
 
-pub fn preempt() {
+fn switch_to_next() {
+    match fetch_task(true) {
+        None => {
+            // todo: idle_balance across cpus
+        }
+        Some(next_task) => {
+            switch_to(next_task);
+        }
+    }
+    activate_preempt(); // no matter wether the context is switched
+}
+
+fn should_preempt_cur_task() -> bool {
+    if in_atomic() {
+        return false;
+    }
+
+    current_task_without_irq_disabling().map_or(true, |ref cur_task| {
+        !cur_task.status().is_runnable()
+            || cur_task.need_resched()
+            || locked_global_scheduler(true).should_preempt(cur_task)
+    })
+}
+
+#[warn(deprecated)]
+pub fn try_preempt() {
+    if !preemptible() {
+        return;
+    }
+
     // disable interrupts to avoid nested preemption.
-    let disable_irq = disable_local();
-    let Some(curr_task) = current_task() else {
-        return;
-    };
-    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(&curr_task) {
-        return;
+    deactivate_preempt();
+    if should_preempt_cur_task() {
+        switch_to_next();
+    } else {
+        activate_preempt();
     }
-    let Some(next_task) = scheduler.dequeue() else {
-        return;
-    };
-    drop(scheduler);
-    switch_to_task(next_task);
 }
 
-/// call this function to switch to other task
+/// Switch to the given next task.
+/// - If current task is none, then it will use the default task context
+/// and it will not return to this function again.
+/// - If current task status is exit, then it will not add to the scheduler.
 ///
-/// if current task is none, then it will use the default task context and it will not return to this function again
+/// After context switch, the current task of the processor
+/// will be switched to the given next task.
 ///
-/// if current task status is exit, then it will not add to the scheduler
-///
-/// before context switch, current task will switch to the next task
-fn switch_to_task(next_task: Arc<Task>) {
-    if !PREEMPT_COUNT.is_preemptive() {
-        panic!(
-            "Calling schedule() while holding {} locks",
-            PREEMPT_COUNT.num_locks()
-        );
-        //GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(next_task);
-        //return;
-    }
-    let current_task_option = current_task();
-    let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
-    let current_task: Arc<Task>;
-    let current_task_cx_ptr = match current_task_option {
-        None => PROCESSOR.lock().get_idle_task_cx_ptr(),
-        Some(current_task) => {
-            if current_task.status() == TaskStatus::Runnable {
-                GLOBAL_SCHEDULER
-                    .lock_irq_disabled()
-                    .enqueue(current_task.clone());
+/// This method should be called with preemption guard.
+pub fn switch_to(next_task: Arc<Task>) {
+    panic_if_in_atomic();
+    let current_task_ctx = match current_task_without_irq_disabling() {
+        None => idle_task_ctx_ptr(),
+        Some(ref cur_task) => {
+            if cur_task.status().is_runnable() {
+                add_task(cur_task.clone(), true);
             }
-            &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
+            &mut cur_task.inner_exclusive_access().ctx as *mut TaskContext
         }
     };
 
-    // change the current task to the next task
-
-    PROCESSOR.lock().current = Some(next_task.clone());
+    let next_task_ctx = &next_task.inner_ctx() as *const TaskContext;
+    PROCESSOR.lock().set_current_task(next_task);
     unsafe {
-        context_switch(current_task_cx_ptr, next_task_cx_ptr);
+        context_switch(current_task_ctx, next_task_ctx);
     }
+    activate_preempt();
 }
 
-cpu_local! {
-    static PREEMPT_COUNT: PreemptInfo = PreemptInfo::new();
-}
-
-/// Currently, ``PreemptInfo`` only holds the number of spin
-/// locks held by the current CPU. When it has a non-zero value,
-/// the CPU cannot call ``schedule()``.
-struct PreemptInfo {
-    num_locks: AtomicUsize,
-}
-
-impl PreemptInfo {
-    const fn new() -> Self {
-        Self {
-            num_locks: AtomicUsize::new(0),
-        }
-    }
-
-    fn incease_num_locks(&self) {
-        self.num_locks.fetch_add(1, Relaxed);
-    }
-
-    fn decrease_num_locks(&self) {
-        self.num_locks.fetch_sub(1, Relaxed);
-    }
-
-    fn is_preemptive(&self) -> bool {
-        self.num_locks.load(Relaxed) == 0
-    }
-
-    fn num_locks(&self) -> usize {
-        self.num_locks.load(Relaxed)
-    }
-}
-
-/// a guard for disable preempt.
-pub struct DisablePreemptGuard {
-    // This private field prevents user from constructing values of this type directly.
-    private: (),
-}
-
-impl !Send for DisablePreemptGuard {}
-
-impl DisablePreemptGuard {
-    fn new() -> Self {
-        PREEMPT_COUNT.incease_num_locks();
-        Self { private: () }
-    }
-
-    /// Transfer this guard to a new guard.
-    /// This guard must be dropped after this function.
-    pub fn transfer_to(&self) -> Self {
-        disable_preempt()
-    }
-}
-
-impl Drop for DisablePreemptGuard {
-    fn drop(&mut self) {
-        PREEMPT_COUNT.decrease_num_locks();
-    }
-}
-
-#[must_use]
-pub fn disable_preempt() -> DisablePreemptGuard {
-    DisablePreemptGuard::new()
+/// Called by the timer handler every TICK.
+fn scheduler_tick() {
+    let disable_irq = disable_local();
+    let Some(ref cur_task) = current_task_without_irq_disabling() else {
+        return;
+    };
+    locked_global_scheduler(true).tick(cur_task);
 }
