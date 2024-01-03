@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 # Make varaiables and defaults, you should refer to aster-runner for more details
 AUTO_TEST ?= none
 BOOT_METHOD ?= qemu-grub

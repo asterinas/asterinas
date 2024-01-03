@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build

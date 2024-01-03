@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 TESTS ?= chmod_test fsync_test getdents_test link_test lseek_test mkdir_test \
 		open_create_test open_test pty_test read_test rename_test stat_test \
 		statfs_test symlink_test sync_test uidgid_test unlink_test \

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 MAKEFLAGS += --no-builtin-rules # Prevent the implicit rules from compiling ".c" or ".s" files automatically.
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
