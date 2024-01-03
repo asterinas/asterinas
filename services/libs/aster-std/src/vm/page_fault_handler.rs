@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::prelude::*;
 
 /// This trait is implemented by structs which can handle a user space page fault.

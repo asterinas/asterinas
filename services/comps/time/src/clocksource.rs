@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This module provides abstractions for hardware-assisted timing mechanisms, encapsulated by the `ClockSource` struct.
 //! A `ClockSource` can be constructed from any counter with a stable frequency, enabling precise time measurements to be taken
 //! by retrieving instances of `Instant`.

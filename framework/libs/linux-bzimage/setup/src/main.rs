@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The linux bzImage setup binary.
 //!
 //! With respect to the format of the bzImage, we design our bzImage setup in the similar

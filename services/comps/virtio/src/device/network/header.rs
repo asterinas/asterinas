@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
 use pod::Pod;

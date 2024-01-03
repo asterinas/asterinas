@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This module provides abstraction over the Intel IA32E paging mechanism. And
 //! offers method to create linear page tables.
 //!

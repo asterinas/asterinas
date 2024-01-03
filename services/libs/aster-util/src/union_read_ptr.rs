@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::marker::PhantomData;
 
 use pod::Pod;

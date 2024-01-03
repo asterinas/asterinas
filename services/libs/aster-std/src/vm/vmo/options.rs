@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Options for allocating root and child VMOs.
 
 use core::marker::PhantomData;

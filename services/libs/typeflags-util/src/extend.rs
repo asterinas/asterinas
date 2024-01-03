@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::{Cons, Nil};
 
 /// This trait will extend a set with another item.

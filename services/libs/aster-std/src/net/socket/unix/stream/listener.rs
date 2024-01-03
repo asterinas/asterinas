@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
 use crate::events::IoEvents;
 use crate::fs::file_handle::FileLike;

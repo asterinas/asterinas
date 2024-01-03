@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 /// A mask for the file mode of a newly-created file or directory.
 ///
 /// This mask is always a subset of `0o777`.

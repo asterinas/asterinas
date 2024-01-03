@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::SyscallReturn;
 use super::SYS_CLOCK_GETTIME;
 use crate::time::now_as_duration;

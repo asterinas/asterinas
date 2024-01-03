@@ -1,4 +1,8 @@
-//! This test checks that if controlled resource not in whitelist is visited, cargo-component will report warning message.
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// Copyright (C) 2023-2024 Ant Group.
+
+//! This test checks that if controlled resource not in whitelist is visited, cargo-component will 
+//! report warning message.
 
 #![feature(once_cell)]
 

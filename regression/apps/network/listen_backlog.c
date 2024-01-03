@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>

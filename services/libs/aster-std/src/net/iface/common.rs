@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use super::Ipv4Address;

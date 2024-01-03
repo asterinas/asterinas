@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::credentials_::Credentials_;
 use super::{Credentials, Gid, Uid};
 use crate::prelude::*;

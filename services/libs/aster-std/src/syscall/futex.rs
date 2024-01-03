@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::process::posix_thread::futex::{
     futex_op_and_flags_from_u32, futex_requeue, futex_wait, futex_wait_bitset, futex_wake,
     futex_wake_bitset, FutexOp, FutexTimeout,

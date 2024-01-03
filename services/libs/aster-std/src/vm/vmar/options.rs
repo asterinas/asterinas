@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Options for allocating child VMARs.
 
 use aster_frame::config::PAGE_SIZE;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 /// Get the offset of a field within a type as a pointer.
 ///
 /// ```rust

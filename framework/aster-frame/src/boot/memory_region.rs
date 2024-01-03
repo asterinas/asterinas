@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Information of memory regions in the boot phase.
 //!
 

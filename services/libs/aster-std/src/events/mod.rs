@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #[allow(clippy::module_inception)]
 mod events;
 mod io_events;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The content of this crate is from another project CapComp.
 //! This crate defines common type level operations, like SameAsOp, and Bool type operations.
 //! Besides, this crate defines operations to deal with type sets, like SetContain and SetInclude.

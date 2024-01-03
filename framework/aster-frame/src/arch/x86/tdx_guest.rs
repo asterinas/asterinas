@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use tdx_guest::{
     tdcall::TdgVeInfo,
     tdvmcall::{cpuid, hlt, rdmsr, wrmsr, IoSize},

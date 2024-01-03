@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #![no_std]
 #![no_main]
 // The `export_name` attribute for the `aster_main` entrypoint requires the removal of safety check.

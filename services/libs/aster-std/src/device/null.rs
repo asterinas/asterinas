@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::*;
 use crate::events::IoEvents;
 use crate::fs::inode_handle::FileIo;

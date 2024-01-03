@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The framework part of Asterinas.
 #![feature(alloc_error_handler)]
 #![feature(const_mut_refs)]

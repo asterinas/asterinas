@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 // This test file is from occlum pthread test.
 
 #include <sys/types.h>

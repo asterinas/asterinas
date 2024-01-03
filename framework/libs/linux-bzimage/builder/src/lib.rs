@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The linux bzImage builder.
 //!
 //! This crate is responsible for building the bzImage. It contains methods to build

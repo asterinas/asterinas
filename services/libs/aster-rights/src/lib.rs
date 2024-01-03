@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #![no_std]
 
 use core::ops::{Deref, DerefMut};

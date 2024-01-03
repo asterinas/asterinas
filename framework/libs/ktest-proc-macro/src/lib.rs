@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #![feature(proc_macro_span)]
 
 extern crate proc_macro2;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::posix_thread::PosixThreadExt;
 use super::signal::signals::user::UserSignal;
 use super::signal::signals::Signal;

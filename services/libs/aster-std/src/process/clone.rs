@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::posix_thread::{PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName};
 use super::process_vm::ProcessVm;
 use super::signal::sig_disposition::SigDispositions;

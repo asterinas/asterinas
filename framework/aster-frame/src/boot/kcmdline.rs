@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The module to parse kernel command-line arguments.
 //!
 //! The format of the Asterinas command line string conforms

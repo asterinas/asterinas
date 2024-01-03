@@ -1,7 +1,7 @@
-//! Licensed under the Apache License, Version 2.0 or the MIT License.
-//! Copyright (C) 2023 Ant Group.
+// Licensed under the Apache License, Version 2.0 or the MIT License.
+// Copyright (C) 2023-2024 Ant Group.
 
-//! This implementation is from rust clippy. We modified the code.
+// This implementation is from rust clippy. We modified the code.
 
 use std::env;
 use std::path::PathBuf;

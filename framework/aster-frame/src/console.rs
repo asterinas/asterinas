@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::fmt::Arguments;
 
 pub fn print(args: Arguments) {

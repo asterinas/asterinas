@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use second_init::HAS_INIT;
 use std::sync::atomic::Ordering::Relaxed;
 

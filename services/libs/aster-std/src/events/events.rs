@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 /// A trait to represent any events.
 ///
 /// # The unit event

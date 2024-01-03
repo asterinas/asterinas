@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_frame::cpu::UserContext;
 
 use crate::log_syscall_entry;

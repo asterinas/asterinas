@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! CPU.
 
 use core::arch::x86_64::{_fxrstor, _fxsave};

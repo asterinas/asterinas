@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::arch::mm::PageTableFlags;
 use crate::config::PAGE_SIZE;
 use crate::sync::Mutex;

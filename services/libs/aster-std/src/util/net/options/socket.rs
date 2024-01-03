@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::RawSocketOption;
 use crate::net::socket::options::{
     Error, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,

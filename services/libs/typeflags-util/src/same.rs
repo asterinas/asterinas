@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Traits used to check if two types are the same, returning a Bool.
 //! This check happens at compile time
 

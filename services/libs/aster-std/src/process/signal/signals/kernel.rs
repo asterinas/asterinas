@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::Signal;
 use crate::process::signal::c_types::siginfo_t;
 use crate::process::signal::constants::SI_KERNEL;

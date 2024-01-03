@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! The block devices of Asterinas.
 //！
 //！This crate provides a number of base components for block devices, including

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::file_table::FileDescripter;
 use crate::log_syscall_entry;
 use crate::net::socket::SockShutdownCmd;

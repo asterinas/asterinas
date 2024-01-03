@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Providing the utility to run the GDB scripts for the runner.
 
 use crate::qemu_grub_efi;

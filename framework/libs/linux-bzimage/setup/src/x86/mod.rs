@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
         mod amd64_efi;

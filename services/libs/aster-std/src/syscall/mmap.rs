@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This mod defines mmap flags and the handler to syscall mmap
 
 use crate::fs::file_table::FileDescripter;

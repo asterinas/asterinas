@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::net::socket::ip::stream::CongestionControl;
 use crate::net::socket::LingerOption;
 use crate::prelude::*;

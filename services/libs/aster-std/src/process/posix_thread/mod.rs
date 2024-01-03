@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::kill::SignalSenderIds;
 use super::signal::sig_mask::SigMask;
 use super::signal::sig_num::SigNum;

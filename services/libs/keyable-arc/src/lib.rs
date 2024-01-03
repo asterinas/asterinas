@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Same as the standard `Arc`, except that it can be used as the key type of a hash table.
 //!
 //! # Motivation

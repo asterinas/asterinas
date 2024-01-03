@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ThreadStatus {
     Init,

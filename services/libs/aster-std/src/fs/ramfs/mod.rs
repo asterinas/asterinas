@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Ramfs based on PageCache
 
 pub use fs::RamFS;

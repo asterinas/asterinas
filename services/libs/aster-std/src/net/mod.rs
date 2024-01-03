@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::{
     net::iface::{Iface, IfaceLoopback, IfaceVirtio},
     prelude::*,

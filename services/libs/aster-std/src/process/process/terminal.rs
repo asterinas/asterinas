@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::inode_handle::FileIo;
 use crate::prelude::*;
 use crate::process::{process_table, Pgid, ProcessGroup};
