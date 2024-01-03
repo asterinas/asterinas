@@ -62,7 +62,7 @@ $(TESTS): $(BIN_DIR) $(TARGET_DIR)
 ifndef ASTER_PREBUILT_SYSCALL_TEST
 $(BIN_DIR): $(SRC_DIR)
 	@if ! type bazel > /dev/null; then \
-		echo "bazel is not installed, please run $(CUR_DIR)/install_bazel.sh with sudo permission to install it."; \
+		echo "bazel is not installed, please run tools/install_bazel.sh with sudo permission to install it."; \
 		exit 1; \
 	fi
 	@rm -rf $@ && mkdir -p $@
