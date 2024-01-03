@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_rights::Full;
 use core::time::Duration;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::{Pgid, Pid, Process, Session};
 use crate::prelude::*;
 use crate::process::signal::signals::Signal;

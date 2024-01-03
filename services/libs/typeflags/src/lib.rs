@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //！This crate defines the procedural macro typeflags to implement capability for Asterinas.
 //! When using this crate, typeflags-util should also be added as dependency.
 //! This is due to typeflgas is a proc-macro crate, which is only allowed to export proc-macro interfaces.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::SpinLock;
 use crate::arch::timer::add_timeout_list;
 use crate::config::TIMER_FREQ;

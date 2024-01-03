@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //！This crate defines the component system related macros.
 //!
 

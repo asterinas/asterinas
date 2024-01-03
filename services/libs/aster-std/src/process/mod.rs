@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 mod clone;
 mod credentials;
 mod exit;

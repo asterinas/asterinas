@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Type Level If
 
 use crate::bool::{False, True};

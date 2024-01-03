@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::device::Device;
 use crate::fs::ext2::{FilePerm, FileType, Inode as Ext2Inode};
 use crate::fs::utils::{

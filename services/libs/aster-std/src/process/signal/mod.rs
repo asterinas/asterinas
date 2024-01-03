@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 pub mod c_types;
 pub mod constants;
 mod events;

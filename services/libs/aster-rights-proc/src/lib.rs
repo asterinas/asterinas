@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //！This crate defines the require procedural macros to implement capability for Asterinas.
 //! When use this crate, typeflags and typeflags-util should also be added as dependency.
 //!

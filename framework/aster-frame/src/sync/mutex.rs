@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::WaitQueue;
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};

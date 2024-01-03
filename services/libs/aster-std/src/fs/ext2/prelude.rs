@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 pub(super) use super::utils::{Dirty, IsPowerOf};
 
 pub(super) use crate::fs::utils::{

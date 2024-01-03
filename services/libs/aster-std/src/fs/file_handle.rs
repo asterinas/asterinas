@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Opend File Handle
 
 use crate::events::{IoEvents, Observer};

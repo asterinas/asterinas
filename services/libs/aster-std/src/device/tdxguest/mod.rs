@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::*;
 use crate::error::Error;
 use crate::events::IoEvents;

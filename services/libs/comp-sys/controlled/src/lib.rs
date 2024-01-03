@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This crate defines two attribute macros `controlled` and `uncontrolled`.
 //! This two macros are attached to functions or static variables to enable crate level access control.
 //! To use these two macros, a crate must at first registers a tool named `component_access_control`,

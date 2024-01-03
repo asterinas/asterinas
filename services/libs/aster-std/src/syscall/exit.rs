@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::process::posix_thread::PosixThreadExt;
 use crate::process::TermStatus;
 use crate::{log_syscall_entry, prelude::*};

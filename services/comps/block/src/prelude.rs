@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 pub(crate) use alloc::collections::{BTreeMap, VecDeque};
 pub(crate) use alloc::string::String;
 pub(crate) use alloc::sync::Arc;

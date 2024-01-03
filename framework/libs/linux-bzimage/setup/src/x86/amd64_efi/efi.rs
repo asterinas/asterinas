@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use uefi::{
     data_types::Handle,
     proto::loaded_image::LoadedImage,

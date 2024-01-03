@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::page_table::{PageTable, PageTableConfig, UserMode};
 use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},

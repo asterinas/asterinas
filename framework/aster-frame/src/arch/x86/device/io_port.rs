@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::marker::PhantomData;
 
 pub use x86_64::instructions::port::{

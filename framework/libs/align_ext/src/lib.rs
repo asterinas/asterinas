@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 #![cfg_attr(not(test), no_std)]
 
 /// An extension trait for Rust integer types, including `u8`, `u16`, `u32`,

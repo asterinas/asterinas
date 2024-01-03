@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::{config::DEFAULT_LOG_LEVEL, early_println};
 
 use log::{Metadata, Record};

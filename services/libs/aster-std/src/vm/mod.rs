@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Virtual memory (VM).
 //!
 //! There are two primary VM abstractions:

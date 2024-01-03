@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! aster-runner is the Asterinas runner script to ease the pain of running
 //! and testing Asterinas inside a QEMU VM. It should be built and run as the
 //! cargo runner: https://doc.rust-lang.org/cargo/reference/config.html

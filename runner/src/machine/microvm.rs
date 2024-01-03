@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use std::{
     fs::OpenOptions,
     io::{Seek, SeekFrom, Write},

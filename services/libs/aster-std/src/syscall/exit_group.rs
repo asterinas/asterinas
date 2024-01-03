@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::process::{do_exit_group, TermStatus};
 use crate::{log_syscall_entry, prelude::*};
 

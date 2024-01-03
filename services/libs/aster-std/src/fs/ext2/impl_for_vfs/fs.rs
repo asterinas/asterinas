@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::fs::ext2::{utils::Dirty, Ext2, SuperBlock as Ext2SuperBlock, MAGIC_NUM as EXT2_MAGIC};
 use crate::fs::utils::{FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX};
 use crate::prelude::*;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions};
 use crate::{
     arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry},

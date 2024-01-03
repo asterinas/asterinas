@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::fmt::Debug;
 
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};

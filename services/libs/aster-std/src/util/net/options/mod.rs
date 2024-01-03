@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This module introduces utilities to support Linux get/setsockopt syscalls.
 //!
 //! These two syscalls are used to get/set options for a socket. These options can be at different

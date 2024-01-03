@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::worker_pool::WorkerPool;
 use crate::prelude::*;
 use crate::thread::kernel_thread::{KernelThreadExt, ThreadOptions};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::{IpAddress, Ipv4Address};
 use crate::prelude::*;
 use smoltcp::{

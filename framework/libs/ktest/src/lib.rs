@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! # The kernel mode testing framework of Asterinas.
 //!
 //! `ktest` stands for kernel-mode testing framework. Its goal is to provide a

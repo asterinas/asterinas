@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::{constants::*, sig_action::SigAction, sig_num::SigNum};
 
 #[derive(Copy, Clone)]

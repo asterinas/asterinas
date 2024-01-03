@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! expand the require macro
 
 use proc_macro2::{Ident, TokenStream};

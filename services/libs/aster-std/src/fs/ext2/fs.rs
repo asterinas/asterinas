@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::block_group::{BlockGroup, RawGroupDescriptor};
 use super::inode::{FilePerm, FileType, Inode, InodeDesc, RawInode};
 use super::prelude::*;

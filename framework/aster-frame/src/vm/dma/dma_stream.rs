@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use alloc::sync::Arc;
 use core::arch::x86_64::_mm_clflush;
 use core::ops::Range;

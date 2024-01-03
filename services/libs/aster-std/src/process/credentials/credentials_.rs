@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::group::AtomicGid;
 use super::user::AtomicUid;
 use super::{Gid, Uid};

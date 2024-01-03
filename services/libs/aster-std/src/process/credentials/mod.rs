@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 mod credentials_;
 mod group;
 mod static_cap;

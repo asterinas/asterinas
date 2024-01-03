@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Panic support.
 
 use alloc::{boxed::Box, string::ToString};

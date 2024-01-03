@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::SyscallReturn;
 use super::SYS_SET_TID_ADDRESS;
 use crate::process::posix_thread::PosixThreadExt;

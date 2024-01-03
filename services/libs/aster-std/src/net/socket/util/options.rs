@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::time::Duration;
 
 use crate::net::iface::{RECV_BUF_LEN, SEND_BUF_LEN};

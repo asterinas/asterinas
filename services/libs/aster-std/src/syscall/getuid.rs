@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use super::{SyscallReturn, SYS_GETUID};
 use crate::log_syscall_entry;
 use crate::prelude::*;

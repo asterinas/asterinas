@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::{trap::IrqLine, vm::paddr_to_vaddr};
 use acpi::{AcpiError, HpetInfo};
 use alloc::vec::Vec;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 pub use aster_frame::arch::console::register_console_input_callback;
 use spin::Once;
 
