@@ -3,8 +3,8 @@
 
 use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
 use crate::fs::utils::Dentry;
-use crate::process::process_vm::ProcessVm;
 use crate::process::program_loader::elf::init_stack::{init_aux_vec, InitStack};
+use crate::process::vm::Vm;
 use crate::process::{do_exit_group, TermStatus};
 use crate::vm::perms::VmPerms;
 use crate::vm::vmo::{VmoOptions, VmoRightsOp};
@@ -25,7 +25,7 @@ use super::elf_file::Elf;
 /// 2. create a vmo for each elf segment, create a pager for each segment. Then map the vmo to the root vmar.
 /// 3. write proper content to the init stack.
 pub fn load_elf_to_vm(
-    process_vm: &ProcessVm,
+    process_vm: &Vm,
     file_header: &[u8],
     elf_file: Arc<Dentry>,
     fs_resolver: &FsResolver,
@@ -92,7 +92,7 @@ fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Resu
 }
 
 fn init_and_map_vmos(
-    process_vm: &ProcessVm,
+    process_vm: &Vm,
     ldso: Option<(Arc<Dentry>, Elf)>,
     elf: &Elf,
     elf_file: &Dentry,
@@ -123,6 +123,8 @@ fn init_and_map_vmos(
         // statically linked executable
         elf.entry_point()
     };
+
+    process_vm.stack().set(init_stack.user_stack_top());
 
     let elf_load_info = ElfLoadInfo::new(entry_point, init_stack.user_stack_top());
     Ok(elf_load_info)

@@ -1,4 +1,5 @@
 mod clone;
+pub mod constants;
 mod credentials;
 mod exit;
 mod kill;
@@ -7,12 +8,12 @@ pub mod posix_thread;
 mod process;
 mod process_filter;
 pub mod process_table;
-mod process_vm;
 mod program_loader;
 mod rlimit;
 pub mod signal;
 mod status;
 mod term_status;
+mod vm;
 mod wait;
 
 pub use clone::{clone_child, CloneArgs, CloneFlags};

@@ -14,7 +14,7 @@ pub fn sys_brk(heap_end: u64) -> Result<SyscallReturn> {
     };
     debug!("new heap end = {:x?}", heap_end);
     let current = current!();
-    let user_heap = current.user_heap();
+    let user_heap = current.heap();
     let new_heap_end = user_heap.brk(new_heap_end)?;
 
     Ok(SyscallReturn::Return(new_heap_end as _))

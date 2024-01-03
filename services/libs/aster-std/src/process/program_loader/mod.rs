@@ -10,10 +10,10 @@ use crate::vm::perms::VmPerms;
 use self::elf::{load_elf_to_vm, ElfLoadInfo};
 use self::shebang::parse_shebang_line;
 
-use super::process_vm::ProcessVm;
+use super::vm::Vm;
 
 /// Map the vdso vmo to the corresponding virtual memory address.
-pub fn map_vdso_to_vm(process_vm: &ProcessVm) -> Vaddr {
+pub fn map_vdso_to_vm(process_vm: &Vm) -> Vaddr {
     let root_vmar = process_vm.root_vmar();
     let vdso_vmo = vdso_vmo();
 
@@ -43,7 +43,7 @@ pub fn map_vdso_to_vm(process_vm: &ProcessVm) -> Vaddr {
 /// I guess for most cases, setting the recursion_limit as 1 should be enough.
 /// because the interpreter is usually an elf binary(e.g., /bin/bash)
 pub fn load_program_to_vm(
-    process_vm: &ProcessVm,
+    process_vm: &Vm,
     elf_file: Arc<Dentry>,
     argv: Vec<CString>,
     envp: Vec<CString>,

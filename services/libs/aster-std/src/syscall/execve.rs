@@ -7,6 +7,7 @@ use crate::fs::fs_resolver::{FsPath, AT_FDCWD};
 use crate::fs::utils::{Dentry, InodeType};
 use crate::log_syscall_entry;
 use crate::prelude::*;
+use crate::process::constants::{MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN};
 use crate::process::posix_thread::{PosixThreadExt, ThreadName};
 use crate::process::{
     check_executable_file, credentials_mut, load_program_to_vm, Credentials, Gid, Uid,

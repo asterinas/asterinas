@@ -1,6 +1,6 @@
 use super::posix_thread::{PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName};
-use super::process_vm::ProcessVm;
 use super::signal::sig_disposition::SigDispositions;
+use super::vm::Vm;
 use super::{credentials, process_table, Credentials, Process, ProcessBuilder};
 use crate::current_thread;
 use crate::fs::file_table::FileTable;
@@ -343,13 +343,14 @@ fn clone_parent_settid(
 
 /// Clone child process vm. If CLONE_VM is set, both threads share the same root vmar.
 /// Otherwise, fork a new copy-on-write vmar.
-fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<ProcessVm> {
+fn clone_vm(parent_process_vm: &Vm, clone_flags: CloneFlags) -> Result<Vm> {
     if clone_flags.contains(CloneFlags::CLONE_VM) {
         Ok(parent_process_vm.clone())
     } else {
         let root_vmar = Vmar::<Full>::fork_from(parent_process_vm.root_vmar())?;
-        let user_heap = parent_process_vm.user_heap().clone();
-        Ok(ProcessVm::new(user_heap, root_vmar))
+        let heap = parent_process_vm.heap().clone();
+        let stack = parent_process_vm.stack().clone();
+        Ok(Vm::new(root_vmar, heap, stack))
     }
 }
 

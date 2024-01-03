@@ -1,6 +1,4 @@
 use super::posix_thread::PosixThreadExt;
-use super::process_vm::user_heap::UserHeap;
-use super::process_vm::ProcessVm;
 use super::rlimit::ResourceLimits;
 use super::signal::constants::SIGCHLD;
 use super::signal::sig_disposition::SigDispositions;
@@ -8,6 +6,7 @@ use super::signal::sig_mask::SigMask;
 use super::signal::signals::Signal;
 use super::signal::Pauser;
 use super::status::ProcessStatus;
+use super::vm::{Heap, Vm};
 use super::{process_table, Credentials, TermStatus};
 use crate::device::tty::open_ntty_as_controlling_terminal;
 use crate::fs::file_table::FileTable;
@@ -43,8 +42,8 @@ pub type ExitCode = i32;
 pub struct Process {
     // Immutable Part
     pid: Pid,
-
-    process_vm: ProcessVm,
+    /// The user space virtual memory
+    vm: Vm,
     /// Wait for child status changed
     children_pauser: Arc<Pauser>,
 
@@ -82,7 +81,7 @@ impl Process {
         parent: Weak<Process>,
         threads: Vec<Arc<Thread>>,
         executable_path: String,
-        process_vm: ProcessVm,
+        process_vm: Vm,
         file_table: Arc<Mutex<FileTable>>,
         fs: Arc<RwMutex<FsResolver>>,
         umask: Arc<RwLock<FileCreationMask>>,
@@ -100,7 +99,7 @@ impl Process {
             pid,
             threads: Mutex::new(threads),
             executable_path: RwLock::new(executable_path),
-            process_vm,
+            vm: process_vm,
             children_pauser,
             status: Mutex::new(ProcessStatus::Uninit),
             parent: Mutex::new(parent),
@@ -478,16 +477,16 @@ impl Process {
 
     // ************** Virtual Memory *************
 
-    pub fn vm(&self) -> &ProcessVm {
-        &self.process_vm
+    pub fn vm(&self) -> &Vm {
+        &self.vm
     }
 
     pub fn root_vmar(&self) -> &Vmar<Full> {
-        self.process_vm.root_vmar()
+        self.vm.root_vmar()
     }
 
-    pub fn user_heap(&self) -> &UserHeap {
-        self.process_vm.user_heap()
+    pub fn heap(&self) -> &Heap {
+        self.vm.heap()
     }
 
     // ************** File system ****************
@@ -593,7 +592,7 @@ mod test {
             parent,
             vec![],
             String::new(),
-            ProcessVm::alloc(),
+            Vm::alloc(),
             Arc::new(Mutex::new(FileTable::new())),
             Arc::new(RwMutex::new(FsResolver::new())),
             Arc::new(RwLock::new(FileCreationMask::default())),

@@ -1,32 +1,28 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::prelude::*;
+use crate::process::constants::{USER_HEAP_BASE, USER_HEAP_SIZE_LIMIT};
 use crate::vm::perms::VmPerms;
 use crate::vm::vmar::Vmar;
-use crate::{
-    prelude::*,
-    vm::vmo::{VmoFlags, VmoOptions},
-};
+use crate::vm::vmo::{VmoFlags, VmoOptions};
 use align_ext::AlignExt;
 use aster_rights::{Full, Rights};
 
-pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
-pub const USER_HEAP_SIZE_LIMIT: usize = PAGE_SIZE * 1000;
-
 #[derive(Debug)]
-pub struct UserHeap {
+pub struct Heap {
     /// the low address of user heap
-    heap_base: Vaddr,
+    bottom: Vaddr,
     /// the max heap size
-    heap_size_limit: usize,
-    current_heap_end: AtomicUsize,
+    size_limit: usize,
+    current_top: AtomicUsize,
 }
 
-impl UserHeap {
+impl Heap {
     pub const fn new() -> Self {
-        UserHeap {
-            heap_base: USER_HEAP_BASE,
-            heap_size_limit: USER_HEAP_SIZE_LIMIT,
-            current_heap_end: AtomicUsize::new(USER_HEAP_BASE),
+        Heap {
+            bottom: USER_HEAP_BASE,
+            size_limit: USER_HEAP_SIZE_LIMIT,
+            current_top: AtomicUsize::new(USER_HEAP_BASE),
         }
     }
 
@@ -37,31 +33,31 @@ impl UserHeap {
         let vmar_map_options = root_vmar
             .new_map(heap_vmo, perms)
             .unwrap()
-            .offset(self.heap_base)
-            .size(self.heap_size_limit);
+            .offset(self.bottom)
+            .size(self.size_limit);
         vmar_map_options.build().unwrap();
-        self.current_heap_end.load(Ordering::Relaxed)
+        self.current_top.load(Ordering::Relaxed)
     }
 
     pub fn brk(&self, new_heap_end: Option<Vaddr>) -> Result<Vaddr> {
         let current = current!();
         let root_vmar = current.root_vmar();
         match new_heap_end {
-            None => Ok(self.current_heap_end.load(Ordering::Relaxed)),
+            None => Ok(self.current_top.load(Ordering::Relaxed)),
             Some(new_heap_end) => {
-                if new_heap_end > self.heap_base + self.heap_size_limit {
+                if new_heap_end > self.bottom + self.size_limit {
                     return_errno_with_message!(Errno::ENOMEM, "heap size limit was met.");
                 }
-                let current_heap_end = self.current_heap_end.load(Ordering::Acquire);
+                let current_heap_end = self.current_top.load(Ordering::Acquire);
                 if new_heap_end < current_heap_end {
                     // FIXME: should we allow shrink current user heap?
                     return Ok(current_heap_end);
                 }
-                let new_size = (new_heap_end - self.heap_base).align_up(PAGE_SIZE);
+                let new_size = (new_heap_end - self.bottom).align_up(PAGE_SIZE);
                 let heap_mapping = root_vmar.get_vm_mapping(USER_HEAP_BASE)?;
                 let heap_vmo = heap_mapping.vmo();
                 heap_vmo.resize(new_size)?;
-                self.current_heap_end.store(new_heap_end, Ordering::Release);
+                self.current_top.store(new_heap_end, Ordering::Release);
                 Ok(new_heap_end)
             }
         }
@@ -70,19 +66,18 @@ impl UserHeap {
     /// Set heap to the default status. i.e., point the heap end to heap base.
     /// This function will we called in execve.
     pub fn set_default(&self, root_vmar: &Vmar<Full>) {
-        self.current_heap_end
-            .store(self.heap_base, Ordering::Relaxed);
+        self.current_top.store(self.bottom, Ordering::Relaxed);
         self.init(root_vmar);
     }
 }
 
-impl Clone for UserHeap {
+impl Clone for Heap {
     fn clone(&self) -> Self {
-        let current_heap_end = self.current_heap_end.load(Ordering::Relaxed);
+        let current_heap_end = self.current_top.load(Ordering::Relaxed);
         Self {
-            heap_base: self.heap_base,
-            heap_size_limit: self.heap_size_limit,
-            current_heap_end: AtomicUsize::new(current_heap_end),
+            bottom: self.bottom,
+            size_limit: self.size_limit,
+            current_top: AtomicUsize::new(current_heap_end),
         }
     }
 }

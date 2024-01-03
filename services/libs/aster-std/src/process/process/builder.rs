@@ -2,9 +2,9 @@ use crate::fs::file_table::FileTable;
 use crate::fs::fs_resolver::FsResolver;
 use crate::fs::utils::FileCreationMask;
 use crate::process::posix_thread::{PosixThreadBuilder, PosixThreadExt};
-use crate::process::process_vm::ProcessVm;
 use crate::process::rlimit::ResourceLimits;
 use crate::process::signal::sig_disposition::SigDispositions;
+use crate::process::vm::Vm;
 use crate::process::Credentials;
 use crate::thread::Thread;
 
@@ -21,7 +21,7 @@ pub struct ProcessBuilder<'a> {
     main_thread_builder: Option<PosixThreadBuilder>,
     argv: Option<Vec<CString>>,
     envp: Option<Vec<CString>>,
-    process_vm: Option<ProcessVm>,
+    process_vm: Option<Vm>,
     file_table: Option<Arc<Mutex<FileTable>>>,
     fs: Option<Arc<RwMutex<FsResolver>>>,
     umask: Option<Arc<RwLock<FileCreationMask>>>,
@@ -54,7 +54,7 @@ impl<'a> ProcessBuilder<'a> {
         self
     }
 
-    pub fn process_vm(&mut self, process_vm: ProcessVm) -> &mut Self {
+    pub fn process_vm(&mut self, process_vm: Vm) -> &mut Self {
         self.process_vm = Some(process_vm);
         self
     }
@@ -135,7 +135,7 @@ impl<'a> ProcessBuilder<'a> {
             credentials,
         } = self;
 
-        let process_vm = process_vm.or_else(|| Some(ProcessVm::alloc())).unwrap();
+        let process_vm = process_vm.or_else(|| Some(Vm::alloc())).unwrap();
 
         let file_table = file_table
             .or_else(|| Some(Arc::new(Mutex::new(FileTable::new_with_stdio()))))

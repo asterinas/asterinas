@@ -3,7 +3,7 @@ use aster_frame::{cpu::UserContext, user::UserSpace};
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     prelude::*,
-    process::{process_vm::ProcessVm, program_loader::load_program_to_vm, Credentials, Process},
+    process::{program_loader::load_program_to_vm, vm::Vm, Credentials, Process},
     thread::{Thread, Tid},
 };
 
@@ -14,7 +14,7 @@ pub trait PosixThreadExt {
     fn new_posix_thread_from_executable(
         tid: Tid,
         credentials: Credentials,
-        process_vm: &ProcessVm,
+        process_vm: &Vm,
         fs_resolver: &FsResolver,
         executable_path: &str,
         process: Weak<Process>,
@@ -28,7 +28,7 @@ impl PosixThreadExt for Thread {
     fn new_posix_thread_from_executable(
         tid: Tid,
         credentials: Credentials,
-        process_vm: &ProcessVm,
+        process_vm: &Vm,
         fs_resolver: &FsResolver,
         executable_path: &str,
         process: Weak<Process>,
