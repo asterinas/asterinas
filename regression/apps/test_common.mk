@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 MAIN_MAKEFILE := $(firstword $(MAKEFILE_LIST))
 INCLUDE_MAKEFILE := $(lastword $(MAKEFILE_LIST))
 CUR_DIR := $(shell dirname $(realpath $(MAIN_MAKEFILE)))
