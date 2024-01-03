@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
 .section ".setup", "ax"
 .code64
 // start_of_setup32 should be loaded at CODE32_START, which is our base.

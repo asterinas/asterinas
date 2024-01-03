@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
 // 32-bit setup code starts here, and will be loaded at CODE32_START.
 .section ".setup", "ax"
 .code32
