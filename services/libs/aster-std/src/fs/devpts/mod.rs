@@ -5,6 +5,7 @@ use crate::fs::utils::{
     SuperBlock, NAME_MAX,
 };
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 
 use aster_util::{id_allocator::IdAlloc, slot_vec::SlotVec};
 use core::time::Duration;
@@ -160,6 +161,8 @@ impl Inode for RootInode {
     }
 
     fn set_mode(&self, mode: InodeMode) {}
+
+    fn set_owner(&self, uid: Uid, gid: Gid) {}
 
     fn atime(&self) -> Duration {
         self.metadata.atime

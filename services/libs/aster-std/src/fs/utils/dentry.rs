@@ -1,5 +1,6 @@
 use crate::fs::device::Device;
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 
 use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -406,6 +407,10 @@ impl Dentry {
     /// Set the inode permission mode
     pub fn set_inode_mode(&self, mode: InodeMode) {
         self.inode.set_mode(mode)
+    }
+
+    pub fn set_inode_owner(&self, uid: Uid, gid: Gid) {
+        self.inode.set_owner(uid, gid)
     }
 
     /// Get the inode length

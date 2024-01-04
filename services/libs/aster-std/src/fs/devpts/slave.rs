@@ -2,6 +2,7 @@ use crate::events::IoEvents;
 use crate::fs::inode_handle::FileIo;
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 
 use super::*;
 
@@ -66,6 +67,8 @@ impl Inode for PtySlaveInode {
     }
 
     fn set_mode(&self, mode: InodeMode) {}
+
+    fn set_owner(&self, uid: Uid, gid: Gid) {}
 
     fn atime(&self) -> Duration {
         self.metadata.atime

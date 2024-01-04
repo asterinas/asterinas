@@ -15,6 +15,7 @@ use crate::fs::utils::{
 };
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 use crate::vm::vmo::Vmo;
 
 /// A volatile file system whose data and metadata exists only in memory.
@@ -526,6 +527,10 @@ impl Inode for RamInode {
 
     fn set_mode(&self, mode: InodeMode) {
         self.0.write().metadata.mode = mode;
+    }
+
+    fn set_owner(&self, uid: Uid, gid: Gid) {
+        self.0.write().metadata.set_owner(uid, gid);
     }
 
     fn mknod(

@@ -4,6 +4,7 @@ use crate::fs::utils::{
     DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
 };
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 use crate::vm::vmo::Vmo;
 
 use aster_rights::Full;
@@ -67,6 +68,11 @@ impl Inode for Ext2Inode {
 
     fn set_mode(&self, mode: InodeMode) {
         self.set_file_perm(mode.into());
+    }
+
+    fn set_owner(&self, uid: Uid, gid: Gid) {
+        self.set_uid(uid.as_u32());
+        self.set_gid(gid.as_u32());
     }
 
     fn page_cache(&self) -> Option<Vmo<Full>> {

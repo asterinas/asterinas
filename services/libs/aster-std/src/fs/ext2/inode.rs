@@ -574,6 +574,8 @@ impl Inode {
 #[inherit_methods(from = "self.inner.write()")]
 impl Inode {
     pub fn set_file_perm(&self, perm: FilePerm);
+    pub fn set_uid(&self, uid: u32);
+    pub fn set_gid(&self, gid: u32);
     pub fn set_atime(&self, time: Duration);
     pub fn set_mtime(&self, time: Duration);
 }
@@ -599,7 +601,9 @@ impl Inner {
     pub fn file_perm(&self) -> FilePerm;
     pub fn set_file_perm(&mut self, perm: FilePerm);
     pub fn uid(&self) -> u32;
+    pub fn set_uid(&mut self, uid: u32);
     pub fn gid(&self) -> u32;
+    pub fn set_gid(&mut self, gid: u32);
     pub fn file_flags(&self) -> FileFlags;
     pub fn hard_links(&self) -> u16;
     pub fn inc_hard_links(&mut self);
@@ -934,8 +938,18 @@ impl InodeImpl {
         self.0.read().desc.uid
     }
 
+    pub fn set_uid(&self, uid: u32) {
+        let mut inner = self.0.write();
+        inner.desc.uid = uid;
+    }
+
     pub fn gid(&self) -> u32 {
         self.0.read().desc.gid
+    }
+
+    pub fn set_gid(&self, gid: u32) {
+        let mut inner = self.0.write();
+        inner.desc.gid = gid;
     }
 
     pub fn file_flags(&self) -> FileFlags {

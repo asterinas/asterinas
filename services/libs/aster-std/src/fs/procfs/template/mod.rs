@@ -2,6 +2,7 @@ use core::time::Duration;
 
 use crate::fs::utils::{FileSystem, InodeMode, Metadata};
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 
 use super::ProcFS;
 
@@ -68,6 +69,10 @@ impl ProcInodeInfo {
 
     pub fn set_mode(&self, mode: InodeMode) {
         self.metadata.write().mode = mode;
+    }
+
+    pub fn set_owner(&self, uid: Uid, gid: Gid) {
+        self.metadata.write().set_owner(uid, gid);
     }
 
     pub fn is_volatile(&self) -> bool {

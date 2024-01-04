@@ -2,6 +2,7 @@ use core::time::Duration;
 
 use crate::fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata};
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 
 use super::{ProcFS, ProcInodeInfo};
 
@@ -52,6 +53,10 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
 
     fn set_mode(&self, mode: InodeMode) {
         self.info.set_mode(mode)
+    }
+
+    fn set_owner(&self, uid: Uid, gid: Gid) {
+        self.info.set_owner(uid, gid)
     }
 
     fn atime(&self) -> Duration {

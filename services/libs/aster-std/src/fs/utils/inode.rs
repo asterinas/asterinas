@@ -7,6 +7,7 @@ use crate::events::IoEvents;
 use crate::fs::device::{Device, DeviceType};
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 use crate::vm::vmo::Vmo;
 
 #[repr(u32)]
@@ -222,6 +223,11 @@ impl Metadata {
             rdev: 0,
         }
     }
+
+    pub fn set_owner(&mut self, uid: Uid, gid: Gid) {
+        self.uid = uid.as_u32() as _;
+        self.gid = gid.as_u32() as _;
+    }
 }
 
 pub trait Inode: Any + Sync + Send {
@@ -242,6 +248,8 @@ pub trait Inode: Any + Sync + Send {
     fn mode(&self) -> InodeMode;
 
     fn set_mode(&self, mode: InodeMode);
+
+    fn set_owner(&self, uid: Uid, gid: Gid);
 
     fn atime(&self) -> Duration;
 

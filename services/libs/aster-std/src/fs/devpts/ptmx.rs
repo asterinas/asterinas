@@ -87,6 +87,8 @@ impl Inode for Ptmx {
 
     fn set_mode(&self, mode: InodeMode) {}
 
+    fn set_owner(&self, uid: Uid, gid: Gid) {}
+
     fn atime(&self) -> Duration {
         self.metadata.atime
     }

@@ -1,6 +1,7 @@
 use crate::events::IoEvents;
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 use aster_rights::{Rights, TRights};
 
 use super::*;
@@ -93,6 +94,11 @@ impl FileLike for InodeHandle<Rights> {
 
     fn metadata(&self) -> Metadata {
         self.dentry().inode_metadata()
+    }
+
+    fn set_owner(&self, uid: Uid, gid: Gid) -> Result<()> {
+        self.dentry().set_inode_owner(uid, gid);
+        Ok(())
     }
 
     fn status_flags(&self) -> StatusFlags {

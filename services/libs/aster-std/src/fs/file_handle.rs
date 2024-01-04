@@ -6,6 +6,7 @@ use crate::fs::utils::{AccessMode, IoctlCmd, Metadata, SeekFrom, StatusFlags};
 use crate::net::socket::Socket;
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 
 use core::any::Any;
 
@@ -33,6 +34,10 @@ pub trait FileLike: Send + Sync + Any {
 
     fn metadata(&self) -> Metadata {
         panic!("metadata unsupported");
+    }
+
+    fn set_owner(&self, uid: Uid, gid: Gid) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "set_owner is not supported");
     }
 
     fn status_flags(&self) -> StatusFlags {
