@@ -1,0 +1,33 @@
+[
+    {
+        "**/*.rs": "// SPDX-License-Identifier: MPL-2.0",
+        "**/*.S": "/* SPDX-License-Identifier: MPL-2.0 */",
+        "**/*.sh": "# SPDX-License-Identifier: MPL-2.0",
+        "**/Makefile": "# SPDX-License-Identifier: MPL-2.0",
+        "**/Dockerfile.*": "# SPDX-License-Identifier: MPL-2.0",
+        "ignore": [
+            "regression/apps/",
+
+            "services/libs/comp-sys/cargo-component/tests/",
+            "services/libs/int-to-c-enum/tests/",
+
+            "framework/aster-frame/src/arch/x86/boot/multiboot/header.S",
+            "framework/aster-frame/src/arch/x86/boot/multiboot2/header.S",
+            "framework/libs/linux-bzimage/setup/src/x86/amd64_efi/header.S",
+            "framework/libs/linux-bzimage/setup/src/x86/legacy_i386/header.S",
+
+            "framework/libs/tdx-guest/",
+            "services/libs/aster-std/src/device/tdxguest/mod.rs",
+            "framework/aster-frame/src/arch/x86/tdx_guest.rs",
+
+            "services/comps/virtio/src/device/input/mod.rs",
+            "services/libs/comp-sys/cargo-component/build.rs",
+            "services/libs/comp-sys/cargo-component/src/"
+        ]
+    },
+    {
+        "services/comps/virtio/src/device/input/mod.rs": "// MIT License",
+        "services/libs/comp-sys/cargo-component/build.rs": "// Licensed under the Apache License, Version 2.0 or the MIT License.",
+        "services/libs/comp-sys/cargo-component/src/*.rs": "// Licensed under the Apache License, Version 2.0 or the MIT License."
+    }
+]
