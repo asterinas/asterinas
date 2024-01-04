@@ -7,7 +7,7 @@ use crate::{config::TIMER_FREQ, prelude::*};
 use core::{sync::atomic::Ordering, time::Duration};
 
 #[cfg(target_arch = "x86_64")]
-pub use crate::arch::x86::timer::read_monotonic_milli_seconds;
+pub use crate::arch::x86::timer::{current_tick, read_monotonic_milli_seconds};
 
 /// A timer invokes a callback function after a specified span of time elapsed.
 ///

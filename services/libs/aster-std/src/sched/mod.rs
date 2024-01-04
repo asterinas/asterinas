@@ -1,5 +1,15 @@
-mod priority_scheduler;
+mod scheduler;
+
+use crate::prelude::*;
+use aster_frame::task::set_scheduler;
+use scheduler::vanilla::PreemptiveRRScheduler;
 
 // There may be multiple scheduling policies in the system,
 // and subsequent schedulers can be placed under this module.
-pub use self::priority_scheduler::init;
+pub fn init() {
+    let sched = Box::new(PreemptiveRRScheduler::new());
+    let sched = Box::<PreemptiveRRScheduler>::leak(sched);
+    set_scheduler(sched);
+}
+
+// todo: add a scheduler manager to manage multiple schedulers

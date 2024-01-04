@@ -281,7 +281,7 @@ impl VmoChildOptions<Rights, VmoSliceChild> {
             .check_rights(Rights::DUP)
             .expect("function new_slice_rights should called with rights Dup");
         Self {
-            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
+            flags: parent.flags(),
             parent,
             range,
             marker: PhantomData,
@@ -328,7 +328,7 @@ impl<R> VmoChildOptions<R, VmoCowChild> {
     /// Any pages that are beyond the parent's range are initially all zeros.
     pub fn new_cow(parent: Vmo<R>, range: Range<usize>) -> Self {
         Self {
-            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
+            flags: parent.flags(),
             parent,
             range,
             marker: PhantomData,
@@ -607,5 +607,18 @@ mod test {
         vmo.write_val(PAGE_SIZE + 20, &123u8).unwrap();
         vmo.resize(PAGE_SIZE).unwrap();
         assert!(vmo.read_val::<u8>(10).unwrap() == 42);
+    }
+
+    #[ktest]
+    fn resize_cow() {
+        let vmo = VmoOptions::<Full>::new(10 * PAGE_SIZE)
+            .flags(VmoFlags::RESIZABLE)
+            .alloc()
+            .unwrap();
+
+        let cow_child = VmoChildOptions::new_cow(vmo, 0..PAGE_SIZE).alloc().unwrap();
+
+        cow_child.resize(2 * PAGE_SIZE).unwrap();
+        assert_eq!(cow_child.size(), 2 * PAGE_SIZE);
     }
 }

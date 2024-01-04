@@ -21,3 +21,8 @@ pub const DEFAULT_LOG_LEVEL: Level = Level::Error;
 pub const TIMER_FREQ: u64 = 500;
 
 pub const REAL_TIME_TASK_PRI: u16 = 100;
+
+/// Whether the child process should run first in scheduling.
+/// This option provides a preference for scheduling, not a guarantee.
+/// todo: defaulted as false
+pub const CHILD_RUN_FIRST: bool = true;

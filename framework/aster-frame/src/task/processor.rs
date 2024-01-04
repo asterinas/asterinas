@@ -1,5 +1,5 @@
 use crate::task::preempt::{activate_preempt, deactivate_preempt};
-use crate::task::scheduler::fetch_task;
+use crate::task::scheduler::fetch_next_task;
 use crate::trap::disable_local;
 use crate::{arch::timer::register_scheduler_tick, sync::SpinLock};
 
@@ -100,7 +100,7 @@ pub fn schedule() {
 }
 
 fn switch_to_next() {
-    match fetch_task(true) {
+    match fetch_next_task(true) {
         None => {
             // todo: idle_balance across cpus
         }
@@ -167,7 +167,7 @@ pub fn switch_to(next_task: Arc<Task>) {
     activate_preempt();
 }
 
-/// Called by the timer handler every TICK.
+/// Called by the timer handler at every TICK update.
 fn scheduler_tick() {
     let disable_irq = disable_local();
     let Some(ref cur_task) = current_task_without_irq_disabling() else {

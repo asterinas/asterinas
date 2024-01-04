@@ -13,6 +13,7 @@ pub(crate) mod tdx_guest;
 pub(crate) mod timer;
 
 use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
+pub use timer::current_tick;
 
 use kernel::apic::ioapic;
 use log::{info, warn};
