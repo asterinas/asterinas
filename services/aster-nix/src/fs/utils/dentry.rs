@@ -2,10 +2,12 @@
 
 use crate::fs::device::Device;
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 
 use alloc::string::String;
 use core::sync::atomic::{AtomicU32, Ordering};
 use core::time::Duration;
+use inherit_methods_macro::inherit_methods;
 
 use super::{FileSystem, Inode, InodeMode, InodeType, Metadata, MountNode, NAME_MAX};
 
@@ -215,7 +217,7 @@ impl Dentry {
         if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
-        if !self.inode.mode().is_executable() {
+        if !self.inode.mode()?.is_executable() {
             return_errno!(Errno::EACCES);
         }
         if name.len() > NAME_MAX {
@@ -380,66 +382,6 @@ impl Dentry {
         Ok(child_mount)
     }
 
-    /// Get the filesystem the inode belongs to
-    pub fn fs(&self) -> Arc<dyn FileSystem> {
-        self.inode.fs()
-    }
-
-    /// Flushes all changes made to data and metadata to the device.
-    pub fn sync(&self) -> Result<()> {
-        self.inode.sync()
-    }
-
-    /// Get the inode metadata
-    pub fn inode_metadata(&self) -> Metadata {
-        self.inode.metadata()
-    }
-
-    /// Get the inode type
-    pub fn inode_type(&self) -> InodeType {
-        self.inode.type_()
-    }
-
-    /// Get the inode permission mode
-    pub fn inode_mode(&self) -> InodeMode {
-        self.inode.mode()
-    }
-
-    /// Set the inode permission mode
-    pub fn set_inode_mode(&self, mode: InodeMode) {
-        self.inode.set_mode(mode)
-    }
-
-    /// Gets the size of the inode
-    pub fn inode_size(&self) -> usize {
-        self.inode.size()
-    }
-
-    /// Sets the size of the inode
-    pub fn set_inode_size(&self, new_size: usize) -> Result<()> {
-        self.inode.resize(new_size)
-    }
-
-    /// Get the access timestamp
-    pub fn atime(&self) -> Duration {
-        self.inode.atime()
-    }
-
-    /// Set the access timestamp
-    pub fn set_atime(&self, time: Duration) {
-        self.inode.set_atime(time)
-    }
-
-    /// Get the modified timestamp
-    pub fn mtime(&self) -> Duration {
-        self.inode.mtime()
-    }
-
-    /// Set the modified timestamp
-    pub fn set_mtime(&self, time: Duration) {
-        self.inode.set_mtime(time)
-    }
-
     /// Get the absolute path.
     ///
     /// It will resolve the mountpoint automatically.
@@ -467,6 +409,26 @@ impl Dentry {
         debug_assert!(path.starts_with('/'));
         path
     }
+}
+
+#[inherit_methods(from = "self.inode")]
+impl Dentry {
+    pub fn fs(&self) -> Arc<dyn FileSystem>;
+    pub fn sync(&self) -> Result<()>;
+    pub fn metadata(&self) -> Metadata;
+    pub fn type_(&self) -> InodeType;
+    pub fn mode(&self) -> Result<InodeMode>;
+    pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    pub fn size(&self) -> usize;
+    pub fn resize(&self, size: usize) -> Result<()>;
+    pub fn owner(&self) -> Result<Uid>;
+    pub fn set_owner(&self, uid: Uid) -> Result<()>;
+    pub fn group(&self) -> Result<Gid>;
+    pub fn set_group(&self, gid: Gid) -> Result<()>;
+    pub fn atime(&self) -> Duration;
+    pub fn set_atime(&self, time: Duration);
+    pub fn mtime(&self) -> Duration;
+    pub fn set_mtime(&self, time: Duration);
 }
 
 impl Debug for Dentry {

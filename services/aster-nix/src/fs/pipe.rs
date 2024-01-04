@@ -3,6 +3,7 @@
 use crate::events::{IoEvents, Observer};
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 
 use super::file_handle::FileLike;
 use super::utils::{AccessMode, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags};
@@ -51,8 +52,8 @@ impl FileLike for PipeReader {
             type_: InodeType::NamedPipe,
             mode: InodeMode::from_bits_truncate(0o400),
             nlinks: 1,
-            uid: 0,
-            gid: 0,
+            uid: Uid::new_root(),
+            gid: Gid::new_root(),
             rdev: 0,
         }
     }
@@ -117,8 +118,8 @@ impl FileLike for PipeWriter {
             type_: InodeType::NamedPipe,
             mode: InodeMode::from_bits_truncate(0o200),
             nlinks: 1,
-            uid: 0,
-            gid: 0,
+            uid: Uid::new_root(),
+            gid: Gid::new_root(),
             rdev: 0,
         }
     }

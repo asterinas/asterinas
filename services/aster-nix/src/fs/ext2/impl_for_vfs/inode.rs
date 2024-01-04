@@ -6,6 +6,7 @@ use crate::fs::utils::{
     DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
 };
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 use crate::vm::vmo::Vmo;
 
 use aster_rights::Full;
@@ -33,8 +34,8 @@ impl Inode for Ext2Inode {
             type_: InodeType::from(self.file_type()),
             mode: InodeMode::from(self.file_perm()),
             nlinks: self.hard_links() as _,
-            uid: self.uid() as _,
-            gid: self.gid() as _,
+            uid: Uid::new(self.uid()),
+            gid: Gid::new(self.gid()),
             rdev: self.device_id(),
         }
     }
@@ -63,12 +64,31 @@ impl Inode for Ext2Inode {
         InodeType::from(self.file_type())
     }
 
-    fn mode(&self) -> InodeMode {
-        InodeMode::from(self.file_perm())
+    fn mode(&self) -> Result<InodeMode> {
+        Ok(InodeMode::from(self.file_perm()))
     }
 
-    fn set_mode(&self, mode: InodeMode) {
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
         self.set_file_perm(mode.into());
+        Ok(())
+    }
+
+    fn owner(&self) -> Result<Uid> {
+        Ok(Uid::new(self.uid()))
+    }
+
+    fn set_owner(&self, uid: Uid) -> Result<()> {
+        self.set_uid(uid.as_u32());
+        Ok(())
+    }
+
+    fn group(&self) -> Result<Gid> {
+        Ok(Gid::new(self.gid()))
+    }
+
+    fn set_group(&self, gid: Gid) -> Result<()> {
+        self.set_gid(gid.as_u32());
+        Ok(())
     }
 
     fn page_cache(&self) -> Option<Vmo<Full>> {

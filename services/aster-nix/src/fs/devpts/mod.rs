@@ -7,6 +7,7 @@ use crate::fs::utils::{
     SuperBlock, NAME_MAX,
 };
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 
 use aster_util::{id_allocator::IdAlloc, slot_vec::SlotVec};
 use core::time::Duration;
@@ -100,7 +101,7 @@ impl FileSystem for DevPts {
 struct RootInode {
     ptmx: Arc<Ptmx>,
     slaves: RwLock<SlotVec<(String, Arc<PtySlaveInode>)>>,
-    metadata: Metadata,
+    metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
 }
 
@@ -109,7 +110,11 @@ impl RootInode {
         Arc::new(Self {
             ptmx: Ptmx::new(sb, fs.clone()),
             slaves: RwLock::new(SlotVec::new()),
-            metadata: Metadata::new_dir(ROOT_INO, InodeMode::from_bits_truncate(0o755), sb),
+            metadata: RwLock::new(Metadata::new_dir(
+                ROOT_INO,
+                InodeMode::from_bits_truncate(0o755),
+                sb,
+            )),
             fs,
         })
     }
@@ -138,7 +143,7 @@ impl RootInode {
 
 impl Inode for RootInode {
     fn size(&self) -> usize {
-        self.metadata.size
+        self.metadata.read().size
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -146,34 +151,59 @@ impl Inode for RootInode {
     }
 
     fn metadata(&self) -> Metadata {
-        self.metadata.clone()
+        *self.metadata.read()
     }
 
     fn ino(&self) -> u64 {
-        self.metadata.ino as _
+        self.metadata.read().ino as _
     }
 
     fn type_(&self) -> InodeType {
-        self.metadata.type_
+        self.metadata.read().type_
     }
 
-    fn mode(&self) -> InodeMode {
-        self.metadata.mode
+    fn mode(&self) -> Result<InodeMode> {
+        Ok(self.metadata.read().mode)
     }
 
-    fn set_mode(&self, mode: InodeMode) {}
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        self.metadata.write().mode = mode;
+        Ok(())
+    }
+
+    fn owner(&self) -> Result<Uid> {
+        Ok(self.metadata.read().uid)
+    }
+
+    fn set_owner(&self, uid: Uid) -> Result<()> {
+        self.metadata.write().uid = uid;
+        Ok(())
+    }
+
+    fn group(&self) -> Result<Gid> {
+        Ok(self.metadata.read().gid)
+    }
+
+    fn set_group(&self, gid: Gid) -> Result<()> {
+        self.metadata.write().gid = gid;
+        Ok(())
+    }
 
     fn atime(&self) -> Duration {
-        self.metadata.atime
+        self.metadata.read().atime
     }
 
-    fn set_atime(&self, time: Duration) {}
+    fn set_atime(&self, time: Duration) {
+        self.metadata.write().atime = time;
+    }
 
     fn mtime(&self) -> Duration {
-        self.metadata.mtime
+        self.metadata.read().mtime
     }
 
-    fn set_mtime(&self, time: Duration) {}
+    fn set_mtime(&self, time: Duration) {
+        self.metadata.write().mtime = time;
+    }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
@@ -187,20 +217,15 @@ impl Inode for RootInode {
         let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
             // Read the 3 special entries.
             if *offset == 0 {
-                visitor.visit(".", self.metadata.ino as u64, self.metadata.type_, *offset)?;
+                visitor.visit(".", self.ino(), self.type_(), *offset)?;
                 *offset += 1;
             }
             if *offset == 1 {
-                visitor.visit("..", self.metadata.ino as u64, self.metadata.type_, *offset)?;
+                visitor.visit("..", self.ino(), self.type_(), *offset)?;
                 *offset += 1;
             }
             if *offset == 2 {
-                visitor.visit(
-                    "ptmx",
-                    self.ptmx.metadata().ino as u64,
-                    self.ptmx.metadata().type_,
-                    *offset,
-                )?;
+                visitor.visit("ptmx", self.ptmx.ino(), self.ptmx.type_(), *offset)?;
                 *offset += 1;
             }
 
@@ -212,12 +237,7 @@ impl Inode for RootInode {
                 .map(|(idx, (name, node))| (idx + 3, (name, node)))
                 .skip_while(|(idx, _)| idx < &start_offset)
             {
-                visitor.visit(
-                    name.as_ref(),
-                    node.metadata().ino as u64,
-                    node.metadata().type_,
-                    idx,
-                )?;
+                visitor.visit(name.as_ref(), node.ino(), node.type_(), idx)?;
                 *offset = idx + 1;
             }
             Ok(())

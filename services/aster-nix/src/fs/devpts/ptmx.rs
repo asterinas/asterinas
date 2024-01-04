@@ -19,7 +19,7 @@ const PTMX_MINOR_NUM: u32 = 2;
 /// and an corresponding pty slave inode is also created.
 pub struct Ptmx {
     inner: Inner,
-    metadata: Metadata,
+    metadata: RwLock<Metadata>,
 }
 
 #[derive(Clone)]
@@ -29,12 +29,12 @@ impl Ptmx {
     pub fn new(sb: &SuperBlock, fs: Weak<DevPts>) -> Arc<Self> {
         let inner = Inner(fs);
         Arc::new(Self {
-            metadata: Metadata::new_device(
+            metadata: RwLock::new(Metadata::new_device(
                 PTMX_INO,
                 InodeMode::from_bits_truncate(0o666),
                 sb,
                 &inner,
-            ),
+            )),
             inner,
         })
     }
@@ -64,7 +64,7 @@ impl Ptmx {
 // it returns the pty master. So the ptmx can not be used at upper layer.
 impl Inode for Ptmx {
     fn size(&self) -> usize {
-        self.metadata.size
+        self.metadata.read().size
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -72,34 +72,59 @@ impl Inode for Ptmx {
     }
 
     fn metadata(&self) -> Metadata {
-        self.metadata.clone()
+        *self.metadata.read()
     }
 
     fn ino(&self) -> u64 {
-        self.metadata.ino as _
+        self.metadata.read().ino as _
     }
 
     fn type_(&self) -> InodeType {
-        self.metadata.type_
+        self.metadata.read().type_
     }
 
-    fn mode(&self) -> InodeMode {
-        self.metadata.mode
+    fn mode(&self) -> Result<InodeMode> {
+        Ok(self.metadata.read().mode)
     }
 
-    fn set_mode(&self, mode: InodeMode) {}
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        self.metadata.write().mode = mode;
+        Ok(())
+    }
+
+    fn owner(&self) -> Result<Uid> {
+        Ok(self.metadata.read().uid)
+    }
+
+    fn set_owner(&self, uid: Uid) -> Result<()> {
+        self.metadata.write().uid = uid;
+        Ok(())
+    }
+
+    fn group(&self) -> Result<Gid> {
+        Ok(self.metadata.read().gid)
+    }
+
+    fn set_group(&self, gid: Gid) -> Result<()> {
+        self.metadata.write().gid = gid;
+        Ok(())
+    }
 
     fn atime(&self) -> Duration {
-        self.metadata.atime
+        self.metadata.read().atime
     }
 
-    fn set_atime(&self, time: Duration) {}
+    fn set_atime(&self, time: Duration) {
+        self.metadata.write().atime = time;
+    }
 
     fn mtime(&self) -> Duration {
-        self.metadata.mtime
+        self.metadata.read().mtime
     }
 
-    fn set_mtime(&self, time: Duration) {}
+    fn set_mtime(&self, time: Duration) {
+        self.metadata.write().mtime = time;
+    }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         Ok(0)

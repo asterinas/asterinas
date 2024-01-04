@@ -290,11 +290,11 @@ fn lookup_socket_file(path: &str) -> Result<Arc<Dentry>> {
         fs.lookup(&fs_path)?
     };
 
-    if dentry.inode_type() != InodeType::Socket {
+    if dentry.type_() != InodeType::Socket {
         return_errno_with_message!(Errno::ENOTSOCK, "not a socket file")
     }
 
-    if !dentry.inode_mode().is_readable() || !dentry.inode_mode().is_writable() {
+    if !dentry.mode()?.is_readable() || !dentry.mode()?.is_writable() {
         return_errno_with_message!(Errno::EACCES, "the socket cannot be read or written")
     }
     Ok(dentry)

@@ -42,7 +42,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
         let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
-    dentry.set_inode_size(len as usize)?;
+    dentry.resize(len as usize)?;
     Ok(SyscallReturn::Return(0))
 }
 

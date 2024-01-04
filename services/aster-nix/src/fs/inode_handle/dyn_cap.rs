@@ -3,7 +3,10 @@
 use crate::events::IoEvents;
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
+
 use aster_rights::{Rights, TRights};
+use inherit_methods_macro::inherit_methods;
 
 use super::*;
 
@@ -14,10 +17,10 @@ impl InodeHandle<Rights> {
         status_flags: StatusFlags,
     ) -> Result<Self> {
         let inode = dentry.inode();
-        if access_mode.is_readable() && !inode.mode().is_readable() {
+        if access_mode.is_readable() && !inode.mode()?.is_readable() {
             return_errno_with_message!(Errno::EACCES, "File is not readable");
         }
-        if access_mode.is_writable() && !inode.mode().is_writable() {
+        if access_mode.is_writable() && !inode.mode()?.is_writable() {
             return_errno_with_message!(Errno::EACCES, "File is not writable");
         }
         if access_mode.is_writable() && inode.type_() == InodeType::Dir {
@@ -70,7 +73,21 @@ impl Clone for InodeHandle<Rights> {
     }
 }
 
+#[inherit_methods(from = "self.0")]
 impl FileLike for InodeHandle<Rights> {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents;
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
+    fn status_flags(&self) -> StatusFlags;
+    fn access_mode(&self) -> AccessMode;
+    fn metadata(&self) -> Metadata;
+    fn mode(&self) -> Result<InodeMode>;
+    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    fn owner(&self) -> Result<Uid>;
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn group(&self) -> Result<Gid>;
+    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn seek(&self, seek_from: SeekFrom) -> Result<usize>;
+
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "File is not readable");
@@ -85,14 +102,6 @@ impl FileLike for InodeHandle<Rights> {
         self.0.write(buf)
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.0.poll(mask, poller)
-    }
-
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        self.0.ioctl(cmd, arg)
-    }
-
     fn resize(&self, new_size: usize) -> Result<()> {
         if !self.1.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EINVAL, "File is not writable");
@@ -100,25 +109,9 @@ impl FileLike for InodeHandle<Rights> {
         self.0.resize(new_size)
     }
 
-    fn metadata(&self) -> Metadata {
-        self.dentry().inode_metadata()
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        self.0.status_flags()
-    }
-
     fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
         self.0.set_status_flags(new_status_flags);
         Ok(())
-    }
-
-    fn access_mode(&self) -> AccessMode {
-        self.0.access_mode()
-    }
-
-    fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
-        self.0.seek(seek_from)
     }
 
     fn clean_for_close(&self) -> Result<()> {

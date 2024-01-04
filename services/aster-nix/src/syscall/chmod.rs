@@ -3,7 +3,6 @@
 use crate::fs::{
     file_table::FileDescripter,
     fs_resolver::{FsPath, AT_FDCWD},
-    inode_handle::InodeHandle,
     utils::{InodeMode, PATH_MAX},
 };
 use crate::log_syscall_entry;
@@ -20,11 +19,7 @@ pub fn sys_fchmod(fd: FileDescripter, mode: u16) -> Result<SyscallReturn> {
     let current = current!();
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;
-    let inode_handle = file
-        .downcast_ref::<InodeHandle>()
-        .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-    let dentry = inode_handle.dentry();
-    dentry.set_inode_mode(InodeMode::from_bits_truncate(mode));
+    file.set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -52,6 +47,6 @@ pub fn sys_fchmodat(
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
-    dentry.set_inode_mode(InodeMode::from_bits_truncate(mode));
+    dentry.set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))
 }

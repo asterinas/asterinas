@@ -1,75 +1,57 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::time::Duration;
+use inherit_methods_macro::inherit_methods;
 
 use crate::fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata};
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 
-use super::{ProcFS, ProcInodeInfo};
+use super::{Common, ProcFS};
 
 pub struct ProcSym<S: SymOps> {
     inner: S,
-    info: ProcInodeInfo,
+    common: Common,
 }
 
 impl<S: SymOps> ProcSym<S> {
     pub fn new(sym: S, fs: Arc<dyn FileSystem>, is_volatile: bool) -> Arc<Self> {
-        let info = {
+        let common = {
             let procfs = fs.downcast_ref::<ProcFS>().unwrap();
             let metadata = Metadata::new_symlink(
                 procfs.alloc_id(),
                 InodeMode::from_bits_truncate(0o777),
                 &fs.sb(),
             );
-            ProcInodeInfo::new(metadata, Arc::downgrade(&fs), is_volatile)
+            Common::new(metadata, Arc::downgrade(&fs), is_volatile)
         };
-        Arc::new(Self { inner: sym, info })
+        Arc::new(Self { inner: sym, common })
     }
 }
 
+#[inherit_methods(from = "self.common")]
 impl<S: SymOps + 'static> Inode for ProcSym<S> {
-    fn size(&self) -> usize {
-        self.info.size()
-    }
+    fn size(&self) -> usize;
+    fn metadata(&self) -> Metadata;
+    fn ino(&self) -> u64;
+    fn mode(&self) -> Result<InodeMode>;
+    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    fn owner(&self) -> Result<Uid>;
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn group(&self) -> Result<Gid>;
+    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn atime(&self) -> Duration;
+    fn set_atime(&self, time: Duration);
+    fn mtime(&self) -> Duration;
+    fn set_mtime(&self, time: Duration);
+    fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn resize(&self, _new_size: usize) -> Result<()> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn metadata(&self) -> Metadata {
-        self.info.metadata()
-    }
-
-    fn ino(&self) -> u64 {
-        self.info.ino()
-    }
-
     fn type_(&self) -> InodeType {
         InodeType::SymLink
-    }
-
-    fn mode(&self) -> InodeMode {
-        self.info.mode()
-    }
-
-    fn set_mode(&self, mode: InodeMode) {
-        self.info.set_mode(mode)
-    }
-
-    fn atime(&self) -> Duration {
-        self.info.atime()
-    }
-
-    fn set_atime(&self, time: Duration) {
-        self.info.set_atime(time)
-    }
-
-    fn mtime(&self) -> Duration {
-        self.info.mtime()
-    }
-
-    fn set_mtime(&self, time: Duration) {
-        self.info.set_mtime(time)
     }
 
     fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
@@ -104,12 +86,8 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         Ok(())
     }
 
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        self.info.fs().upgrade().unwrap()
-    }
-
     fn is_dentry_cacheable(&self) -> bool {
-        !self.info.is_volatile()
+        !self.common.is_volatile()
     }
 }
 

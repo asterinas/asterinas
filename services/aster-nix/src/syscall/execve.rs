@@ -10,9 +10,7 @@ use crate::fs::utils::{Dentry, InodeType};
 use crate::log_syscall_entry;
 use crate::prelude::*;
 use crate::process::posix_thread::{PosixThreadExt, ThreadName};
-use crate::process::{
-    check_executable_file, credentials_mut, load_program_to_vm, Credentials, Gid, Uid,
-};
+use crate::process::{check_executable_file, credentials_mut, load_program_to_vm, Credentials};
 use crate::syscall::{SYS_EXECVE, SYS_EXECVEAT};
 use crate::util::{read_cstring_from_user, read_val_from_user};
 
@@ -65,7 +63,7 @@ fn lookup_executable_file(
         let fs_path = FsPath::new(dfd, &filename)?;
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
             let dentry = fs_resolver.lookup_no_follow(&fs_path)?;
-            if dentry.inode_type() == InodeType::SymLink {
+            if dentry.type_() == InodeType::SymLink {
                 return_errno_with_message!(Errno::ELOOP, "the executable file is a symlink");
             }
             Ok(dentry)
@@ -110,8 +108,8 @@ fn do_execve(
     debug!("load elf in execve succeeds");
 
     let credentials = credentials_mut();
-    set_uid_from_elf(&credentials, &elf_file);
-    set_gid_from_elf(&credentials, &elf_file);
+    set_uid_from_elf(&credentials, &elf_file)?;
+    set_gid_from_elf(&credentials, &elf_file)?;
 
     // set executable path
     current.set_executable_path(new_executable_path);
@@ -169,23 +167,25 @@ fn read_cstring_vec(
 }
 
 /// Sets uid for credentials as the same of uid of elf file if elf file has `set_uid` bit.
-fn set_uid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) {
-    if elf_file.inode_mode().has_set_uid() {
-        let uid = Uid::new(elf_file.inode_metadata().uid as u32);
+fn set_uid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) -> Result<()> {
+    if elf_file.mode()?.has_set_uid() {
+        let uid = elf_file.owner()?;
         credentials.set_euid(uid);
     }
 
     // No matter whether the elf_file has `set_uid` bit, suid should be reset.
     credentials.reset_suid();
+    Ok(())
 }
 
 /// Sets gid for credentials as the same of gid of elf file if elf file has `set_gid` bit.
-fn set_gid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) {
-    if elf_file.inode_mode().has_set_gid() {
-        let gid = Gid::new(elf_file.inode_metadata().gid as u32);
+fn set_gid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) -> Result<()> {
+    if elf_file.mode()?.has_set_gid() {
+        let gid = elf_file.group()?;
         credentials.set_egid(gid);
     }
 
     // No matter whether the the elf file has `set_gid` bit, sgid should be reset.
     credentials.reset_sgid();
+    Ok(())
 }

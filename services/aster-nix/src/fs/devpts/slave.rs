@@ -4,6 +4,7 @@ use crate::events::IoEvents;
 use crate::fs::inode_handle::FileIo;
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 
 use super::*;
 
@@ -15,19 +16,19 @@ const SLAVE_MAJOR_NUM: u32 = 3;
 /// Pty slave inode for the slave device.
 pub struct PtySlaveInode {
     device: Arc<PtySlave>,
-    metadata: Metadata,
+    metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
 }
 
 impl PtySlaveInode {
     pub fn new(device: Arc<PtySlave>, fs: Weak<DevPts>) -> Arc<Self> {
         Arc::new(Self {
-            metadata: Metadata::new_device(
+            metadata: RwLock::new(Metadata::new_device(
                 device.index() as usize + FIRST_SLAVE_INO,
                 InodeMode::from_bits_truncate(0o620),
                 &fs.upgrade().unwrap().sb(),
                 device.as_ref(),
-            ),
+            )),
             device,
             fs,
         })
@@ -44,7 +45,7 @@ impl Inode for PtySlaveInode {
     }
 
     fn size(&self) -> usize {
-        self.metadata.size
+        self.metadata.read().size
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -52,34 +53,59 @@ impl Inode for PtySlaveInode {
     }
 
     fn metadata(&self) -> Metadata {
-        self.metadata.clone()
+        *self.metadata.read()
     }
 
     fn ino(&self) -> u64 {
-        self.metadata.ino as _
+        self.metadata.read().ino as _
     }
 
     fn type_(&self) -> InodeType {
-        self.metadata.type_
+        self.metadata.read().type_
     }
 
-    fn mode(&self) -> InodeMode {
-        self.metadata.mode
+    fn mode(&self) -> Result<InodeMode> {
+        Ok(self.metadata.read().mode)
     }
 
-    fn set_mode(&self, mode: InodeMode) {}
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        self.metadata.write().mode = mode;
+        Ok(())
+    }
+
+    fn owner(&self) -> Result<Uid> {
+        Ok(self.metadata.read().uid)
+    }
+
+    fn set_owner(&self, uid: Uid) -> Result<()> {
+        self.metadata.write().uid = uid;
+        Ok(())
+    }
+
+    fn group(&self) -> Result<Gid> {
+        Ok(self.metadata.read().gid)
+    }
+
+    fn set_group(&self, gid: Gid) -> Result<()> {
+        self.metadata.write().gid = gid;
+        Ok(())
+    }
 
     fn atime(&self) -> Duration {
-        self.metadata.atime
+        self.metadata.read().atime
     }
 
-    fn set_atime(&self, time: Duration) {}
+    fn set_atime(&self, time: Duration) {
+        self.metadata.write().atime = time;
+    }
 
     fn mtime(&self) -> Duration {
-        self.metadata.mtime
+        self.metadata.read().mtime
     }
 
-    fn set_mtime(&self, time: Duration) {}
+    fn set_mtime(&self, time: Duration) {
+        self.metadata.write().mtime = time;
+    }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         self.device.read(buf)

@@ -9,6 +9,7 @@ use crate::events::IoEvents;
 use crate::fs::device::{Device, DeviceType};
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 use crate::vm::vmo::Vmo;
 
 #[repr(u32)]
@@ -112,7 +113,7 @@ impl InodeMode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Metadata {
     pub dev: u64,
     pub ino: usize,
@@ -125,8 +126,8 @@ pub struct Metadata {
     pub type_: InodeType,
     pub mode: InodeMode,
     pub nlinks: usize,
-    pub uid: usize,
-    pub gid: usize,
+    pub uid: Uid,
+    pub gid: Gid,
     pub rdev: u64,
 }
 
@@ -144,8 +145,8 @@ impl Metadata {
             type_: InodeType::Dir,
             mode,
             nlinks: 2,
-            uid: 0,
-            gid: 0,
+            uid: Uid::new_root(),
+            gid: Gid::new_root(),
             rdev: 0,
         }
     }
@@ -163,8 +164,8 @@ impl Metadata {
             type_: InodeType::File,
             mode,
             nlinks: 1,
-            uid: 0,
-            gid: 0,
+            uid: Uid::new_root(),
+            gid: Gid::new_root(),
             rdev: 0,
         }
     }
@@ -182,8 +183,8 @@ impl Metadata {
             type_: InodeType::SymLink,
             mode,
             nlinks: 1,
-            uid: 0,
-            gid: 0,
+            uid: Uid::new_root(),
+            gid: Gid::new_root(),
             rdev: 0,
         }
     }
@@ -200,8 +201,8 @@ impl Metadata {
             type_: InodeType::from(device.type_()),
             mode,
             nlinks: 1,
-            uid: 0,
-            gid: 0,
+            uid: Uid::new_root(),
+            gid: Gid::new_root(),
             rdev: device.id().into(),
         }
     }
@@ -219,8 +220,8 @@ impl Metadata {
             type_: InodeType::Socket,
             mode,
             nlinks: 1,
-            uid: 0,
-            gid: 0,
+            uid: Uid::new_root(),
+            gid: Gid::new_root(),
             rdev: 0,
         }
     }
@@ -237,9 +238,17 @@ pub trait Inode: Any + Sync + Send {
 
     fn type_(&self) -> InodeType;
 
-    fn mode(&self) -> InodeMode;
+    fn mode(&self) -> Result<InodeMode>;
 
-    fn set_mode(&self, mode: InodeMode);
+    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+
+    fn owner(&self) -> Result<Uid>;
+
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+
+    fn group(&self) -> Result<Gid>;
+
+    fn set_group(&self, gid: Gid) -> Result<()>;
 
     fn atime(&self) -> Duration;
 

@@ -26,7 +26,7 @@ pub fn sys_chdir(pathname_addr: Vaddr) -> Result<SyscallReturn> {
         let fs_path = FsPath::try_from(pathname.as_ref())?;
         fs.lookup(&fs_path)?
     };
-    if dentry.inode_type() != InodeType::Dir {
+    if dentry.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
     fs.set_cwd(dentry);
@@ -46,7 +46,7 @@ pub fn sys_fchdir(fd: FileDescripter) -> Result<SyscallReturn> {
             .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
         inode_handle.dentry().clone()
     };
-    if dentry.inode_type() != InodeType::Dir {
+    if dentry.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
     current.fs().write().set_cwd(dentry);

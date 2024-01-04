@@ -32,7 +32,7 @@ pub fn sys_getdents64(
     let inode_handle = file
         .downcast_ref::<InodeHandle>()
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-    if inode_handle.dentry().inode_type() != InodeType::Dir {
+    if inode_handle.dentry().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
     }
     let mut buffer = vec![0u8; buf_len];

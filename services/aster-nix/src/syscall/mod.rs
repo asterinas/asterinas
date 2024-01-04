@@ -8,6 +8,7 @@ use crate::syscall::arch_prctl::sys_arch_prctl;
 use crate::syscall::brk::sys_brk;
 use crate::syscall::chdir::{sys_chdir, sys_fchdir};
 use crate::syscall::chmod::{sys_chmod, sys_fchmod, sys_fchmodat};
+use crate::syscall::chown::{sys_chown, sys_fchown, sys_fchownat, sys_lchown};
 use crate::syscall::clock_gettime::sys_clock_gettime;
 use crate::syscall::clock_nanosleep::sys_clock_nanosleep;
 use crate::syscall::clone::sys_clone;
@@ -115,6 +116,7 @@ mod bind;
 mod brk;
 mod chdir;
 mod chmod;
+mod chown;
 mod clock_gettime;
 mod clock_nanosleep;
 mod clone;
@@ -306,6 +308,9 @@ define_syscall_nums!(
     SYS_READLINK = 89,
     SYS_CHMOD = 90,
     SYS_FCHMOD = 91,
+    SYS_CHOWN = 92,
+    SYS_FCHOWN = 93,
+    SYS_LCHOWN = 94,
     SYS_UMASK = 95,
     SYS_GETTIMEOFDAY = 96,
     SYS_GETUID = 102,
@@ -350,6 +355,7 @@ define_syscall_nums!(
     SYS_WAITID = 247,
     SYS_OPENAT = 257,
     SYS_MKDIRAT = 258,
+    SYS_FCHOWNAT = 260,
     SYS_FSTATAT = 262,
     SYS_UNLINKAT = 263,
     SYS_RENAMEAT = 264,
@@ -486,6 +492,9 @@ pub fn syscall_dispatch(
         SYS_READLINK => syscall_handler!(3, sys_readlink, args),
         SYS_CHMOD => syscall_handler!(2, sys_chmod, args),
         SYS_FCHMOD => syscall_handler!(2, sys_fchmod, args),
+        SYS_CHOWN => syscall_handler!(3, sys_chown, args),
+        SYS_FCHOWN => syscall_handler!(3, sys_fchown, args),
+        SYS_LCHOWN => syscall_handler!(3, sys_lchown, args),
         SYS_UMASK => syscall_handler!(1, sys_umask, args),
         SYS_GETTIMEOFDAY => syscall_handler!(1, sys_gettimeofday, args),
         SYS_GETUID => syscall_handler!(0, sys_getuid),
@@ -530,6 +539,7 @@ pub fn syscall_dispatch(
         SYS_WAITID => syscall_handler!(5, sys_waitid, args),
         SYS_OPENAT => syscall_handler!(4, sys_openat, args),
         SYS_MKDIRAT => syscall_handler!(3, sys_mkdirat, args),
+        SYS_FCHOWNAT => syscall_handler!(5, sys_fchownat, args),
         SYS_FSTATAT => syscall_handler!(4, sys_fstatat, args),
         SYS_UNLINKAT => syscall_handler!(3, sys_unlinkat, args),
         SYS_RENAMEAT => syscall_handler!(4, sys_renameat, args),
