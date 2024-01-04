@@ -3,6 +3,7 @@
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
+VDSO_DIR := $(BUILD_DIR)/linux_vdso
 INITRAMFS := $(BUILD_DIR)/initramfs
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
@@ -29,7 +30,7 @@ INITRAMFS_ALL_DIRS := \
 
 all: build
 
-$(INITRAMFS)/lib/x86_64-linux-gnu:
+$(INITRAMFS)/lib/x86_64-linux-gnu: $(VDSO_DIR)
 	@mkdir -p $@
 	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $@
 	@cp -L /lib/x86_64-linux-gnu/libstdc++.so.6 $@
@@ -42,12 +43,13 @@ $(INITRAMFS)/lib/x86_64-linux-gnu:
 	@cp -L /lib/x86_64-linux-gnu/libdl.so.2 $@
 	@cp -L /lib/x86_64-linux-gnu/libz.so.1 $@
 	@cp -L /usr/local/benchmark/iperf/lib/libiperf.so.0 $@
-	@# TODO: use a custom compiled vdso.so file in the future.
-	@git clone https://github.com/asterinas/linux_vdso.git
-	@cd ./linux_vdso && git checkout 2a6d2db 2>/dev/null
-	@cp -L ./linux_vdso/vdso64.so $@
-	@rm -rf ./linux_vdso 
+	@cp -L $(VDSO_DIR)/vdso64.so $@
 
+$(VDSO_DIR):
+	@# TODO: use a custom compiled vdso.so file in the future.
+	@rm -rf $@ && mkdir -p $@
+	@cd $@ && git clone https://github.com/asterinas/linux_vdso.git .
+	@cd $@ && git checkout 2a6d2db 2>/dev/null
 
 $(INITRAMFS)/lib64:
 	@mkdir -p $@
