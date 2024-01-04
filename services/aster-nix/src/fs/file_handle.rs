@@ -4,10 +4,11 @@
 
 use crate::events::{IoEvents, Observer};
 use crate::fs::device::Device;
-use crate::fs::utils::{AccessMode, IoctlCmd, Metadata, SeekFrom, StatusFlags};
+use crate::fs::utils::{AccessMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags};
 use crate::net::socket::Socket;
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 
 use core::any::Any;
 
@@ -39,6 +40,30 @@ pub trait FileLike: Send + Sync + Any {
 
     fn metadata(&self) -> Metadata {
         panic!("metadata unsupported");
+    }
+
+    fn mode(&self) -> Result<InodeMode> {
+        return_errno_with_message!(Errno::EINVAL, "mode is not supported");
+    }
+
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "set_mode is not supported");
+    }
+
+    fn owner(&self) -> Result<Uid> {
+        return_errno_with_message!(Errno::EPERM, "owner is not supported");
+    }
+
+    fn set_owner(&self, uid: Uid) -> Result<()> {
+        return_errno_with_message!(Errno::EPERM, "set_owner is not supported");
+    }
+
+    fn group(&self) -> Result<Gid> {
+        return_errno_with_message!(Errno::EPERM, "group is not supported");
+    }
+
+    fn set_group(&self, gid: Gid) -> Result<()> {
+        return_errno_with_message!(Errno::EPERM, "set_group is not supported");
     }
 
     fn status_flags(&self) -> StatusFlags {

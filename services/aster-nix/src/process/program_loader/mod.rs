@@ -96,15 +96,15 @@ pub fn load_program_to_vm(
 }
 
 pub fn check_executable_file(dentry: &Arc<Dentry>) -> Result<()> {
-    if dentry.inode_type().is_directory() {
+    if dentry.type_().is_directory() {
         return_errno_with_message!(Errno::EISDIR, "the file is a directory");
     }
 
-    if !dentry.inode_type().is_reguler_file() {
+    if !dentry.type_().is_reguler_file() {
         return_errno_with_message!(Errno::EACCES, "the dentry is not a regular file");
     }
 
-    if !dentry.inode_mode().is_executable() {
+    if !dentry.mode()?.is_executable() {
         return_errno_with_message!(Errno::EACCES, "the dentry is not executable");
     }
 

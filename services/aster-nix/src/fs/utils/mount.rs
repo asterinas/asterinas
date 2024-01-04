@@ -59,7 +59,7 @@ impl MountNode {
         if !Arc::ptr_eq(&mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
-        if mountpoint.inode_type() != InodeType::Dir {
+        if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 

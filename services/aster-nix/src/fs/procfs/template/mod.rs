@@ -4,6 +4,7 @@ use core::time::Duration;
 
 use crate::fs::utils::{FileSystem, InodeMode, Metadata};
 use crate::prelude::*;
+use crate::process::{Gid, Uid};
 
 use super::ProcFS;
 
@@ -17,13 +18,13 @@ mod dir;
 mod file;
 mod sym;
 
-struct ProcInodeInfo {
+struct Common {
     metadata: RwLock<Metadata>,
     fs: Weak<dyn FileSystem>,
     is_volatile: bool,
 }
 
-impl ProcInodeInfo {
+impl Common {
     pub fn new(metadata: Metadata, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Self {
         Self {
             metadata: RwLock::new(metadata),
@@ -32,12 +33,12 @@ impl ProcInodeInfo {
         }
     }
 
-    pub fn fs(&self) -> &Weak<dyn FileSystem> {
-        &self.fs
+    pub fn fs(&self) -> Arc<dyn FileSystem> {
+        self.fs.upgrade().unwrap()
     }
 
     pub fn metadata(&self) -> Metadata {
-        self.metadata.read().clone()
+        *self.metadata.read()
     }
 
     pub fn ino(&self) -> u64 {
@@ -64,12 +65,31 @@ impl ProcInodeInfo {
         self.metadata.write().mtime = time;
     }
 
-    pub fn mode(&self) -> InodeMode {
-        self.metadata.read().mode
+    pub fn mode(&self) -> Result<InodeMode> {
+        Ok(self.metadata.read().mode)
     }
 
-    pub fn set_mode(&self, mode: InodeMode) {
+    pub fn set_mode(&self, mode: InodeMode) -> Result<()> {
         self.metadata.write().mode = mode;
+        Ok(())
+    }
+
+    pub fn owner(&self) -> Result<Uid> {
+        Ok(self.metadata.read().uid)
+    }
+
+    pub fn set_owner(&self, uid: Uid) -> Result<()> {
+        self.metadata.write().uid = uid;
+        Ok(())
+    }
+
+    pub fn group(&self) -> Result<Gid> {
+        Ok(self.metadata.read().gid)
+    }
+
+    pub fn set_group(&self, gid: Gid) -> Result<()> {
+        self.metadata.write().gid = gid;
+        Ok(())
     }
 
     pub fn is_volatile(&self) -> bool {

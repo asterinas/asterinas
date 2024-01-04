@@ -100,7 +100,7 @@ impl FsResolver {
                 if file_name.ends_with('/') {
                     return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
                 }
-                if !dir_dentry.inode_mode().is_writable() {
+                if !dir_dentry.mode()?.is_writable() {
                     return_errno_with_message!(Errno::EACCES, "file cannot be created");
                 }
                 dir_dentry.create(&file_name, InodeType::File, inode_mode)?
@@ -182,7 +182,7 @@ impl FsResolver {
 
             // Iterate next dentry
             let next_dentry = dentry.lookup(next_name)?;
-            let next_type = next_dentry.inode_type();
+            let next_type = next_dentry.type_();
             let next_is_tail = path_remain.is_empty();
 
             // If next inode is a symlink, follow symlinks at most `SYMLINKS_MAX` times.
@@ -280,7 +280,7 @@ impl FsResolver {
         // Dereference the tail symlinks if needed
         loop {
             match dir_dentry.lookup(base_name.trim_end_matches('/')) {
-                Ok(dentry) if dentry.inode_type() == InodeType::SymLink => {
+                Ok(dentry) if dentry.type_() == InodeType::SymLink => {
                     let link = {
                         let mut link = dentry.inode().read_link()?;
                         if link.is_empty() {

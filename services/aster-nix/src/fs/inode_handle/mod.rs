@@ -6,15 +6,18 @@ mod dyn_cap;
 mod static_cap;
 
 use core::sync::atomic::{AtomicU32, Ordering};
+use inherit_methods_macro::inherit_methods;
 
 use crate::events::IoEvents;
 use crate::fs::device::Device;
 use crate::fs::file_handle::FileLike;
 use crate::fs::utils::{
-    AccessMode, Dentry, DirentVisitor, InodeType, IoctlCmd, Metadata, SeekFrom, StatusFlags,
+    AccessMode, Dentry, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
+    StatusFlags,
 };
 use crate::prelude::*;
 use crate::process::signal::Poller;
+use crate::process::{Gid, Uid};
 use aster_rights::Rights;
 
 #[derive(Debug)]
@@ -57,7 +60,7 @@ impl InodeHandle_ {
         }
 
         if self.status_flags().contains(StatusFlags::O_APPEND) {
-            *offset = self.dentry.inode_size();
+            *offset = self.dentry.size();
         }
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
             self.dentry.inode().write_direct_at(*offset, buf)?
@@ -92,7 +95,7 @@ impl InodeHandle_ {
                 off as isize
             }
             SeekFrom::End(off /* as isize */) => {
-                let file_size = self.dentry.inode_size() as isize;
+                let file_size = self.dentry.size() as isize;
                 assert!(file_size >= 0);
                 file_size
                     .checked_add(off)
@@ -116,15 +119,11 @@ impl InodeHandle_ {
         *offset
     }
 
-    pub fn size(&self) -> usize {
-        self.dentry.inode_size()
-    }
-
     pub fn resize(&self, new_size: usize) -> Result<()> {
         if self.status_flags().contains(StatusFlags::O_APPEND) {
             return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
         }
-        self.dentry.set_inode_size(new_size)
+        self.dentry.resize(new_size)
     }
 
     pub fn access_mode(&self) -> AccessMode {
@@ -163,6 +162,18 @@ impl InodeHandle_ {
 
         self.dentry.inode().ioctl(cmd, arg)
     }
+}
+
+#[inherit_methods(from = "self.dentry")]
+impl InodeHandle_ {
+    pub fn size(&self) -> usize;
+    pub fn metadata(&self) -> Metadata;
+    pub fn mode(&self) -> Result<InodeMode>;
+    pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    pub fn owner(&self) -> Result<Uid>;
+    pub fn set_owner(&self, uid: Uid) -> Result<()>;
+    pub fn group(&self) -> Result<Gid>;
+    pub fn set_group(&self, gid: Gid) -> Result<()>;
 }
 
 impl Debug for InodeHandle_ {

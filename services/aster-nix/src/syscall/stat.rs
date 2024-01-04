@@ -67,7 +67,7 @@ pub fn sys_fstatat(
             fs.lookup(&fs_path)?
         }
     };
-    let stat = Stat::from(dentry.inode_metadata());
+    let stat = Stat::from(dentry.metadata());
     write_val_to_user(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }
@@ -121,8 +121,8 @@ impl From<Metadata> for Stat {
             st_ino: info.ino,
             st_nlink: info.nlinks,
             st_mode: info.type_ as u32 | info.mode.bits() as u32,
-            st_uid: info.uid as u32,
-            st_gid: info.gid as u32,
+            st_uid: info.uid.as_u32(),
+            st_gid: info.gid.as_u32(),
             __pad0: 0,
             st_rdev: info.rdev,
             st_size: info.size as isize,
