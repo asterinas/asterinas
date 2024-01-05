@@ -56,6 +56,16 @@ impl PageCache {
     }
 }
 
+impl Drop for PageCache {
+    fn drop(&mut self) {
+        // TODO:
+        // The default destruction procedure exhibits slow performance.
+        // In contrast, resizing the `VMO` to zero greatly accelerates the process.
+        // We need to find out the underlying cause of this discrepancy.
+        let _ = self.pages.resize(0);
+    }
+}
+
 impl Debug for PageCache {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("PageCache")
@@ -147,7 +157,9 @@ impl Pager for PageCacheManager {
         let mut pages = self.pages.lock();
         if let Some(page) = pages.pop(&idx) {
             if let PageState::Dirty = page.state() {
-                let backend = self.backend();
+                let Some(backend) = self.backend.upgrade() else {
+                    return Ok(());
+                };
                 if idx < backend.npages() {
                     backend.write_page(idx, page.frame())?;
                 }

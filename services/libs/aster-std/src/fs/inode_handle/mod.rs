@@ -57,7 +57,7 @@ impl InodeHandle_ {
         }
 
         if self.status_flags().contains(StatusFlags::O_APPEND) {
-            *offset = self.dentry.inode_len();
+            *offset = self.dentry.inode_size();
         }
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
             self.dentry.inode().write_direct_at(*offset, buf)?
@@ -92,7 +92,7 @@ impl InodeHandle_ {
                 off as isize
             }
             SeekFrom::End(off /* as isize */) => {
-                let file_size = self.dentry.inode_len() as isize;
+                let file_size = self.dentry.inode_size() as isize;
                 assert!(file_size >= 0);
                 file_size
                     .checked_add(off)
@@ -116,8 +116,15 @@ impl InodeHandle_ {
         *offset
     }
 
-    pub fn len(&self) -> usize {
-        self.dentry.inode_len()
+    pub fn size(&self) -> usize {
+        self.dentry.inode_size()
+    }
+
+    pub fn resize(&self, new_size: usize) -> Result<()> {
+        if self.status_flags().contains(StatusFlags::O_APPEND) {
+            return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
+        }
+        self.dentry.set_inode_size(new_size)
     }
 
     pub fn access_mode(&self) -> AccessMode {

@@ -56,7 +56,7 @@ impl<D: DirOps> ProcDir<D> {
 }
 
 impl<D: DirOps + 'static> Inode for ProcDir<D> {
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         self.info.size()
     }
 

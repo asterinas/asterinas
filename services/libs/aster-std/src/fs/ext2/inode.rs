@@ -630,8 +630,8 @@ impl Inner {
     }
 
     pub fn resize(&mut self, new_size: usize) -> Result<()> {
-        self.page_cache.pages().resize(new_size)?;
         self.inode_impl.resize(new_size)?;
+        self.page_cache.pages().resize(new_size)?;
         Ok(())
     }
 

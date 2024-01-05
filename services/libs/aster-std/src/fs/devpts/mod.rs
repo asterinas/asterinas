@@ -137,7 +137,7 @@ impl RootInode {
 }
 
 impl Inode for RootInode {
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         self.metadata.size
     }
 

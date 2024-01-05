@@ -93,6 +93,13 @@ impl FileLike for InodeHandle<Rights> {
         self.0.ioctl(cmd, arg)
     }
 
+    fn resize(&self, new_size: usize) -> Result<()> {
+        if !self.1.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EINVAL, "File is not writable");
+        }
+        self.0.resize(new_size)
+    }
+
     fn metadata(&self) -> Metadata {
         self.dentry().inode_metadata()
     }
