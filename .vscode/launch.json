@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Asterinas(debug)",
+            "type": "lldb", // install CodeLLDB extension first
+            "request": "custom",
+            "targetCreateCommands": ["target create ${workspaceFolder}/target/x86_64-custom/debug/asterinas"],
+            "processCreateCommands": ["gdb-remote 1234"],
+        },
+        {
+            "name": "Debug Asterinas(release)",
+            "type": "lldb", // install CodeLLDB extension first
+            "request": "custom",
+            "targetCreateCommands": ["target create ${workspaceFolder}/target/x86_64-custom/release/asterinas"],
+            "processCreateCommands": ["gdb-remote 1234"],
+        }
+    ]
+}

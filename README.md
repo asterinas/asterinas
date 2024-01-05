@@ -140,6 +140,8 @@ To get the GDB interactive shell:
 make run GDB_CLIENT=1
 ```
 
+Or, start a debug session via VS Code after starting a debug server with `GDB_SERVER=1` in the shell. [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension is required to enable debug via VS Code.
+
 Currently, the Asterinas runner's debugging interface is exposed by unix socket. Thus there shouldn't be multiple debugging instances in the same container. To add debug symbols for the underlying infrastructures such as UEFI firmware or bootloader, please check the runner's source code for details.
 
 ## Code organization
