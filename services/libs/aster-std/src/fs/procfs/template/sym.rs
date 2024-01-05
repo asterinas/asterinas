@@ -28,7 +28,7 @@ impl<S: SymOps> ProcSym<S> {
 }
 
 impl<S: SymOps + 'static> Inode for ProcSym<S> {
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         self.info.size()
     }
 
