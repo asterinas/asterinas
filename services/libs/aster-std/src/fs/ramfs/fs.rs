@@ -444,9 +444,9 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EISDIR, "read is not supported");
         };
         let (offset, read_len) = {
-            let file_len = self_inode.metadata.size;
-            let start = file_len.min(offset);
-            let end = file_len.min(offset + buf.len());
+            let file_size = self_inode.metadata.size;
+            let start = file_size.min(offset);
+            let end = file_size.min(offset + buf.len());
             (start, end - start)
         };
         page_cache
@@ -468,17 +468,17 @@ impl Inode for RamInode {
         let Some(page_cache) = self_inode.inner.as_file() else {
             return_errno_with_message!(Errno::EISDIR, "write is not supported");
         };
-        let file_len = self_inode.metadata.size;
-        let new_len = offset + buf.len();
-        let should_expand_len = new_len > file_len;
-        if should_expand_len {
-            page_cache.pages().resize(new_len)?;
+        let file_size = self_inode.metadata.size;
+        let new_size = offset + buf.len();
+        let should_expand_size = new_size > file_size;
+        if should_expand_size {
+            page_cache.pages().resize(new_size)?;
         }
         page_cache.pages().write_bytes(offset, buf)?;
-        if should_expand_len {
+        if should_expand_size {
             // Turn the read guard into a write guard without releasing the lock.
             let mut self_inode = self_inode.upgrade();
-            self_inode.resize(new_len);
+            self_inode.resize(new_size);
         }
         Ok(buf.len())
     }
@@ -487,12 +487,22 @@ impl Inode for RamInode {
         self.write_at(offset, buf)
     }
 
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         self.0.read().metadata.size
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
-        self.0.write().resize(new_size);
+        let self_inode = self.0.upread();
+        let Some(page_cache) = self_inode.inner.as_file() else {
+            return_errno!(Errno::EISDIR);
+        };
+        let file_size = self_inode.metadata.size;
+        if file_size == new_size {
+            return Ok(());
+        }
+        page_cache.pages().resize(new_size)?;
+        let mut self_inode = self_inode.upgrade();
+        self_inode.resize(new_size);
         Ok(())
     }
 

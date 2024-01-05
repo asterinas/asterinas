@@ -408,9 +408,14 @@ impl Dentry {
         self.inode.set_mode(mode)
     }
 
-    /// Get the inode length
-    pub fn inode_len(&self) -> usize {
-        self.inode.len()
+    /// Gets the size of the inode
+    pub fn inode_size(&self) -> usize {
+        self.inode.size()
+    }
+
+    /// Sets the size of the inode
+    pub fn set_inode_size(&self, new_size: usize) -> Result<()> {
+        self.inode.resize(new_size)
     }
 
     /// Get the access timestamp

@@ -61,7 +61,7 @@ impl Ptmx {
 // Many methods are left to do nothing because every time the ptmx is being opened,
 // it returns the pty master. So the ptmx can not be used at upper layer.
 impl Inode for Ptmx {
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         self.metadata.size
     }
 

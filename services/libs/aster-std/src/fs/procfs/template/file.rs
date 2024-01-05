@@ -26,7 +26,7 @@ impl<F: FileOps> ProcFile<F> {
 }
 
 impl<F: FileOps + 'static> Inode for ProcFile<F> {
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         self.info.size()
     }
 

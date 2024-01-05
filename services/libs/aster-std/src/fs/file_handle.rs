@@ -27,6 +27,10 @@ pub trait FileLike: Send + Sync + Any {
         IoEvents::empty()
     }
 
+    fn resize(&self, new_size: usize) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "resize is not supported");
+    }
+
     fn flush(&self) -> Result<()> {
         Ok(())
     }

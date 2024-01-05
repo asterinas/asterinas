@@ -41,7 +41,7 @@ impl Inode for PtySlaveInode {
         false
     }
 
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         self.metadata.size
     }
 

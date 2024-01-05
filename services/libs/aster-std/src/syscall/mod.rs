@@ -63,6 +63,7 @@ use crate::syscall::symlink::{sys_symlink, sys_symlinkat};
 use crate::syscall::sync::sys_sync;
 use crate::syscall::tgkill::sys_tgkill;
 use crate::syscall::time::sys_time;
+use crate::syscall::truncate::{sys_ftruncate, sys_truncate};
 use crate::syscall::umask::sys_umask;
 use crate::syscall::uname::sys_uname;
 use crate::syscall::unlink::{sys_unlink, sys_unlinkat};
@@ -198,6 +199,7 @@ mod symlink;
 mod sync;
 mod tgkill;
 mod time;
+mod truncate;
 mod umask;
 mod uname;
 mod unlink;
@@ -288,6 +290,8 @@ define_syscall_nums!(
     SYS_UNAME = 63,
     SYS_FCNTL = 72,
     SYS_FSYNC = 74,
+    SYS_TRUNCATE = 76,
+    SYS_FTRUNCATE = 77,
     SYS_GETCWD = 79,
     SYS_CHDIR = 80,
     SYS_FCHDIR = 81,
@@ -466,6 +470,8 @@ pub fn syscall_dispatch(
         SYS_UNAME => syscall_handler!(1, sys_uname, args),
         SYS_FCNTL => syscall_handler!(3, sys_fcntl, args),
         SYS_FSYNC => syscall_handler!(1, sys_fsync, args),
+        SYS_TRUNCATE => syscall_handler!(2, sys_truncate, args),
+        SYS_FTRUNCATE => syscall_handler!(2, sys_ftruncate, args),
         SYS_GETCWD => syscall_handler!(2, sys_getcwd, args),
         SYS_CHDIR => syscall_handler!(1, sys_chdir, args),
         SYS_FCHDIR => syscall_handler!(1, sys_fchdir, args),

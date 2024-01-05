@@ -10,7 +10,7 @@ use aster_rights::Full;
 use core::time::Duration;
 
 impl Inode for Ext2Inode {
-    fn len(&self) -> usize {
+    fn size(&self) -> usize {
         self.file_size() as _
     }
 

@@ -225,11 +225,7 @@ impl Metadata {
 }
 
 pub trait Inode: Any + Sync + Send {
-    fn len(&self) -> usize;
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+    fn size(&self) -> usize;
 
     fn resize(&self, new_size: usize) -> Result<()>;
 
@@ -362,11 +358,11 @@ impl dyn Inode {
             return_errno!(Errno::EISDIR);
         }
 
-        let file_len = self.len();
-        if buf.len() < file_len {
-            buf.resize(file_len, 0);
+        let file_size = self.size();
+        if buf.len() < file_size {
+            buf.resize(file_size, 0);
         }
-        self.read_at(0, &mut buf[..file_len])
+        self.read_at(0, &mut buf[..file_size])
     }
 
     pub fn read_direct_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
@@ -374,11 +370,11 @@ impl dyn Inode {
             return_errno!(Errno::EISDIR);
         }
 
-        let file_len = self.len();
-        if buf.len() < file_len {
-            buf.resize(file_len, 0);
+        let file_size = self.size();
+        if buf.len() < file_size {
+            buf.resize(file_size, 0);
         }
-        self.read_direct_at(0, &mut buf[..file_len])
+        self.read_direct_at(0, &mut buf[..file_size])
     }
 
     pub fn writer(&self, from_offset: usize) -> InodeWriter {
