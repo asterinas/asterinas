@@ -44,7 +44,7 @@ fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<dyn Iface> {
 
 pub(super) fn bind_socket(
     unbound_socket: Box<AnyUnboundSocket>,
-    endpoint: IpEndpoint,
+    endpoint: &IpEndpoint,
     can_reuse: bool,
 ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Box<AnyUnboundSocket>)> {
     let iface = match get_iface_to_bind(&endpoint.addr) {

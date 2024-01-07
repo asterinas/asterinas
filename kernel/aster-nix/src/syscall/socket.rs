@@ -31,12 +31,12 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
             CSocketAddrFamily::AF_INET,
             SockType::SOCK_STREAM,
             Protocol::IPPROTO_IP | Protocol::IPPROTO_TCP,
-        ) => Arc::new(StreamSocket::new(nonblocking)) as Arc<dyn FileLike>,
+        ) => StreamSocket::new(nonblocking) as Arc<dyn FileLike>,
         (
             CSocketAddrFamily::AF_INET,
             SockType::SOCK_DGRAM,
             Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP,
-        ) => Arc::new(DatagramSocket::new(nonblocking)) as Arc<dyn FileLike>,
+        ) => DatagramSocket::new(nonblocking) as Arc<dyn FileLike>,
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };
     let fd = {
