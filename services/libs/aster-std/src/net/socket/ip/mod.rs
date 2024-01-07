@@ -1,4 +1,3 @@
-mod always_some;
 mod common;
 mod datagram;
 mod stream;

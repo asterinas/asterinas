@@ -1,8 +1,9 @@
-use crate::events::IoEvents;
+use alloc::sync::Weak;
+
+use crate::events::Observer;
 use crate::net::iface::IpEndpoint;
 
 use crate::net::socket::ip::common::bind_socket;
-use crate::process::signal::{Pollee, Poller};
 use crate::{
     net::iface::{AnyUnboundSocket, RawUdpSocket},
     prelude::*,
@@ -12,41 +13,26 @@ use super::bound::BoundDatagram;
 
 pub struct UnboundDatagram {
     unbound_socket: Box<AnyUnboundSocket>,
-    pollee: Pollee,
 }
 
 impl UnboundDatagram {
-    pub fn new() -> Self {
+    pub fn new(observer: Weak<dyn Observer<()>>) -> Self {
         Self {
-            unbound_socket: Box::new(AnyUnboundSocket::new_udp()),
-            pollee: Pollee::new(IoEvents::empty()),
+            unbound_socket: Box::new(AnyUnboundSocket::new_udp(observer)),
         }
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
-    }
-
-    pub fn bind(
-        self,
-        endpoint: IpEndpoint,
-    ) -> core::result::Result<Arc<BoundDatagram>, (Error, Self)> {
+    pub fn bind(self, endpoint: &IpEndpoint) -> core::result::Result<BoundDatagram, (Error, Self)> {
         let bound_socket = match bind_socket(self.unbound_socket, endpoint, false) {
             Ok(bound_socket) => bound_socket,
-            Err((err, unbound_socket)) => {
-                return Err((
-                    err,
-                    Self {
-                        unbound_socket,
-                        pollee: self.pollee,
-                    },
-                ))
-            }
+            Err((err, unbound_socket)) => return Err((err, Self { unbound_socket })),
         };
+
         let bound_endpoint = bound_socket.local_endpoint().unwrap();
         bound_socket.raw_with(|socket: &mut RawUdpSocket| {
             socket.bind(bound_endpoint).unwrap();
         });
-        Ok(BoundDatagram::new(bound_socket, self.pollee))
+
+        Ok(BoundDatagram::new(bound_socket))
     }
 }
