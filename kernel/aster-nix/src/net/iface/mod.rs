@@ -46,7 +46,6 @@ pub trait Iface: internal::IfaceInternal + Send + Sync {
         config: BindPortConfig,
     ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Box<AnyUnboundSocket>)> {
         let common = self.common();
-        let socket_type_inner = socket.socket_family();
         common.bind_socket(self.arc_self(), socket, config)
     }
 

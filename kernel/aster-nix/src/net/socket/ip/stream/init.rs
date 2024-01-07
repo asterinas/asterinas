@@ -1,156 +1,93 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use alloc::sync::Weak;
 
 use super::{connecting::ConnectingStream, listen::ListenStream};
 use crate::{
-    events::IoEvents,
+    events::Observer,
     net::{
-        iface::{AnyBoundSocket, AnyUnboundSocket, Iface, IpEndpoint},
-        socket::ip::{
-            always_some::AlwaysSome,
-            common::{bind_socket, get_ephemeral_endpoint},
-        },
+        iface::{AnyBoundSocket, AnyUnboundSocket, IpEndpoint},
+        socket::ip::common::{bind_socket, get_ephemeral_endpoint},
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
 };
 
-pub struct InitStream {
-    inner: RwLock<Inner>,
-    is_nonblocking: AtomicBool,
-    pollee: Pollee,
-}
-
-enum Inner {
-    Unbound(AlwaysSome<Box<AnyUnboundSocket>>),
-    Bound(AlwaysSome<Arc<AnyBoundSocket>>),
-}
-
-impl Inner {
-    fn new() -> Inner {
-        let unbound_socket = Box::new(AnyUnboundSocket::new_tcp());
-        Inner::Unbound(AlwaysSome::new(unbound_socket))
-    }
-
-    fn is_bound(&self) -> bool {
-        match self {
-            Self::Unbound(_) => false,
-            Self::Bound(_) => true,
-        }
-    }
-
-    fn bind(&mut self, endpoint: IpEndpoint) -> Result<()> {
-        let unbound_socket = if let Inner::Unbound(unbound_socket) = self {
-            unbound_socket
-        } else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
-        };
-        let bound_socket =
-            unbound_socket.try_take_with(|raw_socket| bind_socket(raw_socket, endpoint, false))?;
-        *self = Inner::Bound(AlwaysSome::new(bound_socket));
-        Ok(())
-    }
-
-    fn bind_to_ephemeral_endpoint(&mut self, remote_endpoint: &IpEndpoint) -> Result<()> {
-        let endpoint = get_ephemeral_endpoint(remote_endpoint);
-        self.bind(endpoint)
-    }
-
-    fn bound_socket(&self) -> Option<&Arc<AnyBoundSocket>> {
-        match self {
-            Inner::Bound(bound_socket) => Some(bound_socket),
-            Inner::Unbound(_) => None,
-        }
-    }
-
-    fn iface(&self) -> Option<Arc<dyn Iface>> {
-        match self {
-            Inner::Bound(bound_socket) => Some(bound_socket.iface().clone()),
-            Inner::Unbound(_) => None,
-        }
-    }
-
-    fn local_endpoint(&self) -> Option<IpEndpoint> {
-        self.bound_socket()
-            .and_then(|socket| socket.local_endpoint())
-    }
+pub enum InitStream {
+    Unbound(Box<AnyUnboundSocket>),
+    Bound(Arc<AnyBoundSocket>),
 }
 
 impl InitStream {
     // FIXME: In Linux we have the `POLLOUT` event for a newly created socket, while calling
     // `write()` on it triggers `SIGPIPE`/`EPIPE`. No documentation found yet, but confirmed by
     // experimentation and Linux source code.
-    pub fn new(nonblocking: bool) -> Arc<Self> {
-        Arc::new(Self {
-            inner: RwLock::new(Inner::new()),
-            is_nonblocking: AtomicBool::new(nonblocking),
-            pollee: Pollee::new(IoEvents::empty()),
-        })
+    pub fn new(observer: Weak<dyn Observer<()>>) -> Self {
+        InitStream::Unbound(Box::new(AnyUnboundSocket::new_tcp(observer)))
     }
 
-    pub fn new_bound(
-        nonblocking: bool,
-        bound_socket: Arc<AnyBoundSocket>,
-        pollee: Pollee,
-    ) -> Arc<Self> {
-        bound_socket.set_observer(Weak::<()>::new());
-        let inner = Inner::Bound(AlwaysSome::new(bound_socket));
-        Arc::new(Self {
-            is_nonblocking: AtomicBool::new(nonblocking),
-            inner: RwLock::new(inner),
-            pollee,
-        })
+    pub fn new_bound(bound_socket: Arc<AnyBoundSocket>) -> Self {
+        InitStream::Bound(bound_socket)
     }
 
-    pub fn bind(&self, endpoint: IpEndpoint) -> Result<()> {
-        self.inner.write().bind(endpoint)
-    }
-
-    pub fn connect(&self, remote_endpoint: &IpEndpoint) -> Result<Arc<ConnectingStream>> {
-        if !self.inner.read().is_bound() {
-            self.inner
-                .write()
-                .bind_to_ephemeral_endpoint(remote_endpoint)?
-        }
-        ConnectingStream::new(
-            self.is_nonblocking(),
-            self.inner.read().bound_socket().unwrap().clone(),
-            *remote_endpoint,
-            self.pollee.clone(),
-        )
-    }
-
-    pub fn listen(&self, backlog: usize) -> Result<Arc<ListenStream>> {
-        let bound_socket = if let Some(bound_socket) = self.inner.read().bound_socket() {
-            bound_socket.clone()
-        } else {
-            return_errno_with_message!(Errno::EINVAL, "cannot listen without bound")
+    pub fn bind(
+        self,
+        endpoint: &IpEndpoint,
+    ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Self)> {
+        let unbound_socket = match self {
+            InitStream::Unbound(unbound_socket) => unbound_socket,
+            InitStream::Bound(bound_socket) => {
+                return Err((
+                    Error::with_message(Errno::EINVAL, "the socket is already bound to an address"),
+                    InitStream::Bound(bound_socket),
+                ));
+            }
         };
-        ListenStream::new(
-            self.is_nonblocking(),
-            bound_socket,
-            backlog,
-            self.pollee.clone(),
-        )
+        let bound_socket = match bind_socket(unbound_socket, endpoint, false) {
+            Ok(bound_socket) => bound_socket,
+            Err((err, unbound_socket)) => return Err((err, InitStream::Unbound(unbound_socket))),
+        };
+        Ok(bound_socket)
+    }
+
+    fn bind_to_ephemeral_endpoint(
+        self,
+        remote_endpoint: &IpEndpoint,
+    ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Self)> {
+        let endpoint = get_ephemeral_endpoint(remote_endpoint);
+        self.bind(&endpoint)
+    }
+
+    pub fn connect(
+        self,
+        remote_endpoint: &IpEndpoint,
+    ) -> core::result::Result<ConnectingStream, (Error, Self)> {
+        let bound_socket = match self {
+            InitStream::Bound(bound_socket) => bound_socket,
+            InitStream::Unbound(_) => self.bind_to_ephemeral_endpoint(remote_endpoint)?,
+        };
+
+        ConnectingStream::new(bound_socket, *remote_endpoint)
+            .map_err(|(err, bound_socket)| (err, InitStream::Bound(bound_socket)))
+    }
+
+    pub fn listen(self, backlog: usize) -> core::result::Result<ListenStream, (Error, Self)> {
+        let InitStream::Bound(bound_socket) = self else {
+            return Err((
+                Error::with_message(Errno::EINVAL, "cannot listen without bound"),
+                self,
+            ));
+        };
+
+        ListenStream::new(bound_socket, backlog)
+            .map_err(|(err, bound_socket)| (err, InitStream::Bound(bound_socket)))
     }
 
     pub fn local_endpoint(&self) -> Result<IpEndpoint> {
-        self.inner
-            .read()
-            .local_endpoint()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "does not has local endpoint"))
-    }
-
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
-    }
-
-    pub fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    pub fn set_nonblocking(&self, nonblocking: bool) {
-        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
+        match self {
+            InitStream::Unbound(_) => {
+                return_errno_with_message!(Errno::EINVAL, "does not has local endpoint")
+            }
+            InitStream::Bound(bound_socket) => Ok(bound_socket.local_endpoint().unwrap()),
+        }
     }
 }

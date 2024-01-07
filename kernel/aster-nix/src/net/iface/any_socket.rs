@@ -9,6 +9,7 @@ pub type RawSocketHandle = smoltcp::iface::SocketHandle;
 
 pub struct AnyUnboundSocket {
     socket_family: AnyRawSocket,
+    observer: Weak<dyn Observer<()>>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -23,7 +24,7 @@ pub(super) enum SocketFamily {
 }
 
 impl AnyUnboundSocket {
-    pub fn new_tcp() -> Self {
+    pub fn new_tcp(observer: Weak<dyn Observer<()>>) -> Self {
         let raw_tcp_socket = {
             let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; RECV_BUF_LEN]);
             let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; SEND_BUF_LEN]);
@@ -31,10 +32,11 @@ impl AnyUnboundSocket {
         };
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Tcp(raw_tcp_socket),
+            observer,
         }
     }
 
-    pub fn new_udp() -> Self {
+    pub fn new_udp(observer: Weak<dyn Observer<()>>) -> Self {
         let raw_udp_socket = {
             let metadata = smoltcp::socket::udp::PacketMetadata::EMPTY;
             let rx_buffer = smoltcp::socket::udp::PacketBuffer::new(
@@ -49,18 +51,12 @@ impl AnyUnboundSocket {
         };
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Udp(raw_udp_socket),
+            observer,
         }
     }
 
-    pub(super) fn raw_socket_family(self) -> AnyRawSocket {
-        self.socket_family
-    }
-
-    pub(super) fn socket_family(&self) -> SocketFamily {
-        match &self.socket_family {
-            AnyRawSocket::Tcp(_) => SocketFamily::Tcp,
-            AnyRawSocket::Udp(_) => SocketFamily::Udp,
-        }
+    pub(super) fn into_raw(self) -> (AnyRawSocket, Weak<dyn Observer<()>>) {
+        (self.socket_family, self.observer)
     }
 }
 
@@ -79,13 +75,14 @@ impl AnyBoundSocket {
         handle: smoltcp::iface::SocketHandle,
         port: u16,
         socket_family: SocketFamily,
+        observer: Weak<dyn Observer<()>>,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             iface,
             handle,
             port,
             socket_family,
-            observer: RwLock::new(Weak::<()>::new()),
+            observer: RwLock::new(observer),
             weak_self: weak_self.clone(),
         })
     }

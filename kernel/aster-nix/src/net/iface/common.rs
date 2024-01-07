@@ -11,7 +11,7 @@ use smoltcp::{
 };
 
 use super::{
-    any_socket::{AnyBoundSocket, AnyRawSocket, AnyUnboundSocket},
+    any_socket::{AnyBoundSocket, AnyRawSocket, AnyUnboundSocket, SocketFamily},
     time::get_network_timestamp,
     util::BindPortConfig,
     Iface, Ipv4Address,
@@ -107,20 +107,28 @@ impl IfaceCommon {
         } else {
             match self.alloc_ephemeral_port() {
                 Ok(port) => port,
-                Err(e) => return Err((e, socket)),
+                Err(err) => return Err((err, socket)),
             }
         };
-        if let Some(e) = self.bind_port(port, config.can_reuse()).err() {
-            return Err((e, socket));
+        if let Some(err) = self.bind_port(port, config.can_reuse()).err() {
+            return Err((err, socket));
         }
-        let socket_family = socket.socket_family();
-        let mut sockets = self.sockets.lock_irq_disabled();
-        let handle = match socket.raw_socket_family() {
-            AnyRawSocket::Tcp(tcp_socket) => sockets.add(tcp_socket),
-            AnyRawSocket::Udp(udp_socket) => sockets.add(udp_socket),
+
+        let (handle, socket_family, observer) = match socket.into_raw() {
+            (AnyRawSocket::Tcp(tcp_socket), observer) => (
+                self.sockets.lock_irq_disabled().add(tcp_socket),
+                SocketFamily::Tcp,
+                observer,
+            ),
+            (AnyRawSocket::Udp(udp_socket), observer) => (
+                self.sockets.lock_irq_disabled().add(udp_socket),
+                SocketFamily::Udp,
+                observer,
+            ),
         };
-        let bound_socket = AnyBoundSocket::new(iface, handle, port, socket_family);
+        let bound_socket = AnyBoundSocket::new(iface, handle, port, socket_family, observer);
         self.insert_bound_socket(&bound_socket).unwrap();
+
         Ok(bound_socket)
     }
 
