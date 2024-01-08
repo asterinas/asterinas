@@ -16,7 +16,7 @@ use crate::{
     process::{
         check_executable_file, credentials_mut, load_program_to_vm,
         posix_thread::{PosixThreadExt, ThreadName},
-        Credentials, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
+        Credentials, Process, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
     util::{read_cstring_from_user, read_val_from_user},
 };
@@ -118,8 +118,8 @@ fn do_execve(
     debug!("load elf in execve succeeds");
 
     let credentials = credentials_mut();
-    set_uid_from_elf(&credentials, &elf_file)?;
-    set_gid_from_elf(&credentials, &elf_file)?;
+    set_uid_from_elf(&current, &credentials, &elf_file)?;
+    set_gid_from_elf(&current, &credentials, &elf_file)?;
 
     // set executable path
     current.set_executable_path(new_executable_path);
@@ -177,10 +177,16 @@ fn read_cstring_vec(
 }
 
 /// Sets uid for credentials as the same of uid of elf file if elf file has `set_uid` bit.
-fn set_uid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) -> Result<()> {
+fn set_uid_from_elf(
+    current: &Arc<Process>,
+    credentials: &Credentials<WriteOp>,
+    elf_file: &Arc<Dentry>,
+) -> Result<()> {
     if elf_file.mode()?.has_set_uid() {
         let uid = elf_file.owner()?;
         credentials.set_euid(uid);
+
+        current.clear_parent_death_signal();
     }
 
     // No matter whether the elf_file has `set_uid` bit, suid should be reset.
@@ -189,10 +195,16 @@ fn set_uid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) 
 }
 
 /// Sets gid for credentials as the same of gid of elf file if elf file has `set_gid` bit.
-fn set_gid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) -> Result<()> {
+fn set_gid_from_elf(
+    current: &Arc<Process>,
+    credentials: &Credentials<WriteOp>,
+    elf_file: &Arc<Dentry>,
+) -> Result<()> {
     if elf_file.mode()?.has_set_gid() {
         let gid = elf_file.group()?;
         credentials.set_egid(gid);
+
+        current.clear_parent_death_signal();
     }
 
     // No matter whether the the elf file has `set_gid` bit, sgid should be reset.

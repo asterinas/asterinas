@@ -65,13 +65,13 @@ impl Thread {
         &self.task
     }
 
-    /// Run this thread at once.
+    /// Runs this thread at once.
     pub fn run(&self) {
         self.set_status(ThreadStatus::Running);
         self.task.run();
     }
 
-    pub fn exit(&self) {
+    pub(super) fn exit(&self) {
         self.set_status(ThreadStatus::Exited);
     }
 
@@ -98,14 +98,16 @@ impl Thread {
         self.tid
     }
 
-    // The return type must be borrowed box, otherwise the downcast_ref will fail
+    /// Returns the associated data.
+    ///
+    /// The return type must be borrowed box, otherwise the `downcast_ref` will fail.
     #[allow(clippy::borrowed_box)]
     pub fn data(&self) -> &Box<dyn Send + Sync + Any> {
         &self.data
     }
 }
 
-/// allocate a new pid for new process
+/// Allocates a new tid for the new thread
 pub fn allocate_tid() -> Tid {
     TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst)
 }
