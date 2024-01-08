@@ -4,23 +4,21 @@ use super::signal::sig_num::SigNum;
 use super::signal::sig_queues::SigQueues;
 use super::signal::signals::Signal;
 use super::signal::{SigEvents, SigEventsFilter, SigStack};
-use super::{do_exit_group, Credentials, Process, TermStatus};
+use super::{Credentials, Process};
 use crate::events::Observer;
 use crate::prelude::*;
 use crate::process::signal::constants::SIGCONT;
-use crate::thread::{thread_table, Tid};
-use crate::util::write_val_to_user;
 use aster_rights::{ReadOp, WriteOp};
-use futex::futex_wake;
-use robust_list::wake_robust_futex;
 
 mod builder;
+mod exit;
 pub mod futex;
 mod name;
 mod posix_thread_ext;
 mod robust_list;
 
 pub use builder::PosixThreadBuilder;
+pub use exit::do_exit;
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::PosixThreadExt;
 pub use robust_list::RobustListHead;
@@ -28,7 +26,6 @@ pub use robust_list::RobustListHead;
 pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,
-    is_main_thread: bool,
 
     // Mutable part
     name: Mutex<Option<ThreadName>>,
@@ -164,78 +161,6 @@ impl PosixThread {
 
     pub fn robust_list(&self) -> &Mutex<Option<RobustListHead>> {
         &self.robust_list
-    }
-
-    /// Whether the thread is main thread. For Posix thread, If a thread's tid is equal to pid, it's main thread.
-    pub fn is_main_thread(&self) -> bool {
-        self.is_main_thread
-    }
-
-    /// whether the thread is the last running thread in process
-    pub fn is_last_thread(&self) -> bool {
-        let process = self.process.upgrade().unwrap();
-        let threads = process.threads().lock();
-        threads
-            .iter()
-            .filter(|thread| !thread.status().lock().is_exited())
-            .count()
-            == 0
-    }
-
-    /// Walks the robust futex list, marking futex dead and wake waiters.
-    /// It corresponds to Linux's exit_robust_list(), errors are silently ignored.
-    pub fn wake_robust_list(&self, tid: Tid) {
-        let mut robust_list = self.robust_list.lock();
-        let list_head = match *robust_list {
-            None => {
-                return;
-            }
-            Some(robust_list_head) => robust_list_head,
-        };
-        debug!("wake the rubust_list: {:?}", list_head);
-        for futex_addr in list_head.futexes() {
-            // debug!("futex addr = 0x{:x}", futex_addr);
-            wake_robust_futex(futex_addr, tid).unwrap();
-        }
-        debug!("wake robust futex success");
-        *robust_list = None;
-    }
-
-    /// Posix thread does not contains tid info. So we require tid as a parameter.
-    pub fn exit(&self, tid: Tid, term_status: TermStatus) -> Result<()> {
-        let mut clear_ctid = self.clear_child_tid().lock();
-        // If clear_ctid !=0 ,do a futex wake and write zero to the clear_ctid addr.
-        debug!("wake up ctid");
-        if *clear_ctid != 0 {
-            debug!("futex wake");
-            futex_wake(*clear_ctid, 1)?;
-            debug!("write ctid");
-            // FIXME: the correct write length?
-            debug!("ctid = 0x{:x}", *clear_ctid);
-            write_val_to_user(*clear_ctid, &0u32).unwrap();
-            debug!("clear ctid");
-            *clear_ctid = 0;
-        }
-        debug!("wake up ctid succeeds");
-        // exit the robust list: walk the robust list; mark futex words as dead and do futex wake
-        self.wake_robust_list(tid);
-
-        if tid != self.process().pid() {
-            // If the thread is not main thread. We don't remove main thread.
-            // Main thread are removed when the whole process is reaped.
-            thread_table::remove_thread(tid);
-        }
-
-        if self.is_main_thread() || self.is_last_thread() {
-            // exit current process.
-            debug!("self is main thread or last thread");
-            debug!("main thread: {}", self.is_main_thread());
-            debug!("last thread: {}", self.is_last_thread());
-            do_exit_group(term_status);
-        }
-        debug!("perform futex wake");
-        futex_wake(Arc::as_ptr(&self.process()) as Vaddr, 1)?;
-        Ok(())
     }
 
     /// Gets the read-only credentials of the thread.

@@ -1,4 +1,4 @@
-use crate::process::posix_thread::PosixThreadExt;
+use crate::process::posix_thread::do_exit;
 use crate::process::signal::signals::kernel::KernelSignal;
 use crate::{prelude::*, process::signal::constants::SIGCHLD};
 
@@ -15,16 +15,8 @@ pub fn do_exit_group(term_status: TermStatus) {
     // Exit all threads
     let threads = current.threads().lock().clone();
     for thread in threads {
-        if thread.is_exited() {
-            continue;
-        }
-
-        thread.exit();
-        if let Some(posix_thread) = thread.as_posix_thread() {
-            let tid = thread.tid();
-            if let Err(e) = posix_thread.exit(tid, term_status) {
-                debug!("Ignore error when call exit: {:?}", e);
-            }
+        if let Err(e) = do_exit(thread, term_status) {
+            debug!("Ignore error when call exit: {:?}", e);
         }
     }
 

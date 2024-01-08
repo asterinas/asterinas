@@ -184,8 +184,7 @@ fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Res
 
         let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
             .process(Arc::downgrade(&current))
-            .sig_mask(sig_mask)
-            .is_main_thread(is_main_thread);
+            .sig_mask(sig_mask);
         thread_builder.build()
     };
 

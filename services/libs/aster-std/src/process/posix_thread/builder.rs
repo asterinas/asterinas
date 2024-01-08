@@ -26,7 +26,6 @@ pub struct PosixThreadBuilder {
     clear_child_tid: Vaddr,
     sig_mask: SigMask,
     sig_queues: SigQueues,
-    is_main_thread: bool,
 }
 
 impl PosixThreadBuilder {
@@ -41,7 +40,6 @@ impl PosixThreadBuilder {
             clear_child_tid: 0,
             sig_mask: SigMask::new_empty(),
             sig_queues: SigQueues::new(),
-            is_main_thread: true,
         }
     }
 
@@ -65,12 +63,6 @@ impl PosixThreadBuilder {
         self
     }
 
-    #[allow(clippy::wrong_self_convention)]
-    pub fn is_main_thread(mut self, is_main_thread: bool) -> Self {
-        self.is_main_thread = is_main_thread;
-        self
-    }
-
     pub fn sig_mask(mut self, sig_mask: SigMask) -> Self {
         self.sig_mask = sig_mask;
         self
@@ -87,14 +79,12 @@ impl PosixThreadBuilder {
             clear_child_tid,
             sig_mask,
             sig_queues,
-            is_main_thread,
         } = self;
         let thread = Arc::new_cyclic(|thread_ref| {
             let task = create_new_user_task(user_space, thread_ref.clone());
             let status = ThreadStatus::Init;
             let posix_thread = PosixThread {
                 process,
-                is_main_thread,
                 name: Mutex::new(thread_name),
                 set_child_tid: Mutex::new(set_child_tid),
                 clear_child_tid: Mutex::new(clear_child_tid),
