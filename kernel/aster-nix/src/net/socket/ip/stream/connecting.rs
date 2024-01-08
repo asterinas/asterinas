@@ -2,7 +2,7 @@
 
 use super::{connected::ConnectedStream, init::InitStream};
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     net::iface::{AnyBoundSocket, IpEndpoint, RawTcpSocket},
     prelude::*,
     process::signal::Pollee,
@@ -69,26 +69,6 @@ impl ConnectingStream {
     pub(super) fn init_pollee(&self, pollee: &Pollee) {
         pollee.reset_events();
         self.update_io_events(pollee);
-    }
-
-    pub fn register_observer(
-        &self,
-        pollee: &Pollee,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    pub fn unregister_observer(
-        &self,
-        pollee: &Pollee,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Result<Weak<dyn Observer<IoEvents>>> {
-        pollee
-            .unregister_observer(observer)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fails to unregister observer"))
     }
 
     pub(super) fn update_io_events(&self, pollee: &Pollee) {

@@ -4,13 +4,12 @@ use alloc::sync::Weak;
 
 use super::{connecting::ConnectingStream, listen::ListenStream};
 use crate::{
-    events::{IoEvents, Observer},
+    events::Observer,
     net::{
         iface::{AnyBoundSocket, AnyUnboundSocket, IpEndpoint},
         socket::ip::common::{bind_socket, get_ephemeral_endpoint},
     },
     prelude::*,
-    process::signal::Pollee,
 };
 
 pub enum InitStream {
@@ -91,25 +90,5 @@ impl InitStream {
             InitStream::Unbound(_) => None,
             InitStream::Bound(bound_socket) => Some(bound_socket.local_endpoint().unwrap()),
         }
-    }
-
-    pub fn register_observer(
-        &self,
-        pollee: &Pollee,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    pub fn unregister_observer(
-        &self,
-        pollee: &Pollee,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Result<Weak<dyn Observer<IoEvents>>> {
-        pollee
-            .unregister_observer(observer)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fails to unregister observer"))
     }
 }
