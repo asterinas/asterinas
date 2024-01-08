@@ -136,3 +136,48 @@ FN_TEST(peername_is_peer_sockname)
 		 addrlen == sizeof(saddr) && saddr.sin_port == em_port);
 }
 END_TEST()
+
+FN_TEST(send)
+{
+	char buf[1] = { 'z' };
+
+	TEST_ERRNO(send(sk_unbound, buf, 1, 0), EPIPE);
+
+	TEST_ERRNO(send(sk_bound, buf, 1, 0), EPIPE);
+
+	TEST_ERRNO(send(sk_listen, buf, 1, 0), EPIPE);
+}
+END_TEST()
+
+FN_TEST(recv)
+{
+	char buf[1] = { 'z' };
+
+	TEST_ERRNO(recv(sk_unbound, buf, 1, 0), ENOTCONN);
+
+	TEST_ERRNO(recv(sk_bound, buf, 1, 0), ENOTCONN);
+
+	TEST_ERRNO(recv(sk_listen, buf, 1, 0), ENOTCONN);
+}
+END_TEST()
+
+FN_TEST(send_and_recv)
+{
+	char buf[1];
+
+	buf[0] = 'a';
+	TEST_RES(send(sk_connected, buf, 1, 0), _ret == 1);
+
+	buf[0] = 'b';
+	sk_addr.sin_port = 0xbeef;
+	TEST_RES(sendto(sk_accepted, buf, 1, 0, (struct sockaddr *)&sk_addr,
+			sizeof(sk_addr)),
+		 _ret == 1);
+
+	TEST_RES(recv(sk_accepted, buf, 1, 0), buf[0] == 'a');
+
+	TEST_RES(recv(sk_connected, buf, 1, 0), buf[0] == 'b');
+
+	TEST_ERRNO(recv(sk_connected, buf, 1, 0), EAGAIN);
+}
+END_TEST()

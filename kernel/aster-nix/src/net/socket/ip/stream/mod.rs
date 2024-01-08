@@ -184,9 +184,16 @@ impl StreamSocket {
     fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         let state = self.state.read();
 
-        let State::Connected(connected_stream) = state.as_ref() else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not connected");
+        let connected_stream = match state.as_ref() {
+            State::Connected(connected_stream) => connected_stream,
+            State::Init(_) | State::Listen(_) => {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
+            }
+            State::Connecting(_) => {
+                return_errno_with_message!(Errno::EAGAIN, "the socket is connecting")
+            }
         };
+
         let recv_bytes = connected_stream.try_recvfrom(buf, flags)?;
         connected_stream.update_io_events(&self.pollee);
         Ok((recv_bytes, connected_stream.remote_endpoint().into()))
@@ -195,9 +202,19 @@ impl StreamSocket {
     fn try_sendto(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
         let state = self.state.read();
 
-        let State::Connected(connected_stream) = state.as_ref() else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not connected");
+        let connected_stream = match state.as_ref() {
+            State::Connected(connected_stream) => connected_stream,
+            State::Init(_) | State::Listen(_) => {
+                // TODO: Trigger `SIGPIPE` if `MSG_NOSIGNAL` is not specified
+                return_errno_with_message!(Errno::EPIPE, "the socket is not connected");
+            }
+            State::Connecting(_) => {
+                // FIXME: Linux indeed allows data to be buffered at this point. Can we do
+                // something similar?
+                return_errno_with_message!(Errno::EAGAIN, "the socket is connecting")
+            }
         };
+
         let sent_bytes = connected_stream.try_sendto(buf, flags)?;
         connected_stream.update_io_events(&self.pollee);
         Ok(sent_bytes)
@@ -427,9 +444,9 @@ impl Socket for StreamSocket {
     ) -> Result<usize> {
         debug_assert!(flags.is_all_supported());
 
-        if remote.is_some() {
-            return_errno_with_message!(Errno::EINVAL, "tcp socked should not provide remote addr");
-        }
+        // According to the Linux man pages, `EISCONN` _may_ be returned when the destination
+        // address is specified for a connection-mode socket. In practice, the destination address
+        // is simply ignored. We follow the same behavior as the Linux implementation to ignore it.
 
         let sent_bytes = if self.is_nonblocking() {
             self.try_sendto(buf, flags)?
