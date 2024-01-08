@@ -5,6 +5,7 @@ use super::rlimit::ResourceLimits;
 use super::signal::constants::SIGCHLD;
 use super::signal::sig_disposition::SigDispositions;
 use super::signal::sig_mask::SigMask;
+use super::signal::sig_num::SigNum;
 use super::signal::signals::Signal;
 use super::signal::Pauser;
 use super::status::ProcessStatus;
@@ -73,6 +74,8 @@ pub struct Process {
     // Signal
     /// Sig dispositions
     sig_dispositions: Arc<Mutex<SigDispositions>>,
+    /// The signal that the process should receive when parent process exits.
+    parent_death_signal: Mutex<Option<SigNum>>,
 }
 
 impl Process {
@@ -83,11 +86,13 @@ impl Process {
         threads: Vec<Arc<Thread>>,
         executable_path: String,
         process_vm: ProcessVm,
-        file_table: Arc<Mutex<FileTable>>,
+
         fs: Arc<RwMutex<FsResolver>>,
+        file_table: Arc<Mutex<FileTable>>,
+
         umask: Arc<RwLock<FileCreationMask>>,
-        sig_dispositions: Arc<Mutex<SigDispositions>>,
         resource_limits: ResourceLimits,
+        sig_dispositions: Arc<Mutex<SigDispositions>>,
     ) -> Self {
         let children_pauser = {
             // SIGCHID does not interrupt pauser. Child process will
@@ -110,6 +115,7 @@ impl Process {
             fs,
             umask,
             sig_dispositions,
+            parent_death_signal: Mutex::new(None),
             resource_limits: Mutex::new(resource_limits),
         }
     }
@@ -541,6 +547,18 @@ impl Process {
         posix_thread.enqueue_signal(Box::new(signal));
     }
 
+    pub fn clear_parent_death_signal(&self) {
+        *self.parent_death_signal.lock() = None;
+    }
+
+    pub fn set_parent_death_signal(&self, signum: SigNum) {
+        *self.parent_death_signal.lock() = Some(signum);
+    }
+
+    pub fn parent_death_signal(&self) -> Option<SigNum> {
+        *self.parent_death_signal.lock()
+    }
+
     // ******************* Status ********************
 
     fn set_runnable(&self) {
@@ -594,11 +612,11 @@ mod test {
             vec![],
             String::new(),
             ProcessVm::alloc(),
-            Arc::new(Mutex::new(FileTable::new())),
             Arc::new(RwMutex::new(FsResolver::new())),
+            Arc::new(Mutex::new(FileTable::new())),
             Arc::new(RwLock::new(FileCreationMask::default())),
-            Arc::new(Mutex::new(SigDispositions::default())),
             ResourceLimits::default(),
+            Arc::new(Mutex::new(SigDispositions::default())),
         ))
     }
 

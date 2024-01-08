@@ -28,6 +28,19 @@ pub fn do_exit_group(term_status: TermStatus) {
         }
     }
 
+    // Sends parent-death signal
+    // FIXME: according to linux spec, the signal should be sent when a posix thread which
+    // creates child process exits, not when the whole process exits group.
+    for (_, child) in current.children().lock().iter() {
+        let Some(signum) = child.parent_death_signal() else {
+            continue;
+        };
+
+        // FIXME: set pid of the signal
+        let signal = KernelSignal::new(signum);
+        child.enqueue_signal(signal);
+    }
+
     // Close all files then exit the process
     let files = current.file_table().lock().close_all();
     for file in files {

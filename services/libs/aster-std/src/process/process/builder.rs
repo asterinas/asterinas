@@ -165,11 +165,11 @@ impl<'a> ProcessBuilder<'a> {
                 threads,
                 executable_path.to_string(),
                 process_vm,
-                file_table,
                 fs,
+                file_table,
                 umask,
-                sig_dispositions,
                 resource_limits,
+                sig_dispositions,
             ))
         };
 

@@ -1,9 +1,9 @@
 use crate::log_syscall_entry;
 use crate::prelude::*;
-use crate::process::posix_thread::PosixThreadExt;
-use crate::process::posix_thread::MAX_THREAD_NAME_LEN;
-use crate::util::read_cstring_from_user;
-use crate::util::write_bytes_to_user;
+use crate::process::posix_thread::{PosixThreadExt, MAX_THREAD_NAME_LEN};
+use crate::process::signal::sig_num::SigNum;
+use crate::util::write_val_to_user;
+use crate::util::{read_cstring_from_user, write_bytes_to_user};
 
 use super::SyscallReturn;
 use super::SYS_PRCTL;
@@ -14,6 +14,22 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     match prctl_cmd {
+        PrctlCmd::PR_SET_PDEATHSIG(signum) => {
+            let current = current!();
+            current.set_parent_death_signal(signum);
+        }
+        PrctlCmd::PR_GET_PDEATHSIG(write_to_addr) => {
+            let write_val = {
+                let current = current!();
+
+                match current.parent_death_signal() {
+                    None => 0i32,
+                    Some(signum) => signum.as_u8() as i32,
+                }
+            };
+
+            write_val_to_user(write_to_addr, &write_val)?;
+        }
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
             let thread_name = posix_thread.thread_name().lock();
             if let Some(thread_name) = &*thread_name {
@@ -34,6 +50,8 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
     Ok(SyscallReturn::Return(0))
 }
 
+const PR_SET_PDEATHSIG: i32 = 1;
+const PR_GET_PDEATHSIG: i32 = 2;
 const PR_SET_NAME: i32 = 15;
 const PR_GET_NAME: i32 = 16;
 const PR_SET_TIMERSLACK: i32 = 29;
@@ -42,6 +60,8 @@ const PR_GET_TIMERSLACK: i32 = 30;
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy)]
 pub enum PrctlCmd {
+    PR_SET_PDEATHSIG(SigNum),
+    PR_GET_PDEATHSIG(Vaddr),
     PR_SET_NAME(Vaddr),
     PR_GET_NAME(Vaddr),
     PR_SET_TIMERSLACK(u64),
@@ -51,6 +71,11 @@ pub enum PrctlCmd {
 impl PrctlCmd {
     fn from_args(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<PrctlCmd> {
         match option {
+            PR_SET_PDEATHSIG => {
+                let signum = SigNum::try_from(arg2 as u8)?;
+                Ok(PrctlCmd::PR_SET_PDEATHSIG(signum))
+            }
+            PR_GET_PDEATHSIG => Ok(PrctlCmd::PR_GET_PDEATHSIG(arg2 as _)),
             PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
             PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
             PR_GET_TIMERSLACK => todo!(),
