@@ -1,4 +1,5 @@
 use alloc::sync::Weak;
+use smoltcp::socket::tcp::{RecvError, SendError};
 
 use crate::events::{IoEvents, Observer};
 use crate::net::iface::IpEndpoint;
@@ -33,25 +34,33 @@ impl ConnectedStream {
     }
 
     pub fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<usize> {
-        let recv_bytes = self
+        let result = self
             .bound_socket
-            .raw_with(|socket: &mut RawTcpSocket| socket.recv_slice(buf))
-            .map_err(|_| Error::with_message(Errno::ENOTCONN, "fail to recv packet"))?;
-        if recv_bytes == 0 {
-            return_errno_with_message!(Errno::EAGAIN, "try to recv again");
+            .raw_with(|socket: &mut RawTcpSocket| socket.recv_slice(buf));
+        match result {
+            Ok(0) => return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty"),
+            Ok(recv_bytes) => Ok(recv_bytes),
+            Err(RecvError::Finished) => Ok(0),
+            Err(RecvError::InvalidState) => {
+                return_errno_with_message!(Errno::ECONNRESET, "the connection is reset")
+            }
         }
-        Ok(recv_bytes)
     }
 
     pub fn try_sendto(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
-        let sent_bytes = self
+        let result = self
             .bound_socket
-            .raw_with(|socket: &mut RawTcpSocket| socket.send_slice(buf))
-            .map_err(|_| Error::with_message(Errno::ENOBUFS, "cannot send packet"))?;
-        if sent_bytes == 0 {
-            return_errno_with_message!(Errno::EAGAIN, "try to send again");
+            .raw_with(|socket: &mut RawTcpSocket| socket.send_slice(buf));
+        match result {
+            Ok(0) => return_errno_with_message!(Errno::EAGAIN, "the send buffer is full"),
+            Ok(sent_bytes) => Ok(sent_bytes),
+            Err(SendError::InvalidState) => {
+                // FIXME: `EPIPE` is another possibility, which means that the socket is shut down
+                // for writing. In that case, we should also trigger a `SIGPIPE` if `MSG_NOSIGNAL`
+                // is not specified.
+                return_errno_with_message!(Errno::ECONNRESET, "the connection is reset");
+            }
         }
-        Ok(sent_bytes)
     }
 
     pub fn local_endpoint(&self) -> IpEndpoint {

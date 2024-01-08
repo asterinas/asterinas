@@ -187,6 +187,8 @@ static struct sockaddr_in saddr = { .sin_port = 0xbeef };
 #define psaddr ((struct sockaddr *)&saddr)
 #define IN_LEN sizeof(struct sockaddr_in)
 
+static char buf[1] = { 'z' };
+
 START_TESTS(unbound)
 {
 	socklen_t alen = IN_LEN;
@@ -194,6 +196,10 @@ START_TESTS(unbound)
 		 &alen);
 
 	TEST(ENOTCONN, getpeername, psaddr, &alen);
+
+	TEST(EPIPE, send, buf, 1, 0);
+
+	TEST(ENOTCONN, recv, buf, 1, 0);
 }
 END_TESTS()
 
@@ -204,6 +210,10 @@ START_TESTS(bound)
 		 psaddr, &alen);
 
 	TEST(ENOTCONN, getpeername, psaddr, &alen);
+
+	TEST(EPIPE, send, buf, 1, 0);
+
+	TEST(ENOTCONN, recv, buf, 1, 0);
 }
 END_TESTS()
 
@@ -214,6 +224,10 @@ START_TESTS(listen)
 		 psaddr, &alen);
 
 	TEST(ENOTCONN, getpeername, psaddr, &alen);
+
+	TEST(EPIPE, send, buf, 1, 0);
+
+	TEST(ENOTCONN, recv, buf, 1, 0);
 }
 END_TESTS()
 
@@ -229,6 +243,13 @@ START_TESTS(connected)
 
 	TEST_AND(0, alen == IN_LEN && saddr.sin_port == S_PORT, getpeername,
 		 psaddr, &alen);
+
+	TEST(0, sendto, buf, 1, 0, NULL, 0);
+
+	// The destination address should be silently ignored
+	TEST(0, sendto, buf, 1, 0, psaddr, IN_LEN);
+
+	TEST(EAGAIN, recv, buf, 1, 0);
 }
 END_TESTS()
 
@@ -240,6 +261,9 @@ START_TESTS(accepted)
 
 	TEST_AND(0, alen == IN_LEN && saddr.sin_port == em_port, getpeername,
 		 psaddr, &alen);
+
+	// Linux does not store the destination address
+	TEST(0, recvfrom, buf, 1, 0, psaddr, &alen);
 }
 END_TESTS()
 
