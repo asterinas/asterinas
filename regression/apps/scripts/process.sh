@@ -23,6 +23,7 @@ itimer/timer_create
 mmap/map_shared_anon
 pthread/pthread_test
 pty/open_pty
+signal_c/parent_death_signal
 signal_c/signal_test
 "
 

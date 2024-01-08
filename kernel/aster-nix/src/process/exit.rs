@@ -4,7 +4,7 @@ use super::{process_table, Pid, Process, TermStatus};
 use crate::{
     prelude::*,
     process::{
-        posix_thread::PosixThreadExt,
+        posix_thread::do_exit,
         signal::{constants::SIGCHLD, signals::kernel::KernelSignal},
     },
 };
@@ -20,17 +20,22 @@ pub fn do_exit_group(term_status: TermStatus) {
     // Exit all threads
     let threads = current.threads().lock().clone();
     for thread in threads {
-        if thread.status().is_exited() {
-            continue;
+        if let Err(e) = do_exit(thread, term_status) {
+            debug!("Ignore error when call exit: {:?}", e);
         }
+    }
 
-        thread.exit();
-        if let Some(posix_thread) = thread.as_posix_thread() {
-            let tid = thread.tid();
-            if let Err(e) = posix_thread.exit(tid, term_status) {
-                debug!("Ignore error when call exit: {:?}", e);
-            }
-        }
+    // Sends parent-death signal
+    // FIXME: according to linux spec, the signal should be sent when a posix thread which
+    // creates child process exits, not when the whole process exits group.
+    for (_, child) in current.children().lock().iter() {
+        let Some(signum) = child.parent_death_signal() else {
+            continue;
+        };
+
+        // FIXME: set pid of the signal
+        let signal = KernelSignal::new(signum);
+        child.enqueue_signal(signal);
     }
 
     // Close all files then exit the process
@@ -61,7 +66,7 @@ pub fn do_exit_group(term_status: TermStatus) {
 
 const INIT_PROCESS_PID: Pid = 1;
 
-/// Get the init process
+/// Gets the init process
 fn get_init_process() -> Option<Arc<Process>> {
     process_table::get_process(INIT_PROCESS_PID)
 }

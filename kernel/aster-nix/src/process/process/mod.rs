@@ -7,7 +7,11 @@ use super::{
     process_vm::{Heap, InitStackReader, ProcessVm},
     rlimit::ResourceLimits,
     signal::{
-        constants::SIGCHLD, sig_disposition::SigDispositions, sig_mask::SigMask, signals::Signal,
+        constants::SIGCHLD,
+        sig_disposition::SigDispositions,
+        sig_mask::SigMask,
+        sig_num::{AtomicSigNum, SigNum},
+        signals::Signal,
         Pauser,
     },
     status::ProcessStatus,
@@ -89,6 +93,8 @@ pub struct Process {
     // Signal
     /// Sig dispositions
     sig_dispositions: Arc<Mutex<SigDispositions>>,
+    /// The signal that the process should receive when parent process exits.
+    parent_death_signal: AtomicSigNum,
 
     /// A profiling clock measures the user CPU time and kernel CPU time of the current process.
     prof_clock: Arc<ProfClock>,
@@ -105,12 +111,14 @@ impl Process {
         threads: Vec<Arc<Thread>>,
         executable_path: String,
         process_vm: ProcessVm,
-        file_table: Arc<Mutex<FileTable>>,
+
         fs: Arc<RwMutex<FsResolver>>,
+        file_table: Arc<Mutex<FileTable>>,
+
         umask: Arc<RwLock<FileCreationMask>>,
-        sig_dispositions: Arc<Mutex<SigDispositions>>,
         resource_limits: ResourceLimits,
         nice: Nice,
+        sig_dispositions: Arc<Mutex<SigDispositions>>,
     ) -> Arc<Self> {
         let children_pauser = {
             // SIGCHID does not interrupt pauser. Child process will
@@ -135,6 +143,7 @@ impl Process {
             fs,
             umask,
             sig_dispositions,
+            parent_death_signal: AtomicSigNum::new_empty(),
             resource_limits: Mutex::new(resource_limits),
             nice: Atomic::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
@@ -587,6 +596,24 @@ impl Process {
         posix_thread.enqueue_signal(Box::new(signal));
     }
 
+    /// Clears the parent death signal.
+    pub fn clear_parent_death_signal(&self) {
+        self.parent_death_signal.clear();
+    }
+
+    /// Sets the parent death signal as `signum`.
+    pub fn set_parent_death_signal(&self, sig_num: SigNum) {
+        self.parent_death_signal.set(sig_num);
+    }
+
+    /// Returns the parent death signal.
+    ///
+    /// The parent death signal is the signal will be sent to child processes
+    /// when the process exits.
+    pub fn parent_death_signal(&self) -> Option<SigNum> {
+        self.parent_death_signal.as_sig_num()
+    }
+
     // ******************* Status ********************
 
     fn set_runnable(&self) {
@@ -642,12 +669,12 @@ mod test {
             vec![],
             String::new(),
             ProcessVm::alloc(),
-            Arc::new(Mutex::new(FileTable::new())),
             Arc::new(RwMutex::new(FsResolver::new())),
+            Arc::new(Mutex::new(FileTable::new())),
             Arc::new(RwLock::new(FileCreationMask::default())),
-            Arc::new(Mutex::new(SigDispositions::default())),
             ResourceLimits::default(),
             Nice::default(),
+            Arc::new(Mutex::new(SigDispositions::default())),
         )
     }
 

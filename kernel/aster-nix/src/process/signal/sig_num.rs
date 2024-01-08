@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
+use core::sync::atomic::AtomicU8;
+
+use atomic::Ordering;
+
 use super::constants::*;
 use crate::prelude::*;
 
@@ -75,5 +81,48 @@ impl SigNum {
             SIGSYS => "SIGSYS",
             _ => "Realtime Signal",
         }
+    }
+}
+
+/// Atomic signal number.
+///
+/// This struct represents a signal number and is different from [SigNum]
+/// in that it allows for an empty signal number.
+pub struct AtomicSigNum(AtomicU8);
+
+impl AtomicSigNum {
+    /// Creates a new empty atomic signal number
+    pub const fn new_empty() -> Self {
+        Self(AtomicU8::new(0))
+    }
+
+    /// Creates a new signal number with the specified value
+    pub const fn new(sig_num: SigNum) -> Self {
+        Self(AtomicU8::new(sig_num.as_u8()))
+    }
+
+    /// Determines whether the signal number is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.load(Ordering::Relaxed) == 0
+    }
+
+    /// Returns the corresponding [`SigNum`]
+    pub fn as_sig_num(&self) -> Option<SigNum> {
+        let sig_num = self.0.load(Ordering::Relaxed);
+        if sig_num == 0 {
+            return None;
+        }
+
+        Some(SigNum::from_u8(sig_num))
+    }
+
+    /// Sets the new `sig_num`
+    pub fn set(&self, sig_num: SigNum) {
+        self.0.store(sig_num.as_u8(), Ordering::Relaxed)
+    }
+
+    /// Clears the signal number
+    pub fn clear(&self) {
+        self.0.store(0, Ordering::Relaxed)
     }
 }

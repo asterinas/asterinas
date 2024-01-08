@@ -181,8 +181,6 @@ fn clone_child_thread(parent_context: &UserContext, clone_args: CloneArgs) -> Re
 
     let child_tid = allocate_tid();
     let child_thread = {
-        let is_main_thread = child_tid == current.pid();
-
         let credentials = {
             let credentials = credentials();
             Credentials::new_from(&credentials)
@@ -190,8 +188,7 @@ fn clone_child_thread(parent_context: &UserContext, clone_args: CloneArgs) -> Re
 
         let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
             .process(Arc::downgrade(&current))
-            .sig_mask(sig_mask)
-            .is_main_thread(is_main_thread);
+            .sig_mask(sig_mask);
         thread_builder.build()
     };
 
