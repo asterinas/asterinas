@@ -11,7 +11,7 @@ mod virtio;
 
 pub use any_socket::{AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket};
 pub use loopback::IfaceLoopback;
-pub use smoltcp::wire::{EthernetAddress, IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
+pub use smoltcp::wire::{EthernetAddress, IpAddress, IpEndpoint, Ipv4Address};
 pub use util::{spawn_background_poll_thread, BindPortConfig};
 pub use virtio::IfaceVirtio;
 

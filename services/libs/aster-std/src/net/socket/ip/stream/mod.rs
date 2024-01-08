@@ -140,7 +140,7 @@ impl StreamSocket {
 
         let remote_endpoint = connected_stream.remote_endpoint();
         let accepted_socket = Self::new_connected(self.is_nonblocking(), connected_stream);
-        Ok((accepted_socket, remote_endpoint.try_into()?))
+        Ok((accepted_socket, remote_endpoint.into()))
     }
 
     fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
@@ -151,7 +151,7 @@ impl StreamSocket {
         };
         let recv_bytes = connected_stream.try_recvfrom(buf, flags)?;
         connected_stream.update_io_events(&self.pollee);
-        Ok((recv_bytes, connected_stream.remote_endpoint().try_into()?))
+        Ok((recv_bytes, connected_stream.remote_endpoint().into()))
     }
 
     fn try_sendto(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
@@ -322,7 +322,7 @@ impl Socket for StreamSocket {
             State::Connected(connected_stream) => connected_stream.local_endpoint(),
             State::Poisoned => return_errno_with_message!(Errno::EINVAL, "socket is poisoned"),
         };
-        local_endpoint.try_into()
+        Ok(local_endpoint.into())
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
@@ -338,7 +338,7 @@ impl Socket for StreamSocket {
             State::Connected(connected_stream) => connected_stream.remote_endpoint(),
             State::Poisoned => return_errno_with_message!(Errno::EINVAL, "socket is poisoned"),
         };
-        remote_endpoint.try_into()
+        Ok(remote_endpoint.into())
     }
 
     fn sock_option(&self, optname: &SockOptionName) -> Result<&[u8]> {
