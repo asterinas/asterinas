@@ -265,6 +265,24 @@ impl FileLike for StreamSocket {
     fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
     }
+
+    fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        self.pollee.register_observer(observer, mask);
+        Ok(())
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        self.pollee
+            .unregister_observer(observer)
+            .ok_or_else(|| Error::with_message(Errno::ENOENT, "observer is not registered"))
+    }
 }
 
 impl Socket for StreamSocket {

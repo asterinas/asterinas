@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/signal.h>
 #include <sys/socket.h>
+#include <sys/poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -99,9 +100,9 @@ static void do_setup(void)
 #undef CHECK
 }
 
-#define TEST_AND(err, cond, func, ...)                                       \
+#define __TEST(err, cond, func, ...)                                         \
 	errno = 0;                                                           \
-	(void)func(sk, __VA_ARGS__);                                         \
+	(void)func(__VA_ARGS__);                                             \
 	if (errno != (err)) {                                                \
 		tests_failed++;                                              \
 		fprintf(stderr,                                              \
@@ -119,13 +120,26 @@ static void do_setup(void)
 			strerror(errno));                                    \
 	}
 
+#define TEST_AND(err, cond, func, ...) __TEST(err, cond, func, sk, __VA_ARGS__)
+
 #define TEST(err, func, ...) TEST_AND(err, 1, func, __VA_ARGS__)
+
+#define _POLL_EV (POLLIN | POLLOUT)
+
+#define TEST_EV(ev)            \
+	pfd.events = _POLL_EV; \
+	__TEST(0, (pfd.revents & _POLL_EV) == (ev), poll, &pfd, 1, 0)
+
+#define WAIT_EV(ev)        \
+	pfd.events = (ev); \
+	__TEST(0, 1, poll, &pfd, 1, 1000)
 
 #define START_TESTS(type)                               \
 	static int test_##type(void)                    \
 	{                                               \
 		int tests_passed = 0, tests_failed = 0; \
-		int sk = sk_##type;
+		int sk = sk_##type;                     \
+		struct pollfd pfd = { .fd = sk };
 
 #define END_TESTS(type)                                                   \
 	fprintf(stderr, "%s summary: %d tests passed, %d tests failed\n", \
@@ -158,6 +172,9 @@ START_TESTS(unbound)
 	TEST(EOPNOTSUPP, listen, 2);
 
 	TEST(EOPNOTSUPP, accept, psaddr, &alen);
+
+	// FIXME: Uncomment this line
+	// TEST_EV(POLLOUT);
 }
 END_TESTS()
 
@@ -185,6 +202,8 @@ START_TESTS(bound)
 	TEST(EOPNOTSUPP, listen, 2);
 
 	TEST(EOPNOTSUPP, accept, psaddr, &alen);
+
+	TEST_EV(POLLOUT);
 }
 END_TESTS()
 
@@ -207,6 +226,8 @@ START_TESTS(connected)
 	TEST(EOPNOTSUPP, listen, 2);
 
 	TEST(EOPNOTSUPP, accept, psaddr, &alen);
+
+	TEST_EV(POLLOUT);
 }
 END_TESTS()
 

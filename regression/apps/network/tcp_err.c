@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/signal.h>
 #include <sys/socket.h>
+#include <sys/poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -110,14 +111,25 @@ static int setup_accepted(void)
 {
 	struct sockaddr addr;
 	socklen_t addrlen = sizeof(addr);
+	int err;
+	struct pollfd pfd = { .fd = sk_listen, .events = POLLIN };
 
-	do {
-		sk_accepted = accept(sk_listen, &addr, &addrlen);
-		if (sk_accepted < 0 && errno != EAGAIN) {
-			perror("accept");
-			return -1;
-		}
-	} while (sk_accepted < 0);
+	err = poll(&pfd, 1, 1000);
+	if (err < 0) {
+		perror("poll");
+		return -1;
+	}
+
+	if (!(pfd.revents & POLLIN)) {
+		fprintf(stderr, "No sockets can be accepted\n");
+		return -1;
+	}
+
+	sk_accepted = accept(sk_listen, &addr, &addrlen);
+	if (sk_accepted < 0) {
+		perror("accept");
+		return -1;
+	}
 
 	return 0;
 }
@@ -149,9 +161,9 @@ static void do_setup(void)
 #undef CHECK
 }
 
-#define TEST_AND(err, cond, func, ...)                                       \
+#define __TEST(err, cond, func, ...)                                         \
 	errno = 0;                                                           \
-	(void)func(sk, __VA_ARGS__);                                         \
+	(void)func(__VA_ARGS__);                                             \
 	if (errno != (err)) {                                                \
 		tests_failed++;                                              \
 		fprintf(stderr,                                              \
@@ -169,13 +181,26 @@ static void do_setup(void)
 			strerror(errno));                                    \
 	}
 
+#define TEST_AND(err, cond, func, ...) __TEST(err, cond, func, sk, __VA_ARGS__)
+
 #define TEST(err, func, ...) TEST_AND(err, 1, func, __VA_ARGS__)
+
+#define _POLL_EV (POLLIN | POLLOUT)
+
+#define TEST_EV(ev)            \
+	pfd.events = _POLL_EV; \
+	__TEST(0, (pfd.revents & _POLL_EV) == (ev), poll, &pfd, 1, 0)
+
+#define WAIT_EV(ev)        \
+	pfd.events = (ev); \
+	__TEST(0, 1, poll, &pfd, 1, 1000)
 
 #define START_TESTS(type)                               \
 	static int test_##type(void)                    \
 	{                                               \
 		int tests_passed = 0, tests_failed = 0; \
-		int sk = sk_##type;
+		int sk = sk_##type;                     \
+		struct pollfd pfd = { .fd = sk };
 
 #define END_TESTS(type)                                                   \
 	fprintf(stderr, "%s summary: %d tests passed, %d tests failed\n", \
@@ -204,6 +229,9 @@ START_TESTS(unbound)
 	// Both `bind` and `listen` may succeed, so there are no tests for them
 
 	TEST(EINVAL, accept, psaddr, &alen);
+
+	// FIXME: Uncomment this line
+	// TEST_EV(POLLOUT);
 }
 END_TESTS()
 
@@ -224,6 +252,9 @@ START_TESTS(bound)
 	// `listen` will succeed, so there are no tests for it
 
 	TEST(EINVAL, accept, psaddr, &alen);
+
+	// FIXME: Uncomment this line
+	// TEST_EV(POLLOUT);
 }
 END_TESTS()
 
@@ -244,6 +275,8 @@ START_TESTS(listen)
 	TEST(0, listen, 2);
 
 	TEST(EAGAIN, accept, psaddr, &alen);
+
+	TEST_EV(0);
 }
 END_TESTS()
 
@@ -272,6 +305,8 @@ START_TESTS(connected)
 	TEST(EINVAL, listen, 2);
 
 	TEST(EINVAL, accept, psaddr, &alen);
+
+	TEST_EV(POLLOUT);
 }
 END_TESTS()
 
@@ -293,6 +328,9 @@ START_TESTS(accepted)
 	TEST(EINVAL, listen, 2);
 
 	TEST(EINVAL, accept, psaddr, &alen);
+
+	WAIT_EV(POLLIN);
+	TEST_EV(POLLIN | POLLOUT);
 }
 END_TESTS()
 
