@@ -115,7 +115,7 @@ impl DatagramSocket {
         };
         let (recv_bytes, remote_endpoint) = bound_datagram.try_recvfrom(buf, flags)?;
         bound_datagram.update_io_events(&self.pollee);
-        Ok((recv_bytes, remote_endpoint.try_into()?))
+        Ok((recv_bytes, remote_endpoint.into()))
     }
 
     fn try_sendto(
@@ -240,7 +240,7 @@ impl Socket for DatagramSocket {
         let Inner::Bound(bound_datagram) = inner.as_ref() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
         };
-        bound_datagram.local_endpoint().try_into()
+        Ok(bound_datagram.local_endpoint().into())
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
@@ -248,7 +248,7 @@ impl Socket for DatagramSocket {
         let Inner::Bound(bound_datagram) = inner.as_ref() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
         };
-        bound_datagram.remote_endpoint()?.try_into()
+        Ok(bound_datagram.remote_endpoint()?.into())
     }
 
     // FIXME: respect RecvFromFlags
