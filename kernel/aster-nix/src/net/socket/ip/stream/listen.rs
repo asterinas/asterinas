@@ -3,7 +3,7 @@ use smoltcp::socket::tcp::ListenError;
 
 use super::connected::ConnectedStream;
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     net::iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, IpEndpoint, RawTcpSocket},
     prelude::*,
     process::signal::Pollee,
@@ -94,26 +94,6 @@ impl ListenStream {
         } else {
             pollee.del_events(IoEvents::IN);
         }
-    }
-
-    pub fn register_observer(
-        &self,
-        pollee: &Pollee,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    pub fn unregister_observer(
-        &self,
-        pollee: &Pollee,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Result<Weak<dyn Observer<IoEvents>>> {
-        pollee
-            .unregister_observer(observer)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fails to unregister observer"))
     }
 }
 

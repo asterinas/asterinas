@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <sys/signal.h>
 #include <sys/socket.h>
+#include <sys/poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -70,11 +71,12 @@ FN_SETUP(accpected)
 {
 	struct sockaddr addr;
 	socklen_t addrlen = sizeof(addr);
+	struct pollfd pfd = { .fd = sk_listen, .events = POLLIN };
 
-	do {
-		sk_accepted = CHECK_WITH(accept(sk_listen, &addr, &addrlen),
-					 _ret >= 0 || errno == EAGAIN);
-	} while (sk_accepted < 0);
+	CHECK_WITH(poll(&pfd, 1, 1000),
+		   _ret >= 0 && ((pfd.revents & (POLLIN | POLLOUT)) & POLLIN));
+
+	sk_accepted = CHECK(accept(sk_listen, &addr, &addrlen));
 }
 END_SETUP()
 
@@ -224,5 +226,32 @@ FN_TEST(accept)
 	TEST_ERRNO(accept(sk_connected, psaddr, &addrlen), EINVAL);
 
 	TEST_ERRNO(accept(sk_accepted, psaddr, &addrlen), EINVAL);
+}
+END_TEST()
+
+FN_TEST(poll)
+{
+	struct pollfd pfd = { .events = POLLIN | POLLOUT };
+
+	pfd.fd = sk_unbound;
+	// FIXME: Uncomment this
+	// TEST_RES(poll(&pfd, 1, 0),
+	// 	 (pfd.revents & (POLLIN | POLLOUT)) == POLLOUT);
+
+	pfd.fd = sk_bound;
+	// FIXME: Uncomment this
+	// TEST_RES(poll(&pfd, 1, 0),
+	// 	 (pfd.revents & (POLLIN | POLLOUT)) == POLLOUT);
+
+	pfd.fd = sk_listen;
+	TEST_RES(poll(&pfd, 1, 0), (pfd.revents & (POLLIN | POLLOUT)) == 0);
+
+	pfd.fd = sk_connected;
+	TEST_RES(poll(&pfd, 1, 0),
+		 (pfd.revents & (POLLIN | POLLOUT)) == POLLOUT);
+
+	pfd.fd = sk_accepted;
+	TEST_RES(poll(&pfd, 1, 0),
+		 (pfd.revents & (POLLIN | POLLOUT)) == POLLOUT);
 }
 END_TEST()
