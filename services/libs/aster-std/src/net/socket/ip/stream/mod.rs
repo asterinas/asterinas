@@ -86,9 +86,31 @@ impl StreamSocket {
         let mut state = self.state.write();
 
         let owned_state = mem::replace(&mut *state, State::Poisoned);
-        let State::Init(init_stream) = owned_state else {
-            *state = owned_state;
-            return_errno_with_message!(Errno::EINVAL, "cannot connect")
+        let init_stream = match owned_state {
+            State::Init(init_stream) => init_stream,
+            State::Connecting(_) => {
+                *state = owned_state;
+                return_errno_with_message!(Errno::EALREADY, "the socket is connecting");
+            }
+            State::Connected(ref connected_stream) => {
+                let new_connection = connected_stream.is_new_connection();
+                if new_connection {
+                    connected_stream.clear_new_connection();
+                    *state = owned_state;
+                    return Ok(());
+                }
+                *state = owned_state;
+                return_errno_with_message!(Errno::EISCONN, "the socket is already connected");
+            }
+            State::Listen(_) => {
+                *state = owned_state;
+                return_errno_with_message!(Errno::EISCONN, "the socket is listening");
+            }
+            State::Poisoned => {
+                *state = owned_state;
+                // FIXME: This error code has no Linux equivalent
+                return_errno_with_message!(Errno::EINVAL, "the socket is poisoned");
+            }
         };
 
         let connecting_stream = match init_stream.connect(remote_endpoint) {
@@ -130,6 +152,24 @@ impl StreamSocket {
         *state = State::Connected(connected_stream);
 
         Ok(())
+    }
+
+    fn check_connect(&self) -> Result<()> {
+        let state = self.state.read();
+
+        match &*state {
+            State::Connecting(_) => {
+                return_errno_with_message!(Errno::EAGAIN, "the connection is pending")
+            }
+            State::Connected(connected_stream) => {
+                connected_stream.clear_new_connection();
+                Ok(())
+            }
+            State::Init(_) | State::Listen(_) | State::Poisoned => {
+                // FIXME: The error code should be retrieved via the `SO_ERROR` socket option
+                return_errno_with_message!(Errno::ECONNREFUSED, "the connection is refused");
+            }
+        }
     }
 
     fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
@@ -216,15 +256,21 @@ impl StreamSocket {
         }
     }
 
-    fn update_io_events(&self) {
+    fn update_io_events(&self) -> bool {
         let state = self.state.read();
         match &*state {
-            State::Init(_) | State::Poisoned => (),
+            State::Init(_) | State::Poisoned => false,
             State::Connecting(connecting_stream) => {
                 connecting_stream.update_io_events(&self.pollee)
             }
-            State::Listen(listen_stream) => listen_stream.update_io_events(&self.pollee),
-            State::Connected(connected_stream) => connected_stream.update_io_events(&self.pollee),
+            State::Listen(listen_stream) => {
+                listen_stream.update_io_events(&self.pollee);
+                false
+            }
+            State::Connected(connected_stream) => {
+                connected_stream.update_io_events(&self.pollee);
+                false
+            }
         }
     }
 }
@@ -312,13 +358,31 @@ impl Socket for StreamSocket {
         Ok(())
     }
 
-    // TODO: Support nonblocking mode
     fn connect(&self, sockaddr: SocketAddr) -> Result<()> {
         let remote_endpoint = sockaddr.try_into()?;
-        self.start_connect(&remote_endpoint)?;
+
+        let is_already = match self.start_connect(&remote_endpoint) {
+            Ok(()) => false,
+            Err(err) if err.error() == Errno::EALREADY => true,
+            Err(err) => return Err(err),
+        };
 
         poll_ifaces();
-        self.wait_events(IoEvents::OUT, || self.finish_connect())
+        let result = if self.is_nonblocking() {
+            self.check_connect()
+        } else {
+            self.wait_events(IoEvents::OUT, || self.check_connect())
+        };
+        match result {
+            Err(err) if err.error() == Errno::EAGAIN => {
+                if is_already {
+                    return_errno_with_message!(Errno::EALREADY, "the socket is connecting");
+                } else {
+                    return_errno_with_message!(Errno::EINPROGRESS, "the socket is connecting");
+                }
+            }
+            other => other,
+        }
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
@@ -441,6 +505,12 @@ impl Socket for StreamSocket {
 
 impl Observer<()> for StreamSocket {
     fn on_events(&self, events: &()) {
-        self.update_io_events();
+        let conn_ready = self.update_io_events();
+
+        if conn_ready {
+            // FIXME: The error code should be stored as the `SO_ERROR` socket option. Since it
+            // does not exist yet, we ignore the return value below.
+            let _ = self.finish_connect();
+        }
     }
 }

@@ -173,6 +173,8 @@ START_TESTS(unbound)
 
 	TEST(EOPNOTSUPP, accept, psaddr, &alen);
 
+	// `connect` may succeed, so there are no tests for it
+
 	TEST_EV(POLLOUT);
 }
 END_TESTS()
@@ -202,6 +204,8 @@ START_TESTS(bound)
 
 	TEST(EOPNOTSUPP, accept, psaddr, &alen);
 
+	// `connect` may succeed, so there are no tests for it
+
 	TEST_EV(POLLOUT);
 }
 END_TESTS()
@@ -225,6 +229,9 @@ START_TESTS(connected)
 	TEST(EOPNOTSUPP, listen, 2);
 
 	TEST(EOPNOTSUPP, accept, psaddr, &alen);
+
+	// `saddr` stores the result of `getpeername`
+	TEST(0, connect, psaddr, IN_LEN);
 
 	TEST_EV(POLLOUT);
 }

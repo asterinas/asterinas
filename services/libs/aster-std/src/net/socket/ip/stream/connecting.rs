@@ -48,6 +48,7 @@ impl ConnectingStream {
             Some(ConnResult::Connected) => Ok(ConnectedStream::new(
                 self.bound_socket,
                 self.remote_endpoint,
+                true,
             )),
             Some(ConnResult::Refused) => Err((
                 Error::with_message(Errno::ECONNREFUSED, "the connection is refused"),
@@ -71,16 +72,16 @@ impl ConnectingStream {
     pub(super) fn reset_io_events(&self, pollee: &Pollee) {
         pollee.del_events(IoEvents::IN);
         pollee.del_events(IoEvents::OUT);
-
-        self.update_io_events(pollee);
     }
 
-    pub(super) fn update_io_events(&self, pollee: &Pollee) {
+    /// Returns `true` when `conn_result` becomes ready, which indicates that the caller should
+    /// the `into_result()` method as soon as possible.
+    pub(super) fn update_io_events(&self, pollee: &Pollee) -> bool {
         if self.conn_result.read().is_some() {
-            return;
+            return false;
         }
 
-        let became_writable = self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
+        self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
             let mut result = self.conn_result.write();
             if result.is_some() {
                 return false;
@@ -98,17 +99,6 @@ impl ConnectingStream {
             // Refused
             *result = Some(ConnResult::Refused);
             true
-        });
-
-        // Either when the connection is established, or when the connection fails, the socket
-        // shall indicate that it is writable.
-        //
-        // TODO: Find a way to turn `ConnectingStream` into `ConnectedStream` or `InitStream`
-        // here, so non-blocking `connect()` can work correctly. Meanwhile, the latter should
-        // be responsible to initialize all the I/O events including `IoEvents::OUT`, so the
-        // following hard-coded event addition can be removed.
-        if became_writable {
-            pollee.add_events(IoEvents::OUT);
-        }
+        })
     }
 }

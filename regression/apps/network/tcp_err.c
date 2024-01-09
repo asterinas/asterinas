@@ -83,6 +83,8 @@ err:
 	return -1;
 }
 
+static int is_conn_async;
+
 static int setup_connected(void)
 {
 	int err;
@@ -100,6 +102,9 @@ static int setup_connected(void)
 		perror("bind");
 		goto err;
 	}
+
+	// In Linux, it's asynchronous even if the interface is loopback
+	is_conn_async = err < 0;
 
 	return 0;
 err:
@@ -230,6 +235,8 @@ START_TESTS(unbound)
 
 	TEST(EINVAL, accept, psaddr, &alen);
 
+	// `connect` may succeed, so there are no tests for it
+
 	TEST_EV(POLLOUT);
 }
 END_TESTS()
@@ -252,6 +259,8 @@ START_TESTS(bound)
 
 	TEST(EINVAL, accept, psaddr, &alen);
 
+	// `connect` may succeed, so there are no tests for it
+
 	TEST_EV(POLLOUT);
 }
 END_TESTS()
@@ -273,6 +282,8 @@ START_TESTS(listen)
 	TEST(0, listen, 2);
 
 	TEST(EAGAIN, accept, psaddr, &alen);
+
+	TEST(EISCONN, connect, psaddr, IN_LEN);
 
 	TEST_EV(0);
 }
@@ -304,6 +315,12 @@ START_TESTS(connected)
 
 	TEST(EINVAL, accept, psaddr, &alen);
 
+	// The first `connect` should succeed for asynchronous connections
+	TEST(is_conn_async ? 0 : EISCONN, connect, psaddr, IN_LEN);
+
+	// After that, `connect` should report `EISCONN`
+	TEST(EISCONN, connect, psaddr, IN_LEN);
+
 	TEST_EV(POLLOUT);
 }
 END_TESTS()
@@ -326,6 +343,8 @@ START_TESTS(accepted)
 	TEST(EINVAL, listen, 2);
 
 	TEST(EINVAL, accept, psaddr, &alen);
+
+	TEST(EISCONN, connect, psaddr, IN_LEN);
 
 	WAIT_EV(POLLIN);
 	TEST_EV(POLLIN | POLLOUT);
