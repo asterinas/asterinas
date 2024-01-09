@@ -173,8 +173,7 @@ START_TESTS(unbound)
 
 	TEST(EOPNOTSUPP, accept, psaddr, &alen);
 
-	// FIXME: Uncomment this line
-	// TEST_EV(POLLOUT);
+	TEST_EV(POLLOUT);
 }
 END_TESTS()
 

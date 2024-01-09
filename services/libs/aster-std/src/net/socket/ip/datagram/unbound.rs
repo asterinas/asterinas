@@ -1,9 +1,10 @@
 use alloc::sync::Weak;
 
-use crate::events::Observer;
+use crate::events::{IoEvents, Observer};
 use crate::net::iface::IpEndpoint;
 
 use crate::net::socket::ip::common::bind_socket;
+use crate::process::signal::Pollee;
 use crate::{
     net::iface::{AnyUnboundSocket, RawUdpSocket},
     prelude::*,
@@ -34,5 +35,10 @@ impl UnboundDatagram {
         });
 
         Ok(BoundDatagram::new(bound_socket))
+    }
+
+    pub(super) fn reset_io_events(&self, pollee: &Pollee) {
+        pollee.del_events(IoEvents::IN);
+        pollee.add_events(IoEvents::OUT);
     }
 }

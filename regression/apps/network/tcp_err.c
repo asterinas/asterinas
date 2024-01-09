@@ -230,8 +230,7 @@ START_TESTS(unbound)
 
 	TEST(EINVAL, accept, psaddr, &alen);
 
-	// FIXME: Uncomment this line
-	// TEST_EV(POLLOUT);
+	TEST_EV(POLLOUT);
 }
 END_TESTS()
 
@@ -253,8 +252,7 @@ START_TESTS(bound)
 
 	TEST(EINVAL, accept, psaddr, &alen);
 
-	// FIXME: Uncomment this line
-	// TEST_EV(POLLOUT);
+	TEST_EV(POLLOUT);
 }
 END_TESTS()
 

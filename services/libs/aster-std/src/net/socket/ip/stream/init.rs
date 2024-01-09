@@ -1,10 +1,11 @@
 use alloc::sync::Weak;
 
-use crate::events::Observer;
+use crate::events::{IoEvents, Observer};
 use crate::net::iface::IpEndpoint;
 use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket};
 use crate::net::socket::ip::common::{bind_socket, get_ephemeral_endpoint};
 use crate::prelude::*;
+use crate::process::signal::Pollee;
 
 use super::connecting::ConnectingStream;
 use super::listen::ListenStream;
@@ -15,9 +16,6 @@ pub enum InitStream {
 }
 
 impl InitStream {
-    // FIXME: In Linux we have the `POLLOUT` event for a newly created socket, while calling
-    // `write()` on it triggers `SIGPIPE`/`EPIPE`. No documentation found yet, but confirmed by
-    // experimentation and Linux source code.
     pub fn new(observer: Weak<dyn Observer<()>>) -> Self {
         InitStream::Unbound(Box::new(AnyUnboundSocket::new_tcp(observer)))
     }
@@ -87,5 +85,10 @@ impl InitStream {
             InitStream::Unbound(_) => None,
             InitStream::Bound(bound_socket) => Some(bound_socket.local_endpoint().unwrap()),
         }
+    }
+
+    pub(super) fn reset_io_events(&self, pollee: &Pollee) {
+        pollee.del_events(IoEvents::IN);
+        pollee.add_events(IoEvents::OUT);
     }
 }

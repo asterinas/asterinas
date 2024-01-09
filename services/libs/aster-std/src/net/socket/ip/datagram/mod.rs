@@ -81,6 +81,7 @@ impl DatagramSocket {
         Arc::new_cyclic(|me| {
             let unbound_datagram = UnboundDatagram::new(me.clone() as _);
             let pollee = Pollee::new(IoEvents::empty());
+            unbound_datagram.reset_io_events(&pollee);
             Self {
                 inner: RwLock::new(Inner::Unbound(unbound_datagram)),
                 nonblocking: AtomicBool::new(nonblocking),
