@@ -82,6 +82,7 @@ impl StreamSocket {
         Arc::new_cyclic(|me| {
             let init_stream = InitStream::new(me.clone() as _);
             let pollee = Pollee::new(IoEvents::empty());
+            init_stream.init_pollee(&pollee);
             Self {
                 options: RwLock::new(OptionSet::new()),
                 state: RwLock::new(Takeable::new(State::Init(init_stream))),
@@ -154,6 +155,7 @@ impl StreamSocket {
             let connected_stream = match connecting_stream.into_result() {
                 Ok(connected_stream) => connected_stream,
                 Err((err, NonConnectedStream::Init(init_stream))) => {
+                    init_stream.init_pollee(&self.pollee);
                     return (State::Init(init_stream), Err(err));
                 }
                 Err((err, NonConnectedStream::Connecting(connecting_stream))) => {
