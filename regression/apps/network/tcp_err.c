@@ -63,7 +63,7 @@ FN_SETUP(connected)
 	sk_addr.sin_port = S_PORT;
 	CHECK_WITH(connect(sk_connected, (struct sockaddr *)&sk_addr,
 			   sizeof(sk_addr)),
-		   _ret == 0 || errno == EINPROGRESS);
+		   _ret < 0 && errno == EINPROGRESS);
 }
 END_SETUP()
 
@@ -251,5 +251,20 @@ FN_TEST(poll)
 	pfd.fd = sk_accepted;
 	TEST_RES(poll(&pfd, 1, 0),
 		 (pfd.revents & (POLLIN | POLLOUT)) == POLLOUT);
+}
+END_TEST()
+
+FN_TEST(connect)
+{
+	struct sockaddr *psaddr = (struct sockaddr *)&sk_addr;
+	socklen_t addrlen = sizeof(sk_addr);
+
+	TEST_ERRNO(connect(sk_listen, psaddr, addrlen), EISCONN);
+
+	TEST_ERRNO(connect(sk_connected, psaddr, addrlen), 0);
+
+	TEST_ERRNO(connect(sk_connected, psaddr, addrlen), EISCONN);
+
+	TEST_ERRNO(connect(sk_accepted, psaddr, addrlen), EISCONN);
 }
 END_TEST()
