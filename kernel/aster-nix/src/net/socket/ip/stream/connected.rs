@@ -17,13 +17,29 @@ use crate::{
 pub struct ConnectedStream {
     bound_socket: Arc<AnyBoundSocket>,
     remote_endpoint: IpEndpoint,
+    /// Indicates whether this connection is "new" in a `connect()` system call.
+    ///
+    /// If the connection is not new, `connect()` will fail with the error code `EISCONN`,
+    /// otherwise it will succeed. This means that `connect()` will succeed _exactly_ once,
+    /// regardless of whether the connection is established synchronously or asynchronously.
+    ///
+    /// If the connection is established synchronously, the synchronous `connect()` will succeed
+    /// and any subsequent `connect()` will fail; otherwise, the first `connect()` after the
+    /// connection is established asynchronously will succeed and any subsequent `connect()` will
+    /// fail.
+    is_new_connection: bool,
 }
 
 impl ConnectedStream {
-    pub fn new(bound_socket: Arc<AnyBoundSocket>, remote_endpoint: IpEndpoint) -> Self {
+    pub fn new(
+        bound_socket: Arc<AnyBoundSocket>,
+        remote_endpoint: IpEndpoint,
+        is_new_connection: bool,
+    ) -> Self {
         Self {
             bound_socket,
             remote_endpoint,
+            is_new_connection,
         }
     }
 
@@ -71,6 +87,15 @@ impl ConnectedStream {
 
     pub fn remote_endpoint(&self) -> IpEndpoint {
         self.remote_endpoint
+    }
+
+    pub fn check_new(&mut self) -> Result<()> {
+        if !self.is_new_connection {
+            return_errno_with_message!(Errno::EISCONN, "the socket is already connected");
+        }
+
+        self.is_new_connection = false;
+        Ok(())
     }
 
     pub(super) fn init_pollee(&self, pollee: &Pollee) {

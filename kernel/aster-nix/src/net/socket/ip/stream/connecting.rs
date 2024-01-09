@@ -2,7 +2,6 @@
 
 use super::{connected::ConnectedStream, init::InitStream};
 use crate::{
-    events::IoEvents,
     net::iface::{AnyBoundSocket, IpEndpoint, RawTcpSocket},
     prelude::*,
     process::signal::Pollee,
@@ -46,6 +45,7 @@ impl ConnectingStream {
             Some(ConnResult::Connected) => Ok(ConnectedStream::new(
                 self.bound_socket,
                 self.remote_endpoint,
+                true,
             )),
             Some(ConnResult::Refused) => Err((
                 Error::with_message(Errno::ECONNREFUSED, "the connection is refused"),
@@ -68,15 +68,20 @@ impl ConnectingStream {
 
     pub(super) fn init_pollee(&self, pollee: &Pollee) {
         pollee.reset_events();
-        self.update_io_events(pollee);
     }
 
-    pub(super) fn update_io_events(&self, pollee: &Pollee) {
+    /// Returns `true` when `conn_result` becomes ready, which indicates that the caller should
+    /// invoke the `into_result()` method as soon as possible.
+    ///
+    /// Since `into_result()` needs to be called only once, this method will return `true`
+    /// _exactly_ once. The caller is responsible for not missing this event.
+    #[must_use]
+    pub(super) fn update_io_events(&self) -> bool {
         if self.conn_result.read().is_some() {
-            return;
+            return false;
         }
 
-        let became_writable = self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
+        self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
             let mut result = self.conn_result.write();
             if result.is_some() {
                 return false;
@@ -94,17 +99,6 @@ impl ConnectingStream {
             // Refused
             *result = Some(ConnResult::Refused);
             true
-        });
-
-        // Either when the connection is established, or when the connection fails, the socket
-        // shall indicate that it is writable.
-        //
-        // TODO: Find a way to turn `ConnectingStream` into `ConnectedStream` or `InitStream`
-        // here, so non-blocking `connect()` can work correctly. Meanwhile, the latter should
-        // be responsible to initialize all the I/O events including `IoEvents::OUT`, so the
-        // following hard-coded event addition can be removed.
-        if became_writable {
-            pollee.add_events(IoEvents::OUT);
-        }
+        })
     }
 }

@@ -189,3 +189,12 @@ FN_TEST(poll)
 		 (pfd.revents & (POLLIN | POLLOUT)) == POLLOUT);
 }
 END_TEST()
+
+FN_TEST(connect)
+{
+	struct sockaddr *psaddr = (struct sockaddr *)&sk_addr;
+	socklen_t addrlen = sizeof(sk_addr);
+
+	TEST_SUCC(connect(sk_connected, psaddr, addrlen));
+}
+END_TEST()
