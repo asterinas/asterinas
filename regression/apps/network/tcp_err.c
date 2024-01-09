@@ -181,3 +181,48 @@ FN_TEST(send_and_recv)
 	TEST_ERRNO(recv(sk_connected, buf, 1, 0), EAGAIN);
 }
 END_TEST()
+
+FN_TEST(bind)
+{
+	struct sockaddr *psaddr = (struct sockaddr *)&sk_addr;
+	socklen_t addrlen = sizeof(sk_addr);
+
+	TEST_ERRNO(bind(sk_bound, psaddr, addrlen), EINVAL);
+
+	TEST_ERRNO(bind(sk_listen, psaddr, addrlen), EINVAL);
+
+	TEST_ERRNO(bind(sk_connected, psaddr, addrlen), EINVAL);
+
+	TEST_ERRNO(bind(sk_accepted, psaddr, addrlen), EINVAL);
+}
+END_TEST()
+
+FN_TEST(listen)
+{
+	// The second `listen` does nothing but succeed.
+	// TODO: Will it update the backlog?
+	TEST_SUCC(listen(sk_listen, 2));
+
+	TEST_ERRNO(listen(sk_connected, 2), EINVAL);
+
+	TEST_ERRNO(listen(sk_accepted, 2), EINVAL);
+}
+END_TEST()
+
+FN_TEST(accept)
+{
+	struct sockaddr_in saddr;
+	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	TEST_ERRNO(accept(sk_unbound, psaddr, &addrlen), EINVAL);
+
+	TEST_ERRNO(accept(sk_bound, psaddr, &addrlen), EINVAL);
+
+	TEST_ERRNO(accept(sk_listen, psaddr, &addrlen), EAGAIN);
+
+	TEST_ERRNO(accept(sk_connected, psaddr, &addrlen), EINVAL);
+
+	TEST_ERRNO(accept(sk_accepted, psaddr, &addrlen), EINVAL);
+}
+END_TEST()

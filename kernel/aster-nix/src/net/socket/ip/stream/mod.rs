@@ -305,7 +305,10 @@ impl Socket for StreamSocket {
             let State::Init(init_stream) = owned_state else {
                 return (
                     owned_state,
-                    Err(Error::with_message(Errno::EINVAL, "cannot bind")),
+                    Err(Error::with_message(
+                        Errno::EINVAL,
+                        "the socket is already bound to an address",
+                    )),
                 );
             };
 
@@ -333,11 +336,20 @@ impl Socket for StreamSocket {
         let mut state = self.state.write();
 
         state.borrow_result(|owned_state| {
-            let State::Init(init_stream) = owned_state else {
-                return (
-                    owned_state,
-                    Err(Error::with_message(Errno::EINVAL, "cannot listen")),
-                );
+            let init_stream = match owned_state {
+                State::Init(init_stream) => init_stream,
+                State::Listen(listen_stream) => {
+                    return (State::Listen(listen_stream), Ok(()));
+                }
+                State::Connecting(_) | State::Connected(_) => {
+                    return (
+                        owned_state,
+                        Err(Error::with_message(
+                            Errno::EINVAL,
+                            "the socket is already connected",
+                        )),
+                    );
+                }
             };
 
             let listen_stream = match init_stream.listen(backlog) {
