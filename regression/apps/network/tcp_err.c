@@ -77,3 +77,62 @@ FN_SETUP(accpected)
 	} while (sk_accepted < 0);
 }
 END_SETUP()
+
+FN_TEST(getsockname)
+{
+	struct sockaddr_in saddr = { .sin_port = 0xbeef };
+	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	TEST_RES(getsockname(sk_unbound, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == 0);
+
+	TEST_RES(getsockname(sk_bound, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == C_PORT);
+
+	TEST_RES(getsockname(sk_listen, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == S_PORT);
+
+	TEST_RES(getsockname(sk_connected, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port != S_PORT);
+
+	TEST_RES(getsockname(sk_accepted, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == S_PORT);
+}
+END_TEST()
+
+FN_TEST(getpeername)
+{
+	struct sockaddr_in saddr = { .sin_port = 0xbeef };
+	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	TEST_ERRNO(getpeername(sk_unbound, psaddr, &addrlen), ENOTCONN);
+
+	TEST_ERRNO(getpeername(sk_bound, psaddr, &addrlen), ENOTCONN);
+
+	TEST_ERRNO(getpeername(sk_listen, psaddr, &addrlen), ENOTCONN);
+
+	TEST_RES(getpeername(sk_connected, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == S_PORT);
+
+	TEST_RES(getpeername(sk_accepted, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port != S_PORT);
+}
+END_TEST()
+
+FN_TEST(peername_is_peer_sockname)
+{
+	struct sockaddr_in saddr = { .sin_port = 0xbeef };
+	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
+	socklen_t addrlen = sizeof(saddr);
+	int em_port;
+
+	TEST_RES(getsockname(sk_connected, psaddr, &addrlen),
+		 addrlen == sizeof(saddr));
+	em_port = saddr.sin_port;
+
+	TEST_RES(getpeername(sk_accepted, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == em_port);
+}
+END_TEST()
