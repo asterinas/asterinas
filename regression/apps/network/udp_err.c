@@ -82,3 +82,56 @@ FN_TEST(getpeername)
 		 addrlen == sizeof(saddr) && saddr.sin_port == C_PORT);
 }
 END_TEST()
+
+FN_TEST(send)
+{
+	char buf[1] = { 'z' };
+
+	TEST_ERRNO(send(sk_unbound, buf, 1, 0), EDESTADDRREQ);
+
+	TEST_ERRNO(send(sk_bound, buf, 1, 0), EDESTADDRREQ);
+}
+END_TEST()
+
+FN_TEST(recv)
+{
+	char buf[1] = { 'z' };
+
+	TEST_ERRNO(recv(sk_unbound, buf, 1, 0), EAGAIN);
+
+	TEST_ERRNO(recv(sk_bound, buf, 1, 0), EAGAIN);
+
+	TEST_ERRNO(recv(sk_connected, buf, 1, 0), EAGAIN);
+}
+END_TEST()
+
+FN_TEST(send_and_recv)
+{
+	char buf[1];
+	struct sockaddr_in saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	sk_addr.sin_port = C_PORT;
+	buf[0] = 'a';
+	TEST_RES(sendto(sk_bound, buf, 1, 0, (struct sockaddr *)&sk_addr,
+			sizeof(sk_addr)),
+		 _ret == 1);
+
+	buf[0] = 'b';
+	TEST_RES(send(sk_connected, buf, 1, 0), _ret == 1);
+
+	saddr.sin_port = 0;
+	buf[0] = 0;
+	TEST_RES(recvfrom(sk_bound, buf, 1, 0, (struct sockaddr *)&saddr,
+			  &addrlen),
+		 _ret == 1 && addrlen == sizeof(sk_addr) &&
+			 saddr.sin_port == C_PORT && buf[0] == 'a');
+
+	saddr.sin_port = 0;
+	buf[0] = 0;
+	TEST_RES(recvfrom(sk_bound, buf, 1, 0, (struct sockaddr *)&saddr,
+			  &addrlen),
+		 _ret == 1 && addrlen == sizeof(sk_addr) &&
+			 saddr.sin_port != C_PORT && buf[0] == 'b');
+}
+END_TEST()
