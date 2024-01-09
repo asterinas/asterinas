@@ -50,3 +50,35 @@ FN_SETUP(connected)
 		      sizeof(sk_addr)));
 }
 END_SETUP()
+
+FN_TEST(getsockname)
+{
+	struct sockaddr_in saddr = { .sin_port = 0xbeef };
+	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	TEST_RES(getsockname(sk_unbound, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == 0);
+
+	TEST_RES(getsockname(sk_bound, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == C_PORT);
+
+	TEST_RES(getsockname(sk_connected, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port != C_PORT);
+}
+END_TEST()
+
+FN_TEST(getpeername)
+{
+	struct sockaddr_in saddr = { .sin_port = 0xbeef };
+	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	TEST_ERRNO(getpeername(sk_unbound, psaddr, &addrlen), ENOTCONN);
+
+	TEST_ERRNO(getpeername(sk_bound, psaddr, &addrlen), ENOTCONN);
+
+	TEST_RES(getpeername(sk_connected, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == C_PORT);
+}
+END_TEST()

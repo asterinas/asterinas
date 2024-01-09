@@ -83,12 +83,10 @@ impl InitStream {
             .map_err(|(err, bound_socket)| (err, InitStream::Bound(bound_socket)))
     }
 
-    pub fn local_endpoint(&self) -> Result<IpEndpoint> {
+    pub fn local_endpoint(&self) -> Option<IpEndpoint> {
         match self {
-            InitStream::Unbound(_) => {
-                return_errno_with_message!(Errno::EINVAL, "does not has local endpoint")
-            }
-            InitStream::Bound(bound_socket) => Ok(bound_socket.local_endpoint().unwrap()),
+            InitStream::Unbound(_) => None,
+            InitStream::Bound(bound_socket) => Some(bound_socket.local_endpoint().unwrap()),
         }
     }
 

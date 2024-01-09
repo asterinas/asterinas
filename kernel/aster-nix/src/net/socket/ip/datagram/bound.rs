@@ -27,9 +27,8 @@ impl BoundDatagram {
         self.bound_socket.local_endpoint().unwrap()
     }
 
-    pub fn remote_endpoint(&self) -> Result<IpEndpoint> {
+    pub fn remote_endpoint(&self) -> Option<IpEndpoint> {
         self.remote_endpoint
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "remote endpoint is not specified"))
     }
 
     pub fn set_remote_endpoint(&mut self, endpoint: &IpEndpoint) {

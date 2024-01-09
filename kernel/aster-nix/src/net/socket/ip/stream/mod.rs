@@ -11,6 +11,7 @@ use smoltcp::wire::IpEndpoint;
 use takeable::Takeable;
 use util::{TcpOptionSet, DEFAULT_MAXSEG};
 
+use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::{IoEvents, Observer},
     fs::{file_handle::FileLike, utils::StatusFlags},
@@ -385,7 +386,9 @@ impl Socket for StreamSocket {
     fn addr(&self) -> Result<SocketAddr> {
         let state = self.state.read();
         let local_endpoint = match state.as_ref() {
-            State::Init(init_stream) => init_stream.local_endpoint()?,
+            State::Init(init_stream) => init_stream
+                .local_endpoint()
+                .unwrap_or(UNSPECIFIED_LOCAL_ENDPOINT),
             State::Connecting(connecting_stream) => connecting_stream.local_endpoint(),
             State::Listen(listen_stream) => listen_stream.local_endpoint(),
             State::Connected(connected_stream) => connected_stream.local_endpoint(),
@@ -396,13 +399,10 @@ impl Socket for StreamSocket {
     fn peer_addr(&self) -> Result<SocketAddr> {
         let state = self.state.read();
         let remote_endpoint = match state.as_ref() {
-            State::Init(init_stream) => {
-                return_errno_with_message!(Errno::EINVAL, "init socket does not have peer")
+            State::Init(_) | State::Listen(_) => {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
             State::Connecting(connecting_stream) => connecting_stream.remote_endpoint(),
-            State::Listen(listen_stream) => {
-                return_errno_with_message!(Errno::EINVAL, "listening socket does not have peer")
-            }
             State::Connected(connected_stream) => connected_stream.remote_endpoint(),
         };
         Ok(remote_endpoint.into())
