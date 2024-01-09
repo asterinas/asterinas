@@ -177,9 +177,8 @@ FN_TEST(poll)
 	struct pollfd pfd = { .events = POLLIN | POLLOUT };
 
 	pfd.fd = sk_unbound;
-	// FIXME: Uncomment this
-	// TEST_RES(poll(&pfd, 1, 0),
-	// 	 (pfd.revents & (POLLIN | POLLOUT)) == POLLOUT);
+	TEST_RES(poll(&pfd, 1, 0),
+		 (pfd.revents & (POLLIN | POLLOUT)) == POLLOUT);
 
 	pfd.fd = sk_bound;
 	TEST_RES(poll(&pfd, 1, 0),
