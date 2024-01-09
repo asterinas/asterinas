@@ -707,7 +707,7 @@ impl Vmar_ {
                 return Ok(vm_mapping.clone());
             }
         }
-        return_errno_with_message!(Errno::EACCES, "No mapped vmo at this offset");
+        return_errno_with_message!(Errno::EFAULT, "No mapped vmo at this offset");
     }
 }
 
