@@ -21,6 +21,8 @@ use self::{
     listen::ListenStream,
 };
 
+use super::DUMMY_LOCAL_ENDPOINT;
+
 mod connected;
 mod connecting;
 mod init;
@@ -316,11 +318,16 @@ impl Socket for StreamSocket {
     fn addr(&self) -> Result<SocketAddr> {
         let state = self.state.read();
         let local_endpoint = match &*state {
-            State::Init(init_stream) => init_stream.local_endpoint()?,
+            State::Init(init_stream) => {
+                init_stream.local_endpoint().unwrap_or(DUMMY_LOCAL_ENDPOINT)
+            }
             State::Connecting(connecting_stream) => connecting_stream.local_endpoint(),
             State::Listen(listen_stream) => listen_stream.local_endpoint(),
             State::Connected(connected_stream) => connected_stream.local_endpoint(),
-            State::Poisoned => return_errno_with_message!(Errno::EINVAL, "socket is poisoned"),
+            State::Poisoned => {
+                // FIXME: This error code has no Linux equivalent
+                return_errno_with_message!(Errno::EINVAL, "the socket is poisoned");
+            }
         };
         Ok(local_endpoint.into())
     }
@@ -328,15 +335,15 @@ impl Socket for StreamSocket {
     fn peer_addr(&self) -> Result<SocketAddr> {
         let state = self.state.read();
         let remote_endpoint = match &*state {
-            State::Init(init_stream) => {
-                return_errno_with_message!(Errno::EINVAL, "init socket does not have peer")
-            }
             State::Connecting(connecting_stream) => connecting_stream.remote_endpoint(),
-            State::Listen(listen_stream) => {
-                return_errno_with_message!(Errno::EINVAL, "listening socket does not have peer")
-            }
             State::Connected(connected_stream) => connected_stream.remote_endpoint(),
-            State::Poisoned => return_errno_with_message!(Errno::EINVAL, "socket is poisoned"),
+            State::Init(_) | State::Listen(_) => {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
+            }
+            State::Poisoned => {
+                // FIXME: This error code has no Linux equivalent
+                return_errno_with_message!(Errno::EINVAL, "the socket is poisoned");
+            }
         };
         Ok(remote_endpoint.into())
     }

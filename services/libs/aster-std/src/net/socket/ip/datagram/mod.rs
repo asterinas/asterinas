@@ -20,6 +20,7 @@ use self::bound::BoundDatagram;
 use self::unbound::UnboundDatagram;
 
 use super::common::get_ephemeral_endpoint;
+use super::DUMMY_LOCAL_ENDPOINT;
 
 mod bound;
 mod unbound;
@@ -248,18 +249,33 @@ impl Socket for DatagramSocket {
 
     fn addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
-        };
-        Ok(bound_datagram.local_endpoint().into())
+
+        match &*inner {
+            Inner::Unbound(unbound_datagram) => Ok(DUMMY_LOCAL_ENDPOINT.into()),
+            Inner::Bound(bound_datagram) => Ok(bound_datagram.local_endpoint().into()),
+            Inner::Poisoned => {
+                // FIXME: This error code has no Linux equivalent
+                return_errno_with_message!(Errno::EINVAL, "the socket is poisoned");
+            }
+        }
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
-        };
-        Ok(bound_datagram.remote_endpoint()?.into())
+
+        match &*inner {
+            Inner::Unbound(unbound_datagram) => {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
+            }
+            Inner::Bound(bound_datagram) => bound_datagram
+                .remote_endpoint()
+                .map(|endpoint| endpoint.into())
+                .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected")),
+            Inner::Poisoned => {
+                // FIXME: This error code has no Linux equivalent
+                return_errno_with_message!(Errno::EINVAL, "the socket is poisoned");
+            }
+        }
     }
 
     // FIXME: respect RecvFromFlags

@@ -133,13 +133,40 @@ static void do_setup(void)
 	return tests_failed;                                              \
 	}
 
+static struct sockaddr_in saddr = { .sin_port = 0xbeef };
+#define psaddr ((struct sockaddr *)&saddr)
+#define IN_LEN sizeof(struct sockaddr_in)
+
 START_TESTS(unbound)
+{
+	socklen_t alen = IN_LEN;
+	TEST_AND(0, alen == IN_LEN && saddr.sin_port == 0, getsockname, psaddr,
+		 &alen);
+
+	TEST(ENOTCONN, getpeername, psaddr, &alen);
+}
 END_TESTS()
 
 START_TESTS(bound)
+{
+	socklen_t alen = IN_LEN;
+	TEST_AND(0, alen == IN_LEN && saddr.sin_port == C_PORT, getsockname,
+		 psaddr, &alen);
+
+	TEST(ENOTCONN, getpeername, psaddr, &alen);
+}
 END_TESTS()
 
 START_TESTS(connected)
+{
+	socklen_t alen = IN_LEN;
+	saddr.sin_port = C_PORT;
+	TEST_AND(0, alen == IN_LEN && saddr.sin_port != C_PORT, getsockname,
+		 psaddr, &alen);
+
+	TEST_AND(0, alen == IN_LEN && saddr.sin_port == C_PORT, getpeername,
+		 psaddr, &alen);
+}
 END_TESTS()
 
 static int do_tests(void)
