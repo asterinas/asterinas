@@ -135,3 +135,38 @@ FN_TEST(send_and_recv)
 			 saddr.sin_port != C_PORT && buf[0] == 'b');
 }
 END_TEST()
+
+FN_TEST(bind)
+{
+	struct sockaddr *psaddr = (struct sockaddr *)&sk_addr;
+	socklen_t addrlen = sizeof(sk_addr);
+
+	TEST_ERRNO(bind(sk_bound, psaddr, addrlen), EINVAL);
+
+	TEST_ERRNO(bind(sk_connected, psaddr, addrlen), EINVAL);
+}
+END_TEST()
+
+FN_TEST(listen)
+{
+	TEST_ERRNO(listen(sk_unbound, 2), EOPNOTSUPP);
+
+	TEST_ERRNO(listen(sk_bound, 2), EOPNOTSUPP);
+
+	TEST_ERRNO(listen(sk_connected, 2), EOPNOTSUPP);
+}
+END_TEST()
+
+FN_TEST(accept)
+{
+	struct sockaddr_in saddr;
+	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	TEST_ERRNO(accept(sk_unbound, psaddr, &addrlen), EOPNOTSUPP);
+
+	TEST_ERRNO(accept(sk_bound, psaddr, &addrlen), EOPNOTSUPP);
+
+	TEST_ERRNO(accept(sk_connected, psaddr, &addrlen), EOPNOTSUPP);
+}
+END_TEST()

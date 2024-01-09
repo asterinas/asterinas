@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+use smoltcp::socket::tcp::ListenError;
 
 use super::connected::ConnectedStream;
 use crate::{
@@ -57,7 +58,9 @@ impl ListenStream {
         let index = backlog_sockets
             .iter()
             .position(|backlog_socket| backlog_socket.is_active())
-            .ok_or_else(|| Error::with_message(Errno::EAGAIN, "try to accept again"))?;
+            .ok_or_else(|| {
+                Error::with_message(Errno::EAGAIN, "no pending connection is available")
+            })?;
         let active_backlog_socket = backlog_sockets.remove(index);
 
         match BacklogSocket::new(&self.bound_socket) {
@@ -119,6 +122,8 @@ struct BacklogSocket {
 }
 
 impl BacklogSocket {
+    // FIXME: All of the error codes below seem to have no Linux equivalents, and I see no reason
+    // why the error may occur. Perhaps it is better to call `unwrap()` directly?
     fn new(bound_socket: &Arc<AnyBoundSocket>) -> Result<Self> {
         let local_endpoint = bound_socket.local_endpoint().ok_or(Error::with_message(
             Errno::EINVAL,
@@ -133,13 +138,18 @@ impl BacklogSocket {
                 .bind_socket(unbound_socket, bind_port_config)
                 .map_err(|(err, _)| err)?
         };
-        bound_socket.raw_with(|raw_tcp_socket: &mut RawTcpSocket| {
-            raw_tcp_socket
-                .listen(local_endpoint)
-                .map_err(|_| Error::with_message(Errno::EINVAL, "fail to listen"))
-        })?;
 
-        Ok(Self { bound_socket })
+        let result = bound_socket
+            .raw_with(|raw_tcp_socket: &mut RawTcpSocket| raw_tcp_socket.listen(local_endpoint));
+        match result {
+            Ok(()) => Ok(Self { bound_socket }),
+            Err(ListenError::Unaddressable) => {
+                return_errno_with_message!(Errno::EINVAL, "the listening address is invalid")
+            }
+            Err(ListenError::InvalidState) => {
+                return_errno_with_message!(Errno::EINVAL, "the listening socket is invalid")
+            }
+        }
     }
 
     fn is_active(&self) -> bool {
