@@ -96,6 +96,15 @@ impl DatagramSocket {
         self.nonblocking.store(nonblocking, Ordering::SeqCst);
     }
 
+    fn remote_endpoint(&self) -> Option<IpEndpoint> {
+        let inner = self.inner.read();
+
+        match &*inner {
+            Inner::Bound(bound_datagram) => bound_datagram.remote_endpoint(),
+            Inner::Unbound(_) | Inner::Poisoned => None,
+        }
+    }
+
     fn try_bind_empheral(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
         // Fast path
         if let Inner::Bound(_) = &*self.inner.read() {
@@ -120,24 +129,37 @@ impl DatagramSocket {
 
     fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
+
+        let bound_datagram = match &*inner {
+            Inner::Bound(bound_datagram) => bound_datagram,
+            Inner::Unbound(unbound_datagram) => {
+                return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
+            }
+            Inner::Poisoned => {
+                // FIXME: This error code has no Linux equivalent
+                return_errno_with_message!(Errno::EINVAL, "the socket is poisoned");
+            }
         };
+
         let (recv_bytes, remote_endpoint) = bound_datagram.try_recvfrom(buf, flags)?;
         bound_datagram.update_io_events(&self.pollee);
         Ok((recv_bytes, remote_endpoint.into()))
     }
 
-    fn try_sendto(
-        &self,
-        buf: &[u8],
-        remote: Option<IpEndpoint>,
-        flags: SendRecvFlags,
-    ) -> Result<usize> {
+    fn try_sendto(&self, buf: &[u8], remote: &IpEndpoint, flags: SendRecvFlags) -> Result<usize> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
+
+        let bound_datagram = match &*inner {
+            Inner::Bound(bound_datagram) => bound_datagram,
+            Inner::Unbound(unbound_datagram) => {
+                return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
+            }
+            Inner::Poisoned => {
+                // FIXME: This error code has no Linux equivalent
+                return_errno_with_message!(Errno::EINVAL, "the socket is poisoned");
+            }
         };
+
         let sent_bytes = bound_datagram.try_sendto(buf, remote, flags)?;
         bound_datagram.update_io_events(&self.pollee);
         Ok(sent_bytes)
@@ -261,21 +283,10 @@ impl Socket for DatagramSocket {
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
-        let inner = self.inner.read();
-
-        match &*inner {
-            Inner::Unbound(unbound_datagram) => {
-                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
-            }
-            Inner::Bound(bound_datagram) => bound_datagram
-                .remote_endpoint()
-                .map(|endpoint| endpoint.into())
-                .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected")),
-            Inner::Poisoned => {
-                // FIXME: This error code has no Linux equivalent
-                return_errno_with_message!(Errno::EINVAL, "the socket is poisoned");
-            }
-        }
+        self.remote_endpoint()
+            .map(|endpoint| endpoint.into())
+            // FIXME: The error code may not be correct if the socket is poisoned
+            .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected"))
     }
 
     // FIXME: respect RecvFromFlags
@@ -299,15 +310,22 @@ impl Socket for DatagramSocket {
         debug_assert!(flags.is_all_supported());
 
         let remote_endpoint = match remote {
-            Some(remote_addr) => Some(remote_addr.try_into()?),
-            None => None,
+            Some(remote_addr) => {
+                let endpoint = remote_addr.try_into()?;
+                self.try_bind_empheral(&endpoint)?;
+                endpoint
+            }
+            None => self.remote_endpoint().ok_or_else(|| {
+                // FIXME: The error code may not be correct if the socket is poisoned
+                Error::with_message(
+                    Errno::EDESTADDRREQ,
+                    "the destination address is not specified",
+                )
+            })?,
         };
-        if let Some(endpoint) = remote_endpoint {
-            self.try_bind_empheral(&endpoint)?;
-        }
 
         // TODO: Block if the send buffer is full
-        let sent_bytes = self.try_sendto(buf, remote_endpoint, flags)?;
+        let sent_bytes = self.try_sendto(buf, &remote_endpoint, flags)?;
         poll_ifaces();
         Ok(sent_bytes)
     }
