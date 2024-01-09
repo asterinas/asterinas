@@ -276,7 +276,8 @@ impl Socket for StreamSocket {
         let owned_state = mem::replace(&mut *state, State::Poisoned);
         let State::Init(init_stream) = owned_state else {
             *state = owned_state;
-            return_errno_with_message!(Errno::EINVAL, "cannot bind");
+            // FIXME: The error code may not be correct if the socket is poisoned
+            return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
         };
 
         let bound_socket = match init_stream.bind(&endpoint) {
@@ -304,9 +305,17 @@ impl Socket for StreamSocket {
         let mut state = self.state.write();
 
         let owned_state = mem::replace(&mut *state, State::Poisoned);
-        let State::Init(init_stream) = owned_state else {
-            *state = owned_state;
-            return_errno_with_message!(Errno::EINVAL, "cannot listen");
+        let init_stream = match owned_state {
+            State::Init(init_stream) => init_stream,
+            State::Listen(listen_stream) => {
+                *state = State::Listen(listen_stream);
+                return Ok(());
+            }
+            State::Connecting(_) | State::Connected(_) | State::Poisoned => {
+                *state = owned_state;
+                // FIXME: The error code may not be correct if the socket is poisoned
+                return_errno_with_message!(Errno::EINVAL, "the socket is already connected");
+            }
         };
 
         let listen_stream = match init_stream.listen(backlog) {

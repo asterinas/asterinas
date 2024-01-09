@@ -152,6 +152,12 @@ START_TESTS(unbound)
 	// No tests for a successful `sendto` because it causes the socket to be bound
 
 	TEST(EAGAIN, recv, buf, 1, 0);
+
+	// `bind` may succeed, so there are no tests for it
+
+	TEST(EOPNOTSUPP, listen, 2);
+
+	TEST(EOPNOTSUPP, accept, psaddr, &alen);
 }
 END_TESTS()
 
@@ -173,6 +179,12 @@ START_TESTS(bound)
 	saddr.sin_port = 0;
 	TEST_AND(0, alen == IN_LEN && saddr.sin_port == C_PORT, recvfrom, buf,
 		 1, 0, psaddr, &alen);
+
+	TEST(EINVAL, bind, psaddr, IN_LEN);
+
+	TEST(EOPNOTSUPP, listen, 2);
+
+	TEST(EOPNOTSUPP, accept, psaddr, &alen);
 }
 END_TESTS()
 
@@ -189,6 +201,12 @@ START_TESTS(connected)
 	TEST(0, send, buf, 1, 0);
 
 	TEST(EAGAIN, recv, buf, 1, 0);
+
+	TEST(EINVAL, bind, psaddr, IN_LEN);
+
+	TEST(EOPNOTSUPP, listen, 2);
+
+	TEST(EOPNOTSUPP, accept, psaddr, &alen);
 }
 END_TESTS()
 

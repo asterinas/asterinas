@@ -200,6 +200,10 @@ START_TESTS(unbound)
 	TEST(EPIPE, send, buf, 1, 0);
 
 	TEST(ENOTCONN, recv, buf, 1, 0);
+
+	// Both `bind` and `listen` may succeed, so there are no tests for them
+
+	TEST(EINVAL, accept, psaddr, &alen);
 }
 END_TESTS()
 
@@ -214,6 +218,12 @@ START_TESTS(bound)
 	TEST(EPIPE, send, buf, 1, 0);
 
 	TEST(ENOTCONN, recv, buf, 1, 0);
+
+	TEST(EINVAL, bind, psaddr, IN_LEN);
+
+	// `listen` will succeed, so there are no tests for it
+
+	TEST(EINVAL, accept, psaddr, &alen);
 }
 END_TESTS()
 
@@ -228,6 +238,12 @@ START_TESTS(listen)
 	TEST(EPIPE, send, buf, 1, 0);
 
 	TEST(ENOTCONN, recv, buf, 1, 0);
+
+	TEST(EINVAL, bind, psaddr, IN_LEN);
+
+	TEST(0, listen, 2);
+
+	TEST(EAGAIN, accept, psaddr, &alen);
 }
 END_TESTS()
 
@@ -250,6 +266,12 @@ START_TESTS(connected)
 	TEST(0, sendto, buf, 1, 0, psaddr, IN_LEN);
 
 	TEST(EAGAIN, recv, buf, 1, 0);
+
+	TEST(EINVAL, bind, psaddr, IN_LEN);
+
+	TEST(EINVAL, listen, 2);
+
+	TEST(EINVAL, accept, psaddr, &alen);
 }
 END_TESTS()
 
@@ -264,6 +286,13 @@ START_TESTS(accepted)
 
 	// Linux does not store the destination address
 	TEST(0, recvfrom, buf, 1, 0, psaddr, &alen);
+
+	TEST(EINVAL, bind, psaddr, IN_LEN);
+
+	// The second `listen` does nothing but succeed
+	TEST(EINVAL, listen, 2);
+
+	TEST(EINVAL, accept, psaddr, &alen);
 }
 END_TESTS()
 

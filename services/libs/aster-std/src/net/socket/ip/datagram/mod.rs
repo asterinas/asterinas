@@ -48,6 +48,7 @@ impl Inner {
                 ));
             }
             Inner::Poisoned => {
+                // FIXME: This error code has no Linux equivalent
                 return Err((
                     Error::with_message(Errno::EINVAL, "the socket is poisoned"),
                     Inner::Poisoned,
