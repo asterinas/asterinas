@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use takeable::Takeable;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
-use super::common::get_ephemeral_endpoint;
+use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
 use crate::{
     events::{IoEvents, Observer},
     fs::{file_handle::FileLike, utils::StatusFlags},
@@ -237,18 +237,21 @@ impl Socket for DatagramSocket {
 
     fn addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = inner.as_ref() else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
-        };
-        Ok(bound_datagram.local_endpoint().into())
+        match inner.as_ref() {
+            Inner::Unbound(unbound_datagram) => Ok(UNSPECIFIED_LOCAL_ENDPOINT.into()),
+            Inner::Bound(bound_datagram) => Ok(bound_datagram.local_endpoint().into()),
+        }
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
         let Inner::Bound(bound_datagram) = inner.as_ref() else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
+            return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
         };
-        Ok(bound_datagram.remote_endpoint()?.into())
+        bound_datagram
+            .remote_endpoint()
+            .map(|endpoint| endpoint.into())
+            .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected"))
     }
 
     // FIXME: respect RecvFromFlags
