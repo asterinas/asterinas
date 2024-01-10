@@ -147,6 +147,13 @@ impl Vmo<Rights> {
         self.check_rights(Rights::from_bits(R1::BITS).ok_or(Error::new(Errno::EINVAL))?)?;
         Ok(Vmo(self.0, R1::new()))
     }
+
+    /// Commits all pages with write access.
+    pub fn commits_with_write_access(&self) {
+        self.0
+            .ensure_all_pages_exist(&(0..self.0.size()), true)
+            .unwrap();
+    }
 }
 
 impl VmIo for Vmo<Rights> {

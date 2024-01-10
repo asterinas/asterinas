@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use aster_frame::config::CHILD_RUN_FIRST;
 use aster_frame::sync::Mutex;
 use aster_frame::vm::{VmFrame, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace};
 use core::ops::Range;
@@ -240,7 +241,13 @@ impl VmMapping {
         let child_vmo = {
             let parent_vmo = vmo.dup().unwrap();
             let vmo_size = parent_vmo.size();
-            VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?
+            let child_vmo = VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?;
+
+            if !CHILD_RUN_FIRST {
+                // Temporary solution for https://github.com/jinzhao-dev/jinux/issues/531
+                child_vmo.commits_with_write_access();
+            }
+            child_vmo
         };
 
         let new_inner = {

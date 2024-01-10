@@ -1,12 +1,13 @@
 use super::SpinLock;
 use crate::arch::timer::add_timeout_list;
 use crate::config::TIMER_FREQ;
+use crate::trap::disable_local;
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::time::Duration;
 
-use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
+use crate::task::{add_task, current_task, yield_now, Task, TaskStatus, WakeUp};
 
 /// A wait queue.
 ///
@@ -99,7 +100,8 @@ impl WaitQueue {
             if let Some(ref timer_callback) = timer_callback
                 && timer_callback.is_expired()
             {
-                return None;
+                self.dequeue(&waiter);
+                return cond();
             }
 
             waiter.wait();
@@ -164,16 +166,15 @@ impl Waiter {
 
     /// make self into wait status until be called wake up
     pub fn wait(&self) {
-        self.is_woken_up.store(false, Ordering::SeqCst);
+        debug_assert!(core::ptr::eq(
+            self.task.as_ref(),
+            current_task().unwrap().as_ref()
+        ));
         self.task.inner_exclusive_access().task_status = TaskStatus::Sleeping;
         while !self.is_woken_up.load(Ordering::SeqCst) {
-            schedule();
+            yield_now();
         }
-        self.task.inner_exclusive_access().task_status = TaskStatus::Runnable;
-    }
-
-    pub fn is_woken_up(&self) -> bool {
-        self.is_woken_up.load(Ordering::SeqCst)
+        self.is_woken_up.store(false, Ordering::SeqCst);
     }
 
     pub fn wake_up(&self) {
@@ -181,6 +182,8 @@ impl Waiter {
             self.is_woken_up
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         {
+            let guard = disable_local();
+            self.task.wakeup();
             add_task(self.task.clone());
         }
     }
@@ -193,6 +196,6 @@ impl Waiter {
 bitflags! {
     pub struct WaiterFlag: u32 {
         const EXCLUSIVE         = 1 << 0;
-        const INTERRUPTIABLE    = 1 << 1;
+        const INTERRUPTIABLE    = 1 << 1; // not used
     }
 }

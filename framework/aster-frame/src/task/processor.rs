@@ -75,16 +75,16 @@ fn idle_task_ctx_ptr() -> *mut TaskContext {
 /// a Rust keyword.
 pub fn yield_now() {
     if let Some(ref cur_task) = current_task() {
-        locked_global_scheduler(false).before_yield(cur_task);
+        locked_global_scheduler().before_yield(cur_task);
     }
     schedule();
 }
 
 pub fn yield_to(task: Arc<Task>) {
     if let Some(ref cur_task) = current_task() {
-        locked_global_scheduler(false).yield_to(cur_task, task);
+        locked_global_scheduler().yield_to(cur_task, task);
     } else {
-        add_task(task, false);
+        add_task(task);
     }
     schedule();
 }
@@ -105,7 +105,7 @@ pub fn schedule() {
 }
 
 fn switch_to_next() {
-    match fetch_next_task(true) {
+    match fetch_next_task() {
         None => {
             // todo: idle_balance across cpus
         }
@@ -124,7 +124,7 @@ fn should_preempt_cur_task() -> bool {
     current_task_without_irq_disabling().map_or(true, |ref cur_task| {
         !cur_task.status().is_runnable()
             || cur_task.need_resched()
-            || locked_global_scheduler(true).should_preempt(cur_task)
+            || locked_global_scheduler().should_preempt(cur_task)
     })
 }
 
@@ -158,7 +158,7 @@ pub fn switch_to(next_task: Arc<Task>) {
         None => idle_task_ctx_ptr(),
         Some(ref cur_task) => {
             if cur_task.status().is_runnable() {
-                add_task(cur_task.clone(), true);
+                add_task(cur_task.clone());
             }
             &mut cur_task.inner_exclusive_access().ctx as *mut TaskContext
         }
@@ -178,5 +178,5 @@ fn scheduler_tick() {
     let Some(ref cur_task) = current_task_without_irq_disabling() else {
         return;
     };
-    locked_global_scheduler(true).tick(cur_task);
+    locked_global_scheduler().tick(cur_task);
 }
