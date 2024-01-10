@@ -5,41 +5,9 @@ use core::ops::Range;
 
 use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 
-use super::VmoRightsOp;
-use super::{
-    options::{VmoCowChild, VmoSliceChild},
-    Vmo, VmoChildOptions,
-};
+use super::{Vmo, VmoChildOptions, VmoRightsOp};
 
 impl<R: TRights> Vmo<TRightSet<R>> {
-    /// Creates a new slice VMO through a set of VMO child options.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let parent = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
-    /// let child_size = parent.size();
-    /// let child = parent.new_slice_child(0..child_size).alloc().unwrap();
-    /// assert!(child.size() == child_size);
-    /// ```
-    ///
-    /// For more details on the available options, see `VmoChildOptions`.
-    ///
-    /// # Access rights
-    ///
-    /// This method requires the Dup right.
-    ///
-    /// The new VMO child will be of the same capability flavor as the parent;
-    /// so are the access rights.
-    #[require(R > Dup)]
-    pub fn new_slice_child(
-        &self,
-        range: Range<usize>,
-    ) -> Result<VmoChildOptions<TRightSet<R>, VmoSliceChild>> {
-        let dup_self = self.dup()?;
-        Ok(VmoChildOptions::new_slice(dup_self, range))
-    }
-
     /// Creates a new COW VMO through a set of VMO child options.
     ///
     /// # Example
@@ -61,10 +29,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// The child will be given the access rights of the parent
     /// plus the Write right.
     #[require(R > Dup)]
-    pub fn new_cow_child(
-        &self,
-        range: Range<usize>,
-    ) -> Result<VmoChildOptions<TRightSet<R>, VmoCowChild>> {
+    pub fn new_cow_child(&self, range: Range<usize>) -> Result<VmoChildOptions<TRightSet<R>>> {
         let dup_self = self.dup()?;
         Ok(VmoChildOptions::new_cow(dup_self, range))
     }

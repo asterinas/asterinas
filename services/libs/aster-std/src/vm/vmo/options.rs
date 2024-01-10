@@ -1,20 +1,17 @@
 //! Options for allocating root and child VMOs.
 
-use core::marker::PhantomData;
 use core::ops::Range;
 
 use align_ext::AlignExt;
 use aster_frame::vm::{VmAllocOptions, VmFrame};
-use aster_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 
 use crate::prelude::*;
 
 use crate::vm::vmo::get_inherited_frames_from_parent;
 use crate::vm::vmo::{VmoInner, Vmo_};
-use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
+use aster_rights::{Rights, TRightSet, TRights, Write};
 
-use super::VmoRightsOp;
 use super::{Pager, Vmo, VmoFlags};
 
 /// Options for allocating a root VMO.
@@ -157,7 +154,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
     }
 }
 
-/// Options for allocating a child VMO out of a parent VMO.
+/// Options for allocating a COW(copy-on-write) child VMO out of a parent VMO.
 ///
 /// # Examples
 ///
@@ -169,7 +166,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
-/// let child_vmo = parent_vmo.new_slice_child(0..PAGE_SIZE)
+/// let child_vmo = parent_vmo.new_cow_child(0..PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
 /// assert!(parent_vmo.rights() == child_vmo.rights());
@@ -184,15 +181,14 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 /// let parent_vmo: Vmo<Full> = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
-/// let child_vmo: Vmo<Full> = parent_vmo.new_slice_child(0..PAGE_SIZE)
+/// let child_vmo: Vmo<Full> = parent_vmo.new_cow_child(0..PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
 /// assert!(parent_vmo.rights() == child_vmo.rights());
 /// ```
 ///
-/// Normally, a child VMO is initially given the same set of access rights
-/// as its parent (as shown above). But there is one exception:
-/// if the child VMO is created as a COW child, then it is granted the Write
+/// Normally, a cow child VMO is initially given the same set of access rights
+/// as its parent (as shown above). Futhermore, the child is granted the Write
 /// right regardless of whether the parent is writable or not.
 ///
 /// ```
@@ -224,7 +220,6 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 ///
 /// One can set VMO flags for a child VMO. Currently, the only flag that is
 /// valid when creating VMO children is `VmoFlags::RESIZABLE`.
-/// Note that a slice VMO child and its parent cannot not be resizable.
 ///
 /// ```rust
 /// use aster_std::vm::{PAGE_SIZE, VmoOptions};
@@ -239,79 +234,13 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 ///     .unwrap();
 /// assert!(parent_vmo.rights() == child_vmo.rights());
 /// ```
-pub struct VmoChildOptions<R, C> {
+pub struct VmoChildOptions<R> {
     parent: Vmo<R>,
     range: Range<usize>,
     flags: VmoFlags,
-    // Specifies whether the child is a slice or a COW
-    marker: PhantomData<C>,
 }
 
-impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoSliceChild> {
-    /// Creates a default set of options for creating a slice VMO child.
-    ///
-    /// A slice child of a VMO, which has direct access to a range of memory
-    /// pages in the parent VMO. In other words, any updates of the parent will
-    /// reflect on the child, and vice versa.
-    ///
-    /// The range of a child must be within that of the parent.
-    #[require(R > Dup)]
-    pub fn new_slice(parent: Vmo<TRightSet<R>>, range: Range<usize>) -> Self {
-        Self {
-            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
-            parent,
-            range,
-            marker: PhantomData,
-        }
-    }
-}
-
-impl VmoChildOptions<Rights, VmoSliceChild> {
-    /// Creates a default set of options for creating a slice VMO child.
-    ///
-    /// User should ensure parent have dup rights, otherwise this function will panic
-    ///
-    /// A slice child of a VMO, which has direct access to a range of memory
-    /// pages in the parent VMO. In other words, any updates of the parent will
-    /// reflect on the child, and vice versa.
-    ///
-    /// The range of a child must be within that of the parent.
-    pub fn new_slice_rights(parent: Vmo<Rights>, range: Range<usize>) -> Self {
-        parent
-            .check_rights(Rights::DUP)
-            .expect("function new_slice_rights should called with rights Dup");
-        Self {
-            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
-            parent,
-            range,
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<R> VmoChildOptions<R, VmoSliceChild> {
-    /// Flags that a VMO child inherits from its parent.
-    pub const PARENT_FLAGS_MASK: VmoFlags =
-        VmoFlags::from_bits(VmoFlags::CONTIGUOUS.bits | VmoFlags::DMA.bits).unwrap();
-    /// Flags that a VMO child may differ from its parent.
-    pub const CHILD_FLAGS_MASK: VmoFlags = VmoFlags::empty();
-
-    /// Sets the VMO flags.
-    ///
-    /// Only the flags among `Self::CHILD_FLAGS_MASK` may be set through this
-    /// method.
-    ///
-    /// To set `VmoFlags::RESIZABLE`, the child must be COW.
-    ///
-    /// The default value is `VmoFlags::empty()`.
-    pub fn flags(mut self, flags: VmoFlags) -> Self {
-        let inherited_flags = self.flags & Self::PARENT_FLAGS_MASK;
-        self.flags = inherited_flags | (flags & Self::CHILD_FLAGS_MASK);
-        self
-    }
-}
-
-impl<R> VmoChildOptions<R, VmoCowChild> {
+impl<R> VmoChildOptions<R> {
     /// Flags that a VMO child inherits from its parent.
     pub const PARENT_FLAGS_MASK: VmoFlags =
         VmoFlags::from_bits(VmoFlags::CONTIGUOUS.bits | VmoFlags::DMA.bits).unwrap();
@@ -328,10 +257,9 @@ impl<R> VmoChildOptions<R, VmoCowChild> {
     /// Any pages that are beyond the parent's range are initially all zeros.
     pub fn new_cow(parent: Vmo<R>, range: Range<usize>) -> Self {
         Self {
-            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
+            flags: parent.flags(),
             parent,
             range,
-            marker: PhantomData,
         }
     }
 
@@ -350,7 +278,7 @@ impl<R> VmoChildOptions<R, VmoCowChild> {
     }
 }
 
-impl VmoChildOptions<Rights, VmoSliceChild> {
+impl VmoChildOptions<Rights> {
     /// Allocates the child VMO.
     ///
     /// # Access rights
@@ -364,50 +292,12 @@ impl VmoChildOptions<Rights, VmoSliceChild> {
             ..
         } = self;
         let Vmo(parent_vmo_, parent_rights) = parent;
-        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Slice)?;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags)?;
         Ok(Vmo(Arc::new(child_vmo_), parent_rights))
     }
 }
 
-impl VmoChildOptions<Rights, VmoCowChild> {
-    /// Allocates the child VMO.
-    ///
-    /// # Access rights
-    ///
-    /// The child VMO is initially assigned all the parent's access rights.
-    pub fn alloc(self) -> Result<Vmo<Rights>> {
-        let VmoChildOptions {
-            parent,
-            range,
-            flags,
-            ..
-        } = self;
-        let Vmo(parent_vmo_, parent_rights) = parent;
-        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Cow)?;
-        Ok(Vmo(Arc::new(child_vmo_), parent_rights))
-    }
-}
-
-impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoSliceChild> {
-    /// Allocates the child VMO.
-    ///
-    /// # Access rights
-    ///
-    /// The child VMO is initially assigned all the parent's access rights.
-    pub fn alloc(self) -> Result<Vmo<TRightSet<R>>> {
-        let VmoChildOptions {
-            parent,
-            range,
-            flags,
-            ..
-        } = self;
-        let Vmo(parent_vmo_, parent_rights) = parent;
-        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Slice)?;
-        Ok(Vmo(Arc::new(child_vmo_), parent_rights))
-    }
-}
-
-impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoCowChild> {
+impl<R: TRights> VmoChildOptions<TRightSet<R>> {
     /// Allocates the child VMO.
     ///
     /// # Access rights
@@ -426,23 +316,16 @@ impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoCowChild> {
             ..
         } = self;
         let Vmo(parent_vmo_, _) = parent;
-        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags, ChildType::Cow)?;
+        let child_vmo_ = alloc_child_vmo_(parent_vmo_, range, flags)?;
         let right = SetExtendOp::<R, Write>::new();
         Ok(Vmo(Arc::new(child_vmo_), TRightSet(right)))
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ChildType {
-    Cow,
-    Slice,
 }
 
 fn alloc_child_vmo_(
     parent_vmo_: Arc<Vmo_>,
     range: Range<usize>,
     child_flags: VmoFlags,
-    child_type: ChildType,
 ) -> Result<Vmo_> {
     let child_vmo_start = range.start;
     let child_vmo_end = range.end;
@@ -455,30 +338,12 @@ fn alloc_child_vmo_(
 
     let is_cow = {
         let parent_vmo_inner = parent_vmo_.inner.lock();
-        match child_type {
-            ChildType::Slice => {
-                // A slice child should be inside parent vmo's range
-                debug_assert!(child_vmo_end <= parent_vmo_inner.size);
-                if child_vmo_end > parent_vmo_inner.size {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
-                        "slice child vmo cannot exceed parent vmo's size"
-                    );
-                }
-                false
-            }
-            ChildType::Cow => {
-                // A copy on Write child should intersect with parent vmo
-                debug_assert!(range.start <= parent_vmo_inner.size);
-                if range.start > parent_vmo_inner.size {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
-                        "COW vmo should overlap with its parent"
-                    );
-                }
-                true
-            }
+        // A copy on Write child should intersect with parent vmo
+        debug_assert!(range.start <= parent_vmo_inner.size);
+        if range.start > parent_vmo_inner.size {
+            return_errno_with_message!(Errno::EINVAL, "COW vmo should overlap with its parent");
         }
+        true
     };
     let parent_page_idx_offset = range.start / PAGE_SIZE;
     let inherited_end = range.end.min(parent_vmo_size);
@@ -502,19 +367,6 @@ fn alloc_child_vmo_(
         inner: Mutex::new(vmo_inner),
     })
 }
-
-/// A type to specify the "type" of a child, which is either a slice or a COW.
-pub trait VmoChildType {}
-
-/// A type to mark a child is slice.
-#[derive(Copy, Clone, Debug)]
-pub struct VmoSliceChild;
-impl VmoChildType for VmoSliceChild {}
-
-/// A type to mark a child is COW.
-#[derive(Copy, Clone, Debug)]
-pub struct VmoCowChild;
-impl VmoChildType for VmoCowChild {}
 
 #[if_cfg_ktest]
 mod test {
@@ -551,21 +403,6 @@ mod test {
         vmo.write_bytes(222, &[0x12, 0x34, 0x56, 0x78]).unwrap();
         let read_val: u32 = vmo.read_val(222).unwrap();
         assert!(read_val == 0x78563412)
-    }
-
-    #[ktest]
-    fn slice_child() {
-        let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
-        let parent_dup = parent.dup().unwrap();
-        let slice_child = VmoChildOptions::new_slice(parent_dup, 0..PAGE_SIZE)
-            .alloc()
-            .unwrap();
-        // write parent, read child
-        parent.write_val(1, &42u8).unwrap();
-        assert!(slice_child.read_val::<u8>(1).unwrap() == 42);
-        // write child, read parent
-        slice_child.write_val(99, &0x1234u32).unwrap();
-        assert!(parent.read_val::<u32>(99).unwrap() == 0x1234);
     }
 
     #[ktest]

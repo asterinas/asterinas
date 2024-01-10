@@ -48,6 +48,8 @@ struct VmMappingInner {
     map_to_addr: Vaddr,
     /// is destroyed
     is_destroyed: bool,
+
+    is_shared: bool,
     /// The pages already mapped. The key is the page index in vmo.
     mapped_pages: BTreeSet<usize>,
     /// The permission of each page. The key is the page index in vmo.
@@ -67,6 +69,7 @@ impl VmMapping {
             offset,
             align,
             can_overwrite,
+            is_shared,
         } = option;
         let Vmar(parent_vmar, _) = parent;
         let vmo_size = vmo.size();
@@ -100,6 +103,7 @@ impl VmMapping {
             is_destroyed: false,
             mapped_pages: BTreeSet::new(),
             page_perms,
+            is_shared,
         };
 
         Ok(Self {
@@ -234,31 +238,36 @@ impl VmMapping {
         self.inner.lock().protect(vm_space, perms, range)
     }
 
-    pub(super) fn new_cow(&self, new_parent: &Arc<Vmar_>) -> Result<VmMapping> {
+    pub(super) fn new_fork(&self, new_parent: &Arc<Vmar_>) -> Result<VmMapping> {
         let VmMapping { inner, vmo, .. } = self;
 
-        let child_vmo = {
-            let parent_vmo = vmo.dup().unwrap();
-            let vmo_size = parent_vmo.size();
-            VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?
-        };
-
-        let new_inner = {
-            let inner = self.inner.lock();
-            VmMappingInner {
-                vmo_offset: inner.vmo_offset,
-                map_size: inner.map_size,
-                map_to_addr: inner.map_to_addr,
-                is_destroyed: inner.is_destroyed,
-                mapped_pages: BTreeSet::new(),
-                page_perms: inner.page_perms.clone(),
-            }
+        let (mapped_vmo, new_inner) = {
+            let inner = inner.lock();
+            let mapped_vmo = if inner.is_shared {
+                vmo.dup().unwrap()
+            } else {
+                let parent_vmo = vmo.dup().unwrap();
+                let vmo_size = parent_vmo.size();
+                VmoChildOptions::new_cow(parent_vmo, 0..vmo_size).alloc()?
+            };
+            (
+                mapped_vmo,
+                VmMappingInner {
+                    vmo_offset: inner.vmo_offset,
+                    map_size: inner.map_size,
+                    map_to_addr: inner.map_to_addr,
+                    is_destroyed: inner.is_destroyed,
+                    is_shared: inner.is_shared,
+                    mapped_pages: BTreeSet::new(),
+                    page_perms: inner.page_perms.clone(),
+                },
+            )
         };
 
         Ok(VmMapping {
             inner: Mutex::new(new_inner),
             parent: Arc::downgrade(new_parent),
-            vmo: child_vmo,
+            vmo: mapped_vmo,
         })
     }
 
@@ -498,6 +507,7 @@ pub struct VmarMapOptions<R1, R2> {
     offset: Option<usize>,
     align: usize,
     can_overwrite: bool,
+    is_shared: bool,
 }
 
 impl<R1, R2> VmarMapOptions<R1, R2> {
@@ -518,6 +528,7 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
             offset: None,
             align: PAGE_SIZE,
             can_overwrite: false,
+            is_shared: false,
         }
     }
 
@@ -529,6 +540,11 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
     /// The default value is zero.
     pub fn vmo_offset(mut self, offset: usize) -> Self {
         self.vmo_offset = offset;
+        self
+    }
+
+    pub fn is_shared(mut self, is_shared: bool) -> Self {
+        self.is_shared = is_shared;
         self
     }
 

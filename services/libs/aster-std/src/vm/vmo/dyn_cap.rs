@@ -6,40 +6,9 @@ use aster_frame::vm::VmIo;
 
 use aster_rights::{Rights, TRights};
 
-use super::VmoRightsOp;
-use super::{
-    options::{VmoCowChild, VmoSliceChild},
-    Vmo, VmoChildOptions,
-};
+use super::{Vmo, VmoChildOptions, VmoRightsOp};
 
 impl Vmo<Rights> {
-    /// Creates a new slice VMO through a set of VMO child options.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let parent = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
-    /// let child_size = parent.size();
-    /// let child = parent.new_slice_child(0..child_size).alloc().unwrap();
-    /// assert!(child.size() == child_size);
-    /// ```
-    ///
-    /// For more details on the available options, see `VmoChildOptions`.
-    ///
-    /// # Access rights
-    ///
-    /// This method requires the Dup right.
-    ///
-    /// The new VMO child will be of the same capability flavor as the parent;
-    /// so are the access rights.
-    pub fn new_slice_child(
-        &self,
-        range: Range<usize>,
-    ) -> Result<VmoChildOptions<Rights, VmoSliceChild>> {
-        let dup_self = self.dup()?;
-        Ok(VmoChildOptions::new_slice_rights(dup_self, range))
-    }
-
     /// Creates a new COW VMO through a set of VMO child options.
     ///
     /// # Example
@@ -60,10 +29,7 @@ impl Vmo<Rights> {
     /// The new VMO child will be of the same capability flavor as the parent.
     /// The child will be given the access rights of the parent
     /// plus the Write right.
-    pub fn new_cow_child(
-        &self,
-        range: Range<usize>,
-    ) -> Result<VmoChildOptions<Rights, VmoCowChild>> {
+    pub fn new_cow_child(&self, range: Range<usize>) -> Result<VmoChildOptions<Rights>> {
         let dup_self = self.dup()?;
         Ok(VmoChildOptions::new_cow(dup_self, range))
     }
