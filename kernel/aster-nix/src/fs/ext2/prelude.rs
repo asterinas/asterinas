@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub(super) use core::{
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Range},
     time::Duration,
 };
 

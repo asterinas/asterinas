@@ -243,23 +243,22 @@ impl SuperBlock {
     }
 
     /// Returns the number of free blocks.
-    pub fn free_blocks(&self) -> u32 {
+    pub fn free_blocks_count(&self) -> u32 {
         self.free_blocks_count
     }
 
     /// Increase the number of free blocks.
-    pub(super) fn inc_free_blocks(&mut self) {
-        self.free_blocks_count += 1;
+    pub(super) fn inc_free_blocks(&mut self, count: u32) {
+        self.free_blocks_count = self.free_blocks_count.checked_add(count).unwrap();
     }
 
     /// Decrease the number of free blocks.
-    pub(super) fn dec_free_blocks(&mut self) {
-        debug_assert!(self.free_blocks_count > 0);
-        self.free_blocks_count -= 1;
+    pub(super) fn dec_free_blocks(&mut self, count: u32) {
+        self.free_blocks_count = self.free_blocks_count.checked_sub(count).unwrap();
     }
 
     /// Returns the number of free inodes.
-    pub fn free_inodes(&self) -> u32 {
+    pub fn free_inodes_count(&self) -> u32 {
         self.free_inodes_count
     }
 
