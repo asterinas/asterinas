@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub(super) use core::{
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, Range},
     time::Duration,
 };
 
@@ -12,7 +12,7 @@ pub(super) use aster_block::{
     BlockDevice, BLOCK_SIZE,
 };
 pub(super) use aster_frame::{
-    sync::{RwMutex, RwMutexReadGuard},
+    sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
     vm::{VmAllocOptions, VmFrame, VmIo, VmSegment},
 };
 pub(super) use aster_rights::Full;

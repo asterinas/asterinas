@@ -8,6 +8,7 @@ SCRIPT_DIR=/regression
 cd ${SCRIPT_DIR}
 
 ./shell_cmd.sh
+./ext2.sh
 ./process.sh
 ./network.sh
 
