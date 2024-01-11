@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::fmt::Debug;
+use core::{fmt::Debug, ops::Range};
 
 use bitvec::prelude::BitVec;
 
@@ -60,6 +60,74 @@ impl IdAlloc {
             Some(id)
         } else {
             None
+        }
+    }
+
+    /// Allocates a consecutive range of new `id`s.
+    ///
+    /// The `count` is the number of consecutive `id`s to allocate. If it is 0, return `None`.
+    ///
+    /// If allocation is not possible, it returns `None`.
+    ///
+    /// TODO: Choose a more efficient strategy.
+    pub fn alloc_consecutive(&mut self, count: usize) -> Option<Range<usize>> {
+        if count == 0 {
+            return None;
+        }
+
+        // Scan the bitmap from the position `first_available_id`
+        // for the first `count` number of consecutive 0's.
+        let allocated_range = {
+            // Invariance: all bits within `curr_range` are 0's
+            let mut curr_range = self.first_available_id..self.first_available_id + 1;
+            while curr_range.len() < count && curr_range.end < self.bitset.len() {
+                if !self.is_allocated(curr_range.end) {
+                    curr_range.end += 1;
+                } else {
+                    curr_range = curr_range.end + 1..curr_range.end + 1;
+                }
+            }
+
+            if curr_range.len() < count {
+                return None;
+            }
+
+            curr_range
+        };
+
+        // Set every bit to 1 within the allocated range
+        for id in allocated_range.clone() {
+            self.bitset.set(id, true);
+        }
+
+        // In case we need to update first_available_id
+        if self.is_allocated(self.first_available_id) {
+            self.first_available_id = (allocated_range.end..self.bitset.len())
+                .find(|&i| !self.bitset[i])
+                .map_or(self.bitset.len(), |i| i);
+        }
+
+        Some(allocated_range)
+    }
+
+    /// Releases the consecutive range of allocated `id`s.
+    ///
+    /// # Panic
+    ///
+    /// If the `range` is out of bounds, this method will panic.
+    pub fn free_consecutive(&mut self, range: Range<usize>) {
+        if range.is_empty() {
+            return;
+        }
+
+        let range_start = range.start;
+        for id in range {
+            debug_assert!(self.is_allocated(id));
+            self.bitset.set(id, false);
+        }
+
+        if range_start < self.first_available_id {
+            self.first_available_id = range_start
         }
     }
 

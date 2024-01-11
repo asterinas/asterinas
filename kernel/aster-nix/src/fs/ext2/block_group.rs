@@ -3,6 +3,7 @@
 use aster_util::id_allocator::IdAlloc;
 
 use super::{
+    block_ptr::Ext2Bid,
     fs::Ext2,
     inode::{Inode, InodeDesc, RawInode},
     prelude::*,
@@ -18,7 +19,7 @@ pub(super) struct BlockGroup {
 }
 
 struct BlockGroupImpl {
-    inode_table_bid: Bid,
+    inode_table_bid: Ext2Bid,
     raw_inodes_size: usize,
     inner: RwMutex<Inner>,
     fs: Weak<Ext2>,
@@ -47,12 +48,12 @@ impl BlockGroup {
                     GroupDescriptor::from(raw_descriptor)
                 };
 
-                let get_bitmap = |bid: Bid, capacity: usize| -> Result<IdAlloc> {
+                let get_bitmap = |bid: Ext2Bid, capacity: usize| -> Result<IdAlloc> {
                     if capacity > BLOCK_SIZE * 8 {
                         return_errno_with_message!(Errno::EINVAL, "bad bitmap");
                     }
                     let mut buf = vec![0u8; BLOCK_SIZE];
-                    block_device.read_bytes(bid.to_offset(), &mut buf)?;
+                    block_device.read_bytes(bid as usize * BLOCK_SIZE, &mut buf)?;
                     Ok(IdAlloc::from_bytes_with_capacity(&buf, capacity))
                 };
 
@@ -173,27 +174,38 @@ impl BlockGroup {
         inner.inode_cache.remove(&inode_idx);
     }
 
-    /// Allocates and returns a block index.
-    pub fn alloc_block(&self) -> Option<u32> {
+    /// Allocates and returns a consecutive range of block indices.
+    ///
+    /// Returns `None` if the allocation fails.
+    ///
+    /// The actual allocated range size may be smaller than the requested `count` if
+    /// insufficient consecutive blocks are available.
+    pub fn alloc_blocks(&self, count: Ext2Bid) -> Option<Range<Ext2Bid>> {
         // The fast path
         if self.bg_impl.inner.read().metadata.free_blocks_count() == 0 {
             return None;
         }
 
         // The slow path
-        self.bg_impl.inner.write().metadata.alloc_block()
+        self.bg_impl.inner.write().metadata.alloc_blocks(count)
     }
 
-    /// Frees the allocated block idx.
+    /// Frees the consecutive range of allocated block indices.
     ///
     /// # Panic
     ///
-    /// If `block_idx` has not been allocated before, then the method panics.
-    pub fn free_block(&self, block_idx: u32) {
-        let mut inner = self.bg_impl.inner.write();
-        assert!(inner.metadata.is_block_allocated(block_idx));
+    ///  If the `range` is out of bounds, this method will panic.
+    ///  If one of the `idx` in `range` has not been allocated before, then the method panics.
+    pub fn free_blocks(&self, range: Range<Ext2Bid>) {
+        if range.is_empty() {
+            return;
+        }
 
-        inner.metadata.free_block(block_idx);
+        let mut inner = self.bg_impl.inner.write();
+        for idx in range.clone() {
+            assert!(inner.metadata.is_block_allocated(idx));
+        }
+        inner.metadata.free_blocks(range);
     }
 
     /// Writes back the raw inode metadata to the raw inode metadata cache.
@@ -206,7 +218,7 @@ impl BlockGroup {
     }
 
     /// Writes back the metadata of this group.
-    pub fn sync_metadata(&self, super_block: &SuperBlock) -> Result<()> {
+    pub fn sync_metadata(&self) -> Result<()> {
         if !self.bg_impl.inner.read().metadata.is_dirty() {
             return Ok(());
         }
@@ -219,14 +231,14 @@ impl BlockGroup {
 
         let mut bio_waiter = BioWaiter::new();
         // Writes back the inode bitmap.
-        let inode_bitmap_bid = inner.metadata.descriptor.inode_bitmap_bid;
+        let inode_bitmap_bid = Bid::new(inner.metadata.descriptor.inode_bitmap_bid as u64);
         bio_waiter.concat(fs.block_device().write_bytes_async(
             inode_bitmap_bid.to_offset(),
             inner.metadata.inode_bitmap.as_bytes(),
         )?);
 
         // Writes back the block bitmap.
-        let block_bitmap_bid = inner.metadata.descriptor.block_bitmap_bid;
+        let block_bitmap_bid = Bid::new(inner.metadata.descriptor.block_bitmap_bid as u64);
         bio_waiter.concat(fs.block_device().write_bytes_async(
             block_bitmap_bid.to_offset(),
             inner.metadata.block_bitmap.as_bytes(),
@@ -307,12 +319,12 @@ impl Debug for BlockGroup {
 
 impl PageCacheBackend for BlockGroupImpl {
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
-        let bid = self.inode_table_bid + idx as u64;
+        let bid = self.inode_table_bid + idx as Ext2Bid;
         self.fs.upgrade().unwrap().read_block_async(bid, frame)
     }
 
     fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
-        let bid = self.inode_table_bid + idx as u64;
+        let bid = self.inode_table_bid + idx as Ext2Bid;
         self.fs.upgrade().unwrap().write_block_async(bid, frame)
     }
 
@@ -356,19 +368,28 @@ impl GroupMetadata {
         }
     }
 
-    pub fn is_block_allocated(&self, block_idx: u32) -> bool {
+    pub fn is_block_allocated(&self, block_idx: Ext2Bid) -> bool {
         self.block_bitmap.is_allocated(block_idx as usize)
     }
 
-    pub fn alloc_block(&mut self) -> Option<u32> {
-        let block_idx = self.block_bitmap.alloc()?;
-        self.dec_free_blocks();
-        Some(block_idx as u32)
+    pub fn alloc_blocks(&mut self, count: Ext2Bid) -> Option<Range<Ext2Bid>> {
+        let mut current_count = count.min(self.free_blocks_count() as Ext2Bid) as usize;
+        while current_count > 0 {
+            let Some(range) = self.block_bitmap.alloc_consecutive(current_count) else {
+                // It is efficient to halve the value
+                current_count /= 2;
+                continue;
+            };
+            self.dec_free_blocks(current_count as u16);
+            return Some((range.start as Ext2Bid)..(range.end as Ext2Bid));
+        }
+        None
     }
 
-    pub fn free_block(&mut self, block_idx: u32) {
-        self.block_bitmap.free(block_idx as usize);
-        self.inc_free_blocks();
+    pub fn free_blocks(&mut self, range: Range<Ext2Bid>) {
+        self.block_bitmap
+            .free_consecutive((range.start as usize)..(range.end as usize));
+        self.inc_free_blocks(range.len() as u16);
     }
 
     pub fn free_inodes_count(&self) -> u16 {
@@ -388,13 +409,20 @@ impl GroupMetadata {
         self.descriptor.free_inodes_count -= 1;
     }
 
-    pub fn inc_free_blocks(&mut self) {
-        self.descriptor.free_blocks_count += 1;
+    pub fn inc_free_blocks(&mut self, count: u16) {
+        self.descriptor.free_blocks_count = self
+            .descriptor
+            .free_blocks_count
+            .checked_add(count)
+            .unwrap();
     }
 
-    pub fn dec_free_blocks(&mut self) {
-        debug_assert!(self.descriptor.free_blocks_count > 0);
-        self.descriptor.free_blocks_count -= 1;
+    pub fn dec_free_blocks(&mut self, count: u16) {
+        self.descriptor.free_blocks_count = self
+            .descriptor
+            .free_blocks_count
+            .checked_sub(count)
+            .unwrap();
     }
 
     pub fn inc_dirs(&mut self) {
@@ -414,11 +442,11 @@ impl GroupMetadata {
 #[derive(Clone, Copy, Debug)]
 struct GroupDescriptor {
     /// Blocks usage bitmap block
-    block_bitmap_bid: Bid,
+    block_bitmap_bid: Ext2Bid,
     /// Inodes usage bitmap block
-    inode_bitmap_bid: Bid,
+    inode_bitmap_bid: Ext2Bid,
     /// Starting block of inode table
-    inode_table_bid: Bid,
+    inode_table_bid: Ext2Bid,
     /// Number of free blocks in group
     free_blocks_count: u16,
     /// Number of free inodes in group
@@ -430,9 +458,9 @@ struct GroupDescriptor {
 impl From<RawGroupDescriptor> for GroupDescriptor {
     fn from(desc: RawGroupDescriptor) -> Self {
         Self {
-            block_bitmap_bid: Bid::new(desc.block_bitmap as _),
-            inode_bitmap_bid: Bid::new(desc.inode_bitmap as _),
-            inode_table_bid: Bid::new(desc.inode_table as _),
+            block_bitmap_bid: desc.block_bitmap,
+            inode_bitmap_bid: desc.inode_bitmap,
+            inode_table_bid: desc.inode_table,
             free_blocks_count: desc.free_blocks_count,
             free_inodes_count: desc.free_inodes_count,
             dirs_count: desc.dirs_count,
@@ -461,9 +489,9 @@ pub(super) struct RawGroupDescriptor {
 impl From<&GroupDescriptor> for RawGroupDescriptor {
     fn from(desc: &GroupDescriptor) -> Self {
         Self {
-            block_bitmap: desc.block_bitmap_bid.to_raw() as _,
-            inode_bitmap: desc.inode_bitmap_bid.to_raw() as _,
-            inode_table: desc.inode_table_bid.to_raw() as _,
+            block_bitmap: desc.block_bitmap_bid,
+            inode_bitmap: desc.inode_bitmap_bid,
+            inode_table: desc.inode_table_bid,
             free_blocks_count: desc.free_blocks_count,
             free_inodes_count: desc.free_inodes_count,
             dirs_count: desc.dirs_count,

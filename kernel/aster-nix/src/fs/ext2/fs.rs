@@ -2,6 +2,7 @@
 
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
+    block_ptr::Ext2Bid,
     inode::{FilePerm, FileType, Inode, InodeDesc, RawInode},
     prelude::*,
     super_block::{RawSuperBlock, SuperBlock, SUPER_BLOCK_OFFSET},
@@ -17,7 +18,7 @@ pub struct Ext2 {
     super_block: RwMutex<Dirty<SuperBlock>>,
     block_groups: Vec<BlockGroup>,
     inodes_per_group: u32,
-    blocks_per_group: u32,
+    blocks_per_group: Ext2Bid,
     inode_size: usize,
     block_size: usize,
     group_descriptors_segment: VmSegment,
@@ -112,7 +113,7 @@ impl Ext2 {
     }
 
     /// Returns the number of blocks in each block group.
-    pub fn blocks_per_group(&self) -> u32 {
+    pub fn blocks_per_group(&self) -> Ext2Bid {
         self.blocks_per_group
     }
 
@@ -208,46 +209,93 @@ impl Ext2 {
         Ok(())
     }
 
-    /// Allocates a new block.
+    /// Allocates a consecutive range of blocks.
     ///
-    /// Attempts to allocate from the `block_group_idx` group first.
+    /// The returned allocated range size may be smaller than the requested `count` if
+    /// insufficient consecutive blocks are available.
+    ///
+    /// Attempts to allocate blocks from the `block_group_idx` group first.
     /// If allocation is not possible from this group, then search the remaining groups.
-    pub(super) fn alloc_block(&self, block_group_idx: usize) -> Result<Bid> {
-        let mut block_group_idx = block_group_idx;
-        if block_group_idx >= self.block_groups.len() {
-            return_errno_with_message!(Errno::EINVAL, "invalid block group idx");
+    pub(super) fn alloc_blocks(
+        &self,
+        mut block_group_idx: usize,
+        count: Ext2Bid,
+    ) -> Option<Range<Ext2Bid>> {
+        if count > self.super_block.read().free_blocks_count() {
+            return None;
         }
 
+        let mut remaining_count = count;
+        let mut allocated_range: Option<Range<Ext2Bid>> = None;
         for _ in 0..self.block_groups.len() {
+            if remaining_count == 0 {
+                break;
+            }
+
             if block_group_idx >= self.block_groups.len() {
                 block_group_idx = 0;
             }
             let block_group = &self.block_groups[block_group_idx];
-            if let Some(block_idx) = block_group.alloc_block() {
-                let bid = block_group_idx as u32 * self.blocks_per_group + block_idx;
-                self.super_block.write().dec_free_blocks();
-                return Ok(Bid::new(bid as _));
+            if let Some(range_in_group) = block_group.alloc_blocks(remaining_count) {
+                let device_range = {
+                    let start =
+                        (block_group_idx as Ext2Bid) * self.blocks_per_group + range_in_group.start;
+                    start..start + (range_in_group.len() as Ext2Bid)
+                };
+                match allocated_range {
+                    Some(ref mut range) => {
+                        if range.end == device_range.start {
+                            // Accumulate consecutive bids
+                            range.end = device_range.end;
+                            remaining_count -= range_in_group.len() as Ext2Bid;
+                        } else {
+                            block_group.free_blocks(range_in_group);
+                            break;
+                        }
+                    }
+                    None => {
+                        allocated_range = Some(device_range);
+                    }
+                }
             }
             block_group_idx += 1;
         }
 
-        return_errno_with_message!(Errno::ENOSPC, "no space on device");
+        if let Some(range) = allocated_range.as_ref() {
+            self.super_block
+                .write()
+                .dec_free_blocks(range.len() as Ext2Bid);
+        }
+        allocated_range
     }
 
-    /// Frees a block.
-    pub(super) fn free_block(&self, bid: Bid) -> Result<()> {
-        let (_, block_group) = self.block_group_of_bid(bid)?;
-        let block_idx = self.block_idx(bid);
-        // In order to prevent value underflow, it is necessary to increment
-        // the free block counter prior to freeing the block.
-        self.super_block.write().inc_free_blocks();
-        block_group.free_block(block_idx);
+    /// Frees a range of blocks.
+    pub(super) fn free_blocks(&self, range: Range<Ext2Bid>) -> Result<()> {
+        let mut current_range = range.clone();
+        while !current_range.is_empty() {
+            let (_, block_group) = self.block_group_of_bid(current_range.start)?;
+            let range_in_group = {
+                let start = self.block_idx(current_range.start);
+                let len = (current_range.len() as Ext2Bid).min(self.blocks_per_group - start);
+                start..start + len
+            };
+            // In order to prevent value underflow, it is necessary to increment
+            // the free block counter prior to freeing the block.
+            self.super_block
+                .write()
+                .inc_free_blocks(range_in_group.len() as Ext2Bid);
+            block_group.free_blocks(range_in_group.clone());
+            current_range.start += range_in_group.len() as Ext2Bid
+        }
+
         Ok(())
     }
 
     /// Reads contiguous blocks starting from the `bid` synchronously.
-    pub(super) fn read_blocks(&self, bid: Bid, segment: &VmSegment) -> Result<()> {
-        let status = self.block_device.read_blocks_sync(bid, segment)?;
+    pub(super) fn read_blocks(&self, bid: Ext2Bid, segment: &VmSegment) -> Result<()> {
+        let status = self
+            .block_device
+            .read_blocks_sync(Bid::new(bid as u64), segment)?;
         match status {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
@@ -255,8 +303,10 @@ impl Ext2 {
     }
 
     /// Reads one block indicated by the `bid` synchronously.
-    pub(super) fn read_block(&self, bid: Bid, frame: &VmFrame) -> Result<()> {
-        let status = self.block_device.read_block_sync(bid, frame)?;
+    pub(super) fn read_block(&self, bid: Ext2Bid, frame: &VmFrame) -> Result<()> {
+        let status = self
+            .block_device
+            .read_block_sync(Bid::new(bid as u64), frame)?;
         match status {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
@@ -264,14 +314,16 @@ impl Ext2 {
     }
 
     /// Reads one block indicated by the `bid` asynchronously.
-    pub(super) fn read_block_async(&self, bid: Bid, frame: &VmFrame) -> Result<BioWaiter> {
-        let waiter = self.block_device.read_block(bid, frame)?;
+    pub(super) fn read_block_async(&self, bid: Ext2Bid, frame: &VmFrame) -> Result<BioWaiter> {
+        let waiter = self.block_device.read_block(Bid::new(bid as u64), frame)?;
         Ok(waiter)
     }
 
     /// Writes contiguous blocks starting from the `bid` synchronously.
-    pub(super) fn write_blocks(&self, bid: Bid, segment: &VmSegment) -> Result<()> {
-        let status = self.block_device.write_blocks_sync(bid, segment)?;
+    pub(super) fn write_blocks(&self, bid: Ext2Bid, segment: &VmSegment) -> Result<()> {
+        let status = self
+            .block_device
+            .write_blocks_sync(Bid::new(bid as u64), segment)?;
         match status {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
@@ -279,8 +331,10 @@ impl Ext2 {
     }
 
     /// Writes one block indicated by the `bid` synchronously.
-    pub(super) fn write_block(&self, bid: Bid, frame: &VmFrame) -> Result<()> {
-        let status = self.block_device.write_block_sync(bid, frame)?;
+    pub(super) fn write_block(&self, bid: Ext2Bid, frame: &VmFrame) -> Result<()> {
+        let status = self
+            .block_device
+            .write_block_sync(Bid::new(bid as u64), frame)?;
         match status {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
@@ -288,8 +342,8 @@ impl Ext2 {
     }
 
     /// Writes one block indicated by the `bid` asynchronously.
-    pub(super) fn write_block_async(&self, bid: Bid, frame: &VmFrame) -> Result<BioWaiter> {
-        let waiter = self.block_device.write_block(bid, frame)?;
+    pub(super) fn write_block_async(&self, bid: Ext2Bid, frame: &VmFrame) -> Result<BioWaiter> {
+        let waiter = self.block_device.write_block(Bid::new(bid as u64), frame)?;
         Ok(waiter)
     }
 
@@ -303,7 +357,7 @@ impl Ext2 {
         let mut super_block = self.super_block.write();
         // Writes back the metadata of block groups
         for block_group in &self.block_groups {
-            block_group.sync_metadata(&super_block)?;
+            block_group.sync_metadata()?;
         }
 
         let mut bio_waiter = BioWaiter::new();
@@ -353,10 +407,10 @@ impl Ext2 {
     }
 
     #[inline]
-    fn block_group_of_bid(&self, bid: Bid) -> Result<(usize, &BlockGroup)> {
-        let block_group_idx = (bid.to_raw() / (self.blocks_per_group as u64)) as usize;
+    fn block_group_of_bid(&self, bid: Ext2Bid) -> Result<(usize, &BlockGroup)> {
+        let block_group_idx = (bid / self.blocks_per_group) as usize;
         if block_group_idx >= self.block_groups.len() {
-            return_errno!(Errno::ENOENT);
+            return_errno_with_message!(Errno::EINVAL, "invalid bid");
         }
         Ok((block_group_idx, &self.block_groups[block_group_idx]))
     }
@@ -376,7 +430,7 @@ impl Ext2 {
     }
 
     #[inline]
-    fn block_idx(&self, bid: Bid) -> u32 {
-        (bid.to_raw() as u32) % self.blocks_per_group
+    fn block_idx(&self, bid: Ext2Bid) -> Ext2Bid {
+        bid % self.blocks_per_group
     }
 }
