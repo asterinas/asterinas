@@ -2,6 +2,7 @@
 
 use bitvec::prelude::BitVec;
 use core::fmt::Debug;
+use core::ops::Range;
 
 /// An id allocator implemented by the bitmap.
 /// The true bit implies that the id is allocated, and vice versa.
@@ -59,6 +60,78 @@ impl IdAlloc {
             Some(id)
         } else {
             None
+        }
+    }
+
+    /// Allocates a consecutive range of new `id`s.
+    ///
+    /// The `count` is the number of consecutive `id`s to allocate. If it is 0, return `None`.
+    ///
+    /// If allocation is not possible, it returns `None`.
+    pub fn alloc_range(&mut self, count: usize) -> Option<Range<usize>> {
+        if count == 0 {
+            return None;
+        }
+
+        let mut allocated_range: Option<Range<usize>> = None;
+        for id in self.first_available_id..self.bitset.len() {
+            // Not enough space left to allocate the range
+            let allocated_count = allocated_range.as_ref().map_or(0, |range| range.len());
+            if count - allocated_count > self.bitset.len() - id {
+                return None;
+            }
+
+            // Reset the range
+            if self.is_allocated(id) {
+                allocated_range = None;
+                continue;
+            }
+
+            match allocated_range {
+                Some(ref mut range) => {
+                    range.end += 1;
+                }
+                None => {
+                    allocated_range = Some(id..id + 1);
+                }
+            }
+
+            let range = allocated_range.as_ref().unwrap();
+            if range.len() == count {
+                for id in range.clone() {
+                    self.bitset.set(id, true);
+                }
+
+                // Update the first available id if it is allocated.
+                if self.is_allocated(self.first_available_id) {
+                    self.first_available_id = (range.end..self.bitset.len())
+                        .find(|&i| !self.bitset[i])
+                        .map_or(self.bitset.len(), |i| i);
+                }
+                break;
+            }
+        }
+
+        allocated_range
+    }
+
+    /// Releases the consecutive range of allocated `id`s.
+    ///
+    /// # Panic
+    ///
+    /// If the `range` is out of bounds, this method will panic.
+    pub fn free_range(&mut self, range: Range<usize>) {
+        if range.is_empty() {
+            return;
+        }
+
+        for id in range.clone() {
+            debug_assert!(self.is_allocated(id));
+            self.bitset.set(id, false);
+        }
+
+        if range.start < self.first_available_id {
+            self.first_available_id = range.start
         }
     }
 

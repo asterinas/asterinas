@@ -32,10 +32,10 @@ impl From<RwMutexReadGuard<'_, Dirty<Ext2SuperBlock>>> for SuperBlock {
             magic: EXT2_MAGIC as _,
             bsize: ext2_sb.block_size(),
             blocks: ext2_sb.total_blocks() as _,
-            bfree: ext2_sb.free_blocks() as _,
-            bavail: ext2_sb.free_blocks() as _,
+            bfree: ext2_sb.free_blocks_count() as _,
+            bavail: ext2_sb.free_blocks_count() as _,
             files: ext2_sb.total_inodes() as _,
-            ffree: ext2_sb.free_inodes() as _,
+            ffree: ext2_sb.free_inodes_count() as _,
             fsid: 0, // TODO
             namelen: NAME_MAX,
             frsize: ext2_sb.fragment_size(),

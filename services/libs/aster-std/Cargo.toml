@@ -59,7 +59,7 @@ core2 = { version = "0.4", default_features = false, features = ["alloc"] }
 lending-iterator = "0.1.7"
 spin = "0.9.4"
 vte = "0.10"
-lru = "0.9.0"
+lru = "0.12.1"
 log = "0.4"
 getrandom = { version = "0.2.10", default-features = false, features = [
     "rdrand",

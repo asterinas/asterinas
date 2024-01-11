@@ -171,27 +171,38 @@ impl BlockGroup {
         inner.inode_cache.remove(&inode_idx);
     }
 
-    /// Allocates and returns a block index.
-    pub fn alloc_block(&self) -> Option<u32> {
+    /// Allocates and returns a consecutive range of block indices.
+    ///
+    /// Returns `None` if the allocation fails.
+    ///
+    /// The actual allocated range size may be smaller than the requested `count` if
+    /// insufficient consecutive blocks are available.
+    pub fn alloc_blocks(&self, count: u32) -> Option<Range<u32>> {
         // The fast path
         if self.bg_impl.inner.read().metadata.free_blocks_count() == 0 {
             return None;
         }
 
         // The slow path
-        self.bg_impl.inner.write().metadata.alloc_block()
+        self.bg_impl.inner.write().metadata.alloc_blocks(count)
     }
 
-    /// Frees the allocated block idx.
+    /// Frees the consecutive range of allocated block indices.
     ///
     /// # Panic
     ///
-    /// If `block_idx` has not been allocated before, then the method panics.
-    pub fn free_block(&self, block_idx: u32) {
-        let mut inner = self.bg_impl.inner.write();
-        assert!(inner.metadata.is_block_allocated(block_idx));
+    ///  If the `range` is out of bounds, this method will panic.
+    ///  If one of the `idx` in `range` has not been allocated before, then the method panics.
+    pub fn free_blocks(&self, range: Range<u32>) {
+        if range.is_empty() {
+            return;
+        }
 
-        inner.metadata.free_block(block_idx);
+        let mut inner = self.bg_impl.inner.write();
+        for idx in range.clone() {
+            assert!(inner.metadata.is_block_allocated(idx));
+        }
+        inner.metadata.free_blocks(range);
     }
 
     /// Writes back the raw inode metadata to the raw inode metadata cache.
@@ -306,13 +317,19 @@ impl Debug for BlockGroup {
 impl PageCacheBackend for BlockGroupImpl {
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         let bid = self.inode_table_bid + idx as u64;
-        self.fs.upgrade().unwrap().read_block(bid, frame)?;
+        self.fs
+            .upgrade()
+            .unwrap()
+            .read_block(bid.to_raw() as u32, frame)?;
         Ok(())
     }
 
     fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         let bid = self.inode_table_bid + idx as u64;
-        self.fs.upgrade().unwrap().write_block(bid, frame)?;
+        self.fs
+            .upgrade()
+            .unwrap()
+            .write_block(bid.to_raw() as u32, frame)?;
         Ok(())
     }
 
@@ -362,17 +379,23 @@ impl GroupMetadata {
         self.block_bitmap.is_allocated(block_idx as usize)
     }
 
-    pub fn alloc_block(&mut self) -> Option<u32> {
-        let Some(block_idx) = self.block_bitmap.alloc() else {
-            return None;
-        };
-        self.dec_free_blocks();
-        Some(block_idx as u32)
+    pub fn alloc_blocks(&mut self, count: u32) -> Option<Range<u32>> {
+        let mut current_count = count.min(self.free_blocks_count() as u32) as usize;
+        while current_count > 0 {
+            let Some(range) = self.block_bitmap.alloc_range(current_count) else {
+                current_count -= 1;
+                continue;
+            };
+            self.dec_free_blocks(current_count as u16);
+            return Some((range.start as u32)..(range.end as u32));
+        }
+        None
     }
 
-    pub fn free_block(&mut self, block_idx: u32) {
-        self.block_bitmap.free(block_idx as usize);
-        self.inc_free_blocks();
+    pub fn free_blocks(&mut self, range: Range<u32>) {
+        self.block_bitmap
+            .free_range((range.start as usize)..(range.end as usize));
+        self.inc_free_blocks(range.len() as u16);
     }
 
     pub fn free_inodes_count(&self) -> u16 {
@@ -392,13 +415,20 @@ impl GroupMetadata {
         self.descriptor.free_inodes_count -= 1;
     }
 
-    pub fn inc_free_blocks(&mut self) {
-        self.descriptor.free_blocks_count += 1;
+    pub fn inc_free_blocks(&mut self, count: u16) {
+        self.descriptor.free_blocks_count = self
+            .descriptor
+            .free_blocks_count
+            .checked_add(count)
+            .unwrap();
     }
 
-    pub fn dec_free_blocks(&mut self) {
-        debug_assert!(self.descriptor.free_blocks_count > 0);
-        self.descriptor.free_blocks_count -= 1;
+    pub fn dec_free_blocks(&mut self, count: u16) {
+        self.descriptor.free_blocks_count = self
+            .descriptor
+            .free_blocks_count
+            .checked_sub(count)
+            .unwrap();
     }
 
     pub fn inc_dirs(&mut self) {

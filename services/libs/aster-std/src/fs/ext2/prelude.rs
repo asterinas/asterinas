@@ -20,6 +20,6 @@ pub(super) use aster_frame::vm::VmAllocOptions;
 pub(super) use aster_frame::vm::VmIo;
 pub(super) use aster_frame::vm::{VmFrame, VmSegment};
 pub(super) use aster_rights::Full;
-pub(super) use core::ops::{Deref, DerefMut};
+pub(super) use core::ops::{Deref, DerefMut, Range};
 pub(super) use core::time::Duration;
 pub(super) use static_assertions::const_assert;
