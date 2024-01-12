@@ -25,11 +25,12 @@ pub(super) enum SocketFamily {
 
 impl AnyUnboundSocket {
     pub fn new_tcp() -> Self {
-        let raw_tcp_socket = {
+        let mut raw_tcp_socket = {
             let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; RECV_BUF_LEN]);
             let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; SEND_BUF_LEN]);
             RawTcpSocket::new(rx_buffer, tx_buffer)
         };
+        raw_tcp_socket.set_ack_delay(None);
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Tcp(raw_tcp_socket),
         }
