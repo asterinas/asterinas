@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright(c) 2023-2024 Intel Corporation.
+
 #![no_std]
 #![allow(dead_code)]
 #![allow(unused_variables)]

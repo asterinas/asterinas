@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2023-2024 Intel Corporation.
+
 .section .text
 
 # Mask used to control which part of the guest TD GPR and XMM
