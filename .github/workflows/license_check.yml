@@ -1,0 +1,14 @@
+name: Check License
+on:
+  pull_request:
+  push:
+    branches: 
+      - main
+jobs:
+  check-license-lines:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: Check License
+      # Check license lines of each file in this repository.
+      uses: apache/skywalking-eyes@v0.5.0

@@ -1,0 +1,96 @@
+# This is the configuration file for github action License Eye Header. The action is used 
+# to check that each source file contains the header lines. For the configuration details, 
+# see https://github.com/marketplace/actions/license-eye-header#configurations.
+
+header:
+  # Files are licensed under MPL-2.0, by default.
+  - paths: 
+      - '**/*.rs'
+      - '**/*.S'
+      - '**/*.s'
+      - '**/*.c'
+      - '**/*.sh'
+      - '**/Makefile'
+      - '**/Dockerfile.*'
+    paths-ignore:
+      - 'regression/apps'
+      # These boot headers are from internet.
+      - 'framework/aster-frame/src/arch/x86/boot/multiboot/header.S'
+      - 'framework/aster-frame/src/arch/x86/boot/multiboot2/header.S'
+      - 'framework/libs/linux-bzimage/setup/src/x86/amd64_efi/header.S'
+      - 'framework/libs/linux-bzimage/setup/src/x86/legacy_i386/header.S'
+      # cargo-component is licensed under Apache-2.0 or MIT license.
+      - 'services/libs/comp-sys/cargo-component'
+      # tdx-guest is licensed under BSD-3-clause license.
+      - 'framework/libs/tdx-guest'
+      # The below file is under MIT license
+      - 'services/comps/virtio/src/device/input/mod.rs'
+    license:
+      content: |
+        SPDX-License-Identifier: MPL-2.0
+    language: 
+      Assembly: 
+        extensions:
+          - ".S"
+        comment_style_id: SlashAsterisk
+
+  # Below are files licensed under licenses other than MPL-2.0.
+
+  # Files under tdx-guest are licensed under BSD-3-Clause license.
+  - paths: 
+      - 'framework/libs/tdx-guest/**'
+    paths-ignore:
+      - 'Cargo.toml'
+      - '.gitignore'
+    license:
+      content: |
+        SPDX-License-Identifier: BSD-3-Clause
+        Copyright(c) 2023-2024 Intel Corporation.
+
+  # Files under cargo-component are licensed under Apache-2.0 or MIT license.
+  - paths:
+      - 'services/libs/comp-sys/cargo-component/**/*.rs'
+    paths-ignore:
+      # These directories do not contain test source code and are just for test input.
+      - '**/tests/duplicate_lib_name_test/**'
+      - '**/tests/missing_toml_test/**'
+      - '**/tests/reexport_test/**'
+      - '**/tests/regression_test/**'
+      - '**/tests/trait_method_test/**'
+      - '**/tests/violate_policy_test/**'
+      
+    license:
+      content: |
+        Licensed under the Apache License, Version 2.0 or the MIT License.
+        Copyright (C) 2023-2024 Ant Group.
+
+  # The below files are under MIT license.
+  - paths: 
+      - 'services/comps/virtio/src/device/input/mod.rs'
+    license:
+      # The content must macth the full license header.
+      content: |
+        Modified from input.rs in virtio-drivers project
+
+        MIT License
+
+        Copyright (c) 2022-2023 Ant Group
+        Copyright (c) 2019-2020 rCore Developers
+
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
