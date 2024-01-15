@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright(c) 2023-2024 Intel Corporation.
+
 //! The TDVMCALL helps invoke services from the host VMM. From the perspective of the host VMM, the TDVMCALL is a trap-like, VM exit into
 //! the host VMM, reported via the SEAMRET instruction flow.
 //! By design, after the SEAMRET, the host VMM services the request specified in the parameters

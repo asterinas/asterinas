@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright(c) 2023-2024 Intel Corporation.
+
 //! The TDCALL instruction causes a VM exit to the Intel TDX module.
 //! It is used to call guest-side Intel TDX functions. For more information about
 //! TDCALL, please refer to the [Intel® TDX Module v1.5 ABI Specification](https://cdrdv2.intel.com/v1/dl/getContent/733579)
