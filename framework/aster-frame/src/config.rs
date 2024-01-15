@@ -17,12 +17,16 @@ pub const PAGE_SIZE_BITS: usize = 0xc;
 pub const KVA_START: usize = (usize::MAX) << PAGE_SIZE_BITS;
 
 pub const DEFAULT_LOG_LEVEL: Level = Level::Error;
+/// Whether to enable the debug log in scheduling.
+/// Only work when `DEFAULT_LOG_LEVEL` is `Debug`.
+/// Excessive scheduling logs can overwhelm other logs, so disabled by default.
+pub const SCHED_DEBUG_LOG: bool = false;
 /// This value represent the base timer frequency in Hz
 pub const TIMER_FREQ: u64 = 500;
 
 pub const REAL_TIME_TASK_PRI: u16 = 100;
 
-/// Whether the child process should run first in scheduling.
+/// Whether the child process should run first for the first time in scheduling.
 /// This option provides a preference for scheduling, not a guarantee.
 /// todo: defaulted as false
 pub const CHILD_RUN_FIRST: bool = true;

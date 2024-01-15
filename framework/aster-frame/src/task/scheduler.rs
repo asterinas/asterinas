@@ -1,3 +1,4 @@
+use crate::config::SCHED_DEBUG_LOG;
 use crate::prelude::*;
 use crate::sync::{SpinLock, SpinLockGuard};
 use crate::task::{NeedResched, ReadPriority, Task};
@@ -9,6 +10,8 @@ lazy_static! {
     pub(crate) static ref GLOBAL_SCHEDULER: SpinLock<GlobalScheduler> =
         SpinLock::new(GlobalScheduler { scheduler: None });
 }
+
+pub type TaskNumber = u32;
 
 /// A scheduler for tasks.
 ///
@@ -42,21 +45,25 @@ pub trait Scheduler<T: NeedResched + ReadPriority = Task>: Sync + Send {
     /// # Arguments
     ///
     /// * `cur_task` - the task to be charged, must be held by the processor, and not in runqueue
-    ///
-    /// # Returns
-    ///
-    /// `true` if the `task` need a rescudule.
-    fn tick(&self, cur_task: &Arc<T>) -> bool;
+    fn tick(&self, cur_task: &Arc<T>);
 
     /// Modify states before yielding the current task.
     /// Set the `need_resched` flag of the current task.
     fn before_yield(&self, cur_task: &Arc<T>) {
         cur_task.set_need_resched();
-        debug!("task yielded");
+        if SCHED_DEBUG_LOG {
+            debug!("task yielded");
+        }
     }
 
     /// Yield the current task to the target task at best effort.
     fn yield_to(&self, cur_task: &Arc<T>, target_task: Arc<T>);
+
+    #[cfg(any(test, ktest))]
+    fn task_num(&self) -> TaskNumber;
+
+    #[cfg(any(test, ktest))]
+    fn contains(&self, task: &Arc<T>) -> bool;
 }
 
 pub struct GlobalScheduler {
@@ -90,8 +97,8 @@ impl GlobalScheduler {
         self.scheduler.unwrap().should_preempt(task)
     }
 
-    pub fn tick(&self, task: &Arc<Task>) -> bool {
-        self.scheduler.unwrap().tick(task)
+    pub fn tick(&self, task: &Arc<Task>) {
+        self.scheduler.unwrap().tick(task);
     }
 
     pub fn before_yield(&self, task: &Arc<Task>) {
@@ -135,13 +142,15 @@ pub(super) fn locked_global_scheduler<'a>(
 /// * `irq_disabled` - whether interrupts are disabled now.
 pub fn fetch_next_task(irq_disabled: bool) -> Option<Arc<Task>> {
     let task = locked_global_scheduler(irq_disabled).fetch_next();
-    debug!("fetch next task: {:#X}", {
-        if let Some(task) = &task {
-            Arc::as_ptr(task) as usize
-        } else {
-            0
-        }
-    });
+    if SCHED_DEBUG_LOG {
+        debug!("fetch next task: {:#X}", {
+            if let Some(task) = &task {
+                Arc::as_ptr(task) as usize
+            } else {
+                0
+            }
+        });
+    }
     task
 }
 
@@ -153,7 +162,9 @@ pub fn fetch_next_task(irq_disabled: bool) -> Option<Arc<Task>> {
 /// * `irq_disabled` - whether interrupts are disabled now.
 pub fn add_task(task: Arc<Task>, irq_disabled: bool) {
     locked_global_scheduler(irq_disabled).enqueue(task.clone());
-    debug!("add task: {:#X}", Arc::as_ptr(&task) as usize);
+    if SCHED_DEBUG_LOG {
+        debug!("add task: {:#X}", Arc::as_ptr(&task) as usize);
+    }
 }
 
 /// Remove the task and all its related information from the scheduler.
@@ -164,5 +175,7 @@ pub fn add_task(task: Arc<Task>, irq_disabled: bool) {
 /// * `irq_disabled` - whether interrupts are disabled now.
 pub fn remove_task(task: &Arc<Task>, irq_disabled: bool) {
     locked_global_scheduler(irq_disabled).remove(task);
-    debug!("remove task: {:#X}", Arc::as_ptr(task) as usize);
+    if SCHED_DEBUG_LOG {
+        debug!("remove task: {:#X}", Arc::as_ptr(task) as usize);
+    }
 }

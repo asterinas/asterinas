@@ -41,6 +41,7 @@ smoltcp = { version = "0.9.1", default-features = false, features = [
     "socket-raw",
     "socket-dhcpv4",
 ] }
+bitmaps = { version="3.2.0", default-features = false }
 ktest = { path = "../../../framework/libs/ktest" }
 tdx-guest = { path = "../../../framework/libs/tdx-guest", optional = true }
 
@@ -51,6 +52,7 @@ xmas-elf = "0.8.0"
 bitflags = "1.3"
 ringbuf = { version = "0.3.2", default-features = false, features = ["alloc"] }
 keyable-arc = { path = "../keyable-arc" }
+hashbrown = { version = "0.14", default_features = true, features = ["nightly"]}
 # unzip initramfs
 libflate = { git = "https://github.com/asterinas/libflate", rev = "b781da6", features = [
     "no_std",

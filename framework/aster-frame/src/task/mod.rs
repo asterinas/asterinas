@@ -12,7 +12,7 @@ pub use self::nice::Nice;
 pub use self::preempt::{in_atomic, preemptible, DisablePreemptGuard};
 pub use self::priority::Priority;
 pub use self::processor::{current_task, schedule, switch_to, try_preempt, yield_now};
-pub use self::scheduler::{add_task, remove_task, set_scheduler, Scheduler};
+pub use self::scheduler::{add_task, remove_task, set_scheduler, Scheduler, TaskNumber};
 pub use self::task::{
     NeedResched, ReadPriority, Task, TaskAdapter, TaskOptions, TaskStatus, WakeUp,
 };

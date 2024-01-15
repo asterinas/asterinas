@@ -1,7 +1,8 @@
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::AtomicU32;
 
 use crate::prelude::*;
 use aster_frame::task::{NeedResched, ReadPriority, Scheduler, Task, TaskAdapter};
+use core::sync::atomic::Ordering::Relaxed;
 use intrusive_collections::{linked_list::CursorMut, LinkedList};
 
 /// The preempt scheduler
@@ -15,7 +16,8 @@ pub struct PreemptiveRRScheduler {
     real_time_tasks: SpinLock<LinkedList<TaskAdapter>>,
     /// Tasks with a priority greater than or equal to 100 are regarded as normal tasks.
     normal_tasks: SpinLock<LinkedList<TaskAdapter>>,
-    num_tasks: AtomicUsize,
+    /// The total number of tasks in the scheduler.
+    num_tasks: AtomicU32,
 }
 
 impl PreemptiveRRScheduler {
@@ -42,8 +44,7 @@ impl PreemptiveRRScheduler {
 
     fn enqueue_at(&self, task: Arc<Task>, front: bool) {
         task.clear_need_resched();
-        self.num_tasks
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        self.num_tasks.fetch_add(1, Relaxed);
         let mut target = if task.is_real_time() {
             self.real_time_tasks.lock_irq_disabled()
         } else {
@@ -55,6 +56,14 @@ impl PreemptiveRRScheduler {
             target.push_back(task);
         }
     }
+
+    fn target_queue(&self, task: &Arc<Task>) -> SpinLockGuard<'_, LinkedList<TaskAdapter>> {
+        if task.is_real_time() {
+            self.real_time_tasks.lock_irq_disabled()
+        } else {
+            self.normal_tasks.lock_irq_disabled()
+        }
+    }
 }
 
 impl Scheduler for PreemptiveRRScheduler {
@@ -63,19 +72,15 @@ impl Scheduler for PreemptiveRRScheduler {
     }
 
     fn remove(&self, task: &Arc<Task>) -> bool {
-        let mut target = if task.is_real_time() {
-            self.real_time_tasks.lock_irq_disabled()
-        } else {
-            self.normal_tasks.lock_irq_disabled()
-        };
-        let found = Self::rm_task_from_queue(task, target.cursor_mut());
-        let tmp = target.cursor_mut();
+        let found = Self::rm_task_from_queue(task, self.target_queue(task).cursor_mut());
+        if found {
+            self.num_tasks.fetch_sub(1, Relaxed);
+        }
         found
     }
 
     fn pick_next_task(&self) -> Option<Arc<Task>> {
-        self.num_tasks
-            .fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
+        self.num_tasks.fetch_sub(1, Relaxed);
         if !self.real_time_tasks.lock_irq_disabled().is_empty() {
             self.real_time_tasks.lock_irq_disabled().pop_front()
         } else {
@@ -88,12 +93,28 @@ impl Scheduler for PreemptiveRRScheduler {
             || !task.is_real_time() && !self.real_time_tasks.lock_irq_disabled().is_empty()
     }
 
-    fn tick(&self, task: &Arc<Task>) -> bool {
-        task.need_resched()
-    }
+    fn tick(&self, task: &Arc<Task>) {}
 
     fn yield_to(&self, cur_task: &Arc<Task>, target_task: Arc<Task>) {
         self.before_yield(cur_task);
         self.enqueue_at(target_task, true);
+    }
+
+    #[cfg(any(test, ktest))]
+    fn task_num(&self) -> aster_frame::task::TaskNumber {
+        self.num_tasks.load(Relaxed)
+    }
+
+    #[cfg(any(test, ktest))]
+    fn contains(&self, task: &Arc<Task>) -> bool {
+        let target = self.target_queue(task);
+        let cursor = &mut target.cursor();
+        while let Some(t) = cursor.get() {
+            if t == task.as_ref() {
+                return true;
+            }
+            cursor.move_next();
+        }
+        false
     }
 }
