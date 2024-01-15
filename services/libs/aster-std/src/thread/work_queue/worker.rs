@@ -43,7 +43,7 @@ impl Worker {
             cpu_affinity.add(bound_cpu);
             let mut priority = Priority::normal();
             if worker_pool.upgrade().unwrap().is_high_priority() {
-                priority = Priority::high();
+                priority = Priority::high_rt();
             }
             let bound_thread = Thread::new_kernel_thread(
                 ThreadOptions::new(task_fn)

@@ -17,7 +17,11 @@ impl Priority {
         Self::new(139)
     }
 
-    pub const fn low() -> Self {
+    pub const fn low_normal() -> Self {
+        Self::new(130)
+    }
+
+    pub const fn high_normal() -> Self {
         Self::new(110)
     }
 
@@ -25,7 +29,11 @@ impl Priority {
         Self::new(100)
     }
 
-    pub const fn high() -> Self {
+    pub const fn low_rt() -> Self {
+        Self::new(90)
+    }
+
+    pub const fn high_rt() -> Self {
         Self::new(10)
     }
 
