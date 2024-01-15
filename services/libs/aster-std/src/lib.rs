@@ -119,7 +119,8 @@ fn init_thread() {
 /// first process never return
 #[controlled]
 pub fn run_first_process() -> ! {
-    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread));
+    let prio = aster_frame::task::Priority::low_normal();
+    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread).priority(prio));
     unreachable!()
 }
 
