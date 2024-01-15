@@ -1,0 +1,61 @@
+# This is the configuration file for github action License Eye Header. The action is used 
+# to check that each source file contains the license header lines. For the configuration 
+# details, see https://github.com/marketplace/actions/license-eye-header#configurations.
+
+header:
+  # Files are licensed under MPL-2.0, by default.
+  - paths: 
+      - '**/*.rs'
+      - '**/*.S'
+      - '**/*.s'
+      - '**/*.c'
+      - '**/*.sh'
+      - '**/Makefile'
+      - '**/Dockerfile.*'
+    paths-ignore:
+      # These directories are licensed under licenses other than MPL-2.0.
+      - 'services/libs/comp-sys/cargo-component'
+      - 'framework/libs/tdx-guest'
+    license:
+      content: |
+        SPDX-License-Identifier: MPL-2.0
+    language: 
+      # License Eye Header cannot recognize files with extension .S, so we add
+      # the definition here.
+      Assembly: 
+        extensions:
+          - ".S"
+        comment_style_id: SlashAsterisk
+
+  # Files under tdx-guest are licensed under BSD-3-Clause license.
+  - paths: 
+      - 'framework/libs/tdx-guest/**'
+    paths-ignore:
+      - 'Cargo.toml'
+      - '.gitignore'
+    license:
+      content: |
+        SPDX-License-Identifier: BSD-3-Clause
+        Copyright(c) 2023-2024 Intel Corporation.
+
+  # Files under cargo-component are licensed under Apache-2.0 or MIT license.
+  - paths:
+      - 'services/libs/comp-sys/cargo-component/**'
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.toml'
+      - 'Cargo.lock'
+      - '.gitignore'
+      # These directories do not contain test source code and are just for test input.
+      - '**/tests/duplicate_lib_name_test/**'
+      - '**/tests/missing_toml_test/**'
+      - '**/tests/reexport_test/**'
+      - '**/tests/regression_test/**'
+      - '**/tests/trait_method_test/**'
+      - '**/tests/violate_policy_test/**'
+      
+    license:
+      content: |
+        Licensed under the Apache License, Version 2.0 or the MIT License.
+        Copyright (C) 2023-2024 Ant Group.
+  
