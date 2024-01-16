@@ -30,13 +30,15 @@ impl AnyUnboundSocket {
             let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; SEND_BUF_LEN]);
             let mut socket = RawTcpSocket::new(rx_buffer, tx_buffer);
             // In current state of TCP implementation, we didn't exploit much on tuning TCP performance
-            // like what Linux did, where they dynamically enable QuickACK for several packets in runtime 
+            // like what Linux did, i.e., Linux dynamically enable QuickACK for several packets in runtime 
             // even without turning on the quickACK mode.
-            // Here in Asterinas, if we still keep the DelayACK, it would introduce
+            // Here in Asterinas, if we still keep the DelayACK, it would introduce 10 times lower TCP bandwidth.
+            // Ideally, we should provide interface like setsockopt to enable optimization for different traffic pattern.
+            // Currently as a work-around, since QuickACK outperform original cases with different 
+            // socket buffer sizes and packet size, we force enable QuickACK in default setting.
             socket.set_ack_delay(None);
             socket
         };
-        raw_tcp_socket.set_ack_delay(None);
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Tcp(raw_tcp_socket),
         }
@@ -168,6 +170,86 @@ impl Drop for AnyBoundSocket {
         self.iface.poll();
         self.iface.common().remove_socket(self.handle);
         self.iface.common().release_port(self.port);
+        self.iface.common().remove_bou{
+            iface,
+            handle,
+            port,
+            socket_family,
+            observer: RwLock::new(Weak::<()>::new()),
+            weak_self: weak_self.clone(),
+        })
+    }
+
+    pub(super) fn on_iface_events(&self) {
+        if let Some(observer) = Weak::upgrade(&*self.observer.read()) {
+            observer.on_events(&())
+        }
+    }
+
+    /// Set the observer whose `on_events` will be called when certain iface events happen. After
+    /// setting, the new observer will fire once immediately to avoid missing any events.
+    ///
+    /// If there is an existing observer, due to race conditions, this function does not guarentee
+    /// that the old observer will never be called after the setting. Users should be aware of this
+    /// and proactively handle the race conditions if necessary.
+    pub fn set_observer(&self, handler: Weak<dyn Observer<()>>) {
+        *self.observer.write() = handler;
+
+        self.on_iface_events();
+    }
+
+    pub fn local_endpoint(&self) -> Option<IpEndpoint> {
+        let ip_addr = {
+            let ipv4_addr = self.iface.ipv4_addr()?;
+            IpAddress::Ipv4(ipv4_addr)
+        };
+        Some(IpEndpoint::new(ip_addr, self.port))
+    }
+
+    pub fn raw_with<T: smoltcp::socket::AnySocket<'static>, R, F: FnMut(&mut T) -> R>(
+        &self,
+        mut f: F,
+    ) -> R {
+        let mut sockets = self.iface.sockets();
+        let socket = sockets.get_mut::<T>(self.handle);
+        f(socket)
+    }
+
+    /// Try to connect to a remote endpoint. Tcp socket only.
+    pub fn do_connect(&self, remote_endpoint: IpEndpoint) -> Result<()> {
+        let mut sockets = self.iface.sockets();
+        let socket = sockets.get_mut::<RawTcpSocket>(self.handle);
+        let port = self.port;
+        let mut iface_inner = self.iface.iface_inner();
+        let cx = iface_inner.context();
+        socket
+            .connect(cx, remote_endpoint, port)
+            .map_err(|_| Error::with_message(Errno::ENOBUFS, "send connection request failed"))?;
+        Ok(())
+    }
+
+    pub fn iface(&self) -> &Arc<dyn Iface> {
+        &self.iface
+    }
+
+    pub(super) fn weak_ref(&self) -> Weak<Self> {
+        self.weak_self.clone()
+    }
+
+    fn close(&self) {
+        match self.socket_family {
+            SocketFamily::Tcp => self.raw_with(|socket: &mut RawTcpSocket| socket.close()),
+            SocketFamily::Udp => self.raw_with(|socket: &mut RawUdpSocket| socket.close()),
+        }
+    }
+}
+
+impl Drop for AnyBoundSocket {
+    fn drop(&mut self) {
+        self.close();
+        self.iface.poll();
+        self.iface.common().remove_socket(self.handle);
+        self.iface.common().release_port(self.port);
         self.iface.common().remove_bound_socket(self.weak_ref());
     }
 }
@@ -177,6 +259,10 @@ pub const RECV_BUF_LEN: usize = 65536;
 pub const SEND_BUF_LEN: usize = 65536;
 
 // For UDP
+const UDP_METADATA_LEN: usize = 256;
+const UDP_SEND_PAYLOAD_LEN: usize = 65536;
+const UDP_RECEIVE_PAYLOAD_LEN: usize = 65536;
+
 const UDP_METADATA_LEN: usize = 256;
 const UDP_SEND_PAYLOAD_LEN: usize = 65536;
 const UDP_RECEIVE_PAYLOAD_LEN: usize = 65536;
