@@ -12,8 +12,9 @@ aster-frame = { path = "../../../framework/aster-frame" }
 aster-util = { path = "../../libs/aster-util" }
 aster-rights = { path = "../../libs/aster-rights" }
 component = { path = "../../libs/comp-sys/component" }
-virtio-input-decoder = "0.1.4"
+int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 log = "0.4"
+ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 
 [features]
 

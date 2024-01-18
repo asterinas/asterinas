@@ -103,7 +103,7 @@ struct DevIDs {
 /// are filled according to the Linux input layer (evdev) interface.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct InputEvent {
+pub struct VirtioInputEvent {
     /// Event type.
     pub event_type: u16,
     /// Event code.
