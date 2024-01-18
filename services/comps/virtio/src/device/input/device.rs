@@ -10,13 +10,16 @@ use alloc::{
     vec::Vec,
 };
 use aster_frame::{io_mem::IoMem, offset_of, sync::SpinLock, trap::TrapFrame};
+use aster_input::{
+    key::{Key, KeyStatus},
+    InputEvent,
+};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::{debug, info};
 use pod::Pod;
-use virtio_input_decoder::{DecodeType, Decoder};
 
-use super::{InputConfigSelect, InputEvent, VirtioInputConfig, QUEUE_EVENT, QUEUE_STATUS};
+use super::{InputConfigSelect, VirtioInputConfig, VirtioInputEvent, QUEUE_EVENT, QUEUE_STATUS};
 
 bitflags! {
     /// The properties of input device.
@@ -64,9 +67,9 @@ pub struct InputDevice {
     config: SafePtr<VirtioInputConfig, IoMem>,
     event_queue: SpinLock<VirtQueue>,
     status_queue: VirtQueue,
-    event_buf: SpinLock<Box<[InputEvent; QUEUE_SIZE as usize]>>,
+    event_buf: SpinLock<Box<[VirtioInputEvent; QUEUE_SIZE as usize]>>,
     #[allow(clippy::type_complexity)]
-    callbacks: SpinLock<Vec<Arc<dyn Fn(DecodeType) + Send + Sync + 'static>>>,
+    callbacks: SpinLock<Vec<Arc<dyn Fn(InputEvent) + Send + Sync + 'static>>>,
     transport: Box<dyn VirtioTransport>,
 }
 
@@ -74,7 +77,7 @@ impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let mut event_buf = Box::new([InputEvent::default(); QUEUE_SIZE as usize]);
+        let mut event_buf = Box::new([VirtioInputEvent::default(); QUEUE_SIZE as usize]);
         let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())
             .expect("create event virtqueue failed");
         let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, transport.as_mut())
@@ -139,7 +142,7 @@ impl InputDevice {
     }
 
     /// Pop the pending event.
-    pub fn pop_pending_event(&self) -> Option<InputEvent> {
+    pub fn pop_pending_event(&self) -> Option<VirtioInputEvent> {
         let mut lock = self.event_queue.lock();
         if let Ok((token, _)) = lock.pop_used() {
             if token >= QUEUE_SIZE {
@@ -192,31 +195,29 @@ impl aster_input::InputDevice for InputDevice {
             let Some(event) = self.pop_pending_event() else {
                 return Some(());
             };
-            let dtype = match Decoder::decode(
-                event.event_type as usize,
-                event.code as usize,
-                event.value as usize,
-            ) {
-                Ok(dtype) => dtype,
-                Err(_) => return Some(()),
-            };
-            let lock = self.callbacks.lock();
-            for callback in lock.iter() {
-                callback.call((dtype,));
+            match event.event_type {
+                0 => return Some(()),
+                // Keyboard
+                1 => {}
+                // TODO: Support mouse device.
+                _ => continue,
             }
-            match dtype {
-                virtio_input_decoder::DecodeType::Key(key, r#type) => {
-                    info!("{:?} {:?}", key, r#type);
-                }
-                virtio_input_decoder::DecodeType::Mouse(mouse) => info!("{:?}", mouse),
+            let status = match event.value {
+                1 => KeyStatus::Pressed,
+                0 => KeyStatus::Released,
+                _ => return Some(()),
+            };
+            let event = InputEvent::KeyBoard(Key::try_from(event.code).unwrap(), status);
+            info!("Input Event:{:?}", event);
+
+            let callbacks = self.callbacks.lock();
+            for callback in callbacks.iter() {
+                callback.call((event,));
             }
         }
     }
 
-    fn register_callbacks(
-        &self,
-        function: &'static (dyn Fn(virtio_input_decoder::DecodeType) + Send + Sync),
-    ) {
+    fn register_callbacks(&self, function: &'static (dyn Fn(InputEvent) + Send + Sync)) {
         self.callbacks.lock().push(Arc::new(function))
     }
 }
