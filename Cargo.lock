@@ -570,7 +570,7 @@ dependencies = [
 [[package]]
 name = "ctor"
 version = "0.1.25"
-source = "git+https://github.com/sdww0/rust-ctor#a6ee5e7a69cb368f00e7df00108028635fdf3fbd"
+source = "git+https://github.com/asterinas/rust-ctor#e30a5d960a3eccf79a7caddfa4de43b5dce424a0"
 dependencies = [
  "quote",
  "syn 1.0.109",
@@ -857,7 +857,7 @@ dependencies = [
 [[package]]
 name = "inventory"
 version = "0.3.3"
-source = "git+https://github.com/sdww0/inventory?rev=6356dc7#6356dc79fb15ae4e72ddb6fe826a3ea76d9046a5"
+source = "git+https://github.com/asterinas/inventory?rev=9dce587#9dce58712d1cd1e51ff067634d42b5c5fea29f48"
 dependencies = [
  "ctor",
  "ghost",
