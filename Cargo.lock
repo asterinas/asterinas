@@ -292,7 +292,6 @@ dependencies = [
  "time",
  "typeflags",
  "typeflags-util",
- "virtio-input-decoder",
  "vte",
  "xmas-elf 0.8.0",
 ]
@@ -1631,12 +1630,6 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
-
-[[package]]
-name = "virtio-input-decoder"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7292fc7f4de1afc0ded2e9b6e6c557d9cd594fca27a2217eb97a89d34cf5c6f5"
 
 [[package]]
 name = "volatile"

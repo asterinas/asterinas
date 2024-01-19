@@ -23,7 +23,6 @@ aster-rights-proc = { path = "../aster-rights-proc" }
 aster-util = { path = "../aster-util" }
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 cpio-decoder = { path = "../cpio-decoder" }
-virtio-input-decoder = "0.1.4"
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 intrusive-collections = "0.9.5"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
