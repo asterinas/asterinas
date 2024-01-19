@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-inventory = { git = "https://github.com/sdww0/inventory", rev = "6356dc7" }
+inventory = { git = "https://github.com/asterinas/inventory", rev = "9dce587" }
 log = "0.4"
 component-macro = { path = "../component-macro" }
 
