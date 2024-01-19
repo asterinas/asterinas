@@ -3,18 +3,20 @@
 use alloc::sync::Arc;
 use core::arch::x86_64::_rdtsc;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use x86::cpuid::cpuid;
 
 use log::info;
 use spin::Once;
 use trapframe::TrapFrame;
 use x86::msr::{wrmsr, IA32_TSC_DEADLINE};
 
-use crate::arch::kernel::apic::ioapic::IO_APIC;
-use crate::arch::kernel::tsc::is_tsc_deadline_mode_supported;
+use crate::arch::kernel::tsc::init_tsc_freq;
+use crate::arch::timer::pit::OperatingMode;
 use crate::arch::x86::kernel::apic::{DivideConfig, APIC_INSTANCE};
-use crate::arch::x86::kernel::tsc::{determine_tsc_freq_via_cpuid, TSC_FREQ};
-use crate::config::TIMER_FREQ;
+use crate::arch::x86::kernel::tsc::TSC_FREQ;
 use crate::trap::IrqLine;
+
+use super::TIMER_FREQ;
 
 pub fn init() {
     init_tsc_freq();
@@ -29,11 +31,11 @@ pub fn init() {
 
 pub(super) static APIC_TIMER_CALLBACK: Once<Arc<dyn Fn() + Sync + Send>> = Once::new();
 
-fn init_tsc_freq() {
-    let tsc_freq = determine_tsc_freq_via_cpuid()
-        .map_or(determine_tsc_freq_via_pit(), |freq| freq as u64 * 1000);
-    TSC_FREQ.store(tsc_freq, Ordering::Relaxed);
-    info!("TSC frequency:{:?} Hz", tsc_freq);
+/// Determine if the current system supports tsc_deadline mode APIC timer.
+fn is_tsc_deadline_mode_supported() -> bool {
+    const TSC_DEADLINE_MODE_SUPPORT: u32 = 1 << 24;
+    let cpuid = cpuid!(1);
+    (cpuid.ecx & TSC_DEADLINE_MODE_SUPPORT) > 0
 }
 
 fn init_tsc_mode() {
@@ -53,97 +55,54 @@ fn init_tsc_mode() {
     APIC_TIMER_CALLBACK.call_once(|| Arc::new(callback));
 }
 
-/// When kernel cannot get the TSC frequency from CPUID, it can leverage
-/// the PIT to calculate this frequency.
-fn determine_tsc_freq_via_pit() -> u64 {
+fn init_periodic_mode() {
+    // Allocate IRQ
     let mut irq = IrqLine::alloc_specific(super::TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
     irq.on_active(pit_callback);
-    let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-    debug_assert_eq!(io_apic.interrupt_base(), 0);
-    io_apic.enable(2, irq.clone()).unwrap();
-    drop(io_apic);
 
-    super::pit::init();
+    // Enable PIT
+    super::pit::init(OperatingMode::RateGenerator);
+    super::pit::enable_ioapic_line(irq.clone());
 
-    x86_64::instructions::interrupts::enable();
-    static IS_FINISH: AtomicBool = AtomicBool::new(false);
-    static FREQUENCY: AtomicU64 = AtomicU64::new(0);
-    while !IS_FINISH.load(Ordering::Acquire) {
-        x86_64::instructions::hlt();
-    }
-    x86_64::instructions::interrupts::disable();
-    drop(irq);
-    return FREQUENCY.load(Ordering::Acquire);
-
-    fn pit_callback(trap_frame: &TrapFrame) {
-        static mut IN_TIME: u64 = 0;
-        static mut TSC_FIRST_COUNT: u64 = 0;
-        // Set a certain times of callbacks to calculate the frequency.
-        const CALLBACK_TIMES: u64 = TIMER_FREQ / 10;
-        unsafe {
-            if IN_TIME < CALLBACK_TIMES || IS_FINISH.load(Ordering::Acquire) {
-                // drop the first entry, since it may not be the time we want
-                if IN_TIME == 0 {
-                    TSC_FIRST_COUNT = _rdtsc();
-                }
-                IN_TIME += 1;
-                return;
-            }
-            let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-            io_apic.disable(2).unwrap();
-            drop(io_apic);
-            let tsc_count = _rdtsc();
-            let freq = (tsc_count - TSC_FIRST_COUNT) * (TIMER_FREQ / CALLBACK_TIMES);
-            FREQUENCY.store(freq, Ordering::Release);
-        }
-        IS_FINISH.store(true, Ordering::Release);
-    }
-}
-
-fn init_periodic_mode() {
+    // Set APIC timer count
     let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
-    let mut irq = IrqLine::alloc_specific(super::TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
-    irq.on_active(init_function);
-    let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-    debug_assert_eq!(io_apic.interrupt_base(), 0);
-    io_apic.enable(2, irq.clone()).unwrap();
-    drop(io_apic);
-    // divide by 64
     apic_lock.set_timer_div_config(DivideConfig::Divide64);
     apic_lock.set_timer_init_count(0xFFFF_FFFF);
     drop(apic_lock);
-    super::pit::init();
-    // wait until it is finish
-    x86_64::instructions::interrupts::enable();
+
     static IS_FINISH: AtomicBool = AtomicBool::new(false);
+    x86_64::instructions::interrupts::enable();
     while !IS_FINISH.load(Ordering::Acquire) {
         x86_64::instructions::hlt();
     }
     x86_64::instructions::interrupts::disable();
     drop(irq);
 
-    fn init_function(trap_frame: &TrapFrame) {
-        static mut IN_TIME: u8 = 0;
-        static mut FIRST_TIME_COUNT: u64 = 0;
-        unsafe {
-            if IS_FINISH.load(Ordering::Acquire) || IN_TIME == 0 {
-                // drop the first entry, since it may not be the time we want
-                IN_TIME += 1;
+    fn pit_callback(trap_frame: &TrapFrame) {
+        static IN_TIME: AtomicU64 = AtomicU64::new(0);
+        static APIC_FIRST_COUNT: AtomicU64 = AtomicU64::new(0);
+        // Set a certain times of callbacks to calculate the frequency.
+        const CALLBACK_TIMES: u64 = TIMER_FREQ / 10;
+
+        if IN_TIME.load(Ordering::Relaxed) < CALLBACK_TIMES || IS_FINISH.load(Ordering::Acquire) {
+            if IN_TIME.load(Ordering::Relaxed) == 0 {
                 let apic_lock = APIC_INSTANCE.get().unwrap().lock();
                 let remain_ticks = apic_lock.timer_current_count();
-                FIRST_TIME_COUNT = 0xFFFF_FFFF - remain_ticks;
-                return;
+                APIC_FIRST_COUNT.store(0xFFFF_FFFF - remain_ticks, Ordering::Relaxed);
             }
+            IN_TIME.fetch_add(1, Ordering::Relaxed);
+            return;
         }
-        let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-        io_apic.disable(2).unwrap();
-        drop(io_apic);
-        // stop APIC Timer, get the number of tick we need
+
+        // Stop PIT and APIC Timer
+        super::pit::disable_ioapic_line();
         let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
         let remain_ticks = apic_lock.timer_current_count();
         apic_lock.set_timer_init_count(0);
-        let ticks = unsafe { 0xFFFF_FFFF - remain_ticks - FIRST_TIME_COUNT };
-        // periodic mode, divide 64, freq: TIMER_FREQ Hz
+
+        // Init APIC Timer
+        let ticks = (0xFFFF_FFFF - remain_ticks - APIC_FIRST_COUNT.load(Ordering::Relaxed))
+            / CALLBACK_TIMES;
         apic_lock.set_timer_init_count(ticks);
         apic_lock.set_lvt_timer(super::TIMER_IRQ_NUM.load(Ordering::Relaxed) as u64 | (1 << 17));
         apic_lock.set_timer_div_config(DivideConfig::Divide64);
