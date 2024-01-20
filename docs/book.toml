@@ -1,9 +1,21 @@
 [book]
-authors = ["Tate, Hongliang Tian"]
+authors = ["The Asterinas authors"]
 language = "en"
 multilingual = false
 src = "src"
-title = "Asterinas: A Secure, Fast, and Modern OS in Rust"
+title = "The Asterinas Book"
 
-[rust]
-edition = "2021"
+[build]
+# create-missing = true
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+
+[output.html.playground]
+editable = false         # allows editing the source code
+copyable = true          # include the copy button for copying code snippets
+copy-js = true           # includes the JavaScript for the code editor
+line-numbers = false     # displays line numbers for editable code
+runnable = false         # displays a run button for rust code
+
