@@ -11,9 +11,9 @@
     * [Type-Level Capabilities](kernel/the-approach/capabilities.md)
 * [Development Status and Roadmap](kernel/status-and-roadmap.md)
 * [Linux Compatibility](kernel/linux/README.md)
-    * [File Systems](kernel/linux/file_systems.md)
+    * [File Systems](kernel/linux/file-systems.md)
     * [Networking](kernel/linux/network.md)
-    * [Boot protocols](kernel/linux/boot.md)
+    * [Boot Protocols](kernel/linux/boot.md)
 
 # Asterinas Framework
 
