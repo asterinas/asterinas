@@ -4,7 +4,7 @@
 
 use crate::fs::file_table::FileDescripter;
 use crate::vm::perms::VmPerms;
-use crate::vm::vmo::{VmoChildOptions, VmoOptions, VmoRightsOp};
+use crate::vm::vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp};
 use crate::{log_syscall_entry, prelude::*};
 use align_ext::AlignExt;
 use aster_frame::vm::VmPerm;
@@ -24,7 +24,7 @@ pub fn sys_mmap(
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MMAP);
     let perms = VmPerm::try_from(perms).unwrap();
-    let option = MMapOptions::try_from(flags as u32).unwrap();
+    let option = MMapOptions::try_from(flags as u32)?;
     let res = do_sys_mmap(
         addr as usize,
         len as usize,
@@ -36,7 +36,7 @@ pub fn sys_mmap(
     Ok(SyscallReturn::Return(res as _))
 }
 
-pub fn do_sys_mmap(
+fn do_sys_mmap(
     addr: Vaddr,
     len: usize,
     vm_perm: VmPerm,
@@ -56,81 +56,67 @@ pub fn do_sys_mmap(
     }
     let perms = VmPerms::from(vm_perm);
 
-    if option.flags().contains(MMapFlags::MAP_ANONYMOUS) {
-        mmap_anonymous_vmo(addr, len, offset, perms, option)
+    let vmo = if option.flags.contains(MMapFlags::MAP_ANONYMOUS) {
+        if offset != 0 {
+            return_errno_with_message!(Errno::EINVAL, "offset must be zero for anonymous mapping");
+        }
+        alloc_anonyous_vmo(len)?
     } else {
-        mmap_filebacked_vmo(addr, fd, len, offset, perms, option)
-    }
-}
-
-fn mmap_anonymous_vmo(
-    addr: Vaddr,
-    len: usize,
-    offset: usize,
-    perms: VmPerms,
-    option: MMapOptions,
-) -> Result<Vaddr> {
-    assert!(option.flags().contains(MMapFlags::MAP_ANONYMOUS));
-    debug_assert!(offset == 0);
-
-    // TODO: implement features presented by other flags.
-    if option.typ() != MMapType::Private {
-        panic!("Unsupported mmap flags {:?} now", option);
-    }
-
-    let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
-    let vmo = vmo_options.alloc()?;
-    let current = current!();
-    let root_vmar = current.root_vmar();
-
-    let mut vmar_map_options = root_vmar.new_map(vmo, perms)?;
-    if option.flags().contains(MMapFlags::MAP_FIXED) {
-        vmar_map_options = vmar_map_options.offset(addr).can_overwrite(true);
-    }
-    let map_addr = vmar_map_options.build()?;
-    debug!("map addr = 0x{:x}", map_addr);
-    Ok(map_addr)
-}
-
-fn mmap_filebacked_vmo(
-    addr: Vaddr,
-    fd: FileDescripter,
-    len: usize,
-    offset: usize,
-    perms: VmPerms,
-    option: MMapOptions,
-) -> Result<Vaddr> {
-    let current = current!();
-    let page_cache_vmo = {
-        let fs_resolver = current.fs().read();
-        let dentry = fs_resolver.lookup_from_fd(fd)?;
-        let inode = dentry.inode();
-        inode.page_cache().ok_or(Error::with_message(
-            Errno::EBADF,
-            "File does not have page cache",
-        ))?
+        alloc_filebacked_vmo(fd, len, offset, &option)?
     };
 
-    let vmo = if option.typ() == MMapType::Private {
-        // map private
-        VmoChildOptions::new_cow(page_cache_vmo, offset..(offset + len)).alloc()?
-    } else {
-        // map shared
-        // FIXME: enable slice child to exceed parent range
-        VmoChildOptions::new_slice(page_cache_vmo, offset..(offset + len)).alloc()?
-    };
-
+    let current = current!();
     let root_vmar = current.root_vmar();
     let vm_map_options = {
         let mut options = root_vmar.new_map(vmo.to_dyn(), perms)?;
-        if option.flags().contains(MMapFlags::MAP_FIXED) {
+        let flags = option.flags;
+        if flags.contains(MMapFlags::MAP_FIXED) {
             options = options.offset(addr).can_overwrite(true);
+        } else if flags.contains(MMapFlags::MAP_32BIT) {
+            // TODO: support MAP_32BIT. MAP_32BIT requires the map range to be below 2GB
+            warn!("MAP_32BIT is not supported");
         }
         options
     };
     let map_addr = vm_map_options.build()?;
     trace!("map range = 0x{:x} - 0x{:x}", map_addr, map_addr + len);
+
     Ok(map_addr)
+}
+
+fn alloc_anonyous_vmo(len: usize) -> Result<Vmo> {
+    let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
+    vmo_options.alloc()
+}
+
+fn alloc_filebacked_vmo(
+    fd: FileDescripter,
+    len: usize,
+    offset: usize,
+    option: &MMapOptions,
+) -> Result<Vmo> {
+    let current = current!();
+    let page_cache_vmo = {
+        let fs_resolver = current.fs().read();
+        let dentry = fs_resolver.lookup_from_fd(fd)?;
+        let inode = dentry.inode();
+        inode
+            .page_cache()
+            .ok_or(Error::with_message(
+                Errno::EBADF,
+                "File does not have page cache",
+            ))?
+            .to_dyn()
+    };
+
+    if option.typ() == MMapType::Private {
+        // map private
+        VmoChildOptions::new_cow(page_cache_vmo, offset..(offset + len)).alloc()
+    } else {
+        // map shared
+        // FIXME: map shared vmo can exceed parent range, but slice child cannot
+        VmoChildOptions::new_slice_rights(page_cache_vmo, offset..(offset + len)).alloc()
+    }
 }
 
 // Definition of MMap flags, conforming to the linux mmap interface:
@@ -155,6 +141,7 @@ bitflags! {
     pub struct MMapFlags : u32 {
         const MAP_FIXED           = 0x10;
         const MAP_ANONYMOUS       = 0x20;
+        const MAP_32BIT           = 0x40;
         const MAP_GROWSDOWN       = 0x100;
         const MAP_DENYWRITE       = 0x800;
         const MAP_EXECUTABLE      = 0x1000;
