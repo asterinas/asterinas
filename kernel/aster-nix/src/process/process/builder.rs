@@ -11,6 +11,7 @@ use crate::{
         signal::sig_disposition::SigDispositions,
         Credentials,
     },
+    sched::nice::Nice,
     thread::Thread,
 };
 
@@ -31,6 +32,7 @@ pub struct ProcessBuilder<'a> {
     resource_limits: Option<ResourceLimits>,
     sig_dispositions: Option<Arc<Mutex<SigDispositions>>>,
     credentials: Option<Credentials>,
+    nice: Option<Nice>,
 }
 
 impl<'a> ProcessBuilder<'a> {
@@ -49,6 +51,7 @@ impl<'a> ProcessBuilder<'a> {
             resource_limits: None,
             sig_dispositions: None,
             credentials: None,
+            nice: None,
         }
     }
 
@@ -102,6 +105,11 @@ impl<'a> ProcessBuilder<'a> {
         self
     }
 
+    pub fn nice(&mut self, nice: Nice) -> &mut Self {
+        self.nice = Some(nice);
+        self
+    }
+
     fn check_build(&self) -> Result<()> {
         if self.main_thread_builder.is_some() {
             debug_assert!(self.parent.upgrade().is_some());
@@ -136,6 +144,7 @@ impl<'a> ProcessBuilder<'a> {
             resource_limits,
             sig_dispositions,
             credentials,
+            nice,
         } = self;
 
         let process_vm = process_vm.or_else(|| Some(ProcessVm::alloc())).unwrap();
@@ -160,6 +169,8 @@ impl<'a> ProcessBuilder<'a> {
             .or_else(|| Some(Arc::new(Mutex::new(SigDispositions::new()))))
             .unwrap();
 
+        let nice = nice.or_else(|| Some(Nice::default())).unwrap();
+
         let process = {
             let threads = Vec::new();
             Arc::new(Process::new(
@@ -173,6 +184,7 @@ impl<'a> ProcessBuilder<'a> {
                 umask,
                 sig_dispositions,
                 resource_limits,
+                nice,
             ))
         };
 

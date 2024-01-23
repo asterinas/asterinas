@@ -4,6 +4,8 @@
 //! This table can be used to get process with pid.
 //! TODO: progress group, thread all need similar mapping
 
+use alloc::collections::btree_map::Values;
+
 use super::{Pgid, Pid, Process, ProcessGroup, Session, Sid};
 use crate::{
     events::{Events, Observer, Subject},
@@ -26,13 +28,40 @@ pub(super) fn process_table_mut() -> MutexGuard<'static, BTreeMap<Pid, Arc<Proce
     PROCESS_TABLE.lock()
 }
 
-/// Gets all processes
-pub fn get_all_processes() -> Vec<Arc<Process>> {
-    PROCESS_TABLE
-        .lock()
-        .iter()
-        .map(|(_, process)| process.clone())
-        .collect()
+/// Acquires a lock on the process table and returns a `ProcessTable`.
+pub fn process_table() -> ProcessTable<'static> {
+    ProcessTable {
+        inner: PROCESS_TABLE.lock(),
+    }
+}
+
+/// A wrapper for the mutex-protected process table.
+///
+/// It provides the `iter` method to iterator over the processes in the table.
+pub struct ProcessTable<'a> {
+    inner: MutexGuard<'a, BTreeMap<Pid, Arc<Process>>>,
+}
+
+impl<'a> ProcessTable<'a> {
+    /// Returns an iterator over the processes in the table.
+    pub fn iter(&self) -> ProcessTableIter {
+        ProcessTableIter {
+            inner: self.inner.values(),
+        }
+    }
+}
+
+/// An iterator over the processes of the process table.
+pub struct ProcessTableIter<'a> {
+    inner: Values<'a, Pid, Arc<Process>>,
+}
+
+impl<'a> Iterator for ProcessTableIter<'a> {
+    type Item = &'a Arc<Process>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
 }
 
 // ************ Process Group *************

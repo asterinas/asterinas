@@ -65,6 +65,9 @@ bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 static_assertions = "1.1.0"
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
 getset = "0.1.2"
+atomic = "0.6"
+bytemuck = "1.14.3"
+bytemuck_derive = "1.5.0"
 
 [dependencies.lazy_static]
 version = "1.0"

@@ -112,8 +112,7 @@ impl DirOps for RootDirOps {
         let mut cached_children = this.cached_children().write();
         cached_children.put_entry_if_not_found("self", || SelfSymOps::new_inode(this_ptr.clone()));
 
-        let processes = process_table::get_all_processes();
-        for process in processes {
+        for process in process_table::process_table().iter() {
             let pid = process.pid().to_string();
             cached_children.put_entry_if_not_found(&pid, || {
                 PidDirOps::new_inode(process.clone(), this_ptr.clone())

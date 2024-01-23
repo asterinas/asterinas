@@ -89,13 +89,12 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>) -> Result<()> {
 /// if it is authorized to send the signal to the target group.
 pub fn kill_all(signal: Option<UserSignal>) -> Result<()> {
     let current = current!();
-    let processes = process_table::get_all_processes();
-    for process in processes {
-        if Arc::ptr_eq(&current, &process) || process.is_init_process() {
+    for process in process_table::process_table().iter() {
+        if Arc::ptr_eq(&current, process) || process.is_init_process() {
             continue;
         }
 
-        kill_process(&process, signal)?;
+        kill_process(process, signal)?;
     }
 
     Ok(())
