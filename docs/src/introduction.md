@@ -36,7 +36,7 @@ Asterinas's source code and documentation primarily use the [Mozilla Public Lice
 
 Our choice of the [weak-copyleft](https://www.tldrlegal.com/license/mozilla-public-license-2-0-mpl-2) MPL license reflects a strategic balance:
 
-1. **Commitment to open-source freedom**: We believe that OS kernels are a communal asset that should benefit humanity. The MPL ensures that any alterations to MPL-covered files remain open source, aligning with our vision. Additionally, we do not require contributors to sign a Contributor License Agreement (CLA), preserving their rights and preventing 
+1. **Commitment to open-source freedom**: We believe that OS kernels are a communal asset that should benefit humanity. The MPL ensures that any alterations to MPL-covered files remain open source, aligning with our vision. Additionally, we do not require contributors to sign a Contributor License Agreement (CLA), [preserving their rights and preventing the possibility of their contributions being made closed source](https://drewdevault.com/2018/10/05/Dont-sign-a-CLA.html).
 
 2. **Accommodating proprietary modules**: Recognizing the evolving landscape where large corporations also contribute significantly to open-source, we accommodate the business need for proprietary kernel modules. Unlike GPL, the MPL permits the combination and linking of MPL-covered files with proprietary code.
 
