@@ -84,7 +84,8 @@ fn enable_common_cpu_features() {
     }
 
     let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
-    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
+    let avx512 = XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
+    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE | avx512;
     unsafe {
         x86_64::registers::xcontrol::XCr0::write(xcr0);
     }
