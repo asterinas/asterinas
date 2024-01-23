@@ -5,6 +5,7 @@
 # Asterinas Kernel
 
 * [Getting Started](kernel/README.md)
+* [Advanced Build and Test Instructions](kernel/advanced-instructions.md)
 * [A Zero-Cost, Least-Privilege Approach](kernel/the-approach/README.md)
     * [Framekernel OS Architecture](kernel/the-approach/framekernel.md)
     * [Component-Level Access Control](kernel/the-approach/components.md)
