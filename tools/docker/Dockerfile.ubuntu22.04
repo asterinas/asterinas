@@ -34,6 +34,7 @@ RUN wget https://github.com/akopytov/sysbench/archive/1.0.20.tar.gz \
     && rm 1.0.20.tar.gz
 RUN git clone https://github.com/nicktehrany/membench.git
 RUN git clone https://github.com/esnet/iperf.git
+RUN git clone https://github.com/asterinas/fio.git
 
 # Build sysbench
 WORKDIR /root/sysbench-1.0.20
@@ -53,11 +54,18 @@ WORKDIR /root/iperf
 RUN ./configure --prefix=/usr/local/benchmark/iperf \
     && make -j \
     && make install
+
+# Build fio
+WORKDIR /root/fio
+RUN ./configure --disable-shm --prefix=/usr/local/benchmark/fio \
+    && make -j \
+    && make install
  
 WORKDIR /root
 RUN rm -rf sysbench-1.0.20 \
     membench \
-    iperf
+    iperf \
+    fio
 
 #= Build syscall test =========================================================
 

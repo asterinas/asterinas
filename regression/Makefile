@@ -44,6 +44,7 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_DIR)
 	@cp -L /lib/x86_64-linux-gnu/libcrypt.so.1 $@
 	@cp -L /lib/x86_64-linux-gnu/libdl.so.2 $@
 	@cp -L /lib/x86_64-linux-gnu/libz.so.1 $@
+	@cp -L /lib/x86_64-linux-gnu/libmvec.so.1 $@
 	@cp -L /usr/local/benchmark/iperf/lib/libiperf.so.0 $@
 	@cp -L $(VDSO_DIR)/vdso64.so $@
 
@@ -80,6 +81,7 @@ $(INITRAMFS)/benchmark:
 	@cp /usr/local/benchmark/sysbench/bin/sysbench $@
 	@cp /usr/local/benchmark/iperf/bin/iperf3 $@
 	@cp /usr/local/benchmark/membench/membench $@
+	@cp /usr/local/benchmark/fio/bin/fio $@
 
 # Make necessary directories.
 $(INITRAMFS_EMPTY_DIRS):
