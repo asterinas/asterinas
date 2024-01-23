@@ -16,6 +16,7 @@ use crate::{
     device::tty::open_ntty_as_controlling_terminal,
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
+    sched::nice::Nice,
     thread::{allocate_tid, Thread},
     vm::vmar::Vmar,
 };
@@ -27,6 +28,7 @@ mod session;
 mod terminal;
 
 use aster_rights::Full;
+use atomic::Atomic;
 pub use builder::ProcessBuilder;
 pub use job_control::JobControl;
 pub use process_group::ProcessGroup;
@@ -72,6 +74,10 @@ pub struct Process {
     umask: Arc<RwLock<FileCreationMask>>,
     /// resource limits
     resource_limits: Mutex<ResourceLimits>,
+    /// Scheduling priority nice value
+    /// According to POSIX.1, the nice value is a per-process attribute,
+    /// the threads in a process should share a nice value.
+    nice: Atomic<Nice>,
 
     // Signal
     /// Sig dispositions
@@ -91,6 +97,7 @@ impl Process {
         umask: Arc<RwLock<FileCreationMask>>,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
         resource_limits: ResourceLimits,
+        nice: Nice,
     ) -> Self {
         let children_pauser = {
             // SIGCHID does not interrupt pauser. Child process will
@@ -114,6 +121,7 @@ impl Process {
             umask,
             sig_dispositions,
             resource_limits: Mutex::new(resource_limits),
+            nice: Atomic::new(nice),
         }
     }
 
@@ -206,7 +214,11 @@ impl Process {
         &self.resource_limits
     }
 
-    fn main_thread(&self) -> Option<Arc<Thread>> {
+    pub fn nice(&self) -> &Atomic<Nice> {
+        &self.nice
+    }
+
+    pub fn main_thread(&self) -> Option<Arc<Thread>> {
         self.threads
             .lock()
             .iter()
@@ -602,6 +614,7 @@ mod test {
             Arc::new(RwLock::new(FileCreationMask::default())),
             Arc::new(Mutex::new(SigDispositions::default())),
             ResourceLimits::default(),
+            Nice::default(),
         ))
     }
 

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::collections::btree_map::Values;
+
 use super::{Pgid, Pid, Process, Session};
 use crate::{prelude::*, process::signal::signals::Signal};
 
@@ -68,6 +70,13 @@ impl ProcessGroup {
         self.pgid
     }
 
+    /// Acquires a lock on the process group.
+    pub fn lock(&self) -> ProcessGroupGuard {
+        ProcessGroupGuard {
+            inner: self.inner.lock(),
+        }
+    }
+
     /// Broadcasts signal to all processes in the group.
     ///
     /// This method should only be used to broadcast fault signal and kernel signal.
@@ -87,5 +96,34 @@ impl ProcessGroup {
     /// Returns the session which the group belongs to
     pub fn session(&self) -> Option<Arc<Session>> {
         self.inner.lock().session.upgrade()
+    }
+}
+
+/// A scoped lock for a process group.
+///
+/// It provides some public methods to prevent the exposure of the inner type.
+pub struct ProcessGroupGuard<'a> {
+    inner: MutexGuard<'a, Inner>,
+}
+
+impl<'a> ProcessGroupGuard<'a> {
+    /// Returns an iterator over the processes in the group.
+    pub fn iter(&self) -> ProcessGroupIter {
+        ProcessGroupIter {
+            inner: self.inner.processes.values(),
+        }
+    }
+}
+
+/// An iterator over the processes of the process group.
+pub struct ProcessGroupIter<'a> {
+    inner: Values<'a, Pid, Arc<Process>>,
+}
+
+impl<'a> Iterator for ProcessGroupIter<'a> {
+    type Item = &'a Arc<Process>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
     }
 }

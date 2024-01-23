@@ -72,6 +72,7 @@ use crate::{
         rt_sigreturn::sys_rt_sigreturn,
         sched_yield::sys_sched_yield,
         select::sys_select,
+        set_get_priority::{sys_get_priority, sys_set_priority},
         set_robust_list::sys_set_robust_list,
         set_tid_address::sys_set_tid_address,
         setpgid::sys_setpgid,
@@ -163,6 +164,7 @@ mod rt_sigreturn;
 mod sched_yield;
 mod select;
 mod sendto;
+mod set_get_priority;
 mod set_robust_list;
 mod set_tid_address;
 mod setfsgid;
@@ -321,6 +323,8 @@ define_syscall_nums!(
     SYS_SIGALTSTACK = 131,
     SYS_STATFS = 137,
     SYS_FSTATFS = 138,
+    SYS_GET_PRIORITY = 140,
+    SYS_SET_PRIORITY = 141,
     SYS_PRCTL = 157,
     SYS_ARCH_PRCTL = 158,
     SYS_SYNC = 162,
@@ -505,6 +509,8 @@ pub fn syscall_dispatch(
         SYS_SIGALTSTACK => syscall_handler!(2, sys_sigaltstack, args),
         SYS_STATFS => syscall_handler!(2, sys_statfs, args),
         SYS_FSTATFS => syscall_handler!(2, sys_fstatfs, args),
+        SYS_GET_PRIORITY => syscall_handler!(2, sys_get_priority, args),
+        SYS_SET_PRIORITY => syscall_handler!(3, sys_set_priority, args),
         SYS_PRCTL => syscall_handler!(5, sys_prctl, args),
         SYS_ARCH_PRCTL => syscall_handler!(2, sys_arch_prctl, args, context),
         SYS_SYNC => syscall_handler!(0, sys_sync),

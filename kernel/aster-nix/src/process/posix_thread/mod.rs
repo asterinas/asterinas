@@ -246,7 +246,7 @@ impl PosixThread {
     }
 
     /// Gets the read-only credentials of the thread.
-    pub(in crate::process) fn credentials(&self) -> Credentials<ReadOp> {
+    pub fn credentials(&self) -> Credentials<ReadOp> {
         self.credentials.dup().restrict()
     }
 

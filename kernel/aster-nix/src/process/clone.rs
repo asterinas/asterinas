@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::Ordering;
+
 use aster_frame::{cpu::UserContext, user::UserSpace, vm::VmIo};
 use aster_rights::Full;
 
@@ -260,6 +262,9 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
         *sigmask
     };
 
+    // inherit parent's nice value
+    let child_nice = current.nice().load(Ordering::Relaxed);
+
     let child_tid = allocate_tid();
 
     let child = {
@@ -286,7 +291,8 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
             .file_table(child_file_table)
             .fs(child_fs)
             .umask(child_umask)
-            .sig_dispositions(child_sig_dispositions);
+            .sig_dispositions(child_sig_dispositions)
+            .nice(child_nice);
 
         process_builder.build()?
     };
