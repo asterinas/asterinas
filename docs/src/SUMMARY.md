@@ -6,14 +6,7 @@
 
 * [Getting Started](kernel/README.md)
 * [Advanced Build and Test Instructions](kernel/advanced-instructions.md)
-* [A Zero-Cost, Least-Privilege Approach](kernel/the-approach/README.md)
-    * [Framekernel OS Architecture](kernel/the-approach/framekernel.md)
-    * [Component-Level Access Control](kernel/the-approach/components.md)
-    * [Type-Level Capabilities](kernel/the-approach/capabilities.md)
-* [Linux Compatibility](kernel/linux/README.md)
-    * [File Systems](kernel/linux/file-systems.md)
-    * [Networking](kernel/linux/network.md)
-    * [Boot Protocols](kernel/linux/boot.md)
+* [Linux Compatibility](kernel/linux-compatibility.md)
 * [Roadmap](kernel/roadmap.md)
 
 # Asterinas Framework
