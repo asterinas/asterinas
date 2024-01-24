@@ -16,6 +16,15 @@ pub fn handle_exception(context: &UserContext) {
 
     match *exception {
         PAGE_FAULT => handle_page_fault(trap_info),
+        INVALID_OPCODE => {
+            // Print the instruction if it is illegal
+            println!(
+                "Rip: 0x{:016x} Instruction: {}",
+                context.general_regs().rip,
+                context.rip_instruction()
+            );
+            generate_fault_signal(trap_info);
+        }
         _ => {
             // We current do nothing about other exceptions
             generate_fault_signal(trap_info);

@@ -5,8 +5,10 @@
 use core::arch::x86_64::{_fxrstor, _fxsave};
 use core::fmt::Debug;
 
+use alloc::string::String;
 use alloc::vec::Vec;
 use bitvec::{prelude::Lsb0, slice::IterOnes};
+use iced_x86::{Decoder, DecoderOptions, Formatter, GasFormatter, Instruction};
 use trapframe::{GeneralRegs, UserContext as RawUserContext};
 
 #[cfg(feature = "intel_tdx")]
@@ -171,6 +173,32 @@ impl UserContext {
 
     pub fn fp_regs_mut(&mut self) -> &mut FpRegs {
         &mut self.fp_regs
+    }
+
+    /// Returns the assembly representation of the instruction at the `rip`
+    /// register's address in GNU assembler (AT&T) format.
+    pub fn rip_instruction(&self) -> String {
+        let instr = {
+            let rip = self.user_context.general.rip;
+            let code_data = {
+                // In the instruction set of the x86_64 architecture,
+                // the maximum length of a single instruction is 15 bytes.
+                let mut data = [0u8; 15];
+                unsafe {
+                    core::ptr::copy_nonoverlapping(rip as *const u8, data.as_mut_ptr(), data.len());
+                }
+                data
+            };
+            let mut decoder = Decoder::with_ip(64, &code_data, rip as u64, DecoderOptions::NONE);
+            let mut instr = Instruction::default();
+            decoder.decode_out(&mut instr);
+            instr
+        };
+
+        let mut formatter = GasFormatter::new();
+        let mut asm_instr = String::new();
+        formatter.format(&instr, &mut asm_instr);
+        asm_instr
     }
 }
 
