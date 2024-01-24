@@ -10,11 +10,11 @@
     * [Framekernel OS Architecture](kernel/the-approach/framekernel.md)
     * [Component-Level Access Control](kernel/the-approach/components.md)
     * [Type-Level Capabilities](kernel/the-approach/capabilities.md)
-* [Development Status and Roadmap](kernel/status-and-roadmap.md)
 * [Linux Compatibility](kernel/linux/README.md)
     * [File Systems](kernel/linux/file-systems.md)
     * [Networking](kernel/linux/network.md)
     * [Boot Protocols](kernel/linux/boot.md)
+* [Roadmap](kernel/roadmap.md)
 
 # Asterinas Framework
 

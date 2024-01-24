@@ -4,7 +4,7 @@
 
 Asterinas is a _safe_, _fast_, and _general-purpose_ OS kernel that provides _Linux-compatible_ ABI. It can serve as a seamless replacement for Linux while enhancing _memory safety_ and _developer friendliness_.
 
-* Asterinas prioritizes memory safety by employing Rust as its sole programming language and limiting the use of _unsafe Rust_ to a clearly defined and minimal Trusted Computing Base (TCB). This innovative framework, known as [the framekernel architecture](), establishes Asterinas as a more secure and dependable kernel option.
+* Asterinas prioritizes memory safety by employing Rust as its sole programming language and limiting the use of _unsafe Rust_ to a clearly defined and minimal Trusted Computing Base (TCB). This innovative approach, known as [the framekernel architecture](), establishes Asterinas as a more secure and dependable kernel option.
 
 * Asterinas surpasses Linux in terms of developer friendliness. It empowers kernel developers to (1) utilize the more productive Rust programming language, (2) leverage a purpose-built toolkit called [OSDK]() to streamline their workflows, and (3) choose between releasing their kernel modules as open source or keeping them proprietary, thanks to the flexibility offered by [MPL]().
 
@@ -12,7 +12,7 @@ While the journey towards a production-grade OS kernel can be challenging, we ar
 
 ## Getting Started
 
-Get yourself an x86-64 machine with Docker installed. Follow the three simple steps below to get Asterinas up and running.
+Get yourself an x86-64 Linux machine with Docker installed. Follow the three simple steps below to get Asterinas up and running.
 
 1. Download the latest source code.
 

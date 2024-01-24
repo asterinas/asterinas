@@ -6,7 +6,7 @@ src = "src"
 title = "The Asterinas Book"
 
 [build]
-# create-missing = true
+create-missing = false
 
 [output.html]
 default-theme = "navy"
