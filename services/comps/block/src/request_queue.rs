@@ -7,24 +7,118 @@ use super::{
     id::Sid,
 };
 
-/// Represents the software staging queue for the `BioRequest` objects.
-pub trait BioRequestQueue {
+use aster_frame::sync::{Mutex, WaitQueue};
+
+/// A simple block I/O request queue backed by one internal FIFO queue.
+///
+/// It is a FIFO producer-consumer queue, where the producer (e.g., filesystem)
+/// submits requests to the queue, and the consumer (e.g., block device driver)
+/// continuously consumes and processes these requests from the queue.
+///
+/// It supports merging the new request with the front request if if the type
+/// is same and the sector range is contiguous.
+pub struct BioRequestSingleQueue {
+    queue: Mutex<VecDeque<BioRequest>>,
+    num_requests: AtomicUsize,
+    wait_queue: WaitQueue,
+}
+
+impl BioRequestSingleQueue {
+    /// Creates an empty queue.
+    pub fn new() -> Self {
+        Self {
+            queue: Mutex::new(VecDeque::new()),
+            num_requests: AtomicUsize::new(0),
+            wait_queue: WaitQueue::new(),
+        }
+    }
+
+    /// Returns the number of requests currently in this queue.
+    pub fn num_requests(&self) -> usize {
+        self.num_requests.load(Ordering::Relaxed)
+    }
+
     /// Enqueues a `SubmittedBio` to this queue.
     ///
-    /// This `SubmittedBio` will be merged into an existing `BioRequest`, or a new
-    /// `BioRequest` will be created from the `SubmittedBio` before being placed
-    /// into the queue.
+    /// When enqueueing the `SubmittedBio`, try to insert it into the last request if the
+    /// type is same and the sector range is contiguous.
+    /// Otherwise, creates and inserts a new request for the `SubmittedBio`.
     ///
     /// This method will wake up the waiter if a new `BioRequest` is enqueued.
-    fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError>;
+    pub fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
+        let mut queue = self.queue.lock();
+        if let Some(request) = queue.front_mut() {
+            if request.can_merge(&bio) {
+                request.merge_bio(bio);
+                return Ok(());
+            }
+        }
+
+        let new_request = BioRequest::from(bio);
+        queue.push_front(new_request);
+        self.inc_num_requests();
+        drop(queue);
+
+        self.wait_queue.wake_all();
+        Ok(())
+    }
 
     /// Dequeues a `BioRequest` from this queue.
     ///
     /// This method will wait until one request can be retrieved.
-    fn dequeue(&self) -> BioRequest;
+    pub fn dequeue(&self) -> BioRequest {
+        let mut num_requests = self.num_requests();
+
+        loop {
+            if num_requests > 0 {
+                let mut queue = self.queue.lock();
+                if let Some(request) = queue.pop_back() {
+                    self.dec_num_requests();
+                    return request;
+                }
+            }
+
+            num_requests = self.wait_queue.wait_until(|| {
+                let num_requests = self.num_requests();
+                if num_requests > 0 {
+                    Some(num_requests)
+                } else {
+                    None
+                }
+            });
+        }
+    }
+
+    fn dec_num_requests(&self) {
+        self.num_requests.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    fn inc_num_requests(&self) {
+        self.num_requests.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl Default for BioRequestSingleQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Debug for BioRequestSingleQueue {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("BioRequestSingleQueue")
+            .field("num_requests", &self.num_requests())
+            .field("queue", &self.queue.lock())
+            .finish()
+    }
 }
 
 /// The block I/O request.
+///
+/// The advantage of this data structure is to merge several `SubmittedBio`s that are
+/// contiguous on the target device's sector address, allowing them to be collectively
+/// processed in a queue.
+#[derive(Debug)]
 pub struct BioRequest {
     /// The type of the I/O
     type_: BioType,

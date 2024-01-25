@@ -1,22 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{
-    fmt::Debug,
-    hint::spin_loop,
-    mem::size_of,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
-use alloc::{boxed::Box, collections::VecDeque, string::ToString, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use aster_block::{
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     id::Sid,
-    request_queue::{BioRequest, BioRequestQueue},
+    request_queue::{BioRequest, BioRequestSingleQueue},
 };
 use aster_frame::{
     io_mem::IoMem,
     sync::SpinLock,
-    sync::{Mutex, WaitQueue},
     trap::TrapFrame,
     vm::{VmAllocOptions, VmFrame, VmIo, VmReader, VmWriter},
 };
@@ -37,7 +31,7 @@ use super::{BlockFeatures, VirtioBlockConfig};
 pub struct BlockDevice {
     device: DeviceInner,
     /// The software staging queue.
-    queue: BioSingleQueue,
+    queue: BioRequestSingleQueue,
 }
 
 impl BlockDevice {
@@ -47,7 +41,7 @@ impl BlockDevice {
             let device = DeviceInner::init(transport)?;
             Self {
                 device,
-                queue: BioSingleQueue::new(),
+                queue: BioRequestSingleQueue::new(),
             }
         };
         aster_block::register_device(super::DEVICE_NAME.to_string(), Arc::new(block_device));
@@ -117,8 +111,8 @@ impl BlockDevice {
 }
 
 impl aster_block::BlockDevice for BlockDevice {
-    fn request_queue(&self) -> &dyn BioRequestQueue {
-        &self.queue
+    fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
+        self.queue.enqueue(bio)
     }
 
     fn handle_irq(&self) {
@@ -300,102 +294,6 @@ impl Default for BlockResp {
     fn default() -> Self {
         Self {
             status: RespStatus::_NotReady as _,
-        }
-    }
-}
-
-/// A simple block I/O request queue with a single queue.
-///
-/// It is a FIFO producer-consumer queue, where the producer (e.g., filesystem)
-/// submits requests to the queue, and the consumer (e.g., block device driver)
-/// continuously consumes and processes these requests from the queue.
-pub struct BioSingleQueue {
-    queue: Mutex<VecDeque<BioRequest>>,
-    num_requests: AtomicUsize,
-    wait_queue: WaitQueue,
-}
-
-impl BioSingleQueue {
-    /// Creates an empty queue.
-    pub fn new() -> Self {
-        Self {
-            queue: Mutex::new(VecDeque::new()),
-            num_requests: AtomicUsize::new(0),
-            wait_queue: WaitQueue::new(),
-        }
-    }
-
-    /// Returns the number of requests currently in this queue.
-    pub fn num_requests(&self) -> usize {
-        self.num_requests.load(Ordering::Relaxed)
-    }
-
-    fn dec_num_requests(&self) {
-        self.num_requests.fetch_sub(1, Ordering::Relaxed);
-    }
-
-    fn inc_num_requests(&self) {
-        self.num_requests.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl Default for BioSingleQueue {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Debug for BioSingleQueue {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        f.debug_struct("BioSingleQueue")
-            .field("num_requests", &self.num_requests())
-            .finish()
-    }
-}
-
-impl BioRequestQueue for BioSingleQueue {
-    /// Enqueues a `SubmittedBio` to this queue.
-    ///
-    /// When enqueueing the `SubmittedBio`, try to insert it into the last request if the
-    /// type is same and the sector range is contiguous.
-    /// Otherwise, creates and inserts a new request for the `SubmittedBio`.
-    fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
-        let mut queue = self.queue.lock();
-        if let Some(request) = queue.front_mut() {
-            if request.can_merge(&bio) {
-                request.merge_bio(bio);
-                return Ok(());
-            }
-        }
-
-        let new_request = BioRequest::from(bio);
-        queue.push_front(new_request);
-        drop(queue);
-        self.inc_num_requests();
-        self.wait_queue.wake_all();
-        Ok(())
-    }
-
-    /// Dequeues a `BioRequest` from this queue.
-    fn dequeue(&self) -> BioRequest {
-        let mut num_requests = self.num_requests();
-
-        loop {
-            if num_requests > 0 {
-                if let Some(request) = self.queue.lock().pop_back() {
-                    self.dec_num_requests();
-                    return request;
-                }
-            }
-
-            num_requests = self.wait_queue.wait_until(|| {
-                let num_requests = self.num_requests();
-                if num_requests > 0 {
-                    Some(num_requests)
-                } else {
-                    None
-                }
-            });
         }
     }
 }
