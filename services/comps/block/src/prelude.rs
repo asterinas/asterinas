@@ -8,4 +8,4 @@ pub(crate) use alloc::vec::Vec;
 pub(crate) use core::any::Any;
 pub(crate) use core::fmt::Debug;
 pub(crate) use core::ops::Range;
-pub(crate) use core::sync::atomic::{AtomicU32, Ordering};
+pub(crate) use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};

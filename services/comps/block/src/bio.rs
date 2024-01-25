@@ -17,6 +17,7 @@ use int_to_c_enum::TryFromInt;
 /// (2) The target sectors on the device for doing I/O,
 /// (3) The memory locations (`BioSegment`) from/to which data are read/written,
 /// (4) The optional callback function that will be invoked when the I/O is completed.
+#[derive(Debug)]
 pub struct Bio(Arc<BioInner>);
 
 impl Bio {
@@ -85,10 +86,7 @@ impl Bio {
         );
         assert!(result.is_ok());
 
-        if let Err(e) = block_device
-            .request_queue()
-            .enqueue(SubmittedBio(self.0.clone()))
-        {
+        if let Err(e) = block_device.enqueue(SubmittedBio(self.0.clone())) {
             // Fail to submit, revert the status.
             let result = self.0.status.compare_exchange(
                 BioStatus::Submit as u32,
@@ -151,6 +149,7 @@ impl From<BioEnqueueError> for aster_frame::Error {
 /// This structure holds a list of `Bio` requests and provides functionality to
 /// wait for their completion and retrieve their statuses.
 #[must_use]
+#[derive(Debug)]
 pub struct BioWaiter {
     bios: Vec<Arc<BioInner>>,
 }
@@ -230,6 +229,7 @@ impl Default for BioWaiter {
 /// A submitted `Bio` object.
 ///
 /// The request queue of block device only accepts a `SubmittedBio` into the queue.
+#[derive(Debug)]
 pub struct SubmittedBio(Arc<BioInner>);
 
 impl SubmittedBio {
@@ -306,6 +306,18 @@ impl BioInner {
 
     pub fn status(&self) -> BioStatus {
         BioStatus::try_from(self.status.load(Ordering::Relaxed)).unwrap()
+    }
+}
+
+impl Debug for BioInner {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("BioInner")
+            .field("type", &self.type_())
+            .field("sid_range", &self.sid_range())
+            .field("status", &self.status())
+            .field("segments", &self.segments())
+            .field("complete_fn", &self.complete_fn)
+            .finish()
     }
 }
 
