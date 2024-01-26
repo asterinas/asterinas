@@ -12,7 +12,7 @@ by employing Rust as its sole programming language
 and limiting the use of _unsafe Rust_
 to a clearly defined and minimal Trusted Computing Base (TCB).
 This innovative approach,
-known as [the framekernel architecture](),
+known as [the framekernel architecture](the-framekernel-architecture.md),
 establishes Asterinas as a more secure and dependable kernel option.
 
 * Asterinas surpasses Linux in terms of developer friendliness.
@@ -21,12 +21,12 @@ It empowers kernel developers to
 (2) leverage a purpose-built toolkit called [OSDK]() to streamline their workflows,
 and (3) choose between releasing their kernel modules as open source
 or keeping them proprietary,
-thanks to the flexibility offered by [MPL]().
+thanks to the flexibility offered by [MPL](../).
 
 While the journey towards a production-grade OS kernel can be challenging,
 we are steadfastly progressing towards our goal.
 Currently, Asterinas only supports x86-64 VMs.
-However, [our aim for 2024]() is
+However, [our aim for 2024](roadmap.md) is
 to make Asterinas production-ready on x86-64
 for both bare-metal and VM environments.
 
