@@ -1,6 +1,8 @@
 # Example: Writing a Kernel in About 100 Lines of Safe Rust
 
-To give you a sense of how Asterinas Framework enables writing kernels in safe Rust, we will show a new kernel in about 100 lines of safe Rust.
+To give you a sense of
+how Asterinas Framework enables writing kernels in safe Rust,
+we will show a new kernel in about 100 lines of safe Rust.
 
 Our new kernel will be able to run the following Hello World program.
 
@@ -29,7 +31,9 @@ The user program above requires our kernel to support three main features:
 3. Handling the write system call;
 4. Handling the exit system call.
 
-A sample implementation of the kernel in safe Rust is given below. Comments are added to highlight how the APIs of Asterinas Framework enable safe kernel development.
+A sample implementation of the kernel in safe Rust is given below.
+Comments are added
+to highlight how the APIs of Asterinas Framework enable safe kernel development.
 
 ```rust
 #![no_std]

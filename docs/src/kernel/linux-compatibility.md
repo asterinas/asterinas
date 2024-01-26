@@ -4,11 +4,19 @@
 >
 > --- Linus Torvalds
 
-Asterinas is dedicated to maintaining compatibility with the Linux ABI, ensuring that applications and administrative tools designed for Linux can seamlessly operate within Asterinas. While we prioritize compatibility, it is important to note that Asterinas does not, nor will it in the future, support the loading of Linux kernel modules.
+Asterinas is dedicated to maintaining compatibility with the Linux ABI,
+ensuring that applications and administrative tools
+designed for Linux can seamlessly operate within Asterinas.
+While we prioritize compatibility,
+it is important to note that Asterinas does not,
+nor will it in the future,
+support the loading of Linux kernel modules.
 
 ## System Calls
 
-At the time of writing, Asterinas implements 120 out of the 310+ system calls provided by Linux on x86-64 architecture.
+At the time of writing,
+Asterinas implements 120 out of the 310+ system calls
+provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |
 | ------- | ---------------- | --------------- |
