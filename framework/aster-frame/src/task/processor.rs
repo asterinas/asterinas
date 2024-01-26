@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::sync::SpinLock;
 use crate::task::preempt::{activate_preempt, deactivate_preempt};
 use crate::task::scheduler::fetch_next_task;
+use crate::trap::disable_local;
+use crate::{arch::timer::register_scheduler_tick, sync::SpinLock};
 
-use super::TaskStatus;
 use super::{
     preempt::{in_atomic, panic_if_in_atomic, preemptible},
     scheduler::{add_task, locked_global_scheduler},
-    task::{context_switch, Task, TaskContext},
+    task::{context_switch, NeedResched, Task, TaskContext},
 };
 use alloc::sync::Arc;
 
@@ -19,6 +19,7 @@ pub struct Processor {
 
 impl Processor {
     pub fn new() -> Self {
+        register_scheduler_tick(scheduler_tick);
         Self {
             current: None,
             idle_task_cx: TaskContext::default(),
@@ -72,7 +73,16 @@ pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
 /// a Rust keyword.
 pub fn yield_now() {
     if let Some(ref cur_task) = current_task() {
-        cur_task.set_need_resched(true);
+        locked_global_scheduler().before_yield(cur_task);
+    }
+    schedule();
+}
+
+pub fn yield_to(task: Arc<Task>) {
+    if let Some(ref cur_task) = current_task() {
+        locked_global_scheduler().yield_to(cur_task, task);
+    } else {
+        add_task(task);
     }
     schedule();
 }
@@ -108,7 +118,7 @@ fn should_preempt_cur_task() -> bool {
     }
 
     current_task_irq_disabled().map_or(true, |ref cur_task| {
-        cur_task.status() != TaskStatus::Runnable
+        !cur_task.status().is_runnable()
             || cur_task.need_resched()
             || locked_global_scheduler().should_preempt(cur_task)
     })
@@ -128,7 +138,7 @@ pub fn switch_to(next_task: Arc<Task>) {
     let current_task_ctx = match current_task_irq_disabled() {
         None => PROCESSOR.get().unwrap().lock().idle_task_ctx_ptr(),
         Some(ref cur_task) => {
-            if cur_task.status() == TaskStatus::Runnable {
+            if cur_task.status().is_runnable() {
                 add_task(cur_task.clone());
             }
             &mut cur_task.inner_exclusive_access().ctx as *mut TaskContext
@@ -140,4 +150,13 @@ pub fn switch_to(next_task: Arc<Task>) {
     unsafe {
         context_switch(current_task_ctx, next_task_ctx);
     }
+}
+
+/// Called by the timer handler at every TICK update.
+fn scheduler_tick() {
+    let disable_irq = disable_local();
+    let Some(ref cur_task) = current_task_irq_disabled() else {
+        return;
+    };
+    locked_global_scheduler().tick(cur_task);
 }

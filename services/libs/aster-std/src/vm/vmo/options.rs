@@ -283,7 +283,7 @@ impl VmoChildOptions<Rights, VmoSliceChild> {
             .check_rights(Rights::DUP)
             .expect("function new_slice_rights should called with rights Dup");
         Self {
-            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
+            flags: parent.flags(),
             parent,
             range,
             marker: PhantomData,
