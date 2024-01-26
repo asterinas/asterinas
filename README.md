@@ -5,7 +5,7 @@
 
 ## Introducing Asterinas
 
-Asterinas is a _safe_, _fast_, and _general-purpose_ OS kernel
+Asterinas (星绽 in Chinese) is a _safe_, _fast_, and _general-purpose_ OS kernel
 that provides _Linux-compatible_ ABI.
 It can serve as a seamless replacement for Linux
 while enhancing _memory safety_ and _developer friendliness_.
