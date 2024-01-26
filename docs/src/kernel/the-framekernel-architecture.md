@@ -23,7 +23,7 @@ While the concept of framekernel is straightforward, the design and implementati
 
 ![The four requirements for the OS framework](../images/four_requirements_for_os_framework.svg)
 
-* **Soundness.** The safe APIs of the framework is considered sound if no [undefined behaviors](https://doc.rust-lang.org/reference/behavior-considered-undefined.html#behavior-considered-undefined) shall be triggered by whatever safe Rust code that a programmer may write using the APIs---as long as the code is verified by the Rust toolchain. Soundness ensures that the OS framework, in conjunction with the Rust toolchain, bears the full responsibility for the kernel's memory safety.
+* **Soundness.** The safe APIs of the framework are considered sound if no [undefined behaviors](https://doc.rust-lang.org/reference/behavior-considered-undefined.html#behavior-considered-undefined) shall be triggered by whatever safe Rust code that a programmer may write using the APIs---as long as the code is verified by the Rust toolchain. Soundness ensures that the OS framework, in conjunction with the Rust toolchain, bears the full responsibility for the kernel's memory safety.
 
 * **Expressiveness.** The framework should empower developers to implement a substantial range of OS functionalities in safe Rust using the APIs. It is especially important that the framework enables writing device drivers in safe Rust, considering that device drivers comprise the bulk of the code in a fully-fleged OS kernel (like Linux).
 

@@ -13,7 +13,7 @@
 # Asterinas Framework
 
 * [An Overview of Framework APIs](framework/README.md)
-* [Writing a Kenrel in 100 Lines of Safe Rust](framework/an-100-line-example.md)
+* [Example: Writing a Kenrel in 100 Lines of Safe Rust](framework/an-100-line-example.md)
 
 # Asterinas OSDK
 
