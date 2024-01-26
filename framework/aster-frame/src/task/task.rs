@@ -118,6 +118,7 @@ intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLin
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
+    pub need_resched: bool,
 }
 
 impl Task {
@@ -166,6 +167,14 @@ impl Task {
         } else {
             None
         }
+    }
+
+    pub fn need_resched(&self) -> bool {
+        self.task_inner.lock().need_resched
+    }
+
+    pub fn set_need_resched(&self, need_resched: bool) {
+        self.task_inner.lock().need_resched = need_resched;
     }
 
     pub fn exit(&self) -> ! {
@@ -265,6 +274,7 @@ impl TaskOptions {
             task_inner: Mutex::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
+                need_resched: false,
             }),
             exit_code: 0,
             kstack: KernelStack::new_with_guard_page()?,
@@ -302,6 +312,7 @@ impl TaskOptions {
             task_inner: Mutex::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
+                need_resched: false,
             }),
             exit_code: 0,
             kstack: KernelStack::new_with_guard_page()?,

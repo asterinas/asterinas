@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::prelude::*;
-use crate::sync::SpinLock;
+use crate::sync::{SpinLock, SpinLockGuard};
 use crate::task::Task;
 
 use lazy_static::lazy_static;
@@ -55,7 +55,12 @@ pub fn set_scheduler(scheduler: &'static dyn Scheduler) {
     GLOBAL_SCHEDULER.lock_irq_disabled().scheduler = Some(scheduler);
 }
 
-pub fn fetch_task() -> Option<Arc<Task>> {
+/// Get the locked global task scheduler.
+pub(super) fn locked_global_scheduler<'a>() -> SpinLockGuard<'a, GlobalScheduler> {
+    GLOBAL_SCHEDULER.lock_irq_disabled()
+}
+
+pub fn fetch_next_task() -> Option<Arc<Task>> {
     GLOBAL_SCHEDULER.lock_irq_disabled().dequeue()
 }
 
