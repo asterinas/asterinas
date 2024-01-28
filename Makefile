@@ -42,30 +42,30 @@ CARGO_KBUILD_ARGS += --release
 CARGO_KRUN_ARGS += --release
 endif
 
-CARGO_KRUN_ARGS += -- '$(KERNEL_CMDLINE) -- $(INIT_CMDLINE)'
-CARGO_KRUN_ARGS += --boot-method="$(BOOT_METHOD)"
-CARGO_KRUN_ARGS += --boot-protocol="$(BOOT_PROTOCOL)"
+ifeq ($(INTEL_TDX), 1)
+CARGO_KBUILD_ARGS += --features intel_tdx
+CARGO_KRUN_ARGS += --features intel_tdx
+endif
+
+RUNNER_ARGS := '$(KERNEL_CMDLINE) -- $(INIT_CMDLINE)'
+RUNNER_ARGS += --boot-method="$(BOOT_METHOD)"
+RUNNER_ARGS += --boot-protocol="$(BOOT_PROTOCOL)"
 
 ifeq ($(EMULATE_IOMMU), 1)
-CARGO_KRUN_ARGS += --emulate-iommu
+RUNNER_ARGS += --emulate-iommu
 endif
 
 ifeq ($(ENABLE_KVM), 1)
-CARGO_KRUN_ARGS += --enable-kvm
+RUNNER_ARGS += --enable-kvm
 endif
 
 ifeq ($(GDB_SERVER), 1)
 ENABLE_KVM := 0
-CARGO_KRUN_ARGS += --halt-for-gdb
+RUNNER_ARGS += --halt-for-gdb
 endif
 
 ifeq ($(GDB_CLIENT), 1)
-CARGO_KRUN_ARGS += --run-gdb-client
-endif
-
-ifeq ($(INTEL_TDX), 1)
-CARGO_KBUILD_ARGS += --features intel_tdx
-CARGO_KRUN_ARGS += --features intel_tdx
+RUNNER_ARGS += --run-gdb-client
 endif
 
 ifeq ($(KTEST), 1)
@@ -74,7 +74,7 @@ GLOBAL_RUSTC_FLAGS += --cfg ktest --cfg ktest=\"$(subst $(comma),\" --cfg ktest=
 endif
 
 ifeq ($(SKIP_GRUB_MENU), 1)
-CARGO_KRUN_ARGS += --skip-grub-menu
+RUNNER_ARGS += --skip-grub-menu
 endif
 
 # Pass make variables to all subdirectory makes
@@ -118,7 +118,7 @@ tools:
 	@cd services/libs/comp-sys && cargo install --path cargo-component
 
 run: build
-	@RUSTFLAGS="$(GLOBAL_RUSTC_FLAGS)" cargo krun $(CARGO_KRUN_ARGS)
+	@RUSTFLAGS="$(GLOBAL_RUSTC_FLAGS)" cargo krun $(CARGO_KRUN_ARGS) -- $(RUNNER_ARGS)
 
 test:
 	@for dir in $(USERMODE_TESTABLE); do \
