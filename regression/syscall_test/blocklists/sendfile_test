@@ -1,0 +1,6 @@
+SendFileTest.Overflow
+SendFileTest.DoNotSendfileIfOutfileIsAppendOnly
+SendFileTest.SendPipeWouldBlock
+SendFileTest.SendPipeBlocks
+SendFileTest.SendToNotARegularFile
+SendFileTest.SendToSpecialFile
