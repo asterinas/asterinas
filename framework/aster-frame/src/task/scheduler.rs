@@ -13,6 +13,9 @@ pub fn init() {
     GLOBAL_SCHEDULER.call_once(|| SpinLock::new(GlobalScheduler { scheduler: None }));
 }
 
+/// The number of `Task`s.
+pub type TaskNumber = u32;
+
 /// A scheduler for tasks.
 ///
 /// Operations on the scheduler should be performed with interrupts disabled,
@@ -23,13 +26,23 @@ pub trait Scheduler<T: NeedResched + ReadPriority = Task>: Sync + Send {
     /// Add the task to the scheduler.
     fn enqueue(&self, task: Arc<T>);
 
-    /// Called when the task is no longer alive.
-    /// Remove the task-related from the scheduler.
-    ///
-    /// A similar method in the linux scheduler is `dequeue_task`.
-    ///
+    /// Pick the task out of the scheduler if it is in the scheduler.
     /// Return `true` if the task was in the scheduler.
-    fn remove(&self, task: &Arc<T>) -> bool;
+    fn dequeue(&self, task: &Arc<T>) -> bool;
+
+    // FIXME: use purge/remove_dead instead?
+    /// Called when the task is no longer alive.
+    /// Remove all the task-related from the scheduler.
+    /// Return `true` if the task was in the scheduler.
+    fn remove(&self, task: &Arc<T>) -> bool {
+        self.dequeue(task) && {
+            self.clear(task);
+            true
+        }
+    }
+
+    /// Clear the all states of the given task from the scheduler.
+    fn clear(&self, task: &Arc<T>) {}
 
     /// Choose the most appropriate task eligible to run next.
     fn pick_next_task(&self) -> Option<Arc<T>>;
@@ -58,6 +71,10 @@ pub trait Scheduler<T: NeedResched + ReadPriority = Task>: Sync + Send {
 
     /// Yield the current task to the target task at best effort.
     fn yield_to(&self, cur_task: &Arc<T>, target_task: Arc<T>);
+
+    fn contains(&self, task: &Arc<T>) -> bool;
+
+    fn task_num(&self) -> TaskNumber;
 }
 
 pub struct GlobalScheduler {
@@ -72,16 +89,22 @@ impl GlobalScheduler {
 
     /// fetch the next task to run from scheduler
     /// require the scheduler is not none
-    pub fn fetch_next(&mut self) -> Option<Arc<Task>> {
+    pub fn fetch_next(&self) -> Option<Arc<Task>> {
         self.scheduler.unwrap().pick_next_task()
     }
 
     /// enqueue a task using scheduler
     /// require the scheduler is not none
-    pub fn enqueue(&mut self, task: Arc<Task>) {
+    pub fn enqueue(&self, task: Arc<Task>) {
         self.scheduler.unwrap().enqueue(task)
     }
 
+    /// dequeue a task from the scheduler
+    pub fn dequeue(&self, task: &Arc<Task>) -> bool {
+        self.scheduler.unwrap().dequeue(task)
+    }
+
+    // FIXME: use purge/remove_dead instead?
     /// Remove the task and its related information from the scheduler.
     pub fn remove(&mut self, task: &Arc<Task>) {
         self.scheduler.unwrap().remove(task);
@@ -101,6 +124,14 @@ impl GlobalScheduler {
 
     pub fn yield_to(&self, cur_task: &Arc<Task>, target_task: Arc<Task>) {
         self.scheduler.unwrap().yield_to(cur_task, target_task)
+    }
+
+    pub fn contains(&self, task: &Arc<Task>) -> bool {
+        self.scheduler.unwrap().contains(task)
+    }
+
+    pub fn task_num(&self) -> TaskNumber {
+        self.scheduler.unwrap().task_num()
     }
 }
 
@@ -150,4 +181,9 @@ pub fn remove_task(task: &Arc<Task>) {
     if SCHED_DEBUG_LOG {
         debug!("remove task: {:#X}", Arc::as_ptr(task) as usize);
     }
+}
+
+/// Whether the given task has been queued in the scheduler.
+pub fn task_queued(task: &Arc<Task>) -> bool {
+    locked_global_scheduler().contains(task)
 }

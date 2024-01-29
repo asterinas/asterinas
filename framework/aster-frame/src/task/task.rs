@@ -110,7 +110,6 @@ pub struct Task {
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
-    priority: Priority,
     // TODO:: add multiprocessor support
     cpu_affinity: CpuSet,
 }
@@ -125,6 +124,7 @@ impl PartialEq for Task {
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
 pub(crate) struct TaskInner {
+    priority: Priority,
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
     pub need_resched: bool,
@@ -196,20 +196,32 @@ pub trait ReadPriority {
     fn nice(&self) -> Nice;
 }
 
+pub trait WritePriority {
+    fn set_priority(&self, priority: Priority);
+}
+
 impl ReadPriority for Task {
     fn priority(&self) -> Priority {
-        self.priority
+        self.task_inner.lock().priority
     }
 
     fn is_real_time(&self) -> bool {
-        self.priority.is_real_time()
+        self.task_inner.lock().priority.is_real_time()
     }
 
     /// From the static priority
     fn nice(&self) -> Nice {
-        self.priority
+        self.task_inner
+            .lock()
+            .priority
             .as_nice()
             .expect("No nice value for real-time tasks")
+    }
+}
+
+impl WritePriority for Task {
+    fn set_priority(&self, priority: Priority) {
+        self.task_inner.lock().priority = priority;
     }
 }
 
@@ -351,6 +363,7 @@ impl TaskOptions {
             data: self.data.unwrap(),
             user_space: self.user_space,
             task_inner: Mutex::new(TaskInner {
+                priority: self.priority,
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
                 need_resched: false,
@@ -359,7 +372,6 @@ impl TaskOptions {
             exit_code: 0,
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
-            priority: self.priority,
             cpu_affinity: self.cpu_affinity,
         };
 
@@ -381,6 +393,7 @@ impl TaskOptions {
             data: self.data.unwrap(),
             user_space: self.user_space,
             task_inner: Mutex::new(TaskInner {
+                priority: self.priority,
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
                 need_resched: false,
@@ -389,7 +402,6 @@ impl TaskOptions {
             exit_code: 0,
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
-            priority: self.priority,
             cpu_affinity: self.cpu_affinity,
         };
 

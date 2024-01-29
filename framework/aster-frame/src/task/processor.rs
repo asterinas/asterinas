@@ -7,8 +7,9 @@ use crate::{arch::timer::register_scheduler_tick, sync::SpinLock};
 
 use super::{
     preempt::{in_atomic, panic_if_in_atomic, preemptible},
+    priority::Priority,
     scheduler::{add_task, locked_global_scheduler},
-    task::{context_switch, NeedResched, Task, TaskContext},
+    task::{context_switch, NeedResched, ReadPriority, Task, TaskContext},
 };
 use alloc::sync::Arc;
 
@@ -36,6 +37,11 @@ impl Processor {
     }
     pub fn set_current_task(&mut self, task: Arc<Task>) {
         self.current = Some(task);
+    }
+    pub fn is_running(&self, task: &Arc<Task>) -> bool {
+        self.current
+            .as_ref()
+            .is_some_and(|cur_task| cur_task == task)
     }
 }
 
@@ -159,4 +165,52 @@ fn scheduler_tick() {
         return;
     };
     locked_global_scheduler().tick(cur_task);
+}
+
+/// Called when the priority of a runnable task is changed.
+/// Reschedule the task if necessary.
+fn prio_changed(task: &Arc<Task>, old_prio: &Priority) {
+    if locked_global_scheduler().task_num() == 0 {
+        // do nothing if the task is not in the scheduler,
+        // or there's no candidate in the scheduler.
+        return;
+    }
+
+    // A running task with a higher priority does not need to be rescheduled at once.
+    if task.priority() < *old_prio
+        && PROCESSOR
+            .get()
+            .unwrap()
+            .lock_irq_disabled()
+            .is_running(task)
+    {
+        locked_global_scheduler().before_yield(task);
+    }
+    // No need to check if the re-prioritized task can preempt the current task,
+    // because it will be checked in `should_preempt_cur_task` in next `schedule`.
+}
+
+/// Modify the static priority of the task according to the nice value.
+pub fn set_nice(task: &Arc<Task>, nice: i8) {
+    if !super::nice::NICE_RANGE.contains(&nice) {
+        return;
+    }
+
+    let old_prio = task.priority();
+    if old_prio == nice.into() || old_prio.is_real_time() {
+        return;
+    }
+
+    use super::task::WritePriority;
+    let sched = locked_global_scheduler();
+    if task.status().is_runnable() && sched.dequeue(task) {
+        task.set_priority(nice.into());
+        sched.enqueue(task.clone());
+        drop(sched);
+    } else {
+        drop(sched);
+        task.set_priority(nice.into());
+    }
+
+    prio_changed(task, &old_prio);
 }

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
+
 use crate::prelude::*;
-use aster_frame::task::{NeedResched, ReadPriority, Scheduler, Task, TaskAdapter};
+use aster_frame::task::{NeedResched, ReadPriority, Scheduler, Task, TaskAdapter, TaskNumber};
 use intrusive_collections::{linked_list::CursorMut, LinkedList};
 
 /// The preempt scheduler
@@ -15,6 +17,8 @@ pub struct PreemptiveRRScheduler {
     real_time_tasks: SpinLock<LinkedList<TaskAdapter>>,
     /// Tasks with a priority greater than or equal to 100 are regarded as normal tasks.
     normal_tasks: SpinLock<LinkedList<TaskAdapter>>,
+    /// The total number of tasks in this scheduler.
+    task_num: AtomicU32,
 }
 
 impl PreemptiveRRScheduler {
@@ -22,6 +26,7 @@ impl PreemptiveRRScheduler {
         Self {
             real_time_tasks: SpinLock::new(LinkedList::new(TaskAdapter::new())),
             normal_tasks: SpinLock::new(LinkedList::new(TaskAdapter::new())),
+            task_num: AtomicU32::new(0),
         }
     }
 
@@ -50,6 +55,7 @@ impl PreemptiveRRScheduler {
         } else {
             target.push_back(task);
         }
+        self.task_num.fetch_add(1, Relaxed);
     }
 }
 
@@ -58,23 +64,29 @@ impl Scheduler for PreemptiveRRScheduler {
         self.enqueue_at(task, false);
     }
 
-    fn remove(&self, task: &Arc<Task>) -> bool {
+    fn dequeue(&self, task: &Arc<Task>) -> bool {
         let mut target = if task.is_real_time() {
             self.real_time_tasks.lock()
         } else {
             self.normal_tasks.lock()
         };
         let found = Self::rm_task_from_queue(task, target.cursor_mut());
-        let tmp = target.cursor_mut();
+        if found {
+            self.task_num.fetch_sub(1, Relaxed);
+        }
         found
     }
 
     fn pick_next_task(&self) -> Option<Arc<Task>> {
-        if !self.real_time_tasks.lock().is_empty() {
+        let picked = if !self.real_time_tasks.lock().is_empty() {
             self.real_time_tasks.lock().pop_front()
         } else {
             self.normal_tasks.lock().pop_front()
+        };
+        if picked.is_some() {
+            self.task_num.fetch_sub(1, Relaxed);
         }
+        picked
     }
 
     fn should_preempt(&self, task: &Arc<Task>) -> bool {
@@ -87,5 +99,26 @@ impl Scheduler for PreemptiveRRScheduler {
     fn yield_to(&self, cur_task: &Arc<Task>, target_task: Arc<Task>) {
         self.before_yield(cur_task);
         self.enqueue_at(target_task, true);
+    }
+
+    fn contains(&self, task: &Arc<Task>) -> bool {
+        let target = &mut if task.is_real_time() {
+            self.real_time_tasks.lock()
+        } else {
+            self.normal_tasks.lock()
+        };
+
+        let cursor = &mut target.cursor_mut();
+        while let Some(t) = cursor.get() {
+            if t == task.as_ref() {
+                return true;
+            }
+            cursor.move_next();
+        }
+        false
+    }
+
+    fn task_num(&self) -> TaskNumber {
+        self.task_num.load(Relaxed)
     }
 }

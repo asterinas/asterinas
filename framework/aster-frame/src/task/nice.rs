@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ops::RangeInclusive;
+
 use crate::task::Priority;
 
 /// The Nice value of a task.
@@ -32,3 +34,5 @@ impl From<Priority> for Nice {
         (prio.get() as i8 - RT_PRIO_NUMERIC_UPPER_BOUND as i8) as Nice - 20
     }
 }
+
+pub const NICE_RANGE: RangeInclusive<i8> = -20..=19;
