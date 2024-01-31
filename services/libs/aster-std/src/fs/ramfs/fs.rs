@@ -414,7 +414,7 @@ impl RamInode {
 impl PageCacheBackend for RamInode {
     fn read_page(&self, _idx: usize, frame: &VmFrame) -> Result<()> {
         // Initially, any block/page in a RamFs inode contains all zeros
-        frame.zero();
+        frame.writer().fill(0);
         Ok(())
     }
 
