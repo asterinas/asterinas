@@ -75,9 +75,9 @@ impl InodeHandle_ {
         }
 
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().read_direct_to_end(buf)?
+            self.dentry.inode().read_direct_all(buf)?
         } else {
-            self.dentry.inode().read_to_end(buf)?
+            self.dentry.inode().read_all(buf)?
         };
         Ok(len)
     }

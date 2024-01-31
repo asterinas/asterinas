@@ -355,7 +355,7 @@ impl dyn Inode {
         (self as &dyn Any).downcast_ref::<T>()
     }
 
-    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
+    pub fn read_all(&self, buf: &mut Vec<u8>) -> Result<usize> {
         if !self.type_().support_read() {
             return_errno!(Errno::EISDIR);
         }
@@ -367,7 +367,7 @@ impl dyn Inode {
         self.read_at(0, &mut buf[..file_size])
     }
 
-    pub fn read_direct_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
+    pub fn read_direct_all(&self, buf: &mut Vec<u8>) -> Result<usize> {
         if !self.type_().support_read() {
             return_errno!(Errno::EISDIR);
         }
