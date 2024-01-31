@@ -6,6 +6,7 @@ use core::{
     marker::PhantomData,
     ops::{BitAnd, BitOr, Not, Range},
 };
+use pod::Pod;
 
 use crate::{config::PAGE_SIZE, prelude::*, Error};
 
@@ -55,11 +56,6 @@ impl VmFrameVec {
     pub fn append(&mut self, more: &mut VmFrameVec) -> Result<()> {
         self.0.append(&mut more.0);
         Ok(())
-    }
-
-    /// zero all internal vm frames
-    pub fn zero(&self) {
-        self.0.iter().for_each(|vm_frame| vm_frame.zero())
     }
 
     /// Truncate some frames.
@@ -226,12 +222,6 @@ impl VmFrame {
 
     pub fn end_paddr(&self) -> Paddr {
         (self.frame_index() + 1) * PAGE_SIZE
-    }
-
-    /// Fills the frame with zero.
-    pub fn zero(&self) {
-        // Safety: The range of memory is valid for writes of one page data.
-        unsafe { core::ptr::write_bytes(self.as_mut_ptr(), 0, PAGE_SIZE) }
     }
 
     fn need_dealloc(&self) -> bool {
@@ -416,12 +406,6 @@ impl VmSegment {
     /// Returns the number of bytes.
     pub fn nbytes(&self) -> usize {
         self.nframes() * PAGE_SIZE
-    }
-
-    /// Fills the page frames with zero.
-    pub fn zero(&self) {
-        // Safety: The range of memory is valid for writes of `self.nbytes()` data.
-        unsafe { core::ptr::write_bytes(self.as_mut_ptr(), 0, self.nbytes()) }
     }
 
     fn need_dealloc(&self) -> bool {
@@ -699,6 +683,21 @@ impl<'a> VmWriter<'a> {
             reader.cursor = reader.cursor.add(copy_len);
         }
         copy_len
+    }
+
+    /// Fills the available space by repeating `value`.
+    ///
+    /// # Panic
+    ///
+    /// The size of the available space must be a multiple of the size of `value`.
+    /// Otherwise, the method would panic.
+    pub fn fill<T: Pod>(&mut self, value: T) {
+        assert!(self.avail() / value.as_bytes().len() > 0);
+        assert!(self.avail() % value.as_bytes().len() == 0);
+
+        while self.avail() > 0 {
+            self.write(&mut value.as_bytes().into());
+        }
     }
 }
 

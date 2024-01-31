@@ -845,7 +845,7 @@ impl InodeImpl_ {
 
         debug_assert!(field::DIRECT.contains(&(bid as usize)));
         if self.blocks_hole_desc.is_hole(bid as usize) {
-            block.zero();
+            block.writer().fill(0);
             return Ok(());
         }
         let device_bid = Bid::new(self.desc.data[bid as usize] as _);
