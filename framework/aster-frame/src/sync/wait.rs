@@ -180,7 +180,9 @@ impl Waiter {
             self.is_woken_up
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         {
-            add_task(self.task.clone());
+            if self.task.inner_exclusive_access().task_status == TaskStatus::Sleeping {
+                add_task(self.task.clone());
+            }
         }
     }
 

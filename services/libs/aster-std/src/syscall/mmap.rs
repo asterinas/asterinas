@@ -75,7 +75,11 @@ fn mmap_anonymous_vmo(
 
     // TODO: implement features presented by other flags.
     if option.typ() != MMapType::Private {
-        panic!("Unsupported mmap flags {:?} now", option);
+        if option.typ() == MMapType::Shared {
+            warn!("Workaround the shared mmap {:?}", option);
+        } else {
+            panic!("Unsupported mmap flags {:?} now", option);
+        }
     }
 
     let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
