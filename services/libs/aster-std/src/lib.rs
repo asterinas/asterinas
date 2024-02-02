@@ -22,6 +22,7 @@
 #![feature(format_args_nl)]
 #![feature(int_roundings)]
 #![feature(step_trait)]
+#![feature(btree_cursors)]
 #![register_tool(component_access_control)]
 
 use crate::{
@@ -131,10 +132,10 @@ fn print_banner() {
     println!("\x1B[36m");
     println!(
         r"
-   _   ___ _____ ___ ___ ___ _  _   _   ___ 
+   _   ___ _____ ___ ___ ___ _  _   _   ___
   /_\ / __|_   _| __| _ \_ _| \| | /_\ / __|
  / _ \\__ \ | | | _||   /| || .` |/ _ \\__ \
-/_/ \_\___/ |_| |___|_|_\___|_|\_/_/ \_\___/                                                                                                                                    
+/_/ \_\___/ |_| |___|_|_\___|_|\_/_/ \_\___/
 "
     );
     println!("\x1B[0m");

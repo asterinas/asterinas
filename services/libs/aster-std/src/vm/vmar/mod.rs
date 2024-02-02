@@ -3,6 +3,7 @@
 //! Virtual Memory Address Regions (VMARs).
 
 mod dyn_cap;
+mod interval;
 mod options;
 mod static_cap;
 pub mod vm_mapping;
@@ -18,6 +19,7 @@ use aster_frame::vm::VmSpace;
 use aster_rights::Rights;
 use core::ops::Range;
 
+use self::interval::{Interval, IntervalSet};
 use self::vm_mapping::VmMapping;
 
 use super::page_fault_handler::PageFaultHandler;
@@ -131,6 +133,12 @@ impl VmarInner {
 const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x0010_0000;
 const ROOT_VMAR_HIGHEST_ADDR: Vaddr = 0x1000_0000_0000;
 
+impl Interval<usize> for Arc<Vmar_> {
+    fn range(&self) -> Range<usize> {
+        self.base..(self.base + self.size)
+    }
+}
+
 impl Vmar_ {
     fn new(
         inner: VmarInner,
@@ -181,20 +189,20 @@ impl Vmar_ {
 
     // do real protect. The protected range is ensured to be mapped.
     fn do_protect_inner(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
-        for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
-            let vm_mapping_range = *vm_mapping_base..(*vm_mapping_base + vm_mapping.map_size());
-            if is_intersected(&range, &vm_mapping_range) {
-                let intersected_range = get_intersected_range(&range, &vm_mapping_range);
-                vm_mapping.protect(perms, intersected_range)?;
-            }
+        let inner = self.inner.lock();
+
+        for vm_mapping in inner.vm_mappings.find(&range) {
+            let vm_mapping_range = vm_mapping.range();
+            debug_assert!(is_intersected(&vm_mapping_range, &range));
+            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
+            vm_mapping.protect(perms, intersected_range)?;
         }
 
-        for child_vmar_ in self.inner.lock().child_vmar_s.values() {
+        for child_vmar_ in inner.child_vmar_s.find(&range) {
             let child_vmar_range = child_vmar_.range();
-            if is_intersected(&range, &child_vmar_range) {
-                let intersected_range = get_intersected_range(&range, &child_vmar_range);
-                child_vmar_.do_protect_inner(perms, intersected_range)?;
-            }
+            debug_assert!(is_intersected(&child_vmar_range, &range));
+            let intersected_range = get_intersected_range(&range, &child_vmar_range);
+            child_vmar_.do_protect_inner(perms, intersected_range)?;
         }
 
         Ok(())
@@ -209,19 +217,23 @@ impl Vmar_ {
         assert!(protected_range.end <= self.base + self.size);
 
         // The protected range should not interstect with any free region
-        for free_region in self.inner.lock().free_regions.values() {
-            if is_intersected(&free_region.range, protected_range) {
-                return_errno_with_message!(Errno::EACCES, "protected range is not fully mapped");
-            }
+        let inner = self.inner.lock();
+        if inner
+            .free_regions
+            .find(protected_range)
+            .into_iter()
+            .next()
+            .is_some()
+        {
+            return_errno_with_message!(Errno::EACCES, "protected range is not fully mapped");
         }
 
         // if the protected range intersects with child vmar_, child vmar_ is responsible to do the check.
-        for child_vmar_ in self.inner.lock().child_vmar_s.values() {
-            let child_range = child_vmar_.range();
-            if is_intersected(&child_range, protected_range) {
-                let intersected_range = get_intersected_range(&child_range, protected_range);
-                child_vmar_.check_protected_range(&intersected_range)?;
-            }
+        for child_vmar_ in inner.child_vmar_s.find(protected_range) {
+            let child_vmar_range = child_vmar_.range();
+            debug_assert!(is_intersected(&child_vmar_range, protected_range));
+            let intersected_range = get_intersected_range(protected_range, &child_vmar_range);
+            child_vmar_.check_protected_range(&intersected_range)?;
         }
 
         Ok(())
@@ -239,21 +251,21 @@ impl Vmar_ {
         }
 
         let inner = self.inner.lock();
-        for (child_vmar_base, child_vmar) in &inner.child_vmar_s {
-            if *child_vmar_base <= page_fault_addr
-                && page_fault_addr < *child_vmar_base + child_vmar.size
-            {
-                return child_vmar.handle_page_fault(page_fault_addr, not_present, write);
-            }
+        if let Some(child_vmar) = inner.child_vmar_s.find_one(&page_fault_addr) {
+            debug_assert!(is_intersected(
+                &child_vmar.range(),
+                &(page_fault_addr..page_fault_addr + 1)
+            ));
+            return child_vmar.handle_page_fault(page_fault_addr, not_present, write);
         }
 
         // FIXME: If multiple vmos are mapped to the addr, should we allow all vmos to handle page fault?
-        for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
-            if *vm_mapping_base <= page_fault_addr
-                && page_fault_addr < *vm_mapping_base + vm_mapping.map_size()
-            {
-                return vm_mapping.handle_page_fault(page_fault_addr, not_present, write);
-            }
+        if let Some(vm_mapping) = inner.vm_mappings.find_one(&page_fault_addr) {
+            debug_assert!(is_intersected(
+                &vm_mapping.range(),
+                &(page_fault_addr..page_fault_addr + 1)
+            ));
+            return vm_mapping.handle_page_fault(page_fault_addr, not_present, write);
         }
 
         return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
@@ -305,11 +317,11 @@ impl Vmar_ {
         self.check_destroy_range(&range)?;
         let mut inner = self.inner.lock();
         let mut free_regions = BTreeMap::new();
-        for (child_vmar_base, child_vmar) in &inner.child_vmar_s {
-            let child_vmar_range = child_vmar.range();
-            if is_intersected(&range, &child_vmar_range) {
-                child_vmar.destroy_all()?;
-            }
+
+        for child_vmar_ in inner.child_vmar_s.find(&range) {
+            let child_vmar_range = child_vmar_.range();
+            debug_assert!(is_intersected(&child_vmar_range, &range));
+            child_vmar_.destroy_all()?;
             let free_region = FreeRegion::new(child_vmar_range);
             free_regions.insert(free_region.start(), free_region);
         }
@@ -320,18 +332,18 @@ impl Vmar_ {
 
         let mut mappings_to_remove = BTreeSet::new();
         let mut mappings_to_append = BTreeMap::new();
-        for vm_mapping in inner.vm_mappings.values() {
+
+        for vm_mapping in inner.vm_mappings.find(&range) {
             let vm_mapping_range = vm_mapping.range();
-            if is_intersected(&vm_mapping_range, &range) {
-                let intersected_range = get_intersected_range(&vm_mapping_range, &range);
-                vm_mapping.trim_mapping(
-                    &intersected_range,
-                    &mut mappings_to_remove,
-                    &mut mappings_to_append,
-                )?;
-                let free_region = FreeRegion::new(intersected_range);
-                free_regions.insert(free_region.start(), free_region);
-            }
+            debug_assert!(is_intersected(&vm_mapping_range, &range));
+            let intersected_range = get_intersected_range(&vm_mapping_range, &range);
+            vm_mapping.trim_mapping(
+                &intersected_range,
+                &mut mappings_to_remove,
+                &mut mappings_to_append,
+            )?;
+            let free_region = FreeRegion::new(intersected_range);
+            free_regions.insert(free_region.start(), free_region);
         }
 
         for mapping in mappings_to_remove {
@@ -354,21 +366,18 @@ impl Vmar_ {
         debug_assert!(range.start % PAGE_SIZE == 0);
         debug_assert!(range.end % PAGE_SIZE == 0);
 
-        for (child_vmar_base, child_vmar) in &self.inner.lock().child_vmar_s {
-            let child_vmar_start = *child_vmar_base;
-            let child_vmar_end = child_vmar_start + child_vmar.size;
-            if child_vmar_end <= range.start || child_vmar_start >= range.end {
-                // child vmar does not intersect with range
-                continue;
-            }
-            if range.start <= child_vmar_start && child_vmar_end <= range.end {
+        let inner = self.inner.lock();
+
+        for child_vmar_ in inner.child_vmar_s.find(range) {
+            let child_vmar_range = child_vmar_.range();
+            debug_assert!(is_intersected(&child_vmar_range, range));
+            if range.start <= child_vmar_range.start && child_vmar_range.end <= range.end {
                 // child vmar is totolly in the range
                 continue;
             }
-            assert!(is_intersected(range, &(child_vmar_start..child_vmar_end)));
             return_errno_with_message!(
                 Errno::EACCES,
-                "Child vmar is partly intersected with destryed range"
+                "Child vmar is partly intersected with destroyed range"
             );
         }
 
@@ -400,19 +409,22 @@ impl Vmar_ {
     pub fn read(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         let read_start = self.base + offset;
         let read_end = buf.len() + read_start;
+        let read_range = read_start..read_end;
         // if the read range is in child vmar
-        for (child_vmar_base, child_vmar) in &self.inner.lock().child_vmar_s {
-            let child_vmar_end = *child_vmar_base + child_vmar.size;
-            if *child_vmar_base <= read_start && read_end <= child_vmar_end {
-                let child_offset = read_start - *child_vmar_base;
-                return child_vmar.read(child_offset, buf);
+        let inner = self.inner.lock();
+        for child_vmar_ in inner.child_vmar_s.find(&read_range) {
+            let child_vmar_range = child_vmar_.range();
+            if child_vmar_range.start <= read_start && read_end <= child_vmar_range.end {
+                let child_offset = read_start - child_vmar_range.start;
+                return child_vmar_.read(child_offset, buf);
             }
         }
+
         // if the read range is in mapped vmo
-        for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
-            let vm_mapping_end = *vm_mapping_base + vm_mapping.map_size();
-            if *vm_mapping_base <= read_start && read_end <= vm_mapping_end {
-                let vm_mapping_offset = read_start - *vm_mapping_base;
+        for vm_mapping in inner.vm_mappings.find(&read_range) {
+            let vm_mapping_range = vm_mapping.range();
+            if vm_mapping_range.start <= read_start && read_end <= vm_mapping_range.end {
+                let vm_mapping_offset = read_start - vm_mapping_range.start;
                 return vm_mapping.read_bytes(vm_mapping_offset, buf);
             }
         }
@@ -431,20 +443,23 @@ impl Vmar_ {
             .len()
             .checked_add(write_start)
             .ok_or_else(|| Error::with_message(Errno::EFAULT, "Arithmetic Overflow"))?;
+        let write_range = write_start..write_end;
 
         // if the write range is in child vmar
-        for (child_vmar_base, child_vmar) in &self.inner.lock().child_vmar_s {
-            let child_vmar_end = *child_vmar_base + child_vmar.size;
-            if *child_vmar_base <= write_start && write_end <= child_vmar_end {
-                let child_offset = write_start - *child_vmar_base;
-                return child_vmar.write(child_offset, buf);
+        let inner = self.inner.lock();
+        for child_vmar_ in inner.child_vmar_s.find(&write_range) {
+            let child_vmar_range = child_vmar_.range();
+            if child_vmar_range.start <= write_start && write_end <= child_vmar_range.end {
+                let child_offset = write_start - child_vmar_range.start;
+                return child_vmar_.write(child_offset, buf);
             }
         }
+
         // if the write range is in mapped vmo
-        for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
-            let vm_mapping_end = *vm_mapping_base + vm_mapping.map_size();
-            if *vm_mapping_base <= write_start && write_end <= vm_mapping_end {
-                let vm_mapping_offset = write_start - *vm_mapping_base;
+        for vm_mapping in inner.vm_mappings.find(&write_range) {
+            let vm_mapping_range = vm_mapping.range();
+            if vm_mapping_range.start <= write_start && write_end <= vm_mapping_range.end {
+                let vm_mapping_offset = write_start - vm_mapping_range.start;
                 return vm_mapping.write_bytes(vm_mapping_offset, buf);
             }
         }
@@ -503,18 +518,24 @@ impl Vmar_ {
         child_size: usize,
         align: usize,
     ) -> Result<(Vaddr, Vaddr)> {
-        for (region_base, free_region) in &self.inner.lock().free_regions {
-            if let Some(child_vmar_offset) = child_offset {
-                // if the offset is set, we should find a free region can satisfy both the offset and size
-                if *region_base <= child_vmar_offset
-                    && (child_vmar_offset + child_size) <= (free_region.end())
+        let inner = self.inner.lock();
+
+        if let Some(child_vmar_offset) = child_offset {
+            // if the offset is set, we should find a free region can satisfy both the offset and size
+            let child_vmar_range = child_vmar_offset..(child_vmar_offset + child_size);
+            for free_region in inner.free_regions.find(&child_vmar_range) {
+                let free_region_range = free_region.range();
+                if free_region_range.start <= child_vmar_range.start
+                    && child_vmar_range.end <= free_region_range.end
                 {
-                    return Ok((*region_base, child_vmar_offset));
+                    return Ok((free_region_range.start, child_vmar_offset));
                 }
-            } else {
-                // else, we find a free region that can satisfy the length and align requirement.
-                // Here, we use a simple brute-force algorithm to find the first free range that can satisfy.
-                // FIXME: A randomized algorithm may be more efficient.
+            }
+        } else {
+            // else, we find a free region that can satisfy the length and align requirement.
+            // Here, we use a simple brute-force algorithm to find the first free range that can satisfy.
+            // FIXME: A randomized algorithm may be more efficient.
+            for (region_base, free_region) in &inner.free_regions {
                 let region_start = free_region.start();
                 let region_end = free_region.end();
                 let child_vmar_real_start = region_start.align_up(align);
@@ -527,34 +548,27 @@ impl Vmar_ {
         return_errno_with_message!(Errno::EACCES, "Cannot find free region for child")
     }
 
-    fn range(&self) -> Range<usize> {
-        self.base..(self.base + self.size)
-    }
-
     fn check_vmo_overwrite(&self, vmo_range: Range<usize>, can_overwrite: bool) -> Result<()> {
         let inner = self.inner.lock();
-        for child_vmar in inner.child_vmar_s.values() {
-            let child_vmar_range = child_vmar.range();
-            if is_intersected(&vmo_range, &child_vmar_range) {
-                return_errno_with_message!(
-                    Errno::EACCES,
-                    "vmo range overlapped with child vmar range"
-                );
-            }
+        if inner
+            .child_vmar_s
+            .find(&vmo_range)
+            .into_iter()
+            .next()
+            .is_some()
+        {
+            return_errno_with_message!(Errno::EACCES, "vmo range overlapped with child vmar range");
         }
 
-        if !can_overwrite {
-            for (child_vmo_base, child_vmo) in &inner.vm_mappings {
-                let child_vmo_range = *child_vmo_base..*child_vmo_base + child_vmo.map_size();
-                if is_intersected(&vmo_range, &child_vmo_range) {
-                    debug!("vmo_range = {:x?}", vmo_range);
-                    debug!("child_vmo_range = {:x?}", child_vmo_range);
-                    return_errno_with_message!(
-                        Errno::EACCES,
-                        "vmo range overlapped with another vmo"
-                    );
-                }
-            }
+        if !can_overwrite
+            && inner
+                .vm_mappings
+                .find(&vmo_range)
+                .into_iter()
+                .next()
+                .is_some()
+        {
+            return_errno_with_message!(Errno::EACCES, "vmo range overlapped with another vmo");
         }
 
         Ok(())
@@ -594,15 +608,17 @@ impl Vmar_ {
             let map_range = offset..(offset + map_size);
             // If can overwrite, the vmo can cross multiple free regions. We will split each free regions that intersect with the vmo
             let mut split_regions = Vec::new();
-            for (free_region_base, free_region) in &inner.free_regions {
+
+            for free_region in inner.free_regions.find(&map_range) {
                 let free_region_range = free_region.range();
-                if is_intersected(free_region_range, &map_range) {
-                    split_regions.push(*free_region_base);
+                if is_intersected(&free_region_range, &map_range) {
+                    split_regions.push(free_region_range.start);
                 }
             }
+
             for region_base in split_regions {
                 let free_region = inner.free_regions.remove(&region_base).unwrap();
-                let intersected_range = get_intersected_range(free_region.range(), &map_range);
+                let intersected_range = get_intersected_range(&free_region.range(), &map_range);
                 let regions_after_split = free_region.allocate_range(intersected_range);
                 regions_after_split.into_iter().for_each(|region| {
                     inner.free_regions.insert(region.start(), region);
@@ -618,7 +634,7 @@ impl Vmar_ {
             let mut inner = self.inner.lock();
             let free_region = inner.free_regions.remove(&free_region_base).unwrap();
             let vmo_range = offset..(offset + map_size);
-            let intersected_range = get_intersected_range(free_region.range(), &vmo_range);
+            let intersected_range = get_intersected_range(&free_region.range(), &vmo_range);
             let regions_after_split = free_region.allocate_range(intersected_range);
             regions_after_split.into_iter().for_each(|region| {
                 inner.free_regions.insert(region.start(), region);
@@ -704,11 +720,14 @@ impl Vmar_ {
 
     /// get mapped vmo at given offset
     fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
-        for (vm_mapping_base, vm_mapping) in &self.inner.lock().vm_mappings {
-            if *vm_mapping_base <= offset && offset < *vm_mapping_base + vm_mapping.map_size() {
-                return Ok(vm_mapping.clone());
-            }
+        let inner = self.inner.lock();
+        let range = offset..offset + 1;
+
+        if let Some(vm_mapping) = inner.vm_mappings.find_one(&offset) {
+            debug_assert!(is_intersected(&vm_mapping.range(), &(offset..offset + 1)));
+            return Ok(vm_mapping.clone());
         }
+
         return_errno_with_message!(Errno::EACCES, "No mapped vmo at this offset");
     }
 }
@@ -739,6 +758,12 @@ pub struct FreeRegion {
     range: Range<Vaddr>,
 }
 
+impl Interval<usize> for FreeRegion {
+    fn range(&self) -> Range<usize> {
+        self.range.clone()
+    }
+}
+
 impl FreeRegion {
     pub fn new(range: Range<Vaddr>) -> Self {
         Self { range }
@@ -754,10 +779,6 @@ impl FreeRegion {
 
     pub fn size(&self) -> usize {
         self.range.end - self.range.start
-    }
-
-    pub fn range(&self) -> &Range<usize> {
-        &self.range
     }
 
     /// allocate a range in this free region.
@@ -785,6 +806,7 @@ impl FreeRegion {
 }
 
 /// determine whether two ranges are intersected.
+/// returns zero if one of the ranges has a length of 0
 pub fn is_intersected(range1: &Range<usize>, range2: &Range<usize>) -> bool {
     range1.start.max(range2.start) < range1.end.min(range2.end)
 }
@@ -794,4 +816,61 @@ pub fn is_intersected(range1: &Range<usize>, range2: &Range<usize>) -> bool {
 pub fn get_intersected_range(range1: &Range<usize>, range2: &Range<usize>) -> Range<usize> {
     debug_assert!(is_intersected(range1, range2));
     range1.start.max(range2.start)..range1.end.min(range2.end)
+}
+
+impl<'a, V: Interval<Vaddr> + 'a> IntervalSet<'a, Vaddr> for BTreeMap<Vaddr, V> {
+    type Item = V;
+    fn find(&'a self, range: &Range<Vaddr>) -> impl IntoIterator<Item = &'a Self::Item> + 'a {
+        let mut res = Vec::new();
+        let mut start_cursor = self.lower_bound(core::ops::Bound::Excluded(&range.start));
+        let start_key = {
+            start_cursor.move_prev();
+            if start_cursor.key().is_none()
+                || start_cursor.value().unwrap().range().end <= range.start
+            {
+                // the start_cursor is pointing to the "ghost" non-element before the first element
+                // or not intersected
+                start_cursor.move_next();
+            }
+            if start_cursor.key().is_none()
+                || start_cursor.value().unwrap().range().start >= range.end
+            {
+                // return None if the start_cursor is pointing to the "ghost" non-element after the last element
+                // or not intersected
+                return res;
+            }
+            start_cursor.key().unwrap()
+        };
+        let mut end_cursor = start_cursor.clone();
+        loop {
+            if end_cursor.key().is_none() || end_cursor.value().unwrap().range().start >= range.end
+            {
+                // the end_cursor is pointing to the "ghost" non-element after the last element
+                // or not intersected
+                break;
+            }
+            res.push(end_cursor.value().unwrap());
+            end_cursor.move_next();
+        }
+
+        res
+    }
+
+    fn find_one(&'a self, point: &Vaddr) -> Option<&'a Self::Item> {
+        let mut cursor = self.lower_bound(core::ops::Bound::Excluded(point));
+        cursor.move_prev();
+        if cursor.key().is_none() || cursor.value().unwrap().range().end <= *point {
+            // the cursor is pointing to the "ghost" non-element before the first element
+            // or not intersected
+            cursor.move_next();
+        }
+        // return None if the cursor is pointing to the "ghost" non-element after the last element
+        cursor.key()?;
+
+        if cursor.value().unwrap().range().start > *point {
+            None
+        } else {
+            Some(cursor.value().unwrap())
+        }
+    }
 }
