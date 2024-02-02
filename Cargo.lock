@@ -154,6 +154,7 @@ dependencies = [
  "buddy_system_allocator",
  "cfg-if",
  "gimli",
+ "iced-x86",
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
@@ -801,6 +802,15 @@ name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
+
+[[package]]
+name = "iced-x86"
+version = "1.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c447cff8c7f384a7d4f741cfcff32f75f3ad02b406432e8d6c878d56b1edf6b"
+dependencies = [
+ "lazy_static",
+]
 
 [[package]]
 name = "ident_case"
