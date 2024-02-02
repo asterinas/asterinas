@@ -15,6 +15,8 @@ use crate::vm::perms::VmPerms;
 use crate::vm::vmar::Rights;
 use crate::vm::vmo::VmoRightsOp;
 
+use super::interval::Interval;
+
 /// A VmMapping represents mapping a vmo into a vmar.
 /// A vmar can has multiple VmMappings, which means multiple vmos are mapped to a vmar.
 /// A vmo can also contain multiple VmMappings, which means a vmo can be mapped to multiple vmars.
@@ -56,6 +58,12 @@ struct VmMappingInner {
     /// This map can be filled when mapping a vmo to vmar and can be modified when call mprotect.
     /// We keep the options in case the page is not committed(or create copy on write mappings) and will further need these options.
     page_perms: BTreeMap<usize, VmPerm>,
+}
+
+impl Interval<usize> for Arc<VmMapping> {
+    fn range(&self) -> Range<usize> {
+        self.map_to_addr()..self.map_to_addr() + self.map_size()
+    }
 }
 
 impl VmMapping {
