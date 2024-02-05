@@ -10,8 +10,8 @@ DEP_OUTPUT_DIR := $(BUILD_DIR)/dep/$(CUR_DIR_NAME)
 C_SRCS := $(wildcard *.c)
 C_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(C_SRCS:%.c=%))
 C_DEPS := $(addprefix $(DEP_OUTPUT_DIR)/,$(C_SRCS:%.c=%.d))
-ASM_SRCS := $(wildcard *.s)
-ASM_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(ASM_SRCS:%.s=%))
+ASM_SRCS := $(wildcard *.S)
+ASM_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(ASM_SRCS:%.S=%))
 CC := gcc
 C_FLAGS := -Wall -Werror
 
@@ -28,6 +28,6 @@ $(OBJ_OUTPUT_DIR)/%: %.c | $(OBJ_OUTPUT_DIR) $(DEP_OUTPUT_DIR)
 
 -include $(C_DEPS)
 
-$(OBJ_OUTPUT_DIR)/%: %.s | $(OBJ_OUTPUT_DIR)
+$(OBJ_OUTPUT_DIR)/%: %.S | $(OBJ_OUTPUT_DIR)
 	@$(CC) $(C_FLAGS) $(EXTRA_C_FLAGS) $< -o $@
 	@echo "CC <= $@"

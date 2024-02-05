@@ -11,7 +11,8 @@ use crate::{
 
 pub fn sys_wait4(wait_pid: u64, exit_status_ptr: u64, wait_options: u32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_WAIT4);
-    let wait_options = WaitOptions::from_bits(wait_options).expect("Unknown wait options");
+    let wait_options = WaitOptions::from_bits(wait_options)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown wait option"))?;
     debug!(
         "pid = {}, exit_status_ptr = {}, wait_options: {:?}",
         wait_pid as i32, exit_status_ptr, wait_options
