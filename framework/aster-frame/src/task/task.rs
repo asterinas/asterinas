@@ -5,16 +5,19 @@ use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
 use crate::cpu::CpuSet;
 use crate::prelude::*;
 use crate::sync::{Mutex, MutexGuard};
+use crate::task::preempt::{activate_preempt, panic_if_in_atomic};
+use crate::task::remove_task;
+use crate::timer::current_tick;
 use crate::user::UserSpace;
 use crate::vm::page_table::KERNEL_PAGE_TABLE;
 use crate::vm::{VmAllocOptions, VmSegment};
 
+use super::priority::Priority;
+use super::processor::{current_task, schedule, yield_to};
+use super::scheduler::add_task;
+use super::Nice;
 use intrusive_collections::intrusive_adapter;
 use intrusive_collections::LinkedListAtomicLink;
-
-use super::add_task;
-use super::priority::Priority;
-use super::processor::{current_task, schedule};
 
 core::arch::global_asm!(include_str!("switch.S"));
 
@@ -107,17 +110,25 @@ pub struct Task {
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
-    priority: Priority,
     // TODO:: add multiprocessor support
     cpu_affinity: CpuSet,
+}
+
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self, other)
+    }
 }
 
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
 pub(crate) struct TaskInner {
+    priority: Priority,
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
+    pub need_resched: bool,
+    pub woken_up_timestamp: Option<u64>, // in Tick
 }
 
 impl Task {
@@ -136,17 +147,16 @@ impl Task {
         self.task_inner.lock().ctx
     }
 
-    /// Yields execution so that another task may be scheduled.
-    ///
-    /// Note that this method cannot be simply named "yield" as the name is
-    /// a Rust keyword.
-    pub fn yield_now() {
-        schedule();
-    }
-
     pub fn run(self: &Arc<Self>) {
-        add_task(self.clone());
-        schedule();
+        assert!(self.status().is_runnable());
+        // FIXME: leaves only `add_task(self.clone());schedule();` after fixing #518
+        const CHILD_RUN_FIRST: bool = true;
+        if CHILD_RUN_FIRST {
+            yield_to(self.clone());
+        } else {
+            add_task(self.clone());
+            schedule();
+        }
     }
 
     /// Returns the task status.
@@ -168,18 +178,102 @@ impl Task {
         }
     }
 
-    pub fn exit(&self) -> ! {
+    pub fn exit(self: &Arc<Self>) -> ! {
+        remove_task(self);
         self.inner_exclusive_access().task_status = TaskStatus::Exited;
         schedule();
+        panic_if_in_atomic();
         unreachable!()
-    }
-
-    pub fn is_real_time(&self) -> bool {
-        self.priority.is_real_time()
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub trait ReadPriority {
+    fn priority(&self) -> Priority;
+
+    fn is_real_time(&self) -> bool;
+
+    /// From the static priority
+    fn nice(&self) -> Nice;
+}
+
+pub trait WritePriority {
+    fn set_priority(&self, priority: Priority);
+}
+
+impl ReadPriority for Task {
+    fn priority(&self) -> Priority {
+        self.task_inner.lock().priority
+    }
+
+    fn is_real_time(&self) -> bool {
+        self.task_inner.lock().priority.is_real_time()
+    }
+
+    /// From the static priority
+    fn nice(&self) -> Nice {
+        self.task_inner
+            .lock()
+            .priority
+            .as_nice()
+            .expect("No nice value for real-time tasks")
+    }
+}
+
+impl WritePriority for Task {
+    fn set_priority(&self, priority: Priority) {
+        self.task_inner.lock().priority = priority;
+    }
+}
+
+pub trait WakeUp {
+    fn wakeup(&self);
+
+    fn woken_up_timestamp(&self) -> Option<u64>;
+
+    fn clear_woken_up_timestamp(&self);
+}
+
+impl WakeUp for Task {
+    fn wakeup(&self) {
+        let inner = &mut self.task_inner.lock();
+        if inner.task_status.is_sleeping() {
+            inner.task_status = TaskStatus::Runnable;
+            inner.woken_up_timestamp = Some(current_tick());
+        }
+    }
+
+    fn woken_up_timestamp(&self) -> Option<u64> {
+        self.task_inner.lock().woken_up_timestamp
+    }
+
+    fn clear_woken_up_timestamp(&self) {
+        self.task_inner.lock().woken_up_timestamp = None;
+    }
+}
+
+pub trait NeedResched {
+    fn set_need_resched(&self);
+
+    fn clear_need_resched(&self);
+
+    fn need_resched(&self) -> bool;
+}
+
+impl NeedResched for Task {
+    fn set_need_resched(&self) {
+        self.inner_exclusive_access().need_resched = true;
+    }
+
+    fn clear_need_resched(&self) {
+        self.inner_exclusive_access().need_resched = false;
+    }
+
+    fn need_resched(&self) -> bool {
+        self.inner_exclusive_access().need_resched
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The status of a task.
 pub enum TaskStatus {
     /// The task is runnable.
@@ -188,6 +282,20 @@ pub enum TaskStatus {
     Sleeping,
     /// The task has exited.
     Exited,
+}
+
+impl TaskStatus {
+    pub fn is_runnable(&self) -> bool {
+        self == &TaskStatus::Runnable
+    }
+
+    pub fn is_sleeping(&self) -> bool {
+        self == &TaskStatus::Sleeping
+    }
+
+    pub fn is_exited(&self) -> bool {
+        self == &TaskStatus::Exited
+    }
 }
 
 /// Options to create or spawn a new task.
@@ -250,30 +358,23 @@ impl TaskOptions {
 
     /// Builds a new task but not run it immediately.
     pub fn build(self) -> Result<Arc<Task>> {
-        /// all task will entering this function
-        /// this function is mean to executing the task_fn in Task
-        fn kernel_task_entry() {
-            let current_task = current_task()
-                .expect("no current task, it should have current task in kernel task entry");
-            current_task.func.call(());
-            current_task.exit();
-        }
         let result = Task {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
             task_inner: Mutex::new(TaskInner {
+                priority: self.priority,
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
+                need_resched: false,
+                woken_up_timestamp: None,
             }),
             exit_code: 0,
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
-            priority: self.priority,
             cpu_affinity: self.cpu_affinity,
         };
 
-        result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
         result.task_inner.lock().ctx.regs.rsp =
             (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
@@ -287,30 +388,23 @@ impl TaskOptions {
     /// If having a user space, then the task can switch to the user space to
     /// execute user code. Multiple tasks can share a single user space.
     pub fn spawn(self) -> Result<Arc<Task>> {
-        /// all task will entering this function
-        /// this function is mean to executing the task_fn in Task
-        fn kernel_task_entry() {
-            let current_task = current_task()
-                .expect("no current task, it should have current task in kernel task entry");
-            current_task.func.call(());
-            current_task.exit();
-        }
         let result = Task {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
             task_inner: Mutex::new(TaskInner {
+                priority: self.priority,
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
+                need_resched: false,
+                woken_up_timestamp: None,
             }),
             exit_code: 0,
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
-            priority: self.priority,
             cpu_affinity: self.cpu_affinity,
         };
 
-        result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
         result.task_inner.lock().ctx.regs.rsp =
             (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
@@ -319,4 +413,14 @@ impl TaskOptions {
         arc_self.run();
         Ok(arc_self)
     }
+}
+
+/// all task will entering this function
+/// this function is mean to executing the task_fn in Task
+fn kernel_task_entry() {
+    activate_preempt();
+    let current_task =
+        current_task().expect("no current task, it should have current task in kernel task entry");
+    current_task.func.call(());
+    current_task.exit();
 }

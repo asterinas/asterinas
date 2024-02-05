@@ -7,7 +7,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use aster_frame::task::Task;
+use aster_frame::task::{yield_now, Task};
 
 use crate::prelude::*;
 
@@ -87,7 +87,7 @@ impl Thread {
     }
 
     pub fn yield_now() {
-        Task::yield_now()
+        yield_now();
     }
 
     pub fn tid(&self) -> Tid {

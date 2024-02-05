@@ -19,6 +19,10 @@ pub const PAGE_SIZE_BITS: usize = 0xc;
 pub const KVA_START: usize = (usize::MAX) << PAGE_SIZE_BITS;
 
 pub const DEFAULT_LOG_LEVEL: Level = Level::Error;
+/// Whether to enable the debug log from scheduling.
+/// Only works when `DEFAULT_LOG_LEVEL` is `Debug`.
+/// Disabled by default.
+pub const SCHED_DEBUG_LOG: bool = false;
 /// This value represent the base timer frequency in Hz
 pub const TIMER_FREQ: u64 = 500;
 
