@@ -89,7 +89,7 @@ fn init_thread() {
     }));
     thread.join();
     info!(
-        "[aster-std/lib.rs] spawn kernel thread, tid = {}",
+        "[aster-nix/lib.rs] spawn kernel thread, tid = {}",
         thread.tid()
     );
     thread::work_queue::init();
