@@ -9,7 +9,7 @@ path = "kernel/main.rs"
 
 [dependencies]
 aster-frame = { path = "framework/aster-frame" }
-aster-std = { path = "services/libs/aster-std" }
+aster-nix = { path = "services/aster-nix" }
 component = { path = "services/libs/comp-sys/component" }
 
 [dev-dependencies]
@@ -40,6 +40,7 @@ members = [
     "framework/libs/linux-bzimage/setup",
     "framework/libs/ktest",
     "framework/libs/tdx-guest",
+    "services/aster-nix",
     "services/comps/block",
     "services/comps/console",
     "services/comps/framebuffer",
@@ -52,7 +53,6 @@ members = [
     "services/libs/int-to-c-enum/derive",
     "services/libs/aster-rights",
     "services/libs/aster-rights-proc",
-    "services/libs/aster-std",
     "services/libs/aster-util",
     "services/libs/keyable-arc",
     "services/libs/typeflags",
@@ -67,4 +67,4 @@ exclude = [
 ]
 
 [features]
-intel_tdx = ["aster-frame/intel_tdx", "aster-std/intel_tdx"]
+intel_tdx = ["aster-frame/intel_tdx", "aster-nix/intel_tdx"]

@@ -1,6 +1,6 @@
 # template
 [components]
-std = { name = "aster-std" }
+nix = { name = "aster-nix" }
 virtio = { name = "aster-virtio" }
 input = { name = "aster-input" }
 block = { name = "aster-block" }
@@ -11,5 +11,5 @@ network = { name = "aster-network" }
 main = { name = "asterinas" }
 
 [whitelist]
-[whitelist.std.run_first_process]
+[whitelist.nix.run_first_process]
 main = true

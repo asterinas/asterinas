@@ -221,37 +221,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aster-rights"
-version = "0.1.0"
-dependencies = [
- "aster-rights-proc",
- "bitflags 1.3.2",
- "typeflags",
- "typeflags-util",
-]
-
-[[package]]
-name = "aster-rights-proc"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "aster-runner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "linux-bzimage-builder",
- "rand",
- "xmas-elf 0.8.0",
-]
-
-[[package]]
-name = "aster-std"
+name = "aster-nix"
 version = "0.1.0"
 dependencies = [
  "align_ext",
@@ -293,6 +263,36 @@ dependencies = [
  "typeflags",
  "typeflags-util",
  "vte",
+ "xmas-elf 0.8.0",
+]
+
+[[package]]
+name = "aster-rights"
+version = "0.1.0"
+dependencies = [
+ "aster-rights-proc",
+ "bitflags 1.3.2",
+ "typeflags",
+ "typeflags-util",
+]
+
+[[package]]
+name = "aster-rights-proc"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "aster-runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "linux-bzimage-builder",
+ "rand",
  "xmas-elf 0.8.0",
 ]
 
@@ -350,7 +350,7 @@ version = "0.3.0"
 dependencies = [
  "aster-frame",
  "aster-framebuffer",
- "aster-std",
+ "aster-nix",
  "aster-time",
  "component",
  "x86_64",
