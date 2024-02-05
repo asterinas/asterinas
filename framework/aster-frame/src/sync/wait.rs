@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SpinLock;
-use crate::arch::timer::add_timeout_list;
-use crate::config::TIMER_FREQ;
+use crate::arch::timer::{add_timeout_list, TIMER_FREQ};
 use alloc::{collections::VecDeque, sync::Arc};
 use bitflags::bitflags;
 use core::sync::atomic::{AtomicBool, Ordering};

@@ -12,11 +12,21 @@ use spin::Once;
 use trapframe::TrapFrame;
 
 use crate::arch::x86::kernel;
-use crate::config::TIMER_FREQ;
 use crate::sync::SpinLock;
 use crate::trap::IrqLine;
 
 use self::apic::APIC_TIMER_CALLBACK;
+
+/// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and
+/// convenient for timer. What's more, the frequency cannot be set too high or too low, 1000Hz is
+/// a modest choice.
+///
+/// For system performance reasons, this rate cannot be set too high, otherwise most of the time
+/// is spent executing timer code.
+///
+/// Due to hardware limitations, this value cannot be set too low; for example, PIT cannot accept
+/// frequencies lower than 19Hz = 1193182 / 65536 (Timer rate / Divider)
+pub const TIMER_FREQ: u64 = 1000;
 
 pub static TIMER_IRQ_NUM: AtomicU8 = AtomicU8::new(32);
 pub static TICK: AtomicU64 = AtomicU64::new(0);
@@ -24,7 +34,6 @@ pub static TICK: AtomicU64 = AtomicU64::new(0);
 static TIMER_IRQ: Once<IrqLine> = Once::new();
 
 pub fn init() {
-    TIMEOUT_LIST.call_once(|| SpinLock::new(BinaryHeap::new()));
     if kernel::apic::APIC_INSTANCE.is_completed() {
         // Get the free irq number first. Use `allocate_target_irq` to get the Irq handle after dropping it.
         // Because the function inside `apic::init` will allocate this irq.
@@ -33,8 +42,9 @@ pub fn init() {
         drop(irq);
         apic::init();
     } else {
-        pit::init();
+        pit::init(pit::OperatingMode::SquareWaveGenerator);
     };
+    TIMEOUT_LIST.call_once(|| SpinLock::new(BinaryHeap::new()));
     let mut timer_irq = IrqLine::alloc_specific(TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
     timer_irq.on_active(timer_callback);
     TIMER_IRQ.call_once(|| timer_irq);
