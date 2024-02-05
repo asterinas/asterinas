@@ -1,17 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::AtomicU64;
+use core::{
+    arch::x86_64::_rdtsc,
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+};
+use log::info;
+use trapframe::TrapFrame;
 use x86::cpuid::cpuid;
 
-/// The frequency of tsc. The unit is Hz.
+use crate::{
+    arch::timer::{
+        pit::{self, OperatingMode},
+        TIMER_FREQ, TIMER_IRQ_NUM,
+    },
+    trap::IrqLine,
+};
+
+/// The frequency of TSC(Hz)
 pub(crate) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
 
-const TSC_DEADLINE_MODE_SUPPORT: u32 = 1 << 24;
-
-/// Determine if the current system supports tsc_deadline mode.
-pub fn is_tsc_deadline_mode_supported() -> bool {
-    let cpuid = cpuid!(1);
-    (cpuid.ecx & TSC_DEADLINE_MODE_SUPPORT) > 0
+pub fn init_tsc_freq() {
+    let tsc_freq = determine_tsc_freq_via_cpuid().map_or(determine_tsc_freq_via_pit(), |freq| freq);
+    TSC_FREQ.store(tsc_freq, Ordering::Relaxed);
+    info!("TSC frequency:{:?} Hz", tsc_freq);
 }
 
 /// Determine TSC frequency via CPUID. If the CPU does not support calculating TSC frequency by
@@ -19,7 +30,7 @@ pub fn is_tsc_deadline_mode_supported() -> bool {
 ///
 /// Ref: function `native_calibrate_tsc` in linux `arch/x86/kernel/tsc.c`
 ///
-pub fn determine_tsc_freq_via_cpuid() -> Option<u32> {
+pub fn determine_tsc_freq_via_cpuid() -> Option<u64> {
     // Check the max cpuid supported
     let cpuid = cpuid!(0);
     let max_cpuid = cpuid.eax;
@@ -49,6 +60,53 @@ pub fn determine_tsc_freq_via_cpuid() -> Option<u32> {
     if crystal_khz == 0 {
         None
     } else {
-        Some(crystal_khz * ebx_numerator / eax_denominator)
+        let crystal_hz = crystal_khz as u64 * 1000;
+        Some(crystal_hz * ebx_numerator as u64 / eax_denominator as u64)
+    }
+}
+
+/// When kernel cannot get the TSC frequency from CPUID, it can leverage
+/// the PIT to calculate this frequency.
+pub fn determine_tsc_freq_via_pit() -> u64 {
+    // Allocate IRQ
+    let mut irq = IrqLine::alloc_specific(TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
+    irq.on_active(pit_callback);
+
+    // Enable PIT
+    pit::init(OperatingMode::RateGenerator);
+    pit::enable_ioapic_line(irq.clone());
+
+    static IS_FINISH: AtomicBool = AtomicBool::new(false);
+    static FREQUENCY: AtomicU64 = AtomicU64::new(0);
+    x86_64::instructions::interrupts::enable();
+    while !IS_FINISH.load(Ordering::Acquire) {
+        x86_64::instructions::hlt();
+    }
+    x86_64::instructions::interrupts::disable();
+    drop(irq);
+    return FREQUENCY.load(Ordering::Acquire);
+
+    fn pit_callback(trap_frame: &TrapFrame) {
+        static IN_TIME: AtomicU64 = AtomicU64::new(0);
+        static TSC_FIRST_COUNT: AtomicU64 = AtomicU64::new(0);
+        // Set a certain times of callbacks to calculate the frequency
+        const CALLBACK_TIMES: u64 = TIMER_FREQ / 10;
+
+        if IN_TIME.load(Ordering::Relaxed) < CALLBACK_TIMES || IS_FINISH.load(Ordering::Acquire) {
+            if IN_TIME.load(Ordering::Relaxed) == 0 {
+                unsafe {
+                    TSC_FIRST_COUNT.store(_rdtsc(), Ordering::Relaxed);
+                }
+            }
+            IN_TIME.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+        pit::disable_ioapic_line();
+        let tsc_count = unsafe { _rdtsc() };
+        let freq =
+            (tsc_count - TSC_FIRST_COUNT.load(Ordering::Relaxed)) * (TIMER_FREQ / CALLBACK_TIMES);
+        FREQUENCY.store(freq, Ordering::Release);
+        IS_FINISH.store(true, Ordering::Release);
     }
 }
