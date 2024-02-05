@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: MPL-2.0
 
+# FIXME: WNOHANG option currently does not work properly without preemption, so we have temporarily 
+# removed it. Once preemption is supported, the following macro can be uncommented to add the WNOHANG 
+# option back.
+# #define PREEMPTION_ENABLE
+
 .global _start
 
 .section .text
@@ -22,14 +27,22 @@ _child:
     call    exit
 wait_child:
     mov     %rax, %rdi                  # child process id
+#ifdef PREEMPTION_ENABLE
 _loop:
     mov     $61, %rax                   # syscall number of wait4
     mov     $0, %rsi                    # exit status address
-    mov     $1, %rdx                    # WNOHANG
+    mov     $1, %rdx                    # wait option: WNOHANG
     syscall
     cmp     %rdi, %rax                  # The return value is the pid of child 
     jne _loop
     ret
+#else
+    mov     $61, %rax                   # syscall number of wait4
+    mov     $0, %rsi                    # exit status address
+    mov     $0, %rdx                    # wait option
+    syscall
+    ret
+#endif
 exit:
     mov     $60, %rax                   # syscall number of exit
     mov     $0, %rdi                    # exit code
