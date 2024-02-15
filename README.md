@@ -3,9 +3,11 @@
     A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux
 </p>
 
+English | [中文版](README_CN.md)
+
 ## Introducing Asterinas
 
-Asterinas (星绽 in Chinese) is a _secure_, _fast_, and _general-purpose_ OS kernel
+Asterinas is a _secure_, _fast_, and _general-purpose_ OS kernel
 that provides _Linux-compatible_ ABI.
 It can serve as a seamless replacement for Linux
 while enhancing _memory safety_ and _developer friendliness_.
