@@ -1,0 +1,22 @@
+kcmd_args = ["init=/bin/busybox", "path=/usr/local/bin"]
+init_args = ["sh", "-l"]
+initramfs="./build/initramfs.cpio.gz"
+
+[boot]
+loader = "grub"
+protocol = "multiboot2"
+grub-mkrescue = "/usr/bin/grub-mkrescue"
+ovmf = "/usr/bin/ovmf"
+
+[qemu]
+path = "/usr/bin/qemu-system-x86_64"
+machine = "q35"
+args = [
+  	"-enable-kvm",
+    "-m 2G",
+    "-s /tmp/aster.sock",
+    "--no-reboot",
+    "-nographic",
+    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off",
+    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
+]
