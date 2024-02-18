@@ -60,6 +60,7 @@ members = [
 ]
 
 exclude = [
+    "osdk",
     "services/libs/comp-sys/cargo-component",
     "services/libs/comp-sys/component",
     "services/libs/comp-sys/component-macro",

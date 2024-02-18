@@ -1,0 +1,24 @@
+[package]
+name = "cargo-osdk"
+version = "0.1.5"
+edition = "2021"
+description = "Accelerate OS development with Asterinas OSDK"
+license = "MPL-2.0"
+readme = "README.md"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.4.17", features = ["cargo", "derive"] }
+env_logger = "0.11.0"
+indexmap = "2.2.1"
+lazy_static = "1.4.0"
+log = "0.4.20"
+regex = "1.10.3"
+serde = { version = "1.0.195", features = ["derive"] }
+serde_json = "1.0.111"
+toml = { version = "0.8.8", features = ["preserve_order"] }
+which = "6.0.0"
+
+[dev-dependencies]
+assert_cmd = "2.0.13"

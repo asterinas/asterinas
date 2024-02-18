@@ -1,0 +1,25 @@
+name: OSDK CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  osdk-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: asterinas/asterinas:0.3.0
+    steps:
+      - run: echo "Running in asterinas/asterinas:0.3.0"
+
+      - uses: actions/checkout@v3
+
+      - name: Format check
+        id: fmt_check
+        run: cd osdk && cargo check && cargo clippy 
+
+      - name: Unit test
+        id: unit_test
+        run: cd osdk && cargo build && cargo test
