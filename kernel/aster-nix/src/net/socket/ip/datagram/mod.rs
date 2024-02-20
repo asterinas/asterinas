@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{
-    mem,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use takeable::Takeable;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
 use super::common::get_ephemeral_endpoint;
@@ -26,7 +25,7 @@ mod bound;
 mod unbound;
 
 pub struct DatagramSocket {
-    inner: RwLock<Inner>,
+    inner: RwLock<Takeable<Inner>>,
     nonblocking: AtomicBool,
     pollee: Pollee,
 }
@@ -34,7 +33,6 @@ pub struct DatagramSocket {
 enum Inner {
     Unbound(UnboundDatagram),
     Bound(BoundDatagram),
-    Poisoned,
 }
 
 impl Inner {
@@ -45,12 +43,6 @@ impl Inner {
                 return Err((
                     Error::with_message(Errno::EINVAL, "the socket is already bound to an address"),
                     Inner::Bound(bound_datagram),
-                ));
-            }
-            Inner::Poisoned => {
-                return Err((
-                    Error::with_message(Errno::EINVAL, "the socket is poisoned"),
-                    Inner::Poisoned,
                 ));
             }
         };
@@ -81,7 +73,7 @@ impl DatagramSocket {
             let unbound_datagram = UnboundDatagram::new(me.clone() as _);
             let pollee = Pollee::new(IoEvents::empty());
             Self {
-                inner: RwLock::new(Inner::Unbound(unbound_datagram)),
+                inner: RwLock::new(Takeable::new(Inner::Unbound(unbound_datagram))),
                 nonblocking: AtomicBool::new(nonblocking),
                 pollee,
             }
@@ -98,29 +90,27 @@ impl DatagramSocket {
 
     fn try_bind_empheral(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
         // Fast path
-        if let Inner::Bound(_) = &*self.inner.read() {
+        if let Inner::Bound(_) = self.inner.read().as_ref() {
             return Ok(());
         }
 
         // Slow path
         let mut inner = self.inner.write();
-        let owned_inner = mem::replace(&mut *inner, Inner::Poisoned);
-
-        let bound_datagram = match owned_inner.bind_to_ephemeral_endpoint(remote_endpoint) {
-            Ok(bound_datagram) => bound_datagram,
-            Err((err, err_inner)) => {
-                *inner = err_inner;
-                return Err(err);
-            }
-        };
-        bound_datagram.init_pollee(&self.pollee);
-        *inner = Inner::Bound(bound_datagram);
-        Ok(())
+        inner.borrow_result(|owned_inner| {
+            let bound_datagram = match owned_inner.bind_to_ephemeral_endpoint(remote_endpoint) {
+                Ok(bound_datagram) => bound_datagram,
+                Err((err, err_inner)) => {
+                    return (err_inner, Err(err));
+                }
+            };
+            bound_datagram.init_pollee(&self.pollee);
+            (Inner::Bound(bound_datagram), Ok(()))
+        })
     }
 
     fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
+        let Inner::Bound(bound_datagram) = inner.as_ref() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
         };
         let (recv_bytes, remote_endpoint) = bound_datagram.try_recvfrom(buf, flags)?;
@@ -135,7 +125,7 @@ impl DatagramSocket {
         flags: SendRecvFlags,
     ) -> Result<usize> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
+        let Inner::Bound(bound_datagram) = inner.as_ref() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
         };
         let sent_bytes = bound_datagram.try_sendto(buf, remote, flags)?;
@@ -167,7 +157,7 @@ impl DatagramSocket {
 
     fn update_io_events(&self) {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
+        let Inner::Bound(bound_datagram) = inner.as_ref() else {
             return;
         };
         bound_datagram.update_io_events(&self.pollee);
@@ -219,18 +209,16 @@ impl Socket for DatagramSocket {
         let endpoint = socket_addr.try_into()?;
 
         let mut inner = self.inner.write();
-        let owned_inner = mem::replace(&mut *inner, Inner::Poisoned);
-
-        let bound_datagram = match owned_inner.bind(&endpoint) {
-            Ok(bound_datagram) => bound_datagram,
-            Err((err, err_inner)) => {
-                *inner = err_inner;
-                return Err(err);
-            }
-        };
-        bound_datagram.init_pollee(&self.pollee);
-        *inner = Inner::Bound(bound_datagram);
-        Ok(())
+        inner.borrow_result(|owned_inner| {
+            let bound_datagram = match owned_inner.bind(&endpoint) {
+                Ok(bound_datagram) => bound_datagram,
+                Err((err, err_inner)) => {
+                    return (err_inner, Err(err));
+                }
+            };
+            bound_datagram.init_pollee(&self.pollee);
+            (Inner::Bound(bound_datagram), Ok(()))
+        })
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
@@ -239,7 +227,7 @@ impl Socket for DatagramSocket {
         self.try_bind_empheral(&endpoint)?;
 
         let mut inner = self.inner.write();
-        let Inner::Bound(bound_datagram) = &mut *inner else {
+        let Inner::Bound(bound_datagram) = inner.as_mut() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not bound")
         };
         bound_datagram.set_remote_endpoint(&endpoint);
@@ -249,7 +237,7 @@ impl Socket for DatagramSocket {
 
     fn addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
+        let Inner::Bound(bound_datagram) = inner.as_ref() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
         };
         bound_datagram.local_endpoint().try_into()
@@ -257,7 +245,7 @@ impl Socket for DatagramSocket {
 
     fn peer_addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
-        let Inner::Bound(bound_datagram) = &*inner else {
+        let Inner::Bound(bound_datagram) = inner.as_ref() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not bound");
         };
         bound_datagram.remote_endpoint()?.try_into()
