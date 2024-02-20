@@ -68,6 +68,7 @@ getset = "0.1.2"
 atomic = "0.6"
 bytemuck = "1.14.3"
 bytemuck_derive = "1.5.0"
+takeable = "0.2.2"
 
 [dependencies.lazy_static]
 version = "1.0"
