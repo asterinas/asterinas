@@ -3,10 +3,6 @@ name = "asterinas"
 version = "0.3.1"
 edition = "2021"
 
-[[bin]]
-name = "asterinas"
-path = "kernel/main.rs"
-
 [dependencies]
 aster-frame = { path = "framework/aster-frame" }
 aster-nix = { path = "services/aster-nix" }
@@ -32,9 +28,9 @@ panic = "unwind"
 [workspace]
 
 members = [
-    "runner",
     "framework/aster-frame",
     "framework/libs/align_ext",
+    "framework/libs/aster-main",
     "framework/libs/linux-bzimage/builder",
     "framework/libs/linux-bzimage/boot-params",
     "framework/libs/linux-bzimage/setup",
@@ -61,6 +57,7 @@ members = [
 
 exclude = [
     "osdk",
+    "target/osdk/base",
     "services/libs/comp-sys/cargo-component",
     "services/libs/comp-sys/component",
     "services/libs/comp-sys/component-macro",

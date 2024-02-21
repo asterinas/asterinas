@@ -39,26 +39,16 @@ pub enum BzImageType {
 ///  - `target_image_path`: The path to the target bzImage.
 ///  - `image_type`: The type of the bzImage that we are building.
 ///  - `kernel_path`: The path to the kernel ELF.
-///  - `setup_src`: The path to the setup crate.
 ///  - `setup_tmp_out_dir`: The path to the temporary output directory for the setup binary.
-pub fn make_bzimage(
-    target_image_path: &Path,
-    image_type: BzImageType,
-    kernel_path: &Path,
-    setup_src: &Path,
-    setup_tmp_out_dir: &Path,
-) {
+pub fn make_bzimage(target_image_path: &Path, image_type: BzImageType, kernel_path: &Path) {
     let setup = match image_type {
         BzImageType::Legacy32 => {
-            let arch = setup_src
-                .join("x86_64-i386_pm-none.json")
+            let arch = PathBuf::from("../../setup/x86_64-i386_pm-none.json")
                 .canonicalize()
                 .unwrap();
-            build_setup_with_arch(setup_src, setup_tmp_out_dir, &SetupBuildArch::Other(arch))
+            build_setup_with_arch(&SetupBuildArch::Other(arch))
         }
-        BzImageType::Efi64 => {
-            build_setup_with_arch(setup_src, setup_tmp_out_dir, &SetupBuildArch::X86_64)
-        }
+        BzImageType::Efi64 => build_setup_with_arch(&SetupBuildArch::X86_64),
     };
 
     let mut setup_elf = Vec::new();
@@ -186,33 +176,24 @@ fn fill_legacy_header_fields(
 /// Build the setup binary.
 ///
 /// It will return the path to the built setup binary.
-fn build_setup_with_arch(source_dir: &Path, tmp_out_dir: &Path, arch: &SetupBuildArch) -> PathBuf {
-    if !tmp_out_dir.exists() {
-        std::fs::create_dir_all(&tmp_out_dir).unwrap();
-    }
-    let tmp_out_dir = std::fs::canonicalize(tmp_out_dir).unwrap();
-
+fn build_setup_with_arch(arch: &SetupBuildArch) -> PathBuf {
     // Relocations are fewer in release mode. That's why the release mode is more stable than
     // the debug mode.
     let profile = "release";
 
-    let cargo = std::env::var("CARGO").unwrap();
-    let mut cmd = std::process::Command::new(cargo);
-    cmd.current_dir(source_dir);
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.current_dir("../../setup");
     cmd.arg("build");
     if profile == "release" {
         cmd.arg("--release");
     }
-    cmd.arg("--package").arg("linux-bzimage-setup");
+    cmd.arg("--bin").arg("linux-bzimage-setup");
     cmd.arg("--target").arg(match arch {
         SetupBuildArch::X86_64 => "x86_64-unknown-none",
         SetupBuildArch::Other(path) => path.to_str().unwrap(),
     });
     cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
     cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
-    // Specify the build target directory to avoid cargo running
-    // into a deadlock reading the workspace files.
-    cmd.arg("--target-dir").arg(tmp_out_dir.as_os_str());
     cmd.env_remove("RUSTFLAGS");
     cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
 
@@ -231,7 +212,7 @@ fn build_setup_with_arch(source_dir: &Path, tmp_out_dir: &Path, arch: &SetupBuil
         SetupBuildArch::Other(path) => path.file_stem().unwrap().to_str().unwrap(),
     };
 
-    let setup_artifact = tmp_out_dir
+    let setup_artifact = PathBuf::from("../../setup/target")
         .join(arch_name)
         .join(profile)
         .join("linux-bzimage-setup");

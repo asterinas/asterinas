@@ -13,6 +13,7 @@ clap = { version = "4.4.17", features = ["cargo", "derive"] }
 env_logger = "0.11.0"
 indexmap = "2.2.1"
 lazy_static = "1.4.0"
+linux-bzimage-builder = { path = "../framework/libs/linux-bzimage/builder" }
 log = "0.4.20"
 regex = "1.10.3"
 serde = { version = "1.0.195", features = ["derive"] }

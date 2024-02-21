@@ -1,6 +1,5 @@
 kcmd_args = ["init=/bin/busybox", "path=/usr/local/bin"]
 init_args = ["sh", "-l"]
-initramfs="./build/initramfs.cpio.gz"
 
 [boot]
 loader = "grub"
@@ -9,7 +8,6 @@ grub-mkrescue = "/usr/bin/grub-mkrescue"
 ovmf = "/usr/bin/ovmf"
 
 [qemu]
-path = "/usr/bin/qemu-system-x86_64"
 machine = "q35"
 args = [
   	"-enable-kvm",

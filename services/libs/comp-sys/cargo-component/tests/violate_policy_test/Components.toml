@@ -1,5 +1,5 @@
 [components]
-foo = { name = "foo" }
-bar = { name = "bar" }
+foo3 = { name = "foo3" }
+bar3 = { name = "bar3" }
 
 [whitelist]

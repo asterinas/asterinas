@@ -1,0 +1,14 @@
+#![no_std]
+
+#[macro_use]
+extern crate ktest;
+extern crate aster_frame;
+
+#[cfg(ktest)]
+mod tests {
+    #[ktest]
+    fn it_works() {
+        let memory_regions = aster_frame::boot::memory_regions();
+        assert!(!memory_regions.is_empty());
+    }
+}

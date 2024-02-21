@@ -1,19 +1,19 @@
 [components]
-foo = { name = "foo" }
-bar = { name = "bar" }
+foo2 = { name = "foo2" }
+bar2 = { name = "bar2" }
 
 [whitelist]
-[whitelist.foo.FooTrait.trait_method]
-bar = false
+[whitelist.foo2.FooTrait.trait_method]
+bar2 = false
 
-[whitelist.foo.FooTrait.trait_associate_fn]
-bar = false
+[whitelist.foo2.FooTrait.trait_associate_fn]
+bar2 = false
 
-[whitelist.foo.Foo.method]
-bar = false
+[whitelist.foo2.Foo.method]
+bar2 = false
 
-[whitelist.foo.ObjectSafeTrait.get]
-bar = true
+[whitelist.foo2.ObjectSafeTrait.get]
+bar2 = true
 
-[whitelist.foo.Foo.associate_fn]
-bar = true
+[whitelist.foo2.Foo.associate_fn]
+bar2 = true

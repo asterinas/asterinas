@@ -19,6 +19,7 @@
 #![no_std]
 
 extern crate alloc;
+#[cfg(ktest)]
 #[macro_use]
 extern crate ktest;
 #[macro_use]
@@ -83,7 +84,7 @@ fn invoke_ffi_init_funcs() {
 }
 
 /// Simple unit tests for the ktest framework.
-#[if_cfg_ktest]
+#[cfg(ktest)]
 mod test {
     #[ktest]
     fn trivial_assertion() {

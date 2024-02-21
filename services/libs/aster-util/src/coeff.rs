@@ -5,8 +5,6 @@
 
 use core::ops::Mul;
 
-use ktest::if_cfg_ktest;
-
 /// A `Coeff` is used to do a fraction multiplication operation with an unsigned integer.
 /// It can achieve accurate and efficient calculation and avoid numeric overflow at the same time.
 ///
@@ -127,7 +125,7 @@ impl Mul<u32> for Coeff {
     }
 }
 
-#[if_cfg_ktest]
+#[cfg(ktest)]
 mod test {
     use ktest::ktest;
 

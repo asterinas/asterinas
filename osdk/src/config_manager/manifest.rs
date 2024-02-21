@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{path::PathBuf, process};
+use std::path::{Path, PathBuf};
+use std::process;
 
 use regex::Regex;
 use serde::Deserialize;
@@ -12,7 +13,7 @@ use super::{
 use crate::{error::Errno, error_msg};
 
 /// The osdk manifest from configuration file and command line arguments.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OsdkManifest {
     pub kcmd_args: Vec<String>,
     pub initramfs: Option<PathBuf>,
@@ -21,7 +22,10 @@ pub struct OsdkManifest {
 }
 
 impl OsdkManifest {
-    pub fn from_toml_manifest<S: AsRef<str>>(toml_manifest: TomlManifest, features: &[S]) -> Self {
+    pub fn from_toml_manifest<S: AsRef<str>>(
+        toml_manifest: TomlManifest,
+        selection: Option<S>,
+    ) -> Self {
         let TomlManifest {
             mut kcmd_args,
             mut init_args,
@@ -46,26 +50,26 @@ impl OsdkManifest {
 
         let mut qemu_args = None;
 
-        let mut feature_enabled_args: Vec<_> = cfg
-            .into_iter()
-            .filter_map(|(cfg, args)| {
-                if features
-                    .iter()
-                    .any(|feature| cfg.contains(feature.as_ref()))
-                {
-                    Some(args)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let mut selected_args: Vec<_> = if let Some(sel) = selection {
+            cfg.into_iter()
+                .filter_map(|(cfg, args)| {
+                    if cfg.contains(sel.as_ref()) {
+                        Some(args)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            vec![]
+        };
 
-        if feature_enabled_args.len() > 1 {
-            error_msg!("Multiple features are conflict");
+        if selected_args.len() > 1 {
+            error_msg!("Multiple selections are not allowed");
             process::exit(Errno::ParseMetadata as _);
-        } else if feature_enabled_args.len() == 1 {
-            qemu_args = Some(feature_enabled_args.remove(0));
-        } else if feature_enabled_args.is_empty() {
+        } else if selected_args.len() == 1 {
+            qemu_args = Some(selected_args.remove(0));
+        } else if selected_args.is_empty() {
             qemu_args = Some(default);
         }
 
@@ -80,6 +84,38 @@ impl OsdkManifest {
             initramfs,
             boot,
             qemu: qemu_args.unwrap(),
+        }
+    }
+
+    pub fn check_canonicalize_all_paths(&mut self, manifest_file_dir: impl AsRef<Path>) {
+        macro_rules! canonicalize_path {
+            ($path:expr) => {{
+                let path = if $path.is_relative() {
+                    manifest_file_dir.as_ref().join($path)
+                } else {
+                    $path.clone()
+                };
+                path.canonicalize().unwrap_or_else(|_| {
+                    error_msg!("File specified but not found: {:#?}", path);
+                    process::exit(Errno::ParseMetadata as _);
+                })
+            }};
+        }
+        macro_rules! canonicalize_optional_path {
+            ($path:expr) => {
+                if let Some(path_inner) = &$path {
+                    Some(canonicalize_path!(path_inner))
+                } else {
+                    None
+                }
+            };
+        }
+        self.initramfs = canonicalize_optional_path!(self.initramfs);
+        self.boot.grub_mkrescue = canonicalize_optional_path!(self.boot.grub_mkrescue);
+        self.boot.ovmf = canonicalize_optional_path!(self.boot.ovmf);
+        self.qemu.path = canonicalize_optional_path!(self.qemu.path);
+        for drive_file in &mut self.qemu.drive_files {
+            drive_file.path = canonicalize_path!(&drive_file.path);
         }
     }
 }
@@ -111,12 +147,12 @@ fn check_args(arg_name: &str, args: &[String]) {
 
 /// Check cfg that is in the form that we can accept
 fn check_cfg(cfg: &str) {
-    if FEATURE_REGEX.captures(cfg).is_none() {
-        error_msg!("{} is not allowed to used after `qemu` in `OSDK.toml`. Currently we only allowed cfg like `cfg(feature=\"foo\")`", cfg);
+    if SELECT_REGEX.captures(cfg).is_none() {
+        error_msg!("{} is not allowed to used after `qemu` in `OSDK.toml`. Currently we only allow cfgs like `cfg(select=\"foo\")`", cfg);
         process::exit(Errno::ParseMetadata as _);
     }
 }
 
 lazy_static::lazy_static! {
-    pub static ref FEATURE_REGEX: Regex = Regex::new(r#"cfg\(feature="(?P<feature>\w+)"\)"#).unwrap();
+    pub static ref SELECT_REGEX: Regex = Regex::new(r#"cfg\(select="(?P<select>\w+)"\)"#).unwrap();
 }

@@ -1,0 +1,88 @@
+kcmd_args = [
+    "SHELL=/bin/sh",
+    "LOGNAME=root",
+    "HOME=/",
+    "USER=root",
+    "PATH=/bin:/benchmark",
+    "init=/usr/bin/busybox",
+]
+init_args = ["sh", "-l"]
+initramfs = "regression/build/initramfs.cpio.gz"
+
+[boot]
+protocol = "multiboot2"
+loader = "grub"
+ovmf = "/root/ovmf/release"
+
+[qemu]
+machine = "q35"
+drive_files = [
+    ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
+]
+args = [
+    "--no-reboot",
+    "-m 2G",
+    "-nographic",
+    "-serial chardev:mux",
+    "-monitor chardev:mux",
+    "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log",
+    "-display none",
+    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
+    "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
+    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off",
+    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
+    "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
+    "-device virtio-serial-pci,disable-legacy=on,disable-modern=off",
+    "-device virtconsole,chardev=mux",
+]
+
+[qemu.'cfg(select="iommu")']
+machine = "q35"
+drive_files = [
+    ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
+]
+args = [
+    "--no-reboot",
+    "-m 2G",
+    "-nographic",
+    "-serial chardev:mux",
+    "-monitor chardev:mux",
+    "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log",
+    "-display none",
+    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
+    "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
+    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device virtio-serial-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device virtconsole,chardev=mux",
+    "-device intel-iommu,intremap=on,device-iotlb=on",
+    "-device ioh3420,id=pcie.0,chassis=1",
+]
+
+[qemu.'cfg(select="microvm")']
+machine = "microvm"
+drive_files = [
+    ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
+]
+args = [
+    "--no-reboot",
+    "-m 2G",
+    "-nographic",
+    "-serial chardev:mux",
+    "-monitor chardev:mux",
+    "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log",
+    "-display none",
+    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
+    "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
+    "-nodefaults",
+    "-no-user-config",
+    "-device virtio-blk-device,drive=x0",
+    "-device virtio-keyboard-device",
+    "-device virtio-net-device,netdev=net01",
+    "-device virtio-serial-device",
+    "-device virtconsole,chardev=mux",
+]

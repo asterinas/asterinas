@@ -7,6 +7,9 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
+mod base_crate;
+mod bin;
+mod bundle;
 mod cli;
 mod commands;
 mod config_manager;
@@ -14,6 +17,7 @@ mod error;
 #[cfg(test)]
 mod test;
 mod utils;
+mod vm_image;
 
 fn main() {
     // init logger

@@ -21,8 +21,8 @@
 //! module, e.g.:
 //!
 //! ```rust
-//! use ktest::{ktest, if_cfg_ktest};
-//! #[if_cfg_ktest]
+//! use ktest::ktest;
+//! #[cfg(ktest)]
 //! mod test {
 //!     #[ktest]
 //!     fn trivial_assertion() {
@@ -97,7 +97,7 @@ extern crate alloc;
 use alloc::{boxed::Box, string::String};
 use core::result::Result;
 
-pub use ktest_proc_macro::{if_cfg_ktest, ktest};
+pub use ktest_proc_macro::ktest;
 
 #[derive(Clone, Debug)]
 pub struct PanicInfo {

@@ -91,11 +91,6 @@ impl From<&str> for KCmdlineArg {
         // The main parse loop. The processing steps are arranged (not very strictly)
         // by the analysis over the Backus–Naur form syntax tree.
         for arg in split_arg(cmdline) {
-            // FIXME: The -kernel option in QEMU seems to add this string to the command line, which we skip for now.
-            if arg.starts_with("target/x86_64-custom/") {
-                warn!("Found kcmdline: {:?}, skipped for now.", arg);
-                continue;
-            }
             // Cmdline => KernelArg "--" InitArg
             // KernelArg => Arg "\s+" KernelArg | %empty
             // InitArg => Arg "\s+" InitArg | %empty
@@ -116,7 +111,8 @@ impl From<&str> for KCmdlineArg {
                 1 => (arg_pattern[0], None),
                 2 => (arg_pattern[0], Some(arg_pattern[1])),
                 _ => {
-                    panic!("Unable to parse argument {}", arg);
+                    warn!("Unable to parse kernel argument {}, skip for now", arg);
+                    continue;
                 }
             };
             // Entry => Module "." ModuleOptionName | KernelOptionName
@@ -125,7 +121,11 @@ impl From<&str> for KCmdlineArg {
                 1 => (None, entry_pattern[0]),
                 2 => (Some(entry_pattern[0]), entry_pattern[1]),
                 _ => {
-                    panic!("Unable to parse entry {} in argument {}", entry, arg);
+                    warn!(
+                        "Unable to parse entry {} in argument {}, skip for now",
+                        entry, arg
+                    );
+                    continue;
                 }
             };
             if let Some(modname) = node {

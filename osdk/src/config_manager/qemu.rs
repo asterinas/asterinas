@@ -16,11 +16,23 @@ pub struct Qemu {
     /// The additional arguments for running qemu, except `-cpu` and `-machine`.
     #[serde(default)]
     pub args: Vec<String>,
+    /// The additional drive files
+    #[serde(default)]
+    pub drive_files: Vec<DriveFile>,
     /// The `-machine` argument for running qemu.
     #[serde(default)]
     pub machine: QemuMachine,
     /// The path of qemu.
+    #[serde(default)]
     pub path: Option<PathBuf>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveFile {
+    #[serde(default)]
+    pub path: PathBuf,
+    #[serde(default)]
+    pub append: String,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
@@ -44,6 +56,7 @@ impl<'de> Deserialize<'de> for CfgQemu {
             Path,
             Args,
             Machine,
+            DriveFiles,
             Cfg(String),
         }
 
@@ -58,7 +71,7 @@ impl<'de> Deserialize<'de> for CfgQemu {
                     type Value = Field;
 
                     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                        formatter.write_str("`path`, `args`, `machine` or cfg")
+                        formatter.write_str("`path`, `args`, `machine`, `drive_files` or cfg")
                     }
 
                     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -69,6 +82,7 @@ impl<'de> Deserialize<'de> for CfgQemu {
                             "args" => Ok(Field::Args),
                             "machine" => Ok(Field::Machine),
                             "path" => Ok(Field::Path),
+                            "drive_files" => Ok(Field::DriveFiles),
                             v => Ok(Field::Cfg(v.to_string())),
                         }
                     }
@@ -104,6 +118,9 @@ impl<'de> Deserialize<'de> for CfgQemu {
                         }
                         Field::Path => {
                             default.path = map.next_value()?;
+                        }
+                        Field::DriveFiles => {
+                            default.drive_files = map.next_value()?;
                         }
                         Field::Cfg(cfg) => {
                             let qemu_args = map.next_value()?;

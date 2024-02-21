@@ -8,6 +8,9 @@ pub enum Errno {
     AddRustToolchain = 3,
     ParseMetadata = 4,
     ExecuteCommand = 5,
+    BuildCrate = 6,
+    RunBundle = 7,
+    CreateBaseCrate = 8,
 }
 
 /// Print error message to console

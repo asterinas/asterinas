@@ -7,24 +7,7 @@ extern crate proc_macro2;
 use proc_macro::TokenStream;
 use quote::quote;
 use rand::{distributions::Alphanumeric, Rng};
-use syn::{parse_macro_input, Expr, Ident, ItemFn, ItemMod};
-
-/// The conditional compilation attribute macro to control the compilation of test
-/// modules.
-#[proc_macro_attribute]
-pub fn if_cfg_ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    // Assuming that the item is a module declearation, otherwise panics.
-    let input = parse_macro_input!(item as ItemMod);
-
-    let crate_name = std::env::var("CARGO_PKG_NAME").unwrap();
-
-    let output = quote! {
-        #[cfg(all(ktest, any(ktest = "all", ktest = #crate_name)))]
-        #input
-    };
-
-    TokenStream::from(output)
-}
+use syn::{parse_macro_input, Expr, Ident, ItemFn};
 
 /// The test attribute macro to mark a test function.
 #[proc_macro_attribute]

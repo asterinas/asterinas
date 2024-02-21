@@ -579,7 +579,7 @@ pub fn current() -> Arc<Process> {
     }
 }
 
-#[if_cfg_ktest]
+#[cfg(ktest)]
 mod test {
     use super::*;
 

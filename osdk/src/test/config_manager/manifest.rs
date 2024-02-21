@@ -23,9 +23,6 @@ fn deserialize_osdk_manifest() {
     let content = include_str!("OSDK.toml.full");
     let osdk_manifest: TomlManifest = toml::from_str(content).unwrap();
     assert!(osdk_manifest.boot.grub_mkrescue.unwrap() == PathBuf::from("/usr/bin/grub-mkrescue"));
-    assert!(
-        osdk_manifest.qemu.default.path.unwrap() == PathBuf::from("/usr/bin/qemu-system-x86_64")
-    );
 }
 
 #[test]
@@ -65,7 +62,7 @@ fn load_manifest_conditional() {
     fs::write(path, contents).unwrap();
 
     let cargo_args = CargoArgs {
-        release: true,
+        profile: "release".to_string(),
         features: vec![String::from("iommu")],
     };
     cargo_osdk_build(PathBuf::from(workspace).join(kernel_name), &cargo_args);
@@ -118,51 +115,39 @@ fn conditional_manifest() {
         .cfg
         .as_ref()
         .unwrap()
-        .contains_key(&String::from("cfg(feature=\"intel_tdx\")")));
+        .contains_key(&String::from("cfg(select=\"intel_tdx\")")));
     assert!(toml_manifest
         .qemu
         .cfg
         .as_ref()
         .unwrap()
-        .contains_key(&String::from("cfg(feature=\"iommu\")")));
+        .contains_key(&String::from("cfg(select=\"iommu\")")));
 
-    // No features
-    let features: &[&str] = &[];
-    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), features);
-    assert_eq!(
-        manifest.qemu.path,
-        Some(PathBuf::from("/usr/bin/qemu-system-x86_64"))
-    );
+    // Default selection
+    let selection: Option<&str> = None;
+    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), selection);
     assert!(manifest.qemu.args.contains(&String::from(
         "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off"
     )));
 
-    // Iommu features
-    let features: &[&str] = &["iommu"];
-    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), features);
-    assert_eq!(
-        manifest.qemu.path,
-        Some(PathBuf::from("/usr/bin/qemu-system-x86_64"))
-    );
+    // Iommu
+    let selection: Option<&str> = Some("iommu");
+    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), selection);
     assert!(manifest
         .qemu
         .args
         .contains(&String::from("-device ioh3420,id=pcie.0,chassis=1")));
 
-    // Tdx features
-    let features: &[&str] = &["intel_tdx"];
-    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), features);
-    assert_eq!(
-        manifest.qemu.path,
-        Some(PathBuf::from("/usr/local/sbin/qemu-kvm"))
-    );
+    // Tdx
+    let selection: Option<&str> = Some("intel_tdx");
+    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), selection);
     assert!(manifest.qemu.args.is_empty());
 }
 
 #[test]
-fn extract_feature() {
-    let text = "cfg(feature=\"abc123_\")";
-    let captures = FEATURE_REGEX.captures(text).unwrap();
-    let feature = captures.name("feature").unwrap().as_str();
-    assert_eq!(feature, "abc123_");
+fn extract_selection() {
+    let text = "cfg(select=\"abc123_\")";
+    let captures = SELECT_REGEX.captures(text).unwrap();
+    let selection = captures.name("select").unwrap().as_str();
+    assert_eq!(selection, "abc123_");
 }

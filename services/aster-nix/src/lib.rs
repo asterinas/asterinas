@@ -43,6 +43,7 @@ extern crate alloc;
 extern crate lru;
 #[macro_use]
 extern crate controlled;
+#[cfg(ktest)]
 #[macro_use]
 extern crate ktest;
 #[macro_use]
