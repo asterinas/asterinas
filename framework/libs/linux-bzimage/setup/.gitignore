@@ -1,0 +1,2 @@
+# The Rust build cache for the setup crate is placed here.
+target/

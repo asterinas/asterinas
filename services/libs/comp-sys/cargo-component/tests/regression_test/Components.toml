@@ -1,10 +1,10 @@
 [components]
-foo = { name = "foo" }
-bar = { name = "bar" }
+foo1 = { name = "foo1" }
+bar1 = { name = "bar1" }
 
 [whitelist]
-[whitelist.foo.foo_add]
-bar = true
+[whitelist.foo1.foo_add]
+bar1 = true
 
-[whitelist.foo.FOO_ITEM]
-bar = true
+[whitelist.foo1.FOO_ITEM]
+bar1 = true

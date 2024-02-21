@@ -19,7 +19,12 @@ pub fn cargo_osdk<T: AsRef<OsStr>, I: IntoIterator<Item = T>>(args: I) -> Comman
 }
 
 pub fn assert_success(output: &Output) {
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "Command output {:#?} seems failed, stderr:\n {}",
+        output,
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 pub fn assert_stdout_contains_msg(output: &Output, msg: &str) {
@@ -37,7 +42,11 @@ pub fn create_workspace(workspace_name: &str, members: &[&str]) {
             .iter()
             .map(|member| toml::Value::String(member.to_string()))
             .collect();
+
+        let exclude = toml::Value::Array(vec![toml::Value::String("target/osdk/base".to_string())]);
+
         table.insert("members".to_string(), toml::Value::Array(members));
+        table.insert("exclude".to_string(), exclude);
         table
     };
 

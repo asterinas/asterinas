@@ -1,0 +1,12 @@
+#![no_std]
+#![no_main]
+
+extern crate #TARGET_NAME#;
+
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    extern "Rust" {
+        pub fn __aster_panic_handler(info: &core::panic::PanicInfo) -> !;
+    }
+    unsafe { __aster_panic_handler(info); }
+}

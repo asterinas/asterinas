@@ -16,6 +16,8 @@ jobs:
 
       - uses: actions/checkout@v3
 
+      - run: make install_osdk
+
       - name: Boot Test (Multiboot)
         id: boot_test_mb
         run: make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_PROTOCOL=multiboot RELEASE_MODE=1
@@ -26,7 +28,7 @@ jobs:
 
       - name: Boot Test (MicroVM)
         id: boot_test_microvm
-        run: make run AUTO_TEST=boot ENABLE_KVM=0 BOOT_METHOD=microvm RELEASE_MODE=1
+        run: make run AUTO_TEST=boot ENABLE_KVM=0 QEMU_MACHINE=microvm RELEASE_MODE=1
 
       - name: Boot Test (Linux Legacy 32-bit Boot Protocol)
         id: boot_test_linux_legacy32
@@ -42,9 +44,9 @@ jobs:
 
       - name: Syscall Test at Ext2 (MicroVM)
         id: syscall_test_at_ext2_microvm
-        run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=0 BOOT_METHOD=microvm RELEASE_MODE=1
+        run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=0 QEMU_MACHINE=microvm RELEASE_MODE=1
         
       - name: Regression Test (MicroVM)
         id: regression_test_linux
-        run: make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_METHOD=microvm RELEASE_MODE=1
+        run: make run AUTO_TEST=regression ENABLE_KVM=0 QEMU_MACHINE=microvm RELEASE_MODE=1
         

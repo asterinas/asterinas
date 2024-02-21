@@ -288,7 +288,7 @@ impl fmt::Debug for AtomicBits {
     }
 }
 
-#[if_cfg_ktest]
+#[cfg(ktest)]
 mod test {
     use super::*;
 
