@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::vm::{DmaCoherent, DmaStream, HasDaddr};
+use aster_frame::vm::{DmaCoherent, DmaStream, DmaStreamSlice, HasDaddr};
 
 /// A DMA-capable buffer.
 ///
@@ -13,6 +13,12 @@ pub trait DmaBuf: HasDaddr {
 }
 
 impl DmaBuf for DmaStream {
+    fn len(&self) -> usize {
+        self.nbytes()
+    }
+}
+
+impl DmaBuf for DmaStreamSlice<'_> {
     fn len(&self) -> usize {
         self.nbytes()
     }

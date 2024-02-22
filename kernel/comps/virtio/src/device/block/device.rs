@@ -12,7 +12,7 @@ use aster_frame::{
     io_mem::IoMem,
     sync::SpinLock,
     trap::TrapFrame,
-    vm::{VmAllocOptions, VmFrame, VmIo, VmReader, VmWriter},
+    vm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmIo},
 };
 use aster_util::safe_ptr::SafePtr;
 use log::info;
@@ -67,42 +67,60 @@ impl BlockDevice {
 
     fn do_read(&self, request: &BioRequest) {
         let start_sid = request.sid_range().start;
+        let dma_streams: Vec<(DmaStream, usize, usize)> = request
+            .bios()
+            .flat_map(|bio| {
+                bio.segments().iter().map(|segment| {
+                    let dma_stream =
+                        DmaStream::map(segment.pages().clone(), DmaDirection::FromDevice, false)
+                            .unwrap();
+                    (dma_stream, segment.offset(), segment.nbytes())
+                })
+            })
+            .collect();
+        let dma_slices: Vec<DmaStreamSlice> = dma_streams
+            .iter()
+            .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
+            .collect();
 
-        let writers = {
-            let mut writers = Vec::new();
-            for bio in request.bios() {
-                for segment in bio.segments() {
-                    writers.push(segment.writer());
-                }
-            }
-            writers
-        };
+        self.device.read(start_sid, &dma_slices);
 
-        self.device.read(start_sid, writers.as_slice());
+        dma_slices.iter().for_each(|dma_slice| {
+            dma_slice.sync().unwrap();
+        });
+        drop(dma_slices);
+        drop(dma_streams);
 
-        for bio in request.bios() {
+        request.bios().for_each(|bio| {
             bio.complete(BioStatus::Complete);
-        }
+        });
     }
 
     fn do_write(&self, request: &BioRequest) {
         let start_sid = request.sid_range().start;
+        let dma_streams: Vec<(DmaStream, usize, usize)> = request
+            .bios()
+            .flat_map(|bio| {
+                bio.segments().iter().map(|segment| {
+                    let dma_stream =
+                        DmaStream::map(segment.pages().clone(), DmaDirection::ToDevice, false)
+                            .unwrap();
+                    (dma_stream, segment.offset(), segment.nbytes())
+                })
+            })
+            .collect();
+        let dma_slices: Vec<DmaStreamSlice> = dma_streams
+            .iter()
+            .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
+            .collect();
 
-        let readers = {
-            let mut readers = Vec::new();
-            for bio in request.bios() {
-                for segment in bio.segments() {
-                    readers.push(segment.reader());
-                }
-            }
-            readers
-        };
+        self.device.write(start_sid, &dma_slices);
+        drop(dma_slices);
+        drop(dma_streams);
 
-        self.device.write(start_sid, readers.as_slice());
-
-        for bio in request.bios() {
+        request.bios().for_each(|bio| {
             bio.complete(BioStatus::Complete);
-        }
+        });
     }
 
     /// Negotiate features for the device specified bits 0~23
@@ -128,12 +146,8 @@ struct DeviceInner {
     config: SafePtr<VirtioBlockConfig, IoMem>,
     queue: SpinLock<VirtQueue>,
     transport: Box<dyn VirtioTransport>,
-    /// Block requests, we use VmFrame to store the requests so that
-    /// it can pass to the `add_vm` function
-    block_requests: VmFrame,
-    /// Block responses, we use VmFrame to store the requests so that
-    /// it can pass to the `add_vm` function
-    block_responses: VmFrame,
+    block_requests: DmaStream,
+    block_responses: DmaStream,
     id_allocator: SpinLock<Vec<u8>>,
     device_id: Option<String>,
 }
@@ -148,12 +162,26 @@ impl DeviceInner {
         }
 
         let queue = VirtQueue::new(0, 64, transport.as_mut()).expect("create virtqueue failed");
+        let block_requests = {
+            let vm_segment = VmAllocOptions::new(1)
+                .is_contiguous(true)
+                .alloc_contiguous()
+                .unwrap();
+            DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap()
+        };
+        let block_responses = {
+            let vm_segment = VmAllocOptions::new(1)
+                .is_contiguous(true)
+                .alloc_contiguous()
+                .unwrap();
+            DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap()
+        };
         let mut device = Self {
             config,
             queue: SpinLock::new(queue),
             transport,
-            block_requests: VmAllocOptions::new(1).alloc_single().unwrap(),
-            block_responses: VmAllocOptions::new(1).alloc_single().unwrap(),
+            block_requests,
+            block_responses,
             id_allocator: SpinLock::new((0..64).collect()),
             device_id: None,
         };
@@ -190,30 +218,38 @@ impl DeviceInner {
     // TODO: Should return an Err instead of panic if the device fails.
     fn get_id(&self) -> String {
         let id = self.id_allocator.lock().pop().unwrap() as usize;
-        let req = BlockReq {
-            type_: ReqType::GetId as _,
-            reserved: 0,
-            sector: 0,
+        let req_slice = {
+            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req = BlockReq {
+                type_: ReqType::GetId as _,
+                reserved: 0,
+                sector: 0,
+            };
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
         };
 
-        self.block_requests
-            .write_val(id * size_of::<BlockReq>(), &req)
-            .unwrap();
-
-        let req_reader = self
-            .block_requests
-            .reader()
-            .skip(id * size_of::<BlockReq>())
-            .limit(size_of::<BlockReq>());
-
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice
+        };
         const MAX_ID_LENGTH: usize = 20;
-
-        let page = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
-        let writer = page.writer().limit(MAX_ID_LENGTH);
+        let device_id_stream = {
+            let segment = VmAllocOptions::new(1)
+                .is_contiguous(true)
+                .uninit(true)
+                .alloc_contiguous()
+                .unwrap();
+            DmaStream::map(segment, DmaDirection::FromDevice, false).unwrap()
+        };
+        let device_id_slice = DmaStreamSlice::new(&device_id_stream, 0, MAX_ID_LENGTH);
+        let outputs = vec![&device_id_slice, &resp_slice];
 
         let mut queue = self.queue.lock_irq_disabled();
         let token = queue
-            .add_vm(&[&req_reader], &[&writer])
+            .add_dma_buf(&[&req_slice], outputs.as_slice())
             .expect("add queue failed");
         queue.notify();
         while !queue.can_pop() {
@@ -221,61 +257,69 @@ impl DeviceInner {
         }
         queue.pop_used_with_token(token).expect("pop used failed");
 
+        resp_slice.sync().unwrap();
         self.id_allocator.lock().push(id as u8);
+        let resp: BlockResp = resp_slice.read_val(0).unwrap();
+        match RespStatus::try_from(resp.status).unwrap() {
+            RespStatus::Ok => {}
+            _ => panic!("io error in block device"),
+        };
 
-        //Add an extra 0, so that the array must end with 0.
-        let mut device_id = vec![0; MAX_ID_LENGTH + 1];
-        let _ = page.read_bytes(0, &mut device_id);
-
-        device_id.resize(device_id.iter().position(|&x| x == 0).unwrap(), 0);
+        let device_id = {
+            device_id_slice.sync().unwrap();
+            let mut device_id = vec![0u8; MAX_ID_LENGTH];
+            let _ = device_id_slice.read_bytes(0, &mut device_id);
+            let len = device_id
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(MAX_ID_LENGTH);
+            device_id.truncate(len);
+            device_id
+        };
         String::from_utf8(device_id).unwrap()
-
-        //The device is not initialized yet, so the response must be not_ready.
     }
 
     /// Reads data from the block device, this function is blocking.
-    /// FIEME: replace slice with a more secure data structure to use dma mapping.
-    pub fn read(&self, sector_id: Sid, buf: &[VmWriter]) {
+    pub fn read(&self, sector_id: Sid, bufs: &[DmaStreamSlice]) {
         // FIXME: Handling cases without id.
         let id = self.id_allocator.lock().pop().unwrap() as usize;
-        let req = BlockReq {
-            type_: ReqType::In as _,
-            reserved: 0,
-            sector: sector_id.to_raw(),
-        };
-        let resp = BlockResp::default();
-        self.block_requests
-            .write_val(id * size_of::<BlockReq>(), &req)
-            .unwrap();
-        self.block_responses
-            .write_val(id * size_of::<BlockResp>(), &resp)
-            .unwrap();
-        let req_reader = self
-            .block_requests
-            .reader()
-            .skip(id * size_of::<BlockReq>())
-            .limit(size_of::<BlockReq>());
-        let resp_writer = self
-            .block_responses
-            .writer()
-            .skip(id * size_of::<BlockResp>())
-            .limit(size_of::<BlockResp>());
 
-        let mut outputs: Vec<&VmWriter<'_>> = buf.iter().collect();
-        outputs.push(&resp_writer);
+        let req_slice = {
+            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req = BlockReq {
+                type_: ReqType::In as _,
+                reserved: 0,
+                sector: sector_id.to_raw(),
+            };
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
+        };
+
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice
+        };
+
+        let outputs = {
+            let mut outputs: Vec<&DmaStreamSlice> = bufs.iter().collect();
+            outputs.push(&resp_slice);
+            outputs
+        };
+
         let mut queue = self.queue.lock_irq_disabled();
         let token = queue
-            .add_vm(&[&req_reader], outputs.as_slice())
+            .add_dma_buf(&[&req_slice], outputs.as_slice())
             .expect("add queue failed");
         queue.notify();
         while !queue.can_pop() {
             spin_loop();
         }
         queue.pop_used_with_token(token).expect("pop used failed");
-        let resp: BlockResp = self
-            .block_responses
-            .read_val(id * size_of::<BlockResp>())
-            .unwrap();
+
+        resp_slice.sync().unwrap();
+        let resp: BlockResp = resp_slice.read_val(0).unwrap();
         self.id_allocator.lock().push(id as u8);
         match RespStatus::try_from(resp.status).unwrap() {
             RespStatus::Ok => {}
@@ -284,48 +328,46 @@ impl DeviceInner {
     }
 
     /// Writes data to the block device, this function is blocking.
-    /// FIEME: replace slice with a more secure data structure to use dma mapping.
-    pub fn write(&self, sector_id: Sid, buf: &[VmReader]) {
+    pub fn write(&self, sector_id: Sid, bufs: &[DmaStreamSlice]) {
         // FIXME: Handling cases without id.
         let id = self.id_allocator.lock().pop().unwrap() as usize;
-        let req = BlockReq {
-            type_: ReqType::Out as _,
-            reserved: 0,
-            sector: sector_id.to_raw(),
+
+        let req_slice = {
+            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req = BlockReq {
+                type_: ReqType::Out as _,
+                reserved: 0,
+                sector: sector_id.to_raw(),
+            };
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
         };
-        let resp = BlockResp::default();
-        self.block_requests
-            .write_val(id * size_of::<BlockReq>(), &req)
-            .unwrap();
-        self.block_responses
-            .write_val(id * size_of::<BlockResp>(), &resp)
-            .unwrap();
-        let req_reader = self
-            .block_requests
-            .reader()
-            .skip(id * size_of::<BlockReq>())
-            .limit(size_of::<BlockReq>());
-        let resp_writer = self
-            .block_responses
-            .writer()
-            .skip(id * size_of::<BlockResp>())
-            .limit(size_of::<BlockResp>());
+
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice
+        };
+
+        let inputs = {
+            let mut inputs: Vec<&DmaStreamSlice> = bufs.iter().collect();
+            inputs.insert(0, &req_slice);
+            inputs
+        };
 
         let mut queue = self.queue.lock_irq_disabled();
-        let mut inputs: Vec<&VmReader<'_>> = buf.iter().collect();
-        inputs.insert(0, &req_reader);
         let token = queue
-            .add_vm(inputs.as_slice(), &[&resp_writer])
+            .add_dma_buf(inputs.as_slice(), &[&resp_slice])
             .expect("add queue failed");
         queue.notify();
         while !queue.can_pop() {
             spin_loop();
         }
         queue.pop_used_with_token(token).expect("pop used failed");
-        let resp: BlockResp = self
-            .block_responses
-            .read_val(id * size_of::<BlockResp>())
-            .unwrap();
+
+        resp_slice.sync().unwrap();
+        let resp: BlockResp = resp_slice.read_val(0).unwrap();
         self.id_allocator.lock().push(id as u8);
         match RespStatus::try_from(resp.status).unwrap() {
             RespStatus::Ok => {}
@@ -342,12 +384,16 @@ struct BlockReq {
     pub sector: u64,
 }
 
+const REQ_SIZE: usize = size_of::<BlockReq>();
+
 /// Response of a VirtIOBlock request.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod)]
 struct BlockResp {
     pub status: u8,
 }
+
+const RESP_SIZE: usize = size_of::<BlockResp>();
 
 impl Default for BlockResp {
     fn default() -> Self {
