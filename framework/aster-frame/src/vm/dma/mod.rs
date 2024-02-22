@@ -6,7 +6,7 @@ mod dma_stream;
 use alloc::collections::BTreeSet;
 
 pub use dma_coherent::DmaCoherent;
-pub use dma_stream::{DmaDirection, DmaStream};
+pub use dma_stream::{DmaDirection, DmaStream, DmaStreamSlice};
 use spin::Once;
 
 use super::Paddr;

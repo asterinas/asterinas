@@ -222,6 +222,73 @@ impl HasPaddr for DmaStream {
     }
 }
 
+/// A slice of streaming DMA mapping.
+#[derive(Debug)]
+pub struct DmaStreamSlice<'a> {
+    stream: &'a DmaStream,
+    offset: usize,
+    len: usize,
+}
+
+impl<'a> DmaStreamSlice<'a> {
+    /// Constructs a `DmaStreamSlice` from the `DmaStream`.
+    ///
+    /// # Panic
+    ///
+    /// If the `offset` is greater than or equal to the length of the stream,
+    /// this method will panic.
+    /// If the `offset + len` is greater than the length of the stream,
+    /// this method will panic.
+    pub fn new(stream: &'a DmaStream, offset: usize, len: usize) -> Self {
+        assert!(offset < stream.nbytes());
+        assert!(offset + len <= stream.nbytes());
+
+        Self {
+            stream,
+            offset,
+            len,
+        }
+    }
+
+    /// Returns the number of bytes.
+    pub fn nbytes(&self) -> usize {
+        self.len
+    }
+
+    /// Synchronizes the slice of streaming DMA mapping with the device.
+    pub fn sync(&self) -> Result<(), Error> {
+        self.stream.sync(self.offset..self.offset + self.len)
+    }
+}
+
+impl VmIo for DmaStreamSlice<'_> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<(), Error> {
+        if buf.len() + offset > self.len {
+            return Err(Error::InvalidArgs);
+        }
+        self.stream.read_bytes(self.offset + offset, buf)
+    }
+
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<(), Error> {
+        if buf.len() + offset > self.len {
+            return Err(Error::InvalidArgs);
+        }
+        self.stream.write_bytes(self.offset + offset, buf)
+    }
+}
+
+impl HasDaddr for DmaStreamSlice<'_> {
+    fn daddr(&self) -> Daddr {
+        self.stream.daddr() + self.offset
+    }
+}
+
+impl HasPaddr for DmaStreamSlice<'_> {
+    fn paddr(&self) -> Paddr {
+        self.stream.paddr() + self.offset
+    }
+}
+
 #[cfg(ktest)]
 mod test {
     use alloc::vec;
