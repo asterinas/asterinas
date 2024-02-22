@@ -11,7 +11,7 @@ use core::{
 use aster_frame::{
     io_mem::IoMem,
     offset_of,
-    vm::{DmaCoherent, VmAllocOptions, VmReader, VmWriter},
+    vm::{DmaCoherent, VmAllocOptions},
 };
 use aster_rights::{Dup, TRightSet, TRights, Write};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -317,73 +317,6 @@ impl VirtQueue {
         Ok(head)
     }
 
-    /// Add VmReader/VmWriter to the virtqueue, return a token.
-    ///
-    /// Ref: linux virtio_ring.c virtqueue_add
-    pub fn add_vm(
-        &mut self,
-        inputs: &[&VmReader],
-        outputs: &[&VmWriter],
-    ) -> Result<u16, QueueError> {
-        if inputs.is_empty() && outputs.is_empty() {
-            return Err(QueueError::InvalidArgs);
-        }
-        if inputs.len() + outputs.len() + self.num_used as usize > self.queue_size as usize {
-            return Err(QueueError::BufferTooSmall);
-        }
-
-        // allocate descriptors from free list
-        let head = self.free_head;
-        let mut last = self.free_head;
-        for input in inputs.iter() {
-            let desc = &self.descs[self.free_head as usize];
-            set_buf_reader(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), input);
-            field_ptr!(desc, Descriptor, flags)
-                .write(&DescFlags::NEXT)
-                .unwrap();
-            last = self.free_head;
-            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
-        }
-        for output in outputs.iter() {
-            let desc = &mut self.descs[self.free_head as usize];
-            set_buf_writer(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), output);
-            field_ptr!(desc, Descriptor, flags)
-                .write(&(DescFlags::NEXT | DescFlags::WRITE))
-                .unwrap();
-            last = self.free_head;
-            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
-        }
-        // set last_elem.next = NULL
-        {
-            let desc = &mut self.descs[last as usize];
-            let mut flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
-            flags.remove(DescFlags::NEXT);
-            field_ptr!(desc, Descriptor, flags).write(&flags).unwrap();
-        }
-        self.num_used += (inputs.len() + outputs.len()) as u16;
-
-        let avail_slot = self.avail_idx & (self.queue_size - 1);
-
-        {
-            let ring_ptr: SafePtr<[u16; 64], &DmaCoherent> =
-                field_ptr!(&self.avail, AvailRing, ring);
-            let mut ring_slot_ptr = ring_ptr.cast::<u16>();
-            ring_slot_ptr.add(avail_slot as usize);
-            ring_slot_ptr.write(&head).unwrap();
-        }
-        // write barrier
-        fence(Ordering::SeqCst);
-
-        // increase head of avail ring
-        self.avail_idx = self.avail_idx.wrapping_add(1);
-        field_ptr!(&self.avail, AvailRing, idx)
-            .write(&self.avail_idx)
-            .unwrap();
-
-        fence(Ordering::SeqCst);
-        Ok(head)
-    }
-
     /// Whether there is a used element that can pop.
     pub fn can_pop(&self) -> bool {
         self.last_used_idx != field_ptr!(&self.used, UsedRing, idx).read().unwrap()
@@ -532,32 +465,6 @@ fn set_buf_slice(desc_ptr: &DescriptorPtr, buf: &[u8]) {
         .unwrap();
     field_ptr!(desc_ptr, Descriptor, len)
         .write(&(buf.len() as u32))
-        .unwrap();
-}
-
-#[inline]
-#[allow(clippy::type_complexity)]
-fn set_buf_reader(desc_ptr: &DescriptorPtr, reader: &VmReader) {
-    let va = reader.cursor() as usize;
-    let pa = aster_frame::vm::vaddr_to_paddr(va).unwrap();
-    field_ptr!(desc_ptr, Descriptor, addr)
-        .write(&(pa as u64))
-        .unwrap();
-    field_ptr!(desc_ptr, Descriptor, len)
-        .write(&(reader.remain() as u32))
-        .unwrap();
-}
-
-#[inline]
-#[allow(clippy::type_complexity)]
-fn set_buf_writer(desc_ptr: &DescriptorPtr, writer: &VmWriter) {
-    let va = writer.cursor() as usize;
-    let pa = aster_frame::vm::vaddr_to_paddr(va).unwrap();
-    field_ptr!(desc_ptr, Descriptor, addr)
-        .write(&(pa as u64))
-        .unwrap();
-    field_ptr!(desc_ptr, Descriptor, len)
-        .write(&(writer.avail() as u32))
         .unwrap();
 }
 
