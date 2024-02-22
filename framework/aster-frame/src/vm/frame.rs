@@ -314,17 +314,17 @@ impl Drop for VmFrame {
 /// ```
 #[derive(Debug, Clone)]
 pub struct VmSegment {
-    inner: Arc<Inner>,
+    inner: VmSegmentInner,
     range: Range<usize>,
 }
 
-#[derive(Debug)]
-struct Inner {
-    start_frame_index: Paddr,
+#[derive(Debug, Clone)]
+struct VmSegmentInner {
+    start_frame_index: Arc<Paddr>,
     nframes: usize,
 }
 
-impl Inner {
+impl VmSegmentInner {
     /// Creates the inner part of 'VmSegment'.
     ///
     /// # Safety
@@ -333,14 +333,13 @@ impl Inner {
     unsafe fn new(paddr: Paddr, nframes: usize, flags: VmFrameFlags) -> Self {
         assert_eq!(paddr % PAGE_SIZE, 0);
         Self {
-            start_frame_index: (paddr / PAGE_SIZE).bitor(flags.bits),
+            start_frame_index: Arc::new((paddr / PAGE_SIZE).bitor(flags.bits)),
             nframes,
         }
     }
 
     fn start_frame_index(&self) -> usize {
-        self.start_frame_index
-            .bitand(VmFrameFlags::all().bits().not())
+        (*self.start_frame_index).bitand(VmFrameFlags::all().bits().not())
     }
 
     fn start_paddr(&self) -> Paddr {
@@ -364,7 +363,7 @@ impl VmSegment {
     /// as part of either a `VmFrame` or `VmSegment`.
     pub(crate) unsafe fn new(paddr: Paddr, nframes: usize, flags: VmFrameFlags) -> Self {
         Self {
-            inner: Arc::new(Inner::new(paddr, nframes, flags)),
+            inner: VmSegmentInner::new(paddr, nframes, flags),
             range: 0..nframes,
         }
     }
@@ -407,7 +406,7 @@ impl VmSegment {
     }
 
     fn need_dealloc(&self) -> bool {
-        (self.inner.start_frame_index & VmFrameFlags::NEED_DEALLOC.bits()) != 0
+        (*self.inner.start_frame_index & VmFrameFlags::NEED_DEALLOC.bits()) != 0
     }
 
     fn start_frame_index(&self) -> usize {
@@ -459,7 +458,7 @@ impl VmIo for VmSegment {
 
 impl Drop for VmSegment {
     fn drop(&mut self) {
-        if self.need_dealloc() && Arc::strong_count(&self.inner) == 1 {
+        if self.need_dealloc() && Arc::strong_count(&self.inner.start_frame_index) == 1 {
             // Safety: the range of contiguous page frames is valid.
             unsafe {
                 frame_allocator::dealloc_contiguous(
@@ -467,6 +466,18 @@ impl Drop for VmSegment {
                     self.inner.nframes,
                 );
             }
+        }
+    }
+}
+
+impl From<VmFrame> for VmSegment {
+    fn from(frame: VmFrame) -> Self {
+        Self {
+            inner: VmSegmentInner {
+                start_frame_index: frame.frame_index.clone(),
+                nframes: 1,
+            },
+            range: 0..1,
         }
     }
 }
