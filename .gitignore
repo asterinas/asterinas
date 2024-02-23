@@ -12,10 +12,6 @@ target/
 
 **/.DS_Store
 
-# Ramdisk file
-regression/ramdisk/initramfs/
-regression/ramdisk/build/
-
 # qemu log file
 qemu.log
 
