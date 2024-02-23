@@ -105,14 +105,9 @@ static ssize_t receive_all(int sockfd)
 	size_t recv_len = 0;
 	ssize_t ret;
 
-	if (mark_filde_nonblock(sockfd) < 0) {
-		perror("receive_all: mark_filde_nonblock");
-		return -1;
-	}
-
 	for (;;) {
 		ret = recv(sockfd, buffer, sizeof(buffer), 0);
-		if (ret < 0 && errno == EAGAIN)
+		if (ret == 0)
 			break;
 
 		if (ret < 0) {
@@ -197,6 +192,9 @@ int test_full_send_buffer(struct sockaddr_in *addr)
 	if (pid == 0) {
 		ssize_t recv_len;
 
+		close(sendfd);
+		sendfd = -1;
+
 		// Ensure that the parent executes send() first, then the child
 		// executes recv().
 		sleep(1);
@@ -230,6 +228,9 @@ int test_full_send_buffer(struct sockaddr_in *addr)
 	sent_len += 1;
 	fprintf(stderr, "Sent bytes: %lu\n", sent_len);
 
+	close(sendfd);
+	sendfd = -1;
+
 	ret = 0;
 
 wait:
@@ -250,7 +251,8 @@ out:
 	close(recvfd);
 
 out_send:
-	close(sendfd);
+	if (sendfd >= 0)
+		close(sendfd);
 
 out_listen:
 	close(listenfd);
