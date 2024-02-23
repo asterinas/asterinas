@@ -18,7 +18,7 @@ echo "Start network test......"
 ./socketpair
 ./sockoption
 ./listen_backlog
-# ./send_buf_full
+./send_buf_full
 ./http_server &
 ./http_client
 ./tcp_err
