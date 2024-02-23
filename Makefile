@@ -100,12 +100,12 @@ OSDK_CRATES := \
 	kernel/comps/virtio \
 	kernel/libs/aster-util
 
-.PHONY: all build tools run test docs check clean update_initramfs install_osdk
-
+.PHONY: all
 all: build
 
 # Install or update OSDK from source
 # To uninstall, do `cargo uninstall cargo-osdk`
+.PHONY: install_osdk
 install_osdk:
 	@cargo install cargo-osdk --path osdk
 
@@ -118,38 +118,48 @@ build: $(CARGO_ODSK)
 	@make --no-print-directory -C regression
 	@cd kernel && cargo osdk build $(CARGO_OSDK_ARGS)
 
+.PHONY: tools
 tools:
 	@cd kernel/libs/comp-sys && cargo install --path cargo-component
 
+.PHONY: run
 run: build
 	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS)
 
+.PHONY: test
 test:
 	@for dir in $(NON_OSDK_CRATES); do \
 		(cd $$dir && cargo test) || exit 1; \
 	done
 
-ktest: $(CARGO_ODSK)
+.PHONY: ktest
+ktest: $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "framework/libs/linux-bzimage/setup" ] && continue; \
 		(cd $$dir && cargo osdk test) || exit 1; \
 	done
 
+.PHONY: docs
 docs:
-	@cargo doc 								# Build Rust docs
-	@echo "" 								# Add a blank line
+	@cargo doc 						# Build Rust docs
+	@echo "" 						# Add a blank line
 	@cd docs && mdbook build 				# Build mdBook
 
+.PHONY: format
 format:
 	@./tools/format_all.sh
 
-check: $(CARGO_ODSK)
+.PHONY: check
+check: $(CARGO_OSDK)
 	@./tools/format_all.sh --check   	# Check Rust format issues
 	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
-	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | grep -v "members = \[" | tr -d '", \]' | sort > /tmp/all_crates
+	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | \
+		grep -v "members = \[" | tr -d '", \]' | \
+		sort > /tmp/all_crates
 	@echo $(NON_OSDK_CRATES) $(OSDK_CRATES) | tr ' ' '\n' | sort > /tmp/combined_crates
-	@diff -B /tmp/all_crates /tmp/combined_crates || (echo "Error: STD_CRATES and NOSTD_CRATES combined is not the same as all workspace members" && exit 1)
+	@diff -B /tmp/all_crates /tmp/combined_crates || \
+		(echo "Error: STD_CRATES and NOSTD_CRATES combined is not the same as all workspace members" && exit 1)
 	@rm /tmp/all_crates /tmp/combined_crates
 	@for dir in $(NON_OSDK_CRATES); do \
 		(cd $$dir && cargo clippy -- -D warnings) || exit 1; \
@@ -158,11 +168,13 @@ check: $(CARGO_ODSK)
 		(cd $$dir && cargo osdk clippy) || exit 1; \
 	done
 
+.PHONY: clean
 clean:
 	@cargo clean
 	@cd docs && mdbook clean
 	@make --no-print-directory -C regression clean
 
+.PHONY: update_initramfs
 update_initramfs:
 	@make --no-print-directory -C regression clean
 	@make --no-print-directory -C regression

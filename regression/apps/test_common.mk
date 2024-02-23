@@ -14,7 +14,6 @@ CC := gcc
 C_FLAGS :=
 
 .PHONY: all
-
 all: $(OBJ_OUTPUT_DIR) $(C_OBJS) $(ASM_OBJS)
 
 $(OBJ_OUTPUT_DIR):

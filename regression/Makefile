@@ -26,8 +26,7 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/benchmark \
 	$(INITRAMFS_EMPTY_DIRS)
 
-.PHONY: all clean
-
+.PHONY: all
 all: build
 
 $(INITRAMFS)/lib/x86_64-linux-gnu: $(VDSO_DIR)
@@ -100,7 +99,9 @@ $(EXT2_IMAGE):
 	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
 	@mke2fs $(EXT2_IMAGE)
 
+.PHONY: build
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE)
 
+.PHONY: clean
 clean:
 	@rm -rf $(BUILD_DIR)

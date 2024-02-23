@@ -19,8 +19,7 @@ TARGET_DIR := $(INITRAMFS)/opt/syscall_test
 RUN_BASH := $(CUR_DIR)/run_syscall_test.sh
 BLOCK_LIST := $(CUR_DIR)/blocklists
 
-.PHONY: all clean
-
+.PHONY: all
 all: $(TESTS)
 
 $(TESTS): $(BIN_DIR) $(TARGET_DIR)
@@ -50,5 +49,6 @@ $(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST)
 	@# Copy bash script
 	@cp -f $(RUN_BASH) $@
 
+.PHONY: clean
 clean:
 	@rm -rf $(TARGET_DIR)
