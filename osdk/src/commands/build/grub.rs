@@ -38,7 +38,12 @@ pub fn create_bootdev_image(
     // Make the kernel image and place it in the boot directory.
     match protocol {
         BootProtocol::LinuxLegacy32 | BootProtocol::LinuxEfiHandover64 => {
-            make_install_bzimage(&iso_root.join("boot"), aster_bin, protocol);
+            make_install_bzimage(
+                &iso_root.join("boot"),
+                &target_dir,
+                aster_bin,
+                protocol,
+            );
         }
         BootProtocol::Multiboot | BootProtocol::Multiboot2 => {
             // Copy the kernel image to the boot directory.

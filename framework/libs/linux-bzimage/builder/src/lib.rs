@@ -19,7 +19,7 @@ mod pe_header;
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use mapping::{SetupFileOffset, SetupVA};
@@ -36,23 +36,19 @@ pub enum BzImageType {
 /// Making a bzImage given the kernel ELF and setup source.
 ///
 /// Explanations for the arguments:
-///  - `target_image_path`: The path to the target bzImage.
-///  - `image_type`: The type of the bzImage that we are building.
-///  - `kernel_path`: The path to the kernel ELF.
-///  - `setup_tmp_out_dir`: The path to the temporary output directory for the setup binary.
-pub fn make_bzimage(target_image_path: &Path, image_type: BzImageType, kernel_path: &Path) {
-    let setup = match image_type {
-        BzImageType::Legacy32 => {
-            let arch = PathBuf::from("../../setup/x86_64-i386_pm-none.json")
-                .canonicalize()
-                .unwrap();
-            build_setup_with_arch(&SetupBuildArch::Other(arch))
-        }
-        BzImageType::Efi64 => build_setup_with_arch(&SetupBuildArch::X86_64),
-    };
-
+///  - `target_image_path`: The path to the target bzImage;
+///  - `image_type`: The type of the bzImage that we are building;
+///  - `kernel_path`: The path to the kernel ELF;
+///  - `setup_elf_path`: The path to the setup ELF.
+///
+pub fn make_bzimage(
+    target_image_path: &Path,
+    image_type: BzImageType,
+    kernel_path: &Path,
+    setup_elf_path: &Path,
+) {
     let mut setup_elf = Vec::new();
-    File::open(setup)
+    File::open(setup_elf_path)
         .unwrap()
         .read_to_end(&mut setup_elf)
         .unwrap();
@@ -97,9 +93,9 @@ pub fn make_bzimage(target_image_path: &Path, image_type: BzImageType, kernel_pa
     }
 }
 
-enum SetupBuildArch {
-    X86_64,
-    Other(PathBuf),
+/// To build the legacy32 bzImage setup header, the OSDK should use this target.
+pub fn legacy32_rust_target_json() -> &'static str {
+    include_str!("x86_64-i386_pm-none.json")
 }
 
 /// We need a flat binary which satisfies PA delta == File offset delta,
@@ -171,51 +167,4 @@ fn fill_legacy_header_fields(
         0x260, /* init_size */
         &((setup_len + kernel_len) as u32).to_le_bytes(),
     );
-}
-
-/// Build the setup binary.
-///
-/// It will return the path to the built setup binary.
-fn build_setup_with_arch(arch: &SetupBuildArch) -> PathBuf {
-    // Relocations are fewer in release mode. That's why the release mode is more stable than
-    // the debug mode.
-    let profile = "release";
-
-    let mut cmd = std::process::Command::new("cargo");
-    cmd.current_dir("../../setup");
-    cmd.arg("build");
-    if profile == "release" {
-        cmd.arg("--release");
-    }
-    cmd.arg("--bin").arg("linux-bzimage-setup");
-    cmd.arg("--target").arg(match arch {
-        SetupBuildArch::X86_64 => "x86_64-unknown-none",
-        SetupBuildArch::Other(path) => path.to_str().unwrap(),
-    });
-    cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
-    cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
-    cmd.env_remove("RUSTFLAGS");
-    cmd.env_remove("CARGO_ENCODED_RUSTFLAGS");
-
-    let mut child = cmd.spawn().unwrap();
-    let status = child.wait().unwrap();
-    if !status.success() {
-        panic!(
-            "Failed to build linux x86 setup header:\n\tcommand `{:?}`\n\treturned {}",
-            cmd, status
-        );
-    }
-
-    // Get the path to the setup binary.
-    let arch_name = match arch {
-        SetupBuildArch::X86_64 => "x86_64-unknown-none",
-        SetupBuildArch::Other(path) => path.file_stem().unwrap().to_str().unwrap(),
-    };
-
-    let setup_artifact = PathBuf::from("../../setup/target")
-        .join(arch_name)
-        .join(profile)
-        .join("linux-bzimage-setup");
-
-    setup_artifact.to_owned()
 }

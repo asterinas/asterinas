@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use linux_bzimage_builder::{make_bzimage, BzImageType};
+use linux_bzimage_builder::{make_bzimage, BzImageType, legacy32_rust_target_json};
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{
     fs::OpenOptions,
@@ -15,6 +15,7 @@ use crate::utils::get_current_crate_info;
 
 pub fn make_install_bzimage(
     install_dir: impl AsRef<Path>,
+    target_dir: impl AsRef<Path>,
     aster_elf: &AsterBin,
     protocol: &BootProtocol,
 ) -> AsterBin {
@@ -24,10 +25,32 @@ pub fn make_install_bzimage(
         BootProtocol::LinuxEfiHandover64 => BzImageType::Efi64,
         _ => unreachable!(),
     };
+    let setup_bin = {
+        let setup_install_dir = target_dir.as_ref();
+        let setup_target_dir = &target_dir.as_ref().join("linux-bzimage-setup");
+        match image_type {
+            BzImageType::Legacy32 => {
+                let target_json = legacy32_rust_target_json();
+                let gen_target_json_path = target_dir.as_ref().join("x86_64-i386_pm-none.json");
+                std::fs::write(&gen_target_json_path, target_json).unwrap();
+                let arch = SetupInstallArch::Other(gen_target_json_path.canonicalize().unwrap());
+                install_setup_with_arch(setup_install_dir, setup_target_dir, &arch);
+            }
+            BzImageType::Efi64 => {
+                install_setup_with_arch(
+                    setup_install_dir,
+                    setup_target_dir,
+                    &SetupInstallArch::X86_64,
+                );
+            }
+        };
+        setup_install_dir.join("bin").join("linux-bzimage-setup")
+    };
     // Make the `bzImage`-compatible kernel image and place it in the boot directory.
     let install_path = install_dir.as_ref().join(&target_name);
     info!("Building bzImage");
-    make_bzimage(&install_path, image_type, &aster_elf.path);
+    println!("install_path: {:?}", install_path);
+    make_bzimage(&install_path, image_type, &aster_elf.path, &setup_bin);
 
     AsterBin {
         path: install_path,
@@ -98,5 +121,48 @@ pub fn strip_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin) -> Aste
         version: elf.version.clone(),
         sha256sum: "TODO".to_string(),
         stripped: true,
+    }
+}
+
+enum SetupInstallArch {
+    X86_64,
+    Other(PathBuf),
+}
+
+fn install_setup_with_arch(
+    install_dir: impl AsRef<Path>,
+    target_dir: impl AsRef<Path>,
+    arch: &SetupInstallArch,
+) {
+    if !target_dir.as_ref().exists() {
+        std::fs::create_dir_all(&target_dir).unwrap();
+    }
+    let target_dir = std::fs::canonicalize(target_dir).unwrap();
+
+    let mut cmd = Command::new("cargo");
+    cmd.env("RUSTFLAGS", "-Ccode-model=kernel -Crelocation-model=pie -Ctarget-feature=+crt-static -Zplt=yes -Zrelax-elf-relocations=yes -Zrelro-level=full");
+    cmd.arg("install").arg("linux-bzimage-setup");
+    cmd.arg("--force");
+    cmd.arg("--root").arg(install_dir.as_ref());
+    // TODO: Use the latest revision when modifications on the `osdk` branch is merged.
+    cmd.arg("--git")
+        .arg("https://github.com/junyang-zh/asterinas");
+    cmd.arg("--branch").arg("osdk");
+    cmd.arg("--target").arg(match arch {
+        SetupInstallArch::X86_64 => "x86_64-unknown-none",
+        SetupInstallArch::Other(path) => path.to_str().unwrap(),
+    });
+    cmd.arg("-Zbuild-std=core,alloc,compiler_builtins");
+    cmd.arg("-Zbuild-std-features=compiler-builtins-mem");
+    // Specify the build target directory to avoid cargo running
+    // into a deadlock reading the workspace files.
+    cmd.arg("--target-dir").arg(target_dir.as_os_str());
+
+    let status = cmd.status().unwrap();
+    if !status.success() {
+        panic!(
+            "Failed to build linux x86 setup header:\n\tcommand `{:?}`\n\treturned {}",
+            cmd, status
+        );
     }
 }
