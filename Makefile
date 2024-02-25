@@ -130,8 +130,11 @@ docs:
 	@echo "" 								# Add a blank line
 	@cd docs && mdbook build 				# Build mdBook
 
+format:
+	./tools/format_all.sh
+
 check:
-	@cargo fmt --check              # Check Rust format issues
+	./tools/format_all.sh --check   # Check Rust format issues
 	@cargo kclippy -- -D warnings   # Make build fail if any warnings are found by rustc and clippy
 
 clean:
