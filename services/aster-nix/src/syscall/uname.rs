@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{log_syscall_entry, prelude::*};
-
-use crate::syscall::SYS_UNAME;
-use crate::util::write_val_to_user;
-
 use super::SyscallReturn;
+use crate::{log_syscall_entry, prelude::*, syscall::SYS_UNAME, util::write_val_to_user};
 
 // We don't use the real name and version of our os here. Instead, we pick up fake values witch is the same as the ones of linux.
 // The values are used to fool glibc since glibc will check the version and os name.

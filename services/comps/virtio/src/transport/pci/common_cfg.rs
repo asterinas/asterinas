@@ -4,9 +4,8 @@ use aster_frame::io_mem::IoMem;
 use aster_util::safe_ptr::SafePtr;
 use pod::Pod;
 
-use crate::transport::pci::capability::VirtioPciCpabilityType;
-
 use super::capability::VirtioPciCapabilityData;
+use crate::transport::pci::capability::VirtioPciCpabilityType;
 
 #[derive(Debug, Default, Copy, Clone, Pod)]
 #[repr(C)]

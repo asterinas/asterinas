@@ -2,6 +2,7 @@
 
 use aster_frame::user::UserSpace;
 
+use super::PosixThread;
 use crate::{
     prelude::*,
     process::{
@@ -11,8 +12,6 @@ use crate::{
     },
     thread::{status::ThreadStatus, task::create_new_user_task, thread_table, Thread, Tid},
 };
-
-use super::PosixThread;
 
 /// The builder to build a posix thread
 pub struct PosixThreadBuilder {

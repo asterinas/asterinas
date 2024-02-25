@@ -1,22 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::arch::x86_64::_rdtsc;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use x86::cpuid::cpuid;
+use core::{
+    arch::x86_64::_rdtsc,
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+};
 
 use log::info;
 use spin::Once;
 use trapframe::TrapFrame;
-use x86::msr::{wrmsr, IA32_TSC_DEADLINE};
-
-use crate::arch::kernel::tsc::init_tsc_freq;
-use crate::arch::timer::pit::OperatingMode;
-use crate::arch::x86::kernel::apic::{DivideConfig, APIC_INSTANCE};
-use crate::arch::x86::kernel::tsc::TSC_FREQ;
-use crate::trap::IrqLine;
+use x86::{
+    cpuid::cpuid,
+    msr::{wrmsr, IA32_TSC_DEADLINE},
+};
 
 use super::TIMER_FREQ;
+use crate::{
+    arch::{
+        kernel::tsc::init_tsc_freq,
+        timer::pit::OperatingMode,
+        x86::kernel::{
+            apic::{DivideConfig, APIC_INSTANCE},
+            tsc::TSC_FREQ,
+        },
+    },
+    trap::IrqLine,
+};
 
 pub fn init() {
     init_tsc_freq();

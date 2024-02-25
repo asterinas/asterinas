@@ -4,14 +4,13 @@ mod dma_coherent;
 mod dma_stream;
 
 use alloc::collections::BTreeSet;
-use spin::Once;
-
-use crate::{arch::iommu::has_iommu, config::PAGE_SIZE, sync::SpinLock};
-
-use super::Paddr;
 
 pub use dma_coherent::DmaCoherent;
 pub use dma_stream::{DmaDirection, DmaStream};
+use spin::Once;
+
+use super::Paddr;
+use crate::{arch::iommu::has_iommu, config::PAGE_SIZE, sync::SpinLock};
 
 /// If a device performs DMA to read or write system
 /// memory, the addresses used by the device are device addresses.

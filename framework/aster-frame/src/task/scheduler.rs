@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-use crate::sync::SpinLock;
-use crate::task::Task;
-
 use lazy_static::lazy_static;
+
+use crate::{prelude::*, sync::SpinLock, task::Task};
 
 lazy_static! {
     pub(crate) static ref GLOBAL_SCHEDULER: SpinLock<GlobalScheduler> =

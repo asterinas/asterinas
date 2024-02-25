@@ -5,14 +5,16 @@
 use alloc::{boxed::Box, string::ToString};
 use core::ffi::c_void;
 
-use crate::arch::qemu::{exit_qemu, QemuExitCode};
-use crate::{early_print, early_println};
 use log::error;
+
+use crate::{
+    arch::qemu::{exit_qemu, QemuExitCode},
+    early_print, early_println,
+};
 
 extern crate cfg_if;
 extern crate gimli;
 use gimli::Register;
-
 use unwinding::{
     abi::{
         UnwindContext, UnwindReasonCode, _Unwind_Backtrace, _Unwind_FindEnclosingFunction,

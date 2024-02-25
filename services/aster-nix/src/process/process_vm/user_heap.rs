@@ -2,14 +2,17 @@
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::vm::perms::VmPerms;
-use crate::vm::vmar::Vmar;
-use crate::{
-    prelude::*,
-    vm::vmo::{VmoFlags, VmoOptions},
-};
 use align_ext::AlignExt;
 use aster_rights::{Full, Rights};
+
+use crate::{
+    prelude::*,
+    vm::{
+        perms::VmPerms,
+        vmar::Vmar,
+        vmo::{VmoFlags, VmoOptions},
+    },
+};
 
 pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
 pub const USER_HEAP_SIZE_LIMIT: usize = PAGE_SIZE * 1000;

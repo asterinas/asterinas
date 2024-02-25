@@ -11,8 +11,8 @@
 //! The module is initialized with `init`, which sets up the `START_SECS_COUNT` and prepares the VDSO instance for
 //! use. It also hooks up the VDSO data update routine to the time management subsystem for periodic updates.
 
-use alloc::boxed::Box;
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
+
 use aster_frame::{config::PAGE_SIZE, sync::Mutex, vm::VmIo};
 use aster_rights::Rights;
 use aster_time::Instant;

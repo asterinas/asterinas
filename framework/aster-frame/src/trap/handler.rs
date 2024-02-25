@@ -2,13 +2,13 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::{arch::irq::IRQ_LIST, cpu::CpuException, cpu_local};
-
-#[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
 use trapframe::TrapFrame;
+
+#[cfg(feature = "intel_tdx")]
+use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
+use crate::{arch::irq::IRQ_LIST, cpu::CpuException, cpu_local};
 
 #[cfg(feature = "intel_tdx")]
 impl TdxTrapFrame for TrapFrame {

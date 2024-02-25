@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::log_syscall_entry;
-use crate::prelude::*;
-
-use crate::syscall::SyscallReturn;
-use crate::syscall::SYS_BRK;
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    syscall::{SyscallReturn, SYS_BRK},
+};
 
 /// expand the user heap to new heap end, returns the new heap end if expansion succeeds.
 pub fn sys_brk(heap_end: u64) -> Result<SyscallReturn> {

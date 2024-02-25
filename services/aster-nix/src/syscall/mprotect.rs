@@ -2,12 +2,8 @@
 
 use align_ext::AlignExt;
 
-use crate::{log_syscall_entry, prelude::*};
-
-use crate::syscall::SYS_MPROTECT;
-use crate::vm::perms::VmPerms;
-
 use super::SyscallReturn;
+use crate::{log_syscall_entry, prelude::*, syscall::SYS_MPROTECT, vm::perms::VmPerms};
 
 pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MPROTECT);

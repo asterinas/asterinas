@@ -4,19 +4,21 @@
 //! The process initial stack, contains arguments, environmental variables and auxiliary vectors
 //! The data layout of init stack can be seen in Figure 3.9 in https://uclibc.org/docs/psABI-x86_64.pdf
 
-use crate::vm::perms::VmPerms;
-use crate::{
-    prelude::*,
-    vm::{vmar::Vmar, vmo::VmoOptions},
-};
+use core::mem;
+
 use align_ext::AlignExt;
 use aster_frame::vm::{VmIo, VmPerm};
 use aster_rights::{Full, Rights};
-use core::mem;
 
-use super::aux_vec::{AuxKey, AuxVec};
-use super::elf_file::Elf;
-use super::load_elf::LdsoLoadInfo;
+use super::{
+    aux_vec::{AuxKey, AuxVec},
+    elf_file::Elf,
+    load_elf::LdsoLoadInfo,
+};
+use crate::{
+    prelude::*,
+    vm::{perms::VmPerms, vmar::Vmar, vmo::VmoOptions},
+};
 
 pub const INIT_STACK_BASE: Vaddr = 0x0000_0000_2000_0000;
 pub const INIT_STACK_SIZE: usize = 0x1000 * 16; // 64KB

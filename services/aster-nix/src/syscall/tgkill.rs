@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::signal::sig_num::SigNum;
-use crate::process::signal::signals::user::{UserSignal, UserSignalKind};
-use crate::process::tgkill;
-use crate::process::{credentials, Pid};
-use crate::syscall::SYS_TGKILL;
-use crate::thread::Tid;
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{
+        credentials,
+        signal::{
+            sig_num::SigNum,
+            signals::user::{UserSignal, UserSignalKind},
+        },
+        tgkill, Pid,
+    },
+    syscall::SYS_TGKILL,
+    thread::Tid,
+};
 
 /// tgkill send a signal to a thread with pid as its thread id, and tgid as its thread group id.
 pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8) -> Result<SyscallReturn> {

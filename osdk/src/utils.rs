@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::ffi::OsStr;
-use std::path::Path;
-use std::process::Command;
+use std::{ffi::OsStr, path::Path, process::Command};
 
-use crate::error::Errno;
-use crate::error_msg;
+use crate::{error::Errno, error_msg};
 
-// FIXME: Crates belonging to Asterinas require a different dependency format. The dependency 
+// FIXME: Crates belonging to Asterinas require a different dependency format. The dependency
 // should be specified using a relative path instead of a URL.
 pub const ASTER_FRAME_DEP: &str =
     "aster-frame = { git = \"https://github.com/asterinas/asterinas\", rev = \"f2f991b\" }";

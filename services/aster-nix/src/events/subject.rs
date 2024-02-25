@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-
 use core::sync::atomic::{AtomicUsize, Ordering};
+
 use keyable_arc::KeyableWeak;
 
 use super::{Events, EventsFilter, Observer};
+use crate::prelude::*;
 
 /// A Subject notifies interesting events to registered observers.
 pub struct Subject<E: Events, F: EventsFilter<E> = ()> {

@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{trap::IrqLine, vm::paddr_to_vaddr};
-use acpi::{AcpiError, HpetInfo};
 use alloc::vec::Vec;
+
+use acpi::{AcpiError, HpetInfo};
 use spin::Once;
 use volatile::{
     access::{ReadOnly, ReadWrite},
     Volatile,
 };
 
-use crate::arch::x86::kernel::{acpi::ACPI_TABLES, apic::ioapic};
+use crate::{
+    arch::x86::kernel::{acpi::ACPI_TABLES, apic::ioapic},
+    trap::IrqLine,
+    vm::paddr_to_vaddr,
+};
 static HPET_INSTANCE: Once<Hpet> = Once::new();
 
 const OFFSET_ID_REGISTER: usize = 0x000;

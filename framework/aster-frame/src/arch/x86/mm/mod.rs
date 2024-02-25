@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::sync::Mutex;
 use alloc::{collections::BTreeMap, fmt};
+
 use pod::Pod;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::{
     config::ENTRY_COUNT,
+    sync::Mutex,
     vm::{
         page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
         Paddr, Vaddr,

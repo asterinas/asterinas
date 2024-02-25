@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use spin::Once;
+
+use self::iface::spawn_background_poll_thread;
 use crate::{
     net::iface::{Iface, IfaceLoopback, IfaceVirtio},
     prelude::*,
 };
-use spin::Once;
-
-use self::iface::spawn_background_poll_thread;
 
 pub static IFACES: Once<Vec<Arc<dyn Iface>>> = Once::new();
 

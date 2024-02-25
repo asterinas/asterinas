@@ -27,10 +27,11 @@
 //
 
 pub mod device;
-use crate::transport::VirtioTransport;
 use aster_frame::io_mem::IoMem;
 use aster_util::safe_ptr::SafePtr;
 use pod::Pod;
+
+use crate::transport::VirtioTransport;
 
 pub static DEVICE_NAME: &str = "Virtio-Input";
 

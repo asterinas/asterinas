@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::utils::{FileSystem, Inode};
-use crate::prelude::*;
-
 use super::{
     dir::{DirOps, ProcDir},
     file::{FileOps, ProcFile},
     sym::{ProcSym, SymOps},
+};
+use crate::{
+    fs::utils::{FileSystem, Inode},
+    prelude::*,
 };
 
 pub struct ProcDirBuilder<O: DirOps> {

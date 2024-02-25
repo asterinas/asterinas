@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{SyscallReturn, SYS_GETRESGID};
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::credentials;
-use crate::util::write_val_to_user;
+use crate::{log_syscall_entry, prelude::*, process::credentials, util::write_val_to_user};
 
 pub fn sys_getresgid(rgid_ptr: Vaddr, egid_ptr: Vaddr, sgid_ptr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_GETRESGID);

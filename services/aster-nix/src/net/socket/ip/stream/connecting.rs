@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use alloc::sync::Arc;
-
-use crate::events::{IoEvents, Observer};
-use crate::net::iface::RawTcpSocket;
-use crate::net::poll_ifaces;
-use crate::prelude::*;
-
-use crate::net::iface::{AnyBoundSocket, IpEndpoint};
-use crate::process::signal::{Pollee, Poller};
-
-use super::connected::ConnectedStream;
-use super::init::InitStream;
+use super::{connected::ConnectedStream, init::InitStream};
+use crate::{
+    events::{IoEvents, Observer},
+    net::{
+        iface::{AnyBoundSocket, IpEndpoint, RawTcpSocket},
+        poll_ifaces,
+    },
+    prelude::*,
+    process::signal::{Pollee, Poller},
+};
 
 pub struct ConnectingStream {
     nonblocking: AtomicBool,

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::{credentials_mut, Gid};
-
 use super::{SyscallReturn, SYS_SETGID};
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{credentials_mut, Gid},
+};
 
 pub fn sys_setgid(gid: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SETGID);

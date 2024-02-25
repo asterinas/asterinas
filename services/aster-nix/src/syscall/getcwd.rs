@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::util::write_bytes_to_user;
-
-use super::SyscallReturn;
-use super::SYS_GETCWD;
+use super::{SyscallReturn, SYS_GETCWD};
+use crate::{log_syscall_entry, prelude::*, util::write_bytes_to_user};
 
 pub fn sys_getcwd(buf: Vaddr, len: usize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_GETCWD);

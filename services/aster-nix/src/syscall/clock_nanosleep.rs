@@ -2,13 +2,14 @@
 
 use core::time::Duration;
 
-use super::SyscallReturn;
-use super::SYS_CLOCK_NANOSLEEP;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::signal::Pauser;
-use crate::time::{clockid_t, now_as_duration, timespec_t, ClockID, TIMER_ABSTIME};
-use crate::util::{read_val_from_user, write_val_to_user};
+use super::{SyscallReturn, SYS_CLOCK_NANOSLEEP};
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::signal::Pauser,
+    time::{clockid_t, now_as_duration, timespec_t, ClockID, TIMER_ABSTIME},
+    util::{read_val_from_user, write_val_to_user},
+};
 
 pub fn sys_clock_nanosleep(
     clockid: clockid_t,

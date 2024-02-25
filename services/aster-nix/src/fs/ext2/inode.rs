@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::blocks_hole::BlocksHoleDesc;
-use super::dir::{DirEntry, DirEntryReader, DirEntryWriter};
-use super::fs::Ext2;
-use super::prelude::*;
-
 use core::cmp::Ordering;
+
 use inherit_methods_macro::inherit_methods;
+
+use super::{
+    blocks_hole::BlocksHoleDesc,
+    dir::{DirEntry, DirEntryReader, DirEntryWriter},
+    fs::Ext2,
+    prelude::*,
+};
 
 mod field {
     pub type Field = core::ops::Range<usize>;

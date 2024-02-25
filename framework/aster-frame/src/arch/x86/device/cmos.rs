@@ -3,9 +3,8 @@
 use acpi::{fadt::Fadt, sdt::Signature};
 use x86_64::instructions::port::{ReadOnlyAccess, WriteOnlyAccess};
 
-use crate::arch::x86::kernel::acpi::ACPI_TABLES;
-
 use super::io_port::IoPort;
+use crate::arch::x86::kernel::acpi::ACPI_TABLES;
 
 pub static CMOS_ADDRESS: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x70) };
 pub static CMOS_DATA: IoPort<u8, ReadOnlyAccess> = unsafe { IoPort::new(0x71) };

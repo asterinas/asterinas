@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::fs::utils::SeekFrom;
-use crate::util::write_bytes_to_user;
-use crate::{log_syscall_entry, prelude::*};
-
-use super::SyscallReturn;
-use super::SYS_PREAD64;
+use super::{SyscallReturn, SYS_PREAD64};
+use crate::{
+    fs::{file_table::FileDescripter, utils::SeekFrom},
+    log_syscall_entry,
+    prelude::*,
+    util::write_bytes_to_user,
+};
 
 pub fn sys_pread64(
     fd: FileDescripter,

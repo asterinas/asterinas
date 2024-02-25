@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{boxed::Box, sync::Arc};
+use core::fmt::Debug;
+
 use aster_frame::{
     bus::{
         pci::{
@@ -12,10 +15,7 @@ use aster_frame::{
     trap::IrqCallbackFunction,
     vm::DmaCoherent,
 };
-
-use alloc::{boxed::Box, sync::Arc};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use core::fmt::Debug;
 use log::{info, warn};
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};

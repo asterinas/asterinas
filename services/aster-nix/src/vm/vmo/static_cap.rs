@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-use aster_frame::vm::VmIo;
-use aster_rights_proc::require;
 use core::ops::Range;
 
+use aster_frame::vm::VmIo;
 use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
+use aster_rights_proc::require;
 
-use super::VmoRightsOp;
 use super::{
     options::{VmoCowChild, VmoSliceChild},
-    Vmo, VmoChildOptions,
+    Vmo, VmoChildOptions, VmoRightsOp,
 };
+use crate::prelude::*;
 
 impl<R: TRights> Vmo<TRightSet<R>> {
     /// Creates a new slice VMO through a set of VMO child options.

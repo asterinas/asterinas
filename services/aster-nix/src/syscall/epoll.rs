@@ -2,16 +2,18 @@
 
 use core::time::Duration;
 
-use crate::events::IoEvents;
-use crate::fs::epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags};
-use crate::fs::file_table::FileDescripter;
-use crate::fs::utils::CreationFlags;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::util::{read_val_from_user, write_val_to_user};
-
-use super::SyscallReturn;
-use super::{SYS_EPOLL_CREATE1, SYS_EPOLL_CTL, SYS_EPOLL_WAIT};
+use super::{SyscallReturn, SYS_EPOLL_CREATE1, SYS_EPOLL_CTL, SYS_EPOLL_WAIT};
+use crate::{
+    events::IoEvents,
+    fs::{
+        epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
+        file_table::FileDescripter,
+        utils::CreationFlags,
+    },
+    log_syscall_entry,
+    prelude::*,
+    util::{read_val_from_user, write_val_to_user},
+};
 
 pub fn sys_epoll_create(size: i32) -> Result<SyscallReturn> {
     if size <= 0 {

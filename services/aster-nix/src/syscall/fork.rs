@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_frame::cpu::UserContext;
+
+use super::SyscallReturn;
 use crate::{
     log_syscall_entry,
     prelude::*,
     process::{clone_child, CloneArgs},
+    syscall::SYS_FORK,
 };
-use aster_frame::cpu::UserContext;
-
-use crate::syscall::SYS_FORK;
-
-use super::SyscallReturn;
 
 pub fn sys_fork(parent_context: UserContext) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FORK);

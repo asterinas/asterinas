@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::{IoEvents, Observer};
-use crate::prelude::*;
-use crate::process::signal::Poller;
-use crate::process::{Gid, Uid};
-
-use super::file_handle::FileLike;
-use super::utils::{AccessMode, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags};
+use super::{
+    file_handle::FileLike,
+    utils::{AccessMode, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags},
+};
+use crate::{
+    events::{IoEvents, Observer},
+    prelude::*,
+    process::{signal::Poller, Gid, Uid},
+};
 
 pub struct PipeReader {
     consumer: Consumer<u8>,

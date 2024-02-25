@@ -2,6 +2,7 @@
 
 use aster_frame::timer::read_monotonic_milli_seconds;
 
+use super::Iface;
 use crate::{
     prelude::*,
     thread::{
@@ -9,8 +10,6 @@ use crate::{
         Thread,
     },
 };
-
-use super::Iface;
 
 pub enum BindPortConfig {
     CanReuse(u16),

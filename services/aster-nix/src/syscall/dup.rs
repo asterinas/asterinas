@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-
-use super::SyscallReturn;
-use super::{SYS_DUP, SYS_DUP2};
+use super::{SyscallReturn, SYS_DUP, SYS_DUP2};
+use crate::{fs::file_table::FileDescripter, log_syscall_entry, prelude::*};
 
 pub fn sys_dup(old_fd: FileDescripter) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_DUP);

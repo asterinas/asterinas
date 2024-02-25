@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
 use aster_frame::task::{set_scheduler, Scheduler, Task, TaskAdapter};
 use intrusive_collections::LinkedList;
+
+use crate::prelude::*;
 
 pub fn init() {
     let preempt_scheduler = Box::new(PreemptScheduler::new());

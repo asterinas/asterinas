@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::{
-    file_table::FileDescripter,
-    fs_resolver::FsPath,
-    inode_handle::InodeHandle,
-    utils::{SuperBlock, PATH_MAX},
+use super::{SyscallReturn, SYS_FSTATFS, SYS_STATFS};
+use crate::{
+    fs::{
+        file_table::FileDescripter,
+        fs_resolver::FsPath,
+        inode_handle::InodeHandle,
+        utils::{SuperBlock, PATH_MAX},
+    },
+    log_syscall_entry,
+    prelude::*,
+    util::{read_cstring_from_user, write_val_to_user},
 };
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::util::{read_cstring_from_user, write_val_to_user};
-
-use super::SyscallReturn;
-use super::{SYS_FSTATFS, SYS_STATFS};
 
 pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_STATFS);

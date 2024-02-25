@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::collections::btree_map::Entry;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use super::Ipv4Address;
-use crate::prelude::*;
-use alloc::collections::btree_map::Entry;
 use keyable_arc::KeyableWeak;
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
@@ -16,8 +14,9 @@ use super::{
     any_socket::{AnyBoundSocket, AnyRawSocket, AnyUnboundSocket},
     time::get_network_timestamp,
     util::BindPortConfig,
-    Iface,
+    Iface, Ipv4Address,
 };
+use crate::prelude::*;
 
 pub struct IfaceCommon {
     interface: SpinLock<smoltcp::iface::Interface>,

@@ -8,9 +8,10 @@
 //! It can be integrated into larger systems to provide timing capabilities, or used standalone for time tracking and elapsed time measurements.
 
 use alloc::sync::Arc;
+use core::{cmp::max, ops::Add, time::Duration};
+
 use aster_frame::sync::SpinLock;
 use aster_util::coeff::Coeff;
-use core::{cmp::max, ops::Add, time::Duration};
 
 use crate::NANOS_PER_SECOND;
 

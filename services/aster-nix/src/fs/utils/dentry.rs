@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::device::Device;
-use crate::prelude::*;
-use crate::process::{Gid, Uid};
-
 use alloc::string::String;
-use core::sync::atomic::{AtomicU32, Ordering};
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
+};
+
 use inherit_methods_macro::inherit_methods;
 
 use super::{FileSystem, Inode, InodeMode, InodeType, Metadata, MountNode, NAME_MAX};
+use crate::{
+    fs::device::Device,
+    prelude::*,
+    process::{Gid, Uid},
+};
 
 lazy_static! {
     static ref DCACHE: Mutex<BTreeMap<DentryKey, Arc<Dentry>>> = Mutex::new(BTreeMap::new());

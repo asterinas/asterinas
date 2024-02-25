@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_frame::{cpu::CpuSet, task::Priority};
+
 use super::worker_pool::WorkerPool;
-use crate::prelude::*;
-use crate::thread::kernel_thread::{KernelThreadExt, ThreadOptions};
-use crate::Thread;
-use aster_frame::cpu::CpuSet;
-use aster_frame::task::Priority;
+use crate::{
+    prelude::*,
+    thread::kernel_thread::{KernelThreadExt, ThreadOptions},
+    Thread,
+};
 
 /// A worker thread. A `Worker` will attempt to retrieve unfinished
 /// work items from its corresponding `WorkerPool`. If there are none,

@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::config::{KERNEL_HEAP_SIZE, PAGE_SIZE};
-use crate::prelude::*;
-use crate::sync::SpinLock;
-use crate::trap::disable_local;
-use crate::vm::frame_allocator::FRAME_ALLOCATOR;
-use crate::Error;
-use align_ext::AlignExt;
-use buddy_system_allocator::Heap;
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::NonNull,
 };
+
+use align_ext::AlignExt;
+use buddy_system_allocator::Heap;
 use log::debug;
 
 use super::paddr_to_vaddr;
+use crate::{
+    config::{KERNEL_HEAP_SIZE, PAGE_SIZE},
+    prelude::*,
+    sync::SpinLock,
+    trap::disable_local,
+    vm::frame_allocator::FRAME_ALLOCATOR,
+    Error,
+};
 
 #[global_allocator]
 static HEAP_ALLOCATOR: LockedHeapWithRescue<32> = LockedHeapWithRescue::new(rescue);

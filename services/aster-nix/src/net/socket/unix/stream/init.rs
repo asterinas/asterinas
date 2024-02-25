@@ -2,16 +2,17 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
-use crate::fs::fs_resolver::{split_path, FsPath};
-use crate::fs::utils::{Dentry, InodeMode, InodeType};
-use crate::net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound};
-use crate::prelude::*;
-use crate::process::signal::{Pollee, Poller};
-
-use super::connected::Connected;
-use super::endpoint::Endpoint;
-use super::listener::push_incoming;
+use super::{connected::Connected, endpoint::Endpoint, listener::push_incoming};
+use crate::{
+    events::IoEvents,
+    fs::{
+        fs_resolver::{split_path, FsPath},
+        utils::{Dentry, InodeMode, InodeType},
+    },
+    net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
+    prelude::*,
+    process::signal::{Pollee, Poller},
+};
 
 pub(super) struct Init {
     is_nonblocking: AtomicBool,

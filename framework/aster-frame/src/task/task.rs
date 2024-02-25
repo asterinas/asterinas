@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::arch::mm::PageTableFlags;
-use crate::config::{KERNEL_STACK_SIZE, PAGE_SIZE};
-use crate::cpu::CpuSet;
-use crate::prelude::*;
-use crate::sync::{Mutex, MutexGuard};
-use crate::user::UserSpace;
-use crate::vm::page_table::KERNEL_PAGE_TABLE;
-use crate::vm::{VmAllocOptions, VmSegment};
+use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
-use intrusive_collections::intrusive_adapter;
-use intrusive_collections::LinkedListAtomicLink;
-
-use super::add_task;
-use super::priority::Priority;
-use super::processor::{current_task, schedule};
+use super::{
+    add_task,
+    priority::Priority,
+    processor::{current_task, schedule},
+};
+use crate::{
+    arch::mm::PageTableFlags,
+    config::{KERNEL_STACK_SIZE, PAGE_SIZE},
+    cpu::CpuSet,
+    prelude::*,
+    sync::{Mutex, MutexGuard},
+    user::UserSpace,
+    vm::{page_table::KERNEL_PAGE_TABLE, VmAllocOptions, VmSegment},
+};
 
 core::arch::global_asm!(include_str!("switch.S"));
 

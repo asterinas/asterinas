@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{collections::VecDeque, fmt::Debug, sync::Arc, vec::Vec};
+
 use log::{debug, error};
 
-use crate::bus::BusProbeError;
-
 use super::device::MmioCommonDevice;
+use crate::bus::BusProbeError;
 
 pub trait MmioDevice: Sync + Send + Debug {
     fn device_id(&self) -> u32;

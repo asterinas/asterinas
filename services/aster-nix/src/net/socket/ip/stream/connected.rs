@@ -2,16 +2,15 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::{IoEvents, Observer};
-use crate::net::iface::IpEndpoint;
-use crate::process::signal::{Pollee, Poller};
 use crate::{
+    events::{IoEvents, Observer},
     net::{
-        iface::{AnyBoundSocket, RawTcpSocket},
+        iface::{AnyBoundSocket, IpEndpoint, RawTcpSocket},
         poll_ifaces,
         socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
     },
     prelude::*,
+    process::signal::{Pollee, Poller},
 };
 
 pub struct ConnectedStream {

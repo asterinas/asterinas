@@ -2,8 +2,7 @@
 
 //! Options for allocating child VMARs.
 
-use aster_frame::config::PAGE_SIZE;
-use aster_frame::{Error, Result};
+use aster_frame::{config::PAGE_SIZE, Error, Result};
 
 use super::Vmar;
 
@@ -136,13 +135,16 @@ impl<R> VmarChildOptions<R> {
 
 #[if_cfg_ktest]
 mod test {
-    use super::*;
-    use crate::vm::page_fault_handler::PageFaultHandler;
-    use crate::vm::perms::VmPerms;
-    use crate::vm::vmo::VmoRightsOp;
-    use crate::vm::{vmar::ROOT_VMAR_HIGHEST_ADDR, vmo::VmoOptions};
     use aster_frame::vm::VmIo;
     use aster_rights::Full;
+
+    use super::*;
+    use crate::vm::{
+        page_fault_handler::PageFaultHandler,
+        perms::VmPerms,
+        vmar::ROOT_VMAR_HIGHEST_ADDR,
+        vmo::{VmoOptions, VmoRightsOp},
+    };
 
     #[ktest]
     fn root_vmar() {

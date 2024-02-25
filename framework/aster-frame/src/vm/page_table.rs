@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{vec, vec::Vec};
+use core::{fmt::Debug, marker::PhantomData, mem::size_of};
+
+use log::trace;
+use pod::Pod;
+use spin::Once;
+
 use super::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions};
 use crate::{
     arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry},
@@ -7,11 +14,6 @@ use crate::{
     sync::SpinLock,
     vm::VmFrame,
 };
-use alloc::{vec, vec::Vec};
-use core::{fmt::Debug, marker::PhantomData, mem::size_of};
-use log::trace;
-use pod::Pod;
-use spin::Once;
 
 pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
     fn new() -> Self;

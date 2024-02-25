@@ -11,11 +11,13 @@ mod asm;
 pub mod tdcall;
 pub mod tdvmcall;
 
-pub use self::tdcall::{get_veinfo, TdxVirtualExceptionType};
-pub use self::tdvmcall::print;
-
 use raw_cpuid::{native_cpuid::cpuid_count, CpuIdResult};
 use tdcall::{InitError, TdgVpInfo};
+
+pub use self::{
+    tdcall::{get_veinfo, TdxVirtualExceptionType},
+    tdvmcall::print,
+};
 
 pub fn init_tdx() -> Result<TdgVpInfo, InitError> {
     check_tdx_guest()?;

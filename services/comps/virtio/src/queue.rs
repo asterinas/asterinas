@@ -2,9 +2,12 @@
 
 //! Virtqueue
 
-use crate::transport::VirtioTransport;
-
 use alloc::vec::Vec;
+use core::{
+    mem::size_of,
+    sync::atomic::{fence, Ordering},
+};
+
 use aster_frame::{
     io_mem::IoMem,
     offset_of,
@@ -13,12 +16,10 @@ use aster_frame::{
 use aster_rights::{Dup, TRightSet, TRights, Write};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
-use core::{
-    mem::size_of,
-    sync::atomic::{fence, Ordering},
-};
 use log::debug;
 use pod::Pod;
+
+use crate::transport::VirtioTransport;
 
 #[derive(Debug)]
 pub enum QueueError {

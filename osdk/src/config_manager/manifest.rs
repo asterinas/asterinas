@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::path::PathBuf;
-use std::process;
+use std::{path::PathBuf, process};
 
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::error::Errno;
-use crate::error_msg;
-
-use super::boot::Boot;
-use super::qemu::{CfgQemu, Qemu};
+use super::{
+    boot::Boot,
+    qemu::{CfgQemu, Qemu},
+};
+use crate::{error::Errno, error_msg};
 
 /// The osdk manifest from configuration file and command line arguments.
 #[derive(Debug)]

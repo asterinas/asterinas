@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::{
-    file_table::FileDescripter,
-    fs_resolver::{FsPath, AT_FDCWD},
+use super::{SyscallReturn, SYS_LINKAT};
+use crate::{
+    fs::{
+        file_table::FileDescripter,
+        fs_resolver::{FsPath, AT_FDCWD},
+    },
+    log_syscall_entry,
+    prelude::*,
+    syscall::constants::MAX_FILENAME_LEN,
+    util::read_cstring_from_user,
 };
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::syscall::constants::MAX_FILENAME_LEN;
-use crate::util::read_cstring_from_user;
-
-use super::SyscallReturn;
-use super::SYS_LINKAT;
 
 pub fn sys_linkat(
     old_dirfd: FileDescripter,

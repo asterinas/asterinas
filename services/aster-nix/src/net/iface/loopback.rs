@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{IpAddress, Ipv4Address};
-use crate::prelude::*;
 use smoltcp::{
     iface::{Config, Routes},
     phy::{Loopback, Medium},
     wire::IpCidr,
 };
 
-use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
+use super::{common::IfaceCommon, internal::IfaceInternal, Iface, IpAddress, Ipv4Address};
+use crate::prelude::*;
 
 pub const LOOPBACK_ADDRESS: IpAddress = {
     let ipv4_addr = Ipv4Address::new(127, 0, 0, 1);

@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
-use super::SYS_CLOCK_GETTIME;
-use crate::time::now_as_duration;
+use super::{SyscallReturn, SYS_CLOCK_GETTIME};
 use crate::{
     log_syscall_entry,
     prelude::*,
-    time::{clockid_t, timespec_t, ClockID},
+    time::{clockid_t, now_as_duration, timespec_t, ClockID},
     util::write_val_to_user,
 };
 

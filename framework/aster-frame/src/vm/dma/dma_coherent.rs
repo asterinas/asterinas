@@ -3,15 +3,16 @@
 use alloc::sync::Arc;
 use core::ops::Deref;
 
-use crate::arch::{iommu, mm::PageTableFlags};
-use crate::vm::{
-    dma::{dma_type, Daddr, DmaType},
-    paddr_to_vaddr,
-    page_table::KERNEL_PAGE_TABLE,
-    HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
-};
-
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
+use crate::{
+    arch::{iommu, mm::PageTableFlags},
+    vm::{
+        dma::{dma_type, Daddr, DmaType},
+        paddr_to_vaddr,
+        page_table::KERNEL_PAGE_TABLE,
+        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
+    },
+};
 
 /// A coherent (or consistent) DMA mapping,
 /// which guarantees that the device and the CPU can
@@ -163,9 +164,10 @@ impl HasPaddr for DmaCoherent {
 
 #[if_cfg_ktest]
 mod test {
+    use alloc::vec;
+
     use super::*;
     use crate::vm::VmAllocOptions;
-    use alloc::vec;
 
     #[ktest]
     fn map_with_coherent_device() {

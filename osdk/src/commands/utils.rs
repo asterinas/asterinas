@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 pub const COMMON_CARGO_ARGS: &[&str] = &[
     "-Zbuild-std=core,alloc,compiler_builtins",

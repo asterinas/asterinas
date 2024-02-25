@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::signal::Pauser;
-
 use super::{SyscallReturn, SYS_PAUSE};
+use crate::{log_syscall_entry, prelude::*, process::signal::Pauser};
 
 pub fn sys_pause() -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_PAUSE);

@@ -2,15 +2,18 @@
 
 //! Opend File Handle
 
-use crate::events::{IoEvents, Observer};
-use crate::fs::device::Device;
-use crate::fs::utils::{AccessMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags};
-use crate::net::socket::Socket;
-use crate::prelude::*;
-use crate::process::signal::Poller;
-use crate::process::{Gid, Uid};
-
 use core::any::Any;
+
+use crate::{
+    events::{IoEvents, Observer},
+    fs::{
+        device::Device,
+        utils::{AccessMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
+    },
+    net::socket::Socket,
+    prelude::*,
+    process::{signal::Poller, Gid, Uid},
+};
 
 /// The basic operations defined on a file
 pub trait FileLike: Send + Sync + Any {

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use bitvec::prelude::BitVec;
 use core::fmt::Debug;
+
+use bitvec::prelude::BitVec;
 
 /// An id allocator implemented by the bitmap.
 /// The true bit implies that the id is allocated, and vice versa.

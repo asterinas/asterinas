@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use aster_frame::cpu::CpuSet;
-use core::sync::atomic::AtomicBool;
-use core::sync::atomic::Ordering;
+
+use crate::prelude::*;
 
 /// A task to be executed by a worker thread.
 pub struct WorkItem {

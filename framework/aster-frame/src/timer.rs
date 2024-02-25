@@ -2,12 +2,14 @@
 
 //! Timer.
 
-use crate::arch::timer::{add_timeout_list, TimerCallback, TICK};
-use crate::prelude::*;
-use crate::{arch::timer::TIMER_FREQ, sync::SpinLock};
 use core::{sync::atomic::Ordering, time::Duration};
 
 pub use crate::arch::timer::read_monotonic_milli_seconds;
+use crate::{
+    arch::timer::{add_timeout_list, TimerCallback, TICK, TIMER_FREQ},
+    prelude::*,
+    sync::SpinLock,
+};
 
 /// A timer invokes a callback function after a specified span of time elapsed.
 ///

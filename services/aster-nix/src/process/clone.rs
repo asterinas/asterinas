@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::posix_thread::{PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName};
-use super::process_vm::ProcessVm;
-use super::signal::sig_disposition::SigDispositions;
-use super::{credentials, process_table, Credentials, Process, ProcessBuilder};
-use crate::current_thread;
-use crate::fs::file_table::FileTable;
-use crate::fs::fs_resolver::FsResolver;
-use crate::fs::utils::FileCreationMask;
-use crate::prelude::*;
-use crate::thread::{allocate_tid, thread_table, Thread, Tid};
-use crate::util::write_val_to_user;
-use crate::vm::vmar::Vmar;
-use aster_frame::cpu::UserContext;
-use aster_frame::user::UserSpace;
-use aster_frame::vm::VmIo;
+use aster_frame::{cpu::UserContext, user::UserSpace, vm::VmIo};
 use aster_rights::Full;
+
+use super::{
+    credentials,
+    posix_thread::{PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName},
+    process_table,
+    process_vm::ProcessVm,
+    signal::sig_disposition::SigDispositions,
+    Credentials, Process, ProcessBuilder,
+};
+use crate::{
+    current_thread,
+    fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
+    prelude::*,
+    thread::{allocate_tid, thread_table, Thread, Tid},
+    util::write_val_to_user,
+    vm::vmar::Vmar,
+};
 
 bitflags! {
     pub struct CloneFlags: u32 {

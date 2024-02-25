@@ -2,9 +2,7 @@
 
 //! Type level bools
 
-pub use core::ops::BitAnd as And;
-pub use core::ops::BitOr as Or;
-pub use core::ops::Not;
+pub use core::ops::{BitAnd as And, BitOr as Or, Not};
 use core::unimplemented;
 
 pub trait Bool {}

@@ -7,6 +7,7 @@ pub mod driver;
 pub(super) mod msix;
 
 use alloc::sync::Arc;
+
 use aster_frame::bus::pci::PCI_BUS;
 use spin::Once;
 

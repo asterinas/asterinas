@@ -3,16 +3,16 @@
 //! Test runner enabling control over the tests.
 //!
 
+use alloc::{string::String, vec::Vec};
+use core::format_args;
+
+use owo_colors::OwoColorize;
+
 use crate::{
     path::{KtestPath, SuffixTrie},
     tree::{KtestCrate, KtestTree},
     CatchUnwindImpl, KtestError, KtestItem, KtestIter,
 };
-
-use alloc::{string::String, vec::Vec};
-use core::format_args;
-
-use owo_colors::OwoColorize;
 
 pub enum KtestResult {
     Ok,

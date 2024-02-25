@@ -2,9 +2,9 @@
 
 //! CPU.
 
+use core::{cell::UnsafeCell, ops::Deref};
+
 use crate::trap::disable_local;
-use core::cell::UnsafeCell;
-use core::ops::Deref;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")]{

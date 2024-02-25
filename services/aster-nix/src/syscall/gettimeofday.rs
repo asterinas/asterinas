@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
-use super::SYS_GETTIMEOFDAY;
+use super::{SyscallReturn, SYS_GETTIMEOFDAY};
 use crate::{
     log_syscall_entry,
     prelude::*,

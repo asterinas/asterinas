@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::fmt::Debug;
-
-use crate::{device::VirtioDeviceError, queue::VirtQueue, transport::VirtioTransport};
 use alloc::{
     boxed::Box,
     string::{String, ToString},
     sync::Arc,
     vec::Vec,
 };
+use core::fmt::Debug;
+
 use aster_frame::{io_mem::IoMem, offset_of, sync::SpinLock, trap::TrapFrame};
 use aster_input::{
     key::{Key, KeyStatus},
@@ -20,6 +19,7 @@ use log::{debug, info};
 use pod::Pod;
 
 use super::{InputConfigSelect, VirtioInputConfig, VirtioInputEvent, QUEUE_EVENT, QUEUE_STATUS};
+use crate::{device::VirtioDeviceError, queue::VirtQueue, transport::VirtioTransport};
 
 bitflags! {
     /// The properties of input device.

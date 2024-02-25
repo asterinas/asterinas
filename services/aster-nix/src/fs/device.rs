@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::fs_resolver::{FsPath, FsResolver};
-use crate::fs::utils::Dentry;
-use crate::fs::utils::{InodeMode, InodeType};
-use crate::prelude::*;
-
 use super::inode_handle::FileIo;
+use crate::{
+    fs::{
+        fs_resolver::{FsPath, FsResolver},
+        utils::{Dentry, InodeMode, InodeType},
+    },
+    prelude::*,
+};
 
 /// The abstract of device
 pub trait Device: Sync + Send + FileIo {

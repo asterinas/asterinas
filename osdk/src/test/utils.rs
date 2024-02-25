@@ -2,11 +2,14 @@
 
 //! The common utils for crate unit test
 
+use std::{
+    ffi::OsStr,
+    fs::{self, create_dir_all},
+    path::{Path, PathBuf},
+    process::Output,
+};
+
 use assert_cmd::Command;
-use std::ffi::OsStr;
-use std::fs::{self, create_dir_all};
-use std::path::{Path, PathBuf};
-use std::process::Output;
 
 pub fn cargo_osdk<T: AsRef<OsStr>, I: IntoIterator<Item = T>>(args: I) -> Command {
     let mut command = Command::cargo_bin("cargo-osdk").unwrap();

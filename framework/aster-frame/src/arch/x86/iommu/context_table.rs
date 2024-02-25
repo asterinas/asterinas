@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::collections::BTreeMap;
 use core::mem::size_of;
 
-use alloc::collections::BTreeMap;
 use log::warn;
 use pod::Pod;
 
+use super::second_stage::{PageTableEntry, PageTableFlags};
 use crate::{
     bus::pci::PciDeviceLocation,
     vm::{
@@ -14,8 +15,6 @@ use crate::{
         Paddr, PageTable, VmAllocOptions, VmFrame, VmIo,
     },
 };
-
-use super::second_stage::{PageTableEntry, PageTableFlags};
 
 /// Bit 0 is `Present` bit, indicating whether this entry is present.
 /// Bit 63:12 is the context-table pointer pointing to this bus's context-table.

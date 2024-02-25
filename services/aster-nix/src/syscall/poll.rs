@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::cell::Cell;
-use core::time::Duration;
+use core::{cell::Cell, time::Duration};
 
-use crate::events::IoEvents;
-use crate::fs::file_table::FileDescripter;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::signal::Poller;
-use crate::util::{read_val_from_user, write_val_to_user};
-
-use super::SyscallReturn;
-use super::SYS_POLL;
+use super::{SyscallReturn, SYS_POLL};
+use crate::{
+    events::IoEvents,
+    fs::file_table::FileDescripter,
+    log_syscall_entry,
+    prelude::*,
+    process::signal::Poller,
+    util::{read_val_from_user, write_val_to_user},
+};
 
 pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_POLL);

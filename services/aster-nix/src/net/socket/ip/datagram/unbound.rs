@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::IoEvents;
-use crate::net::iface::IpEndpoint;
-
-use crate::net::socket::ip::common::bind_socket;
-use crate::process::signal::{Pollee, Poller};
-use crate::{
-    net::iface::{AnyUnboundSocket, RawUdpSocket},
-    prelude::*,
-};
-
 use super::bound::BoundDatagram;
+use crate::{
+    events::IoEvents,
+    net::{
+        iface::{AnyUnboundSocket, IpEndpoint, RawUdpSocket},
+        socket::ip::common::bind_socket,
+    },
+    prelude::*,
+    process::signal::{Pollee, Poller},
+};
 
 pub struct UnboundDatagram {
     unbound_socket: Box<AnyUnboundSocket>,

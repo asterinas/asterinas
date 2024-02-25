@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::{file_table::FileDescripter, utils::SeekFrom};
-use crate::log_syscall_entry;
-use crate::prelude::*;
-
-use super::SyscallReturn;
-use super::SYS_LSEEK;
+use super::{SyscallReturn, SYS_LSEEK};
+use crate::{
+    fs::{file_table::FileDescripter, utils::SeekFrom},
+    log_syscall_entry,
+    prelude::*,
+};
 
 pub fn sys_lseek(fd: FileDescripter, offset: isize, whence: u32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_LSEEK);

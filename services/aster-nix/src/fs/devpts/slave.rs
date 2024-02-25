@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::IoEvents;
-use crate::fs::inode_handle::FileIo;
-use crate::prelude::*;
-use crate::process::signal::Poller;
-use crate::process::{Gid, Uid};
-
 use super::*;
-
-use crate::device::PtySlave;
+use crate::{
+    device::PtySlave,
+    events::IoEvents,
+    fs::inode_handle::FileIo,
+    process::{signal::Poller, Gid, Uid},
+};
 
 /// Same major number with Linux, the minor number is the index of slave.
 const SLAVE_MAJOR_NUM: u32 = 3;

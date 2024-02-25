@@ -1,15 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
-use crate::events::IoEvents;
-use crate::fs::file_handle::FileLike;
-use crate::fs::utils::{Dentry, Inode};
-use crate::net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound};
-use crate::net::socket::SocketAddr;
-use crate::prelude::*;
-use crate::process::signal::{Pollee, Poller};
 use core::sync::atomic::{AtomicBool, Ordering};
+
 use keyable_arc::KeyableWeak;
+
+use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
+use crate::{
+    events::IoEvents,
+    fs::{
+        file_handle::FileLike,
+        utils::{Dentry, Inode},
+    },
+    net::socket::{
+        unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
+        SocketAddr,
+    },
+    prelude::*,
+    process::signal::{Pollee, Poller},
+};
 
 pub(super) struct Listener {
     addr: UnixSocketAddrBound,

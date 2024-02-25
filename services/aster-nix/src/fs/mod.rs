@@ -14,11 +14,15 @@ pub mod ramfs;
 pub mod rootfs;
 pub mod utils;
 
-use crate::fs::{ext2::Ext2, fs_resolver::FsPath};
-use crate::prelude::*;
-use crate::thread::kernel_thread::KernelThreadExt;
-use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
-use aster_virtio::device::block::DEVICE_NAME as VIRTIO_BLOCK_NAME;
+use aster_virtio::device::block::{
+    device::BlockDevice as VirtIoBlockDevice, DEVICE_NAME as VIRTIO_BLOCK_NAME,
+};
+
+use crate::{
+    fs::{ext2::Ext2, fs_resolver::FsPath},
+    prelude::*,
+    thread::kernel_thread::KernelThreadExt,
+};
 
 pub fn lazy_init() {
     let block_device = aster_block::get_device(VIRTIO_BLOCK_NAME).unwrap();

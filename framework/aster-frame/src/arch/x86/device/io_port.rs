@@ -2,11 +2,13 @@
 
 use core::marker::PhantomData;
 
-pub use x86_64::instructions::port::{
-    PortReadAccess as IoPortReadAccess, PortWriteAccess as IoPortWriteAccess, ReadOnlyAccess,
-    ReadWriteAccess, WriteOnlyAccess,
+pub use x86_64::{
+    instructions::port::{
+        PortReadAccess as IoPortReadAccess, PortWriteAccess as IoPortWriteAccess, ReadOnlyAccess,
+        ReadWriteAccess, WriteOnlyAccess,
+    },
+    structures::port::{PortRead, PortWrite},
 };
-pub use x86_64::structures::port::{PortRead, PortWrite};
 
 /// An I/O port, representing a specific address in the I/O address of x86.
 ///

@@ -8,6 +8,7 @@ use volatile::{
     Volatile,
 };
 
+use super::{context_table::RootTable, IommuError};
 use crate::{
     arch::{
         iommu::fault,
@@ -18,8 +19,6 @@ use crate::{
     },
     vm::paddr_to_vaddr,
 };
-
-use super::{context_table::RootTable, IommuError};
 
 #[derive(Debug)]
 pub struct RemappingRegisters {

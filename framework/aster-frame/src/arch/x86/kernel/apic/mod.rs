@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::sync::Mutex;
-use alloc::boxed::Box;
-use alloc::sync::Arc;
+use alloc::{boxed::Box, sync::Arc};
+
 use log::info;
 use spin::Once;
+
+use crate::sync::Mutex;
 
 pub mod ioapic;
 pub mod x2apic;

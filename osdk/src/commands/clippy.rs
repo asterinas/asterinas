@@ -2,11 +2,10 @@
 
 use std::process;
 
-use crate::error_msg;
-use crate::utils::get_cargo_metadata;
-use crate::{commands::utils::create_target_json, error::Errno};
-
 use super::utils::{cargo, COMMON_CARGO_ARGS};
+use crate::{
+    commands::utils::create_target_json, error::Errno, error_msg, utils::get_cargo_metadata,
+};
 
 pub fn execute_clippy_command() {
     let target_json_path = {

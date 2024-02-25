@@ -9,16 +9,17 @@ pub mod tty;
 mod urandom;
 mod zero;
 
-use crate::fs::device::{add_node, Device, DeviceId, DeviceType};
-use crate::prelude::*;
-pub use pty::new_pty_pair;
-pub use pty::{PtyMaster, PtySlave};
+pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
 #[cfg(feature = "intel_tdx")]
 pub use tdxguest::TdxGuest;
 pub use urandom::Urandom;
 
 use self::tty::get_n_tty;
+use crate::{
+    fs::device::{add_node, Device, DeviceId, DeviceType},
+    prelude::*,
+};
 
 /// Init the device node in fs, must be called after mounting rootfs.
 pub fn init() -> Result<()> {

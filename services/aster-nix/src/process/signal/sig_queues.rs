@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{constants::*, SigEvents, SigEventsFilter};
-use crate::events::{Observer, Subject};
-use crate::prelude::*;
-
-use super::sig_mask::SigMask;
-use super::sig_num::SigNum;
-use super::signals::Signal;
+use super::{
+    constants::*, sig_mask::SigMask, sig_num::SigNum, signals::Signal, SigEvents, SigEventsFilter,
+};
+use crate::{
+    events::{Observer, Subject},
+    prelude::*,
+};
 
 pub struct SigQueues {
     count: usize,

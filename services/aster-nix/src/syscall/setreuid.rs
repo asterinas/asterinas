@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::{credentials_mut, Uid};
-
 use super::{SyscallReturn, SYS_SETREUID};
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{credentials_mut, Uid},
+};
 
 pub fn sys_setreuid(ruid: i32, euid: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SETREUID);

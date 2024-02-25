@@ -3,16 +3,20 @@
 pub mod elf;
 mod shebang;
 
-use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
-use crate::fs::utils::Dentry;
-use crate::prelude::*;
-use crate::vdso::vdso_vmo;
-use crate::vm::perms::VmPerms;
-
-use self::elf::{load_elf_to_vm, ElfLoadInfo};
-use self::shebang::parse_shebang_line;
-
+use self::{
+    elf::{load_elf_to_vm, ElfLoadInfo},
+    shebang::parse_shebang_line,
+};
 use super::process_vm::ProcessVm;
+use crate::{
+    fs::{
+        fs_resolver::{FsPath, FsResolver, AT_FDCWD},
+        utils::Dentry,
+    },
+    prelude::*,
+    vdso::vdso_vmo,
+    vm::perms::VmPerms,
+};
 
 /// Map the vdso vmo to the corresponding virtual memory address.
 pub fn map_vdso_to_vm(process_vm: &ProcessVm) -> Vaddr {

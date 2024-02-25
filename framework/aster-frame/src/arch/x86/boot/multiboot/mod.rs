@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{string::String, vec::Vec};
+use core::arch::global_asm;
+
 use multiboot2::MemoryAreaType;
 use spin::Once;
 
@@ -13,8 +15,6 @@ use crate::{
     config::PHYS_OFFSET,
     vm::paddr_to_vaddr,
 };
-
-use core::arch::global_asm;
 
 global_asm!(include_str!("header.S"));
 

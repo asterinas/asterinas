@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::log_syscall_entry;
-use crate::net::socket::SockShutdownCmd;
-use crate::prelude::*;
-use crate::util::net::get_socket_from_fd;
-
 use super::{SyscallReturn, SYS_SHUTDOWN};
+use crate::{
+    fs::file_table::FileDescripter, log_syscall_entry, net::socket::SockShutdownCmd, prelude::*,
+    util::net::get_socket_from_fd,
+};
 
 pub fn sys_shutdown(sockfd: FileDescripter, how: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SHUTDOWN);

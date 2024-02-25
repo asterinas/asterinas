@@ -2,9 +2,8 @@
 
 #![allow(non_camel_case_types)]
 
-use crate::prelude::*;
-
 use super::{process_vm::user_heap::USER_HEAP_SIZE_LIMIT, program_loader::elf::INIT_STACK_SIZE};
+use crate::prelude::*;
 
 pub struct ResourceLimits {
     rlimits: [RLimit64; RLIMIT_COUNT],

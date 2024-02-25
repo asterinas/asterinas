@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::RawSocketOption;
-use crate::net::socket::options::{
-    Error, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
-};
-use crate::prelude::*;
-use crate::vm::vmar::Vmar;
-use crate::{impl_raw_sock_option_get_only, impl_raw_socket_option};
 use aster_rights::Full;
+
+use super::RawSocketOption;
+use crate::{
+    impl_raw_sock_option_get_only, impl_raw_socket_option,
+    net::socket::options::{Error, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption},
+    prelude::*,
+    vm::vmar::Vmar,
+};
 
 /// Socket level options.
 ///

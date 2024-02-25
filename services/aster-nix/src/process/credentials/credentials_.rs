@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::group::AtomicGid;
-use super::user::AtomicUid;
-use super::{Gid, Uid};
-use crate::prelude::*;
 use aster_frame::sync::{RwLockReadGuard, RwLockWriteGuard};
+
+use super::{group::AtomicGid, user::AtomicUid, Gid, Uid};
+use crate::prelude::*;
 
 #[derive(Debug)]
 pub(super) struct Credentials_ {

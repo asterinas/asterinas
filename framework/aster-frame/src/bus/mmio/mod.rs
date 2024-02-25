@@ -5,17 +5,16 @@
 pub mod bus;
 pub mod device;
 
+use alloc::vec::Vec;
 use core::ops::Range;
 
-use alloc::vec::Vec;
 use log::debug;
 
+use self::bus::MmioBus;
 use crate::{
     arch::kernel::IO_APIC, bus::mmio::device::MmioCommonDevice, sync::SpinLock, trap::IrqLine,
     vm::paddr_to_vaddr,
 };
-
-use self::bus::MmioBus;
 
 const VIRTIO_MMIO_MAGIC: u32 = 0x74726976;
 

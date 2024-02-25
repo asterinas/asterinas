@@ -2,16 +2,18 @@
 
 use core::time::Duration;
 
-use crate::fs::utils::{FileSystem, InodeMode, Metadata};
-use crate::prelude::*;
-use crate::process::{Gid, Uid};
-
+pub use self::{
+    builder::{ProcDirBuilder, ProcFileBuilder, ProcSymBuilder},
+    dir::{DirOps, ProcDir},
+    file::FileOps,
+    sym::SymOps,
+};
 use super::ProcFS;
-
-pub use self::builder::{ProcDirBuilder, ProcFileBuilder, ProcSymBuilder};
-pub use self::dir::{DirOps, ProcDir};
-pub use self::file::FileOps;
-pub use self::sym::SymOps;
+use crate::{
+    fs::utils::{FileSystem, InodeMode, Metadata},
+    prelude::*,
+    process::{Gid, Uid},
+};
 
 mod builder;
 mod dir;

@@ -2,22 +2,19 @@
 
 //! Options for allocating root and child VMOs.
 
-use core::marker::PhantomData;
-use core::ops::Range;
+use core::{marker::PhantomData, ops::Range};
 
 use align_ext::AlignExt;
 use aster_frame::vm::{VmAllocOptions, VmFrame};
+use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 
-use crate::prelude::*;
-
-use crate::vm::vmo::get_inherited_frames_from_parent;
-use crate::vm::vmo::{VmoInner, Vmo_};
-use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
-
-use super::VmoRightsOp;
-use super::{Pager, Vmo, VmoFlags};
+use super::{Pager, Vmo, VmoFlags, VmoRightsOp};
+use crate::{
+    prelude::*,
+    vm::vmo::{get_inherited_frames_from_parent, VmoInner, Vmo_},
+};
 
 /// Options for allocating a root VMO.
 ///
@@ -520,9 +517,10 @@ impl VmoChildType for VmoCowChild {}
 
 #[if_cfg_ktest]
 mod test {
-    use super::*;
     use aster_frame::vm::VmIo;
     use aster_rights::Full;
+
+    use super::*;
 
     #[ktest]
     fn alloc_vmo() {

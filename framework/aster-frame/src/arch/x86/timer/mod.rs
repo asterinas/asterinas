@@ -4,18 +4,17 @@ pub mod apic;
 pub mod hpet;
 pub mod pit;
 
-use core::any::Any;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
-
 use alloc::{boxed::Box, collections::BinaryHeap, sync::Arc, vec::Vec};
+use core::{
+    any::Any,
+    sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+};
+
 use spin::Once;
 use trapframe::TrapFrame;
 
-use crate::arch::x86::kernel;
-use crate::sync::SpinLock;
-use crate::trap::IrqLine;
-
 use self::apic::APIC_TIMER_CALLBACK;
+use crate::{arch::x86::kernel, sync::SpinLock, trap::IrqLine};
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and
 /// convenient for timer. What's more, the frequency cannot be set too high or too low, 1000Hz is

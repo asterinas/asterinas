@@ -7,12 +7,12 @@
 pub mod kcmdline;
 pub mod memory_region;
 
+use alloc::{string::String, vec::Vec};
+
 use kcmdline::KCmdlineArg;
+use spin::Once;
 
 use self::memory_region::MemoryRegion;
-
-use alloc::{string::String, vec::Vec};
-use spin::Once;
 
 /// ACPI information from the bootloader.
 ///
@@ -119,9 +119,10 @@ pub fn call_aster_main() -> ! {
     }
     #[cfg(ktest)]
     {
-        use crate::arch::qemu::{exit_qemu, QemuExitCode};
         use alloc::{boxed::Box, string::ToString};
         use core::any::Any;
+
+        use crate::arch::qemu::{exit_qemu, QemuExitCode};
         crate::init();
         let fn_catch_unwind = &(unwinding::panic::catch_unwind::<(), fn()>
             as fn(fn()) -> Result<(), Box<(dyn Any + Send + 'static)>>);

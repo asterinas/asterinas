@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::sync::Mutex;
-use crate::vm;
 use spin::Once;
 use x86::apic::xapic;
 
 use super::ApicTimer;
+use crate::{sync::Mutex, vm};
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 const IA32_APIC_BASE_MSR_BSP: u32 = 0x100; // Processor is a BSP

@@ -8,14 +8,16 @@
 //! resumes the TD via a SEAMCALL [TDH.VP.ENTER] invocation.
 extern crate alloc;
 
-use crate::asm::asm_td_vmcall;
 use alloc::fmt;
-use bitflags::bitflags;
 use core::fmt::Write;
+
+use bitflags::bitflags;
 use x86_64::{
     registers::rflags::{self, RFlags},
     structures::port::PortRead,
 };
+
+use crate::asm::asm_td_vmcall;
 
 /// TDVMCALL Instruction Leaf Numbers Definition.
 #[repr(u64)]

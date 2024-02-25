@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::time::Duration;
+
 use inherit_methods_macro::inherit_methods;
 
-use crate::fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata};
-use crate::prelude::*;
-use crate::process::{Gid, Uid};
-
 use super::{Common, ProcFS};
+use crate::{
+    fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata},
+    prelude::*,
+    process::{Gid, Uid},
+};
 
 pub struct ProcFile<F: FileOps> {
     inner: F,

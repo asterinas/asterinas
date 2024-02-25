@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::fmt::{self};
-use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use core::{
+    fmt::{self},
+    sync::atomic::{AtomicU64, Ordering::Relaxed},
+};
 
 use align_ext::AlignExt;
 

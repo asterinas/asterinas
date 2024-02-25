@@ -40,14 +40,14 @@ mod impl_block_device;
 mod prelude;
 pub mod request_queue;
 
-use self::bio::{BioEnqueueError, SubmittedBio};
-use self::prelude::*;
-
 use aster_frame::sync::SpinLock;
-use component::init_component;
-use component::ComponentInitError;
-
+use component::{init_component, ComponentInitError};
 use spin::Once;
+
+use self::{
+    bio::{BioEnqueueError, SubmittedBio},
+    prelude::*,
+};
 
 pub const BLOCK_SIZE: usize = aster_frame::config::PAGE_SIZE;
 pub const SECTOR_SIZE: usize = 512;

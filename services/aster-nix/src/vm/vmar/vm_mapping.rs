@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-use aster_frame::sync::Mutex;
-use aster_frame::vm::{VmFrame, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace};
 use core::ops::Range;
 
-use crate::vm::{
-    vmo::get_page_idx_range,
-    vmo::{Vmo, VmoChildOptions},
+use aster_frame::{
+    sync::Mutex,
+    vm::{VmFrame, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
 };
 
-use super::{is_intersected, Vmar, Vmar_};
-use crate::vm::perms::VmPerms;
-use crate::vm::vmar::Rights;
-use crate::vm::vmo::VmoRightsOp;
-
-use super::interval::Interval;
+use super::{interval::Interval, is_intersected, Vmar, Vmar_};
+use crate::{
+    prelude::*,
+    vm::{
+        perms::VmPerms,
+        vmar::Rights,
+        vmo::{get_page_idx_range, Vmo, VmoChildOptions, VmoRightsOp},
+    },
+};
 
 /// A VmMapping represents mapping a vmo into a vmar.
 /// A vmar can has multiple VmMappings, which means multiple vmos are mapped to a vmar.

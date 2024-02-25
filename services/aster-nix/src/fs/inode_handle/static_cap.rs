@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
 use aster_rights::{Read, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 
 use super::*;
+use crate::prelude::*;
 
 impl<R: TRights> InodeHandle<TRightSet<R>> {
     #[require(R > Read)]

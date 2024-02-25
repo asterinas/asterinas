@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::log_syscall_entry;
-use crate::util::write_bytes_to_user;
-use crate::{fs::file_table::FileDescripter, prelude::*};
-
-use super::SyscallReturn;
-use super::SYS_READ;
+use super::{SyscallReturn, SYS_READ};
+use crate::{
+    fs::file_table::FileDescripter, log_syscall_entry, prelude::*, util::write_bytes_to_user,
+};
 
 pub fn sys_read(fd: FileDescripter, user_buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_READ);

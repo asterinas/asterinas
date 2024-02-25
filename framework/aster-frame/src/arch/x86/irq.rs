@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::sync::Mutex;
 use alloc::{boxed::Box, fmt::Debug, sync::Arc, vec::Vec};
+
 use spin::Once;
 use trapframe::TrapFrame;
 
 use crate::{
-    sync::{SpinLock, SpinLockGuard},
+    sync::{Mutex, SpinLock, SpinLockGuard},
     util::recycle_allocator::RecycleAllocator,
 };
 

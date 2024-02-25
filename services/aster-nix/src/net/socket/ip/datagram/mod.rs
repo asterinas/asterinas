@@ -2,21 +2,21 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
-use crate::fs::file_handle::FileLike;
-use crate::fs::utils::StatusFlags;
-use crate::net::iface::IpEndpoint;
-use crate::net::socket::util::send_recv_flags::SendRecvFlags;
-use crate::net::socket::util::socket_addr::SocketAddr;
-use crate::net::socket::Socket;
-use crate::prelude::*;
-use crate::process::signal::Poller;
-
-use self::bound::BoundDatagram;
-use self::unbound::UnboundDatagram;
-
-use super::always_some::AlwaysSome;
-use super::common::get_ephemeral_endpoint;
+use self::{bound::BoundDatagram, unbound::UnboundDatagram};
+use super::{always_some::AlwaysSome, common::get_ephemeral_endpoint};
+use crate::{
+    events::IoEvents,
+    fs::{file_handle::FileLike, utils::StatusFlags},
+    net::{
+        iface::IpEndpoint,
+        socket::{
+            util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr},
+            Socket,
+        },
+    },
+    prelude::*,
+    process::signal::Poller,
+};
 
 mod bound;
 mod unbound;

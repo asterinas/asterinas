@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_frame::cpu::UserContext;
+
+use super::{SyscallReturn, SYS_RT_SIGRETRUN};
 use crate::{
     log_syscall_entry,
     prelude::*,
     process::{posix_thread::PosixThreadExt, signal::c_types::ucontext_t},
     util::read_val_from_user,
 };
-use aster_frame::cpu::UserContext;
-
-use super::{SyscallReturn, SYS_RT_SIGRETRUN};
 
 pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_RT_SIGRETRUN);

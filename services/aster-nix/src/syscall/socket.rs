@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_handle::FileLike;
-use crate::net::socket::ip::{DatagramSocket, StreamSocket};
-use crate::net::socket::unix::UnixStreamSocket;
-use crate::util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK};
-use crate::{log_syscall_entry, prelude::*};
-
-use super::SyscallReturn;
-use super::SYS_SOCKET;
+use super::{SyscallReturn, SYS_SOCKET};
+use crate::{
+    fs::file_handle::FileLike,
+    log_syscall_entry,
+    net::socket::{
+        ip::{DatagramSocket, StreamSocket},
+        unix::UnixStreamSocket,
+    },
+    prelude::*,
+    util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK},
+};
 
 pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SOCKET);

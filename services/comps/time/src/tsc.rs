@@ -4,13 +4,18 @@
 //!
 //! Use `init` to initialize this module.
 use alloc::sync::Arc;
-use aster_frame::arch::{read_tsc, x86::tsc_freq};
-use aster_frame::timer::Timer;
 use core::time::Duration;
+
+use aster_frame::{
+    arch::{read_tsc, x86::tsc_freq},
+    timer::Timer,
+};
 use spin::Once;
 
-use crate::clocksource::{ClockSource, Instant};
-use crate::{START_TIME, VDSO_DATA_UPDATE};
+use crate::{
+    clocksource::{ClockSource, Instant},
+    START_TIME, VDSO_DATA_UPDATE,
+};
 
 /// A instance of TSC clocksource.
 pub static CLOCK: Once<Arc<ClockSource>> = Once::new();

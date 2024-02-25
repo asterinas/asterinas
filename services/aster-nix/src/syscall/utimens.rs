@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::{file_table::FileDescripter, fs_resolver::FsPath};
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::syscall::constants::MAX_FILENAME_LEN;
-use crate::time::timespec_t;
-use crate::util::{read_cstring_from_user, read_val_from_user};
 use core::time::Duration;
 
-use super::SyscallReturn;
-use super::SYS_UTIMENSAT;
+use super::{SyscallReturn, SYS_UTIMENSAT};
+use crate::{
+    fs::{file_table::FileDescripter, fs_resolver::FsPath},
+    log_syscall_entry,
+    prelude::*,
+    syscall::constants::MAX_FILENAME_LEN,
+    time::timespec_t,
+    util::{read_cstring_from_user, read_val_from_user},
+};
 
 pub fn sys_utimensat(
     dirfd: FileDescripter,

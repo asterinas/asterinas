@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::util::read_bytes_from_user;
-use crate::{log_syscall_entry, prelude::*};
-
-use super::SyscallReturn;
-use super::SYS_MADVISE;
+use super::{SyscallReturn, SYS_MADVISE};
+use crate::{log_syscall_entry, prelude::*, util::read_bytes_from_user};
 
 pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MADVISE);

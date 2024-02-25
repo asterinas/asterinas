@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::{
-    file_table::FileDescripter,
-    fs_resolver::{FsPath, AT_FDCWD},
-    utils::{InodeMode, PATH_MAX},
+use super::{SyscallReturn, SYS_FCHMOD, SYS_FCHMODAT};
+use crate::{
+    fs::{
+        file_table::FileDescripter,
+        fs_resolver::{FsPath, AT_FDCWD},
+        utils::{InodeMode, PATH_MAX},
+    },
+    log_syscall_entry,
+    prelude::*,
+    util::read_cstring_from_user,
 };
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::util::read_cstring_from_user;
-
-use super::SyscallReturn;
-use super::{SYS_FCHMOD, SYS_FCHMODAT};
 
 pub fn sys_fchmod(fd: FileDescripter, mode: u16) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FCHMOD);

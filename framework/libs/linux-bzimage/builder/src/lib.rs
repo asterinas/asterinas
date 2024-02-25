@@ -22,9 +22,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use xmas_elf::program::SegmentData;
-
 use mapping::{SetupFileOffset, SetupVA};
+use xmas_elf::program::SegmentData;
 
 /// The type of the bzImage that we are building through `make_bzimage`.
 ///

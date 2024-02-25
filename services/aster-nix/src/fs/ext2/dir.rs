@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::inode::{FileType, MAX_FNAME_LEN};
-use super::prelude::*;
-
 use core::iter::Iterator;
+
+use super::{
+    inode::{FileType, MAX_FNAME_LEN},
+    prelude::*,
+};
 
 /// The data structure in a directory's data block. It is stored in a linked list.
 ///

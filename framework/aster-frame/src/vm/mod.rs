@@ -19,24 +19,23 @@ mod options;
 pub(crate) mod page_table;
 mod space;
 
-use crate::config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET};
+use alloc::{borrow::ToOwned, vec::Vec};
 
-pub use self::dma::{DmaCoherent, DmaDirection, DmaStream, HasDaddr};
-pub use self::frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter};
-pub use self::io::VmIo;
-pub use self::options::VmAllocOptions;
-pub use self::space::{VmMapOptions, VmPerm, VmSpace};
-
-pub use self::{
-    memory_set::{MapArea, MemorySet},
-    page_table::PageTable,
-};
-
-use alloc::borrow::ToOwned;
-use alloc::vec::Vec;
 use spin::Once;
 
-use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
+pub use self::{
+    dma::{DmaCoherent, DmaDirection, DmaStream, HasDaddr},
+    frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter},
+    io::VmIo,
+    memory_set::{MapArea, MemorySet},
+    options::VmAllocOptions,
+    page_table::PageTable,
+    space::{VmMapOptions, VmPerm, VmSpace},
+};
+use crate::{
+    boot::memory_region::{MemoryRegion, MemoryRegionType},
+    config::{KERNEL_OFFSET, PAGE_SIZE, PHYS_OFFSET},
+};
 
 /// Get physical address trait
 pub trait HasPaddr {

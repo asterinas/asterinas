@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc};
+use core::mem::size_of;
+
 use aster_frame::{
     bus::mmio::{
         bus::MmioDevice,
@@ -15,16 +17,14 @@ use aster_frame::{
 };
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use core::mem::size_of;
 use log::warn;
 
+use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};
 use crate::{
     queue::{AvailRing, Descriptor, UsedRing},
     transport::{DeviceStatus, VirtioTransport, VirtioTransportError},
     VirtioDeviceType,
 };
-
-use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};
 
 #[derive(Debug)]
 pub struct VirtioMmioDevice {

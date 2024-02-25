@@ -8,21 +8,23 @@ mod options;
 mod static_cap;
 pub mod vm_mapping;
 
-use crate::prelude::*;
-use crate::vm::perms::VmPerms;
-use align_ext::AlignExt;
-use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
-use alloc::sync::Weak;
-use alloc::vec::Vec;
-use aster_frame::vm::VmSpace;
-use aster_rights::Rights;
+use alloc::{
+    collections::BTreeMap,
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use core::ops::Range;
 
-use self::interval::{Interval, IntervalSet};
-use self::vm_mapping::VmMapping;
+use align_ext::AlignExt;
+use aster_frame::vm::VmSpace;
+use aster_rights::Rights;
 
+use self::{
+    interval::{Interval, IntervalSet},
+    vm_mapping::VmMapping,
+};
 use super::page_fault_handler::PageFaultHandler;
+use crate::{prelude::*, vm::perms::VmPerms};
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
 /// user address spaces.

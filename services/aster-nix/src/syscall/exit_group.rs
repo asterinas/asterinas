@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::process::{do_exit_group, TermStatus};
-use crate::{log_syscall_entry, prelude::*};
-
-use crate::syscall::{SyscallReturn, SYS_EXIT_GROUP};
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{do_exit_group, TermStatus},
+    syscall::{SyscallReturn, SYS_EXIT_GROUP},
+};
 
 /// Exit all thread in a process.
 pub fn sys_exit_group(exit_code: u64) -> Result<SyscallReturn> {

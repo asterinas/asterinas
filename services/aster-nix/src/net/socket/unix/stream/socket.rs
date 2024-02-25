@@ -1,21 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::IoEvents;
-use crate::fs::file_handle::FileLike;
-use crate::fs::fs_resolver::FsPath;
-use crate::fs::utils::{Dentry, InodeType, StatusFlags};
-use crate::net::socket::unix::addr::UnixSocketAddrBound;
-use crate::net::socket::unix::UnixSocketAddr;
-use crate::net::socket::util::send_recv_flags::SendRecvFlags;
-use crate::net::socket::util::socket_addr::SocketAddr;
-use crate::net::socket::{SockShutdownCmd, Socket};
-use crate::prelude::*;
-use crate::process::signal::Poller;
-
-use super::connected::Connected;
-use super::endpoint::Endpoint;
-use super::init::Init;
-use super::listener::{unregister_backlog, Listener};
+use super::{
+    connected::Connected,
+    endpoint::Endpoint,
+    init::Init,
+    listener::{unregister_backlog, Listener},
+};
+use crate::{
+    events::IoEvents,
+    fs::{
+        file_handle::FileLike,
+        fs_resolver::FsPath,
+        utils::{Dentry, InodeType, StatusFlags},
+    },
+    net::socket::{
+        unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
+        util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr},
+        SockShutdownCmd, Socket,
+    },
+    prelude::*,
+    process::signal::Poller,
+};
 
 pub struct UnixStreamSocket(RwLock<State>);
 

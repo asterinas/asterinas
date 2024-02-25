@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_util::slot_vec::SlotVec;
 use core::time::Duration;
+
+use aster_util::slot_vec::SlotVec;
 use inherit_methods_macro::inherit_methods;
 
-use crate::fs::device::Device;
-use crate::fs::utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata};
-use crate::prelude::*;
-use crate::process::{Gid, Uid};
-
 use super::{Common, ProcFS};
+use crate::{
+    fs::{
+        device::Device,
+        utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata},
+    },
+    prelude::*,
+    process::{Gid, Uid},
+};
 
 pub struct ProcDir<D: DirOps> {
     inner: D,

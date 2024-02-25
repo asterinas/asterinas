@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::log_syscall_entry;
-use crate::net::socket::SendRecvFlags;
-use crate::prelude::*;
-use crate::util::net::{get_socket_from_fd, read_socket_addr_from_user};
-use crate::util::read_bytes_from_user;
-
 use super::{SyscallReturn, SYS_SENDTO};
+use crate::{
+    fs::file_table::FileDescripter,
+    log_syscall_entry,
+    net::socket::SendRecvFlags,
+    prelude::*,
+    util::{
+        net::{get_socket_from_fd, read_socket_addr_from_user},
+        read_bytes_from_user,
+    },
+};
 
 pub fn sys_sendto(
     sockfd: FileDescripter,

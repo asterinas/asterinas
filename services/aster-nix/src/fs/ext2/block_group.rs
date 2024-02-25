@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::fs::Ext2;
-use super::inode::{Inode, InodeDesc, RawInode};
-use super::prelude::*;
-use super::super_block::SuperBlock;
-
 use aster_util::id_allocator::IdAlloc;
+
+use super::{
+    fs::Ext2,
+    inode::{Inode, InodeDesc, RawInode},
+    prelude::*,
+    super_block::SuperBlock,
+};
 
 /// Blocks are clustered into block groups in order to reduce fragmentation and minimise
 /// the amount of head seeking when reading a large amount of consecutive data.

@@ -2,14 +2,17 @@
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::events::Observer;
-use crate::fs::utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX};
-use crate::prelude::*;
-use crate::process::{process_table, process_table::PidEvent, Pid};
-
-use self::pid::PidDirOps;
-use self::self_::SelfSymOps;
-use self::template::{DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps};
+use self::{
+    pid::PidDirOps,
+    self_::SelfSymOps,
+    template::{DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps},
+};
+use crate::{
+    events::Observer,
+    fs::utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
+    prelude::*,
+    process::{process_table, process_table::PidEvent, Pid},
+};
 
 mod pid;
 mod self_;

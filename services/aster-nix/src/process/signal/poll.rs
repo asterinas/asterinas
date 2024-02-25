@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::IoEvents;
-use crate::events::{Observer, Subject};
-use crate::prelude::*;
-use crate::process::signal::Pauser;
+use core::{
+    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+    time::Duration,
+};
 
-use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use core::time::Duration;
 use keyable_arc::KeyableWeak;
+
+use crate::{
+    events::{IoEvents, Observer, Subject},
+    prelude::*,
+    process::signal::Pauser,
+};
 
 /// A pollee maintains a set of active events, which can be polled with
 /// pollers or be monitored with observers.

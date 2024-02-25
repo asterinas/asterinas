@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::cpu::{CpuException, CpuExceptionInfo};
 use aster_frame::cpu::{
-    ALIGNMENT_CHECK, BOUND_RANGE_EXCEEDED, DIVIDE_BY_ZERO, GENERAL_PROTECTION_FAULT,
-    INVALID_OPCODE, PAGE_FAULT, SIMD_FLOATING_POINT_EXCEPTION, X87_FLOATING_POINT_EXCEPTION,
+    CpuException, CpuExceptionInfo, ALIGNMENT_CHECK, BOUND_RANGE_EXCEEDED, DIVIDE_BY_ZERO,
+    GENERAL_PROTECTION_FAULT, INVALID_OPCODE, PAGE_FAULT, SIMD_FLOATING_POINT_EXCEPTION,
+    X87_FLOATING_POINT_EXCEPTION,
 };
 
-use crate::prelude::*;
-use crate::process::signal::c_types::siginfo_t;
-use crate::process::signal::constants::*;
-use crate::process::signal::sig_num::SigNum;
-
 use super::Signal;
+use crate::{
+    prelude::*,
+    process::signal::{c_types::siginfo_t, constants::*, sig_num::SigNum},
+};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FaultSignal {
     num: SigNum,

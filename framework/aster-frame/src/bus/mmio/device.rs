@@ -3,13 +3,12 @@
 use int_to_c_enum::TryFromInt;
 use log::info;
 
+use super::VIRTIO_MMIO_MAGIC;
 use crate::{
     io_mem::IoMem,
     trap::IrqLine,
     vm::{paddr_to_vaddr, Paddr, VmIo},
 };
-
-use super::VIRTIO_MMIO_MAGIC;
 
 /// MMIO Common device.
 /// TODO: Implement universal access to MMIO devices since we are temporarily

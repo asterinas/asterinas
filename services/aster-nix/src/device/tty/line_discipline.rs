@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::IoEvents;
-use crate::prelude::*;
-use crate::process::signal::constants::{SIGINT, SIGQUIT};
-use crate::process::signal::signals::kernel::KernelSignal;
-use crate::process::signal::{Pollee, Poller};
-use crate::thread::work_queue::work_item::WorkItem;
-use crate::thread::work_queue::{submit_work_item, WorkPriority};
 use alloc::format;
+
 use aster_frame::trap::{disable_local, in_interrupt_context};
 use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
 use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
+use crate::{
+    events::IoEvents,
+    prelude::*,
+    process::signal::{
+        constants::{SIGINT, SIGQUIT},
+        signals::kernel::KernelSignal,
+        Pollee, Poller,
+    },
+    thread::work_queue::{submit_work_item, work_item::WorkItem, WorkPriority},
+};
 
 // This implementation refers the implementation of linux
 // https://elixir.bootlin.com/linux/latest/source/include/linux/tty_ldisc.h

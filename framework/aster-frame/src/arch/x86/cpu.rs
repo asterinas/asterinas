@@ -2,23 +2,28 @@
 
 //! CPU.
 
-use core::arch::x86_64::{_fxrstor, _fxsave};
-use core::fmt::Debug;
-
 use alloc::vec::Vec;
-use bitvec::{prelude::Lsb0, slice::IterOnes};
-use trapframe::{GeneralRegs, UserContext as RawUserContext};
+use core::{
+    arch::x86_64::{_fxrstor, _fxsave},
+    fmt::Debug,
+};
 
-#[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
-use bitvec::prelude::BitVec;
+use bitvec::{
+    prelude::{BitVec, Lsb0},
+    slice::IterOnes,
+};
 use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
+use trapframe::{GeneralRegs, UserContext as RawUserContext};
 use x86_64::registers::rflags::RFlags;
 
-use crate::trap::call_irq_callback_functions;
-use crate::user::{UserContextApi, UserContextApiInternal, UserEvent};
+#[cfg(feature = "intel_tdx")]
+use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
+use crate::{
+    trap::call_irq_callback_functions,
+    user::{UserContextApi, UserContextApiInternal, UserEvent},
+};
 
 /// Returns the number of CPUs.
 pub fn num_cpus() -> u32 {

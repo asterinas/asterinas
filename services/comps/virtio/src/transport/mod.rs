@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::boxed::Box;
 use core::fmt::Debug;
 
-use alloc::boxed::Box;
 use aster_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::DmaCoherent};
 use aster_util::safe_ptr::SafePtr;
 
+use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
 use crate::{
     queue::{AvailRing, Descriptor, UsedRing},
     VirtioDeviceType,
 };
-
-use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
 
 pub mod mmio;
 pub mod pci;

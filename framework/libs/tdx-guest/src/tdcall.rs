@@ -5,9 +5,11 @@
 //! It is used to call guest-side Intel TDX functions. For more information about
 //! TDCALL, please refer to the [Intel® TDX Module v1.5 ABI Specification](https://cdrdv2.intel.com/v1/dl/getContent/733579)
 
-use crate::asm::asm_td_call;
-use bitflags::bitflags;
 use core::fmt;
+
+use bitflags::bitflags;
+
+use crate::asm::asm_td_call;
 
 /// TDCALL Instruction Leaf Numbers Definition.
 #[repr(u64)]

@@ -4,10 +4,11 @@
 //! This table can be used to get process with pid.
 //! TODO: progress group, thread all need similar mapping
 
-use crate::events::{Events, Observer, Subject};
-use crate::prelude::*;
-
 use super::{Pgid, Pid, Process, ProcessGroup, Session, Sid};
+use crate::{
+    events::{Events, Observer, Subject},
+    prelude::*,
+};
 
 static PROCESS_TABLE: Mutex<BTreeMap<Pid, Arc<Process>>> = Mutex::new(BTreeMap::new());
 static PROCESS_GROUP_TABLE: Mutex<BTreeMap<Pgid, Arc<ProcessGroup>>> = Mutex::new(BTreeMap::new());

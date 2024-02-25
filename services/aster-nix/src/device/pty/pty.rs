@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::format;
+
 use ringbuf::{ring_buffer::RbBase, HeapRb, Rb};
 
-use crate::device::tty::line_discipline::LineDiscipline;
-use crate::device::tty::new_job_control_and_ldisc;
-use crate::events::IoEvents;
-use crate::fs::device::{Device, DeviceId, DeviceType};
-use crate::fs::devpts::DevPts;
-use crate::fs::fs_resolver::FsPath;
-use crate::fs::inode_handle::FileIo;
-use crate::fs::utils::{AccessMode, Inode, InodeMode, IoctlCmd};
-use crate::prelude::*;
-use crate::process::signal::{Pollee, Poller};
-use crate::process::{JobControl, Terminal};
-use crate::util::{read_val_from_user, write_val_to_user};
+use crate::{
+    device::tty::{line_discipline::LineDiscipline, new_job_control_and_ldisc},
+    events::IoEvents,
+    fs::{
+        device::{Device, DeviceId, DeviceType},
+        devpts::DevPts,
+        fs_resolver::FsPath,
+        inode_handle::FileIo,
+        utils::{AccessMode, Inode, InodeMode, IoctlCmd},
+    },
+    prelude::*,
+    process::{
+        signal::{Pollee, Poller},
+        JobControl, Terminal,
+    },
+    util::{read_val_from_user, write_val_to_user},
+};
 
 const BUFFER_CAPACITY: usize = 4096;
 

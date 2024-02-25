@@ -2,10 +2,8 @@
 
 use aster_frame::cpu::UserContext;
 
-use crate::syscall::SYS_ARCH_PRCTL;
-use crate::{log_syscall_entry, prelude::*};
-
 use super::SyscallReturn;
+use crate::{log_syscall_entry, prelude::*, syscall::SYS_ARCH_PRCTL};
 
 #[allow(non_camel_case_types)]
 #[repr(u64)]

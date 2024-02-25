@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
 use core::ops::{Deref, DerefMut};
+
+use crate::prelude::*;
 
 /// AlwaysSome is a wrapper for Option.
 ///

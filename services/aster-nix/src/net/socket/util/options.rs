@@ -2,8 +2,10 @@
 
 use core::time::Duration;
 
-use crate::net::iface::{RECV_BUF_LEN, SEND_BUF_LEN};
-use crate::prelude::*;
+use crate::{
+    net::iface::{RECV_BUF_LEN, SEND_BUF_LEN},
+    prelude::*,
+};
 
 #[derive(Debug, Clone, CopyGetters, Setters)]
 #[get_copy = "pub"]

@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{SyscallReturn, SYS_GETGROUPS};
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::credentials;
-use crate::util::write_val_to_user;
+use crate::{log_syscall_entry, prelude::*, process::credentials, util::write_val_to_user};
 
 pub fn sys_getgroups(size: i32, group_list_addr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_GETGROUPS);
