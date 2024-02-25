@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::arch::x86_64::_mm_clflush;
-use core::ops::Range;
-
-use crate::arch::iommu;
-use crate::error::Error;
-use crate::vm::{
-    dma::{dma_type, Daddr, DmaType},
-    HasPaddr, Paddr, VmSegment, PAGE_SIZE,
-};
-use crate::vm::{VmIo, VmReader, VmWriter};
+use core::{arch::x86_64::_mm_clflush, ops::Range};
 
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
+use crate::{
+    arch::iommu,
+    error::Error,
+    vm::{
+        dma::{dma_type, Daddr, DmaType},
+        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
+    },
+};
 
 /// A streaming DMA mapping. Users must synchronize data
 /// before reading or after writing to ensure consistency.
@@ -198,9 +197,10 @@ impl HasPaddr for DmaStream {
 
 #[if_cfg_ktest]
 mod test {
+    use alloc::vec;
+
     use super::*;
     use crate::vm::VmAllocOptions;
-    use alloc::vec;
 
     #[ktest]
     fn streaming_map() {

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
+use aster_frame::sync::{Mutex, WaitQueue};
 
 use super::{
     bio::{BioEnqueueError, BioType, SubmittedBio},
     id::Sid,
 };
-
-use aster_frame::sync::{Mutex, WaitQueue};
+use crate::prelude::*;
 
 /// A simple block I/O request queue backed by one internal FIFO queue.
 ///

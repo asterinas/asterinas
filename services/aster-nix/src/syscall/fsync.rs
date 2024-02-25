@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::log_syscall_entry;
+use super::{SyscallReturn, SYS_FSYNC};
 use crate::{
     fs::{file_table::FileDescripter, inode_handle::InodeHandle},
+    log_syscall_entry,
     prelude::*,
 };
-
-use super::SyscallReturn;
-use super::SYS_FSYNC;
 
 pub fn sys_fsync(fd: FileDescripter) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FSYNC);

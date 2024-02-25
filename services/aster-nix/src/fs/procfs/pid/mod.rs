@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::Observer;
-use crate::fs::file_table::FdEvents;
-use crate::fs::utils::{DirEntryVecExt, Inode};
-use crate::prelude::*;
-use crate::process::Process;
-
-use self::comm::CommFileOps;
-use self::exe::ExeSymOps;
-use self::fd::FdDirOps;
+use self::{comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps};
 use super::template::{
     DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFileBuilder, ProcSymBuilder, SymOps,
+};
+use crate::{
+    events::Observer,
+    fs::{
+        file_table::FdEvents,
+        utils::{DirEntryVecExt, Inode},
+    },
+    prelude::*,
+    process::Process,
 };
 
 mod comm;

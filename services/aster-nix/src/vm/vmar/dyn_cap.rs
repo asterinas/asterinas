@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::vm::{Vaddr, VmIo};
-use aster_rights::Rights;
 use core::ops::Range;
 
-use crate::prelude::*;
-
-use crate::vm::{page_fault_handler::PageFaultHandler, vmo::Vmo};
+use aster_frame::vm::{Vaddr, VmIo};
+use aster_rights::Rights;
 
 use super::{
     options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_,
+};
+use crate::{
+    prelude::*,
+    vm::{page_fault_handler::PageFaultHandler, vmo::Vmo},
 };
 
 impl Vmar<Rights> {

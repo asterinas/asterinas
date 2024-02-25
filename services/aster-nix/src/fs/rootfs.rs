@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-
-use super::fs_resolver::{FsPath, FsResolver};
-use super::procfs::ProcFS;
-use super::ramfs::RamFS;
-use super::utils::{FileSystem, InodeMode, InodeType, MountNode};
-
 use cpio_decoder::{CpioDecoder, FileType};
 use lending_iterator::LendingIterator;
 use libflate::gzip::Decoder as GZipDecoder;
 use spin::Once;
+
+use super::{
+    fs_resolver::{FsPath, FsResolver},
+    procfs::ProcFS,
+    ramfs::RamFS,
+    utils::{FileSystem, InodeMode, InodeType, MountNode},
+};
+use crate::prelude::*;
 
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
 pub fn init(initramfs_buf: &[u8]) -> Result<()> {

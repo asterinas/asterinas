@@ -78,8 +78,7 @@
 use require_item::RequireItem;
 use syn::parse_macro_input;
 
-use crate::require_attr::expand_require;
-use crate::require_attr::RequireAttr;
+use crate::require_attr::{expand_require, RequireAttr};
 
 mod require_attr;
 mod require_item;

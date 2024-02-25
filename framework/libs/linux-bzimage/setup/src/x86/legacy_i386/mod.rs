@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use linux_boot_params::BootParams;
-
 use core::arch::{asm, global_asm};
+
+use linux_boot_params::BootParams;
 
 global_asm!(include_str!("header.S"));
 

@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::posix_thread::PosixThreadExt;
-use super::signal::signals::user::UserSignal;
-use super::signal::signals::Signal;
-use super::{credentials, process_table, Pgid, Pid, Process, Sid, Uid};
-use crate::prelude::*;
-use crate::thread::{thread_table, Tid};
+use super::{
+    credentials,
+    posix_thread::PosixThreadExt,
+    process_table,
+    signal::signals::{user::UserSignal, Signal},
+    Pgid, Pid, Process, Sid, Uid,
+};
+use crate::{
+    prelude::*,
+    thread::{thread_table, Tid},
+};
 
 /// Sends a signal to a process, using the current process as the sender.
 ///

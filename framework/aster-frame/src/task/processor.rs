@@ -1,20 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::AtomicUsize;
+use alloc::sync::Arc;
+use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-use crate::cpu_local;
-use crate::sync::Mutex;
-use crate::trap::disable_local;
-
-use core::sync::atomic::Ordering::Relaxed;
+use lazy_static::lazy_static;
 
 use super::{
     scheduler::{fetch_task, GLOBAL_SCHEDULER},
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use alloc::sync::Arc;
-use lazy_static::lazy_static;
+use crate::{cpu_local, sync::Mutex, trap::disable_local};
 
 pub struct Processor {
     current: Option<Arc<Task>>,

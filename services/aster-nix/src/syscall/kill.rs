@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{SyscallReturn, SYS_KILL};
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::kill;
-use crate::process::kill_all;
-use crate::process::kill_group;
-use crate::process::signal::sig_num::SigNum;
-use crate::process::signal::signals::user::{UserSignal, UserSignalKind};
-use crate::process::{credentials, ProcessFilter};
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{
+        credentials, kill, kill_all, kill_group,
+        signal::{
+            sig_num::SigNum,
+            signals::user::{UserSignal, UserSignalKind},
+        },
+        ProcessFilter,
+    },
+};
 
 pub fn sys_kill(process_filter: u64, sig_num: u64) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_KILL);

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::endpoint::Endpoint;
-use crate::events::IoEvents;
-use crate::net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd};
-use crate::prelude::*;
-use crate::process::signal::Poller;
+use crate::{
+    events::IoEvents,
+    net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd},
+    prelude::*,
+    process::signal::Poller,
+};
 
 pub(super) struct Connected {
     local_endpoint: Arc<Endpoint>,

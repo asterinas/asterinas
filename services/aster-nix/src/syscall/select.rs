@@ -2,16 +2,18 @@
 
 use core::time::Duration;
 
-use crate::events::IoEvents;
-use crate::fs::file_table::FileDescripter;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::time::timeval_t;
-use crate::util::{read_val_from_user, write_val_to_user};
-
-use super::poll::{do_poll, PollFd};
-use super::SyscallReturn;
-use super::SYS_SELECT;
+use super::{
+    poll::{do_poll, PollFd},
+    SyscallReturn, SYS_SELECT,
+};
+use crate::{
+    events::IoEvents,
+    fs::file_table::FileDescripter,
+    log_syscall_entry,
+    prelude::*,
+    time::timeval_t,
+    util::{read_val_from_user, write_val_to_user},
+};
 
 pub fn sys_select(
     nfds: FileDescripter,

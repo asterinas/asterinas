@@ -2,9 +2,8 @@
 
 use core::iter;
 
-use crate::arch::pci::{PCI_ADDRESS_PORT, PCI_DATA_PORT};
-
 use super::cfg_space::PciDeviceCommonCfgOffset;
+use crate::arch::pci::{PCI_ADDRESS_PORT, PCI_DATA_PORT};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PciDeviceId {

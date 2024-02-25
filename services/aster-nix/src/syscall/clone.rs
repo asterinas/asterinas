@@ -2,11 +2,13 @@
 
 use aster_frame::cpu::UserContext;
 
-use crate::log_syscall_entry;
-use crate::process::{clone_child, CloneArgs, CloneFlags};
-use crate::{prelude::*, syscall::SYS_CLONE};
-
 use super::SyscallReturn;
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{clone_child, CloneArgs, CloneFlags},
+    syscall::SYS_CLONE,
+};
 
 // The order of arguments for clone differs in different architecture.
 // This order we use here is the order for x86_64. See https://man7.org/linux/man-pages/man2/clone.2.html.

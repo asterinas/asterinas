@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_rights_proc::require;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
+use aster_rights::{Read, ReadOp, TRights, Write, WriteOp};
+use aster_rights_proc::require;
 use ringbuf::{HeapConsumer as HeapRbConsumer, HeapProducer as HeapRbProducer, HeapRb};
 
-use crate::events::IoEvents;
-use crate::events::Observer;
-use crate::prelude::*;
-use crate::process::signal::{Pollee, Poller};
-use aster_rights::{Read, ReadOp, TRights, Write, WriteOp};
-
 use super::StatusFlags;
+use crate::{
+    events::{IoEvents, Observer},
+    prelude::*,
+    process::signal::{Pollee, Poller},
+};
 
 /// A unidirectional communication channel, intended to implement IPC, e.g., pipe,
 /// unix domain sockets, etc.

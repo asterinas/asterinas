@@ -6,19 +6,23 @@ mod dyn_cap;
 mod static_cap;
 
 use core::sync::atomic::{AtomicU32, Ordering};
+
+use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 
-use crate::events::IoEvents;
-use crate::fs::device::Device;
-use crate::fs::file_handle::FileLike;
-use crate::fs::utils::{
-    AccessMode, Dentry, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
-    StatusFlags,
+use crate::{
+    events::IoEvents,
+    fs::{
+        device::Device,
+        file_handle::FileLike,
+        utils::{
+            AccessMode, Dentry, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
+            StatusFlags,
+        },
+    },
+    prelude::*,
+    process::{signal::Poller, Gid, Uid},
 };
-use crate::prelude::*;
-use crate::process::signal::Poller;
-use crate::process::{Gid, Uid};
-use aster_rights::Rights;
 
 #[derive(Debug)]
 pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);

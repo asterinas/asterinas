@@ -4,10 +4,9 @@ pub mod fault;
 pub mod kernel;
 pub mod user;
 
-use super::c_types::siginfo_t;
-use super::sig_num::SigNum;
-use core::any::Any;
-use core::fmt::Debug;
+use core::{any::Any, fmt::Debug};
+
+use super::{c_types::siginfo_t, sig_num::SigNum};
 
 pub trait Signal: Send + Sync + Debug + Any {
     /// Returns the number of the signal.

@@ -3,19 +3,21 @@
 //! The Linux 64-bit Boot Protocol supporting module.
 //!
 
-use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
-
-use crate::boot::{
-    kcmdline::KCmdlineArg,
-    memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
-    BootloaderAcpiArg, BootloaderFramebufferArg,
-};
-use crate::{config::PHYS_OFFSET, vm::paddr_to_vaddr};
-
 use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
 use core::ffi::CStr;
 
+use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
 use spin::Once;
+
+use crate::{
+    boot::{
+        kcmdline::KCmdlineArg,
+        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        BootloaderAcpiArg, BootloaderFramebufferArg,
+    },
+    config::PHYS_OFFSET,
+    vm::paddr_to_vaddr,
+};
 
 static BOOT_PARAMS: Once<BootParams> = Once::new();
 

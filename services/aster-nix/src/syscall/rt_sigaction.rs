@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use super::SyscallReturn;
 use crate::{
     log_syscall_entry,
     prelude::*,
@@ -7,8 +8,6 @@ use crate::{
     syscall::SYS_RT_SIGACTION,
     util::{read_val_from_user, write_val_to_user},
 };
-
-use super::SyscallReturn;
 
 pub fn sys_rt_sigaction(
     sig_num: u8,

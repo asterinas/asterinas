@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use tdx_guest::{
+    serial_println, tdcall,
     tdcall::TdgVeInfo,
+    tdvmcall,
     tdvmcall::{cpuid, hlt, rdmsr, wrmsr, IoSize},
-    {serial_println, tdcall, tdvmcall, TdxVirtualExceptionType},
+    TdxVirtualExceptionType,
 };
 
 pub trait TdxTrapFrame {

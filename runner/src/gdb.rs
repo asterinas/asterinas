@@ -2,8 +2,9 @@
 
 //! Providing the utility to run the GDB scripts for the runner.
 
-use crate::qemu_grub_efi;
 use std::{fs::OpenOptions, io::Write, path::PathBuf, process::Command};
+
+use crate::qemu_grub_efi;
 
 /// Run a GDB client.
 ///

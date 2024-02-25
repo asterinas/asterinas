@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{prelude::*, Error};
-
 use super::{frame::VmFrameFlags, frame_allocator, VmFrame, VmFrameVec, VmSegment};
+use crate::{prelude::*, Error};
 
 /// Options for allocating physical memory pages (or frames).
 ///

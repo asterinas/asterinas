@@ -2,13 +2,14 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_frame::{cpu::CpuSet, sync::WaitQueue, task::Priority};
+
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
-use crate::prelude::*;
-use crate::thread::kernel_thread::{KernelThreadExt, ThreadOptions};
-use crate::Thread;
-use aster_frame::cpu::CpuSet;
-use aster_frame::sync::WaitQueue;
-use aster_frame::task::Priority;
+use crate::{
+    prelude::*,
+    thread::kernel_thread::{KernelThreadExt, ThreadOptions},
+    Thread,
+};
 
 /// A pool of workers.
 ///

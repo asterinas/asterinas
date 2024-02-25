@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::{log_syscall_entry, prelude::*};
-
-use crate::syscall::SYS_WRITE;
-use crate::util::read_bytes_from_user;
-
 use super::SyscallReturn;
+use crate::{
+    fs::file_table::FileDescripter, log_syscall_entry, prelude::*, syscall::SYS_WRITE,
+    util::read_bytes_from_user,
+};
 
 const STDOUT: u64 = 1;
 const STDERR: u64 = 2;

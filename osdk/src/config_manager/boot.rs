@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::path::PathBuf;
-use std::process;
+use std::{path::PathBuf, process};
 
-use crate::error::Errno;
-use crate::error_msg;
+use crate::{error::Errno, error_msg};
 
 /// Arguments for creating bootdev image and how to boot with vmm.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]

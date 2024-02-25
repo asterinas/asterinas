@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::net::iface::{IpAddress, Ipv4Address};
-use crate::net::iface::{IpEndpoint, IpListenEndpoint};
-use crate::net::socket::unix::UnixSocketAddr;
-use crate::prelude::*;
+use crate::{
+    net::{
+        iface::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address},
+        socket::unix::UnixSocketAddr,
+    },
+    prelude::*,
+};
 
 type PortNum = u16;
 

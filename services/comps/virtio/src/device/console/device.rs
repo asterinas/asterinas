@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
 
-use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use aster_frame::{config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
 use aster_util::safe_ptr::SafePtr;
 use log::debug;
 
+use super::{config::VirtioConsoleConfig, DEVICE_NAME};
 use crate::{
     device::{console::config::ConsoleFeatures, VirtioDeviceError},
     queue::VirtQueue,
     transport::VirtioTransport,
 };
-
-use super::{config::VirtioConsoleConfig, DEVICE_NAME};
 
 pub struct ConsoleDevice {
     config: SafePtr<VirtioConsoleConfig, IoMem>,

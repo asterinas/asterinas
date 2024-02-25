@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::{
-    file_table::FileDescripter,
-    fs_resolver::{FsPath, AT_FDCWD},
-    utils::Metadata,
+use super::{SyscallReturn, SYS_FSTAT, SYS_FSTATAT};
+use crate::{
+    fs::{
+        file_table::FileDescripter,
+        fs_resolver::{FsPath, AT_FDCWD},
+        utils::Metadata,
+    },
+    log_syscall_entry,
+    prelude::*,
+    syscall::constants::MAX_FILENAME_LEN,
+    time::timespec_t,
+    util::{read_cstring_from_user, write_val_to_user},
 };
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::syscall::constants::MAX_FILENAME_LEN;
-use crate::time::timespec_t;
-use crate::util::{read_cstring_from_user, write_val_to_user};
-
-use super::SyscallReturn;
-use super::{SYS_FSTAT, SYS_FSTATAT};
 
 pub fn sys_fstat(fd: FileDescripter, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FSTAT);

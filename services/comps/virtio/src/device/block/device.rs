@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
-use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use aster_block::{
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     id::Sid,
@@ -18,14 +18,15 @@ use aster_util::safe_ptr::SafePtr;
 use log::info;
 use pod::Pod;
 
+use super::{BlockFeatures, VirtioBlockConfig};
 use crate::{
-    device::block::{ReqType, RespStatus},
-    device::VirtioDeviceError,
+    device::{
+        block::{ReqType, RespStatus},
+        VirtioDeviceError,
+    },
     queue::VirtQueue,
     transport::VirtioTransport,
 };
-
-use super::{BlockFeatures, VirtioBlockConfig};
 
 #[derive(Debug)]
 pub struct BlockDevice {

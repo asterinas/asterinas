@@ -2,18 +2,19 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::IoEvents;
-use crate::net::iface::Iface;
-use crate::net::iface::IpEndpoint;
-use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket};
-use crate::net::socket::ip::always_some::AlwaysSome;
-use crate::net::socket::ip::common::{bind_socket, get_ephemeral_endpoint};
-use crate::prelude::*;
-use crate::process::signal::Pollee;
-use crate::process::signal::Poller;
-
-use super::connecting::ConnectingStream;
-use super::listen::ListenStream;
+use super::{connecting::ConnectingStream, listen::ListenStream};
+use crate::{
+    events::IoEvents,
+    net::{
+        iface::{AnyBoundSocket, AnyUnboundSocket, Iface, IpEndpoint},
+        socket::ip::{
+            always_some::AlwaysSome,
+            common::{bind_socket, get_ephemeral_endpoint},
+        },
+    },
+    prelude::*,
+    process::signal::{Pollee, Poller},
+};
 
 pub struct InitStream {
     inner: RwLock<Inner>,

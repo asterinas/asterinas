@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use aster_frame::sync::WaitQueue;
 
-use crate::events::Observer;
-use crate::prelude::*;
-use crate::process::posix_thread::PosixThreadExt;
-
-use super::sig_mask::SigMask;
-use super::{SigEvents, SigEventsFilter};
+use super::{sig_mask::SigMask, SigEvents, SigEventsFilter};
+use crate::{events::Observer, prelude::*, process::posix_thread::PosixThreadExt};
 
 /// A `Pauser` allows pausing the execution of the current thread until certain conditions are reached.
 ///

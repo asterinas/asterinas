@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::{Events, Observer, Subject};
-use crate::net::socket::Socket;
-use crate::prelude::*;
-
-use aster_util::slot_vec::SlotVec;
 use core::cell::Cell;
 
-use super::file_handle::FileLike;
-use super::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
-use super::utils::{AccessMode, InodeMode};
+use aster_util::slot_vec::SlotVec;
+
+use super::{
+    file_handle::FileLike,
+    fs_resolver::{FsPath, FsResolver, AT_FDCWD},
+    utils::{AccessMode, InodeMode},
+};
+use crate::{
+    events::{Events, Observer, Subject},
+    net::socket::Socket,
+    prelude::*,
+};
 
 pub type FileDescripter = i32;
 

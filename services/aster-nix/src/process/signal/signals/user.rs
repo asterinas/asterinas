@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::Signal;
-use crate::process::signal::c_types::siginfo_t;
-use crate::process::signal::constants::{SI_QUEUE, SI_TKILL, SI_USER};
-use crate::process::signal::sig_num::SigNum;
-use crate::process::{Pid, Uid};
+use crate::process::{
+    signal::{
+        c_types::siginfo_t,
+        constants::{SI_QUEUE, SI_TKILL, SI_USER},
+        sig_num::SigNum,
+    },
+    Pid, Uid,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct UserSignal {

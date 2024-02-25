@@ -4,6 +4,7 @@ use core::{
     arch::x86_64::_rdtsc,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
+
 use log::info;
 use trapframe::TrapFrame;
 use x86::cpuid::cpuid;

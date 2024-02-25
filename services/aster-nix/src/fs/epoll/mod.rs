@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::file_table::FileDescripter;
-use crate::events::IoEvents;
-use crate::prelude::*;
+use crate::{events::IoEvents, prelude::*};
 
 mod epoll_file;
 

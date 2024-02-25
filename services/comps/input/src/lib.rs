@@ -9,21 +9,13 @@ extern crate alloc;
 
 pub mod key;
 
-use core::any::Any;
-use core::fmt::Debug;
-
-use alloc::collections::BTreeMap;
-use alloc::string::String;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-use component::init_component;
-use component::ComponentInitError;
+use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
+use core::{any::Any, fmt::Debug};
 
 use aster_frame::sync::SpinLock;
+use component::{init_component, ComponentInitError};
+use key::{Key, KeyStatus};
 use spin::Once;
-
-use key::Key;
-use key::KeyStatus;
 
 #[derive(Debug, Clone, Copy)]
 pub enum InputEvent {

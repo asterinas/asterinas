@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
+use aster_frame::vm::{VmAllocOptions, VmFrame, VmIo, VmSegment};
 
 use super::{
     bio::{Bio, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter, SubmittedBio},
     id::{Bid, Sid},
     BlockDevice, BLOCK_SIZE, SECTOR_SIZE,
 };
-
-use aster_frame::vm::{VmAllocOptions, VmFrame, VmIo, VmSegment};
+use crate::prelude::*;
 
 /// Implements several commonly used APIs for the block device to conveniently
 /// read and write block(s).

@@ -2,11 +2,8 @@
 
 use align_ext::AlignExt;
 
-use crate::log_syscall_entry;
-use crate::prelude::*;
-
-use super::SyscallReturn;
-use super::SYS_MUNMAP;
+use super::{SyscallReturn, SYS_MUNMAP};
+use crate::{log_syscall_entry, prelude::*};
 
 pub fn sys_munmap(addr: Vaddr, len: usize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MUNMAP);

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-
 use super::{Pgid, Process, ProcessGroup, Sid, Terminal};
+use crate::prelude::*;
 
 /// A `Session` is a collection of related process groups. Each session has a
 /// unique identifier `sid`. Process groups and sessions form a two-level

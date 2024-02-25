@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use smoltcp::iface::SocketSet;
+
 use self::common::IfaceCommon;
 use crate::prelude::*;
-use smoltcp::iface::SocketSet;
 
 mod any_socket;
 mod common;
@@ -11,8 +12,9 @@ mod time;
 mod util;
 mod virtio;
 
-pub use any_socket::{AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket};
-pub use any_socket::{RECV_BUF_LEN, SEND_BUF_LEN};
+pub use any_socket::{
+    AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket, RECV_BUF_LEN, SEND_BUF_LEN,
+};
 pub use loopback::IfaceLoopback;
 pub use smoltcp::wire::{EthernetAddress, IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
 pub use util::{spawn_background_poll_thread, BindPortConfig};

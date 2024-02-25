@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::block_group::{BlockGroup, RawGroupDescriptor};
-use super::inode::{FilePerm, FileType, Inode, InodeDesc, RawInode};
-use super::prelude::*;
-use super::super_block::{RawSuperBlock, SuperBlock, SUPER_BLOCK_OFFSET};
+use super::{
+    block_group::{BlockGroup, RawGroupDescriptor},
+    inode::{FilePerm, FileType, Inode, InodeDesc, RawInode},
+    prelude::*,
+    super_block::{RawSuperBlock, SuperBlock, SUPER_BLOCK_OFFSET},
+};
 
 /// The root inode number.
 const ROOT_INO: u32 = 2;

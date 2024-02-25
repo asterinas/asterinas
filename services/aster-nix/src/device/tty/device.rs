@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::IoEvents;
-use crate::fs::device::{Device, DeviceId, DeviceType};
-use crate::fs::inode_handle::FileIo;
-use crate::prelude::*;
-use crate::process::signal::Poller;
+use crate::{
+    events::IoEvents,
+    fs::{
+        device::{Device, DeviceId, DeviceType},
+        inode_handle::FileIo,
+    },
+    prelude::*,
+    process::signal::Poller,
+};
 
 /// Corresponds to `/dev/tty` in the file system. This device represents the controlling terminal
 /// of the session of current process.

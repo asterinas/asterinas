@@ -2,17 +2,14 @@
 
 use core::ops::Range;
 
-use crate::prelude::*;
-
 use aster_frame::vm::VmIo;
-
 use aster_rights::{Rights, TRights};
 
-use super::VmoRightsOp;
 use super::{
     options::{VmoCowChild, VmoSliceChild},
-    Vmo, VmoChildOptions,
+    Vmo, VmoChildOptions, VmoRightsOp,
 };
+use crate::prelude::*;
 
 impl Vmo<Rights> {
     /// Creates a new slice VMO through a set of VMO child options.

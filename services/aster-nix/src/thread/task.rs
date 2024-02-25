@@ -6,12 +6,11 @@ use aster_frame::{
     user::{UserContextApi, UserEvent, UserMode, UserSpace},
 };
 
+use super::Thread;
 use crate::{
     prelude::*, process::signal::handle_pending_signal, syscall::handle_syscall,
     thread::exception::handle_exception,
 };
-
-use super::Thread;
 
 /// create new task with userspace and parent process
 pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>) -> Arc<Task> {

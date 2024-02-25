@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_rights::Full;
 use core::time::Duration;
+
+use aster_rights::Full;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 
 use super::{DirentVisitor, FileSystem, IoctlCmd, SuperBlock};
-use crate::events::IoEvents;
-use crate::fs::device::{Device, DeviceType};
-use crate::prelude::*;
-use crate::process::signal::Poller;
-use crate::process::{Gid, Uid};
-use crate::vm::vmo::Vmo;
+use crate::{
+    events::IoEvents,
+    fs::device::{Device, DeviceType},
+    prelude::*,
+    process::{signal::Poller, Gid, Uid},
+    vm::vmo::Vmo,
+};
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]

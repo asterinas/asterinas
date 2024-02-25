@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::error::*;
-use super::{CpioDecoder, FileType};
 use lending_iterator::LendingIterator;
+
+use super::{error::*, CpioDecoder, FileType};
 
 #[test]
 fn test_decoder() {

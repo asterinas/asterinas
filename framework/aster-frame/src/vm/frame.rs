@@ -6,12 +6,11 @@ use core::{
     marker::PhantomData,
     ops::{BitAnd, BitOr, Not, Range},
 };
+
 use pod::Pod;
 
+use super::{frame_allocator, HasPaddr, Paddr, VmIo};
 use crate::{config::PAGE_SIZE, prelude::*, Error};
-
-use super::{frame_allocator, HasPaddr};
-use super::{Paddr, VmIo};
 
 /// A collection of page frames (physical memory pages).
 ///

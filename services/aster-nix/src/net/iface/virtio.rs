@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
 use aster_frame::sync::SpinLock;
 use aster_network::AnyNetworkDevice;
 use aster_virtio::device::network::DEVICE_NAME;
@@ -11,6 +10,7 @@ use smoltcp::{
 };
 
 use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
+use crate::prelude::*;
 
 pub struct IfaceVirtio {
     driver: Arc<SpinLock<Box<dyn AnyNetworkDevice>>>,

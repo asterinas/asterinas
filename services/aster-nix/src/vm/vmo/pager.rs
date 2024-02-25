@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
 use aster_frame::vm::VmFrame;
+
+use crate::prelude::*;
 
 /// Pagers provide frame to a VMO.
 ///

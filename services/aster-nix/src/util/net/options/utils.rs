@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::net::socket::ip::stream::CongestionControl;
-use crate::net::socket::LingerOption;
-use crate::prelude::*;
-use crate::vm::vmar::Vmar;
+use core::time::Duration;
+
 use aster_frame::vm::VmIo;
 use aster_rights::Full;
-use core::time::Duration;
+
+use crate::{
+    net::socket::{ip::stream::CongestionControl, LingerOption},
+    prelude::*,
+    vm::vmar::Vmar,
+};
 
 /// Create an object by reading its C counterpart from the user space.
 ///

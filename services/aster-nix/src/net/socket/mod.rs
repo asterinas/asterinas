@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{fs::file_handle::FileLike, prelude::*};
-
 use self::options::SocketOption;
-pub use self::util::options::LingerOption;
-pub use self::util::send_recv_flags::SendRecvFlags;
-pub use self::util::shutdown_cmd::SockShutdownCmd;
-pub use self::util::socket_addr::SocketAddr;
+pub use self::util::{
+    options::LingerOption, send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
+    socket_addr::SocketAddr,
+};
+use crate::{fs::file_handle::FileLike, prelude::*};
 
 pub mod ip;
 pub mod options;

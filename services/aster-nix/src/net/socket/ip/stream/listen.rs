@@ -2,14 +2,16 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::events::{IoEvents, Observer};
-use crate::net::iface::{AnyUnboundSocket, BindPortConfig, IpEndpoint};
-
-use crate::net::iface::{AnyBoundSocket, RawTcpSocket};
-use crate::process::signal::{Pollee, Poller};
-use crate::{net::poll_ifaces, prelude::*};
-
 use super::connected::ConnectedStream;
+use crate::{
+    events::{IoEvents, Observer},
+    net::{
+        iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, IpEndpoint, RawTcpSocket},
+        poll_ifaces,
+    },
+    prelude::*,
+    process::signal::{Pollee, Poller},
+};
 
 pub struct ListenStream {
     is_nonblocking: AtomicBool,

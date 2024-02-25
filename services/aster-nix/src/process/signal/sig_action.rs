@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use bitflags::bitflags;
+
 use super::{c_types::sigaction_t, constants::*, sig_mask::SigMask, sig_num::SigNum};
 use crate::prelude::*;
-use bitflags::bitflags;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum SigAction {

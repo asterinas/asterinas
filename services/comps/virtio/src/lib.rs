@@ -8,11 +8,10 @@
 
 extern crate alloc;
 
-use component::init_component;
-
 use alloc::boxed::Box;
+
 use bitflags::bitflags;
-use component::ComponentInitError;
+use component::{init_component, ComponentInitError};
 use device::{
     block::device::BlockDevice, console::device::ConsoleDevice, input::device::InputDevice,
     network::device::NetworkDevice, VirtioDeviceType,

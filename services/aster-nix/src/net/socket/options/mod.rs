@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::impl_socket_options;
-use crate::prelude::*;
+use crate::{impl_socket_options, prelude::*};
 mod macros;
 
 use super::LingerOption;

@@ -3,9 +3,9 @@
 #![allow(non_camel_case_types)]
 use core::time::Duration;
 
-use crate::prelude::*;
-
 use aster_time::read_monotonic_time;
+
+use crate::prelude::*;
 
 mod system_time;
 

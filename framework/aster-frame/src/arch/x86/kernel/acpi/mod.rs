@@ -3,20 +3,21 @@
 pub mod dmar;
 pub mod remapping;
 
+use alloc::borrow::ToOwned;
 use core::{
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
-use crate::vm::paddr_to_vaddr;
+use acpi::{sdt::SdtHeader, AcpiHandler, AcpiTable, AcpiTables};
+use log::{info, warn};
+use spin::Once;
+
 use crate::{
     boot::{self, BootloaderAcpiArg},
     sync::SpinLock,
+    vm::paddr_to_vaddr,
 };
-use acpi::{sdt::SdtHeader, AcpiHandler, AcpiTable, AcpiTables};
-use alloc::borrow::ToOwned;
-use log::{info, warn};
-use spin::Once;
 
 /// RSDP information, key is the signature, value is the virtual address of the signature
 pub static ACPI_TABLES: Once<SpinLock<AcpiTables<AcpiMemoryHandler>>> = Once::new();

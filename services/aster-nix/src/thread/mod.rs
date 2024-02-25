@@ -9,9 +9,8 @@ use core::{
 
 use aster_frame::task::Task;
 
-use crate::prelude::*;
-
 use self::status::ThreadStatus;
+use crate::prelude::*;
 
 pub mod exception;
 pub mod kernel_thread;

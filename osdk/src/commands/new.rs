@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::{fs, process};
+use std::{fs, path::PathBuf, process, str::FromStr};
 
-use crate::cli::NewArgs;
-use crate::error::Errno;
-use crate::error_msg;
-use crate::utils::{cargo_new_lib, get_cargo_metadata, ASTER_FRAME_DEP};
+use crate::{
+    cli::NewArgs,
+    error::Errno,
+    error_msg,
+    utils::{cargo_new_lib, get_cargo_metadata, ASTER_FRAME_DEP},
+};
 
 pub fn execute_new_command(args: &NewArgs) {
     cargo_new_lib(&args.crate_name);

@@ -2,14 +2,13 @@
 
 use aster_frame::{cpu::UserContext, user::UserSpace};
 
+use super::{builder::PosixThreadBuilder, name::ThreadName, PosixThread};
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     prelude::*,
     process::{process_vm::ProcessVm, program_loader::load_program_to_vm, Credentials, Process},
     thread::{Thread, Tid},
 };
-
-use super::{builder::PosixThreadBuilder, name::ThreadName, PosixThread};
 pub trait PosixThreadExt {
     fn as_posix_thread(&self) -> Option<&PosixThread>;
     #[allow(clippy::too_many_arguments)]

@@ -1,17 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::arch::mm::PageTableFlags;
-use crate::config::PAGE_SIZE;
-use crate::sync::Mutex;
-use bitflags::bitflags;
 use core::ops::Range;
 
-use super::VmFrameVec;
-use super::{is_page_aligned, Vaddr};
-use super::{MapArea, MemorySet};
-use crate::{prelude::*, Error};
+use bitflags::bitflags;
 
-use super::VmIo;
+use super::{is_page_aligned, MapArea, MemorySet, Vaddr, VmFrameVec, VmIo};
+use crate::{arch::mm::PageTableFlags, config::PAGE_SIZE, prelude::*, sync::Mutex, Error};
 
 /// Virtual memory space.
 ///

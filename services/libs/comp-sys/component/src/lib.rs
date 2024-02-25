@@ -9,14 +9,17 @@
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-use alloc::{borrow::ToOwned, fmt::Debug};
-use log::{debug, error, info};
+use alloc::{
+    borrow::ToOwned,
+    collections::BTreeMap,
+    fmt::Debug,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 pub use component_macro::*;
 pub use inventory::submit;
+use log::{debug, error, info};
 
 #[derive(Debug)]
 pub enum ComponentInitError {

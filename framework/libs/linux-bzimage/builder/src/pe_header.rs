@@ -8,10 +8,10 @@
 //! The reference to the Linux PE header definition:
 //! https://github.com/torvalds/linux/blob/master/include/linux/pe.h
 
+use std::{mem::size_of, ops::Range};
+
 use bytemuck::{Pod, Zeroable};
 use serde::Serialize;
-
-use std::{mem::size_of, ops::Range};
 
 use crate::mapping::{SetupFileOffset, SetupVA, LEGACY_SETUP_SEC_SIZE, SETUP32_LMA};
 

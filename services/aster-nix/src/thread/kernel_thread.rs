@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::cpu::CpuSet;
-use aster_frame::task::{Priority, TaskOptions};
-
-use crate::prelude::*;
+use aster_frame::{
+    cpu::CpuSet,
+    task::{Priority, TaskOptions},
+};
 
 use super::{allocate_tid, status::ThreadStatus, thread_table, Thread};
+use crate::prelude::*;
 
 /// The inner data of a kernel thread
 pub struct KernelThread;

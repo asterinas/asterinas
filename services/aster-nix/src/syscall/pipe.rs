@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::fs::pipe::{PipeReader, PipeWriter};
-use crate::fs::utils::{Channel, StatusFlags};
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::util::{read_val_from_user, write_val_to_user};
-
-use super::SyscallReturn;
-use super::SYS_PIPE2;
+use super::{SyscallReturn, SYS_PIPE2};
+use crate::{
+    fs::{
+        file_table::FileDescripter,
+        pipe::{PipeReader, PipeWriter},
+        utils::{Channel, StatusFlags},
+    },
+    log_syscall_entry,
+    prelude::*,
+    util::{read_val_from_user, write_val_to_user},
+};
 
 pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_PIPE2);

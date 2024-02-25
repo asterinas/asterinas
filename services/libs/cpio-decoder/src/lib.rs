@@ -21,13 +21,17 @@
 
 extern crate alloc;
 
-use crate::error::{Error, Result};
-use alloc::string::{String, ToString};
-use alloc::vec;
+use alloc::{
+    string::{String, ToString},
+    vec,
+};
 use core::cmp::min;
+
 use core2::io::{Read, Write};
 use int_to_c_enum::TryFromInt;
 use lending_iterator::prelude::*;
+
+use crate::error::{Error, Result};
 
 pub mod error;
 

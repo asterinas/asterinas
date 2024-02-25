@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::prelude::*;
-
 use core::ops::MulAssign;
+
+use super::prelude::*;
 
 pub trait IsPowerOf: Copy + Sized + MulAssign + PartialOrd {
     /// Returns true if and only if `self == x^k` for some `k` where `k > 0`.

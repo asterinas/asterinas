@@ -8,12 +8,13 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use aster_frame::{boot, config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo};
-use component::{init_component, ComponentInitError};
 use core::{
     fmt,
     ops::{Index, IndexMut},
 };
+
+use aster_frame::{boot, config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo};
+use component::{init_component, ComponentInitError};
 use font8x8::UnicodeFonts;
 use spin::Once;
 

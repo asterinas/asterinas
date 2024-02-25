@@ -9,18 +9,22 @@ pub mod boot;
 pub mod manifest;
 pub mod qemu;
 
-use std::path::PathBuf;
-use std::{fs, process};
+use std::{fs, path::PathBuf, process};
 
 use indexmap::{IndexMap, IndexSet};
 use which::which;
 
-use self::boot::BootLoader;
-use self::manifest::{OsdkManifest, TomlManifest};
-use crate::cli::{BuildArgs, CargoArgs, OsdkArgs, RunArgs, TestArgs};
-use crate::error::Errno;
-use crate::utils::get_cargo_metadata;
-use crate::{error_msg, warn_msg};
+use self::{
+    boot::BootLoader,
+    manifest::{OsdkManifest, TomlManifest},
+};
+use crate::{
+    cli::{BuildArgs, CargoArgs, OsdkArgs, RunArgs, TestArgs},
+    error::Errno,
+    error_msg,
+    utils::get_cargo_metadata,
+    warn_msg,
+};
 
 /// Configurations for build subcommand
 #[derive(Debug)]

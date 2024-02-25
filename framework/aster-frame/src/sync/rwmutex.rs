@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::cell::UnsafeCell;
-use core::fmt;
-use core::ops::{Deref, DerefMut};
-use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release};
+use core::{
+    cell::UnsafeCell,
+    fmt,
+    ops::{Deref, DerefMut},
+    sync::atomic::{
+        AtomicUsize,
+        Ordering::{AcqRel, Acquire, Relaxed, Release},
+    },
+};
 
 use super::WaitQueue;
 

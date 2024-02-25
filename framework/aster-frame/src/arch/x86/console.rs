@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{fmt, sync::Arc, vec::Vec};
 use core::fmt::Write;
 
-use crate::sync::SpinLock;
-use crate::trap::IrqLine;
-use alloc::fmt;
-use alloc::{sync::Arc, vec::Vec};
 use log::debug;
 use spin::Once;
 use trapframe::TrapFrame;
 
-use super::device::serial::SerialPort;
-use super::kernel::IO_APIC;
+use super::{device::serial::SerialPort, kernel::IO_APIC};
+use crate::{sync::SpinLock, trap::IrqLine};
 
 #[inline]
 pub fn print(args: fmt::Arguments) {

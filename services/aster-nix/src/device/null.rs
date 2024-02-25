@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
-use crate::events::IoEvents;
-use crate::fs::inode_handle::FileIo;
-use crate::prelude::*;
-use crate::process::signal::Poller;
+use crate::{events::IoEvents, fs::inode_handle::FileIo, prelude::*, process::signal::Poller};
 
 pub struct Null;
 

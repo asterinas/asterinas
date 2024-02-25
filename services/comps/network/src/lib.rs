@@ -10,19 +10,13 @@ pub mod driver;
 
 extern crate alloc;
 
-use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
-use alloc::string::String;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc, vec::Vec};
+use core::{any::Any, fmt::Debug};
+
 use aster_frame::sync::SpinLock;
 use aster_util::safe_ptr::Pod;
-use buffer::RxBuffer;
-use buffer::TxBuffer;
-use component::init_component;
-use component::ComponentInitError;
-use core::any::Any;
-use core::fmt::Debug;
+use buffer::{RxBuffer, TxBuffer};
+use component::{init_component, ComponentInitError};
 use smoltcp::phy;
 use spin::Once;
 

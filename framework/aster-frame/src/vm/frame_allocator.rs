@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use align_ext::AlignExt;
 use alloc::vec::Vec;
+
+use align_ext::AlignExt;
 use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
-use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
-use crate::{config::PAGE_SIZE, sync::SpinLock};
-
 use super::{frame::VmFrameFlags, VmFrame, VmFrameVec, VmSegment};
+use crate::{
+    boot::memory_region::{MemoryRegion, MemoryRegionType},
+    config::PAGE_SIZE,
+    sync::SpinLock,
+};
 
 pub(super) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 

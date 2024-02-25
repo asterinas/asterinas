@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-
 use super::{Dentry, DentryKey, FileSystem, InodeType};
+use crate::prelude::*;
 
 /// The MountNode can form a mount tree to maintain the mount information.
 pub struct MountNode {

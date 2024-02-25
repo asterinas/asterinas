@@ -1,24 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::sync::RwLockWriteGuard;
-use aster_frame::vm::VmFrame;
-use aster_frame::vm::VmIo;
+use core::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
+
+use aster_frame::{
+    sync::RwLockWriteGuard,
+    vm::{VmFrame, VmIo},
+};
 use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
-use core::sync::atomic::{AtomicUsize, Ordering};
-use core::time::Duration;
 
 use super::*;
-use crate::events::IoEvents;
-use crate::fs::device::Device;
-use crate::fs::utils::{
-    CStr256, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
-    PageCache, PageCacheBackend, SuperBlock,
+use crate::{
+    events::IoEvents,
+    fs::{
+        device::Device,
+        utils::{
+            CStr256, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd,
+            Metadata, PageCache, PageCacheBackend, SuperBlock,
+        },
+    },
+    prelude::*,
+    process::{signal::Poller, Gid, Uid},
+    vm::vmo::Vmo,
 };
-use crate::prelude::*;
-use crate::process::signal::Poller;
-use crate::process::{Gid, Uid};
-use crate::vm::vmo::Vmo;
 
 /// A volatile file system whose data and metadata exists only in memory.
 pub struct RamFS {

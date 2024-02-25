@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::vm::Paddr;
-use aster_frame::vm::{HasPaddr, VmIo};
-use aster_frame::Result;
+use core::{fmt::Debug, marker::PhantomData};
+
+use aster_frame::{
+    vm::{HasPaddr, Paddr, VmIo},
+    Result,
+};
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
-use core::fmt::Debug;
-use core::marker::PhantomData;
 pub use pod::Pod;
 pub use typeflags_util::SetContain;
 

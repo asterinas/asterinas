@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use super::SyscallReturn;
 use crate::{
     log_syscall_entry,
-    process::{wait_child_exit, ProcessFilter},
+    prelude::*,
+    process::{wait_child_exit, ProcessFilter, WaitOptions},
     syscall::SYS_WAIT4,
     util::write_val_to_user,
 };
-
-use crate::prelude::*;
-use crate::process::WaitOptions;
-
-use super::SyscallReturn;
 
 pub fn sys_wait4(wait_pid: u64, exit_status_ptr: u64, wait_options: u32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_WAIT4);

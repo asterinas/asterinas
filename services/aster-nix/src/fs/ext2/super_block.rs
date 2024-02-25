@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::inode::RawInode;
-use super::prelude::*;
+use super::{inode::RawInode, prelude::*};
 
 /// The magic number of Ext2.
 pub const MAGIC_NUM: u16 = 0xef53;

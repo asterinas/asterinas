@@ -25,6 +25,12 @@
 #![feature(btree_cursors)]
 #![register_tool(component_access_control)]
 
+use aster_frame::{
+    arch::qemu::{exit_qemu, QemuExitCode},
+    boot,
+};
+use process::Process;
+
 use crate::{
     prelude::*,
     thread::{
@@ -32,11 +38,6 @@ use crate::{
         Thread,
     },
 };
-use aster_frame::{
-    arch::qemu::{exit_qemu, QemuExitCode},
-    boot,
-};
-use process::Process;
 
 extern crate alloc;
 extern crate lru;

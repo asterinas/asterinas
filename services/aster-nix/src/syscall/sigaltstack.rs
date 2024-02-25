@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::posix_thread::PosixThreadExt;
-use crate::process::signal::SigStack;
-use crate::process::signal::SigStackFlags;
-use crate::util::read_val_from_user;
-use crate::util::write_val_to_user;
-
 use super::{SyscallReturn, SYS_SIGALTSTACK};
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{
+        posix_thread::PosixThreadExt,
+        signal::{SigStack, SigStackFlags},
+    },
+    util::{read_val_from_user, write_val_to_user},
+};
 
 pub fn sys_sigaltstack(sig_stack_addr: Vaddr, old_sig_stack_addr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SIGALTSTACK);

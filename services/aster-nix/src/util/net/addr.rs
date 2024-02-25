@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::net::iface::Ipv4Address;
-use crate::net::socket::unix::UnixSocketAddr;
-use crate::net::socket::SocketAddr;
-use crate::prelude::*;
-use crate::util::{read_bytes_from_user, read_val_from_user, write_val_to_user};
+use crate::{
+    net::{
+        iface::Ipv4Address,
+        socket::{unix::UnixSocketAddr, SocketAddr},
+    },
+    prelude::*,
+    util::{read_bytes_from_user, read_val_from_user, write_val_to_user},
+};
 
 pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<SocketAddr> {
     debug_assert!(addr_len >= core::mem::size_of::<CSocketAddr>());

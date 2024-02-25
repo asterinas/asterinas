@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::util::net::get_socket_from_fd;
-
 use super::{SyscallReturn, SYS_LISTEN};
+use crate::{
+    fs::file_table::FileDescripter, log_syscall_entry, prelude::*, util::net::get_socket_from_fd,
+};
 
 pub fn sys_listen(sockfd: FileDescripter, backlog: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_LISTEN);

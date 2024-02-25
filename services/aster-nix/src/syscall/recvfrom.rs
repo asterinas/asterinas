@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::log_syscall_entry;
-use crate::net::socket::SendRecvFlags;
-use crate::prelude::*;
-use crate::util::net::{get_socket_from_fd, write_socket_addr_to_user};
-use crate::util::write_bytes_to_user;
-
 use super::{SyscallReturn, SYS_RECVFROM};
+use crate::{
+    fs::file_table::FileDescripter,
+    log_syscall_entry,
+    net::socket::SendRecvFlags,
+    prelude::*,
+    util::{
+        net::{get_socket_from_fd, write_socket_addr_to_user},
+        write_bytes_to_user,
+    },
+};
 
 pub fn sys_recvfrom(
     sockfd: FileDescripter,

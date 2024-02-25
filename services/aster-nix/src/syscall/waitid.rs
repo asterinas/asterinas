@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::process::{wait_child_exit, ProcessFilter};
-use crate::{log_syscall_entry, prelude::*};
-
-use crate::process::WaitOptions;
-
-use super::SyscallReturn;
-use super::SYS_WAITID;
+use super::{SyscallReturn, SYS_WAITID};
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{wait_child_exit, ProcessFilter, WaitOptions},
+};
 
 pub fn sys_waitid(
     which: u64,

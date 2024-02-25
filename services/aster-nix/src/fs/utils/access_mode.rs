@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
 use aster_rights::Rights;
+
+use crate::prelude::*;
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug)]

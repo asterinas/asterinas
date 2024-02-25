@@ -2,17 +2,21 @@
 
 //! This mod defines mmap flags and the handler to syscall mmap
 
-use crate::fs::file_table::FileDescripter;
-use crate::vm::perms::VmPerms;
-use crate::vm::vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp};
-use crate::{log_syscall_entry, prelude::*};
 use align_ext::AlignExt;
 use aster_frame::vm::VmPerm;
 use aster_rights::Rights;
 
-use crate::syscall::SYS_MMAP;
-
 use super::SyscallReturn;
+use crate::{
+    fs::file_table::FileDescripter,
+    log_syscall_entry,
+    prelude::*,
+    syscall::SYS_MMAP,
+    vm::{
+        perms::VmPerms,
+        vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp},
+    },
+};
 
 pub fn sys_mmap(
     addr: u64,

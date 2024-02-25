@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileTable;
-use crate::fs::fs_resolver::FsResolver;
-use crate::fs::utils::FileCreationMask;
-use crate::process::posix_thread::{PosixThreadBuilder, PosixThreadExt};
-use crate::process::process_vm::ProcessVm;
-use crate::process::rlimit::ResourceLimits;
-use crate::process::signal::sig_disposition::SigDispositions;
-use crate::process::Credentials;
-use crate::thread::Thread;
-
 use super::{Pid, Process};
-use crate::prelude::*;
+use crate::{
+    fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
+    prelude::*,
+    process::{
+        posix_thread::{PosixThreadBuilder, PosixThreadExt},
+        process_vm::ProcessVm,
+        rlimit::ResourceLimits,
+        signal::sig_disposition::SigDispositions,
+        Credentials,
+    },
+    thread::Thread,
+};
 
 pub struct ProcessBuilder<'a> {
     // Essential parts

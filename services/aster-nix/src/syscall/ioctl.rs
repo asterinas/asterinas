@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::fs::utils::IoctlCmd;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-
-use super::SyscallReturn;
-use super::SYS_IOCTL;
+use super::{SyscallReturn, SYS_IOCTL};
+use crate::{
+    fs::{file_table::FileDescripter, utils::IoctlCmd},
+    log_syscall_entry,
+    prelude::*,
+};
 
 pub fn sys_ioctl(fd: FileDescripter, cmd: u32, arg: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_IOCTL);

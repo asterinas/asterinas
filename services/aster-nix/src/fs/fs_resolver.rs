@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
 use alloc::str;
 
-use super::file_table::FileDescripter;
-use super::inode_handle::InodeHandle;
-use super::rootfs::root_mount;
-use super::utils::{
-    AccessMode, CreationFlags, Dentry, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX,
+use super::{
+    file_table::FileDescripter,
+    inode_handle::InodeHandle,
+    rootfs::root_mount,
+    utils::{
+        AccessMode, CreationFlags, Dentry, InodeMode, InodeType, StatusFlags, PATH_MAX,
+        SYMLINKS_MAX,
+    },
 };
+use crate::prelude::*;
 
 #[derive(Debug)]
 pub struct FsResolver {

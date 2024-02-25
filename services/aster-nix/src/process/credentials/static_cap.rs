@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::credentials_::Credentials_;
-use super::{Credentials, Gid, Uid};
-use crate::prelude::*;
 use aster_frame::sync::{RwLockReadGuard, RwLockWriteGuard};
 use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
+
+use super::{credentials_::Credentials_, Credentials, Gid, Uid};
+use crate::prelude::*;
 
 impl<R: TRights> Credentials<R> {
     /// Creates a root `Credentials`. This method can only be used when creating the first process

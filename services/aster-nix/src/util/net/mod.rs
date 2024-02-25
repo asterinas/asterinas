@@ -8,9 +8,7 @@ pub use addr::{read_socket_addr_from_user, write_socket_addr_to_user, CSocketAdd
 pub use options::{new_raw_socket_option, CSocketOptionLevel};
 pub use socket::{Protocol, SockFlags, SockType, SOCK_TYPE_MASK};
 
-use crate::fs::file_table::FileDescripter;
-use crate::net::socket::Socket;
-use crate::prelude::*;
+use crate::{fs::file_table::FileDescripter, net::socket::Socket, prelude::*};
 
 pub fn get_socket_from_fd(sockfd: FileDescripter) -> Result<Arc<dyn Socket>> {
     let current = current!();

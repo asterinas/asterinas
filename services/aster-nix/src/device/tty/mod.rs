@@ -2,17 +2,21 @@
 
 use spin::Once;
 
-use self::driver::TtyDriver;
-use self::line_discipline::LineDiscipline;
-use crate::events::IoEvents;
-use crate::fs::device::{Device, DeviceId, DeviceType};
-use crate::fs::inode_handle::FileIo;
-use crate::fs::utils::IoctlCmd;
-use crate::prelude::*;
-use crate::process::signal::signals::kernel::KernelSignal;
-use crate::process::signal::Poller;
-use crate::process::{JobControl, Process, Terminal};
-use crate::util::{read_val_from_user, write_val_to_user};
+use self::{driver::TtyDriver, line_discipline::LineDiscipline};
+use crate::{
+    events::IoEvents,
+    fs::{
+        device::{Device, DeviceId, DeviceType},
+        inode_handle::FileIo,
+        utils::IoctlCmd,
+    },
+    prelude::*,
+    process::{
+        signal::{signals::kernel::KernelSignal, Poller},
+        JobControl, Process, Terminal,
+    },
+    util::{read_val_from_user, write_val_to_user},
+};
 
 mod device;
 pub mod driver;

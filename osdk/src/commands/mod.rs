@@ -7,6 +7,6 @@ mod clippy;
 mod new;
 mod utils;
 
-pub use self::check::execute_check_command;
-pub use self::clippy::execute_clippy_command;
-pub use self::new::execute_new_command;
+pub use self::{
+    check::execute_check_command, clippy::execute_clippy_command, new::execute_new_command,
+};

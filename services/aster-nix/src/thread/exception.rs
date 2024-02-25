@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-use crate::process::signal::signals::fault::FaultSignal;
-use crate::vm::page_fault_handler::PageFaultHandler;
-use aster_frame::cpu::*;
-use aster_frame::vm::VmIo;
+use aster_frame::{cpu::*, vm::VmIo};
+
+use crate::{
+    prelude::*, process::signal::signals::fault::FaultSignal,
+    vm::page_fault_handler::PageFaultHandler,
+};
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(context: &UserContext) {

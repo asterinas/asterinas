@@ -1,28 +1,30 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::IoEvents;
-use crate::fs::file_handle::FileLike;
-use crate::fs::utils::StatusFlags;
-use crate::net::socket::options::{
-    Error, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
-};
-use crate::net::socket::util::options::{SocketOptionSet, MIN_RECVBUF, MIN_SENDBUF};
-use crate::net::socket::util::{
-    send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd, socket_addr::SocketAddr,
-};
-use crate::net::socket::Socket;
-use crate::prelude::*;
-use crate::process::signal::Poller;
-use crate::{match_sock_option_mut, match_sock_option_ref};
-use options::{Congestion, MaxSegment, WindowClamp};
-use util::{TcpOptionSet, DEFAULT_MAXSEG};
-
 use connected::ConnectedStream;
 use connecting::ConnectingStream;
 use init::InitStream;
 use listen::ListenStream;
-use options::NoDelay;
+use options::{Congestion, MaxSegment, NoDelay, WindowClamp};
 use smoltcp::wire::IpEndpoint;
+use util::{TcpOptionSet, DEFAULT_MAXSEG};
+
+use crate::{
+    events::IoEvents,
+    fs::{file_handle::FileLike, utils::StatusFlags},
+    match_sock_option_mut, match_sock_option_ref,
+    net::socket::{
+        options::{Error, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption},
+        util::{
+            options::{SocketOptionSet, MIN_RECVBUF, MIN_SENDBUF},
+            send_recv_flags::SendRecvFlags,
+            shutdown_cmd::SockShutdownCmd,
+            socket_addr::SocketAddr,
+        },
+        Socket,
+    },
+    prelude::*,
+    process::signal::Poller,
+};
 
 mod connected;
 mod connecting;

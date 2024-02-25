@@ -4,9 +4,8 @@
 //! This file defines these structures and provides a "Debug" implementation to see the value inside these structures.
 //! Most of the introduction are copied from Intel vt-directed-io-specification.
 
-use core::{fmt::Debug, mem::size_of};
-
 use alloc::{string::String, vec::Vec};
+use core::{fmt::Debug, mem::size_of};
 
 /// DMA-remapping hardware unit definition (DRHD).
 ///

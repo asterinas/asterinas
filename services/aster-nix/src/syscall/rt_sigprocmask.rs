@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_RT_SIGPROCMASK};
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::process::posix_thread::PosixThreadExt;
-use crate::process::signal::constants::{SIGKILL, SIGSTOP};
-use crate::process::signal::sig_mask::SigMask;
 use aster_frame::vm::VmIo;
+
+use super::{SyscallReturn, SYS_RT_SIGPROCMASK};
+use crate::{
+    log_syscall_entry,
+    prelude::*,
+    process::{
+        posix_thread::PosixThreadExt,
+        signal::{
+            constants::{SIGKILL, SIGSTOP},
+            sig_mask::SigMask,
+        },
+    },
+};
 
 pub fn sys_rt_sigprocmask(
     how: u32,

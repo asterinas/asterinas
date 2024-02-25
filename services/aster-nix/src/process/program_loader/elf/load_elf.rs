@@ -3,24 +3,33 @@
 //! This module is used to parse elf file content to get elf_load_info.
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
 
-use crate::fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD};
-use crate::fs::utils::Dentry;
-use crate::process::process_vm::ProcessVm;
-use crate::process::program_loader::elf::init_stack::{init_aux_vec, InitStack};
-use crate::process::{do_exit_group, TermStatus};
-use crate::vm::perms::VmPerms;
-use crate::vm::vmo::{VmoOptions, VmoRightsOp};
-use crate::{
-    prelude::*,
-    vm::{vmar::Vmar, vmo::Vmo},
-};
 use align_ext::AlignExt;
-use aster_frame::task::Task;
-use aster_frame::vm::{VmIo, VmPerm};
+use aster_frame::{
+    task::Task,
+    vm::{VmIo, VmPerm},
+};
 use aster_rights::{Full, Rights};
 use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::Elf;
+use crate::{
+    fs::{
+        fs_resolver::{FsPath, FsResolver, AT_FDCWD},
+        utils::Dentry,
+    },
+    prelude::*,
+    process::{
+        do_exit_group,
+        process_vm::ProcessVm,
+        program_loader::elf::init_stack::{init_aux_vec, InitStack},
+        TermStatus,
+    },
+    vm::{
+        perms::VmPerms,
+        vmar::Vmar,
+        vmo::{Vmo, VmoOptions, VmoRightsOp},
+    },
+};
 
 /// load elf to the root vmar. this function will  
 /// 1. read the vaddr of each segment to get all elf pages.  

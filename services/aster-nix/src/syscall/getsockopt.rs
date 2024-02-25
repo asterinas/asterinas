@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::file_table::FileDescripter;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::util::net::{get_socket_from_fd, new_raw_socket_option, CSocketOptionLevel};
-use crate::util::{read_val_from_user, write_val_to_user};
-
 use super::{SyscallReturn, SYS_SETSOCKOPT};
+use crate::{
+    fs::file_table::FileDescripter,
+    log_syscall_entry,
+    prelude::*,
+    util::{
+        net::{get_socket_from_fd, new_raw_socket_option, CSocketOptionLevel},
+        read_val_from_user, write_val_to_user,
+    },
+};
 
 pub fn sys_getsockopt(
     sockfd: FileDescripter,

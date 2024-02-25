@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::IoEvents;
-use crate::process::signal::Poller;
 use crate::{
+    events::IoEvents,
     fs::utils::{Channel, Consumer, Producer, StatusFlags},
     net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd},
     prelude::*,
+    process::signal::Poller,
 };
 
 pub(super) struct Endpoint(Inner);

@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::posix_thread::PosixThreadExt;
-use super::process_vm::user_heap::UserHeap;
-use super::process_vm::ProcessVm;
-use super::rlimit::ResourceLimits;
-use super::signal::constants::SIGCHLD;
-use super::signal::sig_disposition::SigDispositions;
-use super::signal::sig_mask::SigMask;
-use super::signal::signals::Signal;
-use super::signal::Pauser;
-use super::status::ProcessStatus;
-use super::{process_table, Credentials, TermStatus};
-use crate::device::tty::open_ntty_as_controlling_terminal;
-use crate::fs::file_table::FileTable;
-use crate::fs::fs_resolver::FsResolver;
-use crate::fs::utils::FileCreationMask;
-use crate::prelude::*;
-use crate::thread::{allocate_tid, Thread};
-use crate::vm::vmar::Vmar;
+use super::{
+    posix_thread::PosixThreadExt,
+    process_table,
+    process_vm::{user_heap::UserHeap, ProcessVm},
+    rlimit::ResourceLimits,
+    signal::{
+        constants::SIGCHLD, sig_disposition::SigDispositions, sig_mask::SigMask, signals::Signal,
+        Pauser,
+    },
+    status::ProcessStatus,
+    Credentials, TermStatus,
+};
+use crate::{
+    device::tty::open_ntty_as_controlling_terminal,
+    fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
+    prelude::*,
+    thread::{allocate_tid, Thread},
+    vm::vmar::Vmar,
+};
 
 mod builder;
 mod job_control;

@@ -47,17 +47,15 @@
 //! At the syscall level, the interface is unified for all options and does not need to be modified.
 //!
 
-use crate::net::socket::options::SocketOption;
-use crate::prelude::*;
-use crate::vm::vmar::Vmar;
 use aster_rights::Full;
+
+use crate::{net::socket::options::SocketOption, prelude::*, vm::vmar::Vmar};
 
 mod socket;
 mod tcp;
 mod utils;
 
-use self::socket::new_socket_option;
-use self::tcp::new_tcp_option;
+use self::{socket::new_socket_option, tcp::new_tcp_option};
 
 pub trait RawSocketOption: SocketOption {
     fn read_from_user(&mut self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<()>;

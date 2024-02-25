@@ -7,15 +7,14 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use aster_frame::sync::Mutex;
-use component::{init_component, ComponentInitError};
 use core::{sync::atomic::Ordering::Relaxed, time::Duration};
-use spin::Once;
 
+use aster_frame::sync::Mutex;
 use clocksource::ClockSource;
-use rtc::{get_cmos, is_updating, CENTURY_REGISTER};
-
 pub use clocksource::Instant;
+use component::{init_component, ComponentInitError};
+use rtc::{get_cmos, is_updating, CENTURY_REGISTER};
+use spin::Once;
 
 mod clocksource;
 mod rtc;

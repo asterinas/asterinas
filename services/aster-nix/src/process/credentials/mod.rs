@@ -5,14 +5,13 @@ mod group;
 mod static_cap;
 mod user;
 
-use crate::prelude::*;
 use aster_rights::{FullOp, ReadOp, WriteOp};
 use credentials_::Credentials_;
-
 pub use group::Gid;
 pub use user::Uid;
 
 use super::posix_thread::PosixThreadExt;
+use crate::prelude::*;
 
 /// `Credentials` represents a set of associated numeric user ids (UIDs) and group identifiers (GIDs)
 /// for a process.

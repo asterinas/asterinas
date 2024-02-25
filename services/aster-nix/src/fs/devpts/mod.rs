@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::device::PtyMaster;
-use crate::fs::device::{Device, DeviceId, DeviceType};
-use crate::fs::utils::{
-    DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
-    SuperBlock, NAME_MAX,
-};
-use crate::prelude::*;
-use crate::process::{Gid, Uid};
-
-use aster_util::{id_allocator::IdAlloc, slot_vec::SlotVec};
 use core::time::Duration;
 
-use self::ptmx::Ptmx;
-use self::slave::PtySlaveInode;
+use aster_util::{id_allocator::IdAlloc, slot_vec::SlotVec};
+
+use self::{ptmx::Ptmx, slave::PtySlaveInode};
+use crate::{
+    device::PtyMaster,
+    fs::{
+        device::{Device, DeviceId, DeviceType},
+        utils::{
+            DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+            SuperBlock, NAME_MAX,
+        },
+    },
+    prelude::*,
+    process::{Gid, Uid},
+};
 
 mod ptmx;
 mod slave;

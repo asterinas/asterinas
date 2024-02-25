@@ -1,20 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::kill::SignalSenderIds;
-use super::signal::sig_mask::SigMask;
-use super::signal::sig_num::SigNum;
-use super::signal::sig_queues::SigQueues;
-use super::signal::signals::Signal;
-use super::signal::{SigEvents, SigEventsFilter, SigStack};
-use super::{do_exit_group, Credentials, Process, TermStatus};
-use crate::events::Observer;
-use crate::prelude::*;
-use crate::process::signal::constants::SIGCONT;
-use crate::thread::{thread_table, Tid};
-use crate::util::write_val_to_user;
 use aster_rights::{ReadOp, WriteOp};
 use futex::futex_wake;
 use robust_list::wake_robust_futex;
+
+use super::{
+    do_exit_group,
+    kill::SignalSenderIds,
+    signal::{
+        sig_mask::SigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal, SigEvents,
+        SigEventsFilter, SigStack,
+    },
+    Credentials, Process, TermStatus,
+};
+use crate::{
+    events::Observer,
+    prelude::*,
+    process::signal::constants::SIGCONT,
+    thread::{thread_table, Tid},
+    util::write_val_to_user,
+};
 
 mod builder;
 pub mod futex;

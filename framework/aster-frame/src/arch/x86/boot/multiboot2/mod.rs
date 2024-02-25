@@ -4,16 +4,16 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use core::arch::global_asm;
+
 use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
+use spin::Once;
 
 use crate::boot::{
     kcmdline::KCmdlineArg,
     memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
     BootloaderAcpiArg, BootloaderFramebufferArg,
 };
-use spin::Once;
-
-use core::arch::global_asm;
 
 global_asm!(include_str!("header.S"));
 

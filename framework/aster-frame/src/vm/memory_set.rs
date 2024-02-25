@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::collections::{btree_map::Entry, BTreeMap};
+use core::fmt;
+
 use super::page_table::{PageTable, PageTableConfig, UserMode};
 use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
     config::{PAGE_SIZE, PHYS_OFFSET},
-    vm::is_page_aligned,
-    vm::{VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter},
+    prelude::*,
+    vm::{is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter},
+    Error,
 };
-use crate::{prelude::*, Error};
-use alloc::collections::{btree_map::Entry, BTreeMap};
-use core::fmt;
 
 #[derive(Debug)]
 pub struct MapArea {

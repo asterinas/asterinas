@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
+use inherit_methods_macro::inherit_methods;
 use pod::Pod;
 
-use inherit_methods_macro::inherit_methods;
+use crate::prelude::*;
 
 /// A trait that enables reading/writing data from/to a VM object,
 /// e.g., `VmSpace`, `VmFrameVec`, and `VmFrame`.

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::WaitQueue;
-use core::cell::UnsafeCell;
-use core::ops::{Deref, DerefMut};
+use core::{
+    cell::UnsafeCell,
+    fmt,
+    ops::{Deref, DerefMut},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
-use core::fmt;
-use core::sync::atomic::{AtomicBool, Ordering};
+use super::WaitQueue;
 
 /// A mutex with waitqueue.
 pub struct Mutex<T> {

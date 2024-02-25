@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use linux_boot_params::BootParams;
 use uefi::{
     data_types::Handle,
     proto::loaded_image::LoadedImage,
     table::{boot::MemoryMap, Boot, Runtime, SystemTable},
 };
 
-use linux_boot_params::BootParams;
-
-use super::paging::{Ia32eFlags, PageNumber, PageTableCreator};
-use super::relocation::apply_rela_dyn_relocations;
+use super::{
+    paging::{Ia32eFlags, PageNumber, PageTableCreator},
+    relocation::apply_rela_dyn_relocations,
+};
 
 #[export_name = "efi_stub_entry"]
 extern "sysv64" fn efi_stub_entry(handle: Handle, mut system_table: SystemTable<Boot>) -> ! {

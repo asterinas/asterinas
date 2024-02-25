@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-
 use super::{Thread, Tid};
+use crate::prelude::*;
 
 lazy_static! {
     static ref THREAD_TABLE: Mutex<BTreeMap<Tid, Arc<Thread>>> = Mutex::new(BTreeMap::new());

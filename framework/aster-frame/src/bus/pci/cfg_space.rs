@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
+
 use bitflags::bitflags;
 
-use crate::{io_mem::IoMem, Error, Result};
-
 use super::PciDeviceLocation;
+use crate::{io_mem::IoMem, Error, Result};
 
 #[repr(u16)]
 pub enum PciDeviceCommonCfgOffset {

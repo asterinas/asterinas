@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::arch::x86::device::io_port::{IoPort, WriteOnlyAccess};
-use crate::trap::IrqLine;
-use core::sync::atomic::Ordering::Relaxed;
-use core::sync::atomic::{AtomicBool, AtomicU8};
+use core::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};
 
 use log::info;
+
+use crate::{
+    arch::x86::device::io_port::{IoPort, WriteOnlyAccess},
+    trap::IrqLine,
+};
 
 static MASTER_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x20) };
 static MASTER_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x21) };

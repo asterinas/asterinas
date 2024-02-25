@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::inode_handle::FileIo;
-use crate::prelude::*;
-use crate::process::{process_table, Pgid, ProcessGroup};
-
 use super::JobControl;
+use crate::{
+    fs::inode_handle::FileIo,
+    prelude::*,
+    process::{process_table, Pgid, ProcessGroup},
+};
 
 /// A termial is used to interact with system. A terminal can support the shell
 /// job control.

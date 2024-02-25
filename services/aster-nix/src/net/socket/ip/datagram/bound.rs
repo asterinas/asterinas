@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::{IoEvents, Observer};
-use crate::net::iface::IpEndpoint;
-
-use crate::net::poll_ifaces;
-use crate::process::signal::{Pollee, Poller};
 use crate::{
+    events::{IoEvents, Observer},
     net::{
-        iface::{AnyBoundSocket, RawUdpSocket},
+        iface::{AnyBoundSocket, IpEndpoint, RawUdpSocket},
+        poll_ifaces,
         socket::util::send_recv_flags::SendRecvFlags,
     },
     prelude::*,
+    process::signal::{Pollee, Poller},
 };
 
 pub struct BoundDatagram {

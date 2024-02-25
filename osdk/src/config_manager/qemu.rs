@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-use std::{fmt, process};
+use std::{collections::BTreeMap, fmt, path::PathBuf, process};
 
-use serde::de::{self, Visitor};
-use serde::{Deserialize, Deserializer};
-
-use crate::error::Errno;
-use crate::error_msg;
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Deserializer,
+};
 
 use super::get_key;
+use crate::{error::Errno, error_msg};
 
 /// Arguments for creating bootdev image and how to boot with vmm.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]

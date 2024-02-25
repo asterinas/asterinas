@@ -109,13 +109,15 @@
 extern crate alloc;
 
 use alloc::sync::{Arc, Weak};
-use core::borrow::Borrow;
-use core::cmp::Ordering;
-use core::convert::AsRef;
-use core::fmt;
-use core::hash::{Hash, Hasher};
-use core::marker::Unsize;
-use core::ops::{CoerceUnsized, Deref};
+use core::{
+    borrow::Borrow,
+    cmp::Ordering,
+    convert::AsRef,
+    fmt,
+    hash::{Hash, Hasher},
+    marker::Unsize,
+    ops::{CoerceUnsized, Deref},
+};
 
 /// Same as the standard `Arc`, except that it can be used as the key type of a hash table.
 #[repr(transparent)]

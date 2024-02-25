@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::fs::{
-    file_table::FileDescripter,
-    inode_handle::InodeHandle,
-    utils::{DirentVisitor, InodeType},
-};
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::util::write_bytes_to_user;
 use core::marker::PhantomData;
 
-use super::SyscallReturn;
-use super::SYS_GETDENTS64;
+use super::{SyscallReturn, SYS_GETDENTS64};
+use crate::{
+    fs::{
+        file_table::FileDescripter,
+        inode_handle::InodeHandle,
+        utils::{DirentVisitor, InodeType},
+    },
+    log_syscall_entry,
+    prelude::*,
+    util::write_bytes_to_user,
+};
 
 pub fn sys_getdents64(
     fd: FileDescripter,

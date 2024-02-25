@@ -43,11 +43,10 @@ pub mod user;
 mod util;
 pub mod vm;
 
-pub use self::cpu::CpuLocal;
-pub use self::error::Error;
-pub use self::prelude::Result;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
+
+pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
 
 pub fn init() {
     arch::before_all_init();

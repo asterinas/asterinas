@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use aster_frame::{
     io_mem::IoMem,
     sync::RwLock,

@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::config_manager::manifest::{OsdkManifest, TomlManifest, FEATURE_REGEX};
-
-use crate::cli::CargoArgs;
-use crate::config_manager::get_feature_strings;
-use crate::test::utils::{assert_success, cargo_osdk, create_workspace};
+use crate::{
+    cli::CargoArgs,
+    config_manager::{
+        get_feature_strings,
+        manifest::{OsdkManifest, TomlManifest, FEATURE_REGEX},
+    },
+    test::utils::{assert_success, cargo_osdk, create_workspace},
+};
 
 #[test]
 fn deserialize_osdk_manifest() {

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::net::iface::BindPortConfig;
-use crate::net::iface::Iface;
-use crate::net::iface::{AnyBoundSocket, AnyUnboundSocket};
-use crate::net::iface::{IpAddress, IpEndpoint};
-use crate::net::IFACES;
-use crate::prelude::*;
+use crate::{
+    net::{
+        iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, Iface, IpAddress, IpEndpoint},
+        IFACES,
+    },
+    prelude::*,
+};
 
 pub fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<dyn Iface>> {
     let ifaces = IFACES.get().unwrap();

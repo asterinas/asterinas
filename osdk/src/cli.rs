@@ -4,10 +4,14 @@ use std::path::PathBuf;
 
 use clap::{crate_version, Args, Parser};
 
-use crate::commands::{execute_check_command, execute_clippy_command, execute_new_command};
-use crate::config_manager::boot::{BootLoader, BootProtocol};
-use crate::config_manager::qemu::QemuMachine;
-use crate::config_manager::{BuildConfig, RunConfig, TestConfig};
+use crate::{
+    commands::{execute_check_command, execute_clippy_command, execute_new_command},
+    config_manager::{
+        boot::{BootLoader, BootProtocol},
+        qemu::QemuMachine,
+        BuildConfig, RunConfig, TestConfig,
+    },
+};
 
 pub fn main() {
     let osdk_subcommand = match Cli::parse() {

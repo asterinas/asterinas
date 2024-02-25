@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
 use aster_frame::cpu::CpuSet;
 use spin::Once;
 use work_item::WorkItem;
 use worker_pool::WorkerPool;
+
+use crate::prelude::*;
 
 mod simple_scheduler;
 pub mod work_item;

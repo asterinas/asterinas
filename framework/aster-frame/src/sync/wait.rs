@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SpinLock;
-use crate::arch::timer::{add_timeout_list, TIMER_FREQ};
 use alloc::{collections::VecDeque, sync::Arc};
-use bitflags::bitflags;
-use core::sync::atomic::{AtomicBool, Ordering};
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
-use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
+use bitflags::bitflags;
+
+use super::SpinLock;
+use crate::{
+    arch::timer::{add_timeout_list, TIMER_FREQ},
+    task::{add_task, current_task, schedule, Task, TaskStatus},
+};
 
 /// A wait queue.
 ///

@@ -13,24 +13,25 @@ pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
 
+use core::mem;
+
+use align_ext::AlignExt;
+use aster_frame::{cpu::UserContext, task::Task};
+use c_types::{siginfo_t, ucontext_t};
 pub use events::{SigEvents, SigEventsFilter};
 pub use pauser::Pauser;
 pub use poll::{Pollee, Poller};
-pub use sig_stack::{SigStack, SigStackFlags};
-
-use align_ext::AlignExt;
-use aster_frame::cpu::UserContext;
-use aster_frame::task::Task;
-use core::mem;
-
-use super::posix_thread::{PosixThread, PosixThreadExt};
-use crate::prelude::*;
-use crate::process::{do_exit_group, TermStatus};
-use crate::util::{write_bytes_to_user, write_val_to_user};
-use c_types::{siginfo_t, ucontext_t};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
 use sig_mask::SigMask;
 use sig_num::SigNum;
+pub use sig_stack::{SigStack, SigStackFlags};
+
+use super::posix_thread::{PosixThread, PosixThreadExt};
+use crate::{
+    prelude::*,
+    process::{do_exit_group, TermStatus},
+    util::{write_bytes_to_user, write_val_to_user},
+};
 
 /// Handle pending signal for current process
 pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {

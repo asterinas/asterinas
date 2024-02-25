@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
-use crate::process::signal::constants::{SIGCONT, SIGHUP};
-use crate::process::signal::signals::kernel::KernelSignal;
-use crate::process::signal::Pauser;
-use crate::process::{ProcessGroup, Session};
+use crate::{
+    prelude::*,
+    process::{
+        signal::{
+            constants::{SIGCONT, SIGHUP},
+            signals::kernel::KernelSignal,
+            Pauser,
+        },
+        ProcessGroup, Session,
+    },
+};
 
 /// The job control for terminals like tty and pty.
 ///

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{vec, vec::Vec};
+
 use acpi::PlatformInfo;
-use alloc::vec;
-use alloc::vec::Vec;
 use bit_field::BitField;
 use log::info;
 use spin::Once;

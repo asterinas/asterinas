@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::device;
-use crate::log_syscall_entry;
-use crate::prelude::*;
-use crate::syscall::SYS_GETRANDOM;
-use crate::util::write_bytes_to_user;
-
 use super::SyscallReturn;
+use crate::{
+    device, log_syscall_entry, prelude::*, syscall::SYS_GETRANDOM, util::write_bytes_to_user,
+};
 
 pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_GETRANDOM);

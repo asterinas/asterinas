@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::process::posix_thread::PosixThreadExt;
-use crate::process::signal::signals::kernel::KernelSignal;
-use crate::{prelude::*, process::signal::constants::SIGCHLD};
-
 use super::{process_table, Pid, Process, TermStatus};
+use crate::{
+    prelude::*,
+    process::{
+        posix_thread::PosixThreadExt,
+        signal::{constants::SIGCHLD, signals::kernel::KernelSignal},
+    },
+};
 
 pub fn do_exit_group(term_status: TermStatus) {
     let current = current!();

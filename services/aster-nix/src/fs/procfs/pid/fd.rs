@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
-use crate::fs::file_handle::FileLike;
-use crate::fs::file_table::FileDescripter;
-use crate::fs::inode_handle::InodeHandle;
+use crate::fs::{file_handle::FileLike, file_table::FileDescripter, inode_handle::InodeHandle};
 
 /// Represents the inode at `/proc/[pid]/fd`.
 pub struct FdDirOps(Arc<Process>);

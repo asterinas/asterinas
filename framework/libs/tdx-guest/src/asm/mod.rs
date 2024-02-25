@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright(c) 2023-2024 Intel Corporation.
 
-use crate::{tdcall::TdcallArgs, tdvmcall::TdVmcallArgs};
 use core::arch::global_asm;
+
+use crate::{tdcall::TdcallArgs, tdvmcall::TdVmcallArgs};
 
 global_asm!(include_str!("tdcall.asm"));
 global_asm!(include_str!("tdvmcall.asm"));

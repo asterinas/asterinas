@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::events::Observer;
-use crate::prelude::*;
-
-use super::Iface;
-use super::{IpAddress, IpEndpoint};
+use super::{Iface, IpAddress, IpEndpoint};
+use crate::{events::Observer, prelude::*};
 
 pub type RawTcpSocket = smoltcp::socket::tcp::Socket<'static>;
 pub type RawUdpSocket = smoltcp::socket::udp::Socket<'static>;

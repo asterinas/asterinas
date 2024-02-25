@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_util::slot_vec::SlotVec;
+
 use super::Inode;
 use crate::prelude::*;
-
-use aster_util::slot_vec::SlotVec;
 
 pub trait DirEntryVecExt {
     /// If the entry is not found by `name`, use `f` to get the inode, then put the entry into vec.
