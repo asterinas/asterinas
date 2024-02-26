@@ -52,11 +52,17 @@ git clone https://github.com/asterinas/asterinas
 docker run -it --privileged --network=host --device=/dev/kvm -v ./asterinas:/root/asterinas asterinas/asterinas:0.3.1
 ```
 
-3. Inside the container, go to the project folder to build and run Asterinas.
+3. Install the Asterinas OSDK from source.
 
 ```bash
-make build
-make run
+make install_osdk
+```
+
+4. Inside the container, go to the project folder to build and run Asterinas.
+
+```bash
+cargo osdk build
+cargo osdk run
 ```
 
 If everything goes well, Asterinas is now up and running inside a VM.
