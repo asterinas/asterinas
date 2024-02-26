@@ -48,11 +48,17 @@ git clone https://github.com/asterinas/asterinas
 docker run -it --privileged --network=host --device=/dev/kvm -v ./asterinas:/root/asterinas asterinas/asterinas:0.3.0
 ```
 
-3. 在容器内，进入项目文件夹构建并运行星绽。
+3. 从源码编译安装 Asterinas OSDK
 
 ```bash
-make build
-make run
+make install_osdk
+```
+
+4. 在容器内，进入项目文件夹构建并运行星绽。
+
+```bash
+cargo osdk build
+cargo osdk run
 ```
 
 如果一切顺利，星绽现在应该在一个虚拟机内运行起来了。
