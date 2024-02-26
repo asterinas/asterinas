@@ -24,19 +24,26 @@ use crate::{
 };
 
 pub fn execute_build_command(config: &BuildConfig) {
-    let osdk_target_directory = get_target_directory().join(DEFAULT_TARGET_RELPATH);
+    let ws_target_directory = get_target_directory();
+    let osdk_target_directory = ws_target_directory.join(DEFAULT_TARGET_RELPATH);
     if !osdk_target_directory.exists() {
         std::fs::create_dir_all(&osdk_target_directory).unwrap();
     }
     let target_info = get_current_crate_info();
     let bundle_path = osdk_target_directory.join(target_info.name);
 
-    let _bundle = create_base_and_build(bundle_path, &osdk_target_directory, config);
+    let _bundle = create_base_and_build(
+        bundle_path,
+        &osdk_target_directory,
+        &ws_target_directory,
+        config,
+    );
 }
 
 pub fn create_base_and_build(
     bundle_path: impl AsRef<Path>,
     osdk_target_directory: impl AsRef<Path>,
+    cargo_target_directory: impl AsRef<Path>,
     config: &BuildConfig,
 ) -> Bundle {
     let base_crate_path = osdk_target_directory.as_ref().join("base");
@@ -47,7 +54,12 @@ pub fn create_base_and_build(
     );
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&base_crate_path).unwrap();
-    let bundle = do_build(&bundle_path, &osdk_target_directory, config);
+    let bundle = do_build(
+        &bundle_path,
+        &osdk_target_directory,
+        &cargo_target_directory,
+        config,
+    );
     std::env::set_current_dir(original_dir).unwrap();
     bundle
 }
@@ -55,6 +67,7 @@ pub fn create_base_and_build(
 pub fn do_build(
     bundle_path: impl AsRef<Path>,
     osdk_target_directory: impl AsRef<Path>,
+    cargo_target_directory: impl AsRef<Path>,
     config: &BuildConfig,
 ) -> Bundle {
     if let Some(ref initramfs) = config.manifest.initramfs {
@@ -76,7 +89,7 @@ pub fn do_build(
         &bundle_path,
     );
     info!("Building kernel ELF");
-    let aster_elf = build_kernel_elf(&config.cargo_args);
+    let aster_elf = build_kernel_elf(&config.cargo_args, &cargo_target_directory);
 
     if matches!(config.manifest.qemu.machine, QemuMachine::Microvm) {
         let stripped_elf = strip_elf_for_qemu(&osdk_target_directory, &aster_elf);
@@ -100,13 +113,16 @@ pub fn do_build(
     bundle
 }
 
-fn build_kernel_elf(args: &CargoArgs) -> AsterBin {
-    let target_directory = get_target_directory();
+fn build_kernel_elf(args: &CargoArgs, cargo_target_directory: impl AsRef<Path>) -> AsterBin {
     let target_json_path = PathBuf::from_str("x86_64-custom.json").unwrap();
 
     let mut command = cargo();
     command.env_remove("RUSTUP_TOOLCHAIN");
-    command.arg("build").arg("--target").arg(&target_json_path);
+    command.arg("build");
+    command.arg("--target").arg(&target_json_path);
+    command
+        .arg("--target-dir")
+        .arg(cargo_target_directory.as_ref());
     command.args(COMMON_CARGO_ARGS);
     command.arg("--profile=".to_string() + &args.profile);
     let status = command.status().unwrap();
@@ -115,8 +131,9 @@ fn build_kernel_elf(args: &CargoArgs) -> AsterBin {
         process::exit(Errno::ExecuteCommand as _);
     }
 
-    let aster_bin_path =
-        target_directory.join(target_json_path.file_stem().unwrap().to_str().unwrap());
+    let aster_bin_path = cargo_target_directory
+        .as_ref()
+        .join(target_json_path.file_stem().unwrap().to_str().unwrap());
     let aster_bin_path = if args.profile == "dev" {
         aster_bin_path.join("debug")
     } else {

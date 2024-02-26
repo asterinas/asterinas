@@ -11,7 +11,8 @@ use crate::{
 
 pub fn execute_test_command(config: &TestConfig) {
     let current_crate = get_current_crate_info();
-    let osdk_target_directory = get_target_directory().join(DEFAULT_TARGET_RELPATH);
+    let ws_target_directory = get_target_directory();
+    let osdk_target_directory = ws_target_directory.join(DEFAULT_TARGET_RELPATH);
     let target_crate_dir = osdk_target_directory.join("base");
     new_base_crate(&target_crate_dir, &current_crate.name, &current_crate.path);
 
@@ -56,6 +57,7 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     let bundle = do_build(
         default_bundle_directory,
         &osdk_target_directory,
+        &ws_target_directory,
         &required_build_config,
     );
     std::env::remove_var("RUSTFLAGS");
