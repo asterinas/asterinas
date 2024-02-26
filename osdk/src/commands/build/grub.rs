@@ -7,10 +7,13 @@ use std::{
 
 use super::bin::make_install_bzimage;
 use crate::{
-    bin::AsterBin,
+    bundle::{
+        bin::AsterBin,
+        file::BundleFile,
+        vm_image::{AsterGrubIsoImageMeta, AsterVmImage, AsterVmImageType},
+    },
     config_manager::{boot::BootProtocol, BuildConfig},
     utils::get_current_crate_info,
-    vm_image::{AsterGrubIsoImageMeta, AsterVmImage, AsterVmImageType},
 };
 
 pub fn create_bootdev_image(
@@ -46,7 +49,7 @@ pub fn create_bootdev_image(
         BootProtocol::Multiboot | BootProtocol::Multiboot2 => {
             // Copy the kernel image to the boot directory.
             let target_path = iso_root.join("boot").join(&target_name);
-            fs::copy(&aster_bin.path, target_path).unwrap();
+            fs::copy(aster_bin.path(), target_path).unwrap();
         }
     };
 
@@ -77,14 +80,13 @@ pub fn create_bootdev_image(
         panic!("Failed to run {:#?}.", grub_mkrescue_cmd);
     }
 
-    AsterVmImage {
-        path: iso_path.clone(),
-        typ: AsterVmImageType::GrubIso(AsterGrubIsoImageMeta {
+    AsterVmImage::new(
+        iso_path,
+        AsterVmImageType::GrubIso(AsterGrubIsoImageMeta {
             grub_version: get_grub_mkrescue_version(grub_mkrescue_bin),
         }),
-        aster_version: aster_bin.version.clone(),
-        sha256sum: "TODO".to_string(),
-    }
+        aster_bin.version().clone(),
+    )
 }
 
 fn generate_grub_cfg(

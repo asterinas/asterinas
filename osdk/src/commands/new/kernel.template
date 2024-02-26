@@ -14,9 +14,10 @@ fn kernel_main() -> ! {
 }
 
 #[cfg(ktest)]
-mod test {
+mod tests {
     #[ktest]
-    fn trivial_test() {
-        assert_eq!(1 + 1, 2);
+    fn it_works() {
+        let memory_regions = aster_frame::boot::memory_regions();
+        assert!(!memory_regions.is_empty());
     }
 }

@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
+pub mod bin;
+pub mod file;
+pub mod vm_image;
+
+use bin::AsterBin;
+use file::{BundleFile, Initramfs};
+use vm_image::AsterVmImage;
+
 use std::{
     path::{Path, PathBuf},
     process::Command,
+    time::SystemTime,
 };
 
 use crate::{
-    bin::AsterBin,
     cli::CargoArgs,
     config_manager::{
         boot::Boot,
@@ -15,7 +23,6 @@ use crate::{
     },
     error::Errno,
     error_msg,
-    vm_image::AsterVmImage,
 };
 
 /// The osdk bundle artifact that stores as `bundle` directory.
@@ -28,39 +35,111 @@ pub struct Bundle {
     path: PathBuf,
 }
 
+/// The osdk bundle artifact manifest that stores as `bundle.toml`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BundleManifest {
+    pub kcmd_args: Vec<String>,
+    pub initramfs: Option<Initramfs>,
+    pub aster_bin: Option<AsterBin>,
+    pub vm_image: Option<AsterVmImage>,
+    pub boot: Boot,
+    pub qemu: Qemu,
+    pub cargo_args: CargoArgs,
+    pub last_modified: SystemTime,
+}
+
 impl Bundle {
-    pub fn new(manifest: BundleManifest, path: impl AsRef<Path>) -> Self {
+    /// This function creates a new `Bundle` without adding any files.
+    pub fn new(
+        path: impl AsRef<Path>,
+        kcmd_args: Vec<String>,
+        boot: Boot,
+        qemu: Qemu,
+        cargo_args: CargoArgs,
+    ) -> Self {
         std::fs::create_dir_all(path.as_ref()).unwrap();
-        let created = Self {
-            manifest,
+        let mut created = Self {
+            manifest: BundleManifest {
+                kcmd_args,
+                initramfs: None,
+                aster_bin: None,
+                vm_image: None,
+                boot,
+                qemu,
+                cargo_args,
+                last_modified: SystemTime::now(),
+            },
             path: path.as_ref().to_path_buf(),
         };
-        created.write_manifest_content();
+        created.write_manifest_to_fs();
         created
     }
 
-    // FIXME: the load function should be used when implementing build cache, but it is not
-    // implemented yet.
-    #[allow(dead_code)]
-    pub fn load(path: impl AsRef<Path>) -> Self {
+    // Load the bundle from the file system. If the bundle does not exist or have inconsistencies,
+    // it will return `None`.
+    pub fn load(path: impl AsRef<Path>) -> Option<Self> {
         let manifest_file_path = path.as_ref().join("bundle.toml");
-        let manifest_file_content = std::fs::read_to_string(manifest_file_path).unwrap();
-        let manifest: BundleManifest = toml::from_str(&manifest_file_content).unwrap();
-        // TODO: check integrity of the loaded bundle.
-        Self {
+        let manifest_file_content = std::fs::read_to_string(manifest_file_path).ok()?;
+        let manifest: BundleManifest = toml::from_str(&manifest_file_content).ok()?;
+
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&path).unwrap();
+
+        if let Some(aster_bin) = &manifest.aster_bin {
+            if !aster_bin.validate() {
+                return None;
+            }
+        }
+        if let Some(vm_image) = &manifest.vm_image {
+            if !vm_image.validate() {
+                return None;
+            }
+        }
+        if let Some(initramfs) = &manifest.initramfs {
+            if !initramfs.validate() {
+                return None;
+            }
+        }
+
+        std::env::set_current_dir(original_dir).unwrap();
+
+        Some(Self {
             manifest,
             path: path.as_ref().to_path_buf(),
-        }
+        })
     }
 
     pub fn can_run_with_config(&self, config: &RunConfig) -> bool {
+        // Compare the manifest with the run configuration.
         // TODO: This pairwise comparison will result in some false negatives. We may
         // fix it by pondering upon each fields with more care.
-        self.manifest.kcmd_args == config.manifest.kcmd_args
-            && self.manifest.initramfs == config.manifest.initramfs
-            && self.manifest.boot == config.manifest.boot
-            && self.manifest.qemu == config.manifest.qemu
-            && self.manifest.cargo_args == config.cargo_args
+        if self.manifest.kcmd_args != config.manifest.kcmd_args
+            || self.manifest.boot != config.manifest.boot
+            || self.manifest.qemu != config.manifest.qemu
+            || self.manifest.cargo_args != config.cargo_args
+        {
+            return false;
+        }
+
+        // Compare the initramfs.
+        match (&self.manifest.initramfs, &config.manifest.initramfs) {
+            (Some(initramfs), Some(initramfs_path)) => {
+                let config_initramfs = Initramfs::new(initramfs_path);
+                if initramfs.sha256sum() != config_initramfs.sha256sum() {
+                    return false;
+                }
+            }
+            (None, None) => {}
+            _ => {
+                return false;
+            }
+        };
+
+        true
+    }
+
+    pub fn last_modified_time(&self) -> SystemTime {
+        self.manifest.last_modified
     }
 
     pub fn run(&self, config: &RunConfig) {
@@ -84,7 +163,9 @@ impl Bundle {
                     error_msg!("Kernel ELF binary is required for Microvm");
                     std::process::exit(Errno::RunBundle as _);
                 };
-                qemu_cmd.arg("-kernel").arg(self.path.join(&aster_bin.path));
+                qemu_cmd
+                    .arg("-kernel")
+                    .arg(self.path.join(aster_bin.path()));
                 let Some(ref initramfs) = config.manifest.initramfs else {
                     error_msg!("Initramfs is required for Microvm");
                     std::process::exit(Errno::RunBundle as _);
@@ -100,7 +181,7 @@ impl Bundle {
                     error_msg!("VM image is required for QEMU booting");
                     std::process::exit(Errno::RunBundle as _);
                 };
-                qemu_cmd.arg("-cdrom").arg(self.path.join(&vm_image.path));
+                qemu_cmd.arg("-cdrom").arg(self.path.join(vm_image.path()));
                 if let Some(ovmf) = &config.manifest.boot.ovmf {
                     qemu_cmd.arg("-drive").arg(format!(
                         "if=pflash,format=raw,unit=0,readonly=on,file={}",
@@ -136,61 +217,37 @@ impl Bundle {
         }
     }
 
-    pub fn add_vm_image(&mut self, vm_image: &AsterVmImage) {
+    /// Move the vm_image into the bundle.
+    pub fn consume_vm_image(&mut self, vm_image: AsterVmImage) {
         if self.manifest.vm_image.is_some() {
             panic!("vm_image already exists");
         }
-        let file_name = vm_image.path.file_name().unwrap();
-        let copied_path = self.path.join(file_name);
-        std::fs::copy(&vm_image.path, copied_path).unwrap();
-        self.manifest.vm_image = Some(AsterVmImage {
-            path: file_name.into(),
-            typ: vm_image.typ.clone(),
-            aster_version: vm_image.aster_version.clone(),
-            sha256sum: vm_image.sha256sum.clone(),
-        });
-        self.write_manifest_content();
+        self.manifest.vm_image = Some(vm_image.move_to(&self.path));
+        self.write_manifest_to_fs();
     }
 
-    pub fn add_aster_bin(&mut self, aster_bin: &AsterBin) {
+    /// Move the aster_bin into the bundle.
+    pub fn consume_aster_bin(&mut self, aster_bin: AsterBin) {
         if self.manifest.aster_bin.is_some() {
             panic!("aster_bin already exists");
         }
-        let file_name = aster_bin.path.file_name().unwrap();
-        let copied_path = self.path.join(file_name);
-        std::fs::copy(&aster_bin.path, copied_path).unwrap();
-        self.manifest.aster_bin = Some(AsterBin {
-            path: file_name.into(),
-            typ: aster_bin.typ.clone(),
-            version: aster_bin.version.clone(),
-            sha256sum: aster_bin.sha256sum.clone(),
-            stripped: aster_bin.stripped,
-        });
-        self.write_manifest_content();
+        self.manifest.aster_bin = Some(aster_bin.move_to(&self.path));
+        self.write_manifest_to_fs();
     }
 
-    fn write_manifest_content(&self) {
+    /// Copy the initramfs into the bundle.
+    pub fn add_initramfs(&mut self, initramfs: Initramfs) {
+        if self.manifest.initramfs.is_some() {
+            panic!("initramfs already exists");
+        }
+        self.manifest.initramfs = Some(initramfs.copy_to(&self.path));
+        self.write_manifest_to_fs();
+    }
+
+    fn write_manifest_to_fs(&mut self) {
+        self.manifest.last_modified = SystemTime::now();
         let manifest_file_content = toml::to_string(&self.manifest).unwrap();
         let manifest_file_path = self.path.join("bundle.toml");
         std::fs::write(manifest_file_path, manifest_file_content).unwrap();
     }
-}
-
-/// The osdk bundle artifact manifest that stores as `bundle.toml`.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BundleManifest {
-    #[serde(default)]
-    pub kcmd_args: Vec<String>,
-    #[serde(default)]
-    pub initramfs: Option<PathBuf>,
-    #[serde(default)]
-    pub aster_bin: Option<AsterBin>,
-    #[serde(default)]
-    pub vm_image: Option<AsterVmImage>,
-    #[serde(default)]
-    pub boot: Boot,
-    #[serde(default)]
-    pub qemu: Qemu,
-    #[serde(default)]
-    pub cargo_args: CargoArgs,
 }

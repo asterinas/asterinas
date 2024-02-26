@@ -10,7 +10,10 @@ use std::{
 use linux_bzimage_builder::{legacy32_rust_target_json, make_bzimage, BzImageType};
 
 use crate::{
-    bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
+    bundle::{
+        bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
+        file::BundleFile,
+    },
     config_manager::boot::BootProtocol,
     utils::get_current_crate_info,
 };
@@ -52,30 +55,35 @@ pub fn make_install_bzimage(
     let install_path = install_dir.as_ref().join(target_name);
     info!("Building bzImage");
     println!("install_path: {:?}", install_path);
-    make_bzimage(&install_path, image_type, &aster_elf.path, &setup_bin);
+    make_bzimage(&install_path, image_type, aster_elf.path(), &setup_bin);
 
-    AsterBin {
-        path: install_path,
-        typ: AsterBinType::BzImage(AsterBzImageMeta {
+    AsterBin::new(
+        &install_path,
+        AsterBinType::BzImage(AsterBzImageMeta {
             support_legacy32_boot: matches!(protocol, BootProtocol::LinuxLegacy32),
             support_efi_boot: false,
             support_efi_handover: matches!(protocol, BootProtocol::LinuxEfiHandover64),
         }),
-        version: aster_elf.version.clone(),
-        sha256sum: "TODO".to_string(),
-        stripped: aster_elf.stripped,
-    }
+        aster_elf.version().clone(),
+        aster_elf.stripped(),
+    )
 }
 
 pub fn strip_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin) -> AsterBin {
     let stripped_elf_path = {
-        let elf_name = elf.path.file_name().unwrap().to_str().unwrap().to_string();
+        let elf_name = elf
+            .path()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
         install_dir.as_ref().join(elf_name + ".stripped.elf")
     };
 
     // We use rust-strip to reduce the kernel image size.
     let status = Command::new("rust-strip")
-        .arg(&elf.path)
+        .arg(elf.path())
         .arg("-o")
         .arg(stripped_elf_path.as_os_str())
         .status();
@@ -112,18 +120,17 @@ pub fn strip_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin) -> Aste
     file.write_all(&bytes).unwrap();
     file.flush().unwrap();
 
-    AsterBin {
-        path: stripped_elf_path,
-        typ: AsterBinType::Elf(AsterElfMeta {
+    AsterBin::new(
+        &stripped_elf_path,
+        AsterBinType::Elf(AsterElfMeta {
             has_linux_header: false,
             has_pvh_header: false,
             has_multiboot_header: true,
             has_multiboot2_header: true,
         }),
-        version: elf.version.clone(),
-        sha256sum: "TODO".to_string(),
-        stripped: true,
-    }
+        elf.version().clone(),
+        true,
+    )
 }
 
 enum SetupInstallArch {
