@@ -10,7 +10,6 @@ pub enum Errno {
     ExecuteCommand = 5,
     BuildCrate = 6,
     RunBundle = 7,
-    CreateBaseCrate = 8,
 }
 
 /// Print error message to console

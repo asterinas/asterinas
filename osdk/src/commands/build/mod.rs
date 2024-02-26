@@ -29,9 +29,9 @@ pub fn execute_build_command(config: &BuildConfig) {
         std::fs::create_dir_all(&osdk_target_directory).unwrap();
     }
     let target_info = get_current_crate_info();
-    let bundle_path = osdk_target_directory.join(&target_info.name);
+    let bundle_path = osdk_target_directory.join(target_info.name);
 
-    let _bundle = create_base_and_build(&bundle_path, &osdk_target_directory, &config);
+    let _bundle = create_base_and_build(bundle_path, &osdk_target_directory, config);
 }
 
 pub fn create_base_and_build(
@@ -43,12 +43,12 @@ pub fn create_base_and_build(
     new_base_crate(
         &base_crate_path,
         &get_current_crate_info().name,
-        &get_current_crate_info().path,
+        get_current_crate_info().path,
     );
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&base_crate_path).unwrap();
-    let bundle = do_build(&bundle_path, &osdk_target_directory, &config);
-    std::env::set_current_dir(&original_dir).unwrap();
+    let bundle = do_build(&bundle_path, &osdk_target_directory, config);
+    std::env::set_current_dir(original_dir).unwrap();
     bundle
 }
 
@@ -92,7 +92,7 @@ pub fn do_build(
             &osdk_target_directory,
             &aster_elf,
             config.manifest.initramfs.as_ref(),
-            &config,
+            config,
         );
         bundle.add_vm_image(&bootdev_image);
     }
@@ -105,6 +105,7 @@ fn build_kernel_elf(args: &CargoArgs) -> AsterBin {
     let target_json_path = PathBuf::from_str("x86_64-custom.json").unwrap();
 
     let mut command = cargo();
+    command.env_remove("RUSTUP_TOOLCHAIN");
     command.arg("build").arg("--target").arg(&target_json_path);
     command.args(COMMON_CARGO_ARGS);
     command.arg("--profile=".to_string() + &args.profile);
@@ -114,8 +115,8 @@ fn build_kernel_elf(args: &CargoArgs) -> AsterBin {
         process::exit(Errno::ExecuteCommand as _);
     }
 
-    let aster_bin_path = PathBuf::from(target_directory)
-        .join(target_json_path.file_stem().unwrap().to_str().unwrap());
+    let aster_bin_path =
+        target_directory.join(target_json_path.file_stem().unwrap().to_str().unwrap());
     let aster_bin_path = if args.profile == "dev" {
         aster_bin_path.join("debug")
     } else {

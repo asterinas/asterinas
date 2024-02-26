@@ -3,6 +3,8 @@
     一个安全、快速、通用的操作系统内核，使用Rust编写，并与Linux兼容
 </p>
 
+[![Asterinas CI](https://github.com/asterinas/asterinas/actions/workflows/aster_ci.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/aster_ci.yml)
+
 [English](README.md) | 中文版
 
 ## 初见星绽

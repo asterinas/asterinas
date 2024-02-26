@@ -158,3 +158,16 @@ fn check_cfg(cfg: &str) {
 lazy_static::lazy_static! {
     pub static ref SELECT_REGEX: Regex = Regex::new(r#"cfg\(select="(?P<select>\w+)"\)"#).unwrap();
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn extract_selection() {
+        let text = "cfg(select=\"abc123_\")";
+        let captures = SELECT_REGEX.captures(text).unwrap();
+        let selection = captures.name("select").unwrap().as_str();
+        assert_eq!(selection, "abc123_");
+    }
+}

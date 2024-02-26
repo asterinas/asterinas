@@ -1,0 +1,4 @@
+[package]
+name = "#NAME#"
+version = "#VERSION#"
+edition = "2021"

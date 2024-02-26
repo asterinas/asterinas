@@ -44,7 +44,7 @@ impl Bundle {
     #[allow(dead_code)]
     pub fn load(path: impl AsRef<Path>) -> Self {
         let manifest_file_path = path.as_ref().join("bundle.toml");
-        let manifest_file_content = std::fs::read_to_string(&manifest_file_path).unwrap();
+        let manifest_file_content = std::fs::read_to_string(manifest_file_path).unwrap();
         let manifest: BundleManifest = toml::from_str(&manifest_file_content).unwrap();
         // TODO: check integrity of the loaded bundle.
         Self {
@@ -142,7 +142,7 @@ impl Bundle {
         }
         let file_name = vm_image.path.file_name().unwrap();
         let copied_path = self.path.join(file_name);
-        std::fs::copy(&vm_image.path, &copied_path).unwrap();
+        std::fs::copy(&vm_image.path, copied_path).unwrap();
         self.manifest.vm_image = Some(AsterVmImage {
             path: file_name.into(),
             typ: vm_image.typ.clone(),
@@ -158,13 +158,13 @@ impl Bundle {
         }
         let file_name = aster_bin.path.file_name().unwrap();
         let copied_path = self.path.join(file_name);
-        std::fs::copy(&aster_bin.path, &copied_path).unwrap();
+        std::fs::copy(&aster_bin.path, copied_path).unwrap();
         self.manifest.aster_bin = Some(AsterBin {
             path: file_name.into(),
             typ: aster_bin.typ.clone(),
             version: aster_bin.version.clone(),
             sha256sum: aster_bin.sha256sum.clone(),
-            stripped: aster_bin.stripped.clone(),
+            stripped: aster_bin.stripped,
         });
         self.write_manifest_content();
     }
@@ -172,7 +172,7 @@ impl Bundle {
     fn write_manifest_content(&self) {
         let manifest_file_content = toml::to_string(&self.manifest).unwrap();
         let manifest_file_path = self.path.join("bundle.toml");
-        std::fs::write(&manifest_file_path, manifest_file_content).unwrap();
+        std::fs::write(manifest_file_path, manifest_file_content).unwrap();
     }
 }
 

@@ -49,7 +49,7 @@ pub fn make_install_bzimage(
         setup_install_dir.join("bin").join("linux-bzimage-setup")
     };
     // Make the `bzImage`-compatible kernel image and place it in the boot directory.
-    let install_path = install_dir.as_ref().join(&target_name);
+    let install_path = install_dir.as_ref().join(target_name);
     info!("Building bzImage");
     println!("install_path: {:?}", install_path);
     make_bzimage(&install_path, image_type, &aster_elf.path, &setup_bin);

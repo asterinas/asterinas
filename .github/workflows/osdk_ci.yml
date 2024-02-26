@@ -2,6 +2,8 @@ name: OSDK CI
 
 on:
   pull_request:
+    paths:
+      - osdk/**
   push:
     branches:
       - main
@@ -16,9 +18,9 @@ jobs:
 
       - uses: actions/checkout@v3
 
-      - name: Format check
-        id: fmt_check
-        run: cd osdk && cargo check && cargo clippy 
+      - name: Lint
+        id: lint
+        run: cd osdk && cargo clippy -- -D warnings
 
       - name: Unit test
         id: unit_test

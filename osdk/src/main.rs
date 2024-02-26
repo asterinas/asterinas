@@ -14,8 +14,6 @@ mod cli;
 mod commands;
 mod config_manager;
 mod error;
-#[cfg(test)]
-mod test;
 mod utils;
 mod vm_image;
 

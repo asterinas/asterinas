@@ -18,10 +18,10 @@ pub fn execute_run_command(config: &RunConfig) {
 
     // TODO: Check if the bundle is already built and compatible with the run configuration.
     let bundle = create_base_and_build(
-        &default_bundle_directory,
+        default_bundle_directory,
         &osdk_target_directory,
         &required_build_config,
     );
 
-    bundle.run(&config);
+    bundle.run(config);
 }

@@ -19,7 +19,7 @@ pub fn execute_test_command(config: &TestConfig) {
 
     let ktest_test_whitelist = match &config.test_name {
         Some(name) => format!(r#"Some(&["{}"])"#, name),
-        None => format!(r#"None"#),
+        None => r#"None"#.to_string(),
     };
 
     let mut ktest_crate_whitelist = vec![current_crate.name];
@@ -54,12 +54,12 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     // Add `--cfg ktest` to RUSTFLAGS
     std::env::set_var("RUSTFLAGS", "--cfg ktest");
     let bundle = do_build(
-        &default_bundle_directory,
+        default_bundle_directory,
         &osdk_target_directory,
         &required_build_config,
     );
     std::env::remove_var("RUSTFLAGS");
-    std::env::set_current_dir(&original_dir).unwrap();
+    std::env::set_current_dir(original_dir).unwrap();
 
     let required_run_config = RunConfig {
         manifest: required_build_config.manifest.clone(),
