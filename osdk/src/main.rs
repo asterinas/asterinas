@@ -8,14 +8,12 @@ extern crate log;
 extern crate serde;
 
 mod base_crate;
-mod bin;
 mod bundle;
 mod cli;
 mod commands;
 mod config_manager;
 mod error;
 mod utils;
-mod vm_image;
 
 fn main() {
     // init logger

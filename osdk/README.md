@@ -15,15 +15,25 @@ OSDK (short for Operating System Development Kit) is designed to simplify the de
 
 Currenly, `cargo-osdk` only supports x86_64 ubuntu system. 
 
-`cargo-osdk` requires the following tools to be installed: 
+To run a kernel with QEMU, `cargo-osdk` requires the following tools to be installed: 
 - Rust >= 1.75.0
-- Gcc compiler
+- cargo-binutils
+- gcc
+- qemu-system-x86_64
+- grub-mkrescue
+- ovmf 
+- xorriso
 
 About how to install Rust, you can refer to the [official site](https://www.rust-lang.org/tools/install).
 
-Gcc compiler can be installed by
+After installing Rust, you can install Cargo tools by
 ```bash
-apt install build-essential
+cargo install cargo-binutils
+```
+
+Other tools can be installed by
+```bash
+apt install build-essential grub2-common qemu-system-x86 ovmf xorriso
 ```
 
 #### Install 
@@ -43,17 +53,6 @@ cargo install --force cargo-osdk
 ### Get start
 
 Here we provide a simple demo to demonstrate how to create and run a simple kernel with `cargo-osdk`.
-
-Suppose you are on a x86_64 ubuntu machine, to run a kernel with QEMU, the following tools should be installed:
-- qemu-system-x86_64
-- grub-mkrescue
-- ovmf 
-- xorriso
-
-If these tools are missing, they can be installed by
-```bash
-apt install grub2-common qemu-system-x86 ovmf xorriso
-```
 
 With `cargo-osdk`, a kernel project can be created by one command
 ```bash
@@ -105,15 +104,17 @@ ovmf = "/usr/bin/ovmf" # <7>
 path = "/usr/bin/qemu-system-x86_64" # <8>
 machine = "q35" # <9>
 args = [ # <10>
-    "--enable-kvm",
+    "-enable-kvm",
     "-m 2G", 
-    "--device virtio-keyboard-pci,disable-legacy=on,disable-modern=off"
+    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off"
 ] 
 
 [qemu.'cfg(feature="iommu")'] # <11>
 path = "/usr/local/sbin/qemu-kvm" # <8>
 machine = "q35" # <9>
 args = [ # <10>
+    "-enable-kvm",
+    "-m 2G", 
     "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
     "-device intel-iommu,intremap=on,device-iotlb=on"
 ] 
@@ -145,18 +146,7 @@ Optional. Default is `q35`.
 The allowed values are `q35` and `microvm`.  
 10. Additional arguments passed to QEMU.   
 Optional. The default value is empty.   
-Each argument should be in the form `KEY VALUE` (separated by space), or `KEY` if no value is required. Some keys can appear multiple times (e.g., `--device`, `--netdev`), while other keys can appear at most once. Certain keys, such as `-cpu` and `-machine`, are not allowed to be set here as they may conflict with the internal settings of `cargo-osdk`.
+Each argument should be in the form `KEY VALUE` (separated by space), or `KEY` if no value is required. Some keys can appear multiple times (e.g., `-device`, `-netdev`), while other keys can appear at most once. Certain keys, such as `-cpu` and `-machine`, are not allowed to be set here as they may conflict with the internal settings of `cargo-osdk`.
 11. Conditional QEMU settings.   
 Optional. The default value is empty.   
 Conditional QEMU settings allow for a condition to be specified after `qemu`. Currently, `cargo-osdk` only supports the condition `cfg(feature="FEATURE")`, which activates the QEMU settings only if the `FEATURE` is set. The `FEATURE` must be defined in the project's `Cargo.toml`. At most one conditional setting can be activated at a time. If multiple conditional settings can be activated simultaneously, `cargo-osdk` will report an error. In the future, `cargo-osdk` will support all possible conditions that [Rust conditional compilation](https://doc.rust-lang.org/reference/conditional-compilation.html) supports.
-
-
-### The framekernel architecture
-
-The architecture divides the OS development into two distinct realms: the safe world and the unsafe world. In the safe world, only safe Rust code is allowed, while the unsafe world can tap into the power of the unsafe keyword. At the heart of the unsafe world lies `aster-frame`, a compact framework with limited functionalities. It encapsulates essential OS operations such as booting, physical memory management, context switching, and more.
-
-With `aster-frame` as the foundation, higher-level OS functionalities like process management, file systems, network protocols, and even device drivers can be built upon it using only safe Rust. This segregation ensures that critical operations are handled securely in the unsafe realm while allowing for the development of complex and feature-rich OS components.
-
-In addition to OS functionalities, `aster-frame` also provides development utilities, including kernel mode unit test support. The shared base of crates built on `aster-frame` allows for easy reuse and facilitates the creation of sophisticated operating systems with rich features.
-
-Overall, this architectural approach promotes safety and modularity, empowering developers to build robust and advanced OS systems using Rust.

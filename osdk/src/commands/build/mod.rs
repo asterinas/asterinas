@@ -14,8 +14,11 @@ use bin::strip_elf_for_qemu;
 use super::utils::{cargo, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
 use crate::{
     base_crate::new_base_crate,
-    bin::{AsterBin, AsterBinType, AsterElfMeta},
-    bundle::{Bundle, BundleManifest},
+    bundle::{
+        bin::{AsterBin, AsterBinType, AsterElfMeta},
+        file::Initramfs,
+        Bundle,
+    },
     cli::CargoArgs,
     config_manager::{qemu::QemuMachine, BuildConfig},
     error::Errno,
@@ -70,30 +73,31 @@ pub fn do_build(
     cargo_target_directory: impl AsRef<Path>,
     config: &BuildConfig,
 ) -> Bundle {
+    if bundle_path.as_ref().exists() {
+        std::fs::remove_dir_all(&bundle_path).unwrap();
+    }
+    let mut bundle = Bundle::new(
+        &bundle_path,
+        config.manifest.kcmd_args.clone(),
+        config.manifest.boot.clone(),
+        config.manifest.qemu.clone(),
+        config.cargo_args.clone(),
+    );
+
     if let Some(ref initramfs) = config.manifest.initramfs {
         if !initramfs.exists() {
             error_msg!("initramfs file not found: {}", initramfs.display());
             process::exit(Errno::BuildCrate as _);
         }
+        bundle.add_initramfs(Initramfs::new(initramfs));
     };
-    let mut bundle = Bundle::new(
-        BundleManifest {
-            kcmd_args: config.manifest.kcmd_args.clone(),
-            initramfs: config.manifest.initramfs.clone(),
-            aster_bin: None,
-            vm_image: None,
-            boot: config.manifest.boot.clone(),
-            qemu: config.manifest.qemu.clone(),
-            cargo_args: config.cargo_args.clone(),
-        },
-        &bundle_path,
-    );
+
     info!("Building kernel ELF");
     let aster_elf = build_kernel_elf(&config.cargo_args, &cargo_target_directory);
 
     if matches!(config.manifest.qemu.machine, QemuMachine::Microvm) {
         let stripped_elf = strip_elf_for_qemu(&osdk_target_directory, &aster_elf);
-        bundle.add_aster_bin(&stripped_elf);
+        bundle.consume_aster_bin(stripped_elf);
     }
 
     // TODO: A boot device is required if we use GRUB. Actually you can boot
@@ -107,7 +111,7 @@ pub fn do_build(
             config.manifest.initramfs.as_ref(),
             config,
         );
-        bundle.add_vm_image(&bootdev_image);
+        bundle.consume_vm_image(bootdev_image);
     }
 
     bundle
@@ -141,16 +145,15 @@ fn build_kernel_elf(args: &CargoArgs, cargo_target_directory: impl AsRef<Path>) 
     }
     .join(get_current_crate_info().name);
 
-    AsterBin {
-        path: aster_bin_path,
-        typ: AsterBinType::Elf(AsterElfMeta {
+    AsterBin::new(
+        aster_bin_path,
+        AsterBinType::Elf(AsterElfMeta {
             has_linux_header: false,
             has_pvh_header: false,
             has_multiboot_header: true,
             has_multiboot2_header: true,
         }),
-        version: get_current_crate_info().version,
-        sha256sum: "TODO".to_string(),
-        stripped: false,
-    }
+        get_current_crate_info().version,
+        false,
+    )
 }

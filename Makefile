@@ -97,7 +97,7 @@ KTEST_TESTABLE := \
 all: build
 
 install_osdk:
-	@cargo install cargo-osdk --path osdk --force
+	@cargo install cargo-osdk --path osdk
 
 build:
 	@make --no-print-directory -C regression
