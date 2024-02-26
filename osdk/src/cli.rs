@@ -115,7 +115,7 @@ pub struct TestArgs {
 pub struct CargoArgs {
     #[arg(
         long,
-        help = "The Cargo build profile (built-in candidates are 'debug', 'release' and 'dev')",
+        help = "The Cargo build profile (built-in candidates are 'debug', 'release', 'dev' and 'bench')",
         default_value = "dev"
     )]
     pub profile: String,

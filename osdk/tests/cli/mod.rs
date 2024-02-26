@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::utils::*;
+use crate::util::*;
 
 #[test]
 fn cli_help_message() {

@@ -25,7 +25,7 @@ pub fn create_bootdev_image(
 
     // Clear or make the iso dir.
     if iso_root.exists() {
-        fs::remove_dir_all(&iso_root).unwrap();
+        fs::remove_dir_all(iso_root).unwrap();
     }
     fs::create_dir_all(iso_root.join("boot").join("grub")).unwrap();
 
@@ -41,12 +41,12 @@ pub fn create_bootdev_image(
     // Make the kernel image and place it in the boot directory.
     match protocol {
         BootProtocol::LinuxLegacy32 | BootProtocol::LinuxEfiHandover64 => {
-            make_install_bzimage(&iso_root.join("boot"), &target_dir, aster_bin, protocol);
+            make_install_bzimage(iso_root.join("boot"), &target_dir, aster_bin, protocol);
         }
         BootProtocol::Multiboot | BootProtocol::Multiboot2 => {
             // Copy the kernel image to the boot directory.
             let target_path = iso_root.join("boot").join(&target_name);
-            fs::copy(&aster_bin.path, &target_path).unwrap();
+            fs::copy(&aster_bin.path, target_path).unwrap();
         }
     };
 
@@ -63,7 +63,7 @@ pub fn create_bootdev_image(
         protocol,
     );
     let grub_cfg_path = iso_root.join("boot").join("grub").join("grub.cfg");
-    fs::write(&grub_cfg_path, grub_cfg).unwrap();
+    fs::write(grub_cfg_path, grub_cfg).unwrap();
 
     // Make the boot device CDROM image using `grub-mkrescue`.
     let iso_path = &target_dir.as_ref().join(target_name.to_string() + ".iso");
@@ -109,11 +109,11 @@ fn generate_grub_cfg(
     let grub_cfg = grub_cfg.replace("#KERNEL_COMMAND_LINE#", kcmdline);
     // Replace the grub commands according to the protocol selected.
     let aster_bin_path_on_device = PathBuf::from("/boot")
-        .join(&target_name)
+        .join(target_name)
         .into_os_string()
         .into_string()
         .unwrap();
-    let grub_cfg = match protocol {
+    match protocol {
         BootProtocol::Multiboot => grub_cfg
             .replace("#GRUB_CMD_KERNEL#", "multiboot")
             .replace("#KERNEL#", &aster_bin_path_on_device)
@@ -147,9 +147,7 @@ fn generate_grub_cfg(
                     "".to_owned()
                 },
             ),
-    };
-
-    grub_cfg
+    }
 }
 
 fn get_grub_mkrescue_version(grub_mkrescue: &PathBuf) -> String {

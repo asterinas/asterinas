@@ -3,6 +3,8 @@
     A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux
 </p>
 
+[![Asterinas CI](https://github.com/asterinas/asterinas/actions/workflows/aster_ci.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/aster_ci.yml)
+
 English | [中文版](README_CN.md)
 
 ## Introducing Asterinas

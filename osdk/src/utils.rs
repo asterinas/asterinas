@@ -83,13 +83,13 @@ pub fn get_current_crate_info() -> CrateInfo {
     let default_member = default_members[0]
         .as_str()
         .unwrap()
-        .split(" ")
+        .split(' ')
         .collect::<Vec<&str>>();
     let name = default_member[0].to_string();
     let version = default_member[1].to_string();
     let path = default_member[2]
         .trim_start_matches("(path+file://")
-        .trim_end_matches(")")
+        .trim_end_matches(')')
         .to_string();
     CrateInfo {
         name,

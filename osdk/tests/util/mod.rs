@@ -33,6 +33,7 @@ pub fn assert_stdout_contains_msg(output: &Output, msg: &str) {
 }
 
 pub fn create_workspace(workspace_name: &str, members: &[&str]) {
+    // Create Cargo.toml
     let mut table = toml::Table::new();
     let workspace_table = {
         let mut table = toml::Table::new();
@@ -58,8 +59,14 @@ pub fn create_workspace(workspace_name: &str, members: &[&str]) {
     let content = table.to_string();
     fs::write(manefest_path, content).unwrap();
 
+    // Create OSDK.toml
     let osdk_manifest_path = PathBuf::from(workspace_name).join("OSDK.toml");
     fs::write(osdk_manifest_path, "").unwrap();
+
+    // Create rust-toolchain.toml which is synced with the Asterinas' toolchain
+    let rust_toolchain_path = PathBuf::from(workspace_name).join("rust-toolchain.toml");
+    let content = include_str!("../../../rust-toolchain.toml");
+    fs::write(rust_toolchain_path, content).unwrap();
 }
 
 pub fn add_member_to_workspace(workspace: impl AsRef<Path>, new_member: &str) {

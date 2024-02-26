@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::fs::remove_dir_all;
+use std::{fs::remove_dir_all, path::Path};
 
-use crate::test::utils::*;
+use crate::util::*;
 
 const KERNEL_NAME: &str = "myos";
 const LIB_NAME: &str = "my_module";
 
 #[test]
 fn create_kernel_in_workspace() {
-    const WORKSPACE_NAME: &str = "kernel_workspace";
+    const WORKSPACE_NAME: &str = "/tmp/kernel_workspace";
+    if Path::new(WORKSPACE_NAME).exists() {
+        remove_dir_all(WORKSPACE_NAME).unwrap();
+    }
     create_workspace(WORKSPACE_NAME, &[KERNEL_NAME]);
     let mut cargo_osdk = cargo_osdk(["new", "--kernel", KERNEL_NAME]);
     cargo_osdk.current_dir(WORKSPACE_NAME);
@@ -20,7 +23,10 @@ fn create_kernel_in_workspace() {
 
 #[test]
 fn create_lib_in_workspace() {
-    const WORKSPACE_NAME: &str = "lib_workspace";
+    const WORKSPACE_NAME: &str = "/tmp/lib_workspace";
+    if Path::new(WORKSPACE_NAME).exists() {
+        remove_dir_all(WORKSPACE_NAME).unwrap();
+    }
     create_workspace(WORKSPACE_NAME, &[LIB_NAME]);
     let mut cargo_osdk = cargo_osdk(["new", LIB_NAME]);
     cargo_osdk.current_dir(WORKSPACE_NAME);
@@ -31,7 +37,11 @@ fn create_lib_in_workspace() {
 
 #[test]
 fn create_two_crates_in_workspace() {
-    const WORKSPACE_NAME: &str = "my_workspace";
+    const WORKSPACE_NAME: &str = "/tmp/my_workspace";
+    if Path::new(WORKSPACE_NAME).exists() {
+        remove_dir_all(WORKSPACE_NAME).unwrap();
+    }
+
     create_workspace(WORKSPACE_NAME, &[LIB_NAME]);
     // Create lib crate
     let mut command = cargo_osdk(["new", LIB_NAME]);

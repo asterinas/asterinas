@@ -1,0 +1,16 @@
+[qemu]
+args = [
+    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
+    "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
+    "-device virtio-serial-pci,disable-legacy=on,disable-modern=off"
+]
+
+[qemu.'cfg(select="intel_tdx")']
+
+[qemu.'cfg(select="iommu")']
+args = [
+    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device intel-iommu,intremap=on,device-iotlb=on",
+    "-device ioh3420,id=pcie.0,chassis=1",
+]

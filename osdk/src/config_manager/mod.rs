@@ -9,6 +9,9 @@ pub mod boot;
 pub mod manifest;
 pub mod qemu;
 
+#[cfg(test)]
+mod test;
+
 use std::{fs, path::PathBuf, process};
 
 use indexmap::{IndexMap, IndexSet};
@@ -335,40 +338,4 @@ fn split_kcmd_args(kcmd_args: &mut Vec<String>) -> Vec<String> {
     let mut init_args = kcmd_args.split_off(index);
     init_args.remove(0);
     init_args
-}
-
-#[test]
-fn split_kcmd_args_test() {
-    let mut kcmd_args = ["init=/bin/sh", "--", "sh", "-l"]
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-    let init_args = split_kcmd_args(&mut kcmd_args);
-    let expected_kcmd_args: Vec<_> = ["init=/bin/sh"].iter().map(ToString::to_string).collect();
-    assert_eq!(kcmd_args, expected_kcmd_args);
-    let expecetd_init_args: Vec<_> = ["sh", "-l"].iter().map(ToString::to_string).collect();
-    assert_eq!(init_args, expecetd_init_args);
-
-    let mut kcmd_args = ["init=/bin/sh", "--"]
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-    let init_args = split_kcmd_args(&mut kcmd_args);
-    let expected_kcmd_args: Vec<_> = ["init=/bin/sh"].iter().map(ToString::to_string).collect();
-    assert_eq!(kcmd_args, expected_kcmd_args);
-    let expecetd_init_args: Vec<String> = Vec::new();
-    assert_eq!(init_args, expecetd_init_args);
-
-    let mut kcmd_args = ["init=/bin/sh", "shell=/bin/sh"]
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-    let init_args = split_kcmd_args(&mut kcmd_args);
-    let expected_kcmd_args: Vec<_> = ["init=/bin/sh", "shell=/bin/sh"]
-        .iter()
-        .map(ToString::to_string)
-        .collect();
-    assert_eq!(kcmd_args, expected_kcmd_args);
-    let expecetd_init_args: Vec<String> = Vec::new();
-    assert_eq!(init_args, expecetd_init_args);
 }
