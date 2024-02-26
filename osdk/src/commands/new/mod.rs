@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
-use std::{fs, process};
-use std::ffi::OsStr;
+use std::{
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+    process,
+    str::FromStr,
+};
 
-use crate::cli::NewArgs;
-use crate::error::Errno;
-use crate::error_msg;
-use crate::utils::{cargo_new_lib, get_cargo_metadata, ASTER_FRAME_DEP, KTEST_DEP};
+use crate::{
+    cli::NewArgs,
+    error::Errno,
+    error_msg,
+    utils::{cargo_new_lib, get_cargo_metadata, ASTER_FRAME_DEP, KTEST_DEP},
+};
 
 pub fn execute_new_command(args: &NewArgs) {
     cargo_new_lib(&args.crate_name);
@@ -51,7 +56,7 @@ fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &st
         let exclude = toml::Table::from_str(r#"exclude = ["target/osdk/base"]"#).unwrap();
         manifest.insert("workspace".to_string(), toml::Value::Table(exclude));
     }
-    
+
     let content = toml::to_string(&manifest).unwrap();
     fs::write(mainfest_path, content).unwrap();
 }
@@ -70,7 +75,9 @@ fn create_osdk_manifest(cargo_metadata: &serde_json::Value) {
     // Create `OSDK.toml` for the workspace
     // FIXME: we need ovmf for grub-efi, the user may not have it.
     // The apt OVMF repo installs to `/usr/share/OVMF`
-    fs::write(osdk_manifest_path, r#"
+    fs::write(
+        osdk_manifest_path,
+        r#"
 [boot]
 ovmf = "/usr/share/OVMF"
 [qemu]
@@ -85,7 +92,9 @@ args = [
     "-display none",
     "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
 ]
-"#).unwrap();
+"#,
+    )
+    .unwrap();
 }
 
 /// Write the default content of `src/kernel.rs`, with contents in provided template.

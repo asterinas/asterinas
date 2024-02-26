@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
-use crate::bin::AsterBin;
-use crate::cli::CargoArgs;
-use crate::config_manager::{
-    boot::Boot,
-    qemu::{Qemu, QemuMachine},
-    RunConfig,
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
 };
-use crate::vm_image::AsterVmImage;
-use crate::{error::Errno, error_msg};
+
+use crate::{
+    bin::AsterBin,
+    cli::CargoArgs,
+    config_manager::{
+        boot::Boot,
+        qemu::{Qemu, QemuMachine},
+        RunConfig,
+    },
+    error::Errno,
+    error_msg,
+    vm_image::AsterVmImage,
+};
 
 /// The osdk bundle artifact that stores as `bundle` directory.
 ///

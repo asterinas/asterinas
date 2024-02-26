@@ -2,12 +2,12 @@
 
 use std::fs;
 
-use crate::base_crate::new_base_crate;
-use crate::config_manager::{BuildConfig, RunConfig, TestConfig};
-use crate::utils::{get_current_crate_info, get_target_directory};
-
-use super::build::do_build;
-use super::utils::DEFAULT_TARGET_RELPATH;
+use super::{build::do_build, utils::DEFAULT_TARGET_RELPATH};
+use crate::{
+    base_crate::new_base_crate,
+    config_manager::{BuildConfig, RunConfig, TestConfig},
+    utils::{get_current_crate_info, get_target_directory},
+};
 
 pub fn execute_test_command(config: &TestConfig) {
     let current_crate = get_current_crate_info();

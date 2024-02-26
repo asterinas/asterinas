@@ -11,6 +11,6 @@ mod test;
 mod utils;
 
 pub use self::{
-    check::execute_check_command, clippy::execute_clippy_command, new::execute_new_command,
-    run::execute_run_command, test::execute_test_command,
+    build::execute_build_command, check::execute_check_command, clippy::execute_clippy_command,
+    new::execute_new_command, run::execute_run_command, test::execute_test_command,
 };

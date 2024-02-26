@@ -9,7 +9,7 @@ use crate::{
     cli::CargoArgs,
     config_manager::{
         get_feature_strings,
-        manifest::{OsdkManifest, TomlManifest, FEATURE_REGEX},
+        manifest::{OsdkManifest, TomlManifest, SELECT_REGEX},
     },
     test::utils::{assert_success, cargo_osdk, create_workspace},
 };

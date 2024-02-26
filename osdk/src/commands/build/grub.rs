@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use crate::bin::AsterBin;
-use crate::config_manager::{boot::BootProtocol, BuildConfig};
-use crate::utils::get_current_crate_info;
-use crate::vm_image::{AsterGrubIsoImageMeta, AsterVmImage, AsterVmImageType};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use super::bin::make_install_bzimage;
+use crate::{
+    bin::AsterBin,
+    config_manager::{boot::BootProtocol, BuildConfig},
+    utils::get_current_crate_info,
+    vm_image::{AsterGrubIsoImageMeta, AsterVmImage, AsterVmImageType},
+};
 
 pub fn create_bootdev_image(
     target_dir: impl AsRef<Path>,
@@ -38,12 +41,7 @@ pub fn create_bootdev_image(
     // Make the kernel image and place it in the boot directory.
     match protocol {
         BootProtocol::LinuxLegacy32 | BootProtocol::LinuxEfiHandover64 => {
-            make_install_bzimage(
-                &iso_root.join("boot"),
-                &target_dir,
-                aster_bin,
-                protocol,
-            );
+            make_install_bzimage(&iso_root.join("boot"), &target_dir, aster_bin, protocol);
         }
         BootProtocol::Multiboot | BootProtocol::Multiboot2 => {
             // Copy the kernel image to the boot directory.

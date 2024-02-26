@@ -38,7 +38,7 @@ for CRATE in $EXCLUDED_CRATES; do
     # is not currently in use or under development. 
     case "$CRATE" in
         *cargo-component*)
-            continue 
+            continue
             ;;
     esac
 
@@ -52,4 +52,3 @@ for CRATE in $EXCLUDED_CRATES; do
         echo "Directory for crate $CRATE does not exist"
     fi
 done
-

@@ -3,9 +3,7 @@
 use std::process;
 
 use super::utils::{cargo, COMMON_CARGO_ARGS};
-use crate::{
-    error_msg, commands::utils::create_target_json, error::Errno, error_msg, utils::get_cargo_metadata,
-};
+use crate::{commands::utils::create_target_json, error::Errno, error_msg};
 
 pub fn execute_clippy_command() {
     let target_json_path = create_target_json();

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::config_manager::{BuildConfig, RunConfig};
-use crate::utils::{get_current_crate_info, get_target_directory};
-
-use super::build::create_base_and_build;
-use super::utils::DEFAULT_TARGET_RELPATH;
+use super::{build::create_base_and_build, utils::DEFAULT_TARGET_RELPATH};
+use crate::{
+    config_manager::{BuildConfig, RunConfig},
+    utils::{get_current_crate_info, get_target_directory},
+};
 
 pub fn execute_run_command(config: &RunConfig) {
     let osdk_target_directory = get_target_directory().join(DEFAULT_TARGET_RELPATH);

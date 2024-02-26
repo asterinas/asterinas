@@ -3,7 +3,7 @@
 //! Test runner enabling control over the tests.
 //!
 
-use alloc::{string::String, vec::Vec, collections::BTreeSet};
+use alloc::{collections::BTreeSet, string::String, vec::Vec};
 use core::format_args;
 
 use owo_colors::OwoColorize;
