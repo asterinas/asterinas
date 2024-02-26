@@ -7,7 +7,8 @@ use crate::{
 };
 
 pub fn execute_run_command(config: &RunConfig) {
-    let osdk_target_directory = get_target_directory().join(DEFAULT_TARGET_RELPATH);
+    let ws_target_directory = get_target_directory();
+    let osdk_target_directory = ws_target_directory.join(DEFAULT_TARGET_RELPATH);
     let target_name = get_current_crate_info().name;
     let default_bundle_directory = osdk_target_directory.join(target_name);
 
@@ -20,6 +21,7 @@ pub fn execute_run_command(config: &RunConfig) {
     let bundle = create_base_and_build(
         default_bundle_directory,
         &osdk_target_directory,
+        &ws_target_directory,
         &required_build_config,
     );
 
