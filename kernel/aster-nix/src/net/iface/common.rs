@@ -3,6 +3,7 @@
 use alloc::collections::btree_map::Entry;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use aster_frame::sync::WaitQueue;
 use keyable_arc::KeyableWeak;
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
@@ -22,9 +23,11 @@ pub struct IfaceCommon {
     interface: SpinLock<smoltcp::iface::Interface>,
     sockets: SpinLock<SocketSet<'static>>,
     used_ports: RwLock<BTreeMap<u16, usize>>,
-    /// The time should do next poll. We stores the total microseconds since system boots up.
+    /// The time should do next poll. We stores the total milliseconds since system boots up.
     next_poll_at_ms: AtomicU64,
     bound_sockets: RwLock<BTreeSet<KeyableWeak<AnyBoundSocket>>>,
+    /// The wait queue that background polling thread will sleep on
+    polling_wait_queue: WaitQueue,
 }
 
 impl IfaceCommon {
@@ -37,6 +40,7 @@ impl IfaceCommon {
             used_ports: RwLock::new(used_ports),
             next_poll_at_ms: AtomicU64::new(0),
             bound_sockets: RwLock::new(BTreeSet::new()),
+            polling_wait_queue: WaitQueue::new(),
         }
     }
 
@@ -58,6 +62,10 @@ impl IfaceCommon {
         ip_addrs.first().map(|cidr| match cidr {
             IpCidr::Ipv4(ipv4_cidr) => ipv4_cidr.netmask(),
         })
+    }
+
+    pub(super) fn polling_wait_queue(&self) -> &WaitQueue {
+        &self.polling_wait_queue
     }
 
     /// Alloc an unused port range from 49152 ~ 65535 (According to smoltcp docs)
@@ -155,10 +163,16 @@ impl IfaceCommon {
 
         let sockets = self.sockets.lock_irq_disabled();
         if let Some(instant) = interface.poll_at(timestamp, &sockets) {
+            let old_instant = self.next_poll_at_ms.load(Ordering::Acquire);
+            let new_instant = instant.total_millis() as u64;
             self.next_poll_at_ms
-                .store(instant.total_millis() as u64, Ordering::SeqCst);
+                .store(instant.total_millis() as u64, Ordering::Relaxed);
+
+            if new_instant < old_instant {
+                self.polling_wait_queue.wake_all();
+            }
         } else {
-            self.next_poll_at_ms.store(0, Ordering::SeqCst);
+            self.next_poll_at_ms.store(0, Ordering::Relaxed);
         }
     }
 

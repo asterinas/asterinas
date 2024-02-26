@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_frame::sync::WaitQueue;
 use smoltcp::iface::SocketSet;
 
 use self::common::IfaceCommon;
@@ -59,6 +60,11 @@ pub trait Iface: internal::IfaceInternal + Send + Sync {
     /// FIXME: The netmask and IP address should be one-to-one if there are multiple ip address
     fn netmask(&self) -> Option<Ipv4Address> {
         self.common().netmask()
+    }
+
+    /// The waitqueue used to background polling thread
+    fn polling_wait_queue(&self) -> &WaitQueue {
+        self.common().polling_wait_queue()
     }
 }
 

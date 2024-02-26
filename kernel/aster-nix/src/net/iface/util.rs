@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::timer::read_monotonic_milli_seconds;
+use core::time::Duration;
+
+use aster_frame::{task::Priority, timer::read_monotonic_milli_seconds};
 
 use super::Iface;
 use crate::{
@@ -46,30 +48,40 @@ impl BindPortConfig {
 }
 
 pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
-    // FIXME: use timer or wait_timeout when timer is enable.
     let task_fn = move || {
-        debug!("spawn background poll thread");
+        trace!("spawn background poll thread for {}", iface.name());
+        let wait_queue = iface.polling_wait_queue();
         loop {
-            let next_poll_time = if let Some(next_poll_time) = iface.next_poll_at_ms() {
-                next_poll_time
+            let next_poll_at_ms = if let Some(next_poll_at_ms) = iface.next_poll_at_ms() {
+                next_poll_at_ms
             } else {
-                Thread::yield_now();
-                continue;
+                wait_queue.wait_until(|| iface.next_poll_at_ms())
             };
-            let now = read_monotonic_milli_seconds();
-            if now > next_poll_time {
-                // FIXME: now is later than next poll time. This may cause problem.
+
+            let now_as_ms = read_monotonic_milli_seconds();
+
+            // FIXME: Ideally, we should perform the `poll` just before `next_poll_at_ms`.
+            // However, this approach may result in a spinning busy loop
+            // if the `poll` operation yields no results.
+            // To mitigate this issue,
+            // we have opted to assign a high priority to the polling thread,
+            // ensuring that the `poll` runs as soon as possible.
+            // For a more in-depth discussion, please refer to the following link:
+            // <https://github.com/asterinas/asterinas/pull/630#discussion_r1496817030>.
+            if now_as_ms >= next_poll_at_ms {
                 iface.poll();
                 continue;
             }
-            let duration = next_poll_time - now;
-            // FIXME: choose a suitable time interval
-            if duration < 10 {
-                iface.poll();
-            } else {
-                Thread::yield_now();
-            }
+
+            let duration = Duration::from_millis(next_poll_at_ms - now_as_ms);
+            wait_queue.wait_until_or_timeout(
+                // If `iface.next_poll_at_ms()` changes to an earlier time, we will end the waiting.
+                || (iface.next_poll_at_ms()? < next_poll_at_ms).then_some(()),
+                &duration,
+            );
         }
     };
-    Thread::spawn_kernel_thread(ThreadOptions::new(task_fn));
+
+    let options = ThreadOptions::new(task_fn).priority(Priority::high());
+    Thread::spawn_kernel_thread(options);
 }
