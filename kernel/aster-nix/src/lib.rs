@@ -80,6 +80,7 @@ fn init_thread() {
         "[kernel] Spawn init thread, tid = {}",
         current_thread!().tid()
     );
+    aster_frame::enable_interrupts();
     net::lazy_init();
     fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();

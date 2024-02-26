@@ -69,6 +69,10 @@ pub fn init() {
     invoke_ffi_init_funcs();
 }
 
+pub fn enable_interrupts() {
+    x86_64::instructions::interrupts::enable();
+}
+
 fn invoke_ffi_init_funcs() {
     extern "C" {
         fn __sinit_array();
