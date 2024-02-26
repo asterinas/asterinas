@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{fs, path::PathBuf, process::Command};
 
 use crate::utils::get_target_directory;
 

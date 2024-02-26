@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{ffi::OsStr, path::{Path, PathBuf}, process::Command};
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use crate::{error::Errno, error_msg};
 

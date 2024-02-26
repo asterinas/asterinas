@@ -130,9 +130,10 @@ pub fn call_aster_main() -> ! {
 }
 
 fn run_ktests(test_whitelist: Option<&[&str]>, crate_whitelist: Option<&[&str]>) -> ! {
-    use crate::arch::qemu::{exit_qemu, QemuExitCode};
     use alloc::{boxed::Box, string::ToString};
     use core::any::Any;
+
+    use crate::arch::qemu::{exit_qemu, QemuExitCode};
 
     let fn_catch_unwind = &(unwinding::panic::catch_unwind::<(), fn()>
         as fn(fn()) -> Result<(), Box<(dyn Any + Send + 'static)>>);

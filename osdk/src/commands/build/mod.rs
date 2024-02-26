@@ -3,21 +3,25 @@
 mod bin;
 mod grub;
 
-use std::path::{Path, PathBuf};
-use std::process;
-use std::str::FromStr;
+use std::{
+    path::{Path, PathBuf},
+    process,
+    str::FromStr,
+};
 
 use bin::strip_elf_for_qemu;
 
-use crate::base_crate::new_base_crate;
-use crate::bin::{AsterBin, AsterBinType, AsterElfMeta};
-use crate::bundle::{Bundle, BundleManifest};
-use crate::cli::CargoArgs;
-use crate::config_manager::{qemu::QemuMachine, BuildConfig};
-use crate::utils::{get_current_crate_info, get_target_directory};
-use crate::{error::Errno, error_msg};
-
 use super::utils::{cargo, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
+use crate::{
+    base_crate::new_base_crate,
+    bin::{AsterBin, AsterBinType, AsterElfMeta},
+    bundle::{Bundle, BundleManifest},
+    cli::CargoArgs,
+    config_manager::{qemu::QemuMachine, BuildConfig},
+    error::Errno,
+    error_msg,
+    utils::{get_current_crate_info, get_target_directory},
+};
 
 pub fn execute_build_command(config: &BuildConfig) {
     let osdk_target_directory = get_target_directory().join(DEFAULT_TARGET_RELPATH);

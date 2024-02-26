@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::path::{Path, PathBuf};
-use std::process;
+use std::{
+    path::{Path, PathBuf},
+    process,
+};
 
 use regex::Regex;
 use serde::Deserialize;

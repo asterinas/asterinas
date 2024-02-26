@@ -4,13 +4,9 @@
 //! It will depend on the kernel crate.
 //!
 
-use std::path::Path;
-use std::process::Command;
-use std::str::FromStr;
-use std::{fs, process};
+use std::{fs, path::Path, process, process::Command, str::FromStr};
 
-use crate::error::Errno;
-use crate::error_msg;
+use crate::{error::Errno, error_msg};
 
 pub fn new_base_crate(
     base_crate_path: impl AsRef<Path>,

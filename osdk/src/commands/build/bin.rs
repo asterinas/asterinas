@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use linux_bzimage_builder::{make_bzimage, BzImageType, legacy32_rust_target_json};
-
-use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::{
     fs::OpenOptions,
     io::{Seek, SeekFrom, Write},
+    path::{Path, PathBuf},
+    process::Command,
 };
 
-use crate::bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta};
-use crate::config_manager::boot::BootProtocol;
-use crate::utils::get_current_crate_info;
+use linux_bzimage_builder::{legacy32_rust_target_json, make_bzimage, BzImageType};
+
+use crate::{
+    bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
+    config_manager::boot::BootProtocol,
+    utils::get_current_crate_info,
+};
 
 pub fn make_install_bzimage(
     install_dir: impl AsRef<Path>,

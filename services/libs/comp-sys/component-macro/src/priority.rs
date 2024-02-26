@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{collections::HashMap, fs::File, io::Read, ops::Add, path::PathBuf, process::Command, str::FromStr};
+use std::{
+    collections::HashMap, fs::File, io::Read, ops::Add, path::PathBuf, process::Command,
+    str::FromStr,
+};
 
 use json::JsonValue;
 use proc_macro2::{Group, TokenStream};
@@ -88,7 +91,11 @@ pub fn component_generate() -> Vec<ComponentInfo> {
         };
         let component_info = ComponentInfo {
             name: package["name"].as_str().unwrap().to_string(),
-            path: PathBuf::from(&workspace_root).join(path).to_str().unwrap().to_string(),
+            path: PathBuf::from(&workspace_root)
+                .join(path)
+                .to_str()
+                .unwrap()
+                .to_string(),
             priority: *mapping
                 .get(&package["name"].as_str().unwrap().to_string())
                 .unwrap(),
