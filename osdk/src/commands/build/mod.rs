@@ -11,7 +11,7 @@ use std::{
 
 use bin::strip_elf_for_qemu;
 
-use super::utils::{cargo, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
+use super::util::{cargo, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
 use crate::{
     base_crate::new_base_crate,
     bundle::{
@@ -23,7 +23,7 @@ use crate::{
     config_manager::{qemu::QemuMachine, BuildConfig},
     error::Errno,
     error_msg,
-    utils::{get_current_crate_info, get_target_directory},
+    util::{get_current_crate_info, get_target_directory},
 };
 
 pub fn execute_build_command(config: &BuildConfig) {

@@ -15,7 +15,7 @@ use crate::{
         file::BundleFile,
     },
     config_manager::boot::BootProtocol,
-    utils::get_current_crate_info,
+    util::get_current_crate_info,
 };
 
 pub fn make_install_bzimage(

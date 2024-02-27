@@ -2,11 +2,11 @@
 
 use std::fs;
 
-use super::{build::do_build, utils::DEFAULT_TARGET_RELPATH};
+use super::{build::do_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
     base_crate::new_base_crate,
     config_manager::{BuildConfig, RunConfig, TestConfig},
-    utils::{get_current_crate_info, get_target_directory},
+    util::{get_current_crate_info, get_target_directory},
 };
 
 pub fn execute_test_command(config: &TestConfig) {

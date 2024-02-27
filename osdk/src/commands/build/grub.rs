@@ -13,7 +13,7 @@ use crate::{
         vm_image::{AsterGrubIsoImageMeta, AsterVmImage, AsterVmImageType},
     },
     config_manager::{boot::BootProtocol, BuildConfig},
-    utils::get_current_crate_info,
+    util::get_current_crate_info,
 };
 
 pub fn create_bootdev_image(
