@@ -5,11 +5,11 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use super::{build::create_base_and_build, utils::DEFAULT_TARGET_RELPATH};
+use super::{build::create_base_and_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
     bundle::Bundle,
     config_manager::{BuildConfig, RunConfig},
-    utils::{get_cargo_metadata, get_current_crate_info, get_target_directory},
+    util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
 };
 
 pub fn execute_run_command(config: &RunConfig) {

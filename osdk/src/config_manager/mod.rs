@@ -25,7 +25,7 @@ use crate::{
     cli::{BuildArgs, CargoArgs, OsdkArgs, RunArgs, TestArgs},
     error::Errno,
     error_msg,
-    utils::get_cargo_metadata,
+    util::get_cargo_metadata,
     warn_msg,
 };
 

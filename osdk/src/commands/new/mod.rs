@@ -12,7 +12,7 @@ use crate::{
     cli::NewArgs,
     error::Errno,
     error_msg,
-    utils::{cargo_new_lib, get_cargo_metadata, ASTER_FRAME_DEP, KTEST_DEP},
+    util::{cargo_new_lib, get_cargo_metadata, ASTER_FRAME_DEP, KTEST_DEP},
 };
 
 pub fn execute_new_command(args: &NewArgs) {

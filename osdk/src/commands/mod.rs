@@ -8,7 +8,7 @@ mod clippy;
 mod new;
 mod run;
 mod test;
-mod utils;
+mod util;
 
 pub use self::{
     build::execute_build_command, check::execute_check_command, clippy::execute_clippy_command,

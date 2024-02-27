@@ -2,7 +2,7 @@
 
 use std::{fs, path::PathBuf, process::Command};
 
-use crate::utils::get_target_directory;
+use crate::util::get_target_directory;
 
 pub const COMMON_CARGO_ARGS: &[&str] = &[
     "-Zbuild-std=core,alloc,compiler_builtins",
