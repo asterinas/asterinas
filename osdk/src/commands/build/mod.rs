@@ -3,11 +3,7 @@
 mod bin;
 mod grub;
 
-use std::{
-    path::{Path, PathBuf},
-    process,
-    str::FromStr,
-};
+use std::{path::Path, process};
 
 use bin::strip_elf_for_qemu;
 
@@ -40,6 +36,7 @@ pub fn execute_build_command(config: &BuildConfig) {
         &osdk_target_directory,
         &ws_target_directory,
         config,
+        &[],
     );
 }
 
@@ -48,6 +45,7 @@ pub fn create_base_and_build(
     osdk_target_directory: impl AsRef<Path>,
     cargo_target_directory: impl AsRef<Path>,
     config: &BuildConfig,
+    rustflags: &[&str],
 ) -> Bundle {
     let base_crate_path = osdk_target_directory.as_ref().join("base");
     new_base_crate(
@@ -62,6 +60,7 @@ pub fn create_base_and_build(
         &osdk_target_directory,
         &cargo_target_directory,
         config,
+        rustflags,
     );
     std::env::set_current_dir(original_dir).unwrap();
     bundle
@@ -72,6 +71,7 @@ pub fn do_build(
     osdk_target_directory: impl AsRef<Path>,
     cargo_target_directory: impl AsRef<Path>,
     config: &BuildConfig,
+    rustflags: &[&str],
 ) -> Bundle {
     if bundle_path.as_ref().exists() {
         std::fs::remove_dir_all(&bundle_path).unwrap();
@@ -93,7 +93,7 @@ pub fn do_build(
     };
 
     info!("Building kernel ELF");
-    let aster_elf = build_kernel_elf(&config.cargo_args, &cargo_target_directory);
+    let aster_elf = build_kernel_elf(&config.cargo_args, &cargo_target_directory, rustflags);
 
     if matches!(config.manifest.qemu.machine, QemuMachine::Microvm) {
         let stripped_elf = strip_elf_for_qemu(&osdk_target_directory, &aster_elf);
@@ -117,13 +117,25 @@ pub fn do_build(
     bundle
 }
 
-fn build_kernel_elf(args: &CargoArgs, cargo_target_directory: impl AsRef<Path>) -> AsterBin {
-    let target_json_path = PathBuf::from_str("x86_64-custom.json").unwrap();
+fn build_kernel_elf(args: &CargoArgs, cargo_target_directory: impl AsRef<Path>, rustflags: &[&str]) -> AsterBin {
+    let target = "x86_64-unknown-none";
+
+    let env_rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
+    let mut rustflags = Vec::from(rustflags);
+    // We disable RELRO and PIC here because they cause link failures
+    rustflags.extend(vec![
+        &env_rustflags,
+        "-C link-arg=-Tx86_64.ld",
+        "-C code-model=kernel",
+        "-C relocation-model=static",
+        "-Z relro-level=off",
+    ]);
 
     let mut command = cargo();
     command.env_remove("RUSTUP_TOOLCHAIN");
+    command.env("RUSTFLAGS", rustflags.join(" "));
     command.arg("build");
-    command.arg("--target").arg(&target_json_path);
+    command.arg("--target").arg(target);
     command
         .arg("--target-dir")
         .arg(cargo_target_directory.as_ref());
@@ -135,9 +147,7 @@ fn build_kernel_elf(args: &CargoArgs, cargo_target_directory: impl AsRef<Path>) 
         process::exit(Errno::ExecuteCommand as _);
     }
 
-    let aster_bin_path = cargo_target_directory
-        .as_ref()
-        .join(target_json_path.file_stem().unwrap().to_str().unwrap());
+    let aster_bin_path = cargo_target_directory.as_ref().join(target);
     let aster_bin_path = if args.profile == "dev" {
         aster_bin_path.join("debug")
     } else {

@@ -125,10 +125,10 @@ docs:
 	@cd docs && mdbook build 				# Build mdBook
 
 format:
-	./tools/format_all.sh
+	@./tools/format_all.sh
 
 check:
-	./tools/format_all.sh --check   # Check Rust format issues
+	@./tools/format_all.sh --check   # Check Rust format issues
 	@cargo osdk clippy
 
 clean:
