@@ -105,7 +105,7 @@ pub fn legacy32_rust_target_json() -> &'static str {
 /// Interestingly, the resulting binary should be the same as the memory
 /// dump of the kernel setup header when it's loaded by the bootloader.
 fn to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
-    let elf = xmas_elf::ElfFile::new(&elf_file).unwrap();
+    let elf = xmas_elf::ElfFile::new(elf_file).unwrap();
     let mut bin = Vec::<u8>::new();
 
     for program in elf.program_iter() {

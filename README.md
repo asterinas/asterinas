@@ -4,7 +4,6 @@
 </p>
 
 [![Check License](https://github.com/asterinas/asterinas/actions/workflows/license_check.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/license_check.yml)
-[![Framework Test](https://github.com/asterinas/asterinas/actions/workflows/framework_test.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/framework_test.yml)
 [![Kernel Test](https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml)
 
 English | [中文版](README_CN.md)

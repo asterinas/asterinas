@@ -117,7 +117,11 @@ pub fn do_build(
     bundle
 }
 
-fn build_kernel_elf(args: &CargoArgs, cargo_target_directory: impl AsRef<Path>, rustflags: &[&str]) -> AsterBin {
+fn build_kernel_elf(
+    args: &CargoArgs,
+    cargo_target_directory: impl AsRef<Path>,
+    rustflags: &[&str],
+) -> AsterBin {
     let target = "x86_64-unknown-none";
 
     let env_rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();

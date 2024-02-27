@@ -4,7 +4,11 @@
 //! It will depend on the kernel crate.
 //!
 
-use std::{fs, path::{Path, PathBuf}, str::FromStr};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use crate::util::get_cargo_metadata;
 

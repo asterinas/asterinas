@@ -19,7 +19,7 @@ pub fn load_elf(file: &[u8]) {
 }
 
 fn load_segment(file: &xmas_elf::ElfFile, program: &xmas_elf::program::ProgramHeader64) {
-    let SegmentData::Undefined(header_data) = program.get_data(&file).unwrap() else {
+    let SegmentData::Undefined(header_data) = program.get_data(file).unwrap() else {
         panic!("[setup] Unexpected segment data type!");
     };
     // Safety: the physical address from the ELF file is valid
