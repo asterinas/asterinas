@@ -65,8 +65,8 @@ make install_osdk
 4. Inside the container, go to the project folder to build and run Asterinas.
 
 ```bash
-cargo osdk build
-cargo osdk run
+make build
+make run
 ```
 
 If everything goes well, Asterinas is now up and running inside a VM.

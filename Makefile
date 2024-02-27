@@ -71,26 +71,26 @@ USERMODE_TESTABLE := \
 	framework/libs/linux-bzimage/boot-params \
     framework/libs/ktest \
     framework/libs/ktest-proc-macro \
-    services/libs/cpio-decoder \
-    services/libs/int-to-c-enum \
-    services/libs/int-to-c-enum/derive \
-    services/libs/aster-rights \
-    services/libs/aster-rights-proc \
-    services/libs/keyable-arc \
-    services/libs/typeflags \
-    services/libs/typeflags-util
+    kernel/libs/cpio-decoder \
+    kernel/libs/int-to-c-enum \
+    kernel/libs/int-to-c-enum/derive \
+    kernel/libs/aster-rights \
+    kernel/libs/aster-rights-proc \
+    kernel/libs/keyable-arc \
+    kernel/libs/typeflags \
+    kernel/libs/typeflags-util
 
 # Maintain a list of kernel crates that can be tested with `cargo osdk test`
 # The framework is tested independently, thus not included here
 KTEST_TESTABLE := \
-    "services/aster-nix" \
-    "services/comps/block" \
-    "services/comps/console" \
-    "services/comps/framebuffer" \
-    "services/comps/input" \
-    "services/comps/network" \
-    "services/comps/time" \
-    "services/comps/virtio"
+    "kernel/aster-nix" \
+    "kernel/comps/block" \
+    "kernel/comps/console" \
+    "kernel/comps/framebuffer" \
+    "kernel/comps/input" \
+    "kernel/comps/network" \
+    "kernel/comps/time" \
+    "kernel/comps/virtio"
 
 .PHONY: all install_osdk build tools run test docs check clean update_initramfs
 
@@ -101,13 +101,13 @@ install_osdk:
 
 build:
 	@make --no-print-directory -C regression
-	@cargo osdk build $(CARGO_OSDK_ARGS)
+	@cd kernel && cargo osdk build $(CARGO_OSDK_ARGS)
 
 tools:
-	@cd services/libs/comp-sys && cargo install --path cargo-component
+	@cd kernel/libs/comp-sys && cargo install --path cargo-component
 
 run: build
-	@cargo osdk run $(CARGO_OSDK_ARGS)
+	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS)
 
 test:
 	@for dir in $(USERMODE_TESTABLE); do \
