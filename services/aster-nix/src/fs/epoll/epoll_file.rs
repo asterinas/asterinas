@@ -7,12 +7,8 @@ use core::{
 
 use super::*;
 use crate::{
-    events::{IoEvents, Observer},
-    fs::{
-        file_handle::FileLike,
-        file_table::{FdEvents, FileDescripter},
-        utils::IoctlCmd,
-    },
+    events::Observer,
+    fs::{file_handle::FileLike, file_table::FdEvents, utils::IoctlCmd},
     process::signal::{Pollee, Poller},
 };
 

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::iter::Iterator;
-
 use super::{
     inode::{FileType, MAX_FNAME_LEN},
     prelude::*,

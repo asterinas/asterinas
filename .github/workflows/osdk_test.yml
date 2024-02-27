@@ -1,0 +1,33 @@
+name: OSDK Test
+
+on:
+  pull_request:
+    paths:
+      - framework/**
+      - osdk/**
+      - tools/**
+      - Cargo.toml
+  push:
+    branches:
+      - main
+
+jobs:
+  osdk-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: asterinas/asterinas:0.4.0
+    steps:
+      - run: echo "Running in asterinas/asterinas:0.4.0"
+
+      - uses: actions/checkout@v4
+
+      - name: Lint
+        id: lint
+        run: cd osdk && cargo clippy -- -D warnings
+
+        # The OSDK unit test features a recursive call of Cargo,
+        # which will break when RUSTUP_HOME is altered in the case
+        # of actions/checkout@v4
+      - name: Unit test
+        id: unit_test
+        run: cd osdk && cargo build && RUSTUP_HOME=/root/.rustup cargo test

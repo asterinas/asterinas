@@ -2,10 +2,7 @@
 
 //! Posix thread implementation
 
-use core::{
-    any::Any,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_frame::task::Task;
 

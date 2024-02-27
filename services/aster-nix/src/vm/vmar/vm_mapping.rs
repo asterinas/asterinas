@@ -2,10 +2,7 @@
 
 use core::ops::Range;
 
-use aster_frame::{
-    sync::Mutex,
-    vm::{VmFrame, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace},
-};
+use aster_frame::vm::{VmFrame, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace};
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
 use crate::{

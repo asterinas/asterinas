@@ -47,7 +47,7 @@ git clone https://github.com/asterinas/asterinas
 2. 运行一个作为开发环境的Docker容器。
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v ./asterinas:/root/asterinas asterinas/asterinas:0.3.0
+docker run -it --privileged --network=host --device=/dev/kvm -v ./asterinas:/root/asterinas asterinas/asterinas:0.4.0
 ```
 
 3. 从源码编译安装 Asterinas OSDK

@@ -2,14 +2,13 @@
 
 use alloc::vec;
 use core::{
-    iter::Iterator,
     marker::PhantomData,
     ops::{BitAnd, BitOr, Not, Range},
 };
 
 use pod::Pod;
 
-use super::{frame_allocator, HasPaddr, Paddr, VmIo};
+use super::{frame_allocator, HasPaddr, VmIo};
 use crate::{config::PAGE_SIZE, prelude::*, Error};
 
 /// A collection of page frames (physical memory pages).

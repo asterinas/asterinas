@@ -6,23 +6,23 @@
 #![allow(dead_code)]
 #![allow(incomplete_features)]
 #![allow(unused_variables)]
-#![feature(exclusive_range_pattern)]
+#![feature(btree_cursors)]
 #![feature(btree_extract_if)]
 #![feature(const_option)]
+#![feature(exclusive_range_pattern)]
 #![feature(extend_one)]
+#![feature(fn_traits)]
+#![feature(format_args_nl)]
+#![feature(int_roundings)]
 #![feature(let_chains)]
+#![feature(linked_list_remove)]
+#![feature(register_tool)]
 // FIXME: This feature is used to support vm capbility now as a work around.
 // Since this is an incomplete feature, use this feature is unsafe.
 // We should find a proper method to replace this feature with min_specialization, which is a sound feature.
 #![feature(specialization)]
-#![feature(fn_traits)]
-#![feature(linked_list_remove)]
-#![feature(trait_alias)]
-#![feature(register_tool)]
-#![feature(format_args_nl)]
-#![feature(int_roundings)]
 #![feature(step_trait)]
-#![feature(btree_cursors)]
+#![feature(trait_alias)]
 #![register_tool(component_access_control)]
 
 use aster_frame::{

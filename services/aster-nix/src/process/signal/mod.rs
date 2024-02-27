@@ -210,10 +210,7 @@ pub fn handle_user_signal(
 /// It the stack is not used by any handler, we will return the new sp in alternate signal stack.
 fn use_alternate_signal_stack(posix_thread: &PosixThread) -> Option<usize> {
     let mut sig_stack = posix_thread.sig_stack().lock();
-
-    let Some(sig_stack) = &mut *sig_stack else {
-        return None;
-    };
+    let sig_stack = (*sig_stack).as_mut()?;
 
     if sig_stack.is_disabled() {
         return None;

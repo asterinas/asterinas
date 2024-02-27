@@ -2,7 +2,7 @@
 
 use core::ops::Range;
 
-use aster_frame::vm::{Vaddr, VmIo};
+use aster_frame::vm::VmIo;
 use aster_rights::Rights;
 
 use super::{
