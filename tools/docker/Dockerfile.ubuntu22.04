@@ -153,13 +153,12 @@ FROM build-grub as grub
 # in the GRUB release. The Ubuntu release notoriously modifies the GRUB source code and enforce
 # EFI handover boot, which is deprecated. So we have to build GRUB from source.
 WORKDIR /root
-RUN wget -O grub.tar.xz https://git.savannah.gnu.org/cgit/grub.git/snapshot/grub-grub-2.12-rc1.tar.gz \
+RUN wget -O grub.tar.xz https://ftp.gnu.org/gnu/grub/grub-2.12.tar.xz \
     && mkdir /root/grub \
     && tar xf grub.tar.xz --strip-components=1 -C /root/grub \
     && rm grub.tar.xz
 WORKDIR /root/grub
-RUN ./bootstrap \
-    && ./configure --target=x86_64 --with-platform=efi --prefix=/usr/local/grub \
+RUN ./configure --target=x86_64 --with-platform=efi --prefix=/usr/local/grub \
     && make -j \
     && make install
 WORKDIR /root
@@ -188,11 +187,12 @@ RUN make defconfig \
 
 FROM build-base as rust
 
-# Install Rust
+# Install Rust with both nightly and stable
 ENV PATH="/root/.cargo/bin:${PATH}"
 ARG ASTER_RUST_VERSION
 RUN curl https://sh.rustup.rs -sSf | \
         sh -s -- --default-toolchain ${ASTER_RUST_VERSION} -y \
+    && rustup toolchain install stable \
     && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \
     && cargo -V \
     && rustup component add rust-src rustc-dev llvm-tools-preview
