@@ -166,6 +166,8 @@ bitflags::bitflags! {
 }
 
 // The `flags` field choices in the PE section header.
+// We follow the Linux naming, thus ignoring the clippy name warnings.
+#[allow(clippy::enum_variant_names)]
 #[derive(Serialize, Clone, Copy)]
 #[repr(u32)]
 enum PeSectionHdrFlagsAlign {
@@ -238,10 +240,10 @@ impl ImageSectionAddrInfo {
         }
 
         Self {
-            text: SetupVA::from(text_start.unwrap())..SetupVA::from(text_end.unwrap()),
-            data: SetupVA::from(data_start.unwrap())..SetupVA::from(data_end.unwrap()),
-            bss: SetupVA::from(bss_start.unwrap())..SetupVA::from(bss_end.unwrap()),
-            rodata: SetupVA::from(rodata_start.unwrap())..SetupVA::from(rodata_end.unwrap()),
+            text: text_start.unwrap()..text_end.unwrap(),
+            data: data_start.unwrap()..data_end.unwrap(),
+            bss: bss_start.unwrap()..bss_end.unwrap(),
+            rodata: rodata_start.unwrap()..rodata_end.unwrap(),
         }
     }
 
@@ -351,90 +353,90 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> ImageP
     let addr_info = ImageSectionAddrInfo::from(&elf);
 
     // PE section headers
-    let mut sec_hdrs = Vec::<PeSectionHdr>::new();
-    // .reloc
-    sec_hdrs.push(PeSectionHdr {
-        name: [b'.', b'r', b'e', b'l', b'o', b'c', 0, 0],
-        virtual_size: relocs.len() as u32,
-        virtual_address: usize::from(SetupVA::from(reloc_offset)) as u32,
-        raw_data_size: relocs.len() as u32,
-        data_addr: usize::from(reloc_offset) as u32,
-        relocs: 0,
-        line_numbers: 0,
-        num_relocs: 0,
-        num_lin_numbers: 0,
-        flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
-            | PeSectionHdrFlags::MEM_READ
-            | PeSectionHdrFlags::MEM_DISCARDABLE)
-            .bits
-            | PeSectionHdrFlagsAlign::_1Bytes as u32,
-    });
-    // .text
-    sec_hdrs.push(PeSectionHdr {
-        name: [b'.', b't', b'e', b'x', b't', 0, 0, 0],
-        virtual_size: addr_info.text_virt_size() as u32,
-        virtual_address: usize::from(addr_info.text.start) as u32,
-        raw_data_size: addr_info.text_file_size() as u32,
-        data_addr: usize::from(SetupFileOffset::from(addr_info.text.start)) as u32,
-        relocs: 0,
-        line_numbers: 0,
-        num_relocs: 0,
-        num_lin_numbers: 0,
-        flags: (PeSectionHdrFlags::CNT_CODE
-            | PeSectionHdrFlags::MEM_READ
-            | PeSectionHdrFlags::MEM_EXECUTE)
-            .bits
-            | PeSectionHdrFlagsAlign::_16Bytes as u32,
-    });
-    // .data
-    sec_hdrs.push(PeSectionHdr {
-        name: [b'.', b'd', b'a', b't', b'a', 0, 0, 0],
-        virtual_size: addr_info.data_virt_size() as u32,
-        virtual_address: usize::from(addr_info.data.start) as u32,
-        raw_data_size: addr_info.data_file_size() as u32,
-        data_addr: usize::from(SetupFileOffset::from(addr_info.data.start)) as u32,
-        relocs: 0,
-        line_numbers: 0,
-        num_relocs: 0,
-        num_lin_numbers: 0,
-        flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
-            | PeSectionHdrFlags::MEM_READ
-            | PeSectionHdrFlags::MEM_WRITE)
-            .bits
-            | PeSectionHdrFlagsAlign::_16Bytes as u32,
-    });
-    // .bss
-    sec_hdrs.push(PeSectionHdr {
-        name: [b'.', b'b', b's', b's', 0, 0, 0, 0],
-        virtual_size: addr_info.bss_virt_size() as u32,
-        virtual_address: usize::from(addr_info.bss.start) as u32,
-        raw_data_size: 0,
-        data_addr: 0,
-        relocs: 0,
-        line_numbers: 0,
-        num_relocs: 0,
-        num_lin_numbers: 0,
-        flags: (PeSectionHdrFlags::CNT_UNINITIALIZED_DATA
-            | PeSectionHdrFlags::MEM_READ
-            | PeSectionHdrFlags::MEM_WRITE)
-            .bits
-            | PeSectionHdrFlagsAlign::_16Bytes as u32,
-    });
-    // .rodata
-    sec_hdrs.push(PeSectionHdr {
-        name: [b'.', b'r', b'o', b'd', b'a', b't', b'a', 0],
-        virtual_size: addr_info.rodata_virt_size() as u32,
-        virtual_address: usize::from(addr_info.rodata.start) as u32,
-        raw_data_size: addr_info.rodata_file_size() as u32,
-        data_addr: usize::from(SetupFileOffset::from(addr_info.rodata.start)) as u32,
-        relocs: 0,
-        line_numbers: 0,
-        num_relocs: 0,
-        num_lin_numbers: 0,
-        flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA | PeSectionHdrFlags::MEM_READ).bits
-            | PeSectionHdrFlagsAlign::_16Bytes as u32,
-    });
-
+    let sec_hdrs = [
+        // .reloc
+        PeSectionHdr {
+            name: [b'.', b'r', b'e', b'l', b'o', b'c', 0, 0],
+            virtual_size: relocs.len() as u32,
+            virtual_address: usize::from(SetupVA::from(reloc_offset)) as u32,
+            raw_data_size: relocs.len() as u32,
+            data_addr: usize::from(reloc_offset) as u32,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
+                | PeSectionHdrFlags::MEM_READ
+                | PeSectionHdrFlags::MEM_DISCARDABLE)
+                .bits
+                | PeSectionHdrFlagsAlign::_1Bytes as u32,
+        },
+        // .text
+        PeSectionHdr {
+            name: [b'.', b't', b'e', b'x', b't', 0, 0, 0],
+            virtual_size: addr_info.text_virt_size() as u32,
+            virtual_address: usize::from(addr_info.text.start) as u32,
+            raw_data_size: addr_info.text_file_size() as u32,
+            data_addr: usize::from(SetupFileOffset::from(addr_info.text.start)) as u32,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_CODE
+                | PeSectionHdrFlags::MEM_READ
+                | PeSectionHdrFlags::MEM_EXECUTE)
+                .bits
+                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+        },
+        // .data
+        PeSectionHdr {
+            name: [b'.', b'd', b'a', b't', b'a', 0, 0, 0],
+            virtual_size: addr_info.data_virt_size() as u32,
+            virtual_address: usize::from(addr_info.data.start) as u32,
+            raw_data_size: addr_info.data_file_size() as u32,
+            data_addr: usize::from(SetupFileOffset::from(addr_info.data.start)) as u32,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
+                | PeSectionHdrFlags::MEM_READ
+                | PeSectionHdrFlags::MEM_WRITE)
+                .bits
+                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+        },
+        // .bss
+        PeSectionHdr {
+            name: [b'.', b'b', b's', b's', 0, 0, 0, 0],
+            virtual_size: addr_info.bss_virt_size() as u32,
+            virtual_address: usize::from(addr_info.bss.start) as u32,
+            raw_data_size: 0,
+            data_addr: 0,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_UNINITIALIZED_DATA
+                | PeSectionHdrFlags::MEM_READ
+                | PeSectionHdrFlags::MEM_WRITE)
+                .bits
+                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+        },
+        // .rodata
+        PeSectionHdr {
+            name: [b'.', b'r', b'o', b'd', b'a', b't', b'a', 0],
+            virtual_size: addr_info.rodata_virt_size() as u32,
+            virtual_address: usize::from(addr_info.rodata.start) as u32,
+            raw_data_size: addr_info.rodata_file_size() as u32,
+            data_addr: usize::from(SetupFileOffset::from(addr_info.rodata.start)) as u32,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA | PeSectionHdrFlags::MEM_READ).bits
+                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+        },
+    ];
     // Write the MS-DOS header
     bin.extend_from_slice(&MZ_MAGIC.to_le_bytes());
     // Write the MS-DOS stub at 0x3c

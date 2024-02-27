@@ -7,7 +7,7 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use core::{
     fmt,
     ops::{Index, IndexMut},
@@ -26,13 +26,16 @@ fn framebuffer_init() -> Result<(), ComponentInitError> {
 
 pub(crate) static WRITER: Once<SpinLock<Writer>> = Once::new();
 
+// ignore the warnings since we use the `todo!` macro.
+#[allow(unused_variables)]
+#[allow(unreachable_code)]
+#[allow(clippy::diverging_sub_expression)]
 pub(crate) fn init() {
     let mut writer = {
         let framebuffer = boot::framebuffer_arg();
-        let mut writer = None;
         let mut size = 0;
         for i in aster_frame::vm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
-            size = i.len() as usize;
+            size = i.len();
         }
 
         let page_size = size / PAGE_SIZE;
@@ -40,13 +43,10 @@ pub(crate) fn init() {
         let start_paddr = framebuffer.address;
         let io_mem = todo!("IoMem is private for components now, should fix it.");
 
-        let mut buffer: Vec<u8> = Vec::with_capacity(size);
-        for _ in 0..size {
-            buffer.push(0);
-        }
+        let mut buffer: Vec<u8> = vec![0; size];
         log::debug!("Found framebuffer:{:?}", framebuffer);
 
-        writer = Some(Writer {
+        Writer {
             io_mem,
             x_pos: 0,
             y_pos: 0,
@@ -54,9 +54,7 @@ pub(crate) fn init() {
             width: framebuffer.width as usize,
             height: framebuffer.height as usize,
             buffer: buffer.leak(),
-        });
-
-        writer.unwrap()
+        }
     };
     writer.clear();
 

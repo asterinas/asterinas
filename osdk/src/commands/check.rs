@@ -10,7 +10,7 @@ pub fn execute_check_command() {
     command
         .arg("check")
         .arg("--target")
-        .arg("x86_64-unkown-none");
+        .arg("x86_64-unknown-none");
     command.args(COMMON_CARGO_ARGS);
     let status = command.status().unwrap();
     if !status.success() {

@@ -63,34 +63,40 @@ endif
 # Pass make variables to all subdirectory makes
 export
 
-# Maintain a list of usermode crates that can be tested with `cargo test`
-USERMODE_TESTABLE := \
-    framework/libs/align_ext \
-    framework/libs/aster-main \
+# Basically, non-OSDK crates do not depend on Aster Frame and can be checked
+# or tested without OSDK.
+NON_OSDK_CRATES := \
+	framework/libs/align_ext \
+	framework/libs/aster-main \
 	framework/libs/linux-bzimage/builder \
 	framework/libs/linux-bzimage/boot-params \
-    framework/libs/ktest \
-    framework/libs/ktest-proc-macro \
-    kernel/libs/cpio-decoder \
-    kernel/libs/int-to-c-enum \
-    kernel/libs/int-to-c-enum/derive \
-    kernel/libs/aster-rights \
-    kernel/libs/aster-rights-proc \
-    kernel/libs/keyable-arc \
-    kernel/libs/typeflags \
-    kernel/libs/typeflags-util
+	framework/libs/ktest \
+	framework/libs/ktest-proc-macro \
+	framework/libs/tdx-guest \
+	kernel/libs/cpio-decoder \
+	kernel/libs/int-to-c-enum \
+	kernel/libs/int-to-c-enum/derive \
+	kernel/libs/aster-rights \
+	kernel/libs/aster-rights-proc \
+	kernel/libs/keyable-arc \
+	kernel/libs/typeflags \
+	kernel/libs/typeflags-util
 
-# Maintain a list of kernel crates that can be tested with `cargo osdk test`
-# The framework is tested independently, thus not included here
-KTEST_TESTABLE := \
-    "kernel/aster-nix" \
-    "kernel/comps/block" \
-    "kernel/comps/console" \
-    "kernel/comps/framebuffer" \
-    "kernel/comps/input" \
-    "kernel/comps/network" \
-    "kernel/comps/time" \
-    "kernel/comps/virtio"
+# In contrast, OSDK crates depend on Aster Frame (or being aster-frame itself)
+# and need to be built or tested with OSDK.
+OSDK_CRATES := \
+	framework/aster-frame \
+	framework/libs/linux-bzimage/setup \
+	kernel \
+	kernel/aster-nix \
+	kernel/comps/block \
+	kernel/comps/console \
+	kernel/comps/framebuffer \
+	kernel/comps/input \
+	kernel/comps/network \
+	kernel/comps/time \
+	kernel/comps/virtio \
+	kernel/libs/aster-util
 
 .PHONY: all install_osdk build tools run test docs check clean update_initramfs
 
@@ -110,12 +116,14 @@ run: build
 	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS)
 
 test:
-	@for dir in $(USERMODE_TESTABLE); do \
+	@for dir in $(NON_OSDK_CRATES); do \
 		(cd $$dir && cargo test) || exit 1; \
 	done
 
 ktest:
-	@for dir in $(KTEST_TESTABLE); do \
+	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
+	@for dir in $(OSDK_CRATES); do \
+		[ $$dir = "framework/libs/linux-bzimage/setup" ] && continue; \
 		(cd $$dir && cargo osdk test) || exit 1; \
 	done
 
@@ -128,8 +136,18 @@ format:
 	@./tools/format_all.sh
 
 check:
-	@./tools/format_all.sh --check   # Check Rust format issues
-	@cargo osdk clippy
+	@./tools/format_all.sh --check   	# Check Rust format issues
+	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
+	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | grep -v "members = \[" | tr -d '", \]' | sort > /tmp/all_crates
+	@echo $(NON_OSDK_CRATES) $(OSDK_CRATES) | tr ' ' '\n' | sort > /tmp/combined_crates
+	@diff -B /tmp/all_crates /tmp/combined_crates || (echo "Error: STD_CRATES and NOSTD_CRATES combined is not the same as all workspace members" && exit 1)
+	@rm /tmp/all_crates /tmp/combined_crates
+	@for dir in $(NON_OSDK_CRATES); do \
+		(cd $$dir && cargo clippy -- -D warnings) || exit 1; \
+	done
+	@for dir in $(OSDK_CRATES); do \
+		(cd $$dir && cargo osdk clippy) || exit 1; \
+	done
 
 clean:
 	@cargo clean

@@ -12,6 +12,10 @@ use super::{
     relocation::apply_rela_dyn_relocations,
 };
 
+// Suppress warnings since using todo!.
+#[allow(unreachable_code)]
+#[allow(unused_variables)]
+#[allow(clippy::diverging_sub_expression)]
 #[export_name = "efi_stub_entry"]
 extern "sysv64" fn efi_stub_entry(handle: Handle, mut system_table: SystemTable<Boot>) -> ! {
     unsafe {
@@ -19,13 +23,9 @@ extern "sysv64" fn efi_stub_entry(handle: Handle, mut system_table: SystemTable<
     }
     uefi_services::init(&mut system_table).unwrap();
 
-    // Suppress TODO warning.
-    #[allow(unreachable_code)]
-    efi_phase_boot(
-        handle,
-        system_table,
-        todo!("Use EFI boot services to fill boot params"),
-    );
+    let boot_params_ptr = todo!("Use EFI boot services to fill boot params");
+
+    efi_phase_boot(handle, system_table, boot_params_ptr);
 }
 
 #[export_name = "efi_handover_entry"]
@@ -65,7 +65,7 @@ fn efi_phase_boot(
         let Ok(loaded_image) = boot_services.open_protocol_exclusive::<LoadedImage>(handle) else {
             panic!("Failed to open LoadedImage protocol");
         };
-        loaded_image.data_type().clone()
+        loaded_image.data_type()
     };
     let (system_table, memory_map) = system_table.exit_boot_services(memory_type);
 
@@ -115,8 +115,8 @@ fn efi_phase_runtime(
             break;
         }
         e820_table[e820_entries] = linux_boot_params::BootE820Entry {
-            addr: md.phys_start as u64,
-            size: md.page_count as u64 * 4096,
+            addr: md.phys_start,
+            size: md.page_count * 4096,
             typ: match md.ty {
                 uefi::table::boot::MemoryType::CONVENTIONAL => linux_boot_params::E820Type::Ram,
                 uefi::table::boot::MemoryType::RESERVED => linux_boot_params::E820Type::Reserved,
