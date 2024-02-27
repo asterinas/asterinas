@@ -4,13 +4,20 @@
 //! It will depend on the kernel crate.
 //!
 
-use std::{fs, path::Path, str::FromStr};
+use std::{fs, path::{Path, PathBuf}, str::FromStr};
+
+use crate::util::get_cargo_metadata;
 
 pub fn new_base_crate(
     base_crate_path: impl AsRef<Path>,
     dep_crate_name: &str,
     dep_crate_path: impl AsRef<Path>,
 ) {
+    let workspace_root = {
+        let meta = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
+        PathBuf::from(meta.get("workspace_root").unwrap().as_str().unwrap())
+    };
+
     if base_crate_path.as_ref().exists() {
         std::fs::remove_dir_all(&base_crate_path).unwrap();
     }
@@ -47,12 +54,8 @@ pub fn new_base_crate(
     std::env::set_current_dir(&base_crate_path).unwrap();
 
     // Add linker.ld file
-    let linker_ld = include_str!("x86_64-custom.ld.template");
-    fs::write("x86_64-custom.ld", linker_ld).unwrap();
-
-    // Add target json file
-    let target_json = include_str!("x86_64-custom.json.template");
-    fs::write("x86_64-custom.json", target_json).unwrap();
+    let linker_ld = include_str!("x86_64.ld.template");
+    fs::write("x86_64.ld", linker_ld).unwrap();
 
     // Overrite the main.rs file
     let main_rs = include_str!("main.rs.template");
@@ -64,7 +67,7 @@ pub fn new_base_crate(
     add_manifest_dependency(dep_crate_name, dep_crate_path);
 
     // Copy the manifest configurations from the target crate to the base crate
-    copy_manifest_configurations(base_crate_path);
+    copy_profile_configurations(workspace_root);
 
     // Get back to the original directory
     std::env::set_current_dir(original_dir).unwrap();
@@ -100,8 +103,8 @@ fn add_manifest_dependency(crate_name: &str, crate_path: impl AsRef<Path>) {
     fs::write(mainfest_path, content).unwrap();
 }
 
-fn copy_manifest_configurations(target_crate_path: impl AsRef<Path>) {
-    let target_manifest_path = target_crate_path.as_ref().join("Cargo.toml");
+fn copy_profile_configurations(workspace_root: impl AsRef<Path>) {
+    let target_manifest_path = workspace_root.as_ref().join("Cargo.toml");
     let manifest_path = "Cargo.toml";
 
     let target_manifest: toml::Table = {

@@ -50,6 +50,7 @@ pub fn execute_run_command(config: &RunConfig) {
         &osdk_target_directory,
         &ws_target_directory,
         &required_build_config,
+        &[],
     );
 
     bundle.run(config);

@@ -3,13 +3,16 @@
 use std::process;
 
 use super::util::{cargo, COMMON_CARGO_ARGS};
-use crate::{commands::util::create_target_json, error::Errno, error_msg};
+use crate::{error::Errno, error_msg};
 
 pub fn execute_clippy_command() {
-    let target_json_path = create_target_json();
-
     let mut command = cargo();
-    command.arg("clippy").arg("-h");
+    command
+        .arg("clippy")
+        .arg("-h")
+        .arg("--target")
+        .arg("x86_64-unknown-none")
+        .args(COMMON_CARGO_ARGS);
     info!("Running `cargo clippy -h`");
     let output = command.output().unwrap();
     if !output.status.success() {
@@ -20,8 +23,11 @@ pub fn execute_clippy_command() {
     }
 
     let mut command = cargo();
-    command.arg("clippy").arg("--target").arg(target_json_path);
-    command.args(COMMON_CARGO_ARGS);
+    command
+        .arg("clippy")
+        .arg("--target")
+        .arg("x86_64-unknown-none")
+        .args(COMMON_CARGO_ARGS);
     // TODO: Add support for custom clippy args using OSDK commandline rather than hardcode it.
     command.args(["--", "-D", "warnings"]);
     let status = command.status().unwrap();

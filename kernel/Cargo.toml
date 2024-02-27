@@ -13,17 +13,5 @@ x86_64 = "0.14.2"
 aster-time = { path = "comps/time" }
 aster-framebuffer = { path = "comps/framebuffer" }
 
-[profile.dev]
-opt-level = 0
-debug = true
-lto = false
-panic = "unwind"
-
-[profile.release]
-opt-level = 3
-debug = false
-lto = false
-panic = "unwind"
-
 [features]
 intel_tdx = ["aster-frame/intel_tdx", "aster-nix/intel_tdx"]

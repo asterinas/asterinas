@@ -1,5 +1,5 @@
 [workspace]
-
+resolver = "2"
 members = [
     "framework/aster-frame",
     "framework/libs/align_ext",
@@ -28,7 +28,6 @@ members = [
     "kernel/libs/typeflags",
     "kernel/libs/typeflags-util",
 ]
-
 exclude = [
     "osdk",
     "target/osdk/base",

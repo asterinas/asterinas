@@ -52,13 +52,12 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     };
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&target_crate_dir).unwrap();
-    // Add `--cfg ktest` to RUSTFLAGS
-    std::env::set_var("RUSTFLAGS", "--cfg ktest");
     let bundle = do_build(
         default_bundle_directory,
         &osdk_target_directory,
         &ws_target_directory,
         &required_build_config,
+        &["--cfg ktest", "-C panic=unwind"],
     );
     std::env::remove_var("RUSTFLAGS");
     std::env::set_current_dir(original_dir).unwrap();

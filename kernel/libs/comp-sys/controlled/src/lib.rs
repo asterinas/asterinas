@@ -28,7 +28,7 @@ pub fn controlled(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let attr = attr.to_string();
-    if attr.len() != 0 {
+    if !attr.is_empty() {
         panic!("controlled cannot accept inner tokens.")
     }
     let mut tokens: proc_macro::TokenStream = quote!(
@@ -45,7 +45,7 @@ pub fn uncontrolled(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let attr = attr.to_string();
-    if attr.len() != 0 {
+    if !attr.is_empty() {
         panic!("uncontrolled cannot accept inner tokens.")
     }
     let mut tokens: proc_macro::TokenStream = quote!(
