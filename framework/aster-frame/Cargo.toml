@@ -16,7 +16,7 @@ buddy_system_allocator = "0.9.0"
 cfg-if = "1.0"
 gimli = { version = "0.28", default-features = false, features = ["read-core"] }
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
-int-to-c-enum = { path = "../../services/libs/int-to-c-enum" }
+int-to-c-enum = { path = "../../kernel/libs/int-to-c-enum" }
 intrusive-collections = "0.9.5"
 ktest = { path = "../libs/ktest" }
 lazy_static = { version = "1.0", features = ["spin_no_std"] }

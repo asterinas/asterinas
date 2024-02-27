@@ -14,7 +14,7 @@ header:
       - '**/Dockerfile.*'
     paths-ignore:
       # These directories are licensed under licenses other than MPL-2.0.
-      - 'services/libs/comp-sys/cargo-component'
+      - 'kernel/libs/comp-sys/cargo-component'
       - 'framework/libs/tdx-guest'
     license:
       content: |
@@ -40,7 +40,7 @@ header:
 
   # Files under cargo-component are licensed under Apache-2.0 or MIT license.
   - paths:
-      - 'services/libs/comp-sys/cargo-component/**'
+      - 'kernel/libs/comp-sys/cargo-component/**'
     paths-ignore:
       - '**/*.md'
       - '**/*.toml'
