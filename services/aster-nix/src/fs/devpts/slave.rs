@@ -2,10 +2,7 @@
 
 use super::*;
 use crate::{
-    device::PtySlave,
-    events::IoEvents,
-    fs::inode_handle::FileIo,
-    process::{signal::Poller, Gid, Uid},
+    device::PtySlave, events::IoEvents, fs::inode_handle::FileIo, process::signal::Poller,
 };
 
 /// Same major number with Linux, the minor number is the index of slave.

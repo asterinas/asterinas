@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
-use crate::{
-    device::PtyMaster, events::IoEvents, fs::inode_handle::FileIo, process::signal::Poller,
-};
+use crate::{events::IoEvents, fs::inode_handle::FileIo, process::signal::Poller};
 
 /// Same major number with Linux.
 const PTMX_MAJOR_NUM: u32 = 5;

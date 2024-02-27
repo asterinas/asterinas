@@ -51,14 +51,12 @@ bitflags = "1.3"
 ringbuf = { version = "0.3.2", default-features = false, features = ["alloc"] }
 keyable-arc = { path = "../libs/keyable-arc" }
 # unzip initramfs
-libflate = { git = "https://github.com/asterinas/libflate", rev = "b781da6", features = [
-    "no_std",
-] }
+libflate = { version ="2", default-features = false }
 core2 = { version = "0.4", default_features = false, features = ["alloc"] }
 lending-iterator = "0.1.7"
 spin = "0.9.4"
 vte = "0.10"
-lru = "0.9.0"
+lru = "0.12.3"
 log = "0.4"
 getrandom = { version = "0.2.10", default-features = false, features = [
     "rdrand",

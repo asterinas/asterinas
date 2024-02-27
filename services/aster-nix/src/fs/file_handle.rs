@@ -2,8 +2,6 @@
 
 //! Opend File Handle
 
-use core::any::Any;
-
 use crate::{
     events::{IoEvents, Observer},
     fs::{

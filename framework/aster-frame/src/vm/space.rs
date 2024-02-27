@@ -4,7 +4,7 @@ use core::ops::Range;
 
 use bitflags::bitflags;
 
-use super::{is_page_aligned, MapArea, MemorySet, Vaddr, VmFrameVec, VmIo};
+use super::{is_page_aligned, MapArea, MemorySet, VmFrameVec, VmIo};
 use crate::{arch::mm::PageTableFlags, config::PAGE_SIZE, prelude::*, sync::Mutex, Error};
 
 /// Virtual memory space.

@@ -342,9 +342,7 @@ impl GroupMetadata {
     }
 
     pub fn alloc_inode(&mut self, is_dir: bool) -> Option<u32> {
-        let Some(inode_idx) = self.inode_bitmap.alloc() else {
-            return None;
-        };
+        let inode_idx = self.inode_bitmap.alloc()?;
         self.dec_free_inodes();
         if is_dir {
             self.inc_dirs();
@@ -365,9 +363,7 @@ impl GroupMetadata {
     }
 
     pub fn alloc_block(&mut self) -> Option<u32> {
-        let Some(block_idx) = self.block_bitmap.alloc() else {
-            return None;
-        };
+        let block_idx = self.block_bitmap.alloc()?;
         self.dec_free_blocks();
         Some(block_idx as u32)
     }

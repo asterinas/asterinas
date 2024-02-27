@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::sync::SpinLock;
 use aster_network::AnyNetworkDevice;
 use aster_virtio::device::network::DEVICE_NAME;
 use smoltcp::{

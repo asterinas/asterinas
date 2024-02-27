@@ -95,7 +95,6 @@ pub mod tree;
 
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
-use core::result::Result;
 
 pub use ktest_proc_macro::ktest;
 
@@ -220,9 +219,7 @@ impl core::iter::Iterator for KtestIter {
     type Item = KtestItem;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let Some(ktest_item) = ktest_array!().get(self.index) else {
-            return None;
-        };
+        let ktest_item = ktest_array!().get(self.index)?;
         self.index += 1;
         Some(ktest_item.clone())
     }

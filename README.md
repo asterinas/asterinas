@@ -3,7 +3,9 @@
     A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux
 </p>
 
-[![Asterinas CI](https://github.com/asterinas/asterinas/actions/workflows/aster_ci.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/aster_ci.yml)
+[![Check License](https://github.com/asterinas/asterinas/actions/workflows/license_check.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/license_check.yml)
+[![Framework Test](https://github.com/asterinas/asterinas/actions/workflows/framework_test.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/framework_test.yml)
+[![Kernel Test](https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml)
 
 English | [中文版](README_CN.md)
 
@@ -51,7 +53,7 @@ git clone https://github.com/asterinas/asterinas
 2. Run a Docker container as the development environment.
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v ./asterinas:/root/asterinas asterinas/asterinas:0.3.1
+docker run -it --privileged --network=host --device=/dev/kvm -v ./asterinas:/root/asterinas asterinas/asterinas:0.4.0
 ```
 
 3. Install the Asterinas OSDK from source.

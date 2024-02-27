@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_rights::{Rights, TRights};
+use aster_rights::TRights;
 use inherit_methods_macro::inherit_methods;
 
 use super::*;
-use crate::{
-    events::IoEvents,
-    prelude::*,
-    process::{signal::Poller, Gid, Uid},
-};
+use crate::prelude::*;
 
 impl InodeHandle<Rights> {
     pub fn new(

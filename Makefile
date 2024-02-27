@@ -81,8 +81,8 @@ USERMODE_TESTABLE := \
     services/libs/typeflags-util
 
 # Maintain a list of kernel crates that can be tested with `cargo osdk test`
+# The framework is tested independently, thus not included here
 KTEST_TESTABLE := \
-    "framework/aster-frame" \
     "services/aster-nix" \
     "services/comps/block" \
     "services/comps/console" \

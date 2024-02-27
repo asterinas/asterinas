@@ -8,11 +8,6 @@ mod options;
 mod static_cap;
 pub mod vm_mapping;
 
-use alloc::{
-    collections::BTreeMap,
-    sync::{Arc, Weak},
-    vec::Vec,
-};
 use core::ops::Range;
 
 use align_ext::AlignExt;

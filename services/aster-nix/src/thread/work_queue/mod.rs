@@ -146,13 +146,10 @@ impl WorkQueue {
     /// the calling worker is located.
     fn dequeue(&self, request_cpu: u32) -> Option<Arc<WorkItem>> {
         let mut inner = self.inner.lock_irq_disabled();
-        let Some(index) = inner
+        let index = inner
             .pending_work_items
             .iter()
-            .position(|item| item.is_valid_cpu(request_cpu))
-        else {
-            return None;
-        };
+            .position(|item| item.is_valid_cpu(request_cpu))?;
         let item = inner.pending_work_items.remove(index);
         Some(item)
     }

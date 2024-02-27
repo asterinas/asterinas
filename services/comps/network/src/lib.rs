@@ -61,9 +61,7 @@ pub fn register_device(name: String, device: Arc<SpinLock<Box<dyn AnyNetworkDevi
 
 pub fn get_device(str: &str) -> Option<Arc<SpinLock<Box<dyn AnyNetworkDevice>>>> {
     let lock = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some((_, device)) = lock.get(str) else {
-        return None;
-    };
+    let (_, device) = lock.get(str)?;
     Some(device.clone())
 }
 

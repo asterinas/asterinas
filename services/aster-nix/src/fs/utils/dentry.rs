@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::string::String;
 use core::{
     sync::atomic::{AtomicU32, Ordering},
     time::Duration,

@@ -112,7 +112,6 @@ use alloc::sync::{Arc, Weak};
 use core::{
     borrow::Borrow,
     cmp::Ordering,
-    convert::AsRef,
     fmt,
     hash::{Hash, Hasher},
     marker::Unsize,

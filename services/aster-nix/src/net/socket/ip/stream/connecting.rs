@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::{connected::ConnectedStream, init::InitStream};

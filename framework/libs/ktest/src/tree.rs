@@ -13,7 +13,6 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::iter::{FromIterator, Iterator};
 
 use crate::{
     path::{KtestPath, PathElement},
