@@ -15,11 +15,13 @@ use crate::{
     transport::VirtioTransport,
 };
 
+const QUEUE_SIZE: usize = 2;
+
 pub struct ConsoleDevice {
     config: SafePtr<VirtioConsoleConfig, IoMem>,
     transport: Box<dyn VirtioTransport>,
-    receive_queue: SpinLock<VirtQueue>,
-    transmit_queue: SpinLock<VirtQueue>,
+    receive_queue: SpinLock<VirtQueue<QUEUE_SIZE>>,
+    transmit_queue: SpinLock<VirtQueue<QUEUE_SIZE>>,
     buffer: SpinLock<Box<[u8; PAGE_SIZE]>>,
     callbacks: SpinLock<Vec<&'static ConsoleCallback>>,
 }
@@ -100,9 +102,9 @@ impl ConsoleDevice {
         const RECV0_QUEUE_INDEX: u16 = 0;
         const TRANSMIT0_QUEUE_INDEX: u16 = 1;
         let receive_queue =
-            SpinLock::new(VirtQueue::new(RECV0_QUEUE_INDEX, 2, transport.as_mut()).unwrap());
+            SpinLock::new(VirtQueue::<2>::new(RECV0_QUEUE_INDEX, transport.as_mut()).unwrap());
         let transmit_queue =
-            SpinLock::new(VirtQueue::new(TRANSMIT0_QUEUE_INDEX, 2, transport.as_mut()).unwrap());
+            SpinLock::new(VirtQueue::<2>::new(TRANSMIT0_QUEUE_INDEX, transport.as_mut()).unwrap());
 
         let mut device = Self {
             config,

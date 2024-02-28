@@ -56,7 +56,7 @@ pub const FF: u8 = 0x15;
 pub const PWR: u8 = 0x16;
 pub const FF_STATUS: u8 = 0x17;
 
-const QUEUE_SIZE: u16 = 64;
+const QUEUE_SIZE: usize = 64;
 
 /// Virtual human interface devices such as keyboards, mice and tablets.
 ///
@@ -65,9 +65,9 @@ const QUEUE_SIZE: u16 = 64;
 /// making pass-through implementations on top of evdev easy.
 pub struct InputDevice {
     config: SafePtr<VirtioInputConfig, IoMem>,
-    event_queue: SpinLock<VirtQueue>,
-    status_queue: VirtQueue,
-    event_buf: SpinLock<Box<[VirtioInputEvent; QUEUE_SIZE as usize]>>,
+    event_queue: SpinLock<VirtQueue<QUEUE_SIZE>>,
+    status_queue: VirtQueue<QUEUE_SIZE>,
+    event_buf: SpinLock<Box<[VirtioInputEvent; QUEUE_SIZE]>>,
     #[allow(clippy::type_complexity)]
     callbacks: SpinLock<Vec<Arc<dyn Fn(InputEvent) + Send + Sync + 'static>>>,
     transport: Box<dyn VirtioTransport>,
@@ -77,10 +77,10 @@ impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let mut event_buf = Box::new([VirtioInputEvent::default(); QUEUE_SIZE as usize]);
-        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())
+        let mut event_buf = Box::new([VirtioInputEvent::default(); QUEUE_SIZE]);
+        let mut event_queue = VirtQueue::<QUEUE_SIZE>::new(QUEUE_EVENT, transport.as_mut())
             .expect("create event virtqueue failed");
-        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, transport.as_mut())
+        let status_queue = VirtQueue::<QUEUE_SIZE>::new(QUEUE_STATUS, transport.as_mut())
             .expect("create status virtqueue failed");
 
         for (i, event) in event_buf.as_mut().iter_mut().enumerate() {
@@ -145,7 +145,7 @@ impl InputDevice {
     pub fn pop_pending_event(&self) -> Option<VirtioInputEvent> {
         let mut lock = self.event_queue.lock();
         if let Ok((token, _)) = lock.pop_used() {
-            if token >= QUEUE_SIZE {
+            if token >= QUEUE_SIZE as u16 {
                 return None;
             }
             let event = &mut self.event_buf.lock()[token as usize];
