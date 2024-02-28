@@ -1,7 +1,7 @@
 # Accelerate OS development with Asterinas OSDK
 
 [![Crates.io](https://img.shields.io/crates/v/cargo-osdk.svg)](https://crates.io/crates/cargo-osdk)
-[![OSDK Test](https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml)
+[![OSDK Test](https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml/badge.svg?event=push)](https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml)
 
 ### What is it?
 

@@ -12,7 +12,7 @@ use crate::{
     cli::NewArgs,
     error::Errno,
     error_msg,
-    util::{cargo_new_lib, get_cargo_metadata, ASTER_FRAME_DEP, KTEST_DEP},
+    util::{cargo_new_lib, get_cargo_metadata, aster_crate_dep},
 };
 
 pub fn execute_new_command(args: &NewArgs) {
@@ -44,9 +44,9 @@ fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &st
 
     let dependencies = manifest.get_mut("dependencies").unwrap();
 
-    let aster_frame_dep = toml::Table::from_str(ASTER_FRAME_DEP).unwrap();
+    let aster_frame_dep = toml::Table::from_str(&aster_crate_dep("aster-frame")).unwrap();
     dependencies.as_table_mut().unwrap().extend(aster_frame_dep);
-    let ktest_dep = toml::Table::from_str(KTEST_DEP).unwrap();
+    let ktest_dep = toml::Table::from_str(&aster_crate_dep("ktest")).unwrap();
     dependencies.as_table_mut().unwrap().extend(ktest_dep);
 
     // If we created a workspace by `osdk new`, we should exclude the `base` crate from the workspace.

@@ -8,13 +8,16 @@ use std::{
 
 use crate::{error::Errno, error_msg};
 
-// FIXME: Crates belonging to Asterinas require a different dependency format. The dependency
-// should be specified using a relative path instead of a URL.
-// TODO: The dependency should be corrected when this branch is merged.
-pub const ASTER_FRAME_DEP: &str =
-    "aster-frame = { git = \"https://github.com/junyang-zh/asterinas\", branch = \"osdk\" }";
-pub const KTEST_DEP: &str =
-    "ktest = { git = \"https://github.com/junyang-zh/asterinas\", branch = \"osdk\" }";
+/// FIXME: We should publish the asterinas crates to a public registry
+/// and use the published version in the generated Cargo.toml.
+pub const ASTER_GIT_LINK: &str = "https://github.com/asterinas/asterinas";
+pub const ASTER_GIT_REV: &str = "7d0ea99";
+pub fn aster_crate_dep(crate_name: &str) -> String {
+    format!(
+        "{} = {{ git = \"{}\", rev = \"{}\" }}",
+        crate_name, ASTER_GIT_LINK, ASTER_GIT_REV
+    )
+}
 
 fn cargo() -> Command {
     Command::new("cargo")
