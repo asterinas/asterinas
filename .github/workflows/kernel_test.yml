@@ -16,8 +16,6 @@ jobs:
 
       - uses: actions/checkout@v4
       
-      - run: make install_osdk
-
       - name: Check
         id: check
         run: make check
@@ -30,8 +28,6 @@ jobs:
       - run: echo "Running in asterinas/asterinas:0.4.0"
 
       - uses: actions/checkout@v4
-
-      - run: make install_osdk
 
       - name: Usermode Unit test
         id: usermode_unit_test
@@ -51,8 +47,6 @@ jobs:
       - run: echo "Running in asterinas/asterinas:0.4.0"
 
       - uses: actions/checkout@v4
-
-      - run: make install_osdk
 
       - name: Boot Test (Multiboot)
         id: boot_test_mb

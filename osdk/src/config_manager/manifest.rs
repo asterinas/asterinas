@@ -150,7 +150,7 @@ fn check_args(arg_name: &str, args: &[String]) {
 /// Check cfg that is in the form that we can accept
 fn check_cfg(cfg: &str) {
     if SELECT_REGEX.captures(cfg).is_none() {
-        error_msg!("{} is not allowed to used after `qemu` in `OSDK.toml`. Currently we only allow cfgs like `cfg(select=\"foo\")`", cfg);
+        error_msg!("{} is not allowed to be used after `qemu` in `OSDK.toml`. Currently we only allow cfgs like `cfg(select=\"foo\")`", cfg);
         process::exit(Errno::ParseMetadata as _);
     }
 }

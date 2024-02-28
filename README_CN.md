@@ -1,9 +1,10 @@
 <p align="center">
     <img src="docs/src/images/logo_cn.svg" alt="asterinas-logo" width="620"><br>
-    一个安全、快速、通用的操作系统内核，使用Rust编写，并与Linux兼容
+    一个安全、快速、通用的操作系统内核，使用Rust编写，并与Linux兼容<br/>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml/badge.svg" alt="OSDK Test" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml/badge.svg" alt="Kernel Test" style="max-width: 100%;"></a>
+    <br/>
 </p>
-
-[![Asterinas CI](https://github.com/asterinas/asterinas/actions/workflows/aster_ci.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/aster_ci.yml)
 
 [English](README.md) | 中文版
 
@@ -50,13 +51,7 @@ git clone https://github.com/asterinas/asterinas
 docker run -it --privileged --network=host --device=/dev/kvm -v ./asterinas:/root/asterinas asterinas/asterinas:0.4.0
 ```
 
-3. 从源码编译安装 Asterinas OSDK
-
-```bash
-make install_osdk
-```
-
-4. 在容器内，进入项目文件夹构建并运行星绽。
+3. 在容器内，进入项目文件夹构建并运行星绽。
 
 ```bash
 make build
