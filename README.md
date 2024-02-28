@@ -1,10 +1,10 @@
 <p align="center">
     <img src="docs/src/images/logo_en.svg" alt="asterinas-logo" width="620"><br>
-    A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux
+    A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux<br/>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml/badge.svg" alt="OSDK Test" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml/badge.svg" alt="Kernel Test" style="max-width: 100%;"></a>
+    <br/>
 </p>
-
-[![Check License](https://github.com/asterinas/asterinas/actions/workflows/license_check.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/license_check.yml)
-[![Kernel Test](https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml/badge.svg)](https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml)
 
 English | [中文版](README_CN.md)
 
@@ -55,13 +55,7 @@ git clone https://github.com/asterinas/asterinas
 docker run -it --privileged --network=host --device=/dev/kvm -v ./asterinas:/root/asterinas asterinas/asterinas:0.4.0
 ```
 
-3. Install the Asterinas OSDK from source.
-
-```bash
-make install_osdk
-```
-
-4. Inside the container, go to the project folder to build and run Asterinas.
+3. Inside the container, go to the project folder to build and run Asterinas.
 
 ```bash
 make build

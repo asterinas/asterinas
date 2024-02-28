@@ -98,14 +98,18 @@ OSDK_CRATES := \
 	kernel/comps/virtio \
 	kernel/libs/aster-util
 
-.PHONY: all install_osdk build tools run test docs check clean update_initramfs
+.PHONY: all build tools run test docs check clean update_initramfs
 
 all: build
 
-install_osdk:
+# Install or update OSDK from source
+# To uninstall, do `cargo uninstall cargo-osdk`
+install_osdk: osdk
 	@cargo install cargo-osdk --path osdk
 
-build:
+~/.cargo/bin/cargo-osdk: install_osdk
+
+build: install_osdk ~/.cargo/bin/cargo-osdk
 	@make --no-print-directory -C regression
 	@cd kernel && cargo osdk build $(CARGO_OSDK_ARGS)
 
@@ -120,7 +124,7 @@ test:
 		(cd $$dir && cargo test) || exit 1; \
 	done
 
-ktest:
+ktest: install_osdk ~/.cargo/bin/cargo-osdk
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "framework/libs/linux-bzimage/setup" ] && continue; \
@@ -135,7 +139,7 @@ docs:
 format:
 	@./tools/format_all.sh
 
-check:
+check: install_osdk ~/.cargo/bin/cargo-osdk
 	@./tools/format_all.sh --check   	# Check Rust format issues
 	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
 	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | grep -v "members = \[" | tr -d '", \]' | sort > /tmp/all_crates
