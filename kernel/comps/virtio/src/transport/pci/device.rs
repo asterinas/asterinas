@@ -13,14 +13,13 @@ use aster_frame::{
     io_mem::IoMem,
     offset_of,
     trap::IrqCallbackFunction,
-    vm::DmaCoherent,
+    vm::Paddr,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::{info, warn};
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};
 use crate::{
-    queue::{AvailRing, Descriptor, UsedRing},
     transport::{
         pci::capability::{VirtioPciCapabilityData, VirtioPciCpabilityType},
         DeviceStatus, VirtioTransport, VirtioTransportError,
@@ -72,9 +71,9 @@ impl VirtioTransport for VirtioPciTransport {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
-        avail_ring_ptr: &SafePtr<AvailRing, DmaCoherent>,
-        used_ring_ptr: &SafePtr<UsedRing, DmaCoherent>,
+        descriptor_paddr: Paddr,
+        avail_ring_paddr: Paddr,
+        used_ring_paddr: Paddr,
     ) -> Result<(), VirtioTransportError> {
         if idx >= self.num_queues() {
             return Err(VirtioTransportError::InvalidArgs);
@@ -93,13 +92,13 @@ impl VirtioTransport for VirtioPciTransport {
             .write(&queue_size)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_desc)
-            .write(&(descriptor_ptr.paddr() as u64))
+            .write(&(descriptor_paddr as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_driver)
-            .write(&(avail_ring_ptr.paddr() as u64))
+            .write(&(avail_ring_paddr as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_device)
-            .write(&(used_ring_ptr.paddr() as u64))
+            .write(&(used_ring_paddr as u64))
             .unwrap();
         // Enable queue
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_enable)

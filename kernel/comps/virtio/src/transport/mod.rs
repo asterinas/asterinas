@@ -3,14 +3,11 @@
 use alloc::boxed::Box;
 use core::fmt::Debug;
 
-use aster_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::DmaCoherent};
+use aster_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::Paddr};
 use aster_util::safe_ptr::SafePtr;
 
 use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
-use crate::{
-    queue::{AvailRing, Descriptor, UsedRing},
-    VirtioDeviceType,
-};
+use crate::VirtioDeviceType;
 
 pub mod mmio;
 pub mod pci;
@@ -62,9 +59,9 @@ pub trait VirtioTransport: Sync + Send + Debug {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
-        avail_ring_ptr: &SafePtr<AvailRing, DmaCoherent>,
-        used_ring_ptr: &SafePtr<UsedRing, DmaCoherent>,
+        descriptor_paddr: Paddr,
+        avail_ring_paddr: Paddr,
+        used_ring_paddr: Paddr,
     ) -> Result<(), VirtioTransportError>;
 
     /// The max queue size of one virtqueue.

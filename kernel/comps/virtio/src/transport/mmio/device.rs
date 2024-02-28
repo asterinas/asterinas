@@ -12,7 +12,7 @@ use aster_frame::{
     offset_of,
     sync::RwLock,
     trap::IrqCallbackFunction,
-    vm::{DmaCoherent, PAGE_SIZE},
+    vm::{Paddr, PAGE_SIZE},
 };
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -20,7 +20,7 @@ use log::warn;
 
 use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};
 use crate::{
-    queue::{AvailRing, Descriptor, UsedRing},
+    queue::Descriptor,
     transport::{DeviceStatus, VirtioTransport, VirtioTransportError},
     VirtioDeviceType,
 };
@@ -95,9 +95,9 @@ impl VirtioTransport for VirtioMmioTransport {
         &mut self,
         idx: u16,
         queue_size: u16,
-        descriptor_ptr: &SafePtr<Descriptor, DmaCoherent>,
-        driver_ptr: &SafePtr<AvailRing, DmaCoherent>,
-        device_ptr: &SafePtr<UsedRing, DmaCoherent>,
+        descriptor_paddr: Paddr,
+        avail_ring_paddr: Paddr,
+        used_ring_paddr: Paddr,
     ) -> Result<(), VirtioTransportError> {
         field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
             .write(&(idx as u32))
@@ -112,10 +112,6 @@ impl VirtioTransport for VirtioMmioTransport {
             return Err(VirtioTransportError::InvalidArgs);
         }
 
-        let descriptor_paddr = descriptor_ptr.paddr();
-        let driver_paddr = driver_ptr.paddr();
-        let device_paddr = device_ptr.paddr();
-
         field_ptr!(&self.layout, VirtioMmioLayout, queue_num)
             .write(&(queue_size as u32))
             .unwrap();
@@ -124,7 +120,7 @@ impl VirtioTransport for VirtioMmioTransport {
             VirtioMmioVersion::Legacy => {
                 // The area should be continuous
                 assert_eq!(
-                    driver_paddr - descriptor_paddr,
+                    avail_ring_paddr - descriptor_paddr,
                     size_of::<Descriptor>() * queue_size as usize
                 );
                 // Descriptor paddr should align
@@ -146,17 +142,17 @@ impl VirtioTransport for VirtioMmioTransport {
                     .unwrap();
 
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_driver_low)
-                    .write(&(driver_paddr as u32))
+                    .write(&(avail_ring_paddr as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_driver_high)
-                    .write(&((driver_paddr >> 32) as u32))
+                    .write(&((avail_ring_paddr >> 32) as u32))
                     .unwrap();
 
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_device_low)
-                    .write(&(device_paddr as u32))
+                    .write(&(used_ring_paddr as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_device_high)
-                    .write(&((device_paddr >> 32) as u32))
+                    .write(&((used_ring_paddr >> 32) as u32))
                     .unwrap();
                 // enable queue
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)

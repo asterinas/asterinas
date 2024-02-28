@@ -11,7 +11,7 @@ use core::{
 use aster_frame::{
     io_mem::IoMem,
     offset_of,
-    vm::{DmaCoherent, VmAllocOptions},
+    vm::{DmaCoherent, VmAllocOptions, PAGE_SIZE},
 };
 use aster_rights::{Dup, TRightSet, TRights, Write};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -32,151 +32,115 @@ pub enum QueueError {
 
 /// The mechanism for bulk data transport on virtio devices.
 ///
-/// Each device can have zero or more virtqueues.
+/// A device can have zero or several virtqueues.
+///
+/// The const parameter `SIZE` specifies the size of the queue,
+/// correlating to the number of descriptors, and the number of slots
+/// in both the available and used rings.
 #[derive(Debug)]
-pub struct VirtQueue {
-    /// Descriptor table
-    descs: Vec<SafePtr<Descriptor, DmaCoherent>>,
-    /// Available ring
-    avail: SafePtr<AvailRing, DmaCoherent>,
-    /// Used ring
-    used: SafePtr<UsedRing, DmaCoherent>,
-    /// point to notify address
+pub struct VirtQueue<const SIZE: usize> {
+    /// The index of the queue
+    idx: u16,
+    /// The descriptor table
+    desc_table: DescTable,
+    /// The available ring
+    aval_ring: AvailRing<SIZE>,
+    /// The used ring
+    used_ring: UsedRing<SIZE>,
+    /// The notify pointer
     notify: SafePtr<u32, IoMem>,
-
-    /// The index of queue
-    queue_idx: u32,
-    /// The size of the queue.
-    ///
-    /// This is both the number of descriptors, and the number of slots in the available and used
-    /// rings.
-    queue_size: u16,
-    /// The number of used queues.
-    num_used: u16,
-    /// The head desc index of the free list.
-    free_head: u16,
-    /// the index of the next avail ring index
-    avail_idx: u16,
-    /// last service used index
-    last_used_idx: u16,
 }
 
-impl VirtQueue {
-    /// Create a new VirtQueue.
-    pub(crate) fn new(
-        idx: u16,
-        size: u16,
-        transport: &mut dyn VirtioTransport,
-    ) -> Result<Self, QueueError> {
-        if !size.is_power_of_two() {
+impl<const SIZE: usize> VirtQueue<SIZE> {
+    /// Creates a new `VirtQueue`.
+    pub(crate) fn new(idx: u16, transport: &mut dyn VirtioTransport) -> Result<Self, QueueError> {
+        if !SIZE.is_power_of_two()
+            || SIZE > u16::MAX as usize
+            || SIZE > transport.max_queue_size(idx).unwrap() as usize
+        {
             return Err(QueueError::InvalidArgs);
         }
 
-        let (descriptor_ptr, avail_ring_ptr, used_ring_ptr) = if transport.is_legacy_version() {
-            // FIXME: How about pci legacy?
-            // Currently, we use one VmFrame to place the descriptors and avaliable rings, one VmFrame to place used rings
-            // because the virtio-mmio legacy required the address to be continuous. The max queue size is 128.
-            if size > 128 {
-                return Err(QueueError::InvalidArgs);
-            }
-            let desc_size = size_of::<Descriptor>() * size as usize;
+        let (descriptor_ptr, avail_ring_ptr, used_ring_ptr) = {
+            let desc_size = size_of::<Descriptor>() * SIZE;
+            let avail_size = size_of::<AvailRingBuf<SIZE>>();
+            let used_size = size_of::<UsedRingBuf<SIZE>>();
 
-            let (seg1, seg2) = {
-                let continue_segment = VmAllocOptions::new(2)
-                    .is_contiguous(true)
-                    .alloc_contiguous()
-                    .unwrap();
-                let seg1 = continue_segment.range(0..1);
-                let seg2 = continue_segment.range(1..2);
-                (seg1, seg2)
-            };
-            let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
-                SafePtr::new(DmaCoherent::map(seg1, true).unwrap(), 0);
-            let mut avail_frame_ptr: SafePtr<AvailRing, DmaCoherent> =
-                desc_frame_ptr.clone().cast();
-            avail_frame_ptr.byte_add(desc_size);
-            let used_frame_ptr: SafePtr<UsedRing, DmaCoherent> =
-                SafePtr::new(DmaCoherent::map(seg2, true).unwrap(), 0);
-            (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
-        } else {
-            if size > 256 {
-                return Err(QueueError::InvalidArgs);
+            if transport.is_legacy_version() {
+                // FIXME: How about pci legacy?
+                // Currently, we use one VmSegment to place the descriptors and avaliable rings, one VmSegment to place used rings
+                // because the virtio-mmio legacy required the address to be continuous.
+                let (desc_avail_seg, used_seg) = {
+                    let desc_avail_num_pages = (desc_size + avail_size).div_ceil(PAGE_SIZE);
+                    let used_num_pages = used_size.div_ceil(PAGE_SIZE);
+                    let total_pages = desc_avail_num_pages + used_num_pages;
+                    let segment = VmAllocOptions::new(total_pages)
+                        .is_contiguous(true)
+                        .alloc_contiguous()
+                        .unwrap();
+                    let desc_avail_seg = segment.range(0..desc_avail_num_pages);
+                    let used_seg = segment.range(desc_avail_num_pages..total_pages);
+                    (desc_avail_seg, used_seg)
+                };
+
+                let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
+                    SafePtr::new(DmaCoherent::map(desc_avail_seg, true).unwrap(), 0);
+                let mut avail_frame_ptr: SafePtr<AvailRingBuf<SIZE>, DmaCoherent> =
+                    desc_frame_ptr.clone().cast();
+                avail_frame_ptr.byte_add(desc_size);
+                let used_frame_ptr: SafePtr<UsedRingBuf<SIZE>, DmaCoherent> =
+                    SafePtr::new(DmaCoherent::map(used_seg, true).unwrap(), 0);
+                (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
+            } else {
+                let (desc_seg, avail_seg, used_seg) = {
+                    let desc_num_pages = desc_size.div_ceil(PAGE_SIZE);
+                    let avail_num_pages = avail_size.div_ceil(PAGE_SIZE);
+                    let used_num_pages = used_size.div_ceil(PAGE_SIZE);
+                    let total_pages = desc_num_pages + avail_num_pages + used_num_pages;
+                    let segment = VmAllocOptions::new(total_pages)
+                        .is_contiguous(true)
+                        .alloc_contiguous()
+                        .unwrap();
+                    let desc_seg = segment.range(0..desc_num_pages);
+                    let avail_seg = segment.range(desc_num_pages..desc_num_pages + avail_num_pages);
+                    let used_seg = segment.range(desc_num_pages + avail_num_pages..total_pages);
+                    (desc_seg, avail_seg, used_seg)
+                };
+
+                let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
+                    SafePtr::new(DmaCoherent::map(desc_seg, true).unwrap(), 0);
+                let avail_frame_ptr: SafePtr<AvailRingBuf<SIZE>, DmaCoherent> =
+                    SafePtr::new(DmaCoherent::map(avail_seg, true).unwrap(), 0);
+                let used_frame_ptr: SafePtr<UsedRingBuf<SIZE>, DmaCoherent> =
+                    SafePtr::new(DmaCoherent::map(used_seg, true).unwrap(), 0);
+                (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
             }
-            (
-                SafePtr::new(
-                    DmaCoherent::map(
-                        VmAllocOptions::new(1)
-                            .is_contiguous(true)
-                            .alloc_contiguous()
-                            .unwrap(),
-                        true,
-                    )
-                    .unwrap(),
-                    0,
-                ),
-                SafePtr::new(
-                    DmaCoherent::map(
-                        VmAllocOptions::new(1)
-                            .is_contiguous(true)
-                            .alloc_contiguous()
-                            .unwrap(),
-                        true,
-                    )
-                    .unwrap(),
-                    0,
-                ),
-                SafePtr::new(
-                    DmaCoherent::map(
-                        VmAllocOptions::new(1)
-                            .is_contiguous(true)
-                            .alloc_contiguous()
-                            .unwrap(),
-                        true,
-                    )
-                    .unwrap(),
-                    0,
-                ),
-            )
         };
         debug!("queue_desc start paddr:{:x?}", descriptor_ptr.paddr());
         debug!("queue_driver start paddr:{:x?}", avail_ring_ptr.paddr());
         debug!("queue_device start paddr:{:x?}", used_ring_ptr.paddr());
 
+        let queue_size = SIZE as u16;
         transport
-            .set_queue(idx, size, &descriptor_ptr, &avail_ring_ptr, &used_ring_ptr)
+            .set_queue(
+                idx,
+                queue_size,
+                descriptor_ptr.paddr(),
+                avail_ring_ptr.paddr(),
+                used_ring_ptr.paddr(),
+            )
             .unwrap();
-        let mut descs = Vec::with_capacity(size as usize);
-        descs.push(descriptor_ptr);
-        for i in 0..size as usize {
-            let mut desc = descs.get(i).unwrap().clone();
-            desc.add(1);
-            descs.push(desc);
-        }
 
-        let notify = transport.get_notify_ptr(idx).unwrap();
-        // Link descriptors together.
-        for i in 0..(size - 1) {
-            let temp = descs.get(i as usize).unwrap();
-            field_ptr!(temp, Descriptor, next).write(&(i + 1)).unwrap();
-        }
-        field_ptr!(&avail_ring_ptr, AvailRing, flags)
-            .write(&(0u16))
-            .unwrap();
         Ok(VirtQueue {
-            descs,
-            avail: avail_ring_ptr,
-            used: used_ring_ptr,
-            notify,
-            queue_size: size,
-            queue_idx: idx as u32,
-            num_used: 0,
-            free_head: 0,
-            avail_idx: 0,
-            last_used_idx: 0,
+            idx,
+            desc_table: DescTable::new(descriptor_ptr, queue_size),
+            aval_ring: AvailRing::new(avail_ring_ptr),
+            used_ring: UsedRing::new(used_ring_ptr),
+            notify: transport.get_notify_ptr(idx).unwrap(),
         })
     }
 
-    /// Add dma buffers to the virtqueue, return a token.
+    /// Adds dma buffers to the virtqueue, returns a token.
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
     pub fn add_dma_buf<T: DmaBuf>(
@@ -187,66 +151,16 @@ impl VirtQueue {
         if inputs.is_empty() && outputs.is_empty() {
             return Err(QueueError::InvalidArgs);
         }
-        if inputs.len() + outputs.len() + self.num_used as usize > self.queue_size as usize {
+        if inputs.len() + outputs.len() > self.desc_table.num_free_desc() {
             return Err(QueueError::BufferTooSmall);
         }
 
-        // allocate descriptors from free list
-        let head = self.free_head;
-        let mut last = self.free_head;
-        for input in inputs.iter() {
-            let desc = &self.descs[self.free_head as usize];
-            set_dma_buf(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), *input);
-            field_ptr!(desc, Descriptor, flags)
-                .write(&DescFlags::NEXT)
-                .unwrap();
-            last = self.free_head;
-            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
-        }
-        for output in outputs.iter() {
-            let desc = &mut self.descs[self.free_head as usize];
-            set_dma_buf(
-                &desc.borrow_vm().restrict::<TRights![Write, Dup]>(),
-                *output,
-            );
-            field_ptr!(desc, Descriptor, flags)
-                .write(&(DescFlags::NEXT | DescFlags::WRITE))
-                .unwrap();
-            last = self.free_head;
-            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
-        }
-        // set last_elem.next = NULL
-        {
-            let desc = &mut self.descs[last as usize];
-            let mut flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
-            flags.remove(DescFlags::NEXT);
-            field_ptr!(desc, Descriptor, flags).write(&flags).unwrap();
-        }
-        self.num_used += (inputs.len() + outputs.len()) as u16;
-
-        let avail_slot = self.avail_idx & (self.queue_size - 1);
-
-        {
-            let ring_ptr: SafePtr<[u16; 64], &DmaCoherent> =
-                field_ptr!(&self.avail, AvailRing, ring);
-            let mut ring_slot_ptr = ring_ptr.cast::<u16>();
-            ring_slot_ptr.add(avail_slot as usize);
-            ring_slot_ptr.write(&head).unwrap();
-        }
-        // write barrier
-        fence(Ordering::SeqCst);
-
-        // increase head of avail ring
-        self.avail_idx = self.avail_idx.wrapping_add(1);
-        field_ptr!(&self.avail, AvailRing, idx)
-            .write(&self.avail_idx)
-            .unwrap();
-
-        fence(Ordering::SeqCst);
-        Ok(head)
+        let desc_head = self.desc_table.add_dma_buf(inputs, outputs);
+        self.aval_ring.push_desc(desc_head);
+        Ok(desc_head)
     }
 
-    /// Add buffers to the virtqueue, return a token. **This function will be removed in the future.**
+    /// Adds buffers to the virtqueue, return a token. **This function will be removed in the future.**
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
     pub fn add_buf(&mut self, inputs: &[&[u8]], outputs: &[&mut [u8]]) -> Result<u16, QueueError> {
@@ -261,183 +175,394 @@ impl VirtQueue {
         if inputs.is_empty() && outputs.is_empty() {
             return Err(QueueError::InvalidArgs);
         }
-        if inputs.len() + outputs.len() + self.num_used as usize > self.queue_size as usize {
+        if inputs.len() + outputs.len() > self.desc_table.num_free_desc() {
             return Err(QueueError::BufferTooSmall);
         }
 
-        // allocate descriptors from free list
+        let desc_head = self.desc_table.add_buf(inputs, outputs);
+        self.aval_ring.push_desc(desc_head);
+        Ok(desc_head)
+    }
+
+    /// Returns whether there is an used element that can pop.
+    pub fn can_pop(&self) -> bool {
+        self.used_ring.can_pop()
+    }
+
+    /// Returns the number of free descriptors.
+    pub fn num_free_desc(&self) -> usize {
+        self.desc_table.num_free_desc()
+    }
+
+    /// Pops and returns a token along with the buffer length that
+    /// the device has filled, taken from the used ring buffer.
+    ///
+    /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
+    pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
+        let Some(used_elem_ptr) = self.used_ring.pop_elem() else {
+            return Err(QueueError::NotReady);
+        };
+
+        let idx = field_ptr!(&used_elem_ptr, UsedElem, idx).read().unwrap();
+        let len = field_ptr!(&used_elem_ptr, UsedElem, len).read().unwrap();
+        self.desc_table.recycle_descriptors(idx as u16);
+        self.used_ring.inc_last_idx();
+        Ok((idx as u16, len))
+    }
+
+    /// If the given token is next on the used ring buffer,
+    /// pops and returns it along with the buffer length that
+    /// the device has filled.
+    ///
+    /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
+    pub fn pop_used_with_token(&mut self, token: u16) -> Result<u32, QueueError> {
+        let Some(used_elem_ptr) = self.used_ring.pop_elem() else {
+            return Err(QueueError::NotReady);
+        };
+
+        let idx = field_ptr!(&used_elem_ptr, UsedElem, idx).read().unwrap();
+        if idx as u16 != token {
+            return Err(QueueError::WrongToken);
+        }
+        let len = field_ptr!(&used_elem_ptr, UsedElem, len).read().unwrap();
+        self.desc_table.recycle_descriptors(idx as u16);
+        self.used_ring.inc_last_idx();
+        Ok(len)
+    }
+
+    /// Returns the size.
+    pub fn size(&self) -> u16 {
+        SIZE as _
+    }
+
+    /// Returns whether the driver should notify the device.
+    pub fn should_notify(&self) -> bool {
+        self.used_ring.should_notify()
+    }
+
+    /// Notifies the given queue on the device.
+    pub fn notify(&mut self) {
+        self.notify.write(&(self.idx as u32)).unwrap();
+    }
+}
+
+#[derive(Debug)]
+struct DescTable {
+    /// The descriptors
+    descs: Vec<SafePtr<Descriptor, DmaCoherent>>,
+    /// The number of used descriptors
+    num_used: u16,
+    /// The head index of the free descripters
+    free_head: u16,
+}
+
+#[repr(C, align(16))]
+#[derive(Debug, Default, Copy, Clone, Pod)]
+pub(crate) struct Descriptor {
+    addr: u64,
+    len: u32,
+    flags: DescFlags,
+    next: u16,
+}
+
+bitflags! {
+    /// Descriptor flags
+    #[derive(Pod, Default)]
+    #[repr(C)]
+    struct DescFlags: u16 {
+        const NEXT = 1;
+        const WRITE = 2;
+        const INDIRECT = 4;
+    }
+}
+
+impl DescTable {
+    pub fn new(start_desc_ptr: SafePtr<Descriptor, DmaCoherent>, size: u16) -> Self {
+        // Initializes the descriptors and links them together
+        let descs = {
+            let mut descs = Vec::with_capacity(size as usize);
+            descs.push(start_desc_ptr);
+            for idx in 0..size {
+                let mut desc = descs.get(idx as usize).unwrap().clone();
+                let next_idx = idx + 1;
+                if next_idx != size {
+                    field_ptr!(&desc, Descriptor, next)
+                        .write(&(next_idx))
+                        .unwrap();
+                    desc.add(1);
+                    descs.push(desc);
+                } else {
+                    field_ptr!(&desc, Descriptor, next).write(&(0u16)).unwrap();
+                }
+            }
+            descs
+        };
+
+        Self {
+            descs,
+            num_used: 0,
+            free_head: 0,
+        }
+    }
+
+    pub fn num_free_desc(&self) -> usize {
+        self.descs.len() - self.num_used as usize
+    }
+
+    pub fn num_used(&self) -> usize {
+        self.num_used as usize
+    }
+
+    pub fn add_dma_buf<T: DmaBuf>(&mut self, inputs: &[&T], outputs: &[&T]) -> u16 {
+        // Allocates descriptors from the free list
         let head = self.free_head;
-        let mut last = self.free_head;
+        let mut tail = self.free_head;
         for input in inputs.iter() {
             let desc = &self.descs[self.free_head as usize];
-            set_buf_slice(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), input);
+            set_dma_buf(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), *input);
             field_ptr!(desc, Descriptor, flags)
                 .write(&DescFlags::NEXT)
                 .unwrap();
-            last = self.free_head;
+            tail = self.free_head;
             self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
         }
+
         for output in outputs.iter() {
             let desc = &mut self.descs[self.free_head as usize];
-            set_buf_slice(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), output);
+            set_dma_buf(
+                &desc.borrow_vm().restrict::<TRights![Write, Dup]>(),
+                *output,
+            );
             field_ptr!(desc, Descriptor, flags)
                 .write(&(DescFlags::NEXT | DescFlags::WRITE))
                 .unwrap();
-            last = self.free_head;
+            tail = self.free_head;
             self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
         }
-        // set last_elem.next = NULL
+
+        // Removes the NEXT flag for the tail desc
         {
-            let desc = &mut self.descs[last as usize];
+            let desc = &mut self.descs[tail as usize];
             let mut flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
             flags.remove(DescFlags::NEXT);
             field_ptr!(desc, Descriptor, flags).write(&flags).unwrap();
         }
         self.num_used += (inputs.len() + outputs.len()) as u16;
 
-        let avail_slot = self.avail_idx & (self.queue_size - 1);
+        head
+    }
 
-        {
-            let ring_ptr: SafePtr<[u16; 64], &DmaCoherent> =
-                field_ptr!(&self.avail, AvailRing, ring);
-            let mut ring_slot_ptr = ring_ptr.cast::<u16>();
-            ring_slot_ptr.add(avail_slot as usize);
-            ring_slot_ptr.write(&head).unwrap();
+    pub fn add_buf(&mut self, inputs: &[&[u8]], outputs: &[&mut [u8]]) -> u16 {
+        // Allocates descriptors from the free list
+        let head = self.free_head;
+        let mut tail = self.free_head;
+        for input in inputs.iter() {
+            let desc = &self.descs[self.free_head as usize];
+            set_buf_slice(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), input);
+            field_ptr!(desc, Descriptor, flags)
+                .write(&DescFlags::NEXT)
+                .unwrap();
+            tail = self.free_head;
+            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
         }
-        // write barrier
-        fence(Ordering::SeqCst);
 
-        // increase head of avail ring
-        self.avail_idx = self.avail_idx.wrapping_add(1);
-        field_ptr!(&self.avail, AvailRing, idx)
-            .write(&self.avail_idx)
-            .unwrap();
+        for output in outputs.iter() {
+            let desc = &mut self.descs[self.free_head as usize];
+            set_buf_slice(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), output);
+            field_ptr!(desc, Descriptor, flags)
+                .write(&(DescFlags::NEXT | DescFlags::WRITE))
+                .unwrap();
+            tail = self.free_head;
+            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
+        }
 
-        fence(Ordering::SeqCst);
-        Ok(head)
+        // Removes the NEXT flag for the tail descriptor
+        {
+            let desc = &mut self.descs[tail as usize];
+            let mut flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
+            flags.remove(DescFlags::NEXT);
+            field_ptr!(desc, Descriptor, flags).write(&flags).unwrap();
+        }
+        self.num_used += (inputs.len() + outputs.len()) as u16;
+
+        head
     }
 
-    /// Whether there is a used element that can pop.
-    pub fn can_pop(&self) -> bool {
-        self.last_used_idx != field_ptr!(&self.used, UsedRing, idx).read().unwrap()
-    }
-
-    /// The number of free descriptors.
-    pub fn available_desc(&self) -> usize {
-        (self.queue_size - self.num_used) as usize
-    }
-
-    /// Recycle descriptors in the list specified by head.
+    /// Recycles descriptors from the beginning of a chain of descriptors.
     ///
     /// This will push all linked descriptors at the front of the free list.
-    fn recycle_descriptors(&mut self, mut head: u16) {
-        let origin_free_head = self.free_head;
-        self.free_head = head;
+    pub fn recycle_descriptors(&mut self, mut head: u16) {
         let last_free_head = if head == 0 {
-            self.queue_size - 1
+            self.descs.len() as u16 - 1
         } else {
             head - 1
         };
-        let temp_desc = &mut self.descs[last_free_head as usize];
-        field_ptr!(temp_desc, Descriptor, next)
+        let last_free_desc = &mut self.descs[last_free_head as usize];
+        field_ptr!(last_free_desc, Descriptor, next)
             .write(&head)
             .unwrap();
+
+        let origin_free_head = self.free_head;
+        self.free_head = head;
         loop {
             let desc = &mut self.descs[head as usize];
+            // Sets the buffer address and length to 0
+            field_ptr!(desc, Descriptor, addr).write(&(0u64)).unwrap();
+            field_ptr!(desc, Descriptor, len).write(&(0u32)).unwrap();
+
             let flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
             self.num_used -= 1;
+
             if flags.contains(DescFlags::NEXT) {
                 head = field_ptr!(desc, Descriptor, next).read().unwrap();
             } else {
                 field_ptr!(desc, Descriptor, next)
                     .write(&origin_free_head)
                     .unwrap();
-                return;
+                break;
             }
         }
     }
+}
 
-    /// Get a token from device used buffers, return (token, len).
-    ///
-    /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
-    pub fn pop_used(&mut self) -> Result<(u16, u32), QueueError> {
-        if !self.can_pop() {
-            return Err(QueueError::NotReady);
+/// The available ring is utilized by the driver to provide buffers
+/// to the device, where each entry in the ring corresponds to the
+/// head of the descriptors chain.
+/// This ring is written to by the driver and read by the device.
+#[derive(Debug)]
+struct AvailRing<const SIZE: usize> {
+    /// The ring buffer
+    ring_ptr: SafePtr<AvailRingBuf<SIZE>, DmaCoherent>,
+    /// The next index in the ring buffer
+    next_idx: u16,
+}
+
+#[repr(C, align(2))]
+#[derive(Debug, Copy, Clone, Pod)]
+struct AvailRingBuf<const SIZE: usize> {
+    /// The flag
+    flags: u16,
+    /// A driver MUST NOT decrement the idx.
+    idx: u16,
+    // The actual ring
+    ring: [u16; SIZE],
+    // Unused
+    used_event: u16,
+}
+
+impl<const SIZE: usize> AvailRing<SIZE> {
+    pub fn new(ring_ptr: SafePtr<AvailRingBuf<SIZE>, DmaCoherent>) -> Self {
+        field_ptr!(&ring_ptr, AvailRingBuf<SIZE>, flags)
+            .write(&(0u16))
+            .unwrap();
+
+        Self {
+            ring_ptr,
+            next_idx: 0,
         }
-        // read barrier
-        fence(Ordering::SeqCst);
+    }
 
-        let last_used_slot = self.last_used_idx & (self.queue_size - 1);
-        let element_ptr = {
-            let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8);
-            ptr.cast::<UsedElem>()
+    pub fn push_desc(&mut self, head: u16) {
+        let idx_ptr = {
+            let inner_ring_ptr: SafePtr<[u16; SIZE], &DmaCoherent> =
+                field_ptr!(&self.ring_ptr, AvailRingBuf<SIZE>, ring);
+            let mut idx_ptr = inner_ring_ptr.cast::<u16>();
+            let next_slot = self.next_idx & (SIZE as u16 - 1);
+            idx_ptr.add(next_slot as usize);
+            idx_ptr
         };
-        let index = field_ptr!(&element_ptr, UsedElem, id).read().unwrap();
-        let len = field_ptr!(&element_ptr, UsedElem, len).read().unwrap();
+        idx_ptr.write(&head).unwrap();
 
-        self.recycle_descriptors(index as u16);
-        self.last_used_idx = self.last_used_idx.wrapping_add(1);
-
-        Ok((index as u16, len))
-    }
-
-    /// If the given token is next on the device used queue, pops it and returns the total buffer
-    /// length which was used (written) by the device.
-    ///
-    /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
-    pub fn pop_used_with_token(&mut self, token: u16) -> Result<u32, QueueError> {
-        if !self.can_pop() {
-            return Err(QueueError::NotReady);
-        }
-        // read barrier
+        // Write barrier so that device sees changes to descriptor table
+        // and available ring before change to available index.
         fence(Ordering::SeqCst);
 
-        let last_used_slot = self.last_used_idx & (self.queue_size - 1);
-        let element_ptr = {
-            let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8);
-            ptr.cast::<UsedElem>()
-        };
-        let index = field_ptr!(&element_ptr, UsedElem, id).read().unwrap();
-        let len = field_ptr!(&element_ptr, UsedElem, len).read().unwrap();
+        self.next_idx = self.next_idx.wrapping_add(1);
+        field_ptr!(&self.ring_ptr, AvailRingBuf<SIZE>, idx)
+            .write(&self.next_idx)
+            .unwrap();
 
-        if index as u16 != token {
-            return Err(QueueError::WrongToken);
-        }
-
-        self.recycle_descriptors(index as u16);
-        self.last_used_idx = self.last_used_idx.wrapping_add(1);
-
-        Ok(len)
-    }
-
-    /// Return size of the queue.
-    pub fn size(&self) -> u16 {
-        self.queue_size
-    }
-
-    /// whether the driver should notify the device
-    pub fn should_notify(&self) -> bool {
-        // read barrier
+        // Write barrier so that device can see change to available
+        // index after this method returns.
         fence(Ordering::SeqCst);
-        let flags = field_ptr!(&self.used, UsedRing, flags).read().unwrap();
-        flags & 0x0001u16 == 0u16
-    }
-
-    /// notify that there are available rings
-    pub fn notify(&mut self) {
-        self.notify.write(&self.queue_idx).unwrap();
     }
 }
 
-#[repr(C, align(16))]
+/// The used ring is where the device returns buffers once it is done with them:
+/// it is only written to by the device, and read by the driver.
+#[derive(Debug)]
+struct UsedRing<const SIZE: usize> {
+    /// The ring buffer
+    ring_ptr: SafePtr<UsedRingBuf<SIZE>, DmaCoherent>,
+    /// The last index of the ring buffer
+    last_idx: u16,
+}
+
+#[repr(C, align(4))]
+#[derive(Debug, Copy, Clone, Pod)]
+struct UsedRingBuf<const SIZE: usize> {
+    // the flag
+    flags: u16,
+    // the next index of the used element in ring array
+    idx: u16,
+    // the actual ring
+    ring: [UsedElem; SIZE],
+    // unused
+    avail_event: u16, // unused
+}
+
+#[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
-pub struct Descriptor {
-    addr: u64,
+struct UsedElem {
+    idx: u32,
     len: u32,
-    flags: DescFlags,
-    next: u16,
+}
+
+impl<const SIZE: usize> UsedRing<SIZE> {
+    pub fn new(ring_ptr: SafePtr<UsedRingBuf<SIZE>, DmaCoherent>) -> Self {
+        Self {
+            ring_ptr,
+            last_idx: 0,
+        }
+    }
+
+    pub fn can_pop(&self) -> bool {
+        // Read barrier to read a fresh value from the device
+        fence(Ordering::SeqCst);
+
+        self.last_idx
+            != field_ptr!(&self.ring_ptr, UsedRingBuf<SIZE>, idx)
+                .read()
+                .unwrap()
+    }
+
+    pub fn pop_elem(&mut self) -> Option<SafePtr<UsedElem, &DmaCoherent>> {
+        if !self.can_pop() {
+            return None;
+        }
+
+        let inner_ring_ptr: SafePtr<[UsedElem; SIZE], &DmaCoherent> =
+            field_ptr!(&self.ring_ptr, UsedRingBuf<SIZE>, ring);
+        let mut elem_ptr = inner_ring_ptr.cast::<UsedElem>();
+        let last_slot = self.last_idx & (SIZE as u16 - 1);
+        elem_ptr.add(last_slot as usize);
+
+        Some(elem_ptr)
+    }
+
+    pub fn inc_last_idx(&mut self) {
+        self.last_idx = self.last_idx.wrapping_add(1);
+    }
+
+    pub fn should_notify(&self) -> bool {
+        // Read barrier to read a fresh value from the device
+        fence(Ordering::SeqCst);
+
+        let flags: u16 = field_ptr!(&self.ring_ptr, UsedRingBuf<SIZE>, flags)
+            .read()
+            .unwrap();
+        flags & 0x0001 == 0
+    }
 }
 
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a DmaCoherent, TRightSet<TRights![Dup, Write]>>;
@@ -466,48 +591,4 @@ fn set_buf_slice(desc_ptr: &DescriptorPtr, buf: &[u8]) {
     field_ptr!(desc_ptr, Descriptor, len)
         .write(&(buf.len() as u32))
         .unwrap();
-}
-
-bitflags! {
-    /// Descriptor flags
-    #[derive(Pod, Default)]
-    #[repr(C)]
-    struct DescFlags: u16 {
-        const NEXT = 1;
-        const WRITE = 2;
-        const INDIRECT = 4;
-    }
-}
-
-/// The driver uses the available ring to offer buffers to the device:
-/// each ring entry refers to the head of a descriptor chain.
-/// It is only written by the driver and read by the device.
-#[repr(C, align(2))]
-#[derive(Debug, Copy, Clone, Pod)]
-pub struct AvailRing {
-    flags: u16,
-    /// A driver MUST NOT decrement the idx.
-    idx: u16,
-    ring: [u16; 64], // actual size: queue_size
-    used_event: u16, // unused
-}
-
-/// The used ring is where the device returns buffers once it is done with them:
-/// it is only written to by the device, and read by the driver.
-#[repr(C, align(4))]
-#[derive(Debug, Copy, Clone, Pod)]
-pub struct UsedRing {
-    // the flag in UsedRing
-    flags: u16,
-    // the next index of the used element in ring array
-    idx: u16,
-    ring: [UsedElem; 64], // actual size: queue_size
-    avail_event: u16,     // unused
-}
-
-#[repr(C)]
-#[derive(Debug, Default, Copy, Clone, Pod)]
-pub struct UsedElem {
-    id: u32,
-    len: u32,
 }
