@@ -79,10 +79,12 @@ impl aster_block::BlockDevice for BlockDevice {
     }
 }
 
+const QUEUE_SIZE: usize = 64;
+
 #[derive(Debug)]
 struct DeviceInner {
     config: SafePtr<VirtioBlockConfig, IoMem>,
-    queue: SpinLock<VirtQueue>,
+    queue: SpinLock<VirtQueue<QUEUE_SIZE>>,
     transport: Box<dyn VirtioTransport>,
     block_requests: DmaStream,
     block_responses: DmaStream,
@@ -91,8 +93,6 @@ struct DeviceInner {
 }
 
 impl DeviceInner {
-    const QUEUE_SIZE: u16 = 64;
-
     /// Creates and inits the device.
     fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Self, VirtioDeviceError> {
         let config = VirtioBlockConfig::new(transport.as_mut());
@@ -100,8 +100,8 @@ impl DeviceInner {
         if num_queues != 1 {
             return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
         }
-        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())
-            .expect("create virtqueue failed");
+        let queue =
+            VirtQueue::<QUEUE_SIZE>::new(0, transport.as_mut()).expect("create virtqueue failed");
         let block_requests = {
             let vm_segment = VmAllocOptions::new(1)
                 .is_contiguous(true)
@@ -109,7 +109,7 @@ impl DeviceInner {
                 .unwrap();
             DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap()
         };
-        assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.nbytes());
+        assert!(QUEUE_SIZE * REQ_SIZE <= block_requests.nbytes());
         let block_responses = {
             let vm_segment = VmAllocOptions::new(1)
                 .is_contiguous(true)
@@ -117,7 +117,7 @@ impl DeviceInner {
                 .unwrap();
             DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap()
         };
-        assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.nbytes());
+        assert!(QUEUE_SIZE * RESP_SIZE <= block_responses.nbytes());
 
         let mut device = Self {
             config,
@@ -125,7 +125,7 @@ impl DeviceInner {
             transport,
             block_requests,
             block_responses,
-            id_allocator: SpinLock::new(IdAlloc::with_capacity(Self::QUEUE_SIZE as usize)),
+            id_allocator: SpinLock::new(IdAlloc::with_capacity(QUEUE_SIZE)),
             submitted_requests: SpinLock::new(BTreeMap::new()),
         };
 

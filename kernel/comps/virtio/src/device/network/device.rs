@@ -23,8 +23,8 @@ use crate::{
 pub struct NetworkDevice {
     config: VirtioNetConfig,
     mac_addr: EthernetAddr,
-    send_queue: VirtQueue,
-    recv_queue: VirtQueue,
+    send_queue: VirtQueue<QUEUE_SIZE>,
+    recv_queue: VirtQueue<QUEUE_SIZE>,
     rx_buffers: SlotVec<RxBuffer>,
     callbacks: Vec<Box<dyn NetDeviceIrqHandler>>,
     transport: Box<dyn VirtioTransport>,
@@ -53,13 +53,13 @@ impl NetworkDevice {
             .read()
             .unwrap();
         debug!("mac addr = {:x?}, status = {:?}", mac_addr, status);
-        let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())
+        let mut recv_queue = VirtQueue::<QUEUE_SIZE>::new(QUEUE_RECV, transport.as_mut())
             .expect("creating recv queue fails");
-        let send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())
+        let send_queue = VirtQueue::<QUEUE_SIZE>::new(QUEUE_SEND, transport.as_mut())
             .expect("create send queue fails");
 
         let mut rx_buffers = SlotVec::new();
-        for i in 0..QUEUE_SIZE {
+        for i in 0..QUEUE_SIZE as u16 {
             let mut rx_buffer = RxBuffer::new(RX_BUFFER_LEN, size_of::<VirtioNetHdr>());
             // FIEME: Replace rx_buffer with VM segment-based data structure to use dma mapping.
             let token = recv_queue.add_buf(&[], &[rx_buffer.buf_mut()])?;
@@ -191,7 +191,7 @@ impl AnyNetworkDevice for NetworkDevice {
     }
 
     fn can_send(&self) -> bool {
-        self.send_queue.available_desc() >= 2
+        self.send_queue.num_free_desc() >= 2
     }
 
     fn receive(&mut self) -> Result<RxBuffer, VirtioNetError> {
@@ -218,5 +218,5 @@ impl Debug for NetworkDevice {
 const QUEUE_RECV: u16 = 0;
 const QUEUE_SEND: u16 = 1;
 
-const QUEUE_SIZE: u16 = 64;
+const QUEUE_SIZE: usize = 64;
 const RX_BUFFER_LEN: usize = 4096;
