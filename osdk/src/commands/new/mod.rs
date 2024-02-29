@@ -12,7 +12,7 @@ use crate::{
     cli::NewArgs,
     error::Errno,
     error_msg,
-    util::{cargo_new_lib, get_cargo_metadata, aster_crate_dep},
+    util::{aster_crate_dep, cargo_new_lib, get_cargo_metadata},
 };
 
 pub fn execute_new_command(args: &NewArgs) {
@@ -75,7 +75,7 @@ fn create_osdk_manifest(cargo_metadata: &serde_json::Value) {
     // The apt OVMF repo installs to `/usr/share/OVMF`
     fs::write(
         osdk_manifest_path,
-        r#"\
+        r#"
 [boot]
 ovmf = "/usr/share/OVMF"
 [qemu]
