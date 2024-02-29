@@ -114,8 +114,12 @@ install_osdk:
 $(CARGO_OSDK):
 	@make --no-print-directory install_osdk
 
-build: $(CARGO_ODSK)
+.PHONY: initramfs
+initramfs:
 	@make --no-print-directory -C regression
+
+.PHONY: build
+build: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk build $(CARGO_OSDK_ARGS)
 
 .PHONY: tools
@@ -133,7 +137,7 @@ test:
 	done
 
 .PHONY: ktest
-ktest: $(CARGO_OSDK)
+ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "framework/libs/linux-bzimage/setup" ] && continue; \
@@ -173,8 +177,3 @@ clean:
 	@cargo clean
 	@cd docs && mdbook clean
 	@make --no-print-directory -C regression clean
-
-.PHONY: update_initramfs
-update_initramfs:
-	@make --no-print-directory -C regression clean
-	@make --no-print-directory -C regression
