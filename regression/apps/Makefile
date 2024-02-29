@@ -8,9 +8,15 @@ REGRESSION_BUILD_DIR ?= $(INITRAMFS)/regression
 TEST_APPS := signal_c pthread network hello_world hello_pie hello_c fork_c fork execve pty
 
 .PHONY: all
-all: 
-	@mkdir -p $(REGRESSION_BUILD_DIR)
-	@for test_app in $(TEST_APPS); \
-		do make --no-print-directory -C $${test_app}; \
-	done
+all: $(TEST_APPS) scripts
+
+.PHONY: $(TEST_APPS)
+$(TEST_APPS):
+	@make --no-print-directory -C $@
+
+$(REGRESSION_BUILD_DIR):
+	@mkdir -p $@
+
+.PHONY: scripts
+scripts: | $(REGRESSION_BUILD_DIR)
 	@make --no-print-directory BUILD_DIR=$(REGRESSION_BUILD_DIR) -C scripts
