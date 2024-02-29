@@ -24,13 +24,13 @@
     * [Creating an OS Project](osdk/guide/create-project.md)
     * [Testing or Running an OS Project](osdk/guide/run-project.md)
     * [Working in a Workspace](osdk/guide/work-in-workspace.md)
-* [OSDK User Reference]()
-    * [Commands]()
-        * [cargo osdk new]()
-        * [cargo osdk build]()
-        * [cargo osdk run]()
-        * [cargo osdk test]()
-    * [Manifest]()
+* [OSDK User Reference](osdk/reference/README.md)
+    * [Commands](osdk/reference/commands/README.md)
+        * [cargo osdk new](osdk/reference/commands/new.md)
+        * [cargo osdk build](osdk/reference/commands/build.md)
+        * [cargo osdk run](osdk/reference/commands/run.md)
+        * [cargo osdk test](osdk/reference/commands/test.md)
+    * [Manifest](osdk/reference/manifest.md)
 
 # How to Contribute
 
