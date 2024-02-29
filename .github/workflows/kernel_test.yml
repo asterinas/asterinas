@@ -35,7 +35,7 @@ jobs:
 
       - name: Ktest Unit Test
         id: ktest_unit_test
-        run: make update_initramfs && make ktest
+        run: make ktest
 
       # TODO: add component check.
 

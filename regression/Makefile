@@ -5,9 +5,9 @@ CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
 VDSO_DIR := $(BUILD_DIR)/linux_vdso
 INITRAMFS := $(BUILD_DIR)/initramfs
+INITRAMFS_FILELIST := $(BUILD_DIR)/initramfs.filelist
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
-SHELL := /bin/bash
 INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/root \
@@ -25,11 +25,12 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/regression \
 	$(INITRAMFS)/benchmark \
 	$(INITRAMFS_EMPTY_DIRS)
+SYSCALL_TEST_DIR := $(INITRAMFS)/opt/syscall_test
 
 .PHONY: all
 all: build
 
-$(INITRAMFS)/lib/x86_64-linux-gnu: $(VDSO_DIR)
+$(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_DIR)
 	@mkdir -p $@
 	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $@
 	@cp -L /lib/x86_64-linux-gnu/libstdc++.so.6 $@
@@ -64,11 +65,11 @@ $(INITRAMFS)/bin:
 	@mkdir -p $@
 	@/bin/busybox --install -s $@
 
-$(INITRAMFS)/usr/bin: $(INITRAMFS)/bin
+$(INITRAMFS)/usr/bin: | $(INITRAMFS)/bin
 	@mkdir -p $@
 	@cp /usr/bin/busybox $@
 
-# Copy from apps.
+.PHONY: $(INITRAMFS)/regression
 $(INITRAMFS)/regression:
 	@make --no-print-directory -C apps
 
@@ -82,18 +83,35 @@ $(INITRAMFS)/benchmark:
 $(INITRAMFS_EMPTY_DIRS):
 	@mkdir -p $@
 
-$(INITRAMFS)/opt/syscall_test:
+.PHONY: $(SYSCALL_TEST_DIR)
+$(SYSCALL_TEST_DIR):
 	@make --no-print-directory -C syscall_test
 
+.PHONY: $(INITRAMFS_IMAGE)
+$(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
+	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous ; then \
+		echo "Generating the initramfs image..."; \
+		cp -f $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous; \
+		( \
+			cd $(INITRAMFS); \
+			# `$(INITRAMFS_FILELIST)` contains files' last modification \
+			# time in the first column, and files' relative path to \
+			# `$(INITRAMFS)` in the second column. This prunes the first \
+			# column and passes the second column to `cpio`. \
+			cut -d " " -f 2- $(INITRAMFS_FILELIST) | \
+				cpio -o -H newc | gzip \
+		) > $@; \
+	fi
+
+.PHONY: $(INITRAMFS_FILELIST)
 # If the BUILD_SYSCALL_TEST variable is set, we should depend on the
 # sub make output to do incremental building.
 ifeq ($(BUILD_SYSCALL_TEST), 1)
-$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS) $(INITRAMFS)/opt/syscall_test
+$(INITRAMFS_FILELIST): | $(INITRAMFS_ALL_DIRS) $(SYSCALL_TEST_DIR)
 else
-$(INITRAMFS_IMAGE): $(INITRAMFS_ALL_DIRS)
+$(INITRAMFS_FILELIST): | $(INITRAMFS_ALL_DIRS)
 endif
-	@echo "Generating the initramfs image..."
-	@(cd $(INITRAMFS); find . | cpio -o -H newc | gzip) > $@
+	@(cd $(INITRAMFS); find . -printf "%T@ %p\n") > $(INITRAMFS_FILELIST)
 
 $(EXT2_IMAGE):
 	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
