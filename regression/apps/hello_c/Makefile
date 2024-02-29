@@ -2,4 +2,4 @@
 
 include ../test_common.mk
 
-EXTRA_C_FLAGS :=-static -mno-sse
+EXTRA_C_FLAGS := -static -mno-sse
