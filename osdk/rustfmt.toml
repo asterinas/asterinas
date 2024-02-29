@@ -1,0 +1,10 @@
+# This file contains the same content as the rustfmt.toml in the root directory,
+# but configurations that rely on nightly Rust are commented out.
+# This is needed because unlike the rest of the project,
+# OSDK is built with the stable Rust and thus cannot use unstable features.
+# Once these rustfmt configurations become stable,
+# the corresponding lines can be uncommented.
+
+# imports_granularity="Crate"
+# group_imports="StdExternalCrate"
+reorder_imports=true

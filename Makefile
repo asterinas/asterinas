@@ -98,7 +98,7 @@ OSDK_CRATES := \
 	kernel/comps/virtio \
 	kernel/libs/aster-util
 
-.PHONY: all build tools run test docs check clean update_initramfs
+.PHONY: all build tools run test docs check clean update_initramfs install_osdk
 
 all: build
 
