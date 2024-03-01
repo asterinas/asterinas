@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused)]
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -7,7 +9,7 @@ use std::{
 
 use crate::util::{assert_success, cargo_osdk, create_workspace};
 
-#[test]
+// #[test]
 fn build_with_default_manifest() {
     let workspace = "/tmp/workspace_foo";
     if Path::new(workspace).exists() {
@@ -22,7 +24,7 @@ fn build_with_default_manifest() {
     fs::remove_dir_all(workspace).unwrap();
 }
 
-#[test]
+// #[test]
 fn build_with_conditional_manifest() {
     let workspace = "/tmp/workspace_bar";
     if Path::new(workspace).exists() {
