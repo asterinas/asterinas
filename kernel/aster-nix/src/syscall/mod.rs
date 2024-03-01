@@ -25,6 +25,7 @@ use crate::{
         chdir::{sys_chdir, sys_fchdir},
         chmod::{sys_chmod, sys_fchmod, sys_fchmodat},
         chown::{sys_chown, sys_fchown, sys_fchownat, sys_lchown},
+        chroot::sys_chroot,
         clock_gettime::sys_clock_gettime,
         clock_nanosleep::sys_clock_nanosleep,
         clone::sys_clone,
@@ -104,6 +105,7 @@ mod brk;
 mod chdir;
 mod chmod;
 mod chown;
+mod chroot;
 mod clock_gettime;
 mod clock_nanosleep;
 mod clone;
@@ -330,6 +332,7 @@ define_syscall_nums!(
     SYS_SET_PRIORITY = 141,
     SYS_PRCTL = 157,
     SYS_ARCH_PRCTL = 158,
+    SYS_CHROOT = 161,
     SYS_SYNC = 162,
     SYS_GETTID = 186,
     SYS_TIME = 201,
@@ -517,6 +520,7 @@ pub fn syscall_dispatch(
         SYS_SET_PRIORITY => syscall_handler!(3, sys_set_priority, args),
         SYS_PRCTL => syscall_handler!(5, sys_prctl, args),
         SYS_ARCH_PRCTL => syscall_handler!(2, sys_arch_prctl, args, context),
+        SYS_CHROOT => syscall_handler!(1, sys_chroot, args),
         SYS_SYNC => syscall_handler!(0, sys_sync),
         SYS_GETTID => syscall_handler!(0, sys_gettid),
         SYS_TIME => syscall_handler!(1, sys_time, args),
