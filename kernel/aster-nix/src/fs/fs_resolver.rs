@@ -57,6 +57,11 @@ impl FsResolver {
         self.cwd = dentry;
     }
 
+    /// Set the root directory
+    pub fn set_root(&mut self, dentry: Arc<Dentry>) {
+        self.root = dentry;
+    }
+
     /// Open or create a file inode handler.
     pub fn open(&self, path: &FsPath, flags: u32, mode: u16) -> Result<InodeHandle> {
         let creation_flags = CreationFlags::from_bits_truncate(flags);
