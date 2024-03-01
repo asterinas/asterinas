@@ -1,10 +1,16 @@
 # Creating an OS Project
 
-OSDK can be used to create a new kernel project or a new library project. A kernel project defines the entry point of the kernel and can be run with QEMU. A library project can provide certain OS functionalities and be imported by other OSes.
+OSDK can be used to create a new kernel project
+or a new library project.
+A kernel project defines the entry point of the kernel
+and can be run with QEMU.
+A library project can provide certain OS functionalities
+and be imported by other OSes.
 
 ## Creating a new kernel project
 
-Creating a new kernel project is simple. You only need to execute the following command:
+Creating a new kernel project is simple.
+You only need to execute the following command:
 
 ```bash
 cargo osdk new --kernel myos
@@ -20,11 +26,16 @@ cargo osdk new mylib
 
 ## Generated files
 
-Next, we will introduce the contents of the generated project in detail. If you don't wish to delve into the details, you can skip the following sections.
+Next, we will introduce 
+the contents of the generated project in detail.
+If you don't wish to delve into the details,
+you can skip the following sections.
 
 ### Overview
 
-The generated directory for both the kernel project and library project contains the following contents:
+The generated directory
+for both the kernel project and library project
+contains the following contents:
 
 ```text
 myos/
@@ -39,60 +50,38 @@ myos/
 
 #### Kernel project
 
-The `src/lib.rs` file contains the code for a simple kernel. The function marked with the `#[aster_main]` macro is considered the kernel entry point by OSDK. The kernel will print `Hello world from the guest kernel!` to the console and then abort. 
+The `src/lib.rs` file contains the code for a simple kernel.
+The function marked with the `#[aster_main]` macro
+is considered the kernel entry point by OSDK.
+The kernel 
+will print `Hello world from the guest kernel!`to the console 
+and then abort.
 
-There is also a code snippet that demonstrates how to write kernel mode unit tests. It follows a similar code pattern as user mode unit tests. The test module is marked with the `#[cfg(ktest)]` macro, and each test case is marked with `#[ktest]`.
+There is also a code snippet that demonstrates
+how to write kernel mode unit tests.
+It follows a similar code pattern as user mode unit tests.
+The test module is marked with the `#[cfg(ktest)]` macro,
+and each test case is marked with `#[ktest]`.
 
 ```rust
-#![no_std]
-#![no_main]
-#![forbid(unsafe_code)]
-
-#[macro_use]
-extern crate ktest;
-
-use aster_frame::prelude::*;
-
-#[aster_main]
-fn kernel_main() -> ! {
-    println!("Hello world from guest kernel!");
-    abort();
-}
-
-#[cfg(ktest)]
-mod tests {
-    #[ktest]
-    fn it_works() {
-        let memory_regions = aster_frame::boot::memory_regions();
-        assert!(!memory_regions.is_empty());
-    }
-}
+{{#include ../../../../osdk/src/commands/new/kernel.template}}
 ```
 
 #### Library project
 
-The `src/lib.rs` of library project only contains a simple kernel mode unit test.
+The `src/lib.rs` of library project only contains
+a simple kernel mode unit test.
 
 ```rust
-#![no_std]
-
-#[macro_use]
-extern crate ktest;
-extern crate aster_frame;
-
-#[cfg(ktest)]
-mod tests {
-    #[ktest]
-    fn it_works() {
-        let memory_regions = aster_frame::boot::memory_regions();
-        assert!(!memory_regions.is_empty());
-    }
-}
+{{#include ../../../../osdk/src/commands/new/lib.template}}
 ```
 
 ### `Cargo.toml`
 
-The `Cargo.toml` file is the Rust project manifest. In addition to the contents of a normal Rust project, OSDK will add the dependencies of the Asterinas framework to the file. The dependency version may change over time.
+The `Cargo.toml` file is the Rust project manifest.
+In addition to the contents of a normal Rust project,
+OSDK will add the dependencies of the Asterinas framework to the file.
+The dependency version may change over time.
 
 ```toml
 [dependencies.aster_frame]
@@ -106,7 +95,14 @@ branch = "main"
 
 ### `OSDK.toml`
 
-The `OSDK.toml` file is a manifest that defines the exact behavior of OSDK. By default, it contains the following contents. It includes settings on how to start QEMU to run a kernel. The meaning of each key can be found in the [manifest documentation](../reference/manifest.md). Please avoid changing the default settings unless you know what you are doing.
+The `OSDK.toml` file is a manifest
+that defines the exact behavior of OSDK.
+By default, it contains the following contents.
+It includes settings on how to start QEMU to run a kernel.
+The meaning of each key can be found
+in the [manifest documentation](../reference/manifest.md).
+Please avoid changing the default settings
+unless you know what you are doing.
 
 ```toml
 [boot]
@@ -127,4 +123,5 @@ args = [
 
 ### `rust-toolchain.toml`
 
-The Rust toolchain for the kernel. It aligns with the toolchain of the Asterinas framework.
+The Rust toolchain for the kernel.
+It aligns with the toolchain of the Asterinas framework.

@@ -8,7 +8,7 @@ extern crate aster_frame;
 use aster_frame::prelude::*;
 
 #[aster_main]
-pub fn main() -> ! {
+pub fn main() {
     println!("[kernel] finish init aster_frame");
     component::init_all(component::parse_metadata!()).unwrap();
     aster_nix::init();

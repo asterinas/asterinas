@@ -14,6 +14,7 @@ pub fn aster_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
         pub fn __aster_main() -> ! {
             aster_frame::init();
             #main_fn_name();
+            aster_frame::prelude::abort();
         }
 
         #main_fn

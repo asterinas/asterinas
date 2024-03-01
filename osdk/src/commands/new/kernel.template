@@ -1,5 +1,4 @@
 #![no_std]
-#![no_main]
 #![forbid(unsafe_code)]
 
 #[macro_use]
@@ -8,16 +7,6 @@ extern crate ktest;
 use aster_frame::prelude::*;
 
 #[aster_main]
-fn kernel_main() -> ! {
+fn kernel_main() {
     println!("Hello world from guest kernel!");
-    loop {}
-}
-
-#[cfg(ktest)]
-mod tests {
-    #[ktest]
-    fn it_works() {
-        let memory_regions = aster_frame::boot::memory_regions();
-        assert!(!memory_regions.is_empty());
-    }
 }

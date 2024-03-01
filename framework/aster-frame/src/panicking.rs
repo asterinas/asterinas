@@ -46,7 +46,8 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     abort();
 }
 
-fn abort() -> ! {
+// Aborts the QEMU
+pub fn abort() -> ! {
     exit_qemu(QemuExitCode::Failed);
 }
 
