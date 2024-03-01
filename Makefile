@@ -16,6 +16,8 @@ SYSCALL_TEST_DIR ?= /tmp
 RELEASE_MODE ?= 0
 # End of auto test features.
 
+CARGO_OSDK := ~/.cargo/bin/cargo-osdk
+
 CARGO_OSDK_ARGS :=
 
 ifeq ($(AUTO_TEST), syscall)
@@ -104,12 +106,15 @@ all: build
 
 # Install or update OSDK from source
 # To uninstall, do `cargo uninstall cargo-osdk`
-install_osdk: osdk
+install_osdk:
 	@cargo install cargo-osdk --path osdk
 
-~/.cargo/bin/cargo-osdk: install_osdk
+# This will install OSDK if it is not already installed
+# To update OSDK, we need to run `install_osdk` manually
+$(CARGO_OSDK):
+	@make --no-print-directory install_osdk
 
-build: install_osdk ~/.cargo/bin/cargo-osdk
+build: $(CARGO_ODSK)
 	@make --no-print-directory -C regression
 	@cd kernel && cargo osdk build $(CARGO_OSDK_ARGS)
 
@@ -124,7 +129,7 @@ test:
 		(cd $$dir && cargo test) || exit 1; \
 	done
 
-ktest: install_osdk ~/.cargo/bin/cargo-osdk
+ktest: $(CARGO_ODSK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "framework/libs/linux-bzimage/setup" ] && continue; \
@@ -139,7 +144,7 @@ docs:
 format:
 	@./tools/format_all.sh
 
-check: install_osdk ~/.cargo/bin/cargo-osdk
+check: $(CARGO_ODSK)
 	@./tools/format_all.sh --check   	# Check Rust format issues
 	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
 	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | grep -v "members = \[" | tr -d '", \]' | sort > /tmp/all_crates
