@@ -80,6 +80,7 @@ This function will call the function from `mymodule`:
 fn kernel_main() {
   let avail_mem_as_mb = mymodule::available_memory() / 1_000_000;
   println!("The available memory is {} MB", avail_mem_as_mb);
+}
 ```
 
 ## Building and Running the kernel
