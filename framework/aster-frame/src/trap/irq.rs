@@ -7,7 +7,7 @@ use trapframe::TrapFrame;
 use crate::{
     arch::irq::{self, IrqCallbackHandle, NOT_USING_IRQ},
     prelude::*,
-    task::{disable_preempt, DisablePreemptGuard},
+    task::DisablePreemptGuard,
     Error,
 };
 
@@ -130,7 +130,7 @@ impl DisabledLocalIrqGuard {
         if was_enabled {
             irq::disable_local();
         }
-        let preempt_guard = disable_preempt();
+        let preempt_guard = DisablePreemptGuard::for_irq();
         Self {
             was_enabled,
             preempt_guard,
@@ -144,7 +144,7 @@ impl DisabledLocalIrqGuard {
         self.was_enabled = false;
         Self {
             was_enabled,
-            preempt_guard: disable_preempt(),
+            preempt_guard: DisablePreemptGuard::for_lock(),
         }
     }
 }

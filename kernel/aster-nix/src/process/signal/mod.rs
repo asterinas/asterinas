@@ -16,7 +16,10 @@ pub mod signals;
 use core::mem;
 
 use align_ext::AlignExt;
-use aster_frame::{cpu::UserContext, task::Task};
+use aster_frame::{
+    cpu::UserContext,
+    task::{Current, Task},
+};
 use c_types::{siginfo_t, ucontext_t};
 pub use events::{SigEvents, SigEventsFilter};
 pub use pauser::Pauser;

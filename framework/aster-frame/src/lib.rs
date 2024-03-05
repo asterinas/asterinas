@@ -64,6 +64,7 @@ pub fn init() {
     boot::init();
     vm::init();
     trap::init();
+    task::init();
     arch::after_all_init();
     bus::init();
     invoke_ffi_init_funcs();

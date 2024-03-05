@@ -18,6 +18,7 @@ use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
 
 use kernel::apic::ioapic;
 use log::{info, warn};
+pub use timer::current_tick;
 
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();

@@ -8,7 +8,7 @@ use core::{
 };
 
 use crate::{
-    task::{disable_preempt, DisablePreemptGuard},
+    task::DisablePreemptGuard,
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
@@ -63,7 +63,7 @@ impl<T> SpinLock<T> {
     /// in the interrupt context, then it is ok to use this method
     /// in the process context.
     pub fn lock(&self) -> SpinLockGuard<T> {
-        let guard = disable_preempt();
+        let guard = DisablePreemptGuard::for_lock();
         self.acquire_lock();
         SpinLockGuard {
             lock: self,
@@ -73,7 +73,7 @@ impl<T> SpinLock<T> {
 
     /// Try acquiring the spin lock immedidately without disabling the local IRQs.
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
-        let guard = disable_preempt();
+        let guard = DisablePreemptGuard::for_lock();
         if self.try_acquire_lock() {
             let lock_guard = SpinLockGuard {
                 lock: self,

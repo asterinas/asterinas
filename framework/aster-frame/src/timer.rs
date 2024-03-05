@@ -4,7 +4,7 @@
 
 use core::{sync::atomic::Ordering, time::Duration};
 
-pub use crate::arch::timer::read_monotonic_milli_seconds;
+pub use crate::arch::timer::{current_tick, read_monotonic_milli_seconds};
 use crate::{
     arch::timer::{add_timeout_list, TimerCallback, TICK, TIMER_FREQ},
     prelude::*,

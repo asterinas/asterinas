@@ -5,7 +5,7 @@
 
 use align_ext::AlignExt;
 use aster_frame::{
-    task::Task,
+    task::{Current, Task},
     vm::{VmIo, VmPerm},
 };
 use aster_rights::{Full, Rights};

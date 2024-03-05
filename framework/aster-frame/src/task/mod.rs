@@ -2,6 +2,7 @@
 
 //! Tasks are the unit of code execution.
 
+mod preempt;
 mod priority;
 mod processor;
 mod scheduler;
@@ -9,8 +10,17 @@ mod scheduler;
 mod task;
 
 pub use self::{
+    preempt::{in_atomic, is_preemptible, DisablePreemptGuard},
     priority::Priority,
-    processor::{current_task, disable_preempt, preempt, schedule, DisablePreemptGuard},
-    scheduler::{add_task, set_scheduler, Scheduler},
-    task::{Task, TaskAdapter, TaskOptions, TaskStatus},
+    processor::{current_task, schedule, yield_now, yield_to},
+    scheduler::{add_task, clear_task, set_scheduler, Scheduler},
+    task::{
+        Current, NeedResched, ReadPriority, SchedTaskBase, Task, TaskAdapter, TaskOptions,
+        TaskStatus, WakeUp,
+    },
 };
+
+pub fn init() {
+    self::processor::init();
+    self::scheduler::init();
+}

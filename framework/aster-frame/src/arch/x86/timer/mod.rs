@@ -32,6 +32,10 @@ pub static TICK: AtomicU64 = AtomicU64::new(0);
 
 static TIMER_IRQ: Once<IrqLine> = Once::new();
 
+type TickCount = u64;
+type SchedulerTickHook = dyn Fn() + Send + Sync + 'static;
+static SCHEDULER_TICK_CALLBACK: Once<Arc<SchedulerTickHook>> = Once::new();
+
 pub fn init() {
     if kernel::apic::APIC_INSTANCE.is_completed() {
         // Get the free irq number first. Use `allocate_target_irq` to get the Irq handle after dropping it.
@@ -47,6 +51,10 @@ pub fn init() {
     let mut timer_irq = IrqLine::alloc_specific(TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
     timer_irq.on_active(timer_callback);
     TIMER_IRQ.call_once(|| timer_irq);
+}
+
+pub fn current_tick() -> TickCount {
+    TICK.load(Ordering::Acquire)
 }
 
 fn timer_callback(trap_frame: &TrapFrame) {
@@ -76,6 +84,17 @@ fn timer_callback(trap_frame: &TrapFrame) {
     if APIC_TIMER_CALLBACK.is_completed() {
         APIC_TIMER_CALLBACK.get().unwrap().call(());
     }
+
+    if let Some(callback) = SCHEDULER_TICK_CALLBACK.get() {
+        callback();
+    }
+}
+
+pub(crate) fn register_scheduler_tick<F>(callback: F)
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    SCHEDULER_TICK_CALLBACK.call_once(|| Arc::new(callback));
 }
 
 static TIMEOUT_LIST: Once<SpinLock<BinaryHeap<Arc<TimerCallback>>>> = Once::new();

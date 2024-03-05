@@ -41,9 +41,8 @@ impl KernelThreadExt for Thread {
         };
         let tid = allocate_tid();
         let thread = Arc::new_cyclic(|thread_ref| {
-            let weal_thread = thread_ref.clone();
             let task = TaskOptions::new(thread_fn)
-                .data(weal_thread)
+                .data(thread_ref.clone())
                 .build()
                 .unwrap();
             let status = ThreadStatus::Init;
@@ -55,14 +54,8 @@ impl KernelThreadExt for Thread {
     }
 
     fn join(&self) {
-        loop {
-            let status = self.status.lock();
-            if status.is_exited() {
-                return;
-            } else {
-                drop(status);
-                Thread::yield_now();
-            }
+        while !self.status.lock().is_exited() {
+            Thread::yield_now();
         }
     }
 }

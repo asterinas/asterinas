@@ -2,7 +2,7 @@
 
 use aster_frame::{
     cpu::UserContext,
-    task::{preempt, Task, TaskOptions},
+    task::{schedule, Current, Task, TaskOptions},
     user::{UserContextApi, UserEvent, UserMode, UserSpace},
 };
 
@@ -52,7 +52,7 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
                 handle_pending_signal(context).unwrap();
             }
             // a preemption point after handling user event.
-            preempt();
+            schedule();
         }
         debug!("exit user loop");
         // FIXME: This is a work around: exit in kernel task entry may be not called. Why this will happen?
