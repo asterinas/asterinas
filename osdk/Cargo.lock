@@ -137,10 +137,12 @@ dependencies = [
  "lazy_static",
  "linux-bzimage-builder",
  "log",
+ "quote",
  "regex",
  "serde",
  "serde_json",
  "sha2",
+ "syn",
  "toml",
  "which",
 ]
@@ -534,9 +536,9 @@ checksum = "5ee073c9e4cd00e28217186dbe12796d692868f432bf2e97ee73bed0c56dfa01"
 
 [[package]]
 name = "syn"
-version = "2.0.50"
+version = "2.0.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74f1bdc9872430ce9b75da68329d1c1746faf50ffac5f19e02b71e37ff881ffb"
+checksum = "b699d15b36d1f02c3e7c69f8ffef53de37aefae075d8488d4ba1a7788d574a07"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -15,10 +15,12 @@ indexmap = "2.2.1"
 lazy_static = "1.4.0"
 linux-bzimage-builder = { path = "../framework/libs/linux-bzimage/builder" }
 log = "0.4.20"
+quote = "1.0.35"
 regex = "1.10.3"
 serde = { version = "1.0.195", features = ["derive"] }
 serde_json = "1.0.111"
 sha2 = "0.10.8"
+syn = { version = "2.0.52", features = ["extra-traits", "full", "parsing", "printing"] }
 toml = { version = "0.8.8", features = ["preserve_order"] }
 which = "6.0.0"
 
