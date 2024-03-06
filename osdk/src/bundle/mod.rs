@@ -158,7 +158,7 @@ impl Bundle {
         }
         match config.manifest.qemu.machine {
             QemuMachine::Microvm => {
-                qemu_cmd.arg("-machine").arg("microvm");
+                qemu_cmd.arg("-machine").arg("microvm,rtc=on");
                 let Some(ref aster_bin) = self.manifest.aster_bin else {
                     error_msg!("Kernel ELF binary is required for Microvm");
                     std::process::exit(Errno::RunBundle as _);
