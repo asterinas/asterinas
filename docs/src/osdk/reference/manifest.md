@@ -24,7 +24,7 @@ the `OSDK.toml` of the workspace will be used
 - If running commands in the crate directory
   - If the crate has `OSDK.toml`,
   the `OSDK.toml` of the crate will be used.
-  - Otherwise, `the OSDK.toml` of the workspace will be used.
+  - Otherwise, the `OSDK.toml` of the workspace will be used.
 
 ## Configurations
 
