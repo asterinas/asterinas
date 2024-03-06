@@ -144,10 +144,14 @@ ktest: initramfs $(CARGO_OSDK)
 		(cd $$dir && cargo osdk test) || exit 1; \
 	done
 
-.PHONY: docs
-docs:
-	@cargo doc 						# Build Rust docs
-	@echo "" 						# Add a blank line
+docs: $(CARGO_OSDK)
+	@for dir in $(NON_OSDK_CRATES); do \
+		(cd $$dir && cargo doc --no-deps) || exit 1; \
+	done
+	@for dir in $(OSDK_CRATES); do \
+		(cd $$dir && cargo osdk doc --no-deps) || exit 1; \
+	done
+	@echo "" 								# Add a blank line
 	@cd docs && mdbook build 				# Build mdBook
 
 .PHONY: format
@@ -169,7 +173,7 @@ check: $(CARGO_OSDK)
 		(cd $$dir && cargo clippy -- -D warnings) || exit 1; \
 	done
 	@for dir in $(OSDK_CRATES); do \
-		(cd $$dir && cargo osdk clippy) || exit 1; \
+		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
 
 .PHONY: clean

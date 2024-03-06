@@ -6,8 +6,8 @@ use clap::{crate_version, Args, Parser};
 
 use crate::{
     commands::{
-        execute_build_command, execute_check_command, execute_clippy_command, execute_new_command,
-        execute_run_command, execute_test_command,
+        execute_build_command, execute_forwarded_command, execute_new_command, execute_run_command,
+        execute_test_command,
     },
     config_manager::{
         boot::{BootLoader, BootProtocol},
@@ -37,8 +37,9 @@ pub fn main() {
             let test_config = TestConfig::parse(test_args);
             execute_test_command(&test_config);
         }
-        OsdkSubcommand::Check => execute_check_command(),
-        OsdkSubcommand::Clippy => execute_clippy_command(),
+        OsdkSubcommand::Check(args) => execute_forwarded_command("check", &args.args),
+        OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", &args.args),
+        OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args),
     }
 }
 
@@ -68,10 +69,22 @@ pub enum OsdkSubcommand {
     Run(RunArgs),
     #[command(about = "Execute kernel mode unit test by starting a VMM")]
     Test(TestArgs),
-    #[command(about = "Analyze the current package and report errors")]
-    Check,
-    #[command(about = "Check the current package and catch common mistakes")]
-    Clippy,
+    #[command(about = "Check a local package and all of its dependencies for errors")]
+    Check(ForwardedArguments),
+    #[command(about = "Checks a package to catch common mistakes and improve your Rust code")]
+    Clippy(ForwardedArguments),
+    #[command(about = "Build a package's documentation")]
+    Doc(ForwardedArguments),
+}
+
+#[derive(Debug, Parser)]
+pub struct ForwardedArguments {
+    #[arg(
+        help = "The full set of Cargo arguments",
+        trailing_var_arg = true,
+        allow_hyphen_values = true
+    )]
+    pub args: Vec<String>,
 }
 
 #[derive(Debug, Parser)]
