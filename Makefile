@@ -122,7 +122,7 @@ initramfs:
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk build $(CARGO_OSDK_ARGS)
+	cargo osdk build $(CARGO_OSDK_ARGS)
 
 .PHONY: tools
 tools:
@@ -130,7 +130,7 @@ tools:
 
 .PHONY: run
 run: build
-	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS)
+	@cargo osdk run $(CARGO_OSDK_ARGS)
 
 .PHONY: test
 test:

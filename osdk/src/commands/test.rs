@@ -6,10 +6,18 @@ use super::{build::do_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
     base_crate::new_base_crate,
     config_manager::{BuildConfig, RunConfig, TestConfig},
-    util::{get_current_crate_info, get_target_directory},
+    util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
 };
 
 pub fn execute_test_command(config: &TestConfig) {
+    let crates = get_workspace_default_members();
+    for crate_path in crates {
+        std::env::set_current_dir(crate_path).unwrap();
+        test_current_crate(config);
+    }
+}
+
+pub fn test_current_crate(config: &TestConfig) {
     let current_crate = get_current_crate_info();
     let ws_target_directory = get_target_directory();
     let osdk_target_directory = ws_target_directory.join(DEFAULT_TARGET_RELPATH);
@@ -68,4 +76,24 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     };
 
     bundle.run(&required_run_config);
+}
+
+fn get_workspace_default_members() -> Vec<String> {
+    let metadata = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
+    let default_members = metadata
+        .get("workspace_default_members")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    default_members
+        .iter()
+        .map(|value| {
+            // The default member is in the form of "<crate_name> <crate_version> (path+file://<crate_path>)"
+            let default_member = value.as_str().unwrap();
+            let path = default_member.split(" ").nth(2).unwrap();
+            path.trim_start_matches("(path+file://")
+                .trim_end_matches(')')
+                .to_string()
+        })
+        .collect()
 }

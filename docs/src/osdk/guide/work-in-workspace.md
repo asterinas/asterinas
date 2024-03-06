@@ -49,6 +49,9 @@ myworkspace/
           └── lib.rs
 ```
 
+At present, OSDK mandates that there must be only one kernel project
+within a workspace.
+
 In addition to the two projects,
 OSDK will also generate `OSDK.toml` and `rust-toolchain.toml`
 at the root of the workspace.
@@ -78,8 +81,8 @@ This function will call the function from `mymodule`:
 ```rust
 #[aster_main]
 fn kernel_main() {
-  let avail_mem_as_mb = mymodule::available_memory() / 1_000_000;
-  println!("The available memory is {} MB", avail_mem_as_mb);
+    let avail_mem_as_mb = mymodule::available_memory() / 1_000_000;
+    println!("The available memory is {} MB", avail_mem_as_mb);
 }
 ```
 
