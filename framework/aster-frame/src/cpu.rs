@@ -79,8 +79,8 @@ impl<T> CpuLocal<T> {
     /// the CPU-local object is only accessed by the current task or IRQ handler.
     /// As local IRQs are disabled, one should keep the closure as short as possible.
     pub fn borrow_with<U, F: FnOnce(&T) -> U>(this: &Self, f: F) -> U {
-        // FIXME: implement disable preemption
         // Disable interrupts when accessing cpu-local variable
+        // Preemption is also disabled in `disable_local()`.
         let _guard = disable_local();
         // Safety. Now that the local IRQs are disabled, this CPU-local object can only be
         // accessed by the current task/thread. So it is safe to get its immutable reference

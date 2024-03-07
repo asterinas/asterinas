@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
+use core::cell::RefCell;
 
 use super::{
     preempt::{
@@ -9,7 +10,7 @@ use super::{
     scheduler::{add_task, locked_global_scheduler, pick_next_task},
     task::{context_switch, NeedResched, Task, TaskContext},
 };
-use crate::{arch::timer::register_scheduler_tick, cpu_local, sync::SpinLock, trap::disable_local};
+use crate::{arch::timer::register_scheduler_tick, cpu_local, trap::disable_local, CpuLocal};
 
 #[derive(Default)]
 pub struct Processor {
@@ -35,9 +36,8 @@ impl Processor {
     }
 }
 
-// FIXME: remove lock on the processor
 cpu_local! {
-    static PROCESSOR: SpinLock<Processor> = SpinLock::new(Processor::new());
+    static PROCESSOR: RefCell<Processor> = RefCell::new(Processor::new());
 }
 
 pub fn init() {
@@ -45,7 +45,7 @@ pub fn init() {
 }
 
 pub fn current_task() -> Option<Arc<Task>> {
-    PROCESSOR.lock_irq_disabled().current()
+    CpuLocal::borrow_with(&PROCESSOR, |processor| processor.borrow().current())
 }
 
 /// Yields execution so that another task may be scheduled.
@@ -115,20 +115,24 @@ fn should_preempt_cur_task() -> bool {
 /// This method should be called with preemption guard.
 fn switch_to(next_task: Arc<Task>) {
     panic_if_in_atomic();
-    let mut processor = PROCESSOR.lock();
-    let current_task_ctx = match processor.current() {
-        None => processor.idle_task_ctx_ptr(),
-        Some(ref cur_task) => {
-            if cur_task.status().is_runnable() {
-                add_task(cur_task.clone());
-            }
-            &mut cur_task.inner_exclusive_access().ctx as *mut TaskContext
-        }
-    };
-
     let next_task_ctx = &next_task.context() as *const TaskContext;
-    processor.set_current_task(next_task);
-    drop(processor);
+
+    let current_task_ctx = CpuLocal::borrow_with(&PROCESSOR, |processor| {
+        let processor = &mut processor.borrow_mut();
+        let cur_task = processor.current();
+        // Replace in advance to reduce the overhead from `CpuLocal::borrow_with`.
+        processor.set_current_task(next_task);
+
+        match cur_task {
+            None => processor.idle_task_ctx_ptr(),
+            Some(ref cur_task) => {
+                if cur_task.status().is_runnable() {
+                    add_task(cur_task.clone());
+                }
+                &mut cur_task.inner_exclusive_access().ctx as *mut TaskContext
+            }
+        }
+    });
     unsafe {
         context_switch(current_task_ctx, next_task_ctx);
     }
