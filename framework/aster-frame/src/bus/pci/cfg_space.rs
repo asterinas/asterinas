@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
+use core::mem::size_of;
 
 use bitflags::bitflags;
 
 use super::PciDeviceLocation;
-use crate::{io_mem::IoMem, Error, Result};
+use crate::{
+    arch::device::io_port::{PortRead, PortWrite},
+    io_mem::IoMem,
+    Error, Result,
+};
 
 #[repr(u16)]
 pub enum PciDeviceCommonCfgOffset {
@@ -187,6 +192,35 @@ impl IoBar {
 
     pub fn size(&self) -> u32 {
         self.size
+    }
+
+    pub fn read<T: PortRead>(&self, offset: u32) -> Result<T> {
+        // Check alignment
+        if (self.base + offset) % size_of::<T>() as u32 != 0 {
+            return Err(Error::InvalidArgs);
+        }
+        // Check overflow
+        if self.size < size_of::<T>() as u32 || offset > self.size - size_of::<T>() as u32 {
+            return Err(Error::InvalidArgs);
+        }
+        // Safety: The range of ports accessed is within the scope managed by the IoBar and
+        // an out-of-bounds check is performed.
+        unsafe { Ok(T::read_from_port((self.base + offset) as u16)) }
+    }
+
+    pub fn write<T: PortWrite>(&self, offset: u32, value: T) -> Result<()> {
+        // Check alignment
+        if (self.base + offset) % size_of::<T>() as u32 != 0 {
+            return Err(Error::InvalidArgs);
+        }
+        // Check overflow
+        if size_of::<T>() as u32 > self.size || offset > self.size - size_of::<T>() as u32 {
+            return Err(Error::InvalidArgs);
+        }
+        // Safety: The range of ports accessed is within the scope managed by the IoBar and
+        // an out-of-bounds check is performed.
+        unsafe { T::write_to_port((self.base + offset) as u16, value) }
+        Ok(())
     }
 
     fn new(location: &PciDeviceLocation, index: u8) -> Result<Self> {
