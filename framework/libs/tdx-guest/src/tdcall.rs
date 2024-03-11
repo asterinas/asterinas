@@ -327,6 +327,7 @@ pub enum TdxVirtualExceptionType {
     VmCall,
     Mwait,
     Monitor,
+    EptViolation,
     Wbinvd,
     Rdpmc,
     Other,
@@ -344,6 +345,7 @@ impl From<u32> for TdxVirtualExceptionType {
             32 => Self::MsrWrite,
             36 => Self::Mwait,
             39 => Self::Monitor,
+            48 => Self::EptViolation,
             54 => Self::Wbinvd,
             _ => Self::Other,
         }
@@ -435,10 +437,10 @@ pub fn verify_report(report_mac_gpa: &[u8]) -> Result<(), TdCallError> {
 /// Accept a pending private page and initialize it to all-0 using the TD ephemeral private key.
 /// # Safety
 /// The 'gpa' parameter must be a valid address.
-pub unsafe fn accept_page(sept_level: u64, gpa: &[u8]) -> Result<(), TdCallError> {
+pub unsafe fn accept_page(sept_level: u64, gpa: u64) -> Result<(), TdCallError> {
     let mut args = TdcallArgs {
         rax: TdcallNum::MemPageAccept as u64,
-        rcx: sept_level | ((gpa.as_ptr() as u64) << 12),
+        rcx: sept_level | gpa,
         ..Default::default()
     };
     td_call(&mut args)

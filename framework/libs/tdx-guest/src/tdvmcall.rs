@@ -163,12 +163,12 @@ pub fn perform_cache_operation(cache_operation: u64) -> Result<(), TdVmcallError
 
 /// # Safety
 /// Make sure the mmio address is valid.
-pub unsafe fn read_mmio(size: IoSize, mmio_gpa: &[u8]) -> Result<u64, TdVmcallError> {
+pub unsafe fn read_mmio(size: IoSize, mmio_gpa: u64) -> Result<u64, TdVmcallError> {
     let mut args = TdVmcallArgs {
         r11: TdVmcallNum::RequestMmio as u64,
         r12: size as u64,
         r13: 0,
-        r14: mmio_gpa.as_ptr() as u64,
+        r14: mmio_gpa,
         ..Default::default()
     };
     td_vmcall(&mut args)?;
@@ -177,16 +177,30 @@ pub unsafe fn read_mmio(size: IoSize, mmio_gpa: &[u8]) -> Result<u64, TdVmcallEr
 
 /// # Safety
 /// Make sure the mmio address is valid.
-pub unsafe fn write_mmio(size: IoSize, mmio_gpa: &[u8], data: u64) -> Result<(), TdVmcallError> {
+pub unsafe fn write_mmio(size: IoSize, mmio_gpa: u64, data: u64) -> Result<(), TdVmcallError> {
     let mut args = TdVmcallArgs {
         r11: TdVmcallNum::RequestMmio as u64,
         r12: size as u64,
         r13: 1,
-        r14: mmio_gpa.as_ptr() as u64,
+        r14: mmio_gpa,
         r15: data,
         ..Default::default()
     };
     td_vmcall(&mut args)
+}
+
+/// MapGPA TDG.VP.VMCALL is used to help request the host VMM to map a GPA range as private
+/// or shared-memory mappings. This API may also be used to convert page mappings from
+/// private to shared. The GPA range passed in this operation can indicate if the mapping is
+/// requested for a shared or private memory via the GPA.Shared bit in the start address.
+pub fn map_gpa(gpa: u64, size: u64) -> Result<(), (u64, TdVmcallError)> {
+    let mut args = TdVmcallArgs {
+        r11: TdVmcallNum::Mapgpa as u64,
+        r12: gpa,
+        r13: size,
+        ..Default::default()
+    };
+    td_vmcall(&mut args).map_err(|e| (args.r11, e))
 }
 
 macro_rules! io_read {

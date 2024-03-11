@@ -16,6 +16,8 @@ pub(crate) mod timer;
 
 use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
 
+#[cfg(feature = "intel_tdx")]
+use ::tdx_guest::tdx_is_enabled;
 use kernel::apic::ioapic;
 use log::{info, warn};
 
@@ -39,6 +41,14 @@ pub(crate) fn after_all_init() {
     }
     console::callback_init();
     timer::init();
+    #[cfg(feature = "intel_tdx")]
+    if !tdx_is_enabled() {
+        match iommu::init() {
+            Ok(_) => {}
+            Err(err) => warn!("IOMMU initialization error:{:?}", err),
+        }
+    }
+    #[cfg(not(feature = "intel_tdx"))]
     match iommu::init() {
         Ok(_) => {}
         Err(err) => warn!("IOMMU initialization error:{:?}", err),

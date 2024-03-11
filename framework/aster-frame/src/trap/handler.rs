@@ -8,6 +8,13 @@ use trapframe::TrapFrame;
 
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
+#[cfg(feature = "intel_tdx")]
+use crate::arch::{
+    mm::PageTableFlags,
+    tdx_guest::{handle_virtual_exception, TdxTrapFrame},
+};
+#[cfg(feature = "intel_tdx")]
+use crate::vm::{page_table::KERNEL_PAGE_TABLE, vaddr_to_paddr};
 use crate::{arch::irq::IRQ_LIST, cpu::CpuException, cpu_local};
 
 #[cfg(feature = "intel_tdx")]
@@ -54,19 +61,92 @@ impl TdxTrapFrame for TrapFrame {
     fn set_rip(&mut self, rip: usize) {
         self.rip = rip;
     }
+    fn r8(&self) -> usize {
+        self.r8
+    }
+    fn set_r8(&mut self, r8: usize) {
+        self.r8 = r8;
+    }
+    fn r9(&self) -> usize {
+        self.r9
+    }
+    fn set_r9(&mut self, r9: usize) {
+        self.r9 = r9;
+    }
+    fn r10(&self) -> usize {
+        self.r10
+    }
+    fn set_r10(&mut self, r10: usize) {
+        self.r10 = r10;
+    }
+    fn r11(&self) -> usize {
+        self.r11
+    }
+    fn set_r11(&mut self, r11: usize) {
+        self.r11 = r11;
+    }
+    fn r12(&self) -> usize {
+        self.r12
+    }
+    fn set_r12(&mut self, r12: usize) {
+        self.r12 = r12;
+    }
+    fn r13(&self) -> usize {
+        self.r13
+    }
+    fn set_r13(&mut self, r13: usize) {
+        self.r13 = r13;
+    }
+    fn r14(&self) -> usize {
+        self.r14
+    }
+    fn set_r14(&mut self, r14: usize) {
+        self.r14 = r14;
+    }
+    fn r15(&self) -> usize {
+        self.r15
+    }
+    fn set_r15(&mut self, r15: usize) {
+        self.r15 = r15;
+    }
+    fn rbp(&self) -> usize {
+        self.rbp
+    }
+    fn set_rbp(&mut self, rbp: usize) {
+        self.rbp = rbp;
+    }
 }
 
 /// Only from kernel
 #[no_mangle]
 extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     if CpuException::is_cpu_exception(f.trap_num as u16) {
+        const VIRTUALIZATION_EXCEPTION: u16 = 20;
+        const PAGE_FAULT: u16 = 14;
         #[cfg(feature = "intel_tdx")]
-        if f.trap_num as u16 == 20 {
+        if f.trap_num as u16 == VIRTUALIZATION_EXCEPTION {
             let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
             handle_virtual_exception(f, &ve_info);
             return;
         }
-        panic!("cannot handle kernel cpu fault now, information:{:#x?}", f);
+        #[cfg(feature = "intel_tdx")]
+        if f.trap_num as u16 == PAGE_FAULT {
+            let mut pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
+            // Safety: Map virtio addr when set shared bit in a TD. Only add the `PageTableFlags::SHARED` flag.
+            unsafe {
+                let page_fault_vaddr = x86::controlregs::cr2();
+                let _ = pt.map(
+                    page_fault_vaddr,
+                    vaddr_to_paddr(page_fault_vaddr).unwrap(),
+                    PageTableFlags::SHARED | PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                );
+            };
+            return;
+        }
+        panic!(
+            "cannot handle this kernel cpu fault now, information:{:#x?}",
+            f
+        );
     } else {
         call_irq_callback_functions(f);
     }
