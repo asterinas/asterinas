@@ -8,9 +8,13 @@ pub mod device;
 use alloc::vec::Vec;
 use core::ops::Range;
 
+#[cfg(feature = "intel_tdx")]
+use ::tdx_guest::tdx_is_enabled;
 use log::debug;
 
 use self::bus::MmioBus;
+#[cfg(feature = "intel_tdx")]
+use crate::arch::tdx_guest;
 use crate::{
     arch::kernel::IO_APIC, bus::mmio::device::MmioCommonDevice, sync::SpinLock, trap::IrqLine,
     vm::paddr_to_vaddr,
@@ -22,6 +26,17 @@ pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
 pub fn init() {
+    #[cfg(feature = "intel_tdx")]
+    // Safety:
+    // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
+    // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
+    // We are also ensuring that we are only unprotecting four pages.
+    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
+    if tdx_is_enabled() {
+        unsafe {
+            tdx_guest::unprotect_gpa_range(0xFEB0_0000, 4).unwrap();
+        }
+    }
     // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
     iter_range(0xFEB0_0000..0xFEB0_4000);
 }

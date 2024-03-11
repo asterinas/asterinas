@@ -18,16 +18,10 @@ use crate::{arch::iommu::has_iommu, config::PAGE_SIZE, sync::SpinLock};
 /// the address space used by device side.
 pub type Daddr = usize;
 
-fn has_tdx() -> bool {
-    // FIXME: Support TDX
-    false
-}
-
 #[derive(PartialEq)]
 pub enum DmaType {
     Direct,
     Iommu,
-    Tdx,
 }
 
 #[derive(Debug)]
@@ -48,10 +42,8 @@ static DMA_MAPPING_SET: Once<SpinLock<BTreeSet<Paddr>>> = Once::new();
 pub fn dma_type() -> DmaType {
     if has_iommu() {
         DmaType::Iommu
-    } else if has_tdx() {
-        return DmaType::Tdx;
     } else {
-        return DmaType::Direct;
+        DmaType::Direct
     }
 }
 

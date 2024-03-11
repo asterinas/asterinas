@@ -39,6 +39,9 @@ bitflags::bitflags! {
         /// Indicates that the mapping is present in all address spaces, so it isn't flushed from
         /// the TLB on an address space switch.
         const GLOBAL =          1 << 8;
+        /// TDX shared bit.
+        #[cfg(feature = "intel_tdx")]
+        const SHARED =          1 << 51;
         /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
         const NO_EXECUTE =      1 << 63;
     }
@@ -176,7 +179,10 @@ impl PageTableFlagsTrait for PageTableFlags {
 
 impl PageTableEntry {
     /// 51:12
+    #[cfg(not(feature = "intel_tdx"))]
     const PHYS_ADDR_MASK: usize = 0xF_FFFF_FFFF_F000;
+    #[cfg(feature = "intel_tdx")]
+    const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
 }
 
 impl PageTableEntryTrait for PageTableEntry {

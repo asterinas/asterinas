@@ -155,6 +155,60 @@ impl TdxTrapFrame for GeneralRegs {
     fn set_rip(&mut self, rip: usize) {
         self.rip = rip;
     }
+    fn r8(&self) -> usize {
+        self.r8
+    }
+    fn set_r8(&mut self, r8: usize) {
+        self.r8 = r8;
+    }
+    fn r9(&self) -> usize {
+        self.r9
+    }
+    fn set_r9(&mut self, r9: usize) {
+        self.r9 = r9;
+    }
+    fn r10(&self) -> usize {
+        self.r10
+    }
+    fn set_r10(&mut self, r10: usize) {
+        self.r10 = r10;
+    }
+    fn r11(&self) -> usize {
+        self.r11
+    }
+    fn set_r11(&mut self, r11: usize) {
+        self.r11 = r11;
+    }
+    fn r12(&self) -> usize {
+        self.r12
+    }
+    fn set_r12(&mut self, r12: usize) {
+        self.r12 = r12;
+    }
+    fn r13(&self) -> usize {
+        self.r13
+    }
+    fn set_r13(&mut self, r13: usize) {
+        self.r13 = r13;
+    }
+    fn r14(&self) -> usize {
+        self.r14
+    }
+    fn set_r14(&mut self, r14: usize) {
+        self.r14 = r14;
+    }
+    fn r15(&self) -> usize {
+        self.r15
+    }
+    fn set_r15(&mut self, r15: usize) {
+        self.r15 = r15;
+    }
+    fn rbp(&self) -> usize {
+        self.rbp
+    }
+    fn set_rbp(&mut self, rbp: usize) {
+        self.rbp = rbp;
+    }
 }
 
 impl UserContext {
