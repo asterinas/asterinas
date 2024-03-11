@@ -21,7 +21,8 @@ use crate::{
 pub(crate) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_tsc_freq() {
-    let tsc_freq = determine_tsc_freq_via_cpuid().map_or(determine_tsc_freq_via_pit(), |freq| freq);
+    let tsc_freq =
+        determine_tsc_freq_via_cpuid().map_or_else(determine_tsc_freq_via_pit, |freq| freq);
     TSC_FREQ.store(tsc_freq, Ordering::Relaxed);
     info!("TSC frequency:{:?} Hz", tsc_freq);
 }
