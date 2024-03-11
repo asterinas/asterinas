@@ -17,7 +17,7 @@ use crate::{
 /// A VmMapping represents mapping a vmo into a vmar.
 /// A vmar can has multiple VmMappings, which means multiple vmos are mapped to a vmar.
 /// A vmo can also contain multiple VmMappings, which means a vmo can be mapped to multiple vmars.
-/// The reltionship between Vmar and Vmo is M:N.
+/// The relationship between Vmar and Vmo is M:N.
 pub struct VmMapping {
     inner: Mutex<VmMappingInner>,
     /// The parent vmar. The parent should always point to a valid vmar.
@@ -51,10 +51,9 @@ struct VmMappingInner {
     is_destroyed: bool,
     /// The pages already mapped. The key is the page index in vmo.
     mapped_pages: BTreeSet<usize>,
-    /// The permission of each page. The key is the page index in vmo.
-    /// This map can be filled when mapping a vmo to vmar and can be modified when call mprotect.
-    /// We keep the options in case the page is not committed(or create copy on write mappings) and will further need these options.
-    page_perms: BTreeMap<usize, VmPerm>,
+    /// The permission of pages in the mapping.
+    /// All pages within the same VmMapping have the same permission.
+    perm: VmPerm,
 }
 
 impl Interval<usize> for Arc<VmMapping> {
@@ -90,23 +89,13 @@ impl VmMapping {
             map_to_addr + size
         );
 
-        let page_perms = {
-            let mut page_perms = BTreeMap::new();
-            let perm = VmPerm::from(perms);
-            let page_idx_range = get_page_idx_range(&(vmo_offset..vmo_offset + size));
-            for page_idx in page_idx_range {
-                page_perms.insert(page_idx, perm);
-            }
-            page_perms
-        };
-
         let vm_mapping_inner = VmMappingInner {
             vmo_offset,
             map_size: size,
             map_to_addr,
             is_destroyed: false,
             mapped_pages: BTreeSet::new(),
-            page_perms,
+            perm: VmPerm::from(perms),
         };
 
         Ok(Self {
@@ -114,6 +103,28 @@ impl VmMapping {
             parent: Arc::downgrade(&parent_vmar),
             vmo: vmo.to_dyn(),
         })
+    }
+
+    /// Build a new VmMapping based on part of current `VmMapping`.
+    /// The mapping range of the new mapping must be contained in the full mapping.
+    ///
+    /// Note: Since such new mappings will intersect with the current mapping,
+    /// making sure that when adding the new mapping into a Vmar, the current mapping in the Vmar will be removed.
+    fn clone_partial(
+        &self,
+        range: Range<usize>,
+        new_perm: Option<VmPerm>,
+    ) -> Result<Arc<VmMapping>> {
+        let partial_mapping = Arc::new(self.try_clone()?);
+        // Adjust the mapping range and the permission.
+        {
+            let mut inner = partial_mapping.inner.lock();
+            inner.shrink_to(range);
+            if let Some(perm) = new_perm {
+                inner.perm = perm;
+            }
+        }
+        Ok(partial_mapping)
     }
 
     pub fn vmo(&self) -> &Vmo<Rights> {
@@ -190,17 +201,6 @@ impl VmMapping {
         self.inner.lock().unmap(vm_space, range, may_destroy)
     }
 
-    pub fn unmap_and_decommit(&self, range: Range<usize>) -> Result<()> {
-        self.unmap(&range, false)?;
-        let vmo_range = {
-            let map_to_addr = self.map_to_addr();
-            let vmo_offset = self.vmo_offset();
-            (range.start - map_to_addr + vmo_offset)..(range.end - map_to_addr + vmo_offset)
-        };
-        self.vmo.decommit(vmo_range)?;
-        Ok(())
-    }
-
     pub fn is_destroyed(&self) -> bool {
         self.inner.lock().is_destroyed
     }
@@ -233,12 +233,28 @@ impl VmMapping {
         self.map_one_page(page_idx, frame, is_readonly)
     }
 
-    pub(super) fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
-        let rights = Rights::from(perms);
+    /// Protect a specified range of pages in the mapping to the target perms.
+    /// The VmMapping will split to maintain its property.
+    ///
+    /// Since this method will modify the `vm_mappings` in the vmar,
+    /// it should not be called during the direct iteration of the `vm_mappings`.
+    pub(super) fn protect(&self, new_perms: VmPerms, range: Range<usize>) -> Result<()> {
+        // If `new_perms` is equal to `old_perms`, `protect()` will not modify any permission in the VmMapping.
+        let old_perms = VmPerms::from(self.inner.lock().perm);
+        if old_perms == new_perms {
+            return Ok(());
+        }
+
+        let rights = Rights::from(new_perms);
         self.vmo().check_rights(rights)?;
+        // Protect permission for the perm in the VmMapping.
+        self.protect_with_subdivision(&range, VmPerm::from(new_perms))?;
+        // Protect permission in the VmSpace.
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
-        self.inner.lock().protect(vm_space, perms, range)
+        self.inner.lock().protect(vm_space, new_perms, range)?;
+
+        Ok(())
     }
 
     pub(super) fn new_cow(&self, new_parent: &Arc<Vmar_>) -> Result<VmMapping> {
@@ -258,7 +274,7 @@ impl VmMapping {
                 map_to_addr: inner.map_to_addr,
                 is_destroyed: inner.is_destroyed,
                 mapped_pages: BTreeSet::new(),
-                page_perms: inner.page_perms.clone(),
+                perm: inner.perm,
             }
         };
 
@@ -271,6 +287,63 @@ impl VmMapping {
 
     pub fn range(&self) -> Range<usize> {
         self.map_to_addr()..self.map_to_addr() + self.map_size()
+    }
+
+    /// Protect the current `VmMapping` to enforce new permissions within a specified range.
+    ///
+    /// Due to the property of `VmMapping`, this operation may require subdividing the current
+    /// `VmMapping`. In this condition, it will generate a new `VmMapping` with the specified `perm` to protect the
+    /// target range, as well as additional `VmMappings` to preserve the mappings in the remaining ranges.
+    ///
+    /// There are four conditions:
+    /// 1. |--------old perm--------| -> |-old-| + |------new------|
+    /// 2. |--------old perm--------| -> |-new-| + |------old------|
+    /// 3. |--------old perm--------| -> |-old-| + |-new-| + |-old-|
+    /// 4. |--------old perm--------| -> |---------new perm--------|
+    ///
+    /// Generally, this function is only used in `protect()` method.
+    /// This method modifies the parent `Vmar` in the end if subdividing is required.
+    /// It removes current mapping and add splitted mapping to the Vmar.
+    fn protect_with_subdivision(&self, intersect_range: &Range<usize>, perm: VmPerm) -> Result<()> {
+        let mut additional_mappings = Vec::new();
+        let range = self.range();
+        // Condition 4, the `additional_mappings` will be empty.
+        if range.start == intersect_range.start && range.end == intersect_range.end {
+            self.inner.lock().perm = perm;
+            return Ok(());
+        }
+        // Condition 1 or 3, which needs an additional new VmMapping with range (range.start..intersect_range.start)
+        if range.start < intersect_range.start {
+            let additional_left_mapping =
+                self.clone_partial(range.start..intersect_range.start, None)?;
+            additional_mappings.push(additional_left_mapping);
+        }
+        // Condition 2 or 3, which needs an additional new VmMapping with range (intersect_range.end..range.end).
+        if range.end > intersect_range.end {
+            let additional_right_mapping =
+                self.clone_partial(intersect_range.end..range.end, None)?;
+            additional_mappings.push(additional_right_mapping);
+        }
+        // The protected VmMapping must exist and its range is `intersect_range`.
+        let protected_mapping = self.clone_partial(intersect_range.clone(), Some(perm))?;
+
+        // Begin to modify the `Vmar`.
+        let vmar = self.parent.upgrade().unwrap();
+        let mut vmar_inner = vmar.inner.lock();
+        // Remove the original mapping.
+        vmar_inner.vm_mappings.remove(&self.map_to_addr());
+        // Add protected mappings to the vmar.
+        vmar_inner
+            .vm_mappings
+            .insert(protected_mapping.map_to_addr(), protected_mapping);
+        // Add additional mappings to the vmar.
+        for mapping in additional_mappings {
+            vmar_inner
+                .vm_mappings
+                .insert(mapping.map_to_addr(), mapping);
+        }
+
+        Ok(())
     }
 
     /// Trim a range from the mapping.
@@ -294,7 +367,7 @@ impl VmMapping {
             return Ok(());
         }
         if trim_range.start <= map_to_addr && trim_range.end >= map_to_addr + map_size {
-            // fast path: the whole mapping was trimed
+            // Fast path: the whole mapping was trimed.
             self.unmap(trim_range, true)?;
             mappings_to_remove.insert(map_to_addr);
             return Ok(());
@@ -302,20 +375,20 @@ impl VmMapping {
         if trim_range.start <= range.start {
             mappings_to_remove.insert(map_to_addr);
             if trim_range.end <= range.end {
-                // overlap vm_mapping from left
+                // Overlap vm_mapping from left.
                 let new_map_addr = self.trim_left(trim_range.end)?;
                 mappings_to_append.insert(new_map_addr, self.clone());
             } else {
-                // the mapping was totally destroyed
+                // The mapping was totally destroyed.
             }
         } else {
             if trim_range.end <= range.end {
-                // the trim range was totally inside the old mapping
+                // The trim range was totally inside the old mapping.
                 let another_mapping = Arc::new(self.try_clone()?);
                 let another_map_to_addr = another_mapping.trim_left(trim_range.end)?;
                 mappings_to_append.insert(another_map_to_addr, another_mapping);
             } else {
-                // overlap vm_mapping from right
+                // Overlap vm_mapping from right.
             }
             self.trim_right(trim_range.start)?;
         }
@@ -323,14 +396,14 @@ impl VmMapping {
         Ok(())
     }
 
-    /// trim the mapping from left to a new address.
+    /// Trim the mapping from left to a new address.
     fn trim_left(&self, vaddr: Vaddr) -> Result<Vaddr> {
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
         self.inner.lock().trim_left(vm_space, vaddr)
     }
 
-    /// trim the mapping from right to a new address.
+    /// Trim the mapping from right to a new address.
     fn trim_right(&self, vaddr: Vaddr) -> Result<Vaddr> {
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
@@ -354,7 +427,7 @@ impl VmMappingInner {
         let map_addr = self.page_map_addr(page_idx);
 
         let vm_perm = {
-            let mut perm = *self.page_perms.get(&page_idx).unwrap();
+            let mut perm = self.perm;
             if is_readonly {
                 debug_assert!(vmo.is_cow_child());
                 perm -= VmPerm::W;
@@ -369,7 +442,7 @@ impl VmMappingInner {
             options
         };
 
-        // cow child allows unmapping the mapped page
+        // Cow child allows unmapping the mapped page.
         if vmo.is_cow_child() && vm_space.is_mapped(map_addr) {
             vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
         }
@@ -389,7 +462,7 @@ impl VmMappingInner {
         Ok(())
     }
 
-    /// Unmap pages in the range
+    /// Unmap pages in the range.
     fn unmap(&mut self, vm_space: &VmSpace, range: &Range<usize>, may_destroy: bool) -> Result<()> {
         let map_to_addr = self.map_to_addr;
         let vmo_map_range = (range.start - map_to_addr + self.vmo_offset)
@@ -405,7 +478,7 @@ impl VmMappingInner {
     }
 
     fn page_map_addr(&self, page_idx: usize) -> usize {
-        page_idx * PAGE_SIZE - self.vmo_offset + self.map_to_addr
+        page_idx * PAGE_SIZE + self.map_to_addr - self.vmo_offset
     }
 
     pub(super) fn protect(
@@ -420,11 +493,9 @@ impl VmMappingInner {
         let end_page = (range.end - self.map_to_addr + self.vmo_offset) / PAGE_SIZE;
         let perm = VmPerm::from(perms);
         for page_idx in start_page..end_page {
-            self.page_perms.insert(page_idx, perm);
             let page_addr = self.page_map_addr(page_idx);
             if vm_space.is_mapped(page_addr) {
-                // if the page is already mapped, we will modify page table
-                let perm = VmPerm::from(perms);
+                // If the page is already mapped, we will modify page table
                 let page_range = page_addr..(page_addr + PAGE_SIZE);
                 vm_space.protect(&page_range, perm)?;
             }
@@ -432,7 +503,7 @@ impl VmMappingInner {
         Ok(())
     }
 
-    /// trim the mapping from left to a new address.
+    /// Trim the mapping from left to a new address.
     fn trim_left(&mut self, vm_space: &VmSpace, vaddr: Vaddr) -> Result<Vaddr> {
         trace!(
             "trim left: range: {:x?}, vaddr = 0x{:x}",
@@ -448,7 +519,6 @@ impl VmMappingInner {
         self.vmo_offset += trim_size;
         self.map_size -= trim_size;
         for page_idx in old_vmo_offset / PAGE_SIZE..self.vmo_offset / PAGE_SIZE {
-            self.page_perms.remove(&page_idx);
             if self.mapped_pages.remove(&page_idx) {
                 let _ = self.unmap_one_page(vm_space, page_idx);
             }
@@ -456,7 +526,7 @@ impl VmMappingInner {
         Ok(self.map_to_addr)
     }
 
-    /// trim the mapping from right to a new address.
+    /// Trim the mapping from right to a new address.
     fn trim_right(&mut self, vm_space: &VmSpace, vaddr: Vaddr) -> Result<Vaddr> {
         trace!(
             "trim right: range: {:x?}, vaddr = 0x{:x}",
@@ -468,11 +538,20 @@ impl VmMappingInner {
         let page_idx_range = (vaddr - self.map_to_addr + self.vmo_offset) / PAGE_SIZE
             ..(self.map_size + self.vmo_offset) / PAGE_SIZE;
         for page_idx in page_idx_range {
-            self.page_perms.remove(&page_idx);
             let _ = self.unmap_one_page(vm_space, page_idx);
         }
         self.map_size = vaddr - self.map_to_addr;
         Ok(self.map_to_addr)
+    }
+
+    /// Shrink the current `VmMapping` to the new range.
+    /// The new range must be contained in the old range.
+    fn shrink_to(&mut self, new_range: Range<usize>) {
+        debug_assert!(self.map_to_addr <= new_range.start);
+        debug_assert!(self.map_to_addr + self.map_size >= new_range.end);
+        self.vmo_offset += new_range.start - self.map_to_addr;
+        self.map_to_addr = new_range.start;
+        self.map_size = new_range.end - new_range.start;
     }
 
     fn range(&self) -> Range<usize> {
@@ -480,12 +559,13 @@ impl VmMappingInner {
     }
 
     fn check_perm(&self, page_idx: &usize, perm: &VmPerm) -> Result<()> {
-        let page_perm = self
-            .page_perms
-            .get(page_idx)
-            .ok_or(Error::with_message(Errno::EINVAL, "invalid page idx"))?;
-
-        if !page_perm.contains(*perm) {
+        // Check if the page is in current VmMapping.
+        if page_idx * PAGE_SIZE < self.vmo_offset
+            || (page_idx + 1) * PAGE_SIZE > self.vmo_offset + self.map_size
+        {
+            return_errno_with_message!(Errno::EINVAL, "invalid page idx");
+        }
+        if !self.perm.contains(*perm) {
             return_errno_with_message!(Errno::EACCES, "perm check fails");
         }
 
@@ -609,9 +689,9 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
         Ok(map_to_addr)
     }
 
-    /// check whether all options are valid
+    /// Check whether all options are valid.
     fn check_options(&self) -> Result<()> {
-        // check align
+        // Check align.
         debug_assert!(self.align % PAGE_SIZE == 0);
         debug_assert!(self.align.is_power_of_two());
         if self.align % PAGE_SIZE != 0 || !self.align.is_power_of_two() {
@@ -632,16 +712,16 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
         Ok(())
     }
 
-    /// check whether the vmperm is subset of vmo rights
+    /// Check whether the vmperm is subset of vmo rights.
     fn check_perms(&self) -> Result<()> {
         let perm_rights = Rights::from(self.perms);
         self.vmo.check_rights(perm_rights)
     }
 
-    /// check whether the vmo will overwrite with any existing vmo or vmar
+    /// Check whether the vmo will overwrite with any existing vmo or vmar.
     fn check_overwrite(&self) -> Result<()> {
         if self.can_overwrite {
-            // if can_overwrite is set, the offset cannot be None
+            // If `can_overwrite` is set, the offset cannot be None.
             debug_assert!(self.offset.is_some());
             if self.offset.is_none() {
                 return_errno_with_message!(
@@ -651,12 +731,12 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
             }
         }
         if self.offset.is_none() {
-            // if does not specify the offset, we assume the map can always find suitable free region.
+            // If does not specify the offset, we assume the map can always find suitable free region.
             // FIXME: is this always true?
             return Ok(());
         }
         let offset = self.offset.unwrap();
-        // we should spare enough space at least for the whole vmo
+        // We should spare enough space at least for the whole vmo.
         let size = self.size.max(self.vmo.size());
         let vmo_range = offset..(offset + size);
         self.parent

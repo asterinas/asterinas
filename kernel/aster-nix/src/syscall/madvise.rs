@@ -29,11 +29,10 @@ fn madv_dontneed(start: Vaddr, len: usize) -> Result<()> {
     debug_assert!(len % PAGE_SIZE == 0);
     let current = current!();
     let root_vmar = current.root_vmar();
-    let vm_mapping = root_vmar.get_vm_mapping(start)?;
-    // ensure the range is totally in the mapping
-    debug_assert!(vm_mapping.map_to_addr() <= start);
-    debug_assert!(start + len <= vm_mapping.map_to_addr() + vm_mapping.map_size());
-    vm_mapping.unmap_and_decommit(start..(start + len))
+    let advised_range = start..start + len;
+    // `destroy()` interface may require adjustment and replacement afterwards.
+    let _ = root_vmar.destroy(advised_range);
+    Ok(())
 }
 
 #[repr(i32)]
