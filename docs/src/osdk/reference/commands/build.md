@@ -60,7 +60,7 @@ Arguments for running QEMU
 ## Examples
 
 - Build a project with `./initramfs.cpio.gz`
-as the initramfs and `multiboot2` as the boot portocol:
+as the initramfs and `multiboot2` as the boot protocol:
 
 ```bash
 cargo osdk build --initramfs="./initramfs.cpio.gz" --boot.protocol="multiboot2"

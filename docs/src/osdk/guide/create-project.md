@@ -39,11 +39,11 @@ contains the following contents:
 
 ```text
 myos/
-  src/
-    lib.rs
-  Cargo.toml
-  OSDK.toml
-  rust-toolchain.toml
+├── Cargo.toml
+├── OSDK.toml
+├── rust-toolchain.toml
+└── src/
+    └── lib.rs
 ```
 
 ### `src/lib.rs`
