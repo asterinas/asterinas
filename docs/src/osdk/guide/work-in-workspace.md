@@ -36,17 +36,17 @@ The generated directory structure will be as follows:
 
 ```text
 myworkspace/
-  Cargo.toml
-  OSDK.toml
-  rust-toolchain.toml
-  myos/
-    src/
-      lib.rs
-    Cargo.toml
-  mymodule/
-    src/    
-      lib.rs
-    Cargo.toml
+  ├── Cargo.toml
+  ├── OSDK.toml
+  ├── rust-toolchain.toml
+  ├── myos/
+  │   ├── Cargo.toml
+  │   └── src/
+  │       └── lib.rs
+  └── mymodule/
+      ├── Cargo.toml
+      └── src/
+          └── lib.rs
 ```
 
 In addition to the two projects,

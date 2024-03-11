@@ -17,7 +17,7 @@ and one of the crate
 (in the same directory as the crate's `Cargo.toml`).
 So which manifest should be used?
 
-The rules are
+The rules are:
 
 - If running commands in the workspace root directory,
 the `OSDK.toml` of the workspace will be used
@@ -54,72 +54,72 @@ args = [ # <10>
 
 1. The arguments provided will be passed to the guest kernel.
 
-Optional. The default value is empty.
+    Optional. The default value is empty.
 
-Each argument should be in one of the following two forms:
-`KEY=VALUE` or `KEY` if no value is required.
-Each `KEY` can appear at most once.
+    Each argument should be in one of the following two forms:
+    `KEY=VALUE` or `KEY` if no value is required.
+    Each `KEY` can appear at most once.
 
 2. The arguments provided will be passed to the init process,
 usually, the init shell.
 
-Optional. The default value is empty.
+    Optional. The default value is empty.
 
 3. The path to the built initramfs.
 
-Optional. The default value is empty.
+    Optional. The default value is empty.
 
 4. The bootloader used to boot the kernel.
 
-Optional. The default value is `grub`.
+    Optional. The default value is `grub`.
 
-The allowed values are `grub` and `qemu`
-(`qemu` indicates that QEMU directly boots the kernel).
+    The allowed values are `grub` and `qemu`
+    (`qemu` indicates that QEMU directly boots the kernel).
 
 5. The boot protocol used to boot the kernel.
 
-Optional. The default value is `multiboot2`.
+    Optional. The default value is `multiboot2`.
 
-The allowed values are `linux-efi-handover64`,
-`linux-legacy32`, `multiboot`, and `multiboot2`.
+    The allowed values are `linux-efi-handover64`,
+    `linux-legacy32`, `multiboot`, and `multiboot2`.
 
 6. The path of `grub-mkrescue`,
 which is used to create a GRUB CD_ROM.
 
-Optional. The default value is system path,
-determined using `which grub-mkrescue`.
+    Optional. The default value is system path,
+    determined using `which grub-mkrescue`.
 
-This argument only takes effect
-when the bootloader is `grub`.
+    This argument only takes effect
+    when the bootloader is `grub`.
 
 7. The path of OVMF. OVMF enables UEFI support for QEMU.
 
-Optional. The default value is empty.
+    Optional. The default value is empty.
 
-This argument only takes effect
-when the boot protocol is `linux-efi-handover64`.
+    This argument only takes effect
+    when the boot protocol is `linux-efi-handover64`.
 
 8. The path of QEMU.
 
-Optional. The default value is system path,
-determined using `which qemu-system-x86_64`.
+    Optional. The default value is system path,
+    determined using `which qemu-system-x86_64`.
 
 9. The machine type of QEMU.
 
-Optional. Default is `q35`.
+    Optional. Default is `q35`.
 
-The allowed values are `q35` and `microvm`.
+    The allowed values are `q35` and `microvm`.
 
 10. Additional arguments passed to QEMU.
 
-Optional. The default value is empty.
+    Optional. The default value is empty.
 
-Each argument should be in the form `KEY VALUE`
-(separated by space),
-or `KEY` if no value is required.
-Some keys can appear multiple times
-(e.g., `-device`, `-netdev`),
-while other keys can appear at most once.
-Certain keys, such as `-cpu` and `-machine`,
-are not allowed to be set here
-as they may conflict with the internal settings of OSDK.
+    Each argument should be in the form `KEY VALUE`
+    (separated by space),
+    or `KEY` if no value is required.
+    Some keys can appear multiple times
+    (e.g., `-device`, `-netdev`),
+    while other keys can appear at most once.
+    Certain keys, such as `-cpu` and `-machine`,
+    are not allowed to be set here
+    as they may conflict with the internal settings of OSDK.
