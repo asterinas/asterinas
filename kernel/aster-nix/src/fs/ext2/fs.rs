@@ -42,7 +42,6 @@ impl Ext2 {
             .div_ceil(BLOCK_SIZE);
             let segment = VmAllocOptions::new(npages)
                 .uninit(true)
-                .is_contiguous(true)
                 .alloc_contiguous()?;
             match block_device.read_blocks_sync(super_block.group_descriptors_bid(0), &segment)? {
                 BioStatus::Complete => (),

@@ -99,7 +99,6 @@ impl VmIo for dyn BlockDevice {
             };
             let segment = VmAllocOptions::new(num_blocks as usize)
                 .uninit(true)
-                .is_contiguous(true)
                 .alloc_contiguous()?;
             let bio_segment = BioSegment::from_segment(segment, offset % BLOCK_SIZE, buf.len());
 
@@ -141,7 +140,6 @@ impl VmIo for dyn BlockDevice {
             };
             let segment = VmAllocOptions::new(num_blocks as usize)
                 .uninit(true)
-                .is_contiguous(true)
                 .alloc_contiguous()?;
             segment.write_bytes(offset % BLOCK_SIZE, buf)?;
             let len = segment
@@ -183,7 +181,6 @@ impl dyn BlockDevice {
             };
             let segment = VmAllocOptions::new(num_blocks as usize)
                 .uninit(true)
-                .is_contiguous(true)
                 .alloc_contiguous()?;
             segment.write_bytes(offset % BLOCK_SIZE, buf)?;
             let len = segment
