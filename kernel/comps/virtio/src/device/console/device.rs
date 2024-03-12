@@ -4,7 +4,12 @@ use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
-use aster_frame::{config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
+use aster_frame::{
+    io_mem::IoMem,
+    sync::SpinLock,
+    trap::TrapFrame,
+    vm::{DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmReader, VmWriter},
+};
 use aster_util::safe_ptr::SafePtr;
 use log::debug;
 
@@ -20,21 +25,32 @@ pub struct ConsoleDevice {
     transport: Box<dyn VirtioTransport>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
-    buffer: SpinLock<Box<[u8; PAGE_SIZE]>>,
+    send_buffer: DmaStream,
+    receive_buffer: DmaStream,
     callbacks: SpinLock<Vec<&'static ConsoleCallback>>,
 }
 
 impl AnyConsoleDevice for ConsoleDevice {
     fn send(&self, value: &[u8]) {
         let mut transmit_queue = self.transmit_queue.lock_irq_disabled();
-        transmit_queue.add_buf(&[value], &[]).unwrap();
-        if transmit_queue.should_notify() {
-            transmit_queue.notify();
+        let mut reader = VmReader::from(value);
+
+        while reader.remain() > 0 {
+            let mut writer = self.send_buffer.writer().unwrap();
+            let len = writer.write(&mut reader);
+            self.send_buffer.sync(0..len).unwrap();
+
+            transmit_queue
+                .add_dma_buf(&[&(self.send_buffer.daddr(), len)], &[])
+                .unwrap();
+            if transmit_queue.should_notify() {
+                transmit_queue.notify();
+            }
+            while !transmit_queue.can_pop() {
+                spin_loop();
+            }
+            transmit_queue.pop_used().unwrap();
         }
-        while !transmit_queue.can_pop() {
-            spin_loop();
-        }
-        transmit_queue.pop_used().unwrap();
     }
 
     fn recv(&self, buf: &mut [u8]) -> Option<usize> {
@@ -43,17 +59,26 @@ impl AnyConsoleDevice for ConsoleDevice {
             return None;
         }
         let (_, len) = receive_queue.pop_used().unwrap();
+        self.receive_buffer.sync(0..len as usize).unwrap();
 
-        let mut recv_buffer = self.buffer.lock();
-        buf.copy_from_slice(&recv_buffer.as_ref()[..len as usize]);
-        receive_queue.add_buf(&[], &[recv_buffer.as_mut()]).unwrap();
+        let recv_len = {
+            // FIXME: If the length of the recv_buffer exceeds that of the buf,
+            // there will be some content that is not received.
+            let mut writer = VmWriter::from(buf);
+            let mut reader = self.receive_buffer.reader().unwrap().limit(len as usize);
+            writer.write(&mut reader)
+        };
+
+        receive_queue
+            .add_dma_buf(&[], &[&self.receive_buffer])
+            .unwrap();
         if receive_queue.should_notify() {
             receive_queue.notify();
         }
-        Some(len as usize)
+        Some(recv_len)
     }
 
-    fn register_callback(&self, callback: &'static (dyn Fn(&[u8]) + Send + Sync)) {
+    fn register_callback(&self, callback: &'static ConsoleCallback) {
         self.callbacks.lock().push(callback);
     }
 
@@ -63,13 +88,17 @@ impl AnyConsoleDevice for ConsoleDevice {
             return;
         }
         let (_, len) = receive_queue.pop_used().unwrap();
-        let mut recv_buffer = self.buffer.lock();
-        let buffer = &recv_buffer.as_ref()[..len as usize];
-        let lock = self.callbacks.lock();
-        for callback in lock.iter() {
-            callback.call((buffer,));
+        self.receive_buffer.sync(0..len as usize).unwrap();
+
+        let callbacks = self.callbacks.lock_irq_disabled();
+
+        for callback in callbacks.iter() {
+            let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
+            callback(reader);
         }
-        receive_queue.add_buf(&[], &[recv_buffer.as_mut()]).unwrap();
+        receive_queue
+            .add_dma_buf(&[], &[&self.receive_buffer])
+            .unwrap();
         if receive_queue.should_notify() {
             receive_queue.notify();
         }
@@ -104,18 +133,33 @@ impl ConsoleDevice {
         let transmit_queue =
             SpinLock::new(VirtQueue::new(TRANSMIT0_QUEUE_INDEX, 2, transport.as_mut()).unwrap());
 
+        let send_buffer = {
+            let mut options = VmAllocOptions::new(1);
+            options.is_contiguous(true);
+            let vm_segment = options.alloc_contiguous().unwrap();
+            DmaStream::map(vm_segment, DmaDirection::ToDevice, false).unwrap()
+        };
+
+        let receive_buffer = {
+            let mut options = VmAllocOptions::new(1);
+            options.is_contiguous(true);
+            let vm_segment = options.alloc_contiguous().unwrap();
+            DmaStream::map(vm_segment, DmaDirection::FromDevice, false).unwrap()
+        };
+
         let mut device = Self {
             config,
             transport,
             receive_queue,
             transmit_queue,
-            buffer: SpinLock::new(Box::new([0; PAGE_SIZE])),
+            send_buffer,
+            receive_buffer,
             callbacks: SpinLock::new(Vec::new()),
         };
 
         let mut receive_queue = device.receive_queue.lock();
         receive_queue
-            .add_buf(&[], &[device.buffer.lock().as_mut()])
+            .add_dma_buf(&[], &[&device.receive_buffer])
             .unwrap();
         if receive_queue.should_notify() {
             receive_queue.notify();

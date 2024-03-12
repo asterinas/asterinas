@@ -10,11 +10,11 @@ extern crate alloc;
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
-use aster_frame::sync::SpinLock;
+use aster_frame::{sync::SpinLock, vm::VmReader};
 use component::{init_component, ComponentInitError};
 use spin::Once;
 
-pub type ConsoleCallback = dyn Fn(&[u8]) + Send + Sync;
+pub type ConsoleCallback = dyn Fn(VmReader) + Send + Sync;
 
 pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     fn send(&self, buf: &[u8]);

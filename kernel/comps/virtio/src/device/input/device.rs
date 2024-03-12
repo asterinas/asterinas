@@ -8,7 +8,13 @@ use alloc::{
 };
 use core::fmt::Debug;
 
-use aster_frame::{io_mem::IoMem, offset_of, sync::SpinLock, trap::TrapFrame};
+use aster_frame::{
+    io_mem::IoMem,
+    offset_of,
+    sync::SpinLock,
+    trap::TrapFrame,
+    vm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmIo, VmReader},
+};
 use aster_input::{
     key::{Key, KeyStatus},
     InputEvent,
@@ -16,7 +22,6 @@ use aster_input::{
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::{debug, info};
-use pod::Pod;
 
 use super::{InputConfigSelect, VirtioInputConfig, VirtioInputEvent, QUEUE_EVENT, QUEUE_STATUS};
 use crate::{device::VirtioDeviceError, queue::VirtQueue, transport::VirtioTransport};
@@ -67,7 +72,7 @@ pub struct InputDevice {
     config: SafePtr<VirtioInputConfig, IoMem>,
     event_queue: SpinLock<VirtQueue>,
     status_queue: VirtQueue,
-    event_buf: SpinLock<Box<[VirtioInputEvent; QUEUE_SIZE as usize]>>,
+    event_buf: EventBuf,
     #[allow(clippy::type_complexity)]
     callbacks: SpinLock<Vec<Arc<dyn Fn(InputEvent) + Send + Sync + 'static>>>,
     transport: Box<dyn VirtioTransport>,
@@ -77,15 +82,14 @@ impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let mut event_buf = Box::new([VirtioInputEvent::default(); QUEUE_SIZE as usize]);
         let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())
             .expect("create event virtqueue failed");
         let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, transport.as_mut())
             .expect("create status virtqueue failed");
 
-        for (i, event) in event_buf.as_mut().iter_mut().enumerate() {
-            // FIEME: replace slice with a more secure data structure to use dma mapping.
-            let token = event_queue.add_buf(&[], &[event.as_bytes_mut()]);
+        let event_buf = EventBuf::new();
+        for (i, event) in event_buf.iter().enumerate() {
+            let token = event_queue.add_dma_buf(&[], &[&(event.daddr(), event.size())]);
             match token {
                 Ok(value) => {
                     assert_eq!(value, i as u16);
@@ -100,7 +104,7 @@ impl InputDevice {
             config: VirtioInputConfig::new(transport.as_mut()),
             event_queue: SpinLock::new(event_queue),
             status_queue,
-            event_buf: SpinLock::new(event_buf),
+            event_buf,
             transport,
             callbacks: SpinLock::new(Vec::new()),
         };
@@ -118,7 +122,7 @@ impl InputDevice {
         fn handle_input(_: &TrapFrame) {
             debug!("Handle Virtio input interrupt");
             let device = aster_input::get_device(super::DEVICE_NAME).unwrap();
-            device.handle_irq().unwrap();
+            device.handle_irq();
         }
 
         fn config_space_change(_: &TrapFrame) {
@@ -142,24 +146,27 @@ impl InputDevice {
     }
 
     /// Pop the pending event.
-    pub fn pop_pending_event(&self) -> Option<VirtioInputEvent> {
+    fn pop_pending_event(&self, handle_event: &impl Fn(&Event) -> bool) -> bool {
         let mut lock = self.event_queue.lock();
-        if let Ok((token, _)) = lock.pop_used() {
-            if token >= QUEUE_SIZE {
-                return None;
-            }
-            let event = &mut self.event_buf.lock()[token as usize];
-            // requeue
-            // FIEME: replace slice with a more secure data structure to use dma mapping.
-            if let Ok(new_token) = lock.add_buf(&[], &[event.as_bytes_mut()]) {
-                // This only works because nothing happen between `pop_used` and `add` that affects
-                // the list of free descriptors in the queue, so `add` reuses the descriptor which
-                // was just freed by `pop_used`.
-                assert_eq!(new_token, token);
-                return Some(*event);
-            }
+        let Ok((token, _)) = lock.pop_used() else {
+            return false;
+        };
+
+        if token >= QUEUE_SIZE {
+            return false;
         }
-        None
+        let event = self.event_buf.iter().nth(token as usize).unwrap();
+        let res = handle_event(&event);
+        // requeue
+        // FIEME: replace slice with a more secure data structure to use dma mapping.
+        let new_token = lock
+            .add_dma_buf(&[], &[&(event.daddr(), event.size())])
+            .unwrap();
+        // This only works because nothing happen between `pop_used` and `add` that affects
+        // the list of free descriptors in the queue, so `add` reuses the descriptor which
+        // was just freed by `pop_used`.
+        assert_eq!(new_token, token);
+        res
     }
 
     /// Query a specific piece of information by `select` and `subsel`, and write
@@ -188,33 +195,127 @@ impl InputDevice {
     }
 }
 
+#[derive(Debug)]
+struct EventBuf(DmaStream);
+
+impl EventBuf {
+    fn new() -> Self {
+        let vm_segment = {
+            let mut options = VmAllocOptions::new(1);
+            options.is_contiguous(true);
+            options.alloc_contiguous().unwrap()
+        };
+
+        let default_event = VirtioInputEvent::default();
+        for idx in 0..QUEUE_SIZE as usize {
+            let offset = idx * core::mem::size_of::<VirtioInputEvent>();
+            vm_segment.write_val(offset, &default_event).unwrap();
+        }
+
+        let stream = DmaStream::map(vm_segment, DmaDirection::FromDevice, false).unwrap();
+        Self(stream)
+    }
+
+    fn iter(&self) -> EventBufIter {
+        EventBufIter {
+            event_buf: self,
+            cur_idx: 0,
+        }
+    }
+}
+
+struct Event<'a> {
+    event_buf: &'a EventBuf,
+    offset: usize,
+    size: usize,
+}
+
+impl<'a> Event<'a> {
+    fn daddr(&self) -> Daddr {
+        self.event_buf.0.daddr() + self.offset
+    }
+
+    const fn size(&self) -> usize {
+        self.size
+    }
+
+    fn reader(&self) -> VmReader<'a> {
+        self.event_buf
+            .0
+            .sync(self.offset..self.offset + self.size)
+            .unwrap();
+        self.event_buf
+            .0
+            .reader()
+            .unwrap()
+            .skip(self.offset)
+            .limit(self.size)
+    }
+}
+
+struct EventBufIter<'a> {
+    event_buf: &'a EventBuf,
+    cur_idx: usize,
+}
+
+impl<'a> Iterator for EventBufIter<'a> {
+    type Item = Event<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur_idx >= QUEUE_SIZE as usize {
+            return None;
+        }
+
+        let event_size = core::mem::size_of::<VirtioInputEvent>();
+        let offset = self.cur_idx * event_size;
+        let event = Event {
+            event_buf: self.event_buf,
+            offset,
+            size: event_size,
+        };
+
+        self.cur_idx += 1;
+
+        Some(event)
+    }
+}
+
 impl aster_input::InputDevice for InputDevice {
-    fn handle_irq(&self) -> Option<()> {
-        // one interrupt may contains serval input, so it should loop
-        loop {
-            let Some(event) = self.pop_pending_event() else {
-                return Some(());
+    fn handle_irq(&self) {
+        // If there may be more events to handle
+        let handle_event = |event: &Event| -> bool {
+            let event: VirtioInputEvent = {
+                let mut reader = event.reader();
+                reader.read_val()
             };
+
             match event.event_type {
-                0 => return Some(()),
+                0 => return false,
                 // Keyboard
                 1 => {}
                 // TODO: Support mouse device.
-                _ => continue,
+                _ => return true,
             }
+
             let status = match event.value {
                 1 => KeyStatus::Pressed,
                 0 => KeyStatus::Released,
-                _ => return Some(()),
+                _ => return false,
             };
+
             let event = InputEvent::KeyBoard(Key::try_from(event.code).unwrap(), status);
             info!("Input Event:{:?}", event);
 
             let callbacks = self.callbacks.lock();
             for callback in callbacks.iter() {
-                callback.call((event,));
+                callback(event);
             }
-        }
+
+            true
+        };
+
+        // one interrupt may contains serval input, so it should loop
+        while self.pop_pending_event(&handle_event) {}
     }
 
     fn register_callbacks(&self, function: &'static (dyn Fn(InputEvent) + Send + Sync)) {
