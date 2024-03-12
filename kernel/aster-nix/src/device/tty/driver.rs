@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub use aster_frame::arch::console::register_console_input_callback;
+pub use aster_frame::arch::console;
+use aster_frame::vm::VmReader;
 use spin::Once;
 
 use crate::{
@@ -62,24 +63,25 @@ impl TtyDriver {
         Ok(())
     }
 
-    pub fn receive_char(&self, item: u8) {
+    pub fn push_char(&self, ch: u8) {
         // FIXME: should the char send to all ttys?
         for tty in &*self.ttys.lock_irq_disabled() {
-            tty.receive_char(item);
+            tty.push_char(ch);
         }
     }
 }
 
-fn console_input_callback(items: &[u8]) {
+fn console_input_callback(mut reader: VmReader) {
     let tty_driver = get_tty_driver();
-    for item in items {
-        tty_driver.receive_char(*item);
+    while reader.remain() > 0 {
+        let ch = reader.read_val();
+        tty_driver.push_char(ch);
     }
 }
 
 fn serial_input_callback(item: u8) {
     let tty_driver = get_tty_driver();
-    tty_driver.receive_char(item);
+    tty_driver.push_char(item);
 }
 
 fn get_tty_driver() -> &'static TtyDriver {

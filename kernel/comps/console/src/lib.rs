@@ -10,17 +10,20 @@ extern crate alloc;
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
-use aster_frame::sync::SpinLock;
+use aster_frame::{sync::SpinLock, vm::VmReader};
 use component::{init_component, ComponentInitError};
 use spin::Once;
 
-pub type ConsoleCallback = dyn Fn(&[u8]) + Send + Sync;
+pub type ConsoleCallback = dyn Fn(VmReader) + Send + Sync;
 
 pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     fn send(&self, buf: &[u8]);
-    fn recv(&self, buf: &mut [u8]) -> Option<usize>;
+    /// Registers callback to the console device.
+    /// The callback will be called once the console device receive data.
+    ///
+    /// Since the callback will be called in interrupt context,
+    /// the callback should NEVER sleep.
     fn register_callback(&self, callback: &'static ConsoleCallback);
-    fn handle_irq(&self);
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {
@@ -30,16 +33,6 @@ pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {
         .console_device_table
         .lock_irq_disabled()
         .insert(name, device);
-}
-
-pub fn get_device(str: &str) -> Option<Arc<dyn AnyConsoleDevice>> {
-    COMPONENT
-        .get()
-        .unwrap()
-        .console_device_table
-        .lock_irq_disabled()
-        .get(str)
-        .cloned()
 }
 
 pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {

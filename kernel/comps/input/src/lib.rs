@@ -23,7 +23,6 @@ pub enum InputEvent {
 }
 
 pub trait InputDevice: Send + Sync + Any + Debug {
-    fn handle_irq(&self) -> Option<()>;
     fn register_callbacks(&self, function: &'static (dyn Fn(InputEvent) + Send + Sync));
 }
 

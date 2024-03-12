@@ -5,12 +5,10 @@ use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
 use aster_network::{
-    buffer::{RxBuffer, TxBuffer},
-    AnyNetworkDevice, EthernetAddr, NetDeviceIrqHandler, VirtioNetError,
+    AnyNetworkDevice, EthernetAddr, NetDeviceIrqHandler, RxBuffer, TxBuffer, VirtioNetError,
 };
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
-use pod::Pod;
 use smoltcp::phy::{DeviceCapabilities, Medium};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
@@ -60,9 +58,9 @@ impl NetworkDevice {
 
         let mut rx_buffers = SlotVec::new();
         for i in 0..QUEUE_SIZE {
-            let mut rx_buffer = RxBuffer::new(RX_BUFFER_LEN, size_of::<VirtioNetHdr>());
+            let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>());
             // FIEME: Replace rx_buffer with VM segment-based data structure to use dma mapping.
-            let token = recv_queue.add_buf(&[], &[rx_buffer.buf_mut()])?;
+            let token = recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
         }
@@ -80,7 +78,7 @@ impl NetworkDevice {
             transport,
             callbacks: Vec::new(),
         };
-        device.transport.finish_init();
+
         /// Interrupt handler if network device config space changes
         fn config_space_change(_: &TrapFrame) {
             debug!("network device config space change");
@@ -99,6 +97,7 @@ impl NetworkDevice {
             .transport
             .register_queue_callback(QUEUE_RECV, Box::new(handle_network_event), false)
             .unwrap();
+        device.transport.finish_init();
 
         aster_network::register_device(
             super::DEVICE_NAME.to_string(),
@@ -109,10 +108,10 @@ impl NetworkDevice {
 
     /// Add a rx buffer to recv queue
     /// FIEME: Replace rx_buffer with VM segment-based data structure to use dma mapping.
-    fn add_rx_buffer(&mut self, mut rx_buffer: RxBuffer) -> Result<(), VirtioNetError> {
+    fn add_rx_buffer(&mut self, rx_buffer: RxBuffer) -> Result<(), VirtioNetError> {
         let token = self
             .recv_queue
-            .add_buf(&[], &[rx_buffer.buf_mut()])
+            .add_dma_buf(&[], &[&rx_buffer])
             .map_err(queue_to_network_error)?;
         assert!(self.rx_buffers.put_at(token as usize, rx_buffer).is_none());
         if self.recv_queue.should_notify() {
@@ -133,18 +132,20 @@ impl NetworkDevice {
         rx_buffer.set_packet_len(len as usize);
         // FIXME: Ideally, we can reuse the returned buffer without creating new buffer.
         // But this requires locking device to be compatible with smoltcp interface.
-        let new_rx_buffer = RxBuffer::new(RX_BUFFER_LEN, size_of::<VirtioNetHdr>());
+        let new_rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>());
         self.add_rx_buffer(new_rx_buffer)?;
         Ok(rx_buffer)
     }
 
     /// Send a packet to network. Return until the request completes.
     /// FIEME: Replace tx_buffer with VM segment-based data structure to use dma mapping.
-    fn send(&mut self, tx_buffer: TxBuffer) -> Result<(), VirtioNetError> {
+    fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError> {
         let header = VirtioNetHdr::default();
+        let tx_buffer = TxBuffer::new(&header, packet);
+
         let token = self
             .send_queue
-            .add_buf(&[header.as_bytes(), tx_buffer.buf()], &[])
+            .add_dma_buf(&[&tx_buffer], &[])
             .map_err(queue_to_network_error)?;
 
         if self.send_queue.should_notify() {
@@ -198,8 +199,8 @@ impl AnyNetworkDevice for NetworkDevice {
         self.receive()
     }
 
-    fn send(&mut self, tx_buffer: TxBuffer) -> Result<(), VirtioNetError> {
-        self.send(tx_buffer)
+    fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError> {
+        self.send(packet)
     }
 }
 

@@ -84,7 +84,8 @@ impl VmAllocOptions {
     ///
     /// The returned `VmSegment` contains at least one page frame.
     pub fn alloc_contiguous(&self) -> Result<VmSegment> {
-        if !self.is_contiguous || self.nframes == 0 {
+        // It's no use to checking `self.is_contiguous` here.
+        if self.nframes == 0 {
             return Err(Error::InvalidArgs);
         }
 

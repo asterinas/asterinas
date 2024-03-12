@@ -4,7 +4,12 @@ use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
-use aster_frame::{io_mem::IoMem, sync::SpinLock, trap::TrapFrame, vm::PAGE_SIZE};
+use aster_frame::{
+    io_mem::IoMem,
+    sync::SpinLock,
+    trap::TrapFrame,
+    vm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmReader},
+};
 use aster_util::safe_ptr::SafePtr;
 use log::debug;
 
@@ -17,62 +22,39 @@ use crate::{
 
 pub struct ConsoleDevice {
     config: SafePtr<VirtioConsoleConfig, IoMem>,
-    transport: Box<dyn VirtioTransport>,
+    transport: SpinLock<Box<dyn VirtioTransport>>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
-    buffer: SpinLock<Box<[u8; PAGE_SIZE]>>,
+    send_buffer: DmaStream,
+    receive_buffer: DmaStream,
     callbacks: SpinLock<Vec<&'static ConsoleCallback>>,
 }
 
 impl AnyConsoleDevice for ConsoleDevice {
     fn send(&self, value: &[u8]) {
         let mut transmit_queue = self.transmit_queue.lock_irq_disabled();
-        transmit_queue.add_buf(&[value], &[]).unwrap();
-        if transmit_queue.should_notify() {
-            transmit_queue.notify();
+        let mut reader = VmReader::from(value);
+
+        while reader.remain() > 0 {
+            let mut writer = self.send_buffer.writer().unwrap();
+            let len = writer.write(&mut reader);
+            self.send_buffer.sync(0..len).unwrap();
+
+            let slice = DmaStreamSlice::new(&self.send_buffer, 0, len);
+            transmit_queue.add_dma_buf(&[&slice], &[]).unwrap();
+
+            if transmit_queue.should_notify() {
+                transmit_queue.notify();
+            }
+            while !transmit_queue.can_pop() {
+                spin_loop();
+            }
+            transmit_queue.pop_used().unwrap();
         }
-        while !transmit_queue.can_pop() {
-            spin_loop();
-        }
-        transmit_queue.pop_used().unwrap();
     }
 
-    fn recv(&self, buf: &mut [u8]) -> Option<usize> {
-        let mut receive_queue = self.receive_queue.lock_irq_disabled();
-        if !receive_queue.can_pop() {
-            return None;
-        }
-        let (_, len) = receive_queue.pop_used().unwrap();
-
-        let mut recv_buffer = self.buffer.lock();
-        buf.copy_from_slice(&recv_buffer.as_ref()[..len as usize]);
-        receive_queue.add_buf(&[], &[recv_buffer.as_mut()]).unwrap();
-        if receive_queue.should_notify() {
-            receive_queue.notify();
-        }
-        Some(len as usize)
-    }
-
-    fn register_callback(&self, callback: &'static (dyn Fn(&[u8]) + Send + Sync)) {
-        self.callbacks.lock().push(callback);
-    }
-
-    fn handle_irq(&self) {
-        let mut receive_queue = self.receive_queue.lock_irq_disabled();
-        if !receive_queue.can_pop() {
-            return;
-        }
-        let (_, len) = receive_queue.pop_used().unwrap();
-        let mut recv_buffer = self.buffer.lock();
-        let buffer = &recv_buffer.as_ref()[..len as usize];
-        let lock = self.callbacks.lock();
-        for callback in lock.iter() {
-            callback.call((buffer,));
-        }
-        receive_queue.add_buf(&[], &[recv_buffer.as_mut()]).unwrap();
-        if receive_queue.should_notify() {
-            receive_queue.notify();
-        }
+    fn register_callback(&self, callback: &'static ConsoleCallback) {
+        self.callbacks.lock_irq_disabled().push(callback);
     }
 }
 
@@ -104,41 +86,76 @@ impl ConsoleDevice {
         let transmit_queue =
             SpinLock::new(VirtQueue::new(TRANSMIT0_QUEUE_INDEX, 2, transport.as_mut()).unwrap());
 
-        let mut device = Self {
-            config,
-            transport,
-            receive_queue,
-            transmit_queue,
-            buffer: SpinLock::new(Box::new([0; PAGE_SIZE])),
-            callbacks: SpinLock::new(Vec::new()),
+        let send_buffer = {
+            let vm_segment = VmAllocOptions::new(1).alloc_contiguous().unwrap();
+            DmaStream::map(vm_segment, DmaDirection::ToDevice, false).unwrap()
         };
 
-        let mut receive_queue = device.receive_queue.lock();
+        let receive_buffer = {
+            let vm_segment = VmAllocOptions::new(1).alloc_contiguous().unwrap();
+            DmaStream::map(vm_segment, DmaDirection::FromDevice, false).unwrap()
+        };
+
+        let device = Arc::new(Self {
+            config,
+            transport: SpinLock::new(transport),
+            receive_queue,
+            transmit_queue,
+            send_buffer,
+            receive_buffer,
+            callbacks: SpinLock::new(Vec::new()),
+        });
+
+        let mut receive_queue = device.receive_queue.lock_irq_disabled();
         receive_queue
-            .add_buf(&[], &[device.buffer.lock().as_mut()])
+            .add_dma_buf(&[], &[&device.receive_buffer])
             .unwrap();
         if receive_queue.should_notify() {
             receive_queue.notify();
         }
         drop(receive_queue);
-        device
-            .transport
+
+        // Register irq callbacks
+        let mut transport = device.transport.lock_irq_disabled();
+        let handle_console_input = {
+            let device = device.clone();
+            move |_: &TrapFrame| device.handle_recv_irq()
+        };
+        transport
             .register_queue_callback(RECV0_QUEUE_INDEX, Box::new(handle_console_input), false)
             .unwrap();
-        device
-            .transport
+        transport
             .register_cfg_callback(Box::new(config_space_change))
             .unwrap();
-        device.transport.finish_init();
+        transport.finish_init();
+        drop(transport);
 
-        aster_console::register_device(DEVICE_NAME.to_string(), Arc::new(device));
+        aster_console::register_device(DEVICE_NAME.to_string(), device);
 
         Ok(())
     }
-}
 
-fn handle_console_input(_: &TrapFrame) {
-    aster_console::get_device(DEVICE_NAME).unwrap().handle_irq();
+    fn handle_recv_irq(&self) {
+        let mut receive_queue = self.receive_queue.lock_irq_disabled();
+        if !receive_queue.can_pop() {
+            return;
+        }
+        let (_, len) = receive_queue.pop_used().unwrap();
+        self.receive_buffer.sync(0..len as usize).unwrap();
+
+        let callbacks = self.callbacks.lock_irq_disabled();
+
+        for callback in callbacks.iter() {
+            let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
+            callback(reader);
+        }
+        receive_queue
+            .add_dma_buf(&[], &[&self.receive_buffer])
+            .unwrap();
+        if receive_queue.should_notify() {
+            receive_queue.notify();
+        }
+    }
 }
 
 fn config_space_change(_: &TrapFrame) {

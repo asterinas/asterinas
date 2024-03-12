@@ -80,6 +80,9 @@ fn init_thread() {
         "[kernel] Spawn init thread, tid = {}",
         current_thread!().tid()
     );
+    // Work queue should be initialized before interrupt is enabled,
+    // in case any irq handler uses work queue as bottom half
+    thread::work_queue::init();
     // FIXME: Remove this if we move the step of mounting
     // the filesystems to be done within the init process.
     aster_frame::trap::enable_local();
@@ -97,7 +100,6 @@ fn init_thread() {
         "[aster-nix/lib.rs] spawn kernel thread, tid = {}",
         thread.tid()
     );
-    thread::work_queue::init();
 
     print_banner();
 

@@ -4,9 +4,11 @@
 #![forbid(unsafe_code)]
 #![feature(trait_alias)]
 #![feature(fn_traits)]
+#![feature(linked_list_cursors)]
 
-pub mod buffer;
-pub mod driver;
+mod buffer;
+mod dma_pool;
+mod driver;
 
 extern crate alloc;
 
@@ -15,8 +17,9 @@ use core::{any::Any, fmt::Debug};
 
 use aster_frame::sync::SpinLock;
 use aster_util::safe_ptr::Pod;
-use buffer::{RxBuffer, TxBuffer};
+pub use buffer::{RxBuffer, TxBuffer};
 use component::{init_component, ComponentInitError};
+pub use dma_pool::DmaSegment;
 use smoltcp::phy;
 use spin::Once;
 
@@ -45,7 +48,7 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
     /// Otherwise, return NotReady error.
     fn receive(&mut self) -> Result<RxBuffer, VirtioNetError>;
     /// Send a packet to network. Return until the request completes.
-    fn send(&mut self, tx_buffer: TxBuffer) -> Result<(), VirtioNetError>;
+    fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError>;
 }
 
 pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;
@@ -55,38 +58,57 @@ pub fn register_device(name: String, device: Arc<SpinLock<dyn AnyNetworkDevice>>
         .get()
         .unwrap()
         .network_device_table
-        .lock()
+        .lock_irq_disabled()
         .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
 }
 
 pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice>>> {
-    let lock = COMPONENT.get().unwrap().network_device_table.lock();
-    let (_, device) = lock.get(str)?;
+    let table = COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_irq_disabled();
+    let (_, device) = table.get(str)?;
     Some(device.clone())
 }
 
+/// Registers callback which will be called when receiving message.
+///
+/// Since the callback will be called in interrupt context,
+/// the callback function should NOT sleep.
 pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
-    let lock = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some((callbacks, _)) = lock.get(name) else {
+    let device_table = COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_irq_disabled();
+    let Some((callbacks, _)) = device_table.get(name) else {
         return;
     };
-    callbacks.lock().push(Arc::new(callback));
+    callbacks.lock_irq_disabled().push(Arc::new(callback));
 }
 
 pub fn handle_recv_irq(name: &str) {
-    let lock = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some((callbacks, _)) = lock.get(name) else {
+    let device_table = COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_irq_disabled();
+    let Some((callbacks, _)) = device_table.get(name) else {
         return;
     };
-    let callbacks = callbacks.clone();
-    let lock = callbacks.lock();
-    for callback in lock.iter() {
-        callback.call(())
+    let callbacks = callbacks.lock_irq_disabled();
+    for callback in callbacks.iter() {
+        callback();
     }
 }
 
 pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
-    let network_devs = COMPONENT.get().unwrap().network_device_table.lock();
+    let network_devs = COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_irq_disabled();
     network_devs
         .iter()
         .map(|(name, (_, device))| (name.clone(), device.clone()))
@@ -102,6 +124,7 @@ fn init() -> Result<(), ComponentInitError> {
     let a = Component::init()?;
     COMPONENT.call_once(|| a);
     NETWORK_IRQ_HANDLERS.call_once(|| SpinLock::new(Vec::new()));
+    buffer::init();
     Ok(())
 }
 

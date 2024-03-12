@@ -51,9 +51,7 @@ pub struct KernelStack {
 impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE)
-                .is_contiguous(true)
-                .alloc_contiguous()?,
+            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).alloc_contiguous()?,
             old_guard_page_flag: None,
         })
     }
@@ -61,9 +59,8 @@ impl KernelStack {
     /// Generate a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
-        let stack_segment = VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1)
-            .is_contiguous(true)
-            .alloc_contiguous()?;
+        let stack_segment =
+            VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
         let unpresent_flag = PageTableFlags::empty();
         let old_guard_page_flag = Self::protect_guard_page(&stack_segment, unpresent_flag);
         Ok(Self {

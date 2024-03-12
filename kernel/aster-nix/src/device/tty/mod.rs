@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_frame::early_print;
 use spin::Once;
 
 use self::{driver::TtyDriver, line_discipline::LineDiscipline};
@@ -61,8 +62,11 @@ impl Tty {
         *self.driver.lock_irq_disabled() = driver;
     }
 
-    pub fn receive_char(&self, ch: u8) {
-        self.ldisc.push_char(ch, |content| print!("{}", content));
+    pub fn push_char(&self, ch: u8) {
+        // FIXME: Use `early_print` to avoid calling virtio-console.
+        // This is only a workaround
+        self.ldisc
+            .push_char(ch, |content| early_print!("{}", content))
     }
 }
 
