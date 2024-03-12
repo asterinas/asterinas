@@ -14,7 +14,7 @@ on:
 jobs:
   osdk-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     container: asterinas/asterinas:0.4.1
     steps:
       - run: echo "Running in asterinas/asterinas:0.4.1"
@@ -31,3 +31,19 @@ jobs:
       - name: Unit test
         id: unit_test
         run: cd osdk && cargo build && RUSTUP_HOME=/root/.rustup cargo test
+  
+  # Test OSDK in the same environment as described in the OSDK User Guide in the Asterinas Book.
+  osdk_doc_env_test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: asterinas/osdk:0.4.0
+    steps:
+      - run: echo "Running in asterinas/osdk:0.4.0"
+
+      - uses: actions/checkout@v4
+
+      - name: Unit test
+        id: unit_test
+        run: cd osdk && cargo build && RUSTUP_HOME=/root/.rustup cargo test
+    
+    # TODO: test the demos in Asterinas Book
