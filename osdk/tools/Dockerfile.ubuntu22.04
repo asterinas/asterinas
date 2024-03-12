@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# This image is for the OSDK GitHub CI. 
+# The environment is consistent with the one 
+# described in the OSDK User Guide section of the Asterinas Book.
+
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt update \ 
+    && apt install -y \ 
+    build-essential \ 
+    curl \ 
+    grub-efi-amd64 \
+    grub2-common \ 
+    libpixman-1-dev     `# running dependency for QEMU` \
+    mtools              `# used by grub-mkrescue` \
+    ovmf \ 
+    qemu-system-x86 \ 
+    xorriso \ 
+    && apt clean \ 
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust of both nightly and stable channel
+ENV PATH="/root/.cargo/bin:${PATH}"
+ARG ASTER_RUST_VERSION
+RUN curl https://sh.rustup.rs -sSf | \ 
+        sh -s -- --default-toolchain ${ASTER_RUST_VERSION} -y \ 
+    && rustup toolchain install stable \ 
+    && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \ 
+    && cargo -V \ 
+    && rustup component add rust-src rustc-dev llvm-tools-preview
+
+# Install cargo-binutils
+RUN cargo install cargo-binutils
+
+VOLUME [ "/root/asterinas" ]
+
+WORKDIR /root/asterinas

@@ -43,11 +43,7 @@ fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &st
     dependencies.as_table_mut().unwrap().extend(aster_frame_dep);
     let ktest_dep = toml::Table::from_str(&aster_crate_dep("ktest")).unwrap();
     dependencies.as_table_mut().unwrap().extend(ktest_dep);
-
-    // If we created a workspace by `osdk new`, we should exclude the `base` crate from the workspace.
-    // let exclude = toml::Table::from_str(r#"exclude = ["target/osdk/base"]"#).unwrap();
-    // manifest.insert("workspace".to_string(), toml::Value::Table(exclude));
-
+    
     let content = toml::to_string(&manifest).unwrap();
     fs::write(mainfest_path, content).unwrap();
 }

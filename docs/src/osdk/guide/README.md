@@ -27,7 +27,7 @@ the following tools need to be installed:
 - cargo-binutils
 - gcc
 - qemu-system-x86_64
-- grub-mkrescue
+- grub
 - ovmf
 - xorriso
 
@@ -42,7 +42,8 @@ cargo install cargo-binutils
 
 Other tools can be installed by
 ```bash
-apt install build-essential grub2-common qemu-system-x86 ovmf xorriso
+apt install build-essential grub-efi-amd64 grub2-common \
+    libpixman-1-dev mtools qemu-system-x86 ovmf xorriso
 ```
 
 ### Install
