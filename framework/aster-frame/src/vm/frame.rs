@@ -595,6 +595,21 @@ impl<'a> VmReader<'a> {
         }
         copy_len
     }
+
+    /// Read a value of `Pod` type.
+    ///
+    /// # Panic
+    ///
+    /// If the length of the `Pod` type exceeds `self.remain()`, then this method will panic.
+    pub fn read_val<T: Pod>(&mut self) -> T {
+        assert!(self.remain() >= core::mem::size_of::<T>());
+
+        let mut val = T::new_uninit();
+        let mut writer = VmWriter::from(val.as_bytes_mut());
+        let read_len = self.read(&mut writer);
+
+        val
+    }
 }
 
 impl<'a> From<&'a [u8]> for VmReader<'a> {

@@ -19,7 +19,7 @@ use bitflags::bitflags;
 use log::debug;
 use pod::Pod;
 
-use crate::transport::VirtioTransport;
+use crate::{dma_buf::DmaBuf, transport::VirtioTransport};
 
 #[derive(Debug)]
 pub enum QueueError {
@@ -174,6 +174,76 @@ impl VirtQueue {
             avail_idx: 0,
             last_used_idx: 0,
         })
+    }
+
+    /// Add dma buffers to the virtqueue, return a token.
+    ///
+    /// Ref: linux virtio_ring.c virtqueue_add
+    pub fn add_dma_buf<T: DmaBuf>(
+        &mut self,
+        inputs: &[&T],
+        outputs: &[&T],
+    ) -> Result<u16, QueueError> {
+        if inputs.is_empty() && outputs.is_empty() {
+            return Err(QueueError::InvalidArgs);
+        }
+        if inputs.len() + outputs.len() + self.num_used as usize > self.queue_size as usize {
+            return Err(QueueError::BufferTooSmall);
+        }
+
+        // allocate descriptors from free list
+        let head = self.free_head;
+        let mut last = self.free_head;
+        for input in inputs.iter() {
+            let desc = &self.descs[self.free_head as usize];
+            set_dma_buf(&desc.borrow_vm().restrict::<TRights![Write, Dup]>(), *input);
+            field_ptr!(desc, Descriptor, flags)
+                .write(&DescFlags::NEXT)
+                .unwrap();
+            last = self.free_head;
+            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
+        }
+        for output in outputs.iter() {
+            let desc = &mut self.descs[self.free_head as usize];
+            set_dma_buf(
+                &desc.borrow_vm().restrict::<TRights![Write, Dup]>(),
+                *output,
+            );
+            field_ptr!(desc, Descriptor, flags)
+                .write(&(DescFlags::NEXT | DescFlags::WRITE))
+                .unwrap();
+            last = self.free_head;
+            self.free_head = field_ptr!(desc, Descriptor, next).read().unwrap();
+        }
+        // set last_elem.next = NULL
+        {
+            let desc = &mut self.descs[last as usize];
+            let mut flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
+            flags.remove(DescFlags::NEXT);
+            field_ptr!(desc, Descriptor, flags).write(&flags).unwrap();
+        }
+        self.num_used += (inputs.len() + outputs.len()) as u16;
+
+        let avail_slot = self.avail_idx & (self.queue_size - 1);
+
+        {
+            let ring_ptr: SafePtr<[u16; 64], &DmaCoherent> =
+                field_ptr!(&self.avail, AvailRing, ring);
+            let mut ring_slot_ptr = ring_ptr.cast::<u16>();
+            ring_slot_ptr.add(avail_slot as usize);
+            ring_slot_ptr.write(&head).unwrap();
+        }
+        // write barrier
+        fence(Ordering::SeqCst);
+
+        // increase head of avail ring
+        self.avail_idx = self.avail_idx.wrapping_add(1);
+        field_ptr!(&self.avail, AvailRing, idx)
+            .write(&self.avail_idx)
+            .unwrap();
+
+        fence(Ordering::SeqCst);
+        Ok(head)
     }
 
     /// Add buffers to the virtqueue, return a token. **This function will be removed in the future.**
@@ -438,6 +508,17 @@ pub struct Descriptor {
 }
 
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a DmaCoherent, TRightSet<TRights![Dup, Write]>>;
+
+#[inline]
+fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) {
+    let daddr = buf.daddr();
+    field_ptr!(desc_ptr, Descriptor, addr)
+        .write(&(daddr as u64))
+        .unwrap();
+    field_ptr!(desc_ptr, Descriptor, len)
+        .write(&(buf.len() as u32))
+        .unwrap();
+}
 
 #[inline]
 #[allow(clippy::type_complexity)]

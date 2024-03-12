@@ -38,7 +38,7 @@ struct DmaStreamInner {
 
 /// `DmaDirection` limits the data flow direction of `DmaStream` and
 /// prevents users from reading and writing to `DmaStream` unexpectedly.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum DmaDirection {
     ToDevice,
     FromDevice,
@@ -106,6 +106,10 @@ impl DmaStream {
     /// the memory. Do this at your own risk.
     pub fn vm_segment(&self) -> &VmSegment {
         &self.inner.vm_segment
+    }
+
+    pub fn nframes(&self) -> usize {
+        self.inner.vm_segment.nframes()
     }
 
     pub fn nbytes(&self) -> usize {
