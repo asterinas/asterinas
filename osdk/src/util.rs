@@ -106,7 +106,7 @@ fn get_default_member(metadata: &serde_json::Value) -> &str {
             .iter()
             .filter(|package| {
                 let id = package.get("id").unwrap();
-                if !default_members.contains(&id) {
+                if !default_members.contains(id) {
                     return false;
                 }
 
@@ -128,7 +128,7 @@ fn get_default_member(metadata: &serde_json::Value) -> &str {
             .collect()
     };
 
-    if packages.len() == 0 {
+    if packages.is_empty() {
         error_msg!("OSDK requires there's at least one kernel package. Please navigate to the kernel package directory or the workspace root and run the command.");
         std::process::exit(Errno::BuildCrate as _);
     }

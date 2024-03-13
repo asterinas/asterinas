@@ -163,6 +163,7 @@ format:
 
 .PHONY: check
 check: $(CARGO_OSDK)
+	@cd osdk && cargo clippy -- -D warnings
 	@./tools/format_all.sh --check   	# Check Rust format issues
 	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
 	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | \
