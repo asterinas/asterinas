@@ -129,9 +129,16 @@ pub struct CargoArgs {
     #[arg(
         long,
         help = "The Cargo build profile (built-in candidates are 'dev', 'release', 'test' and 'bench')",
-        default_value = "dev"
+        default_value = "dev",
+        conflicts_with = "release"
     )]
     pub profile: String,
+    #[arg(
+        long,
+        help = "Build artifacts in release mode",
+        conflicts_with = "profile"
+    )]
+    pub release: bool,
     #[arg(long, value_name = "FEATURES", help = "List of features to activate")]
     pub features: Vec<String>,
 }

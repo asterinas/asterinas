@@ -38,7 +38,7 @@ pub struct BuildConfig {
 
 impl BuildConfig {
     pub fn parse(args: &BuildArgs) -> Self {
-        let cargo_args = split_features(&args.cargo_args);
+        let cargo_args = parse_cargo_args(&args.cargo_args);
         let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
         apply_cli_args(&mut manifest, &args.osdk_args);
         try_fill_system_configs(&mut manifest);
@@ -58,7 +58,7 @@ pub struct RunConfig {
 
 impl RunConfig {
     pub fn parse(args: &RunArgs) -> Self {
-        let cargo_args = split_features(&args.cargo_args);
+        let cargo_args = parse_cargo_args(&args.cargo_args);
         let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
         apply_cli_args(&mut manifest, &args.osdk_args);
         try_fill_system_configs(&mut manifest);
@@ -79,7 +79,7 @@ pub struct TestConfig {
 
 impl TestConfig {
     pub fn parse(args: &TestArgs) -> Self {
-        let cargo_args = split_features(&args.cargo_args);
+        let cargo_args = parse_cargo_args(&args.cargo_args);
         let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
         apply_cli_args(&mut manifest, &args.osdk_args);
         try_fill_system_configs(&mut manifest);
@@ -128,9 +128,10 @@ fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S
     osdk_manifest
 }
 
-/// Split `features` in `cargo_args` to ensure each string contains exactly one feature.
-/// This method will spilt features seperated by comma in one string as multiple strings.
-fn split_features(cargo_args: &CargoArgs) -> CargoArgs {
+/// Parse cargo args.
+/// 1. Split `features` in `cargo_args` to ensure each string contains exactly one feature.
+/// 2. Change `profile` to `release` if `--release` is set.
+fn parse_cargo_args(cargo_args: &CargoArgs) -> CargoArgs {
     let mut features = Vec::new();
 
     for feature in cargo_args.features.iter() {
@@ -141,8 +142,15 @@ fn split_features(cargo_args: &CargoArgs) -> CargoArgs {
         }
     }
 
+    let profile = if cargo_args.release {
+        "release".to_string()
+    } else {
+        cargo_args.profile.clone()
+    };
+
     CargoArgs {
-        profile: cargo_args.profile.clone(),
+        profile,
+        release: cargo_args.release,
         features,
     }
 }
