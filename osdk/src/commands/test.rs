@@ -90,7 +90,7 @@ fn get_workspace_default_members() -> Vec<String> {
         .map(|value| {
             // The default member is in the form of "<crate_name> <crate_version> (path+file://<crate_path>)"
             let default_member = value.as_str().unwrap();
-            let path = default_member.split(" ").nth(2).unwrap();
+            let path = default_member.split(' ').nth(2).unwrap();
             path.trim_start_matches("(path+file://")
                 .trim_end_matches(')')
                 .to_string()
