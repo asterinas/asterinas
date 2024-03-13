@@ -27,7 +27,7 @@ use crate::{
     vm::{
         perms::VmPerms,
         vmar::Vmar,
-        vmo::{Vmo, VmoOptions, VmoRightsOp},
+        vmo::{Vmo, VmoFlags, VmoOptions, VmoRightsOp},
     },
 };
 
@@ -279,14 +279,25 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     };
 
     let segment_vmo = {
-        let vmo_offset = file_offset.align_down(PAGE_SIZE);
-        let map_start = virtual_addr.align_down(PAGE_SIZE);
-        let map_end = (virtual_addr + program_header.mem_size as usize).align_up(PAGE_SIZE);
-        let vmo_size = map_end - map_start;
+        let parent_range = {
+            let start = file_offset.align_down(PAGE_SIZE);
+            let end = (file_offset + program_header.file_size as usize).align_up(PAGE_SIZE);
+            start..end
+        };
+        let vmo_size = {
+            let vmap_start = virtual_addr.align_down(PAGE_SIZE);
+            let vmap_end = (virtual_addr + program_header.mem_size as usize).align_up(PAGE_SIZE);
+            vmap_end - vmap_start
+        };
         debug_assert!(vmo_size >= (program_header.file_size as usize).align_up(PAGE_SIZE));
-        page_cache_vmo
-            .new_cow_child(vmo_offset..vmo_offset + vmo_size)?
-            .alloc()?
+        let segment_vmo = page_cache_vmo
+            .new_cow_child(parent_range)?
+            .flags(VmoFlags::RESIZABLE)
+            .alloc()?;
+        if vmo_size > segment_vmo.size() {
+            segment_vmo.resize(vmo_size)?;
+        };
+        segment_vmo
     };
 
     // Write zero as paddings. There are head padding and tail padding.
@@ -294,7 +305,6 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     // then the bytes in first page from start to virtual address should be padded zeros.
     // Tail padding: If the segment's mem_size is larger than file size,
     // then the bytes that are not backed up by file content should be zeros.(usually .data/.bss sections).
-    // FIXME: Head padding may be removed.
 
     // Head padding.
     let page_offset = file_offset % PAGE_SIZE;
@@ -306,7 +316,7 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     let segment_vmo_size = segment_vmo.size();
     let tail_padding_offset = program_header.file_size as usize + page_offset;
     if segment_vmo_size > tail_padding_offset {
-        let buffer = vec![0u8; segment_vmo_size - tail_padding_offset];
+        let buffer = vec![0u8; (segment_vmo_size - tail_padding_offset) % PAGE_SIZE];
         segment_vmo.write_bytes(tail_padding_offset, &buffer)?;
     }
     Ok(segment_vmo.to_dyn())
