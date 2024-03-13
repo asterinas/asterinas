@@ -15,8 +15,7 @@ use crate::{
         memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    config::PHYS_OFFSET,
-    vm::paddr_to_vaddr,
+    vm::{paddr_to_vaddr, PHYS_MEM_BASE_VADDR},
 };
 
 static BOOT_PARAMS: Once<BootParams> = Once::new();
@@ -71,7 +70,7 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
     let hdr = &BOOT_PARAMS.get().unwrap().hdr;
     let ptr = hdr.ramdisk_image as usize;
     // We must return a slice composed by VA since kernel should read everything in VA.
-    let base_va = if ptr < PHYS_OFFSET {
+    let base_va = if ptr < PHYS_MEM_BASE_VADDR {
         paddr_to_vaddr(ptr)
     } else {
         ptr

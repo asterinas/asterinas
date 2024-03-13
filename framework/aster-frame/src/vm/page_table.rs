@@ -9,10 +9,9 @@ use spin::Once;
 
 use super::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions};
 use crate::{
-    arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry},
-    config::{ENTRY_COUNT, PAGE_SIZE},
+    arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry, NR_ENTRIES_PER_PAGE},
     sync::SpinLock,
-    vm::VmFrame,
+    vm::{VmFrame, PAGE_SIZE},
 };
 
 pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
@@ -77,9 +76,9 @@ pub trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
 
     /// The index of the next PTE is determined based on the virtual address and the current level, and the level range is [1,5].
     ///
-    /// For example, in x86 we use the following expression to get the index (ENTRY_COUNT is 512):
+    /// For example, in x86 we use the following expression to get the index (NR_ENTRIES_PER_PAGE is 512):
     /// ```
-    /// va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
+    /// va >> (12 + 9 * (level - 1)) & (NR_ENTRIES_PER_PAGE - 1)
     /// ```
     ///
     fn page_index(va: Vaddr, level: usize) -> usize;
@@ -395,7 +394,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     }
 }
 
-/// Read `ENTRY_COUNT` of PageTableEntry from an address
+/// Read `NR_ENTRIES_PER_PAGE` of PageTableEntry from an address
 ///
 /// # Safety
 ///
@@ -406,7 +405,7 @@ pub unsafe fn table_of<'a, T: PageTableEntryTrait>(pa: Paddr) -> Option<&'a mut 
         return None;
     }
     let ptr = super::paddr_to_vaddr(pa) as *mut _;
-    Some(core::slice::from_raw_parts_mut(ptr, ENTRY_COUNT))
+    Some(core::slice::from_raw_parts_mut(ptr, NR_ENTRIES_PER_PAGE))
 }
 
 /// translate a virtual address to physical address which cannot use offset to get physical address

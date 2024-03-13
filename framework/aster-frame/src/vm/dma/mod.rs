@@ -10,7 +10,7 @@ pub use dma_stream::{DmaDirection, DmaStream};
 use spin::Once;
 
 use super::Paddr;
-use crate::{arch::iommu::has_iommu, config::PAGE_SIZE, sync::SpinLock};
+use crate::{arch::iommu::has_iommu, sync::SpinLock, vm::PAGE_SIZE};
 
 /// If a device performs DMA to read or write system
 /// memory, the addresses used by the device are device addresses.

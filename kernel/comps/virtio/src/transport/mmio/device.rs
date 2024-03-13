@@ -8,12 +8,11 @@ use aster_frame::{
         bus::MmioDevice,
         device::{MmioCommonDevice, VirtioMmioVersion},
     },
-    config::PAGE_SIZE,
     io_mem::IoMem,
     offset_of,
     sync::RwLock,
     trap::IrqCallbackFunction,
-    vm::DmaCoherent,
+    vm::{DmaCoherent, PAGE_SIZE},
 };
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};

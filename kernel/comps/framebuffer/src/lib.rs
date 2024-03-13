@@ -13,7 +13,12 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use aster_frame::{boot, config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, vm::VmIo};
+use aster_frame::{
+    boot,
+    io_mem::IoMem,
+    sync::SpinLock,
+    vm::{VmIo, PAGE_SIZE},
+};
 use component::{init_component, ComponentInitError};
 use font8x8::UnicodeFonts;
 use spin::Once;

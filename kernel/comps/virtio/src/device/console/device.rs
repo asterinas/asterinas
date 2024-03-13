@@ -4,7 +4,7 @@ use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
-use aster_frame::{config::PAGE_SIZE, io_mem::IoMem, sync::SpinLock, trap::TrapFrame};
+use aster_frame::{io_mem::IoMem, sync::SpinLock, trap::TrapFrame, vm::PAGE_SIZE};
 use aster_util::safe_ptr::SafePtr;
 use log::debug;
 

@@ -11,7 +11,7 @@ pub mod vm_mapping;
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use aster_frame::vm::VmSpace;
+use aster_frame::vm::{VmSpace, MAX_USERSPACE_VADDR};
 use aster_rights::Rights;
 
 use self::{
@@ -124,11 +124,8 @@ impl VmarInner {
     }
 }
 
-// FIXME: How to set the correct root vmar range?
-// We should not include addr 0 here(is this right?), since the 0 addr means the null pointer.
-// We should include addr 0x0040_0000, since non-pie executables typically are put on 0x0040_0000.
-const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x0010_0000;
-const ROOT_VMAR_HIGHEST_ADDR: Vaddr = 0x1000_0000_0000;
+const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
+const ROOT_VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
 
 impl Interval<usize> for Arc<Vmar_> {
     fn range(&self) -> Range<usize> {
@@ -161,7 +158,7 @@ impl Vmar_ {
 
     pub fn new_root() -> Arc<Self> {
         let mut free_regions = BTreeMap::new();
-        let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_HIGHEST_ADDR);
+        let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR);
         free_regions.insert(root_region.start(), root_region);
         let vmar_inner = VmarInner {
             is_destroyed: false,
@@ -169,7 +166,7 @@ impl Vmar_ {
             vm_mappings: BTreeMap::new(),
             free_regions,
         };
-        Vmar_::new(vmar_inner, VmSpace::new(), 0, ROOT_VMAR_HIGHEST_ADDR, None)
+        Vmar_::new(vmar_inner, VmSpace::new(), 0, ROOT_VMAR_CAP_ADDR, None)
     }
 
     fn is_root_vmar(&self) -> bool {
@@ -279,7 +276,7 @@ impl Vmar_ {
         inner.child_vmar_s.clear();
         inner.vm_mappings.clear();
         inner.free_regions.clear();
-        let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_HIGHEST_ADDR);
+        let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR);
         inner.free_regions.insert(root_region.start(), root_region);
         Ok(())
     }

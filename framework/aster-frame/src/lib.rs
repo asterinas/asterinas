@@ -28,7 +28,6 @@ extern crate static_assertions;
 pub mod arch;
 pub mod boot;
 pub mod bus;
-pub mod config;
 pub mod console;
 pub mod cpu;
 mod error;

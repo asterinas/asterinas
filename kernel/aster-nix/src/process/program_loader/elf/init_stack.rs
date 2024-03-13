@@ -7,7 +7,7 @@
 use core::mem;
 
 use align_ext::AlignExt;
-use aster_frame::vm::{VmIo, VmPerm};
+use aster_frame::vm::{VmIo, VmPerm, MAX_USERSPACE_VADDR};
 use aster_rights::{Full, Rights};
 
 use super::{
@@ -20,15 +20,16 @@ use crate::{
     vm::{perms::VmPerms, vmar::Vmar, vmo::VmoOptions},
 };
 
-pub const INIT_STACK_BASE: Vaddr = 0x0000_0000_2000_0000;
-pub const INIT_STACK_SIZE: usize = 0x1000 * 16; // 64KB
+pub const INIT_STACK_SIZE: usize = 64 * 1024; // 64 KiB
 
 /*
- * The initial stack of a process looks like below(This figure is from occlum):
+ * Illustration of the virtual memory space containing the processes' init stack:
  *
- *
- *  +---------------------+ <------+ Top of stack
- *  |                     |          (high address)
+ *  (high address)
+ *  +---------------------+ <------+ Highest address
+ *  |                     |          Random stack paddings
+ *  +---------------------+ <------+ The base of stack (stack grows down)
+ *  |                     |
  *  | Null-terminated     |
  *  | strings referenced  |
  *  | by variables below  |
@@ -62,8 +63,10 @@ pub const INIT_STACK_SIZE: usize = 0x1000 * 16; // 64KB
  *  +---------------------+
  *  |                     |
  *  |                     |
- *  +                     +
- *
+ *  +---------------------+
+ *  |                     |
+ *  +---------------------+ <------+ User stack default rlimit
+ *  (low address)
  */
 pub struct InitStack {
     /// The high address of init stack
@@ -93,9 +96,13 @@ impl InitStack {
         }
     }
 
-    /// This function only work for first process
     pub fn new_default_config(argv: Vec<CString>, envp: Vec<CString>) -> Self {
-        let init_stack_top = INIT_STACK_BASE - PAGE_SIZE;
+        let nr_pages_padding = {
+            let mut random_nr_pages_padding: u8 = 0;
+            getrandom::getrandom(random_nr_pages_padding.as_bytes_mut()).unwrap();
+            random_nr_pages_padding as usize
+        };
+        let init_stack_top = MAX_USERSPACE_VADDR - PAGE_SIZE * nr_pages_padding;
         let init_stack_size = INIT_STACK_SIZE;
         InitStack::new(init_stack_top, init_stack_size, argv, envp)
     }

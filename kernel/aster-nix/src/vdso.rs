@@ -13,7 +13,10 @@
 
 use alloc::{boxed::Box, sync::Arc};
 
-use aster_frame::{config::PAGE_SIZE, sync::Mutex, vm::VmIo};
+use aster_frame::{
+    sync::Mutex,
+    vm::{VmIo, PAGE_SIZE},
+};
 use aster_rights::Rights;
 use aster_time::Instant;
 use aster_util::coeff::Coeff;

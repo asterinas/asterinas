@@ -14,30 +14,40 @@ use user_heap::UserHeap;
 use crate::vm::vmar::Vmar;
 
 /*
-* The user vm space layout is look like below.
-* |-----------------------|-------The highest user vm address
-* |                       |
-* |       Mmap Areas      |
-* |                       |
-* |                       |
-* --------------------------------The init stack base
-* |                       |
-* | User Stack(Init Stack)|
-* |                       |
-* |         ||            |
-* ----------||----------------------The user stack top, grows down
-* |         \/            |
-* |                       |
-* |     Unmapped Areas    |
-* |                       |
-* |         /\            |
-* ----------||---------------------The user heap top, grows up
-* |         ||            |
-* |                       |
-* |        User Heap      |
-* |                       |
-* ----------------------------------The user heap base
-*/
+ * The user's virtual memory space layout looks like below.
+ * TODO: The layout of the userheap does not match the current implementation,
+ * And currently the initial program break is a fixed value.
+ *
+ *  (high address)
+ *  +---------------------+ <------+ The top of Vmar, which is the highest address usable
+ *  |                     |          Randomly padded pages
+ *  +---------------------+ <------+ The base of the initial user stack
+ *  | User stack          |
+ *  |                     |
+ *  +---------||----------+ <------+ The user stack limit, can be extended lower
+ *  |         \/          |
+ *  | ...                 |
+ *  |                     |
+ *  | MMAP Spaces         |
+ *  |                     |
+ *  | ...                 |
+ *  |         /\          |
+ *  +---------||----------+ <------+ The current program break
+ *  | User heap           |
+ *  |                     |
+ *  +---------------------+ <------+ The original program break
+ *  |                     |          Randomly padded pages
+ *  +---------------------+ <------+ The end of the program's last segment
+ *  |                     |
+ *  | Loaded segments     |
+ *  | .text, .data, .bss  |
+ *  | , etc.              |
+ *  |                     |
+ *  +---------------------+ <------+ The bottom of Vmar at 0x1_0000
+ *  |                     |          64 KiB unusable space
+ *  +---------------------+
+ *  (low address)
+ */
 
 /// The virtual space usage.
 /// This struct is used to control brk and mmap now.
