@@ -17,7 +17,7 @@ use crate::boot::{
 
 global_asm!(include_str!("header.S"));
 
-use crate::{config::PHYS_OFFSET, vm::paddr_to_vaddr};
+use crate::vm::{paddr_to_vaddr, PHYS_MEM_BASE_VADDR};
 
 pub(super) const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
 
@@ -58,7 +58,7 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
         .expect("No Multiboot2 modules found!");
     let base_addr = mb2_module_tag.start_address() as usize;
     // We must return a slice composed by VA since kernel should read every in VA.
-    let base_va = if base_addr < PHYS_OFFSET {
+    let base_va = if base_addr < PHYS_MEM_BASE_VADDR {
         paddr_to_vaddr(base_addr)
     } else {
         base_addr

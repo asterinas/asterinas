@@ -2,7 +2,7 @@
 
 //! Options for allocating child VMARs.
 
-use aster_frame::{config::PAGE_SIZE, Error, Result};
+use aster_frame::{vm::PAGE_SIZE, Error, Result};
 
 use super::Vmar;
 
@@ -142,14 +142,14 @@ mod test {
     use crate::vm::{
         page_fault_handler::PageFaultHandler,
         perms::VmPerms,
-        vmar::ROOT_VMAR_HIGHEST_ADDR,
+        vmar::ROOT_VMAR_CAP_ADDR,
         vmo::{VmoOptions, VmoRightsOp},
     };
 
     #[ktest]
     fn root_vmar() {
         let vmar = Vmar::<Full>::new_root();
-        assert!(vmar.size() == ROOT_VMAR_HIGHEST_ADDR);
+        assert!(vmar.size() == ROOT_VMAR_CAP_ADDR);
     }
 
     #[ktest]

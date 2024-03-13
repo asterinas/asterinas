@@ -6,9 +6,11 @@ use core::fmt;
 use super::page_table::{PageTable, PageTableConfig, UserMode};
 use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
-    config::{PAGE_SIZE, PHYS_OFFSET},
     prelude::*,
-    vm::{is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter},
+    vm::{
+        is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter,
+        PHYS_MEM_BASE_VADDR, PAGE_SIZE,
+    },
     Error,
 };
 
@@ -148,7 +150,7 @@ impl MemorySet {
             if let Entry::Vacant(e) = self.areas.entry(area.start_va) {
                 let area = e.insert(area);
                 for (va, frame) in area.mapper.iter() {
-                    debug_assert!(frame.start_paddr() < PHYS_OFFSET);
+                    debug_assert!(frame.start_paddr() < PHYS_MEM_BASE_VADDR);
                     self.pt.map(*va, frame, area.flags).unwrap();
                 }
             } else {

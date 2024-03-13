@@ -12,8 +12,7 @@ use crate::{
         memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    config::PHYS_OFFSET,
-    vm::paddr_to_vaddr,
+    vm::{paddr_to_vaddr, PHYS_MEM_BASE_VADDR},
 };
 
 global_asm!(include_str!("header.S"));
@@ -77,7 +76,7 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
         )
     };
     // We must return a slice composed by VA since kernel should read every in VA.
-    let base_va = if start < PHYS_OFFSET {
+    let base_va = if start < PHYS_MEM_BASE_VADDR {
         paddr_to_vaddr(start)
     } else {
         start

@@ -9,7 +9,7 @@ use core::{
 use pod::Pod;
 
 use super::{frame_allocator, HasPaddr, VmIo};
-use crate::{config::PAGE_SIZE, prelude::*, Error};
+use crate::{prelude::*, vm::PAGE_SIZE, Error};
 
 /// A collection of page frames (physical memory pages).
 ///

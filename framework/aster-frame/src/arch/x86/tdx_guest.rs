@@ -12,11 +12,11 @@ use tdx_guest::{
 
 use crate::{
     arch::mm::{is_kernel_vaddr, PageTableFlags},
-    config::PAGE_SIZE,
     vm::{
         paddr_to_vaddr,
         page_table::{PageTableError, KERNEL_PAGE_TABLE},
     },
+    PAGE_SIZE,
 };
 
 const SHARED_BIT: u8 = 51;

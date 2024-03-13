@@ -6,13 +6,14 @@ use pod::Pod;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::{
-    config::ENTRY_COUNT,
     sync::Mutex,
     vm::{
         page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
         Paddr, Vaddr,
     },
 };
+
+pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
 bitflags::bitflags! {
     #[derive(Pod)]
@@ -210,7 +211,7 @@ impl PageTableEntryTrait for PageTableEntry {
 
     fn page_index(va: crate::vm::Vaddr, level: usize) -> usize {
         debug_assert!((1..=5).contains(&level));
-        va >> (12 + 9 * (level - 1)) & (ENTRY_COUNT - 1)
+        va >> (12 + 9 * (level - 1)) & (NR_ENTRIES_PER_PAGE - 1)
     }
 }
 

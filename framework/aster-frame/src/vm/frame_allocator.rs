@@ -10,8 +10,8 @@ use spin::Once;
 use super::{frame::VmFrameFlags, VmFrame, VmFrameVec, VmSegment};
 use crate::{
     boot::memory_region::{MemoryRegion, MemoryRegionType},
-    config::PAGE_SIZE,
     sync::SpinLock,
+    vm::PAGE_SIZE,
 };
 
 pub(super) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
