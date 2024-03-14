@@ -32,8 +32,9 @@ jobs:
         id: unit_test
         run: cd osdk && cargo build && RUSTUP_HOME=/root/.rustup cargo test
   
-  # Test OSDK in the same environment as described in the OSDK User Guide in the Asterinas Book.
-  osdk_doc_env_test:
+  # Test OSDK in the same environment 
+  # as described in the OSDK User Guide in the Asterinas Book.
+  osdk-doc-env-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container: asterinas/osdk:0.4.0
@@ -44,6 +45,10 @@ jobs:
 
       - name: Unit test
         id: unit_test
+        # Github's actions/checkout@v4 will result in a new user (not root) 
+        # and thus not using the Rust environment we set up in the container. 
+        # So the RUSTUP_HOME needs to be set here. 
+        # This only breaks when we invoke Cargo in the integration test of OSDK 
+        # since the OSDK toolchain is not nightly.
         run: cd osdk && cargo build && RUSTUP_HOME=/root/.rustup cargo test
     
-    # TODO: test the demos in Asterinas Book

@@ -3,6 +3,15 @@
 # This image is for the OSDK GitHub CI. 
 # The environment is consistent with the one 
 # described in the OSDK User Guide section of the Asterinas Book.
+#
+# TODO: We should build the Asterinas image based on the OSDK image
+# since Asterinas is managed by OSDK itself.
+# However, currently, these two images have different contents.
+# The main distinction is that
+# QEMU, grub, and OVMF in the OSDK image are installed via apt,
+# while these tools in the Asterinas image are built from source.
+# Some boot methods in Asterinas only function properly
+# when using the tools that are built from source.
 
 FROM ubuntu:22.04
 
