@@ -186,3 +186,4 @@ clean:
 	@cargo clean
 	@cd docs && mdbook clean
 	@make --no-print-directory -C regression clean
+	@rm -f $(CARGO_OSDK)

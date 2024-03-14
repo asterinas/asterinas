@@ -81,12 +81,12 @@ pub struct CrateInfo {
     pub path: String,
 }
 
-/// Retrieve the default member in the workspace. 
-/// 
-/// If there is only one kernel crate, return that crate; 
-/// If there are multiple kernel crates or no kernel crates in the workspace, 
-/// this function will exit with an error. 
-/// 
+/// Retrieve the default member in the workspace.
+///
+/// If there is only one kernel crate, return that crate;
+/// If there are multiple kernel crates or no kernel crates in the workspace,
+/// this function will exit with an error.
+///
 /// A crate is considered a kernel crate if it utilizes the `aster_main` macro.
 fn get_default_member(metadata: &serde_json::Value) -> &str {
     let default_members = metadata

@@ -17,11 +17,7 @@ touch Cargo.toml
 
 Then, add the following content to `Cargo.toml`:
 
-```toml
-[workspace]
-members = []
-resolver = "2"
-```
+{{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/Cargo.toml}}
 
 ## Creating a kernel project and a library project
 
@@ -60,31 +56,17 @@ Next, add the following function to `mymodule/src/lib.rs`.
 This function will calculate the available memory
 after booting:
 
-```rust
-pub fn available_memory() -> usize {
-    let regions = aster_frame::boot::memory_regions();
-    regions.iter().map(|region| region.len()).sum()
-}
-```
+{{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/mymodule/src/lib.rs}}
 
 Then, add a dependency on `mymodule` to `myos/Cargo.toml`:
 
-```toml
-[dependencies]
-mymodule = { path = "../mymodule" }
-```
+{{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/myos/Cargo.toml}}
 
 In `myos/src/lib.rs`,
-modify the main function as follows.
-This function will call the function from `mymodule`:
+modify the file content as follows.
+This main function will call the function from `mymodule`:
 
-```rust
-#[aster_main]
-fn kernel_main() {
-    let avail_mem_as_mb = mymodule::available_memory() / 1_000_000;
-    println!("The available memory is {} MB", avail_mem_as_mb);
-}
-```
+{{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/myos/src/lib.rs}}
 
 ## Building and Running the kernel
 
