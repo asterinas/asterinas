@@ -17,14 +17,14 @@ int main()
 	struct sockaddr_un server_addr, client_addr;
 	char buf[BUFFER_SIZE];
 
-	// 创建Server Socket
+	// Create the server socket
 	server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (server_fd == -1) {
 		perror("socket");
 		exit(EXIT_FAILURE);
 	}
 
-	// 绑定Socket地址
+	// Bind the socket address
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sun_family = AF_UNIX;
 	strncpy(server_addr.sun_path, SOCKET_NAME,
@@ -36,7 +36,7 @@ int main()
 		exit(EXIT_FAILURE);
 	}
 
-	// 监听连接请求
+	// Listen for an incoming connection
 	if (listen(server_fd, 5) == -1) {
 		perror("listen");
 		exit(EXIT_FAILURE);
@@ -44,7 +44,7 @@ int main()
 
 	printf("Server is listening...\n");
 
-	// 接收连接请求
+	// Accept the incoming connection
 	len = sizeof(client_addr);
 	accepted_fd = accept(server_fd, (struct sockaddr *)&client_addr, &len);
 	if (accepted_fd == -1) {
@@ -64,7 +64,8 @@ int main()
 	printf("Server is connected to client\n");
 	char *mesg = "Hello from unix socket server";
 	write(accepted_fd, mesg, strlen(mesg));
-	// 读取客户端发送的数据并打印
+
+	// Read data from the client
 	memset(buf, 0, BUFFER_SIZE);
 	if (read(accepted_fd, buf, BUFFER_SIZE) == -1) {
 		perror("read");
@@ -72,7 +73,7 @@ int main()
 	}
 	printf("Server Received: %s\n", buf);
 
-	// 关闭Socket
+	// Close the socket
 	close(accepted_fd);
 	close(server_fd);
 	unlink(SOCKET_NAME);
