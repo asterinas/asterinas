@@ -4,11 +4,11 @@
 //! When use this crate, typeflags and typeflags-util should also be added as dependency.
 //!
 //! The require macro are used to ensure that an object has the enough capability to call the function.
-//! The **require** macro can accept constraint [SomeRightSet] > [SomeRight],
-//! which means the SomeRightSet should **contain** the SomeRight.
-//! The **require** macro can also accept constraint [SomeRightSet] > [AnotherRightSet],
-//! which means the SomeRightSet should **include** the AnotherRightSet. In this case, AnotherRightSet should be a **generic parameter**.
-//! i.e., AnotherRightSet should occur the the generic param list of the function.
+//! The **require** macro can accept constraint `SomeRightSet` > `SomeRight`,
+//! which means the `SomeRightSet` should **contain** the `SomeRight`.
+//! The **require** macro can also accept constraint `SomeRightSet` > `AnotherRightSet`,
+//! which means the `SomeRightSet` should **include** the `AnotherRightSet`. In this case, `AnotherRightSet` should be a **generic parameter**.
+//! i.e., `AnotherRightSet` should occur the the generic param list of the function.
 //!
 //! If there are multiple constraits, they can be seperated with `|`, which means all constraits should be satisfied.
 //!

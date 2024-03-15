@@ -9,7 +9,7 @@
 //!
 //! Use case:
 //!
-//! ```rust norun
+//! ```rust no_run
 //! #[derive(Debug)]
 //! pub struct PciDeviceA {
 //!     common_device: PciCommonDevice,

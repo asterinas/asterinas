@@ -309,7 +309,7 @@ impl UserContextApiInternal for UserContext {
     }
 }
 
-/// As Osdev Wiki defines(https://wiki.osdev.org/Exceptions):
+/// As Osdev Wiki defines(<https://wiki.osdev.org/Exceptions>):
 /// CPU exceptions are classified as:
 ///
 /// Faults: These can be corrected and the program may continue as if nothing happened.

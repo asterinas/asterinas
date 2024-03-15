@@ -22,7 +22,7 @@ pub fn _print(args: Arguments) {
     VirtioConsolesPrinter.write_fmt(args).unwrap();
 }
 
-/// Copy from Rust std: https://github.com/rust-lang/rust/blob/master/library/std/src/macros.rs
+/// Copied from Rust std: <https://github.com/rust-lang/rust/blob/master/library/std/src/macros.rs>
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {{
@@ -30,7 +30,7 @@ macro_rules! print {
     }};
 }
 
-/// Copy from Rust std: https://github.com/rust-lang/rust/blob/master/library/std/src/macros.rs
+/// Copied from Rust std: <https://github.com/rust-lang/rust/blob/master/library/std/src/macros.rs>
 #[macro_export]
 macro_rules! println {
     () => {
