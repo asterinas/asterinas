@@ -10,7 +10,7 @@
 
 int main()
 {
-	int sock = 0, valread;
+	int sock = 0;
 	struct sockaddr_in serv_addr;
 	char *hello = "Hello from client";
 	char buffer[1024] = { 0 };
@@ -40,7 +40,7 @@ int main()
 	// Send message to the server and receive the reply
 	send(sock, hello, strlen(hello), 0);
 	printf("Hello message sent\n");
-	valread = read(sock, buffer, 1024);
+	read(sock, buffer, 1024);
 	printf("Server: %s\n", buffer);
 	return 0;
 }

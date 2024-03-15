@@ -292,6 +292,7 @@ int main()
 {
 	test_mutex_with_concurrent_counter();
 	test_robust_mutex_with_concurrent_counter();
-	// test_mutex_with_cond_wait();
+	// FIXME: Add the `test_mutex_with_cond_wait` test back.
+	(void)test_mutex_with_cond_wait;
 	return 0;
 }

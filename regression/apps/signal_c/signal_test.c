@@ -193,6 +193,7 @@ int test_handle_sigfpe()
 	volatile int c;
 	fxsave(x);
 	c = div_maybe_zero(a, b);
+	(void)c;
 	fxsave(y);
 
 	// Asterinas does not save and restore fpregs now, so we emit this check.
