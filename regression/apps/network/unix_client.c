@@ -13,7 +13,7 @@
 
 int main()
 {
-	int client_fd, len;
+	int client_fd;
 	struct sockaddr_un server_addr, peer_addr;
 	char buf[BUFFER_SIZE];
 
@@ -36,7 +36,7 @@ int main()
 		exit(EXIT_FAILURE);
 	}
 
-	int addrlen = sizeof(peer_addr);
+	socklen_t addrlen = sizeof(peer_addr);
 	int rc =
 		getpeername(client_fd, (struct sockaddr *)&peer_addr, &addrlen);
 	if (rc == -1) {

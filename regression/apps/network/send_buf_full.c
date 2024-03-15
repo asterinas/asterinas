@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
-#include <sched.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -196,7 +195,6 @@ int test_full_send_buffer(struct sockaddr_in *addr)
 	}
 
 	if (pid == 0) {
-		int i;
 		ssize_t recv_len;
 
 		// Ensure that the parent executes send() first, then the child

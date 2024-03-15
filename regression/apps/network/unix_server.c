@@ -13,7 +13,7 @@
 
 int main()
 {
-	int server_fd, accepted_fd, len;
+	int server_fd, accepted_fd;
 	struct sockaddr_un server_addr, client_addr;
 	char buf[BUFFER_SIZE];
 
@@ -45,14 +45,14 @@ int main()
 	printf("Server is listening...\n");
 
 	// Accept the incoming connection
-	len = sizeof(client_addr);
+	socklen_t len = sizeof(client_addr);
 	accepted_fd = accept(server_fd, (struct sockaddr *)&client_addr, &len);
 	if (accepted_fd == -1) {
 		perror("accept");
 		exit(EXIT_FAILURE);
 	}
 
-	int addrlen = sizeof(client_addr);
+	socklen_t addrlen = sizeof(client_addr);
 	int rc = getpeername(accepted_fd, (struct sockaddr *)&client_addr,
 			     &addrlen);
 	if (rc == -1) {
