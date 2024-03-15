@@ -24,7 +24,7 @@ use alloc::{borrow::ToOwned, vec::Vec};
 use spin::Once;
 
 pub use self::{
-    dma::{DmaCoherent, DmaDirection, DmaStream, HasDaddr},
+    dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter},
     io::VmIo,
     memory_set::{MapArea, MemorySet},

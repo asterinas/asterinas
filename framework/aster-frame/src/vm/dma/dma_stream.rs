@@ -38,7 +38,7 @@ struct DmaStreamInner {
 
 /// `DmaDirection` limits the data flow direction of `DmaStream` and
 /// prevents users from reading and writing to `DmaStream` unexpectedly.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum DmaDirection {
     ToDevice,
     FromDevice,
@@ -104,6 +104,10 @@ impl DmaStream {
     /// the memory. Do this at your own risk.
     pub fn vm_segment(&self) -> &VmSegment {
         &self.inner.vm_segment
+    }
+
+    pub fn nframes(&self) -> usize {
+        self.inner.vm_segment.nframes()
     }
 
     pub fn nbytes(&self) -> usize {
@@ -211,6 +215,73 @@ impl<'a> DmaStream {
 impl HasPaddr for DmaStream {
     fn paddr(&self) -> Paddr {
         self.inner.vm_segment.start_paddr()
+    }
+}
+
+/// A slice of streaming DMA mapping.
+#[derive(Debug, Clone)]
+pub struct DmaStreamSlice {
+    stream: DmaStream,
+    offset: usize,
+    len: usize,
+}
+
+impl DmaStreamSlice {
+    /// Constructs a `DmaStreamSlice` from the `DmaStream`.
+    ///
+    /// # Panic
+    ///
+    /// If the `offset` is greater than or equal to the length of the stream,
+    /// this method will panic.
+    /// If the `offset + len` is greater than the length of the stream,
+    /// this method will panic.
+    pub fn new(stream: DmaStream, offset: usize, len: usize) -> Self {
+        assert!(offset < stream.nbytes());
+        assert!(offset + len <= stream.nbytes());
+
+        Self {
+            stream,
+            offset,
+            len,
+        }
+    }
+
+    /// Returns the number of bytes.
+    pub fn nbytes(&self) -> usize {
+        self.len
+    }
+
+    /// Synchronizes the slice of streaming DMA mapping with the device.
+    pub fn sync(&self) -> Result<(), Error> {
+        self.stream.sync(self.offset..self.offset + self.len)
+    }
+}
+
+impl VmIo for DmaStreamSlice {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<(), Error> {
+        if buf.len() + offset > self.len {
+            return Err(Error::InvalidArgs);
+        }
+        self.stream.read_bytes(self.offset + offset, buf)
+    }
+
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<(), Error> {
+        if buf.len() + offset > self.len {
+            return Err(Error::InvalidArgs);
+        }
+        self.stream.write_bytes(self.offset + offset, buf)
+    }
+}
+
+impl HasDaddr for DmaStreamSlice {
+    fn daddr(&self) -> Daddr {
+        self.stream.daddr() + self.offset
+    }
+}
+
+impl HasPaddr for DmaStreamSlice {
+    fn paddr(&self) -> Paddr {
+        self.stream.paddr() + self.offset
     }
 }
 
