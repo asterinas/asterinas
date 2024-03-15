@@ -120,6 +120,14 @@ $(EXT2_IMAGE):
 .PHONY: build
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE)
 
+.PHONY: format
+format:
+	@make --no-print-directory -C apps format
+
+.PHONY: check
+check:
+	@make --no-print-directory -C apps check
+
 .PHONY: clean
 clean:
 	@rm -rf $(BUILD_DIR)
