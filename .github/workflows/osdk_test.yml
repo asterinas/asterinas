@@ -15,9 +15,9 @@ jobs:
   osdk-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: asterinas/asterinas:0.4.0
+    container: asterinas/asterinas:0.4.1
     steps:
-      - run: echo "Running in asterinas/asterinas:0.4.0"
+      - run: echo "Running in asterinas/asterinas:0.4.1"
 
       - uses: actions/checkout@v4
 
