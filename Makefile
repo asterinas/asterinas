@@ -153,6 +153,7 @@ docs:
 .PHONY: format
 format:
 	@./tools/format_all.sh
+	@make --no-print-directory -C regression format
 
 .PHONY: check
 check: $(CARGO_OSDK)
@@ -171,6 +172,7 @@ check: $(CARGO_OSDK)
 	@for dir in $(OSDK_CRATES); do \
 		(cd $$dir && cargo osdk clippy) || exit 1; \
 	done
+	@make --no-print-directory -C regression check
 
 .PHONY: clean
 clean:
