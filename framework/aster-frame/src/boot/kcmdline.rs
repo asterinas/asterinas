@@ -5,7 +5,7 @@
 //! The format of the Asterinas command line string conforms
 //! to the Linux kernel command line rules:
 //!
-//! https://www.kernel.org/doc/html/v6.4/admin-guide/kernel-parameters.html
+//! <https://www.kernel.org/doc/html/v6.4/admin-guide/kernel-parameters.html>
 //!
 
 use alloc::{

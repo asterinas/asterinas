@@ -103,7 +103,7 @@ impl Drop for IrqLine {
 ///
 /// # Example
 ///
-/// ``rust
+/// ```rust
 /// use aster_frame::irq;
 ///
 /// {

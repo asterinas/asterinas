@@ -4,7 +4,7 @@
 //! a prescaler and 3 independent frequency dividers. Each frequency divider has an output, which is
 //! used to allow the timer to control external circuitry (for example, IRQ 0).
 //!
-//! Reference: https://wiki.osdev.org/Programmable_Interval_Timer
+//! Reference: <https://wiki.osdev.org/Programmable_Interval_Timer>
 //!
 
 use crate::{

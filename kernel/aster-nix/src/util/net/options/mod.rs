@@ -24,7 +24,7 @@
 //!
 //! First, the option should be added in the net module for the TCP socket.
 //!  
-//! ```rust norun
+//! ```rust no_run
 //! impl_socket_option!(TcpNodelay(bool));
 //! ```
 //!
@@ -32,15 +32,19 @@
 //! in the utils module. These util functions can be shared if multiple options have the value
 //! of same type.
 //!
-//! ```rust norun
-//! impl ReadFromUser for bool { // content omitted here }
-//! impl WriteFromUser for bool { // content omitted here }
+//! ```rust compile_fail
+//! impl ReadFromUser for bool {
+//!     // content omitted here
+//! }
+//! impl WriteFromUser for bool {
+//!     // content omitted here
+//! }
 //! ```
 //!
 //! At last, we can implement `RawSocketOption` for `TcpNodelay` so that it can be read/from
 //! user space.
 //!
-//! ```rust norun
+//! ```rust no_run
 //! impl_raw_socket_option!(TcpNodeley);
 //! ```
 //!

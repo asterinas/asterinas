@@ -2,7 +2,7 @@
 
 //! This module defines the process initial stack.
 //! The process initial stack, contains arguments, environmental variables and auxiliary vectors
-//! The data layout of init stack can be seen in Figure 3.9 in https://uclibc.org/docs/psABI-x86_64.pdf
+//! The data layout of init stack can be seen in Figure 3.9 in <https://uclibc.org/docs/psABI-x86_64.pdf>
 
 use core::mem;
 

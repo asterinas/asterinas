@@ -55,7 +55,7 @@ pub type WriteOp = TRights![Write];
 pub type FullOp = TRights![Read, Write, Dup];
 
 /// Wrapper for TRights, used to bypass an error message from the Rust compiler,
-/// the relevant issue is: https://github.com/rust-lang/rfcs/issues/2758
+/// the relevant issue is: <https://github.com/rust-lang/rfcs/issues/2758>
 ///
 /// Example:
 ///

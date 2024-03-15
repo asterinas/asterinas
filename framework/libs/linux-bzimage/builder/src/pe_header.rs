@@ -3,10 +3,10 @@
 //! Big zImage PE/COFF header generation.
 //!
 //! The definition of the PE/COFF header is in the Microsoft PE/COFF specification:
-//! https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+//! <https://learn.microsoft.com/en-us/windows/win32/debug/pe-format>
 //!
 //! The reference to the Linux PE header definition:
-//! https://github.com/torvalds/linux/blob/master/include/linux/pe.h
+//! <https://github.com/torvalds/linux/blob/master/include/linux/pe.h>
 
 use std::{mem::size_of, ops::Range};
 
