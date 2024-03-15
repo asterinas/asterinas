@@ -1,22 +1,27 @@
 # SPDX-License-Identifier: MPL-2.0
 
+#= Install packages for Docker building ====================================
+
 FROM ubuntu:22.04 as build-base
 
 SHELL ["/bin/bash", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
+
+# Please keep the list sorted by name
 RUN apt update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     curl \
     git-core \
+    gnupg \
     libssl-dev \
-    python-is-python3 \
     python3-pip \
-    wget \
-    gnupg
+    python-is-python3 \
+    wget
 
 #= Build benchmark =========================================================
+
 FROM build-base as build-benchmarks
 
 # Download the source files of benchmarks
@@ -219,6 +224,7 @@ FROM rust
 
 # Install all Asterinas dependent packages
 RUN apt update && apt-get install -y --no-install-recommends \
+    clang-format       `# formatting regression tests` \
     cpio \
     cpuid \
     exfatprogs \

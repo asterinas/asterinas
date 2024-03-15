@@ -12,7 +12,7 @@ jobs:
   osdk-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: asterinas/asterinas:0.4.0
+    container: asterinas/asterinas:0.4.1
     steps:
       - uses: actions/checkout@v4
       - uses: katyo/publish-crates@v2
