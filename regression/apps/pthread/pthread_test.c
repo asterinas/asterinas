@@ -64,19 +64,19 @@ static void *thread_func(void *_arg)
 static int test_mutex_with_concurrent_counter(void)
 {
 	/*
-     * Multiple threads are to increase a global counter concurrently
-     */
+	 * Multiple threads are to increase a global counter concurrently
+	 */
 	volatile unsigned long global_count = 0;
 	pthread_t threads[NTHREADS];
 	struct thread_arg thread_args[NTHREADS];
 	/*
-     * Protect the counter with a mutex
-     */
+	 * Protect the counter with a mutex
+	 */
 	pthread_mutex_t mutex;
 	pthread_mutex_init(&mutex, NULL);
 	/*
-     * Start the threads
-     */
+	 * Start the threads
+	 */
 	for (int ti = 0; ti < NTHREADS; ti++) {
 		struct thread_arg *thread_arg = &thread_args[ti];
 		thread_arg->ti = ti;
@@ -91,8 +91,8 @@ static int test_mutex_with_concurrent_counter(void)
 		}
 	}
 	/*
-     * Wait for the threads to finish
-     */
+	 * Wait for the threads to finish
+	 */
 	for (int ti = 0; ti < NTHREADS; ti++) {
 		if (pthread_join(threads[ti], NULL) < 0) {
 			printf("ERROR: pthread_join failed (ti = %d)\n", ti);
@@ -100,8 +100,8 @@ static int test_mutex_with_concurrent_counter(void)
 		}
 	}
 	/*
-     * Check the correctness of the concurrent counter
-     */
+	 * Check the correctness of the concurrent counter
+	 */
 	if (global_count != EXPECTED_GLOBAL_COUNT) {
 		printf("ERROR: incorrect global_count (actual = %ld, expected = %ld)\n",
 		       global_count, EXPECTED_GLOBAL_COUNT);
@@ -247,8 +247,8 @@ static int test_mutex_with_cond_wait(void)
 	pthread_cond_t cond_val = PTHREAD_COND_INITIALIZER;
 	pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 	/*
-     * Start the threads waiting on the condition variable
-     */
+	 * Start the threads waiting on the condition variable
+	 */
 	for (int ti = 0; ti < NTHREADS; ti++) {
 		struct thread_cond_arg *thread_arg = &thread_args[ti];
 		thread_arg->ti = ti;
@@ -264,8 +264,8 @@ static int test_mutex_with_cond_wait(void)
 		}
 	}
 	/*
-     * Unblock all threads currently waiting on the condition variable
-     */
+	 * Unblock all threads currently waiting on the condition variable
+	 */
 	while (exit_thread_count < NTHREADS) {
 		pthread_mutex_lock(&mutex);
 		val = 1;
@@ -277,8 +277,8 @@ static int test_mutex_with_cond_wait(void)
 		pthread_mutex_unlock(&mutex);
 	}
 	/*
-     * Wait for the threads to finish
-     */
+	 * Wait for the threads to finish
+	 */
 	for (int ti = 0; ti < NTHREADS; ti++) {
 		if (pthread_join(threads[ti], NULL) < 0) {
 			printf("ERROR: pthread_join failed (ti = %d)\n", ti);

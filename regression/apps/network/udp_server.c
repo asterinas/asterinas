@@ -63,7 +63,7 @@ int main()
 		exit(EXIT_FAILURE);
 	}
 
-	// 关闭socket
+	// Close socket
 	close(sock_fd);
 
 	return 0;
