@@ -18,6 +18,7 @@ ovmf = "/root/ovmf/release"
 machine = "q35"
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
+    ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
 ]
 args = [
     "--no-reboot",
@@ -30,7 +31,8 @@ args = [
     "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
     "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
-    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off",
+    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off",
+    "-device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off",
     "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
     "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
     "-device virtio-serial-pci,disable-legacy=on,disable-modern=off",
@@ -41,6 +43,7 @@ args = [
 machine = "q35"
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
+    ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
 ]
 args = [
     "--no-reboot",
@@ -53,7 +56,8 @@ args = [
     "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
     "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
-    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
+    "-device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
     "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
     "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
     "-device virtio-serial-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
@@ -66,6 +70,7 @@ args = [
 machine = "microvm"
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
+    ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
 ]
 args = [
     "--no-reboot",
@@ -80,7 +85,8 @@ args = [
     "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
     "-nodefaults",
     "-no-user-config",
-    "-device virtio-blk-device,drive=x0",
+    "-device virtio-blk-device,drive=x0,serial=vext2",
+    "-device virtio-blk-device,drive=x1,serial=vexfat",
     "-device virtio-keyboard-device",
     "-device virtio-net-device,netdev=net01",
     "-device virtio-serial-device",

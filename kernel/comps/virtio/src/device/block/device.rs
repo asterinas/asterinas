@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, string::String, sync::Arc, vec, vec::Vec};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_block::{
@@ -45,7 +45,9 @@ impl BlockDevice {
                 queue: BioRequestSingleQueue::new(),
             }
         };
-        aster_block::register_device(super::DEVICE_NAME.to_string(), Arc::new(block_device));
+
+        let device_id = block_device.device.device_id.clone().unwrap();
+        aster_block::register_device(device_id, Arc::new(block_device));
         Ok(())
     }
 
@@ -133,6 +135,7 @@ struct DeviceInner {
     /// it can pass to the `add_vm` function
     block_responses: VmFrame,
     id_allocator: SpinLock<Vec<u8>>,
+    device_id: Option<String>,
 }
 
 impl DeviceInner {
@@ -143,6 +146,7 @@ impl DeviceInner {
         if num_queues != 1 {
             return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
         }
+
         let queue = VirtQueue::new(0, 64, transport.as_mut()).expect("create virtqueue failed");
         let mut device = Self {
             config,
@@ -151,28 +155,82 @@ impl DeviceInner {
             block_requests: VmAllocOptions::new(1).alloc_single().unwrap(),
             block_responses: VmAllocOptions::new(1).alloc_single().unwrap(),
             id_allocator: SpinLock::new((0..64).collect()),
+            device_id: None,
         };
+
+        let device_id = device.get_id();
+        let cloned_device_id = device_id.clone();
+
+        let handle_block_device = move |_: &TrapFrame| {
+            aster_block::get_device(device_id.as_str())
+                .unwrap()
+                .handle_irq();
+        };
+
+        device.device_id = Some(cloned_device_id);
 
         device
             .transport
             .register_cfg_callback(Box::new(config_space_change))
             .unwrap();
+
         device
             .transport
             .register_queue_callback(0, Box::new(handle_block_device), false)
             .unwrap();
-
-        fn handle_block_device(_: &TrapFrame) {
-            aster_block::get_device(super::DEVICE_NAME)
-                .unwrap()
-                .handle_irq();
-        }
 
         fn config_space_change(_: &TrapFrame) {
             info!("Virtio block device config space change");
         }
         device.transport.finish_init();
         Ok(device)
+    }
+
+    // TODO: Most logic is the same as read and write, there should be a refactor.
+    // TODO: Should return an Err instead of panic if the device fails.
+    fn get_id(&self) -> String {
+        let id = self.id_allocator.lock().pop().unwrap() as usize;
+        let req = BlockReq {
+            type_: ReqType::GetId as _,
+            reserved: 0,
+            sector: 0,
+        };
+
+        self.block_requests
+            .write_val(id * size_of::<BlockReq>(), &req)
+            .unwrap();
+
+        let req_reader = self
+            .block_requests
+            .reader()
+            .skip(id * size_of::<BlockReq>())
+            .limit(size_of::<BlockReq>());
+
+        const MAX_ID_LENGTH: usize = 20;
+
+        let page = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
+        let writer = page.writer().limit(MAX_ID_LENGTH);
+
+        let mut queue = self.queue.lock_irq_disabled();
+        let token = queue
+            .add_vm(&[&req_reader], &[&writer])
+            .expect("add queue failed");
+        queue.notify();
+        while !queue.can_pop() {
+            spin_loop();
+        }
+        queue.pop_used_with_token(token).expect("pop used failed");
+
+        self.id_allocator.lock().push(id as u8);
+
+        //Add an extra 0, so that the array must end with 0.
+        let mut device_id = vec![0; MAX_ID_LENGTH + 1];
+        let _ = page.read_bytes(0, &mut device_id);
+
+        device_id.resize(device_id.iter().position(|&x| x == 0).unwrap(), 0);
+        String::from_utf8(device_id).unwrap()
+
+        //The device is not initialized yet, so the response must be not_ready.
     }
 
     /// Reads data from the block device, this function is blocking.

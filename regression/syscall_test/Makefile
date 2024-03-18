@@ -43,6 +43,7 @@ INITRAMFS ?= $(CUR_DIR)/../build/initramfs
 TARGET_DIR := $(INITRAMFS)/opt/syscall_test
 RUN_BASH := $(CUR_DIR)/run_syscall_test.sh
 BLOCK_LIST := $(CUR_DIR)/blocklists
+EXFAT_BLOCK_LIST := $(CUR_DIR)/blocklists.exfat
 
 .PHONY: all
 all: $(TESTS)
@@ -65,12 +66,14 @@ $(SRC_DIR):
 	@cd $@ && git clone -b 20200921.0 https://github.com/asterinas/gvisor.git .
 endif
 
-$(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST)
+$(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST) $(EXFAT_BLOCK_LIST)
 	@rm -rf $@ && mkdir -p $@
 	@# Prepare tests dir for test binaries
 	@mkdir $@/tests
 	@# Copy blocklists
 	@cp -rf $(BLOCK_LIST) $@
+	@# Copy exFAT specific blocklists
+	@cp -rf $(EXFAT_BLOCK_LIST) $@
 	@# Copy bash script
 	@cp -f $(RUN_BASH) $@
 

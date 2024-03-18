@@ -13,6 +13,7 @@ ENABLE_KVM ?= 1
 INTEL_TDX ?= 0
 SKIP_GRUB_MENU ?= 1
 SYSCALL_TEST_DIR ?= /tmp
+EXTRA_BLOCKLISTS_DIRS ?= ""
 RELEASE_MODE ?= 0
 # End of auto test features.
 
@@ -23,6 +24,7 @@ CARGO_OSDK_ARGS :=
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
 CARGO_OSDK_ARGS += --kcmd_args="SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)"
+CARGO_OSDK_ARGS += --kcmd_args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
 CARGO_OSDK_ARGS += --init_args="/opt/syscall_test/run_syscall_test.sh"
 endif
 ifeq ($(AUTO_TEST), regression)
