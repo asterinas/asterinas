@@ -10,9 +10,8 @@ use spin::Once;
 use super::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions};
 use crate::{
     arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry},
-    config::{ENTRY_COUNT, PAGE_SIZE},
     sync::SpinLock,
-    vm::VmFrame,
+    vm::{PAGE_SIZE, VmFrame},
 };
 
 pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
@@ -282,7 +281,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         paddr: Paddr,
         flags: T::F,
     ) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, true).unwrap();
+        let (last_entry, _) = self.page_walk(vaddr, true).unwrap();
         trace!(
             "Page Table: Map vaddr:{:x?}, paddr:{:x?}, flags:{:x?}",
             vaddr,
@@ -297,12 +296,12 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         Ok(())
     }
 
-    /// Find the last PTE
+    /// Find the last PTE and the level of the last PTE.
     ///
     /// If create is set, it will create the next table until the last PTE.
-    /// If not, it will return None if it is not reach the last PTE.
+    /// None will be returned if the vaddr is not mapped.
     ///
-    fn page_walk(&mut self, vaddr: Vaddr, create: bool) -> Option<&mut T> {
+    fn page_walk(&mut self, vaddr: Vaddr, create: bool) -> Option<(&mut T, usize)> {
         let mut count = self.config.address_width as usize;
         debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
         // Safety: The offset does not exceed the value of PAGE_SIZE.
@@ -341,7 +340,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
                 ) as *mut T)
             };
         }
-        Some(current)
+        Some((current, count))
     }
 
     /// Unmap `vaddr`.
@@ -351,7 +350,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     /// This function allows arbitrary modifications to the page table.
     /// Incorrect modifications may cause the kernel to crash (e.g., unmap the linear mapping.).
     unsafe fn do_unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, false).unwrap();
+        let (last_entry, _) = self.page_walk(vaddr, false).unwrap();
         trace!("Page Table: Unmap vaddr:{:x?}", vaddr);
         if !last_entry.is_used() && !last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
@@ -370,7 +369,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     /// Incorrect modifications may cause the kernel to crash
     /// (e.g., make the linear mapping visible to the user mode applications.).
     unsafe fn do_protect(&mut self, vaddr: Vaddr, new_flags: T::F) -> Result<T::F, PageTableError> {
-        let last_entry = self.page_walk(vaddr, false).unwrap();
+        let (last_entry , _) = self.page_walk(vaddr, false).unwrap();
         let old_flags = last_entry.flags();
         trace!(
             "Page Table: Protect vaddr:{:x?}, flags:{:x?}",
@@ -386,7 +385,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     }
 
     pub fn flags(&mut self, vaddr: Vaddr) -> Option<T::F> {
-        let last_entry = self.page_walk(vaddr, false)?;
+        let (last_entry, _) = self.page_walk(vaddr, false)?;
         Some(last_entry.flags())
     }
 
@@ -406,7 +405,7 @@ pub unsafe fn table_of<'a, T: PageTableEntryTrait>(pa: Paddr) -> Option<&'a mut 
         return None;
     }
     let ptr = super::paddr_to_vaddr(pa) as *mut _;
-    Some(core::slice::from_raw_parts_mut(ptr, ENTRY_COUNT))
+    Some(core::slice::from_raw_parts_mut(ptr, 512))
 }
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
@@ -414,9 +413,10 @@ pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
     let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
     // Although we bypass the unsafe APIs provided by KernelMode, the purpose here is
     // only to obtain the corresponding physical address according to the mapping.
-    let last_entry = page_table.page_walk(vaddr, false)?;
-    // FIXME: Support huge page
-    Some(last_entry.paddr() + (vaddr & (PAGE_SIZE - 1)))
+    let (last_entry, level) = page_table.page_walk(vaddr, false)?;
+    let offset_width = (level - 1) * 9 + 12;
+    let offset_mask = (1usize << offset_width) - 1;
+    Some(last_entry.paddr() + (vaddr & offset_mask))
 }
 
 pub fn init() {
