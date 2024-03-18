@@ -14,7 +14,14 @@ pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 
 pub(crate) fn init() {
     #[cfg(target_arch = "x86_64")]
-    x86_probe();
+    crate::arch::if_tdx_enabled!({
+        // TODO: support virtio-mmio devices on TDX.
+        //
+        // Currently, virtio-mmio devices need to acquire sub-page MMIO regions,
+        // which are not supported by `IoMem::acquire` in the TDX environment.
+    } else {
+        x86_probe();
+    });
 }
 
 #[cfg(target_arch = "x86_64")]
