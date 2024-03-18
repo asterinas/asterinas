@@ -2,12 +2,10 @@
 
 use alloc::vec;
 
+use aster_frame::vm::VmWriter;
 use smoltcp::{phy, time::Instant};
 
-use crate::{
-    buffer::{RxBuffer, TxBuffer},
-    AnyNetworkDevice,
-};
+use crate::{buffer::RxBuffer, AnyNetworkDevice};
 
 impl phy::Device for dyn AnyNetworkDevice {
     type RxToken<'a> = RxToken;
@@ -37,12 +35,14 @@ impl phy::Device for dyn AnyNetworkDevice {
 pub struct RxToken(RxBuffer);
 
 impl phy::RxToken for RxToken {
-    fn consume<R, F>(mut self, f: F) -> R
+    fn consume<R, F>(self, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
     {
-        let packet_but = self.0.packet_mut();
-        f(packet_but)
+        let mut packet = self.0.packet();
+        let mut buffer = vec![0u8; packet.remain()];
+        packet.read(&mut VmWriter::from(&mut buffer as &mut [u8]));
+        f(&mut buffer)
     }
 }
 
@@ -55,8 +55,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
     {
         let mut buffer = vec![0u8; len];
         let res = f(&mut buffer);
-        let tx_buffer = TxBuffer::new(&buffer);
-        self.0.send(tx_buffer).expect("Send packet failed");
+        self.0.send(&buffer).expect("Send packet failed");
         res
     }
 }

@@ -22,6 +22,7 @@ use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};
 use crate::transport::VirtioTransport;
 
 pub mod device;
+mod dma_buf;
 pub mod queue;
 mod transport;
 

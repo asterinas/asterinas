@@ -4,9 +4,11 @@
 #![forbid(unsafe_code)]
 #![feature(trait_alias)]
 #![feature(fn_traits)]
+#![feature(linked_list_cursors)]
 
-pub mod buffer;
-pub mod driver;
+mod buffer;
+mod dma_pool;
+mod driver;
 
 extern crate alloc;
 
@@ -15,8 +17,9 @@ use core::{any::Any, fmt::Debug};
 
 use aster_frame::sync::SpinLock;
 use aster_util::safe_ptr::Pod;
-use buffer::{RxBuffer, TxBuffer};
+pub use buffer::{RxBuffer, TxBuffer};
 use component::{init_component, ComponentInitError};
+pub use dma_pool::DmaBlock;
 use smoltcp::phy;
 use spin::Once;
 
@@ -45,7 +48,7 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
     /// Otherwise, return NotReady error.
     fn receive(&mut self) -> Result<RxBuffer, VirtioNetError>;
     /// Send a packet to network. Return until the request completes.
-    fn send(&mut self, tx_buffer: TxBuffer) -> Result<(), VirtioNetError>;
+    fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError>;
 }
 
 pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;
@@ -102,6 +105,7 @@ fn init() -> Result<(), ComponentInitError> {
     let a = Component::init()?;
     COMPONENT.call_once(|| a);
     NETWORK_IRQ_HANDLERS.call_once(|| SpinLock::new(Vec::new()));
+    buffer::init();
     Ok(())
 }
 
