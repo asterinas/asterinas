@@ -364,13 +364,78 @@ int test_sigaltstack()
 	return 0;
 }
 
-int main()
-{
-	test_sigprocmask();
-	test_raise();
-	test_handle_sigfpe();
-	test_handle_sigsegv();
-	test_sigchld();
-	test_sigaltstack();
-	return 0;
+
+// ============================================================================
+// Test sigpending
+// ============================================================================
+int test_sigpending() {
+    int ret;
+    sigset_t new_set, old_set, pending_set;
+
+
+    // Initialize the signal set and add SIGUSR1 and SIGRTMIN to the block set
+    sigfillset(&new_set);
+    sigaddset(&new_set, SIGUSR1);
+    sigaddset(&new_set, SIGRTMIN);
+    if ((ret = sigprocmask(SIG_BLOCK, &new_set, &old_set)) < 0) {
+        THROW_ERROR("sigprocmask failed unexpectedly");
+    }
+
+    // Send SIGUSR1 and SIGRTMIN signals to the current process twice
+    kill(getpid(), SIGUSR1);
+    kill(getpid(), SIGUSR1); // Repeat
+    kill(getpid(), SIGRTMIN);
+    kill(getpid(), SIGRTMIN); // Repeat
+
+
+    // Check for pending signals
+    if (sigpending(&pending_set) < 0) {
+        THROW_ERROR("sigpending failed unexpectedly");
+    }
+
+    // Check SIGUSR1 is in the set of pending signals
+    if (!sigismember(&pending_set, SIGUSR1)) {
+        THROW_ERROR("SIGUSR1 is not pending");
+    } 
+
+     // Check SIGRTMIN is in the set of pending signals
+    if (!sigismember(&pending_set, SIGRTMIN)) {
+         THROW_ERROR("SIGRTMIN (real-time signal) is not pending");
+    } 
+
+    
+    // Unblock all signals and check if pending signals are cleared
+    if (sigprocmask(SIG_SETMASK, &old_set, NULL) < 0) {
+        THROW_ERROR("sigprocmask failed unexpectedly, failed to restore signal mask");
+    }
+
+    // Fetch and check pending signals after unblocking
+    if (sigpending(&pending_set) < 0) {
+        THROW_ERROR("sigpending failed unexpectedly");
+    }
+
+
+     // Check SIGUSR1 is not in the set of pending signals
+    if (sigismember(&pending_set, SIGUSR1)) {
+        THROW_ERROR("SIGUSR1 is  pending");
+    } 
+
+     // Check SIGRTMIN is not in the set of pending signals
+    if (sigismember(&pending_set, SIGRTMIN)) {
+         THROW_ERROR("SIGRTMIN (real-time signal) is  pending");
+    } 
+
+    return 0;
+}
+
+
+int main() {
+    test_sigprocmask();
+    test_raise();
+    test_handle_sigfpe();
+    test_handle_sigsegv();
+    test_sigchld();
+    test_sigaltstack();
+    test_sigpending();
+    return 0;
 }

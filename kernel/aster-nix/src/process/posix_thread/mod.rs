@@ -8,8 +8,7 @@ use super::{
     do_exit_group,
     kill::SignalSenderIds,
     signal::{
-        sig_mask::SigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal, SigEvents,
-        SigEventsFilter, SigStack,
+        sig_mask::SigMask, sig_num::SigNum, sig_queues::SigQueues, sig_set::SigSet, signals::Signal, SigEvents, SigEventsFilter, SigStack
     },
     Credentials, Process, TermStatus,
 };
@@ -89,6 +88,10 @@ impl PosixThread {
 
     pub fn has_pending_signal(&self) -> bool {
         !self.sig_queues.lock().is_empty()
+    }
+
+    pub fn sig_pending(&self) -> SigSet {
+        self.sig_queues.lock().sig_pending()
     }
 
     /// Returns whether the signal is blocked by the thread.

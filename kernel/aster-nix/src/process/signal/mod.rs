@@ -12,6 +12,7 @@ pub mod sig_num;
 pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
+pub mod sig_set;
 
 use core::mem;
 

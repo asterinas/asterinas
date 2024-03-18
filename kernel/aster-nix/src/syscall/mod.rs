@@ -71,6 +71,7 @@ use crate::{
         rt_sigaction::sys_rt_sigaction,
         rt_sigprocmask::sys_rt_sigprocmask,
         rt_sigreturn::sys_rt_sigreturn,
+        rt_sigpending::sys_rt_sigpending,
         sched_yield::sys_sched_yield,
         select::sys_select,
         set_get_priority::{sys_get_priority, sys_set_priority},
@@ -200,6 +201,7 @@ mod wait4;
 mod waitid;
 mod write;
 mod writev;
+mod rt_sigpending;
 
 macro_rules! define_syscall_nums {
     ( $( $name: ident = $num: expr ),+ ) => {
@@ -323,6 +325,7 @@ define_syscall_nums!(
     SYS_SETFSUID = 122,
     SYS_SETFSGID = 123,
     SYS_GETSID = 124,
+    SYS_RT_SIGPENDING = 127,
     SYS_SIGALTSTACK = 131,
     SYS_STATFS = 137,
     SYS_FSTATFS = 138,
@@ -510,6 +513,7 @@ pub fn syscall_dispatch(
         SYS_SETFSUID => syscall_handler!(1, sys_setfsuid, args),
         SYS_SETFSGID => syscall_handler!(1, sys_setfsgid, args),
         SYS_GETSID => syscall_handler!(1, sys_getsid, args),
+        SYS_RT_SIGPENDING => syscall_handler!(2, sys_rt_sigpending, args),
         SYS_SIGALTSTACK => syscall_handler!(2, sys_sigaltstack, args),
         SYS_STATFS => syscall_handler!(2, sys_statfs, args),
         SYS_FSTATFS => syscall_handler!(2, sys_fstatfs, args),
