@@ -14,6 +14,7 @@ pub use inode::{Inode, InodeMode, InodeType, Metadata};
 pub use ioctl::IoctlCmd;
 pub use mount::MountNode;
 pub use page_cache::{PageCache, PageCacheBackend};
+pub use random_test::{generate_random_operation, new_fs_in_memory};
 pub use status_flags::StatusFlags;
 
 mod access_mode;
@@ -28,6 +29,7 @@ mod inode;
 mod ioctl;
 mod mount;
 mod page_cache;
+mod random_test;
 mod status_flags;
 
 use crate::prelude::*;
