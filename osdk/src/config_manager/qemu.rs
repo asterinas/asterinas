@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{collections::BTreeMap, fmt, path::PathBuf, process};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display},
+    path::PathBuf,
+    process,
+};
 
 use serde::{
     de::{self, Visitor},
@@ -38,12 +43,72 @@ pub struct DriveFile {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct CfgQemu {
     pub default: Qemu,
-    pub cfg: Option<BTreeMap<String, Qemu>>,
+    pub cfg_map: Option<BTreeMap<Cfg, Qemu>>,
+}
+
+/// A configuration that looks like "cfg(k1=v1, k2=v2, ...)".
+#[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq, Serialize)]
+pub struct Cfg(BTreeMap<String, String>);
+
+impl Cfg {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        let s = s.trim();
+
+        if !s.starts_with("cfg(") || !s.ends_with(')') {
+            error_msg!("`{}` is not a valid configuration", s);
+            process::exit(Errno::ParseMetadata as _);
+        }
+        let s = &s[4..s.len() - 1];
+
+        let mut cfg = BTreeMap::new();
+        for kv in s.split(',') {
+            let kv: Vec<_> = kv.split('=').collect();
+            if kv.len() != 2 {
+                error_msg!("`{}` is not a valid configuration", s);
+                process::exit(Errno::ParseMetadata as _);
+            }
+            cfg.insert(
+                kv[0].trim().to_string(),
+                kv[1].trim().trim_matches('\"').to_string(),
+            );
+        }
+        Self(cfg)
+    }
+
+    pub fn check_allowed(&self, allowed_keys: &[&str]) -> bool {
+        for (k, _) in self.0.iter() {
+            if allowed_keys.iter().all(|&key| k != key) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn insert(&mut self, k: String, v: String) {
+        self.0.insert(k, v);
+    }
+}
+
+impl Display for Cfg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "cfg(")?;
+        for (i, (k, v)) in self.0.iter().enumerate() {
+            write!(f, "{}={}", k, v)?;
+            if i != self.0.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, ")")
+    }
 }
 
 impl CfgQemu {
-    pub fn new(default: Qemu, cfg: Option<BTreeMap<String, Qemu>>) -> Self {
-        Self { default, cfg }
+    pub fn new(default: Qemu, cfg_map: Option<BTreeMap<Cfg, Qemu>>) -> Self {
+        Self { default, cfg_map }
     }
 }
 
@@ -57,7 +122,7 @@ impl<'de> Deserialize<'de> for CfgQemu {
             Args,
             Machine,
             DriveFiles,
-            Cfg(String),
+            Cfg(Cfg),
         }
 
         impl<'de> Deserialize<'de> for Field {
@@ -83,7 +148,7 @@ impl<'de> Deserialize<'de> for CfgQemu {
                             "machine" => Ok(Field::Machine),
                             "path" => Ok(Field::Path),
                             "drive_files" => Ok(Field::DriveFiles),
-                            v => Ok(Field::Cfg(v.to_string())),
+                            v => Ok(Field::Cfg(Cfg::from_str(v))),
                         }
                     }
                 }
@@ -106,7 +171,7 @@ impl<'de> Deserialize<'de> for CfgQemu {
                 A: de::MapAccess<'de>,
             {
                 let mut default = Qemu::default();
-                let mut cfgs = BTreeMap::new();
+                let mut cfg_map = BTreeMap::<Cfg, Qemu>::new();
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -124,12 +189,12 @@ impl<'de> Deserialize<'de> for CfgQemu {
                         }
                         Field::Cfg(cfg) => {
                             let qemu_args = map.next_value()?;
-                            cfgs.insert(cfg, qemu_args);
+                            cfg_map.insert(cfg, qemu_args);
                         }
                     }
                 }
 
-                Ok(CfgQemu::new(default, Some(cfgs)))
+                Ok(CfgQemu::new(default, Some(cfg_map)))
             }
         }
 
@@ -143,6 +208,7 @@ pub enum QemuMachine {
     Microvm,
     #[default]
     Q35,
+    Virt,
 }
 
 impl<'a> From<&'a str> for QemuMachine {
@@ -150,6 +216,7 @@ impl<'a> From<&'a str> for QemuMachine {
         match value {
             "microvm" => Self::Microvm,
             "q35" => Self::Q35,
+            "virt" => Self::Virt,
             _ => {
                 error_msg!("{} is not a valid option for `qemu.machine`", value);
                 process::exit(Errno::ParseMetadata as _);

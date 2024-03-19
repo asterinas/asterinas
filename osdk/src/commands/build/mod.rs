@@ -3,7 +3,7 @@
 mod bin;
 mod grub;
 
-use std::{path::Path, process};
+use std::{ffi::OsString, path::Path, process};
 
 use bin::strip_elf_for_qemu;
 
@@ -19,6 +19,7 @@ use crate::{
     config_manager::{qemu::QemuMachine, BuildConfig},
     error::Errno,
     error_msg,
+    target::get_default_target,
     util::{get_current_crate_info, get_target_directory},
 };
 
@@ -122,15 +123,16 @@ fn build_kernel_elf(
     cargo_target_directory: impl AsRef<Path>,
     rustflags: &[&str],
 ) -> AsterBin {
-    let target = "x86_64-unknown-none";
+    let target = args.target.clone().unwrap_or(get_default_target());
+    let target_os_string = OsString::from(&target.triple());
+    let rustc_linker_script_arg = format!("-C link-arg=-T{}.ld", target);
 
     let env_rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
     let mut rustflags = Vec::from(rustflags);
     // We disable RELRO and PIC here because they cause link failures
     rustflags.extend(vec![
         &env_rustflags,
-        "-C link-arg=-Tx86_64.ld",
-        "-C code-model=kernel",
+        &rustc_linker_script_arg,
         "-C relocation-model=static",
         "-Z relro-level=off",
     ]);
@@ -139,7 +141,7 @@ fn build_kernel_elf(
     command.env_remove("RUSTUP_TOOLCHAIN");
     command.env("RUSTFLAGS", rustflags.join(" "));
     command.arg("build");
-    command.arg("--target").arg(target);
+    command.arg("--target").arg(&target_os_string);
     command
         .arg("--target-dir")
         .arg(cargo_target_directory.as_ref());
@@ -151,7 +153,7 @@ fn build_kernel_elf(
         process::exit(Errno::ExecuteCommand as _);
     }
 
-    let aster_bin_path = cargo_target_directory.as_ref().join(target);
+    let aster_bin_path = cargo_target_directory.as_ref().join(&target_os_string);
     let aster_bin_path = if args.profile == "dev" {
         aster_bin_path.join("debug")
     } else {
