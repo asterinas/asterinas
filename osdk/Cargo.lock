@@ -138,7 +138,6 @@ dependencies = [
  "linux-bzimage-builder",
  "log",
  "quote",
- "regex",
  "serde",
  "serde_json",
  "sha2",

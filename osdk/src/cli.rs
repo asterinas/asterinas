@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use clap::{crate_version, Args, Parser};
 
 use crate::{
+    arch::Arch,
     commands::{
         execute_build_command, execute_forwarded_command, execute_new_command, execute_run_command,
         execute_test_command,
@@ -145,6 +146,8 @@ pub struct CargoArgs {
 
 #[derive(Debug, Args)]
 pub struct OsdkArgs {
+    #[arg(long, value_name = "ARCH", help = "The architecture to build for")]
+    pub arch: Option<Arch>,
     #[arg(
         long = "select",
         help = "Select the specific configuration provided in the OSDK manifest",

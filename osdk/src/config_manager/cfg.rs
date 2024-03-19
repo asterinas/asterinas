@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: MPL-2.0
+
+//! A module for handling configurations.
+
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display},
+};
+
+/// A configuration that looks like "cfg(k1=v1, k2=v2, ...)".
+#[derive(Debug, Clone, Eq, Ord, PartialOrd, PartialEq, Serialize)]
+pub struct Cfg(BTreeMap<String, String>);
+
+#[derive(Debug)]
+pub struct CfgParseError(String);
+
+impl fmt::Display for CfgParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Failed to parse cfg: {}", self.0)
+    }
+}
+
+impl serde::ser::StdError for CfgParseError {}
+impl serde::de::Error for CfgParseError {
+    fn custom<T: fmt::Display>(msg: T) -> Self {
+        Self(msg.to_string())
+    }
+}
+
+impl CfgParseError {
+    pub fn new(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+/// This is to allow constructions like `Cfg::from([("arch", "foo"), ("select", "bar")])`.
+/// Making things easier for testing.
+impl<K, V, const N: usize> From<[(K, V); N]> for Cfg
+where
+    K: Into<String>,
+    V: Into<String>,
+{
+    fn from(array: [(K, V); N]) -> Self {
+        let mut cfg = BTreeMap::new();
+        for (k, v) in array.into_iter() {
+            cfg.insert(k.into(), v.into());
+        }
+        Self(cfg)
+    }
+}
+
+impl Cfg {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, CfgParseError> {
+        let s = s.trim();
+
+        // Match the leading "cfg(" and trailing ")"
+        if !s.starts_with("cfg(") || !s.ends_with(')') {
+            return Err(CfgParseError::new(s));
+        }
+        let s = &s[4..s.len() - 1];
+
+        let mut cfg = BTreeMap::new();
+        for kv in s.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            let kv: Vec<_> = kv.split('=').collect();
+            if kv.len() != 2 {
+                return Err(CfgParseError::new(s));
+            }
+            cfg.insert(
+                kv[0].trim().to_string(),
+                kv[1].trim().trim_matches('\"').to_string(),
+            );
+        }
+        Ok(Self(cfg))
+    }
+
+    pub fn check_allowed(&self, allowed_keys: &[&str]) -> bool {
+        for (k, _) in self.0.iter() {
+            if allowed_keys.iter().all(|&key| k != key) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn insert(&mut self, k: String, v: String) {
+        self.0.insert(k, v);
+    }
+}
+
+impl Display for Cfg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "cfg(")?;
+        for (i, (k, v)) in self.0.iter().enumerate() {
+            write!(f, "{}=\"{}\"", k, v)?;
+            if i != self.0.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, ")")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_cfg_from_str() {
+        let cfg = Cfg::from([("arch", "x86_64"), ("select", "foo")]);
+        let cfg1 = Cfg::from_str("cfg(arch =  \"x86_64\",     select=\"foo\", )").unwrap();
+        let cfg2 = Cfg::from_str("cfg(arch=\"x86_64\",select=\"foo\")").unwrap();
+        let cfg3 = Cfg::from_str("cfg( arch=\"x86_64\", select=\"foo\" )").unwrap();
+        assert_eq!(cfg, cfg1);
+        assert_eq!(cfg, cfg2);
+        assert_eq!(cfg, cfg3);
+    }
+
+    #[test]
+    fn test_cfg_display() {
+        let cfg = Cfg::from([("arch", "x86_64"), ("select", "foo")]);
+        let cfg_string = cfg.to_string();
+        let cfg_back = Cfg::from_str(&cfg_string).unwrap();
+        assert_eq!(cfg_string, "cfg(arch=\"x86_64\", select=\"foo\")");
+        assert_eq!(cfg, cfg_back);
+    }
+
+    #[test]
+    fn test_bad_cfg_strings() {
+        Cfg::from_str("cfg(,,,,arch=\"x86_64 \", select=\"foo\")").is_err();
+        Cfg::from_str("cfg(arch=\"x86_64\", select=\"foo\"").is_err();
+        Cfg::from_str("cfg(arch=x86_64,,, select=\"foo\") ").is_err();
+    }
+}

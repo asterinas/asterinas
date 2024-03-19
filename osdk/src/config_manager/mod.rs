@@ -6,6 +6,7 @@
 //! `RunConfig` and `TestConfig`. These `*Config` are used for `build`, `run` and `test` subcommand.
 
 pub mod boot;
+pub mod cfg;
 pub mod manifest;
 pub mod qemu;
 
@@ -22,6 +23,7 @@ use self::{
     manifest::{OsdkManifest, TomlManifest},
 };
 use crate::{
+    arch::{get_default_arch, Arch},
     cli::{BuildArgs, CargoArgs, OsdkArgs, RunArgs, TestArgs},
     error::Errno,
     error_msg,
@@ -32,17 +34,20 @@ use crate::{
 /// Configurations for build subcommand
 #[derive(Debug)]
 pub struct BuildConfig {
+    pub arch: Arch,
     pub manifest: OsdkManifest,
     pub cargo_args: CargoArgs,
 }
 
 impl BuildConfig {
     pub fn parse(args: &BuildArgs) -> Self {
+        let arch = args.osdk_args.arch.clone().unwrap_or_else(get_default_arch);
         let cargo_args = parse_cargo_args(&args.cargo_args);
-        let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
+        let mut manifest = load_osdk_manifest(&args.cargo_args, &args.osdk_args);
         apply_cli_args(&mut manifest, &args.osdk_args);
         try_fill_system_configs(&mut manifest);
         Self {
+            arch,
             manifest,
             cargo_args,
         }
@@ -52,17 +57,20 @@ impl BuildConfig {
 /// Configurations for run subcommand
 #[derive(Debug)]
 pub struct RunConfig {
+    pub arch: Arch,
     pub manifest: OsdkManifest,
     pub cargo_args: CargoArgs,
 }
 
 impl RunConfig {
     pub fn parse(args: &RunArgs) -> Self {
+        let arch = args.osdk_args.arch.clone().unwrap_or_else(get_default_arch);
         let cargo_args = parse_cargo_args(&args.cargo_args);
-        let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
+        let mut manifest = load_osdk_manifest(&args.cargo_args, &args.osdk_args);
         apply_cli_args(&mut manifest, &args.osdk_args);
         try_fill_system_configs(&mut manifest);
         Self {
+            arch,
             manifest,
             cargo_args,
         }
@@ -72,6 +80,7 @@ impl RunConfig {
 /// Configurations for test subcommand
 #[derive(Debug)]
 pub struct TestConfig {
+    pub arch: Arch,
     pub manifest: OsdkManifest,
     pub cargo_args: CargoArgs,
     pub test_name: Option<String>,
@@ -79,11 +88,13 @@ pub struct TestConfig {
 
 impl TestConfig {
     pub fn parse(args: &TestArgs) -> Self {
+        let arch = args.osdk_args.arch.clone().unwrap_or_else(get_default_arch);
         let cargo_args = parse_cargo_args(&args.cargo_args);
-        let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
+        let mut manifest = load_osdk_manifest(&args.cargo_args, &args.osdk_args);
         apply_cli_args(&mut manifest, &args.osdk_args);
         try_fill_system_configs(&mut manifest);
         Self {
+            arch,
             manifest,
             cargo_args,
             test_name: args.test_name.clone(),
@@ -94,7 +105,7 @@ impl TestConfig {
 /// FIXME: I guess OSDK manifest is definitely NOT per workspace. It's per crate. When you cannot
 /// find a manifest per crate, find it in the upper levels.
 /// I don't bother to do it now, just fix the relpaths.
-fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S>) -> OsdkManifest {
+fn load_osdk_manifest(cargo_args: &CargoArgs, osdk_args: &OsdkArgs) -> OsdkManifest {
     let feature_strings = get_feature_strings(cargo_args);
     let cargo_metadata = get_cargo_metadata(None::<&str>, Some(&feature_strings)).unwrap();
     let workspace_root = PathBuf::from(
@@ -123,7 +134,14 @@ fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S
         );
         process::exit(Errno::ParseMetadata as _);
     });
-    let mut osdk_manifest = OsdkManifest::from_toml_manifest(toml_manifest, selection);
+    let mut osdk_manifest = OsdkManifest::from_toml_manifest(
+        toml_manifest,
+        osdk_args
+            .arch
+            .as_ref()
+            .map(|s| s.to_string()),
+        osdk_args.select.as_ref().map(|s| s.to_string()),
+    );
     osdk_manifest.check_canonicalize_all_paths(workspace_root);
     osdk_manifest
 }

@@ -7,6 +7,7 @@ use serde::{
     Deserialize, Deserializer,
 };
 
+use super::cfg::Cfg;
 use super::get_key;
 use crate::{error::Errno, error_msg};
 
@@ -38,12 +39,12 @@ pub struct DriveFile {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct CfgQemu {
     pub default: Qemu,
-    pub cfg: Option<BTreeMap<String, Qemu>>,
+    pub cfg_map: Option<BTreeMap<Cfg, Qemu>>,
 }
 
 impl CfgQemu {
-    pub fn new(default: Qemu, cfg: Option<BTreeMap<String, Qemu>>) -> Self {
-        Self { default, cfg }
+    pub fn new(default: Qemu, cfg_map: Option<BTreeMap<Cfg, Qemu>>) -> Self {
+        Self { default, cfg_map }
     }
 }
 
@@ -57,7 +58,7 @@ impl<'de> Deserialize<'de> for CfgQemu {
             Args,
             Machine,
             DriveFiles,
-            Cfg(String),
+            Cfg(Cfg),
         }
 
         impl<'de> Deserialize<'de> for Field {
@@ -83,7 +84,10 @@ impl<'de> Deserialize<'de> for CfgQemu {
                             "machine" => Ok(Field::Machine),
                             "path" => Ok(Field::Path),
                             "drive_files" => Ok(Field::DriveFiles),
-                            v => Ok(Field::Cfg(v.to_string())),
+                            v => Ok(Field::Cfg(Cfg::from_str(v).unwrap_or_else(|e| {
+                                error_msg!("Error parsing cfg: {}", e);
+                                process::exit(Errno::ParseMetadata as _);
+                            }))),
                         }
                     }
                 }
@@ -106,7 +110,7 @@ impl<'de> Deserialize<'de> for CfgQemu {
                 A: de::MapAccess<'de>,
             {
                 let mut default = Qemu::default();
-                let mut cfgs = BTreeMap::new();
+                let mut cfg_map = BTreeMap::<Cfg, Qemu>::new();
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -124,12 +128,12 @@ impl<'de> Deserialize<'de> for CfgQemu {
                         }
                         Field::Cfg(cfg) => {
                             let qemu_args = map.next_value()?;
-                            cfgs.insert(cfg, qemu_args);
+                            cfg_map.insert(cfg, qemu_args);
                         }
                     }
                 }
 
-                Ok(CfgQemu::new(default, Some(cfgs)))
+                Ok(CfgQemu::new(default, Some(cfg_map)))
             }
         }
 
@@ -143,6 +147,7 @@ pub enum QemuMachine {
     Microvm,
     #[default]
     Q35,
+    Virt,
 }
 
 impl<'a> From<&'a str> for QemuMachine {
@@ -150,6 +155,7 @@ impl<'a> From<&'a str> for QemuMachine {
         match value {
             "microvm" => Self::Microvm,
             "q35" => Self::Q35,
+            "virt" => Self::Virt,
             _ => {
                 error_msg!("{} is not a valid option for `qemu.machine`", value);
                 process::exit(Errno::ParseMetadata as _);

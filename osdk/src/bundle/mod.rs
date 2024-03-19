@@ -193,6 +193,27 @@ impl Bundle {
                     ));
                 }
             }
+            QemuMachine::Virt => {
+                qemu_cmd.arg("-machine").arg("virt");
+                let Some(ref vm_image) = self.manifest.vm_image else {
+                    error_msg!("VM image is required for QEMU booting");
+                    std::process::exit(Errno::RunBundle as _);
+                };
+                qemu_cmd.arg("-kernel").arg(self.path.join(vm_image.path()));
+                let Some(ref initramfs) = config.manifest.initramfs else {
+                    error_msg!("Initramfs is required for Virt machine");
+                    std::process::exit(Errno::RunBundle as _);
+                };
+                qemu_cmd.arg("-initrd").arg(initramfs);
+                qemu_cmd
+                    .arg("-append")
+                    .arg(config.manifest.kcmd_args.join(" "));
+                let Some(ref opensbi) = self.manifest.boot.opensbi else {
+                    error_msg!("OpenSBI is required for Virt machine");
+                    std::process::exit(Errno::RunBundle as _);
+                };
+                qemu_cmd.arg("-bios").arg(opensbi);
+            }
         };
         qemu_cmd.arg("-cpu").arg("Icelake-Server,+x2apic");
 

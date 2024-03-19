@@ -57,9 +57,18 @@ pub fn new_base_crate(
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&base_crate_path).unwrap();
 
-    // Add linker.ld file
-    let linker_ld = include_str!("x86_64.ld.template");
-    fs::write("x86_64.ld", linker_ld).unwrap();
+    // Add linker script files
+    macro_rules! include_linker_script {
+        ([$($linker_script:literal),+]) => {$(
+            fs::write(
+                base_crate_path.as_ref().join($linker_script),
+                include_str!(concat!($linker_script, ".template"))
+            ).unwrap();
+        )+};
+    }
+    // TODO: currently just x86_64 works; add support for other architectures
+    // here when the framework is ready
+    include_linker_script!(["x86_64.ld"]);
 
     // Overrite the main.rs file
     let main_rs = include_str!("main.rs.template");
