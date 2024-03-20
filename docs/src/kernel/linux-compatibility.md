@@ -66,8 +66,8 @@ provided by Linux on x86-64 architecture.
 | 43      | accept           | ✅              |
 | 44      | sendto           | ✅              |
 | 45      | recvfrom         | ✅              |
-| 46      | sendmsg          | ❌              |
-| 47      | recvmsg          | ❌              |
+| 46      | sendmsg          | ✅              |
+| 47      | recvmsg          | ✅              |
 | 48      | shutdown         | ✅              |
 | 49      | bind             | ✅              |
 | 50      | listen           | ✅              |

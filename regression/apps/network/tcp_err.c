@@ -6,6 +6,7 @@
 #include <sys/poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 #include "test.h"
 
@@ -288,5 +289,75 @@ FN_TEST(async_connect)
 	// Reading the socket error will cause it to be cleared
 	TEST_RES(getsockopt(sk_bound, SOL_SOCKET, SO_ERROR, &err, &errlen),
 		 errlen == sizeof(err) && err == 0);
+}
+END_TEST()
+
+void set_blocking(int sockfd)
+{
+	int flags = CHECK(fcntl(sockfd, F_GETFL, 0));
+	CHECK(fcntl(sockfd, F_SETFL, flags & (~O_NONBLOCK)));
+}
+
+FN_SETUP(enter_blocking_mode)
+{
+	set_blocking(sk_connected);
+	set_blocking(sk_bound);
+}
+END_SETUP()
+
+FN_TEST(sendmsg_and_recvmsg)
+{
+	struct msghdr msg = { 0 };
+	struct iovec iov[2];
+	char *message = "Message:";
+	char *message2 = "Hello";
+	iov[0].iov_base = message;
+	iov[0].iov_len = strlen(message);
+	iov[1].iov_base = message2;
+	iov[1].iov_len = strlen(message2);
+	msg.msg_iov = iov;
+	msg.msg_iovlen = 2;
+
+	// Send one message and recv one message
+	TEST_RES(sendmsg(sk_connected, &msg, 0),
+		 _ret == strlen(message) + strlen(message2));
+
+#define BUFFER_SIZE 50
+	char concatenated[BUFFER_SIZE] = { 0 };
+	strcat(concatenated, message);
+	strcat(concatenated, message2);
+
+	char buffer[BUFFER_SIZE] = { 0 };
+	iov[0].iov_base = buffer;
+	iov[0].iov_len = BUFFER_SIZE;
+	msg.msg_iovlen = 1;
+
+	TEST_RES(recvmsg(sk_accepted, &msg, 0),
+		 _ret == strlen(concatenated) &&
+			 strcmp(buffer, concatenated) == 0);
+
+	// Send two message and receive two message
+
+	// This test is commented out due to a known issue:
+	// See <https://github.com/asterinas/asterinas/issues/819>
+
+	// iov[0].iov_base = message;
+	// iov[0].iov_len = strlen(message);
+	// msg.msg_iovlen = 1;
+	// TEST_RES(sendmsg(sk_accepted, &msg, 0), _ret == strlen(message));
+	// TEST_RES(sendmsg(sk_accepted, &msg, 0), _ret == strlen(message));
+
+	// char first_buffer[BUFFER_SIZE] = { 0 };
+	// char second_buffer[BUFFER_SIZE] = { 0 };
+	// iov[0].iov_base = first_buffer;
+	// iov[0].iov_len = BUFFER_SIZE;
+	// iov[1].iov_base = second_buffer;
+	// iov[1].iov_len = BUFFER_SIZE;
+	// msg.msg_iovlen = 2;
+
+	// // Ensure two messages are prepared for receiving
+	// sleep(1);
+
+	// TEST_RES(recvmsg(sk_connected, &msg, 0), _ret == strlen(message) * 2);
 }
 END_TEST()

@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
     util::{
         net::{get_socket_from_fd, write_socket_addr_to_user},
-        write_bytes_to_user,
+        IoVec,
     },
 };
 
@@ -24,14 +24,14 @@ pub fn sys_recvfrom(
 
     let socket = get_socket_from_fd(sockfd)?;
 
-    let mut buffer = vec![0u8; len];
+    let io_vecs = [IoVec::new(buf, len)];
+    let (recv_size, message_header) = socket.recvmsg(&io_vecs, flags)?;
 
-    let (recv_size, socket_addr) = socket.recvfrom(&mut buffer, flags)?;
-    if buf != 0 {
-        write_bytes_to_user(buf, &buffer[..recv_size])?;
+    if let Some(socket_addr) = message_header.addr()
+        && src_addr != 0
+    {
+        write_socket_addr_to_user(socket_addr, src_addr, addrlen_ptr)?;
     }
-    if src_addr != 0 {
-        write_socket_addr_to_user(&socket_addr, src_addr, addrlen_ptr)?;
-    }
+
     Ok(SyscallReturn::Return(recv_size as _))
 }

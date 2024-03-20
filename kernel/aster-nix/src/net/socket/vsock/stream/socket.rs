@@ -9,11 +9,13 @@ use crate::{
     events::IoEvents,
     fs::{file_handle::FileLike, utils::StatusFlags},
     net::socket::{
+        util::{copy_message_from_user, copy_message_to_user, create_message_buffer},
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
-        SendRecvFlags, SockShutdownCmd, Socket, SocketAddr,
+        MessageHeader, SendRecvFlags, SockShutdownCmd, Socket, SocketAddr,
     },
     prelude::*,
     process::signal::Poller,
+    util::IoVec,
 };
 
 pub struct VsockStreamSocket {
@@ -112,7 +114,17 @@ impl VsockStreamSocket {
         Ok((socket, peer_addr.into()))
     }
 
-    fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+    fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+        let inner = self.status.read();
+        match &*inner {
+            Status::Connected(connected) => connected.send(buf, flags),
+            Status::Init(_) | Status::Listen(_) => {
+                return_errno_with_message!(Errno::EINVAL, "the socket is not connected");
+            }
+        }
+    }
+
+    fn try_recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         let connected = match &*self.status.read() {
             Status::Connected(connected) => connected.clone(),
             Status::Init(_) | Status::Listen(_) => {
@@ -133,6 +145,14 @@ impl VsockStreamSocket {
         }
         Ok((read_size, peer_addr))
     }
+
+    fn recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+        if self.is_nonblocking() {
+            self.try_recv(buf, flags)
+        } else {
+            self.wait_events(IoEvents::IN, || self.try_recv(buf, flags))
+        }
+    }
 }
 
 impl FileLike for VsockStreamSocket {
@@ -141,12 +161,15 @@ impl FileLike for VsockStreamSocket {
     }
 
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.recvfrom(buf, SendRecvFlags::empty())
-            .map(|(read_size, _)| read_size)
+        // TODO: Set correct flags
+        let flags = SendRecvFlags::empty();
+        self.recv(buf, SendRecvFlags::empty()).map(|(len, _)| len)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        self.sendto(buf, None, SendRecvFlags::empty())
+        // TODO: Set correct flags
+        let flags = SendRecvFlags::empty();
+        self.send(buf, flags)
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -219,7 +242,7 @@ impl Socket for VsockStreamSocket {
         // Send request
         vsockspace.request(&connecting.info()).unwrap();
         // wait for response from driver
-        // TODO: add timeout
+        // TODO: Add timeout
         let poller = Poller::new();
         if !connecting
             .poll(IoEvents::IN, Some(&poller))
@@ -287,33 +310,46 @@ impl Socket for VsockStreamSocket {
         }
     }
 
-    fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
-        debug_assert!(flags.is_all_supported());
-
-        if self.is_nonblocking() {
-            self.try_recvfrom(buf, flags)
-        } else {
-            self.wait_events(IoEvents::IN, || self.try_recvfrom(buf, flags))
-        }
-    }
-
-    fn sendto(
+    fn sendmsg(
         &self,
-        buf: &[u8],
-        remote: Option<SocketAddr>,
+        io_vecs: &[IoVec],
+        message_header: MessageHeader,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        debug_assert!(remote.is_none());
-        if remote.is_some() {
-            return_errno_with_message!(Errno::EINVAL, "vsock should not provide remote addr");
+        // TODO: Deal with flags
+        debug_assert!(flags.is_all_supported());
+
+        let MessageHeader {
+            control_message, ..
+        } = message_header;
+
+        if control_message.is_some() {
+            // TODO: Support sending control message
+            warn!("sending control message is not supported");
         }
-        let inner = self.status.read();
-        match &*inner {
-            Status::Connected(connected) => connected.send(buf, flags),
-            Status::Init(_) | Status::Listen(_) => {
-                return_errno_with_message!(Errno::EINVAL, "the socket is not connected");
-            }
-        }
+
+        let buf = copy_message_from_user(io_vecs);
+        self.send(&buf, flags)
+    }
+
+    fn recvmsg(&self, io_vecs: &[IoVec], flags: SendRecvFlags) -> Result<(usize, MessageHeader)> {
+        // TODO: Deal with flags
+        debug_assert!(flags.is_all_supported());
+
+        let mut buf = create_message_buffer(io_vecs);
+
+        let (received_bytes, _) = self.recv(&mut buf, flags)?;
+
+        let copied_bytes = {
+            let message = &buf[..received_bytes];
+            copy_message_to_user(io_vecs, message)
+        };
+
+        // TODO: Receive control message
+
+        let messsge_header = MessageHeader::new(None, None);
+
+        Ok((copied_bytes, messsge_header))
     }
 
     fn addr(&self) -> Result<SocketAddr> {

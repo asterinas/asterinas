@@ -70,6 +70,7 @@ use crate::syscall::{
     read::sys_read,
     readlink::{sys_readlink, sys_readlinkat},
     recvfrom::sys_recvfrom,
+    recvmsg::sys_recvmsg,
     rename::{sys_rename, sys_renameat},
     rmdir::sys_rmdir,
     rt_sigaction::sys_rt_sigaction,
@@ -81,6 +82,7 @@ use crate::syscall::{
     sched_yield::sys_sched_yield,
     select::sys_select,
     sendfile::sys_sendfile,
+    sendmsg::sys_sendmsg,
     sendto::sys_sendto,
     set_get_priority::{sys_get_priority, sys_set_priority},
     set_robust_list::sys_set_robust_list,
@@ -161,6 +163,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_ACCEPT = 43            => sys_accept(args[..3]);
     SYS_SENDTO = 44            => sys_sendto(args[..6]);
     SYS_RECVFROM = 45          => sys_recvfrom(args[..6]);
+    SYS_SENDMSG = 46           => sys_sendmsg(args[..3]);
+    SYS_RECVMSG = 47           => sys_recvmsg(args[..3]);
     SYS_SHUTDOWN = 48          => sys_shutdown(args[..2]);
     SYS_BIND = 49              => sys_bind(args[..3]);
     SYS_LISTEN = 50            => sys_listen(args[..2]);

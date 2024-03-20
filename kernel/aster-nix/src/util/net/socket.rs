@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::*;
+use super::read_socket_addr_from_user;
+use crate::{
+    net::socket::SocketAddr,
+    prelude::*,
+    util::{copy_iovs_from_user, net::write_socket_addr_with_max_len, IoVec},
+};
 
 /// Standard well-defined IP protocols.
 /// From https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/in.h.
@@ -66,5 +71,48 @@ bitflags! {
     pub struct SockFlags: i32 {
         const SOCK_NONBLOCK = 1 << 11;
         const SOCK_CLOEXEC = 1 << 19;
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct CUserMsgHdr {
+    /// Pointer to socket address structure
+    pub msg_name: Vaddr,
+    /// Size of socket address
+    pub msg_namelen: i32,
+    /// Scatter/Gather iov array
+    pub msg_iov: Vaddr,
+    /// The # of elements in msg_iov
+    pub msg_iovlen: u32,
+    /// Ancillary data
+    pub msg_control: Vaddr,
+    /// Ancillary data buffer length
+    pub msg_controllen: u32,
+    /// Flags on received message
+    pub msg_flags: u32,
+}
+
+impl CUserMsgHdr {
+    pub fn read_socket_addr_from_user(&self) -> Result<Option<SocketAddr>> {
+        if self.msg_name == 0 {
+            return Ok(None);
+        }
+
+        let socket_addr = read_socket_addr_from_user(self.msg_name, self.msg_namelen as usize)?;
+        Ok(Some(socket_addr))
+    }
+
+    pub fn write_socket_addr_to_user(&self, addr: &SocketAddr) -> Result<()> {
+        if self.msg_name == 0 {
+            return Ok(());
+        }
+
+        write_socket_addr_with_max_len(addr, self.msg_name, self.msg_namelen)?;
+        Ok(())
+    }
+
+    pub fn copy_iovs_from_user(&self) -> Result<Box<[IoVec]>> {
+        copy_iovs_from_user(self.msg_iov, self.msg_iovlen as usize)
     }
 }

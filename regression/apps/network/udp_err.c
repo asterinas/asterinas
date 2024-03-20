@@ -6,6 +6,7 @@
 #include <sys/poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 #include "test.h"
 
@@ -196,5 +197,65 @@ FN_TEST(connect)
 	socklen_t addrlen = sizeof(sk_addr);
 
 	TEST_SUCC(connect(sk_connected, psaddr, addrlen));
+}
+END_TEST()
+
+void set_blocking(int sockfd)
+{
+	int flags = CHECK(fcntl(sockfd, F_GETFL, 0));
+	CHECK(fcntl(sockfd, F_SETFL, flags & (~O_NONBLOCK)));
+}
+
+FN_SETUP(enter_blocking_mode)
+{
+	set_blocking(sk_connected);
+	set_blocking(sk_bound);
+}
+END_SETUP()
+
+FN_TEST(sendmsg_and_recvmsg)
+{
+	struct sockaddr_in saddr;
+	socklen_t addrlen = sizeof(saddr);
+
+	sk_addr.sin_port = C_PORT;
+
+	struct msghdr msg = { 0 };
+	struct iovec iov[1];
+	char *message = "Message";
+	iov[0].iov_base = message;
+	iov[0].iov_len = strlen(message);
+	msg.msg_iov = iov;
+	msg.msg_iovlen = 1;
+	msg.msg_name = (struct sockaddr *)&sk_addr;
+	msg.msg_namelen = addrlen;
+
+	// Send one message and receive one message
+	TEST_RES(sendmsg(sk_connected, &msg, 0), _ret == strlen(message));
+
+#define BUFFER_SIZE 50
+	char buffer[BUFFER_SIZE];
+	iov[0].iov_base = buffer;
+	iov[0].iov_len = BUFFER_SIZE;
+	msg.msg_name = 0;
+	TEST_RES(recvmsg(sk_bound, &msg, 0),
+		 _ret == strlen(message) && strcmp(message, buffer) == 0);
+
+	// Send two messages and receive two messages
+	iov[0].iov_base = message;
+	iov[0].iov_len = strlen(message);
+	msg.msg_name = (struct sockaddr *)&sk_addr;
+	msg.msg_namelen = addrlen;
+
+	TEST_RES(sendmsg(sk_connected, &msg, 0), _ret == strlen(message));
+	TEST_RES(sendmsg(sk_connected, &msg, 0), _ret == strlen(message));
+
+	iov[0].iov_base = buffer;
+	iov[0].iov_len = BUFFER_SIZE;
+
+	TEST_RES(recvmsg(sk_bound, &msg, 0),
+		 _ret == strlen(message) && strcmp(message, buffer) == 0);
+	TEST_RES(recvmsg(sk_bound, &msg, 0),
+		 _ret == strlen(message) && strcmp(message, buffer) == 0);
 }
 END_TEST()

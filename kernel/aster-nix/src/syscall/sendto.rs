@@ -3,11 +3,11 @@
 use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    net::socket::SendRecvFlags,
+    net::socket::{MessageHeader, SendRecvFlags},
     prelude::*,
     util::{
         net::{get_socket_from_fd, read_socket_addr_from_user},
-        read_bytes_from_user,
+        IoVec,
     },
 };
 
@@ -27,12 +27,13 @@ pub fn sys_sendto(
         Some(socket_addr)
     };
     debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = 0x{len:x}, flags = {flags:?}, socket_addr = {socket_addr:?}");
-    let mut buffer = vec![0u8; len];
-    read_bytes_from_user(buf, &mut buffer)?;
 
     let socket = get_socket_from_fd(sockfd)?;
 
-    let send_size = socket.sendto(&buffer, socket_addr, flags)?;
+    let io_vecs = [IoVec::new(buf, len)];
+    let message_header = MessageHeader::new(socket_addr, None);
+
+    let send_size = socket.sendmsg(&io_vecs, message_header, flags)?;
 
     Ok(SyscallReturn::Return(send_size as _))
 }
