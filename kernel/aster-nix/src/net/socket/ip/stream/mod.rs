@@ -204,6 +204,8 @@ impl StreamSocket {
     }
 
     fn check_connect(&self) -> Result<()> {
+        // Hold the lock in advance to avoid deadlocks.
+        let mut options = self.options.write();
         let mut state = self.state.write();
 
         match state.as_mut() {
@@ -212,8 +214,9 @@ impl StreamSocket {
             }
             State::Connected(connected_stream) => connected_stream.check_new(),
             State::Init(_) | State::Listen(_) => {
-                // FIXME: The error code should be retrieved via the `SO_ERROR` socket option
-                return_errno_with_message!(Errno::ECONNREFUSED, "the connection is refused");
+                let sock_errors = options.socket.sock_errors();
+                options.socket.set_sock_errors(None);
+                sock_errors.map(Err).unwrap_or(Ok(()))
             }
         }
     }
@@ -518,13 +521,24 @@ impl Socket for StreamSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        let options = self.options.read();
+        // Note that the socket error has to be handled separately, because it is automatically
+        // cleared after reading.
         match_sock_option_mut!(option, {
-            // Socket Options
             socket_errors: SocketError => {
+                let mut options = self.options.write();
                 let sock_errors = options.socket.sock_errors();
                 socket_errors.set(sock_errors);
+                options.socket.set_sock_errors(None);
+
+                return Ok(());
             },
+            _ => ()
+        });
+
+        let options = self.options.read();
+
+        match_sock_option_mut!(option, {
+            // Socket options:
             socket_reuse_addr: ReuseAddr => {
                 let reuse_addr = options.socket.reuse_addr();
                 socket_reuse_addr.set(reuse_addr);
@@ -541,7 +555,7 @@ impl Socket for StreamSocket {
                 let reuse_port = options.socket.reuse_port();
                 socket_reuse_port.set(reuse_port);
             },
-            // Tcp Options
+            // TCP options:
             tcp_no_delay: NoDelay => {
                 let no_delay = options.tcp.no_delay();
                 tcp_no_delay.set(no_delay);
@@ -565,17 +579,19 @@ impl Socket for StreamSocket {
                 let window_clamp = options.tcp.window_clamp();
                 tcp_window_clamp.set(window_clamp);
             },
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "get unknown option")
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
         });
+
         Ok(())
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
         let mut options = self.options.write();
+
         // FIXME: here we have only set the value of the option, without actually
         // making any real modifications.
         match_sock_option_ref!(option, {
-            // Socket options
+            // Socket options:
             socket_recv_buf: RecvBuf => {
                 let recv_buf = socket_recv_buf.get().unwrap();
                 if *recv_buf <= MIN_RECVBUF {
@@ -604,7 +620,7 @@ impl Socket for StreamSocket {
                 let linger = socket_linger.get().unwrap();
                 options.socket.set_linger(*linger);
             },
-            // Tcp options
+            // TCP options:
             tcp_no_delay: NoDelay => {
                 let no_delay = tcp_no_delay.get().unwrap();
                 options.tcp.set_no_delay(*no_delay);
@@ -616,12 +632,11 @@ impl Socket for StreamSocket {
             tcp_maxseg: MaxSegment => {
                 const MIN_MAXSEG: u32 = 536;
                 const MAX_MAXSEG: u32 = 65535;
+
                 let maxseg = tcp_maxseg.get().unwrap();
-
                 if *maxseg < MIN_MAXSEG || *maxseg > MAX_MAXSEG {
-                    return_errno_with_message!(Errno::EINVAL, "New maxseg should be in allowed range.");
+                    return_errno_with_message!(Errno::EINVAL, "the maximum segment size is out of bounds");
                 }
-
                 options.tcp.set_maxseg(*maxseg);
             },
             tcp_window_clamp: WindowClamp => {
@@ -633,8 +648,9 @@ impl Socket for StreamSocket {
                     options.tcp.set_window_clamp(*window_clamp);
                 }
             },
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "set unknown option")
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
         });
+
         Ok(())
     }
 }
@@ -644,9 +660,11 @@ impl Observer<()> for StreamSocket {
         let conn_ready = self.update_io_events();
 
         if conn_ready {
-            // FIXME: The error code should be stored as the `SO_ERROR` socket option. Since it
-            // does not exist yet, we ignore the return value below.
-            let _ = self.finish_connect();
+            // Hold the lock in advance to avoid race conditions.
+            let mut options = self.options.write();
+
+            let result = self.finish_connect();
+            options.socket.set_sock_errors(result.err());
         }
     }
 }
