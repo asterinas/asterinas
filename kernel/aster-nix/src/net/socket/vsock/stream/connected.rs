@@ -68,14 +68,14 @@ impl Connected {
         }
     }
 
-    pub fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+    pub fn send(&self, packet: &[u8], flags: SendRecvFlags) -> Result<usize> {
         let mut connection = self.connection.lock_irq_disabled();
         debug_assert!(flags.is_all_supported());
-        let buf_len = buf.len();
+        let buf_len = packet.len();
         VSOCK_GLOBAL
             .get()
             .unwrap()
-            .send(buf, &mut connection.info)?;
+            .send(packet, &mut connection.info)?;
 
         Ok(buf_len)
     }

@@ -79,7 +79,25 @@ pub fn write_socket_addr_to_user(
     if addrlen_ptr == 0 {
         return_errno_with_message!(Errno::EINVAL, "must provide the addrlen ptr");
     }
-    let max_len = read_val_from_user::<i32>(addrlen_ptr)? as usize;
+
+    let write_size = {
+        let max_len = read_val_from_user::<i32>(addrlen_ptr)?;
+        write_socket_addr_with_max_len(socket_addr, dest, max_len)?
+    };
+
+    if addrlen_ptr != 0 {
+        write_val_to_user(addrlen_ptr, &write_size)?;
+    }
+    Ok(())
+}
+
+pub fn write_socket_addr_with_max_len(
+    socket_addr: &SocketAddr,
+    dest: Vaddr,
+    max_len: i32,
+) -> Result<i32> {
+    let max_len = max_len as usize;
+
     let write_size = match socket_addr {
         SocketAddr::Unix(path) => {
             let sock_addr_unix = CSocketAddrUnix::try_from(path)?;
@@ -104,10 +122,8 @@ pub fn write_socket_addr_to_user(
             write_size as i32
         }
     };
-    if addrlen_ptr != 0 {
-        write_val_to_user(addrlen_ptr, &write_size)?;
-    }
-    Ok(())
+
+    Ok(write_size)
 }
 
 /// PlaceHolder

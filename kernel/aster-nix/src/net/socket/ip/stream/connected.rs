@@ -53,10 +53,11 @@ impl ConnectedStream {
         Ok(())
     }
 
-    pub fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<usize> {
+    pub fn try_recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<usize> {
         let result = self
             .bound_socket
             .raw_with(|socket: &mut RawTcpSocket| socket.recv_slice(buf));
+
         match result {
             Ok(0) => return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty"),
             Ok(recv_bytes) => Ok(recv_bytes),
@@ -67,10 +68,11 @@ impl ConnectedStream {
         }
     }
 
-    pub fn try_sendto(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+    pub fn try_send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
         let result = self
             .bound_socket
             .raw_with(|socket: &mut RawTcpSocket| socket.send_slice(buf));
+
         match result {
             Ok(0) => return_errno_with_message!(Errno::EAGAIN, "the send buffer is full"),
             Ok(sent_bytes) => Ok(sent_bytes),

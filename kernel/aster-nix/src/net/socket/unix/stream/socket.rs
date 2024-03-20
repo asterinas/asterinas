@@ -19,11 +19,15 @@ use crate::{
     },
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
-        util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr},
+        util::{
+            copy_message_from_user, copy_message_to_user, create_message_buffer,
+            send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader,
+        },
         SockShutdownCmd, Socket,
     },
     prelude::*,
     process::signal::Poller,
+    util::IoVec,
 };
 
 pub struct UnixStreamSocket(RwLock<State>);
@@ -86,6 +90,24 @@ impl UnixStreamSocket {
 
         status_flags.intersection(SUPPORTED_FLAGS)
     }
+
+    fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+        let connected = match &*self.0.read() {
+            State::Connected(connected) => connected.clone(),
+            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+        };
+
+        connected.write(buf)
+    }
+
+    fn recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<usize> {
+        let connected = match &*self.0.read() {
+            State::Connected(connected) => connected.clone(),
+            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+        };
+
+        connected.read(buf)
+    }
 }
 
 impl FileLike for UnixStreamSocket {
@@ -94,12 +116,15 @@ impl FileLike for UnixStreamSocket {
     }
 
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.recvfrom(buf, SendRecvFlags::empty())
-            .map(|(read_size, _)| read_size)
+        // TODO: Set correct flags
+        let flags = SendRecvFlags::empty();
+        self.recv(buf, flags)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        self.sendto(buf, None, SendRecvFlags::empty())
+        // TODO: Set correct flags
+        let flags = SendRecvFlags::empty();
+        self.send(buf, flags)
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -251,31 +276,46 @@ impl Socket for UnixStreamSocket {
         }
     }
 
-    fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
-        let connected = match &*self.0.read() {
-            State::Connected(connected) => connected.clone(),
-            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
-        };
-
-        let peer_addr = self.peer_addr()?;
-        let read_size = connected.read(buf)?;
-        Ok((read_size, peer_addr))
-    }
-
-    fn sendto(
+    fn sendmsg(
         &self,
-        buf: &[u8],
-        remote: Option<SocketAddr>,
+        io_vecs: &[IoVec],
+        message_header: MessageHeader,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        debug_assert!(remote.is_none());
-        // TODO: deal with flags
-        let connected = match &*self.0.read() {
-            State::Connected(connected) => connected.clone(),
-            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+        // TODO: Deal with flags
+        debug_assert!(flags.is_all_supported());
+
+        let MessageHeader {
+            control_message, ..
+        } = message_header;
+
+        if control_message.is_some() {
+            // TODO: Support sending control message
+            warn!("sending control message is not supported");
+        }
+
+        let buf = copy_message_from_user(io_vecs);
+
+        self.send(&buf, flags)
+    }
+
+    fn recvmsg(&self, io_vecs: &[IoVec], flags: SendRecvFlags) -> Result<(usize, MessageHeader)> {
+        // TODO: Deal with flags
+        debug_assert!(flags.is_all_supported());
+
+        let mut buf = create_message_buffer(io_vecs);
+        let received_bytes = self.recv(&mut buf, flags)?;
+
+        let copied_bytes = {
+            let message = &buf[..received_bytes];
+            copy_message_to_user(io_vecs, message)
         };
 
-        connected.write(buf)
+        // TODO: Receive control message
+
+        let message_header = MessageHeader::new(None, None);
+
+        Ok((copied_bytes, message_header))
     }
 }
 

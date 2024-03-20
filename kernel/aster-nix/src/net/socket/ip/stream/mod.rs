@@ -25,16 +25,19 @@ use crate::{
                 Error as SocketError, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
             },
             util::{
+                copy_message_from_user, copy_message_to_user, create_message_buffer,
                 options::{SocketOptionSet, MIN_RECVBUF, MIN_SENDBUF},
                 send_recv_flags::SendRecvFlags,
                 shutdown_cmd::SockShutdownCmd,
                 socket_addr::SocketAddr,
+                MessageHeader,
             },
             Socket,
         },
     },
     prelude::*,
     process::signal::{Pollee, Poller},
+    util::IoVec,
 };
 
 mod connected;
@@ -249,7 +252,7 @@ impl StreamSocket {
         accepted
     }
 
-    fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+    fn try_recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         let state = self.state.read();
 
         let connected_stream = match state.as_ref() {
@@ -262,7 +265,7 @@ impl StreamSocket {
             }
         };
 
-        let received = connected_stream.try_recvfrom(buf, flags).map(|recv_bytes| {
+        let received = connected_stream.try_recv(buf, flags).map(|recv_bytes| {
             connected_stream.update_io_events(&self.pollee);
 
             let remote_endpoint = connected_stream.remote_endpoint();
@@ -275,7 +278,15 @@ impl StreamSocket {
         received
     }
 
-    fn try_sendto(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+    fn recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+        if self.is_nonblocking() {
+            self.try_recv(buf, flags)
+        } else {
+            self.wait_events(IoEvents::IN, || self.try_recv(buf, flags))
+        }
+    }
+
+    fn try_send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
         let state = self.state.read();
 
         let connected_stream = match state.as_ref() {
@@ -291,7 +302,7 @@ impl StreamSocket {
             }
         };
 
-        let sent_bytes = connected_stream.try_sendto(buf, flags).map(|sent_bytes| {
+        let sent_bytes = connected_stream.try_send(buf, flags).map(|sent_bytes| {
             connected_stream.update_io_events(&self.pollee);
             sent_bytes
         });
@@ -300,6 +311,14 @@ impl StreamSocket {
         poll_ifaces();
 
         sent_bytes
+    }
+
+    fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+        if self.is_nonblocking() {
+            self.try_send(buf, flags)
+        } else {
+            self.wait_events(IoEvents::OUT, || self.try_send(buf, flags))
+        }
     }
 
     // TODO: Support timeout
@@ -344,16 +363,15 @@ impl StreamSocket {
 
 impl FileLike for StreamSocket {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        // FIXME: set correct flags
+        // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
-        let (recv_len, _) = self.recvfrom(buf, flags)?;
-        Ok(recv_len)
+        self.recv(buf, flags).map(|(len, _)| len)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        // FIXME: set correct flags
+        // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
-        self.sendto(buf, None, flags)
+        self.send(buf, flags)
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -510,33 +528,53 @@ impl Socket for StreamSocket {
         Ok(remote_endpoint.into())
     }
 
-    fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
-        debug_assert!(flags.is_all_supported());
-
-        if self.is_nonblocking() {
-            self.try_recvfrom(buf, flags)
-        } else {
-            self.wait_events(IoEvents::IN, || self.try_recvfrom(buf, flags))
-        }
-    }
-
-    fn sendto(
+    fn sendmsg(
         &self,
-        buf: &[u8],
-        remote: Option<SocketAddr>,
+        io_vecs: &[IoVec],
+        message_header: MessageHeader,
         flags: SendRecvFlags,
     ) -> Result<usize> {
+        // TODO: Deal with flags
         debug_assert!(flags.is_all_supported());
+
+        let MessageHeader {
+            control_message, ..
+        } = message_header;
 
         // According to the Linux man pages, `EISCONN` _may_ be returned when the destination
         // address is specified for a connection-mode socket. In practice, the destination address
         // is simply ignored. We follow the same behavior as the Linux implementation to ignore it.
 
-        if self.is_nonblocking() {
-            self.try_sendto(buf, flags)
-        } else {
-            self.wait_events(IoEvents::OUT, || self.try_sendto(buf, flags))
+        if control_message.is_some() {
+            // TODO: Support sending control message
+            warn!("sending control message is not supported");
         }
+
+        let buf = copy_message_from_user(io_vecs);
+
+        self.send(&buf, flags)
+    }
+
+    fn recvmsg(&self, io_vecs: &[IoVec], flags: SendRecvFlags) -> Result<(usize, MessageHeader)> {
+        // TODO: Deal with flags
+        debug_assert!(flags.is_all_supported());
+
+        let mut buf = create_message_buffer(io_vecs);
+
+        let (received_bytes, _) = self.recv(&mut buf, flags)?;
+
+        let copied_bytes = {
+            let message = &buf[..received_bytes];
+            copy_message_to_user(io_vecs, message)
+        };
+
+        // TODO: Receive control message
+
+        // According to <https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp.c#L2645>,
+        // peer address is ignored for connected socket.
+        let message_header = MessageHeader::new(None, None);
+
+        Ok((copied_bytes, message_header))
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {

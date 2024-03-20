@@ -10,7 +10,7 @@ use crate::{
 
 type PortNum = u16;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum SocketAddr {
     Unix(UnixSocketAddr),
     IPv4(Ipv4Address, PortNum),

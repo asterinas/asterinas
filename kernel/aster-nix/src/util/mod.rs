@@ -6,8 +6,11 @@ use aster_frame::mm::VmIo;
 use aster_rights::Full;
 
 use crate::{prelude::*, vm::vmar::Vmar};
+mod iovec;
 pub mod net;
 pub mod random;
+
+pub use iovec::{copy_iovs_from_user, IoVec};
 
 /// Read bytes into the `dest` buffer
 /// from the user space of the current process.

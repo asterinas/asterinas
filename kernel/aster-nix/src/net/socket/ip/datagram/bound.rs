@@ -39,11 +39,7 @@ impl BoundDatagram {
         self.remote_endpoint = Some(*endpoint)
     }
 
-    pub fn try_recvfrom(
-        &self,
-        buf: &mut [u8],
-        flags: SendRecvFlags,
-    ) -> Result<(usize, IpEndpoint)> {
+    pub fn try_recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, IpEndpoint)> {
         let result = self
             .bound_socket
             .raw_with(|socket: &mut RawUdpSocket| socket.recv_slice(buf));
@@ -55,12 +51,7 @@ impl BoundDatagram {
         }
     }
 
-    pub fn try_sendto(
-        &self,
-        buf: &[u8],
-        remote: &IpEndpoint,
-        flags: SendRecvFlags,
-    ) -> Result<usize> {
+    pub fn try_send(&self, buf: &[u8], remote: &IpEndpoint, flags: SendRecvFlags) -> Result<usize> {
         let result = self.bound_socket.raw_with(|socket: &mut RawUdpSocket| {
             if socket.payload_send_capacity() < buf.len() {
                 return None;
