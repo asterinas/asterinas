@@ -3,7 +3,10 @@
 use aster_frame::vm::VmIo;
 
 use crate::prelude::*;
+mod iovec;
 pub mod net;
+
+pub use iovec::IoVecIter;
 
 /// copy bytes from user space of current process. The bytes len is the len of dest.
 pub fn read_bytes_from_user(src: Vaddr, dest: &mut [u8]) -> Result<()> {

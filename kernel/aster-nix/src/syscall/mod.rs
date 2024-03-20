@@ -9,12 +9,12 @@ use self::{
     execve::sys_execveat, getgroups::sys_getgroups, getpeername::sys_getpeername,
     getrandom::sys_getrandom, getresgid::sys_getresgid, getresuid::sys_getresuid,
     getsid::sys_getsid, getsockname::sys_getsockname, getsockopt::sys_getsockopt,
-    listen::sys_listen, pread64::sys_pread64, recvfrom::sys_recvfrom, sendto::sys_sendto,
-    setfsgid::sys_setfsgid, setfsuid::sys_setfsuid, setgid::sys_setgid, setgroups::sys_setgroups,
-    setregid::sys_setregid, setresgid::sys_setresgid, setresuid::sys_setresuid,
-    setreuid::sys_setreuid, setsid::sys_setsid, setsockopt::sys_setsockopt, setuid::sys_setuid,
-    shutdown::sys_shutdown, sigaltstack::sys_sigaltstack, socket::sys_socket,
-    socketpair::sys_socketpair,
+    listen::sys_listen, pread64::sys_pread64, recvfrom::sys_recvfrom, recvmsg::sys_recvmsg,
+    sendmsg::sys_sendmsg, sendto::sys_sendto, setfsgid::sys_setfsgid, setfsuid::sys_setfsuid,
+    setgid::sys_setgid, setgroups::sys_setgroups, setregid::sys_setregid, setresgid::sys_setresgid,
+    setresuid::sys_setresuid, setreuid::sys_setreuid, setsid::sys_setsid,
+    setsockopt::sys_setsockopt, setuid::sys_setuid, shutdown::sys_shutdown,
+    sigaltstack::sys_sigaltstack, socket::sys_socket, socketpair::sys_socketpair,
 };
 use crate::{
     prelude::*,
@@ -158,6 +158,7 @@ mod prlimit64;
 mod read;
 mod readlink;
 mod recvfrom;
+mod recvmsg;
 mod rename;
 mod rmdir;
 mod rt_sigaction;
@@ -165,6 +166,7 @@ mod rt_sigprocmask;
 mod rt_sigreturn;
 mod sched_yield;
 mod select;
+mod sendmsg;
 mod sendto;
 mod set_get_priority;
 mod set_robust_list;
@@ -266,6 +268,8 @@ define_syscall_nums!(
     SYS_ACCEPT = 43,
     SYS_SENDTO = 44,
     SYS_RECVFROM = 45,
+    SYS_SENDMSG = 46,
+    SYS_RECVMSG = 47,
     SYS_SHUTDOWN = 48,
     SYS_BIND = 49,
     SYS_LISTEN = 50,
@@ -453,6 +457,8 @@ pub fn syscall_dispatch(
         SYS_ACCEPT => syscall_handler!(3, sys_accept, args),
         SYS_SENDTO => syscall_handler!(6, sys_sendto, args),
         SYS_RECVFROM => syscall_handler!(6, sys_recvfrom, args),
+        SYS_SENDMSG => syscall_handler!(3, sys_sendmsg, args),
+        SYS_RECVMSG => syscall_handler!(3, sys_recvmsg, args),
         SYS_SHUTDOWN => syscall_handler!(2, sys_shutdown, args),
         SYS_BIND => syscall_handler!(3, sys_bind, args),
         SYS_LISTEN => syscall_handler!(2, sys_listen, args),

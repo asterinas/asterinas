@@ -13,7 +13,7 @@ use crate::{
         iface::IpEndpoint,
         poll_ifaces,
         socket::{
-            util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr},
+            util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader},
             Socket,
         },
     },
@@ -283,6 +283,68 @@ impl Socket for DatagramSocket {
         let sent_bytes = self.try_sendto(buf, remote_endpoint, flags)?;
         poll_ifaces();
         Ok(sent_bytes)
+    }
+
+    fn sendmsg(&self, msg_hdr: MessageHeader, flags: SendRecvFlags) -> Result<usize> {
+        let MessageHeader {
+            addr,
+            io_vec_iter,
+            control_message,
+        } = msg_hdr;
+
+        if control_message.is_some() {
+            // TODO: support sending control message
+            warn!("sending control message is not supported");
+        }
+
+        let remote_endpoint = match addr {
+            None => None,
+            Some(remote_addr) => Some(remote_addr.try_into()?),
+        };
+
+        if let Some(endpoint) = remote_endpoint {
+            self.try_bind_empheral(&endpoint)?;
+        }
+
+        let mut total_bytes = 0;
+        for io_vec in io_vec_iter {
+            let buffer = {
+                let io_vec = io_vec?;
+                let mut buffer = vec![0u8; io_vec.len()];
+                io_vec.read_from_user(&mut buffer)?;
+                buffer
+            };
+
+            // TODO: Block if the send buffer is full
+            let sent_bytes = self.try_sendto(&buffer, remote_endpoint, flags)?;
+            total_bytes += sent_bytes;
+        }
+
+        Ok(total_bytes)
+    }
+
+    fn recvmsg(&self, msg_hdr: &mut MessageHeader, flags: SendRecvFlags) -> Result<usize> {
+        let mut total_bytes = 0;
+        for io_vec in msg_hdr.io_vec_iter.clone() {
+            let io_vec = io_vec?;
+
+            let (recv_bytes, addr) = {
+                let mut buffer = vec![0u8; io_vec.len()];
+                let (recv_bytes, addr) = self.recvfrom(&mut buffer, flags)?;
+                io_vec.write_to_user(&buffer)?;
+                (recv_bytes, addr)
+            };
+
+            total_bytes += recv_bytes;
+
+            if msg_hdr.addr.is_none() {
+                msg_hdr.addr = Some(addr);
+            }
+        }
+
+        // TODO: receive control message
+
+        Ok(total_bytes)
     }
 }
 

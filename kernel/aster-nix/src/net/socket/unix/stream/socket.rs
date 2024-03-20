@@ -15,7 +15,7 @@ use crate::{
     },
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
-        util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr},
+        util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader},
         SockShutdownCmd, Socket,
     },
     prelude::*,
@@ -272,6 +272,68 @@ impl Socket for UnixStreamSocket {
         };
 
         connected.write(buf)
+    }
+
+    fn sendmsg(&self, msg_hdr: MessageHeader, flags: SendRecvFlags) -> Result<usize> {
+        let MessageHeader {
+            addr,
+            io_vec_iter,
+            control_message,
+        } = msg_hdr;
+
+        debug_assert!(addr.is_none());
+
+        if control_message.is_some() {
+            // TODO: support sending control message
+            warn!("sending control message is not supported");
+        }
+
+        let connected = match &*self.0.read() {
+            State::Connected(connected) => connected.clone(),
+            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+        };
+
+        let mut total_bytes = 0;
+        for io_vec in io_vec_iter {
+            let buffer = {
+                let io_vec = io_vec?;
+                let mut buffer = vec![0u8; io_vec.len()];
+                io_vec.read_from_user(&mut buffer)?;
+                buffer
+            };
+
+            let sent_bytes = connected.write(&buffer)?;
+            total_bytes += sent_bytes;
+        }
+
+        Ok(total_bytes)
+    }
+
+    fn recvmsg(&self, msg_hdr: &mut MessageHeader, flags: SendRecvFlags) -> Result<usize> {
+        debug_assert!(flags.is_all_supported());
+
+        let connected = match &*self.0.read() {
+            State::Connected(connected) => connected.clone(),
+            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+        };
+
+        msg_hdr.addr = Some(self.peer_addr()?);
+
+        let mut total_bytes = 0;
+        for io_vec in msg_hdr.io_vec_iter.clone() {
+            let io_vec = io_vec?;
+
+            let recv_bytes = {
+                let mut buffer = vec![0u8; io_vec.len()];
+                let recv_bytes = connected.read(&mut buffer)?;
+                io_vec.write_to_user(&buffer)?;
+                recv_bytes
+            };
+
+            total_bytes += recv_bytes;
+        }
+
+        Ok(total_bytes)
     }
 }
 
