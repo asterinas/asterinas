@@ -7,22 +7,19 @@ use crate::util::get_target_directory;
 use std::process::Command;
 
 pub fn execute_debug_command(config: &DebugConfig) {
-    let DebugConfig {
-        manifest,
-        cargo_args,
-    } = config;
+    let DebugConfig { cargo_args, remote } = config;
 
     let profile = profile_adapter(&cargo_args.profile);
     let file_path = get_target_directory()
         .join("x86_64-unknown-none")
         .join(profile)
         .join(bin_file_name());
-    println!("Debugging {:?}", file_path);
+    println!("Debugging {}", file_path.display());
 
     let mut gdb = Command::new("gdb");
     gdb.args([
         "-ex",
-        "target remote :1234",
+        format!("target remote {}", remote).as_str(),
         "-ex",
         format!("file {}", file_path.display()).as_str(),
     ]);
