@@ -21,5 +21,7 @@ echo "Start network test......"
 # ./send_buf_full
 ./http_server &
 ./http_client
+./tcp_err
+./udp_err
 
 echo "All network test passed"

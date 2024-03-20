@@ -9,6 +9,7 @@ header:
       - '**/*.S'
       - '**/*.s'
       - '**/*.c'
+      - '**/*.h'
       - '**/*.sh'
       - '**/Makefile'
       - '**/Dockerfile.*'
@@ -58,4 +59,3 @@ header:
       content: |
         Licensed under the Apache License, Version 2.0 or the MIT License.
         Copyright (C) 2023-2024 Ant Group.
-  
