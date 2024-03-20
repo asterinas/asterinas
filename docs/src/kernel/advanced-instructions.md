@@ -2,7 +2,11 @@
 
 ## User-Mode Unit Tests
 
-Asterinas consists of many crates, some of which do not require a VM environment and can be tested with the standard `cargo test`. They are listed in the root `Makefile` and can be tested together through the following Make command.
+Asterinas consists of many crates,
+some of which do not require a VM environment
+and can be tested with the standard `cargo test`.
+They are listed in the root `Makefile`
+and can be tested together through the following Make command.
 
 ```bash
 make test
@@ -12,16 +16,18 @@ To test an individual crate, enter the directory of the crate and invoke `cargo 
 
 ### Kernel-Mode Unit Tests
 
-Many crates in Asterinas do require a VM environment to be tested. The unit tests for these crates are empowered by our [ktest](framework/libs/ktest) framework.
+Many crates in Asterinas do require a VM environment to be tested.
+The unit tests for these crates are empowered by OSDK.
 
 ```bash
-make run KTEST=1
+make ktest
 ```
 
-It is also possible to specify a subset of tests to run.
+To test an individual crate in kernel mode, enter the directory of the crate and invoke `cargo osdk test`.
 
 ```bash
-make run KTEST=1 KTEST_WHITELIST=failing_assertion,aster_frame::test::expect_panic KTEST_CRATES=aster-frame
+cd asterinas/framework/aster-frame
+cargo osdk test
 ```
 
 ## Integration Test
@@ -58,18 +64,28 @@ Then, in the interactive shell, run the following script to start the syscall te
 
 ### Using GDB to Debug
 
-To debug Asterinas using [QEMU GDB remote debugging](https://qemu-project.gitlab.io/qemu/system/gdb.html), one could compile Asterinas in the debug profile, start an Asterinas instance and run the GDB interactive shell in another terminal.
+To debug Asterinas by [QEMU GDB support](https://qemu-project.gitlab.io/qemu/system/gdb.html),
+one could compile Asterinas in the debug profile,
+start an Asterinas instance and run the GDB interactive shell in another terminal.
 
-First, start a GDB-enabled VM of Asterinas and wait for debugging connection:
-
-```bash
-make run GDB_SERVER=1 ENABLE_KVM=0
-```
-
-Next, start a GDB client in another terminal.
+Start a GDB-enabled VM of Asterinas with OSDK and wait for debugging connection:
 
 ```bash
-make run GDB_CLIENT=1
+make gdb_server
 ```
 
-Currently, the Asterinas runner's debugging interface is exposed via UNIX sockets. Thus there shouldn't be multiple debugging instances in the same container. To add debug symbols for the underlying infrastructures such as UEFI firmware or bootloader, please check the runner's source code for details.
+Two options are provided to interact with the debug server.
+
+- A GDB client: start a GDB client in another terminal.
+
+    ```bash
+    make gdb_client
+    ```
+
+- VS Code: [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) extension is required.
+After starting a debug server with OSDK from the shell with `make gdb_server`,
+a temporary `launch.json` is generated under `.vscode`.
+Your previous launch configs will be restored after the server is down.
+Press `F5`(Run and Debug) to start a debug session via VS Code. 
+Click `Continue`(or, press `F5`) at the fisrt break to resume the paused server instance,
+then it will continue until reaching your first breakpoint. 
