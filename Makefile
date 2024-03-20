@@ -132,6 +132,14 @@ tools:
 run: build
 	@cargo osdk run $(CARGO_OSDK_ARGS)
 
+.PHONY: gdb_server
+gdb_server: build
+	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS) -G --vsc --gdb-server-addr :1234
+
+.PHONY: gdb_client
+gdb_client: $(CARGO_OSDK)
+	@cd kernel && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :1234
+
 .PHONY: test
 test:
 	@for dir in $(NON_OSDK_CRATES); do \
