@@ -7,12 +7,11 @@ mod pauser;
 mod poll;
 pub mod sig_action;
 pub mod sig_disposition;
-pub mod sig_mask;
+pub mod sig_set;
 pub mod sig_num;
 pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
-pub mod sig_set;
 
 use core::mem;
 
@@ -23,7 +22,7 @@ pub use events::{SigEvents, SigEventsFilter};
 pub use pauser::Pauser;
 pub use poll::{Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
-use sig_mask::SigMask;
+use sig_set::SigSet;
 use sig_num::SigNum;
 pub use sig_stack::{SigStack, SigStackFlags};
 
@@ -112,7 +111,7 @@ pub fn handle_user_signal(
     handler_addr: Vaddr,
     flags: SigActionFlags,
     restorer_addr: Vaddr,
-    mut mask: SigMask,
+    mut mask: SigSet,
     context: &mut UserContext,
     sig_info: siginfo_t,
 ) -> Result<()> {
@@ -127,7 +126,7 @@ pub fn handle_user_signal(
     }
     if !flags.contains(SigActionFlags::SA_NODEFER) {
         // add current signal to mask
-        let current_mask = SigMask::from(sig_num);
+        let current_mask = SigSet::from(sig_num);
         mask.block(current_mask.as_u64());
     }
     let current_thread = current_thread!();

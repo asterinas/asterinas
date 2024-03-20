@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    constants::*, sig_mask::SigMask, sig_num::SigNum, sig_set::SigSet, signals::Signal, SigEvents, SigEventsFilter
+    constants::*, sig_set::SigSet, sig_num::SigNum, signals::Signal, SigEvents, SigEventsFilter
 };
 use crate::{
     events::{Observer, Subject},
@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub struct SigQueues {
-    pending: SigSet,
+    count: usize,
     std_queues: Vec<Option<Box<dyn Signal>>>,
     rt_queues: Vec<VecDeque<Box<dyn Signal>>>,
     subject: Subject<SigEvents, SigEventsFilter>,
@@ -17,12 +17,12 @@ pub struct SigQueues {
 
 impl SigQueues {
     pub fn new() -> Self {
-        let pending = SigSet::new_empty();
+        let count = 0;
         let std_queues = (0..COUNT_STD_SIGS).map(|_| None).collect();
         let rt_queues = (0..COUNT_RT_SIGS).map(|_| Default::default()).collect();
         let subject = Subject::new();
         SigQueues {
-            pending,
+            count,
             std_queues,
             rt_queues,
             subject,
@@ -30,7 +30,7 @@ impl SigQueues {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.pending.empty()
+        self.count == 0
     }
 
     pub fn enqueue(&mut self, signal: Box<dyn Signal>) {
@@ -55,18 +55,18 @@ impl SigQueues {
                 return;
             }
             *queue = Some(signal);
-            self.pending.add_signal(signum);
+            self.count += 1;
         } else {
             // Real-time signals
             let queue = self.get_rt_queue_mut(signum);
             queue.push_back(signal);
-            self.pending.add_signal(signum);
+            self.count += 1;
         }
 
         self.subject.notify_observers(&SigEvents::new(signum));
     }
 
-    pub fn dequeue(&mut self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
+    pub fn dequeue(&mut self, blocked: &SigSet) -> Option<Box<dyn Signal>> {
         // Fast path for the common case of no pending signals
         if self.is_empty() {
             return None;
@@ -100,7 +100,7 @@ impl SigQueues {
             let queue = self.get_std_queue_mut(signum);
             let signal = queue.take();
             if signal.is_some() {
-                self.pending.remove_signal(signum);
+                self.count -= 1;
                 return signal;
             }
         }
@@ -122,9 +122,7 @@ impl SigQueues {
             let queue = self.get_rt_queue_mut(signum);
             let signal = queue.pop_front();
             if signal.is_some() {
-                if queue.is_empty(){
-                    self.pending.remove_signal(signum);
-                }
+                self.count -= 1;
                 return signal;
             }
         }
@@ -146,7 +144,23 @@ impl SigQueues {
     }
     
     pub fn sig_pending(&mut self) -> SigSet {
-         self.pending
+        let mut pending = SigSet::new_empty();
+
+        // Process standard signal queues
+        for (idx, signal) in self.std_queues.iter().enumerate(){
+            if signal.is_some(){
+                pending.add_signal(SigNum::try_from(idx as u8 + MIN_STD_SIG_NUM).unwrap());
+            }
+        }
+
+        // Process real-time signal queues
+        for (idx, signals) in self.rt_queues.iter().enumerate(){
+            if !signals.is_empty(){
+                pending.add_signal(SigNum::try_from(idx as u8 + MIN_RT_SIG_NUM).unwrap());
+            }
+        }
+        
+        pending
     }
 
     pub fn register_observer(

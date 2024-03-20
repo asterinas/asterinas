@@ -15,7 +15,7 @@ impl From<u64> for SigSet {
 
 impl From<SigNum> for SigSet {
     fn from(sig_num: SigNum) -> Self {
-        let idx: usize = SigSet::num_to_idx(sig_num);
+        let idx = SigSet::num_to_idx(sig_num);
         let bits = 1u64 << idx;
         SigSet { bits }
     }
@@ -40,6 +40,14 @@ impl SigSet {
 
     pub const fn full(&self) -> bool {
         self.bits == !0
+    }
+
+    pub fn block(&mut self, block_sets: u64) {
+        self.bits |= block_sets;
+    }
+
+    pub fn unblock(&mut self, unblock_sets: u64) {
+        self.bits &= !unblock_sets;
     }
 
     pub fn set(&mut self, new_set: u64) {

@@ -36,7 +36,7 @@ fn do_rt_sigpending(
     let combined_signals = {
         let sig_mask_value = posix_thread.sig_mask().lock().as_u64();
         let sig_pending_value = posix_thread.sig_pending().as_u64();
-        sig_mask_value &  sig_pending_value
+        sig_mask_value & sig_pending_value
     };
  
     write_val_to_user(set_ptr, &combined_signals)?;

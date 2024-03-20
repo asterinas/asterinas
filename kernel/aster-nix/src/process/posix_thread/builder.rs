@@ -8,7 +8,7 @@ use crate::{
     process::{
         posix_thread::name::ThreadName,
         signal::{
-            constants::SIGALRM, sig_mask::SigMask, sig_queues::SigQueues,
+            constants::SIGALRM, sig_set::SigSet, sig_queues::SigQueues,
             signals::kernel::KernelSignal,
         },
         Credentials, Process,
@@ -28,7 +28,7 @@ pub struct PosixThreadBuilder {
     thread_name: Option<ThreadName>,
     set_child_tid: Vaddr,
     clear_child_tid: Vaddr,
-    sig_mask: SigMask,
+    sig_mask: SigSet,
     sig_queues: SigQueues,
     is_main_thread: bool,
 }
@@ -43,7 +43,7 @@ impl PosixThreadBuilder {
             thread_name: None,
             set_child_tid: 0,
             clear_child_tid: 0,
-            sig_mask: SigMask::new_empty(),
+            sig_mask: SigSet::new_empty(),
             sig_queues: SigQueues::new(),
             is_main_thread: true,
         }
@@ -75,7 +75,7 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub fn sig_mask(mut self, sig_mask: SigMask) -> Self {
+    pub fn sig_mask(mut self, sig_mask: SigSet) -> Self {
         self.sig_mask = sig_mask;
         self
     }

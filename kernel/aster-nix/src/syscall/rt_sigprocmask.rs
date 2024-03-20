@@ -10,7 +10,7 @@ use crate::{
         posix_thread::PosixThreadExt,
         signal::{
             constants::{SIGKILL, SIGSTOP},
-            sig_mask::SigMask,
+            sig_set::SigSet,
         },
     },
 };
@@ -54,7 +54,7 @@ fn do_rt_sigprocmask(
         let new_set = root_vmar.read_val::<u64>(set_ptr)?;
         match mask_op {
             MaskOp::Block => {
-                let mut new_sig_mask = SigMask::from(new_set);
+                let mut new_sig_mask = SigSet::from(new_set);
                 // According to man pages, "it is not possible to block SIGKILL or SIGSTOP.
                 // Attempts to do so are silently ignored."
                 new_sig_mask.remove_signal(SIGKILL);

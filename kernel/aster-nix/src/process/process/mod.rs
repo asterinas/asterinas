@@ -6,7 +6,7 @@ use super::{
     process_vm::{user_heap::UserHeap, ProcessVm},
     rlimit::ResourceLimits,
     signal::{
-        constants::SIGCHLD, sig_disposition::SigDispositions, sig_mask::SigMask, signals::Signal,
+        constants::SIGCHLD, sig_disposition::SigDispositions, sig_set::SigSet, signals::Signal,
         Pauser,
     },
     status::ProcessStatus,
@@ -102,7 +102,7 @@ impl Process {
         let children_pauser = {
             // SIGCHID does not interrupt pauser. Child process will
             // resume paused parent when doing exit.
-            let sigmask = SigMask::from(SIGCHLD);
+            let sigmask = SigSet::from(SIGCHLD);
             Pauser::new_with_mask(sigmask)
         };
 
