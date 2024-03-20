@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Providing the ability to exit QEMU and return a value as debug result.
+pub fn exit_success() -> ! {
+    exit_qemu(QemuExitCode::Success)
+}
+
+pub fn exit_failure() -> ! {
+    exit_qemu(QemuExitCode::Failed)
+}
 
 /// The exit code of x86 QEMU isa debug device. In `qemu-system-x86_64` the
 /// exit code will be `(code << 1) | 1`. So you could never let QEMU invoke
@@ -9,7 +15,7 @@
 /// with QEMU return value 1, which indicates that QEMU itself fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
-pub enum QemuExitCode {
+enum QemuExitCode {
     Success = 0x10,
     Failed = 0x20,
 }
@@ -19,7 +25,7 @@ pub enum QemuExitCode {
 /// This function assumes that the kernel is run in QEMU with the following
 /// QEMU command line arguments that specifies the ISA debug exit device:
 /// `-device isa-debug-exit,iobase=0xf4,iosize=0x04`.
-pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
+fn exit_qemu(exit_code: QemuExitCode) -> ! {
     use x86_64::instructions::port::Port;
     let mut port = Port::new(0xf4);
 

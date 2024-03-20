@@ -58,9 +58,6 @@ spin = "0.9.4"
 vte = "0.10"
 lru = "0.12.3"
 log = "0.4"
-getrandom = { version = "0.2.10", default-features = false, features = [
-    "rdrand",
-] }
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 hashbrown = "0.14"
 rand = {version = "0.8.5", default-features = false, features = ["small_rng"]}
@@ -71,10 +68,8 @@ atomic = "0.6"
 bytemuck = "1.14.3"
 bytemuck_derive = "1.5.0"
 takeable = "0.2.2"
-
-[dependencies.lazy_static]
-version = "1.0"
-features = ["spin_no_std"]
+lazy_static = { version = "1.0", features = ["spin_no_std"] }
+getrandom = { version = "0.2.10", default-features = false, features = [ "custom", "rdrand" ] }
 
 [features]
 intel_tdx = ["dep:tdx-guest"]

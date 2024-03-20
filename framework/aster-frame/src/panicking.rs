@@ -7,10 +7,7 @@ use core::ffi::c_void;
 
 use log::error;
 
-use crate::{
-    arch::qemu::{exit_qemu, QemuExitCode},
-    early_print, early_println,
-};
+use crate::{arch::system, early_print, early_println};
 
 extern crate cfg_if;
 extern crate gimli;
@@ -46,9 +43,8 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     abort();
 }
 
-// Aborts the QEMU
-pub fn abort() -> ! {
-    exit_qemu(QemuExitCode::Failed);
+fn abort() -> ! {
+    system::exit_failure()
 }
 
 fn print_stack_trace() {
@@ -73,6 +69,8 @@ fn print_stack_trace() {
             cfg_if::cfg_if! {
                 if #[cfg(target_arch = "x86_64")] {
                     let reg_name = gimli::X86_64::register_name(Register(i)).unwrap_or("unknown");
+                } else if #[cfg(target_arch = "riscv64")] {
+                    let reg_name = gimli::RiscV::register_name(Register(i)).unwrap_or("unknown");
                 } else {
                     let reg_name = "unknown";
                 }

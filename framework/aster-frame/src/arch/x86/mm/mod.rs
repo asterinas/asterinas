@@ -52,6 +52,11 @@ pub fn tlb_flush(vaddr: Vaddr) {
     tlb::flush(VirtAddr::new(vaddr as u64));
 }
 
+pub fn page_table_base() -> Paddr {
+    let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
+    page_directory_base.start_address().as_u64() as usize
+}
+
 pub const fn is_user_vaddr(vaddr: Vaddr) -> bool {
     // FIXME: Support 3/5 level page table.
     // 47 = 12(offset) + 4 * 9(index) - 1
