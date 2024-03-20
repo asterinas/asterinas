@@ -268,3 +268,25 @@ FN_TEST(connect)
 	TEST_ERRNO(connect(sk_accepted, psaddr, addrlen), EISCONN);
 }
 END_TEST()
+
+FN_TEST(async_connect)
+{
+	struct pollfd pfd = { .fd = sk_bound, .events = POLLOUT };
+	int err;
+	socklen_t errlen = sizeof(err);
+
+	sk_addr.sin_port = 0xbeef;
+	TEST_ERRNO(connect(sk_bound, (struct sockaddr *)&sk_addr,
+			   sizeof(sk_addr)),
+		   EINPROGRESS);
+
+	TEST_RES(poll(&pfd, 1, 60), pfd.revents & POLLOUT);
+
+	TEST_RES(getsockopt(sk_bound, SOL_SOCKET, SO_ERROR, &err, &errlen),
+		 errlen == sizeof(err) && err == ECONNREFUSED);
+
+	// Reading the socket error will cause it to be cleared
+	TEST_RES(getsockopt(sk_bound, SOL_SOCKET, SO_ERROR, &err, &errlen),
+		 errlen == sizeof(err) && err == 0);
+}
+END_TEST()
