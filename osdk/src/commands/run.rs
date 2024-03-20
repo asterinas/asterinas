@@ -9,13 +9,11 @@ use super::{build::create_base_and_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
     bundle::Bundle,
     config_manager::{BuildConfig, RunConfig},
-    error::Errno,
-    error_msg,
     util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
 };
 
 pub fn execute_run_command(config: &RunConfig) {
-    if config.gdb_server {
+    if config.gdb_server_args.is_gdb_enabled {
         use std::env;
         env::set_var(
             "RUSTFLAGS",
@@ -29,9 +27,55 @@ pub fn execute_run_command(config: &RunConfig) {
     let default_bundle_directory = osdk_target_directory.join(target_name);
     let existing_bundle = Bundle::load(&default_bundle_directory);
 
+    let config = RunConfig {
+        manifest: {
+            if config.gdb_server_args.is_gdb_enabled {
+                let qemu_gdb_args: Vec<_> = {
+                    let gdb_stub_addr = config.gdb_server_args.gdb_server_addr.as_str();
+                    match gdb::stub_type_of(gdb_stub_addr) {
+                        gdb::StubAddrType::Unix => {
+                            let chardev = format!(
+                                "-chardev socket,path={},server=on,wait=off,id=gdb0",
+                                gdb_stub_addr
+                            );
+                            let stub = "-gdb chardev:gdb0".to_owned();
+                            vec![chardev, stub, "-S".into()]
+                        }
+                        gdb::StubAddrType::Tcp => {
+                            vec![
+                                format!(
+                                    "-gdb tcp:{}",
+                                    gdb::tcp_addr_util::format_tcp_addr(gdb_stub_addr)
+                                ),
+                                "-S".into(),
+                            ]
+                        }
+                    }
+                };
+
+                let qemu_gdb_args: Vec<_> = qemu_gdb_args
+                    .into_iter()
+                    .filter(|arg| !config.manifest.qemu.args.iter().any(|x| x == arg))
+                    .map(|x| x.to_string())
+                    .collect();
+                let mut manifest = config.manifest.clone();
+                manifest.qemu.args.extend(qemu_gdb_args);
+                manifest
+            } else {
+                config.manifest.clone()
+            }
+        },
+        ..config.clone()
+    };
+    let _vsc_launch_file = config.gdb_server_args.vsc_launch_file.then(|| {
+        vsc::check_gdb_config(&config.gdb_server_args);
+        let profile = super::util::profile_adapter(&config.cargo_args.profile);
+        vsc::VscLaunchConfig::new(profile, &config.gdb_server_args.gdb_server_addr)
+    });
+
     // If the source is not since modified and the last build is recent, we can reuse the existing bundle.
     if let Some(existing_bundle) = existing_bundle {
-        if existing_bundle.can_run_with_config(config) {
+        if existing_bundle.can_run_with_config(&config) {
             if let Ok(built_since) =
                 SystemTime::now().duration_since(existing_bundle.last_modified_time())
             {
@@ -42,7 +86,7 @@ pub fn execute_run_command(config: &RunConfig) {
                     };
                     if get_last_modified_time(workspace_root) < existing_bundle.last_modified_time()
                     {
-                        existing_bundle.run(config);
+                        existing_bundle.run(&config);
                         return;
                     }
                 }
@@ -50,21 +94,8 @@ pub fn execute_run_command(config: &RunConfig) {
         }
     }
 
-    let manifest = if config.gdb_server {
-        let qemu_dbg_args: Vec<_> = vec!["-s", "-S"]
-            .into_iter()
-            .filter(|arg| !config.manifest.qemu.args.iter().any(|x| x == arg))
-            .map(|x| x.to_string())
-            .collect();
-        let mut manifest = config.manifest.clone();
-        manifest.qemu.args.extend(qemu_dbg_args);
-        manifest
-    } else {
-        config.manifest.clone()
-    };
-
     let required_build_config = BuildConfig {
-        manifest: manifest.clone(),
+        manifest: config.manifest.clone(),
         cargo_args: config.cargo_args.clone(),
     };
 
@@ -75,22 +106,7 @@ pub fn execute_run_command(config: &RunConfig) {
         &required_build_config,
         &[],
     );
-
-    let _vsc_launch_file = config.vsc_launch_file.then(|| {
-        if !config.gdb_server {
-            error_msg!(
-                "No need for a VSCode launch file without launching GDB server,\
-                    pass '-h' for help"
-            );
-            std::process::exit(Errno::ExecuteCommand as _);
-        }
-        let profile = super::util::profile_adapter(&config.cargo_args.profile);
-        vsc::VscLaunchConfig::new(profile)
-    });
-    bundle.run(&RunConfig {
-        manifest,
-        ..config.clone()
-    });
+    bundle.run(&config);
 }
 
 fn get_last_modified_time(path: impl AsRef<Path>) -> SystemTime {
@@ -111,31 +127,62 @@ fn get_last_modified_time(path: impl AsRef<Path>) -> SystemTime {
     last_modified
 }
 
+mod gdb {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum StubAddrType {
+        Unix, // Unix Domain Socket
+        Tcp,  // IP_ADDR:PORT
+    }
+    pub fn stub_type_of(stub: &str) -> StubAddrType {
+        if stub.split(':').last().unwrap().parse::<u16>().is_ok() {
+            return StubAddrType::Tcp;
+        }
+        StubAddrType::Unix
+    }
+
+    pub mod tcp_addr_util {
+        use crate::{error::Errno, error_msg};
+        use std::process::exit;
+
+        fn strip_tcp_prefix(addr: &str) -> &str {
+            addr.strip_prefix("tcp:").unwrap_or(addr)
+        }
+
+        fn parse_tcp_addr(addr: &str) -> (&str, u16) {
+            let addr = strip_tcp_prefix(addr);
+            if !addr.contains(':') {
+                error_msg!("Ambiguous GDB server address, use '[IP]:PORT' format");
+                exit(Errno::ParseMetadata as _);
+            }
+            let mut iter = addr.split(':');
+            let host = iter.next().unwrap();
+            let port = iter.next().unwrap().parse().unwrap();
+            (host, port)
+        }
+
+        pub fn format_tcp_addr(tcp_addr: &str) -> String {
+            let (host, port) = parse_tcp_addr(tcp_addr);
+            format!("{}:{}", host, port)
+        }
+    }
+}
+
 mod vsc {
-    use crate::{commands::util::bin_file_name, util::get_cargo_metadata};
-
+    use crate::{cli::GdbServerArgs, commands::util::bin_file_name, util::get_cargo_metadata};
     use serde_json::{from_str, Value};
-
     use std::{
         fs::{read_to_string, write as write_file},
         path::Path,
     };
 
+    use super::gdb;
+
     const VSC_DIR: &str = ".vscode";
 
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
     struct Existence {
         vsc_dir: bool,
         launch_file: bool,
-    }
-
-    impl Default for Existence {
-        fn default() -> Self {
-            Existence {
-                vsc_dir: false,
-                launch_file: false,
-            }
-        }
     }
 
     fn workspace_root() -> String {
@@ -144,13 +191,14 @@ mod vsc {
             .unwrap()
             .to_owned()
     }
+
     #[derive(Debug, Default)]
     pub struct VscLaunchConfig {
         existence: Existence,
         backup_launch_path: Option<String>,
     }
     impl VscLaunchConfig {
-        pub fn new(profile: &str) -> Self {
+        pub fn new(profile: &str, addr: &str) -> Self {
             let workspace = workspace_root();
             let workspace = Path::new(&workspace);
             let launch_file_path = workspace.join(VSC_DIR).join("launch.json");
@@ -168,7 +216,7 @@ mod vsc {
             if !existence.vsc_dir {
                 std::fs::create_dir(workspace.join(VSC_DIR)).unwrap();
             }
-            generate_vsc_launch_file(&workspace, profile).unwrap();
+            generate_vsc_launch_file(workspace, profile, addr).unwrap();
 
             VscLaunchConfig {
                 existence,
@@ -176,7 +224,6 @@ mod vsc {
             }
         }
     }
-
     impl Drop for VscLaunchConfig {
         fn drop(&mut self) {
             // remove generated files
@@ -207,13 +254,43 @@ mod vsc {
         }
     }
 
+    /// Exit if the QEMU GDB server configuration is not valid
+    pub fn check_gdb_config(args: &GdbServerArgs) {
+        use crate::{error::Errno, error_msg};
+        use std::process::exit;
+
+        if !args.is_gdb_enabled {
+            error_msg!(
+                "No need for a VSCode launch file without launching GDB server,\
+                    pass '-h' for help"
+            );
+            exit(Errno::ParseMetadata as _);
+        }
+
+        // check GDB server address
+        let gdb_stub_addr = args.gdb_server_addr.as_str();
+        if gdb_stub_addr.is_empty() {
+            error_msg!("GDB server address is required to generate a VSCode launch file");
+            exit(Errno::ParseMetadata as _);
+        }
+        if gdb::stub_type_of(gdb_stub_addr) != gdb::StubAddrType::Tcp {
+            error_msg!("Non-TCP GDB server address is not supported under '--vsc' currently");
+            exit(Errno::ParseMetadata as _);
+        }
+    }
+
     fn generate_vsc_launch_file(
         workspace: impl AsRef<Path>,
         profile: &str,
+        addr: &str,
     ) -> Result<(), std::io::Error> {
         let contents = include_str!("launch.json.template")
             .replace("#PROFILE#", profile)
-            .replace("#BIN_NAME#", &bin_file_name());
+            .replace("#BIN_NAME#", &bin_file_name())
+            .replace(
+                "#ADDR_PORT#",
+                gdb::tcp_addr_util::format_tcp_addr(addr).trim_start_matches(':'),
+            );
 
         let original_items: Option<Value> = {
             let launch_file_path = workspace.as_ref().join(VSC_DIR).join("launch.json");

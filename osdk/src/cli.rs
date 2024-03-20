@@ -71,7 +71,7 @@ pub enum OsdkSubcommand {
     Build(BuildArgs),
     #[command(about = "Run the kernel with a VMM")]
     Run(RunArgs),
-    #[command(about = "Debug the kernel with a VMM as a client or a server")]
+    #[command(about = "Debug a remote target via GDB")]
     Debug(DebugArgs),
     #[command(about = "Execute kernel mode unit test by starting a VMM")]
     Test(TestArgs),
@@ -115,14 +115,35 @@ pub struct RunArgs {
     pub cargo_args: CargoArgs,
     #[command(flatten)]
     pub osdk_args: OsdkArgs,
-    #[arg(long, short = 'G', help = "Enable QEMU GDB server for debugging")]
-    pub gdb_server: bool,
+    #[command(flatten)]
+    pub gdb_server_args: GdbServerArgs,
+}
+
+#[derive(Debug, Args, Clone, Default)]
+pub struct GdbServerArgs {
+    /// Whether to enable QEMU GDB server for debugging
+    #[arg(
+        long = "enable-gdb",
+        short = 'G',
+        help = "Enable QEMU GDB server for debugging",
+        default_value_t
+    )]
+    pub is_gdb_enabled: bool,
     #[arg(
         long = "vsc",
         help = "Generate a '.vscode/launch.json' for debugging with Visual Studio Code \
-                (only works when '--gdb-server' is enabled)"
+                (only works when '--enable-gdb' is enabled)",
+        default_value_t
     )]
     pub vsc_launch_file: bool,
+    #[arg(
+        long = "gdb-server-addr",
+        help = "The network address on which the GDB server listens, \
+        it can be either a path for the UNIX domain socket or a TCP port on an IP address.",
+        value_name = "ADDR",
+        default_value = ".aster-gdb-socket"
+    )]
+    pub gdb_server_addr: String,
 }
 
 #[derive(Debug, Parser)]

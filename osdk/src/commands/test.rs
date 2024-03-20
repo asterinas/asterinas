@@ -5,6 +5,7 @@ use std::fs;
 use super::{build::do_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
     base_crate::new_base_crate,
+    cli::GdbServerArgs,
     config_manager::{BuildConfig, RunConfig, TestConfig},
     util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
 };
@@ -73,8 +74,7 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     let required_run_config = RunConfig {
         manifest: required_build_config.manifest.clone(),
         cargo_args: required_build_config.cargo_args.clone(),
-        gdb_server: false,
-        vsc_launch_file: false,
+        gdb_server_args: GdbServerArgs::default(),
     };
 
     bundle.run(&required_run_config);
