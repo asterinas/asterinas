@@ -263,6 +263,12 @@ impl Ext2 {
         }
     }
 
+    /// Reads one block indicated by the `bid` asynchronously.
+    pub(super) fn read_block_async(&self, bid: Bid, frame: &VmFrame) -> Result<BioWaiter> {
+        let waiter = self.block_device.read_block(bid, frame)?;
+        Ok(waiter)
+    }
+
     /// Writes contiguous blocks starting from the `bid` synchronously.
     pub(super) fn write_blocks(&self, bid: Bid, segment: &VmSegment) -> Result<()> {
         let status = self.block_device.write_blocks_sync(bid, segment)?;
@@ -279,6 +285,12 @@ impl Ext2 {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
         }
+    }
+
+    /// Writes one block indicated by the `bid` asynchronously.
+    pub(super) fn write_block_async(&self, bid: Bid, frame: &VmFrame) -> Result<BioWaiter> {
+        let waiter = self.block_device.write_block(bid, frame)?;
+        Ok(waiter)
     }
 
     /// Writes back the metadata to the block device.

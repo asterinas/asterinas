@@ -2,6 +2,7 @@
 
 use core::ops::Range;
 
+use aster_block::bio::{BioStatus, BioWaiter};
 use aster_frame::vm::{VmAllocOptions, VmFrame};
 use aster_rights::Full;
 use lru::LruCache;
@@ -98,15 +99,27 @@ impl PageCacheManager {
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let page_idx_range = get_page_idx_range(&range);
         let mut pages = self.pages.lock();
+
+        //TODO: When there are many pages, we should submit them in batches of folios rather than all at once.
+        let mut indices_and_waiters: Vec<(usize, BioWaiter)> = Vec::new();
+
         for idx in page_idx_range {
             if let Some(page) = pages.get_mut(&idx) {
                 if let PageState::Dirty = page.state() {
                     let backend = self.backend();
                     if idx < backend.npages() {
-                        backend.write_page(idx, page.frame())?;
-                        page.set_state(PageState::UpToDate);
+                        indices_and_waiters.push((idx, backend.write_page(idx, page.frame())?));
                     }
                 }
+            }
+        }
+
+        for (idx, waiter) in indices_and_waiters.iter() {
+            if matches!(waiter.wait(), Some(BioStatus::Complete)) {
+                pages.get_mut(idx).unwrap().set_state(PageState::UpToDate)
+            } else {
+                // TODO: We may need an error handler here.
+                return_errno!(Errno::EIO)
             }
         }
 
@@ -131,7 +144,7 @@ impl Pager for PageCacheManager {
             let backend = self.backend();
             let page = if idx < backend.npages() {
                 let mut page = Page::alloc()?;
-                backend.read_page(idx, page.frame())?;
+                backend.read_page_sync(idx, page.frame())?;
                 page.set_state(PageState::UpToDate);
                 page
             } else {
@@ -164,7 +177,7 @@ impl Pager for PageCacheManager {
                     return Ok(());
                 };
                 if idx < backend.npages() {
-                    backend.write_page(idx, page.frame())?;
+                    backend.write_page_sync(idx, page.frame())?;
                 }
             }
         }
@@ -224,10 +237,29 @@ enum PageState {
 
 /// This trait represents the backend for the page cache.
 pub trait PageCacheBackend: Sync + Send {
-    /// Reads a page from the backend.
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
-    /// Writes a page to the backend.
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()>;
+    /// Reads a page from the backend asynchronously.
+    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter>;
+    /// Writes a page to the backend asynchronously.
+    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter>;
     /// Returns the number of pages in the backend.
     fn npages(&self) -> usize;
+}
+
+impl dyn PageCacheBackend {
+    /// Reads a page from the backend synchronously.
+    fn read_page_sync(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+        let waiter = self.read_page(idx, frame)?;
+        match waiter.wait() {
+            Some(BioStatus::Complete) => Ok(()),
+            _ => return_errno!(Errno::EIO),
+        }
+    }
+    /// Writes a page to the backend synchronously.
+    fn write_page_sync(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+        let waiter = self.write_page(idx, frame)?;
+        match waiter.wait() {
+            Some(BioStatus::Complete) => Ok(()),
+            _ => return_errno!(Errno::EIO),
+        }
+    }
 }

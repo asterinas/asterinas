@@ -2,7 +2,7 @@
 
 use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 
-use aster_block::{id::BlockId, BlockDevice};
+use aster_block::{bio::BioWaiter, id::BlockId, BlockDevice};
 use aster_frame::vm::VmFrame;
 pub(super) use aster_frame::vm::VmIo;
 use hashbrown::HashMap;
@@ -361,23 +361,24 @@ impl ExfatFS {
 }
 
 impl PageCacheBackend for ExfatFS {
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
-        self.block_device
-            .read_block_sync(BlockId::new(idx as u64), frame)?;
-        Ok(())
+        let waiter = self
+            .block_device
+            .read_block(BlockId::new(idx as u64), frame)?;
+        Ok(waiter)
     }
 
-    // What if block_size is not equal to page size?
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }
-        self.block_device
-            .write_block_sync(BlockId::new(idx as u64), frame)?;
-        Ok(())
+        let waiter = self
+            .block_device
+            .write_block(BlockId::new(idx as u64), frame)?;
+        Ok(waiter)
     }
 
     fn npages(&self) -> usize {

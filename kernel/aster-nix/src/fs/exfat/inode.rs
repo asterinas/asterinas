@@ -5,6 +5,7 @@ use core::{cmp::Ordering, time::Duration};
 
 pub(super) use align_ext::AlignExt;
 use aster_block::{
+    bio::BioWaiter,
     id::{Bid, BlockId},
     BLOCK_SIZE,
 };
@@ -131,20 +132,20 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-        inner.fs().block_device().read_block_sync(
+        let waiter = inner.fs().block_device().read_block(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             frame,
         )?;
-        Ok(())
+        Ok(waiter)
     }
 
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
@@ -152,11 +153,11 @@ impl PageCacheBackend for ExfatInode {
 
         // FIXME: We may need to truncate the file if write_page fails.
         // To fix this issue, we need to change the interface of the PageCacheBackend trait.
-        inner.fs().block_device().write_block_sync(
+        let waiter = inner.fs().block_device().write_block(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             frame,
         )?;
-        Ok(())
+        Ok(waiter)
     }
 
     fn npages(&self) -> usize {

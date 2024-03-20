@@ -670,7 +670,7 @@ impl Inner {
         let mut buf_offset = 0;
         for bid in Bid::from_offset(offset)..Bid::from_offset(offset + read_len) {
             let frame = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
-            self.inode_impl.read_block(bid, &frame)?;
+            self.inode_impl.read_block_sync(bid, &frame)?;
             frame.read_bytes(0, &mut buf[buf_offset..buf_offset + BLOCK_SIZE])?;
             buf_offset += BLOCK_SIZE;
         }
@@ -710,7 +710,7 @@ impl Inner {
                 frame.write_bytes(0, &buf[buf_offset..buf_offset + BLOCK_SIZE])?;
                 frame
             };
-            self.inode_impl.write_block(bid, &frame)?;
+            self.inode_impl.write_block_sync(bid, &frame)?;
             buf_offset += BLOCK_SIZE;
         }
 
@@ -844,7 +844,7 @@ impl InodeImpl_ {
         self.weak_self.upgrade().unwrap()
     }
 
-    pub fn read_block(&self, bid: Bid, block: &VmFrame) -> Result<()> {
+    pub fn read_block_async(&self, bid: Bid, block: &VmFrame) -> Result<BioWaiter> {
         let bid = bid.to_raw() as u32;
         if bid >= self.desc.blocks_count() {
             return_errno!(Errno::EINVAL);
@@ -853,14 +853,20 @@ impl InodeImpl_ {
         debug_assert!(field::DIRECT.contains(&(bid as usize)));
         if self.blocks_hole_desc.is_hole(bid as usize) {
             block.writer().fill(0);
-            return Ok(());
+            return Ok(BioWaiter::new());
         }
         let device_bid = Bid::new(self.desc.data[bid as usize] as _);
-        self.inode().fs().read_block(device_bid, block)?;
-        Ok(())
+        self.inode().fs().read_block_async(device_bid, block)
     }
 
-    pub fn write_block(&self, bid: Bid, block: &VmFrame) -> Result<()> {
+    pub fn read_block_sync(&self, bid: Bid, block: &VmFrame) -> Result<()> {
+        match self.read_block_async(bid, block)?.wait() {
+            Some(BioStatus::Complete) => Ok(()),
+            _ => return_errno!(Errno::EIO),
+        }
+    }
+
+    pub fn write_block_async(&self, bid: Bid, block: &VmFrame) -> Result<BioWaiter> {
         let bid = bid.to_raw() as u32;
         if bid >= self.desc.blocks_count() {
             return_errno!(Errno::EINVAL);
@@ -868,8 +874,14 @@ impl InodeImpl_ {
 
         debug_assert!(field::DIRECT.contains(&(bid as usize)));
         let device_bid = Bid::new(self.desc.data[bid as usize] as _);
-        self.inode().fs().write_block(device_bid, block)?;
-        Ok(())
+        self.inode().fs().write_block_async(device_bid, block)
+    }
+
+    pub fn write_block_sync(&self, bid: Bid, block: &VmFrame) -> Result<()> {
+        match self.write_block_async(bid, block)?.wait() {
+            Some(BioStatus::Complete) => Ok(()),
+            _ => return_errno!(Errno::EIO),
+        }
     }
 
     pub fn resize(&mut self, new_size: usize) -> Result<()> {
@@ -1006,13 +1018,25 @@ impl InodeImpl {
         self.0.read().desc.ctime
     }
 
-    pub fn read_block(&self, bid: Bid, block: &VmFrame) -> Result<()> {
-        self.0.read().read_block(bid, block)
+    pub fn read_block_sync(&self, bid: Bid, block: &VmFrame) -> Result<()> {
+        self.0.read().read_block_sync(bid, block)
     }
 
-    pub fn write_block(&self, bid: Bid, block: &VmFrame) -> Result<()> {
+    pub fn read_block_async(&self, bid: Bid, block: &VmFrame) -> Result<BioWaiter> {
+        self.0.read().read_block_async(bid, block)
+    }
+
+    pub fn write_block_sync(&self, bid: Bid, block: &VmFrame) -> Result<()> {
+        let waiter = self.write_block_async(bid, block)?;
+        match waiter.wait() {
+            Some(BioStatus::Complete) => Ok(()),
+            _ => return_errno!(Errno::EIO),
+        }
+    }
+
+    pub fn write_block_async(&self, bid: Bid, block: &VmFrame) -> Result<BioWaiter> {
         let inner = self.0.read();
-        inner.write_block(bid, block)?;
+        let waiter = inner.write_block_async(bid, block)?;
 
         let bid = bid.to_raw() as usize;
         if inner.blocks_hole_desc.is_hole(bid) {
@@ -1022,7 +1046,7 @@ impl InodeImpl {
                 inner.blocks_hole_desc.unset(bid);
             }
         }
-        Ok(())
+        Ok(waiter)
     }
 
     pub fn set_device_id(&self, device_id: u64) {
@@ -1059,7 +1083,7 @@ impl InodeImpl {
         let zero_frame = VmAllocOptions::new(1).alloc_single().unwrap();
         for bid in 0..inner.desc.blocks_count() {
             if inner.blocks_hole_desc.is_hole(bid as usize) {
-                inner.write_block(Bid::new(bid as _), &zero_frame)?;
+                inner.write_block_sync(Bid::new(bid as _), &zero_frame)?;
                 inner.blocks_hole_desc.unset(bid as usize);
             }
         }
@@ -1095,16 +1119,14 @@ impl InodeImpl {
 }
 
 impl PageCacheBackend for InodeImpl {
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
         let bid = Bid::new(idx as _);
-        self.read_block(bid, frame)?;
-        Ok(())
+        self.read_block_async(bid, frame)
     }
 
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
         let bid = Bid::new(idx as _);
-        self.write_block(bid, frame)?;
-        Ok(())
+        self.write_block_async(bid, frame)
     }
 
     fn npages(&self) -> usize {

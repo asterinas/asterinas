@@ -5,6 +5,7 @@ use core::{
     time::Duration,
 };
 
+use aster_block::bio::BioWaiter;
 use aster_frame::{
     sync::RwLockWriteGuard,
     vm::{VmFrame, VmIo},
@@ -420,15 +421,15 @@ impl RamInode {
 }
 
 impl PageCacheBackend for RamInode {
-    fn read_page(&self, _idx: usize, frame: &VmFrame) -> Result<()> {
+    fn read_page(&self, _idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
         // Initially, any block/page in a RamFs inode contains all zeros
         frame.writer().fill(0);
-        Ok(())
+        Ok(BioWaiter::new())
     }
 
-    fn write_page(&self, _idx: usize, _frame: &VmFrame) -> Result<()> {
+    fn write_page(&self, _idx: usize, _frame: &VmFrame) -> Result<BioWaiter> {
         // do nothing
-        Ok(())
+        Ok(BioWaiter::new())
     }
 
     fn npages(&self) -> usize {
