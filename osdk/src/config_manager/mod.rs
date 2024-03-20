@@ -22,12 +22,19 @@ use self::{
     manifest::{OsdkManifest, TomlManifest},
 };
 use crate::{
-    cli::{BuildArgs, CargoArgs, OsdkArgs, RunArgs, TestArgs},
+    cli::{BuildArgs, CargoArgs, DebugArgs, OsdkArgs, RunArgs, TestArgs},
     error::Errno,
     error_msg,
     util::get_cargo_metadata,
     warn_msg,
 };
+
+fn get_final_manifest(cargo_args: &CargoArgs, osdk_args: &OsdkArgs) -> OsdkManifest {
+    let mut manifest = load_osdk_manifest(cargo_args, osdk_args.select.as_ref());
+    apply_cli_args(&mut manifest, &osdk_args);
+    try_fill_system_configs(&mut manifest);
+    manifest
+}
 
 /// Configurations for build subcommand
 #[derive(Debug)]
@@ -39,31 +46,45 @@ pub struct BuildConfig {
 impl BuildConfig {
     pub fn parse(args: &BuildArgs) -> Self {
         let cargo_args = parse_cargo_args(&args.cargo_args);
-        let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
-        apply_cli_args(&mut manifest, &args.osdk_args);
-        try_fill_system_configs(&mut manifest);
         Self {
-            manifest,
+            manifest: get_final_manifest(&cargo_args, &args.osdk_args),
             cargo_args,
         }
     }
 }
 
 /// Configurations for run subcommand
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RunConfig {
     pub manifest: OsdkManifest,
     pub cargo_args: CargoArgs,
+    pub gdb_server: bool,
+    pub vsc_launch_file: bool,
 }
 
 impl RunConfig {
     pub fn parse(args: &RunArgs) -> Self {
         let cargo_args = parse_cargo_args(&args.cargo_args);
-        let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
-        apply_cli_args(&mut manifest, &args.osdk_args);
-        try_fill_system_configs(&mut manifest);
         Self {
-            manifest,
+            manifest: get_final_manifest(&cargo_args, &args.osdk_args),
+            cargo_args,
+            gdb_server: args.gdb_server,
+            vsc_launch_file: args.vsc_launch_file,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct DebugConfig {
+    pub manifest: OsdkManifest,
+    pub cargo_args: CargoArgs,
+}
+
+impl DebugConfig {
+    pub fn parse(args: &DebugArgs) -> Self {
+        let cargo_args = split_features(&args.cargo_args);
+        Self {
+            manifest: get_final_manifest(&cargo_args, &args.osdk_args),
             cargo_args,
         }
     }
@@ -80,11 +101,8 @@ pub struct TestConfig {
 impl TestConfig {
     pub fn parse(args: &TestArgs) -> Self {
         let cargo_args = parse_cargo_args(&args.cargo_args);
-        let mut manifest = load_osdk_manifest(&cargo_args, args.osdk_args.select.as_ref());
-        apply_cli_args(&mut manifest, &args.osdk_args);
-        try_fill_system_configs(&mut manifest);
         Self {
-            manifest,
+            manifest: get_final_manifest(&cargo_args, &args.osdk_args),
             cargo_args,
             test_name: args.test_name.clone(),
         }

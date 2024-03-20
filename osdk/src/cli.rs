@@ -6,13 +6,13 @@ use clap::{crate_version, Args, Parser};
 
 use crate::{
     commands::{
-        execute_build_command, execute_forwarded_command, execute_new_command, execute_run_command,
-        execute_test_command,
+        execute_build_command, execute_debug_command, execute_forwarded_command,
+        execute_new_command, execute_run_command, execute_test_command,
     },
     config_manager::{
         boot::{BootLoader, BootProtocol},
         qemu::QemuMachine,
-        BuildConfig, RunConfig, TestConfig,
+        BuildConfig, DebugConfig, RunConfig, TestConfig,
     },
 };
 
@@ -32,6 +32,10 @@ pub fn main() {
         OsdkSubcommand::Run(run_args) => {
             let run_config = RunConfig::parse(run_args);
             execute_run_command(&run_config);
+        }
+        OsdkSubcommand::Debug(debug_args) => {
+            let debug_config = DebugConfig::parse(debug_args);
+            execute_debug_command(&debug_config);
         }
         OsdkSubcommand::Test(test_args) => {
             let test_config = TestConfig::parse(test_args);
@@ -67,6 +71,8 @@ pub enum OsdkSubcommand {
     Build(BuildArgs),
     #[command(about = "Run the kernel with a VMM")]
     Run(RunArgs),
+    #[command(about = "Debug the kernel with a VMM as a client or a server")]
+    Debug(DebugArgs),
     #[command(about = "Execute kernel mode unit test by starting a VMM")]
     Test(TestArgs),
     #[command(about = "Check a local package and all of its dependencies for errors")]
@@ -109,6 +115,24 @@ pub struct RunArgs {
     pub cargo_args: CargoArgs,
     #[command(flatten)]
     pub osdk_args: OsdkArgs,
+    #[arg(long, short = 'G', help = "Enable QEMU GDB server for debugging")]
+    pub gdb_server: bool,
+    #[arg(
+        long = "vsc",
+        help = "Generate a '.vscode/launch.json' for debugging with Visual Studio Code \
+                (only works when '--gdb-server' is enabled)"
+    )]
+    pub vsc_launch_file: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct DebugArgs {
+    #[command(flatten)]
+    pub cargo_args: CargoArgs,
+    #[command(flatten)]
+    pub osdk_args: OsdkArgs,
+    #[arg(name = "ROLE", help = "'client' or 'server'", default_value = "server")]
+    pub role: String,
 }
 
 #[derive(Debug, Parser)]

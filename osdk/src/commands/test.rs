@@ -73,6 +73,8 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     let required_run_config = RunConfig {
         manifest: required_build_config.manifest.clone(),
         cargo_args: required_build_config.cargo_args.clone(),
+        gdb_server: false,
+        vsc_launch_file: false,
     };
 
     bundle.run(&required_run_config);
