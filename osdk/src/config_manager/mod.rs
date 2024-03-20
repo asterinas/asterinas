@@ -76,16 +76,15 @@ impl RunConfig {
 
 #[derive(Debug)]
 pub struct DebugConfig {
-    pub manifest: OsdkManifest,
     pub cargo_args: CargoArgs,
+    pub remote: String,
 }
 
 impl DebugConfig {
     pub fn parse(args: &DebugArgs) -> Self {
-        let cargo_args = split_features(&args.cargo_args);
         Self {
-            manifest: get_final_manifest(&cargo_args, &args.osdk_args),
-            cargo_args,
+            cargo_args: split_features(&args.cargo_args),
+            remote: args.remote.clone(),
         }
     }
 }

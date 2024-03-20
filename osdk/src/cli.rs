@@ -131,8 +131,12 @@ pub struct DebugArgs {
     pub cargo_args: CargoArgs,
     #[command(flatten)]
     pub osdk_args: OsdkArgs,
-    #[arg(name = "ROLE", help = "'client' or 'server'", default_value = "server")]
-    pub role: String,
+    #[arg(
+        long,
+        help = "Specify the address of the remote target",
+        default_value = ".aster-gdb-socket"
+    )]
+    pub remote: String,
 }
 
 #[derive(Debug, Parser)]
