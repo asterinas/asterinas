@@ -3,7 +3,7 @@
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
-    add_task,
+    add_task_to_global,
     priority::Priority,
     processor::{current_task, schedule},
 };
@@ -137,7 +137,6 @@ pub struct Task {
     kstack: KernelStack,
     link: LinkedListAtomicLink,
     priority: Priority,
-    // TODO:: add multiprocessor support
     cpu_affinity: CpuSet,
 }
 
@@ -174,7 +173,7 @@ impl Task {
     }
 
     pub fn run(self: &Arc<Self>) {
-        add_task(self.clone());
+        add_task_to_global(self.clone());
         schedule();
     }
 
@@ -205,6 +204,10 @@ impl Task {
 
     pub fn is_real_time(&self) -> bool {
         self.priority.is_real_time()
+    }
+
+    pub fn cpu_affinity(&self) -> &CpuSet {
+        &self.cpu_affinity
     }
 }
 

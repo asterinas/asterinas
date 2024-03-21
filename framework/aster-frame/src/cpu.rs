@@ -59,6 +59,14 @@ impl CpuSet {
         Self { bitset }
     }
 
+    pub fn from_cpu_id(cpu_id: u32) -> Self {
+        let num_cpus = num_cpus();
+        let mut bitset = BitVec::with_capacity(num_cpus as usize);
+        bitset.resize(num_cpus as usize, false);
+        bitset.set(cpu_id as usize, true);
+        Self { bitset }
+    }
+
     pub fn add(&mut self, cpu_id: u32) {
         self.bitset.set(cpu_id as usize, true);
     }

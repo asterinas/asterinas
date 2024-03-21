@@ -6,7 +6,7 @@ use core::time::Duration;
 use super::SpinLock;
 use crate::{
     arch::timer::{add_timeout_list, TIMER_FREQ},
-    task::{add_task, current_task, schedule, Task, TaskStatus},
+    task::{add_task_to_global, current_task, schedule, Task, TaskStatus},
 };
 
 /// A wait queue.

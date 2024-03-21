@@ -28,6 +28,7 @@
 use aster_frame::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
+    cpu::{this_cpu, CpuSet},
 };
 use process::Process;
 
@@ -70,7 +71,7 @@ pub mod vm;
 pub fn init() {
     driver::init();
     net::init();
-    sched::init();
+    sched::init_global_scheduler();
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
     vdso::init();
@@ -128,11 +129,12 @@ fn init_thread() {
 /// Initializes and runs the first process on the boot CPU (CPU 0) and never return.
 #[controlled]
 pub fn run_first_process() -> ! {
+    sched::init_local_scheduler();
     let cpu_id = this_cpu();
     assert!(cpu_id == 0);
-    let mut cpu_set = CpuSet::new_empty();
-    cpu_set.add(cpu_id);
-    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread).cpu_affinity(cpu_set));
+    Thread::spawn_kernel_thread(
+        ThreadOptions::new(init_thread).cpu_affinity(CpuSet::from_cpu_id(cpu_id)),
+    );
     unreachable!()
 }
 

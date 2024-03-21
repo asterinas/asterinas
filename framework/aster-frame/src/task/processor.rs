@@ -3,10 +3,8 @@
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-use lazy_static::lazy_static;
-
 use super::{
-    scheduler::{fetch_task, GLOBAL_SCHEDULER},
+    scheduler::{add_task_to_local, fetch_task_from_local, preempt_local},
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
@@ -54,28 +52,28 @@ pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
     PROCESSOR.borrow().get_idle_task_cx_ptr()
 }
 
-/// call this function to switch to other task by using GLOBAL_SCHEDULER
+/// `schedule()` is responsible for switching the CURRENT CPU to another task if available.
+/// It fetches a task from the local run queue and performs the context switch.
 pub fn schedule() {
-    if let Some(task) = fetch_task() {
+    if let Some(task) = fetch_task_from_local() {
         switch_to_task(task);
     }
 }
 
+/// `preempt()` checks whether the current task should be replaced by a higher priority task.
+/// If the current task is a low priority task and a higher priority task is available,
+/// it preempts the current task by switching to the high priority one.
 pub fn preempt() {
     // TODO: Refactor `preempt` and `schedule`
     // after the Atomic mode and `might_break` is enabled.
     let Some(curr_task) = current_task() else {
         return;
     };
-    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(&curr_task) {
-        return;
+    if !curr_task.is_real_time() {
+        if let Some(high_pri_task) = preempt_local() {
+            switch_to_task(high_pri_task);
+        }
     }
-    let Some(next_task) = scheduler.dequeue() else {
-        return;
-    };
-    drop(scheduler);
-    switch_to_task(next_task);
 }
 
 /// call this function to switch to other task
@@ -105,9 +103,7 @@ fn switch_to_task(next_task: Arc<Task>) {
         None => PROCESSOR.borrow().get_idle_task_cx_ptr(),
         Some(current_task) => {
             if current_task.status() == TaskStatus::Runnable {
-                GLOBAL_SCHEDULER
-                    .lock_irq_disabled()
-                    .enqueue(current_task.clone());
+                add_task_to_local(current_task.clone());
             }
             &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
         }
