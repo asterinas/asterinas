@@ -20,7 +20,7 @@ pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
 
 core::arch::global_asm!(include_str!("switch.S"));
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct CalleeRegs {
     pub rsp: u64,
@@ -32,11 +32,34 @@ pub struct CalleeRegs {
     pub r15: u64,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+impl CalleeRegs {
+    pub const fn default() -> Self {
+        Self {
+            rsp: 0,
+            rbx: 0,
+            rbp: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub(crate) struct TaskContext {
     pub regs: CalleeRegs,
     pub rip: usize,
+}
+
+impl TaskContext {
+    pub const fn default() -> Self {
+        Self {
+            regs: CalleeRegs::default(),
+            rip: 0,
+        }
+    }
 }
 
 extern "C" {

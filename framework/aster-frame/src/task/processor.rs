@@ -18,7 +18,7 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             current: None,
             idle_task_cx: TaskContext::default(),
