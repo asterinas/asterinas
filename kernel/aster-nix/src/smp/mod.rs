@@ -8,6 +8,7 @@ use log::info;
 
 use crate::{
     current_thread,
+    sched::init_local_scheduler,
     thread::{
         kernel_thread::{KernelThreadExt, ThreadOptions},
         Thread,
@@ -24,12 +25,13 @@ pub fn ap_entry() -> ! {
 }
 
 fn run_ap_first_process() -> ! {
+    init_local_scheduler();
     let cpu_id = this_cpu();
-    let mut cpu_set = CpuSet::new_empty();
-    cpu_set.add(cpu_id);
     info!("hello from cpu {}", cpu_id);
     assert!(cpu_id != 0);
-    Thread::spawn_kernel_thread(ThreadOptions::new(ap_thread).cpu_affinity(cpu_set));
+    Thread::spawn_kernel_thread(
+        ThreadOptions::new(ap_thread).cpu_affinity(CpuSet::from_cpu_id(cpu_id)),
+    );
     unreachable!()
 }
 

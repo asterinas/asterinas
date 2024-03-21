@@ -68,7 +68,7 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let _guard = disable_local();
 
-        if let Ok(allocation) = self.heap.lock().alloc(layout) {
+        if let Ok(allocation) = self.heap.lock_irq_disabled().alloc(layout) {
             return allocation.as_ptr();
         }
 
@@ -78,7 +78,7 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
         }
 
         self.heap
-            .lock()
+            .lock_irq_disabled()
             .alloc(layout)
             .map_or(core::ptr::null_mut::<u8>(), |allocation| {
                 allocation.as_ptr()

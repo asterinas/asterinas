@@ -11,7 +11,7 @@ use bitflags::bitflags;
 use super::SpinLock;
 use crate::{
     arch::timer::{add_timeout_list, TIMER_FREQ},
-    task::{add_task, current_task, schedule, Task, TaskStatus},
+    task::{add_task_to_global, current_task, schedule, Task, TaskStatus},
 };
 
 /// A wait queue.
@@ -184,7 +184,7 @@ impl Waiter {
             self.is_woken_up
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         {
-            add_task(self.task.clone());
+            add_task_to_global(self.task.clone());
         }
     }
 
