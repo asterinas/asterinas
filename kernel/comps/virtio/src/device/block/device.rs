@@ -158,7 +158,9 @@ impl DeviceInner {
         let config = VirtioBlockConfig::new(transport.as_mut());
         let num_queues = transport.num_queues();
         if num_queues != 1 {
-            return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
+            // TODO: support Multi-Queue Block IO Queueing Mechanism(`BlkFeatures::MQ`) to accelerate multi-processor
+            // requests for block devices.
+            // return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
         }
 
         let queue = VirtQueue::new(0, 64, transport.as_mut()).expect("create virtqueue failed");
