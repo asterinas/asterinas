@@ -278,6 +278,7 @@ gdt_end:
 
 .global boot_page_table_start
 boot_page_table_start:
+.global boot_pml4
 boot_pml4:
     .skip 4096
 boot_pdpt:

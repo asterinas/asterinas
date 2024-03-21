@@ -139,6 +139,17 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     // Add the kernel region.
     regions.push(MemoryRegion::kernel());
 
+    // Add the ap boot region.
+    extern "C" {
+        fn __ap_boot_start();
+        fn __ap_boot_end();
+    }
+    regions.push(MemoryRegion::new(
+        __ap_boot_start as usize,
+        __ap_boot_end as usize - __ap_boot_start as usize,
+        MemoryRegionType::Reserved,
+    ));
+
     // Add the initramfs area.
     if info.mods_count != 0 {
         let modules_addr = info.mods_addr as usize;

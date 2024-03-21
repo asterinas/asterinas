@@ -65,6 +65,7 @@ pub fn init() {
     trap::init();
     arch::after_all_init();
     bus::init();
+    smp::init();
     invoke_ffi_init_funcs();
 }
 

@@ -2,12 +2,22 @@ ENTRY(__multiboot_boot)
 OUTPUT_ARCH(i386:x86-64)
 OUTPUT_FORMAT(elf64-x86-64)
 
+AP_START = 0x8000;
 KERNEL_LMA = 0x8000000;
 LINUX_32_ENTRY = 0x8001000;
 KERNEL_VMA = 0xffffffff80000000;
 
 SECTIONS
 {
+    . = AP_START;
+    . = ALIGN(0x1000);
+    __ap_boot_start = .;
+    .smp : {
+        KEEP(*(.smp .smp.*))
+    }
+    . = ALIGN(0x1000);
+    __ap_boot_end = .;
+
     . = KERNEL_LMA;
 
     __kernel_start = .;
