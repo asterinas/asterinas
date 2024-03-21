@@ -21,6 +21,9 @@ intrusive-collections = "0.9.5"
 ktest = { path = "../libs/ktest" }
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
 log = "0.4"
+num = { verion = "0.4.1", default-features = false }
+num-derive = "0.4.2"
+num-traits = { version = "0.2.18", default-features = false }
 pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 spin = "0.9.4"
 static_assertions = "1.1.0"
@@ -37,6 +40,9 @@ aml = "0.16.3"
 multiboot2 = "0.16.0"
 rsdp = "2.0.0"
 iced-x86 = { version = "1.21.0", default-features = false, features = [ "no_std", "decoder", "gas" ], optional = true }
+
+[target.riscv64gc-unknown-none-elf.dependencies]
+riscv = "0.11.1"
 
 [features]
 intel_tdx = ["dep:tdx-guest", "dep:iced-x86"]

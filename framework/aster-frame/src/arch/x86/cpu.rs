@@ -2,16 +2,11 @@
 
 //! CPU.
 
-use alloc::vec::Vec;
 use core::{
     arch::x86_64::{_fxrstor, _fxsave},
     fmt::Debug,
 };
 
-use bitvec::{
-    prelude::{BitVec, Lsb0},
-    slice::IterOnes,
-};
 use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
@@ -35,63 +30,6 @@ pub fn num_cpus() -> u32 {
 pub fn this_cpu() -> u32 {
     // FIXME: we only start one cpu now.
     0
-}
-
-#[derive(Default)]
-pub struct CpuSet {
-    bitset: BitVec,
-}
-
-impl CpuSet {
-    pub fn new_full() -> Self {
-        let num_cpus = num_cpus();
-        let mut bitset = BitVec::with_capacity(num_cpus as usize);
-        bitset.resize(num_cpus as usize, true);
-        Self { bitset }
-    }
-
-    pub fn new_empty() -> Self {
-        let num_cpus = num_cpus();
-        let mut bitset = BitVec::with_capacity(num_cpus as usize);
-        bitset.resize(num_cpus as usize, false);
-        Self { bitset }
-    }
-
-    pub fn add(&mut self, cpu_id: u32) {
-        self.bitset.set(cpu_id as usize, true);
-    }
-
-    pub fn add_from_vec(&mut self, cpu_ids: Vec<u32>) {
-        for cpu_id in cpu_ids {
-            self.add(cpu_id)
-        }
-    }
-
-    pub fn add_all(&mut self) {
-        self.bitset.fill(true);
-    }
-
-    pub fn remove(&mut self, cpu_id: u32) {
-        self.bitset.set(cpu_id as usize, false);
-    }
-
-    pub fn remove_from_vec(&mut self, cpu_ids: Vec<u32>) {
-        for cpu_id in cpu_ids {
-            self.remove(cpu_id);
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.bitset.fill(false);
-    }
-
-    pub fn contains(&self, cpu_id: u32) -> bool {
-        self.bitset.get(cpu_id as usize).as_deref() == Some(&true)
-    }
-
-    pub fn iter(&self) -> IterOnes<'_, usize, Lsb0> {
-        self.bitset.iter_ones()
-    }
 }
 
 /// Cpu context, including both general-purpose registers and floating-point registers.
@@ -336,21 +274,9 @@ pub struct CpuException {
     pub typ: CpuExceptionType,
 }
 
-/// Copy from: https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#slice-length
-macro_rules! replace_expr {
-    ($_t:tt $sub:expr) => {
-        $sub
-    };
-}
-
-/// Copy from: https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#slice-length
-macro_rules! count_tts {
-    ($($tts:tt)*) => {<[()]>::len(&[$(replace_expr!($tts ())),*])};
-}
-
-macro_rules! define_cpu_exception {
+macro_rules! define_cpu_exception_list {
     ( $([ $name: ident = $exception_num:tt, $exception_type:tt]),* ) => {
-        const EXCEPTION_LIST : [CpuException;count_tts!($($name)*)] = [
+        const EXCEPTION_LIST : &[CpuException] = &[
             $($name,)*
         ];
         $(
@@ -363,7 +289,7 @@ macro_rules! define_cpu_exception {
 }
 
 // We also defined the RESERVED Exception so that we can easily use the index of EXCEPTION_LIST to get the Exception
-define_cpu_exception!(
+define_cpu_exception_list!(
     [DIVIDE_BY_ZERO = 0, Fault],
     [DEBUG = 1, FaultOrTrap],
     [NON_MASKABLE_INTERRUPT = 2, Interrupt],

@@ -13,8 +13,9 @@ initramfs = "regression/build/initramfs.cpio.gz"
 protocol = "multiboot2"
 loader = "grub"
 ovmf = "/root/ovmf/release"
+opensbi = "/root/opensbi-virt-firmware"
 
-[qemu]
+[qemu.'cfg(arch="x86_64")']
 machine = "q35"
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
@@ -39,7 +40,7 @@ args = [
     "-device virtconsole,chardev=mux",
 ]
 
-[qemu.'cfg(select="iommu")']
+[qemu.'cfg(arch="x86_64", select="iommu")']
 machine = "q35"
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
@@ -66,7 +67,7 @@ args = [
     "-device ioh3420,id=pcie.0,chassis=1",
 ]
 
-[qemu.'cfg(select="microvm")']
+[qemu.'cfg(arch="x86_64", select="microvm")']
 machine = "microvm"
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
@@ -91,4 +92,12 @@ args = [
     "-device virtio-net-device,netdev=net01",
     "-device virtio-serial-device",
     "-device virtconsole,chardev=mux",
+]
+
+[qemu.'cfg(arch="riscv64")']
+machine = "virt"
+args = [
+    "--no-reboot",
+    "-m 2G",
+    "-nographic",
 ]

@@ -94,7 +94,7 @@ impl TestConfig {
 /// FIXME: I guess OSDK manifest is definitely NOT per workspace. It's per crate. When you cannot
 /// find a manifest per crate, find it in the upper levels.
 /// I don't bother to do it now, just fix the relpaths.
-fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S>) -> OsdkManifest {
+fn load_osdk_manifest(cargo_args: &CargoArgs, selection: Option<impl AsRef<str>>) -> OsdkManifest {
     let feature_strings = get_feature_strings(cargo_args);
     let cargo_metadata = get_cargo_metadata(None::<&str>, Some(&feature_strings)).unwrap();
     let workspace_root = PathBuf::from(
@@ -123,7 +123,12 @@ fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S
         );
         process::exit(Errno::ParseMetadata as _);
     });
-    let mut osdk_manifest = OsdkManifest::from_toml_manifest(toml_manifest, selection);
+    let cfg_target = cargo_args.target.as_ref().map(|t| t.to_string());
+    let mut osdk_manifest = OsdkManifest::from_toml_manifest(
+        toml_manifest,
+        cfg_target,
+        selection.map(|s| s.as_ref().to_string()),
+    );
     osdk_manifest.check_canonicalize_all_paths(workspace_root);
     osdk_manifest
 }
@@ -144,6 +149,7 @@ fn split_features(cargo_args: &CargoArgs) -> CargoArgs {
     CargoArgs {
         profile: cargo_args.profile.clone(),
         features,
+        target: cargo_args.target.clone(),
     }
 }
 

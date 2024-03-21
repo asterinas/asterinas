@@ -133,7 +133,7 @@ fn run_ktests(test_whitelist: Option<&[&str]>, crate_whitelist: Option<&[&str]>)
     use alloc::{boxed::Box, string::ToString};
     use core::any::Any;
 
-    use crate::arch::qemu::{exit_qemu, QemuExitCode};
+    use crate::arch::system::{exit_failure, exit_success};
 
     let fn_catch_unwind = &(unwinding::panic::catch_unwind::<(), fn()>
         as fn(fn()) -> Result<(), Box<(dyn Any + Send + 'static)>>);
@@ -145,7 +145,7 @@ fn run_ktests(test_whitelist: Option<&[&str]>, crate_whitelist: Option<&[&str]>)
         test_whitelist.map(|s| s.iter().map(|s| s.to_string())),
         crate_whitelist,
     ) {
-        KtestResult::Ok => exit_qemu(QemuExitCode::Success),
-        KtestResult::Failed => exit_qemu(QemuExitCode::Failed),
+        KtestResult::Ok => exit_success(),
+        KtestResult::Failed => exit_failure(),
     };
 }

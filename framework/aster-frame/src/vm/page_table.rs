@@ -9,7 +9,10 @@ use spin::Once;
 
 use super::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions};
 use crate::{
-    arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry, NR_ENTRIES_PER_PAGE},
+    arch::mm::{
+        is_kernel_vaddr, is_user_vaddr, page_table_base, tlb_flush, PageTableEntry,
+        NR_ENTRIES_PER_PAGE,
+    },
     sync::SpinLock,
     vm::{VmFrame, PAGE_SIZE},
 };
@@ -420,10 +423,8 @@ pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
 
 pub fn init() {
     KERNEL_PAGE_TABLE.call_once(|| {
-        #[cfg(target_arch = "x86_64")]
-        let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
         SpinLock::new(PageTable {
-            root_paddr: page_directory_base.start_address().as_u64() as usize,
+            root_paddr: page_table_base() as usize,
             tables: Vec::new(),
             config: PageTableConfig {
                 address_width: AddressWidth::Level4,

@@ -13,6 +13,7 @@ mod cli;
 mod commands;
 mod config_manager;
 mod error;
+mod target;
 mod util;
 
 fn main() {

@@ -9,7 +9,7 @@ pub(crate) mod irq;
 pub(crate) mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
-pub mod qemu;
+pub mod system;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
 pub(crate) mod timer;

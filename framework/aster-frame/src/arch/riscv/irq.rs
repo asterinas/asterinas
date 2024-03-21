@@ -7,19 +7,17 @@ use spin::Once;
 use crate::{sync::SpinLock, trap::irq::SystemIrqLine, util::recycle_allocator::RecycleAllocator};
 
 pub(crate) fn enable_local() {
-    x86_64::instructions::interrupts::enable();
-    // When emulated with QEMU, interrupts may not be delivered if a STI instruction is immediately
-    // followed by a RET instruction. It is a BUG of QEMU, see the following patch for details.
-    // https://lore.kernel.org/qemu-devel/20231210190147.129734-2-lrh2000@pku.edu.cn/
-    x86_64::instructions::nop();
+    riscv::interrupt::supervisor::enable();
 }
 
 pub(crate) fn disable_local() {
-    x86_64::instructions::interrupts::disable();
+    unsafe {
+        riscv::interrupt::supervisor::disable();
+    }
 }
 
 pub(crate) fn is_local_enabled() -> bool {
-    x86_64::instructions::interrupts::are_enabled()
+    riscv::register::sstatus::read().sie()
 }
 
 pub(crate) static IRQ_NUM_ALLOCATOR: SpinLock<RecycleAllocator> =

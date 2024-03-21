@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod handler;
-mod irq;
+pub(crate) mod irq;
 
 pub use handler::in_interrupt_context;
 pub use trapframe::TrapFrame;

@@ -14,6 +14,7 @@ use crate::{
         qemu::QemuMachine,
         BuildConfig, RunConfig, TestConfig,
     },
+    target::Target,
 };
 
 pub fn main() {
@@ -134,6 +135,8 @@ pub struct CargoArgs {
     pub profile: String,
     #[arg(long, value_name = "FEATURES", help = "List of features to activate")]
     pub features: Vec<String>,
+    #[arg(long, value_name = "TARGET", help = "The target triple to build for")]
+    pub target: Option<Target>,
 }
 
 #[derive(Debug, Args)]

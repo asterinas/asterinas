@@ -11,6 +11,5 @@ pub use aster_main::aster_main;
 
 pub use crate::{
     early_print as print, early_println as println,
-    panicking::abort,
     vm::{Paddr, Vaddr},
 };

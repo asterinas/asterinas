@@ -26,7 +26,7 @@
 #![register_tool(component_access_control)]
 
 use aster_frame::{
-    arch::qemu::{exit_qemu, QemuExitCode},
+    arch::system::{exit_failure, exit_success},
     boot,
 };
 use process::Process;
@@ -114,13 +114,11 @@ fn init_thread() {
         Thread::yield_now();
     }
 
-    // TODO: exit via qemu isa debug device should not be the only way.
-    let exit_code = if initproc.exit_code().unwrap() == 0 {
-        QemuExitCode::Success
+    if initproc.exit_code().unwrap() == 0 {
+        exit_success();
     } else {
-        QemuExitCode::Failed
-    };
-    exit_qemu(exit_code);
+        exit_failure();
+    }
 }
 
 /// first process never return

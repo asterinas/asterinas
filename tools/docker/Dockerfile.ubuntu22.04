@@ -106,7 +106,7 @@ RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-8.2.1.tar.xz \
     && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \
     && rm qemu.tar.xz
 WORKDIR /root/qemu
-RUN ./configure --target-list=x86_64-softmmu --prefix=/usr/local/qemu --enable-slirp \
+RUN ./configure --target-list=x86_64-softmmu,riscv64-softmmu --prefix=/usr/local/qemu --enable-slirp \
     && make -j \
     && make install
 WORKDIR /root
@@ -201,7 +201,34 @@ RUN make defconfig \
     && sed -i "s/# CONFIG_FEATURE_SH_STANDALONE is not set/CONFIG_FEATURE_SH_STANDALONE=y/g" .config \
     && make -j
 
-#= The final stages to produce the Asterinas development image ====================
+#= RISC-V specific toolchains and OpenSBI =====================================
+
+FROM build-base as riscv-toolchains
+
+# Download and extract prebuilt RISCV Toolchains (gdb, objdump, etc) to /root/riscv
+WORKDIR /root
+ENV RV_TOOLCHAIN_HREF=https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2024.03.01
+ENV RV_TOOLCHAIN=riscv64-glibc-ubuntu-22.04-llvm-nightly-2024.03.01-nightly
+RUN wget ${RV_TOOLCHAIN_HREF}/${RV_TOOLCHAIN}.tar.gz \
+    && mkdir /root/riscv \
+    && tar -xvf ${RV_TOOLCHAIN}.tar.gz --strip-components=1 -C /root/riscv \
+    && rm -f ${RV_TOOLCHAIN}.tar.gz
+# Install the built binaries for the following cross-compilation
+RUN cp -r /root/riscv/* /usr/local
+
+# Download OpenSBI
+WORKDIR /root
+RUN wget -O opensbi.tar.gz https://github.com/riscv-software-src/opensbi/archive/refs/tags/v1.4.tar.gz \
+    && mkdir /root/opensbi \
+    && tar -xvf opensbi.tar.gz --strip-components=1 -C /root/opensbi \
+    && rm opensbi.tar.gz
+# Build OpenSBI for QEMU virt platform
+WORKDIR /root/opensbi
+RUN make -j CROSS_COMPILE=riscv64-unknown-linux-gnu- \
+            PLATFORM=generic \
+            PLATFORM_RISCV_XLEN=64
+
+#= The final stages to produce the Asterinas development image ================
 
 FROM build-base as rust
 
@@ -272,6 +299,12 @@ COPY --from=busybox /root/busybox/busybox /bin/busybox
 
 # Install benchmarks built from the previous stages
 COPY --from=build-benchmarks /usr/local/benchmark /usr/local/benchmark
+
+# Install RISC-V toolchains from the previous stages
+COPY --from=riscv-toolchains /root/riscv/. /usr/local/
+
+# Install RISC-V OpenSBI virtual firmwares from the previous stages
+COPY --from=riscv-toolchains /root/opensbi/build/platform/generic/firmware/. /root/opensbi-virt-firmware/
 
 # Add the path of Asterinas tools
 ENV PATH="/root/asterinas/target/bin:${PATH}"

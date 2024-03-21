@@ -2,16 +2,14 @@
 
 //! CPU.
 
+use alloc::vec::Vec;
 use core::{cell::UnsafeCell, ops::Deref};
 
-use crate::trap::disable_local;
+use bitvec::{prelude::*, slice::IterOnes};
+pub use trapframe::GeneralRegs;
 
-cfg_if::cfg_if! {
-    if #[cfg(target_arch = "x86_64")]{
-        pub use trapframe::GeneralRegs;
-        pub use crate::arch::x86::cpu::*;
-    }
-}
+pub use crate::arch::cpu::*;
+use crate::trap::disable_local;
 
 /// Defines a CPU-local variable.
 ///
@@ -99,5 +97,62 @@ impl<T: Sync> Deref for CpuLocal<T> {
 
     fn deref(&self) -> &T {
         unsafe { &*self.0.get() }
+    }
+}
+
+#[derive(Default)]
+pub struct CpuSet {
+    bitset: BitVec,
+}
+
+impl CpuSet {
+    pub fn new_full() -> Self {
+        let num_cpus = num_cpus();
+        let mut bitset = BitVec::with_capacity(num_cpus as usize);
+        bitset.resize(num_cpus as usize, true);
+        Self { bitset }
+    }
+
+    pub fn new_empty() -> Self {
+        let num_cpus = num_cpus();
+        let mut bitset = BitVec::with_capacity(num_cpus as usize);
+        bitset.resize(num_cpus as usize, false);
+        Self { bitset }
+    }
+
+    pub fn add(&mut self, cpu_id: u32) {
+        self.bitset.set(cpu_id as usize, true);
+    }
+
+    pub fn add_from_vec(&mut self, cpu_ids: Vec<u32>) {
+        for cpu_id in cpu_ids {
+            self.add(cpu_id)
+        }
+    }
+
+    pub fn add_all(&mut self) {
+        self.bitset.fill(true);
+    }
+
+    pub fn remove(&mut self, cpu_id: u32) {
+        self.bitset.set(cpu_id as usize, false);
+    }
+
+    pub fn remove_from_vec(&mut self, cpu_ids: Vec<u32>) {
+        for cpu_id in cpu_ids {
+            self.remove(cpu_id);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.bitset.fill(false);
+    }
+
+    pub fn contains(&self, cpu_id: u32) -> bool {
+        self.bitset.get(cpu_id as usize).as_deref() == Some(&true)
+    }
+
+    pub fn iter(&self) -> IterOnes<'_, usize, Lsb0> {
+        self.bitset.iter_ones()
     }
 }

@@ -14,8 +14,10 @@ pub struct Boot {
     pub protocol: BootProtocol,
     /// The path of `grub_mkrecue`. Only be `Some(_)` if `loader` is `BootLoader::grub`.
     pub grub_mkrescue: Option<PathBuf>,
-    /// The path of ovmf. Only be `Some(_)` if `protocol` is `BootProtocol::LinuxEfiHandover64`.
+    /// The path of OVMF binaries. Only required if `protocol` is `BootProtocol::LinuxEfiHandover64`.
     pub ovmf: Option<PathBuf>,
+    /// The path of OpenSBI binaries. Only required for RISC-V.
+    pub opensbi: Option<PathBuf>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]

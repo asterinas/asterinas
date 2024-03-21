@@ -1,25 +1,29 @@
 # SPDX-License-Identifier: MPL-2.0
 
+# Project-wide options.
+TARGET ?= x86_64
+# End of project-wide options.
+
 # The Makefile provides a way to run arbitrary tests in the kernel
 # mode using the kernel command line.
 # Here are the options for the auto test feature.
 AUTO_TEST ?= none
 BOOT_LOADER ?= grub
 BOOT_PROTOCOL ?= multiboot2
-QEMU_MACHINE ?= q35
 BUILD_SYSCALL_TEST ?= 0
 EMULATE_IOMMU ?= 0
 ENABLE_KVM ?= 1
+EXTRA_BLOCKLISTS_DIRS ?= ""
 INTEL_TDX ?= 0
+QEMU_MACHINE ?= q35
+RELEASE_MODE ?= 0
 SKIP_GRUB_MENU ?= 1
 SYSCALL_TEST_DIR ?= /tmp
-EXTRA_BLOCKLISTS_DIRS ?= ""
-RELEASE_MODE ?= 0
 # End of auto test features.
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
-CARGO_OSDK_ARGS :=
+CARGO_OSDK_ARGS := --target=$(TARGET)
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
