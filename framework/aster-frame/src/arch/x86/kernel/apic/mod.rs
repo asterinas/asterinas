@@ -2,16 +2,21 @@
 
 use alloc::{boxed::Box, sync::Arc};
 
+use bit_field::BitField;
 use log::info;
 use spin::Once;
 
-use crate::sync::Mutex;
+use crate::{cpu_local, sync::Mutex};
 
 pub mod ioapic;
 pub mod x2apic;
 pub mod xapic;
 
-pub static APIC_INSTANCE: Once<Arc<Mutex<Box<dyn Apic + 'static>>>> = Once::new();
+cpu_local! {
+    pub static APIC_INSTANCE: Once<Arc<Mutex<Box<dyn Apic + 'static>>>> = Once::new();
+}
+
+static APIC_TYPE: Once<ApicType> = Once::new();
 
 pub trait Apic: ApicTimer + Sync + Send {
     fn id(&self) -> u32;
@@ -259,6 +264,7 @@ pub fn init() -> Result<(), ApicInitError> {
             version & 0xff,
             (version >> 16) & 0xff
         );
+        APIC_TYPE.call_once(|| ApicType::X2Apic);
         APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(x2apic))));
         Ok(())
     } else if let Some(mut xapic) = xapic::XApic::new() {
@@ -270,10 +276,29 @@ pub fn init() -> Result<(), ApicInitError> {
             version & 0xff,
             (version >> 16) & 0xff
         );
+        APIC_TYPE.call_once(|| ApicType::XApic);
         APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(xapic))));
         Ok(())
     } else {
         log::warn!("Not found x2APIC or xAPIC");
         Err(ApicInitError::NoApic)
+    }
+}
+
+pub fn init_ap() {
+    if let Some(apic_type) = APIC_TYPE.get() {
+        assert!(!APIC_INSTANCE.is_completed());
+        match apic_type {
+            ApicType::X2Apic => {
+                let mut x2apic = x2apic::X2Apic::new().unwrap();
+                x2apic.enable();
+                APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(x2apic))));
+            }
+            ApicType::XApic => {
+                let mut xapic = xapic::XApic::new().unwrap();
+                xapic.enable();
+                APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(xapic))));
+            }
+        }
     }
 }

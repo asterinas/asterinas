@@ -10,6 +10,7 @@ pub(crate) mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
+pub mod smp;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
 pub(crate) mod timer;
@@ -75,7 +76,7 @@ pub fn read_tsc() -> u64 {
     unsafe { _rdtsc() }
 }
 
-fn enable_common_cpu_features() {
+pub(crate) fn enable_common_cpu_features() {
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::FSGSBASE | Cr4Flags::OSXSAVE | Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE;
@@ -95,4 +96,8 @@ fn enable_common_cpu_features() {
             *efer |= EferFlags::NO_EXECUTE_ENABLE;
         });
     }
+}
+
+pub(crate) fn init_ap() {
+    kernel::apic::init_ap();
 }

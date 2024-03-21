@@ -85,11 +85,15 @@ pub(crate) fn init() {
 
     // Safety: page_directory_base is read from Cr3, the address is valid.
     let p4 = unsafe { table_of::<PageTableEntry>(page_directory_base).unwrap() };
-    // Cancel mapping in lowest addresses.
-    p4[0].clear();
     INIT_MAPPED_PTE.call_once(|| {
         let mut mapped_pte = BTreeMap::new();
         for (i, p4_i) in p4.iter().enumerate().take(512) {
+            // Low addresses are still reserved in the boot page table for multi-processor boot,
+            // but these mappings should not be reserved in the subsequent kernel page table
+            // and user page table.
+            if i == 0 {
+                continue;
+            }
             if p4_i.flags().contains(PageTableFlags::PRESENT) {
                 mapped_pte.insert(i, *p4_i);
             }

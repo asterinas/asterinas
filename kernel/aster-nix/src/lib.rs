@@ -59,6 +59,7 @@ pub mod net;
 pub mod prelude;
 mod process;
 mod sched;
+mod smp;
 pub mod syscall;
 pub mod thread;
 pub mod time;
@@ -73,6 +74,7 @@ pub fn init() {
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
     vdso::init();
+    smp::init();
 }
 
 fn init_thread() {
@@ -123,10 +125,14 @@ fn init_thread() {
     exit_qemu(exit_code);
 }
 
-/// first process never return
+/// Initializes and runs the first process on the boot CPU (CPU 0) and never return.
 #[controlled]
 pub fn run_first_process() -> ! {
-    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread));
+    let cpu_id = this_cpu();
+    assert!(cpu_id == 0);
+    let mut cpu_set = CpuSet::new_empty();
+    cpu_set.add(cpu_id);
+    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread).cpu_affinity(cpu_set));
     unreachable!()
 }
 

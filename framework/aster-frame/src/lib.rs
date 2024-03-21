@@ -36,6 +36,7 @@ pub mod io_mem;
 pub mod logger;
 pub mod panicking;
 pub mod prelude;
+pub mod smp;
 pub mod sync;
 pub mod task;
 pub mod timer;
@@ -66,6 +67,7 @@ pub fn init() {
     trap::init();
     arch::after_all_init();
     bus::init();
+    smp::init();
     invoke_ffi_init_funcs();
 }
 
