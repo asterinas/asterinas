@@ -10,7 +10,7 @@ use super::{
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, sync::Mutex};
+use crate::cpu_local;
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -18,7 +18,7 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             current: None,
             idle_task_cx: TaskContext::default(),
@@ -38,20 +38,20 @@ impl Processor {
     }
 }
 
-lazy_static! {
-    static ref PROCESSOR: Mutex<Processor> = Mutex::new(Processor::new());
+cpu_local! {
+    static PROCESSOR: Processor = Processor::new();
 }
 
 pub fn take_current_task() -> Option<Arc<Task>> {
-    PROCESSOR.lock().take_current()
+    PROCESSOR.borrow().take_current()
 }
 
 pub fn current_task() -> Option<Arc<Task>> {
-    PROCESSOR.lock().current()
+    PROCESSOR.borrow().current()
 }
 
 pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
-    PROCESSOR.lock().get_idle_task_cx_ptr()
+    PROCESSOR.borrow().get_idle_task_cx_ptr()
 }
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
@@ -86,19 +86,23 @@ pub fn preempt() {
 ///
 /// before context switch, current task will switch to the next task
 fn switch_to_task(next_task: Arc<Task>) {
-    if !PREEMPT_COUNT.is_preemptive() {
-        panic!(
-            "Calling schedule() while holding {} locks",
-            PREEMPT_COUNT.num_locks()
-        );
-        //GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(next_task);
-        //return;
+    // Safety: the `PREEMPT_COUNT` utilizes an `AtomicUsize` for its internal state, ensuring that
+    // modifications are atomic and therefore free from data races.
+    unsafe {
+        if !PREEMPT_COUNT.borrow_unchecked().is_preemptive() {
+            panic!(
+                "Calling schedule() while holding {} locks",
+                PREEMPT_COUNT.borrow_unchecked().num_locks()
+            );
+            //GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(next_task);
+            //return;
+        }
     }
     let current_task_option = current_task();
     let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
     let current_task: Arc<Task>;
     let current_task_cx_ptr = match current_task_option {
-        None => PROCESSOR.lock().get_idle_task_cx_ptr(),
+        None => PROCESSOR.borrow().get_idle_task_cx_ptr(),
         Some(current_task) => {
             if current_task.status() == TaskStatus::Runnable {
                 GLOBAL_SCHEDULER
@@ -110,8 +114,7 @@ fn switch_to_task(next_task: Arc<Task>) {
     };
 
     // change the current task to the next task
-
-    PROCESSOR.lock().current = Some(next_task.clone());
+    PROCESSOR.borrow().current = Some(next_task.clone());
     unsafe {
         context_switch(current_task_cx_ptr, next_task_cx_ptr);
     }
@@ -162,7 +165,11 @@ impl !Send for DisablePreemptGuard {}
 
 impl DisablePreemptGuard {
     fn new() -> Self {
-        PREEMPT_COUNT.incease_num_locks();
+        // The `PREEMPT_COUNT` utilizes an `AtomicUsize` for its internal state, ensuring that
+        // modifications are atomic and therefore free from data races.
+        unsafe {
+            PREEMPT_COUNT.borrow_unchecked().incease_num_locks();
+        }
         Self { private: () }
     }
 
@@ -175,7 +182,11 @@ impl DisablePreemptGuard {
 
 impl Drop for DisablePreemptGuard {
     fn drop(&mut self) {
-        PREEMPT_COUNT.decrease_num_locks();
+        // The `PREEMPT_COUNT` utilizes an `AtomicUsize` for its internal state, ensuring that
+        // modifications are atomic and therefore free from data races.
+        unsafe {
+            PREEMPT_COUNT.borrow_unchecked().decrease_num_locks();
+        }
     }
 }
 

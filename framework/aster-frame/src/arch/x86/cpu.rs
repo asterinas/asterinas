@@ -2,21 +2,16 @@
 
 //! CPU.
 
-use alloc::vec::Vec;
 use core::{
     arch::x86_64::{_fxrstor, _fxsave},
     fmt::Debug,
 };
 
-use bitflags::bitflags;
-use bitvec::{
-    prelude::{BitVec, Lsb0},
-    slice::IterOnes,
-};
 use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
 use trapframe::{GeneralRegs, UserContext as RawUserContext};
+use x86::msr::{rdmsr, wrmsr, IA32_FS_BASE};
 use x86_64::registers::rflags::RFlags;
 
 #[cfg(feature = "intel_tdx")]
@@ -25,75 +20,6 @@ use crate::{
     trap::call_irq_callback_functions,
     user::{UserContextApi, UserContextApiInternal, UserEvent},
 };
-
-/// Returns the number of CPUs.
-pub fn num_cpus() -> u32 {
-    // FIXME: we only start one cpu now.
-    1
-}
-
-/// Returns the ID of this CPU.
-pub fn this_cpu() -> u32 {
-    // FIXME: we only start one cpu now.
-    0
-}
-
-#[derive(Default)]
-pub struct CpuSet {
-    bitset: BitVec,
-}
-
-impl CpuSet {
-    pub fn new_full() -> Self {
-        let num_cpus = num_cpus();
-        let mut bitset = BitVec::with_capacity(num_cpus as usize);
-        bitset.resize(num_cpus as usize, true);
-        Self { bitset }
-    }
-
-    pub fn new_empty() -> Self {
-        let num_cpus = num_cpus();
-        let mut bitset = BitVec::with_capacity(num_cpus as usize);
-        bitset.resize(num_cpus as usize, false);
-        Self { bitset }
-    }
-
-    pub fn add(&mut self, cpu_id: u32) {
-        self.bitset.set(cpu_id as usize, true);
-    }
-
-    pub fn add_from_vec(&mut self, cpu_ids: Vec<u32>) {
-        for cpu_id in cpu_ids {
-            self.add(cpu_id)
-        }
-    }
-
-    pub fn add_all(&mut self) {
-        self.bitset.fill(true);
-    }
-
-    pub fn remove(&mut self, cpu_id: u32) {
-        self.bitset.set(cpu_id as usize, false);
-    }
-
-    pub fn remove_from_vec(&mut self, cpu_ids: Vec<u32>) {
-        for cpu_id in cpu_ids {
-            self.remove(cpu_id);
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.bitset.fill(false);
-    }
-
-    pub fn contains(&self, cpu_id: u32) -> bool {
-        self.bitset.get(cpu_id as usize).as_deref() == Some(&true)
-    }
-
-    pub fn iter(&self) -> IterOnes<'_, usize, Lsb0> {
-        self.bitset.iter_ones()
-    }
-}
 
 /// Cpu context, including both general-purpose registers and floating-point registers.
 #[derive(Clone, Default, Copy, Debug)]
@@ -616,4 +542,22 @@ impl Default for FpRegs {
 #[derive(Debug, Clone, Copy)]
 struct FxsaveArea {
     data: [u8; 512], // 512 bytes
+}
+
+/// Sets the base address for the CPU local storage by writing to the FS base model-specific register.
+/// This operation is marked as `unsafe` because it directly interfaces with low-level CPU registers.
+///
+/// Safety:
+/// - This function is safe to call provided that the FS register is dedicated entirely for CPU local storage
+///   and is not concurrently accessed for other purposes.
+/// - The caller must ensure that `addr` is a valid address and properly aligned, as required by the CPU.
+/// - This function should only be called in contexts where the CPU is in a state to accept such changes,
+///  such as during processor initialization.
+pub(crate) unsafe fn set_cpu_local_base_addr(addr: u64) {
+    wrmsr(IA32_FS_BASE, addr);
+}
+
+pub(crate) fn get_cpu_local_base_addr() -> u64 {
+    // Safety: the FS register is used as the base address for the CPU local storage in our implementation.
+    unsafe { rdmsr(IA32_FS_BASE) }
 }

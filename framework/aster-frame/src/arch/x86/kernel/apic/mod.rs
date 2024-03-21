@@ -1,22 +1,49 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::boxed::Box;
 
 use bit_field::BitField;
 use log::info;
 use spin::Once;
 
-use crate::{cpu_local, sync::Mutex};
+use crate::lazy_cpu_local;
 
 pub mod ioapic;
 pub mod x2apic;
 pub mod xapic;
 
-cpu_local! {
-    pub static APIC_INSTANCE: Once<Arc<Mutex<Box<dyn Apic + 'static>>>> = Once::new();
+lazy_cpu_local! {
+    pub static APIC_INSTANCE: Box<dyn Apic + 'static> = {
+        match APIC_TYPE.get().unwrap() {
+            ApicType::X2Apic => {
+                let mut x2apic = x2apic::X2Apic::new().unwrap();
+                x2apic.enable();
+                let version = x2apic.version();
+                info!(
+                    "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                    x2apic.id(),
+                    version & 0xff,
+                    (version >> 16) & 0xff
+                );
+                Box::new(x2apic)
+            }
+            ApicType::XApic => {
+                let mut xapic = xapic::XApic::new().unwrap();
+                xapic.enable();
+                let version = xapic.version();
+                info!(
+                    "xAPIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                    xapic.id(),
+                    version & 0xff,
+                    (version >> 16) & 0xff
+                );
+                Box::new(xapic)
+            }
+        }
+    };
 }
 
-static APIC_TYPE: Once<ApicType> = Once::new();
+pub(crate) static APIC_TYPE: Once<ApicType> = Once::new();
 
 pub trait Apic: ApicTimer + Sync + Send {
     fn id(&self) -> u32;
@@ -49,7 +76,7 @@ pub trait ApicTimer: Sync + Send {
     fn set_timer_div_config(&mut self, div_config: DivideConfig);
 }
 
-enum ApicType {
+pub(crate) enum ApicType {
     XApic,
     X2Apic,
 }
@@ -255,50 +282,14 @@ pub enum DivideConfig {
 
 pub fn init() -> Result<(), ApicInitError> {
     crate::arch::x86::kernel::pic::disable_temp();
-    if let Some(mut x2apic) = x2apic::X2Apic::new() {
-        x2apic.enable();
-        let version = x2apic.version();
-        info!(
-            "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
-            x2apic.id(),
-            version & 0xff,
-            (version >> 16) & 0xff
-        );
+    if x2apic::X2Apic::has_x2apic() {
         APIC_TYPE.call_once(|| ApicType::X2Apic);
-        APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(x2apic))));
         Ok(())
-    } else if let Some(mut xapic) = xapic::XApic::new() {
-        xapic.enable();
-        let version = xapic.version();
-        info!(
-            "xAPIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
-            xapic.id(),
-            version & 0xff,
-            (version >> 16) & 0xff
-        );
+    } else if xapic::XApic::has_xapic() {
         APIC_TYPE.call_once(|| ApicType::XApic);
-        APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(xapic))));
         Ok(())
     } else {
         log::warn!("Not found x2APIC or xAPIC");
         Err(ApicInitError::NoApic)
-    }
-}
-
-pub fn init_ap() {
-    if let Some(apic_type) = APIC_TYPE.get() {
-        assert!(!APIC_INSTANCE.is_completed());
-        match apic_type {
-            ApicType::X2Apic => {
-                let mut x2apic = x2apic::X2Apic::new().unwrap();
-                x2apic.enable();
-                APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(x2apic))));
-            }
-            ApicType::XApic => {
-                let mut xapic = xapic::XApic::new().unwrap();
-                xapic.enable();
-                APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(xapic))));
-            }
-        }
     }
 }

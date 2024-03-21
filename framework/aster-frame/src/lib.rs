@@ -14,6 +14,7 @@
 #![feature(panic_info_message)]
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
+#![feature(unsafe_cell_from_mut)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![no_std]
@@ -48,10 +49,14 @@ pub mod vm;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
 
-pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
+pub use self::{error::Error, prelude::Result};
 
 pub fn init() {
     arch::before_all_init();
+    // Safety: Cpu local data has not been accessed before
+    unsafe {
+        cpu::bsp_init();
+    }
     logger::init();
     #[cfg(feature = "intel_tdx")]
     let td_info = init_tdx().unwrap();

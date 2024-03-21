@@ -5,8 +5,8 @@ use spin::Once;
 
 use crate::{
     arch::{
-        self, enable_common_cpu_features,
-        smp::{get_processor_info, prepare_boot_stacks, send_boot_ipis},
+        enable_common_cpu_features,
+        smp::{get_processor_info, init_boot_stack_array, send_boot_ipis},
     },
     cpu,
     sync::SpinLock,
@@ -70,7 +70,6 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
     enable_common_cpu_features();
     cpu::ap_init(local_apic_id);
     trap::init();
-    arch::init_ap();
 
     let ap_boot_info = AP_BOOT_INFO.get().unwrap().lock_irq_disabled();
     ap_boot_info

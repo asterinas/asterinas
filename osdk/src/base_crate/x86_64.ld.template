@@ -37,6 +37,15 @@ SECTIONS
     }
     .rodata                 : AT(ADDR(.rodata) - KERNEL_VMA) { *(.rodata .rodata.*) }
 
+    . = ALIGN(0x1000);
+    __cpu_local_start = .;
+    . += 4;
+    .cpu_local              : AT(ADDR(.cpu_local) - KERNEL_VMA) {  
+        KEEP(*(SORT(.cpu_local)))
+    }
+    . = ALIGN(0x1000);
+    __cpu_local_end = .;
+
     .eh_frame_hdr           : AT(ADDR(.eh_frame_hdr) - KERNEL_VMA) {
         PROVIDE(__GNU_EH_FRAME_HDR = .);
         KEEP(*(.eh_frame_hdr .eh_frame_hdr.*))
@@ -69,6 +78,14 @@ SECTIONS
         *(.bss .bss.*) *(COMMON)
         __bss_end = .;
     }
+
+    /* Reserve a section with size __cpu_local_end-__cpu_local_start filled with zeroes */
+    . = ALIGN(0x1000);
+    __bsp_local_start = .;
+    . += 4;
+    . += __cpu_local_end - __cpu_local_start;
+    . = ALIGN(0x1000);
+    __bsp_local_end = .;
 
     .ktest_array            : AT(ADDR(.ktest_array) - KERNEL_VMA) {
         __ktest_array = .;

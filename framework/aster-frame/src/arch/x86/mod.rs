@@ -60,8 +60,8 @@ pub(crate) fn after_all_init() {
 
 pub(crate) fn interrupts_ack() {
     kernel::pic::ack();
-    if let Some(apic) = kernel::apic::APIC_INSTANCE.get() {
-        apic.lock().eoi();
+    if kernel::apic::APIC_TYPE.is_completed() {
+        kernel::apic::APIC_INSTANCE.borrow().eoi();
     }
 }
 
@@ -96,8 +96,4 @@ pub(crate) fn enable_common_cpu_features() {
             *efer |= EferFlags::NO_EXECUTE_ENABLE;
         });
     }
-}
-
-pub(crate) fn init_ap() {
-    kernel::apic::init_ap();
 }

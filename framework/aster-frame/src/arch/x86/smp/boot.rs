@@ -126,7 +126,7 @@ fn send_startup_to_all_aps() {
         (AP_BOOT_START_PA / PAGE_SIZE) as u8,
     );
     unsafe {
-        APIC_INSTANCE.get().unwrap().lock().send_ipi(icr);
+        (*APIC_INSTANCE.borrow()).send_ipi(icr);
     }
 }
 
@@ -142,7 +142,7 @@ fn send_init_to_all_aps() {
         0,
     );
     unsafe {
-        APIC_INSTANCE.get().unwrap().lock().send_ipi(icr);
+        (*APIC_INSTANCE.borrow()).send_ipi(icr);
     }
 }
 
@@ -158,7 +158,7 @@ fn send_init_deassert() {
         0,
     );
     unsafe {
-        APIC_INSTANCE.get().unwrap().lock().send_ipi(icr);
+        (*APIC_INSTANCE.borrow()).send_ipi(icr);
     }
 }
 

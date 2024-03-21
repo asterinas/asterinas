@@ -33,7 +33,7 @@ pub static TICK: AtomicU64 = AtomicU64::new(0);
 static TIMER_IRQ: Once<IrqLine> = Once::new();
 
 pub fn init() {
-    if kernel::apic::APIC_INSTANCE.is_completed() {
+    if kernel::apic::ioapic::IO_APIC.is_completed() {
         // Get the free irq number first. Use `allocate_target_irq` to get the Irq handle after dropping it.
         // Because the function inside `apic::init` will allocate this irq.
         let irq = IrqLine::alloc().unwrap();
