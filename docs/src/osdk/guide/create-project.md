@@ -13,7 +13,7 @@ Creating a new kernel project is simple.
 You only need to execute the following command:
 
 ```bash
-cargo osdk new --kernel myos
+cargo osdk new --type kernel myos
 ```
 
 ## Creating a new library project

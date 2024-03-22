@@ -13,11 +13,10 @@ use crate::{
     base_crate::new_base_crate,
     bundle::{
         bin::{AsterBin, AsterBinType, AsterElfMeta},
-        file::Initramfs,
         Bundle,
     },
     cli::CargoArgs,
-    config_manager::{qemu::QemuMachine, BuildConfig},
+    config_manager::{action::Bootloader, BuildConfig},
     error::Errno,
     error_msg,
     util::{get_current_crate_info, get_target_directory},
@@ -79,19 +78,9 @@ pub fn do_build(
     }
     let mut bundle = Bundle::new(
         &bundle_path,
-        config.manifest.kcmd_args.clone(),
-        config.manifest.boot.clone(),
-        config.manifest.qemu.clone(),
+        config.settings.clone(),
         config.cargo_args.clone(),
     );
-
-    if let Some(ref initramfs) = config.manifest.initramfs {
-        if !initramfs.exists() {
-            error_msg!("initramfs file not found: {}", initramfs.display());
-            process::exit(Errno::BuildCrate as _);
-        }
-        bundle.add_initramfs(Initramfs::new(initramfs));
-    };
 
     info!("Building kernel ELF");
     let aster_elf = build_kernel_elf(
@@ -101,20 +90,17 @@ pub fn do_build(
         rustflags,
     );
 
-    if matches!(config.manifest.qemu.machine, QemuMachine::Microvm) {
+    if matches!(config.settings.bootloader, Some(Bootloader::Qemu)) {
         let stripped_elf = strip_elf_for_qemu(&osdk_target_directory, &aster_elf);
         bundle.consume_aster_bin(stripped_elf);
     }
 
-    // TODO: A boot device is required if we use GRUB. Actually you can boot
-    // a multiboot kernel with Q35 machine directly without a bootloader.
-    // We are currently ignoring this case.
-    if matches!(config.manifest.qemu.machine, QemuMachine::Q35) {
+    if matches!(config.settings.bootloader, Some(Bootloader::Grub)) {
         info!("Building boot device image");
         let bootdev_image = grub::create_bootdev_image(
             &osdk_target_directory,
             &aster_elf,
-            config.manifest.initramfs.as_ref(),
+            config.settings.initramfs.as_ref(),
             config,
         );
         bundle.consume_vm_image(bootdev_image);
@@ -134,7 +120,7 @@ fn build_kernel_elf(
 
     let env_rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
     let mut rustflags = Vec::from(rustflags);
-    // We disable RELRO and PIC here because they cause link failures
+    // Asterinas does not support PIC yet.
     rustflags.extend(vec![
         &env_rustflags,
         &rustc_linker_script_arg,

@@ -11,11 +11,10 @@ AUTO_TEST ?= none
 BOOT_LOADER ?= grub
 BOOT_PROTOCOL ?= multiboot2
 BUILD_SYSCALL_TEST ?= 0
-EMULATE_IOMMU ?= 0
 ENABLE_KVM ?= 1
 EXTRA_BLOCKLISTS_DIRS ?= ""
 INTEL_TDX ?= 0
-QEMU_MACHINE ?= q35
+SCHEMA ?= ""
 RELEASE_MODE ?= 0
 SKIP_GRUB_MENU ?= 1
 SYSCALL_TEST_DIR ?= /tmp
@@ -27,15 +26,15 @@ CARGO_OSDK_ARGS := --arch=$(ARCH)
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
-CARGO_OSDK_ARGS += --kcmd_args="SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)"
-CARGO_OSDK_ARGS += --kcmd_args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
-CARGO_OSDK_ARGS += --init_args="/opt/syscall_test/run_syscall_test.sh"
+CARGO_OSDK_ARGS += --kcmd_args+="SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)"
+CARGO_OSDK_ARGS += --kcmd_args+="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
+CARGO_OSDK_ARGS += --init_args+="/opt/syscall_test/run_syscall_test.sh"
 endif
 ifeq ($(AUTO_TEST), regression)
-CARGO_OSDK_ARGS += --init_args="/regression/run_regression_test.sh"
+CARGO_OSDK_ARGS += --init_args+="/regression/run_regression_test.sh"
 endif
 ifeq ($(AUTO_TEST), boot)
-CARGO_OSDK_ARGS += --init_args="-c exit 0"
+CARGO_OSDK_ARGS += --init_args+="-c exit 0"
 endif
 
 ifeq ($(RELEASE_MODE), 1)
@@ -46,26 +45,21 @@ ifeq ($(INTEL_TDX), 1)
 CARGO_OSDK_ARGS += --features intel_tdx
 endif
 
-CARGO_OSDK_ARGS += --boot.loader="$(BOOT_LOADER)"
-CARGO_OSDK_ARGS += --boot.protocol="$(BOOT_PROTOCOL)"
-CARGO_OSDK_ARGS += --qemu.machine="$(QEMU_MACHINE)"
+CARGO_OSDK_ARGS += --bootloader="$(BOOT_LOADER)"
+CARGO_OSDK_ARGS += --boot_protocol="$(BOOT_PROTOCOL)"
 
-ifeq ($(QEMU_MACHINE), microvm)
-CARGO_OSDK_ARGS += --select microvm
+ifneq ($(SCHEMA), "")
+CARGO_OSDK_ARGS += --schema $(SCHEMA)
 endif
 
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's
 # GRUB release, which is installed in /usr/bin in our Docker image.
 ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
-CARGO_OSDK_ARGS += --boot.grub-mkrescue=/usr/bin/grub-mkrescue
-endif
-
-ifeq ($(EMULATE_IOMMU), 1)
-CARGO_OSDK_ARGS += --select iommu
+CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue
 endif
 
 ifeq ($(ENABLE_KVM), 1)
-CARGO_OSDK_ARGS += --qemu.args="--enable-kvm"
+CARGO_OSDK_ARGS += --qemu_args+="--enable-kvm"
 endif
 
 # Pass make variables to all subdirectory makes
@@ -126,7 +120,7 @@ initramfs:
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
-	cargo osdk build $(CARGO_OSDK_ARGS)
+	@cargo osdk build $(CARGO_OSDK_ARGS)
 
 .PHONY: tools
 tools:

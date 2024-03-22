@@ -10,7 +10,7 @@ use std::fmt::{self, Display, Formatter};
 /// element of the target triple, but akin to the "target_arch" cfg
 /// of Cargo:
 /// <https://doc.rust-lang.org/reference/conditional-compilation.html#target_arch>
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Arch {
     Aarch64,
     X86_64,
@@ -41,7 +41,7 @@ impl Arch {
         }
     }
 
-    pub fn to_str(&self) -> &'static str {
+    pub fn to_str(self) -> &'static str {
         match self {
             Arch::Aarch64 => "aarch64",
             Arch::RiscV64 => "riscv64",

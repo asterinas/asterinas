@@ -29,7 +29,9 @@ fn work_in_workspace() {
     // Create a kernel project and a library project
     let kernel = "myos";
     let module = "mymodule";
-    cargo_osdk(&["new", "--kernel", kernel]).ok().unwrap();
+    cargo_osdk(&["new", "--type", "kernel", kernel])
+        .ok()
+        .unwrap();
     cargo_osdk(&["new", module]).ok().unwrap();
 
     // Add a test function to mymodule/src/lib.rs

@@ -24,7 +24,7 @@ Then, add the following content to `Cargo.toml`:
 The two projects can be created using the following commands:
 
 ```bash
-cargo osdk new --kernel myos
+cargo osdk new --type kernel myos
 cargo osdk new mymodule
 ```
 

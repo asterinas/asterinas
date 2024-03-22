@@ -59,10 +59,6 @@ pub fn create_workspace(workspace_name: &str, members: &[&str]) {
     let content = table.to_string();
     fs::write(manefest_path, content).unwrap();
 
-    // Create OSDK.toml
-    let osdk_manifest_path = PathBuf::from(workspace_name).join("OSDK.toml");
-    fs::write(osdk_manifest_path, "").unwrap();
-
     // Create rust-toolchain.toml which is synced with the Asterinas' toolchain
     let rust_toolchain_path = PathBuf::from(workspace_name).join("rust-toolchain.toml");
     let content = include_str!("../../../rust-toolchain.toml");

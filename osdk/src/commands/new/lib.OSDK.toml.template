@@ -1,0 +1,17 @@
+[project]
+type = "library"
+
+[test]
+bootloader = "qemu"
+qemu_args = [
+    "-machine q35,kernel-irqchip=split",
+    "-cpu Icelake-Server,+x2apic",
+    "--no-reboot",
+    "-m 2G",
+    "-nographic",
+    "-serial chardev:mux",
+    "-monitor chardev:mux",
+    "-chardev stdio,id=mux,mux=on,signal=off",
+    "-display none",
+    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
+]

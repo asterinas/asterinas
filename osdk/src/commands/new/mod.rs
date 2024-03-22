@@ -4,6 +4,7 @@ use std::{fs, path::PathBuf, process, str::FromStr};
 
 use crate::{
     cli::NewArgs,
+    config_manager::manifest::ProjectType,
     error::Errno,
     error_msg,
     util::{aster_crate_dep, cargo_new_lib, get_cargo_metadata},
@@ -13,13 +14,9 @@ pub fn execute_new_command(args: &NewArgs) {
     cargo_new_lib(&args.crate_name);
     let cargo_metadata = get_cargo_metadata(Some(&args.crate_name), None::<&[&str]>).unwrap();
     add_manifest_dependencies(&cargo_metadata, &args.crate_name);
-    create_osdk_manifest(&cargo_metadata);
+    create_osdk_manifest(&cargo_metadata, &args.type_);
     exclude_osdk_base(&cargo_metadata);
-    if args.kernel {
-        write_kernel_template(&cargo_metadata, &args.crate_name);
-    } else {
-        write_library_template(&cargo_metadata, &args.crate_name);
-    }
+    write_src_template(&cargo_metadata, &args.crate_name, &args.type_);
     add_rust_toolchain(&cargo_metadata);
 }
 
@@ -83,7 +80,7 @@ fn exclude_osdk_base(metadata: &serde_json::Value) {
     fs::write(workspace_manifest_path, content).unwrap();
 }
 
-fn create_osdk_manifest(cargo_metadata: &serde_json::Value) {
+fn create_osdk_manifest(cargo_metadata: &serde_json::Value, type_: &ProjectType) {
     let osdk_manifest_path = {
         let workspace_root = get_workspace_root(cargo_metadata);
         PathBuf::from(workspace_root).join("OSDK.toml")
@@ -95,42 +92,34 @@ fn create_osdk_manifest(cargo_metadata: &serde_json::Value) {
     }
 
     // Create `OSDK.toml` for the workspace
-    // FIXME: we need ovmf for grub-efi, the user may not have it.
-    // The apt OVMF repo installs to `/usr/share/OVMF`
-    fs::write(
-        osdk_manifest_path,
-        r#"
-[boot]
-ovmf = "/usr/share/OVMF"
-protocol = "multiboot"
-[qemu]
-machine = "q35"
-args = [
-    "--no-reboot",
-    "-m 2G",
-    "-nographic",
-    "-serial chardev:mux",
-    "-monitor chardev:mux",
-    "-chardev stdio,id=mux,mux=on,signal=off",
-    "-display none",
-    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
-]
-"#,
-    )
-    .unwrap();
-}
-
-/// Write the default content of `src/kernel.rs`, with contents in provided template.
-fn write_kernel_template(cargo_metadata: &serde_json::Value, crate_name: &str) {
-    let src_path = get_src_path(cargo_metadata, crate_name);
-    let contents = include_str!("kernel.template");
-    fs::write(src_path, contents).unwrap();
+    let contents = match type_ {
+        ProjectType::Kernel => {
+            include_str!("kernel.OSDK.toml.template")
+        }
+        ProjectType::Library => {
+            include_str!("lib.OSDK.toml.template")
+        }
+        ProjectType::Module => {
+            todo!()
+        }
+    };
+    fs::write(osdk_manifest_path, contents).unwrap();
 }
 
 /// Write the default content of `src/lib.rs`, with contents in provided template.
-fn write_library_template(cargo_metadata: &serde_json::Value, crate_name: &str) {
+fn write_src_template(cargo_metadata: &serde_json::Value, crate_name: &str, type_: &ProjectType) {
     let src_path = get_src_path(cargo_metadata, crate_name);
-    let contents = include_str!("lib.template");
+    let contents = match type_ {
+        ProjectType::Kernel => {
+            include_str!("kernel.template")
+        }
+        ProjectType::Library => {
+            include_str!("lib.template")
+        }
+        ProjectType::Module => {
+            todo!()
+        }
+    };
     fs::write(src_path, contents).unwrap();
 }
 
