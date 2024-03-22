@@ -15,7 +15,7 @@ fn create_and_run_kernel() {
         fs::remove_dir_all(&os_dir).unwrap();
     }
 
-    let mut command = cargo_osdk(&["new", "--kernel", os_name]);
+    let mut command = cargo_osdk(&["new", "--type", "kernel", os_name]);
     command.current_dir(work_dir);
     command.ok().unwrap();
 

@@ -14,7 +14,7 @@ use crate::{
         bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
         file::BundleFile,
     },
-    config_manager::boot::BootProtocol,
+    config_manager::action::BootProtocol,
     util::get_current_crate_info,
 };
 
@@ -153,7 +153,6 @@ fn install_setup_with_arch(
     cmd.arg("install").arg("linux-bzimage-setup");
     cmd.arg("--force");
     cmd.arg("--root").arg(install_dir.as_ref());
-    // TODO: Use the latest revision when modifications on the `osdk` branch is merged.
     cmd.arg("--git").arg(crate::util::ASTER_GIT_LINK);
     cmd.arg("--rev").arg(crate::util::ASTER_GIT_REV);
     cmd.arg("--target").arg(match arch {
