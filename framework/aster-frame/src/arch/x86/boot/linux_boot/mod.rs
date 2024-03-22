@@ -69,6 +69,9 @@ fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
 fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
     let hdr = &BOOT_PARAMS.get().unwrap().hdr;
     let ptr = hdr.ramdisk_image as usize;
+    if ptr == 0 {
+        return;
+    }
     // We must return a slice composed by VA since kernel should read everything in VA.
     let base_va = if ptr < PHYS_MEM_BASE_VADDR {
         paddr_to_vaddr(ptr)
@@ -76,6 +79,9 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
         ptr
     };
     let length = hdr.ramdisk_size as usize;
+    if length == 0 {
+        return;
+    }
     initramfs.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
 }
 

@@ -50,12 +50,9 @@ fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
 }
 
 fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
-    let mb2_module_tag = MB2_INFO
-        .get()
-        .unwrap()
-        .module_tags()
-        .next()
-        .expect("No Multiboot2 modules found!");
+    let Some(mb2_module_tag) = MB2_INFO.get().unwrap().module_tags().next() else {
+        return;
+    };
     let base_addr = mb2_module_tag.start_address() as usize;
     // We must return a slice composed by VA since kernel should read every in VA.
     let base_va = if base_addr < PHYS_MEM_BASE_VADDR {
