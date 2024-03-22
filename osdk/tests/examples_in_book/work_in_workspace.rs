@@ -40,7 +40,9 @@ fn work_in_workspace() {
         .open(&module_src_path)
         .unwrap();
     module_src_file
-        .write_all(include_bytes!("work_in_workspace_templates/mymodule/src/lib.rs"))
+        .write_all(include_bytes!(
+            "work_in_workspace_templates/mymodule/src/lib.rs"
+        ))
         .unwrap();
     module_src_file.flush().unwrap();
 
@@ -52,14 +54,20 @@ fn work_in_workspace() {
         .open(&kernel_manifest_path)
         .unwrap();
     kernel_manifest_file
-        .write_all(include_bytes!("work_in_workspace_templates/myos/Cargo.toml"))
+        .write_all(include_bytes!(
+            "work_in_workspace_templates/myos/Cargo.toml"
+        ))
         .unwrap();
     kernel_manifest_file.flush().unwrap();
 
     // Add the content to myos/src/lib.rs
     let kernel_src_path = workspace_dir.join(kernel).join("src").join("lib.rs");
     assert!(kernel_src_path.is_file());
-    fs::write(&kernel_src_path, include_str!("work_in_workspace_templates/myos/src/lib.rs")).unwrap();
+    fs::write(
+        &kernel_src_path,
+        include_str!("work_in_workspace_templates/myos/src/lib.rs"),
+    )
+    .unwrap();
 
     // Run subcommand build & run
     cargo_osdk(&["build"]).ok().unwrap();
