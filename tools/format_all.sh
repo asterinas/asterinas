@@ -2,6 +2,8 @@
 
 # SPDX-License-Identifier: MPL-2.0
 
+set -e
+
 WORKSPACE_ROOT="$(dirname "$(readlink -f "$0")")/.."
 
 EXCLUDED_CRATES=$(sed -n '/^\[workspace\]/,/^\[.*\]/{/exclude = \[/,/\]/p}' "$WORKSPACE_ROOT/Cargo.toml" | grep -v "exclude = \[" | tr -d '", \]')
