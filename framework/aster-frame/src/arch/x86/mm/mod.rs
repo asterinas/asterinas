@@ -3,14 +3,12 @@
 use alloc::{collections::BTreeMap, fmt};
 
 use pod::Pod;
+use spin::Once;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
-use crate::{
-    sync::Mutex,
-    vm::{
-        page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
-        Paddr, Vaddr,
-    },
+use crate::vm::{
+    page_table::{table_of, PageTableEntryTrait, PageTableFlagsTrait},
+    Paddr, Vaddr,
 };
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
@@ -79,9 +77,9 @@ pub unsafe fn activate_page_table(root_paddr: Paddr, flags: x86_64::registers::c
     );
 }
 
-pub static ALL_MAPPED_PTE: Mutex<BTreeMap<usize, PageTableEntry>> = Mutex::new(BTreeMap::new());
+pub(crate) static INIT_MAPPED_PTE: Once<BTreeMap<usize, PageTableEntry>> = Once::new();
 
-pub fn init() {
+pub(crate) fn init() {
     let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
     let page_directory_base = page_directory_base.start_address().as_u64() as usize;
 
@@ -89,12 +87,15 @@ pub fn init() {
     let p4 = unsafe { table_of::<PageTableEntry>(page_directory_base).unwrap() };
     // Cancel mapping in lowest addresses.
     p4[0].clear();
-    let mut map_pte = ALL_MAPPED_PTE.lock();
-    for (i, p4_i) in p4.iter().enumerate().take(512) {
-        if p4_i.flags().contains(PageTableFlags::PRESENT) {
-            map_pte.insert(i, *p4_i);
+    INIT_MAPPED_PTE.call_once(|| {
+        let mut mapped_pte = BTreeMap::new();
+        for (i, p4_i) in p4.iter().enumerate().take(512) {
+            if p4_i.flags().contains(PageTableFlags::PRESENT) {
+                mapped_pte.insert(i, *p4_i);
+            }
         }
-    }
+        mapped_pte
+    });
 }
 
 impl PageTableFlagsTrait for PageTableFlags {
