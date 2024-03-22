@@ -5,7 +5,7 @@ use core::fmt;
 
 use super::page_table::{PageTable, PageTableConfig, UserMode};
 use crate::{
-    arch::mm::{PageTableEntry, PageTableFlags},
+    arch::mm::{PageTableEntry, PageTableFlags, INIT_MAPPED_PTE},
     prelude::*,
     vm::{
         is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter, PAGE_SIZE,
@@ -179,7 +179,7 @@ impl MemorySet {
         let mut page_table = PageTable::<PageTableEntry, UserMode>::new(PageTableConfig {
             address_width: super::page_table::AddressWidth::Level4,
         });
-        let mapped_pte = crate::arch::mm::ALL_MAPPED_PTE.lock();
+        let mapped_pte = INIT_MAPPED_PTE.get().unwrap();
         for (index, pte) in mapped_pte.iter() {
             // Safety: These PTEs are all valid PTEs fetched from the initial page table during memory initialization.
             unsafe {
