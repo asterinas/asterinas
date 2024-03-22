@@ -69,7 +69,7 @@ impl IfaceCommon {
                 return Ok(port);
             }
         }
-        return_errno_with_message!(Errno::EAGAIN, "cannot find unused high port");
+        return_errno_with_message!(Errno::EAGAIN, "no ephemeral port is available");
     }
 
     fn bind_port(&self, port: u16, can_reuse: bool) -> Result<()> {
@@ -78,7 +78,7 @@ impl IfaceCommon {
             if *used_times == 0 || can_reuse {
                 *used_times += 1;
             } else {
-                return_errno_with_message!(Errno::EADDRINUSE, "cannot bind port");
+                return_errno_with_message!(Errno::EADDRINUSE, "the address is already in use");
             }
         } else {
             used_ports.insert(port, 1);

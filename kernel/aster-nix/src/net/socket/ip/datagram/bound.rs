@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+use smoltcp::socket::udp::{RecvError, SendError};
 
 use crate::{
     events::IoEvents,
@@ -27,9 +28,8 @@ impl BoundDatagram {
         self.bound_socket.local_endpoint().unwrap()
     }
 
-    pub fn remote_endpoint(&self) -> Result<IpEndpoint> {
+    pub fn remote_endpoint(&self) -> Option<IpEndpoint> {
         self.remote_endpoint
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "remote endpoint is not specified"))
     }
 
     pub fn set_remote_endpoint(&mut self, endpoint: &IpEndpoint) {
@@ -41,24 +41,39 @@ impl BoundDatagram {
         buf: &mut [u8],
         flags: SendRecvFlags,
     ) -> Result<(usize, IpEndpoint)> {
-        self.bound_socket
-            .raw_with(|socket: &mut RawUdpSocket| socket.recv_slice(buf))
-            .map_err(|_| Error::with_message(Errno::EAGAIN, "recv buf is empty"))
+        let result = self
+            .bound_socket
+            .raw_with(|socket: &mut RawUdpSocket| socket.recv_slice(buf));
+        match result {
+            Ok((recv_len, endpoint)) => Ok((recv_len, endpoint)),
+            Err(RecvError::Exhausted) => {
+                return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
+            }
+        }
     }
 
     pub fn try_sendto(
         &self,
         buf: &[u8],
-        remote: Option<IpEndpoint>,
+        remote: &IpEndpoint,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        let remote_endpoint = remote
-            .or(self.remote_endpoint)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "udp should provide remote addr"))?;
-        self.bound_socket
-            .raw_with(|socket: &mut RawUdpSocket| socket.send_slice(buf, remote_endpoint))
-            .map(|_| buf.len())
-            .map_err(|_| Error::with_message(Errno::EAGAIN, "send udp packet fails"))
+        let result = self.bound_socket.raw_with(|socket: &mut RawUdpSocket| {
+            if socket.payload_send_capacity() < buf.len() {
+                return None;
+            }
+            Some(socket.send_slice(buf, *remote))
+        });
+        match result {
+            Some(Ok(())) => Ok(buf.len()),
+            Some(Err(SendError::BufferFull)) => {
+                return_errno_with_message!(Errno::EAGAIN, "the send buffer is full")
+            }
+            Some(Err(SendError::Unaddressable)) => {
+                return_errno_with_message!(Errno::EINVAL, "the destionation address is invalid")
+            }
+            None => return_errno_with_message!(Errno::EMSGSIZE, "the message is too large"),
+        }
     }
 
     pub(super) fn init_pollee(&self, pollee: &Pollee) {

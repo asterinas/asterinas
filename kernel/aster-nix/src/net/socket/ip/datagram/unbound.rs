@@ -4,12 +4,13 @@ use alloc::sync::Weak;
 
 use super::bound::BoundDatagram;
 use crate::{
-    events::Observer,
+    events::{IoEvents, Observer},
     net::{
         iface::{AnyUnboundSocket, IpEndpoint, RawUdpSocket},
         socket::ip::common::bind_socket,
     },
     prelude::*,
+    process::signal::Pollee,
 };
 
 pub struct UnboundDatagram {
@@ -35,5 +36,10 @@ impl UnboundDatagram {
         });
 
         Ok(BoundDatagram::new(bound_socket))
+    }
+
+    pub(super) fn reset_io_events(&self, pollee: &Pollee) {
+        pollee.del_events(IoEvents::IN);
+        pollee.add_events(IoEvents::OUT);
     }
 }
