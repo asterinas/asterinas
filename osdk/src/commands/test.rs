@@ -56,8 +56,8 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     let target_name = get_current_crate_info().name;
     let default_bundle_directory = osdk_target_directory.join(target_name);
     let required_build_config = BuildConfig {
-        arch: config.arch.clone(),
-        manifest: config.manifest.clone(),
+        arch: config.arch,
+        settings: config.settings.clone(),
         cargo_args: config.cargo_args.clone(),
     };
     let original_dir = std::env::current_dir().unwrap();
@@ -73,8 +73,8 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     std::env::set_current_dir(original_dir).unwrap();
 
     let required_run_config = RunConfig {
-        arch: config.arch.clone(),
-        manifest: required_build_config.manifest.clone(),
+        arch: config.arch,
+        settings: required_build_config.settings.clone(),
         cargo_args: required_build_config.cargo_args.clone(),
         gdb_server_args: GdbServerArgs::default(),
     };

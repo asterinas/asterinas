@@ -1,3 +1,7 @@
+[project]
+type = "kernel"
+
+[run]
 kcmd_args = [
     "SHELL=/bin/sh",
     "LOGNAME=root",
@@ -8,20 +12,16 @@ kcmd_args = [
 ]
 init_args = ["sh", "-l"]
 initramfs = "regression/build/initramfs.cpio.gz"
-
-[boot]
-protocol = "multiboot2"
-loader = "grub"
+boot_protocol = "multiboot2"
+bootloader = "grub"
 ovmf = "/root/ovmf/release"
-opensbi = "/root/opensbi-virt-firmware"
-
-[qemu.'cfg(arch="x86_64")']
-machine = "q35"
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
     ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
 ]
-args = [
+qemu_args = [
+    "-machine q35,kernel-irqchip=split",
+    "-cpu Icelake-Server,+x2apic",
     "--no-reboot",
     "-m 2G",
     "-nographic",
@@ -40,13 +40,36 @@ args = [
     "-device virtconsole,chardev=mux",
 ]
 
-[qemu.'cfg(arch="x86_64", select="iommu")']
-machine = "q35"
+[test]
+boot_protocol = "multiboot"
+bootloader = "qemu"
+qemu_args = [
+    "-machine q35,kernel-irqchip=split",
+    "-cpu Icelake-Server,+x2apic",
+    "--no-reboot",
+    "-m 2G",
+    "-nographic",
+    "-serial chardev:mux",
+    "-monitor chardev:mux",
+    "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log",
+    "-display none",
+    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
+    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
+    "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
+    "-device virtio-serial-pci,disable-legacy=on,disable-modern=off",
+    "-device virtconsole,chardev=mux",
+]
+
+
+['cfg(arch="x86_64", schema="iommu")'.run]
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
     ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
 ]
-args = [
+qemu_args = [
+    "-machine q35,kernel-irqchip=split",
+    "-cpu Icelake-Server,+x2apic",
     "--no-reboot",
     "-m 2G",
     "-nographic",
@@ -67,13 +90,15 @@ args = [
     "-device ioh3420,id=pcie.0,chassis=1",
 ]
 
-[qemu.'cfg(arch="x86_64", select="microvm")']
-machine = "microvm"
+['cfg(arch="x86_64", schema="microvm")'.run]
+bootloader = "qemu"
 drive_files = [
     ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
     ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
 ]
-args = [
+qemu_args = [
+    "-machine microvm,rtc=on",
+    "-cpu Icelake-Server,+x2apic",
     "--no-reboot",
     "-m 2G",
     "-nographic",
@@ -94,9 +119,9 @@ args = [
     "-device virtconsole,chardev=mux",
 ]
 
-[qemu.'cfg(arch="riscv64")']
-machine = "virt"
-args = [
+['cfg(arch="riscv64")'.run]
+qemu_args = [
+    "-machine virt",
     "--no-reboot",
     "-m 2G",
     "-nographic",

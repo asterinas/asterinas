@@ -28,7 +28,7 @@ pub fn execute_run_command(config: &RunConfig) {
     let existing_bundle = Bundle::load(&default_bundle_directory);
 
     let config = RunConfig {
-        manifest: {
+        settings: {
             if config.gdb_server_args.is_gdb_enabled {
                 let qemu_gdb_args: Vec<_> = {
                     let gdb_stub_addr = config.gdb_server_args.gdb_server_addr.as_str();
@@ -55,14 +55,14 @@ pub fn execute_run_command(config: &RunConfig) {
 
                 let qemu_gdb_args: Vec<_> = qemu_gdb_args
                     .into_iter()
-                    .filter(|arg| !config.manifest.qemu.args.iter().any(|x| x == arg))
+                    .filter(|arg| !config.settings.qemu_args.iter().any(|x| x == arg))
                     .map(|x| x.to_string())
                     .collect();
-                let mut manifest = config.manifest.clone();
-                manifest.qemu.args.extend(qemu_gdb_args);
-                manifest
+                let mut settings = config.settings.clone();
+                settings.qemu_args.extend(qemu_gdb_args);
+                settings
             } else {
-                config.manifest.clone()
+                config.settings.clone()
             }
         },
         ..config.clone()
@@ -95,8 +95,8 @@ pub fn execute_run_command(config: &RunConfig) {
     }
 
     let required_build_config = BuildConfig {
-        arch: config.arch.clone(),
-        manifest: config.manifest.clone(),
+        arch: config.arch,
+        settings: config.settings.clone(),
         cargo_args: config.cargo_args.clone(),
     };
 

@@ -11,8 +11,8 @@ use crate::{
         execute_new_command, execute_run_command, execute_test_command,
     },
     config_manager::{
-        boot::{BootLoader, BootProtocol},
-        qemu::QemuMachine,
+        action::{BootProtocol, Bootloader},
+        manifest::ProjectType,
         BuildConfig, DebugConfig, RunConfig, TestConfig,
     },
 };
@@ -96,8 +96,13 @@ pub struct ForwardedArguments {
 
 #[derive(Debug, Parser)]
 pub struct NewArgs {
-    #[arg(long, default_value = "false", help = "Use the kernel template")]
-    pub kernel: bool,
+    #[arg(
+        long = "type",
+        short = 't',
+        default_value = "library",
+        help = "The type of the project to create"
+    )]
+    pub type_: ProjectType,
     #[arg(name = "name", required = true)]
     pub crate_name: String,
 }
@@ -189,7 +194,7 @@ pub struct CargoArgs {
         conflicts_with = "profile"
     )]
     pub release: bool,
-    #[arg(long, value_name = "FEATURES", help = "List of features to activate")]
+    #[arg(long, value_name = "FEATURES", help = "List of features to activate", value_delimiter = ',', num_args = 1..)]
     pub features: Vec<String>,
 }
 
@@ -198,57 +203,60 @@ pub struct OsdkArgs {
     #[arg(long, value_name = "ARCH", help = "The architecture to build for")]
     pub arch: Option<Arch>,
     #[arg(
-        long = "select",
-        help = "Select the specific configuration provided in the OSDK manifest",
-        value_name = "SELECTION"
+        long = "schema",
+        help = "Select the specific configuration schema provided in the OSDK manifest",
+        value_name = "SCHEMA"
     )]
-    pub select: Option<String>,
+    pub schema: Option<String>,
     #[arg(
-        long = "kcmd_args",
-        help = "Command line arguments for guest kernel",
+        long = "kcmd_args+",
+        require_equals = true,
+        help = "Extra or overriding command line arguments for guest kernel",
         value_name = "ARGS"
     )]
     pub kcmd_args: Vec<String>,
     #[arg(
-        long = "init_args",
-        help = "Command line arguments for init process",
+        long = "init_args+",
+        require_equals = true,
+        help = "Extra command line arguments for init process",
         value_name = "ARGS"
     )]
     pub init_args: Vec<String>,
     #[arg(long, help = "Path of initramfs", value_name = "PATH")]
     pub initramfs: Option<PathBuf>,
-    #[arg(long = "boot.ovmf", help = "Path of OVMF", value_name = "PATH")]
-    pub boot_ovmf: Option<PathBuf>,
+    #[arg(long = "ovmf", help = "Path of OVMF", value_name = "PATH")]
+    pub ovmf: Option<PathBuf>,
+    #[arg(long = "opensbi", help = "Path of OpenSBI", value_name = "PATH")]
+    pub opensbi: Option<PathBuf>,
     #[arg(
-        long = "boot.loader",
+        long = "bootloader",
         help = "Loader for booting the kernel",
-        value_name = "LOADER"
+        value_name = "BOOTLOADER"
     )]
-    pub boot_loader: Option<BootLoader>,
+    pub bootloader: Option<Bootloader>,
     #[arg(
-        long = "boot.grub-mkrescue",
+        long = "grub-mkrescue",
         help = "Path of grub-mkrescue",
         value_name = "PATH"
     )]
-    pub boot_grub_mkrescue: Option<PathBuf>,
+    pub grub_mkrescue: Option<PathBuf>,
     #[arg(
-        long = "boot.protocol",
+        long = "boot_protocol",
         help = "Protocol for booting the kernel",
-        value_name = "PROTOCOL"
+        value_name = "BOOT_PROTOCOL"
     )]
     pub boot_protocol: Option<BootProtocol>,
-    #[arg(long = "qemu.path", help = "Path of QEMU", value_name = "PATH")]
-    pub qemu_path: Option<PathBuf>,
     #[arg(
-        long = "qemu.machine",
-        help = "QEMU machine type",
-        value_name = "MACHINE"
+        long = "qemu_exe",
+        help = "The QEMU executable file",
+        value_name = "FILE"
     )]
-    pub qemu_machine: Option<QemuMachine>,
+    pub qemu_exe: Option<PathBuf>,
     #[arg(
-        long = "qemu.args",
-        help = "Arguments for running QEMU",
+        long = "qemu_args+",
+        require_equals = true,
+        help = "Extra arguments or overriding arguments for running QEMU",
         value_name = "ARGS"
     )]
-    pub qemu_args: Vec<String>,
+    pub qemu_args_add: Vec<String>,
 }

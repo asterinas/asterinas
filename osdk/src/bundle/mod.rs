@@ -6,6 +6,7 @@ pub mod vm_image;
 
 use bin::AsterBin;
 use file::{BundleFile, Initramfs};
+use std::process;
 use vm_image::AsterVmImage;
 
 use std::{
@@ -15,10 +16,10 @@ use std::{
 };
 
 use crate::{
+    arch::Arch,
     cli::CargoArgs,
     config_manager::{
-        boot::Boot,
-        qemu::{Qemu, QemuMachine},
+        action::{ActionSettings, Bootloader},
         RunConfig,
     },
     error::Errno,
@@ -38,34 +39,33 @@ pub struct Bundle {
 /// The osdk bundle artifact manifest that stores as `bundle.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BundleManifest {
-    pub kcmd_args: Vec<String>,
     pub initramfs: Option<Initramfs>,
     pub aster_bin: Option<AsterBin>,
     pub vm_image: Option<AsterVmImage>,
-    pub boot: Boot,
-    pub qemu: Qemu,
+    pub settings: ActionSettings,
     pub cargo_args: CargoArgs,
     pub last_modified: SystemTime,
 }
 
 impl Bundle {
     /// This function creates a new `Bundle` without adding any files.
-    pub fn new(
-        path: impl AsRef<Path>,
-        kcmd_args: Vec<String>,
-        boot: Boot,
-        qemu: Qemu,
-        cargo_args: CargoArgs,
-    ) -> Self {
+    pub fn new(path: impl AsRef<Path>, settings: ActionSettings, cargo_args: CargoArgs) -> Self {
         std::fs::create_dir_all(path.as_ref()).unwrap();
+        let initramfs = if let Some(ref initramfs) = settings.initramfs {
+            if !initramfs.exists() {
+                error_msg!("initramfs file not found: {}", initramfs.display());
+                process::exit(Errno::BuildCrate as _);
+            }
+            Some(Initramfs::new(initramfs).copy_to(&path))
+        } else {
+            None
+        };
         let mut created = Self {
             manifest: BundleManifest {
-                kcmd_args,
-                initramfs: None,
+                initramfs,
                 aster_bin: None,
                 vm_image: None,
-                boot,
-                qemu,
+                settings,
                 cargo_args,
                 last_modified: SystemTime::now(),
             },
@@ -113,16 +113,14 @@ impl Bundle {
         // Compare the manifest with the run configuration.
         // TODO: This pairwise comparison will result in some false negatives. We may
         // fix it by pondering upon each fields with more care.
-        if self.manifest.kcmd_args != config.manifest.kcmd_args
-            || self.manifest.boot != config.manifest.boot
-            || self.manifest.qemu != config.manifest.qemu
+        if self.manifest.settings != config.settings
             || self.manifest.cargo_args != config.cargo_args
         {
             return false;
         }
 
         // Compare the initramfs.
-        match (&self.manifest.initramfs, &config.manifest.initramfs) {
+        match (&self.manifest.initramfs, &config.settings.initramfs) {
             (Some(initramfs), Some(initramfs_path)) => {
                 let config_initramfs = Initramfs::new(initramfs_path);
                 if initramfs.sha256sum() != config_initramfs.sha256sum() {
@@ -147,42 +145,46 @@ impl Bundle {
             error_msg!("The bundle is not compatible with the run configuration");
             std::process::exit(Errno::RunBundle as _);
         }
-        let mut qemu_cmd = Command::new(config.manifest.qemu.path.clone().unwrap());
+        let mut qemu_cmd = Command::new(config.settings.qemu_exe.clone().unwrap_or_else(|| {
+            PathBuf::from(match config.arch {
+                Arch::Aarch64 => "qemu-system-aarch64",
+                Arch::RiscV64 => "qemu-system-riscv64",
+                Arch::X86_64 => "qemu-system-x86_64",
+            })
+        }));
         // FIXME: Arguments like "-m 2G" sould be separated into "-m" and "2G". This
         // is a dirty hack to make it work. Anything like space in the paths will
         // break this.
-        for arg in &config.manifest.qemu.args {
+        for arg in &config.settings.qemu_args {
             for part in arg.split_whitespace() {
                 qemu_cmd.arg(part);
             }
         }
-        match config.manifest.qemu.machine {
-            QemuMachine::Microvm => {
-                qemu_cmd.arg("-machine").arg("microvm,rtc=on");
+        match config.settings.bootloader {
+            Some(Bootloader::Qemu) => {
                 let Some(ref aster_bin) = self.manifest.aster_bin else {
-                    error_msg!("Kernel ELF binary is required for Microvm");
+                    error_msg!("Kernel ELF binary is required for direct QEMU booting");
                     std::process::exit(Errno::RunBundle as _);
                 };
                 qemu_cmd
                     .arg("-kernel")
                     .arg(self.path.join(aster_bin.path()));
-                let Some(ref initramfs) = config.manifest.initramfs else {
-                    error_msg!("Initramfs is required for Microvm");
-                    std::process::exit(Errno::RunBundle as _);
+                if let Some(ref initramfs) = config.settings.initramfs {
+                    qemu_cmd.arg("-initrd").arg(initramfs);
+                } else {
+                    info!("No initramfs specified");
                 };
-                qemu_cmd.arg("-initrd").arg(initramfs);
                 qemu_cmd
                     .arg("-append")
-                    .arg(config.manifest.kcmd_args.join(" "));
+                    .arg(config.settings.combined_kcmd_args().join(" "));
             }
-            QemuMachine::Q35 => {
-                qemu_cmd.arg("-machine").arg("q35,kernel-irqchip=split");
+            Some(Bootloader::Grub) => {
                 let Some(ref vm_image) = self.manifest.vm_image else {
                     error_msg!("VM image is required for QEMU booting");
                     std::process::exit(Errno::RunBundle as _);
                 };
                 qemu_cmd.arg("-cdrom").arg(self.path.join(vm_image.path()));
-                if let Some(ovmf) = &config.manifest.boot.ovmf {
+                if let Some(ovmf) = &config.settings.ovmf {
                     qemu_cmd.arg("-drive").arg(format!(
                         "if=pflash,format=raw,unit=0,readonly=on,file={}",
                         ovmf.join("OVMF_CODE.fd").display()
@@ -193,31 +195,13 @@ impl Bundle {
                     ));
                 }
             }
-            QemuMachine::Virt => {
-                qemu_cmd.arg("-machine").arg("virt");
-                let Some(ref vm_image) = self.manifest.vm_image else {
-                    error_msg!("VM image is required for QEMU booting");
-                    std::process::exit(Errno::RunBundle as _);
-                };
-                qemu_cmd.arg("-kernel").arg(self.path.join(vm_image.path()));
-                let Some(ref initramfs) = config.manifest.initramfs else {
-                    error_msg!("Initramfs is required for Virt machine");
-                    std::process::exit(Errno::RunBundle as _);
-                };
-                qemu_cmd.arg("-initrd").arg(initramfs);
-                qemu_cmd
-                    .arg("-append")
-                    .arg(config.manifest.kcmd_args.join(" "));
-                let Some(ref opensbi) = self.manifest.boot.opensbi else {
-                    error_msg!("OpenSBI is required for Virt machine");
-                    std::process::exit(Errno::RunBundle as _);
-                };
-                qemu_cmd.arg("-bios").arg(opensbi);
+            None => {
+                error_msg!("Bootloader is required for QEMU booting");
+                std::process::exit(Errno::RunBundle as _);
             }
         };
-        qemu_cmd.arg("-cpu").arg("Icelake-Server,+x2apic");
 
-        for drive_file in &config.manifest.qemu.drive_files {
+        for drive_file in &config.settings.drive_files {
             qemu_cmd.arg("-drive").arg(format!(
                 "file={},{}",
                 drive_file.path.display(),
@@ -253,15 +237,6 @@ impl Bundle {
             panic!("aster_bin already exists");
         }
         self.manifest.aster_bin = Some(aster_bin.move_to(&self.path));
-        self.write_manifest_to_fs();
-    }
-
-    /// Copy the initramfs into the bundle.
-    pub fn add_initramfs(&mut self, initramfs: Initramfs) {
-        if self.manifest.initramfs.is_some() {
-            panic!("initramfs already exists");
-        }
-        self.manifest.initramfs = Some(initramfs.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 
