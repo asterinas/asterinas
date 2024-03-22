@@ -8,8 +8,8 @@ use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
     prelude::*,
     vm::{
-        is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter,
-        PHYS_MEM_BASE_VADDR, PAGE_SIZE,
+        is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter, PAGE_SIZE,
+        PHYS_MEM_BASE_VADDR,
     },
     Error,
 };

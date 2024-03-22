@@ -37,7 +37,7 @@ use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
 pub const PAGE_SIZE: usize = 0x1000;
 
 /// The maximum virtual address of user space (non inclusive).
-/// 
+///
 /// Typicall 64-bit systems have at least 48-bit virtual address space.
 /// A typical way to reserve half of the address space for the kernel is
 /// to use the highest 48-bit virtual address space.
@@ -49,7 +49,7 @@ pub const PAGE_SIZE: usize = 0x1000;
 pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE;
 
 /// Start of the kernel address space.
-/// 
+///
 /// This is the _lowest_ address of the x86-64's _high_ canonical addresses.
 ///
 /// This is also the base address of the direct mapping of all physical
