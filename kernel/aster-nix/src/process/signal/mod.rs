@@ -7,9 +7,9 @@ mod pauser;
 mod poll;
 pub mod sig_action;
 pub mod sig_disposition;
-pub mod sig_set;
 pub mod sig_num;
 pub mod sig_queues;
+pub mod sig_set;
 mod sig_stack;
 pub mod signals;
 
@@ -22,8 +22,8 @@ pub use events::{SigEvents, SigEventsFilter};
 pub use pauser::Pauser;
 pub use poll::{Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
-use sig_set::SigSet;
 use sig_num::SigNum;
+use sig_set::SigSet;
 pub use sig_stack::{SigStack, SigStackFlags};
 
 use super::posix_thread::{PosixThread, PosixThreadExt};

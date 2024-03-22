@@ -8,7 +8,7 @@ use crate::{
     process::{
         posix_thread::name::ThreadName,
         signal::{
-            constants::SIGALRM, sig_set::SigSet, sig_queues::SigQueues,
+            constants::SIGALRM, sig_queues::SigQueues, sig_set::SigSet,
             signals::kernel::KernelSignal,
         },
         Credentials, Process,

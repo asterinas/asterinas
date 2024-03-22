@@ -2,7 +2,7 @@
 
 use bitflags::bitflags;
 
-use super::{c_types::sigaction_t, constants::*, sig_set::SigSet, sig_num::SigNum};
+use super::{c_types::sigaction_t, constants::*, sig_num::SigNum, sig_set::SigSet};
 use crate::prelude::*;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]

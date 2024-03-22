@@ -2,16 +2,10 @@
 
 use super::{SyscallReturn, SYS_RT_SIGPENDING};
 use crate::{
-    log_syscall_entry,
-    prelude::*,
-    process::posix_thread::PosixThreadExt, util::write_val_to_user,
+    log_syscall_entry, prelude::*, process::posix_thread::PosixThreadExt, util::write_val_to_user,
 };
 
-
-pub fn sys_rt_sigpending(
-    u_set_ptr: Vaddr,
-    sigset_size: usize,
-) -> Result<SyscallReturn> {
+pub fn sys_rt_sigpending(u_set_ptr: Vaddr, sigset_size: usize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_RT_SIGPENDING);
     debug!(
         "u_set_ptr = 0x{:x},  sigset_size = {}",
@@ -24,12 +18,7 @@ pub fn sys_rt_sigpending(
     Ok(SyscallReturn::Return(0))
 }
 
-
-fn do_rt_sigpending(
-    set_ptr: Vaddr,
-    sigset_size: usize,
-) -> Result<()> {
-    let current = current!();
+fn do_rt_sigpending(set_ptr: Vaddr, sigset_size: usize) -> Result<()> {
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
 
@@ -38,8 +27,7 @@ fn do_rt_sigpending(
         let sig_pending_value = posix_thread.sig_pending().as_u64();
         sig_mask_value & sig_pending_value
     };
- 
+
     write_val_to_user(set_ptr, &combined_signals)?;
     Ok(())
 }
-

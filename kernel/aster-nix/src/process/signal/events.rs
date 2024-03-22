@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{sig_set::SigSet, sig_num::SigNum};
+use super::{sig_num::SigNum, sig_set::SigSet};
 use crate::{
     events::{Events, EventsFilter},
     prelude::*,

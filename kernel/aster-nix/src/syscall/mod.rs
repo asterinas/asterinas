@@ -69,9 +69,9 @@ use crate::{
         rename::{sys_rename, sys_renameat},
         rmdir::sys_rmdir,
         rt_sigaction::sys_rt_sigaction,
+        rt_sigpending::sys_rt_sigpending,
         rt_sigprocmask::sys_rt_sigprocmask,
         rt_sigreturn::sys_rt_sigreturn,
-        rt_sigpending::sys_rt_sigpending,
         sched_yield::sys_sched_yield,
         select::sys_select,
         set_get_priority::{sys_get_priority, sys_set_priority},
@@ -162,6 +162,7 @@ mod recvfrom;
 mod rename;
 mod rmdir;
 mod rt_sigaction;
+mod rt_sigpending;
 mod rt_sigprocmask;
 mod rt_sigreturn;
 mod sched_yield;
@@ -201,7 +202,6 @@ mod wait4;
 mod waitid;
 mod write;
 mod writev;
-mod rt_sigpending;
 
 macro_rules! define_syscall_nums {
     ( $( $name: ident = $num: expr ),+ ) => {

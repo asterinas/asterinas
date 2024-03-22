@@ -8,7 +8,8 @@ use super::{
     do_exit_group,
     kill::SignalSenderIds,
     signal::{
-        sig_set::SigSet, sig_num::SigNum, sig_queues::SigQueues, signals::Signal, SigEvents, SigEventsFilter, SigStack
+        sig_num::SigNum, sig_queues::SigQueues, sig_set::SigSet, signals::Signal, SigEvents,
+        SigEventsFilter, SigStack,
     },
     Credentials, Process, TermStatus,
 };
