@@ -370,35 +370,57 @@ int test_sigaltstack()
 int test_sigpending()
 {
 	int ret;
-	sigset_t new_set, old_set, pending_set;
 
-	// Initialize the signal set and add SIGUSR1 and SIGRTMIN to the block set
+	// Set up  signal handler for SIGSEGV and SIGIO
+	struct sigaction new_action, old_sigsegv_action, old_sigio_action;
+	memset(&new_action, 0, sizeof(struct sigaction));
+	memset(&old_sigsegv_action, 0, sizeof(struct sigaction));
+	new_action.sa_sigaction = handle_sigsegv;
+	new_action.sa_flags = SA_SIGINFO;
+	if (sigaction(SIGSEGV, &new_action, &old_sigsegv_action) < 0) {
+		THROW_ERROR("registering new signal handler failed");
+	}
+	if (old_sigsegv_action.sa_handler != SIG_DFL) {
+		THROW_ERROR("unexpected old sig handler");
+	}
+
+	memset(&new_action, 0, sizeof(struct sigaction));
+	memset(&old_sigio_action, 0, sizeof(struct sigaction));
+	new_action.sa_sigaction = handle_sigio;
+	new_action.sa_flags = SA_SIGINFO | SA_NODEFER;
+	if (sigaction(SIGIO, &new_action, &old_sigio_action) < 0) {
+		THROW_ERROR("registering new signal handler failed");
+	}
+	if (old_sigio_action.sa_handler != SIG_DFL) {
+		THROW_ERROR("unexpected old sig handler");
+	}
+
+	// Block SIGSEGV and SIGIO
+	sigset_t new_set, old_set, pending_set;
 	sigfillset(&new_set);
-	sigaddset(&new_set, SIGUSR1);
-	sigaddset(&new_set, SIGRTMIN);
+	sigaddset(&new_set, SIGSEGV);
+	sigaddset(&new_set, SIGIO);
 	if ((ret = sigprocmask(SIG_BLOCK, &new_set, &old_set)) < 0) {
 		THROW_ERROR("sigprocmask failed unexpectedly");
 	}
 
-	// Send SIGUSR1 and SIGRTMIN signals to the current process twice
-	kill(getpid(), SIGUSR1);
-	kill(getpid(), SIGUSR1); // Repeat
-	kill(getpid(), SIGRTMIN);
-	kill(getpid(), SIGRTMIN); // Repeat
+	// Send SIGSEGV and SIGIO signals to the current process twice
+	kill(getpid(), SIGSEGV);
+	kill(getpid(), SIGSEGV); // Repeat
+	kill(getpid(), SIGIO);
+	kill(getpid(), SIGIO); // Repeat
 
 	// Check for pending signals
 	if (sigpending(&pending_set) < 0) {
 		THROW_ERROR("sigpending failed unexpectedly");
 	}
 
-	// Check SIGUSR1 is in the set of pending signals
-	if (!sigismember(&pending_set, SIGUSR1)) {
-		THROW_ERROR("SIGUSR1 is not pending");
+	if (!sigismember(&pending_set, SIGSEGV)) {
+		THROW_ERROR("SIGSEGV is not pending");
 	}
 
-	// Check SIGRTMIN is in the set of pending signals
-	if (!sigismember(&pending_set, SIGRTMIN)) {
-		THROW_ERROR("SIGRTMIN (real-time signal) is not pending");
+	if (!sigismember(&pending_set, SIGIO)) {
+		THROW_ERROR("SIGIO (real-time signal) is not pending");
 	}
 
 	// Unblock all signals and check if pending signals are cleared
@@ -412,14 +434,20 @@ int test_sigpending()
 		THROW_ERROR("sigpending failed unexpectedly");
 	}
 
-	// Check SIGUSR1 is not in the set of pending signals
-	if (sigismember(&pending_set, SIGUSR1)) {
-		THROW_ERROR("SIGUSR1 is  pending");
+	if (sigismember(&pending_set, SIGSEGV)) {
+		THROW_ERROR("SIGSEGV is pending");
 	}
 
-	// Check SIGRTMIN is not in the set of pending signals
-	if (sigismember(&pending_set, SIGRTMIN)) {
-		THROW_ERROR("SIGRTMIN (real-time signal) is  pending");
+	if (sigismember(&pending_set, SIGIO)) {
+		THROW_ERROR("SIGIO (real-time signal) is  pending");
+	}
+
+	// Restore old sigaction
+	if (sigaction(SIGSEGV, &old_sigsegv_action, NULL) < 0) {
+		THROW_ERROR("restoring old signal handler failed");
+	}
+	if (sigaction(SIGIO, &old_sigio_action, NULL) < 0) {
+		THROW_ERROR("restoring old signal handler failed");
 	}
 
 	return 0;
