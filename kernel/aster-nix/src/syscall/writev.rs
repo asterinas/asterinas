@@ -2,21 +2,9 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDescripter,
-    log_syscall_entry,
-    prelude::*,
-    syscall::SYS_WRITEV,
-    util::{read_bytes_from_user, read_val_from_user},
+    fs::file_table::FileDescripter, log_syscall_entry, prelude::*, syscall::SYS_WRITEV,
+    util::IoVecIter,
 };
-
-const IOVEC_MAX: usize = 256;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
-pub struct IoVec {
-    base: Vaddr,
-    len: usize,
-}
 
 pub fn sys_writev(
     fd: FileDescripter,
@@ -38,19 +26,20 @@ fn do_sys_writev(fd: FileDescripter, io_vec_ptr: Vaddr, io_vec_count: usize) -> 
         let filetable = current.file_table().lock();
         filetable.get_file(fd)?.clone()
     };
+
     let mut total_len = 0;
-    for i in 0..io_vec_count {
-        let io_vec = read_val_from_user::<IoVec>(io_vec_ptr + i * core::mem::size_of::<IoVec>())?;
-        if io_vec.base == 0 {
-            continue;
-        }
+
+    let io_vec_iter = IoVecIter::new(io_vec_ptr, io_vec_count);
+
+    for io_vec in io_vec_iter {
+        let io_vec = io_vec?;
+
         let buffer = {
-            let base = io_vec.base;
-            let len = io_vec.len;
-            let mut buffer = vec![0u8; len];
-            read_bytes_from_user(base, &mut buffer)?;
+            let mut buffer = vec![0u8; io_vec.len()];
+            io_vec.read_from_user(&mut buffer)?;
             buffer
         };
+
         let write_len = file.write(&buffer)?;
         total_len += write_len;
     }

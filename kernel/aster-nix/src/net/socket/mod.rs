@@ -3,7 +3,7 @@
 use self::options::SocketOption;
 pub use self::util::{
     options::LingerOption, send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
-    socket_addr::SocketAddr,
+    socket_addr::SocketAddr, MessageHeader,
 };
 use crate::{fs::file_handle::FileLike, prelude::*};
 
@@ -74,4 +74,10 @@ pub trait Socket: FileLike + Send + Sync {
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "recvfrom not implemented");
     }
+
+    /// Receive a message along with control message from a socket
+    fn sendmsg(&self, msg_hdr: MessageHeader, flags: SendRecvFlags) -> Result<usize>;
+
+    /// Receive a message along with control message on a socket
+    fn recvmsg(&self, msg_hdr: &mut MessageHeader, flags: SendRecvFlags) -> Result<usize>;
 }

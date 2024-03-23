@@ -19,6 +19,7 @@ echo "Start network test......"
 ./sockoption
 ./listen_backlog
 ./send_buf_full
-
+./send_msg_server &
+./send_msg_client
 
 echo "All network test passed"

@@ -26,6 +26,7 @@ use crate::{
                 send_recv_flags::SendRecvFlags,
                 shutdown_cmd::SockShutdownCmd,
                 socket_addr::SocketAddr,
+                MessageHeader,
             },
             Socket,
         },
@@ -529,6 +530,59 @@ impl Socket for StreamSocket {
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "set unknown option")
         });
         Ok(())
+    }
+
+    fn sendmsg(&self, msg_hdr: MessageHeader, flags: SendRecvFlags) -> Result<usize> {
+        let MessageHeader {
+            addr,
+            io_vec_iter,
+            control_message,
+        } = msg_hdr;
+
+        if control_message.is_some() {
+            // TODO: support sending control message
+            warn!("sending control message is not supported");
+        }
+
+        let mut total_bytes = 0;
+        for io_vec in io_vec_iter {
+            let buffer = {
+                let io_vec = io_vec?;
+                let mut buffer = vec![0u8; io_vec.len()];
+                io_vec.read_from_user(&mut buffer)?;
+                buffer
+            };
+
+            // Remote address is ignored
+            let sent_bytes = self.sendto(&buffer, None, flags)?;
+            total_bytes += sent_bytes;
+        }
+
+        Ok(total_bytes)
+    }
+
+    fn recvmsg(&self, msg_hdr: &mut MessageHeader, flags: SendRecvFlags) -> Result<usize> {
+        let mut total_bytes = 0;
+        for io_vec in msg_hdr.io_vec_iter.clone() {
+            let io_vec = io_vec?;
+
+            let (recv_bytes, addr) = {
+                let mut buffer = vec![0u8; io_vec.len()];
+                let (recv_bytes, addr) = self.recvfrom(&mut buffer, flags)?;
+                io_vec.write_to_user(&buffer)?;
+                (recv_bytes, addr)
+            };
+
+            total_bytes += recv_bytes;
+
+            if msg_hdr.addr.is_none() {
+                msg_hdr.addr = Some(addr);
+            }
+        }
+
+        // TODO: support receiving control message
+
+        Ok(total_bytes)
     }
 }
 
