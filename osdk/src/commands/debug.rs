@@ -26,9 +26,7 @@ pub fn execute_debug_command(config: &DebugConfig) {
     gdb.status().unwrap();
 }
 
-// FIXME: Failed because the test env have no gdb.
-// #[test]
-#[allow(dead_code)]
+#[test]
 fn have_gdb_installed() {
     let output = Command::new("gdb").arg("--version").output();
     assert!(output.is_ok(), "Failed to run gdb");

@@ -37,9 +37,9 @@ jobs:
   osdk-doc-env-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: asterinas/osdk:0.4.0
+    container: asterinas/osdk:0.4.2
     steps:
-      - run: echo "Running in asterinas/osdk:0.4.0"
+      - run: echo "Running in asterinas/osdk:0.4.2"
 
       - uses: actions/checkout@v4
 
