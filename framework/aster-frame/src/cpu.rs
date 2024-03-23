@@ -10,10 +10,9 @@ use bitvec::{order::Lsb0, slice::IterOnes, vec::BitVec};
 use spin::Once;
 
 use crate::{
-    config::PAGE_SIZE,
     smp::CPUNUM,
     trap::disable_local,
-    vm::{paddr_to_vaddr, Vaddr, VmAllocOptions},
+    vm::{paddr_to_vaddr, Vaddr, VmAllocOptions, PAGE_SIZE},
 };
 
 cfg_if::cfg_if! {

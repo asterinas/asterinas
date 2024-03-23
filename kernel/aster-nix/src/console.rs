@@ -7,6 +7,8 @@
 
 use core::fmt::{Arguments, Write};
 
+use aster_frame::console::PRINT_LOCK;
+
 struct VirtioConsolesPrinter;
 
 impl Write for VirtioConsolesPrinter {
@@ -19,6 +21,7 @@ impl Write for VirtioConsolesPrinter {
 }
 
 pub fn _print(args: Arguments) {
+    let guard = PRINT_LOCK.lock_irq_disabled();
     VirtioConsolesPrinter.write_fmt(args).unwrap();
 }
 
