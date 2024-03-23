@@ -12,7 +12,6 @@ use align_ext::AlignExt;
 use bitvec::{order::Lsb0, slice::IterOnes, vec::BitVec};
 
 use crate::{
-    config::PAGE_SIZE,
     smp::CPUNUM,
     task::{disable_preempt, DisablePreemptGuard},
     vm::{paddr_to_vaddr, Vaddr, VmAllocOptions, VmIo, PAGE_SIZE},
