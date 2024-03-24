@@ -9,6 +9,7 @@ TESTS ?= \
 	alarm_test \
 	chmod_test \
 	chown_test \
+	chroot_test \
 	fsync_test \
 	getdents_test \
 	link_test \
