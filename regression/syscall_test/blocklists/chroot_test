@@ -1,0 +1,11 @@
+ChrootTest.Success
+ChrootTest.PermissionDenied
+ChrootTest.NotDir
+ChrootTest.NotExist
+ChrootTest.WithoutCapability
+ChrootTest.CreatesNewRoot
+ChrootTest.DotDotFromOpenFD
+ChrootTest.ProcFdLinkResolutionInChroot
+ChrootTest.ProcMemSelfFdsNoEscapeProcOpen
+ChrootTest.ProcMemSelfMapsNoEscapeProcOpen
+ChrootTest.ProcMountsMountinfoNoEscape
