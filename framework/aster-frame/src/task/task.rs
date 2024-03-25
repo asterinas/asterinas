@@ -11,7 +11,7 @@ use crate::{
     arch::mm::PageTableFlags,
     cpu::CpuSet,
     prelude::*,
-    sync::{Mutex, MutexGuard},
+    sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
     vm::{page_table::KERNEL_PAGE_TABLE, VmAllocOptions, VmSegment, PAGE_SIZE},
 };
@@ -127,7 +127,7 @@ pub struct Task {
     func: Box<dyn Fn() + Send + Sync>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
-    task_inner: Mutex<TaskInner>,
+    task_inner: SpinLock<TaskInner>,
     exit_code: usize,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
@@ -139,7 +139,7 @@ pub struct Task {
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
-pub(crate) struct TaskInner {
+pub struct TaskInner {
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
 }
@@ -151,7 +151,7 @@ impl Task {
     }
 
     /// get inner
-    pub(crate) fn inner_exclusive_access(&self) -> MutexGuard<'_, TaskInner> {
+    pub fn inner_exclusive_access(&self) -> SpinLockGuard<'_, TaskInner> {
         self.task_inner.lock()
     }
 
@@ -290,7 +290,7 @@ impl TaskOptions {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
-            task_inner: Mutex::new(TaskInner {
+            task_inner: SpinLock::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
             }),
@@ -327,7 +327,7 @@ impl TaskOptions {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
-            task_inner: Mutex::new(TaskInner {
+            task_inner: SpinLock::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
             }),

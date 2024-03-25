@@ -37,6 +37,9 @@ pub trait Scheduler: Sync + Send {
 
     /// Fetch a high priority task for potential preemption.
     fn preempt(&self, cpu_id: u32) -> Option<Arc<Task>>;
+
+    /// Add a task to the scheduler's sleep queue.
+    fn enqueue_sleep(&self, task: Arc<Task>);
 }
 
 /// `GeneralScheduler` is a simple wrapper around a Scheduler trait object.
@@ -65,6 +68,10 @@ impl GeneralScheduler {
     /// It requires the scheduler to be set (not None).
     fn preempt(&mut self, cpu_id: u32) -> Option<Arc<Task>> {
         self.scheduler.unwrap().preempt(cpu_id)
+    }
+
+    fn enqueue_sleep(&mut self, task: Arc<Task>) {
+        self.scheduler.unwrap().enqueue_sleep(task)
     }
 }
 
@@ -105,6 +112,10 @@ pub fn fetch_task_from_local() -> Option<Arc<Task>> {
 /// Fetches a task from the local scheduler queue of the current CPU.
 pub fn add_task_to_local(task: Arc<Task>) {
     LOCAL_SCHEDULER.lock_irq_disabled().enqueue(task);
+}
+
+pub fn add_sleeping_task_to_local(task: Arc<Task>) {
+    LOCAL_SCHEDULER.lock_irq_disabled().enqueue_sleep(task);
 }
 
 /// This function is used to check for and retrieve a high-priority task from the local scheduler,
