@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{fs::remove_dir_all, path::Path};
+use std::{
+    fs::remove_dir_all,
+    path::{Path, PathBuf},
+};
 
 use crate::util::*;
 
@@ -14,10 +17,20 @@ fn create_kernel_in_workspace() {
         remove_dir_all(WORKSPACE_NAME).unwrap();
     }
     create_workspace(WORKSPACE_NAME, &[KERNEL_NAME]);
-    let mut cargo_osdk = cargo_osdk(["new", "--type", "kernel", KERNEL_NAME]);
-    cargo_osdk.current_dir(WORKSPACE_NAME);
-    let output = cargo_osdk.output().unwrap();
+    let kernel_path = PathBuf::from(WORKSPACE_NAME).join(KERNEL_NAME);
+
+    let mut cmd = cargo_osdk(["new", "--kernel", KERNEL_NAME]);
+    cmd.current_dir(WORKSPACE_NAME);
+    let output = cmd.output().unwrap();
     assert_success(&output);
+    remove_dir_all(&kernel_path).unwrap();
+
+    let mut cmd = cargo_osdk(["new", "-t", "kernel", KERNEL_NAME]);
+    cmd.current_dir(WORKSPACE_NAME);
+    let output = cmd.output().unwrap();
+    assert_success(&output);
+    remove_dir_all(&kernel_path).unwrap();
+
     remove_dir_all(WORKSPACE_NAME).unwrap();
 }
 
@@ -51,7 +64,7 @@ fn create_two_crates_in_workspace() {
 
     add_member_to_workspace(WORKSPACE_NAME, KERNEL_NAME);
     // Create kernel crate
-    let mut command = cargo_osdk(["new", "--type", "kernel", KERNEL_NAME]);
+    let mut command = cargo_osdk(["new", "--kernel", KERNEL_NAME]);
     command.current_dir(WORKSPACE_NAME);
     let output = command.output().unwrap();
     assert_success(&output);

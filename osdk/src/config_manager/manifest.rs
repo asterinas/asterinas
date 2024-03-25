@@ -24,7 +24,7 @@ pub struct Project {
     pub type_: ProjectType,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ValueEnum, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ValueEnum, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProjectType {
     Kernel,

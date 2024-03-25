@@ -17,7 +17,7 @@ cargo osdk new [OPTIONS] <name>
 
 ## Options
 
-`--type kernel`:
+`--kernel`:
 Use the kernel template.
 If this option is not set,
 the library template will be used by default.
@@ -27,7 +27,7 @@ the library template will be used by default.
 - Create a new kernel named `myos`: 
 
 ```bash
-cargo osdk new --type kernel myos
+cargo osdk new --kernel myos
 ```
 
 - Create a new library named `mymodule`:
