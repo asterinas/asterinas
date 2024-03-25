@@ -10,11 +10,11 @@ use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    arch::{iommu, mm::PageTableFlags},
+    arch::iommu,
     vm::{
         dma::{dma_type, Daddr, DmaType},
-        paddr_to_vaddr,
-        page_table::KERNEL_PAGE_TABLE,
+        kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
+        page_table::{CachePolicy, MapProperty},
         HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
     },
 };
@@ -57,16 +57,16 @@ impl DmaCoherent {
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         if !is_cache_coherent {
             let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
-            for i in 0..frame_count {
-                let paddr = start_paddr + (i * PAGE_SIZE);
-                let vaddr = paddr_to_vaddr(paddr);
-                let flags = page_table.flags(vaddr).unwrap();
-                // Safety: the address is in the range of `vm_segment`.
-                unsafe {
-                    page_table
-                        .protect(vaddr, flags.union(PageTableFlags::NO_CACHE))
-                        .unwrap();
-                }
+            let vaddr = paddr_to_vaddr(start_paddr);
+            let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
+            // Safety: the address is in the range of `vm_segment`.
+            unsafe {
+                page_table
+                    .protect_unchecked(&va_range, |info| MapProperty {
+                        perm: info.prop.perm,
+                        cache: CachePolicy::Uncacheable,
+                    })
+                    .unwrap();
             }
         }
         let start_daddr = match dma_type() {
@@ -147,15 +147,16 @@ impl Drop for DmaCoherentInner {
         }
         if !self.is_cache_coherent {
             let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
-            for i in 0..frame_count {
-                let paddr = start_paddr + (i * PAGE_SIZE);
-                let vaddr = paddr_to_vaddr(paddr);
-                let mut flags = page_table.flags(vaddr).unwrap();
-                flags.remove(PageTableFlags::NO_CACHE);
-                // Safety: the address is in the range of `vm_segment`.
-                unsafe {
-                    page_table.protect(vaddr, flags).unwrap();
-                }
+            let vaddr = paddr_to_vaddr(start_paddr);
+            let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
+            // Safety: the address is in the range of `vm_segment`.
+            unsafe {
+                page_table
+                    .protect_unchecked(&va_range, |info| MapProperty {
+                        perm: info.prop.perm,
+                        cache: CachePolicy::Writeback,
+                    })
+                    .unwrap();
             }
         }
         remove_dma_mapping(start_paddr, frame_count);
@@ -215,11 +216,19 @@ mod test {
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment.clone(), false).unwrap();
         assert!(dma_coherent.paddr() == vm_segment.paddr());
-        let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
-        assert!(page_table
-            .flags(paddr_to_vaddr(vm_segment.paddr()))
-            .unwrap()
-            .contains(PageTableFlags::NO_CACHE))
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+        let vaddr = paddr_to_vaddr(vm_segment.paddr());
+        assert!(
+            page_table
+                .query(vaddr..vaddr + PAGE_SIZE)
+                .unwrap()
+                .next()
+                .unwrap()
+                .info
+                .prop
+                .cache
+                == CachePolicy::Uncacheable
+        );
     }
 
     #[ktest]

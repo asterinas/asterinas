@@ -138,9 +138,7 @@ impl<'a> UserMode<'a> {
     /// After handling the user event and updating the user-mode CPU context,
     /// this method can be invoked again to go back to the user space.
     pub fn execute(&mut self) -> UserEvent {
-        unsafe {
-            self.user_space.vm_space().activate();
-        }
+        self.user_space.vm_space().activate();
         debug_assert!(Arc::ptr_eq(&self.current, &Task::current()));
         self.context.execute()
     }

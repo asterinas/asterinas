@@ -13,6 +13,7 @@ mod frame;
 mod frame_allocator;
 pub(crate) mod heap_allocator;
 mod io;
+pub(crate) mod kspace;
 mod memory_set;
 mod offset;
 mod options;
@@ -24,10 +25,12 @@ use core::ops::Range;
 
 use spin::Once;
 
+pub(crate) use self::kspace::paddr_to_vaddr;
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter},
     io::VmIo,
+    kspace::vaddr_to_paddr,
     memory_set::{MapArea, MemorySet},
     options::VmAllocOptions,
     page_table::PageTable,
@@ -85,27 +88,19 @@ pub const fn kernel_loaded_offset() -> usize {
 }
 const_assert!(PHYS_MEM_VADDR_RANGE.end < kernel_loaded_offset());
 
+/// Start of the kernel address space.
+/// This is the _lowest_ address of the x86-64's _high_ canonical addresses.
+pub(crate) const KERNEL_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000;
+/// End of the kernel address space (non inclusive).
+pub(crate) const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000;
+
 /// Get physical address trait
 pub trait HasPaddr {
     fn paddr(&self) -> Paddr;
 }
 
-pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
-    if PHYS_MEM_VADDR_RANGE.contains(&va) {
-        // can use offset to get the physical address
-        Some(va - PHYS_MEM_BASE_VADDR)
-    } else {
-        page_table::vaddr_to_paddr(va)
-    }
-}
-
 pub const fn is_page_aligned(p: usize) -> bool {
     (p & (PAGE_SIZE - 1)) == 0
-}
-
-/// Convert physical address to virtual address using offset, only available inside aster-frame
-pub(crate) fn paddr_to_vaddr(pa: usize) -> usize {
-    pa + PHYS_MEM_BASE_VADDR
 }
 
 /// Only available inside aster-frame
@@ -116,7 +111,7 @@ pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 pub(crate) fn init() {
     let memory_regions = crate::boot::memory_regions().to_owned();
     frame_allocator::init(&memory_regions);
-    page_table::init();
+    kspace::init_kernel_page_table();
     dma::init();
 
     let mut framebuffer_regions = Vec::new();

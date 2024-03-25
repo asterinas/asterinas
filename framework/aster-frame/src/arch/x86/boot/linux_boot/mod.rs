@@ -15,7 +15,7 @@ use crate::{
         memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    vm::{paddr_to_vaddr, PHYS_MEM_BASE_VADDR},
+    vm::kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
 };
 
 static BOOT_PARAMS: Once<BootParams> = Once::new();
@@ -73,7 +73,7 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
         return;
     }
     // We must return a slice composed by VA since kernel should read everything in VA.
-    let base_va = if ptr < PHYS_MEM_BASE_VADDR {
+    let base_va = if ptr < LINEAR_MAPPING_BASE_VADDR {
         paddr_to_vaddr(ptr)
     } else {
         ptr

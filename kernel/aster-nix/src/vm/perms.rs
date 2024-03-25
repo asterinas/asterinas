@@ -66,7 +66,7 @@ impl From<VmPerm> for VmPerms {
 
 impl From<VmPerms> for VmPerm {
     fn from(perms: VmPerms) -> Self {
-        let mut perm = VmPerm::empty();
+        let mut perm = VmPerm::U;
         if perms.contains(VmPerms::READ) {
             perm |= VmPerm::R;
         }

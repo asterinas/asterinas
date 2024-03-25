@@ -11,10 +11,11 @@ use tdx_guest::{
 };
 
 use crate::{
-    arch::mm::{is_kernel_vaddr, PageTableFlags},
+    arch::mm::PageTableFlags,
     vm::{
         paddr_to_vaddr,
         page_table::{PageTableError, KERNEL_PAGE_TABLE},
+        KERNEL_BASE_VADDR, KERNEL_END_VADDR,
     },
     PAGE_SIZE,
 };
@@ -323,7 +324,7 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
 }
 
 fn decode_instr(rip: usize) -> Result<Instruction, MmioError> {
-    if !is_kernel_vaddr(rip) {
+    if !(KERNEL_BASE_VADDR..KERNEL_END_VADDR).contains(rip) {
         return Err(MmioError::InvalidAddress);
     }
     let code_data = {

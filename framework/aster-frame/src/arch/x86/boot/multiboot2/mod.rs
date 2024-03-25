@@ -9,15 +9,16 @@ use core::arch::global_asm;
 use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
 use spin::Once;
 
-use crate::boot::{
-    kcmdline::KCmdlineArg,
-    memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
-    BootloaderAcpiArg, BootloaderFramebufferArg,
+use crate::{
+    boot::{
+        kcmdline::KCmdlineArg,
+        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        BootloaderAcpiArg, BootloaderFramebufferArg,
+    },
+    vm::kspace::paddr_to_vaddr,
 };
 
 global_asm!(include_str!("header.S"));
-
-use crate::vm::{paddr_to_vaddr, PHYS_MEM_BASE_VADDR};
 
 pub(super) const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
 
@@ -54,12 +55,8 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
         return;
     };
     let base_addr = mb2_module_tag.start_address() as usize;
-    // We must return a slice composed by VA since kernel should read every in VA.
-    let base_va = if base_addr < PHYS_MEM_BASE_VADDR {
-        paddr_to_vaddr(base_addr)
-    } else {
-        base_addr
-    };
+    // We must return a slice composed by VA since kernel should read everything in VA.
+    let base_va = paddr_to_vaddr(base_addr);
     let length = mb2_module_tag.module_size() as usize;
     initramfs.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
 }

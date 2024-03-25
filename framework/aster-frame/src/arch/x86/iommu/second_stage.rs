@@ -1,11 +1,36 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ops::Range;
+
 use pod::Pod;
 
-use crate::{
-    arch::x86::mm::NR_ENTRIES_PER_PAGE,
-    vm::page_table::{PageTableEntryTrait, PageTableFlagsTrait},
+use crate::vm::{
+    page_table::{
+        CachePolicy, MapInfo, MapProperty, MapStatus, PageTableConstsTrait, PageTableEntryTrait,
+        PageTableMode,
+    },
+    Paddr, Vaddr, VmPerm,
 };
+
+/// The page table used by iommu maps the device address
+/// space to the physical address space.
+#[derive(Clone)]
+pub(super) struct DeviceMode {}
+
+impl PageTableMode for DeviceMode {
+    /// The device address space is 32-bit.
+    const VADDR_RANGE: Range<Vaddr> = 0..0x1_0000_0000;
+}
+
+#[derive(Debug)]
+pub(super) struct PageTableConsts {}
+
+impl PageTableConstsTrait for PageTableConsts {
+    const BASE_PAGE_SIZE: usize = 4096;
+    const NR_LEVELS: usize = 3;
+    const HIGHEST_TRANSLATION_LEVEL: usize = 1;
+    const ENTRY_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+}
 
 bitflags::bitflags! {
     #[derive(Pod)]
@@ -42,117 +67,67 @@ bitflags::bitflags! {
 #[repr(C)]
 pub struct PageTableEntry(u64);
 
-impl PageTableFlagsTrait for PageTableFlags {
-    fn new() -> Self {
-        Self::empty()
-    }
-
-    fn set_present(self, present: bool) -> Self {
-        self
-    }
-
-    fn set_writable(mut self, writable: bool) -> Self {
-        self.set(Self::WRITABLE, writable);
-        self
-    }
-
-    fn set_readable(mut self, readable: bool) -> Self {
-        self.set(Self::READABLE, readable);
-        self
-    }
-
-    fn set_accessible_by_user(self, accessible: bool) -> Self {
-        self
-    }
-
-    fn set_executable(self, executable: bool) -> Self {
-        self
-    }
-
-    fn is_present(&self) -> bool {
-        self.contains(Self::WRITABLE) || self.contains(Self::READABLE)
-    }
-
-    fn writable(&self) -> bool {
-        self.contains(Self::WRITABLE)
-    }
-
-    fn readable(&self) -> bool {
-        self.contains(Self::READABLE)
-    }
-
-    fn executable(&self) -> bool {
-        true
-    }
-
-    fn has_accessed(&self) -> bool {
-        self.contains(Self::ACCESSED)
-    }
-
-    fn is_dirty(&self) -> bool {
-        self.contains(Self::DIRTY)
-    }
-
-    fn accessible_by_user(&self) -> bool {
-        true
-    }
-
-    fn union(&self, other: &Self) -> Self {
-        (*self).union(*other)
-    }
-
-    fn remove(&mut self, flags: &Self) {
-        self.remove(*flags)
-    }
-
-    fn insert(&mut self, flags: &Self) {
-        self.insert(*flags)
-    }
-
-    fn is_huge(&self) -> bool {
-        // FIXME: this is super bad
-        false
-    }
-
-    fn set_huge(self, huge: bool) -> Self {
-        // FIXME: this is super bad
-        self
-    }
-}
-
 impl PageTableEntry {
     const PHYS_MASK: usize = 0xFFFF_FFFF_F000;
 }
 
 impl PageTableEntryTrait for PageTableEntry {
-    // bit 47~12
-    type F = PageTableFlags;
-    fn new(paddr: crate::vm::Paddr, flags: PageTableFlags) -> Self {
+    fn new(paddr: crate::vm::Paddr, prop: MapProperty, huge: bool, last: bool) -> Self {
+        let mut flags = PageTableFlags::empty();
+        if prop.perm.contains(VmPerm::W) {
+            flags |= PageTableFlags::WRITABLE;
+        }
+        if prop.perm.contains(VmPerm::R) {
+            flags |= PageTableFlags::READABLE;
+        }
+        if last {
+            flags |= PageTableFlags::LAST_PAGE;
+        }
+        if huge {
+            panic!("Huge page is not supported in iommu page table");
+        }
         Self((paddr & Self::PHYS_MASK) as u64 | flags.bits)
     }
 
-    fn paddr(&self) -> crate::vm::Paddr {
+    fn paddr(&self) -> Paddr {
         (self.0 & Self::PHYS_MASK as u64) as usize
     }
 
-    fn flags(&self) -> PageTableFlags {
-        PageTableFlags::from_bits_truncate(self.0)
+    fn new_invalid() -> Self {
+        Self(0)
     }
 
-    fn is_used(&self) -> bool {
-        self.paddr() != 0
+    fn is_valid(&self) -> bool {
+        self.0 & (PageTableFlags::READABLE | PageTableFlags::WRITABLE).bits() != 0
     }
 
-    fn update(&mut self, paddr: crate::vm::Paddr, flags: Self::F) {
-        self.0 = (paddr & Self::PHYS_MASK) as u64 | flags.bits
+    fn info(&self) -> MapInfo {
+        let mut perm = VmPerm::empty();
+        if self.0 & PageTableFlags::READABLE.bits() != 0 {
+            perm |= VmPerm::R;
+        }
+        if self.0 & PageTableFlags::WRITABLE.bits() != 0 {
+            perm |= VmPerm::W;
+        }
+        let cache = if self.0 & PageTableFlags::SNOOP.bits() != 0 {
+            CachePolicy::Writeback
+        } else {
+            CachePolicy::Uncacheable
+        };
+        let mut status = MapStatus::empty();
+        if self.0 & PageTableFlags::ACCESSED.bits() != 0 {
+            status |= MapStatus::ACCESSED;
+        }
+        if self.0 & PageTableFlags::DIRTY.bits() != 0 {
+            status |= MapStatus::DIRTY;
+        }
+        MapInfo {
+            prop: MapProperty { perm, cache },
+            status,
+        }
     }
 
-    fn clear(&mut self) {
-        self.0 = 0;
-    }
-
-    fn page_index(va: crate::vm::Vaddr, level: usize) -> usize {
-        debug_assert!((1..=5).contains(&level));
-        va >> (12 + 9 * (level - 1)) & (NR_ENTRIES_PER_PAGE - 1)
+    fn is_huge(&self) -> bool {
+        false
     }
 }

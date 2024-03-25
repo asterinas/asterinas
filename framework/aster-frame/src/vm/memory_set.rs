@@ -3,27 +3,31 @@
 use alloc::collections::{btree_map::Entry, BTreeMap};
 use core::fmt;
 
-use super::page_table::{PageTable, PageTableConfig, UserMode};
+use align_ext::AlignExt;
+
+use super::{
+    kspace::KERNEL_PAGE_TABLE,
+    page_table::{MapInfo, MapOp, MapProperty, PageTable, UserMode},
+};
 use crate::{
-    arch::mm::{PageTableEntry, PageTableFlags, INIT_MAPPED_PTE},
     prelude::*,
     vm::{
-        is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter, PAGE_SIZE,
-        PHYS_MEM_BASE_VADDR,
+        is_page_aligned, page_table::MapStatus, VmAllocOptions, VmFrame, VmFrameVec, VmPerm,
+        VmReader, VmWriter, PAGE_SIZE,
     },
     Error,
 };
 
 #[derive(Debug, Clone)]
 pub struct MapArea {
-    pub flags: PageTableFlags,
+    pub info: MapInfo,
     pub start_va: Vaddr,
     pub size: usize,
     pub mapper: BTreeMap<Vaddr, VmFrame>,
 }
 
 pub struct MemorySet {
-    pub pt: PageTable<PageTableEntry>,
+    pub pt: PageTable<UserMode>,
     /// all the map area, sort by the start virtual address
     areas: BTreeMap<Vaddr, MapArea>,
 }
@@ -37,7 +41,7 @@ impl MapArea {
     pub fn new(
         start_va: Vaddr,
         size: usize,
-        flags: PageTableFlags,
+        prop: MapProperty,
         physical_frames: VmFrameVec,
     ) -> Self {
         assert!(
@@ -47,7 +51,10 @@ impl MapArea {
         );
 
         let mut map_area = Self {
-            flags,
+            info: MapInfo {
+                prop,
+                status: MapStatus::empty(),
+            },
             start_va,
             size,
             mapper: BTreeMap::new(),
@@ -56,7 +63,7 @@ impl MapArea {
         let page_size = size / PAGE_SIZE;
         let mut phy_frame_iter = physical_frames.iter();
 
-        for i in 0..page_size {
+        for _ in 0..page_size {
             let vm_frame = phy_frame_iter.next().unwrap();
             map_area.map_with_physical_address(current_va, vm_frame.clone());
             current_va += PAGE_SIZE;
@@ -133,8 +140,7 @@ impl MemorySet {
             if let Entry::Vacant(e) = self.areas.entry(area.start_va) {
                 let area = e.insert(area);
                 for (va, frame) in area.mapper.iter() {
-                    debug_assert!(frame.start_paddr() < PHYS_MEM_BASE_VADDR);
-                    self.pt.map(*va, frame, area.flags).unwrap();
+                    self.pt.map_frame(*va, frame, area.info.prop).unwrap();
                 }
             } else {
                 panic!(
@@ -147,26 +153,24 @@ impl MemorySet {
 
     /// Determine whether a Vaddr is in a mapped area
     pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
-        self.pt.is_mapped(vaddr)
+        let vaddr = vaddr.align_down(PAGE_SIZE);
+        self.pt
+            .query(&(vaddr..vaddr + PAGE_SIZE))
+            .map(|mut i| i.next().is_some())
+            .unwrap_or(false)
     }
 
-    /// Return the flags of the PTE for the target virtual memory address.
-    /// If the PTE does not exist, return `None`.
-    pub fn flags(&self, vaddr: Vaddr) -> Option<PageTableFlags> {
-        self.pt.flags(vaddr)
+    /// Return the information of the PTE for the target virtual memory address.
+    pub fn info(&self, vaddr: Vaddr) -> Option<MapInfo> {
+        let vaddr = vaddr.align_down(PAGE_SIZE);
+        self.pt
+            .query(&(vaddr..vaddr + PAGE_SIZE))
+            .map(|mut i| i.next().unwrap().info)
+            .ok()
     }
 
     pub fn new() -> Self {
-        let mut page_table = PageTable::<PageTableEntry, UserMode>::new(PageTableConfig {
-            address_width: super::page_table::AddressWidth::Level4,
-        });
-        let mapped_pte = INIT_MAPPED_PTE.get().unwrap();
-        for (index, pte) in mapped_pte.iter() {
-            // Safety: These PTEs are all valid PTEs fetched from the initial page table during memory initialization.
-            unsafe {
-                page_table.add_root_mapping(*index, pte);
-            }
-        }
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock().fork();
         Self {
             pt: page_table,
             areas: BTreeMap::new(),
@@ -176,7 +180,7 @@ impl MemorySet {
     pub fn unmap(&mut self, va: Vaddr) -> Result<()> {
         if let Some(area) = self.areas.remove(&va) {
             for (va, _) in area.mapper.iter() {
-                self.pt.unmap(*va).unwrap();
+                self.pt.unmap(&(*va..*va + PAGE_SIZE)).unwrap();
             }
             Ok(())
         } else {
@@ -187,7 +191,7 @@ impl MemorySet {
     pub fn clear(&mut self) {
         for area in self.areas.values_mut() {
             for (va, _) in area.mapper.iter() {
-                self.pt.unmap(*va).unwrap();
+                self.pt.unmap(&(*va..*va + PAGE_SIZE)).unwrap();
             }
         }
         self.areas.clear();
@@ -200,7 +204,7 @@ impl MemorySet {
         let mut offset = 0usize;
         for (va, area) in self.areas.iter_mut() {
             if current_addr >= *va && current_addr < area.size + va {
-                if !area.flags.contains(PageTableFlags::WRITABLE) {
+                if !area.info.prop.perm.contains(VmPerm::W) {
                     return Err(Error::PageFault);
                 }
                 let write_len = remain.min(area.size + va - current_addr);
@@ -242,14 +246,14 @@ impl MemorySet {
         Err(Error::PageFault)
     }
 
-    pub fn protect(&mut self, addr: Vaddr, flags: PageTableFlags) {
-        let va = addr;
+    pub fn protect(&mut self, addr: Vaddr, op: impl MapOp) {
+        let va = addr..addr + PAGE_SIZE;
         // Temporary solution, since the `MapArea` currently only represents
         // a single `VmFrame`.
-        if let Some(areas) = self.areas.get_mut(&va) {
-            areas.flags = flags;
+        if let Some(areas) = self.areas.get_mut(&addr) {
+            areas.info.prop = op(areas.info);
         }
-        self.pt.protect(va, flags).unwrap();
+        self.pt.protect(&va, op).unwrap();
     }
 }
 
