@@ -15,7 +15,7 @@ use alloc::{boxed::Box, sync::Arc};
 
 use aster_frame::{
     sync::Mutex,
-    vm::{VmIo, PAGE_SIZE},
+    vm::{VmIo, BASE_PAGE_SIZE},
 };
 use aster_rights::Rights;
 use aster_time::Instant;
@@ -173,7 +173,7 @@ impl Vdso {
         vdso_data.init();
 
         let vdso_vmo = {
-            let vmo_options = VmoOptions::<Rights>::new(5 * PAGE_SIZE);
+            let vmo_options = VmoOptions::<Rights>::new(5 * BASE_PAGE_SIZE);
             let vdso_vmo = vmo_options.alloc().unwrap();
             // Write vdso data to vdso vmo.
             vdso_vmo.write_bytes(0x80, vdso_data.as_bytes()).unwrap();
@@ -184,7 +184,7 @@ impl Vdso {
                 let vdso_lib = fs_resolver.lookup(&vdso_path).unwrap();
                 vdso_lib.inode().page_cache().unwrap()
             };
-            let mut vdso_text = Box::new([0u8; PAGE_SIZE]);
+            let mut vdso_text = Box::new([0u8; BASE_PAGE_SIZE]);
             vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();
             // Write vdso library to vdso vmo.
             vdso_vmo.write_bytes(0x4000, &*vdso_text).unwrap();

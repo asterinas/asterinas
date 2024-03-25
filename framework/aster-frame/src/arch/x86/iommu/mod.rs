@@ -5,6 +5,8 @@ mod fault;
 mod remapping;
 mod second_stage;
 
+use second_stage::DeviceMode;
+
 use log::info;
 use spin::Once;
 
@@ -14,7 +16,7 @@ use crate::{
     sync::Mutex,
     vm::{
         dma::Daddr,
-        page_table::{DeviceMode, PageTableConfig, PageTableError},
+        page_table::{PageTableConfig, PageTableError},
         Paddr, PageTable,
     },
 };
@@ -67,6 +69,7 @@ pub(crate) fn init() -> Result<(), IommuError> {
     let page_table: PageTable<PageTableEntry, DeviceMode> =
         PageTable::<PageTableEntry, DeviceMode>::new(PageTableConfig {
             address_width: crate::vm::page_table::AddressWidth::Level3,
+            supported_translation_depth: 1,
         });
     for table in PciDeviceLocation::all() {
         root_table.specify_device_page_table(table, page_table.clone())

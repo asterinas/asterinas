@@ -9,7 +9,7 @@ use core::{
 use pod::Pod;
 
 use super::{frame_allocator, HasPaddr, VmIo};
-use crate::{prelude::*, vm::PAGE_SIZE, Error};
+use crate::{prelude::*, vm::BASE_PAGE_SIZE, Error};
 
 /// A collection of page frames (physical memory pages).
 ///
@@ -83,9 +83,9 @@ impl VmFrameVec {
 
     /// Returns the number of bytes.
     ///
-    /// This method is equivalent to `self.len() * PAGE_SIZE`.
+    /// This method is equivalent to `self.len() * BASE_PAGE_SIZE`.
     pub fn nbytes(&self) -> usize {
-        self.0.len() * PAGE_SIZE
+        self.0.len() * BASE_PAGE_SIZE
     }
 
     pub fn from_one_frame(frame: VmFrame) -> Self {
@@ -109,8 +109,8 @@ impl VmIo for VmFrameVec {
             return Err(Error::InvalidArgs);
         }
 
-        let num_unread_pages = offset / PAGE_SIZE;
-        let mut start = offset % PAGE_SIZE;
+        let num_unread_pages = offset / BASE_PAGE_SIZE;
+        let mut start = offset % BASE_PAGE_SIZE;
         let mut buf_writer: VmWriter = buf.into();
         for frame in self.0.iter().skip(num_unread_pages) {
             let read_len = frame.reader().skip(start).read(&mut buf_writer);
@@ -127,8 +127,8 @@ impl VmIo for VmFrameVec {
             return Err(Error::InvalidArgs);
         }
 
-        let num_unwrite_pages = offset / PAGE_SIZE;
-        let mut start = offset % PAGE_SIZE;
+        let num_unwrite_pages = offset / BASE_PAGE_SIZE;
+        let mut start = offset % BASE_PAGE_SIZE;
         let mut buf_reader: VmReader = buf.into();
         for frame in self.0.iter().skip(num_unwrite_pages) {
             let write_len = frame.writer().skip(start).write(&mut buf_reader);
@@ -207,19 +207,19 @@ impl VmFrame {
     ///
     /// The given physical address must be valid for use.
     pub(crate) unsafe fn new(paddr: Paddr, flags: VmFrameFlags) -> Self {
-        assert_eq!(paddr % PAGE_SIZE, 0);
+        assert_eq!(paddr % BASE_PAGE_SIZE, 0);
         Self {
-            frame_index: Arc::new((paddr / PAGE_SIZE).bitor(flags.bits)),
+            frame_index: Arc::new((paddr / BASE_PAGE_SIZE).bitor(flags.bits)),
         }
     }
 
     /// Returns the physical address of the page frame.
     pub fn start_paddr(&self) -> Paddr {
-        self.frame_index() * PAGE_SIZE
+        self.frame_index() * BASE_PAGE_SIZE
     }
 
     pub fn end_paddr(&self) -> Paddr {
-        (self.frame_index() + 1) * PAGE_SIZE
+        (self.frame_index() + 1) * BASE_PAGE_SIZE
     }
 
     fn need_dealloc(&self) -> bool {
@@ -245,7 +245,7 @@ impl VmFrame {
 
         // Safety: src and dst is not overlapped.
         unsafe {
-            core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), PAGE_SIZE);
+            core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), BASE_PAGE_SIZE);
         }
     }
 }
@@ -254,19 +254,19 @@ impl<'a> VmFrame {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
         // Safety: the memory of the page is contiguous and is valid during `'a`.
-        unsafe { VmReader::from_raw_parts(self.as_ptr(), PAGE_SIZE) }
+        unsafe { VmReader::from_raw_parts(self.as_ptr(), BASE_PAGE_SIZE) }
     }
 
     /// Returns a writer to write data into it.
     pub fn writer(&'a self) -> VmWriter<'a> {
         // Safety: the memory of the page is contiguous and is valid during `'a`.
-        unsafe { VmWriter::from_raw_parts_mut(self.as_mut_ptr(), PAGE_SIZE) }
+        unsafe { VmWriter::from_raw_parts_mut(self.as_mut_ptr(), BASE_PAGE_SIZE) }
     }
 }
 
 impl VmIo for VmFrame {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        if buf.len() + offset > PAGE_SIZE {
+        if buf.len() + offset > BASE_PAGE_SIZE {
             return Err(Error::InvalidArgs);
         }
         let len = self.reader().skip(offset).read(&mut buf.into());
@@ -275,7 +275,7 @@ impl VmIo for VmFrame {
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        if buf.len() + offset > PAGE_SIZE {
+        if buf.len() + offset > BASE_PAGE_SIZE {
             return Err(Error::InvalidArgs);
         }
         let len = self.writer().skip(offset).write(&mut buf.into());
@@ -331,9 +331,9 @@ impl VmSegmentInner {
     ///
     /// The constructor of 'VmSegment' ensures the safety.
     unsafe fn new(paddr: Paddr, nframes: usize, flags: VmFrameFlags) -> Self {
-        assert_eq!(paddr % PAGE_SIZE, 0);
+        assert_eq!(paddr % BASE_PAGE_SIZE, 0);
         Self {
-            start_frame_index: Arc::new((paddr / PAGE_SIZE).bitor(flags.bits)),
+            start_frame_index: Arc::new((paddr / BASE_PAGE_SIZE).bitor(flags.bits)),
             nframes,
         }
     }
@@ -343,7 +343,7 @@ impl VmSegmentInner {
     }
 
     fn start_paddr(&self) -> Paddr {
-        self.start_frame_index() * PAGE_SIZE
+        self.start_frame_index() * BASE_PAGE_SIZE
     }
 }
 
@@ -387,12 +387,12 @@ impl VmSegment {
 
     /// Returns the start physical address.
     pub fn start_paddr(&self) -> Paddr {
-        self.start_frame_index() * PAGE_SIZE
+        self.start_frame_index() * BASE_PAGE_SIZE
     }
 
     /// Returns the end physical address.
     pub fn end_paddr(&self) -> Paddr {
-        (self.start_frame_index() + self.nframes()) * PAGE_SIZE
+        (self.start_frame_index() + self.nframes()) * BASE_PAGE_SIZE
     }
 
     /// Returns the number of page frames.
@@ -402,7 +402,7 @@ impl VmSegment {
 
     /// Returns the number of bytes.
     pub fn nbytes(&self) -> usize {
-        self.nframes() * PAGE_SIZE
+        self.nframes() * BASE_PAGE_SIZE
     }
 
     fn need_dealloc(&self) -> bool {
@@ -489,7 +489,7 @@ impl From<VmFrame> for VmSegment {
 /// ```rust
 /// impl VmIo for VmFrame {
 ///     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-///         if buf.len() + offset > PAGE_SIZE {
+///         if buf.len() + offset > BASE_PAGE_SIZE {
 ///             return Err(Error::InvalidArgs);
 ///         }
 ///         let len = self.reader().skip(offset).read(&mut buf.into());
@@ -599,7 +599,7 @@ impl<'a> From<&'a [u8]> for VmReader<'a> {
 /// ```rust
 /// impl VmIo for VmFrame {
 ///     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-///         if buf.len() + offset > PAGE_SIZE {
+///         if buf.len() + offset > BASE_PAGE_SIZE {
 ///             return Err(Error::InvalidArgs);
 ///         }
 ///         let len = self.writer().skip(offset).write(&mut buf.into());

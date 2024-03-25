@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
-pub const USER_HEAP_SIZE_LIMIT: usize = PAGE_SIZE * 1000;
+pub const USER_HEAP_SIZE_LIMIT: usize = BASE_PAGE_SIZE * 1000;
 
 #[derive(Debug)]
 pub struct UserHeap {
@@ -62,7 +62,7 @@ impl UserHeap {
                     // FIXME: should we allow shrink current user heap?
                     return Ok(current_heap_end);
                 }
-                let new_size = (new_heap_end - self.heap_base).align_up(PAGE_SIZE);
+                let new_size = (new_heap_end - self.heap_base).align_up(BASE_PAGE_SIZE);
                 let heap_mapping = root_vmar.get_vm_mapping(USER_HEAP_BASE)?;
                 let heap_vmo = heap_mapping.vmo();
                 heap_vmo.resize(new_size)?;

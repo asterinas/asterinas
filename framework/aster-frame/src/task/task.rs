@@ -13,10 +13,10 @@ use crate::{
     prelude::*,
     sync::{Mutex, MutexGuard},
     user::UserSpace,
-    vm::{page_table::KERNEL_PAGE_TABLE, VmAllocOptions, VmSegment, PAGE_SIZE},
+    vm::{page_table::KERNEL_PAGE_TABLE, VmAllocOptions, VmSegment, BASE_PAGE_SIZE},
 };
 
-pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
+pub const KERNEL_STACK_SIZE: usize = BASE_PAGE_SIZE * 64;
 
 core::arch::global_asm!(include_str!("switch.S"));
 
@@ -51,7 +51,7 @@ pub struct KernelStack {
 impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE)
+            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / BASE_PAGE_SIZE)
                 .is_contiguous(true)
                 .alloc_contiguous()?,
             old_guard_page_flag: None,
@@ -61,7 +61,7 @@ impl KernelStack {
     /// Generate a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
-        let stack_segment = VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1)
+        let stack_segment = VmAllocOptions::new(KERNEL_STACK_SIZE / BASE_PAGE_SIZE + 1)
             .is_contiguous(true)
             .alloc_contiguous()?;
         let unpresent_flag = PageTableFlags::empty();

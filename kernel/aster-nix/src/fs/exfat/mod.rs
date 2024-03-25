@@ -45,7 +45,7 @@ mod test {
         }
 
         pub fn sectors_count(&self) -> usize {
-            self.0.nframes() * (PAGE_SIZE / SECTOR_SIZE)
+            self.0.nframes() * (BASE_PAGE_SIZE / SECTOR_SIZE)
         }
     }
 
@@ -106,7 +106,7 @@ mod test {
     /// Read exfat disk image
     fn new_vm_segment_from_image() -> VmSegment {
         let vm_segment = {
-            VmAllocOptions::new(EXFAT_IMAGE.len() / PAGE_SIZE)
+            VmAllocOptions::new(EXFAT_IMAGE.len() / BASE_PAGE_SIZE)
                 .is_contiguous(true)
                 .uninit(true)
                 .alloc_contiguous()
@@ -452,7 +452,7 @@ mod test {
         let file_name = "HI.TXT";
         let a_inode = create_file(root.clone(), file_name);
 
-        const BUF_SIZE: usize = 7 * PAGE_SIZE + 11;
+        const BUF_SIZE: usize = 7 * BASE_PAGE_SIZE + 11;
         let mut buf = vec![0u8; BUF_SIZE];
         for (i, num) in buf.iter_mut().enumerate() {
             //Use a prime number to make each sector different.
@@ -485,7 +485,7 @@ mod test {
         assert!(buf.eq(&read), "File mismatch after rename");
 
         // test write after rename
-        const NEW_BUF_SIZE: usize = 9 * PAGE_SIZE + 23;
+        const NEW_BUF_SIZE: usize = 9 * BASE_PAGE_SIZE + 23;
         let new_buf = vec![7u8; NEW_BUF_SIZE];
         let new_write_after_rename = a_inode_new.write_at(0, &new_buf);
         assert!(
@@ -615,8 +615,8 @@ mod test {
         let root = fs.root_inode() as Arc<dyn Inode>;
         let file = create_file(root.clone(), "test");
 
-        // const BUF_SIZE: usize = PAGE_SIZE * 7 + 3 * SECTOR_SIZE;
-        const BUF_SIZE: usize = PAGE_SIZE * 7;
+        // const BUF_SIZE: usize = BASE_PAGE_SIZE * 7 + 3 * SECTOR_SIZE;
+        const BUF_SIZE: usize = BASE_PAGE_SIZE * 7;
 
         let mut buf = vec![0u8; BUF_SIZE];
         for (i, num) in buf.iter_mut().enumerate() {
@@ -648,7 +648,7 @@ mod test {
         let root = fs.root_inode() as Arc<dyn Inode>;
         let file = create_file(root.clone(), "test");
 
-        const BUF_SIZE: usize = PAGE_SIZE * 11 + 2023;
+        const BUF_SIZE: usize = BASE_PAGE_SIZE * 11 + 2023;
 
         let mut buf = vec![0u8; BUF_SIZE];
         for (i, num) in buf.iter_mut().enumerate() {
@@ -681,7 +681,7 @@ mod test {
         let a = create_file(root.clone(), "a");
         let b = create_file(root.clone(), "b");
 
-        const BUF_SIZE: usize = PAGE_SIZE * 11 + 2023;
+        const BUF_SIZE: usize = BASE_PAGE_SIZE * 11 + 2023;
 
         let mut buf_a = vec![0u8; BUF_SIZE];
         for (i, num) in buf_a.iter_mut().enumerate() {
@@ -1021,7 +1021,7 @@ mod test {
         let mut buf: Vec<u8> = Vec::new();
         let mut pg_num = 1;
         while pg_num <= MAX_PAGE_PER_FILE {
-            let size = pg_num * PAGE_SIZE;
+            let size = pg_num * BASE_PAGE_SIZE;
             let _ = inode.resize(size);
 
             buf.resize(size, 0);
@@ -1041,7 +1041,7 @@ mod test {
         pg_num = MAX_PAGE_PER_FILE;
 
         while pg_num > 0 {
-            let size = (pg_num - 1) * PAGE_SIZE;
+            let size = (pg_num - 1) * BASE_PAGE_SIZE;
             let _ = inode.resize(size);
 
             buf.resize(size, 0);

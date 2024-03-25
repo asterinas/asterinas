@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
-    vm::{frame_allocator::FRAME_ALLOCATOR, PAGE_SIZE},
+    vm::{frame_allocator::FRAME_ALLOCATOR, BASE_PAGE_SIZE},
     Error,
 };
 
@@ -26,7 +26,7 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
     panic!("Heap allocation error, layout = {:?}", layout);
 }
 
-const INIT_KERNEL_HEAP_SIZE: usize = PAGE_SIZE * 256;
+const INIT_KERNEL_HEAP_SIZE: usize = BASE_PAGE_SIZE * 256;
 
 static mut HEAP_SPACE: [u8; INIT_KERNEL_HEAP_SIZE] = [0; INIT_KERNEL_HEAP_SIZE];
 
@@ -94,14 +94,14 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
 }
 
 fn rescue<const ORDER: usize>(heap: &LockedHeapWithRescue<ORDER>, layout: &Layout) -> Result<()> {
-    const MIN_NUM_FRAMES: usize = 0x4000000 / PAGE_SIZE; // 64MB
+    const MIN_NUM_FRAMES: usize = 0x4000000 / BASE_PAGE_SIZE; // 64MB
 
     debug!("enlarge heap, layout = {:?}", layout);
     let mut num_frames = {
-        let align = PAGE_SIZE.max(layout.align());
-        debug_assert!(align % PAGE_SIZE == 0);
+        let align = BASE_PAGE_SIZE.max(layout.align());
+        debug_assert!(align % BASE_PAGE_SIZE == 0);
         let size = layout.size().align_up(align);
-        size / PAGE_SIZE
+        size / BASE_PAGE_SIZE
     };
 
     let allocation_start = {
@@ -120,7 +120,7 @@ fn rescue<const ORDER: usize>(heap: &LockedHeapWithRescue<ORDER>, layout: &Layou
     };
     // FIXME: the alloc function internally allocates heap memory(inside FrameAllocator).
     // So if the heap is nearly run out, allocating frame will fail too.
-    let vaddr = paddr_to_vaddr(allocation_start * PAGE_SIZE);
+    let vaddr = paddr_to_vaddr(allocation_start * BASE_PAGE_SIZE);
 
     // Safety: the frame is allocated from FramAllocator and never be deallocated,
     // so the addr is always valid.
@@ -128,9 +128,9 @@ fn rescue<const ORDER: usize>(heap: &LockedHeapWithRescue<ORDER>, layout: &Layou
         debug!(
             "add frames to heap: addr = 0x{:x}, size = 0x{:x}",
             vaddr,
-            PAGE_SIZE * num_frames
+            BASE_PAGE_SIZE * num_frames
         );
-        heap.add_to_heap(vaddr, PAGE_SIZE * num_frames);
+        heap.add_to_heap(vaddr, BASE_PAGE_SIZE * num_frames);
     }
 
     Ok(())

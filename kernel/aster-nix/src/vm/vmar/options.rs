@@ -2,7 +2,7 @@
 
 //! Options for allocating child VMARs.
 
-use aster_frame::{vm::PAGE_SIZE, Error, Result};
+use aster_frame::{vm::BASE_PAGE_SIZE, Error, Result};
 
 use super::Vmar;
 
@@ -14,10 +14,10 @@ use super::Vmar;
 /// A child VMAR created from a parent VMAR of _dynamic_ capability is also a
 /// _dynamic_ capability.
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, Vmar};
+/// use aster_std::vm::{BASE_PAGE_SIZE, Vmar};
 ///
 /// let parent_vmar = Vmar::new();
-/// let child_size = 10 * PAGE_SIZE;
+/// let child_size = 10 * BASE_PAGE_SIZE;
 /// let child_vmar = parent_vmar
 ///     .new_child(child_size)
 ///     .alloc()
@@ -30,10 +30,10 @@ use super::Vmar;
 /// _static_ capability.
 /// ```
 /// use aster_std::prelude::*;
-/// use aster_std::vm::{PAGE_SIZE, Vmar};
+/// use aster_std::vm::{BASE_PAGE_SIZE, Vmar};
 ///
 /// let parent_vmar: Vmar<Full> = Vmar::new();
-/// let child_size = 10 * PAGE_SIZE;
+/// let child_size = 10 * BASE_PAGE_SIZE;
 /// let child_vmar = parent_vmar
 ///     .new_child(child_size)
 ///     .alloc()
@@ -98,14 +98,14 @@ impl<R> VmarChildOptions<R> {
     pub fn alloc(self) -> Result<Vmar<R>> {
         // check align
         let align = if let Some(align) = self.align {
-            debug_assert!(align % PAGE_SIZE == 0);
+            debug_assert!(align % BASE_PAGE_SIZE == 0);
             debug_assert!(align.is_power_of_two());
-            if align % PAGE_SIZE != 0 || !align.is_power_of_two() {
+            if align % BASE_PAGE_SIZE != 0 || !align.is_power_of_two() {
                 return Err(Error::InvalidArgs);
             }
             align
         } else {
-            PAGE_SIZE
+            BASE_PAGE_SIZE
         };
         // check size
         if self.size % align != 0 {
@@ -113,7 +113,7 @@ impl<R> VmarChildOptions<R> {
         }
         // check offset
         let root_vmar_offset = if let Some(offset) = self.offset {
-            if offset % PAGE_SIZE != 0 {
+            if offset % BASE_PAGE_SIZE != 0 {
                 return Err(Error::InvalidArgs);
             }
             let root_vmar_offset = offset + self.parent.base();
@@ -156,17 +156,17 @@ mod test {
     fn child_vmar() {
         let root_vmar = Vmar::<Full>::new_root();
         let root_vmar_dup = root_vmar.dup().unwrap();
-        let child_vmar = VmarChildOptions::new(root_vmar_dup, 10 * PAGE_SIZE)
+        let child_vmar = VmarChildOptions::new(root_vmar_dup, 10 * BASE_PAGE_SIZE)
             .alloc()
             .unwrap();
-        assert!(child_vmar.size() == 10 * PAGE_SIZE);
+        assert!(child_vmar.size() == 10 * BASE_PAGE_SIZE);
         let root_vmar_dup = root_vmar.dup().unwrap();
-        let second_child = VmarChildOptions::new(root_vmar_dup, 9 * PAGE_SIZE)
+        let second_child = VmarChildOptions::new(root_vmar_dup, 9 * BASE_PAGE_SIZE)
             .alloc()
             .unwrap();
         let root_vmar_dup = root_vmar.dup().unwrap();
-        assert!(VmarChildOptions::new(root_vmar_dup, 9 * PAGE_SIZE)
-            .offset(11 * PAGE_SIZE)
+        assert!(VmarChildOptions::new(root_vmar_dup, 9 * BASE_PAGE_SIZE)
+            .offset(11 * BASE_PAGE_SIZE)
             .alloc()
             .is_err());
     }
@@ -174,7 +174,7 @@ mod test {
     #[ktest]
     fn map_vmo() {
         let root_vmar = Vmar::<Full>::new_root();
-        let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap().to_dyn();
+        let vmo = VmoOptions::<Full>::new(BASE_PAGE_SIZE).alloc().unwrap().to_dyn();
         let perms = VmPerms::READ | VmPerms::WRITE;
         let map_offset = 0x1000_0000;
         let vmo_dup = vmo.dup().unwrap();
@@ -204,7 +204,7 @@ mod test {
         // the page is not mapped by a vmo
         assert!(root_vmar.handle_page_fault(OFFSET, true, true).is_err());
         // the page is mapped READ
-        let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap().to_dyn();
+        let vmo = VmoOptions::<Full>::new(BASE_PAGE_SIZE).alloc().unwrap().to_dyn();
         let perms = VmPerms::READ;
         let vmo_dup = vmo.dup().unwrap();
         root_vmar

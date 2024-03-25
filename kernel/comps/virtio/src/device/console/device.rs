@@ -4,7 +4,7 @@ use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
-use aster_frame::{io_mem::IoMem, sync::SpinLock, trap::TrapFrame, vm::PAGE_SIZE};
+use aster_frame::{io_mem::IoMem, sync::SpinLock, trap::TrapFrame, vm::BASE_PAGE_SIZE};
 use aster_util::safe_ptr::SafePtr;
 use log::debug;
 
@@ -20,7 +20,7 @@ pub struct ConsoleDevice {
     transport: Box<dyn VirtioTransport>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
-    buffer: SpinLock<Box<[u8; PAGE_SIZE]>>,
+    buffer: SpinLock<Box<[u8; BASE_PAGE_SIZE]>>,
     callbacks: SpinLock<Vec<&'static ConsoleCallback>>,
 }
 
@@ -109,7 +109,7 @@ impl ConsoleDevice {
             transport,
             receive_queue,
             transmit_queue,
-            buffer: SpinLock::new(Box::new([0; PAGE_SIZE])),
+            buffer: SpinLock::new(Box::new([0; BASE_PAGE_SIZE])),
             callbacks: SpinLock::new(Vec::new()),
         };
 

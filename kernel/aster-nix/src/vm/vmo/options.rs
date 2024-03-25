@@ -22,9 +22,9 @@ use crate::{
 ///
 /// Creating a VMO as a _dynamic_ capability with full access rights:
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions};
+/// use aster_std::vm::{BASE_PAGE_SIZE, VmoOptions};
 ///
-/// let vmo = VmoOptions::new(PAGE_SIZE)
+/// let vmo = VmoOptions::new(BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
 /// ```
@@ -32,9 +32,9 @@ use crate::{
 /// Creating a VMO as a _static_ capability with all access rights:
 /// ```
 /// use aster_std::prelude::*;
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions};
+/// use aster_std::vm::{BASE_PAGE_SIZE, VmoOptions};
 ///
-/// let vmo = VmoOptions::<Full>::new(PAGE_SIZE)
+/// let vmo = VmoOptions::<Full>::new(BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
 /// ```
@@ -43,9 +43,9 @@ use crate::{
 /// physically contiguous:
 ///
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions, VmoFlags};
+/// use aster_std::vm::{BASE_PAGE_SIZE, VmoOptions, VmoFlags};
 ///
-/// let vmo = VmoOptions::new(10 * PAGE_SIZE)
+/// let vmo = VmoOptions::new(10 * BASE_PAGE_SIZE)
 ///     .flags(VmoFlags::RESIZABLE)
 ///     .alloc()
 ///     .unwrap();
@@ -123,7 +123,7 @@ impl<R: TRights> VmoOptions<TRightSet<R>> {
 }
 
 fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Result<Vmo_> {
-    let size = size.align_up(PAGE_SIZE);
+    let size = size.align_up(BASE_PAGE_SIZE);
     let committed_pages = committed_pages_if_continuous(flags, size)?;
     let vmo_inner = VmoInner {
         pager,
@@ -141,13 +141,13 @@ fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Re
 fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMap<usize, VmFrame>> {
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
-        let frames_num = size / PAGE_SIZE;
+        let frames_num = size / BASE_PAGE_SIZE;
         let frames = VmAllocOptions::new(frames_num)
             .is_contiguous(true)
             .alloc()?;
         let mut committed_pages = BTreeMap::new();
         for (idx, frame) in frames.into_iter().enumerate() {
-            committed_pages.insert(idx * PAGE_SIZE, frame);
+            committed_pages.insert(idx * BASE_PAGE_SIZE, frame);
         }
         Ok(committed_pages)
     } else {
@@ -163,12 +163,12 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 /// A child VMO created from a parent VMO of _dynamic_ capability is also a
 /// _dynamic_ capability.
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions};
+/// use aster_std::vm::{BASE_PAGE_SIZE, VmoOptions};
 ///
-/// let parent_vmo = VmoOptions::new(PAGE_SIZE)
+/// let parent_vmo = VmoOptions::new(BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
-/// let child_vmo = parent_vmo.new_slice_child(0..PAGE_SIZE)
+/// let child_vmo = parent_vmo.new_slice_child(0..BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
 /// assert!(parent_vmo.rights() == child_vmo.rights());
@@ -178,12 +178,12 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 /// _static_ capability.
 /// ```
 /// use aster_std::prelude::*;
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
+/// use aster_std::vm::{BASE_PAGE_SIZE, VmoOptions, VmoChildOptions};
 ///
-/// let parent_vmo: Vmo<Full> = VmoOptions::new(PAGE_SIZE)
+/// let parent_vmo: Vmo<Full> = VmoOptions::new(BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
-/// let child_vmo: Vmo<Full> = parent_vmo.new_slice_child(0..PAGE_SIZE)
+/// let child_vmo: Vmo<Full> = parent_vmo.new_slice_child(0..BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
 /// assert!(parent_vmo.rights() == child_vmo.rights());
@@ -195,13 +195,13 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 /// right regardless of whether the parent is writable or not.
 ///
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
+/// use aster_std::vm::{BASE_PAGE_SIZE, VmoOptions, VmoChildOptions};
 ///
-/// let parent_vmo = VmoOptions::new(PAGE_SIZE)
+/// let parent_vmo = VmoOptions::new(BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap()
 ///     .restrict(Rights::DUP | Rights::READ);
-/// let child_vmo = parent_vmo.new_cow_child(0..PAGE_SIZE)
+/// let child_vmo = parent_vmo.new_cow_child(0..BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
 /// assert!(child_vmo.rights().contains(Rights::WRITE));
@@ -210,12 +210,12 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 /// The above rule for COW VMO children also applies to static capabilities.
 ///
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
+/// use aster_std::vm::{BASE_PAGE_SIZE, VmoOptions, VmoChildOptions};
 ///
-/// let parent_vmo = VmoOptions::<TRights![Read, Dup]>::new(PAGE_SIZE)
+/// let parent_vmo = VmoOptions::<TRights![Read, Dup]>::new(BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
-/// let child_vmo = parent_vmo.new_cow_child(0..PAGE_SIZE)
+/// let child_vmo = parent_vmo.new_cow_child(0..BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
 /// assert!(child_vmo.rights().contains(Rights::WRITE));
@@ -226,12 +226,12 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMa
 /// Note that a slice VMO child and its parent cannot not be resizable.
 ///
 /// ```rust
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions};
+/// use aster_std::vm::{BASE_PAGE_SIZE, VmoOptions};
 ///
-/// let parent_vmo = VmoOptions::new(PAGE_SIZE)
+/// let parent_vmo = VmoOptions::new(BASE_PAGE_SIZE)
 ///     .alloc()
 ///     .unwrap();
-/// let child_vmo = parent_vmo.new_cow_child(0..PAGE_SIZE)
+/// let child_vmo = parent_vmo.new_cow_child(0..BASE_PAGE_SIZE)
 ///     // Make the child resizable!
 ///     .flags(VmoFlags::RESIZABLE)
 ///     .alloc()
@@ -445,10 +445,10 @@ fn alloc_child_vmo_(
 ) -> Result<Vmo_> {
     let child_vmo_start = range.start;
     let child_vmo_end = range.end;
-    debug_assert!(child_vmo_start % PAGE_SIZE == 0);
-    debug_assert!(child_vmo_end % PAGE_SIZE == 0);
-    if child_vmo_start % PAGE_SIZE != 0 || child_vmo_end % PAGE_SIZE != 0 {
-        return_errno_with_message!(Errno::EINVAL, "vmo range does not aligned with PAGE_SIZE");
+    debug_assert!(child_vmo_start % BASE_PAGE_SIZE == 0);
+    debug_assert!(child_vmo_end % BASE_PAGE_SIZE == 0);
+    if child_vmo_start % BASE_PAGE_SIZE != 0 || child_vmo_end % BASE_PAGE_SIZE != 0 {
+        return_errno_with_message!(Errno::EINVAL, "vmo range does not aligned with BASE_PAGE_SIZE");
     }
     let parent_vmo_size = parent_vmo_.size();
 
@@ -479,14 +479,14 @@ fn alloc_child_vmo_(
             }
         }
     };
-    let parent_page_idx_offset = range.start / PAGE_SIZE;
+    let parent_page_idx_offset = range.start / BASE_PAGE_SIZE;
     let inherited_end = range.end.min(parent_vmo_size);
     let cow_size = if inherited_end >= range.start {
         inherited_end - range.start
     } else {
         0
     };
-    let num_pages = cow_size / PAGE_SIZE;
+    let num_pages = cow_size / BASE_PAGE_SIZE;
     let inherited_pages =
         get_inherited_frames_from_parent(parent_vmo_, num_pages, parent_page_idx_offset, is_cow);
     let vmo_inner = VmoInner {
@@ -524,24 +524,24 @@ mod test {
 
     #[ktest]
     fn alloc_vmo() {
-        let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
-        assert!(vmo.size() == PAGE_SIZE);
+        let vmo = VmoOptions::<Full>::new(BASE_PAGE_SIZE).alloc().unwrap();
+        assert!(vmo.size() == BASE_PAGE_SIZE);
         // the vmo is zeroed once allocated
         assert!(vmo.read_val::<usize>(0).unwrap() == 0);
     }
 
     #[ktest]
     fn alloc_continuous_vmo() {
-        let vmo = VmoOptions::<Full>::new(10 * PAGE_SIZE)
+        let vmo = VmoOptions::<Full>::new(10 * BASE_PAGE_SIZE)
             .flags(VmoFlags::CONTIGUOUS)
             .alloc()
             .unwrap();
-        assert!(vmo.size() == 10 * PAGE_SIZE);
+        assert!(vmo.size() == 10 * BASE_PAGE_SIZE);
     }
 
     #[ktest]
     fn write_and_read() {
-        let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
+        let vmo = VmoOptions::<Full>::new(BASE_PAGE_SIZE).alloc().unwrap();
         let val = 42u8;
         // write val
         vmo.write_val(111, &val).unwrap();
@@ -555,9 +555,9 @@ mod test {
 
     #[ktest]
     fn slice_child() {
-        let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
+        let parent = VmoOptions::<Full>::new(2 * BASE_PAGE_SIZE).alloc().unwrap();
         let parent_dup = parent.dup().unwrap();
-        let slice_child = VmoChildOptions::new_slice(parent_dup, 0..PAGE_SIZE)
+        let slice_child = VmoChildOptions::new_slice(parent_dup, 0..BASE_PAGE_SIZE)
             .alloc()
             .unwrap();
         // write parent, read child
@@ -570,9 +570,9 @@ mod test {
 
     #[ktest]
     fn cow_child() {
-        let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
+        let parent = VmoOptions::<Full>::new(2 * BASE_PAGE_SIZE).alloc().unwrap();
         let parent_dup = parent.dup().unwrap();
-        let cow_child = VmoChildOptions::new_cow(parent_dup, 0..10 * PAGE_SIZE)
+        let cow_child = VmoChildOptions::new_cow(parent_dup, 0..10 * BASE_PAGE_SIZE)
             .alloc()
             .unwrap();
         // write parent, read child
@@ -589,23 +589,23 @@ mod test {
         assert!(parent.read_val::<u32>(10).unwrap() == 123);
         assert!(cow_child.read_val::<u32>(10).unwrap() == 0);
         // write parent on not-copied page
-        parent.write_val(PAGE_SIZE + 10, &12345u32).unwrap();
-        assert!(parent.read_val::<u32>(PAGE_SIZE + 10).unwrap() == 12345);
-        assert!(cow_child.read_val::<u32>(PAGE_SIZE + 10).unwrap() == 12345);
+        parent.write_val(BASE_PAGE_SIZE + 10, &12345u32).unwrap();
+        assert!(parent.read_val::<u32>(BASE_PAGE_SIZE + 10).unwrap() == 12345);
+        assert!(cow_child.read_val::<u32>(BASE_PAGE_SIZE + 10).unwrap() == 12345);
     }
 
     #[ktest]
     fn resize() {
-        let vmo = VmoOptions::<Full>::new(PAGE_SIZE)
+        let vmo = VmoOptions::<Full>::new(BASE_PAGE_SIZE)
             .flags(VmoFlags::RESIZABLE)
             .alloc()
             .unwrap();
         vmo.write_val(10, &42u8).unwrap();
-        vmo.resize(2 * PAGE_SIZE).unwrap();
-        assert!(vmo.size() == 2 * PAGE_SIZE);
+        vmo.resize(2 * BASE_PAGE_SIZE).unwrap();
+        assert!(vmo.size() == 2 * BASE_PAGE_SIZE);
         assert!(vmo.read_val::<u8>(10).unwrap() == 42);
-        vmo.write_val(PAGE_SIZE + 20, &123u8).unwrap();
-        vmo.resize(PAGE_SIZE).unwrap();
+        vmo.write_val(BASE_PAGE_SIZE + 20, &123u8).unwrap();
+        vmo.resize(BASE_PAGE_SIZE).unwrap();
         assert!(vmo.read_val::<u8>(10).unwrap() == 42);
     }
 }

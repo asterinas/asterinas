@@ -26,17 +26,17 @@ pub fn map_vdso_to_vm(process_vm: &ProcessVm) -> Vaddr {
     let options = root_vmar
         .new_map(vdso_vmo.dup().unwrap(), VmPerms::empty())
         .unwrap()
-        .size(5 * PAGE_SIZE);
+        .size(5 * BASE_PAGE_SIZE);
     let vdso_data_base = options.build().unwrap();
     let vdso_text_base = vdso_data_base + 0x4000;
 
     let data_perms = VmPerms::READ | VmPerms::WRITE;
     let text_perms = VmPerms::READ | VmPerms::EXEC;
     root_vmar
-        .protect(data_perms, vdso_data_base..vdso_data_base + PAGE_SIZE)
+        .protect(data_perms, vdso_data_base..vdso_data_base + BASE_PAGE_SIZE)
         .unwrap();
     root_vmar
-        .protect(text_perms, vdso_text_base..vdso_text_base + PAGE_SIZE)
+        .protect(text_perms, vdso_text_base..vdso_text_base + BASE_PAGE_SIZE)
         .unwrap();
     vdso_text_base
 }
@@ -60,7 +60,7 @@ pub fn load_program_to_vm(
     let inode = elf_file.inode();
     let file_header = {
         // read the first page of file header
-        let mut file_header_buffer = Box::new([0u8; PAGE_SIZE]);
+        let mut file_header_buffer = Box::new([0u8; BASE_PAGE_SIZE]);
         inode.read_at(0, &mut *file_header_buffer)?;
         file_header_buffer
     };

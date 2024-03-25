@@ -362,7 +362,7 @@ impl ExfatFS {
 
 impl PageCacheBackend for ExfatFS {
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        if self.fs_size() < idx * PAGE_SIZE {
+        if self.fs_size() < idx * BASE_PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
         self.block_device
@@ -372,7 +372,7 @@ impl PageCacheBackend for ExfatFS {
 
     // What if block_size is not equal to page size?
     fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
-        if self.fs_size() < idx * PAGE_SIZE {
+        if self.fs_size() < idx * BASE_PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }
         self.block_device
@@ -381,7 +381,7 @@ impl PageCacheBackend for ExfatFS {
     }
 
     fn npages(&self) -> usize {
-        self.fs_size() / PAGE_SIZE
+        self.fs_size() / BASE_PAGE_SIZE
     }
 }
 

@@ -65,7 +65,7 @@ pub fn main() {
 
 fn create_user_space(program: &[u8]) -> UserSpace {
     let user_pages = {
-        let nframes = content.len().align_up(PAGE_SIZE) / PAGE_SIZE;
+        let nframes = content.len().align_up(BASE_PAGE_SIZE) / BASE_PAGE_SIZE;
         let vm_frames = VmAllocOptions::new(nframes).alloc().unwrap();
         // Phyiscal memory pages can be only accessed
         // via the VmFrame abstraction.

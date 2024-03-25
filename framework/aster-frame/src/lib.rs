@@ -7,6 +7,7 @@
 #![feature(const_trait_impl)]
 #![feature(coroutines)]
 #![feature(fn_traits)]
+#![feature(generic_const_exprs)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(negative_impls)]

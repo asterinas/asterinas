@@ -100,15 +100,15 @@ impl Operation {
         let op_id = rng.gen_range(0..Self::FILE_OP_NUM);
         if op_id == Self::READ_ID {
             let (offset, len) =
-                generate_random_offset_len(Self::MAX_PAGE_PER_FILE * PAGE_SIZE, rng);
+                generate_random_offset_len(Self::MAX_PAGE_PER_FILE * BASE_PAGE_SIZE, rng);
             Operation::Read(offset, len)
         } else if op_id == Self::WRITE_ID {
             let (offset, len) =
-                generate_random_offset_len(Self::MAX_PAGE_PER_FILE * PAGE_SIZE, rng);
+                generate_random_offset_len(Self::MAX_PAGE_PER_FILE * BASE_PAGE_SIZE, rng);
             Operation::Write(offset, len)
         } else if op_id == Self::RESIZE_ID {
             let pg_num = rng.gen_range(0..Self::MAX_PAGE_PER_FILE);
-            let new_size = (pg_num * PAGE_SIZE).max(file.contents.len());
+            let new_size = (pg_num * BASE_PAGE_SIZE).max(file.contents.len());
             Operation::Resize(new_size)
         } else {
             let valid_len = file.valid_len;

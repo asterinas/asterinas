@@ -215,7 +215,7 @@ impl VmMapping {
         if vmo_offset >= self.vmo.size() {
             return_errno_with_message!(Errno::EACCES, "page fault addr is not backed up by a vmo");
         }
-        let page_idx = vmo_offset / PAGE_SIZE;
+        let page_idx = vmo_offset / BASE_PAGE_SIZE;
         if write {
             self.vmo.check_rights(Rights::WRITE)?;
         } else {
@@ -444,7 +444,7 @@ impl VmMappingInner {
 
         // Cow child allows unmapping the mapped page.
         if vmo.is_cow_child() && vm_space.is_mapped(map_addr) {
-            vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
+            vm_space.unmap(&(map_addr..(map_addr + BASE_PAGE_SIZE))).unwrap();
         }
 
         vm_space.map(VmFrameVec::from_one_frame(frame), &vm_map_options)?;
@@ -454,7 +454,7 @@ impl VmMappingInner {
 
     fn unmap_one_page(&mut self, vm_space: &VmSpace, page_idx: usize) -> Result<()> {
         let map_addr = self.page_map_addr(page_idx);
-        let range = map_addr..(map_addr + PAGE_SIZE);
+        let range = map_addr..(map_addr + BASE_PAGE_SIZE);
         if vm_space.is_mapped(map_addr) {
             vm_space.unmap(&range)?;
         }
@@ -478,7 +478,7 @@ impl VmMappingInner {
     }
 
     fn page_map_addr(&self, page_idx: usize) -> usize {
-        page_idx * PAGE_SIZE + self.map_to_addr - self.vmo_offset
+        page_idx * BASE_PAGE_SIZE + self.map_to_addr - self.vmo_offset
     }
 
     pub(super) fn protect(
@@ -487,16 +487,16 @@ impl VmMappingInner {
         perms: VmPerms,
         range: Range<usize>,
     ) -> Result<()> {
-        debug_assert!(range.start % PAGE_SIZE == 0);
-        debug_assert!(range.end % PAGE_SIZE == 0);
-        let start_page = (range.start - self.map_to_addr + self.vmo_offset) / PAGE_SIZE;
-        let end_page = (range.end - self.map_to_addr + self.vmo_offset) / PAGE_SIZE;
+        debug_assert!(range.start % BASE_PAGE_SIZE == 0);
+        debug_assert!(range.end % BASE_PAGE_SIZE == 0);
+        let start_page = (range.start - self.map_to_addr + self.vmo_offset) / BASE_PAGE_SIZE;
+        let end_page = (range.end - self.map_to_addr + self.vmo_offset) / BASE_PAGE_SIZE;
         let perm = VmPerm::from(perms);
         for page_idx in start_page..end_page {
             let page_addr = self.page_map_addr(page_idx);
             if vm_space.is_mapped(page_addr) {
                 // If the page is already mapped, we will modify page table
-                let page_range = page_addr..(page_addr + PAGE_SIZE);
+                let page_range = page_addr..(page_addr + BASE_PAGE_SIZE);
                 vm_space.protect(&page_range, perm)?;
             }
         }
@@ -511,14 +511,14 @@ impl VmMappingInner {
             vaddr
         );
         debug_assert!(vaddr >= self.map_to_addr && vaddr <= self.map_to_addr + self.map_size);
-        debug_assert!(vaddr % PAGE_SIZE == 0);
+        debug_assert!(vaddr % BASE_PAGE_SIZE == 0);
         let trim_size = vaddr - self.map_to_addr;
 
         self.map_to_addr = vaddr;
         let old_vmo_offset = self.vmo_offset;
         self.vmo_offset += trim_size;
         self.map_size -= trim_size;
-        for page_idx in old_vmo_offset / PAGE_SIZE..self.vmo_offset / PAGE_SIZE {
+        for page_idx in old_vmo_offset / BASE_PAGE_SIZE..self.vmo_offset / BASE_PAGE_SIZE {
             if self.mapped_pages.remove(&page_idx) {
                 let _ = self.unmap_one_page(vm_space, page_idx);
             }
@@ -534,9 +534,9 @@ impl VmMappingInner {
             vaddr
         );
         debug_assert!(vaddr >= self.map_to_addr && vaddr <= self.map_to_addr + self.map_size);
-        debug_assert!(vaddr % PAGE_SIZE == 0);
-        let page_idx_range = (vaddr - self.map_to_addr + self.vmo_offset) / PAGE_SIZE
-            ..(self.map_size + self.vmo_offset) / PAGE_SIZE;
+        debug_assert!(vaddr % BASE_PAGE_SIZE == 0);
+        let page_idx_range = (vaddr - self.map_to_addr + self.vmo_offset) / BASE_PAGE_SIZE
+            ..(self.map_size + self.vmo_offset) / BASE_PAGE_SIZE;
         for page_idx in page_idx_range {
             let _ = self.unmap_one_page(vm_space, page_idx);
         }
@@ -560,8 +560,8 @@ impl VmMappingInner {
 
     fn check_perm(&self, page_idx: &usize, perm: &VmPerm) -> Result<()> {
         // Check if the page is in current VmMapping.
-        if page_idx * PAGE_SIZE < self.vmo_offset
-            || (page_idx + 1) * PAGE_SIZE > self.vmo_offset + self.map_size
+        if page_idx * BASE_PAGE_SIZE < self.vmo_offset
+            || (page_idx + 1) * BASE_PAGE_SIZE > self.vmo_offset + self.map_size
         {
             return_errno_with_message!(Errno::EINVAL, "invalid page idx");
         }
@@ -603,7 +603,7 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
             vmo_offset: 0,
             size,
             offset: None,
-            align: PAGE_SIZE,
+            align: BASE_PAGE_SIZE,
             can_overwrite: false,
         }
     }
@@ -692,9 +692,9 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
     /// Check whether all options are valid.
     fn check_options(&self) -> Result<()> {
         // Check align.
-        debug_assert!(self.align % PAGE_SIZE == 0);
+        debug_assert!(self.align % BASE_PAGE_SIZE == 0);
         debug_assert!(self.align.is_power_of_two());
-        if self.align % PAGE_SIZE != 0 || !self.align.is_power_of_two() {
+        if self.align % BASE_PAGE_SIZE != 0 || !self.align.is_power_of_two() {
             return_errno_with_message!(Errno::EINVAL, "invalid align");
         }
         debug_assert!(self.vmo_offset % self.align == 0);

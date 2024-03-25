@@ -86,7 +86,7 @@ fn lookup_and_parse_ldso(
         fs_resolver.lookup(&fs_path)?
     };
     let ldso_elf = {
-        let mut buf = Box::new([0u8; PAGE_SIZE]);
+        let mut buf = Box::new([0u8; BASE_PAGE_SIZE]);
         let inode = ldso_file.inode();
         inode.read_at(0, &mut *buf)?;
         Elf::parse_elf(&*buf)?
@@ -224,7 +224,7 @@ fn base_map_addr(elf: &Elf, root_vmar: &Vmar<Full>) -> Result<Vaddr> {
             Errno::ENOEXEC,
             "executable file does not has loadable sections",
         ))?;
-    let map_size = elf_size.align_up(PAGE_SIZE);
+    let map_size = elf_size.align_up(BASE_PAGE_SIZE);
     let vmo = VmoOptions::<Rights>::new(0).alloc()?;
     let vmar_map_options = root_vmar.new_map(vmo, VmPerms::empty())?.size(map_size);
     vmar_map_options.build()
@@ -238,7 +238,7 @@ fn map_segment_vmo(
     base_addr: Vaddr,
 ) -> Result<()> {
     let perms = VmPerms::from(parse_segment_perm(program_header.flags));
-    let offset = (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
+    let offset = (program_header.virtual_addr as Vaddr).align_down(BASE_PAGE_SIZE);
     trace!(
         "map segment vmo: virtual addr = 0x{:x}, size = 0x{:x}, perms = {:?}",
         offset,
@@ -269,7 +269,7 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
 
     let file_offset = program_header.offset as usize;
     let virtual_addr = program_header.virtual_addr as usize;
-    debug_assert!(file_offset % PAGE_SIZE == virtual_addr % PAGE_SIZE);
+    debug_assert!(file_offset % BASE_PAGE_SIZE == virtual_addr % BASE_PAGE_SIZE);
     let page_cache_vmo = {
         let inode = elf_file.inode();
         inode.page_cache().ok_or(Error::with_message(
@@ -280,16 +280,16 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
 
     let segment_vmo = {
         let parent_range = {
-            let start = file_offset.align_down(PAGE_SIZE);
-            let end = (file_offset + program_header.file_size as usize).align_up(PAGE_SIZE);
+            let start = file_offset.align_down(BASE_PAGE_SIZE);
+            let end = (file_offset + program_header.file_size as usize).align_up(BASE_PAGE_SIZE);
             start..end
         };
         let vmo_size = {
-            let vmap_start = virtual_addr.align_down(PAGE_SIZE);
-            let vmap_end = (virtual_addr + program_header.mem_size as usize).align_up(PAGE_SIZE);
+            let vmap_start = virtual_addr.align_down(BASE_PAGE_SIZE);
+            let vmap_end = (virtual_addr + program_header.mem_size as usize).align_up(BASE_PAGE_SIZE);
             vmap_end - vmap_start
         };
-        debug_assert!(vmo_size >= (program_header.file_size as usize).align_up(PAGE_SIZE));
+        debug_assert!(vmo_size >= (program_header.file_size as usize).align_up(BASE_PAGE_SIZE));
         let segment_vmo = page_cache_vmo
             .new_cow_child(parent_range)?
             .flags(VmoFlags::RESIZABLE)
@@ -307,7 +307,7 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     // then the bytes that are not backed up by file content should be zeros.(usually .data/.bss sections).
 
     // Head padding.
-    let page_offset = file_offset % PAGE_SIZE;
+    let page_offset = file_offset % BASE_PAGE_SIZE;
     if page_offset != 0 {
         let buffer = vec![0u8; page_offset];
         segment_vmo.write_bytes(0, &buffer)?;
@@ -316,7 +316,7 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     let segment_vmo_size = segment_vmo.size();
     let tail_padding_offset = program_header.file_size as usize + page_offset;
     if segment_vmo_size > tail_padding_offset {
-        let buffer = vec![0u8; (segment_vmo_size - tail_padding_offset) % PAGE_SIZE];
+        let buffer = vec![0u8; (segment_vmo_size - tail_padding_offset) % BASE_PAGE_SIZE];
         segment_vmo.write_bytes(tail_padding_offset, &buffer)?;
     }
     Ok(segment_vmo.to_dyn())

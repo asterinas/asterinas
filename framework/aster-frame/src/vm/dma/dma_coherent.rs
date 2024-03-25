@@ -15,7 +15,7 @@ use crate::{
         dma::{dma_type, Daddr, DmaType},
         paddr_to_vaddr,
         page_table::KERNEL_PAGE_TABLE,
-        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
+        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, BASE_PAGE_SIZE,
     },
 };
 
@@ -56,7 +56,7 @@ impl DmaCoherent {
         if !is_cache_coherent {
             let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
             for i in 0..frame_count {
-                let paddr = start_paddr + (i * PAGE_SIZE);
+                let paddr = start_paddr + (i * BASE_PAGE_SIZE);
                 let vaddr = paddr_to_vaddr(paddr);
                 let flags = page_table.flags(vaddr).unwrap();
                 // Safety: the address is in the range of `vm_segment`.
@@ -84,7 +84,7 @@ impl DmaCoherent {
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
-                    let paddr = start_paddr + (i * PAGE_SIZE);
+                    let paddr = start_paddr + (i * BASE_PAGE_SIZE);
                     // Safety: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `vm_segment`.
                     unsafe {
                         iommu::map(paddr as Daddr, paddr).unwrap();
@@ -136,7 +136,7 @@ impl Drop for DmaCoherentInner {
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
-                    let paddr = start_paddr + (i * PAGE_SIZE);
+                    let paddr = start_paddr + (i * BASE_PAGE_SIZE);
                     iommu::unmap(paddr).unwrap();
                 }
             }
@@ -144,7 +144,7 @@ impl Drop for DmaCoherentInner {
         if !self.is_cache_coherent {
             let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
             for i in 0..frame_count {
-                let paddr = start_paddr + (i * PAGE_SIZE);
+                let paddr = start_paddr + (i * BASE_PAGE_SIZE);
                 let vaddr = paddr_to_vaddr(paddr);
                 let mut flags = page_table.flags(vaddr).unwrap();
                 flags.remove(PageTableFlags::NO_CACHE);
@@ -238,9 +238,9 @@ mod test {
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
 
-        let buf_write = vec![1u8; 2 * PAGE_SIZE];
+        let buf_write = vec![1u8; 2 * BASE_PAGE_SIZE];
         dma_coherent.write_bytes(0, &buf_write).unwrap();
-        let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
+        let mut buf_read = vec![0u8; 2 * BASE_PAGE_SIZE];
         dma_coherent.read_bytes(0, &mut buf_read).unwrap();
         assert_eq!(buf_write, buf_read);
     }
@@ -253,13 +253,13 @@ mod test {
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
 
-        let buf_write = vec![1u8; PAGE_SIZE];
+        let buf_write = vec![1u8; BASE_PAGE_SIZE];
         let mut writer = dma_coherent.writer();
         writer.write(&mut buf_write.as_slice().into());
         writer.write(&mut buf_write.as_slice().into());
 
-        let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
-        let buf_write = vec![1u8; 2 * PAGE_SIZE];
+        let mut buf_read = vec![0u8; 2 * BASE_PAGE_SIZE];
+        let buf_write = vec![1u8; 2 * BASE_PAGE_SIZE];
         let mut reader = dma_coherent.reader();
         reader.read(&mut buf_read.as_mut_slice().into());
         assert_eq!(buf_read, buf_write);
