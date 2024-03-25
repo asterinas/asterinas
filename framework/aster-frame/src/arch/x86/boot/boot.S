@@ -163,13 +163,6 @@ PTE_GLOBAL      = (1 << 8)
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
-    // 1000 00000|000  100000|00 0000000|0 00000000 000
-    // PDPT: 0xffff8008_00000000 ~ 0xffff8008_3fffffff
-    lea edi, [boot_pdpt + 0x20 * 8]
-    lea eax, [boot_pd_32g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
-    mov dword ptr [edi], eax
-    mov dword ptr [edi + 4], 0
-
     // PDPT: 0xffffffff_80000000 ~ 0xffffffff_bfffffff
     lea edi, [boot_pdpt + 0x1fe * 8]
     lea eax, [boot_pd_0g_1g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
@@ -193,17 +186,6 @@ write_pd_entry:
     add edi, 8
     loop write_pd_entry
 
-    // Page Directory: map to 1 GiB space offset 32GiB
-    lea edi, [boot_pd_32g]
-    lea eax, [boot_pt_32g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
-    mov ecx, 512 // (of entries in PD)
-write_pd_32g_entry:
-    mov dword ptr [edi], eax
-    mov dword ptr [edi + 4], 0x0
-    add eax, 0x1000 // +4KiB to next table
-    add edi, 8
-    loop write_pd_32g_entry
-
     // Page Table: map to low 1 GiB * 4 space
     lea edi, [boot_pt]
     mov eax, (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL) // Offset 0
@@ -214,17 +196,6 @@ write_pt_entry:
     add eax, 0x1000 // +4KiB
     add edi, 8
     loop write_pt_entry
-
-    // Page Table: map to 1 GiB space offset 32GiB
-    lea edi, [boot_pt_32g]
-    mov eax, (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL) // Offset 0x8_00000000 but should write to high 32bits
-    mov ecx, 512 * 512 // (of entries in PT) * (number of PT)
-write_pt_32g_entry:
-    mov dword ptr [edi], eax
-    mov dword ptr [edi + 4], 0x8 // Offset 0x8_00000000
-    add eax, 0x1000 // +4KiB
-    add edi, 8
-    loop write_pt_32g_entry
 
     jmp enable_long_mode
 
@@ -293,10 +264,6 @@ boot_pd_3g_4g:
     .skip 4096
 boot_pt:
     .skip 4096 * 512 * 4
-boot_pd_32g:
-    .skip 4096
-boot_pt_32g:
-    .skip 4096 * 512
 boot_page_table_end:
 
 .global boot_stack_top

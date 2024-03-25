@@ -25,8 +25,8 @@ pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallRet
 }
 
 fn madv_dontneed(start: Vaddr, len: usize) -> Result<()> {
-    debug_assert!(start % PAGE_SIZE == 0);
-    debug_assert!(len % PAGE_SIZE == 0);
+    debug_assert!(start % BASE_PAGE_SIZE == 0);
+    debug_assert!(len % BASE_PAGE_SIZE == 0);
     let current = current!();
     let root_vmar = current.root_vmar();
     let advised_range = start..start + len;

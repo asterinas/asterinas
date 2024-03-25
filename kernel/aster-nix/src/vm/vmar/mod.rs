@@ -174,8 +174,8 @@ impl Vmar_ {
     }
 
     pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
-        assert!(range.start % PAGE_SIZE == 0);
-        assert!(range.end % PAGE_SIZE == 0);
+        assert!(range.start % BASE_PAGE_SIZE == 0);
+        assert!(range.end % BASE_PAGE_SIZE == 0);
         self.check_protected_range(&range)?;
         self.do_protect_inner(perms, range)?;
         Ok(())
@@ -365,8 +365,8 @@ impl Vmar_ {
     }
 
     fn check_destroy_range(&self, range: &Range<usize>) -> Result<()> {
-        debug_assert!(range.start % PAGE_SIZE == 0);
-        debug_assert!(range.end % PAGE_SIZE == 0);
+        debug_assert!(range.start % BASE_PAGE_SIZE == 0);
+        debug_assert!(range.end % BASE_PAGE_SIZE == 0);
 
         let inner = self.inner.lock();
 

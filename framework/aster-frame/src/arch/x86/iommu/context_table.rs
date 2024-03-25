@@ -6,12 +6,12 @@ use core::mem::size_of;
 use log::warn;
 use pod::Pod;
 
-use super::second_stage::{PageTableEntry, PageTableFlags};
+use super::second_stage::{DeviceMode, PageTableEntry, PageTableFlags};
 use crate::{
     bus::pci::PciDeviceLocation,
     vm::{
         dma::Daddr,
-        page_table::{DeviceMode, PageTableConfig, PageTableError},
+        page_table::{PageTableConfig, PageTableError},
         Paddr, PageTable, VmAllocOptions, VmFrame, VmIo,
     },
 };
@@ -263,6 +263,7 @@ impl ContextTable {
             let table: PageTable<PageTableEntry, DeviceMode> =
                 PageTable::<PageTableEntry, DeviceMode>::new(PageTableConfig {
                     address_width: crate::vm::page_table::AddressWidth::Level3,
+                    min_translation_depth: 1,
                 });
             let address = table.root_paddr();
             self.page_tables.insert(address, table);

@@ -133,10 +133,10 @@ struct ExfatInodeInner {
 impl PageCacheBackend for ExfatInode {
     fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<()> {
         let inner = self.inner.read();
-        if inner.size < idx * PAGE_SIZE {
+        if inner.size < idx * BASE_PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
-        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
+        let sector_id = inner.get_sector_id(idx * BASE_PAGE_SIZE / inner.fs().sector_size())?;
         inner.fs().block_device().read_block_sync(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             frame,
@@ -148,7 +148,7 @@ impl PageCacheBackend for ExfatInode {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
-        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
+        let sector_id = inner.get_sector_id(idx * BASE_PAGE_SIZE / inner.fs().sector_size())?;
 
         // FIXME: We may need to truncate the file if write_page fails.
         // To fix this issue, we need to change the interface of the PageCacheBackend trait.
@@ -160,7 +160,7 @@ impl PageCacheBackend for ExfatInode {
     }
 
     fn npages(&self) -> usize {
-        self.inner.read().size.align_up(PAGE_SIZE) / PAGE_SIZE
+        self.inner.read().size.align_up(BASE_PAGE_SIZE) / BASE_PAGE_SIZE
     }
 }
 
@@ -1052,7 +1052,7 @@ impl DirentVisitor for EmptyVistor {
     }
 }
 fn is_block_aligned(off: usize) -> bool {
-    off % PAGE_SIZE == 0
+    off % BASE_PAGE_SIZE == 0
 }
 
 fn check_corner_cases_for_rename(

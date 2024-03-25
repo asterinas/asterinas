@@ -5,7 +5,7 @@ use core::ops::Range;
 use bitflags::bitflags;
 
 use super::{is_page_aligned, MapArea, MemorySet, VmFrameVec, VmIo};
-use crate::{arch::mm::PageTableFlags, prelude::*, sync::Mutex, vm::PAGE_SIZE, Error};
+use crate::{arch::mm::PageTableFlags, prelude::*, sync::Mutex, vm::BASE_PAGE_SIZE, Error};
 
 /// Virtual memory space.
 ///
@@ -65,9 +65,9 @@ impl VmSpace {
         // FIXME: This is only a hack here. The interface of MapArea cannot simply deal with unmap part of memory,
         // so we only map MapArea of page size now.
         for (idx, frame) in frames.into_iter().enumerate() {
-            let addr = options.addr.unwrap() + idx * PAGE_SIZE;
+            let addr = options.addr.unwrap() + idx * BASE_PAGE_SIZE;
             let frames = VmFrameVec::from_one_frame(frame);
-            memory_set.map(MapArea::new(addr, PAGE_SIZE, flags, frames));
+            memory_set.map(MapArea::new(addr, BASE_PAGE_SIZE, flags, frames));
         }
 
         Ok(options.addr.unwrap())
@@ -86,11 +86,11 @@ impl VmSpace {
     pub fn unmap(&self, range: &Range<Vaddr>) -> Result<()> {
         assert!(is_page_aligned(range.start) && is_page_aligned(range.end));
         let mut start_va = range.start;
-        let page_size = (range.end - range.start) / PAGE_SIZE;
+        let page_size = (range.end - range.start) / BASE_PAGE_SIZE;
         let mut inner = self.memory_set.lock();
         for i in 0..page_size {
             inner.unmap(start_va)?;
-            start_va += PAGE_SIZE;
+            start_va += BASE_PAGE_SIZE;
         }
         Ok(())
     }
@@ -107,13 +107,13 @@ impl VmSpace {
     /// The entire specified VM range must have been mapped with physical
     /// memory pages.
     pub fn protect(&self, range: &Range<Vaddr>, perm: VmPerm) -> Result<()> {
-        debug_assert!(range.start % PAGE_SIZE == 0);
-        debug_assert!(range.end % PAGE_SIZE == 0);
-        let start_page = range.start / PAGE_SIZE;
-        let end_page = range.end / PAGE_SIZE;
+        debug_assert!(range.start % BASE_PAGE_SIZE == 0);
+        debug_assert!(range.end % BASE_PAGE_SIZE == 0);
+        let start_page = range.start / BASE_PAGE_SIZE;
+        let end_page = range.end / BASE_PAGE_SIZE;
         let flags = PageTableFlags::from(perm);
         for page_idx in start_page..end_page {
-            let addr = page_idx * PAGE_SIZE;
+            let addr = page_idx * BASE_PAGE_SIZE;
             self.memory_set.lock().protect(addr, flags)
         }
         Ok(())
@@ -155,7 +155,7 @@ impl VmMapOptions {
     pub fn new() -> Self {
         Self {
             addr: None,
-            align: PAGE_SIZE,
+            align: BASE_PAGE_SIZE,
             perm: VmPerm::empty(),
             can_overwrite: false,
         }

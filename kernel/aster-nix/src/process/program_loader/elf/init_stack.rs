@@ -102,7 +102,7 @@ impl InitStack {
             getrandom::getrandom(random_nr_pages_padding.as_bytes_mut()).unwrap();
             random_nr_pages_padding as usize
         };
-        let init_stack_top = MAX_USERSPACE_VADDR - PAGE_SIZE * nr_pages_padding;
+        let init_stack_top = MAX_USERSPACE_VADDR - BASE_PAGE_SIZE * nr_pages_padding;
         let init_stack_size = INIT_STACK_SIZE;
         InitStack::new(init_stack_top, init_stack_size, argv, envp)
     }
@@ -182,7 +182,7 @@ impl InitStack {
         // which will cause unrecoverable page fault(The guard page is not backed up by any vmo).
         // So we add a zero page here, to ensure the read will not go into guard page.
         // FIXME: Some other OSes put the first page of excutable file here.
-        self.write_bytes(&[0u8; PAGE_SIZE], root_vmar)?;
+        self.write_bytes(&[0u8; BASE_PAGE_SIZE], root_vmar)?;
         // write envp string
         let envp_pointers = self.write_envp_strings(root_vmar)?;
         // write argv string
@@ -336,7 +336,7 @@ impl InitStack {
 
 pub fn init_aux_vec(elf: &Elf, elf_map_addr: Vaddr, vdso_text_base: Vaddr) -> Result<AuxVec> {
     let mut aux_vec = AuxVec::new();
-    aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
+    aux_vec.set(AuxKey::AT_PAGESZ, BASE_PAGE_SIZE as _)?;
     let ph_addr = if elf.is_shared_object() {
         elf.ph_addr()? + elf_map_addr
     } else {

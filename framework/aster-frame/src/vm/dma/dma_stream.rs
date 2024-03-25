@@ -14,7 +14,7 @@ use crate::{
     error::Error,
     vm::{
         dma::{dma_type, Daddr, DmaType},
-        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
+        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, BASE_PAGE_SIZE,
     },
 };
 
@@ -76,7 +76,7 @@ impl DmaStream {
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
-                    let paddr = start_paddr + (i * PAGE_SIZE);
+                    let paddr = start_paddr + (i * BASE_PAGE_SIZE);
                     // Safety: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `vm_segment`.
                     unsafe {
                         iommu::map(paddr as Daddr, paddr).unwrap();
@@ -163,7 +163,7 @@ impl Drop for DmaStreamInner {
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
-                    let paddr = start_paddr + (i * PAGE_SIZE);
+                    let paddr = start_paddr + (i * BASE_PAGE_SIZE);
                     iommu::unmap(paddr).unwrap();
                 }
             }
@@ -253,10 +253,10 @@ mod test {
             .unwrap();
         let dma_stream = DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap();
 
-        let buf_write = vec![1u8; 2 * PAGE_SIZE];
+        let buf_write = vec![1u8; 2 * BASE_PAGE_SIZE];
         dma_stream.write_bytes(0, &buf_write).unwrap();
-        dma_stream.sync(0..2 * PAGE_SIZE).unwrap();
-        let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
+        dma_stream.sync(0..2 * BASE_PAGE_SIZE).unwrap();
+        let mut buf_read = vec![0u8; 2 * BASE_PAGE_SIZE];
         dma_stream.read_bytes(0, &mut buf_read).unwrap();
         assert_eq!(buf_write, buf_read);
     }
@@ -269,13 +269,13 @@ mod test {
             .unwrap();
         let dma_stream = DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap();
 
-        let buf_write = vec![1u8; PAGE_SIZE];
+        let buf_write = vec![1u8; BASE_PAGE_SIZE];
         let mut writer = dma_stream.writer().unwrap();
         writer.write(&mut buf_write.as_slice().into());
         writer.write(&mut buf_write.as_slice().into());
-        dma_stream.sync(0..2 * PAGE_SIZE).unwrap();
-        let mut buf_read = vec![0u8; 2 * PAGE_SIZE];
-        let buf_write = vec![1u8; 2 * PAGE_SIZE];
+        dma_stream.sync(0..2 * BASE_PAGE_SIZE).unwrap();
+        let mut buf_read = vec![0u8; 2 * BASE_PAGE_SIZE];
+        let buf_write = vec![1u8; 2 * BASE_PAGE_SIZE];
         let mut reader = dma_stream.reader().unwrap();
         reader.read(&mut buf_read.as_mut_slice().into());
         assert_eq!(buf_read, buf_write);

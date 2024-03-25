@@ -8,7 +8,7 @@ use crate::{
     arch::mm::{PageTableEntry, PageTableFlags},
     prelude::*,
     vm::{
-        is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter, PAGE_SIZE,
+        is_page_aligned, VmAllocOptions, VmFrame, VmFrameVec, VmReader, VmWriter, BASE_PAGE_SIZE,
         PHYS_MEM_BASE_VADDR,
     },
     Error,
@@ -60,7 +60,7 @@ impl MapArea {
         assert!(
             is_page_aligned(start_va)
                 && is_page_aligned(size)
-                && physical_frames.len() == (size / PAGE_SIZE)
+                && physical_frames.len() == (size / BASE_PAGE_SIZE)
         );
 
         let mut map_area = Self {
@@ -70,13 +70,13 @@ impl MapArea {
             mapper: BTreeMap::new(),
         };
         let mut current_va = start_va;
-        let page_size = size / PAGE_SIZE;
+        let page_size = size / BASE_PAGE_SIZE;
         let mut phy_frame_iter = physical_frames.iter();
 
         for i in 0..page_size {
             let vm_frame = phy_frame_iter.next().unwrap();
             map_area.map_with_physical_address(current_va, vm_frame.clone());
-            current_va += PAGE_SIZE;
+            current_va += BASE_PAGE_SIZE;
         }
 
         map_area
@@ -110,13 +110,13 @@ impl MapArea {
         let mut current_start_address = addr;
         let mut buf_reader: VmReader = data.into();
         for (va, pa) in self.mapper.iter() {
-            if current_start_address >= *va && current_start_address < va + PAGE_SIZE {
+            if current_start_address >= *va && current_start_address < va + BASE_PAGE_SIZE {
                 let offset = current_start_address - va;
                 let _ = pa.writer().skip(offset).write(&mut buf_reader);
                 if !buf_reader.has_remain() {
                     return;
                 }
-                current_start_address = va + PAGE_SIZE;
+                current_start_address = va + BASE_PAGE_SIZE;
             }
         }
     }
@@ -125,13 +125,13 @@ impl MapArea {
         let mut start = addr;
         let mut buf_writer: VmWriter = data.into();
         for (va, pa) in self.mapper.iter() {
-            if start >= *va && start < va + PAGE_SIZE {
+            if start >= *va && start < va + BASE_PAGE_SIZE {
                 let offset = start - va;
                 let _ = pa.reader().skip(offset).read(&mut buf_writer);
                 if !buf_writer.has_avail() {
                     return;
                 }
-                start = va + PAGE_SIZE;
+                start = va + BASE_PAGE_SIZE;
             }
         }
     }
@@ -178,6 +178,7 @@ impl MemorySet {
     pub fn new() -> Self {
         let mut page_table = PageTable::<PageTableEntry, UserMode>::new(PageTableConfig {
             address_width: super::page_table::AddressWidth::Level4,
+            supported_translation_depth: 1,
         });
         let mapped_pte = crate::arch::mm::ALL_MAPPED_PTE.lock();
         for (index, pte) in mapped_pte.iter() {

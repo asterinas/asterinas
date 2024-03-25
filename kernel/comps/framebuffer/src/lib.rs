@@ -17,7 +17,7 @@ use aster_frame::{
     boot,
     io_mem::IoMem,
     sync::SpinLock,
-    vm::{VmIo, PAGE_SIZE},
+    vm::{VmIo, BASE_PAGE_SIZE},
 };
 use component::{init_component, ComponentInitError};
 use font8x8::UnicodeFonts;
@@ -43,7 +43,7 @@ pub(crate) fn init() {
             size = i.len();
         }
 
-        let page_size = size / PAGE_SIZE;
+        let page_size = size / BASE_PAGE_SIZE;
 
         let start_paddr = framebuffer.address;
         let io_mem = todo!("IoMem is private for components now, should fix it.");

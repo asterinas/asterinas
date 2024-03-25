@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{vec, vec::Vec};
-use core::{fmt::Debug, marker::PhantomData, mem::size_of};
+use num::ToPrimitive;
+use core::{fmt::Debug, marker::PhantomData, mem::size_of, ops::Range};
 
-use log::trace;
-use pod::Pod;
+use num_derive::ToPrimitive;
 use spin::Once;
+use pod::Pod;
 
 use super::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions};
 use crate::{
-    arch::mm::{is_kernel_vaddr, is_user_vaddr, tlb_flush, PageTableEntry, NR_ENTRIES_PER_PAGE},
+    arch::mm::{tlb_flush, PageTableEntry, NR_ENTRIES_PER_PAGE},
     sync::SpinLock,
-    vm::{VmFrame, PAGE_SIZE},
+    vm::{VmFrame, BASE_PAGE_SIZE},
 };
 
 pub trait PageTableFlagsTrait: Clone + Copy + Sized + Pod + Debug {
@@ -87,14 +88,24 @@ pub trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
 #[derive(Debug, Clone, Copy)]
 pub struct PageTableConfig {
     pub address_width: AddressWidth,
+    /// The minimum depth of translation.
+    /// 
+    /// It's value is the level that the page table can start to use huge pages.
+    pub supported_translation_depth: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, ToPrimitive)]
 #[repr(usize)]
 pub enum AddressWidth {
     Level3 = 3,
     Level4 = 4,
     Level5 = 5,
+}
+
+impl AddressWidth {
+    pub fn page_size_at_level(&self, level: usize) -> usize {
+        BASE_PAGE_SIZE << (9 * (self.to_usize().unwrap() - level))
+    }
 }
 
 #[derive(Debug)]
@@ -110,16 +121,27 @@ pub enum PageTableError {
 
 pub static KERNEL_PAGE_TABLE: Once<SpinLock<PageTable<PageTableEntry, KernelMode>>> = Once::new();
 
+/// This is a compile-time technique to force the frame developers to distinguish
+/// between the kernel global page table instance, process specific user page table
+/// instance, and device page table instances.
+pub(crate) trait PageTableMode {
+    /// The range of virtual addresses that the page table can manage.
+    const VADDR_RANGE: Range<Vaddr>;
+}
+
 #[derive(Clone)]
 pub struct UserMode {}
+
+impl PageTableMode for UserMode {
+    const VADDR_RANGE: Range<Vaddr> = 0..super::MAX_USERSPACE_VADDR;
+}
 
 #[derive(Clone)]
 pub struct KernelMode {}
 
-/// The page table used by iommu maps the device address
-/// space to the physical address space.
-#[derive(Clone)]
-pub struct DeviceMode {}
+impl PageTableMode for KernelMode {
+    const VADDR_RANGE: Range<Vaddr> = super::KERNEL_BASE_VADDR..super::KERNEL_END_VADDR;
+}
 
 #[derive(Clone, Debug)]
 pub struct PageTable<T: PageTableEntryTrait, M = UserMode> {
@@ -131,180 +153,123 @@ pub struct PageTable<T: PageTableEntryTrait, M = UserMode> {
 }
 
 impl<T: PageTableEntryTrait> PageTable<T, UserMode> {
-    pub fn new(config: PageTableConfig) -> Self {
-        let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
-        Self {
-            root_paddr: root_frame.start_paddr(),
-            tables: vec![root_frame],
-            config,
-            _phantom: PhantomData,
-        }
-    }
-
     pub fn map(
         &mut self,
         vaddr: Vaddr,
         frame: &VmFrame,
         flags: T::F,
     ) -> Result<(), PageTableError> {
-        if is_kernel_vaddr(vaddr) {
+        if !UserMode::VADDR_RANGE.contains(&vaddr) {
             return Err(PageTableError::InvalidVaddr);
         }
+        let from = vaddr..vaddr + BASE_PAGE_SIZE;
+        let to = frame.start_paddr()..frame.start_paddr() + BASE_PAGE_SIZE;
         // Safety:
         // 1. The vaddr belongs to user mode program and does not affect the kernel mapping.
         // 2. The area where the physical address islocated at untyped memory and does not affect kernel security.
-        unsafe { self.do_map(vaddr, frame.start_paddr(), flags) }
-    }
-
-    pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
-        if is_kernel_vaddr(vaddr) {
-            return Err(PageTableError::InvalidVaddr);
-        }
-        // Safety: The vaddr belongs to user mode program and does not affect the kernel mapping.
-        unsafe { self.do_unmap(vaddr) }
-    }
-
-    pub fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<T::F, PageTableError> {
-        if is_kernel_vaddr(vaddr) {
-            return Err(PageTableError::InvalidVaddr);
-        }
-        // Safety: The vaddr belongs to user mode program and does not affect the kernel mapping.
-        unsafe { self.do_protect(vaddr, flags) }
+        unsafe { self.do_map(from, to, MapProperty::from(flags)) }
     }
 }
 
 impl<T: PageTableEntryTrait> PageTable<T, KernelMode> {
-    /// Mapping `vaddr` to `paddr` with flags. The `vaddr` should not be at the low address
-    ///  (memory belonging to the user mode program).
-    ///
-    /// # Safety
-    ///
-    /// Modifying kernel mappings is considered unsafe, and incorrect operation may cause crashes.
-    /// User must take care of the consequences when using this API.
-    pub unsafe fn map(
-        &mut self,
-        vaddr: Vaddr,
-        paddr: Paddr,
-        flags: T::F,
-    ) -> Result<(), PageTableError> {
-        if is_user_vaddr(vaddr) {
-            return Err(PageTableError::InvalidVaddr);
-        }
-        self.do_map(vaddr, paddr, flags)
-    }
-
-    /// Unmap `vaddr`. The `vaddr` should not be at the low address
-    ///  (memory belonging to the user mode program).
-    ///
-    /// # Safety
-    ///
-    /// Modifying kernel mappings is considered unsafe, and incorrect operation may cause crashes.
-    /// User must take care of the consequences when using this API.
-    pub unsafe fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
-        if is_user_vaddr(vaddr) {
-            return Err(PageTableError::InvalidVaddr);
-        }
-        self.do_unmap(vaddr)
-    }
-
-    /// Modify the flags mapped at `vaddr`. The `vaddr` should not be at the low address
-    ///  (memory belonging to the user mode program).
-    /// If the modification succeeds, it will return the old flags of `vaddr`.
-    ///
-    /// # Safety
-    ///
-    /// Modifying kernel mappings is considered unsafe, and incorrect operation may cause crashes.
-    /// User must take care of the consequences when using this API.
-    pub unsafe fn protect(&mut self, vaddr: Vaddr, flags: T::F) -> Result<T::F, PageTableError> {
-        if is_user_vaddr(vaddr) {
-            return Err(PageTableError::InvalidVaddr);
-        }
-        self.do_protect(vaddr, flags)
-    }
-}
-
-impl<T: PageTableEntryTrait> PageTable<T, DeviceMode> {
-    pub fn new(config: PageTableConfig) -> Self {
+    pub fn fork(&self) -> PageTable<T, UserMode> {
         let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
-        Self {
+        // Safety: The root_paddr is refer to the root of a valid page table.
+        unsafe {
+            let src = self.root_paddr as *const T;
+            let dst = root_frame.start_paddr() as *mut T;
+            core::ptr::copy_nonoverlapping(src, dst, NR_ENTRIES_PER_PAGE);
+        }
+        PageTable::<T, UserMode> {
             root_paddr: root_frame.start_paddr(),
             tables: vec![root_frame],
-            config,
+            config: self.config,
             _phantom: PhantomData,
         }
     }
-
-    /// Mapping directly from a virtual address to a physical address.
-    /// The virtual address should be in the device address space.
-    ///
-    /// # Safety
-    ///
-    /// User must ensure the given paddr is a valid one (e.g. from the VmSegment).
-    pub unsafe fn map_with_paddr(
-        &mut self,
-        vaddr: Vaddr,
-        paddr: Paddr,
-        flags: T::F,
+    pub unsafe fn map(
+        from: Range<Vaddr>,
+        to: Range<Paddr>,
+        op: impl Fn(MapProperty) -> MapProperty
     ) -> Result<(), PageTableError> {
-        self.do_map(vaddr, paddr, flags)
-    }
-
-    pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
-        // Safety: the `vaddr` is in the device address space.
-        unsafe { self.do_unmap(vaddr) }
+        if !range_contains(KernelMode::VADDR_RANGE, from){
+            return Err(PageTableError::InvalidVaddr);
+        }
+        self.do_map(from, to, op)
     }
 }
 
 impl<T: PageTableEntryTrait, M> PageTable<T, M> {
-    /// Add a new mapping directly in the root page table.
-    ///
-    /// # Safety
-    ///
-    /// User must guarantee the validity of the PTE.
-    ///
-    pub unsafe fn add_root_mapping(&mut self, index: usize, pte: &T) {
-        debug_assert!((index + 1) * size_of::<T>() <= PAGE_SIZE);
-        // Safety: The root_paddr is refer to the root of a valid page table.
-        let root_ptes: &mut [T] = table_of(self.root_paddr).unwrap();
-        root_ptes[index] = *pte;
-    }
-
     /// Mapping `vaddr` to `paddr` with flags.
-    ///
-    /// # Safety
-    ///
-    /// This function allows arbitrary modifications to the page table.
-    /// Incorrect modifications may cause the kernel to crash (e.g., changing the linear mapping.).
-    unsafe fn do_map(
+    /// 
+    /// This function can be used to map, unmap or protect virtual memory ranges.
+    /// The `op` function is for you to customize the operation on the properties
+    /// of the range. The argument `F` is the properties on the page table entry
+    /// before the mapping operation, and the return value is the properties you
+    /// want after the mapping operation.
+    /// 
+    /// If the argument `to` is `None`, this function will not change the mapped
+    /// address but just adjust the flags according to `op`.
+    /// 
+    /// The function will map as more huge pages as possible, and it will split
+    /// the huge pages into smaller pages if necessary. If the input range is large,
+    /// the resulting mappings may look like this (if very huge pages supported):
+    /// 
+    /// ```text
+    /// start                                                             end
+    ///   |----|----------------|--------------------------------|----|----|
+    ///   small      huge                     very huge          small small
+    /// on x86:
+    ///    4KiB      2MiB                       1GiB             4KiB  4KiB
+    /// ```
+    pub unsafe fn do_map(
         &mut self,
-        vaddr: Vaddr,
-        paddr: Paddr,
-        flags: T::F,
-    ) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, true).unwrap();
-        trace!(
-            "Page Table: Map vaddr:{:x?}, paddr:{:x?}, flags:{:x?}",
-            vaddr,
-            paddr,
-            flags
-        );
-        if last_entry.is_used() && last_entry.flags().is_present() {
-            return Err(PageTableError::InvalidModification);
+        from: Range<Vaddr>,
+        to: Option<Range<Paddr>>,
+        op: impl Fn(MapProperty) -> MapProperty
+    ) -> Result<(), PageTableError>
+    {   
+        let page_sizes = {
+            let mut page_sizes = [0; 5];
+            for i in 0..5 {
+                page_sizes[i] = self.config.address_width.page_size_at_level(i + 1);
+            }
+            page_sizes
+        };
+        let cur_level = self.config.address_width.to_usize().unwrap();
+        let mut current_pt: &mut T = &mut *(paddr_to_vaddr(self.root_paddr) as *mut T);
+        let mut current_vaddr = from.start;
+
+        while cur_level > 1 {
+            debug_assert!(size_of::<T>() * (T::page_index(current_vaddr, cur_level) + 1) <= BASE_PAGE_SIZE);
+            // Safety: The offset does not exceed the value of BASE_PAGE_SIZE.
+            // It only change the memory controlled by page table.
+            current_pt = unsafe {
+                &mut *(paddr_to_vaddr(
+                    current_pt.paddr() + size_of::<T>() * T::page_index(current_vaddr, cur_level),
+                ) as *mut T)
+            };
         }
-        last_entry.update(paddr, flags);
-        tlb_flush(vaddr);
+
         Ok(())
     }
 
-    /// Find the last PTE
-    ///
-    /// If create is set, it will create the next table until the last PTE.
-    /// If not, it will return None if it is not reach the last PTE.
-    ///
-    fn page_walk(&mut self, vaddr: Vaddr, create: bool) -> Option<&mut T> {
-        let mut count = self.config.address_width as usize;
-        debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
-        // Safety: The offset does not exceed the value of PAGE_SIZE.
+    /// Query the page table for the mapping information of the specified range.
+    /// 
+    /// The function will return a iterator on a list mappings
+    pub fn do_query<'a>(
+        &'a self,
+        on: Range<Vaddr>,
+    ) -> PageTableQueryIter<'a, T, M>
+    {
+        todo!()
+    }
+
+    /// A software emulation of the address translation process.
+    pub fn translate(&self, vaddr: Vaddr) -> Option<Paddr> {
+        let mut count = self.config.address_width.to_usize().unwrap();
+        debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= BASE_PAGE_SIZE);
+        // Safety: The offset does not exceed the value of BASE_PAGE_SIZE.
         // It only change the memory controlled by page table.
         let mut current: &mut T = unsafe {
             &mut *(paddr_to_vaddr(self.root_paddr + size_of::<T>() * T::page_index(vaddr, count))
@@ -312,27 +277,13 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         };
 
         while count > 1 {
-            if !current.flags().is_present() {
-                if !create {
-                    return None;
-                }
-                // Create next table
-                let frame = VmAllocOptions::new(1).alloc_single().unwrap();
-                // Default flags: read, write, user, present
-                let flags = T::F::new()
-                    .set_present(true)
-                    .set_accessible_by_user(true)
-                    .set_readable(true)
-                    .set_writable(true);
-                current.update(frame.start_paddr(), flags);
-                self.tables.push(frame);
-            }
             if current.flags().is_huge() {
+                debug_assert!(count <= self.config.supported_translation_depth);
                 break;
             }
             count -= 1;
-            debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
-            // Safety: The offset does not exceed the value of PAGE_SIZE.
+            debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= BASE_PAGE_SIZE);
+            // Safety: The offset does not exceed the value of BASE_PAGE_SIZE.
             // It only change the memory controlled by page table.
             current = unsafe {
                 &mut *(paddr_to_vaddr(
@@ -340,82 +291,79 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
                 ) as *mut T)
             };
         }
-        Some(current)
+
+        let offset_width = (count - 1) * 9 + 12;
+        let offset_mask = (1usize << offset_width) - 1;
+        Some(current.paddr() + (vaddr & offset_mask))
     }
 
-    /// Unmap `vaddr`.
-    ///
-    /// # Safety
-    ///
-    /// This function allows arbitrary modifications to the page table.
-    /// Incorrect modifications may cause the kernel to crash (e.g., unmap the linear mapping.).
-    unsafe fn do_unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, false).unwrap();
-        trace!("Page Table: Unmap vaddr:{:x?}", vaddr);
-        if !last_entry.is_used() && !last_entry.flags().is_present() {
-            return Err(PageTableError::InvalidModification);
+    pub(crate) fn new(config: PageTableConfig) -> Self {
+        let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
+        Self {
+            root_paddr: root_frame.start_paddr(),
+            tables: vec![root_frame],
+            config: config,
+            _phantom: PhantomData,
         }
-        last_entry.clear();
-        tlb_flush(vaddr);
-        Ok(())
-    }
-
-    /// Modify the flags mapped at `vaddr`.
-    /// If the modification succeeds, it will return the old flags of `vaddr`.
-    ///
-    /// # Safety
-    ///
-    /// This function allows arbitrary modifications to the page table.
-    /// Incorrect modifications may cause the kernel to crash
-    /// (e.g., make the linear mapping visible to the user mode applications.).
-    unsafe fn do_protect(&mut self, vaddr: Vaddr, new_flags: T::F) -> Result<T::F, PageTableError> {
-        let last_entry = self.page_walk(vaddr, false).unwrap();
-        let old_flags = last_entry.flags();
-        trace!(
-            "Page Table: Protect vaddr:{:x?}, flags:{:x?}",
-            vaddr,
-            new_flags
-        );
-        if !last_entry.is_used() || !old_flags.is_present() {
-            return Err(PageTableError::InvalidModification);
-        }
-        last_entry.update(last_entry.paddr(), new_flags);
-        tlb_flush(vaddr);
-        Ok(old_flags)
-    }
-
-    pub fn flags(&mut self, vaddr: Vaddr) -> Option<T::F> {
-        let last_entry = self.page_walk(vaddr, false)?;
-        Some(last_entry.flags())
-    }
-
-    pub fn root_paddr(&self) -> Paddr {
-        self.root_paddr
     }
 }
 
-/// Read `NR_ENTRIES_PER_PAGE` of PageTableEntry from an address
-///
-/// # Safety
-///
-/// User must ensure that the physical address refers to the root of a valid page table.
-///
-pub unsafe fn table_of<'a, T: PageTableEntryTrait>(pa: Paddr) -> Option<&'a mut [T]> {
-    if pa == 0 {
-        return None;
+bitflags::bitflags! {
+    pub struct MapProperty: u8 {
+        const READ = 0b0001;
+        const WRITE = 0b0010;
+        const EXEC = 0b0100;
     }
-    let ptr = super::paddr_to_vaddr(pa) as *mut _;
-    Some(core::slice::from_raw_parts_mut(ptr, NR_ENTRIES_PER_PAGE))
 }
 
-/// translate a virtual address to physical address which cannot use offset to get physical address
-pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
-    let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
-    // Although we bypass the unsafe APIs provided by KernelMode, the purpose here is
-    // only to obtain the corresponding physical address according to the mapping.
-    let last_entry = page_table.page_walk(vaddr, false)?;
-    // FIXME: Support huge page
-    Some(last_entry.paddr() + (vaddr & (PAGE_SIZE - 1)))
+impl MapProperty {
+    pub fn from<F: PageTableFlagsTrait>(flags: F) -> Self {
+        let mut prop = Self::empty();
+        if flags.readable() {
+            prop |= Self::READ;
+        }
+        if flags.writable() {
+            prop |= Self::WRITE;
+        }
+        if flags.executable() {
+            prop |= Self::EXEC;
+        }
+        prop
+    }
+}
+
+pub struct PageTableQueryIter<'a, T, M> {
+    page_table: &'a PageTable<T, M>,
+    cur_va: Vaddr,
+    cur_pt: &'a PageTableFrame<T>,
+    cur_level: usize,
+}
+
+impl<T, M> Iterator for PageTableQueryIter<'_, T, M> {
+    type Item = (Vaddr, Paddr, MapProperty);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+}
+
+pub struct PageTableFrame<T> {
+    frame: VmFrame,
+    level: usize,
+}
+
+impl<T: PageTableEntryTrait> PageTableFrame<T> {
+    pub fn new() -> Self {
+        Self(VmAllocOptions::new(1).alloc_single().unwrap())
+    }
+
+    pub fn as_slice(&self) -> &[T] {
+        unsafe { core::slice::from_raw_parts(self.0.start_vaddr() as *const T, NR_ENTRIES_PER_PAGE) }
+    }
+
+    pub fn as_slice_mut(&mut self) -> &mut [T] {
+        unsafe { core::slice::from_raw_parts_mut(self.0.start_vaddr() as *mut T, NR_ENTRIES_PER_PAGE) }
+    }
 }
 
 pub fn init() {
@@ -427,8 +375,13 @@ pub fn init() {
             tables: Vec::new(),
             config: PageTableConfig {
                 address_width: AddressWidth::Level4,
+                supported_translation_depth: 2,
             },
             _phantom: PhantomData,
         })
     });
+}
+
+fn range_contains<Idx: PartialOrd<Idx>>(parent: Range<Idx>, child: Range<Idx>) -> bool {
+    parent.start <= child.start && parent.end >= child.end
 }

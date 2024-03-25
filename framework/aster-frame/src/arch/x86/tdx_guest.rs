@@ -11,12 +11,13 @@ use tdx_guest::{
 };
 
 use crate::{
-    arch::mm::{is_kernel_vaddr, PageTableFlags},
+    arch::mm::PageTableFlags,
     vm::{
+        KERNEL_BASE_VADDR, KERNEL_END_VADDR,
         paddr_to_vaddr,
         page_table::{PageTableError, KERNEL_PAGE_TABLE},
     },
-    PAGE_SIZE,
+    BASE_PAGE_SIZE,
 };
 
 const SHARED_BIT: u8 = 51;
@@ -323,7 +324,7 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
 }
 
 fn decode_instr(rip: usize) -> Result<Instruction, MmioError> {
-    if !is_kernel_vaddr(rip) {
+    if !(KERNEL_BASE_VADDR..KERNEL_END_VADDR).contains(rip) {
         return Err(MmioError::InvalidAddress);
     }
     let code_data = {
@@ -404,9 +405,9 @@ fn decode_mmio(instr: &Instruction) -> Option<(InstrMmioType, IoSize)> {
 /// - The `page_num` argument represents a valid number of pages.
 /// - This function will erase any valid data in the range and should not assume that the data will still be there after the operation.
 pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), PageConvertError> {
-    const PAGE_MASK: usize = PAGE_SIZE - 1;
+    const PAGE_MASK: usize = BASE_PAGE_SIZE - 1;
     for i in 0..page_num {
-        if !is_protected_gpa(gpa + (i * PAGE_SIZE)) {
+        if !is_protected_gpa(gpa + (i * BASE_PAGE_SIZE)) {
             return Err(PageConvertError::TdxPageStatusMismatch);
         }
     }
@@ -418,7 +419,7 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
     unsafe {
         for i in 0..page_num {
             pt.protect(
-                vaddr + (i * PAGE_SIZE),
+                vaddr + (i * BASE_PAGE_SIZE),
                 PageTableFlags::SHARED | PageTableFlags::WRITABLE | PageTableFlags::PRESENT,
             )
             .map_err(|e| PageConvertError::PageTableError(e))?;
@@ -426,7 +427,7 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
     };
     map_gpa(
         (gpa & (!PAGE_MASK)) as u64 | SHARED_MASK,
-        (page_num * PAGE_SIZE) as u64,
+        (page_num * BASE_PAGE_SIZE) as u64,
     )
     .map_err(|e| PageConvertError::TdVmcallError(e))
 }
@@ -441,9 +442,9 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
 /// - The `page_num` argument represents a valid number of pages.
 ///
 pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), PageConvertError> {
-    const PAGE_MASK: usize = PAGE_SIZE - 1;
+    const PAGE_MASK: usize = BASE_PAGE_SIZE - 1;
     for i in 0..page_num {
-        if is_protected_gpa(gpa + (i * PAGE_SIZE)) {
+        if is_protected_gpa(gpa + (i * BASE_PAGE_SIZE)) {
             return Err(PageConvertError::TdxPageStatusMismatch);
         }
     }
@@ -455,17 +456,17 @@ pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Page
     unsafe {
         for i in 0..page_num {
             pt.protect(
-                vaddr + (i * PAGE_SIZE),
+                vaddr + (i * BASE_PAGE_SIZE),
                 PageTableFlags::WRITABLE | PageTableFlags::PRESENT,
             )
             .map_err(|e| PageConvertError::PageTableError(e))?;
         }
     };
-    map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)
+    map_gpa((gpa & PAGE_MASK) as u64, (page_num * BASE_PAGE_SIZE) as u64)
         .map_err(|e| PageConvertError::TdVmcallError(e))?;
     for i in 0..page_num {
         unsafe {
-            accept_page(0, (gpa + i * PAGE_SIZE) as u64)
+            accept_page(0, (gpa + i * BASE_PAGE_SIZE) as u64)
                 .map_err(|e| PageConvertError::TdCallError(e))?;
         }
     }

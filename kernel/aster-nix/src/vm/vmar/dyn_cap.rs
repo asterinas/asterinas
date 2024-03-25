@@ -27,10 +27,10 @@ impl Vmar<Rights> {
     ///
     /// ```
     /// use aster_std::prelude::*;
-    /// use aster_std::vm::{PAGE_SIZE, Vmar, VmoOptions};
+    /// use aster_std::vm::{BASE_PAGE_SIZE, Vmar, VmoOptions};
     ///
     /// let vmar = Vmar::new().unwrap();
-    /// let vmo = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
+    /// let vmo = VmoOptions::new(BASE_PAGE_SIZE).alloc().unwrap();
     /// let target_vaddr = 0x1234000;
     /// let real_vaddr = vmar
     ///     // Map the VMO to create a read-only mapping
@@ -71,7 +71,7 @@ impl Vmar<Rights> {
     ///
     /// ```
     /// let parent = Vmar::new().unwrap();
-    /// let child_size = 10 * PAGE_SIZE;
+    /// let child_size = 10 * BASE_PAGE_SIZE;
     /// let child = parent.new_child(child_size).alloc().unwrap();
     /// assert!(child.size() == child_size);
     /// ```

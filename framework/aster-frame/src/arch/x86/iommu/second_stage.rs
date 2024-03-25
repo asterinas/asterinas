@@ -1,11 +1,48 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ops::Range;
+
 use pod::Pod;
 
 use crate::{
     arch::x86::mm::NR_ENTRIES_PER_PAGE,
-    vm::page_table::{PageTableEntryTrait, PageTableFlagsTrait},
+    vm::{
+        Paddr,
+        page_table::{PageTable, PageTableError, PageTableEntryTrait, PageTableFlagsTrait, PageTableMode}, Vaddr, VmAllocOptions
+    },
 };
+
+/// The page table used by iommu maps the device address
+/// space to the physical address space.
+#[derive(Clone)]
+pub(super) struct DeviceMode {}
+
+impl PageTableMode for DeviceMode {
+    /// The device address space is 32-bit.
+    const VADDR_RANGE: Range<Vaddr> = 0..0x1_0000_0000;
+}
+
+impl<T: PageTableEntryTrait> PageTable<T, DeviceMode> {
+    /// Mapping directly from a virtual address to a physical address.
+    /// The virtual address should be in the device address space.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the given paddr is a valid one (e.g. from the VmSegment).
+    pub unsafe fn map_with_paddr(
+        &mut self,
+        vaddr: Vaddr,
+        paddr: Paddr,
+        flags: T::F,
+    ) -> Result<(), PageTableError> {
+        self.do_map(vaddr, paddr, flags)
+    }
+
+    pub fn unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
+        // Safety: the `vaddr` is in the device address space.
+        unsafe { self.do_unmap(vaddr) }
+    }
+}
 
 bitflags::bitflags! {
     #[derive(Pod)]
