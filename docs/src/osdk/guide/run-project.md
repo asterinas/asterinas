@@ -8,7 +8,7 @@ Suppose you have created a new kernel project named `myos`
 and you are in the project directory:
 
 ```bash
-cargo osdk new --type kernel myos && cd myos
+cargo osdk new --kernel myos && cd myos
 ```
 
 ## Build the project

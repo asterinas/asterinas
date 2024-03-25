@@ -14,9 +14,9 @@ pub fn execute_new_command(args: &NewArgs) {
     cargo_new_lib(&args.crate_name);
     let cargo_metadata = get_cargo_metadata(Some(&args.crate_name), None::<&[&str]>).unwrap();
     add_manifest_dependencies(&cargo_metadata, &args.crate_name);
-    create_osdk_manifest(&cargo_metadata, &args.type_);
+    create_osdk_manifest(&cargo_metadata, &args.project_type());
     exclude_osdk_base(&cargo_metadata);
-    write_src_template(&cargo_metadata, &args.crate_name, &args.type_);
+    write_src_template(&cargo_metadata, &args.crate_name, &args.project_type());
     add_rust_toolchain(&cargo_metadata);
 }
 
