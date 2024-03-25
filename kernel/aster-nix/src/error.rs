@@ -189,6 +189,7 @@ impl From<aster_frame::Error> for Error {
             aster_frame::Error::IoError => Error::new(Errno::EIO),
             aster_frame::Error::NotEnoughResources => Error::new(Errno::EBUSY),
             aster_frame::Error::PageFault => Error::new(Errno::EFAULT),
+            aster_frame::Error::Overflow => Error::new(Errno::EOVERFLOW),
         }
     }
 }

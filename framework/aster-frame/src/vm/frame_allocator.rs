@@ -91,7 +91,8 @@ pub(crate) fn init(regions: &[MemoryRegion]) {
         if region.typ() == MemoryRegionType::Usable {
             // Make the memory region page-aligned, and skip if it is too small.
             let start = region.base().align_up(PAGE_SIZE) / PAGE_SIZE;
-            let end = (region.base() + region.len()).align_down(PAGE_SIZE) / PAGE_SIZE;
+            let region_end = region.base().checked_add(region.len()).unwrap();
+            let end = region_end.align_down(PAGE_SIZE) / PAGE_SIZE;
             if end <= start {
                 continue;
             }

@@ -105,7 +105,9 @@ impl IntoIterator for VmFrameVec {
 
 impl VmIo for VmFrameVec {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        if buf.len() + offset > self.nbytes() {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
 
@@ -123,7 +125,9 @@ impl VmIo for VmFrameVec {
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        if buf.len() + offset > self.nbytes() {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
 
@@ -266,7 +270,9 @@ impl<'a> VmFrame {
 
 impl VmIo for VmFrame {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        if buf.len() + offset > PAGE_SIZE {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > PAGE_SIZE {
             return Err(Error::InvalidArgs);
         }
         let len = self.reader().skip(offset).read(&mut buf.into());
@@ -275,7 +281,9 @@ impl VmIo for VmFrame {
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        if buf.len() + offset > PAGE_SIZE {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > PAGE_SIZE {
             return Err(Error::InvalidArgs);
         }
         let len = self.writer().skip(offset).write(&mut buf.into());
@@ -438,7 +446,9 @@ impl<'a> VmSegment {
 
 impl VmIo for VmSegment {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        if buf.len() + offset > self.nbytes() {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
         let len = self.reader().skip(offset).read(&mut buf.into());
@@ -447,7 +457,9 @@ impl VmIo for VmSegment {
     }
 
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        if buf.len() + offset > self.nbytes() {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
         let len = self.writer().skip(offset).write(&mut buf.into());
