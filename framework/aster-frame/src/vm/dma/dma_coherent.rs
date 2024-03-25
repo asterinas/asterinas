@@ -53,6 +53,8 @@ impl DmaCoherent {
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
         }
+        // Ensure that the addresses used later will not overflow
+        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         if !is_cache_coherent {
             let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
             for i in 0..frame_count {
@@ -120,6 +122,8 @@ impl Drop for DmaCoherentInner {
     fn drop(&mut self) {
         let frame_count = self.vm_segment.nframes();
         let start_paddr = self.vm_segment.start_paddr();
+        // Ensure that the addresses used later will not overflow
+        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         match dma_type() {
             DmaType::Direct => {
                 #[cfg(feature = "intel_tdx")]

@@ -64,13 +64,20 @@ impl VmSpace {
         let mut memory_set = self.memory_set.lock();
         // FIXME: This is only a hack here. The interface of MapArea cannot simply deal with unmap part of memory,
         // so we only map MapArea of page size now.
+
+        // Ensure that the base address is not unwrapped repeatedly
+        // and the addresses used later will not overflow
+        let base_addr = options.addr.unwrap();
+        base_addr
+            .checked_add(frames.len() * PAGE_SIZE)
+            .ok_or(Error::Overflow)?;
         for (idx, frame) in frames.into_iter().enumerate() {
-            let addr = options.addr.unwrap() + idx * PAGE_SIZE;
+            let addr = base_addr + idx * PAGE_SIZE;
             let frames = VmFrameVec::from_one_frame(frame);
             memory_set.map(MapArea::new(addr, PAGE_SIZE, flags, frames));
         }
 
-        Ok(options.addr.unwrap())
+        Ok(base_addr)
     }
 
     /// determine whether a vaddr is already mapped
@@ -86,9 +93,12 @@ impl VmSpace {
     pub fn unmap(&self, range: &Range<Vaddr>) -> Result<()> {
         assert!(is_page_aligned(range.start) && is_page_aligned(range.end));
         let mut start_va = range.start;
-        let page_size = (range.end - range.start) / PAGE_SIZE;
+        let num_pages = (range.end - range.start) / PAGE_SIZE;
         let mut inner = self.memory_set.lock();
-        for i in 0..page_size {
+        start_va
+            .checked_add(PAGE_SIZE * num_pages)
+            .ok_or(Error::Overflow)?;
+        for i in 0..num_pages {
             inner.unmap(start_va)?;
             start_va += PAGE_SIZE;
         }

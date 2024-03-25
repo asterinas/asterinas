@@ -9,4 +9,5 @@ pub enum Error {
     AccessDenied,
     IoError,
     NotEnoughResources,
+    Overflow,
 }
