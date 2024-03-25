@@ -72,8 +72,11 @@ impl InitStream {
 
     pub fn listen(self, backlog: usize) -> core::result::Result<ListenStream, (Error, Self)> {
         let InitStream::Bound(bound_socket) = self else {
+            // FIXME: The socket should be bound to INADDR_ANY (i.e., 0.0.0.0) with an ephemeral
+            // port. However, INADDR_ANY is not yet supported, so we need to return an error first.
+            debug_assert!(false, "listen() without bind() is not implemented");
             return Err((
-                Error::with_message(Errno::EINVAL, "cannot listen without bound"),
+                Error::with_message(Errno::EINVAL, "listen() without bind() is not implemented"),
                 self,
             ));
         };
@@ -82,12 +85,10 @@ impl InitStream {
             .map_err(|(err, bound_socket)| (err, InitStream::Bound(bound_socket)))
     }
 
-    pub fn local_endpoint(&self) -> Result<IpEndpoint> {
+    pub fn local_endpoint(&self) -> Option<IpEndpoint> {
         match self {
-            InitStream::Unbound(_) => {
-                return_errno_with_message!(Errno::EINVAL, "does not has local endpoint")
-            }
-            InitStream::Bound(bound_socket) => Ok(bound_socket.local_endpoint().unwrap()),
+            InitStream::Unbound(_) => None,
+            InitStream::Bound(bound_socket) => Some(bound_socket.local_endpoint().unwrap()),
         }
     }
 }
