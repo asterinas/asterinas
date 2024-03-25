@@ -8,12 +8,14 @@ use super::{
     processor::{current_task, schedule},
 };
 use crate::{
-    arch::mm::PageTableFlags,
     cpu::CpuSet,
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
-    vm::{page_table::KERNEL_PAGE_TABLE, VmAllocOptions, VmSegment, PAGE_SIZE},
+    vm::{
+        kspace::KERNEL_PAGE_TABLE, page_table::MapProperty, VmAllocOptions, VmPerm, VmSegment,
+        PAGE_SIZE,
+    },
 };
 
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
@@ -45,14 +47,14 @@ extern "C" {
 
 pub struct KernelStack {
     segment: VmSegment,
-    old_guard_page_flag: Option<PageTableFlags>,
+    has_guard_page: bool,
 }
 
 impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
             segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).alloc_contiguous()?,
-            old_guard_page_flag: None,
+            has_guard_page: false,
         })
     }
 
@@ -61,37 +63,62 @@ impl KernelStack {
     pub fn new_with_guard_page() -> Result<Self> {
         let stack_segment =
             VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
-        let unpresent_flag = PageTableFlags::empty();
-        let old_guard_page_flag = Self::protect_guard_page(&stack_segment, unpresent_flag);
+        // FIXME: modifying the the linear mapping is bad.
+        let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+        let guard_page_vaddr = {
+            let guard_page_paddr = stack_segment.start_paddr();
+            crate::vm::paddr_to_vaddr(guard_page_paddr)
+        };
+        // Safety: the physical guard page address is exclusively used since we allocated it.
+        unsafe {
+            page_table
+                .protect_unchecked(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |info| {
+                    assert!(
+                        info.prop.perm.contains(VmPerm::RW),
+                        "linear mapping shoud be readable and writable"
+                    );
+                    MapProperty {
+                        perm: info.prop.perm - VmPerm::RW,
+                        cache: info.prop.cache,
+                    }
+                })
+                .unwrap();
+        }
         Ok(Self {
             segment: stack_segment,
-            old_guard_page_flag: Some(old_guard_page_flag),
+            has_guard_page: true,
         })
     }
 
     pub fn end_paddr(&self) -> Paddr {
         self.segment.end_paddr()
     }
-
-    pub fn has_guard_page(&self) -> bool {
-        self.old_guard_page_flag.is_some()
-    }
-
-    fn protect_guard_page(stack_segment: &VmSegment, flags: PageTableFlags) -> PageTableFlags {
-        let mut kernel_pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
-        let guard_page_vaddr = {
-            let guard_page_paddr = stack_segment.start_paddr();
-            crate::vm::paddr_to_vaddr(guard_page_paddr)
-        };
-        // Safety: The protected address must be the address of guard page hence it should be safe and valid.
-        unsafe { kernel_pt.protect(guard_page_vaddr, flags).unwrap() }
-    }
 }
 
 impl Drop for KernelStack {
     fn drop(&mut self) {
-        if self.has_guard_page() {
-            Self::protect_guard_page(&self.segment, self.old_guard_page_flag.unwrap());
+        if self.has_guard_page {
+            // FIXME: modifying the the linear mapping is bad.
+            let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+            let guard_page_vaddr = {
+                let guard_page_paddr = self.segment.start_paddr();
+                crate::vm::paddr_to_vaddr(guard_page_paddr)
+            };
+            // Safety: the physical guard page address is exclusively used since we allocated it.
+            unsafe {
+                page_table
+                    .protect_unchecked(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |info| {
+                        assert!(
+                            !info.prop.perm.contains(VmPerm::RW),
+                            "we should have removed the permission of the guard page"
+                        );
+                        MapProperty {
+                            perm: info.prop.perm | VmPerm::RW,
+                            cache: info.prop.cache,
+                        }
+                    })
+                    .unwrap();
+            }
         }
     }
 }

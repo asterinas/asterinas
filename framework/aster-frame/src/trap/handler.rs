@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use align_ext::AlignExt;
 use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
@@ -15,13 +16,14 @@ use crate::arch::{
     tdx_guest::{handle_virtual_exception, TdxTrapFrame},
 };
 use crate::{
-    arch::{
-        irq::IRQ_LIST,
-        mm::{PageTableEntry, PageTableFlags},
-    },
+    arch::irq::IRQ_LIST,
     cpu::{CpuException, PageFaultErrorCode, PAGE_FAULT},
     cpu_local,
-    vm::{PageTable, PHYS_MEM_BASE_VADDR, PHYS_MEM_VADDR_RANGE},
+    vm::{
+        kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR},
+        page_table::{CachePolicy, MapProperty},
+        VmPerm, PAGE_SIZE, PHYS_MEM_VADDR_RANGE,
+    },
 };
 
 #[cfg(feature = "intel_tdx")]
@@ -180,6 +182,8 @@ pub fn in_interrupt_context() -> bool {
     IN_INTERRUPT_CONTEXT.load(Ordering::Acquire)
 }
 
+/// FIXME: this is a hack because we don't allocate kernel space for IO memory. We are currently
+/// using the linear mapping for IO memory. This is not a good practice.
 fn handle_kernel_page_fault(f: &TrapFrame) {
     let page_fault_vaddr = x86_64::registers::control::Cr2::read().as_u64();
     let error_code = PageFaultErrorCode::from_bits_truncate(f.error_code);
@@ -210,21 +214,28 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
         "kernel page fault: the direct mapping already exists",
     );
 
-    // FIXME: Is it safe to call `PageTable::from_root_register` here?
-    let mut page_table: PageTable<PageTableEntry, crate::vm::page_table::KernelMode> =
-        unsafe { PageTable::from_root_register() };
-
-    let paddr = page_fault_vaddr as usize - PHYS_MEM_BASE_VADDR;
-    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+    // Do the mapping
+    let mut page_table = KERNEL_PAGE_TABLE
+        .get()
+        .expect("The kernel page table is not initialized when kernel page fault happens")
+        .lock();
+    let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
+    let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
     // SAFETY:
     // 1. We have checked that the page fault address falls within the address range of the direct
     //    mapping of physical memory.
     // 2. We map the address to the correct physical page with the correct flags, where the
     //    correctness follows the semantics of the direct mapping of physical memory.
+    // Do the mapping
     unsafe {
-        page_table
-            .map(page_fault_vaddr as usize, paddr, flags)
-            .unwrap();
+        page_table.map_unchecked(
+            &(vaddr..vaddr + PAGE_SIZE),
+            &(paddr..paddr + PAGE_SIZE),
+            MapProperty {
+                perm: VmPerm::RW | VmPerm::G,
+                cache: CachePolicy::Uncacheable,
+            },
+        )
     }
 }

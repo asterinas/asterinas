@@ -4,8 +4,14 @@ use core::ops::Range;
 
 use bitflags::bitflags;
 
-use super::{is_page_aligned, MapArea, MemorySet, VmFrameVec, VmIo};
-use crate::{arch::mm::PageTableFlags, prelude::*, sync::Mutex, vm::PAGE_SIZE, Error};
+use super::{is_page_aligned, page_table::CachePolicy, MapArea, MemorySet, VmFrameVec, VmIo};
+use crate::{
+    arch::mm::PageTableFlags,
+    prelude::*,
+    sync::Mutex,
+    vm::{page_table::MapProperty, PAGE_SIZE},
+    Error,
+};
 
 /// Virtual memory space.
 ///
@@ -31,15 +37,9 @@ impl VmSpace {
             memory_set: Arc::new(Mutex::new(MemorySet::new())),
         }
     }
-
-    /// Activate the page table, load root physical address to cr3
-    #[allow(clippy::missing_safety_doc)]
-    pub unsafe fn activate(&self) {
-        #[cfg(target_arch = "x86_64")]
-        crate::arch::x86::mm::activate_page_table(
-            self.memory_set.lock().pt.root_paddr(),
-            x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE,
-        );
+    /// Activate the page table.
+    pub fn activate(&self) {
+        self.memory_set.lock().pt.activate();
     }
 
     /// Maps some physical memory pages into the VM space according to the given
@@ -49,7 +49,6 @@ impl VmSpace {
     ///
     /// For more information, see `VmMapOptions`.
     pub fn map(&self, frames: VmFrameVec, options: &VmMapOptions) -> Result<Vaddr> {
-        let flags = PageTableFlags::from(options.perm);
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }
@@ -75,7 +74,15 @@ impl VmSpace {
         for (idx, frame) in frames.into_iter().enumerate() {
             let addr = base_addr + idx * PAGE_SIZE;
             let frames = VmFrameVec::from_one_frame(frame);
-            memory_set.map(MapArea::new(addr, PAGE_SIZE, flags, frames));
+            memory_set.map(MapArea::new(
+                addr,
+                PAGE_SIZE,
+                MapProperty {
+                    perm: options.perm,
+                    cache: CachePolicy::Writeback,
+                },
+                frames,
+            ));
         }
 
         Ok(base_addr)
@@ -90,15 +97,15 @@ impl VmSpace {
     /// Determine whether the target `vaddr` is writable based on the page table.
     pub fn is_writable(&self, vaddr: Vaddr) -> bool {
         let memory_set = self.memory_set.lock();
-        let flags = memory_set.flags(vaddr);
-        flags.is_some_and(|flags| flags.contains(PageTableFlags::WRITABLE))
+        let info = memory_set.info(vaddr);
+        info.is_some_and(|info| info.prop.perm.contains(VmPerm::W))
     }
 
     /// Determine whether the target `vaddr` is executable based on the page table.
     pub fn is_executable(&self, vaddr: Vaddr) -> bool {
         let memory_set = self.memory_set.lock();
-        let flags = memory_set.flags(vaddr);
-        flags.is_some_and(|flags| !flags.contains(PageTableFlags::NO_EXECUTE))
+        let info = memory_set.info(vaddr);
+        info.is_some_and(|info| info.prop.perm.contains(VmPerm::X))
     }
 
     /// Unmaps the physical memory pages within the VM address range.
@@ -136,10 +143,15 @@ impl VmSpace {
         debug_assert!(range.end % PAGE_SIZE == 0);
         let start_page = range.start / PAGE_SIZE;
         let end_page = range.end / PAGE_SIZE;
-        let flags = PageTableFlags::from(perm);
         for page_idx in start_page..end_page {
             let addr = page_idx * PAGE_SIZE;
-            self.memory_set.lock().protect(addr, flags)
+            self.memory_set.lock().protect(
+                addr,
+                MapProperty {
+                    perm,
+                    cache: CachePolicy::Writeback,
+                },
+            )
         }
         Ok(())
     }
@@ -253,8 +265,11 @@ bitflags! {
         const W = 0b00000010;
         /// Executable.
         const X = 0b00000100;
-        /// User
+        /// User accessible.
         const U = 0b00001000;
+        /// Global.
+        /// A global page is not evicted from the TLB when TLB is flushed.
+        const G = 0b00010000;
         /// Readable + writable.
         const RW = Self::R.bits | Self::W.bits;
         /// Readable + execuable.

@@ -61,7 +61,7 @@ impl HasPaddr for IoMem {
 impl IoMem {
     /// # Safety
     ///
-    /// User must ensure the range is in the I/O memory region.
+    /// User must ensure the given physical range is in the I/O memory region.
     pub(crate) unsafe fn new(range: Range<Paddr>) -> IoMem {
         IoMem {
             virtual_address: paddr_to_vaddr(range.start),

@@ -28,7 +28,6 @@ pub(crate) fn before_all_init() {
 
 pub(crate) fn after_all_init() {
     irq::init();
-    mm::init();
     kernel::acpi::init();
     match kernel::apic::init() {
         Ok(_) => {

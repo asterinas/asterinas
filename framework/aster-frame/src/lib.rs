@@ -7,6 +7,7 @@
 #![feature(const_trait_impl)]
 #![feature(coroutines)]
 #![feature(fn_traits)]
+#![feature(generic_const_exprs)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(negative_impls)]
@@ -15,8 +16,12 @@
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
 #![feature(pointer_is_aligned)]
+#![feature(unboxed_closures)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
+// The `generic_const_exprs` feature is incomplete however required for the page table
+// const generic implementation. We are using this feature in a conservative manner.
+#![allow(incomplete_features)]
 #![no_std]
 
 extern crate alloc;
@@ -66,9 +71,23 @@ pub fn init() {
     trap::init();
     arch::after_all_init();
     bus::init();
+    // TODO: We activate the kernel page table here because the new kernel page table
+    // has mappings for MMIO which is required for the components initialization. We
+    // should refactor the initialization process to avoid this.
+    // Safety: we are activating the unique kernel page table.
+    unsafe {
+        vm::kspace::KERNEL_PAGE_TABLE
+            .get()
+            .unwrap()
+            .lock()
+            .activate_unchecked();
+    }
     invoke_ffi_init_funcs();
 }
 
+/// Invoke the initialization functions defined in the FFI.
+/// The component system uses this function to call the initialization functions of
+/// the components.
 fn invoke_ffi_init_funcs() {
     extern "C" {
         fn __sinit_array();
