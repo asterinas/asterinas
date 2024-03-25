@@ -143,7 +143,7 @@ pub struct Task {
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
-pub(crate) struct TaskInner {
+pub struct TaskInner {
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
 }
@@ -155,8 +155,8 @@ impl Task {
     }
 
     /// get inner
-    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<'_, TaskInner> {
-        self.task_inner.lock_irq_disabled()
+    pub fn inner_exclusive_access(&self) -> SpinLockGuard<'_, TaskInner> {
+        self.task_inner.lock()
     }
 
     /// get inner
@@ -175,11 +175,6 @@ impl Task {
     pub fn run(self: &Arc<Self>) {
         add_task_to_global(self.clone());
         schedule();
-    }
-
-    /// Returns the task status.
-    pub fn status(&self) -> TaskStatus {
-        self.task_inner.lock_irq_disabled().task_status
     }
 
     /// Returns the task data.

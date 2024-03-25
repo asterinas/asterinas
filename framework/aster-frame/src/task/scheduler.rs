@@ -38,6 +38,9 @@ pub trait Scheduler: Sync + Send {
 
     /// Fetch a high priority task for potential preemption.
     fn preempt(&self, cpu_id: u32) -> Option<Arc<Task>>;
+
+    /// Add a task to the scheduler's sleep queue.
+    fn enqueue_sleep(&self, task: Arc<Task>);
 }
 
 /// `GeneralScheduler` is a simple wrapper around a Scheduler trait object.
@@ -66,6 +69,10 @@ impl GeneralScheduler {
     /// It requires the scheduler to be set (not None).
     fn preempt(&mut self, cpu_id: u32) -> Option<Arc<Task>> {
         self.scheduler.unwrap().preempt(cpu_id)
+    }
+
+    fn enqueue_sleep(&mut self, task: Arc<Task>) {
+        self.scheduler.unwrap().enqueue_sleep(task)
     }
 }
 

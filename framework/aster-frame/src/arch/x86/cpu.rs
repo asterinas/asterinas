@@ -7,6 +7,7 @@ use core::{
     fmt::Debug,
 };
 
+use bitflags::bitflags;
 use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;

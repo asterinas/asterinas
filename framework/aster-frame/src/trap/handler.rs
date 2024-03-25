@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
 use trapframe::TrapFrame;

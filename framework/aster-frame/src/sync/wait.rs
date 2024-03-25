@@ -6,7 +6,7 @@ use core::time::Duration;
 use super::SpinLock;
 use crate::{
     arch::timer::{add_timeout_list, TIMER_FREQ},
-    task::{add_task_to_global, current_task, schedule, Task, TaskStatus},
+    task::{current_task, schedule, Task, TaskStatus},
 };
 
 /// A wait queue.
@@ -62,6 +62,7 @@ impl WaitQueue {
         }
 
         let waiter = Arc::new(Waiter::new());
+        self.enqueue(&waiter);
 
         let timer_callback = timeout.map(|timeout| {
             let remaining_ticks = {
@@ -87,6 +88,8 @@ impl WaitQueue {
 
         loop {
             if let Some(res) = cond() {
+                self.dequeue(&waiter);
+
                 if let Some(timer_callback) = timer_callback {
                     timer_callback.cancel();
                 }
@@ -97,28 +100,24 @@ impl WaitQueue {
             if let Some(ref timer_callback) = timer_callback
                 && timer_callback.is_expired()
             {
+                self.dequeue(&waiter);
                 return cond();
             }
 
-            self.enqueue(&waiter);
             waiter.wait();
         }
     }
 
     /// Wake up one waiting thread.
     pub fn wake_one(&self) {
-        while let Some(waiter) = self.waiters.lock_irq_disabled().pop_front() {
-            // Avoid holding lock when calling `wake_up`
-            if waiter.wake_up() {
-                return;
-            }
+        if let Some(waiter) = self.waiters.lock_irq_disabled().front() {
+            waiter.wake_up();
         }
     }
 
     /// Wake up all waiting threads.
     pub fn wake_all(&self) {
-        while let Some(waiter) = self.waiters.lock_irq_disabled().pop_front() {
-            // Avoid holding lock when calling `wake_up`
+        for waiter in self.waiters.lock_irq_disabled().iter() {
             waiter.wake_up();
         }
     }
@@ -127,10 +126,15 @@ impl WaitQueue {
         self.waiters.lock_irq_disabled().is_empty()
     }
 
-    // Enqueue a waiter into current waitqueue. If waiter is exclusive, add to the back of waitqueue.
-    // Otherwise, add to the front of waitqueue
+    // Enqueue a waiter into current waitqueue.
     fn enqueue(&self, waiter: &Arc<Waiter>) {
-        self.waiters.lock_irq_disabled().push_back(waiter.clone());
+        let mut waiters = self.waiters.lock_irq_disabled();
+        waiters.push_back(waiter.clone())
+    }
+
+    fn dequeue(&self, waiter: &Arc<Waiter>) {
+        let mut waiters = self.waiters.lock_irq_disabled();
+        waiters.retain(|waiter_| !Arc::ptr_eq(waiter_, waiter))
     }
 }
 
@@ -158,22 +162,10 @@ impl Waiter {
         }
     }
 
-    /// Wake up a waiting task.
-    /// If the task is waiting before being woken, return true;
-    /// Otherwise return false.
-    pub fn wake_up(&self) -> bool {
+    pub fn wake_up(&self) {
         let mut task = self.task.inner_exclusive_access();
         if task.task_status == TaskStatus::Sleeping {
             task.task_status = TaskStatus::Runnable;
-
-            // Avoid holding lock when doing `add_task`
-            drop(task);
-
-            add_task(self.task.clone());
-
-            true
-        } else {
-            false
         }
     }
 }

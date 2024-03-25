@@ -26,7 +26,7 @@
 
 use aster_frame::{
     cpu::this_cpu,
-    task::{fetch_task_from_global, preempt_global, Scheduler, Task, TaskAdapter},
+    task::{fetch_task_from_global, preempt_global, Scheduler, Task, TaskAdapter, TaskStatus},
 };
 use intrusive_collections::LinkedList;
 
@@ -58,6 +58,8 @@ pub(super) struct PreemptLocalScheduler {
     real_time_tasks: SpinLock<LinkedList<TaskAdapter>>,
     /// Queue for normal tasks specific to a CPU.
     normal_tasks: SpinLock<LinkedList<TaskAdapter>>,
+    /// Queue for sleeping tasks specific to a CPU.
+    sleeping_tasks: SpinLock<LinkedList<TaskAdapter>>,
 }
 
 impl PreemptGlobalScheduler {
@@ -123,6 +125,11 @@ impl Scheduler for PreemptGlobalScheduler {
         }
         None
     }
+
+    fn enqueue_sleep(&self, task: Arc<Task>) {
+        // Currently, Tasks can only sleep in their local scheduler.
+        unimplemented!()
+    }
 }
 
 impl PreemptLocalScheduler {
@@ -130,6 +137,26 @@ impl PreemptLocalScheduler {
         Self {
             real_time_tasks: SpinLock::new(LinkedList::new(TaskAdapter::new())),
             normal_tasks: SpinLock::new(LinkedList::new(TaskAdapter::new())),
+            sleeping_tasks: SpinLock::new(LinkedList::new(TaskAdapter::new())),
+        }
+    }
+}
+
+impl PreemptLocalScheduler {
+    /// Wakes up sleeping tasks that are now runnable.
+    ///
+    /// This method iterates over the sleeping tasks queue and enqueues any task
+    /// whose status has been changed to `Runnable`.
+    fn wake_up_sleeping_tasks(&self) {
+        let mut sleeping_tasks = self.sleeping_tasks.lock_irq_disabled();
+        let mut cursor = sleeping_tasks.front_mut();
+        while let Some(task_ref) = cursor.get() {
+            // Ensure exclusive access to the task's status to avoid changes between
+            // checking its status and enqueuing the task.
+            if task_ref.inner_exclusive_access().task_status == TaskStatus::Runnable {
+                self.enqueue(cursor.remove().unwrap());
+            }
+            cursor.move_next();
         }
     }
 }
@@ -157,6 +184,7 @@ impl Scheduler for PreemptLocalScheduler {
         if let Some(fetch_task) = fetch_task_from_global(cpu_id) {
             self.enqueue(fetch_task);
         }
+        self.wake_up_sleeping_tasks();
 
         if let Some(task) = self.real_time_tasks.lock_irq_disabled().pop_front() {
             assert!(task.cpu_affinity().contains(cpu_id));
@@ -182,5 +210,11 @@ impl Scheduler for PreemptLocalScheduler {
         }
 
         preempt_global(cpu_id)
+    }
+
+    fn enqueue_sleep(&self, task: Arc<Task>) {
+        self.sleeping_tasks
+            .lock_irq_disabled()
+            .push_back(task.clone());
     }
 }

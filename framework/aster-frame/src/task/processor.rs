@@ -4,7 +4,9 @@ use alloc::sync::Arc;
 use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 use super::{
-    scheduler::{add_task_to_local, fetch_task_from_local, preempt_local},
+    scheduler::{
+        add_sleeping_task_to_local, add_task_to_local, fetch_task_from_local, preempt_local,
+    },
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
@@ -102,8 +104,10 @@ fn switch_to_task(next_task: Arc<Task>) {
     let current_task_cx_ptr = match current_task_option {
         None => PROCESSOR.borrow().get_idle_task_cx_ptr(),
         Some(current_task) => {
-            if current_task.status() == TaskStatus::Runnable {
-                add_task_to_local(current_task.clone());
+            match current_task.inner_exclusive_access().task_status {
+                TaskStatus::Runnable => add_task_to_local(current_task.clone()),
+                TaskStatus::Sleeping => add_sleeping_task_to_local(current_task.clone()),
+                _ => {}
             }
             &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
         }
