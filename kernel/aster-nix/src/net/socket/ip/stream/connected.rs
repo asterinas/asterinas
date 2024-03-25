@@ -68,6 +68,26 @@ impl ConnectedStream {
         self.update_io_events(pollee);
     }
 
+    pub fn register_observer(
+        &self,
+        pollee: &Pollee,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        pollee.register_observer(observer, mask);
+        Ok(())
+    }
+
+    pub fn unregister_observer(
+        &self,
+        pollee: &Pollee,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        pollee
+            .unregister_observer(observer)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fails to unregister observer"))
+    }
+
     pub(super) fn update_io_events(&self, pollee: &Pollee) {
         self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
             if socket.can_recv() {
