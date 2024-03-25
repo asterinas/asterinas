@@ -5,7 +5,9 @@ use aster_rights::Full;
 use super::RawSocketOption;
 use crate::{
     impl_raw_sock_option_get_only, impl_raw_socket_option,
-    net::socket::options::{Error, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption},
+    net::socket::options::{
+        Error, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
+    },
     prelude::*,
     vm::vmar::Vmar,
 };
@@ -48,6 +50,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::ERROR => Ok(Box::new(Error::new())),
         CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
+        CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         _ => todo!(),
     }
 }
@@ -58,3 +61,4 @@ impl_raw_socket_option!(ReuseAddr);
 impl_raw_sock_option_get_only!(Error);
 impl_raw_socket_option!(ReusePort);
 impl_raw_socket_option!(Linger);
+impl_raw_socket_option!(KeepAlive);

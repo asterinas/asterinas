@@ -275,6 +275,36 @@ impl FileLike for StreamSocket {
     fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
         Some(self)
     }
+
+    fn register_observer(
+        &self,
+        observer: Weak<dyn crate::events::Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        let state = self.state.read();
+        match state.as_ref() {
+            State::Init(init) => init.register_observer(&self.pollee, observer, mask),
+            State::Connecting(connecting) => {
+                connecting.register_observer(&self.pollee, observer, mask)
+            }
+            State::Connected(connected) => {
+                connected.register_observer(&self.pollee, observer, mask)
+            }
+            State::Listen(listen) => listen.register_observer(&self.pollee, observer, mask),
+        }
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Weak<dyn crate::events::Observer<IoEvents>>,
+    ) -> Result<Weak<dyn crate::events::Observer<IoEvents>>> {
+        match self.state.read().as_ref() {
+            State::Init(init) => init.unregister_observer(&self.pollee, observer),
+            State::Connecting(connecting) => connecting.unregister_observer(&self.pollee, observer),
+            State::Connected(connected) => connected.unregister_observer(&self.pollee, observer),
+            State::Listen(listen) => listen.unregister_observer(&self.pollee, observer),
+        }
+    }
 }
 
 impl Socket for StreamSocket {
