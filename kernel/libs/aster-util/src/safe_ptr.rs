@@ -47,7 +47,7 @@ pub use typeflags_util::SetContain;
 ///
 /// ```
 /// let u32_ptr: SafePtr<u32, Vec<u8>, _> = {
-///     let vm_obj = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
+///     let vm_obj = VmoOptions::new(BASE_PAGE_SIZE).alloc().unwrap();
 ///     let addr = 16;
 ///     SafePtr::new(vm_obj, addr)
 /// };

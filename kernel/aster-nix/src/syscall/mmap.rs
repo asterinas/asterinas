@@ -53,9 +53,9 @@ fn do_sys_mmap(
         addr, len, vm_perm, option, fd, offset
     );
 
-    let len = len.align_up(PAGE_SIZE);
+    let len = len.align_up(BASE_PAGE_SIZE);
 
-    if offset % PAGE_SIZE != 0 {
+    if offset % BASE_PAGE_SIZE != 0 {
         return_errno_with_message!(Errno::EINVAL, "mmap only support page-aligned offset");
     }
     let perms = VmPerms::from(vm_perm);

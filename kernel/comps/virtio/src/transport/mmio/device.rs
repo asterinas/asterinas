@@ -12,7 +12,7 @@ use aster_frame::{
     offset_of,
     sync::RwLock,
     trap::IrqCallbackFunction,
-    vm::{DmaCoherent, PAGE_SIZE},
+    vm::{DmaCoherent, BASE_PAGE_SIZE},
 };
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -79,7 +79,7 @@ impl VirtioMmioTransport {
         };
         if device.common_device.version() == VirtioMmioVersion::Legacy {
             field_ptr!(&device.layout, VirtioMmioLayout, legacy_guest_page_size)
-                .write(&(PAGE_SIZE as u32))
+                .write(&(BASE_PAGE_SIZE as u32))
                 .unwrap();
         }
         device
@@ -128,10 +128,10 @@ impl VirtioTransport for VirtioMmioTransport {
                     size_of::<Descriptor>() * queue_size as usize
                 );
                 // Descriptor paddr should align
-                assert_eq!(descriptor_paddr % PAGE_SIZE, 0);
-                let pfn = (descriptor_paddr / PAGE_SIZE) as u32;
+                assert_eq!(descriptor_paddr % BASE_PAGE_SIZE, 0);
+                let pfn = (descriptor_paddr / BASE_PAGE_SIZE) as u32;
                 field_ptr!(&self.layout, VirtioMmioLayout, legacy_queue_align)
-                    .write(&(PAGE_SIZE as u32))
+                    .write(&(BASE_PAGE_SIZE as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, legacy_queue_pfn)
                     .write(&pfn)

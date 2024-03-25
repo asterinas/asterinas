@@ -149,7 +149,7 @@ struct VmoInner {
 
 impl VmoInner {
     fn commit_page(&mut self, offset: usize) -> Result<()> {
-        let page_idx = offset / PAGE_SIZE;
+        let page_idx = offset / BASE_PAGE_SIZE;
         // Fast path: the page is already committed.
         if self.committed_pages.contains_key(&page_idx) {
             return Ok(());
@@ -163,7 +163,7 @@ impl VmoInner {
     }
 
     fn decommit_page(&mut self, offset: usize) -> Result<()> {
-        let page_idx = offset / PAGE_SIZE;
+        let page_idx = offset / BASE_PAGE_SIZE;
         if self.committed_pages.remove(&page_idx).is_some() {
             if let Some(pager) = &self.pager {
                 pager.decommit_page(page_idx)?;
@@ -185,7 +185,7 @@ impl VmoInner {
 
         // The vmo is not child
         if self.inherited_pages.is_none() {
-            self.commit_page(page_idx * PAGE_SIZE)?;
+            self.commit_page(page_idx * BASE_PAGE_SIZE)?;
             let frame = self.committed_pages.get(&page_idx).unwrap().clone();
             return Ok(frame);
         }
@@ -241,7 +241,7 @@ impl Vmo_ {
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
         let page_idx_range = get_page_idx_range(&range);
         for page_idx in page_idx_range {
-            let offset = page_idx * PAGE_SIZE;
+            let offset = page_idx * BASE_PAGE_SIZE;
             self.commit_page(offset)?;
         }
 
@@ -251,7 +251,7 @@ impl Vmo_ {
     pub fn decommit(&self, range: Range<usize>) -> Result<()> {
         let page_idx_range = get_page_idx_range(&range);
         for page_idx in page_idx_range {
-            let offset = page_idx * PAGE_SIZE;
+            let offset = page_idx * BASE_PAGE_SIZE;
             self.decommit_page(offset)?;
         }
         Ok(())
@@ -269,7 +269,7 @@ impl Vmo_ {
         }
         let read_range = offset..(offset + read_len);
         let frames = self.ensure_all_pages_exist(&read_range, false)?;
-        let read_offset = offset % PAGE_SIZE;
+        let read_offset = offset % BASE_PAGE_SIZE;
         Ok(frames.read_bytes(read_offset, buf)?)
     }
 
@@ -299,7 +299,7 @@ impl Vmo_ {
 
         let write_range = offset..(offset + write_len);
         let frames = self.ensure_all_pages_exist(&write_range, true)?;
-        let write_offset = offset % PAGE_SIZE;
+        let write_offset = offset % BASE_PAGE_SIZE;
         frames.write_bytes(write_offset, buf)?;
         if let Some(pager) = &self.inner.lock().pager {
             let page_idx_range = get_page_idx_range(&write_range);
@@ -321,7 +321,7 @@ impl Vmo_ {
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
         assert!(self.flags.contains(VmoFlags::RESIZABLE));
-        let new_size = new_size.align_up(PAGE_SIZE);
+        let new_size = new_size.align_up(BASE_PAGE_SIZE);
         let old_size = self.size();
         if new_size == old_size {
             return Ok(());
@@ -369,9 +369,9 @@ impl<R> Vmo<R> {
 
 /// get the page index range that contains the offset range of vmo
 pub fn get_page_idx_range(vmo_offset_range: &Range<usize>) -> Range<usize> {
-    let start = vmo_offset_range.start.align_down(PAGE_SIZE);
-    let end = vmo_offset_range.end.align_up(PAGE_SIZE);
-    (start / PAGE_SIZE)..(end / PAGE_SIZE)
+    let start = vmo_offset_range.start.align_down(BASE_PAGE_SIZE);
+    let end = vmo_offset_range.end.align_up(BASE_PAGE_SIZE);
+    (start / BASE_PAGE_SIZE)..(end / BASE_PAGE_SIZE)
 }
 
 pub(super) fn get_inherited_frames_from_parent(

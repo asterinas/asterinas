@@ -18,7 +18,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// # Example
     ///
     /// ```
-    /// let parent = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
+    /// let parent = VmoOptions::new(BASE_PAGE_SIZE).alloc().unwrap();
     /// let child_size = parent.size();
     /// let child = parent.new_slice_child(0..child_size).alloc().unwrap();
     /// assert!(child.size() == child_size);
@@ -46,7 +46,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// # Example
     ///
     /// ```
-    /// let parent = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
+    /// let parent = VmoOptions::new(BASE_PAGE_SIZE).alloc().unwrap();
     /// let child_size = 2 * parent.size();
     /// let child = parent.new_cow_child(0..child_size).alloc().unwrap();
     /// assert!(child.size() == child_size);

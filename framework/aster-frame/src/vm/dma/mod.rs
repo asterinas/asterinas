@@ -10,7 +10,7 @@ pub use dma_stream::{DmaDirection, DmaStream};
 use spin::Once;
 
 use super::Paddr;
-use crate::{arch::iommu::has_iommu, sync::SpinLock, vm::PAGE_SIZE};
+use crate::{arch::iommu::has_iommu, sync::SpinLock, vm::BASE_PAGE_SIZE};
 
 /// If a device performs DMA to read or write system
 /// memory, the addresses used by the device are device addresses.
@@ -56,13 +56,13 @@ pub fn init() {
 fn check_and_insert_dma_mapping(start_paddr: Paddr, num_pages: usize) -> bool {
     let mut mapping_set = DMA_MAPPING_SET.get().unwrap().lock_irq_disabled();
     for i in 0..num_pages {
-        let paddr = start_paddr + (i * PAGE_SIZE);
+        let paddr = start_paddr + (i * BASE_PAGE_SIZE);
         if mapping_set.contains(&paddr) {
             return false;
         }
     }
     for i in 0..num_pages {
-        let paddr = start_paddr + (i * PAGE_SIZE);
+        let paddr = start_paddr + (i * BASE_PAGE_SIZE);
         mapping_set.insert(paddr);
     }
     true
@@ -72,7 +72,7 @@ fn check_and_insert_dma_mapping(start_paddr: Paddr, num_pages: usize) -> bool {
 fn remove_dma_mapping(start_paddr: Paddr, num_pages: usize) {
     let mut mapping_set = DMA_MAPPING_SET.get().unwrap().lock_irq_disabled();
     for i in 0..num_pages {
-        let paddr = start_paddr + (i * PAGE_SIZE);
+        let paddr = start_paddr + (i * BASE_PAGE_SIZE);
         mapping_set.remove(&paddr);
     }
 }

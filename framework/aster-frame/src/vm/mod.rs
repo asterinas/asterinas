@@ -34,7 +34,7 @@ pub use self::{
 };
 use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
 
-pub const PAGE_SIZE: usize = 0x1000;
+pub const BASE_PAGE_SIZE: usize = 0x1000;
 
 /// The maximum virtual address of user space (non inclusive).
 ///
@@ -46,13 +46,15 @@ pub const PAGE_SIZE: usize = 0x1000;
 /// for some x86_64 CPUs' bugs. See
 /// <https://github.com/torvalds/linux/blob/480e035fc4c714fb5536e64ab9db04fedc89e910/arch/x86/include/asm/page_64.h#L68-L78>
 /// for the rationale.
-pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE;
+pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - BASE_PAGE_SIZE;
 
 /// Start of the kernel address space.
-///
 /// This is the _lowest_ address of the x86-64's _high_ canonical addresses.
-///
-/// This is also the base address of the direct mapping of all physical
+pub(crate) const KERNEL_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000;
+/// End of the kernel address space (non inclusive).
+pub(crate) const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000;
+
+/// The base address of the direct mapping of all physical
 /// memory in the kernel address space.
 pub(crate) const PHYS_MEM_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000;
 
@@ -80,7 +82,7 @@ pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
 }
 
 pub const fn is_page_aligned(p: usize) -> bool {
-    (p & (PAGE_SIZE - 1)) == 0
+    (p & (BASE_PAGE_SIZE - 1)) == 0
 }
 
 /// Convert physical address to virtual address using offset, only available inside aster-frame
