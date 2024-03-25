@@ -97,14 +97,41 @@ pub struct ForwardedArguments {
 #[derive(Debug, Parser)]
 pub struct NewArgs {
     #[arg(
+        id = "type",
         long = "type",
         short = 't',
         default_value = "library",
-        help = "The type of the project to create"
+        help = "The type of the project to create",
+        conflicts_with_all = ["kernel", "library"],
     )]
     pub type_: ProjectType,
+    #[arg(
+        long,
+        help = "Create a kernel package",
+        conflicts_with_all = ["library", "type"],
+    )]
+    pub kernel: bool,
+    #[arg(
+        long,
+        alias = "lib",
+        help = "Create a library package",
+        conflicts_with_all = ["kernel", "type"],
+    )]
+    pub library: bool,
     #[arg(name = "name", required = true)]
     pub crate_name: String,
+}
+
+impl NewArgs {
+    pub fn project_type(&self) -> ProjectType {
+        if self.kernel {
+            ProjectType::Kernel
+        } else if self.library {
+            ProjectType::Library
+        } else {
+            self.type_
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
