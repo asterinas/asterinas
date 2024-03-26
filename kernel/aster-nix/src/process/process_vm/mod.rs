@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! This module defines the UserVm of a process.
-//! The UserSpace of a process only contains the virtual-physical memory mapping.
-//! But we cannot know which vaddr is user heap, which vaddr is mmap areas.
-//! So we define a UserVm struct to store such infomation.
-//! Briefly, it contains the exact usage of each segment of virtual spaces.
+//! This module defines struct `ProcessVm`
+//! to represent the layout of user space process virtual memory.
+//!
+//! The `ProcessVm` struct contains `Vmar`,
+//! which stores all existing memory mappings.
+//! The `Vm` also contains
+//! the basic info of process level vm segments,
+//! like init stack and heap.
 
-pub mod user_heap;
+mod heap;
+mod stack;
 
 use aster_rights::Full;
-use user_heap::UserHeap;
+pub use heap::Heap;
+pub use stack::Stack;
 
 use crate::vm::vmar::Vmar;
 
@@ -49,18 +54,19 @@ use crate::vm::vmar::Vmar;
  *  (low address)
  */
 
-/// The virtual space usage.
-/// This struct is used to control brk and mmap now.
+// The process user space virtual memory
 pub struct ProcessVm {
-    user_heap: UserHeap,
     root_vmar: Vmar<Full>,
+    heap: Heap,
+    stack: Stack,
 }
 
 impl Clone for ProcessVm {
     fn clone(&self) -> Self {
         Self {
             root_vmar: self.root_vmar.dup().unwrap(),
-            user_heap: self.user_heap.clone(),
+            heap: self.heap.clone(),
+            stack: self.stack.clone(),
         }
     }
 }
@@ -68,32 +74,40 @@ impl Clone for ProcessVm {
 impl ProcessVm {
     pub fn alloc() -> Self {
         let root_vmar = Vmar::<Full>::new_root();
-        let user_heap = UserHeap::new();
-        user_heap.init(&root_vmar);
-        ProcessVm {
-            user_heap,
-            root_vmar,
-        }
-    }
-
-    pub fn new(user_heap: UserHeap, root_vmar: Vmar<Full>) -> Self {
+        let heap = Heap::new();
+        heap.init(&root_vmar);
+        let stack = Stack::new(root_vmar.dup().unwrap());
         Self {
-            user_heap,
             root_vmar,
+            heap,
+            stack,
         }
     }
 
-    pub fn user_heap(&self) -> &UserHeap {
-        &self.user_heap
+    pub fn new(root_vmar: Vmar<Full>, heap: Heap, stack: Stack) -> Self {
+        Self {
+            root_vmar,
+            heap,
+            stack,
+        }
     }
 
     pub fn root_vmar(&self) -> &Vmar<Full> {
         &self.root_vmar
     }
 
-    /// Set user vm to the init status
+    pub(super) fn stack(&self) -> &Stack {
+        &self.stack
+    }
+
+    pub fn heap(&self) -> &Heap {
+        &self.heap
+    }
+
+    /// Set the `ProcessVm`` to the init status
     pub fn clear(&self) {
         self.root_vmar.clear().unwrap();
-        self.user_heap.set_default(&self.root_vmar);
+        self.stack.clear();
+        self.heap.set_default(&self.root_vmar);
     }
 }

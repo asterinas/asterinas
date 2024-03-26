@@ -359,8 +359,9 @@ fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<Pr
         Ok(parent_process_vm.clone())
     } else {
         let root_vmar = Vmar::<Full>::fork_from(parent_process_vm.root_vmar())?;
-        let user_heap = parent_process_vm.user_heap().clone();
-        Ok(ProcessVm::new(user_heap, root_vmar))
+        let heap = parent_process_vm.heap().clone();
+        let stack = parent_process_vm.stack().clone();
+        Ok(ProcessVm::new(root_vmar, heap, stack))
     }
 }
 

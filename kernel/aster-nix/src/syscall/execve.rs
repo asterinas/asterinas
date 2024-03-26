@@ -13,7 +13,9 @@ use crate::{
     log_syscall_entry,
     prelude::*,
     process::{
-        check_executable_file, credentials_mut, load_program_to_vm,
+        check_executable_file,
+        constants::{MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN},
+        credentials_mut, load_program_to_vm,
         posix_thread::{PosixThreadExt, ThreadName},
         Credentials,
     },
