@@ -258,6 +258,7 @@ pub(super) fn init() {
 }
 
 /// Return the vdso vmo.
-pub(crate) fn vdso_vmo() -> Arc<Vmo> {
-    VDSO.get().unwrap().vmo().clone()
+pub(crate) fn vdso_vmo() -> Option<Arc<Vmo>> {
+    // We allow that vdso does not exist
+    VDSO.get().map(|vdso| vdso.vmo())
 }

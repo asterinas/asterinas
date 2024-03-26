@@ -2,8 +2,6 @@
 
 use crate::prelude::*;
 
-/// This implementation is from occlum.
-
 /// Auxiliary Vector.
 ///
 /// # What is Auxiliary Vector?

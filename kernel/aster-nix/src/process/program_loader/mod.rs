@@ -14,32 +14,7 @@ use crate::{
         utils::Dentry,
     },
     prelude::*,
-    vdso::vdso_vmo,
-    vm::perms::VmPerms,
 };
-
-/// Map the vdso vmo to the corresponding virtual memory address.
-pub fn map_vdso_to_vm(process_vm: &ProcessVm) -> Vaddr {
-    let root_vmar = process_vm.root_vmar();
-    let vdso_vmo = vdso_vmo();
-
-    let options = root_vmar
-        .new_map(vdso_vmo.dup().unwrap(), VmPerms::empty())
-        .unwrap()
-        .size(5 * PAGE_SIZE);
-    let vdso_data_base = options.build().unwrap();
-    let vdso_text_base = vdso_data_base + 0x4000;
-
-    let data_perms = VmPerms::READ | VmPerms::WRITE;
-    let text_perms = VmPerms::READ | VmPerms::EXEC;
-    root_vmar
-        .protect(data_perms, vdso_data_base..vdso_data_base + PAGE_SIZE)
-        .unwrap();
-    root_vmar
-        .protect(text_perms, vdso_text_base..vdso_text_base + PAGE_SIZE)
-        .unwrap();
-    vdso_text_base
-}
 
 /// Load an executable to root vmar, including loading programe image, preparing heap and stack,
 /// initializing argv, envp and aux tables.
@@ -84,17 +59,11 @@ pub fn load_program_to_vm(
             recursion_limit - 1,
         );
     }
-    process_vm.clear();
-    let vdso_text_base = map_vdso_to_vm(process_vm);
-    let elf_load_info = load_elf_to_vm(
-        process_vm,
-        &*file_header,
-        elf_file,
-        fs_resolver,
-        argv,
-        envp,
-        vdso_text_base,
-    )?;
+
+    process_vm.clear_and_map();
+
+    let elf_load_info =
+        load_elf_to_vm(process_vm, &*file_header, elf_file, fs_resolver, argv, envp)?;
 
     Ok((abs_path, elf_load_info))
 }

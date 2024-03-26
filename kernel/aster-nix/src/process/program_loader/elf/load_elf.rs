@@ -20,10 +20,10 @@ use crate::{
     prelude::*,
     process::{
         do_exit_group,
-        process_vm::ProcessVm,
-        program_loader::elf::init_stack::{init_aux_vec, InitStack},
+        process_vm::{AuxKey, AuxVec, ProcessVm},
         TermStatus,
     },
+    vdso::vdso_vmo,
     vm::{
         perms::VmPerms,
         vmar::Vmar,
@@ -31,10 +31,10 @@ use crate::{
     },
 };
 
-/// load elf to the root vmar. this function will  
-/// 1. read the vaddr of each segment to get all elf pages.  
-/// 2. create a vmo for each elf segment, create a pager for each segment. Then map the vmo to the root vmar.
-/// 3. write proper content to the init stack.
+/// Loads elf to the process vm.   
+///
+/// This function will map elf segments and
+/// initialize process init stack.
 pub fn load_elf_to_vm(
     process_vm: &ProcessVm,
     file_header: &[u8],
@@ -42,31 +42,48 @@ pub fn load_elf_to_vm(
     fs_resolver: &FsResolver,
     argv: Vec<CString>,
     envp: Vec<CString>,
-    vdso_text_base: Vaddr,
 ) -> Result<ElfLoadInfo> {
-    let elf = Elf::parse_elf(file_header)?;
+    let parsed_elf = Elf::parse_elf(file_header)?;
 
-    let ldso = if elf.is_shared_object() {
-        Some(lookup_and_parse_ldso(&elf, file_header, fs_resolver)?)
+    let ldso = if parsed_elf.is_shared_object() {
+        Some(lookup_and_parse_ldso(
+            &parsed_elf,
+            file_header,
+            fs_resolver,
+        )?)
     } else {
         None
     };
 
-    match init_and_map_vmos(
-        process_vm,
-        ldso,
-        &elf,
-        &elf_file,
-        argv,
-        envp,
-        vdso_text_base,
-    ) {
-        Ok(elf_load_info) => Ok(elf_load_info),
-        Err(e) => {
-            // Since the process_vm is cleared, the process cannot return to user space again,
-            // so exit_group is called here.
+    match init_and_map_vmos(process_vm, ldso, &parsed_elf, &elf_file) {
+        Ok((entry_point, mut aux_vec)) => {
+            // Map and set vdso entry.
+            // Since vdso does not require being mapped to any specific address,
+            // vdso is mapped after the elf file, heap and stack are mapped.
+            if let Some(vdso_text_base) = map_vdso_to_vm(process_vm) {
+                aux_vec
+                    .set(AuxKey::AT_SYSINFO_EHDR, vdso_text_base as u64)
+                    .unwrap();
+            }
 
-            // FIXME: if `current` macro is used when creating the init process,
+            let init_stack_writer = process_vm.init_stack_writer(argv, envp, aux_vec);
+            init_stack_writer.write().unwrap();
+
+            let user_stack_top = process_vm.init_stack_reader().user_stack_top();
+            Ok(ElfLoadInfo {
+                entry_point,
+                user_stack_top,
+            })
+        }
+        Err(_) => {
+            // Since the process_vm is in invalid state,
+            // the process cannot return to user space again,
+            // so `Vmar::clear` and `do_exit_group` are called here.
+            // FIXME: sending a fault signal is an alternative approach.
+            process_vm.root_vmar().clear().unwrap();
+
+            // FIXME: `current` macro will be used in `do_exit_group`.
+            // if the macro is used when creating the init process,
             // the macro will panic. This corner case should be handled later.
             // FIXME: how to set the correct exit status?
             do_exit_group(TermStatus::Exited(1));
@@ -105,12 +122,9 @@ fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Resu
 fn init_and_map_vmos(
     process_vm: &ProcessVm,
     ldso: Option<(Arc<Dentry>, Elf)>,
-    elf: &Elf,
+    parsed_elf: &Elf,
     elf_file: &Dentry,
-    argv: Vec<CString>,
-    envp: Vec<CString>,
-    vdso_text_base: Vaddr,
-) -> Result<ElfLoadInfo> {
+) -> Result<(Vaddr, AuxVec)> {
     let root_vmar = process_vm.root_vmar();
 
     // After we clear process vm, if any error happens, we must call exit_group instead of return to user space.
@@ -120,23 +134,27 @@ fn init_and_map_vmos(
         None
     };
 
-    let map_addr = map_segment_vmos(elf, root_vmar, elf_file)?;
-    let mut aux_vec = init_aux_vec(elf, map_addr, vdso_text_base)?;
-    let mut init_stack = InitStack::new_default_config(argv, envp);
-    init_stack.init(root_vmar, elf, &ldso_load_info, &mut aux_vec)?;
+    let elf_map_addr = map_segment_vmos(parsed_elf, root_vmar, elf_file)?;
+
+    let aux_vec = {
+        let ldso_base = ldso_load_info
+            .as_ref()
+            .map(|load_info| load_info.base_addr());
+        init_aux_vec(parsed_elf, elf_map_addr, ldso_base)?
+    };
+
     let entry_point = if let Some(ldso_load_info) = ldso_load_info {
         // Normal shared object
         ldso_load_info.entry_point()
-    } else if elf.is_shared_object() {
+    } else if parsed_elf.is_shared_object() {
         // ldso itself
-        elf.entry_point() + map_addr
+        parsed_elf.entry_point() + elf_map_addr
     } else {
         // statically linked executable
-        elf.entry_point()
+        parsed_elf.entry_point()
     };
 
-    let elf_load_info = ElfLoadInfo::new(entry_point, init_stack.user_stack_top());
-    Ok(elf_load_info)
+    Ok((entry_point, aux_vec))
 }
 
 pub struct LdsoLoadInfo {
@@ -370,4 +388,52 @@ fn check_segment_align(program_header: &ProgramHeader64) -> Result<()> {
         return_errno_with_message!(Errno::ENOEXEC, "segment align is not satisfied.");
     }
     Ok(())
+}
+
+pub fn init_aux_vec(elf: &Elf, elf_map_addr: Vaddr, ldso_base: Option<Vaddr>) -> Result<AuxVec> {
+    let mut aux_vec = AuxVec::new();
+    aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _)?;
+    let ph_addr = if elf.is_shared_object() {
+        elf.ph_addr()? + elf_map_addr
+    } else {
+        elf.ph_addr()?
+    };
+    aux_vec.set(AuxKey::AT_PHDR, ph_addr as u64)?;
+    aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64)?;
+    aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64)?;
+    let elf_entry = if elf.is_shared_object() {
+        let base_load_offset = elf.base_load_address_offset();
+        elf.entry_point() + elf_map_addr - base_load_offset as usize
+    } else {
+        elf.entry_point()
+    };
+    aux_vec.set(AuxKey::AT_ENTRY, elf_entry as u64)?;
+
+    if let Some(ldso_base) = ldso_base {
+        aux_vec.set(AuxKey::AT_BASE, ldso_base as u64)?;
+    }
+    Ok(aux_vec)
+}
+
+/// Map the vdso vmo to the corresponding virtual memory address.
+fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
+    let root_vmar = process_vm.root_vmar();
+    let vdso_vmo = vdso_vmo()?;
+
+    let options = root_vmar
+        .new_map(vdso_vmo.dup().unwrap(), VmPerms::empty())
+        .unwrap()
+        .size(5 * PAGE_SIZE);
+    let vdso_data_base = options.build().unwrap();
+    let vdso_text_base = vdso_data_base + 0x4000;
+
+    let data_perms = VmPerms::READ | VmPerms::WRITE;
+    let text_perms = VmPerms::READ | VmPerms::EXEC;
+    root_vmar
+        .protect(data_perms, vdso_data_base..vdso_data_base + PAGE_SIZE)
+        .unwrap();
+    root_vmar
+        .protect(text_perms, vdso_text_base..vdso_text_base + PAGE_SIZE)
+        .unwrap();
+    Some(vdso_text_base)
 }

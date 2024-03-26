@@ -3,7 +3,7 @@
 use super::{
     posix_thread::PosixThreadExt,
     process_table,
-    process_vm::{user_heap::UserHeap, ProcessVm},
+    process_vm::{Heap, InitStackReader, ProcessVm},
     rlimit::ResourceLimits,
     signal::{
         constants::SIGCHLD, sig_disposition::SigDispositions, sig_mask::SigMask, signals::Signal,
@@ -501,8 +501,12 @@ impl Process {
         self.process_vm.root_vmar()
     }
 
-    pub fn user_heap(&self) -> &UserHeap {
-        self.process_vm.user_heap()
+    pub fn heap(&self) -> &Heap {
+        self.process_vm.heap()
+    }
+
+    pub fn init_stack_reader(&self) -> InitStackReader {
+        self.process_vm.init_stack_reader()
     }
 
     // ************** File system ****************
