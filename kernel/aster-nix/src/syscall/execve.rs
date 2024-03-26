@@ -15,7 +15,7 @@ use crate::{
     process::{
         check_executable_file, credentials_mut, load_program_to_vm,
         posix_thread::{PosixThreadExt, ThreadName},
-        Credentials,
+        Credentials, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
     syscall::{SYS_EXECVE, SYS_EXECVEAT},
     util::{read_cstring_from_user, read_val_from_user},

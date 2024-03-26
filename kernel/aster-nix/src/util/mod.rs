@@ -3,8 +3,9 @@
 use core::mem;
 
 use aster_frame::vm::VmIo;
+use aster_rights::Full;
 
-use crate::prelude::*;
+use crate::{prelude::*, vm::vmar::Vmar};
 pub mod net;
 
 /// Read bytes into the `dest` buffer
@@ -50,13 +51,20 @@ pub fn write_val_to_user<T: Pod>(dest: Vaddr, val: &T) -> Result<()> {
 /// The original Linux implementation can be found at:
 /// <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
 pub fn read_cstring_from_user(addr: Vaddr, max_len: usize) -> Result<CString> {
+    let current = current!();
+    let vmar = current.root_vmar();
+    read_cstring_from_vmar(vmar, addr, max_len)
+}
+
+/// Read CString from `vmar`. If possible, use `read_cstring_from_user` instead.
+pub fn read_cstring_from_vmar(vmar: &Vmar<Full>, addr: Vaddr, max_len: usize) -> Result<CString> {
     let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
     let mut cur_addr = addr;
 
     macro_rules! read_one_byte_at_a_time_while {
         ($cond:expr) => {
             while $cond {
-                let byte = read_val_from_user::<u8>(cur_addr)?;
+                let byte = vmar.read_val::<u8>(cur_addr)?;
                 buffer.push(byte);
                 if byte == 0 {
                     return Ok(CString::from_vec_with_nul(buffer)
@@ -74,7 +82,7 @@ pub fn read_cstring_from_user(addr: Vaddr, max_len: usize) -> Result<CString> {
 
     // Handle the rest of the bytes in bulk
     while (buffer.len() + mem::size_of::<usize>()) <= max_len {
-        let Ok(word) = read_val_from_user::<usize>(cur_addr) else {
+        let Ok(word) = vmar.read_val::<usize>(cur_addr) else {
             break;
         };
 

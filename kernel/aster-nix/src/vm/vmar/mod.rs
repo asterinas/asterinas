@@ -56,6 +56,12 @@ pub trait VmarRightsOp {
     fn check_rights(&self, rights: Rights) -> Result<()>;
 }
 
+impl<R> PartialEq for Vmar<R> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 impl<R> VmarRightsOp for Vmar<R> {
     default fn rights(&self) -> Rights {
         unimplemented!()
