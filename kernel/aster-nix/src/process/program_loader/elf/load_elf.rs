@@ -135,6 +135,8 @@ fn init_and_map_vmos(
         elf.entry_point()
     };
 
+    process_vm.stack().set_base(init_stack.user_stack_top());
+
     let elf_load_info = ElfLoadInfo::new(entry_point, init_stack.user_stack_top());
     Ok(elf_load_info)
 }
