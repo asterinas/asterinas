@@ -8,7 +8,7 @@ CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 INITRAMFS ?= $(CUR_DIR)/../build/initramfs
 REGRESSION_BUILD_DIR ?= $(INITRAMFS)/regression
 
-TEST_APPS := signal_c pthread network hello_world hello_pie hello_c fork_c fork execve pty
+TEST_APPS := signal_c pthread network hello_world hello_pie hello_c fork_c fork execve pty mongoose
 
 C_SOURCES := $(shell find . -type f \( -name "*.c" -or -name "*.h" \) )
 
