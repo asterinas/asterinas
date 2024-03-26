@@ -2,7 +2,7 @@
 
 use log::{Level, Metadata, Record};
 
-use crate::early_println;
+use crate::{cpu::this_cpu, early_println};
 
 const LOGGER: Logger = Logger {};
 
@@ -19,7 +19,12 @@ impl log::Log for Logger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            early_println!("[{}]: {}", record.level(), record.args());
+            early_println!(
+                "[CPU {}][{}]: {}",
+                this_cpu(),
+                record.level(),
+                record.args()
+            );
         }
     }
 
