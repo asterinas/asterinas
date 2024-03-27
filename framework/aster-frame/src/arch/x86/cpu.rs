@@ -8,6 +8,7 @@ use core::{
     fmt::Debug,
 };
 
+use bitflags::bitflags;
 use bitvec::{
     prelude::{BitVec, Lsb0},
     slice::IterOnes,
@@ -397,6 +398,33 @@ define_cpu_exception!(
     [SECURITY_EXCEPTION = 30, Fault],
     [RESERVED_31 = 31, Reserved]
 );
+
+bitflags! {
+    /// Page Fault error code. Following the Intel Architectures Software Developer's Manual Volume 3
+    pub struct PageFaultErrorCode : usize{
+        /// 0 if no translation for the linear address.
+        const PRESENT       = 1 << 0;
+        /// 1 if the access was a write.
+        const WRITE         = 1 << 1;
+        /// 1 if the access was a user-mode access.
+        const USER          = 1 << 2;
+        /// 1 if there is no translation for the linear address
+        /// because a reserved bit was set.
+        const RESERVED      = 1 << 3;
+        /// 1 if the access was an instruction fetch.
+        const INSTRUCTION   = 1 << 4;
+        /// 1 if the access was a data access to a linear address with a protection key for which
+        /// the protection-key rights registers disallow access.
+        const PROTECTION    = 1 << 5;
+        /// 1 if the access was a shadow-stack access.
+        const SHADOW_STACK  = 1 << 6;
+        /// 1 if there is no translation for the linear address using HLAT paging.
+        const HLAT          = 1 << 7;
+        /// 1 if the exception is unrelated to paging and resulted from violation of SGX-specific
+        /// access-control requirements.
+        const SGX           = 1 << 15;
+    }
+}
 
 impl CpuException {
     pub fn is_cpu_exception(trap_num: u16) -> bool {

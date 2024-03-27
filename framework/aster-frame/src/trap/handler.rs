@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
 use trapframe::TrapFrame;
@@ -13,9 +14,19 @@ use crate::arch::{
     mm::PageTableFlags,
     tdx_guest::{handle_virtual_exception, TdxTrapFrame},
 };
-#[cfg(feature = "intel_tdx")]
-use crate::vm::{page_table::KERNEL_PAGE_TABLE, vaddr_to_paddr};
-use crate::{arch::irq::IRQ_LIST, cpu::CpuException, cpu_local};
+use crate::{
+    arch::{
+        irq::IRQ_LIST,
+        mm::{is_kernel_vaddr, PageTableEntry, PageTableFlags},
+    },
+    boot::memory_region::MemoryRegion,
+    cpu::{CpuException, PageFaultErrorCode, PAGE_FAULT},
+    cpu_local,
+    vm::{
+        page_table::PageTableFlagsTrait,
+        PageTable, PHYS_MEM_BASE_VADDR,
+    },
+};
 
 #[cfg(feature = "intel_tdx")]
 impl TdxTrapFrame for TrapFrame {
@@ -121,32 +132,22 @@ impl TdxTrapFrame for TrapFrame {
 #[no_mangle]
 extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     if CpuException::is_cpu_exception(f.trap_num as u16) {
-        const VIRTUALIZATION_EXCEPTION: u16 = 20;
-        const PAGE_FAULT: u16 = 14;
-        #[cfg(feature = "intel_tdx")]
-        if f.trap_num as u16 == VIRTUALIZATION_EXCEPTION {
-            let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
-            handle_virtual_exception(f, &ve_info);
-            return;
-        }
-        #[cfg(feature = "intel_tdx")]
-        if f.trap_num as u16 == PAGE_FAULT {
-            let mut pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
-            // Safety: Map virtio addr when set shared bit in a TD. Only add the `PageTableFlags::SHARED` flag.
-            unsafe {
-                let page_fault_vaddr = x86::controlregs::cr2();
-                let _ = pt.map(
-                    page_fault_vaddr,
-                    vaddr_to_paddr(page_fault_vaddr).unwrap(),
-                    PageTableFlags::SHARED | PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        match CpuException::to_cpu_exception(f.trap_num as u16).unwrap() {
+            #[cfg(feature = "intel_tdx")]
+            &VIRTUALIZATION_EXCEPTION => {
+                let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
+                handle_virtual_exception(f, &ve_info);
+            }
+            &PAGE_FAULT => {
+                handle_kernel_page_fault(f);
+            }
+            exception => {
+                panic!(
+                    "Cannot handle kernel cpu exception:{:?}. Error code:{:x?}; Trapframe:{:#x?}.",
+                    exception, f.error_code, f
                 );
-            };
-            return;
+            }
         }
-        panic!(
-            "cannot handle this kernel cpu fault now, information:{:#x?}",
-            f
-        );
     } else {
         call_irq_callback_functions(f);
     }
@@ -181,4 +182,63 @@ cpu_local! {
 /// we are in softirq context, or bottom half is disabled, this function also returns true.
 pub fn in_interrupt_context() -> bool {
     IN_INTERRUPT_CONTEXT.load(Ordering::Acquire)
+}
+
+fn handle_kernel_page_fault(f: &TrapFrame) {
+    // We only create mapping: `vaddr = paddr + PHYS_OFFSET` in kernel page fault handler.
+    let page_fault_vaddr = x86_64::registers::control::Cr2::read().as_u64();
+    debug_assert!(is_kernel_vaddr(page_fault_vaddr as usize));
+
+    // Check kernel region
+    // FIXME: The modification to the offset mapping of the kernel code and data should not permitted.
+    debug_assert!({
+        let kernel_region = MemoryRegion::kernel();
+        let start = kernel_region.base();
+        let end = start + kernel_region.base() + kernel_region.len();
+        !((start..end).contains(&(page_fault_vaddr as usize)))
+    });
+
+    // Check error code and construct flags
+    // FIXME: The `PageFaultErrorCode` may not be the same on other platforms such as RISC-V.
+    let error_code = PageFaultErrorCode::from_bits_truncate(f.error_code);
+    debug!(
+        "Handling kernel page fault. Page fault address:{:x?}; Error code:{:?}",
+        page_fault_vaddr, error_code
+    );
+    debug_assert!(!error_code.contains(PageFaultErrorCode::USER));
+    debug_assert!(!error_code.contains(PageFaultErrorCode::INSTRUCTION));
+    let mut flags = PageTableFlags::empty()
+        .set_present(true)
+        .set_executable(false);
+    #[cfg(feature = "intel_tdx")]
+    {
+        // FIXME: Adding shared bit directly will have security issues.
+        flags = flags | PageTableFlags::SHARED;
+    }
+    if error_code.contains(PageFaultErrorCode::WRITE) {
+        flags = flags.set_writable(true);
+    }
+
+    // Handle page fault
+    let mut page_table: PageTable<PageTableEntry, crate::vm::page_table::KernelMode> =
+        unsafe { PageTable::from_root_register() };
+    if error_code.contains(PageFaultErrorCode::PRESENT) {
+        // FIXME: We should define the initialize mapping and the protect method here should not change the
+        // permission of the initialize mapping.
+        //
+        // Safety: The page fault address has been checked and the flags is constructed based on error code.
+        unsafe {
+            page_table
+                .protect(page_fault_vaddr as usize, flags)
+                .unwrap();
+        }
+    } else {
+        // Safety: The page fault address has been checked and the flags is constructed based on error code.
+        let paddr = page_fault_vaddr as usize - PHYS_MEM_BASE_VADDR;
+        unsafe {
+            page_table
+                .map(page_fault_vaddr as usize, paddr, flags)
+                .unwrap();
+        }
+    }
 }

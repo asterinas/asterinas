@@ -171,6 +171,18 @@ impl<T: PageTableEntryTrait> PageTable<T, UserMode> {
         // Safety: The vaddr belongs to user mode program and does not affect the kernel mapping.
         unsafe { self.do_protect(vaddr, flags) }
     }
+
+    /// Add a new mapping directly in the root page table.
+    ///
+    /// # Safety
+    ///
+    /// User must guarantee the validity of the PTE.
+    pub(crate) unsafe fn add_root_mapping(&mut self, index: usize, pte: &T) {
+        debug_assert!((index + 1) * size_of::<T>() <= PAGE_SIZE);
+        // Safety: The root_paddr is refer to the root of a valid page table.
+        let root_ptes: &mut [T] = table_of(self.root_paddr).unwrap();
+        root_ptes[index] = *pte;
+    }
 }
 
 impl<T: PageTableEntryTrait> PageTable<T, KernelMode> {
@@ -256,19 +268,6 @@ impl<T: PageTableEntryTrait> PageTable<T, DeviceMode> {
 }
 
 impl<T: PageTableEntryTrait, M> PageTable<T, M> {
-    /// Add a new mapping directly in the root page table.
-    ///
-    /// # Safety
-    ///
-    /// User must guarantee the validity of the PTE.
-    ///
-    pub unsafe fn add_root_mapping(&mut self, index: usize, pte: &T) {
-        debug_assert!((index + 1) * size_of::<T>() <= PAGE_SIZE);
-        // Safety: The root_paddr is refer to the root of a valid page table.
-        let root_ptes: &mut [T] = table_of(self.root_paddr).unwrap();
-        root_ptes[index] = *pte;
-    }
-
     /// Mapping `vaddr` to `paddr` with flags.
     ///
     /// # Safety
@@ -384,6 +383,25 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         Ok(old_flags)
     }
 
+    /// Construct a page table instance from root registers (CR3 in x86)
+    ///
+    /// # Safety
+    ///
+    /// This function bypasses Rust's ownership model and directly constructs an instance of a
+    /// page table.
+    pub(crate) unsafe fn from_root_register() -> Self {
+        #[cfg(target_arch = "x86_64")]
+        let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
+        PageTable {
+            root_paddr: page_directory_base.start_address().as_u64() as usize,
+            tables: Vec::new(),
+            config: PageTableConfig {
+                address_width: AddressWidth::Level4,
+            },
+            _phantom: PhantomData,
+        }
+    }
+
     pub fn flags(&mut self, vaddr: Vaddr) -> Option<T::F> {
         let last_entry = self.page_walk(vaddr, false)?;
         Some(last_entry.flags())
@@ -420,15 +438,8 @@ pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
 
 pub fn init() {
     KERNEL_PAGE_TABLE.call_once(|| {
-        #[cfg(target_arch = "x86_64")]
-        let (page_directory_base, _) = x86_64::registers::control::Cr3::read();
-        SpinLock::new(PageTable {
-            root_paddr: page_directory_base.start_address().as_u64() as usize,
-            tables: Vec::new(),
-            config: PageTableConfig {
-                address_width: AddressWidth::Level4,
-            },
-            _phantom: PhantomData,
-        })
+        // Safety: The `KERENL_PAGE_TABLE` is the only page table that is used to modify the initialize
+        // mapping.
+        SpinLock::new(unsafe { PageTable::from_root_register() })
     });
 }
