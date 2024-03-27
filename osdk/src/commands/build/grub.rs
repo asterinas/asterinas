@@ -12,7 +12,7 @@ use crate::{
         file::BundleFile,
         vm_image::{AsterGrubIsoImageMeta, AsterVmImage, AsterVmImageType},
     },
-    config_manager::{boot::BootProtocol, BuildConfig},
+    config_manager::{action::BootProtocol, BuildConfig},
     util::get_current_crate_info,
 };
 
@@ -24,7 +24,7 @@ pub fn create_bootdev_image(
 ) -> AsterVmImage {
     let target_name = get_current_crate_info().name;
     let iso_root = &target_dir.as_ref().join("iso_root");
-    let protocol = &config.manifest.boot.protocol;
+    let protocol = &config.settings.boot_protocol;
 
     // Clear or make the iso dir.
     if iso_root.exists() {
@@ -43,10 +43,15 @@ pub fn create_bootdev_image(
 
     // Make the kernel image and place it in the boot directory.
     match protocol {
-        BootProtocol::LinuxLegacy32 | BootProtocol::LinuxEfiHandover64 => {
-            make_install_bzimage(iso_root.join("boot"), &target_dir, aster_bin, protocol);
+        Some(BootProtocol::LinuxLegacy32) | Some(BootProtocol::LinuxEfiHandover64) => {
+            make_install_bzimage(
+                iso_root.join("boot"),
+                &target_dir,
+                aster_bin,
+                &protocol.clone().unwrap(),
+            );
         }
-        BootProtocol::Multiboot | BootProtocol::Multiboot2 => {
+        _ => {
             // Copy the kernel image to the boot directory.
             let target_path = iso_root.join("boot").join(&target_name);
             fs::copy(aster_bin.path(), target_path).unwrap();
@@ -60,17 +65,21 @@ pub fn create_bootdev_image(
         None
     };
     let grub_cfg = generate_grub_cfg(
-        &config.manifest.kcmd_args.join(" "),
+        &config.settings.combined_kcmd_args().join(" "),
         true,
         initramfs_in_image,
-        protocol,
+        &protocol.clone().unwrap_or(BootProtocol::Multiboot2),
     );
     let grub_cfg_path = iso_root.join("boot").join("grub").join("grub.cfg");
     fs::write(grub_cfg_path, grub_cfg).unwrap();
 
     // Make the boot device CDROM image using `grub-mkrescue`.
     let iso_path = &target_dir.as_ref().join(target_name.to_string() + ".iso");
-    let grub_mkrescue_bin = &config.manifest.boot.grub_mkrescue.clone().unwrap();
+    let grub_mkrescue_bin = &config
+        .settings
+        .grub_mkrescue
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("grub-mkrescue"));
     let mut grub_mkrescue_cmd = std::process::Command::new(grub_mkrescue_bin.as_os_str());
     grub_mkrescue_cmd
         .arg(iso_root.as_os_str())

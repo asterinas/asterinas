@@ -1,173 +1,256 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{
-    path::{Path, PathBuf},
-    process,
-};
+use std::{collections::BTreeMap, fmt, path::Path, process};
 
-use regex::Regex;
-use serde::Deserialize;
+use clap::ValueEnum;
+use serde::{de, Deserialize, Deserializer, Serialize};
 
-use super::{
-    boot::Boot,
-    qemu::{CfgQemu, Qemu},
-};
-use crate::{error::Errno, error_msg};
+use super::{action::ActionSettings, cfg::Cfg};
 
-/// The osdk manifest from configuration file and command line arguments.
+use crate::{config_manager::Arch, error::Errno, error_msg};
+
+/// The settings for the actions summarized from the command line arguments
+/// and the configuration file `OSDK.toml`.
 #[derive(Debug, Clone)]
 pub struct OsdkManifest {
-    pub kcmd_args: Vec<String>,
-    pub initramfs: Option<PathBuf>,
-    pub boot: Boot,
-    pub qemu: Qemu,
+    pub project: Project,
+    pub run: Option<ActionSettings>,
+    pub test: Option<ActionSettings>,
 }
 
-impl OsdkManifest {
-    pub fn from_toml_manifest<S: AsRef<str>>(
-        toml_manifest: TomlManifest,
-        selection: Option<S>,
-    ) -> Self {
-        let TomlManifest {
-            mut kcmd_args,
-            mut init_args,
-            initramfs,
-            boot,
-            qemu,
-        } = toml_manifest;
-        let CfgQemu { default, cfg } = qemu;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    #[serde(rename(serialize = "type", deserialize = "type"))]
+    pub type_: ProjectType,
+}
 
-        let Some(cfg) = cfg else {
-            return Self {
-                kcmd_args,
-                initramfs,
-                boot,
-                qemu: default,
-            };
-        };
-
-        for cfg in cfg.keys() {
-            check_cfg(cfg);
-        }
-
-        let mut qemu_args = None;
-
-        let mut selected_args: Vec<_> = if let Some(sel) = selection {
-            cfg.into_iter()
-                .filter_map(|(cfg, args)| {
-                    if cfg.contains(sel.as_ref()) {
-                        Some(args)
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        } else {
-            vec![]
-        };
-
-        if selected_args.len() > 1 {
-            error_msg!("Multiple selections are not allowed");
-            process::exit(Errno::ParseMetadata as _);
-        } else if selected_args.len() == 1 {
-            qemu_args = Some(selected_args.remove(0));
-        } else if selected_args.is_empty() {
-            qemu_args = Some(default);
-        }
-
-        check_args("kcmd_args", &kcmd_args);
-        check_args("init_args", &init_args);
-
-        kcmd_args.push("--".to_string());
-        kcmd_args.append(&mut init_args);
-
-        OsdkManifest {
-            kcmd_args,
-            initramfs,
-            boot,
-            qemu: qemu_args.unwrap(),
-        }
-    }
-
-    pub fn check_canonicalize_all_paths(&mut self, manifest_file_dir: impl AsRef<Path>) {
-        macro_rules! canonicalize_path {
-            ($path:expr) => {{
-                let path = if $path.is_relative() {
-                    manifest_file_dir.as_ref().join($path)
-                } else {
-                    $path.clone()
-                };
-                path.canonicalize().unwrap_or_else(|_| {
-                    error_msg!("File specified but not found: {:#?}", path);
-                    process::exit(Errno::ParseMetadata as _);
-                })
-            }};
-        }
-        macro_rules! canonicalize_optional_path {
-            ($path:expr) => {
-                if let Some(path_inner) = &$path {
-                    Some(canonicalize_path!(path_inner))
-                } else {
-                    None
-                }
-            };
-        }
-        self.initramfs = canonicalize_optional_path!(self.initramfs);
-        self.boot.grub_mkrescue = canonicalize_optional_path!(self.boot.grub_mkrescue);
-        self.boot.ovmf = canonicalize_optional_path!(self.boot.ovmf);
-        self.qemu.path = canonicalize_optional_path!(self.qemu.path);
-        for drive_file in &mut self.qemu.drive_files {
-            drive_file.path = canonicalize_path!(&drive_file.path);
-        }
-    }
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ValueEnum, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectType {
+    Kernel,
+    #[value(alias("lib"))]
+    Library,
+    Module,
 }
 
 /// The osdk manifest from configuration file `OSDK.toml`.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct TomlManifest {
-    /// Command line arguments for guest kernel
-    #[serde(default)]
-    pub kcmd_args: Vec<String>,
-    #[serde(default)]
-    pub init_args: Vec<String>,
-    /// The path of initramfs
-    pub initramfs: Option<PathBuf>,
-    #[serde(default)]
-    pub boot: Boot,
-    #[serde(default)]
-    pub qemu: CfgQemu,
+    pub project: Project,
+    cfg_map: BTreeMap<Cfg, CfgArgs>,
 }
 
-fn check_args(arg_name: &str, args: &[String]) {
-    for arg in args {
-        if arg.as_str() == "--" {
-            error_msg!("`{}` cannot have `--` as argument", arg_name);
+impl TomlManifest {
+    /// Get the action manifest given the architecture and the schema from the command line arguments.
+    ///
+    /// If any entry in the `OSDK.toml` manifest doesn't specify an architecture, we regard it matching
+    /// all the architectures.
+    pub fn get_osdk_manifest(
+        &self,
+        path_of_self: impl AsRef<Path>,
+        arch: Arch,
+        schema: Option<String>,
+    ) -> OsdkManifest {
+        let filtered_by_arch = self.cfg_map.iter().filter(|(cfg, _)| {
+            if let Some(got) = cfg.map().get("arch") {
+                got == &arch.to_string()
+            } else {
+                true
+            }
+        });
+
+        let filtered_by_schema = if let Some(schema) = schema {
+            filtered_by_arch
+                .filter(|(cfg, _)| {
+                    if let Some(got) = cfg.map().get("schema") {
+                        got == &schema
+                    } else {
+                        false
+                    }
+                })
+                .collect::<Vec<_>>()
+        } else {
+            filtered_by_arch
+                .filter(|(cfg, _)| cfg == &&Cfg::empty())
+                .collect::<Vec<_>>()
+        };
+
+        let filtered = filtered_by_schema;
+        if filtered.len() > 1 {
+            error_msg!("Multiple entries in OSDK.toml match the given architecture and schema");
             process::exit(Errno::ParseMetadata as _);
+        }
+        if filtered.is_empty() {
+            error_msg!("No entry in OSDK.toml matches the given architecture and schema");
+            process::exit(Errno::ParseMetadata as _);
+        }
+        let final_cfg_args = filtered.first().unwrap().1;
+        let mut run = final_cfg_args.run.clone();
+        if let Some(run_inner) = &mut run {
+            run_inner.canonicalize_paths(&path_of_self);
+        }
+        let mut test = final_cfg_args.test.clone();
+        if let Some(test_inner) = &mut test {
+            test_inner.canonicalize_paths(&path_of_self);
+        }
+        OsdkManifest {
+            project: self.project.clone(),
+            run,
+            test,
         }
     }
 }
 
-/// Check cfg that is in the form that we can accept
-fn check_cfg(cfg: &str) {
-    if SELECT_REGEX.captures(cfg).is_none() {
-        error_msg!("{} is not allowed to be used after `qemu` in `OSDK.toml`. Currently we only allow cfgs like `cfg(select=\"foo\")`", cfg);
-        process::exit(Errno::ParseMetadata as _);
+/// A inner adapter for `TomlManifest` to allow the `cfg` field to be optional.
+/// The fields should be identical to `TomlManifest` except the `cfg` field.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct CfgArgs {
+    pub run: Option<ActionSettings>,
+    pub test: Option<ActionSettings>,
+}
+
+impl CfgArgs {
+    pub fn try_accept(&mut self, another: CfgArgs) {
+        if another.run.is_some() {
+            if self.run.is_some() {
+                error_msg!("Duplicate `run` field in OSDK.toml");
+                process::exit(Errno::ParseMetadata as _);
+            }
+            self.run = another.run;
+        }
+        if another.test.is_some() {
+            if self.test.is_some() {
+                error_msg!("Duplicate `test` field in OSDK.toml");
+                process::exit(Errno::ParseMetadata as _);
+            }
+            self.test = another.test;
+        }
     }
 }
 
-lazy_static::lazy_static! {
-    pub static ref SELECT_REGEX: Regex = Regex::new(r#"cfg\(select="(?P<select>\w+)"\)"#).unwrap();
-}
+impl<'de> Deserialize<'de> for TomlManifest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        enum Field {
+            Project,
+            Run,
+            Test,
+            Cfg(Cfg),
+        }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+        impl<'de> Deserialize<'de> for Field {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct FieldVisitor;
 
-    #[test]
-    fn extract_selection() {
-        let text = "cfg(select=\"abc123_\")";
-        let captures = SELECT_REGEX.captures(text).unwrap();
-        let selection = captures.name("select").unwrap().as_str();
-        assert_eq!(selection, "abc123_");
+                impl<'de> de::Visitor<'de> for FieldVisitor {
+                    type Value = Field;
+
+                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                        formatter.write_str("`project`, `run`, `test` or cfg")
+                    }
+
+                    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                    where
+                        E: de::Error,
+                    {
+                        match v {
+                            "project" => Ok(Field::Project),
+                            "run" => Ok(Field::Run),
+                            "test" => Ok(Field::Test),
+                            v => Ok(Field::Cfg(Cfg::from_str(v).unwrap_or_else(|e| {
+                                error_msg!("Error parsing cfg: {}", e);
+                                process::exit(Errno::ParseMetadata as _);
+                            }))),
+                        }
+                    }
+                }
+
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct TomlManifestVisitor;
+
+        impl<'de> de::Visitor<'de> for TomlManifestVisitor {
+            type Value = TomlManifest;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct TomlManifest")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut project: Option<Project> = None;
+                let default_cfg = Cfg::empty();
+                let mut cfg_map = BTreeMap::<Cfg, CfgArgs>::new();
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Project => {
+                            let value = map.next_value()?;
+                            project = Some(value);
+                        }
+                        Field::Run => {
+                            let value: ActionSettings = map.next_value()?;
+                            cfg_map
+                                .entry(default_cfg.clone())
+                                .and_modify(|v| {
+                                    v.try_accept(CfgArgs {
+                                        run: Some(value.clone()),
+                                        test: None,
+                                    })
+                                })
+                                .or_insert(CfgArgs {
+                                    run: Some(value.clone()),
+                                    test: None,
+                                });
+                        }
+                        Field::Test => {
+                            let value: ActionSettings = map.next_value()?;
+                            cfg_map
+                                .entry(default_cfg.clone())
+                                .and_modify(|v| {
+                                    v.try_accept(CfgArgs {
+                                        run: None,
+                                        test: Some(value.clone()),
+                                    })
+                                })
+                                .or_insert(CfgArgs {
+                                    run: None,
+                                    test: Some(value.clone()),
+                                });
+                        }
+                        Field::Cfg(cfg) => {
+                            let value: CfgArgs = map.next_value()?;
+                            cfg_map
+                                .entry(cfg)
+                                .and_modify(|v| v.try_accept(value.clone()))
+                                .or_insert(value.clone());
+                        }
+                    }
+                }
+
+                Ok(TomlManifest {
+                    project: project.unwrap_or_else(|| {
+                        error_msg!("`project` field is required in OSDK.toml");
+                        process::exit(Errno::ParseMetadata as _);
+                    }),
+                    cfg_map,
+                })
+            }
+        }
+
+        deserializer.deserialize_struct(
+            "TomlManifest",
+            &["run", "test", "cfg"],
+            TomlManifestVisitor,
+        )
     }
 }

@@ -3,20 +3,20 @@
 mod bin;
 mod grub;
 
-use std::{path::Path, process};
+use std::{ffi::OsString, path::Path, process};
 
 use bin::strip_elf_for_qemu;
 
 use super::util::{cargo, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
 use crate::{
+    arch::Arch,
     base_crate::new_base_crate,
     bundle::{
         bin::{AsterBin, AsterBinType, AsterElfMeta},
-        file::Initramfs,
         Bundle,
     },
     cli::CargoArgs,
-    config_manager::{qemu::QemuMachine, BuildConfig},
+    config_manager::{action::Bootloader, BuildConfig},
     error::Errno,
     error_msg,
     util::{get_current_crate_info, get_target_directory},
@@ -78,37 +78,29 @@ pub fn do_build(
     }
     let mut bundle = Bundle::new(
         &bundle_path,
-        config.manifest.kcmd_args.clone(),
-        config.manifest.boot.clone(),
-        config.manifest.qemu.clone(),
+        config.settings.clone(),
         config.cargo_args.clone(),
     );
 
-    if let Some(ref initramfs) = config.manifest.initramfs {
-        if !initramfs.exists() {
-            error_msg!("initramfs file not found: {}", initramfs.display());
-            process::exit(Errno::BuildCrate as _);
-        }
-        bundle.add_initramfs(Initramfs::new(initramfs));
-    };
-
     info!("Building kernel ELF");
-    let aster_elf = build_kernel_elf(&config.cargo_args, &cargo_target_directory, rustflags);
+    let aster_elf = build_kernel_elf(
+        &config.arch,
+        &config.cargo_args,
+        &cargo_target_directory,
+        rustflags,
+    );
 
-    if matches!(config.manifest.qemu.machine, QemuMachine::Microvm) {
+    if matches!(config.settings.bootloader, Some(Bootloader::Qemu)) {
         let stripped_elf = strip_elf_for_qemu(&osdk_target_directory, &aster_elf);
         bundle.consume_aster_bin(stripped_elf);
     }
 
-    // TODO: A boot device is required if we use GRUB. Actually you can boot
-    // a multiboot kernel with Q35 machine directly without a bootloader.
-    // We are currently ignoring this case.
-    if matches!(config.manifest.qemu.machine, QemuMachine::Q35) {
+    if matches!(config.settings.bootloader, Some(Bootloader::Grub)) {
         info!("Building boot device image");
         let bootdev_image = grub::create_bootdev_image(
             &osdk_target_directory,
             &aster_elf,
-            config.manifest.initramfs.as_ref(),
+            config.settings.initramfs.as_ref(),
             config,
         );
         bundle.consume_vm_image(bootdev_image);
@@ -118,19 +110,20 @@ pub fn do_build(
 }
 
 fn build_kernel_elf(
-    args: &CargoArgs,
+    arch: &Arch,
+    cargo_args: &CargoArgs,
     cargo_target_directory: impl AsRef<Path>,
     rustflags: &[&str],
 ) -> AsterBin {
-    let target = "x86_64-unknown-none";
+    let target_os_string = OsString::from(&arch.triple());
+    let rustc_linker_script_arg = format!("-C link-arg=-T{}.ld", arch);
 
     let env_rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
     let mut rustflags = Vec::from(rustflags);
-    // We disable RELRO and PIC here because they cause link failures
+    // Asterinas does not support PIC yet.
     rustflags.extend(vec![
         &env_rustflags,
-        "-C link-arg=-Tx86_64.ld",
-        "-C code-model=kernel",
+        &rustc_linker_script_arg,
         "-C relocation-model=static",
         "-Z relro-level=off",
     ]);
@@ -139,23 +132,23 @@ fn build_kernel_elf(
     command.env_remove("RUSTUP_TOOLCHAIN");
     command.env("RUSTFLAGS", rustflags.join(" "));
     command.arg("build");
-    command.arg("--target").arg(target);
+    command.arg("--target").arg(&target_os_string);
     command
         .arg("--target-dir")
         .arg(cargo_target_directory.as_ref());
     command.args(COMMON_CARGO_ARGS);
-    command.arg("--profile=".to_string() + &args.profile);
+    command.arg("--profile=".to_string() + &cargo_args.profile);
     let status = command.status().unwrap();
     if !status.success() {
         error_msg!("Cargo build failed");
         process::exit(Errno::ExecuteCommand as _);
     }
 
-    let aster_bin_path = cargo_target_directory.as_ref().join(target);
-    let aster_bin_path = if args.profile == "dev" {
+    let aster_bin_path = cargo_target_directory.as_ref().join(&target_os_string);
+    let aster_bin_path = if cargo_args.profile == "dev" {
         aster_bin_path.join("debug")
     } else {
-        aster_bin_path.join(&args.profile)
+        aster_bin_path.join(&cargo_args.profile)
     }
     .join(get_current_crate_info().name);
 

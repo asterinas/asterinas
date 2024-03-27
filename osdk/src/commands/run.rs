@@ -41,7 +41,8 @@ pub fn execute_run_command(config: &RunConfig) {
     }
 
     let required_build_config = BuildConfig {
-        manifest: config.manifest.clone(),
+        arch: config.arch,
+        settings: config.settings.clone(),
         cargo_args: config.cargo_args.clone(),
     };
 
