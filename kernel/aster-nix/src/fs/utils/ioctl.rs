@@ -31,6 +31,8 @@ pub enum IoctlCmd {
     TIOCSPTLCK = 0x40045431,
     /// Safely open the slave
     TIOCGPTPEER = 0x40045441,
-    /// Get tdx report using TDCALL
+    /// Get Intel TDX report using TDVMCALL
+    TDXGETQUOTE = 0x80105404,
+    /// Get Intel TDX report using TDCALL
     TDXGETREPORT = 0xc4405401,
 }
