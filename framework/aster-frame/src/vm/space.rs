@@ -25,6 +25,12 @@ pub struct VmSpace {
 }
 
 impl VmSpace {
+    pub fn deep_copy(&self) -> Self {
+        Self {
+            memory_set: Arc::new(Mutex::new(self.memory_set.lock().clone())),
+        }
+    }
+
     /// Creates a new VM address space.
     pub fn new() -> Self {
         Self {
@@ -80,10 +86,24 @@ impl VmSpace {
         Ok(base_addr)
     }
 
-    /// determine whether a vaddr is already mapped
+    /// Determine whether a vaddr is already mapped
     pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
         let memory_set = self.memory_set.lock();
         memory_set.is_mapped(vaddr)
+    }
+
+    /// Determine whether the target vaddr is writable based on the PageTable.
+    pub fn is_writable(&self, vaddr: Vaddr) -> bool {
+        let memory_set = self.memory_set.lock();
+        let flags = memory_set.flags(vaddr);
+        flags.is_some_and(|flags| flags.contains(PageTableFlags::WRITABLE))
+    }
+
+    /// Determine whether the target vaddr is executable based on the PageTable.
+    pub fn is_executable(&self, vaddr: Vaddr) -> bool {
+        let memory_set = self.memory_set.lock();
+        let flags = memory_set.flags(vaddr);
+        flags.is_some_and(|flags| !flags.contains(PageTableFlags::NO_EXECUTE))
     }
 
     /// Unmaps the physical memory pages within the VM address range.

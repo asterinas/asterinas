@@ -128,6 +128,7 @@ dependencies = [
  "volatile",
  "x86",
  "x86_64",
+ "xarray",
 ]
 
 [[package]]
@@ -1267,6 +1268,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "smallvec"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
+
+[[package]]
 name = "smoltcp"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1648,6 +1655,14 @@ dependencies = [
  "bitflags 2.4.1",
  "rustversion",
  "volatile",
+]
+
+[[package]]
+name = "xarray"
+version = "0.1.0"
+source = "git+https://github.com/asterinas/xarray?rev=72a4067#72a4067a65e8f94cfc193f5f19ebc981c1de9de7"
+dependencies = [
+ "smallvec",
 ]
 
 [[package]]
