@@ -14,6 +14,7 @@
 #![feature(panic_info_message)]
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
+#![feature(pointer_is_aligned)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![no_std]
@@ -28,6 +29,7 @@ extern crate static_assertions;
 pub mod arch;
 pub mod boot;
 pub mod bus;
+pub mod collection;
 pub mod console;
 pub mod cpu;
 mod error;
