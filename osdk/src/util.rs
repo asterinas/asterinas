@@ -14,7 +14,7 @@ use quote::ToTokens;
 /// FIXME: We should publish the asterinas crates to a public registry
 /// and use the published version in the generated Cargo.toml.
 pub const ASTER_GIT_LINK: &str = "https://github.com/asterinas/asterinas";
-pub const ASTER_GIT_REV: &str = "437ab80";
+pub const ASTER_GIT_REV: &str = "d390365";
 pub fn aster_crate_dep(crate_name: &str) -> String {
     format!(
         "{} = {{ git = \"{}\", rev = \"{}\" }}",
