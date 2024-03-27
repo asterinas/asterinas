@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    constants::*, sig_mask::SigMask, sig_num::SigNum, signals::Signal, SigEvents, SigEventsFilter,
+    constants::*, sig_num::SigNum, sig_set::SigSet, signals::Signal, SigEvents, SigEventsFilter,
 };
 use crate::{
     events::{Observer, Subject},
@@ -66,7 +66,7 @@ impl SigQueues {
         self.subject.notify_observers(&SigEvents::new(signum));
     }
 
-    pub fn dequeue(&mut self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
+    pub fn dequeue(&mut self, blocked: &SigSet) -> Option<Box<dyn Signal>> {
         // Fast path for the common case of no pending signals
         if self.is_empty() {
             return None;
@@ -141,6 +141,26 @@ impl SigQueues {
         debug_assert!(signum.is_real_time());
         let idx = (signum.as_u8() - MIN_RT_SIG_NUM) as usize;
         &mut self.rt_queues[idx]
+    }
+
+    pub fn sig_pending(&self) -> SigSet {
+        let mut pending = SigSet::new_empty();
+
+        // Process standard signal queues
+        for (idx, signal) in self.std_queues.iter().enumerate() {
+            if signal.is_some() {
+                pending.add_signal(SigNum::from_u8(idx as u8 + MIN_STD_SIG_NUM));
+            }
+        }
+
+        // Process real-time signal queues
+        for (idx, signals) in self.rt_queues.iter().enumerate() {
+            if !signals.is_empty() {
+                pending.add_signal(SigNum::from_u8(idx as u8 + MIN_RT_SIG_NUM));
+            }
+        }
+
+        pending
     }
 
     pub fn register_observer(

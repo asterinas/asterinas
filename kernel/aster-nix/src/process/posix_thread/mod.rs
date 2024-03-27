@@ -8,7 +8,7 @@ use super::{
     do_exit_group,
     kill::SignalSenderIds,
     signal::{
-        sig_mask::SigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal, SigEvents,
+        sig_num::SigNum, sig_queues::SigQueues, sig_set::SigSet, signals::Signal, SigEvents,
         SigEventsFilter, SigStack,
     },
     Credentials, Process, TermStatus,
@@ -57,7 +57,7 @@ pub struct PosixThread {
 
     // Signal
     /// Blocked signals
-    sig_mask: Mutex<SigMask>,
+    sig_mask: Mutex<SigSet>,
     /// Thread-directed sigqueue
     sig_queues: Mutex<SigQueues>,
     /// Signal handler ucontext address
@@ -83,12 +83,16 @@ impl PosixThread {
         &self.clear_child_tid
     }
 
-    pub fn sig_mask(&self) -> &Mutex<SigMask> {
+    pub fn sig_mask(&self) -> &Mutex<SigSet> {
         &self.sig_mask
     }
 
     pub fn has_pending_signal(&self) -> bool {
         !self.sig_queues.lock().is_empty()
+    }
+
+    pub fn sig_pending(&self) -> SigSet {
+        self.sig_queues.lock().sig_pending()
     }
 
     /// Returns whether the signal is blocked by the thread.
@@ -154,7 +158,7 @@ impl PosixThread {
         self.sig_queues.lock().enqueue(signal);
     }
 
-    pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
+    pub fn dequeue_signal(&self, mask: &SigSet) -> Option<Box<dyn Signal>> {
         self.sig_queues.lock().dequeue(mask)
     }
 

@@ -3,31 +3,31 @@
 use super::{constants::MIN_STD_SIG_NUM, sig_num::SigNum};
 
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub struct SigMask {
+pub struct SigSet {
     bits: u64,
 }
 
-impl From<u64> for SigMask {
+impl From<u64> for SigSet {
     fn from(bits: u64) -> Self {
-        SigMask { bits }
+        SigSet { bits }
     }
 }
 
-impl From<SigNum> for SigMask {
+impl From<SigNum> for SigSet {
     fn from(sig_num: SigNum) -> Self {
-        let idx = SigMask::num_to_idx(sig_num);
+        let idx = SigSet::num_to_idx(sig_num);
         let bits = 1u64 << idx;
-        SigMask { bits }
+        SigSet { bits }
     }
 }
 
-impl SigMask {
+impl SigSet {
     pub fn new_empty() -> Self {
-        SigMask::from(0u64)
+        SigSet::from(0u64)
     }
 
     pub fn new_full() -> Self {
-        SigMask::from(!0u64)
+        SigSet::from(!0u64)
     }
 
     pub const fn as_u64(&self) -> u64 {

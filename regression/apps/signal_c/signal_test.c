@@ -364,6 +364,95 @@ int test_sigaltstack()
 	return 0;
 }
 
+// ============================================================================
+// Test sigpending
+// ============================================================================
+int test_sigpending()
+{
+	int ret;
+
+	// Set up  signal handler for SIGSEGV and SIGIO
+	struct sigaction new_action, old_sigsegv_action, old_sigio_action;
+	memset(&new_action, 0, sizeof(struct sigaction));
+	memset(&old_sigsegv_action, 0, sizeof(struct sigaction));
+	new_action.sa_sigaction = handle_sigsegv;
+	new_action.sa_flags = SA_SIGINFO;
+	if (sigaction(SIGSEGV, &new_action, &old_sigsegv_action) < 0) {
+		THROW_ERROR("registering new signal handler failed");
+	}
+	if (old_sigsegv_action.sa_handler != SIG_DFL) {
+		THROW_ERROR("unexpected old sig handler");
+	}
+
+	memset(&new_action, 0, sizeof(struct sigaction));
+	memset(&old_sigio_action, 0, sizeof(struct sigaction));
+	new_action.sa_sigaction = handle_sigio;
+	new_action.sa_flags = SA_SIGINFO | SA_NODEFER;
+	if (sigaction(SIGIO, &new_action, &old_sigio_action) < 0) {
+		THROW_ERROR("registering new signal handler failed");
+	}
+	if (old_sigio_action.sa_handler != SIG_DFL) {
+		THROW_ERROR("unexpected old sig handler");
+	}
+
+	// Block SIGSEGV and SIGIO
+	sigset_t new_set, old_set, pending_set;
+	sigfillset(&new_set);
+	sigaddset(&new_set, SIGSEGV);
+	sigaddset(&new_set, SIGIO);
+	if ((ret = sigprocmask(SIG_BLOCK, &new_set, &old_set)) < 0) {
+		THROW_ERROR("sigprocmask failed unexpectedly");
+	}
+
+	// Send SIGSEGV and SIGIO signals to the current process twice
+	kill(getpid(), SIGSEGV);
+	kill(getpid(), SIGSEGV); // Repeat
+	kill(getpid(), SIGIO);
+	kill(getpid(), SIGIO); // Repeat
+
+	// Check for pending signals
+	if (sigpending(&pending_set) < 0) {
+		THROW_ERROR("sigpending failed unexpectedly");
+	}
+
+	if (!sigismember(&pending_set, SIGSEGV)) {
+		THROW_ERROR("SIGSEGV is not pending");
+	}
+
+	if (!sigismember(&pending_set, SIGIO)) {
+		THROW_ERROR("SIGIO (real-time signal) is not pending");
+	}
+
+	// Unblock all signals and check if pending signals are cleared
+	if (sigprocmask(SIG_SETMASK, &old_set, NULL) < 0) {
+		THROW_ERROR(
+			"sigprocmask failed unexpectedly, failed to restore signal mask");
+	}
+
+	// Fetch and check pending signals after unblocking
+	if (sigpending(&pending_set) < 0) {
+		THROW_ERROR("sigpending failed unexpectedly");
+	}
+
+	if (sigismember(&pending_set, SIGSEGV)) {
+		THROW_ERROR("SIGSEGV is pending");
+	}
+
+	if (sigismember(&pending_set, SIGIO)) {
+		THROW_ERROR("SIGIO (real-time signal) is  pending");
+	}
+
+	// Restore old sigaction
+	if (sigaction(SIGSEGV, &old_sigsegv_action, NULL) < 0) {
+		THROW_ERROR("restoring old signal handler failed");
+	}
+	if (sigaction(SIGIO, &old_sigio_action, NULL) < 0) {
+		THROW_ERROR("restoring old signal handler failed");
+	}
+
+	return 0;
+}
+
 int main()
 {
 	test_sigprocmask();
@@ -372,5 +461,6 @@ int main()
 	test_handle_sigsegv();
 	test_sigchld();
 	test_sigaltstack();
+	test_sigpending();
 	return 0;
 }

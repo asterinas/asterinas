@@ -7,7 +7,7 @@ use core::{
 
 use aster_frame::sync::WaitQueue;
 
-use super::{sig_mask::SigMask, SigEvents, SigEventsFilter};
+use super::{sig_set::SigSet, SigEvents, SigEventsFilter};
 use crate::{events::Observer, prelude::*, process::posix_thread::PosixThreadExt};
 
 /// A `Pauser` allows pausing the execution of the current thread until certain conditions are reached.
@@ -55,7 +55,7 @@ use crate::{events::Observer, prelude::*, process::posix_thread::PosixThreadExt}
 /// ```
 pub struct Pauser {
     wait_queue: WaitQueue,
-    sig_mask: SigMask,
+    sig_mask: SigSet,
     is_interrupted: AtomicBool,
 }
 
@@ -63,12 +63,12 @@ impl Pauser {
     /// Create a new `Pauser`. The `Pauser` can be interrupted by all signals except that
     /// are blocked by current thread.
     pub fn new() -> Arc<Self> {
-        Self::new_with_mask(SigMask::new_empty())
+        Self::new_with_mask(SigSet::new_empty())
     }
 
     /// Create a new `Pauser`, the `Pauser` will ignore signals that are in `sig_mask` and
     /// blocked by current thread.
-    pub fn new_with_mask(sig_mask: SigMask) -> Arc<Self> {
+    pub fn new_with_mask(sig_mask: SigSet) -> Arc<Self> {
         let wait_queue = WaitQueue::new();
         Arc::new(Self {
             wait_queue,
