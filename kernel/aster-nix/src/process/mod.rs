@@ -14,6 +14,7 @@ mod program_loader;
 mod rlimit;
 pub mod signal;
 mod status;
+mod sync;
 mod term_status;
 mod wait;
 
@@ -28,5 +29,7 @@ pub use process::{
 pub use process_filter::ProcessFilter;
 pub use program_loader::{check_executable_file, load_program_to_vm};
 pub use rlimit::ResourceType;
+#[allow(unused_imports)]
+pub use sync::{Condvar, LockErr};
 pub use term_status::TermStatus;
 pub use wait::{wait_child_exit, WaitOptions};
