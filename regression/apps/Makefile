@@ -13,6 +13,7 @@ TEST_APPS := \
 	execve \
 	fork \
 	fork_c \
+	generate_tdx_quote \
 	getpid \
 	hello_c \
 	hello_pie \
