@@ -106,3 +106,7 @@ impl<'a, T: fmt::Debug> fmt::Debug for MutexGuard<'a, T> {
 impl<'a, T> !Send for MutexGuard<'a, T> {}
 
 unsafe impl<T: Sync> Sync for MutexGuard<'_, T> {}
+
+pub fn guard_lock<'a, T>(guard: &MutexGuard<'a, T>) -> &'a Mutex<T> {
+    guard.mutex
+}
