@@ -10,7 +10,7 @@ use super::{
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, sync::Mutex, trap::disable_local};
+use crate::{cpu_local, sync::Mutex};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -62,8 +62,8 @@ pub fn schedule() {
 }
 
 pub fn preempt() {
-    // disable interrupts to avoid nested preemption.
-    let disable_irq = disable_local();
+    // TODO: Refactor `preempt` and `schedule`
+    // after the Atomic mode and `might_break` is enabled.
     let Some(curr_task) = current_task() else {
         return;
     };
