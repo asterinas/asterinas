@@ -15,7 +15,7 @@ use crate::arch::{
 };
 #[cfg(feature = "intel_tdx")]
 use crate::vm::{page_table::KERNEL_PAGE_TABLE, vaddr_to_paddr};
-use crate::{arch::irq::IRQ_LIST, cpu::CpuException, cpu_local};
+use crate::{arch::irq::IRQ_LIST, cpu::CpuException, cpu_local, prelude::*};
 
 #[cfg(feature = "intel_tdx")]
 impl TdxTrapFrame for TrapFrame {
@@ -152,6 +152,7 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     }
 }
 
+#[atomic_procedure]
 pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame) {
     // For x86 CPUs, interrupts are not re-entrant. Local interrupts will be disabled when
     // an interrupt handler is called (Unless interrupts are re-enabled in an interrupt handler).

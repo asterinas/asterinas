@@ -11,6 +11,7 @@ use bitflags::bitflags;
 use super::SpinLock;
 use crate::{
     arch::timer::{add_timeout_list, TIMER_FREQ},
+    // prelude::*,
     task::{add_task, current_task, schedule, Task, TaskStatus},
 };
 
@@ -58,6 +59,8 @@ impl WaitQueue {
         self.do_wait(cond, Some(timeout))
     }
 
+    // FIXME
+    // #[might_break]
     fn do_wait<F, R>(&self, mut cond: F, timeout: Option<&Duration>) -> Option<R>
     where
         F: FnMut() -> Option<R>,

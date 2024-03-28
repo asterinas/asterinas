@@ -11,7 +11,7 @@ use core::{
 };
 
 use crate::{
-    task::{disable_preempt, DisablePreemptGuard},
+    task::atomic::{enter_atomic_mode, transferred, AtomicModeGuard},
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
@@ -322,12 +322,12 @@ impl<T> RwLock<T> {
     /// method over the `try_read_irq_disabled` method as it has a higher
     /// efficiency.
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
-        let guard = disable_preempt();
+        let guard = enter_atomic_mode();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(RwLockReadGuard {
                 inner: self,
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                inner_guard: InnerGuard::AtomicModeGuard(guard),
             })
         } else {
             self.lock.fetch_sub(READER, Release);
@@ -346,7 +346,7 @@ impl<T> RwLock<T> {
     /// method over the `try_write_irq_disabled` method as it has a higher
     /// efficiency.
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
-        let guard = disable_preempt();
+        let guard = enter_atomic_mode();
         if self
             .lock
             .compare_exchange(0, WRITER, Acquire, Relaxed)
@@ -354,7 +354,7 @@ impl<T> RwLock<T> {
         {
             Some(RwLockWriteGuard {
                 inner: self,
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                inner_guard: InnerGuard::AtomicModeGuard(guard),
             })
         } else {
             None
@@ -372,12 +372,12 @@ impl<T> RwLock<T> {
     /// method over the `try_upread_irq_disabled` method as it has a higher
     /// efficiency.
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T>> {
-        let guard = disable_preempt();
+        let guard = enter_atomic_mode();
         let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
             return Some(RwLockUpgradeableGuard {
                 inner: self,
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                inner_guard: InnerGuard::AtomicModeGuard(guard),
             });
         } else if lock == WRITER {
             self.lock.fetch_sub(UPGRADEABLE_READER, Release);
@@ -406,15 +406,15 @@ unsafe impl<T: Sync> Sync for RwLockReadGuard<'_, T> {}
 impl<'a, T> !Send for RwLockUpgradeableGuard<'a, T> {}
 unsafe impl<T: Sync> Sync for RwLockUpgradeableGuard<'_, T> {}
 
-enum InnerGuard {
-    IrqGuard(DisabledLocalIrqGuard),
-    PreemptGuard(DisablePreemptGuard),
+enum InnerGuard<'a> {
+    IrqGuard(DisabledLocalIrqGuard<'a>),
+    AtomicModeGuard(AtomicModeGuard<'a>),
 }
 
 /// A guard that provides immutable data access.
 pub struct RwLockReadGuard<'a, T> {
     inner: &'a RwLock<T>,
-    inner_guard: InnerGuard,
+    inner_guard: InnerGuard<'a>,
 }
 
 impl<'a, T> Deref for RwLockReadGuard<'a, T> {
@@ -440,7 +440,7 @@ impl<'a, T: fmt::Debug> fmt::Debug for RwLockReadGuard<'a, T> {
 /// A guard that provides mutable data access.
 pub struct RwLockWriteGuard<'a, T> {
     inner: &'a RwLock<T>,
-    inner_guard: InnerGuard,
+    inner_guard: InnerGuard<'a>,
 }
 
 impl<'a, T> Deref for RwLockWriteGuard<'a, T> {
@@ -473,7 +473,7 @@ impl<'a, T: fmt::Debug> fmt::Debug for RwLockWriteGuard<'a, T> {
 /// upgraded to `RwLockWriteGuard`.
 pub struct RwLockUpgradeableGuard<'a, T> {
     inner: &'a RwLock<T>,
-    inner_guard: InnerGuard,
+    inner_guard: InnerGuard<'a>,
 }
 
 impl<'a, T> RwLockUpgradeableGuard<'a, T> {
@@ -505,10 +505,13 @@ impl<'a, T> RwLockUpgradeableGuard<'a, T> {
         if res.is_ok() {
             let inner_guard = match &mut self.inner_guard {
                 InnerGuard::IrqGuard(irq_guard) => InnerGuard::IrqGuard(irq_guard.transfer_to()),
-                InnerGuard::PreemptGuard(preempt_guard) => {
-                    InnerGuard::PreemptGuard(preempt_guard.transfer_to())
+                InnerGuard::AtomicModeGuard(guard) => {
+                    InnerGuard::AtomicModeGuard(transferred(guard))
                 }
             };
+            // TODO: remove the intermediate guard value,
+            // "move" ownership of self to the return value
+            // while keeping necessary `drop`s.
             drop(self);
             Ok(RwLockWriteGuard { inner, inner_guard })
         } else {
