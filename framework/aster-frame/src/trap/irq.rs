@@ -9,7 +9,7 @@ use trapframe::TrapFrame;
 use crate::{
     arch::irq::{self, IrqCallbackHandle, IRQ_ALLOCATOR},
     prelude::*,
-    task::{disable_preempt, DisablePreemptGuard},
+    task::{enter_atomic_mode, AtomicModeGuard},
     Error,
 };
 
@@ -134,7 +134,7 @@ pub fn disable_local() -> DisabledLocalIrqGuard {
 /// A guard for disabled local IRQs.
 pub struct DisabledLocalIrqGuard {
     was_enabled: bool,
-    preempt_guard: DisablePreemptGuard,
+    atomic_mode_guard: AtomicModeGuard,
 }
 
 impl !Send for DisabledLocalIrqGuard {}
@@ -145,10 +145,10 @@ impl DisabledLocalIrqGuard {
         if was_enabled {
             irq::disable_local();
         }
-        let preempt_guard = disable_preempt();
+        let atomic_mode_guard = enter_atomic_mode();
         Self {
             was_enabled,
-            preempt_guard,
+            atomic_mode_guard,
         }
     }
 
@@ -159,7 +159,7 @@ impl DisabledLocalIrqGuard {
         self.was_enabled = false;
         Self {
             was_enabled,
-            preempt_guard: disable_preempt(),
+            atomic_mode_guard: enter_atomic_mode(),
         }
     }
 }
