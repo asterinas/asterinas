@@ -37,6 +37,7 @@ args = [
     "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
     "-device virtio-serial-pci,disable-legacy=on,disable-modern=off",
     "-device virtconsole,chardev=mux",
+    "-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off",
 ]
 
 [qemu.'cfg(select="iommu")']
@@ -64,6 +65,7 @@ args = [
     "-device virtconsole,chardev=mux",
     "-device intel-iommu,intremap=on,device-iotlb=on",
     "-device ioh3420,id=pcie.0,chassis=1",
+    "-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
 ]
 
 [qemu.'cfg(select="microvm")']
@@ -91,4 +93,5 @@ args = [
     "-device virtio-net-device,netdev=net01",
     "-device virtio-serial-device",
     "-device virtconsole,chardev=mux",
+    "-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3",
 ]
