@@ -60,7 +60,9 @@ impl DosTimestamp {
         #[cfg(not(ktest))]
         {
             use crate::time::now_as_duration;
-            DosTimestamp::from_duration(now_as_duration(&crate::time::ClockID::CLOCK_REALTIME)?)
+            DosTimestamp::from_duration(now_as_duration(
+                &crate::time::clock::ClockID::CLOCK_REALTIME,
+            )?)
         }
 
         // When ktesting, the time module has not been initialized yet, return a fake value instead.
