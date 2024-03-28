@@ -54,14 +54,14 @@ pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
 }
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
-// #[might_break]
+#[might_break]
 pub fn schedule() {
     if let Some(task) = fetch_task() {
         switch_to_task(task);
     }
 }
 
-// #[might_break]
+#[might_break]
 pub fn preempt() {
     // disable interrupts to avoid nested preemption.
     let disable_irq = disable_local();
@@ -86,7 +86,7 @@ pub fn preempt() {
 /// if current task status is exit, then it will not add to the scheduler
 ///
 /// before context switch, current task will switch to the next task
-// #[might_break]
+#[might_break]
 fn switch_to_task(next_task: Arc<Task>) {
     let current_task_option = current_task();
     let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
