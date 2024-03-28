@@ -57,6 +57,7 @@ qemu.args = """\
     -device virtio-net-pci,netdev=mynet0,disable-legacy=on,disable-modern=off \
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
     -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off \
+    -device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off \
     -drive file=fs.img,if=none,format=raw,id=x0 \
     -netdev user,id=mynet0,hostfwd=tcp::10027-:22,hostfwd=tcp::54136-:8090 \
     -chardev stdio,id=mux,mux=on,logfile=./$(date '+%Y-%m-%dT%H%M%S').log \
