@@ -1,7 +1,11 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use log::debug;
 
-use super::{header::{VsockAddr, VirtioVsockHdr, VirtioVsockOp}, error::SocketError};
-
+use super::{
+    error::SocketError,
+    header::{VirtioVsockHdr, VirtioVsockOp, VsockAddr},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VsockBufferStatus {
@@ -63,7 +67,7 @@ impl VsockEvent {
             && self.destination.port == connection_info.src_port
     }
 
-    pub fn from_header(header: &VirtioVsockHdr) -> Result<Self,SocketError> {
+    pub fn from_header(header: &VirtioVsockHdr) -> Result<Self, SocketError> {
         let op = header.op()?;
         let buffer_status = VsockBufferStatus {
             buffer_allocation: header.buf_alloc,
@@ -113,7 +117,6 @@ impl VsockEvent {
         })
     }
 }
-
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ConnectionInfo {

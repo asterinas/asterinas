@@ -4,6 +4,7 @@
 #![no_std]
 #![deny(unsafe_code)]
 #![allow(dead_code)]
+#![feature(trait_alias)]
 #![feature(fn_traits)]
 
 extern crate alloc;
@@ -13,8 +14,12 @@ use alloc::boxed::Box;
 use bitflags::bitflags;
 use component::{init_component, ComponentInitError};
 use device::{
-    block::device::BlockDevice, console::device::ConsoleDevice, input::device::InputDevice,
-    network::device::NetworkDevice, socket::{device::SocketDevice, self}, VirtioDeviceType,
+    block::device::BlockDevice,
+    console::device::ConsoleDevice,
+    input::device::InputDevice,
+    network::device::NetworkDevice,
+    socket::{self, device::SocketDevice},
+    VirtioDeviceType,
 };
 use log::{error, warn};
 use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};

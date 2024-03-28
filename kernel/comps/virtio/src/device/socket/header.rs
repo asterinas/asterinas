@@ -1,5 +1,8 @@
-use pod::Pod;
+// SPDX-License-Identifier: MPL-2.0
+
 use bitflags::bitflags;
+use pod::Pod;
+
 use super::error::{self, SocketError};
 
 pub const VIRTIO_VSOCK_HDR_LEN: usize = core::mem::size_of::<VirtioVsockHdr>();
@@ -15,9 +18,9 @@ pub struct VsockAddr {
 
 /// VirtioVsock header precedes the payload in each packet.
 // #[repr(packed)]
-#[repr(C,packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
-pub struct VirtioVsockHdr{
+pub struct VirtioVsockHdr {
     pub src_cid: u64,
     pub dst_cid: u64,
     pub src_port: u32,
@@ -25,7 +28,7 @@ pub struct VirtioVsockHdr{
 
     pub len: u32,
     pub socket_type: u16,
-    pub op: u16, //TOASK: why mark Pod and can I mark OpType Pod and replace u16 into OpType.
+    pub op: u16,
     pub flags: u32,
     /// Total receive buffer space for this socket. This includes both free and in-use buffers.
     pub buf_alloc: u32,
@@ -50,11 +53,14 @@ impl Default for VirtioVsockHdr {
     }
 }
 
-
 impl VirtioVsockHdr {
     /// Returns the length of the data.
     pub fn len(&self) -> u32 {
         self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     pub fn op(&self) -> error::Result<VirtioVsockOp> {
@@ -62,7 +68,7 @@ impl VirtioVsockHdr {
     }
 
     pub fn source(&self) -> VsockAddr {
-        VsockAddr{
+        VsockAddr {
             cid: self.src_cid,
             port: self.src_port,
         }
@@ -76,7 +82,7 @@ impl VirtioVsockHdr {
     }
 
     pub fn check_data_is_empty(&self) -> error::Result<()> {
-        if self.len() == 0 {
+        if self.is_empty() {
             Ok(())
         } else {
             Err(SocketError::UnexpectedDataInPacket)
@@ -87,7 +93,7 @@ impl VirtioVsockHdr {
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 #[allow(non_camel_case_types)]
-pub enum VirtioVsockOp{
+pub enum VirtioVsockOp {
     #[default]
     Invalid = 0,
 
@@ -123,7 +129,7 @@ impl TryFrom<u16> for VirtioVsockOp {
             _ => return Err(SocketError::UnknownOperation(v)),
         };
         Ok(op)
-    } 
+    }
 }
 
 bitflags! {
@@ -136,7 +142,7 @@ bitflags! {
         /// The peer will not send any more data.
         const VIRTIO_VSOCK_SHUTDOWN_SEND = 1 << 1;
         /// The peer will not send or receive any more data.
-        const VIRTIO_VSOCK_SHUTDOWN_ALL = Self::VIRTIO_VSOCK_SHUTDOWN_RCV.bits | Self::VIRTIO_VSOCK_SHUTDOWN_SEND.bits; 
+        const VIRTIO_VSOCK_SHUTDOWN_ALL = Self::VIRTIO_VSOCK_SHUTDOWN_RCV.bits | Self::VIRTIO_VSOCK_SHUTDOWN_SEND.bits;
     }
 }
 
