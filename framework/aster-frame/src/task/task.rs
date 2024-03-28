@@ -146,6 +146,7 @@ impl Task {
         schedule();
     }
 
+    /// Set the task to be schedulable..
     pub fn run(self: &Arc<Self>) {
         add_task(self.clone());
         schedule();

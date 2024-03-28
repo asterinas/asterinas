@@ -5,7 +5,7 @@
 use aster_frame::cpu::UserContext;
 
 use self::{
-    accept::sys_accept, alarm::sys_alarm, bind::sys_bind, connect::sys_connect,
+    accept::sys_accept, alarm::sys_alarm, bind::sys_bind, clone::sys_clone3, connect::sys_connect,
     execve::sys_execveat, getgroups::sys_getgroups, getpeername::sys_getpeername,
     getrandom::sys_getrandom, getresgid::sys_getresgid, getresuid::sys_getresuid,
     getsid::sys_getsid, getsockname::sys_getsockname, getsockopt::sys_getsockopt,
@@ -363,7 +363,8 @@ define_syscall_nums!(
     SYS_PIPE2 = 293,
     SYS_PRLIMIT64 = 302,
     SYS_GETRANDOM = 318,
-    SYS_EXECVEAT = 322
+    SYS_EXECVEAT = 322,
+    SYS_CLONE3 = 435
 );
 
 pub struct SyscallArgument {
@@ -552,6 +553,7 @@ pub fn syscall_dispatch(
         SYS_PRLIMIT64 => syscall_handler!(4, sys_prlimit64, args),
         SYS_GETRANDOM => syscall_handler!(3, sys_getrandom, args),
         SYS_EXECVEAT => syscall_handler!(5, sys_execveat, args, context),
+        SYS_CLONE3 => syscall_handler!(2, sys_clone3, args, *context),
         _ => {
             warn!("Unimplemented syscall number: {}", syscall_number);
             return_errno_with_message!(Errno::ENOSYS, "Syscall was unimplemented");

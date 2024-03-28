@@ -2,8 +2,9 @@
 
 use core::sync::atomic::Ordering;
 
+use align_ext::AlignExt;
 use aster_frame::{cpu::UserContext, user::UserSpace, vm::VmIo};
-use aster_rights::Full;
+use aster_rights::{Full, Rights};
 
 use super::{
     credentials,
@@ -19,7 +20,7 @@ use crate::{
     prelude::*,
     thread::{allocate_tid, thread_table, Thread, Tid},
     util::write_val_to_user,
-    vm::vmar::Vmar,
+    vm::{perms::VmPerms, vmar::Vmar, vmo::VmoOptions},
 };
 
 bitflags! {
@@ -54,6 +55,7 @@ bitflags! {
 #[derive(Debug, Clone, Copy)]
 pub struct CloneArgs {
     new_sp: u64,
+    stack_size: usize,
     parent_tidptr: Vaddr,
     child_tidptr: Vaddr,
     tls: u64,
@@ -64,6 +66,7 @@ impl CloneArgs {
     pub const fn default() -> Self {
         CloneArgs {
             new_sp: 0,
+            stack_size: 0,
             parent_tidptr: 0,
             child_tidptr: 0,
             tls: 0,
@@ -73,6 +76,7 @@ impl CloneArgs {
 
     pub const fn new(
         new_sp: u64,
+        stack_size: usize,
         parent_tidptr: Vaddr,
         child_tidptr: Vaddr,
         tls: u64,
@@ -80,6 +84,7 @@ impl CloneArgs {
     ) -> Self {
         CloneArgs {
             new_sp,
+            stack_size,
             parent_tidptr,
             child_tidptr,
             tls,
@@ -116,38 +121,20 @@ impl CloneFlags {
     }
 }
 
-/// Clone a child thread. Without schedule it to run.
+/// Clone a child thread/process. Without schedule it to run.
 pub fn clone_child(parent_context: UserContext, clone_args: CloneArgs) -> Result<Tid> {
     clone_args.clone_flags.check_unsupported_flags()?;
     if clone_args.clone_flags.contains(CloneFlags::CLONE_THREAD) {
         let child_thread = clone_child_thread(parent_context, clone_args)?;
-        let child_tid = child_thread.tid();
-        debug!(
-            "*********schedule child thread, current tid = {}, child pid = {}**********",
-            current_thread!().tid(),
-            child_tid
-        );
         child_thread.run();
-        debug!(
-            "*********return to parent thread, current tid = {}, child pid = {}*********",
-            current_thread!().tid(),
-            child_tid
-        );
+
+        let child_tid = child_thread.tid();
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(parent_context, clone_args)?;
-        let child_pid = child_process.pid();
-        debug!(
-            "*********schedule child process, current pid = {}, child pid = {}**********",
-            current!().pid(),
-            child_pid
-        );
         child_process.run();
-        debug!(
-            "*********return to parent process, current pid = {}, child pid = {}*********",
-            current!().pid(),
-            child_pid
-        );
+
+        let child_pid = child_process.pid();
         Ok(child_pid)
     }
 }
@@ -160,11 +147,15 @@ fn clone_child_thread(parent_context: UserContext, clone_args: CloneArgs) -> Res
     debug_assert!(clone_flags.contains(CloneFlags::CLONE_SIGHAND));
     let child_root_vmar = current.root_vmar();
 
+    // allocate stack for child
+    alloc_stack(child_root_vmar, clone_args.new_sp, clone_args.stack_size)?;
+
     let child_user_space = {
         let child_vm_space = child_root_vmar.vm_space().clone();
         let child_cpu_context = clone_cpu_context(
             parent_context,
             clone_args.new_sp,
+            clone_args.stack_size,
             clone_args.tls,
             clone_flags,
         );
@@ -221,11 +212,19 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
         clone_vm(parent_process_vm, clone_flags)?
     };
 
+    // allocate stack for child
+    alloc_stack(
+        child_process_vm.root_vmar(),
+        clone_args.new_sp,
+        clone_args.stack_size,
+    )?;
+
     // clone user space
     let child_user_space = {
         let child_cpu_context = clone_cpu_context(
             parent_context,
             clone_args.new_sp,
+            clone_args.stack_size,
             clone_args.tls,
             clone_flags,
         );
@@ -317,6 +316,30 @@ fn clone_child_process(parent_context: UserContext, clone_args: CloneArgs) -> Re
     Ok(child)
 }
 
+fn alloc_stack(child_root_vmar: &Vmar<Full>, new_sp: u64, stack_size: usize) -> Result<()> {
+    if new_sp == 0 || stack_size == 0 {
+        return Ok(());
+    }
+
+    // TODO: check the align of stack size
+
+    let stack_start = (new_sp as usize).align_down(PAGE_SIZE);
+    let stack_end = (new_sp as usize + stack_size).align_up(PAGE_SIZE);
+    let vmo_size = stack_end - stack_start;
+
+    let options = {
+        let stack_vmo = VmoOptions::<Rights>::new(vmo_size).alloc()?;
+        let perms: VmPerms = VmPerms::READ | VmPerms::WRITE;
+        child_root_vmar
+            .new_map(stack_vmo, perms)?
+            .offset(stack_start)
+            .can_overwrite(true)
+    };
+    options.build()?;
+
+    Ok(())
+}
+
 fn clone_child_cleartid(
     child_posix_thread: &PosixThread,
     child_tidptr: Vaddr,
@@ -367,6 +390,7 @@ fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<Pr
 fn clone_cpu_context(
     parent_context: UserContext,
     new_sp: u64,
+    stack_size: usize,
     tls: u64,
     clone_flags: CloneFlags,
 ) -> UserContext {
@@ -379,7 +403,14 @@ fn clone_cpu_context(
         debug_assert!(new_sp != 0);
     }
     if new_sp != 0 {
-        child_context.set_rsp(new_sp as usize);
+        // If stack size is not 0, the `new_sp` points to the BOTTOMMOST byte of stack.
+        if stack_size != 0 {
+            child_context.set_rsp(new_sp as usize + stack_size);
+        }
+        // If stack size is 0, the new_sp points to the TOPMOST byte of stack.
+        else {
+            child_context.set_rsp(new_sp as usize);
+        }
     }
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
         // x86_64 specific: TLS is the fsbase register
