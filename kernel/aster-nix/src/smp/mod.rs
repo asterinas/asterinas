@@ -3,7 +3,7 @@
 use aster_frame::cpu::{this_cpu, CpuSet};
 
 use crate::{
-    current_thread,
+    current_thread, println,
     sched::init_local_scheduler,
     thread::{
         kernel_thread::{KernelThreadExt, ThreadOptions},
@@ -31,7 +31,7 @@ fn run_ap_first_process() -> ! {
 }
 
 fn ap_thread() {
-    info!(
+    println!(
         "[kernel] Spawn init thread for processor {}, tid = {}",
         this_cpu(),
         current_thread!().tid()

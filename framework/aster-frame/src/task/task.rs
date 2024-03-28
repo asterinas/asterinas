@@ -48,7 +48,7 @@ impl CalleeRegs {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub(crate) struct TaskContext {
+pub struct TaskContext {
     pub regs: CalleeRegs,
     pub rip: usize,
 }

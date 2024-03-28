@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Multiprocessor Boot Support
 //!
 //! The MP initialization protocol defines two classes of processors:
@@ -25,10 +27,7 @@
 //! different considerations in different systems.
 use core::arch::global_asm;
 
-use acpi::{
-    platform::{Processor, ProcessorInfo},
-    PlatformInfo,
-};
+use acpi::{platform::ProcessorInfo, PlatformInfo};
 use log::debug;
 
 use crate::{
@@ -43,57 +42,41 @@ use crate::{
         },
         timer::read_monotonic_milli_seconds,
     },
-    vm::{kernel_loaded_offset, paddr_to_vaddr, VmAllocOptions, VmSegment, PAGE_SIZE},
+    vm::{paddr_to_vaddr, VmSegment, PAGE_SIZE},
 };
 
 const AP_BOOT_START_PA: usize = 0x8000;
-const AP_BOOT_STACK_SIZE: usize = PAGE_SIZE * 64;
 
 global_asm!(include_str!("smp_boot.S"));
 
 /// Get processor information
 ///
 /// This function needs to be called after the OS initializes the ACPI table.
-pub(crate) fn get_processor_info() -> ProcessorInfo {
-    PlatformInfo::new(&*ACPI_TABLES.get().unwrap().lock())
-        .unwrap()
-        .processor_info
-        .unwrap()
+pub(crate) fn get_processor_info() -> Option<ProcessorInfo> {
+    if !ACPI_TABLES.is_completed() {
+        return None;
+    }
+    Some(
+        PlatformInfo::new(&*ACPI_TABLES.get().unwrap().lock())
+            .unwrap()
+            .processor_info
+            .unwrap(),
+    )
 }
 
-/// Prepare the boot stack for the specified processor
-///
-/// This function needs to be called after initialization of the page allocator.
-/// Currently, the address of the stack is placed at the location indexed by the processor ID
-/// in the application processor boot frame.
-pub(crate) fn prepare_boot_stacks(application_processor: &Processor) -> VmSegment {
-    debug!("application processor info : {:?}", application_processor);
-    let num_stack_frames = AP_BOOT_STACK_SIZE / PAGE_SIZE;
-    let boot_stack_frames = VmAllocOptions::new(num_stack_frames)
-        .is_contiguous(true)
-        .uninit(false)
-        .alloc_contiguous()
-        .unwrap();
-    let ap_stack_pointer = boot_stack_frames.end_paddr() + kernel_loaded_offset();
+/// Initializes the boot stack array with the given frames.
+pub(crate) fn init_boot_stack_array(frames: &VmSegment) {
     extern "C" {
-        fn __ap_boot_stack_pointer_array();
+        fn __ap_boot_stack_array_pointer();
     }
     debug!(
-        "__ap_boot_stakc_top: 0x{:X}",
-        __ap_boot_stack_pointer_array as usize
+        "__ap_boot_stack_top: 0x{:X}",
+        __ap_boot_stack_array_pointer as usize
     );
-    let ap_boot_stack_top: &mut usize = unsafe {
-        &mut *(paddr_to_vaddr(
-            __ap_boot_stack_pointer_array as usize
-                + 8 * application_processor.local_apic_id as usize,
-        ) as *mut usize)
-    };
-    *ap_boot_stack_top = ap_stack_pointer;
-    debug!(
-        "{} ap_boot_stack_top value: 0x{:X}",
-        application_processor.local_apic_id, *ap_boot_stack_top
-    );
-    boot_stack_frames
+    let ap_boot_stack_array_pointer: &mut usize =
+        unsafe { &mut *(paddr_to_vaddr(__ap_boot_stack_array_pointer as usize) as *mut usize) };
+
+    *ap_boot_stack_array_pointer = paddr_to_vaddr(frames.start_paddr());
 }
 
 /// Send IPIs to notify all application processors to boot
