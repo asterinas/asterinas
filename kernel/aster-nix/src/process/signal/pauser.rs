@@ -8,7 +8,9 @@ use core::{
 use aster_frame::sync::WaitQueue;
 
 use super::{sig_mask::SigMask, SigEvents, SigEventsFilter};
-use crate::{events::Observer, prelude::*, process::posix_thread::PosixThreadExt};
+use crate::{
+    events::Observer, prelude::*, process::posix_thread::PosixThreadExt, time::wait::WaitTimeout,
+};
 
 /// A `Pauser` allows pausing the execution of the current thread until certain conditions are reached.
 ///

@@ -3,41 +3,29 @@
 #![allow(non_camel_case_types)]
 use core::time::Duration;
 
-use aster_time::read_monotonic_time;
+use clock::{id_to_global_clock, ClockID};
+pub use system_time::SystemTime;
+pub use timer::{IntervalTimer, TimerManager};
 
 use crate::prelude::*;
 
+pub mod clock;
 mod system_time;
-
-pub use system_time::SystemTime;
+mod timer;
+mod timer_callback;
+pub mod wait;
 
 pub type clockid_t = i32;
 pub type time_t = i64;
 pub type suseconds_t = i64;
 pub type clock_t = i64;
 
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
-#[repr(i32)]
-pub enum ClockID {
-    CLOCK_REALTIME = 0,
-    CLOCK_MONOTONIC = 1,
-    CLOCK_PROCESS_CPUTIME_ID = 2,
-    CLOCK_THREAD_CPUTIME_ID = 3,
-    CLOCK_MONOTONIC_RAW = 4,
-    CLOCK_REALTIME_COARSE = 5,
-    CLOCK_MONOTONIC_COARSE = 6,
-    CLOCK_BOOTTIME = 7,
+pub(super) fn init() {
+    system_time::init_start_time();
+    clock::init_global_clock_and_timer_manager();
+    clock::init_jiffies_clock_manager();
+    clock::init_xtime();
 }
-
-/// A list of all supported clock IDs for time-related functions.
-pub const ALL_SUPPORTED_CLOCK_IDS: [ClockID; 6] = [
-    ClockID::CLOCK_REALTIME,
-    ClockID::CLOCK_REALTIME_COARSE,
-    ClockID::CLOCK_MONOTONIC,
-    ClockID::CLOCK_MONOTONIC_COARSE,
-    ClockID::CLOCK_MONOTONIC_RAW,
-    ClockID::CLOCK_BOOTTIME,
-];
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
@@ -87,23 +75,16 @@ impl From<timeval_t> for Duration {
 pub const TIMER_ABSTIME: i32 = 0x01;
 
 pub fn now_as_duration(clock_id: &ClockID) -> Result<Duration> {
-    match clock_id {
-        ClockID::CLOCK_MONOTONIC
-        | ClockID::CLOCK_MONOTONIC_COARSE
-        | ClockID::CLOCK_MONOTONIC_RAW
-        | ClockID::CLOCK_BOOTTIME => Ok(read_monotonic_time()),
-        ClockID::CLOCK_REALTIME | ClockID::CLOCK_REALTIME_COARSE => {
-            let now = SystemTime::now();
-            now.duration_since(&SystemTime::UNIX_EPOCH)
-        }
-        _ => {
-            warn!(
-                "unsupported clock_id: {:?}, treat it as CLOCK_REALTIME",
-                clock_id
-            );
-            let now = SystemTime::now();
-            now.duration_since(&SystemTime::UNIX_EPOCH)
-        }
+    if let Some(clock) = id_to_global_clock(clock_id) {
+        Ok(clock.read_time())
+    } else {
+        warn!(
+            "unsupported clock_id: {:?}, treat it as CLOCK_REALTIME",
+            clock_id
+        );
+        Ok(id_to_global_clock(&ClockID::CLOCK_REALTIME)
+            .unwrap()
+            .read_time())
     }
 }
 

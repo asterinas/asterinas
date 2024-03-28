@@ -7,7 +7,7 @@ use crate::{
     log_syscall_entry,
     prelude::*,
     process::signal::Pauser,
-    time::{clockid_t, now_as_duration, timespec_t, ClockID, TIMER_ABSTIME},
+    time::{clock::ClockID, clockid_t, now_as_duration, timespec_t, TIMER_ABSTIME},
     util::{read_val_from_user, write_val_to_user},
 };
 

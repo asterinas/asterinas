@@ -22,7 +22,6 @@ extern crate alloc;
 #[cfg(ktest)]
 #[macro_use]
 extern crate ktest;
-#[macro_use]
 extern crate static_assertions;
 
 pub mod arch;
@@ -37,7 +36,6 @@ pub mod panicking;
 pub mod prelude;
 pub mod sync;
 pub mod task;
-pub mod timer;
 pub mod trap;
 pub mod user;
 mod util;

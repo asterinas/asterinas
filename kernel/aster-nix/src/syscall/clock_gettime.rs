@@ -4,7 +4,7 @@ use super::{SyscallReturn, SYS_CLOCK_GETTIME};
 use crate::{
     log_syscall_entry,
     prelude::*,
-    time::{clockid_t, now_as_duration, timespec_t, ClockID},
+    time::{clock::ClockID, clockid_t, now_as_duration, timespec_t},
     util::write_val_to_user,
 };
 

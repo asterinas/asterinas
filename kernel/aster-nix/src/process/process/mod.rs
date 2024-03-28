@@ -6,7 +6,10 @@ use super::{
     process_vm::{user_heap::UserHeap, ProcessVm},
     rlimit::ResourceLimits,
     signal::{
-        constants::SIGCHLD, sig_disposition::SigDispositions, sig_mask::SigMask, signals::Signal,
+        constants::{SIGALRM, SIGCHLD},
+        sig_disposition::SigDispositions,
+        sig_mask::SigMask,
+        signals::{kernel::KernelSignal, Signal},
         Pauser,
     },
     status::ProcessStatus,
@@ -17,7 +20,15 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     sched::nice::Nice,
-    thread::{allocate_tid, Thread},
+    thread::{
+        allocate_tid,
+        work_queue::{submit_work_item, work_item::WorkItem},
+        Thread,
+    },
+    time::{
+        clock::{id_to_global_manager, ClockID},
+        IntervalTimer,
+    },
     vm::vmar::Vmar,
 };
 
@@ -52,7 +63,8 @@ pub struct Process {
     process_vm: ProcessVm,
     /// Wait for child status changed
     children_pauser: Arc<Pauser>,
-
+    /// The timer counts down in real (i.e., wall clock) time
+    real_timer: Arc<IntervalTimer>,
     // Mutable Part
     /// The executable path.
     executable_path: RwLock<String>,
@@ -98,7 +110,7 @@ impl Process {
         sig_dispositions: Arc<Mutex<SigDispositions>>,
         resource_limits: ResourceLimits,
         nice: Nice,
-    ) -> Self {
+    ) -> Arc<Self> {
         let children_pauser = {
             // SIGCHID does not interrupt pauser. Child process will
             // resume paused parent when doing exit.
@@ -106,23 +118,44 @@ impl Process {
             Pauser::new_with_mask(sigmask)
         };
 
-        Self {
-            pid,
-            threads: Mutex::new(threads),
-            executable_path: RwLock::new(executable_path),
-            process_vm,
-            children_pauser,
-            status: Mutex::new(ProcessStatus::Uninit),
-            parent: Mutex::new(parent),
-            children: Mutex::new(BTreeMap::new()),
-            process_group: Mutex::new(Weak::new()),
-            file_table,
-            fs,
-            umask,
-            sig_dispositions,
-            resource_limits: Mutex::new(resource_limits),
-            nice: Atomic::new(nice),
-        }
+        let process = Arc::new_cyclic(|process_ref: &Weak<Process>| {
+            let current_process = process_ref.clone();
+            let sent_signal = move || {
+                let signal = KernelSignal::new(SIGALRM);
+                if let Some(process) = current_process.upgrade() {
+                    process.enqueue_signal(signal);
+                }
+            };
+
+            let work_sent_signal = move || {
+                let work_func = Box::new(sent_signal.clone());
+                let work_item = Arc::new(WorkItem::new(work_func));
+                submit_work_item(work_item, crate::thread::work_queue::WorkPriority::High);
+            };
+
+            let realtime_timer_manager = id_to_global_manager(&ClockID::CLOCK_REALTIME).unwrap();
+            let real_timer = realtime_timer_manager.create_timer(work_sent_signal.clone());
+
+            Self {
+                pid,
+                threads: Mutex::new(threads),
+                executable_path: RwLock::new(executable_path),
+                process_vm,
+                children_pauser,
+                real_timer,
+                status: Mutex::new(ProcessStatus::Uninit),
+                parent: Mutex::new(parent),
+                children: Mutex::new(BTreeMap::new()),
+                process_group: Mutex::new(Weak::new()),
+                file_table,
+                fs,
+                umask,
+                sig_dispositions,
+                resource_limits: Mutex::new(resource_limits),
+                nice: Atomic::new(nice),
+            }
+        });
+        process
     }
 
     /// init a user process and run the process
@@ -196,6 +229,10 @@ impl Process {
 
     pub fn pid(&self) -> Pid {
         self.pid
+    }
+
+    pub fn real_timer(&self) -> &Arc<IntervalTimer> {
+        &self.real_timer
     }
 
     pub fn threads(&self) -> &Mutex<Vec<Arc<Thread>>> {
@@ -593,7 +630,20 @@ pub fn current() -> Arc<Process> {
 
 #[cfg(ktest)]
 mod test {
+
+    use spin::Once;
+
     use super::*;
+    use crate::time::{
+        clock::{RealTimeClock, CLOCK_REALTIME_MANAGER},
+        TimerManager,
+    };
+
+    fn init_timer_manager() {
+        let clock = RealTimeClock::default();
+        let manager = TimerManager::new(Arc::new(clock));
+        CLOCK_REALTIME_MANAGER.call_once(|| manager);
+    }
 
     fn new_process(parent: Option<Arc<Process>>) -> Arc<Process> {
         crate::fs::rootfs::init_root_mount();
@@ -603,7 +653,7 @@ mod test {
         } else {
             Weak::new()
         };
-        Arc::new(Process::new(
+        Process::new(
             pid,
             parent,
             vec![],
@@ -615,7 +665,7 @@ mod test {
             Arc::new(Mutex::new(SigDispositions::default())),
             ResourceLimits::default(),
             Nice::default(),
-        ))
+        )
     }
 
     fn new_process_in_session(parent: Option<Arc<Process>>) -> Arc<Process> {
@@ -655,6 +705,7 @@ mod test {
 
     #[ktest]
     fn init_process() {
+        init_timer_manager();
         let process = new_process(None);
         assert!(process.process_group().is_none());
         assert!(process.session().is_none());
@@ -662,6 +713,7 @@ mod test {
 
     #[ktest]
     fn init_process_in_session() {
+        init_timer_manager();
         let process = new_process_in_session(None);
         assert!(process.is_group_leader());
         assert!(process.is_session_leader());
@@ -670,6 +722,7 @@ mod test {
 
     #[ktest]
     fn to_new_session() {
+        init_timer_manager();
         let process = new_process_in_session(None);
         let sess = process.session().unwrap();
         sess.inner.lock().leader = None;

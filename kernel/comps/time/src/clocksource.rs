@@ -91,12 +91,12 @@ impl ClockSource {
 
     /// Use an input instant to update the internal instant in the `ClockSource`.
     fn update_last_instant(&self, instant: &Instant) {
-        *self.last_instant.lock() = *instant;
+        *self.last_instant.lock_irq_disabled() = *instant;
     }
 
     /// Use an input cycles to update the internal instant in the `ClockSource`.
     fn update_last_cycles(&self, cycles: u64) {
-        *self.last_cycles.lock() = cycles;
+        *self.last_cycles.lock_irq_disabled() = cycles;
     }
 
     /// read current cycles of the `ClockSource`.
@@ -106,12 +106,12 @@ impl ClockSource {
 
     /// Return the last instant recorded in the `ClockSource`.
     pub fn last_instant(&self) -> Instant {
-        return *self.last_instant.lock();
+        return *self.last_instant.lock_irq_disabled();
     }
 
     /// Return the last cycles recorded in the `ClockSource`.
     pub fn last_cycles(&self) -> u64 {
-        return *self.last_cycles.lock();
+        return *self.last_cycles.lock_irq_disabled();
     }
 
     /// Return the maximum delay seconds for updating of the `ClockSource`.

@@ -20,6 +20,7 @@ use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
 use ::tdx_guest::tdx_is_enabled;
 use kernel::apic::ioapic;
 use log::{info, warn};
+pub use timer::{jiffies_as_duration, register_interrupt_callback, TIMER_FREQ};
 
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
