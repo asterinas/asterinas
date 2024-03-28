@@ -48,7 +48,7 @@ impl CalleeRegs {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub(crate) struct TaskContext {
+pub struct TaskContext {
     pub regs: CalleeRegs,
     pub rip: usize,
 }
@@ -176,6 +176,10 @@ impl Task {
     /// Returns the task status.
     pub fn status(&self) -> TaskStatus {
         self.task_inner.lock().task_status
+    }
+
+    pub fn status_with_lock(&self) -> (TaskStatus, SpinLockGuard<'_, TaskInner>) {
+        (self.task_inner.lock().task_status, self.task_inner.lock())
     }
 
     /// Returns the task data.

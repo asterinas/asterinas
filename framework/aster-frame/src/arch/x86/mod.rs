@@ -22,6 +22,8 @@ use ::tdx_guest::tdx_is_enabled;
 use kernel::apic::ioapic;
 use log::{info, warn};
 
+use self::irq::enable_local;
+
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
     console::init();
@@ -56,6 +58,13 @@ pub(crate) fn after_all_init() {
     }
     // Some driver like serial may use PIC
     kernel::pic::init();
+    // TODO: Implement LAPIC configuration capabilities for local CPU interrupt priority management
+    // and interrupt broadcasting across multiple cores. This enhancement will address the current
+    // limitation where the IOAPIC forwards all interrupts exclusively to CPU 0, necessitating that all
+    // interrupts are bound to core 0 by default.
+    // The present early activation of interrupts is a temporary measure to mitigate the issue of delayed
+    // interrupt enabling, which currently occurs at user-space program initiation—potentially on other cores.
+    enable_local();
 }
 
 pub(crate) fn interrupts_ack() {

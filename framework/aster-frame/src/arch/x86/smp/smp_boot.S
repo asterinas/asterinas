@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
 .extern boot_gdtr
 .extern boot_pml4
 .extern ap_early_entry
@@ -109,12 +111,11 @@ ap_protect:
     ljmp 8, offset ap_long
 
 .code64
-.global __ap_boot_stack_pointer_array
+.global __ap_boot_stack_array_pointer
 .align 8
-// Use two pages to place stack pointers of all aps, thus support up to 1024 aps.
-// stack_pointer = *(__ap_boot_stack_pointer_array + local_apic_id*8)
-__ap_boot_stack_pointer_array:
-    .skip 8 * 1024
+// stack_pointer = *(*__ap_boot_stack_array_pointer + local_apic_id*8)
+__ap_boot_stack_array_pointer:
+    .skip 8
 
 ap_long:
     mov ax, 0
@@ -126,7 +127,8 @@ ap_long:
 
     mov rax, rdi
     shl rax, 3
-    mov rsp, [__ap_boot_stack_pointer_array + rax]
+    mov rbx, [__ap_boot_stack_array_pointer]
+    mov rsp, [rbx + rax]
     mov rax, offset ap_early_entry   
     call rax
     hlt

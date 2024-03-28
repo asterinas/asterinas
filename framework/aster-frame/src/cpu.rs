@@ -247,7 +247,7 @@ pub unsafe fn bsp_init() {
     }
     // Safety: FS register is not used for any other purpose.
     unsafe {
-        set_cpu_local_base_addr(__bsp_local_start as u64);
+        set_cpu_local_base_addr(__bsp_local_start as usize as u64);
     }
     prepare_cpu_local_data(0);
 }
