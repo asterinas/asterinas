@@ -3,7 +3,7 @@
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
-    add_task,
+    add_task_to_global,
     priority::Priority,
     processor::{current_task, schedule},
 };
@@ -11,7 +11,7 @@ use crate::{
     arch::mm::PageTableFlags,
     cpu::CpuSet,
     prelude::*,
-    sync::{Mutex, MutexGuard},
+    sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
     vm::{page_table::KERNEL_PAGE_TABLE, VmAllocOptions, VmSegment, PAGE_SIZE},
 };
@@ -20,7 +20,7 @@ pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
 
 core::arch::global_asm!(include_str!("switch.S"));
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct CalleeRegs {
     pub rsp: u64,
@@ -32,11 +32,34 @@ pub struct CalleeRegs {
     pub r15: u64,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+impl CalleeRegs {
+    pub const fn default() -> Self {
+        Self {
+            rsp: 0,
+            rbx: 0,
+            rbp: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub(crate) struct TaskContext {
+pub struct TaskContext {
     pub regs: CalleeRegs,
     pub rip: usize,
+}
+
+impl TaskContext {
+    pub const fn default() -> Self {
+        Self {
+            regs: CalleeRegs::default(),
+            rip: 0,
+        }
+    }
 }
 
 extern "C" {
@@ -104,20 +127,19 @@ pub struct Task {
     func: Box<dyn Fn() + Send + Sync>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
-    task_inner: Mutex<TaskInner>,
+    task_inner: SpinLock<TaskInner>,
     exit_code: usize,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
     priority: Priority,
-    // TODO:: add multiprocessor support
     cpu_affinity: CpuSet,
 }
 
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
-pub(crate) struct TaskInner {
+pub struct TaskInner {
     pub task_status: TaskStatus,
     pub ctx: TaskContext,
 }
@@ -129,7 +151,7 @@ impl Task {
     }
 
     /// get inner
-    pub(crate) fn inner_exclusive_access(&self) -> MutexGuard<'_, TaskInner> {
+    pub fn inner_exclusive_access(&self) -> SpinLockGuard<'_, TaskInner> {
         self.task_inner.lock()
     }
 
@@ -147,13 +169,17 @@ impl Task {
     }
 
     pub fn run(self: &Arc<Self>) {
-        add_task(self.clone());
+        add_task_to_global(self.clone());
         schedule();
     }
 
     /// Returns the task status.
     pub fn status(&self) -> TaskStatus {
         self.task_inner.lock().task_status
+    }
+
+    pub fn status_with_lock(&self) -> (TaskStatus, SpinLockGuard<'_, TaskInner>) {
+        (self.task_inner.lock().task_status, self.task_inner.lock())
     }
 
     /// Returns the task data.
@@ -178,6 +204,10 @@ impl Task {
 
     pub fn is_real_time(&self) -> bool {
         self.priority.is_real_time()
+    }
+
+    pub fn cpu_affinity(&self) -> &CpuSet {
+        &self.cpu_affinity
     }
 }
 
@@ -264,7 +294,7 @@ impl TaskOptions {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
-            task_inner: Mutex::new(TaskInner {
+            task_inner: SpinLock::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
             }),
@@ -301,7 +331,7 @@ impl TaskOptions {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
-            task_inner: Mutex::new(TaskInner {
+            task_inner: SpinLock::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
             }),

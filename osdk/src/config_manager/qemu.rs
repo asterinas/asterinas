@@ -163,7 +163,7 @@ impl<'a> From<&'a str> for QemuMachine {
 /// Keys with multiple values
 pub const MULTI_VALUE_KEYS: &[&str] = &["-device", "-chardev", "-object", "-netdev", "-drive"];
 /// Keys with only single value
-pub const SINGLE_VALUE_KEYS: &[&str] = &["-m", "-serial", "-monitor", "-display"];
+pub const SINGLE_VALUE_KEYS: &[&str] = &["-m", "-serial", "-monitor", "-display", "-smp"];
 /// Keys with no value
 pub const NO_VALUE_KEYS: &[&str] = &["--no-reboot", "-nographic", "-enable-kvm"];
 /// Keys are not allowed to set in configuration files and command line

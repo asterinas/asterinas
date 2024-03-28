@@ -10,6 +10,7 @@ pub(crate) mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
+pub mod smp;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
 pub(crate) mod timer;
@@ -20,6 +21,8 @@ use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
 use ::tdx_guest::tdx_is_enabled;
 use kernel::apic::ioapic;
 use log::{info, warn};
+
+use self::irq::enable_local;
 
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
@@ -55,6 +58,13 @@ pub(crate) fn after_all_init() {
     }
     // Some driver like serial may use PIC
     kernel::pic::init();
+    // TODO: Implement LAPIC configuration capabilities for local CPU interrupt priority management
+    // and interrupt broadcasting across multiple cores. This enhancement will address the current
+    // limitation where the IOAPIC forwards all interrupts exclusively to CPU 0, necessitating that all
+    // interrupts are bound to core 0 by default.
+    // The present early activation of interrupts is a temporary measure to mitigate the issue of delayed
+    // interrupt enabling, which currently occurs at user-space program initiation—potentially on other cores.
+    enable_local();
 }
 
 pub(crate) fn interrupts_ack() {
@@ -75,7 +85,7 @@ pub fn read_tsc() -> u64 {
     unsafe { _rdtsc() }
 }
 
-fn enable_common_cpu_features() {
+pub fn enable_common_cpu_features() {
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::FSGSBASE | Cr4Flags::OSXSAVE | Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE;
@@ -95,4 +105,8 @@ fn enable_common_cpu_features() {
             *efer |= EferFlags::NO_EXECUTE_ENABLE;
         });
     }
+}
+
+pub fn init_ap() {
+    kernel::apic::init_ap();
 }

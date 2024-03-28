@@ -72,6 +72,24 @@ impl super::Apic for XApic {
     fn eoi(&mut self) {
         self.write(xapic::XAPIC_EOI, 0);
     }
+
+    unsafe fn send_ipi(&mut self, icr: super::Icr) {
+        self.write(xapic::XAPIC_ESR, 0);
+        // The upper 32 bits of ICR must be written into XAPIC_ICR1 first,
+        // because writing into XAPIC_ICR0 will trigger the action of
+        // interrupt sending.
+        self.write(xapic::XAPIC_ICR1, icr.upper());
+        self.write(xapic::XAPIC_ICR0, icr.lower());
+        loop {
+            let icr = self.read(xapic::XAPIC_ICR0);
+            if (icr >> 12 & 0x1) == 0 {
+                break;
+            }
+            if self.read(xapic::XAPIC_ESR) > 0 {
+                break;
+            }
+        }
+    }
 }
 
 impl ApicTimer for XApic {

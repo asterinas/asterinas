@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_frame::{
-    cpu::UserContext,
+    cpu::{CpuSet, UserContext},
     task::{preempt, Task, TaskOptions},
     user::{UserContextApi, UserEvent, UserMode, UserSpace},
 };
@@ -58,10 +58,20 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
         // FIXME: This is a work around: exit in kernel task entry may be not called. Why this will happen?
         Task::current().exit();
     }
-
+    // **FIXME**: All user tasks are currently being bound to a single core due to limitations in the
+    // current Copy-On-Write (COW) mechanism. After a parent process clones a child process, if
+    // the child process is switched to another core, and the parent process returns to user space,
+    // it might modify the state of the user stack. This could lead to the child process accessing
+    // invalid addresses. Binding to a single core avoids this issue because the parent process will
+    // switch immediately to the child process upon clone, so the stack state remains unchanged temporarily.
+    // This constraint should be revisited and the CPU affinity binding removed once a robust COW mechanism
+    // is implemented.
+    let mut cpu_set = CpuSet::new_empty();
+    cpu_set.add(0);
     TaskOptions::new(user_task_entry)
         .data(thread_ref)
         .user_space(Some(user_space))
+        .cpu_affinity(cpu_set)
         .build()
         .expect("spawn task failed")
 }

@@ -35,6 +35,7 @@ pub mod io_mem;
 pub mod logger;
 pub mod panicking;
 pub mod prelude;
+pub mod smp;
 pub mod sync;
 pub mod task;
 pub mod timer;
@@ -46,10 +47,14 @@ pub mod vm;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
 
-pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
+pub use self::{error::Error, prelude::Result};
 
 pub fn init() {
     arch::before_all_init();
+    // Safety: Cpu local data has not been accessed before
+    unsafe {
+        cpu::bsp_init();
+    }
     logger::init();
     #[cfg(feature = "intel_tdx")]
     let td_info = init_tdx().unwrap();
@@ -65,6 +70,7 @@ pub fn init() {
     trap::init();
     arch::after_all_init();
     bus::init();
+    smp::init();
     invoke_ffi_init_funcs();
 }
 

@@ -21,3 +21,19 @@ pub fn aster_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     )
     .into()
 }
+
+#[proc_macro_attribute]
+pub fn aster_ap_entry(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let ap_entry_fn = parse_macro_input!(item as ItemFn);
+    let ap_entry_fn_name = &ap_entry_fn.sig.ident;
+
+    quote!(
+        #[no_mangle]
+        pub fn __aster_ap_entry() -> ! {
+            #ap_entry_fn_name();
+        }
+
+        #ap_entry_fn
+    )
+    .into()
+}

@@ -11,7 +11,7 @@ use bitflags::bitflags;
 use super::SpinLock;
 use crate::{
     arch::timer::{add_timeout_list, TIMER_FREQ},
-    task::{add_task, current_task, schedule, Task, TaskStatus},
+    task::{current_task, schedule, Task, TaskStatus},
 };
 
 /// A wait queue.
@@ -137,17 +137,21 @@ impl WaitQueue {
     // Enqueue a waiter into current waitqueue. If waiter is exclusive, add to the back of waitqueue.
     // Otherwise, add to the front of waitqueue
     fn enqueue(&self, waiter: &Arc<Waiter>) {
+        let mut waiters = self.waiters.lock_irq_disabled();
+        let task = current_task().unwrap();
+        task.inner_exclusive_access().task_status = TaskStatus::Sleeping;
         if waiter.is_exclusive() {
-            self.waiters.lock_irq_disabled().push_back(waiter.clone())
+            waiters.push_back(waiter.clone())
         } else {
-            self.waiters.lock_irq_disabled().push_front(waiter.clone());
+            waiters.push_front(waiter.clone());
         }
     }
 
     fn dequeue(&self, waiter: &Arc<Waiter>) {
-        self.waiters
-            .lock_irq_disabled()
-            .retain(|waiter_| !Arc::ptr_eq(waiter_, waiter))
+        let mut waiters = self.waiters.lock_irq_disabled();
+        let task = current_task().unwrap();
+        task.inner_exclusive_access().task_status = TaskStatus::Runnable;
+        waiters.retain(|waiter_| !Arc::ptr_eq(waiter_, waiter))
     }
 }
 
@@ -171,11 +175,9 @@ impl Waiter {
 
     /// make self into wait status until be called wake up
     pub fn wait(&self) {
-        self.task.inner_exclusive_access().task_status = TaskStatus::Sleeping;
         while !self.is_woken_up.load(Ordering::SeqCst) {
             schedule();
         }
-        self.task.inner_exclusive_access().task_status = TaskStatus::Runnable;
         self.is_woken_up.store(false, Ordering::SeqCst);
     }
 
@@ -184,7 +186,7 @@ impl Waiter {
             self.is_woken_up
                 .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
         {
-            add_task(self.task.clone());
+            self.task.inner_exclusive_access().task_status = TaskStatus::Runnable;
         }
     }
 

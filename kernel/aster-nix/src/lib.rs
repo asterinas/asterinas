@@ -28,6 +28,7 @@
 use aster_frame::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
+    cpu::{this_cpu, CpuSet},
 };
 use process::Process;
 
@@ -59,6 +60,7 @@ pub mod net;
 pub mod prelude;
 mod process;
 mod sched;
+mod smp;
 pub mod syscall;
 pub mod thread;
 pub mod time;
@@ -69,10 +71,11 @@ pub mod vm;
 pub fn init() {
     driver::init();
     net::init();
-    sched::init();
+    sched::init_global_scheduler();
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
     vdso::init();
+    smp::init();
 }
 
 fn init_thread() {
@@ -123,10 +126,16 @@ fn init_thread() {
     exit_qemu(exit_code);
 }
 
-/// first process never return
+/// Initializes and runs the first process on the boot CPU (CPU 0) and never return.
 #[controlled]
 pub fn run_first_process() -> ! {
-    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread));
+    sched::init_local_scheduler();
+    let cpu_id = this_cpu();
+    assert!(cpu_id == 0);
+    info!("hello from cpu {}", cpu_id);
+    Thread::spawn_kernel_thread(
+        ThreadOptions::new(init_thread).cpu_affinity(CpuSet::from_cpu_id(cpu_id)),
+    );
     unreachable!()
 }
 

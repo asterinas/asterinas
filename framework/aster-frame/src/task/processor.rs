@@ -3,14 +3,14 @@
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-use lazy_static::lazy_static;
-
 use super::{
-    scheduler::{fetch_task, GLOBAL_SCHEDULER},
+    scheduler::{
+        add_sleeping_task_to_local, add_task_to_local, fetch_task_from_local, preempt_local,
+    },
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, sync::Mutex, trap::disable_local};
+use crate::{cpu_local, sync::SpinLock};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -18,7 +18,7 @@ pub struct Processor {
 }
 
 impl Processor {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             current: None,
             idle_task_cx: TaskContext::default(),
@@ -38,44 +38,42 @@ impl Processor {
     }
 }
 
-lazy_static! {
-    static ref PROCESSOR: Mutex<Processor> = Mutex::new(Processor::new());
+cpu_local! {
+    static PROCESSOR: SpinLock<Processor> = SpinLock::new(Processor::new());
 }
 
 pub fn take_current_task() -> Option<Arc<Task>> {
-    PROCESSOR.lock().take_current()
+    PROCESSOR.lock_irq_disabled().take_current()
 }
 
 pub fn current_task() -> Option<Arc<Task>> {
-    PROCESSOR.lock().current()
+    PROCESSOR.lock_irq_disabled().current()
 }
 
 pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
-    PROCESSOR.lock().get_idle_task_cx_ptr()
+    PROCESSOR.lock_irq_disabled().get_idle_task_cx_ptr()
 }
 
-/// call this function to switch to other task by using GLOBAL_SCHEDULER
+/// `schedule()` is responsible for switching the CURRENT CPU to another task if available.
+/// It fetches a task from the local run queue and performs the context switch.
 pub fn schedule() {
-    if let Some(task) = fetch_task() {
+    if let Some(task) = fetch_task_from_local() {
         switch_to_task(task);
     }
 }
 
+/// `preempt()` checks whether the current task should be replaced by a higher priority task.
+/// If the current task is a low priority task and a higher priority task is available,
+/// it preempts the current task by switching to the high priority one.
 pub fn preempt() {
-    // disable interrupts to avoid nested preemption.
-    let disable_irq = disable_local();
     let Some(curr_task) = current_task() else {
         return;
     };
-    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(&curr_task) {
-        return;
+    if !curr_task.is_real_time() {
+        if let Some(high_pri_task) = preempt_local() {
+            switch_to_task(high_pri_task);
+        }
     }
-    let Some(next_task) = scheduler.dequeue() else {
-        return;
-    };
-    drop(scheduler);
-    switch_to_task(next_task);
 }
 
 /// call this function to switch to other task
@@ -98,12 +96,12 @@ fn switch_to_task(next_task: Arc<Task>) {
     let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
     let current_task: Arc<Task>;
     let current_task_cx_ptr = match current_task_option {
-        None => PROCESSOR.lock().get_idle_task_cx_ptr(),
+        None => PROCESSOR.lock_irq_disabled().get_idle_task_cx_ptr(),
         Some(current_task) => {
-            if current_task.status() == TaskStatus::Runnable {
-                GLOBAL_SCHEDULER
-                    .lock_irq_disabled()
-                    .enqueue(current_task.clone());
+            match current_task.status() {
+                TaskStatus::Runnable => add_task_to_local(current_task.clone()),
+                TaskStatus::Sleeping => add_sleeping_task_to_local(current_task.clone()),
+                _ => {}
             }
             &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
         }
@@ -111,7 +109,7 @@ fn switch_to_task(next_task: Arc<Task>) {
 
     // change the current task to the next task
 
-    PROCESSOR.lock().current = Some(next_task.clone());
+    PROCESSOR.lock_irq_disabled().current = Some(next_task.clone());
     unsafe {
         context_switch(current_task_cx_ptr, next_task_cx_ptr);
     }
