@@ -7,7 +7,7 @@ use trapframe::TrapFrame;
 use crate::{
     arch::irq::{self, IrqCallbackHandle, NOT_USING_IRQ},
     prelude::*,
-    task::{disable_preempt, DisablePreemptGuard},
+    task::atomic::{enter_atomic_mode, AtomicModeGuard},
     Error,
 };
 
@@ -112,25 +112,25 @@ impl Drop for IrqLine {
 /// }
 /// ```
 #[must_use]
-pub fn disable_local() -> DisabledLocalIrqGuard {
+pub fn disable_local<'a>() -> DisabledLocalIrqGuard<'a> {
     DisabledLocalIrqGuard::new()
 }
 
 /// A guard for disabled local IRQs.
-pub struct DisabledLocalIrqGuard {
+pub struct DisabledLocalIrqGuard<'a> {
     was_enabled: bool,
-    preempt_guard: DisablePreemptGuard,
+    preempt_guard: AtomicModeGuard<'a>,
 }
 
-impl !Send for DisabledLocalIrqGuard {}
+impl<'a> !Send for DisabledLocalIrqGuard<'a> {}
 
-impl DisabledLocalIrqGuard {
+impl<'a> DisabledLocalIrqGuard<'a> {
     fn new() -> Self {
         let was_enabled = irq::is_local_enabled();
         if was_enabled {
             irq::disable_local();
         }
-        let preempt_guard = disable_preempt();
+        let preempt_guard = enter_atomic_mode();
         Self {
             was_enabled,
             preempt_guard,
@@ -144,12 +144,12 @@ impl DisabledLocalIrqGuard {
         self.was_enabled = false;
         Self {
             was_enabled,
-            preempt_guard: disable_preempt(),
+            preempt_guard: enter_atomic_mode(),
         }
     }
 }
 
-impl Drop for DisabledLocalIrqGuard {
+impl<'a> Drop for DisabledLocalIrqGuard<'a> {
     fn drop(&mut self) {
         if self.was_enabled {
             irq::enable_local();

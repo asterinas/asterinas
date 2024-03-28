@@ -9,6 +9,7 @@ pub(crate) use core::any::Any;
 
 pub use aster_main::aster_main;
 
+pub use crate::task::atomic::{enter_atomic_mode, might_break_atomic_mode, AtomicModeGuard};
 pub use crate::{
     early_print as print, early_println as println,
     panicking::abort,

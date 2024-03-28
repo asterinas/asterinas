@@ -8,7 +8,7 @@ use core::{
 };
 
 use crate::{
-    task::{disable_preempt, DisablePreemptGuard},
+    task::atomic::{enter_atomic_mode, AtomicModeGuard},
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
@@ -63,7 +63,7 @@ impl<T> SpinLock<T> {
     /// in the interrupt context, then it is ok to use this method
     /// in the process context.
     pub fn lock(&self) -> SpinLockGuard<T> {
-        let guard = disable_preempt();
+        let guard = enter_atomic_mode();
         self.acquire_lock();
         SpinLockGuard {
             lock: self,
@@ -73,7 +73,7 @@ impl<T> SpinLock<T> {
 
     /// Try acquiring the spin lock immedidately without disabling the local IRQs.
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
-        let guard = disable_preempt();
+        let guard = enter_atomic_mode();
         if self.try_acquire_lock() {
             let lock_guard = SpinLockGuard {
                 lock: self,
@@ -112,15 +112,15 @@ impl<T: fmt::Debug> fmt::Debug for SpinLock<T> {
 unsafe impl<T: Send> Send for SpinLock<T> {}
 unsafe impl<T: Send> Sync for SpinLock<T> {}
 
-enum InnerGuard {
-    IrqGuard(DisabledLocalIrqGuard),
-    PreemptGuard(DisablePreemptGuard),
+enum InnerGuard<'a> {
+    IrqGuard(DisabledLocalIrqGuard<'a>),
+    PreemptGuard(AtomicModeGuard<'a>),
 }
 
 /// The guard of a spin lock that disables the local IRQs.
 pub struct SpinLockGuard<'a, T> {
     lock: &'a SpinLock<T>,
-    inner_guard: InnerGuard,
+    inner_guard: InnerGuard<'a>,
 }
 
 impl<'a, T> Deref for SpinLockGuard<'a, T> {

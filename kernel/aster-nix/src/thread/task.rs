@@ -31,10 +31,14 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
             user_mode.context().syscall_ret()
         );
         loop {
+            // Panics if in atomic mode
+            // Kernel should not return to user space when in atomic mode.
+            aster_frame::task::atomic::might_break_atomic_mode();
+
             let user_event = user_mode.execute();
             let context = user_mode.context_mut();
-            // handle user event:
             handle_user_event(user_event, context);
+
             let current_thread = current_thread!();
             // should be do this comparison before handle signal?
             if current_thread.status().lock().is_exited() {
