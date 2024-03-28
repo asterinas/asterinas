@@ -1,11 +1,11 @@
-//! This module is adapted from network/buffer.rs
+// SPDX-License-Identifier: MPL-2.0
+
 use align_ext::AlignExt;
 use bytes::BytesMut;
 use pod::Pod;
 
-use crate::device::socket::header::VIRTIO_VSOCK_HDR_LEN;
-
 use super::header::VirtioVsockHdr;
+use crate::device::socket::header::VIRTIO_VSOCK_HDR_LEN;
 
 /// Buffer for receive packet
 #[derive(Debug)]
@@ -86,7 +86,7 @@ impl TxBuffer {
 
 /// Buffer for event buffer
 #[derive(Debug)]
-pub struct EventBuffer{
+pub struct EventBuffer {
     id: u32,
 }
 

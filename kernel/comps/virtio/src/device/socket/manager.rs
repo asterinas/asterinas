@@ -1,13 +1,16 @@
+// SPDX-License-Identifier: MPL-2.0
+use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use core::{cmp::min, hint::spin_loop};
 
-use alloc::{vec::Vec, boxed::Box, sync::Arc};
 use aster_frame::sync::SpinLock;
 use log::debug;
 
+use super::{
+    connect::{ConnectionInfo, DisconnectReason, VsockEvent, VsockEventType},
+    device::SocketDevice,
+    header::VsockAddr,
+};
 use crate::device::socket::error::SocketError;
-
-use super::{device::SocketDevice, connect::{ConnectionInfo, VsockEvent, VsockEventType, DisconnectReason}, header::VsockAddr};
-
 
 const PER_CONNECTION_BUFFER_CAPACITY: usize = 1024;
 
@@ -72,11 +75,11 @@ impl VsockConnectionManager {
     /// This returns as soon as the request is sent; you should wait until `poll` returns a
     /// `VsockEventType::Connected` event indicating that the peer has accepted the connection
     /// before sending data.
-    pub fn connect(&mut self, destination: VsockAddr, src_port: u32) -> Result<(),SocketError> {
+    pub fn connect(&mut self, destination: VsockAddr, src_port: u32) -> Result<(), SocketError> {
         if self.connections.iter().any(|connection| {
             connection.info.dst == destination && connection.info.src_port == src_port
         }) {
-            return Err(SocketError::ConnectionExists.into());
+            return Err(SocketError::ConnectionExists);
         }
 
         let new_connection = Connection::new(destination, src_port);
@@ -88,14 +91,19 @@ impl VsockConnectionManager {
     }
 
     /// Sends the buffer to the destination.
-    pub fn send(&mut self, destination: VsockAddr, src_port: u32, buffer: &[u8]) -> Result<(),SocketError> {
+    pub fn send(
+        &mut self,
+        destination: VsockAddr,
+        src_port: u32,
+        buffer: &[u8],
+    ) -> Result<(), SocketError> {
         let (_, connection) = get_connection(&mut self.connections, destination, src_port)?;
 
         self.driver.lock().send(buffer, &mut connection.info)
     }
 
     /// Polls the vsock device to receive data or other updates.
-    pub fn poll(&mut self) -> Result<Option<VsockEvent>,SocketError> {
+    pub fn poll(&mut self) -> Result<Option<VsockEvent>, SocketError> {
         let guest_cid = self.driver.lock().guest_cid();
         let connections = &mut self.connections;
 
@@ -181,8 +189,13 @@ impl VsockConnectionManager {
     }
 
     /// Reads data received from the given connection.
-    pub fn recv(&mut self, peer: VsockAddr, src_port: u32, buffer: &mut [u8]) -> Result<usize,SocketError> {
-        debug!("connections is {:?}",self.connections);
+    pub fn recv(
+        &mut self,
+        peer: VsockAddr,
+        src_port: u32,
+        buffer: &mut [u8],
+    ) -> Result<usize, SocketError> {
+        debug!("connections is {:?}", self.connections);
         let (connection_index, connection) = get_connection(&mut self.connections, peer, src_port)?;
 
         // Copy from ring buffer
@@ -197,11 +210,11 @@ impl VsockConnectionManager {
             self.connections.swap_remove(connection_index);
         }
 
-        Ok(bytes_read) 
+        Ok(bytes_read)
     }
 
     /// Blocks until we get some event from the vsock device.
-    pub fn wait_for_event(&mut self) -> Result<VsockEvent,SocketError> {
+    pub fn wait_for_event(&mut self) -> Result<VsockEvent, SocketError> {
         loop {
             if let Some(event) = self.poll()? {
                 return Ok(event);
@@ -216,14 +229,18 @@ impl VsockConnectionManager {
     /// This returns as soon as the request is sent; you should wait until `poll` returns a
     /// `VsockEventType::Disconnected` event if you want to know that the peer has acknowledged the
     /// shutdown.
-    pub fn shutdown(&mut self, destination: VsockAddr, src_port: u32) -> Result<(),SocketError> {
+    pub fn shutdown(&mut self, destination: VsockAddr, src_port: u32) -> Result<(), SocketError> {
         let (_, connection) = get_connection(&mut self.connections, destination, src_port)?;
 
         self.driver.lock().shutdown(&connection.info)
     }
 
     /// Forcibly closes the connection without waiting for the peer.
-    pub fn force_close(&mut self, destination: VsockAddr, src_port: u32) -> Result<(),SocketError> {
+    pub fn force_close(
+        &mut self,
+        destination: VsockAddr,
+        src_port: u32,
+    ) -> Result<(), SocketError> {
         let (index, connection) = get_connection(&mut self.connections, destination, src_port)?;
 
         self.driver.lock().force_close(&connection.info)?;
@@ -263,7 +280,6 @@ fn get_connection_for_event<'a>(
         .find(|(_, connection)| event.matches_connection(&connection.info, local_cid))
 }
 
-
 #[derive(Debug)]
 struct Connection {
     info: ConnectionInfo,
@@ -296,12 +312,9 @@ struct RingBuffer {
 
 impl RingBuffer {
     pub fn new(capacity: usize) -> Self {
-        // TODO: can be optimized.
-        let mut temp = Vec::with_capacity(capacity);
-        temp.resize(capacity,0);
         Self {
             // FIXME: if the capacity is excessive, elements move will be executed.
-            buffer: temp.into_boxed_slice(),
+            buffer: vec![0; capacity].into_boxed_slice(),
             used: 0,
             start: 0,
         }
