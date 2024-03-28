@@ -68,6 +68,7 @@ pub mod vm;
 
 pub fn init() {
     driver::init();
+    time::init();
     net::init();
     sched::init();
     fs::rootfs::init(boot::initramfs()).unwrap();

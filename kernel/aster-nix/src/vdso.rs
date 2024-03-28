@@ -25,7 +25,10 @@ use spin::Once;
 
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-    time::{ClockID, SystemTime, ALL_SUPPORTED_CLOCK_IDS},
+    time::{
+        clock::{all_supported_clock_ids, ClockID},
+        SystemTime,
+    },
     vm::vmo::{Vmo, VmoOptions},
 };
 
@@ -138,14 +141,14 @@ impl VdsoData {
         self.last_cycles = instant_cycles;
         const REALTIME_IDS: [ClockID; 2] =
             [ClockID::CLOCK_REALTIME, ClockID::CLOCK_REALTIME_COARSE];
-        for clock_id in ALL_SUPPORTED_CLOCK_IDS {
-            let secs = if REALTIME_IDS.contains(&clock_id) {
+        for clock_id in all_supported_clock_ids() {
+            let secs = if REALTIME_IDS.contains(clock_id) {
                 instant.secs() + START_SECS_COUNT.get().unwrap()
             } else {
                 instant.secs()
             };
             self.update_clock_instant(
-                clock_id as usize,
+                *clock_id as usize,
                 secs,
                 (instant.nanos() as u64) << self.shift as u64,
             );
@@ -208,8 +211,8 @@ impl Vdso {
         // Update begins.
         self.vmo.write_val(0x80, &1).unwrap();
         self.vmo.write_val(0x88, &instant_cycles).unwrap();
-        for clock_id in ALL_SUPPORTED_CLOCK_IDS {
-            self.update_vmo_instant(clock_id);
+        for clock_id in all_supported_clock_ids() {
+            self.update_vmo_instant(*clock_id);
         }
         // Update finishes.
         self.vmo.write_val(0x80, &0).unwrap();
