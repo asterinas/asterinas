@@ -1,9 +1,9 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! This file comes from virtio-drivers project
 //! This module contains the error from the VirtIO socket driver.
 
 use core::{fmt, result};
-
-use smoltcp::socket::dhcpv4::Socket;
 
 use crate::queue::QueueError;
 
@@ -43,7 +43,7 @@ pub enum SocketError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SocketQueueError {
+pub enum SocketQueueError {
     InvalidArgs,
     BufferTooSmall,
     NotReady,
@@ -62,7 +62,6 @@ impl From<QueueError> for SocketQueueError {
         }
     }
 }
-
 
 impl From<QueueError> for SocketError {
     fn from(value: QueueError) -> Self {

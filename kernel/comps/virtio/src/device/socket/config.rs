@@ -1,13 +1,15 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use aster_frame::io_mem::IoMem;
-use pod::Pod;
-use aster_util::{safe_ptr::SafePtr};
+use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
+use pod::Pod;
 
-use crate::transport::{self, VirtioTransport};
+use crate::transport::VirtioTransport;
 
-bitflags!{
+bitflags! {
     /// Vsock feature bits since v1.2
-    /// If no feature bit is set, only stream socket type is supported. 
+    /// If no feature bit is set, only stream socket type is supported.
     /// If VIRTIO_VSOCK_F_SEQPACKET has been negotiated, the device MAY act as if VIRTIO_VSOCK_F_STREAM has also been negotiated.
     pub struct VsockFeatures: u64 {
         const VIRTIO_VSOCK_F_STREAM = 1 << 0; // stream socket type is supported.
@@ -23,7 +25,7 @@ impl VsockFeatures {
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
-pub struct VirtioVsockConfig{
+pub struct VirtioVsockConfig {
     /// The guest_cid field contains the guest’s context ID, which uniquely identifies
     /// the device for its lifetime. The upper 32 bits of the CID are reserved and zeroed.
     ///

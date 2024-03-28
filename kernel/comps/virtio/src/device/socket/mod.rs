@@ -1,23 +1,23 @@
-//! This mod is modified from virtio-drivers project.
+// SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, collections::BTreeMap, string::String, vec::Vec};
-use component::{ComponentInitError, init_component};
+//! This mod is modified from virtio-drivers project.
+use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
+
 use aster_frame::sync::SpinLock;
-use smoltcp::socket::dhcpv4::Socket;
+use component::ComponentInitError;
 use spin::Once;
-use core::fmt::Debug;
+
 use self::device::SocketDevice;
 pub mod buffer;
 pub mod config;
-pub mod device;
-pub mod header;
 pub mod connect;
+pub mod device;
 pub mod error;
+pub mod header;
 pub mod manager;
 
 pub static DEVICE_NAME: &str = "Virtio-Vsock";
-pub type VsockDeviceIrqHandler = dyn Fn() + Send + Sync;
-
+pub trait VsockDeviceIrqHandler = Fn() + Send + Sync + 'static;
 
 pub fn register_device(name: String, device: Arc<SpinLock<SocketDevice>>) {
     COMPONENT
@@ -30,9 +30,7 @@ pub fn register_device(name: String, device: Arc<SpinLock<SocketDevice>>) {
 
 pub fn get_device(str: &str) -> Option<Arc<SpinLock<SocketDevice>>> {
     let lock = COMPONENT.get().unwrap().vsock_device_table.lock();
-    let Some(device) = lock.get(str) else {
-        return None;
-    };
+    let device = lock.get(str)?;
     Some(device.clone())
 }
 
@@ -46,13 +44,11 @@ pub fn all_devices() -> Vec<(String, Arc<SpinLock<SocketDevice>>)> {
 
 static COMPONENT: Once<Component> = Once::new();
 
-
-pub fn component_init() -> Result<(), ComponentInitError>{
+pub fn component_init() -> Result<(), ComponentInitError> {
     let a = Component::init()?;
     COMPONENT.call_once(|| a);
     Ok(())
 }
-
 
 struct Component {
     vsock_device_table: SpinLock<BTreeMap<String, Arc<SpinLock<SocketDevice>>>>,
