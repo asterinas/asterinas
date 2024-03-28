@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{collections::VecDeque, sync::Arc};
-use core::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
-};
-
-use bitflags::bitflags;
+use core::time::Duration;
 
 use super::SpinLock;
 use crate::{
@@ -67,7 +62,6 @@ impl WaitQueue {
         }
 
         let waiter = Arc::new(Waiter::new());
-        self.enqueue(&waiter);
 
         let timer_callback = timeout.map(|timeout| {
             let remaining_ticks = {
@@ -93,8 +87,6 @@ impl WaitQueue {
 
         loop {
             if let Some(res) = cond() {
-                self.dequeue(&waiter);
-
                 if let Some(timer_callback) = timer_callback {
                     timer_callback.cancel();
                 }
@@ -105,28 +97,29 @@ impl WaitQueue {
             if let Some(ref timer_callback) = timer_callback
                 && timer_callback.is_expired()
             {
-                self.dequeue(&waiter);
                 return cond();
             }
 
+            self.enqueue(&waiter);
             waiter.wait();
         }
     }
 
-    /// Wake one waiter thread, if there is one.
+    /// Wake up one waiting thread.
     pub fn wake_one(&self) {
-        if let Some(waiter) = self.waiters.lock_irq_disabled().front() {
-            waiter.wake_up();
+        while let Some(waiter) = self.waiters.lock_irq_disabled().pop_front() {
+            // Avoid holding lock when calling `wake_up`
+            if waiter.wake_up() {
+                return;
+            }
         }
     }
 
-    /// Wake all not-exclusive waiter threads and at most one exclusive waiter.
+    /// Wake up all waiting threads.
     pub fn wake_all(&self) {
-        for waiter in self.waiters.lock_irq_disabled().iter() {
+        while let Some(waiter) = self.waiters.lock_irq_disabled().pop_front() {
+            // Avoid holding lock when calling `wake_up`
             waiter.wake_up();
-            if waiter.is_exclusive() {
-                break;
-            }
         }
     }
 
@@ -137,25 +130,11 @@ impl WaitQueue {
     // Enqueue a waiter into current waitqueue. If waiter is exclusive, add to the back of waitqueue.
     // Otherwise, add to the front of waitqueue
     fn enqueue(&self, waiter: &Arc<Waiter>) {
-        if waiter.is_exclusive() {
-            self.waiters.lock_irq_disabled().push_back(waiter.clone())
-        } else {
-            self.waiters.lock_irq_disabled().push_front(waiter.clone());
-        }
-    }
-
-    fn dequeue(&self, waiter: &Arc<Waiter>) {
-        self.waiters
-            .lock_irq_disabled()
-            .retain(|waiter_| !Arc::ptr_eq(waiter_, waiter))
+        self.waiters.lock_irq_disabled().push_back(waiter.clone());
     }
 }
 
 struct Waiter {
-    /// Whether the waiter is woken_up
-    is_woken_up: AtomicBool,
-    /// To respect different wait condition
-    flag: WaiterFlag,
     /// The `Task` held by the waiter.
     task: Arc<Task>,
 }
@@ -163,39 +142,38 @@ struct Waiter {
 impl Waiter {
     pub fn new() -> Self {
         Waiter {
-            is_woken_up: AtomicBool::new(false),
-            flag: WaiterFlag::empty(),
             task: current_task().unwrap(),
         }
     }
 
-    /// make self into wait status until be called wake up
+    /// Wait until being woken up
     pub fn wait(&self) {
+        debug_assert_eq!(
+            self.task.inner_exclusive_access().task_status,
+            TaskStatus::Runnable
+        );
         self.task.inner_exclusive_access().task_status = TaskStatus::Sleeping;
-        while !self.is_woken_up.load(Ordering::SeqCst) {
+        while self.task.inner_exclusive_access().task_status == TaskStatus::Sleeping {
             schedule();
         }
-        self.task.inner_exclusive_access().task_status = TaskStatus::Runnable;
-        self.is_woken_up.store(false, Ordering::SeqCst);
     }
 
-    pub fn wake_up(&self) {
-        if let Ok(false) =
-            self.is_woken_up
-                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        {
+    /// Wake up a waiting task.
+    /// If the task is waiting before being woken, return true;
+    /// Otherwise return false.
+    pub fn wake_up(&self) -> bool {
+        let mut task = self.task.inner_exclusive_access();
+        if task.task_status == TaskStatus::Sleeping {
+            task.task_status = TaskStatus::Runnable;
+
+            // Avoid holding lock when doing `add_task`
+            drop(task);
+
             add_task(self.task.clone());
+
+            true
+        } else {
+            false
         }
-    }
-
-    pub fn is_exclusive(&self) -> bool {
-        self.flag.contains(WaiterFlag::EXCLUSIVE)
-    }
-}
-
-bitflags! {
-    pub struct WaiterFlag: u32 {
-        const EXCLUSIVE         = 1 << 0;
-        const INTERRUPTIABLE    = 1 << 1;
     }
 }

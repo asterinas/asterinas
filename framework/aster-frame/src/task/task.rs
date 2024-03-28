@@ -11,7 +11,7 @@ use crate::{
     arch::mm::PageTableFlags,
     cpu::CpuSet,
     prelude::*,
-    sync::{Mutex, MutexGuard},
+    sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
     vm::{page_table::KERNEL_PAGE_TABLE, VmAllocOptions, VmSegment, PAGE_SIZE},
 };
@@ -104,7 +104,7 @@ pub struct Task {
     func: Box<dyn Fn() + Send + Sync>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
-    task_inner: Mutex<TaskInner>,
+    task_inner: SpinLock<TaskInner>,
     exit_code: usize,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
@@ -129,13 +129,13 @@ impl Task {
     }
 
     /// get inner
-    pub(crate) fn inner_exclusive_access(&self) -> MutexGuard<'_, TaskInner> {
-        self.task_inner.lock()
+    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<'_, TaskInner> {
+        self.task_inner.lock_irq_disabled()
     }
 
     /// get inner
     pub(crate) fn inner_ctx(&self) -> TaskContext {
-        self.task_inner.lock().ctx
+        self.task_inner.lock_irq_disabled().ctx
     }
 
     /// Yields execution so that another task may be scheduled.
@@ -153,7 +153,7 @@ impl Task {
 
     /// Returns the task status.
     pub fn status(&self) -> TaskStatus {
-        self.task_inner.lock().task_status
+        self.task_inner.lock_irq_disabled().task_status
     }
 
     /// Returns the task data.
@@ -181,7 +181,7 @@ impl Task {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The status of a task.
 pub enum TaskStatus {
     /// The task is runnable.
@@ -264,7 +264,7 @@ impl TaskOptions {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
-            task_inner: Mutex::new(TaskInner {
+            task_inner: SpinLock::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
             }),
@@ -301,7 +301,7 @@ impl TaskOptions {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
-            task_inner: Mutex::new(TaskInner {
+            task_inner: SpinLock::new(TaskInner {
                 task_status: TaskStatus::Runnable,
                 ctx: TaskContext::default(),
             }),
