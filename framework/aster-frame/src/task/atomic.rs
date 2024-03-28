@@ -32,7 +32,7 @@ use core::{
 extern crate alloc;
 use alloc::{format, string::String};
 
-// pub use atomic_mode_proc_macro::{atomic_procedure, might_break};
+pub use atomic_mode_proc_macro::{atomic_procedure, might_break};
 
 crate::cpu_local! {
     static ATOMIC_MODE: AtomicMode = AtomicMode::new(PreemptInfo::new());
@@ -214,22 +214,22 @@ mod test {
             might_break_atomic_mode();
         }
     }
-    // mod macros {
-    //     use super::*;
-    //     #[might_break]
-    //     fn breakable_func() {
-    //         // do something might break atomic mode
-    //     }
+    mod macros {
+        use super::*;
+        #[might_break]
+        fn breakable_func() {
+            // do something might break atomic mode
+        }
 
-    //     #[atomic_procedure]
-    //     fn breakable_func_in_atomic_context() {
-    //         breakable_func();
-    //     }
+        #[atomic_procedure]
+        fn breakable_func_in_atomic_context() {
+            breakable_func();
+        }
 
-    //     #[ktest]
-    //     #[should_panic]
-    //     fn panics_at_func_in_atomic_mode() {
-    //         breakable_func_in_atomic_context();
-    //     }
-    // }
+        #[ktest]
+        #[should_panic]
+        fn panics_at_func_in_atomic_mode() {
+            breakable_func_in_atomic_context();
+        }
+    }
 }

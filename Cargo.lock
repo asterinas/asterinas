@@ -103,6 +103,7 @@ dependencies = [
  "align_ext",
  "aml",
  "aster-main",
+ "atomic-mode-proc-macro",
  "bit_field",
  "bitflags 1.3.2",
  "bitvec",
@@ -321,6 +322,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d818003e740b63afc82337e3160717f4f63078720a810b7b903e70a5d1d2994"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "atomic-mode-proc-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.49",
 ]
 
 [[package]]
