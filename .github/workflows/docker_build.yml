@@ -29,7 +29,7 @@ jobs:
           echo "aster_version=$( cat VERSION )" >> "$GITHUB_OUTPUT"
           echo "rust_version=$( grep -m1 -o 'nightly-[0-9]\+-[0-9]\+-[0-9]\+' rust-toolchain.toml )" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      - name: Build and push development image
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -37,5 +37,16 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}
+          build-args: |
+            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+
+      - name: Build and push OSDK test image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./osdk/tools/Dockerfile.ubuntu22.04
+          platforms: linux/amd64
+          push: true
+          tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"

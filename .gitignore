@@ -17,3 +17,6 @@ qemu.log
 
 # packet dump file
 virtio-net.pcap
+
+# vscode launch config file
+.vscode/launch.json
