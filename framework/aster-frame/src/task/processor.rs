@@ -6,7 +6,7 @@ use alloc::sync::Arc;
 use core::cell::RefCell;
 
 use super::{
-    enter_atomic_mode, might_break_atomic_mode,
+    enter_atomic_mode, might_break, might_break_atomic_mode,
     scheduler::{fetch_task, GLOBAL_SCHEDULER},
     task::{context_switch, TaskContext},
     AtomicModeGuard, Task, TaskStatus,
@@ -96,8 +96,8 @@ pub fn preempt(task: &Arc<Task>) {
 /// if current task status is exit, then it will not add to the scheduler
 ///
 /// before context switch, current task will switch to the next task
+#[might_break]
 fn switch_to_task(next_task: Arc<Task>) {
-    might_break_atomic_mode();
     let current_task_ctx_ptr = match current_task() {
         None => get_idle_task_ctx_ptr(),
         Some(current_task) => {
