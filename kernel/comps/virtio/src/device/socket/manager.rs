@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+
 use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use core::{cmp::min, hint::spin_loop};
 
@@ -14,30 +15,6 @@ use crate::device::socket::error::SocketError;
 
 const PER_CONNECTION_BUFFER_CAPACITY: usize = 1024;
 
-/// TODO: A higher level interface for VirtIO socket (vsock) devices.
-///
-/// This keeps track of multiple vsock connections.
-///
-/// # Example
-///
-/// ```
-///
-/// let mut socket = VsockConnectionManager::new(SocketDevice);
-///
-/// // Start a thread to call `socket.poll()` and handle events.
-///
-/// let remote_address = VsockAddr { cid: 2, port: 4321 };
-/// let local_port = 1234;
-/// socket.connect(remote_address, local_port)?;
-///
-/// // Wait until `socket.poll()` returns an event indicating that the socket is connected.
-///
-/// socket.send(remote_address, local_port, "Hello world".as_bytes())?;
-///
-/// socket.shutdown(remote_address, local_port)?;
-/// # Ok(())
-/// # }
-/// ``
 pub struct VsockConnectionManager {
     driver: Arc<SpinLock<SocketDevice>>,
     connections: Vec<Connection>,
