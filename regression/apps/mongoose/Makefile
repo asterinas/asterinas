@@ -1,47 +1,39 @@
 # SPDX-License-Identifier: MPL-2.0
 
-MAIN_MAKEFILE := $(firstword $(MAKEFILE_LIST))
-INCLUDE_MAKEFILE := $(lastword $(MAKEFILE_LIST))
-CUR_DIR := $(shell dirname $(realpath $(MAIN_MAKEFILE)))
+CUR_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 BUILD_DIR := $(CUR_DIR)/../../build/initramfs/regression/network
-TARGET_SERVER := $(BUILD_DIR)/http_server
-TARGET_CLIENT := $(BUILD_DIR)/http_client
+MONGOOSE_DIR := $(CUR_DIR)/../../build/mongoose
+MONGOOSE_C := $(MONGOOSE_DIR)/mongoose.c
+MONGOOSE_H := $(MONGOOSE_DIR)/mongoose.h
+MONGOOSE_FILES := $(MONGOOSE_C) $(MONGOOSE_H)
+MONGOOSE_O := $(MONGOOSE_DIR)/mongoose.o
+SERVER_C := http_server.c
+SERVER_BIN := $(BUILD_DIR)/http_server
+CLIENT_C := http_client.c
+CLIENT_BIN := $(BUILD_DIR)/http_client
+BINS := $(SERVER_BIN) $(CLIENT_BIN)
 CC := cc
-CFLAGS := -W -Wall -Wextra -g -I. -DMG_HTTP_DIRLIST_TIME_FMT="%Y/%m/%d %H:%M:%S" -DMG_ENABLE_LINES=1 -DMG_ENABLE_IPV6=1 -DMG_ENABLE_SSI=1
-SRC_SERVER := http_server.c mongoose.c
-SRC_CLIENT := http_client.c mongoose.c
-DEP := mongoose.h
+CFLAGS := -W -Wall -Wextra -g -I. -I$(MONGOOSE_DIR) -DMG_ENABLE_LINES=1
 
-.PHONY: all clean mongoose server client
+.PHONY: all 
+all: $(BINS) 
 
-all: server client
+$(SERVER_BIN): $(SERVER_C) $(MONGOOSE_O) | $(BUILD_DIR)
+	$(CC) $^ $(CFLAGS) -o $@
 
-server: $(TARGET_SERVER)
+$(CLIENT_BIN): $(CLIENT_C) $(MONGOOSE_O) | $(BUILD_DIR)
+	$(CC) $^ $(CFLAGS) -o $@
 
-client: $(TARGET_CLIENT)
+$(MONGOOSE_O): $(MONGOOSE_FILES) 
+	$(CC) -c $(MONGOOSE_C) $(CFLAGS) -o $@
 
-# Rule to build the http server
-$(TARGET_SERVER): $(SRC_SERVER) | $(BUILD_DIR)
-	$(CC) $(SRC_SERVER) $(CFLAGS) -o $@
+$(MONGOOSE_FILES): | $(MONGOOSE_DIR)
+	wget --header="Accept: application/vnd.github.v3.raw" \
+		-O $@ "https://api.github.com/repos/cesanta/mongoose/contents/$(notdir $@)?ref=7.13"
 
-# Rule to build the http client
-$(TARGET_CLIENT): $(SRC_CLIENT) | $(BUILD_DIR)
-	$(CC) $(SRC_CLIENT) $(CFLAGS) -o $@
-
-# Rule to ensure the mongoose dependency is present
-mongoose:
-	@if [ ! -d "mongoose" ]; then \
-		git clone https://github.com/cesanta/mongoose.git; \
-	fi
-	@cd mongoose && git fetch && git checkout 98782e44c2c095f18b839b09a231328824c23d46
-	@cp mongoose/mongoose.c mongoose/mongoose.h .
-
-# Rule to create the build directory
-$(BUILD_DIR):
+$(BUILD_DIR) $(MONGOOSE_DIR):
 	@mkdir -p $@
 
-# Rule to clean all generated files
+PHONY: clean
 clean:
-	$(RM) -r $(TARGET_SERVER) $(TARGET_CLIENT) mongoose mongoose.c mongoose.h *.o build
-
-$(SRC_SERVER) $(SRC_CLIENT): mongoose
+	@rm -f $(BINS) $(MONGOOSE_O) $(MONGOOSE_FILES)
