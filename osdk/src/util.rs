@@ -162,18 +162,48 @@ pub fn get_current_crate_info() -> CrateInfo {
     let metadata = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
 
     let default_member = get_default_member(&metadata);
-
-    // The default member string here is in the form of "<crate_name> <crate_version> (path+file://<crate_path>)"
-    let default_member = default_member.split(' ').collect::<Vec<&str>>();
-    let name = default_member[0].to_string();
-    let version = default_member[1].to_string();
-    let path = default_member[2]
-        .trim_start_matches("(path+file://")
-        .trim_end_matches(')')
-        .to_string();
-    CrateInfo {
-        name,
-        version,
-        path,
+    // Prior 202403 (Rust 1.77.1), the default member string here is in the form of
+    // "<crate_name> <crate_version> (path+file://<crate_path>)".
+    // After that, it's
+    // "path+file://<crate_path>#<crate_name>@<crate_version>", in which the crate
+    // name might not exist if it is the last component of the path.
+    if default_member.starts_with("path+file://") {
+        // After 1.77.1
+        if default_member.contains('@') {
+            let default_member = default_member.split(['#', '@']).collect::<Vec<&str>>();
+            CrateInfo {
+                name: default_member[1].to_string(),
+                version: default_member[2].to_string(),
+                path: default_member[0]
+                    .trim_start_matches("path+file://")
+                    .to_string(),
+            }
+        } else {
+            let default_member = default_member.split(['#']).collect::<Vec<&str>>();
+            let path = default_member[0]
+                .trim_start_matches("path+file://")
+                .to_string();
+            CrateInfo {
+                name: PathBuf::from(path.clone())
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+                version: default_member[1].to_string(),
+                path,
+            }
+        }
+    } else {
+        // Before 1.77.1
+        let default_member = default_member.split(' ').collect::<Vec<&str>>();
+        CrateInfo {
+            name: default_member[0].to_string(),
+            version: default_member[1].to_string(),
+            path: default_member[2]
+                .trim_start_matches("(path+file://")
+                .trim_end_matches(')')
+                .to_string(),
+        }
     }
 }
