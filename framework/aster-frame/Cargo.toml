@@ -28,7 +28,7 @@ spin = "0.9.4"
 static_assertions = "1.1.0"
 tdx-guest = { path = "../libs/tdx-guest", optional = true }
 trapframe = { git = "https://github.com/asterinas/trapframe-rs", rev = "2f37590" }
-unwinding = { version = "0.2.1", default-features = false, features = ["fde-static", "hide-trace", "panic", "personality", "unwinder"] }
+unwinding = { version = "0.2.1", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = { version = "0.4.5", features = ["unstable"] }
 
 [target.x86_64-unknown-none.dependencies]
