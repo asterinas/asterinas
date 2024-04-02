@@ -65,7 +65,7 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
         &osdk_target_directory,
         &ws_target_directory,
         &required_build_config,
-        &["--cfg ktest", "-C panic=unwind"],
+        &["--cfg ktest"],
     );
     std::env::remove_var("RUSTFLAGS");
     std::env::set_current_dir(original_dir).unwrap();
