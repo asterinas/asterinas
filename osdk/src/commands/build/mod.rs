@@ -133,6 +133,9 @@ fn build_kernel_elf(
         "-C code-model=kernel",
         "-C relocation-model=static",
         "-Z relro-level=off",
+        // We do not really allow unwinding except for kernel testing. However, we need to specify
+        // this to show backtraces when panicking.
+        "-C panic=unwind",
     ]);
 
     let mut command = cargo();
