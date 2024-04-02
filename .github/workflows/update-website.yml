@@ -27,8 +27,9 @@ jobs:
         env:
           BOOK_PUBLISH_KEY: ${{ secrets.BOOK_PUBLISH_KEY }}
         run: |
-          echo "$BOOK_PUBLISH_KEY " > ./book_publish_key
+          echo "$BOOK_PUBLISH_KEY\n" > ./book_publish_key
           chmod 600 ./book_publish_key
+          ssh-keygen -y -f ./book_publish_key > /dev/null
           ssh-keyscan -t rsa github.com >> ./known_hosts
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
