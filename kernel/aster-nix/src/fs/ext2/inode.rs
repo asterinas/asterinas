@@ -663,9 +663,7 @@ impl Inner {
             let end = file_size.min(offset + buf.len()).align_down(BLOCK_SIZE);
             (start, end - start)
         };
-        self.page_cache
-            .pages()
-            .decommit(offset..offset + read_len)?;
+        self.page_cache.discard_range(offset..offset + read_len);
 
         let mut buf_offset = 0;
         for bid in Bid::from_offset(offset)..Bid::from_offset(offset + read_len) {
@@ -696,7 +694,7 @@ impl Inner {
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
-        self.page_cache.pages().decommit(start..end)?;
+        self.page_cache.discard_range(start..end);
 
         if end_offset > file_size {
             self.page_cache.pages().resize(end_offset)?;
