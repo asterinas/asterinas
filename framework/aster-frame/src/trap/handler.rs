@@ -22,10 +22,7 @@ use crate::{
     boot::memory_region::MemoryRegion,
     cpu::{CpuException, PageFaultErrorCode, PAGE_FAULT},
     cpu_local,
-    vm::{
-        page_table::PageTableFlagsTrait,
-        PageTable, PHYS_MEM_BASE_VADDR,
-    },
+    vm::{page_table::PageTableFlagsTrait, PageTable, PHYS_MEM_BASE_VADDR},
 };
 
 #[cfg(feature = "intel_tdx")]
