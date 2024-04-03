@@ -1241,8 +1241,7 @@ impl Inode for ExfatInode {
 
         inner
             .page_cache
-            .pages()
-            .decommit(read_off..read_off + read_len)?;
+            .discard_range(read_off..read_off + read_len);
 
         let mut buf_offset = 0;
         let frame = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
@@ -1334,7 +1333,7 @@ impl Inode for ExfatInode {
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
-        inner.page_cache.pages().decommit(start..end)?;
+        inner.page_cache.discard_range(start..end);
 
         let new_size = {
             let mut inner = inner.upgrade();

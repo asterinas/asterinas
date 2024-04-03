@@ -54,6 +54,12 @@ impl PageCache {
         self.manager.evict_range(range)
     }
 
+    /// Evict the data within a specified range from the page cache without persisting
+    /// them to the backend.
+    pub fn discard_range(&self, range: Range<usize>) {
+        self.manager.discard_range(range)
+    }
+
     /// Returns the backend.
     pub fn backend(&self) -> Arc<dyn PageCacheBackend> {
         self.manager.backend()
@@ -96,15 +102,22 @@ impl PageCacheManager {
         self.backend.upgrade().unwrap()
     }
 
+    // Discard pages without writing them back to disk.
+    pub fn discard_range(&self, range: Range<usize>) {
+        let page_idx_range = get_page_idx_range(&range);
+        for idx in page_idx_range {
+            self.pages.lock().pop(&idx);
+        }
+    }
+
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let page_idx_range = get_page_idx_range(&range);
-        let mut pages = self.pages.lock();
 
         //TODO: When there are many pages, we should submit them in batches of folios rather than all at once.
         let mut indices_and_waiters: Vec<(usize, BioWaiter)> = Vec::new();
 
         for idx in page_idx_range {
-            if let Some(page) = pages.get_mut(&idx) {
+            if let Some(page) = self.pages.lock().get_mut(&idx) {
                 if let PageState::Dirty = page.state() {
                     let backend = self.backend();
                     if idx < backend.npages() {
@@ -116,7 +129,9 @@ impl PageCacheManager {
 
         for (idx, waiter) in indices_and_waiters.iter() {
             if matches!(waiter.wait(), Some(BioStatus::Complete)) {
-                pages.get_mut(idx).unwrap().set_state(PageState::UpToDate)
+                if let Some(page) = self.pages.lock().get_mut(idx) {
+                    page.set_state(PageState::UpToDate)
+                }
             } else {
                 // TODO: We may need an error handler here.
                 return_errno!(Errno::EIO)
@@ -137,24 +152,23 @@ impl Debug for PageCacheManager {
 
 impl Pager for PageCacheManager {
     fn commit_page(&self, idx: usize) -> Result<VmFrame> {
-        let mut pages = self.pages.lock();
-        let frame = if let Some(page) = pages.get(&idx) {
-            page.frame().clone()
-        } else {
-            let backend = self.backend();
-            let page = if idx < backend.npages() {
-                let mut page = Page::alloc()?;
-                backend.read_page_sync(idx, page.frame())?;
-                page.set_state(PageState::UpToDate);
-                page
-            } else {
-                Page::alloc_zero()?
-            };
-            let frame = page.frame().clone();
-            pages.put(idx, page);
-            frame
-        };
+        if let Some(page) = self.pages.lock().get(&idx) {
+            return Ok(page.frame.clone());
+        }
 
+        //Multiple threads may commit the same page, but the result is ok.
+        let backend = self.backend();
+        let page = if idx < backend.npages() {
+            let mut page = Page::alloc()?;
+            backend.read_page_sync(idx, page.frame())?;
+            page.set_state(PageState::UpToDate);
+
+            page
+        } else {
+            Page::alloc_zero()?
+        };
+        let frame = page.frame().clone();
+        self.pages.lock().put(idx, page);
         Ok(frame)
     }
 
@@ -170,8 +184,8 @@ impl Pager for PageCacheManager {
     }
 
     fn decommit_page(&self, idx: usize) -> Result<()> {
-        let mut pages = self.pages.lock();
-        if let Some(page) = pages.pop(&idx) {
+        let page_result = self.pages.lock().pop(&idx);
+        if let Some(page) = page_result {
             if let PageState::Dirty = page.state() {
                 let Some(backend) = self.backend.upgrade() else {
                     return Ok(());
