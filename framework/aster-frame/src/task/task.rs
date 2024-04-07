@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+use core::mem::size_of;
 
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
@@ -277,8 +278,10 @@ impl TaskOptions {
 
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        // Subtract 8 bytes to reserve space for the return address, otherwise
+        // we will write across the page bondary.
         result.task_inner.lock().ctx.regs.rsp =
-            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
+            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr() - size_of::<u64>())) as u64;
 
         Ok(Arc::new(result))
     }
@@ -314,8 +317,10 @@ impl TaskOptions {
 
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        // Subtract 8 bytes to reserve space for the return address, otherwise
+        // we will write across the page bondary.
         result.task_inner.lock().ctx.regs.rsp =
-            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
+            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr() - size_of::<u64>())) as u64;
 
         let arc_self = Arc::new(result);
         arc_self.run();
