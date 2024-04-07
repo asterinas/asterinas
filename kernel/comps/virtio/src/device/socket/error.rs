@@ -1,14 +1,36 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! This file comes from virtio-drivers project
-//! This module contains the error from the VirtIO socket driver.
-
+// Modified from error.rs in virtio-drivers project
+//
+// MIT License
+//
+// Copyright (c) 2022-2023 Ant Group
+// Copyright (c) 2019-2020 rCore Developers
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
 use core::{fmt, result};
 
 use crate::queue::QueueError;
 
 /// The error type of VirtIO socket driver.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum SocketError {
     /// There is an existing connection.
     ConnectionExists,
@@ -39,33 +61,18 @@ pub enum SocketError {
     /// Recycled a wrong buffer.
     RecycledWrongBuffer,
     /// Queue Error
-    QueueError(SocketQueueError),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SocketQueueError {
-    InvalidArgs,
-    BufferTooSmall,
-    NotReady,
-    AlreadyUsed,
-    WrongToken,
-}
-
-impl From<QueueError> for SocketQueueError {
-    fn from(value: QueueError) -> Self {
-        match value {
-            QueueError::InvalidArgs => Self::InvalidArgs,
-            QueueError::BufferTooSmall => Self::BufferTooSmall,
-            QueueError::NotReady => Self::NotReady,
-            QueueError::AlreadyUsed => Self::AlreadyUsed,
-            QueueError::WrongToken => Self::WrongToken,
-        }
-    }
+    QueueError(QueueError),
 }
 
 impl From<QueueError> for SocketError {
     fn from(value: QueueError) -> Self {
-        Self::QueueError(SocketQueueError::from(value))
+        Self::QueueError(value)
+    }
+}
+
+impl From<int_to_c_enum::TryFromIntError> for SocketError {
+    fn from(_e: int_to_c_enum::TryFromIntError) -> Self {
+        Self::InvalidNumber
     }
 }
 

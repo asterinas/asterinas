@@ -55,3 +55,4 @@ export HOST_PORT=8888
 iperf3 -s -B $HOST_ADDR -p $HOST_PORT -D # Start the server as a daemon
 iperf3 -c $HOST_ADDR -p $HOST_PORT # Start the client
 ```
+Note that [a variant of iperf3](https://github.com/stefano-garzarella/iperf-vsock) can measure the performance of `vsock`.

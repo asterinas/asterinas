@@ -2,7 +2,7 @@
 
 use spin::Once;
 
-use self::iface::spawn_background_poll_thread;
+use self::{iface::spawn_background_poll_thread, socket::vsock};
 use crate::{
     net::iface::{Iface, IfaceLoopback, IfaceVirtio},
     prelude::*,
@@ -28,6 +28,7 @@ pub fn init() {
         })
     }
     poll_ifaces();
+    vsock::init();
 }
 
 /// Lazy init should be called after spawning init thread.

@@ -6,6 +6,7 @@ use crate::{
     net::socket::{
         ip::{DatagramSocket, StreamSocket},
         unix::UnixStreamSocket,
+        vsock::VsockStreamSocket,
     },
     prelude::*,
     util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK},
@@ -35,6 +36,9 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
             SockType::SOCK_DGRAM,
             Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP,
         ) => DatagramSocket::new(nonblocking) as Arc<dyn FileLike>,
+        (CSocketAddrFamily::AF_VSOCK, SockType::SOCK_STREAM, _) => {
+            Arc::new(VsockStreamSocket::new()) as Arc<dyn FileLike>
+        }
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };
     let fd = {

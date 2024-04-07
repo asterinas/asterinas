@@ -8,17 +8,14 @@ use pod::Pod;
 use crate::transport::VirtioTransport;
 
 bitflags! {
-    /// Vsock feature bits since v1.2
-    /// If no feature bit is set, only stream socket type is supported.
-    /// If VIRTIO_VSOCK_F_SEQPACKET has been negotiated, the device MAY act as if VIRTIO_VSOCK_F_STREAM has also been negotiated.
     pub struct VsockFeatures: u64 {
         const VIRTIO_VSOCK_F_STREAM = 1 << 0; // stream socket type is supported.
-        const VIRTIO_VSOCK_F_SEQPACKET = 1 << 1; //seqpacket socket type is supported.
+        const VIRTIO_VSOCK_F_SEQPACKET = 1 << 1; //seqpacket socket type is not supported now.
     }
 }
 
 impl VsockFeatures {
-    pub fn support_features() -> Self {
+    pub const fn supported_features() -> Self {
         VsockFeatures::VIRTIO_VSOCK_F_STREAM
     }
 }
@@ -32,9 +29,7 @@ pub struct VirtioVsockConfig {
     /// According to virtio spec v1.1 2.4.1 Driver Requirements: Device Configuration Space,
     /// drivers MUST NOT assume reads from fields greater than 32 bits wide are atomic.
     /// So we need to split the u64 guest_cid into two parts.
-    // read only
     pub guest_cid_low: u32,
-    // read only
     pub guest_cid_high: u32,
 }
 

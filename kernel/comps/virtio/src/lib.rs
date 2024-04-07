@@ -35,8 +35,8 @@ mod transport;
 fn virtio_component_init() -> Result<(), ComponentInitError> {
     // Find all devices and register them to the corresponding crate
     transport::init();
-    // For vsock cmponent
-    socket::component_init()?;
+    // For vsock table static init
+    socket::init();
     while let Some(mut transport) = pop_device_transport() {
         // Reset device
         transport.set_device_status(DeviceStatus::empty()).unwrap();

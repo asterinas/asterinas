@@ -33,7 +33,9 @@ CARGO_OSDK_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
 else ifeq ($(AUTO_TEST), regression)
 CARGO_OSDK_ARGS += --init-args="/regression/run_regression_test.sh"
 else ifeq ($(AUTO_TEST), boot)
-CARGO_OSDK_ARGS += --init-args="/regression/boot_hello.sh"
+CARGO_OSDK_ARGS += --init_args="/regression/boot_hello.sh"
+else ifeq ($(AUTO_TEST), vsock)
+CARGO_OSDK_ARGS += --init_args="/regression/run_vsock_test.sh"
 endif
 
 ifeq ($(RELEASE_LTO), 1)
@@ -66,16 +68,6 @@ endif
 
 ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="--enable-kvm"
-endif
-
-ifeq ($(VSOCK),1)
-ifeq ($(QEMU_MACHINE), microvm)
-CARGO_OSDK_ARGS += --qumu.args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3"
-else ifeq ($(EMULATE_IOMMU), 1)
-CARGO_OSDK_ARGS += --qemu.args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on"
-else
-CARGO_OSDK_ARGS += --qemu.args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off"
-endif
 endif
 
 # Pass make variables to all subdirectory makes
@@ -152,6 +144,8 @@ else ifeq ($(AUTO_TEST), regression)
 	@tail --lines 100 qemu.log | grep -q "^All regression tests passed." || (echo "Regression test failed" && exit 1)
 else ifeq ($(AUTO_TEST), boot)
 	@tail --lines 100 qemu.log | grep -q "^Successfully booted." || (echo "Boot test failed" && exit 1)
+else ifeq ($(AUTO_TEST), vsock)
+	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." || (echo "Vsock test failed" && exit 1)
 endif
 
 gdb_server: initramfs $(CARGO_OSDK)

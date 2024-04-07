@@ -60,7 +60,7 @@ MICROVM_QEMU_ARGS="\
     -device virtio-net-device,netdev=net01 \
     -device virtio-serial-device \
     -device virtconsole,chardev=mux \
-    -device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3 \
+    -device vhost-vsock-device,guest-cid=3 \
 "
 
 if [ "$1" = "microvm" ]; then
