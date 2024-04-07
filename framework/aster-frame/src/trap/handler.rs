@@ -17,12 +17,11 @@ use crate::arch::{
 use crate::{
     arch::{
         irq::IRQ_LIST,
-        mm::{is_kernel_vaddr, PageTableEntry, PageTableFlags},
+        mm::{PageTableEntry, PageTableFlags},
     },
-    boot::memory_region::MemoryRegion,
     cpu::{CpuException, PageFaultErrorCode, PAGE_FAULT},
     cpu_local,
-    vm::{page_table::PageTableFlagsTrait, PageTable, PHYS_MEM_BASE_VADDR},
+    vm::{PageTable, PHYS_MEM_BASE_VADDR, PHYS_MEM_VADDR_RANGE},
 };
 
 #[cfg(feature = "intel_tdx")]
@@ -182,60 +181,50 @@ pub fn in_interrupt_context() -> bool {
 }
 
 fn handle_kernel_page_fault(f: &TrapFrame) {
-    // We only create mapping: `vaddr = paddr + PHYS_OFFSET` in kernel page fault handler.
     let page_fault_vaddr = x86_64::registers::control::Cr2::read().as_u64();
-    debug_assert!(is_kernel_vaddr(page_fault_vaddr as usize));
-
-    // Check kernel region
-    // FIXME: The modification to the offset mapping of the kernel code and data should not permitted.
-    debug_assert!({
-        let kernel_region = MemoryRegion::kernel();
-        let start = kernel_region.base();
-        let end = start + kernel_region.base() + kernel_region.len();
-        !((start..end).contains(&(page_fault_vaddr as usize)))
-    });
-
-    // Check error code and construct flags
-    // FIXME: The `PageFaultErrorCode` may not be the same on other platforms such as RISC-V.
     let error_code = PageFaultErrorCode::from_bits_truncate(f.error_code);
     debug!(
-        "Handling kernel page fault. Page fault address:{:x?}; Error code:{:?}",
-        page_fault_vaddr, error_code
+        "kernel page fault: address {:?}, error code {:?}",
+        page_fault_vaddr as *const (), error_code
     );
-    debug_assert!(!error_code.contains(PageFaultErrorCode::USER));
-    debug_assert!(!error_code.contains(PageFaultErrorCode::INSTRUCTION));
-    let mut flags = PageTableFlags::empty()
-        .set_present(true)
-        .set_executable(false);
-    #[cfg(feature = "intel_tdx")]
-    {
-        // FIXME: Adding shared bit directly will have security issues.
-        flags = flags | PageTableFlags::SHARED;
-    }
-    if error_code.contains(PageFaultErrorCode::WRITE) {
-        flags = flags.set_writable(true);
-    }
 
-    // Handle page fault
+    assert!(
+        PHYS_MEM_VADDR_RANGE.contains(&(page_fault_vaddr as usize)),
+        "kernel page fault: the address is outside the range of the direct mapping",
+    );
+
+    const SUPPORTED_ERROR_CODES: PageFaultErrorCode = PageFaultErrorCode::PRESENT
+        .union(PageFaultErrorCode::WRITE)
+        .union(PageFaultErrorCode::INSTRUCTION);
+    assert!(
+        SUPPORTED_ERROR_CODES.contains(error_code),
+        "kernel page fault: the error code is not supported",
+    );
+
+    assert!(
+        !error_code.contains(PageFaultErrorCode::INSTRUCTION),
+        "kernel page fault: the direct mapping cannot be executed",
+    );
+    assert!(
+        !error_code.contains(PageFaultErrorCode::PRESENT),
+        "kernel page fault: the direct mapping already exists",
+    );
+
+    // FIXME: Is it safe to call `PageTable::from_root_register` here?
     let mut page_table: PageTable<PageTableEntry, crate::vm::page_table::KernelMode> =
         unsafe { PageTable::from_root_register() };
-    if error_code.contains(PageFaultErrorCode::PRESENT) {
-        // FIXME: We should define the initialize mapping and the protect method here should not change the
-        // permission of the initialize mapping.
-        //
-        // Safety: The page fault address has been checked and the flags is constructed based on error code.
-        unsafe {
-            page_table
-                .protect(page_fault_vaddr as usize, flags)
-                .unwrap();
-        }
-    } else {
-        // Safety: The page fault address has been checked and the flags is constructed based on error code.
-        let paddr = page_fault_vaddr as usize - PHYS_MEM_BASE_VADDR;
-        unsafe {
-            page_table
-                .map(page_fault_vaddr as usize, paddr, flags)
-                .unwrap();
-        }
+
+    let paddr = page_fault_vaddr as usize - PHYS_MEM_BASE_VADDR;
+    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+
+    // SAFETY:
+    // 1. We have checked that the page fault address falls within the address range of the direct
+    //    mapping of physical memory.
+    // 2. We map the address to the correct physical page with the correct flags, where the
+    //    correctness follows the semantics of the direct mapping of physical memory.
+    unsafe {
+        page_table
+            .map(page_fault_vaddr as usize, paddr, flags)
+            .unwrap();
     }
 }
