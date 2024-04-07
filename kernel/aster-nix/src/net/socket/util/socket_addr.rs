@@ -15,6 +15,7 @@ pub enum SocketAddr {
     Unix(UnixSocketAddr),
     IPv4(Ipv4Address, PortNum),
     IPv6,
+    Vsock(u32, u32),
 }
 
 impl TryFrom<SocketAddr> for IpEndpoint {

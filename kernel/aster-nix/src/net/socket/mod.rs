@@ -13,6 +13,7 @@ pub mod ip;
 pub mod options;
 pub mod unix;
 mod util;
+pub mod vsock;
 
 /// Operations defined on a socket.
 pub trait Socket: FileLike + Send + Sync {

@@ -2,10 +2,6 @@
 
 use align_ext::AlignExt;
 use bytes::BytesMut;
-use pod::Pod;
-
-use super::header::VirtioVsockHdr;
-use crate::device::socket::header::VIRTIO_VSOCK_HDR_LEN;
 
 /// Buffer for receive packet
 #[derive(Debug)]
@@ -37,22 +33,6 @@ impl RxBuffer {
 
     pub fn buf_mut(&mut self) -> &mut [u8] {
         &mut self.buf
-    }
-
-    /// Packet payload slice, which is inner buffer excluding VirtioVsockHdr.
-    pub fn packet(&self) -> &[u8] {
-        debug_assert!(VIRTIO_VSOCK_HDR_LEN + self.packet_len <= self.buf.len());
-        &self.buf[VIRTIO_VSOCK_HDR_LEN..VIRTIO_VSOCK_HDR_LEN + self.packet_len]
-    }
-
-    /// Mutable packet payload slice.
-    pub fn packet_mut(&mut self) -> &mut [u8] {
-        debug_assert!(VIRTIO_VSOCK_HDR_LEN + self.packet_len <= self.buf.len());
-        &mut self.buf[VIRTIO_VSOCK_HDR_LEN..VIRTIO_VSOCK_HDR_LEN + self.packet_len]
-    }
-
-    pub fn virtio_vsock_header(&self) -> VirtioVsockHdr {
-        VirtioVsockHdr::from_bytes(&self.buf[..VIRTIO_VSOCK_HDR_LEN])
     }
 }
 
