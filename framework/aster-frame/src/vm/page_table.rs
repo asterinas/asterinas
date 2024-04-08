@@ -280,7 +280,7 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         paddr: Paddr,
         flags: T::F,
     ) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, true).unwrap();
+        let last_entry = self.do_page_walk_mut(vaddr, true).unwrap();
         trace!(
             "Page Table: Map vaddr:{:x?}, paddr:{:x?}, flags:{:x?}",
             vaddr,
@@ -295,22 +295,18 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         Ok(())
     }
 
-    /// Find the last PTE
+    /// Find the last PTE and return its mutable reference.
     ///
     /// If create is set, it will create the next table until the last PTE.
-    /// If not, it will return None if it is not reach the last PTE.
-    ///
-    fn page_walk(&mut self, vaddr: Vaddr, create: bool) -> Option<&mut T> {
-        let mut count = self.config.address_width as usize;
-        debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
+    /// If not, it will return `None` if it cannot reach the last PTE.
+    fn do_page_walk_mut(&mut self, vaddr: Vaddr, create: bool) -> Option<&mut T> {
+        let mut level = self.config.address_width as usize;
         // Safety: The offset does not exceed the value of PAGE_SIZE.
         // It only change the memory controlled by page table.
-        let mut current: &mut T = unsafe {
-            &mut *(paddr_to_vaddr(self.root_paddr + size_of::<T>() * T::page_index(vaddr, count))
-                as *mut T)
-        };
+        let mut current: &mut T =
+            unsafe { &mut *(calculate_pte_vaddr::<T>(self.root_paddr, vaddr, level) as *mut T) };
 
-        while count > 1 {
+        while level > 1 {
             if !current.flags().is_present() {
                 if !create {
                     return None;
@@ -329,15 +325,40 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
             if current.flags().is_huge() {
                 break;
             }
-            count -= 1;
-            debug_assert!(size_of::<T>() * (T::page_index(vaddr, count) + 1) <= PAGE_SIZE);
+            level -= 1;
             // Safety: The offset does not exceed the value of PAGE_SIZE.
             // It only change the memory controlled by page table.
             current = unsafe {
-                &mut *(paddr_to_vaddr(
-                    current.paddr() + size_of::<T>() * T::page_index(vaddr, count),
-                ) as *mut T)
+                &mut *(calculate_pte_vaddr::<T>(current.paddr(), vaddr, level) as *mut T)
             };
+        }
+        Some(current)
+    }
+
+    /// Find the last PTE and return its immutable reference.
+    ///
+    /// This function will return `None` if it cannot reach the last PTE.
+    /// Note that finding an entry does not mean the corresponding virtual memory address is mapped
+    /// since the entry may be empty.
+    fn do_page_walk(&self, vaddr: Vaddr) -> Option<&T> {
+        let mut level = self.config.address_width as usize;
+        // Safety: The offset does not exceed the value of PAGE_SIZE.
+        // It only change the memory controlled by page table.
+        let mut current: &T =
+            unsafe { &*(calculate_pte_vaddr::<T>(self.root_paddr, vaddr, level) as *const T) };
+
+        while level > 1 {
+            if !current.flags().is_present() {
+                return None;
+            }
+            if current.flags().is_huge() {
+                break;
+            }
+            level -= 1;
+            // Safety: The offset does not exceed the value of PAGE_SIZE.
+            // It only change the memory controlled by page table.
+            current =
+                unsafe { &*(calculate_pte_vaddr::<T>(current.paddr(), vaddr, level) as *const T) };
         }
         Some(current)
     }
@@ -349,9 +370,11 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     /// This function allows arbitrary modifications to the page table.
     /// Incorrect modifications may cause the kernel to crash (e.g., unmap the linear mapping.).
     unsafe fn do_unmap(&mut self, vaddr: Vaddr) -> Result<(), PageTableError> {
-        let last_entry = self.page_walk(vaddr, false).unwrap();
+        let last_entry = self
+            .do_page_walk_mut(vaddr, false)
+            .ok_or(PageTableError::InvalidModification)?;
         trace!("Page Table: Unmap vaddr:{:x?}", vaddr);
-        if !last_entry.is_used() && !last_entry.flags().is_present() {
+        if !last_entry.is_used() || !last_entry.flags().is_present() {
             return Err(PageTableError::InvalidModification);
         }
         last_entry.clear();
@@ -368,7 +391,9 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
     /// Incorrect modifications may cause the kernel to crash
     /// (e.g., make the linear mapping visible to the user mode applications.).
     unsafe fn do_protect(&mut self, vaddr: Vaddr, new_flags: T::F) -> Result<T::F, PageTableError> {
-        let last_entry = self.page_walk(vaddr, false).unwrap();
+        let last_entry = self
+            .do_page_walk_mut(vaddr, false)
+            .ok_or(PageTableError::InvalidModification)?;
         let old_flags = last_entry.flags();
         trace!(
             "Page Table: Protect vaddr:{:x?}, flags:{:x?}",
@@ -402,13 +427,21 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         }
     }
 
-    pub fn flags(&mut self, vaddr: Vaddr) -> Option<T::F> {
-        let last_entry = self.page_walk(vaddr, false)?;
-        Some(last_entry.flags())
+    /// Return the flags of the PTE for the target virtual memory address.
+    /// If the PTE does not exist, return `None`.
+    pub fn flags(&self, vaddr: Vaddr) -> Option<T::F> {
+        self.do_page_walk(vaddr).map(|entry| entry.flags())
     }
 
+    /// Return the root physical address of current `PageTable`.
     pub fn root_paddr(&self) -> Paddr {
         self.root_paddr
+    }
+
+    /// Determine whether the target virtual memory address is mapped.
+    pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
+        self.do_page_walk(vaddr)
+            .is_some_and(|last_entry| last_entry.is_used() && last_entry.flags().is_present())
     }
 }
 
@@ -428,12 +461,21 @@ pub unsafe fn table_of<'a, T: PageTableEntryTrait>(pa: Paddr) -> Option<&'a mut 
 
 /// translate a virtual address to physical address which cannot use offset to get physical address
 pub fn vaddr_to_paddr(vaddr: Vaddr) -> Option<Paddr> {
-    let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+    let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
     // Although we bypass the unsafe APIs provided by KernelMode, the purpose here is
     // only to obtain the corresponding physical address according to the mapping.
-    let last_entry = page_table.page_walk(vaddr, false)?;
+    let last_entry = page_table.do_page_walk(vaddr)?;
     // FIXME: Support huge page
     Some(last_entry.paddr() + (vaddr & (PAGE_SIZE - 1)))
+}
+
+fn calculate_pte_vaddr<T: PageTableEntryTrait>(
+    root_pa: Paddr,
+    target_va: Vaddr,
+    level: usize,
+) -> Vaddr {
+    debug_assert!(size_of::<T>() * (T::page_index(target_va, level) + 1) <= PAGE_SIZE);
+    paddr_to_vaddr(root_pa + size_of::<T>() * T::page_index(target_va, level))
 }
 
 pub fn init() {

@@ -31,6 +31,7 @@ impl VmSpace {
             memory_set: Arc::new(Mutex::new(MemorySet::new())),
         }
     }
+
     /// Activate the page table, load root physical address to cr3
     #[allow(clippy::missing_safety_doc)]
     pub unsafe fn activate(&self) {
@@ -80,10 +81,24 @@ impl VmSpace {
         Ok(base_addr)
     }
 
-    /// determine whether a vaddr is already mapped
+    /// Determine whether a `vaddr` is already mapped.
     pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
         let memory_set = self.memory_set.lock();
         memory_set.is_mapped(vaddr)
+    }
+
+    /// Determine whether the target `vaddr` is writable based on the page table.
+    pub fn is_writable(&self, vaddr: Vaddr) -> bool {
+        let memory_set = self.memory_set.lock();
+        let flags = memory_set.flags(vaddr);
+        flags.is_some_and(|flags| flags.contains(PageTableFlags::WRITABLE))
+    }
+
+    /// Determine whether the target `vaddr` is executable based on the page table.
+    pub fn is_executable(&self, vaddr: Vaddr) -> bool {
+        let memory_set = self.memory_set.lock();
+        let flags = memory_set.flags(vaddr);
+        flags.is_some_and(|flags| !flags.contains(PageTableFlags::NO_EXECUTE))
     }
 
     /// Unmaps the physical memory pages within the VM address range.
@@ -127,6 +142,16 @@ impl VmSpace {
             self.memory_set.lock().protect(addr, flags)
         }
         Ok(())
+    }
+
+    /// Deep-copy the current `VmSpace`.
+    ///
+    /// The generated new `VmSpace` possesses a `MemorySet` independent from the
+    /// original `VmSpace`, with initial contents identical to the original.
+    pub fn deep_copy(&self) -> Self {
+        Self {
+            memory_set: Arc::new(Mutex::new(self.memory_set.lock().clone())),
+        }
     }
 }
 

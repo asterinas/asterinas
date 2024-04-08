@@ -14,7 +14,7 @@ use crate::{
     Error,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MapArea {
     pub flags: PageTableFlags,
     pub start_va: Vaddr,
@@ -26,23 +26,6 @@ pub struct MemorySet {
     pub pt: PageTable<PageTableEntry>,
     /// all the map area, sort by the start virtual address
     areas: BTreeMap<Vaddr, MapArea>,
-}
-
-impl Clone for MapArea {
-    fn clone(&self) -> Self {
-        let mut mapper = BTreeMap::new();
-        for (&va, old) in &self.mapper {
-            let new = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
-            new.copy_from_frame(old);
-            mapper.insert(va, new.clone());
-        }
-        Self {
-            start_va: self.start_va,
-            size: self.size,
-            flags: self.flags,
-            mapper,
-        }
-    }
 }
 
 impl MapArea {
@@ -162,17 +145,15 @@ impl MemorySet {
         }
     }
 
-    /// determine whether a Vaddr is in a mapped area
+    /// Determine whether a Vaddr is in a mapped area
     pub fn is_mapped(&self, vaddr: Vaddr) -> bool {
-        for (start_address, map_area) in self.areas.iter() {
-            if *start_address > vaddr {
-                break;
-            }
-            if *start_address <= vaddr && vaddr < *start_address + map_area.mapped_size() {
-                return true;
-            }
-        }
-        false
+        self.pt.is_mapped(vaddr)
+    }
+
+    /// Return the flags of the PTE for the target virtual memory address.
+    /// If the PTE does not exist, return `None`.
+    pub fn flags(&self, vaddr: Vaddr) -> Option<PageTableFlags> {
+        self.pt.flags(vaddr)
     }
 
     pub fn new() -> Self {
@@ -263,6 +244,11 @@ impl MemorySet {
 
     pub fn protect(&mut self, addr: Vaddr, flags: PageTableFlags) {
         let va = addr;
+        // Temporary solution, since the `MapArea` currently only represents
+        // a single `VmFrame`.
+        if let Some(areas) = self.areas.get_mut(&va) {
+            areas.flags = flags;
+        }
         self.pt.protect(va, flags).unwrap();
     }
 }
