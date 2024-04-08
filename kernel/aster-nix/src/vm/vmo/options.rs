@@ -5,16 +5,16 @@
 use core::{marker::PhantomData, ops::Range};
 
 use align_ext::AlignExt;
-use aster_frame::vm::{VmAllocOptions, VmFrame};
+use aster_frame::{
+    collections::xarray::XArray,
+    vm::{VmAllocOptions, VmFrame},
+};
 use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 
-use super::{Pager, Vmo, VmoFlags, VmoRightsOp};
-use crate::{
-    prelude::*,
-    vm::vmo::{get_inherited_frames_from_parent, VmoInner, Vmo_},
-};
+use super::{Pager, Pages, Vmo, VmoFlags, VmoMark, VmoRightsOp};
+use crate::{prelude::*, vm::vmo::Vmo_};
 
 /// Options for allocating a root VMO.
 ///
@@ -124,35 +124,40 @@ impl<R: TRights> VmoOptions<TRightSet<R>> {
 
 fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Result<Vmo_> {
     let size = size.align_up(PAGE_SIZE);
-    let committed_pages = committed_pages_if_continuous(flags, size)?;
-    let vmo_inner = VmoInner {
-        pager,
-        size,
-        committed_pages,
-        inherited_pages: None,
-        is_cow: false,
+    let pages = {
+        let pages = committed_pages_if_continuous(flags, size)?;
+        if flags.contains(VmoFlags::RESIZABLE) {
+            Pages::Resizable(Mutex::new((pages, size)))
+        } else {
+            Pages::Nonresizable(Arc::new(Mutex::new(pages)), size)
+        }
     };
     Ok(Vmo_ {
+        pager,
         flags,
-        inner: Mutex::new(vmo_inner),
+        page_idx_offset: 0,
+        pages,
     })
 }
 
-fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<BTreeMap<usize, VmFrame>> {
+fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<VmFrame, VmoMark>> {
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
         let frames = VmAllocOptions::new(frames_num)
             .is_contiguous(true)
             .alloc()?;
-        let mut committed_pages = BTreeMap::new();
-        for (idx, frame) in frames.into_iter().enumerate() {
-            committed_pages.insert(idx * PAGE_SIZE, frame);
+        let mut committed_pages = XArray::new();
+        let mut cursor = committed_pages.cursor_mut(0);
+        for frame in frames {
+            cursor.store(frame);
+            cursor.next();
         }
+        drop(cursor);
         Ok(committed_pages)
     } else {
         // otherwise, we wait for the page is read or write
-        Ok(BTreeMap::new())
+        Ok(XArray::new())
     }
 }
 
@@ -280,7 +285,7 @@ impl VmoChildOptions<Rights, VmoSliceChild> {
             .check_rights(Rights::DUP)
             .expect("function new_slice_rights should called with rights Dup");
         Self {
-            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
+            flags: parent.flags(),
             parent,
             range,
             marker: PhantomData,
@@ -327,7 +332,7 @@ impl<R> VmoChildOptions<R, VmoCowChild> {
     /// Any pages that are beyond the parent's range are initially all zeros.
     pub fn new_cow(parent: Vmo<R>, range: Range<usize>) -> Self {
         Self {
-            flags: parent.flags() & Self::PARENT_FLAGS_MASK,
+            flags: parent.flags(),
             parent,
             range,
             marker: PhantomData,
@@ -432,7 +437,7 @@ impl<R: TRights> VmoChildOptions<TRightSet<R>, VmoCowChild> {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum ChildType {
+pub(crate) enum ChildType {
     Cow,
     Slice,
 }
@@ -443,63 +448,15 @@ fn alloc_child_vmo_(
     child_flags: VmoFlags,
     child_type: ChildType,
 ) -> Result<Vmo_> {
-    let child_vmo_start = range.start;
-    let child_vmo_end = range.end;
-    debug_assert!(child_vmo_start % PAGE_SIZE == 0);
-    debug_assert!(child_vmo_end % PAGE_SIZE == 0);
-    if child_vmo_start % PAGE_SIZE != 0 || child_vmo_end % PAGE_SIZE != 0 {
-        return_errno_with_message!(Errno::EINVAL, "vmo range does not aligned with PAGE_SIZE");
-    }
-    let parent_vmo_size = parent_vmo_.size();
-
-    let is_cow = {
-        let parent_vmo_inner = parent_vmo_.inner.lock();
-        match child_type {
-            ChildType::Slice => {
-                // A slice child should be inside parent vmo's range
-                debug_assert!(child_vmo_end <= parent_vmo_inner.size);
-                if child_vmo_end > parent_vmo_inner.size {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
-                        "slice child vmo cannot exceed parent vmo's size"
-                    );
-                }
-                false
-            }
-            ChildType::Cow => {
-                // A copy on Write child should intersect with parent vmo
-                debug_assert!(range.start <= parent_vmo_inner.size);
-                if range.start > parent_vmo_inner.size {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
-                        "COW vmo should overlap with its parent"
-                    );
-                }
-                true
-            }
-        }
-    };
     let parent_page_idx_offset = range.start / PAGE_SIZE;
-    let inherited_end = range.end.min(parent_vmo_size);
-    let cow_size = if inherited_end >= range.start {
-        inherited_end - range.start
-    } else {
-        0
-    };
-    let num_pages = cow_size / PAGE_SIZE;
-    let inherited_pages =
-        get_inherited_frames_from_parent(parent_vmo_, num_pages, parent_page_idx_offset, is_cow);
-    let vmo_inner = VmoInner {
-        pager: None,
-        size: child_vmo_end - child_vmo_start,
-        committed_pages: BTreeMap::new(),
-        inherited_pages: Some(inherited_pages),
-        is_cow,
-    };
-    Ok(Vmo_ {
+    let child_pages = parent_vmo_.clone_pages_for_child(child_type, child_flags, &range)?;
+    let new_vmo = Vmo_ {
+        pager: parent_vmo_.pager.clone(),
         flags: child_flags,
-        inner: Mutex::new(vmo_inner),
-    })
+        pages: child_pages,
+        page_idx_offset: parent_page_idx_offset + parent_vmo_.page_idx_offset(),
+    };
+    Ok(new_vmo)
 }
 
 /// A type to specify the "type" of a child, which is either a slice or a COW.
@@ -525,9 +482,9 @@ mod test {
     #[ktest]
     fn alloc_vmo() {
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap();
-        assert!(vmo.size() == PAGE_SIZE);
+        assert_eq!(vmo.size(), PAGE_SIZE);
         // the vmo is zeroed once allocated
-        assert!(vmo.read_val::<usize>(0).unwrap() == 0);
+        assert_eq!(vmo.read_val::<usize>(0).unwrap(), 0);
     }
 
     #[ktest]
@@ -536,7 +493,7 @@ mod test {
             .flags(VmoFlags::CONTIGUOUS)
             .alloc()
             .unwrap();
-        assert!(vmo.size() == 10 * PAGE_SIZE);
+        assert_eq!(vmo.size(), 10 * PAGE_SIZE);
     }
 
     #[ktest]
@@ -546,11 +503,11 @@ mod test {
         // write val
         vmo.write_val(111, &val).unwrap();
         let read_val: u8 = vmo.read_val(111).unwrap();
-        assert!(val == read_val);
+        assert_eq!(val, read_val);
         // bit endian
         vmo.write_bytes(222, &[0x12, 0x34, 0x56, 0x78]).unwrap();
         let read_val: u32 = vmo.read_val(222).unwrap();
-        assert!(read_val == 0x78563412)
+        assert_eq!(read_val, 0x78563412)
     }
 
     #[ktest]
@@ -562,36 +519,42 @@ mod test {
             .unwrap();
         // write parent, read child
         parent.write_val(1, &42u8).unwrap();
-        assert!(slice_child.read_val::<u8>(1).unwrap() == 42);
+        assert_eq!(slice_child.read_val::<u8>(1).unwrap(), 42);
         // write child, read parent
         slice_child.write_val(99, &0x1234u32).unwrap();
-        assert!(parent.read_val::<u32>(99).unwrap() == 0x1234);
+        assert_eq!(parent.read_val::<u32>(99).unwrap(), 0x1234);
     }
 
     #[ktest]
     fn cow_child() {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
+        parent.write_val(1, &42u8).unwrap();
+        parent.write_val(2, &16u8).unwrap();
         let parent_dup = parent.dup().unwrap();
         let cow_child = VmoChildOptions::new_cow(parent_dup, 0..10 * PAGE_SIZE)
             .alloc()
             .unwrap();
-        // write parent, read child
-        parent.write_val(1, &42u8).unwrap();
-        assert!(cow_child.read_val::<u8>(1).unwrap() == 42);
-        // write child to trigger copy on write, read child and parent
-        cow_child.write_val(99, &0x1234u32).unwrap();
-        assert!(cow_child.read_val::<u32>(99).unwrap() == 0x1234);
-        assert!(cow_child.read_val::<u32>(1).unwrap() == 42);
-        assert!(parent.read_val::<u32>(99).unwrap() == 0);
-        assert!(parent.read_val::<u32>(1).unwrap() == 42);
-        // write parent on already-copied page
-        parent.write_val(10, &123u8).unwrap();
-        assert!(parent.read_val::<u32>(10).unwrap() == 123);
-        assert!(cow_child.read_val::<u32>(10).unwrap() == 0);
-        // write parent on not-copied page
-        parent.write_val(PAGE_SIZE + 10, &12345u32).unwrap();
-        assert!(parent.read_val::<u32>(PAGE_SIZE + 10).unwrap() == 12345);
-        assert!(cow_child.read_val::<u32>(PAGE_SIZE + 10).unwrap() == 12345);
+        // Read child.
+        assert_eq!(cow_child.read_val::<u8>(1).unwrap(), 42);
+        assert_eq!(cow_child.read_val::<u8>(2).unwrap(), 16);
+        // Write parent to trigger copy-on-write. read child and parent.
+        parent.write_val(1, &64u8).unwrap();
+        assert_eq!(parent.read_val::<u8>(1).unwrap(), 64);
+        assert_eq!(cow_child.read_val::<u8>(1).unwrap(), 42);
+        // Write child to trigger copy on write, read child and parent
+        cow_child.write_val(2, &0x1234u32).unwrap();
+        assert_eq!(cow_child.read_val::<u32>(2).unwrap(), 0x1234);
+        assert_eq!(cow_child.read_val::<u8>(1).unwrap(), 42);
+        assert_eq!(parent.read_val::<u8>(2).unwrap(), 16);
+        assert_eq!(parent.read_val::<u8>(1).unwrap(), 64);
+        // Write parent on already-copied page
+        parent.write_val(1, &123u8).unwrap();
+        assert_eq!(parent.read_val::<u8>(1).unwrap(), 123);
+        assert_eq!(cow_child.read_val::<u8>(1).unwrap(), 42);
+        // Write parent on not-copied page
+        parent.write_val(2, &12345u32).unwrap();
+        assert_eq!(parent.read_val::<u32>(2).unwrap(), 12345);
+        assert_eq!(cow_child.read_val::<u32>(2).unwrap(), 0x1234);
     }
 
     #[ktest]
@@ -602,10 +565,10 @@ mod test {
             .unwrap();
         vmo.write_val(10, &42u8).unwrap();
         vmo.resize(2 * PAGE_SIZE).unwrap();
-        assert!(vmo.size() == 2 * PAGE_SIZE);
-        assert!(vmo.read_val::<u8>(10).unwrap() == 42);
+        assert_eq!(vmo.size(), 2 * PAGE_SIZE);
+        assert_eq!(vmo.read_val::<u8>(10).unwrap(), 42);
         vmo.write_val(PAGE_SIZE + 20, &123u8).unwrap();
         vmo.resize(PAGE_SIZE).unwrap();
-        assert!(vmo.read_val::<u8>(10).unwrap() == 42);
+        assert_eq!(vmo.read_val::<u8>(10).unwrap(), 42);
     }
 }

@@ -674,16 +674,33 @@ impl Vmar_ {
         self.new_cow(None)
     }
 
+    /// Set the entries in the page table associated with the current `Vmar` to read-only.
+    fn set_pt_read_only(&self) -> Result<()> {
+        let inner = self.inner.lock();
+        for (map_addr, vm_mapping) in &inner.vm_mappings {
+            vm_mapping.set_pt_read_only(self.vm_space())?;
+        }
+        Ok(())
+    }
+
     /// Create a new vmar by creating cow child for all mapped vmos.
     fn new_cow(&self, parent: Option<&Arc<Vmar_>>) -> Result<Arc<Self>> {
         let new_vmar_ = {
             let vmar_inner = VmarInner::new();
-            // If this is a root vmar, we create a new vmspace,
-            // Otherwise, we clone the vm space from parent.
+            // If this is not a root `Vmar`, we clone the `VmSpace` from parent.
+            //
+            // If this is a root `Vmar`, we leverage Copy-On-Write (COW) mechanism to
+            // clone the `VmSpace` to the child. We set all the page table entries
+            // in current `VmSpace` to be read-only, then clone the `VmSpace` to the child.
+            // In this way, initially, the child shares the same page table contents
+            // as the current `Vmar`. Later on, whether the current `Vmar` or the child
+            // `Vmar` needs to perform a write operation, the COW mechanism will be triggered,
+            // creating a new page for writing.
             let vm_space = if let Some(parent) = parent {
                 parent.vm_space().clone()
             } else {
-                VmSpace::new()
+                self.set_pt_read_only()?;
+                self.vm_space().deep_copy()
             };
             Vmar_::new(vmar_inner, vm_space, self.base, self.size, parent)
         };

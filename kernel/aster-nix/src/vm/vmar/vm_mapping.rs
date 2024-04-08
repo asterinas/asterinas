@@ -131,6 +131,22 @@ impl VmMapping {
         &self.vmo
     }
 
+    /// Set the entries in the page table associated with the current `VmMapping` to read-only.
+    pub(super) fn set_pt_read_only(&self, vm_space: &VmSpace) -> Result<()> {
+        let map_inner = self.inner.lock();
+        let mapped_addr = &map_inner.mapped_pages;
+        let perm = map_inner.perm;
+        if !perm.contains(VmPerm::W) {
+            return Ok(());
+        }
+
+        for page_idx in mapped_addr {
+            let map_addr = map_inner.page_map_addr(*page_idx);
+            vm_space.protect(&(map_addr..map_addr + PAGE_SIZE), perm - VmPerm::W)?;
+        }
+        Ok(())
+    }
+
     /// Add a new committed page and map it to vmspace. If copy on write is set, it's allowed to unmap the page at the same address.
     /// FIXME: This implementation based on the truth that we map one page at a time. If multiple pages are mapped together, this implementation may have problems
     pub(super) fn map_one_page(
@@ -167,6 +183,7 @@ impl VmMapping {
     pub fn vmo_offset(&self) -> usize {
         self.inner.lock().vmo_offset
     }
+
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         let vmo_read_offset = self.vmo_offset() + offset;
 
@@ -186,8 +203,23 @@ impl VmMapping {
 
         let page_idx_range = get_page_idx_range(&(vmo_write_offset..vmo_write_offset + buf.len()));
         let write_perm = VmPerm::W;
+
+        let mut page_addr =
+            self.map_to_addr() - self.vmo_offset() + page_idx_range.start * PAGE_SIZE;
         for page_idx in page_idx_range {
             self.check_perm(&page_idx, &write_perm)?;
+
+            let parent = self.parent.upgrade().unwrap();
+            let vm_space = parent.vm_space();
+
+            // The `VmMapping` has the write permission but the corresponding PTE is present and is read-only.
+            // This means this PTE is set to read-only due to the COW mechanism. In this situation we need to trigger a
+            // page fault before writing at the VMO to guarantee the consistency between VMO and the page table.
+            let need_page_fault = vm_space.is_mapped(page_addr) && !vm_space.is_writable(page_addr);
+            if need_page_fault {
+                self.handle_page_fault(page_addr, false, true)?;
+            }
+            page_addr += PAGE_SIZE;
         }
 
         self.vmo.write_bytes(vmo_write_offset, buf)?;
@@ -229,7 +261,7 @@ impl VmMapping {
 
         // If read access to cow vmo triggers page fault, the map should be readonly.
         // If user next tries to write to the frame, another page fault will be triggered.
-        let is_readonly = self.vmo.is_cow_child() && !write;
+        let is_readonly = self.vmo.is_cow_vmo() && !write;
         self.map_one_page(page_idx, frame, is_readonly)
     }
 
@@ -429,7 +461,7 @@ impl VmMappingInner {
         let vm_perm = {
             let mut perm = self.perm;
             if is_readonly {
-                debug_assert!(vmo.is_cow_child());
+                debug_assert!(vmo.is_cow_vmo());
                 perm -= VmPerm::W;
             }
             perm
@@ -443,7 +475,7 @@ impl VmMappingInner {
         };
 
         // Cow child allows unmapping the mapped page.
-        if vmo.is_cow_child() && vm_space.is_mapped(map_addr) {
+        if vmo.is_cow_vmo() && vm_space.is_mapped(map_addr) {
             vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
         }
 
