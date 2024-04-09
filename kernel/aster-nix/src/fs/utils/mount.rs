@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{Dentry, DentryKey, FileSystem, InodeType};
+use super::{Dentry, DentryKey, FileSystem, InodeType, Path};
 use crate::prelude::*;
 
 /// The MountNode can form a mount tree to maintain the mount information.
@@ -12,6 +12,8 @@ pub struct MountNode {
     mountpoint_dentry: Option<Arc<Dentry>>,
     /// The associated FS.
     fs: Arc<dyn FileSystem>,
+    /// The parent mount node.
+    parent: RwLock<Option<Weak<MountNode>>>,
     /// Child mount nodes which are mounted on one dentry of self.
     children: Mutex<BTreeMap<DentryKey, Arc<Self>>>,
     /// Reference to self.
@@ -27,16 +29,21 @@ impl MountNode {
     /// It is allowed to create a mount node even if the fs has been provided to another
     /// mount node. It is the fs's responsibility to ensure the data consistency.
     pub fn new_root(fs: Arc<dyn FileSystem>) -> Arc<Self> {
-        Self::new(fs, None)
+        Self::new(fs, None, None)
     }
 
     /// The internal constructor.
     ///
     /// Root mount node has no mountpoint which other mount nodes must have mountpoint.
-    fn new(fs: Arc<dyn FileSystem>, mountpoint: Option<Arc<Dentry>>) -> Arc<Self> {
+    fn new(
+        fs: Arc<dyn FileSystem>,
+        mountpoint: Option<Arc<Dentry>>,
+        parent_mount: Option<Weak<MountNode>>,
+    ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
-            root_dentry: Dentry::new_root(fs.root_inode(), weak_self.clone()),
+            root_dentry: Dentry::new_root(fs.root_inode()),
             mountpoint_dentry: mountpoint,
+            parent: RwLock::new(parent_mount),
             children: Mutex::new(BTreeMap::new()),
             fs,
             this: weak_self.clone(),
@@ -54,16 +61,20 @@ impl MountNode {
     /// mountpoint. It is the fs's responsibility to ensure the data consistency.
     ///
     /// Return the mounted child mount.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Arc<Dentry>) -> Result<Arc<Self>> {
-        if !Arc::ptr_eq(&mountpoint.mount_node(), &self.this()) {
+    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Arc<Path>) -> Result<Arc<Self>> {
+        if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
-        if mountpoint.type_() != InodeType::Dir {
+        if mountpoint.dentry().type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
-        let key = mountpoint.key();
-        let child_mount = Self::new(fs, Some(mountpoint.clone()));
+        let key = mountpoint.dentry().key();
+        let child_mount = Self::new(
+            fs,
+            Some(mountpoint.dentry().clone()),
+            Some(Arc::downgrade(mountpoint.mount_node())),
+        );
         self.children.lock().insert(key, child_mount.clone());
         Ok(child_mount)
     }
@@ -71,25 +82,28 @@ impl MountNode {
     /// Unmount a child mount node from the mountpoint and return it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
-    pub fn umount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
-        if !Arc::ptr_eq(&mountpoint.mount_node(), &self.this()) {
+    pub fn umount(&self, mountpoint: &Path) -> Result<Arc<Self>> {
+        if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
 
         let child_mount = self
             .children
             .lock()
-            .remove(&mountpoint.key())
+            .remove(&mountpoint.dentry().key())
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "can not find child mount"))?;
         Ok(child_mount)
     }
 
     /// Try to get a child mount node from the mountpoint.
-    pub fn get(&self, mountpoint: &Dentry) -> Option<Arc<Self>> {
-        if !Arc::ptr_eq(&mountpoint.mount_node(), &self.this()) {
+    pub fn get(&self, mountpoint: &Path) -> Option<Arc<Self>> {
+        if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return None;
         }
-        self.children.lock().get(&mountpoint.key()).cloned()
+        self.children
+            .lock()
+            .get(&mountpoint.dentry().key())
+            .cloned()
     }
 
     /// Get the root dentry of this mount node.
@@ -115,10 +129,13 @@ impl MountNode {
     }
 
     /// Try to get the parent mount node.
-    pub fn parent(&self) -> Option<Arc<Self>> {
-        self.mountpoint_dentry
-            .as_ref()
-            .map(|dentry| dentry.mount_node())
+    pub fn parent(&self) -> Option<Weak<Self>> {
+        self.parent.read().as_ref().cloned()
+    }
+
+    pub fn set_parent(&self, mount_node: Arc<MountNode>) {
+        let mut parent = self.parent.write();
+        *parent = Some(Arc::downgrade(&mount_node));
     }
 
     /// Get strong reference to self.

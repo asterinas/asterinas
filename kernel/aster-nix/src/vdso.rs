@@ -220,7 +220,7 @@ impl Vdso {
                 let vdso_path = FsPath::new(AT_FDCWD, "/lib/x86_64-linux-gnu/vdso64.so").unwrap();
                 let fs_resolver = FsResolver::new();
                 let vdso_lib = fs_resolver.lookup(&vdso_path).unwrap();
-                vdso_lib.inode().page_cache().unwrap()
+                vdso_lib.dentry().inode().page_cache().unwrap()
             };
             let mut vdso_text = Box::new([0u8; PAGE_SIZE]);
             vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();

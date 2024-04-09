@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{fs::utils::Dentry, net::socket::util::socket_addr::SocketAddr, prelude::*};
+use crate::{fs::utils::Path, net::socket::util::socket_addr::SocketAddr, prelude::*};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnixSocketAddr {
@@ -10,7 +10,7 @@ pub enum UnixSocketAddr {
 
 #[derive(Clone)]
 pub(super) enum UnixSocketAddrBound {
-    Path(Arc<Dentry>),
+    Path(Arc<Path>),
     Abstract(String),
 }
 
@@ -18,7 +18,9 @@ impl PartialEq for UnixSocketAddrBound {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Abstract(l0), Self::Abstract(r0)) => l0 == r0,
-            (Self::Path(l0), Self::Path(r0)) => Arc::ptr_eq(l0.inode(), r0.inode()),
+            (Self::Path(l0), Self::Path(r0)) => {
+                Arc::ptr_eq(l0.dentry().inode(), r0.dentry().inode())
+            }
             _ => false,
         }
     }
@@ -38,8 +40,8 @@ impl TryFrom<SocketAddr> for UnixSocketAddr {
 impl From<UnixSocketAddrBound> for UnixSocketAddr {
     fn from(value: UnixSocketAddrBound) -> Self {
         match value {
-            UnixSocketAddrBound::Path(dentry) => {
-                let abs_path = dentry.abs_path();
+            UnixSocketAddrBound::Path(path) => {
+                let abs_path = path.abs_path();
                 Self::Path(abs_path)
             }
             UnixSocketAddrBound::Abstract(name) => Self::Abstract(name),

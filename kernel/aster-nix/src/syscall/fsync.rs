@@ -18,7 +18,7 @@ pub fn sys_fsync(fd: FileDesc) -> Result<SyscallReturn> {
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
             .ok_or(Error::with_message(Errno::EINVAL, "not inode"))?;
-        inode_handle.dentry().clone()
+        inode_handle.path().dentry().clone()
     };
     dentry.sync()?;
     Ok(SyscallReturn::Return(0))

@@ -8,11 +8,11 @@ use crate::prelude::*;
 
 impl InodeHandle<Rights> {
     pub fn new(
-        dentry: Arc<Dentry>,
+        path: Arc<Path>,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
-        let inode = dentry.inode();
+        let inode = path.dentry().inode();
         if access_mode.is_readable() && !inode.mode()?.is_readable() {
             return_errno_with_message!(Errno::EACCES, "File is not readable");
         }
@@ -30,7 +30,7 @@ impl InodeHandle<Rights> {
         };
 
         let inner = Arc::new(InodeHandle_ {
-            dentry,
+            path,
             file_io,
             offset: Mutex::new(0),
             access_mode,
@@ -116,6 +116,6 @@ impl FileLike for InodeHandle<Rights> {
     }
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {
-        self.dentry().inode().as_device()
+        self.0.path.dentry().inode().as_device()
     }
 }

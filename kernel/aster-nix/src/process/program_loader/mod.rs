@@ -11,7 +11,7 @@ use super::process_vm::ProcessVm;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        utils::Dentry,
+        utils::{Dentry, Path},
     },
     prelude::*,
 };
@@ -25,14 +25,14 @@ use crate::{
 /// because the interpreter is usually an elf binary(e.g., /bin/bash)
 pub fn load_program_to_vm(
     process_vm: &ProcessVm,
-    elf_file: Arc<Dentry>,
+    elf_file: Arc<Path>,
     argv: Vec<CString>,
     envp: Vec<CString>,
     fs_resolver: &FsResolver,
     recursion_limit: usize,
 ) -> Result<(String, ElfLoadInfo)> {
     let abs_path = elf_file.abs_path();
-    let inode = elf_file.inode();
+    let inode = elf_file.dentry().inode();
     let file_header = {
         // read the first page of file header
         let mut file_header_buffer = Box::new([0u8; PAGE_SIZE]);
@@ -49,7 +49,7 @@ pub fn load_program_to_vm(
             let fs_path = FsPath::new(AT_FDCWD, &filename)?;
             fs_resolver.lookup(&fs_path)?
         };
-        check_executable_file(&interpreter)?;
+        check_executable_file(interpreter.dentry())?;
         return load_program_to_vm(
             process_vm,
             interpreter,

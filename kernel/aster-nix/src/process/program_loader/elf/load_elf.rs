@@ -12,7 +12,7 @@ use super::elf_file::Elf;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        utils::Dentry,
+        utils::{Dentry, Path},
     },
     prelude::*,
     process::{
@@ -35,7 +35,7 @@ use crate::{
 pub fn load_elf_to_vm(
     process_vm: &ProcessVm,
     file_header: &[u8],
-    elf_file: Arc<Dentry>,
+    elf_file: Arc<Path>,
     fs_resolver: &FsResolver,
     argv: Vec<CString>,
     envp: Vec<CString>,
@@ -101,11 +101,11 @@ fn lookup_and_parse_ldso(
     };
     let ldso_elf = {
         let mut buf = Box::new([0u8; PAGE_SIZE]);
-        let inode = ldso_file.inode();
+        let inode = ldso_file.dentry().inode();
         inode.read_at(0, &mut *buf)?;
         Elf::parse_elf(&*buf)?
     };
-    Ok((ldso_file, ldso_elf))
+    Ok((ldso_file.dentry().clone(), ldso_elf))
 }
 
 fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {

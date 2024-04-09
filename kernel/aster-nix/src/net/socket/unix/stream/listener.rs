@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        utils::{Dentry, Inode},
+        utils::{Inode, Path},
     },
     net::socket::{
         unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
@@ -91,10 +91,10 @@ impl BacklogTable {
 
     fn add_backlog(&self, addr: &UnixSocketAddrBound, backlog: usize) -> Result<()> {
         let inode = {
-            let UnixSocketAddrBound::Path(dentry) = addr else {
+            let UnixSocketAddrBound::Path(path) = addr else {
                 todo!()
             };
-            create_keyable_inode(dentry)
+            create_keyable_inode(path)
         };
 
         let mut backlog_sockets = self.backlog_sockets.write();
@@ -108,10 +108,10 @@ impl BacklogTable {
 
     fn get_backlog(&self, addr: &UnixSocketAddrBound) -> Result<Arc<Backlog>> {
         let inode = {
-            let UnixSocketAddrBound::Path(dentry) = addr else {
+            let UnixSocketAddrBound::Path(path) = addr else {
                 todo!()
             };
-            create_keyable_inode(dentry)
+            create_keyable_inode(path)
         };
 
         let backlog_sockets = self.backlog_sockets.read();
@@ -212,8 +212,8 @@ impl Backlog {
     }
 }
 
-fn create_keyable_inode(dentry: &Arc<Dentry>) -> KeyableWeak<dyn Inode> {
-    let weak_inode = Arc::downgrade(dentry.inode());
+fn create_keyable_inode(path: &Arc<Path>) -> KeyableWeak<dyn Inode> {
+    let weak_inode = Arc::downgrade(path.dentry().inode());
     KeyableWeak::from(weak_inode)
 }
 

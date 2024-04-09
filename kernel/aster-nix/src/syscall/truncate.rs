@@ -28,21 +28,21 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
 
 pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_TRUNCATE);
-    let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
-    debug!("path = {:?}, length = {}", path, len);
+    let pathname = read_cstring_from_user(path_ptr, PATH_MAX)?;
+    debug!("pathname = {:?}, length = {}", pathname, len);
 
     check_length(len)?;
 
     let current = current!();
-    let dentry = {
-        let path = path.to_string_lossy();
-        if path.is_empty() {
+    let path = {
+        let pathname = pathname.to_string_lossy();
+        if pathname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
+        let fs_path = FsPath::new(AT_FDCWD, pathname.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
-    dentry.resize(len as usize)?;
+    path.dentry().resize(len as usize)?;
     Ok(SyscallReturn::Return(0))
 }
 

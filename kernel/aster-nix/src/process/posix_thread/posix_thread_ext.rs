@@ -41,7 +41,7 @@ impl PosixThreadExt for Thread {
             fs_resolver.lookup(&fs_path)?
         };
         let (_, elf_load_info) =
-            load_program_to_vm(process_vm, elf_file, argv, envp, fs_resolver, 1)?;
+            load_program_to_vm(process_vm, elf_file.clone(), argv, envp, fs_resolver, 1)?;
 
         let vm_space = process_vm.root_vmar().vm_space().clone();
         let mut cpu_ctx = UserContext::default();
