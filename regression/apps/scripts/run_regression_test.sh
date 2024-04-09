@@ -10,3 +10,5 @@ cd ${SCRIPT_DIR}
 ./shell_cmd.sh
 ./process.sh
 ./network.sh
+
+echo "All regression tests passed."
