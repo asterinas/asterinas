@@ -65,10 +65,10 @@ for syscall_test in $(find $TEST_BIN_DIR/. -name \*_test) ; do
     fi
 done
 
-echo -e "$GREEN$PASSED_TESTS$NC of $GREEN$TESTS$NC test cases are passed."
+echo -e "$GREEN$PASSED_TESTS$NC of $GREEN$TESTS$NC test cases passed."
 [ $PASSED_TESTS -ne $TESTS ] && RESULT=1
 if [ $TESTS != $PASSED_TESTS ]; then
-    echo -e "The $RED$(($TESTS-$PASSED_TESTS))$NC failed test cases in this run are as follows:"
+    echo -e "The $RED$(($TESTS-$PASSED_TESTS))$NC failed test cases are as follows:"
     cat $FAIL_CASES
 fi
 

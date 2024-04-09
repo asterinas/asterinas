@@ -26,12 +26,10 @@ BUILD_SYSCALL_TEST := 1
 CARGO_OSDK_ARGS += --kcmd_args="SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)"
 CARGO_OSDK_ARGS += --kcmd_args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
 CARGO_OSDK_ARGS += --init_args="/opt/syscall_test/run_syscall_test.sh"
-endif
-ifeq ($(AUTO_TEST), regression)
+else ifeq ($(AUTO_TEST), regression)
 CARGO_OSDK_ARGS += --init_args="/regression/run_regression_test.sh"
-endif
-ifeq ($(AUTO_TEST), boot)
-CARGO_OSDK_ARGS += --init_args="-c exit 0"
+else ifeq ($(AUTO_TEST), boot)
+CARGO_OSDK_ARGS += --init_args="/regression/boot_hello.sh"
 endif
 
 ifeq ($(RELEASE_MODE), 1)
@@ -122,7 +120,7 @@ initramfs:
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
-	cargo osdk build $(CARGO_OSDK_ARGS)
+	@cargo osdk build $(CARGO_OSDK_ARGS)
 
 .PHONY: tools
 tools:
@@ -131,6 +129,14 @@ tools:
 .PHONY: run
 run: build
 	@cargo osdk run $(CARGO_OSDK_ARGS)
+# Check the running status of auto tests from the QEMU log
+ifeq ($(AUTO_TEST), syscall)
+	@tail --lines 100 qemu.log | grep -q "^.* of .* test cases passed." || (echo "Syscall test failed" && exit 1)
+else ifeq ($(AUTO_TEST), regression)
+	@tail --lines 100 qemu.log | grep -q "^All regression tests passed." || (echo "Regression test failed" && exit 1)
+else ifeq ($(AUTO_TEST), boot)
+	@tail --lines 100 qemu.log | grep -q "^Successfully booted." || (echo "Boot test failed" && exit 1)
+endif
 
 .PHONY: gdb_server
 gdb_server: build
