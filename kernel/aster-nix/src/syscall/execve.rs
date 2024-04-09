@@ -8,7 +8,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::{Dentry, InodeType},
+        utils::{Dentry, InodeType, Path},
     },
     log_syscall_entry,
     prelude::*,
@@ -61,29 +61,29 @@ fn lookup_executable_file(
     dfd: FileDesc,
     filename: String,
     flags: OpenFlags,
-) -> Result<Arc<Dentry>> {
+) -> Result<Arc<Path>> {
     let current = current!();
     let fs_resolver = current.fs().read();
-    let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
+    let path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
         fs_resolver.lookup_from_fd(dfd)
     } else {
         let fs_path = FsPath::new(dfd, &filename)?;
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            let dentry = fs_resolver.lookup_no_follow(&fs_path)?;
-            if dentry.type_() == InodeType::SymLink {
+            let path = fs_resolver.lookup_no_follow(&fs_path)?;
+            if path.dentry().type_() == InodeType::SymLink {
                 return_errno_with_message!(Errno::ELOOP, "the executable file is a symlink");
             }
-            Ok(dentry)
+            Ok(path)
         } else {
             fs_resolver.lookup(&fs_path)
         }
     }?;
-    check_executable_file(&dentry)?;
-    Ok(dentry)
+    check_executable_file(path.dentry())?;
+    Ok(path)
 }
 
 fn do_execve(
-    elf_file: Arc<Dentry>,
+    elf_file: Arc<Path>,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     context: &mut UserContext,
@@ -121,8 +121,8 @@ fn do_execve(
     debug!("load elf in execve succeeds");
 
     let credentials = credentials_mut();
-    set_uid_from_elf(&credentials, &elf_file)?;
-    set_gid_from_elf(&credentials, &elf_file)?;
+    set_uid_from_elf(&credentials, elf_file.dentry())?;
+    set_gid_from_elf(&credentials, elf_file.dentry())?;
 
     // set executable path
     current.set_executable_path(new_executable_path);

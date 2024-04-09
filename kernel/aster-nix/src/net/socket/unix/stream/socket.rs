@@ -11,7 +11,7 @@ use crate::{
     fs::{
         file_handle::FileLike,
         fs_resolver::FsPath,
-        utils::{Dentry, InodeType, StatusFlags},
+        utils::{InodeType, Path, StatusFlags},
     },
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
@@ -161,9 +161,9 @@ impl Socket for UnixStreamSocket {
                 UnixSocketAddr::Abstract(abstract_name) => {
                     UnixSocketAddrBound::Abstract(abstract_name)
                 }
-                UnixSocketAddr::Path(path) => {
-                    let dentry = lookup_socket_file(&path)?;
-                    UnixSocketAddrBound::Path(dentry)
+                UnixSocketAddr::Path(pathname) => {
+                    let path = lookup_socket_file(&pathname)?;
+                    UnixSocketAddrBound::Path(path)
                 }
             }
         };
@@ -287,20 +287,20 @@ impl Drop for UnixStreamSocket {
     }
 }
 
-fn lookup_socket_file(path: &str) -> Result<Arc<Dentry>> {
-    let dentry = {
+fn lookup_socket_file(pathname: &str) -> Result<Arc<Path>> {
+    let path = {
         let current = current!();
         let fs = current.fs().read();
-        let fs_path = FsPath::try_from(path)?;
+        let fs_path = FsPath::try_from(pathname)?;
         fs.lookup(&fs_path)?
     };
 
-    if dentry.type_() != InodeType::Socket {
+    if path.dentry().type_() != InodeType::Socket {
         return_errno_with_message!(Errno::ENOTSOCK, "not a socket file")
     }
 
-    if !dentry.mode()?.is_readable() || !dentry.mode()?.is_writable() {
+    if !path.dentry().mode()?.is_readable() || !path.dentry().mode()?.is_writable() {
         return_errno_with_message!(Errno::EACCES, "the socket cannot be read or written")
     }
-    Ok(dentry)
+    Ok(path)
 }

@@ -16,7 +16,7 @@ use crate::{
         device::Device,
         file_handle::FileLike,
         utils::{
-            AccessMode, Dentry, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
+            AccessMode, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, Path, SeekFrom,
             StatusFlags,
         },
     },
@@ -28,7 +28,7 @@ use crate::{
 pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
 
 struct InodeHandle_ {
-    dentry: Arc<Dentry>,
+    path: Arc<Path>,
     /// `file_io` is Similar to `file_private` field in `file` structure in linux. If
     /// `file_io` is Some, typical file operations including `read`, `write`, `poll`,
     /// `ioctl` will be provided by `file_io`, instead of `dentry`.
@@ -47,9 +47,9 @@ impl InodeHandle_ {
         }
 
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().read_direct_at(*offset, buf)?
+            self.path.dentry().inode().read_direct_at(*offset, buf)?
         } else {
-            self.dentry.inode().read_at(*offset, buf)?
+            self.path.dentry().inode().read_at(*offset, buf)?
         };
 
         *offset += len;
@@ -64,12 +64,12 @@ impl InodeHandle_ {
         }
 
         if self.status_flags().contains(StatusFlags::O_APPEND) {
-            *offset = self.dentry.size();
+            *offset = self.path.dentry().size();
         }
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().write_direct_at(*offset, buf)?
+            self.path.dentry().inode().write_direct_at(*offset, buf)?
         } else {
-            self.dentry.inode().write_at(*offset, buf)?
+            self.path.dentry().inode().write_at(*offset, buf)?
         };
 
         *offset += len;
@@ -82,9 +82,9 @@ impl InodeHandle_ {
         }
 
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().read_direct_all(buf)?
+            self.path.dentry().inode().read_direct_all(buf)?
         } else {
-            self.dentry.inode().read_all(buf)?
+            self.path.dentry().inode().read_all(buf)?
         };
         Ok(len)
     }
@@ -99,7 +99,7 @@ impl InodeHandle_ {
                 off as isize
             }
             SeekFrom::End(off /* as isize */) => {
-                let file_size = self.dentry.size() as isize;
+                let file_size = self.path.dentry().size() as isize;
                 assert!(file_size >= 0);
                 file_size
                     .checked_add(off)
@@ -127,7 +127,7 @@ impl InodeHandle_ {
         if self.status_flags().contains(StatusFlags::O_APPEND) {
             return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
         }
-        self.dentry.resize(new_size)
+        self.path.dentry().resize(new_size)
     }
 
     pub fn access_mode(&self) -> AccessMode {
@@ -146,7 +146,7 @@ impl InodeHandle_ {
 
     pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let mut offset = self.offset.lock();
-        let read_cnt = self.dentry.inode().readdir_at(*offset, visitor)?;
+        let read_cnt = self.path.dentry().inode().readdir_at(*offset, visitor)?;
         *offset += read_cnt;
         Ok(read_cnt)
     }
@@ -156,7 +156,7 @@ impl InodeHandle_ {
             return file_io.poll(mask, poller);
         }
 
-        self.dentry.inode().poll(mask, poller)
+        self.path.dentry().inode().poll(mask, poller)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
@@ -164,11 +164,11 @@ impl InodeHandle_ {
             return file_io.ioctl(cmd, arg);
         }
 
-        self.dentry.inode().ioctl(cmd, arg)
+        self.path.dentry().inode().ioctl(cmd, arg)
     }
 }
 
-#[inherit_methods(from = "self.dentry")]
+#[inherit_methods(from = "self.path.dentry()")]
 impl InodeHandle_ {
     pub fn size(&self) -> usize;
     pub fn metadata(&self) -> Metadata;
@@ -183,7 +183,7 @@ impl InodeHandle_ {
 impl Debug for InodeHandle_ {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("InodeHandle_")
-            .field("dentry", &self.dentry)
+            .field("path", &self.path)
             .field("offset", &self.offset())
             .field("access_mode", &self.access_mode())
             .field("status_flags", &self.status_flags())
@@ -193,8 +193,8 @@ impl Debug for InodeHandle_ {
 
 /// Methods for both dyn and static
 impl<R> InodeHandle<R> {
-    pub fn dentry(&self) -> &Arc<Dentry> {
-        &self.0.dentry
+    pub fn path(&self) -> &Arc<Path> {
+        &self.0.path
     }
 }
 

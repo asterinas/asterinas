@@ -16,7 +16,7 @@ pub fn sys_chdir(pathname_addr: Vaddr) -> Result<SyscallReturn> {
 
     let current = current!();
     let mut fs = current.fs().write();
-    let dentry = {
+    let path = {
         let pathname = pathname.to_string_lossy();
         if pathname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
@@ -24,10 +24,10 @@ pub fn sys_chdir(pathname_addr: Vaddr) -> Result<SyscallReturn> {
         let fs_path = FsPath::try_from(pathname.as_ref())?;
         fs.lookup(&fs_path)?
     };
-    if dentry.type_() != InodeType::Dir {
+    if path.dentry().type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
-    fs.set_cwd(dentry);
+    fs.set_cwd(path);
     Ok(SyscallReturn::Return(0))
 }
 
@@ -36,17 +36,17 @@ pub fn sys_fchdir(fd: FileDesc) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let current = current!();
-    let dentry = {
+    let path = {
         let file_table = current.file_table().lock();
         let file = file_table.get_file(fd)?;
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
             .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-        inode_handle.dentry().clone()
+        inode_handle.path().clone()
     };
-    if dentry.type_() != InodeType::Dir {
+    if path.dentry().type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
-    current.fs().write().set_cwd(dentry);
+    current.fs().write().set_cwd(path);
     Ok(SyscallReturn::Return(0))
 }

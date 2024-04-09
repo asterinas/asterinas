@@ -112,7 +112,6 @@ fn init_thread() {
         karg.get_initproc_envp().to_vec(),
     )
     .expect("Run init process failed.");
-
     // Wait till initproc become zombie.
     while !initproc.is_zombie() {
         // We don't have preemptive scheduler now.

@@ -31,7 +31,7 @@ pub fn sys_symlinkat(
     if target.is_empty() {
         return_errno_with_message!(Errno::ENOENT, "target is empty");
     }
-    let (dir_dentry, link_name) = {
+    let (dir_path, link_name) = {
         let linkpath = linkpath.to_string_lossy();
         if linkpath.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "linkpath is empty");
@@ -43,7 +43,7 @@ pub fn sys_symlinkat(
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
 
-    let new_dentry = dir_dentry.create(
+    let new_dentry = dir_path.dentry().create(
         &link_name,
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),
