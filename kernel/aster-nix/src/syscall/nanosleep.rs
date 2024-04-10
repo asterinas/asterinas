@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use super::{SyscallReturn, SYS_CLOCK_NANOSLEEP};
+use super::{SyscallReturn, SYS_CLOCK_NANOSLEEP, SYS_NANOSLEEP};
 use crate::{
     log_syscall_entry,
     prelude::*,
@@ -10,6 +10,16 @@ use crate::{
     time::{clockid_t, now_as_duration, timespec_t, ClockID, TIMER_ABSTIME},
     util::{read_val_from_user, write_val_to_user},
 };
+
+pub fn sys_nanosleep(
+    request_timespec_addr: Vaddr,
+    remain_timespec_addr: Vaddr,
+) -> Result<SyscallReturn> {
+    log_syscall_entry!(SYS_NANOSLEEP);
+    let clock_id = ClockID::CLOCK_MONOTONIC;
+
+    do_clock_nanosleep(clock_id, false, request_timespec_addr, remain_timespec_addr)
+}
 
 pub fn sys_clock_nanosleep(
     clockid: clockid_t,
@@ -19,7 +29,7 @@ pub fn sys_clock_nanosleep(
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_CLOCK_NANOSLEEP);
     let clock_id = ClockID::try_from(clockid)?;
-    let abs_time = if flags == 0 {
+    let is_abs_time = if flags == 0 {
         false
     } else if flags == TIMER_ABSTIME {
         true
@@ -27,37 +37,57 @@ pub fn sys_clock_nanosleep(
         unreachable!()
     };
 
-    let duration = {
+    do_clock_nanosleep(
+        clock_id,
+        is_abs_time,
+        request_timespec_addr,
+        remain_timespec_addr,
+    )
+}
+
+fn do_clock_nanosleep(
+    clock_id: ClockID,
+    is_abs_time: bool,
+    request_timespec_addr: Vaddr,
+    remain_timespec_addr: Vaddr,
+) -> Result<SyscallReturn> {
+    let request_time = {
         let timespec = read_val_from_user::<timespec_t>(request_timespec_addr)?;
-        if abs_time {
-            todo!("deal with abs time");
-        }
         Duration::from(timespec)
     };
 
     debug!(
-        "clockid = {:?}, abs_time = {}, duration = {:?}, remain_timespec_addr = 0x{:x}",
-        clock_id, abs_time, duration, remain_timespec_addr
+        "clockid = {:?}, is_abs_time = {}, request_time = {:?}, remain_timespec_addr = 0x{:x}",
+        clock_id, is_abs_time, request_time, remain_timespec_addr
     );
 
     let start_time = now_as_duration(&clock_id)?;
+    let timeout = if is_abs_time {
+        if request_time < start_time {
+            return Ok(SyscallReturn::Return(0));
+        }
+
+        request_time - start_time
+    } else {
+        request_time
+    };
 
     // FIXME: sleeping thread can only be interrupted by signals that will call signal handler or terminate
     // current process. i.e., the signals that should be ignored will not interrupt sleeping thread.
     let pauser = Pauser::new();
 
-    let res = pauser.pause_until_or_timeout(|| None, &duration);
+    let res = pauser.pause_until_or_timeout(|| None, &timeout);
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
         Err(e) if e.error() == Errno::EINTR => {
             let end_time = now_as_duration(&clock_id)?;
 
-            if end_time >= start_time + duration {
+            if end_time >= start_time + timeout {
                 return Ok(SyscallReturn::Return(0));
             }
 
-            if remain_timespec_addr != 0 {
-                let remaining_duration = (start_time + duration) - end_time;
+            if remain_timespec_addr != 0 && !is_abs_time {
+                let remaining_duration = (start_time + timeout) - end_time;
                 let remaining_timespec = timespec_t::from(remaining_duration);
                 write_val_to_user(remain_timespec_addr, &remaining_timespec)?;
             }
