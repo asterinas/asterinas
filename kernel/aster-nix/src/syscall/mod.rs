@@ -27,7 +27,6 @@ use crate::{
         chown::{sys_chown, sys_fchown, sys_fchownat, sys_lchown},
         chroot::sys_chroot,
         clock_gettime::sys_clock_gettime,
-        clock_nanosleep::sys_clock_nanosleep,
         clone::sys_clone,
         close::sys_close,
         dup::{sys_dup, sys_dup2},
@@ -59,6 +58,7 @@ use crate::{
         mmap::sys_mmap,
         mprotect::sys_mprotect,
         munmap::sys_munmap,
+        nanosleep::{sys_clock_nanosleep, sys_nanosleep},
         open::{sys_open, sys_openat},
         pause::sys_pause,
         pipe::{sys_pipe, sys_pipe2},
@@ -107,7 +107,6 @@ mod chmod;
 mod chown;
 mod chroot;
 mod clock_gettime;
-mod clock_nanosleep;
 mod clone;
 mod close;
 mod connect;
@@ -150,6 +149,7 @@ mod mkdir;
 mod mmap;
 mod mprotect;
 mod munmap;
+mod nanosleep;
 mod open;
 mod pause;
 mod pipe;
@@ -261,6 +261,7 @@ define_syscall_nums!(
     SYS_DUP = 32,
     SYS_DUP2 = 33,
     SYS_PAUSE = 34,
+    SYS_NANOSLEEP = 35,
     SYS_ALARM = 37,
     SYS_GETPID = 39,
     SYS_SOCKET = 41,
@@ -449,6 +450,7 @@ pub fn syscall_dispatch(
         SYS_DUP => syscall_handler!(1, sys_dup, args),
         SYS_DUP2 => syscall_handler!(2, sys_dup2, args),
         SYS_PAUSE => syscall_handler!(0, sys_pause),
+        SYS_NANOSLEEP => syscall_handler!(2, sys_nanosleep, args),
         SYS_ALARM => syscall_handler!(1, sys_alarm, args),
         SYS_GETPID => syscall_handler!(0, sys_getpid),
         SYS_SOCKET => syscall_handler!(3, sys_socket, args),
