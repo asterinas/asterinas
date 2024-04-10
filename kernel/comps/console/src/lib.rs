@@ -28,7 +28,7 @@ pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {
         .get()
         .unwrap()
         .console_device_table
-        .lock()
+        .lock_irq_disabled()
         .insert(name, device);
 }
 
@@ -37,13 +37,17 @@ pub fn get_device(str: &str) -> Option<Arc<dyn AnyConsoleDevice>> {
         .get()
         .unwrap()
         .console_device_table
-        .lock()
+        .lock_irq_disabled()
         .get(str)
         .cloned()
 }
 
 pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
-    let console_devs = COMPONENT.get().unwrap().console_device_table.lock();
+    let console_devs = COMPONENT
+        .get()
+        .unwrap()
+        .console_device_table
+        .lock_irq_disabled();
     console_devs
         .iter()
         .map(|(name, device)| (name.clone(), device.clone()))
