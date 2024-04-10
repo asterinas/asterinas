@@ -360,8 +360,8 @@ impl Ext2 {
             block_group.sync_metadata()?;
         }
 
-        let mut bio_waiter = BioWaiter::new();
         // Writes back the main superblock and group descriptor table.
+        let mut bio_waiter = BioWaiter::new();
         let raw_super_block = RawSuperBlock::from((*super_block).deref());
         bio_waiter.concat(
             self.block_device
@@ -371,11 +371,16 @@ impl Ext2 {
             super_block.group_descriptors_bid(0),
             &self.group_descriptors_segment,
         )?);
+        bio_waiter
+            .wait()
+            .ok_or_else(|| Error::with_message(Errno::EIO, "failed to sync main metadata"))?;
+        drop(bio_waiter);
 
         // Writes back the backups of superblock and group descriptor table.
         let mut raw_super_block_backup = raw_super_block;
         for idx in 1..super_block.block_groups_count() {
             if super_block.is_backup_group(idx as usize) {
+                let mut bio_waiter = BioWaiter::new();
                 raw_super_block_backup.block_group_idx = idx as u16;
                 bio_waiter.concat(self.block_device.write_bytes_async(
                     super_block.bid(idx as usize).to_offset(),
@@ -385,13 +390,11 @@ impl Ext2 {
                     super_block.group_descriptors_bid(idx as usize),
                     &self.group_descriptors_segment,
                 )?);
+                bio_waiter.wait().ok_or_else(|| {
+                    Error::with_message(Errno::EIO, "failed to sync backup metadata")
+                })?;
             }
         }
-
-        // Waits for the completion of all submitted bios.
-        bio_waiter
-            .wait()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "failed to sync metadata of fs"))?;
 
         // Reset to clean.
         super_block.clear_dirty();

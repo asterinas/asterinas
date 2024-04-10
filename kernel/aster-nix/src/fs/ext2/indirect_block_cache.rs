@@ -2,7 +2,11 @@
 
 use lru::LruCache;
 
-use super::{block_ptr::BID_SIZE, fs::Ext2, prelude::*};
+use super::{
+    block_ptr::{Ext2Bid, BID_SIZE},
+    fs::Ext2,
+    prelude::*,
+};
 
 /// `IndirectBlockCache` is a caching structure that stores `IndirectBlock` objects for Ext2.
 ///
@@ -11,7 +15,7 @@ use super::{block_ptr::BID_SIZE, fs::Ext2, prelude::*};
 /// for new blocks.
 #[derive(Debug)]
 pub struct IndirectBlockCache {
-    cache: LruCache<u32, IndirectBlock>,
+    cache: LruCache<Ext2Bid, IndirectBlock>,
     fs: Weak<Ext2>,
 }
 
@@ -32,7 +36,7 @@ impl IndirectBlockCache {
     /// Retrieves a reference to an `IndirectBlock` by its `bid`.
     ///
     /// If the block is not present in the cache, it will be loaded from the disk.
-    pub fn find(&mut self, bid: u32) -> Result<&IndirectBlock> {
+    pub fn find(&mut self, bid: Ext2Bid) -> Result<&IndirectBlock> {
         self.try_shrink()?;
 
         let fs = self.fs();
@@ -49,7 +53,7 @@ impl IndirectBlockCache {
     /// Retrieves a mutable reference to an `IndirectBlock` by its `bid`.
     ///
     /// If the block is not present in the cache, it will be loaded from the disk.
-    pub fn find_mut(&mut self, bid: u32) -> Result<&mut IndirectBlock> {
+    pub fn find_mut(&mut self, bid: Ext2Bid) -> Result<&mut IndirectBlock> {
         self.try_shrink()?;
 
         let fs = self.fs();
@@ -64,7 +68,7 @@ impl IndirectBlockCache {
     }
 
     /// Inserts or updates an `IndirectBlock` in the cache with the specified `bid`.
-    pub fn insert(&mut self, bid: u32, block: IndirectBlock) -> Result<()> {
+    pub fn insert(&mut self, bid: Ext2Bid, block: IndirectBlock) -> Result<()> {
         self.try_shrink()?;
         self.cache.put(bid, block);
         Ok(())
@@ -72,54 +76,43 @@ impl IndirectBlockCache {
 
     /// Removes and returns the `IndirectBlock` corresponding to the `bid`
     /// from the cache or `None` if does not exist.
-    pub fn remove(&mut self, bid: u32) -> Option<IndirectBlock> {
+    pub fn remove(&mut self, bid: Ext2Bid) -> Option<IndirectBlock> {
         self.cache.pop(&bid)
     }
 
     /// Evicts all blocks from the cache, persisting any with a 'Dirty' state to the disk.
     pub fn evict_all(&mut self) -> Result<()> {
-        let mut bio_waiter = BioWaiter::new();
-        loop {
-            let Some((bid, block)) = self.cache.pop_lru() else {
-                break;
-            };
-
-            if block.is_dirty() {
-                bio_waiter.concat(
-                    self.fs()
-                        .block_device()
-                        .write_block(Bid::new(bid as _), &block.frame)?,
-                );
-            }
-        }
-
-        bio_waiter.wait().ok_or_else(|| {
-            Error::with_message(Errno::EIO, "failed to evict_all the indirect blocks")
-        })?;
-
-        Ok(())
+        let cache_size = self.cache.len();
+        self.evict(cache_size)
     }
 
-    /// Attempts to shrink the cache size if it exceeds the maximum allowed cache size.
+    /// Attempts to evict some blocks from cache if it exceeds the maximum size.
     fn try_shrink(&mut self) -> Result<()> {
         if self.cache.len() < Self::MAX_SIZE {
             return Ok(());
         }
+        // TODO: How to determine the number of evictions each time?
+        //
+        // FIXME: When we set it to `Self::MAX_SIZE / 2` here,
+        // running the `/regression/ext2.sh` test may cause a deadlock issue.
+        let evict_num = 1;
+        self.evict(evict_num)
+    }
+
+    /// Evicts `num` blocks from cache.
+    fn evict(&mut self, num: usize) -> Result<()> {
+        let num = num.min(self.cache.len());
 
         let mut bio_waiter = BioWaiter::new();
-        for _ in 0..(Self::MAX_SIZE / 2) {
+        for _ in 0..num {
             let (bid, block) = self.cache.pop_lru().unwrap();
             if block.is_dirty() {
-                bio_waiter.concat(
-                    self.fs()
-                        .block_device()
-                        .write_block(Bid::new(bid as _), &block.frame)?,
-                );
+                bio_waiter.concat(self.fs().write_block_async(bid, &block.frame)?);
             }
         }
 
         bio_waiter.wait().ok_or_else(|| {
-            Error::with_message(Errno::EIO, "failed to write back the indirect block")
+            Error::with_message(Errno::EIO, "failed to evict the indirect blocks")
         })?;
 
         Ok(())
@@ -164,16 +157,16 @@ impl IndirectBlock {
     }
 
     /// Reads a bid at a specified `idx`.
-    pub fn read_bid(&self, idx: usize) -> Result<u32> {
+    pub fn read_bid(&self, idx: usize) -> Result<Ext2Bid> {
         assert!(self.state != State::Uninit);
-        let bid: u32 = self.frame.read_val(idx * BID_SIZE)?;
+        let bid: Ext2Bid = self.frame.read_val(idx * BID_SIZE)?;
         Ok(bid)
     }
 
     /// Writes a value of bid at a specified `idx`.
     ///
     /// After a successful write operation, the block's state will be marked as dirty.
-    pub fn write_bid(&mut self, idx: usize, bid: &u32) -> Result<()> {
+    pub fn write_bid(&mut self, idx: usize, bid: &Ext2Bid) -> Result<()> {
         assert!(self.state != State::Uninit);
         self.frame.write_val(idx * BID_SIZE, bid)?;
         self.state = State::Dirty;

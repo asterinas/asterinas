@@ -74,10 +74,6 @@ mod test {
     }
 
     impl BlockDevice for ExfatMemoryDisk {
-        fn handle_irq(&self) {
-            info!("ExfatMemoryDisk handle irq");
-        }
-
         fn enqueue(&self, bio: SubmittedBio) -> core::prelude::v1::Result<(), BioEnqueueError> {
             let start_device_ofs = bio.sid_range().start.to_raw() as usize * SECTOR_SIZE;
             let mut cur_device_ofs = start_device_ofs;
