@@ -38,16 +38,20 @@ pub struct BlockDevice {
 impl BlockDevice {
     /// Creates a new VirtIO-Block driver and registers it.
     pub(crate) fn init(transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let block_device = {
-            let device = DeviceInner::init(transport)?;
-            Self {
-                device,
-                queue: BioRequestSingleQueue::new(),
-            }
+        let device = {
+            let mut device = DeviceInner::init(transport)?;
+            let device_id = device.get_id();
+            device.finish_init(device_id);
+            device
         };
+        let device_id = device.device_id.clone().unwrap();
 
-        let device_id = block_device.device.device_id.clone().unwrap();
-        aster_block::register_device(device_id, Arc::new(block_device));
+        let block_device = Arc::new(Self {
+            device,
+            queue: BioRequestSingleQueue::new(),
+        });
+
+        aster_block::register_device(device_id, block_device);
         Ok(())
     }
 
@@ -186,17 +190,6 @@ impl DeviceInner {
             device_id: None,
         };
 
-        let device_id = device.get_id();
-        let cloned_device_id = device_id.clone();
-
-        let handle_block_device = move |_: &TrapFrame| {
-            aster_block::get_device(device_id.as_str())
-                .unwrap()
-                .handle_irq();
-        };
-
-        device.device_id = Some(cloned_device_id);
-
         device
             .transport
             .register_cfg_callback(Box::new(config_space_change))
@@ -204,14 +197,37 @@ impl DeviceInner {
 
         device
             .transport
-            .register_queue_callback(0, Box::new(handle_block_device), false)
+            .register_queue_callback(0, Box::new(dummy_handle_block_device), false)
             .unwrap();
 
         fn config_space_change(_: &TrapFrame) {
             info!("Virtio block device config space change");
         }
-        device.transport.finish_init();
+
+        fn dummy_handle_block_device(_: &TrapFrame) {
+            info!("Virtio block device handle block device");
+        }
+
         Ok(device)
+    }
+
+    /// Finalizes the device initialization and assigns the device ID.
+    pub fn finish_init(&mut self, device_id: String) {
+        assert!(self.device_id.is_none());
+
+        let cloned_device_id = device_id.clone();
+        self.device_id = Some(cloned_device_id);
+
+        let handle_block_device = move |_: &TrapFrame| {
+            aster_block::get_device(device_id.as_str())
+                .unwrap()
+                .handle_irq();
+        };
+        self.transport
+            .register_queue_callback(0, Box::new(handle_block_device), false)
+            .unwrap();
+
+        self.transport.finish_init();
     }
 
     // TODO: Most logic is the same as read and write, there should be a refactor.
