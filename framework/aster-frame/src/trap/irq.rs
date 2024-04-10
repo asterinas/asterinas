@@ -156,3 +156,16 @@ impl Drop for DisabledLocalIrqGuard {
         }
     }
 }
+
+/// FIXME: The reason we need to add this API is that currently IRQs
+/// are enabled when the CPU enters the user space for the first time,
+/// which is too late. During the OS initialization phase,
+/// we need to get the block device working and mount the filesystems,
+/// thus requiring the IRQs should be enabled as early as possible.
+///
+/// FIXME: this method may be unsound.
+pub fn enable_local() {
+    if !crate::arch::irq::is_local_enabled() {
+        crate::arch::irq::enable_local();
+    }
+}

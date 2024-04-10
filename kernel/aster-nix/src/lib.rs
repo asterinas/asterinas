@@ -80,6 +80,9 @@ fn init_thread() {
         "[kernel] Spawn init thread, tid = {}",
         current_thread!().tid()
     );
+    // FIXME: Remove this if we move the step of mounting
+    // the filesystems to be done within the init process.
+    aster_frame::trap::enable_local();
     net::lazy_init();
     fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();

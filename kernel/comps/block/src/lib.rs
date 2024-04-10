@@ -55,7 +55,6 @@ pub const SECTOR_SIZE: usize = 512;
 pub trait BlockDevice: Send + Sync + Any + Debug {
     /// Enqueues a new `SubmittedBio` to the block device.
     fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError>;
-    fn handle_irq(&self);
 }
 
 impl dyn BlockDevice {
