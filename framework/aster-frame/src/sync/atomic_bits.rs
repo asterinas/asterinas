@@ -9,7 +9,7 @@ use align_ext::AlignExt;
 
 use crate::prelude::*;
 
-/// A fixed number of bits taht can be safely shared between threads.
+/// A fixed number of bits that can be safely shared between threads.
 pub struct AtomicBits {
     num_bits: usize,
     u64s: Box<[AtomicU64]>,
@@ -69,7 +69,9 @@ impl AtomicBits {
 
     /// Clear all the bits.
     pub fn clear(&self) {
-        todo!()
+        for u64_atomic in self.u64s.iter() {
+            u64_atomic.store(0, Relaxed);
+        }
     }
 
     /// Are all bits ones.
@@ -83,7 +85,19 @@ impl AtomicBits {
     }
 
     fn match_pattern(&self, pattern: u64) -> bool {
-        todo!()
+        let i = self.num_bits / 64;
+        let j = self.num_bits % 64;
+        for u64_atomic in self.u64s.iter().take(i) {
+            if u64_atomic.load(Relaxed) != pattern {
+                return false;
+            }
+        }
+
+        // Match the last u64_atomic.
+        let u64_atomic = unsafe { self.u64s.get_unchecked(i) };
+        u64_atomic.fetch_or(!0 << j, Relaxed);
+        let pattern = pattern | (!0 << j);
+        return u64_atomic.load(Relaxed) == pattern;
     }
 
     /// Get an iterator for the bits.
