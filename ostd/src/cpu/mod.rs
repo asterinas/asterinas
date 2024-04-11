@@ -108,10 +108,22 @@ pub fn all_cpus() -> impl Iterator<Item = CpuId> {
 pub unsafe trait PinCurrentCpu {
     /// Returns the number of the current CPU.
     fn current_cpu(&self) -> CpuId {
-        let id = CURRENT_CPU.load();
-        debug_assert_ne!(id, u32::MAX, "This CPU is not initialized");
-        CpuId(id)
+        // SAFETY: The implementor ensures that the current task is pinned to
+        // the current CPU while the returned value is used.
+        unsafe { get_current_cpu_unchecked() }
     }
+}
+
+/// Returns the ID of the current CPU.
+///
+/// # Safety
+///
+/// The caller must ensure that the current task is pinned to the current CPU
+/// to let the returned value nessarily be the current CPU ID.
+pub(crate) unsafe fn get_current_cpu_unchecked() -> CpuId {
+    let id = CURRENT_CPU.load();
+    debug_assert_ne!(id, u32::MAX, "This CPU is not initialized");
+    CpuId(id)
 }
 
 // SAFETY: When IRQs are disabled, the task cannot be passively preempted and
