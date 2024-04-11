@@ -14,6 +14,7 @@ use super::{preempt::cpu_local, processor, Task};
 use crate::{
     cpu::{CpuId, PinCurrentCpu},
     prelude::*,
+    sync::pass_quiescent_state,
     task::disable_preempt,
     timer,
 };
@@ -232,6 +233,12 @@ fn reschedule<F>(mut f: F)
 where
     F: FnMut(&mut dyn LocalRunQueue) -> ReschedAction,
 {
+    // SAFETY: RCU read-side critical sections disables preemption. By the time
+    // we reach this point, we have already checked that preemption is enabled.
+    unsafe {
+        pass_quiescent_state();
+    }
+
     let next_task = loop {
         let mut action = ReschedAction::DoNothing;
         SCHEDULER.get().unwrap().local_mut_rq_with(&mut |rq| {
