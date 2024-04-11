@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ptr::NonNull;
-
 use crate::prelude::*;
 
 /// A trait that abstracts pointers that have the ownership of the objects they
@@ -10,7 +8,7 @@ use crate::prelude::*;
 /// The most typical examples smart pointer types like `Box<T>` and `Arc<T>`.
 ///
 /// which can be converted to and from the raw pointer type of `*const T`.
-pub trait OwnerPtr {
+pub trait OwnerPtr: 'static {
     /// The target type that this pointer refers to.
     // TODO: allow ?Sized
     type Target;
@@ -30,7 +28,7 @@ pub trait OwnerPtr {
     unsafe fn from_raw(ptr: *const Self::Target) -> Self;
 }
 
-impl<T> OwnerPtr for Box<T> {
+impl<T: 'static> OwnerPtr for Box<T> {
     type Target = T;
 
     fn into_raw(self) -> *const Self::Target {
@@ -42,7 +40,7 @@ impl<T> OwnerPtr for Box<T> {
     }
 }
 
-impl<T> OwnerPtr for Arc<T> {
+impl<T: 'static> OwnerPtr for Arc<T> {
     type Target = T;
 
     fn into_raw(self) -> *const Self::Target {
