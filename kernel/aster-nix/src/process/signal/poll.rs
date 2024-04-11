@@ -13,6 +13,27 @@ use crate::{
     process::signal::Pauser,
 };
 
+/// Types that uses `Pollee` to store internal status
+/// and thus can be poll.
+pub trait CanPoll {
+    fn pollee(&self) -> &Pollee;
+
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.pollee().poll(mask, poller)
+    }
+
+    fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
+        self.pollee().register_observer(observer, mask)
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
+        self.pollee().unregister_observer(observer)
+    }
+}
+
 /// A pollee maintains a set of active events, which can be polled with
 /// pollers or be monitored with observers.
 #[derive(Clone)]
