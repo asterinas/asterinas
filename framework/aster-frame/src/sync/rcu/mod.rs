@@ -17,8 +17,7 @@ use self::monitor::RcuMonitor;
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86::cpu;
 use crate::{
-    prelude::*,
-    sync::{SpinLock, WaitQueue},
+    sync::SpinLock,
     task::{disable_preempt, DisablePreemptGuard},
 };
 
@@ -160,6 +159,11 @@ pub struct RcuReclaimer<P> {
 impl<P: Send + 'static> RcuReclaimer<P> {
     pub fn delay(mut self) {
         let ptr: P = unsafe {
+            // SAFETY. It is ok to have this uninitialized value because
+            // 1) Its memory won't be acccessed;
+            // 2) It will be forgotten rather than being dropped;
+            // 3) Before it gets forgtten, the code won't return prematurely or panic.
+            #[allow(clippy::mem_replace_with_uninit, clippy::uninit_assumed_init)]
             let ptr = core::mem::replace(
                 &mut self.ptr,
                 core::mem::MaybeUninit::uninit().assume_init(),
@@ -177,22 +181,12 @@ impl<P: Send + 'static> RcuReclaimer<P> {
     }
 }
 
-impl<P> Drop for RcuReclaimer<P> {
-    fn drop(&mut self) {
-        let wq = Arc::new(WaitQueue::new());
-        let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
-        rcu_monitor.after_grace_period({
-            let wq = wq.clone();
-            move || {
-                wq.wake_one();
-            }
-        });
-        wq.wait_until(|| Some(0u8));
-    }
-}
-
 /// Passes the quiescent state to the singleton RcuMonitor and take the callbacks if
 /// the current GP is complete.
+///
+/// # Safety
+///
+/// This function may disable the local IRQs.
 ///
 /// # Non-Preemptible RCU
 ///

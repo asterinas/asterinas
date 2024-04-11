@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ptr::NonNull;
-
 use crate::prelude::*;
 
 /// A trait that abstracts pointers that have the ownership of the objects they

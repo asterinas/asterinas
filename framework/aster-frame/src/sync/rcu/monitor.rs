@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::collections::VecDeque;
-use core::sync::atomic::{
-    AtomicBool,
-    Ordering::{Acquire, Relaxed, Release},
-};
+use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86::cpu;
@@ -74,7 +71,7 @@ impl RcuMonitor {
 
     pub fn after_grace_period<F>(&self, f: F)
     where
-        F: FnOnce() -> () + Send + 'static,
+        F: FnOnce() + Send + 'static,
     {
         let mut state = self.state.lock_irq_disabled();
 
@@ -104,7 +101,7 @@ impl State {
     }
 }
 
-type Callbacks = VecDeque<Box<dyn FnOnce() -> () + Send + 'static>>;
+type Callbacks = VecDeque<Box<dyn FnOnce() + Send + 'static>>;
 
 struct GracePeriod {
     callbacks: Callbacks,

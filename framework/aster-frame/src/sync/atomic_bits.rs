@@ -97,7 +97,7 @@ impl AtomicBits {
         let u64_atomic = unsafe { self.u64s.get_unchecked(i) };
         u64_atomic.fetch_or(!0 << j, Relaxed);
         let pattern = pattern | (!0 << j);
-        return u64_atomic.load(Relaxed) == pattern;
+        u64_atomic.load(Relaxed) == pattern
     }
 
     /// Get an iterator for the bits.
