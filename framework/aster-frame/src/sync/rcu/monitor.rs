@@ -8,9 +8,10 @@ use core::sync::atomic::{
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86::cpu;
-use crate::prelude::*;
-use crate::sync::AtomicBits;
-use crate::sync::SpinLock;
+use crate::{
+    prelude::*,
+    sync::{AtomicBits, SpinLock},
+};
 
 /// A RCU monitor ensures the completion of _grace periods_ by keeping track
 /// of each CPU's passing _quiescent states_.
@@ -50,7 +51,7 @@ impl RcuMonitor {
             // Now that the current GP is complete, take its callbacks
             let current_callbacks = state.current_gp.take_callbacks();
 
-            // Check if we need to70G watch for a next GP
+            // Check if we need to watch for a next GP
             if !state.next_callbacks.is_empty() {
                 let callbacks = core::mem::take(&mut state.next_callbacks);
                 state.current_gp.restart(callbacks);
@@ -112,7 +113,7 @@ impl GracePeriod {
         Self {
             callbacks: Default::default(),
             cpu_mask: AtomicBits::new_zeroes(num_cpus),
-            is_complete: false,
+            is_complete: true,
         }
     }
 

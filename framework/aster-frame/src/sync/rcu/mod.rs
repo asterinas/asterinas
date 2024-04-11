@@ -19,6 +19,7 @@ use crate::arch::x86::cpu;
 use crate::{
     prelude::*,
     sync::{SpinLock, WaitQueue},
+    task::{disable_preempt, DisablePreemptGuard},
 };
 
 mod monitor;
@@ -41,8 +42,13 @@ impl<P: OwnerPtr> Rcu<P> {
     }
 
     pub fn get(&self) -> RcuReadGuard<'_, P> {
+        let guard = disable_preempt();
         let obj = unsafe { &*self.ptr.load(Acquire) };
-        RcuReadGuard { obj, rcu: self }
+        RcuReadGuard {
+            obj,
+            rcu: self,
+            inner_guard: InnerGuard::Preempt(guard),
+        }
     }
 }
 
@@ -57,9 +63,15 @@ impl<P: OwnerPtr + Send> Rcu<P> {
     }
 }
 
+enum InnerGuard {
+    Preempt(DisablePreemptGuard),
+    Empty,
+}
+
 pub struct RcuReadGuard<'a, P: OwnerPtr> {
     obj: &'a <P as OwnerPtr>::Target,
     rcu: &'a Rcu<P>,
+    inner_guard: InnerGuard,
 }
 
 impl<'a, P: OwnerPtr> Deref for RcuReadGuard<'a, P> {
