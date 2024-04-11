@@ -2,16 +2,24 @@
 
 //! Read-copy update (RCU).
 
-use core::marker::PhantomData;
-use core::ops::Deref;
-use core::sync::atomic::{
-    AtomicPtr,
-    Ordering::{AcqRel, Acquire},
+use core::{
+    marker::PhantomData,
+    ops::Deref,
+    sync::atomic::{
+        AtomicPtr,
+        Ordering::{AcqRel, Acquire},
+    },
 };
 
+use spin::once::Once;
+
 use self::monitor::RcuMonitor;
-use crate::prelude::*;
-use crate::sync::WaitQueue;
+#[cfg(target_arch = "x86_64")]
+use crate::arch::x86::cpu;
+use crate::{
+    prelude::*,
+    sync::{SpinLock, WaitQueue},
+};
 
 mod monitor;
 mod owner_ptr;
@@ -70,13 +78,18 @@ pub struct RcuReclaimer<P> {
 impl<P: Send + 'static> RcuReclaimer<P> {
     pub fn delay(mut self) {
         let ptr: P = unsafe {
-            let ptr = core::mem::replace(&mut self.ptr, core::mem::uninitialized());
+            let ptr = core::mem::replace(
+                &mut self.ptr,
+                core::mem::MaybeUninit::uninit().assume_init(),
+            );
 
             core::mem::forget(self);
 
             ptr
         };
-        get_singleton().after_grace_period(move || {
+
+        let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
+        rcu_monitor.after_grace_period(move || {
             drop(ptr);
         });
     }
@@ -85,7 +98,8 @@ impl<P: Send + 'static> RcuReclaimer<P> {
 impl<P> Drop for RcuReclaimer<P> {
     fn drop(&mut self) {
         let wq = Arc::new(WaitQueue::new());
-        get_singleton().after_grace_period({
+        let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
+        rcu_monitor.after_grace_period({
             let wq = wq.clone();
             move || {
                 wq.wake_one();
@@ -96,9 +110,15 @@ impl<P> Drop for RcuReclaimer<P> {
 }
 
 pub unsafe fn pass_quiescent_state() {
-    get_singleton().pass_quiescent_state()
+    let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
+    rcu_monitor.pass_quiescent_state()
 }
 
-fn get_singleton() -> &'static RcuMonitor {
-    todo!()
+static RCU_MONITOR: Once<SpinLock<RcuMonitor>> = Once::new();
+
+pub fn init() {
+    RCU_MONITOR.call_once(|| {
+        let num_cpus = cpu::num_cpus() as usize;
+        SpinLock::new(RcuMonitor::new(num_cpus))
+    });
 }
