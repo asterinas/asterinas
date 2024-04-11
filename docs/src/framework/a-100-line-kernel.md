@@ -7,23 +7,29 @@ we will show a new kernel in about 100 lines of safe Rust.
 Our new kernel will be able to run the following Hello World program.
 
 ```s
-global _start
-
-section .text
-
+.global _start                      # entry point
+.section .text                      # code section
 _start:
-    mov rax, 1        ; syswrite
-    mov rdi, 1        ; fd
-    mov rsi, msg      ; "Hello, world!\n",
-    mov rdx, msglen   ; sizeof("Hello, world!\n")
+    mov     $1, %rax                # syscall number of write
+    mov     $1, %rdi                # stdout
+    mov     $message, %rsi          # address of message         
+    mov     $message_end, %rdx
+    sub     %rsi, %rdx              # calculate message len
     syscall
+    mov     $60, %rax               # syscall number of exit, move it to rax
+    mov     $0, %rdi                # exit code, move it to rdi
+    syscall  
 
-    mov rax, 60       ; sys_exit
-    mov rdi, 0        ; exit_code
-    syscall
+.section .rodata                    # read only data section
+message:
+    .ascii  "Hello, world\n"
+message_end:
+```
 
-section .rodata
-    msg: db "Hello, world!", 10
+The assembly program above can be compiled with the following command.
+
+```bash
+gcc -static -nostdlib hello.S -o hello
 ```
 
 The user program above requires our kernel to support three main features:
@@ -40,8 +46,9 @@ to highlight how the APIs of Asterinas Framework enable safe kernel development.
 
 extern crate alloc;
 
-use alloc::boxed::Box;
-use alloc::collections::VecDeque;
+use align_ext::AlignExt;
+use core::str;
+
 use alloc::sync::Arc;
 use alloc::vec;
 
@@ -49,7 +56,7 @@ use aster_frame::cpu::UserContext;
 use aster_frame::prelude::*;
 use aster_frame::task::{Task, TaskOptions};
 use aster_frame::user::{UserEvent, UserMode, UserSpace};
-use aster_frame::vm::{Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmPerm, VmSpace};
+use aster_frame::vm::{Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmPerm, VmSpace, PAGE_SIZE};
 
 /// The kernel's boot and initialization process is managed by Asterinas Framework.
 /// After the process is done, the kernel's execution environment
@@ -59,17 +66,18 @@ use aster_frame::vm::{Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmPerm, VmSpace
 pub fn main() {
     let program_binary = include_bytes!("../hello_world");
     let user_space = create_user_space(program_binary);
-    let user_task = create_user_task(user_space);
+    let user_task = create_user_task(Arc::new(user_space));
     user_task.run();
 }
 
 fn create_user_space(program: &[u8]) -> UserSpace {
     let user_pages = {
-        let nframes = content.len().align_up(PAGE_SIZE) / PAGE_SIZE;
+        let nframes = program.len().align_up(PAGE_SIZE) / PAGE_SIZE;
         let vm_frames = VmAllocOptions::new(nframes).alloc().unwrap();
         // Phyiscal memory pages can be only accessed
         // via the VmFrame abstraction.
-        frames.write_bytes(0, program).unwrap()
+        vm_frames.write_bytes(0, program).unwrap();
+        vm_frames
     };
     let user_address_space = {
         const MAP_ADDR: Vaddr = 0x0040_0000; // The map addr for statically-linked executable
@@ -91,6 +99,7 @@ fn create_user_space(program: &[u8]) -> UserSpace {
         // abstraction.
         let mut user_cpu_state = UserContext::default();
         user_cpu_state.set_rip(ENTRY_POINT);
+        user_cpu_state
     };
     UserSpace::new(user_address_space, user_cpu_state)
 }
@@ -114,7 +123,7 @@ fn create_user_task(user_space: Arc<UserSpace>) -> Arc<Task> {
             // the `UserContext` abstraction.
             let user_context = user_mode.context_mut();
             if UserEvent::Syscall == user_event {
-                handle_syscall(user_context, user_space);
+                handle_syscall(user_context, current.user_space().unwrap());
             }
         }
     }
@@ -136,7 +145,7 @@ fn handle_syscall(user_context: &mut UserContext, user_space: &UserSpace) {
     match user_context.rax() {
         SYS_WRITE => {
             // Access the user-space CPU registers safely.
-            let (fd, buf_addr, buf_len) =
+            let (_, buf_addr, buf_len) =
                 (user_context.rdi(), user_context.rsi(), user_context.rdx());
             let buf = {
                 let mut buf = vec![0u8; buf_len];
@@ -146,6 +155,7 @@ fn handle_syscall(user_context: &mut UserContext, user_space: &UserSpace) {
                     .vm_space()
                     .read_bytes(buf_addr, &mut buf)
                     .unwrap();
+                buf
             };
             // Use the console for output safely.
             println!("{}", str::from_utf8(&buf).unwrap());
