@@ -21,6 +21,10 @@ pub struct RcuMonitor {
 }
 
 impl RcuMonitor {
+    /// Creates a new RCU monitor.
+    ///
+    /// This function is used to initialize a singleton instance of `RcuMonitor`.
+    /// The singleton instance is globally accessible via the `RCU_MONITOR`.
     pub fn new(num_cpus: usize) -> Self {
         Self {
             is_monitoring: AtomicBool::new(false),

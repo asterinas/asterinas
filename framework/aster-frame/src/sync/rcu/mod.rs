@@ -27,12 +27,62 @@ mod owner_ptr;
 
 pub use owner_ptr::OwnerPtr;
 
+/// Read-Copy Update Synchronization Mechanism
+///
+/// # Overview
+///
+/// RCU avoids the use of lock primitives lock primitives while multiple threads
+/// concurrently read and update elements that are linked through pointers and that
+/// belong to shared data structures.
+///
+/// Whenever a thread is inserting or deleting elements of data structures in shared
+/// memory, all readers are guaranteed to see and traverse either the older or the
+/// new structure, therefore avoiding inconsistencies and allowing readers to not be
+/// blocked by writers.
+///
+/// The type parameter `P` represents the data that this rcu is protecting. The type
+/// parameter `P` must implement `OwnerPtr`.
+///
+/// # Usage
+/// It is used when performance of reads is crucial and is an example of space–time
+/// tradeoff, enabling fast operations at the cost of more space.
+///
+/// Use `Rcu` in scenarios that require frequent reads and infrequent updates(read-mostly).
+/// Use `Rcu` in scenarios that require high real-time reading.
+///
+/// Rcu should not to be used in the scenarios that write-mostly and which need
+/// consistent data.
+///
+/// # Examples
+///
+/// ```
+/// use aster_frame::sync::{Rcu, RcuReadGuard, RcuReclaimer};
+///
+/// let rcu = Rcu::new(Box::new(42));
+///
+/// // Read the data protected by rcu
+/// {
+///     let rcu_guard = rcu.get();
+///     assert_eq!(*rcu_guard, 42);
+/// }
+///
+/// // Update the data protected by rcu
+/// {
+///     let reclaimer = rcu.replace(Box::new(43));
+///     // Delay the reclamation of the old data
+///     reclaimer.delay();
+///
+///     let rcu_guard = rcu.get();
+///     assert_eq!(*rcu_guard, 43);
+/// }
+/// ```
 pub struct Rcu<P: OwnerPtr> {
     ptr: AtomicPtr<<P as OwnerPtr>::Target>,
     marker: PhantomData<P::Target>,
 }
 
 impl<P: OwnerPtr> Rcu<P> {
+    /// Creates a new instance of Rcu with the given pointer.
     pub fn new(ptr: P) -> Self {
         let ptr = AtomicPtr::new(OwnerPtr::into_raw(ptr) as *mut _);
         Self {
@@ -41,6 +91,22 @@ impl<P: OwnerPtr> Rcu<P> {
         }
     }
 
+    /// Retrieves a read guard for the RCU mechanism.
+    ///
+    /// This method returns a `RcuReadGuard` which allows read-only access to the
+    /// underlying data protected by the RCU mechanism.   
+    ///
+    /// This function has the semantics of _subscribe_ in RCU mechanism.
+    ///
+    /// # Safety
+    ///
+    /// The pointer protected by the Rcu must be valid and point to a valid object.
+    ///
+    /// # Non-Preemptible RCU
+    ///
+    /// In non-preemptible RCU, the read-side critical section is delimited using
+    /// a `PreemptGuard`.
+    // TODO: Distinguish different type RCU
     pub fn get(&self) -> RcuReadGuard<'_, P> {
         let guard = disable_preempt();
         let obj = unsafe { &*self.ptr.load(Acquire) };
@@ -53,6 +119,10 @@ impl<P: OwnerPtr> Rcu<P> {
 }
 
 impl<P: OwnerPtr + Send> Rcu<P> {
+    /// Replaces the current pointer with a new pointer and returns a `RcuReclaimer` that
+    /// can be used to reclaim the old pointer.
+    ///
+    /// This function has the semantics of _publish_ in RCU mechanism.
     pub fn replace(&self, new_ptr: P) -> RcuReclaimer<P> {
         let new_ptr = <P as OwnerPtr>::into_raw(new_ptr) as *mut _;
         let old_ptr = {
@@ -121,6 +191,13 @@ impl<P> Drop for RcuReclaimer<P> {
     }
 }
 
+/// Passes the quiescent state to the singleton RcuMonitor and take the callbacks if
+/// the current GP is complete.
+///
+/// # Non-Preemptible RCU
+///
+/// This function is commonly used when the thread is in the user state or idle loop,
+/// or when calling `schedule()` to indicate that the cpu is entering the quiescent state.
 pub unsafe fn pass_quiescent_state() {
     let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
     rcu_monitor.pass_quiescent_state()
