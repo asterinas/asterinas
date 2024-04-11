@@ -85,6 +85,18 @@ impl CpuSet {
         self.bits.iter().all(|part| *part == 0)
     }
 
+    /// Returns true if the set is full.
+    pub fn is_full(&self) -> bool {
+        let num_cpus = num_cpus();
+        self.bits.iter().enumerate().all(|(idx, part)| {
+            if idx == self.bits.len() - 1 && num_cpus % BITS_PER_PART != 0 {
+                *part == (1 << (num_cpus % BITS_PER_PART)) - 1
+            } else {
+                *part == !0
+            }
+        })
+    }
+
     /// Adds all CPUs to the set.
     pub fn add_all(&mut self) {
         self.bits.fill(!0);

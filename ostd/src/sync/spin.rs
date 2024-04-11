@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
@@ -157,6 +155,13 @@ pub type ArcSpinLockGuard<T, G> = SpinLockGuard_<T, Arc<SpinLock<T, G>>, G>;
 pub struct SpinLockGuard_<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> {
     guard: G::Guard,
     lock: R,
+}
+
+impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> SpinLockGuard_<T, R, G> {
+    /// Returns a reference to the guard.
+    pub fn guard(&self) -> &G::Guard {
+        &self.guard
+    }
 }
 
 impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> Deref for SpinLockGuard_<T, R, G> {

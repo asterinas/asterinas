@@ -37,6 +37,12 @@ pub(super) fn current_task() -> Option<NonNull<Task>> {
 pub(super) fn switch_to_task(next_task: Arc<Task>) {
     super::atomic_mode::might_sleep();
 
+    // SAFETY: RCU read-side critical sections disables preemption. By the time
+    // we reach this point, we have already checked that preemption is enabled.
+    unsafe {
+        crate::sync::finish_grace_period();
+    }
+
     let irq_guard = crate::trap::disable_local();
 
     let current_task_ptr = CURRENT_TASK_PTR.load();
