@@ -190,7 +190,9 @@ impl Task {
 pub enum TaskStatus {
     /// The task is runnable.
     Runnable,
-    /// The task is sleeping.
+    /// The task is running in the foreground but will sleep when it goes to the background.
+    Sleepy,
+    /// The task is sleeping in the background.
     Sleeping,
     /// The task has exited.
     Exited,

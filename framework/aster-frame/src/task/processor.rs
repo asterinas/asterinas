@@ -91,26 +91,33 @@ fn switch_to_task(next_task: Arc<Task>) {
             "Calling schedule() while holding {} locks",
             PREEMPT_COUNT.num_locks()
         );
-        //GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(next_task);
-        //return;
     }
-    let current_task_option = current_task();
-    let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
-    let current_task: Arc<Task>;
-    let current_task_cx_ptr = match current_task_option {
+
+    let current_task_cx_ptr = match current_task() {
         None => PROCESSOR.lock().get_idle_task_cx_ptr(),
         Some(current_task) => {
-            if current_task.status() == TaskStatus::Runnable {
-                GLOBAL_SCHEDULER
-                    .lock_irq_disabled()
-                    .enqueue(current_task.clone());
+            let mut task = current_task.inner_exclusive_access();
+
+            // FIXME: `task.ctx` should be put in a separate `UnsafeCell`, not as a part of
+            // `TaskInner`. Otherwise, it violates the sematics of `SpinLock` and Rust's memory
+            // model which requires that mutable references must be exclusive.
+            let cx_ptr = &mut task.ctx as *mut TaskContext;
+
+            debug_assert_ne!(task.task_status, TaskStatus::Sleeping);
+            if task.task_status == TaskStatus::Runnable {
+                drop(task);
+                GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
+            } else if task.task_status == TaskStatus::Sleepy {
+                task.task_status = TaskStatus::Sleeping;
             }
-            &mut current_task.inner_exclusive_access().ctx as *mut TaskContext
+
+            cx_ptr
         }
     };
 
-    // change the current task to the next task
+    let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
 
+    // change the current task to the next task
     PROCESSOR.lock().current = Some(next_task.clone());
     unsafe {
         context_switch(current_task_cx_ptr, next_task_cx_ptr);
