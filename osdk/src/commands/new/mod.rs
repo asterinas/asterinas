@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf, process, str::FromStr};
 
 use crate::{
     cli::NewArgs,
-    config_manager::manifest::ProjectType,
+    config::manifest::ProjectType,
     error::Errno,
     error_msg,
     util::{aster_crate_dep, cargo_new_lib, get_cargo_metadata},

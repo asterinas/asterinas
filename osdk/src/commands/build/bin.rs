@@ -14,7 +14,6 @@ use crate::{
         bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
         file::BundleFile,
     },
-    config_manager::action::BootProtocol,
     util::get_current_crate_info,
 };
 
@@ -22,13 +21,13 @@ pub fn make_install_bzimage(
     install_dir: impl AsRef<Path>,
     target_dir: impl AsRef<Path>,
     aster_elf: &AsterBin,
-    protocol: &BootProtocol,
+    linux_x86_legacy_boot: bool,
 ) -> AsterBin {
     let target_name = get_current_crate_info().name;
-    let image_type = match protocol {
-        BootProtocol::LinuxLegacy32 => BzImageType::Legacy32,
-        BootProtocol::LinuxEfiHandover64 => BzImageType::Efi64,
-        _ => unreachable!(),
+    let image_type = if linux_x86_legacy_boot {
+        BzImageType::Legacy32
+    } else {
+        BzImageType::Efi64
     };
     let setup_bin = {
         let setup_install_dir = target_dir.as_ref();
@@ -60,9 +59,9 @@ pub fn make_install_bzimage(
     AsterBin::new(
         &install_path,
         AsterBinType::BzImage(AsterBzImageMeta {
-            support_legacy32_boot: matches!(protocol, BootProtocol::LinuxLegacy32),
+            support_legacy32_boot: linux_x86_legacy_boot,
             support_efi_boot: false,
-            support_efi_handover: matches!(protocol, BootProtocol::LinuxEfiHandover64),
+            support_efi_handover: !linux_x86_legacy_boot,
         }),
         aster_elf.version().clone(),
         aster_elf.stripped(),

@@ -58,7 +58,7 @@ qemu_args = [ # <10>
     "-m 2G",
 ]
 
-['cfg(arch="x86_64", schema=microvm)'.run] # <12>
+['cfg(arch="x86_64", scheme=microvm)'.run] # <12>
 bootloader = "qemu"
 qemu_args = [ # <10>
     "-machine microvm,rtc=on",
@@ -169,12 +169,12 @@ which is used to create a GRUB CD_ROM.
 
 Cfg is an advanced feature to create multiple profiles for
 the same actions under different scenarios. Currently we
-have two configurable keys, which are `arch` and `schema`.
+have two configurable keys, which are `arch` and `scheme`.
 The key `arch` has a fixed set of values which is aligned
 with the CLI `--arch` argument. If an action has no specified
-arch, it matches all the architectures. The key `schema` allows
-user-defined values and can be selected by the `--schema` CLI
-argument. The key `schema` can be used to create special settings
+arch, it matches all the architectures. The key `scheme` allows
+user-defined values and can be selected by the `--scheme` CLI
+argument. The key `scheme` can be used to create special settings
 (especially special QEMU configurations). If a cfg action is
 matched, unspecified and required arguments will be inherited
 from the action that has no cfg (i.e. the default action setting).

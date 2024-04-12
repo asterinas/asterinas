@@ -12,7 +12,10 @@ use crate::{
         file::BundleFile,
         vm_image::{AsterGrubIsoImageMeta, AsterVmImage, AsterVmImageType},
     },
-    config_manager::{action::BootProtocol, BuildConfig},
+    config::{
+        scheme::{ActionChoice, BootProtocol},
+        Config,
+    },
     util::get_current_crate_info,
 };
 
@@ -20,11 +23,16 @@ pub fn create_bootdev_image(
     target_dir: impl AsRef<Path>,
     aster_bin: &AsterBin,
     initramfs_path: Option<impl AsRef<Path>>,
-    config: &BuildConfig,
+    config: &Config,
+    action: ActionChoice,
 ) -> AsterVmImage {
     let target_name = get_current_crate_info().name;
     let iso_root = &target_dir.as_ref().join("iso_root");
-    let protocol = &config.settings.boot_protocol;
+    let action = match &action {
+        ActionChoice::Run => &config.run,
+        ActionChoice::Test => &config.test,
+    };
+    let protocol = &action.grub.boot_protocol;
 
     // Clear or make the iso dir.
     if iso_root.exists() {
@@ -43,12 +51,12 @@ pub fn create_bootdev_image(
 
     // Make the kernel image and place it in the boot directory.
     match protocol {
-        Some(BootProtocol::LinuxLegacy32) | Some(BootProtocol::LinuxEfiHandover64) => {
+        BootProtocol::Linux => {
             make_install_bzimage(
                 iso_root.join("boot"),
                 &target_dir,
                 aster_bin,
-                &protocol.clone().unwrap(),
+                action.build.linux_x86_legacy_boot,
             );
         }
         _ => {
@@ -65,22 +73,17 @@ pub fn create_bootdev_image(
         None
     };
     let grub_cfg = generate_grub_cfg(
-        &config.settings.combined_kcmd_args().join(" "),
-        true,
+        &action.boot.kcmdline.join(" "),
+        !action.grub.display_grub_menu,
         initramfs_in_image,
-        &protocol.clone().unwrap_or(BootProtocol::Multiboot2),
+        protocol,
     );
     let grub_cfg_path = iso_root.join("boot").join("grub").join("grub.cfg");
     fs::write(grub_cfg_path, grub_cfg).unwrap();
 
     // Make the boot device CDROM image using `grub-mkrescue`.
     let iso_path = &target_dir.as_ref().join(target_name.to_string() + ".iso");
-    let grub_mkrescue_bin = &config
-        .settings
-        .grub_mkrescue
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("grub-mkrescue"));
-    let mut grub_mkrescue_cmd = std::process::Command::new(grub_mkrescue_bin.as_os_str());
+    let mut grub_mkrescue_cmd = std::process::Command::new(action.grub.grub_mkrescue.as_os_str());
     grub_mkrescue_cmd
         .arg(iso_root.as_os_str())
         .arg("-o")
@@ -92,7 +95,7 @@ pub fn create_bootdev_image(
     AsterVmImage::new(
         iso_path,
         AsterVmImageType::GrubIso(AsterGrubIsoImageMeta {
-            grub_version: get_grub_mkrescue_version(grub_mkrescue_bin),
+            grub_version: get_grub_mkrescue_version(&action.grub.grub_mkrescue),
         }),
         aster_bin.version().clone(),
     )
@@ -115,7 +118,7 @@ fn generate_grub_cfg(
             "#GRUB_TIMEOUT_STYLE#",
             if skip_grub_menu { "hidden" } else { "menu" },
         )
-        .replace("#GRUB_TIMEOUT#", if skip_grub_menu { "0" } else { "1" });
+        .replace("#GRUB_TIMEOUT#", if skip_grub_menu { "0" } else { "5" });
     // Replace all occurrences of "#KERNEL_COMMAND_LINE#" with the desired value.
     let grub_cfg = grub_cfg.replace("#KERNEL_COMMAND_LINE#", kcmdline);
     // Replace the grub commands according to the protocol selected.
@@ -147,7 +150,7 @@ fn generate_grub_cfg(
                     "".to_owned()
                 },
             ),
-        BootProtocol::LinuxLegacy32 | BootProtocol::LinuxEfiHandover64 => grub_cfg
+        BootProtocol::Linux => grub_cfg
             .replace("#GRUB_CMD_KERNEL#", "linux")
             .replace("#KERNEL#", &aster_bin_path_on_device)
             .replace(

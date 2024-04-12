@@ -12,8 +12,11 @@ use std::fmt::{self, Display, Formatter};
 /// <https://doc.rust-lang.org/reference/conditional-compilation.html#target_arch>
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Arch {
+    #[serde(rename = "aarch64")]
     Aarch64,
+    #[serde(rename = "riscv64")]
     X86_64,
+    #[serde(rename = "x86_64")]
     RiscV64,
 }
 
@@ -33,11 +36,19 @@ impl ValueEnum for Arch {
 
 impl Arch {
     /// Get the target triple for the architecture.
-    pub fn triple(&self) -> String {
+    pub fn triple(&self) -> &'static str {
         match self {
-            Arch::Aarch64 => "aarch64-unknown-none".to_owned(),
-            Arch::RiscV64 => "riscv64gc-unknown-none-elf".to_owned(),
-            Arch::X86_64 => "x86_64-unknown-none".to_owned(),
+            Arch::Aarch64 => "aarch64-unknown-none",
+            Arch::RiscV64 => "riscv64gc-unknown-none-elf",
+            Arch::X86_64 => "x86_64-unknown-none",
+        }
+    }
+
+    pub fn system_qemu(&self) -> &'static str {
+        match self {
+            Arch::Aarch64 => "qemu-system-aarch64",
+            Arch::RiscV64 => "qemu-system-riscv64",
+            Arch::X86_64 => "qemu-system-x86_64",
         }
     }
 

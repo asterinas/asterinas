@@ -1,18 +1,25 @@
-[project]
-type = "kernel"
+project_type = "kernel"
 
-[run]
-bootloader = "grub"
-ovmf = "/usr/share/OVMF"
-qemu_args = [
-    "-machine q35,kernel-irqchip=split",
-    "-cpu Icelake-Server,+x2apic",
-    "--no-reboot",
-    "-m 2G",
-    "-nographic",
-    "-serial chardev:mux",
-    "-monitor chardev:mux",
-    "-chardev stdio,id=mux,mux=on,signal=off",
-    "-display none",
-    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
+vars = [
+    ["OVMF_PATH", "/usr/share/OVMF"],
 ]
+
+[boot]
+method = "grub-rescue-iso"
+
+[qemu]
+args = """\
+    -machine q35,kernel-irqchip=split \
+    -cpu Icelake-Server,+x2apic \
+    --no-reboot \
+    -m 2G \
+    -smp 1 \
+    -nographic \
+    -serial chardev:mux \
+    -monitor chardev:mux \
+    -chardev stdio,id=mux,mux=on,signal=off \
+    -display none \
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+    -drive if=pflash,format=raw,unit=0,readonly=on,file=$OVMF_PATH/OVMF_CODE.fd \
+    -drive if=pflash,format=raw,unit=1,file=$OVMF_PATH/OVMF_VARS.fd \
+"""
