@@ -58,7 +58,7 @@ jobs:
 
       - name: Boot Test (MicroVM)
         id: boot_test_microvm
-        run: make run AUTO_TEST=boot ENABLE_KVM=0 QEMU_MACHINE=microvm RELEASE_MODE=1
+        run: make run AUTO_TEST=boot ENABLE_KVM=0 SCHEME=microvm RELEASE_MODE=1
 
       - name: Boot Test (Linux Legacy 32-bit Boot Protocol)
         id: boot_test_linux_legacy32
@@ -74,7 +74,7 @@ jobs:
 
       - name: Syscall Test at Ext2 (MicroVM)
         id: syscall_test_at_ext2
-        run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=0 QEMU_MACHINE=microvm RELEASE_MODE=1
+        run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=0 SCHEME=microvm RELEASE_MODE=1
 
       - name: Syscall Test at Exfat
         id: syscall_test_at_exfat_linux
@@ -82,4 +82,4 @@ jobs:
         
       - name: Regression Test (MicroVM)
         id: regression_test_linux
-        run: make run AUTO_TEST=regression ENABLE_KVM=0 QEMU_MACHINE=microvm RELEASE_MODE=1
+        run: make run AUTO_TEST=regression ENABLE_KVM=0 SCHEME=microvm RELEASE_MODE=1

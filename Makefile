@@ -1,38 +1,37 @@
 # SPDX-License-Identifier: MPL-2.0
 
-# Project-wide options.
+# Global options.
 ARCH ?= x86_64
-# End of project-wide options.
+BOOT_METHOD ?= grub-rescue-iso
+BOOT_PROTOCOL ?= multiboot2
+BUILD_SYSCALL_TEST ?= 0
+ENABLE_KVM ?= 1
+INTEL_TDX ?= 0
+RELEASE_MODE ?= 0
+SCHEME ?= ""
+# End of global options.
 
 # The Makefile provides a way to run arbitrary tests in the kernel
 # mode using the kernel command line.
 # Here are the options for the auto test feature.
 AUTO_TEST ?= none
-BOOT_LOADER ?= grub
-BOOT_PROTOCOL ?= multiboot2
-BUILD_SYSCALL_TEST ?= 0
-ENABLE_KVM ?= 1
 EXTRA_BLOCKLISTS_DIRS ?= ""
-INTEL_TDX ?= 0
-SCHEMA ?= ""
-RELEASE_MODE ?= 0
-SKIP_GRUB_MENU ?= 1
 SYSCALL_TEST_DIR ?= /tmp
 # End of auto test features.
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
-CARGO_OSDK_ARGS := --arch=$(ARCH)
+CARGO_OSDK_ARGS := --target-arch=$(ARCH)
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
-CARGO_OSDK_ARGS += --kcmd_args+="SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)"
-CARGO_OSDK_ARGS += --kcmd_args+="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
-CARGO_OSDK_ARGS += --init_args+="/opt/syscall_test/run_syscall_test.sh"
+CARGO_OSDK_ARGS += --kcmd-args="SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)"
+CARGO_OSDK_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
+CARGO_OSDK_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
 else ifeq ($(AUTO_TEST), regression)
-CARGO_OSDK_ARGS += --init_args+="/regression/run_regression_test.sh"
+CARGO_OSDK_ARGS += --init-args="/regression/run_regression_test.sh"
 else ifeq ($(AUTO_TEST), boot)
-CARGO_OSDK_ARGS += --init_args+="/regression/boot_hello.sh"
+CARGO_OSDK_ARGS += --init-args="/regression/boot_hello.sh"
 endif
 
 ifeq ($(RELEASE_MODE), 1)
@@ -43,21 +42,26 @@ ifeq ($(INTEL_TDX), 1)
 CARGO_OSDK_ARGS += --features intel_tdx
 endif
 
-CARGO_OSDK_ARGS += --bootloader="$(BOOT_LOADER)"
-CARGO_OSDK_ARGS += --boot_protocol="$(BOOT_PROTOCOL)"
-
-ifneq ($(SCHEMA), "")
-CARGO_OSDK_ARGS += --schema $(SCHEMA)
+ifneq ($(SCHEME), "")
+CARGO_OSDK_ARGS += --scheme $(SCHEME)
+else
+CARGO_OSDK_ARGS += --boot-method="$(BOOT_METHOD)"
 endif
 
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's
 # GRUB release, which is installed in /usr/bin in our Docker image.
 ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
 CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue
+CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
+else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
+CARGO_OSDK_ARGS += --linux-x86-legacy-boot
+CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
+else
+CARGO_OSDK_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif
 
 ifeq ($(ENABLE_KVM), 1)
-CARGO_OSDK_ARGS += --qemu_args+="--enable-kvm"
+CARGO_OSDK_ARGS += --qemu-args="--enable-kvm"
 endif
 
 # Pass make variables to all subdirectory makes
@@ -186,9 +190,11 @@ check: $(CARGO_OSDK)
 		(echo "Error: STD_CRATES and NOSTD_CRATES combined is not the same as all workspace members" && exit 1)
 	@rm /tmp/all_crates /tmp/combined_crates
 	@for dir in $(NON_OSDK_CRATES); do \
+		echo "Checking $$dir"; \
 		(cd $$dir && cargo clippy -- -D warnings) || exit 1; \
 	done
 	@for dir in $(OSDK_CRATES); do \
+		echo "Checking $$dir"; \
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
 	@make --no-print-directory -C regression check

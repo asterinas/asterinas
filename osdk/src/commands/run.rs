@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{
-    path::{Path, PathBuf},
-    time::{Duration, SystemTime},
-};
-
-use super::{build::create_base_and_build, util::DEFAULT_TARGET_RELPATH};
+use super::{build::create_base_and_cached_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
-    bundle::Bundle,
-    config_manager::{BuildConfig, RunConfig},
-    util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
+    cli::GdbServerArgs,
+    config::{scheme::ActionChoice, Config},
+    util::{get_current_crate_info, get_target_directory},
 };
 
-pub fn execute_run_command(config: &RunConfig) {
-    if config.gdb_server_args.is_gdb_enabled {
+pub fn execute_run_command(config: &Config, gdb_server_args: &GdbServerArgs) {
+    if gdb_server_args.is_gdb_enabled {
         use std::env;
         env::set_var(
             "RUSTFLAGS",
@@ -21,111 +16,48 @@ pub fn execute_run_command(config: &RunConfig) {
         );
     }
 
-    let ws_target_directory = get_target_directory();
-    let osdk_target_directory = ws_target_directory.join(DEFAULT_TARGET_RELPATH);
+    let cargo_target_directory = get_target_directory();
+    let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
     let target_name = get_current_crate_info().name;
-    let default_bundle_directory = osdk_target_directory.join(target_name);
-    let existing_bundle = Bundle::load(&default_bundle_directory);
 
-    let config = RunConfig {
-        settings: {
-            if config.gdb_server_args.is_gdb_enabled {
-                let qemu_gdb_args: Vec<_> = {
-                    let gdb_stub_addr = config.gdb_server_args.gdb_server_addr.as_str();
-                    match gdb::stub_type_of(gdb_stub_addr) {
-                        gdb::StubAddrType::Unix => {
-                            let chardev = format!(
-                                "-chardev socket,path={},server=on,wait=off,id=gdb0",
-                                gdb_stub_addr
-                            );
-                            let stub = "-gdb chardev:gdb0".to_owned();
-                            vec![chardev, stub, "-S".into()]
-                        }
-                        gdb::StubAddrType::Tcp => {
-                            vec![
-                                format!(
-                                    "-gdb tcp:{}",
-                                    gdb::tcp_addr_util::format_tcp_addr(gdb_stub_addr)
-                                ),
-                                "-S".into(),
-                            ]
-                        }
-                    }
-                };
-
-                let qemu_gdb_args: Vec<_> = qemu_gdb_args
-                    .into_iter()
-                    .filter(|arg| !config.settings.qemu_args.iter().any(|x| x == arg))
-                    .map(|x| x.to_string())
-                    .collect();
-                let mut settings = config.settings.clone();
-                settings.qemu_args.extend(qemu_gdb_args);
-                settings
-            } else {
-                config.settings.clone()
-            }
-        },
-        ..config.clone()
-    };
-    let _vsc_launch_file = config.gdb_server_args.vsc_launch_file.then(|| {
-        vsc::check_gdb_config(&config.gdb_server_args);
-        let profile = super::util::profile_adapter(&config.cargo_args.profile);
-        vsc::VscLaunchConfig::new(profile, &config.gdb_server_args.gdb_server_addr)
-    });
-
-    // If the source is not since modified and the last build is recent, we can reuse the existing bundle.
-    if let Some(existing_bundle) = existing_bundle {
-        if existing_bundle.can_run_with_config(&config) {
-            if let Ok(built_since) =
-                SystemTime::now().duration_since(existing_bundle.last_modified_time())
-            {
-                if built_since < Duration::from_secs(600) {
-                    let workspace_root = {
-                        let meta = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
-                        PathBuf::from(meta.get("workspace_root").unwrap().as_str().unwrap())
-                    };
-                    if get_last_modified_time(workspace_root) < existing_bundle.last_modified_time()
-                    {
-                        existing_bundle.run(&config);
-                        return;
-                    }
+    let mut config = config.clone();
+    if gdb_server_args.is_gdb_enabled {
+        let qemu_gdb_args = {
+            let gdb_stub_addr = gdb_server_args.gdb_server_addr.as_str();
+            match gdb::stub_type_of(gdb_stub_addr) {
+                gdb::StubAddrType::Unix => {
+                    format!(
+                        " -chardev socket,path={},server=on,wait=off,id=gdb0 -gdb chardev:gdb0 -S",
+                        gdb_stub_addr
+                    )
+                }
+                gdb::StubAddrType::Tcp => {
+                    format!(
+                        " -gdb tcp:{} -S",
+                        gdb::tcp_addr_util::format_tcp_addr(gdb_stub_addr)
+                    )
                 }
             }
-        }
+        };
+        config.run.qemu.args += &qemu_gdb_args;
     }
+    let _vsc_launch_file = gdb_server_args.vsc_launch_file.then(|| {
+        vsc::check_gdb_config(gdb_server_args);
+        let profile = super::util::profile_adapter(&config.build.profile);
+        vsc::VscLaunchConfig::new(profile, &gdb_server_args.gdb_server_addr)
+    });
 
-    let required_build_config = BuildConfig {
-        arch: config.arch,
-        settings: config.settings.clone(),
-        cargo_args: config.cargo_args.clone(),
-    };
-
-    let bundle = create_base_and_build(
+    let default_bundle_directory = osdk_output_directory.join(target_name);
+    let bundle = create_base_and_cached_build(
         default_bundle_directory,
-        &osdk_target_directory,
-        &ws_target_directory,
-        &required_build_config,
+        &osdk_output_directory,
+        &cargo_target_directory,
+        &config,
+        ActionChoice::Run,
         &[],
     );
-    bundle.run(&config);
-}
 
-fn get_last_modified_time(path: impl AsRef<Path>) -> SystemTime {
-    let mut last_modified = SystemTime::UNIX_EPOCH;
-    for entry in std::fs::read_dir(path).unwrap() {
-        let entry = entry.unwrap();
-        if entry.file_name() == "target" {
-            continue;
-        }
-
-        let metadata = entry.metadata().unwrap();
-        if metadata.is_dir() {
-            last_modified = std::cmp::max(last_modified, get_last_modified_time(&entry.path()));
-        } else {
-            last_modified = std::cmp::max(last_modified, metadata.modified().unwrap());
-        }
-    }
-    last_modified
+    bundle.run(&config, ActionChoice::Run);
 }
 
 mod gdb {

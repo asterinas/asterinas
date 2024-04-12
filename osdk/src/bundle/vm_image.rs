@@ -18,11 +18,16 @@ pub struct AsterVmImage {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AsterVmImageType {
     GrubIso(AsterGrubIsoImageMeta),
-    // TODO: add more vm image types such as qcow2, etc.
+    Qcow2(AsterQcow2ImageMeta),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsterGrubIsoImageMeta {
+    pub grub_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AsterQcow2ImageMeta {
     pub grub_version: String,
 }
 
@@ -48,6 +53,10 @@ impl AsterVmImage {
             sha256sum: created.calculate_sha256sum(),
             ..created
         }
+    }
+
+    pub fn typ(&self) -> &AsterVmImageType {
+        &self.typ
     }
 
     /// Move the binary to the `base` directory and convert the path to a relative path.

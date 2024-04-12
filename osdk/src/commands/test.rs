@@ -2,38 +2,38 @@
 
 use std::fs;
 
-use super::{build::do_build, util::DEFAULT_TARGET_RELPATH};
+use super::{build::do_cached_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
     base_crate::new_base_crate,
-    cli::GdbServerArgs,
-    config_manager::{BuildConfig, RunConfig, TestConfig},
+    cli::TestArgs,
+    config::{scheme::ActionChoice, Config},
     util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
 };
 
-pub fn execute_test_command(config: &TestConfig) {
+pub fn execute_test_command(config: &Config, args: &TestArgs) {
     let crates = get_workspace_default_members();
     for crate_path in crates {
         std::env::set_current_dir(crate_path).unwrap();
-        test_current_crate(config);
+        test_current_crate(config, args);
     }
 }
 
-pub fn test_current_crate(config: &TestConfig) {
+pub fn test_current_crate(config: &Config, args: &TestArgs) {
     let current_crate = get_current_crate_info();
-    let ws_target_directory = get_target_directory();
-    let osdk_target_directory = ws_target_directory.join(DEFAULT_TARGET_RELPATH);
-    let target_crate_dir = osdk_target_directory.join("base");
+    let cargo_target_directory = get_target_directory();
+    let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
+    let target_crate_dir = osdk_output_directory.join("base");
     new_base_crate(&target_crate_dir, &current_crate.name, &current_crate.path);
 
     let main_rs_path = target_crate_dir.join("src").join("main.rs");
 
-    let ktest_test_whitelist = match &config.test_name {
+    let ktest_test_whitelist = match &args.test_name {
         Some(name) => format!(r#"Some(&["{}"])"#, name),
         None => r#"None"#.to_string(),
     };
 
     let mut ktest_crate_whitelist = vec![current_crate.name];
-    if let Some(name) = &config.test_name {
+    if let Some(name) = &args.test_name {
         ktest_crate_whitelist.push(name.clone());
     }
 
@@ -54,32 +54,21 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
 
     // Build the kernel with the given base crate
     let target_name = get_current_crate_info().name;
-    let default_bundle_directory = osdk_target_directory.join(target_name);
-    let required_build_config = BuildConfig {
-        arch: config.arch,
-        settings: config.settings.clone(),
-        cargo_args: config.cargo_args.clone(),
-    };
+    let default_bundle_directory = osdk_output_directory.join(target_name);
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&target_crate_dir).unwrap();
-    let bundle = do_build(
+    let bundle = do_cached_build(
         default_bundle_directory,
-        &osdk_target_directory,
-        &ws_target_directory,
-        &required_build_config,
+        &osdk_output_directory,
+        &cargo_target_directory,
+        config,
+        ActionChoice::Test,
         &["--cfg ktest"],
     );
     std::env::remove_var("RUSTFLAGS");
     std::env::set_current_dir(original_dir).unwrap();
 
-    let required_run_config = RunConfig {
-        arch: config.arch,
-        settings: required_build_config.settings.clone(),
-        cargo_args: required_build_config.cargo_args.clone(),
-        gdb_server_args: GdbServerArgs::default(),
-    };
-
-    bundle.run(&required_run_config);
+    bundle.run(config, ActionChoice::Test);
 }
 
 fn get_workspace_default_members() -> Vec<String> {

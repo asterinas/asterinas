@@ -7,7 +7,7 @@ pub mod vm_image;
 use bin::AsterBin;
 use file::{BundleFile, Initramfs};
 use std::process;
-use vm_image::AsterVmImage;
+use vm_image::{AsterVmImage, AsterVmImageType};
 
 use std::{
     path::{Path, PathBuf},
@@ -16,11 +16,9 @@ use std::{
 };
 
 use crate::{
-    arch::Arch,
-    cli::CargoArgs,
-    config_manager::{
-        action::{ActionSettings, Bootloader},
-        RunConfig,
+    config::{
+        scheme::{ActionChoice, BootMethod},
+        Config,
     },
     error::Errno,
     error_msg,
@@ -42,16 +40,20 @@ pub struct BundleManifest {
     pub initramfs: Option<Initramfs>,
     pub aster_bin: Option<AsterBin>,
     pub vm_image: Option<AsterVmImage>,
-    pub settings: ActionSettings,
-    pub cargo_args: CargoArgs,
+    pub config: Config,
+    pub action: ActionChoice,
     pub last_modified: SystemTime,
 }
 
 impl Bundle {
     /// This function creates a new `Bundle` without adding any files.
-    pub fn new(path: impl AsRef<Path>, settings: ActionSettings, cargo_args: CargoArgs) -> Self {
+    pub fn new(path: impl AsRef<Path>, config: &Config, action: ActionChoice) -> Self {
         std::fs::create_dir_all(path.as_ref()).unwrap();
-        let initramfs = if let Some(ref initramfs) = settings.initramfs {
+        let config_initramfs = match action {
+            ActionChoice::Run => config.run.boot.initramfs.as_ref(),
+            ActionChoice::Test => config.test.boot.initramfs.as_ref(),
+        };
+        let initramfs = if let Some(ref initramfs) = config_initramfs {
             if !initramfs.exists() {
                 error_msg!("initramfs file not found: {}", initramfs.display());
                 process::exit(Errno::BuildCrate as _);
@@ -65,8 +67,8 @@ impl Bundle {
                 initramfs,
                 aster_bin: None,
                 vm_image: None,
-                settings,
-                cargo_args,
+                config: config.clone(),
+                action,
                 last_modified: SystemTime::now(),
             },
             path: path.as_ref().to_path_buf(),
@@ -109,105 +111,139 @@ impl Bundle {
         })
     }
 
-    pub fn can_run_with_config(&self, config: &RunConfig) -> bool {
-        // Compare the manifest with the run configuration.
-        // TODO: This pairwise comparison will result in some false negatives. We may
-        // fix it by pondering upon each fields with more care.
-        if self.manifest.settings != config.settings
-            || self.manifest.cargo_args != config.cargo_args
+    pub fn can_run_with_config(&self, config: &Config, action: ActionChoice) -> Result<(), String> {
+        // If built for testing, better not to run it. Vice versa.
+        if self.manifest.action != action {
+            return Err(format!(
+                "The bundle is built for {:?}",
+                self.manifest.action
+            ));
+        }
+
+        let self_action = match self.manifest.action {
+            ActionChoice::Run => &self.manifest.config.run,
+            ActionChoice::Test => &self.manifest.config.test,
+        };
+        let config_action = match action {
+            ActionChoice::Run => &config.run,
+            ActionChoice::Test => &config.test,
+        };
+
+        // Compare the manifest with the run configuration except the initramfs and the boot method.
+        if self_action.grub != config_action.grub
+            || self_action.qemu != config_action.qemu
+            || self_action.build != config_action.build
+            || self_action.boot.kcmdline != config_action.boot.kcmdline
         {
-            return false;
+            return Err("The bundle is not compatible with the run configuration".to_owned());
+        }
+
+        // Checkout if the files on disk supports the boot method
+        match config_action.boot.method {
+            BootMethod::QemuDirect => {
+                if self.manifest.aster_bin.is_none() {
+                    return Err("Kernel binary is required for direct QEMU booting".to_owned());
+                };
+            }
+            BootMethod::GrubRescueIso => {
+                let Some(ref vm_image) = self.manifest.vm_image else {
+                    return Err("VM image is required for QEMU booting".to_owned());
+                };
+                if !matches!(vm_image.typ(), AsterVmImageType::GrubIso(_)) {
+                    return Err("VM image in the bundle is not a Grub ISO image".to_owned());
+                }
+            }
+            BootMethod::GrubQcow2 => {
+                let Some(ref vm_image) = self.manifest.vm_image else {
+                    return Err("VM image is required for QEMU booting".to_owned());
+                };
+                if !matches!(vm_image.typ(), AsterVmImageType::Qcow2(_)) {
+                    return Err("VM image in the bundle is not a Qcow2 image".to_owned());
+                }
+            }
         }
 
         // Compare the initramfs.
-        match (&self.manifest.initramfs, &config.settings.initramfs) {
+        let initramfs_err =
+            "The initramfs in the bundle is different from the one in the run configuration"
+                .to_owned();
+        match (&self.manifest.initramfs, &config_action.boot.initramfs) {
             (Some(initramfs), Some(initramfs_path)) => {
                 let config_initramfs = Initramfs::new(initramfs_path);
                 if initramfs.sha256sum() != config_initramfs.sha256sum() {
-                    return false;
+                    return Err(initramfs_err);
                 }
             }
             (None, None) => {}
             _ => {
-                return false;
+                return Err(initramfs_err);
             }
         };
 
-        true
+        Ok(())
     }
 
     pub fn last_modified_time(&self) -> SystemTime {
         self.manifest.last_modified
     }
 
-    pub fn run(&self, config: &RunConfig) {
-        if !self.can_run_with_config(config) {
-            error_msg!("The bundle is not compatible with the run configuration");
-            std::process::exit(Errno::RunBundle as _);
-        }
-        let mut qemu_cmd = Command::new(config.settings.qemu_exe.clone().unwrap_or_else(|| {
-            PathBuf::from(match config.arch {
-                Arch::Aarch64 => "qemu-system-aarch64",
-                Arch::RiscV64 => "qemu-system-riscv64",
-                Arch::X86_64 => "qemu-system-x86_64",
-            })
-        }));
-        // FIXME: Arguments like "-m 2G" sould be separated into "-m" and "2G". This
-        // is a dirty hack to make it work. Anything like space in the paths will
-        // break this.
-        for arg in &config.settings.qemu_args {
-            for part in arg.split_whitespace() {
-                qemu_cmd.arg(part);
+    pub fn run(&self, config: &Config, action: ActionChoice) {
+        match self.can_run_with_config(config, action) {
+            Ok(()) => {}
+            Err(msg) => {
+                error_msg!("{}", msg);
+                std::process::exit(Errno::RunBundle as _);
             }
         }
-        match config.settings.bootloader {
-            Some(Bootloader::Qemu) => {
-                let Some(ref aster_bin) = self.manifest.aster_bin else {
-                    error_msg!("Kernel ELF binary is required for direct QEMU booting");
-                    std::process::exit(Errno::RunBundle as _);
-                };
+        let action = match action {
+            ActionChoice::Run => &config.run,
+            ActionChoice::Test => &config.test,
+        };
+        let mut qemu_cmd = Command::new(&action.qemu.path);
+        match shlex::split(&action.qemu.args) {
+            Some(v) => {
+                for arg in v {
+                    qemu_cmd.arg(arg);
+                }
+            }
+            None => {
+                error_msg!("Failed to parse qemu args: {:#?}", &action.qemu.args);
+                process::exit(Errno::ParseMetadata as _);
+            }
+        }
+        match action.boot.method {
+            BootMethod::QemuDirect => {
+                let aster_bin = self.manifest.aster_bin.as_ref().unwrap();
                 qemu_cmd
                     .arg("-kernel")
                     .arg(self.path.join(aster_bin.path()));
-                if let Some(ref initramfs) = config.settings.initramfs {
+                if let Some(ref initramfs) = action.boot.initramfs {
                     qemu_cmd.arg("-initrd").arg(initramfs);
                 } else {
                     info!("No initramfs specified");
                 };
-                qemu_cmd
-                    .arg("-append")
-                    .arg(config.settings.combined_kcmd_args().join(" "));
+                qemu_cmd.arg("-append").arg(action.boot.kcmdline.join(" "));
             }
-            Some(Bootloader::Grub) => {
-                let Some(ref vm_image) = self.manifest.vm_image else {
-                    error_msg!("VM image is required for QEMU booting");
-                    std::process::exit(Errno::RunBundle as _);
-                };
+            BootMethod::GrubRescueIso => {
+                let vm_image = self.manifest.vm_image.as_ref().unwrap();
+                assert!(matches!(vm_image.typ(), AsterVmImageType::GrubIso(_)));
                 qemu_cmd.arg("-cdrom").arg(self.path.join(vm_image.path()));
-                if let Some(ovmf) = &config.settings.ovmf {
-                    qemu_cmd.arg("-drive").arg(format!(
-                        "if=pflash,format=raw,unit=0,readonly=on,file={}",
-                        ovmf.join("OVMF_CODE.fd").display()
-                    ));
-                    qemu_cmd.arg("-drive").arg(format!(
-                        "if=pflash,format=raw,unit=1,file={}",
-                        ovmf.join("OVMF_VARS.fd").display()
-                    ));
-                }
             }
-            None => {
-                error_msg!("Bootloader is required for QEMU booting");
-                std::process::exit(Errno::RunBundle as _);
+            BootMethod::GrubQcow2 => {
+                let vm_image = self.manifest.vm_image.as_ref().unwrap();
+                assert!(matches!(vm_image.typ(), AsterVmImageType::Qcow2(_)));
+                qemu_cmd.arg("-drive").arg(format!(
+                    "file={},index=0,media=disk,format=qcow2",
+                    self.path
+                        .join(vm_image.path())
+                        .into_os_string()
+                        .into_string()
+                        .unwrap()
+                ));
             }
         };
 
-        for drive_file in &config.settings.drive_files {
-            qemu_cmd.arg("-drive").arg(format!(
-                "file={},{}",
-                drive_file.path.display(),
-                drive_file.append,
-            ));
-        }
+        info!("Running QEMU: {:#?}", qemu_cmd);
 
         let exit_status = qemu_cmd.status().unwrap();
         if !exit_status.success() {

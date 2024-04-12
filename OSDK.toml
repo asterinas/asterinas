@@ -1,7 +1,19 @@
-[project]
-type = "kernel"
+vars = [
+    ["SMP", "1"],
+    ["MEM", "2G"],
+    ["EXT2_IMG", "$OSDK_CWD/regression/build/ext2.img"],
+    ["EXFAT_IMG", "$OSDK_CWD/regression/build/exfat.img"],
+]
+
+[boot]
+method = "grub-rescue-iso"
 
 [run]
+vars = [
+    ["OVMF_PATH", "/usr/share/OVMF"],
+]
+
+[run.boot]
 kcmd_args = [
     "SHELL=/bin/sh",
     "LOGNAME=root",
@@ -12,117 +24,67 @@ kcmd_args = [
 ]
 init_args = ["sh", "-l"]
 initramfs = "regression/build/initramfs.cpio.gz"
-boot_protocol = "multiboot2"
-bootloader = "grub"
-ovmf = "/root/ovmf/release"
-drive_files = [
-    ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
-    ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
-]
-qemu_args = [
-    "-machine q35,kernel-irqchip=split",
-    "-cpu Icelake-Server,+x2apic",
-    "--no-reboot",
-    "-m 2G",
-    "-nographic",
-    "-serial chardev:mux",
-    "-monitor chardev:mux",
-    "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log",
-    "-display none",
-    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
-    "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
-    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off",
-    "-device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off",
-    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
-    "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
-    "-device virtio-serial-pci,disable-legacy=on,disable-modern=off",
-    "-device virtconsole,chardev=mux",
-]
 
 [test]
-boot_protocol = "multiboot"
-bootloader = "qemu"
-qemu_args = [
-    "-machine q35,kernel-irqchip=split",
-    "-cpu Icelake-Server,+x2apic",
-    "--no-reboot",
-    "-m 2G",
-    "-nographic",
-    "-serial chardev:mux",
-    "-monitor chardev:mux",
-    "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log",
-    "-display none",
-    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
-    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
-    "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off",
-    "-device virtio-serial-pci,disable-legacy=on,disable-modern=off",
-    "-device virtconsole,chardev=mux",
-]
+boot.method = "qemu-direct"
 
+[grub]
+protocol = "multiboot2"
 
-['cfg(arch="x86_64", schema="iommu")'.run]
-drive_files = [
-    ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
-    ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
-]
-qemu_args = [
-    "-machine q35,kernel-irqchip=split",
-    "-cpu Icelake-Server,+x2apic",
-    "--no-reboot",
-    "-m 2G",
-    "-nographic",
-    "-serial chardev:mux",
-    "-monitor chardev:mux",
-    "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log",
-    "-display none",
-    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
-    "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
-    "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device virtio-serial-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device virtconsole,chardev=mux",
-    "-device intel-iommu,intremap=on,device-iotlb=on",
-    "-device ioh3420,id=pcie.0,chassis=1",
-]
+[qemu]
+args = "$(./tools/qemu_args.sh)"
 
-['cfg(arch="x86_64", schema="microvm")'.run]
-bootloader = "qemu"
-drive_files = [
-    ["regression/build/ext2.img", "if=none,format=raw,id=x0"],
-    ["regression/build/exfat.img", "if=none,format=raw,id=x1"],
+[scheme."microvm"]
+boot.method = "qemu-direct"
+vars = [
+    ["MICROVM", "true"],
 ]
-qemu_args = [
-    "-machine microvm,rtc=on",
-    "-cpu Icelake-Server,+x2apic",
-    "--no-reboot",
-    "-m 2G",
-    "-nographic",
-    "-serial chardev:mux",
-    "-monitor chardev:mux",
-    "-chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log",
-    "-display none",
-    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap",
-    "-netdev user,id=net01,hostfwd=tcp::36788-:22,hostfwd=tcp::55834-:8080",
-    "-nodefaults",
-    "-no-user-config",
-    "-device virtio-blk-device,drive=x0,serial=vext2",
-    "-device virtio-blk-device,drive=x1,serial=vexfat",
-    "-device virtio-keyboard-device",
-    "-device virtio-net-device,netdev=net01",
-    "-device virtio-serial-device",
-    "-device virtconsole,chardev=mux",
-]
+qemu.args = "$(./tools/qemu_args.sh)"
 
-['cfg(arch="riscv64")'.run]
-qemu_args = [
-    "-machine virt",
-    "--no-reboot",
-    "-m 2G",
-    "-nographic",
+[scheme."iommu"]
+supported_archs = ["x86_64"]
+vars = [
+    ["IOMMU_DEV_EXTRA", ",iommu_platform=on,ats=on"],
+    ["IOMMU_EXTRA_ARGS", """\
+        -device intel-iommu,intremap=on,device-iotlb=on \
+        -device ioh3420,id=pcie.0,chassis=1\
+    """],
 ]
+qemu.args = "$(./tools/qemu_args.sh)"
+
+[scheme."tdx"]
+supported_archs = ["x86_64"]
+build.features = ["intel_tdx"]
+vars = [
+    ["MEM", "8G"],
+    ["OVMF_PATH", "~/tdx-tools/ovmf"],
+]
+boot.method = "grub-qcow2"
+grub.mkrescue_path = "~/tdx-tools/grub"
+grub.protocol = "linux"
+qemu.args = """\
+    -accel kvm \
+    -name process=tdxvm,debug-threads=on \
+    -m $MEM \
+    -smp $SMP \
+    -vga none \
+    -nographic \
+    -monitor pty \
+    -no-hpet \
+    -nodefaults \
+    -monitor telnet:127.0.0.1:9003,server,nowait \
+    -bios $OVMF_PATH/OVMF_VARS.fd \
+    -object tdx-guest,sept-ve-disable,id=tdx,quote-generation-service=vsock:2:4050 \
+    -cpu host,-kvm-steal-time,pmu=off,tsc-freq=1000000000 \
+    -machine q35,kernel_irqchip=split,confidential-guest-support=tdx \
+    -device virtio-net-pci,netdev=mynet0,disable-legacy=on,disable-modern=off \
+    -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
+    -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off \
+    -drive file=fs.img,if=none,format=raw,id=x0 \
+    -netdev user,id=mynet0,hostfwd=tcp::10027-:22,hostfwd=tcp::54136-:8090 \
+    -chardev stdio,id=mux,mux=on,logfile=$OSDK_CWD/$(date '+%Y-%m-%dT%H%M%S').log \
+    -device virtio-serial,romfile= \
+    -device virtconsole,chardev=mux \
+    -monitor chardev:mux \
+    -serial chardev:mux \
+"""
