@@ -84,8 +84,7 @@ use super::WaitQueue;
 ///     assert_eq!(*w2, 7);
 /// }   // write mutex is dropped at this point
 /// ```
-pub struct RwMutex<T> {
-    val: UnsafeCell<T>,
+pub struct RwMutex<T: ?Sized> {
     /// The internal representation of the mutex state is as follows:
     /// - **Bit 63:** Writer mutex.
     /// - **Bit 62:** Upgradeable reader mutex.
@@ -94,6 +93,7 @@ pub struct RwMutex<T> {
     lock: AtomicUsize,
     /// Threads that fail to acquire the mutex will sleep on this waitqueue.
     queue: WaitQueue,
+    val: UnsafeCell<T>,
 }
 
 const READER: usize = 1;
@@ -111,7 +111,9 @@ impl<T> RwMutex<T> {
             queue: WaitQueue::new(),
         }
     }
+}
 
+impl<T: ?Sized> RwMutex<T> {
     /// Acquire a read mutex and sleep until it can be acquired.
     ///
     /// The calling thread will sleep until there are no writers or upgrading
@@ -188,7 +190,7 @@ impl<T> RwMutex<T> {
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for RwMutex<T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwMutex<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.val, f)
     }
@@ -196,24 +198,24 @@ impl<T: fmt::Debug> fmt::Debug for RwMutex<T> {
 
 /// Because there can be more than one readers to get the T's immutable ref,
 /// so T must be Sync to guarantee the sharing safety.
-unsafe impl<T: Send> Send for RwMutex<T> {}
-unsafe impl<T: Send + Sync> Sync for RwMutex<T> {}
+unsafe impl<T: ?Sized + Send> Send for RwMutex<T> {}
+unsafe impl<T: ?Sized + Send + Sync> Sync for RwMutex<T> {}
 
-impl<'a, T> !Send for RwMutexWriteGuard<'a, T> {}
-unsafe impl<T: Sync> Sync for RwMutexWriteGuard<'_, T> {}
+impl<'a, T: ?Sized> !Send for RwMutexWriteGuard<'a, T> {}
+unsafe impl<T: ?Sized + Sync> Sync for RwMutexWriteGuard<'_, T> {}
 
-impl<'a, T> !Send for RwMutexReadGuard<'a, T> {}
-unsafe impl<T: Sync> Sync for RwMutexReadGuard<'_, T> {}
+impl<'a, T: ?Sized> !Send for RwMutexReadGuard<'a, T> {}
+unsafe impl<T: ?Sized + Sync> Sync for RwMutexReadGuard<'_, T> {}
 
-impl<'a, T> !Send for RwMutexUpgradeableGuard<'a, T> {}
-unsafe impl<T: Sync> Sync for RwMutexUpgradeableGuard<'_, T> {}
+impl<'a, T: ?Sized> !Send for RwMutexUpgradeableGuard<'a, T> {}
+unsafe impl<T: ?Sized + Sync> Sync for RwMutexUpgradeableGuard<'_, T> {}
 
 /// A guard that provides immutable data access.
-pub struct RwMutexReadGuard<'a, T> {
+pub struct RwMutexReadGuard<'a, T: ?Sized> {
     inner: &'a RwMutex<T>,
 }
 
-impl<'a, T> Deref for RwMutexReadGuard<'a, T> {
+impl<'a, T: ?Sized> Deref for RwMutexReadGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -221,7 +223,7 @@ impl<'a, T> Deref for RwMutexReadGuard<'a, T> {
     }
 }
 
-impl<'a, T> Drop for RwMutexReadGuard<'a, T> {
+impl<'a, T: ?Sized> Drop for RwMutexReadGuard<'a, T> {
     fn drop(&mut self) {
         // When there are no readers, wake up a waiting writer.
         if self.inner.lock.fetch_sub(READER, Release) == READER {
@@ -231,11 +233,11 @@ impl<'a, T> Drop for RwMutexReadGuard<'a, T> {
 }
 
 /// A guard that provides mutable data access.
-pub struct RwMutexWriteGuard<'a, T> {
+pub struct RwMutexWriteGuard<'a, T: ?Sized> {
     inner: &'a RwMutex<T>,
 }
 
-impl<'a, T> Deref for RwMutexWriteGuard<'a, T> {
+impl<'a, T: ?Sized> Deref for RwMutexWriteGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -243,13 +245,13 @@ impl<'a, T> Deref for RwMutexWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for RwMutexWriteGuard<'a, T> {
+impl<'a, T: ?Sized> DerefMut for RwMutexWriteGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.inner.val.get() }
     }
 }
 
-impl<'a, T> Drop for RwMutexWriteGuard<'a, T> {
+impl<'a, T: ?Sized> Drop for RwMutexWriteGuard<'a, T> {
     fn drop(&mut self) {
         self.inner.lock.fetch_and(!WRITER, Release);
 
@@ -263,11 +265,11 @@ impl<'a, T> Drop for RwMutexWriteGuard<'a, T> {
 
 /// A guard that provides immutable data access but can be atomically
 /// upgraded to `RwMutexWriteGuard`.
-pub struct RwMutexUpgradeableGuard<'a, T> {
+pub struct RwMutexUpgradeableGuard<'a, T: ?Sized> {
     inner: &'a RwMutex<T>,
 }
 
-impl<'a, T> RwMutexUpgradeableGuard<'a, T> {
+impl<'a, T: ?Sized> RwMutexUpgradeableGuard<'a, T> {
     /// Upgrade this upread guard to a write guard atomically.
     ///
     /// After calling this method, subsequent readers will be blocked
@@ -307,7 +309,7 @@ impl<'a, T> RwMutexUpgradeableGuard<'a, T> {
     }
 }
 
-impl<'a, T> Deref for RwMutexUpgradeableGuard<'a, T> {
+impl<'a, T: ?Sized> Deref for RwMutexUpgradeableGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -315,7 +317,7 @@ impl<'a, T> Deref for RwMutexUpgradeableGuard<'a, T> {
     }
 }
 
-impl<'a, T> Drop for RwMutexUpgradeableGuard<'a, T> {
+impl<'a, T: ?Sized> Drop for RwMutexUpgradeableGuard<'a, T> {
     fn drop(&mut self) {
         let res = self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
         if res == 0 {
