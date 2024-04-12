@@ -50,7 +50,7 @@ If `cargo-osdk` is already installed, the tool can be upgraded by
 cargo install --force cargo-osdk
 ```
 
-### Get start
+### Getting started
 
 Here we provide a simple demo to demonstrate how to create and run a simple kernel with `cargo-osdk`.
 
@@ -86,68 +86,14 @@ The following command can be used to discover the available options for each com
 cargo osdk help <COMMAND>
 ```
 
-### The configuration file
+### The OSDK manifest
 
-`cargo-osdk` utilizes a configuration file to define its precise behavior. Typically, the configuration file is named `OSDK.toml` and is placed in the root directory of the workspace (the same directory as the workspace's `Cargo.toml`). If there is only one crate and no workspace, the file is placed in the crate's root directory. Below, you will find a comprehensive version of the available configuration options.
+`cargo-osdk` utilizes a configuration file named `OSDK.toml` to define its precise behavior. To learn more about the manifest specification, please refer to [the book](https://asterinas.github.io/book/osdk/reference/manifest.html).
 
-```toml
-kcmd_args = ["init=/bin/busybox", "path=/usr/local/bin"] # <1>
-init_args = ["sh", "-l"] # <2>
-initramfs="./build/initramfs.cpio.gz" # <3>
+### Contributing
 
-[boot]
-loader = "grub" # <4>
-protocol = "multiboot2" # <5>
-grub-mkrescue = "/usr/bin/grub-mkrescue" # <6>
-ovmf = "/usr/bin/ovmf" # <7>
+Asterinas OSDK is developed as a sub-project of [Asterinas](https://github.com/asterinas/asterinas). It shares the same repository with the kernel. Please contribute to OSDK according to the contribution guide of Asterinas.
 
-[qemu]
-path = "/usr/bin/qemu-system-x86_64" # <8>
-machine = "q35" # <9>
-args = [ # <10>
-    "-enable-kvm",
-    "-m 2G", 
-    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off"
-] 
+#### Note for Visual Studio Code users
 
-[qemu.'cfg(feature="iommu")'] # <11>
-path = "/usr/local/sbin/qemu-kvm" # <8>
-machine = "q35" # <9>
-args = [ # <10>
-    "-enable-kvm",
-    "-m 2G", 
-    "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on",
-    "-device intel-iommu,intremap=on,device-iotlb=on"
-] 
-```
-
-1. The arguments provided will be passed to the guest kernel.   
-Optional. The default value is empty.   
-Each argument should be in one of the following two forms: `KEY=VALUE` or `KEY` if no value is required. Each `KEY` can appear at most once.  
-2. The arguments provided will be passed to the init process, usually, the init shell.   
-Optional. The default value is empty.
-3. The path to the built initramfs.  
-Optional. The default value is empty.
-4. The bootloader used to boot the kernel.  
-Optional. The default value is `grub`.   
-The allowed values are `grub` and `qemu` (`qemu` indicates that QEMU directly boots the kernel).
-5. The boot protocol used to boot the kernel.    
-Optional. The default value is `multiboot2`.    
-The allowed values are `linux-efi-handover64`, `linux-legacy32`, `multiboot`, and `multiboot2`.
-6. The path of `grub-mkrescue`, which is used to create a GRUB CD_ROM.   
-Optional. The default value is system path, determined using `which grub-mkrescue`.   
-This argument only takes effect when the bootloader is `grub`.   
-7. The path of OVMF. OVMF enables UEFI support for QEMU.   
-Optional. The default value is empty.   
-This argument only takes effect when the boot protocol is `linux-efi-handover64`.
-8. The path of QEMU.  
-Optional. The default value is system path, determined using `which qemu-system-x86_64`.  
-9. The machine type of QEMU.  
-Optional. Default is `q35`.  
-The allowed values are `q35` and `microvm`.  
-10. Additional arguments passed to QEMU.   
-Optional. The default value is empty.   
-Each argument should be in the form `KEY VALUE` (separated by space), or `KEY` if no value is required. Some keys can appear multiple times (e.g., `-device`, `-netdev`), while other keys can appear at most once. Certain keys, such as `-cpu` and `-machine`, are not allowed to be set here as they may conflict with the internal settings of `cargo-osdk`.  
-11. Conditional QEMU settings.   
-Optional. The default value is empty.   
-Conditional QEMU settings allow for a condition to be specified after `qemu`. Currently, `cargo-osdk` only supports the condition `cfg(feature="FEATURE")`, which activates the QEMU settings only if the `FEATURE` is set. The `FEATURE` must be defined in the project's `Cargo.toml`. At most one conditional setting can be activated at a time. If multiple conditional settings can be activated simultaneously, `cargo-osdk` will report an error. In the future, `cargo-osdk` will support all possible conditions that [Rust conditional compilation](https://doc.rust-lang.org/reference/conditional-compilation.html) supports.
+To enable advanced features of the editor on OSDK, please open the Asterinas repository as a workspace using the `File > Open Workspace from File...` menu entry, and select the file `.code-workspace` in the Asterinas repository root as the configuration.
