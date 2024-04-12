@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::sync::Arc;
 
 use log::info;
 use spin::Once;
@@ -11,7 +11,7 @@ pub mod ioapic;
 pub mod x2apic;
 pub mod xapic;
 
-pub static APIC_INSTANCE: Once<Arc<Mutex<Box<dyn Apic + 'static>>>> = Once::new();
+pub static APIC_INSTANCE: Once<Arc<Mutex<dyn Apic + 'static>>> = Once::new();
 
 pub trait Apic: ApicTimer + Sync + Send {
     fn id(&self) -> u32;
@@ -71,7 +71,7 @@ pub fn init() -> Result<(), ApicInitError> {
             version & 0xff,
             (version >> 16) & 0xff
         );
-        APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(x2apic))));
+        APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(x2apic)));
         Ok(())
     } else if let Some(mut xapic) = xapic::XApic::new() {
         xapic.enable();
@@ -82,7 +82,7 @@ pub fn init() -> Result<(), ApicInitError> {
             version & 0xff,
             (version >> 16) & 0xff
         );
-        APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(Box::new(xapic))));
+        APIC_INSTANCE.call_once(|| Arc::new(Mutex::new(xapic)));
         Ok(())
     } else {
         log::warn!("Not found x2APIC or xAPIC");

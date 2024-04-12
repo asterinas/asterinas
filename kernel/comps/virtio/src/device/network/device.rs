@@ -102,7 +102,7 @@ impl NetworkDevice {
 
         aster_network::register_device(
             super::DEVICE_NAME.to_string(),
-            Arc::new(SpinLock::new(Box::new(device))),
+            Arc::new(SpinLock::new(device)),
         );
         Ok(())
     }

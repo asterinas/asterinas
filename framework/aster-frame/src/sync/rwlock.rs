@@ -96,14 +96,14 @@ use crate::{
 ///     assert_eq!(*w2, 7);
 /// }   // write lock is dropped at this point
 /// ```
-pub struct RwLock<T> {
-    val: UnsafeCell<T>,
+pub struct RwLock<T: ?Sized> {
     /// The internal representation of the lock state is as follows:
     /// - **Bit 63:** Writer lock.
     /// - **Bit 62:** Upgradeable reader lock.
     /// - **Bit 61:** Indicates if an upgradeable reader is being upgraded.
     /// - **Bits 60-0:** Reader lock count.
     lock: AtomicUsize,
+    val: UnsafeCell<T>,
 }
 
 const READER: usize = 1;
@@ -120,7 +120,9 @@ impl<T> RwLock<T> {
             lock: AtomicUsize::new(0),
         }
     }
+}
 
+impl<T: ?Sized> RwLock<T> {
     /// Acquire a read lock while disabling the local IRQs and spin-wait
     /// until it can be acquired.
     ///
@@ -386,7 +388,7 @@ impl<T> RwLock<T> {
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for RwLock<T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.val, f)
     }
@@ -394,17 +396,17 @@ impl<T: fmt::Debug> fmt::Debug for RwLock<T> {
 
 /// Because there can be more than one readers to get the T's immutable ref,
 /// so T must be Sync to guarantee the sharing safety.
-unsafe impl<T: Send> Send for RwLock<T> {}
-unsafe impl<T: Send + Sync> Sync for RwLock<T> {}
+unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
+unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
 
-impl<'a, T> !Send for RwLockWriteGuard<'a, T> {}
-unsafe impl<T: Sync> Sync for RwLockWriteGuard<'_, T> {}
+impl<'a, T: ?Sized> !Send for RwLockWriteGuard<'a, T> {}
+unsafe impl<T: ?Sized + Sync> Sync for RwLockWriteGuard<'_, T> {}
 
-impl<'a, T> !Send for RwLockReadGuard<'a, T> {}
-unsafe impl<T: Sync> Sync for RwLockReadGuard<'_, T> {}
+impl<'a, T: ?Sized> !Send for RwLockReadGuard<'a, T> {}
+unsafe impl<T: ?Sized + Sync> Sync for RwLockReadGuard<'_, T> {}
 
-impl<'a, T> !Send for RwLockUpgradeableGuard<'a, T> {}
-unsafe impl<T: Sync> Sync for RwLockUpgradeableGuard<'_, T> {}
+impl<'a, T: ?Sized> !Send for RwLockUpgradeableGuard<'a, T> {}
+unsafe impl<T: ?Sized + Sync> Sync for RwLockUpgradeableGuard<'_, T> {}
 
 enum InnerGuard {
     IrqGuard(DisabledLocalIrqGuard),
@@ -412,12 +414,12 @@ enum InnerGuard {
 }
 
 /// A guard that provides immutable data access.
-pub struct RwLockReadGuard<'a, T> {
-    inner: &'a RwLock<T>,
+pub struct RwLockReadGuard<'a, T: ?Sized> {
     inner_guard: InnerGuard,
+    inner: &'a RwLock<T>,
 }
 
-impl<'a, T> Deref for RwLockReadGuard<'a, T> {
+impl<'a, T: ?Sized> Deref for RwLockReadGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -425,25 +427,25 @@ impl<'a, T> Deref for RwLockReadGuard<'a, T> {
     }
 }
 
-impl<'a, T> Drop for RwLockReadGuard<'a, T> {
+impl<'a, T: ?Sized> Drop for RwLockReadGuard<'a, T> {
     fn drop(&mut self) {
         self.inner.lock.fetch_sub(READER, Release);
     }
 }
 
-impl<'a, T: fmt::Debug> fmt::Debug for RwLockReadGuard<'a, T> {
+impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for RwLockReadGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
 /// A guard that provides mutable data access.
-pub struct RwLockWriteGuard<'a, T> {
-    inner: &'a RwLock<T>,
+pub struct RwLockWriteGuard<'a, T: ?Sized> {
     inner_guard: InnerGuard,
+    inner: &'a RwLock<T>,
 }
 
-impl<'a, T> Deref for RwLockWriteGuard<'a, T> {
+impl<'a, T: ?Sized> Deref for RwLockWriteGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -451,19 +453,19 @@ impl<'a, T> Deref for RwLockWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for RwLockWriteGuard<'a, T> {
+impl<'a, T: ?Sized> DerefMut for RwLockWriteGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.inner.val.get() }
     }
 }
 
-impl<'a, T> Drop for RwLockWriteGuard<'a, T> {
+impl<'a, T: ?Sized> Drop for RwLockWriteGuard<'a, T> {
     fn drop(&mut self) {
         self.inner.lock.fetch_and(!WRITER, Release);
     }
 }
 
-impl<'a, T: fmt::Debug> fmt::Debug for RwLockWriteGuard<'a, T> {
+impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for RwLockWriteGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
@@ -471,12 +473,12 @@ impl<'a, T: fmt::Debug> fmt::Debug for RwLockWriteGuard<'a, T> {
 
 /// A guard that provides immutable data access but can be atomically
 /// upgraded to `RwLockWriteGuard`.
-pub struct RwLockUpgradeableGuard<'a, T> {
-    inner: &'a RwLock<T>,
+pub struct RwLockUpgradeableGuard<'a, T: ?Sized> {
     inner_guard: InnerGuard,
+    inner: &'a RwLock<T>,
 }
 
-impl<'a, T> RwLockUpgradeableGuard<'a, T> {
+impl<'a, T: ?Sized> RwLockUpgradeableGuard<'a, T> {
     /// Upgrade this upread guard to a write guard atomically.
     ///
     /// After calling this method, subsequent readers will be blocked
@@ -517,7 +519,7 @@ impl<'a, T> RwLockUpgradeableGuard<'a, T> {
     }
 }
 
-impl<'a, T> Deref for RwLockUpgradeableGuard<'a, T> {
+impl<'a, T: ?Sized> Deref for RwLockUpgradeableGuard<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -525,13 +527,13 @@ impl<'a, T> Deref for RwLockUpgradeableGuard<'a, T> {
     }
 }
 
-impl<'a, T> Drop for RwLockUpgradeableGuard<'a, T> {
+impl<'a, T: ?Sized> Drop for RwLockUpgradeableGuard<'a, T> {
     fn drop(&mut self) {
         self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
     }
 }
 
-impl<'a, T: fmt::Debug> fmt::Debug for RwLockUpgradeableGuard<'a, T> {
+impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for RwLockUpgradeableGuard<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }

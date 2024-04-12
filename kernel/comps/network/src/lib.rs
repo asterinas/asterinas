@@ -10,7 +10,7 @@ pub mod driver;
 
 extern crate alloc;
 
-use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc, vec::Vec};
+use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
 use aster_frame::sync::SpinLock;
@@ -50,7 +50,7 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
 
 pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;
 
-pub fn register_device(name: String, device: Arc<SpinLock<Box<dyn AnyNetworkDevice>>>) {
+pub fn register_device(name: String, device: Arc<SpinLock<dyn AnyNetworkDevice>>) {
     COMPONENT
         .get()
         .unwrap()
@@ -59,7 +59,7 @@ pub fn register_device(name: String, device: Arc<SpinLock<Box<dyn AnyNetworkDevi
         .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
 }
 
-pub fn get_device(str: &str) -> Option<Arc<SpinLock<Box<dyn AnyNetworkDevice>>>> {
+pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice>>> {
     let lock = COMPONENT.get().unwrap().network_device_table.lock();
     let (_, device) = lock.get(str)?;
     Some(device.clone())
@@ -106,7 +106,7 @@ fn init() -> Result<(), ComponentInitError> {
 }
 
 type NetDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>>;
-type NetworkDeviceRef = Arc<SpinLock<Box<dyn AnyNetworkDevice>>>;
+type NetworkDeviceRef = Arc<SpinLock<dyn AnyNetworkDevice>>;
 
 struct Component {
     /// Device list, the key is device name, value is (callbacks, device);

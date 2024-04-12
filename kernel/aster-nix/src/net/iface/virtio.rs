@@ -12,7 +12,7 @@ use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
 use crate::prelude::*;
 
 pub struct IfaceVirtio {
-    driver: Arc<SpinLock<Box<dyn AnyNetworkDevice>>>,
+    driver: Arc<SpinLock<dyn AnyNetworkDevice>>,
     common: IfaceCommon,
     dhcp_handle: SocketHandle,
     weak_self: Weak<Self>,
@@ -32,7 +32,7 @@ impl IfaceVirtio {
                 ));
                 config
             };
-            let mut interface = smoltcp::iface::Interface::new(config, &mut **virtio_net.lock());
+            let mut interface = smoltcp::iface::Interface::new(config, &mut *virtio_net.lock());
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.is_empty());
                 ip_addrs.push(ip_addr).unwrap();
@@ -115,7 +115,7 @@ impl Iface for IfaceVirtio {
 
     fn poll(&self) {
         let mut driver = self.driver.lock_irq_disabled();
-        self.common.poll(&mut **driver);
+        self.common.poll(&mut *driver);
         self.process_dhcp();
     }
 }
