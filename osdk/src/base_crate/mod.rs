@@ -26,7 +26,7 @@ pub fn new_base_crate(
         std::fs::remove_dir_all(&base_crate_path).unwrap();
     }
 
-    let dep_crate_version = {
+    let (dep_crate_version, dep_crate_features) = {
         let cargo_toml = dep_crate_path.as_ref().join("Cargo.toml");
         let cargo_toml = fs::read_to_string(cargo_toml).unwrap();
         let cargo_toml: toml::Value = toml::from_str(&cargo_toml).unwrap();
@@ -38,8 +38,13 @@ pub fn new_base_crate(
             .get("version")
             .unwrap()
             .as_str()
-            .unwrap();
-        dep_version.to_string()
+            .unwrap()
+            .to_string();
+        let dep_features = cargo_toml
+            .get("features")
+            .map(|f| f.as_table().unwrap().clone())
+            .unwrap_or_default();
+        (dep_version, dep_features)
     };
 
     // Create the directory
@@ -82,6 +87,9 @@ pub fn new_base_crate(
     // Copy the manifest configurations from the target crate to the base crate
     copy_profile_configurations(workspace_root);
 
+    // Generate the features by copying the features from the target crate
+    add_feature_entries(dep_crate_name, &dep_crate_features);
+
     // Get back to the original directory
     std::env::set_current_dir(original_dir).unwrap();
 }
@@ -105,7 +113,7 @@ fn add_manifest_dependency(crate_name: &str, crate_path: impl AsRef<Path>) {
     let dependencies = manifest.get_mut("dependencies").unwrap();
 
     let dep = toml::Table::from_str(&format!(
-        "{} = {{ path = \"{}\"}}",
+        "{} = {{ path = \"{}\", default-features = false }}",
         crate_name,
         crate_path.as_ref().display()
     ))
@@ -133,8 +141,37 @@ fn copy_profile_configurations(workspace_root: impl AsRef<Path>) {
     // Copy the profile configurations
     let profile = target_manifest.get("profile");
     if let Some(profile) = profile {
-        manifest.insert("profile".to_string(), profile.clone());
+        manifest.insert(
+            "profile".to_string(),
+            toml::Value::Table(profile.as_table().unwrap().clone()),
+        );
     }
+
+    let content = toml::to_string(&manifest).unwrap();
+    fs::write(manifest_path, content).unwrap();
+}
+
+fn add_feature_entries(dep_crate_name: &str, features: &toml::Table) {
+    let manifest_path = "Cargo.toml";
+    let mut manifest: toml::Table = {
+        let content = fs::read_to_string(manifest_path).unwrap();
+        toml::from_str(&content).unwrap()
+    };
+
+    let mut table = toml::Table::new();
+    for (feature, value) in features.iter() {
+        let value = if feature != &"default".to_string() {
+            vec![toml::Value::String(format!(
+                "{}/{}",
+                dep_crate_name, feature
+            ))]
+        } else {
+            value.as_array().unwrap().clone()
+        };
+        table.insert(feature.clone(), toml::Value::Array(value));
+    }
+
+    manifest.insert("features".to_string(), toml::Value::Table(table));
 
     let content = toml::to_string(&manifest).unwrap();
     fs::write(manifest_path, content).unwrap();

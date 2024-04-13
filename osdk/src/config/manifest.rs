@@ -38,9 +38,9 @@ pub struct TomlManifest {
 }
 
 impl TomlManifest {
-    pub fn load(feature_strings: &Vec<String>) -> Self {
+    pub fn load() -> Self {
         let workspace_root = {
-            let cargo_metadata = get_cargo_metadata(None::<&str>, Some(feature_strings)).unwrap();
+            let cargo_metadata = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
             PathBuf::from(
                 cargo_metadata
                     .get("workspace_root")

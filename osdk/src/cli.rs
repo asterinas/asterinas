@@ -26,7 +26,7 @@ pub fn main() {
     };
 
     let load_config = || {
-        let manifest = TomlManifest::load(&common_args.build_args.features);
+        let manifest = TomlManifest::load();
         let scheme = manifest.get_scheme(common_args.scheme.as_ref());
         Config::new(scheme, &common_args)
     };
@@ -233,6 +233,8 @@ pub struct CargoArgs {
         global = true,
     )]
     pub features: Vec<String>,
+    #[arg(long, help = "Do not activate the `default` features", global = true)]
+    pub no_default_features: bool,
 }
 
 impl CargoArgs {
