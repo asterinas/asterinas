@@ -14,6 +14,8 @@ pub enum ActionChoice {
 pub struct BuildScheme {
     pub profile: Option<String>,
     pub features: Vec<String>,
+    #[serde(default)]
+    pub no_default_features: bool,
     /// Whether to turn on the support for the
     /// [Linux legacy x86 32-bit boot protocol](https://www.kernel.org/doc/html/v5.6/x86/boot.html)
     #[serde(default)]
@@ -25,6 +27,8 @@ pub struct Build {
     pub profile: String,
     pub features: Vec<String>,
     #[serde(default)]
+    pub no_default_features: bool,
+    #[serde(default)]
     pub linux_x86_legacy_boot: bool,
 }
 
@@ -33,6 +37,7 @@ impl Default for Build {
         Self {
             profile: "dev".to_string(),
             features: Vec::new(),
+            no_default_features: false,
             linux_x86_legacy_boot: false,
         }
     }
@@ -48,6 +53,7 @@ impl BuildScheme {
             features.extend(self.features.clone());
             features
         };
+        // no_default_features is not inherited
         if parent.linux_x86_legacy_boot {
             self.linux_x86_legacy_boot = true;
         }
@@ -57,6 +63,7 @@ impl BuildScheme {
         Build {
             profile: self.profile.unwrap_or_else(|| "dev".to_string()),
             features: self.features,
+            no_default_features: self.no_default_features,
             linux_x86_legacy_boot: self.linux_x86_legacy_boot,
         }
     }

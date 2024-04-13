@@ -143,19 +143,19 @@ pub fn do_build(
     }
     let mut bundle = Bundle::new(&bundle_path, config, action);
 
-    info!("Building kernel ELF");
+    let (build, boot) = match action {
+        ActionChoice::Run => (&config.run.build, &config.run.boot),
+        ActionChoice::Test => (&config.test.build, &config.test.boot),
+    };
+
     let aster_elf = build_kernel_elf(
         &config.target_arch,
-        &config.build.profile,
-        &config.build.features[..],
+        &build.profile,
+        &build.features[..],
+        build.no_default_features,
         &cargo_target_directory,
         rustflags,
     );
-
-    let boot = match action {
-        ActionChoice::Run => &config.run.boot,
-        ActionChoice::Test => &config.test.boot,
-    };
 
     match boot.method {
         BootMethod::GrubRescueIso => {
@@ -185,6 +185,7 @@ fn build_kernel_elf(
     arch: &Arch,
     profile: &str,
     features: &[String],
+    no_default_features: bool,
     cargo_target_directory: impl AsRef<Path>,
     rustflags: &[&str],
 ) -> AsterBin {
@@ -209,12 +210,18 @@ fn build_kernel_elf(
     command.env("RUSTFLAGS", rustflags.join(" "));
     command.arg("build");
     command.arg("--features").arg(features.join(" "));
+    if no_default_features {
+        command.arg("--no-default-features");
+    }
     command.arg("--target").arg(&target_os_string);
     command
         .arg("--target-dir")
         .arg(cargo_target_directory.as_ref());
     command.args(COMMON_CARGO_ARGS);
     command.arg("--profile=".to_string() + profile);
+
+    info!("Building kernel ELF using command: {:#?}", command);
+
     let status = command.status().unwrap();
     if !status.success() {
         error_msg!("Cargo build failed");

@@ -42,6 +42,9 @@ fn apply_args_before_finalize(action_scheme: &mut ActionScheme, args: &CommonArg
             build.profile = Some(profile.clone());
         }
         build.features.extend(args.build_args.features.clone());
+        if args.build_args.no_default_features {
+            build.no_default_features = true;
+        }
         if args.linux_x86_legacy_boot {
             build.linux_x86_legacy_boot = true;
         }
