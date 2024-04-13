@@ -105,20 +105,7 @@ Please avoid changing the default settings
 unless you know what you are doing.
 
 ```toml
-[boot]
-ovmf = "/usr/share/OVMF"
-[qemu]
-machine = "q35"
-args = [
-    "--no-reboot",
-    "-m 2G",
-    "-nographic",
-    "-serial chardev:mux",
-    "-monitor chardev:mux",
-    "-chardev stdio,id=mux,mux=on,signal=off",
-    "-display none",
-    "-device isa-debug-exit,iobase=0xf4,iosize=0x04",
-]
+{{#include ../../../../osdk/src/commands/new/lib.OSDK.toml.template}}
 ```
 
 ### `rust-toolchain.toml`
