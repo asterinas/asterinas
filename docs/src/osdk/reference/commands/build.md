@@ -38,32 +38,30 @@ or append values in `OSDK.toml`.
 The allowed values for each option can be found
 in the [Manifest Documentation](../manifest.md).
 
-- `--kcmd_args <ARGS>`:
+- `--kcmd-args <ARGS>`:
 Command line arguments for the guest kernel
-- `--init_args <ARGS>`:
+- `--init-args <ARGS>`:
 Command line arguments for the init process
 - `--initramfs <PATH>`:
 Path of the initramfs
-- `--boot.ovmf <PATH>`:
-Path of the OVMF directory
-- `--boot.loader <LOADER>`:
-Loader for booting the kernel
-- `--boot.protocol <PROTOCOL>`:
-Protocol for booting the kernel
-- `--qemu.path <PATH>`:
+- `--boot-method <METHOD>`:
+The method to boot the kernel
+- `--grub-boot-protocol <PROTOCOL>`:
+The boot protocol for booting the kernel
+- `--display-grub-menu`:
+To display the GRUB menu if booting with GRUB
+- `--qemu-path <PATH>`:
 Path of QEMU
-- `--qemu.machine <MACHINE>`:
-QEMU machine type
-- `--qemu.args <ARGS>`:
-Arguments for running QEMU
+- `--qemu-args <ARGS>`:
+Extra arguments for running QEMU
 
 ## Examples
 
 - Build a project with `./initramfs.cpio.gz`
-as the initramfs and `multiboot2` as the boot protocol:
+as the initramfs and `multiboot2` as the boot protocol used by GRUB:
 
 ```bash
-cargo osdk build --initramfs="./initramfs.cpio.gz" --boot.protocol="multiboot2"
+cargo osdk build --initramfs="./initramfs.cpio.gz" --grub-boot-protocol="multiboot2"
 ```
 
 - Build a project and append `sh`, `-l`
