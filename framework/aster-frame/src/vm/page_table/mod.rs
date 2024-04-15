@@ -13,6 +13,8 @@ mod properties;
 pub use properties::*;
 mod cursor;
 use cursor::*;
+#[cfg(ktest)]
+mod test;
 
 #[derive(Debug)]
 pub enum PageTableError {
