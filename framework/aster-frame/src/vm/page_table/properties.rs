@@ -118,6 +118,40 @@ pub struct MapProperty {
 }
 
 /// Any functions that could be used to modify the map property of a memory mapping.
+///
+/// To protect a virtual address range, you can either directly use a `MapProperty` object,
+///
+/// ```rust
+/// let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+/// let prop = MapProperty {
+///     perm: VmPerm::R,
+///     extension: 0,
+///     cache: CachePolicy::Writeback,
+/// };
+/// page_table.protect(0..PAGE_SIZE, prop);
+/// ```
+///
+/// use a map operation
+///
+/// ```rust
+/// let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+/// page_table.map(0..PAGE_SIZE, cache_policy_op(CachePolicy::Writeback));
+/// page_table.map(0..PAGE_SIZE, perm_op(|perm| perm | VmPerm::R));
+/// ```
+///
+/// or even customize a map operation using a closure
+///
+/// ```rust
+/// let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+/// page_table.map(0..PAGE_SIZE, |info| {
+///     assert!(info.prop.perm.contains(VmPerm::R));
+///     MapProperty {
+///         perm: info.prop.perm | VmPerm::W,
+///         extension: info.prop.extension,
+///         cache: info.prop.cache,
+///     }
+/// });
+/// ```
 pub trait MapOp: Fn(MapInfo) -> MapProperty {}
 impl<F> MapOp for F where F: Fn(MapInfo) -> MapProperty {}
 
@@ -137,6 +171,22 @@ impl FnMut<(MapInfo,)> for MapProperty {
 impl Fn<(MapInfo,)> for MapProperty {
     extern "rust-call" fn call(&self, _: (MapInfo,)) -> MapProperty {
         *self
+    }
+}
+
+/// A life saver for creating a map operation that sets the cache policy.
+pub fn cache_policy_op(cache: CachePolicy) -> impl MapOp {
+    move |info| MapProperty {
+        perm: info.prop.perm,
+        cache,
+    }
+}
+
+/// A life saver for creating a map operation that adjusts the permission.
+pub fn perm_op(op: impl Fn(VmPerm) -> VmPerm) -> impl MapOp {
+    move |info| MapProperty {
+        perm: op(info.prop.perm),
+        cache: info.prop.cache,
     }
 }
 
