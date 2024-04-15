@@ -75,11 +75,11 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         }
     }
     // Mount ProcFS
-    let proc_path = fs.lookup(&FsPath::try_from("/proc")?)?;
-    proc_path.mount(ProcFS::new())?;
+    let proc_dentrymnt = fs.lookup(&FsPath::try_from("/proc")?)?;
+    proc_dentrymnt.mount(ProcFS::new())?;
     // Mount DevFS
-    let dev_path = fs.lookup(&FsPath::try_from("/dev")?)?;
-    dev_path.mount(RamFS::new())?;
+    let dev_dentrymnt = fs.lookup(&FsPath::try_from("/dev")?)?;
+    dev_dentrymnt.mount(RamFS::new())?;
 
     println!("[kernel] rootfs is ready");
 
@@ -87,8 +87,8 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
 }
 
 pub fn mount_fs_at(fs: Arc<dyn FileSystem>, fs_path: &FsPath) -> Result<()> {
-    let target_path = FsResolver::new().lookup(fs_path)?;
-    target_path.mount(fs)?;
+    let target_dentrymnt = FsResolver::new().lookup(fs_path)?;
+    target_dentrymnt.mount(fs)?;
     Ok(())
 }
 

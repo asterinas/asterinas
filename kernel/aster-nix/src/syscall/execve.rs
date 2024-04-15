@@ -8,7 +8,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::{Dentry, InodeType, Path},
+        utils::{Dentry, DentryMnt, InodeType},
     },
     log_syscall_entry,
     prelude::*,
@@ -61,29 +61,29 @@ fn lookup_executable_file(
     dfd: FileDesc,
     filename: String,
     flags: OpenFlags,
-) -> Result<Arc<Path>> {
+) -> Result<Arc<DentryMnt>> {
     let current = current!();
     let fs_resolver = current.fs().read();
-    let path = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
+    let dentrymnt = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
         fs_resolver.lookup_from_fd(dfd)
     } else {
         let fs_path = FsPath::new(dfd, &filename)?;
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            let path = fs_resolver.lookup_no_follow(&fs_path)?;
-            if path.dentry().type_() == InodeType::SymLink {
+            let dentrymnt = fs_resolver.lookup_no_follow(&fs_path)?;
+            if dentrymnt.dentry().type_() == InodeType::SymLink {
                 return_errno_with_message!(Errno::ELOOP, "the executable file is a symlink");
             }
-            Ok(path)
+            Ok(dentrymnt)
         } else {
             fs_resolver.lookup(&fs_path)
         }
     }?;
-    check_executable_file(path.dentry())?;
-    Ok(path)
+    check_executable_file(dentrymnt.dentry())?;
+    Ok(dentrymnt)
 }
 
 fn do_execve(
-    elf_file: Arc<Path>,
+    elf_file: Arc<DentryMnt>,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     context: &mut UserContext,

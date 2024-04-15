@@ -22,7 +22,7 @@ pub(super) fn sys_rmdirat(dirfd: FileDesc, pathname_addr: Vaddr) -> Result<Sysca
     debug!("dirfd = {}, pathname = {:?}", dirfd, pathname);
 
     let current = current!();
-    let (dir_path, name) = {
+    let (dir_dentrymnt, name) = {
         let pathname = pathname.to_string_lossy();
         if pathname == "/" {
             return_errno_with_message!(Errno::EBUSY, "is root directory");
@@ -30,6 +30,6 @@ pub(super) fn sys_rmdirat(dirfd: FileDesc, pathname_addr: Vaddr) -> Result<Sysca
         let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
-    dir_path.dentry().rmdir(name.trim_end_matches('/'))?;
+    dir_dentrymnt.dentry().rmdir(name.trim_end_matches('/'))?;
     Ok(SyscallReturn::Return(0))
 }

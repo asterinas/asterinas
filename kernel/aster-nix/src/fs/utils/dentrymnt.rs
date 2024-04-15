@@ -3,15 +3,15 @@
 use super::{Dentry, FileSystem, InodeType, MountNode, NAME_MAX};
 use crate::prelude::*;
 
-/// The Path can represent a location in the mount tree.
+/// The DentryMnt can represent a location in the mount tree.
 #[derive(Debug)]
-pub struct Path {
+pub struct DentryMnt {
     mount_node: Arc<MountNode>,
     dentry: Arc<Dentry>,
-    this: Weak<Path>,
+    this: Weak<DentryMnt>,
 }
 
-impl Path {
+impl DentryMnt {
     pub fn new(mount_node: Arc<MountNode>, dentry: Arc<Dentry>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             mount_node,
@@ -20,7 +20,7 @@ impl Path {
         })
     }
 
-    /// Lookup a path.
+    /// Lookup a dentrymnt.
     pub fn lookup(&self, name: &str) -> Result<Arc<Self>> {
         if self.dentry.inode().type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
@@ -32,22 +32,22 @@ impl Path {
             return_errno!(Errno::ENAMETOOLONG);
         }
 
-        let path = match name {
+        let dentrymnt = match name {
             "." => self.this(),
             ".." => self.effective_parent().unwrap_or(self.this()),
             name => {
                 let children_dentry = self.dentry.lookup_fast(name);
                 match children_dentry {
-                    Some(dentry) => Path::new(self.mount_node().clone(), dentry.clone()),
+                    Some(dentry) => Self::new(self.mount_node().clone(), dentry.clone()),
                     None => {
                         let slow_dentry = self.dentry.lookup_slow(name)?;
-                        Path::new(self.mount_node().clone(), slow_dentry.clone())
+                        Self::new(self.mount_node().clone(), slow_dentry.clone())
                     }
                 }
             }
         };
-        let path = path.overlaid_path();
-        Ok(path)
+        let dentrymnt = dentrymnt.overlaid_dentrymnt();
+        Ok(dentrymnt)
     }
 
     // Get the absolute path.
@@ -55,21 +55,21 @@ impl Path {
     // It will resolve the mountpoint automatically.
     pub fn abs_path(&self) -> String {
         let mut path = self.effective_name();
-        let mut dir_path = self.this();
+        let mut dir_dentrymnt = self.this();
 
         loop {
-            match dir_path.effective_parent() {
+            match dir_dentrymnt.effective_parent() {
                 None => break,
-                Some(parent_dir_path) => {
+                Some(parent_dir_dentrymnt) => {
                     path = {
-                        let parent_name = parent_dir_path.effective_name();
+                        let parent_name = parent_dir_dentrymnt.effective_name();
                         if parent_name != "/" {
                             parent_name + "/" + &path
                         } else {
                             parent_name + &path
                         }
                     };
-                    dir_path = parent_dir_path;
+                    dir_dentrymnt = parent_dir_dentrymnt;
                 }
             }
         }
@@ -77,7 +77,7 @@ impl Path {
         path
     }
 
-    /// Get the effective name of path.
+    /// Get the effective name of dentrymnt.
     ///
     /// If it is the root of mount, it will go up to the mountpoint to get the name
     /// of the mountpoint recursively.
@@ -87,54 +87,53 @@ impl Path {
         }
 
         if self.mount_node.parent().is_some() & self.mount_node.mountpoint_dentry().is_some() {
-            let parent_path = Path::new(
+            let parent_dentrymnt = Self::new(
                 self.mount_node.parent().unwrap().upgrade().unwrap().clone(),
                 self.mount_node.mountpoint_dentry().unwrap().clone(),
             );
-            parent_path.effective_name()
+            parent_dentrymnt.effective_name()
         } else {
             self.dentry.name()
         }
     }
 
-    /// Get the effective parent of path.
+    /// Get the effective parent of dentrymnt.
     ///
     /// If it is the root of mount, it will go up to the mountpoint to get the parent
     /// of the mountpoint recursively.
     fn effective_parent(&self) -> Option<Arc<Self>> {
         if !self.dentry.is_root_of_mount() {
-            return Some(Path::new(
+            return Some(Self::new(
                 self.mount_node.clone(),
                 self.dentry.parent().unwrap().clone(),
             ));
         }
         if self.mount_node.parent().is_some() & self.mount_node.mountpoint_dentry().is_some() {
-            let parent_path = Path::new(
+            let parent_dentrymnt = Self::new(
                 self.mount_node.parent().unwrap().upgrade().unwrap().clone(),
                 self.mount_node.mountpoint_dentry().unwrap().clone(),
             );
-            parent_path.effective_parent()
+            parent_dentrymnt.effective_parent()
         } else {
             None
         }
     }
 
-    /// Get the overlaid path of self.
+    /// Get the overlaid dentrymnt of self.
     ///
     /// It will jump into the child mount if it is a mountpoint.
-    fn overlaid_path(&self) -> Arc<Self> {
+    fn overlaid_dentrymnt(&self) -> Arc<Self> {
         if !self.dentry.is_mountpoint() {
             return self.this();
         }
         match self.mount_node.get(self) {
-            Some(child_mount) => {
-                Path::new(child_mount.clone(), child_mount.root_dentry().clone()).overlaid_path()
-            }
+            Some(child_mount) => Self::new(child_mount.clone(), child_mount.root_dentry().clone())
+                .overlaid_dentrymnt(),
             None => self.this(),
         }
     }
 
-    /// Mount the fs on this path. It will make this path's dentry to be a mountpoint.
+    /// Mount the fs on this dentrymnt. It will make this dentrymnt's dentry to be a mountpoint.
     ///
     /// If the given mountpoint has already been mounted, then its mounted child mount
     /// will be updated.
@@ -167,14 +166,15 @@ impl Path {
         };
 
         let mountpoint_mount_node = mount_node.parent().unwrap().upgrade().unwrap();
-        let mountpoint_path = Path::new(mountpoint_mount_node.clone(), mountpoint_dentry.clone());
+        let mountpoint_dentrymnt =
+            Self::new(mountpoint_mount_node.clone(), mountpoint_dentry.clone());
 
-        let child_mount = mountpoint_mount_node.umount(&mountpoint_path)?;
+        let child_mount = mountpoint_mount_node.umount(&mountpoint_dentrymnt)?;
         mountpoint_dentry.clear_mountpoint();
         Ok(child_mount)
     }
 
-    /// Link a new name for the path's dentry by linking inode.
+    /// Link a new name for the dentrymnt's dentry by linking inode.
     pub fn link(&self, old: &Arc<Self>, name: &str) -> Result<()> {
         if self.dentry.inode().type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
@@ -198,12 +198,12 @@ impl Path {
         self.this.upgrade().unwrap()
     }
 
-    /// Get the mount node of this path.
+    /// Get the mount node of this dentrymnt.
     pub fn mount_node(&self) -> &Arc<MountNode> {
         &self.mount_node
     }
 
-    /// Get the dentry of this path.
+    /// Get the dentry of this dentrymnt.
     pub fn dentry(&self) -> &Arc<Dentry> {
         &self.dentry
     }

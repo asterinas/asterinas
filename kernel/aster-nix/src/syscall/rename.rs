@@ -30,7 +30,7 @@ pub fn sys_renameat(
     let current = current!();
     let fs = current.fs().read();
 
-    let (old_dir_path, old_name) = {
+    let (old_dir_dentrymnt, old_name) = {
         let old_pathname = old_pathname.to_string_lossy();
         if old_pathname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "oldpath is empty");
@@ -38,14 +38,14 @@ pub fn sys_renameat(
         let old_fs_path = FsPath::new(old_dirfd, old_pathname.as_ref())?;
         fs.lookup_dir_and_base_name(&old_fs_path)?
     };
-    let old_path = old_dir_path.lookup(&old_name)?;
+    let old_dentrymnt = old_dir_dentrymnt.lookup(&old_name)?;
 
-    let (new_dir_path, new_name) = {
+    let (new_dir_dentrymnt, new_name) = {
         let new_pathname = new_pathname.to_string_lossy();
         if new_pathname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "newpath is empty");
         }
-        if new_pathname.ends_with('/') && old_path.dentry().type_() != InodeType::Dir {
+        if new_pathname.ends_with('/') && old_dentrymnt.dentry().type_() != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "oldpath is not dir");
         }
         let new_fs_path = FsPath::new(new_dirfd, new_pathname.as_ref().trim_end_matches('/'))?;
@@ -53,8 +53,8 @@ pub fn sys_renameat(
     };
 
     // Check abs_path
-    let old_abs_path = old_path.abs_path();
-    let new_abs_path = new_dir_path.abs_path() + "/" + &new_name;
+    let old_abs_path = old_dentrymnt.abs_path();
+    let new_abs_path = new_dir_dentrymnt.abs_path() + "/" + &new_name;
     if new_abs_path.starts_with(&old_abs_path) {
         if new_abs_path.len() == old_abs_path.len() {
             return Ok(SyscallReturn::Return(0));
@@ -66,13 +66,16 @@ pub fn sys_renameat(
         }
     }
 
-    if !Arc::ptr_eq(old_dir_path.mount_node(), new_dir_path.mount_node()) {
+    if !Arc::ptr_eq(
+        old_dir_dentrymnt.mount_node(),
+        new_dir_dentrymnt.mount_node(),
+    ) {
         return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
     }
 
-    old_dir_path
+    old_dir_dentrymnt
         .dentry()
-        .rename(&old_name, new_dir_path.dentry(), &new_name)?;
+        .rename(&old_name, new_dir_dentrymnt.dentry(), &new_name)?;
 
     Ok(SyscallReturn::Return(0))
 }
