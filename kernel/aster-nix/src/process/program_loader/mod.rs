@@ -11,7 +11,7 @@ use super::process_vm::ProcessVm;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        utils::{Dentry, Path},
+        utils::{Dentry, DentryMnt},
     },
     prelude::*,
 };
@@ -25,7 +25,7 @@ use crate::{
 /// because the interpreter is usually an elf binary(e.g., /bin/bash)
 pub fn load_program_to_vm(
     process_vm: &ProcessVm,
-    elf_file: Arc<Path>,
+    elf_file: Arc<DentryMnt>,
     argv: Vec<CString>,
     envp: Vec<CString>,
     fs_resolver: &FsResolver,

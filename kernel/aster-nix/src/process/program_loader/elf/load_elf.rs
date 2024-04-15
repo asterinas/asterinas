@@ -12,7 +12,7 @@ use super::elf_file::Elf;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        utils::{Dentry, Path},
+        utils::{Dentry, DentryMnt},
     },
     prelude::*,
     process::{
@@ -35,7 +35,7 @@ use crate::{
 pub fn load_elf_to_vm(
     process_vm: &ProcessVm,
     file_header: &[u8],
-    elf_file: Arc<Path>,
+    elf_file: Arc<DentryMnt>,
     fs_resolver: &FsResolver,
     argv: Vec<CString>,
     envp: Vec<CString>,

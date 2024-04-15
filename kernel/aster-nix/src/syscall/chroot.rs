@@ -16,7 +16,7 @@ pub fn sys_chroot(pathname_addr: Vaddr) -> Result<SyscallReturn> {
 
     let current = current!();
     let mut fs = current.fs().write();
-    let path = {
+    let dentrymnt = {
         let pathname = pathname.to_string_lossy();
         if pathname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
@@ -24,9 +24,9 @@ pub fn sys_chroot(pathname_addr: Vaddr) -> Result<SyscallReturn> {
         let fs_path = FsPath::try_from(pathname.as_ref())?;
         fs.lookup(&fs_path)?
     };
-    if path.dentry().type_() != InodeType::Dir {
+    if dentrymnt.dentry().type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
-    fs.set_root(path);
+    fs.set_root(dentrymnt);
     Ok(SyscallReturn::Return(0))
 }

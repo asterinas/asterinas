@@ -7,7 +7,7 @@ use crate::{
     events::IoEvents,
     fs::{
         fs_resolver::{split_path, FsPath},
-        utils::{InodeMode, InodeType, Path},
+        utils::{DentryMnt, InodeMode, InodeType},
     },
     net::socket::unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
     prelude::*,
@@ -38,8 +38,8 @@ impl Init {
         let bound_addr = match addr_to_bind {
             UnixSocketAddr::Abstract(_) => todo!(),
             UnixSocketAddr::Path(pathname) => {
-                let path = create_socket_file(pathname)?;
-                UnixSocketAddrBound::Path(path)
+                let dentrymnt = create_socket_file(pathname)?;
+                UnixSocketAddrBound::Path(dentrymnt)
             }
         };
 
@@ -87,7 +87,7 @@ impl Init {
     }
 }
 
-fn create_socket_file(pathname: &str) -> Result<Arc<Path>> {
+fn create_socket_file(pathname: &str) -> Result<Arc<DentryMnt>> {
     let (parent_pathname, file_name) = split_path(pathname);
     let parent = {
         let current = current!();
@@ -100,6 +100,6 @@ fn create_socket_file(pathname: &str) -> Result<Arc<Path>> {
         InodeType::Socket,
         InodeMode::S_IRUSR | InodeMode::S_IWUSR,
     )?;
-    let path = Path::new(parent.mount_node().clone(), dentry.clone());
-    Ok(path)
+    let dentrymnt = DentryMnt::new(parent.mount_node().clone(), dentry.clone());
+    Ok(dentrymnt)
 }

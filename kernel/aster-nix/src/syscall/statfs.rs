@@ -42,7 +42,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn>
     let inode_handle = file
         .downcast_ref::<InodeHandle>()
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-    let dentry = inode_handle.path().dentry();
+    let dentry = inode_handle.dentrymnt().dentry();
     let statfs = Statfs::from(dentry.fs().sb());
     write_val_to_user(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))

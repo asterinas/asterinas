@@ -35,22 +35,20 @@ pub fn sys_fchmodat(
     /* flags: u32, */
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FCHMODAT);
-    let pathname = read_cstring_from_user(path_ptr, PATH_MAX)?;
-    debug!(
-        "dirfd = {}, path = {:?}, mode = 0o{:o}",
-        dirfd, pathname, mode,
-    );
+    let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
+    debug!("dirfd = {}, path = {:?}, mode = 0o{:o}", dirfd, path, mode,);
 
     let current = current!();
-    let path = {
-        let pathname = pathname.to_string_lossy();
-        if pathname.is_empty() {
+    let dentrymnt = {
+        let path = path.to_string_lossy();
+        if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        let fs_path = FsPath::new(dirfd, path.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
-    path.dentry()
+    dentrymnt
+        .dentry()
         .set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))
 }

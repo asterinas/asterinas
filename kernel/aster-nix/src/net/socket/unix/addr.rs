@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{fs::utils::Path, net::socket::util::socket_addr::SocketAddr, prelude::*};
+use crate::{fs::utils::DentryMnt, net::socket::util::socket_addr::SocketAddr, prelude::*};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnixSocketAddr {
@@ -10,7 +10,7 @@ pub enum UnixSocketAddr {
 
 #[derive(Clone)]
 pub(super) enum UnixSocketAddrBound {
-    Path(Arc<Path>),
+    Path(Arc<DentryMnt>),
     Abstract(String),
 }
 
@@ -40,8 +40,8 @@ impl TryFrom<SocketAddr> for UnixSocketAddr {
 impl From<UnixSocketAddrBound> for UnixSocketAddr {
     fn from(value: UnixSocketAddrBound) -> Self {
         match value {
-            UnixSocketAddrBound::Path(path) => {
-                let abs_path = path.abs_path();
+            UnixSocketAddrBound::Path(dentrymnt) => {
+                let abs_path = dentrymnt.abs_path();
                 Self::Path(abs_path)
             }
             UnixSocketAddrBound::Abstract(name) => Self::Abstract(name),

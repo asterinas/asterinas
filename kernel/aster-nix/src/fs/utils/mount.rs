@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{Dentry, DentryKey, FileSystem, InodeType, Path};
+use super::{Dentry, DentryKey, DentryMnt, FileSystem, InodeType};
 use crate::prelude::*;
 
 /// The MountNode can form a mount tree to maintain the mount information.
@@ -61,7 +61,7 @@ impl MountNode {
     /// mountpoint. It is the fs's responsibility to ensure the data consistency.
     ///
     /// Return the mounted child mount.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Arc<Path>) -> Result<Arc<Self>> {
+    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Arc<DentryMnt>) -> Result<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
@@ -82,7 +82,7 @@ impl MountNode {
     /// Unmount a child mount node from the mountpoint and return it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
-    pub fn umount(&self, mountpoint: &Path) -> Result<Arc<Self>> {
+    pub fn umount(&self, mountpoint: &DentryMnt) -> Result<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
@@ -96,7 +96,7 @@ impl MountNode {
     }
 
     /// Try to get a child mount node from the mountpoint.
-    pub fn get(&self, mountpoint: &Path) -> Option<Arc<Self>> {
+    pub fn get(&self, mountpoint: &DentryMnt) -> Option<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return None;
         }
