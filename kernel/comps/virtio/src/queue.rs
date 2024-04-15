@@ -147,18 +147,19 @@ impl VirtQueue {
             .unwrap();
         let mut descs = Vec::with_capacity(size as usize);
         descs.push(descriptor_ptr);
-        for i in 0..size as usize {
-            let mut desc = descs.get(i).unwrap().clone();
-            desc.add(1);
-            descs.push(desc);
+        for i in 0..size {
+            let mut desc = descs.get(i as usize).unwrap().clone();
+            let next_i = i + 1;
+            if next_i != size {
+                field_ptr!(&desc, Descriptor, next).write(&next_i).unwrap();
+                desc.add(1);
+                descs.push(desc);
+            } else {
+                field_ptr!(&desc, Descriptor, next).write(&(0u16)).unwrap();
+            }
         }
 
         let notify = transport.get_notify_ptr(idx).unwrap();
-        // Link descriptors together.
-        for i in 0..(size - 1) {
-            let temp = descs.get(i as usize).unwrap();
-            field_ptr!(temp, Descriptor, next).write(&(i + 1)).unwrap();
-        }
         field_ptr!(&avail_ring_ptr, AvailRing, flags)
             .write(&(0u16))
             .unwrap();
@@ -319,6 +320,9 @@ impl VirtQueue {
 
     /// Whether there is a used element that can pop.
     pub fn can_pop(&self) -> bool {
+        // read barrier
+        fence(Ordering::SeqCst);
+
         self.last_used_idx != field_ptr!(&self.used, UsedRing, idx).read().unwrap()
     }
 
@@ -333,26 +337,24 @@ impl VirtQueue {
     fn recycle_descriptors(&mut self, mut head: u16) {
         let origin_free_head = self.free_head;
         self.free_head = head;
-        let last_free_head = if head == 0 {
-            self.queue_size - 1
-        } else {
-            head - 1
-        };
-        let temp_desc = &mut self.descs[last_free_head as usize];
-        field_ptr!(temp_desc, Descriptor, next)
-            .write(&head)
-            .unwrap();
         loop {
             let desc = &mut self.descs[head as usize];
-            let flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
+            // Sets the buffer address and length to 0
+            field_ptr!(desc, Descriptor, addr).write(&(0u64)).unwrap();
+            field_ptr!(desc, Descriptor, len).write(&(0u32)).unwrap();
             self.num_used -= 1;
+
+            let flags: DescFlags = field_ptr!(desc, Descriptor, flags).read().unwrap();
             if flags.contains(DescFlags::NEXT) {
+                field_ptr!(desc, Descriptor, flags)
+                    .write(&DescFlags::empty())
+                    .unwrap();
                 head = field_ptr!(desc, Descriptor, next).read().unwrap();
             } else {
                 field_ptr!(desc, Descriptor, next)
                     .write(&origin_free_head)
                     .unwrap();
-                return;
+                break;
             }
         }
     }
@@ -364,8 +366,6 @@ impl VirtQueue {
         if !self.can_pop() {
             return Err(QueueError::NotReady);
         }
-        // read barrier
-        fence(Ordering::SeqCst);
 
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
         let element_ptr = {
@@ -390,8 +390,6 @@ impl VirtQueue {
         if !self.can_pop() {
             return Err(QueueError::NotReady);
         }
-        // read barrier
-        fence(Ordering::SeqCst);
 
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
         let element_ptr = {
