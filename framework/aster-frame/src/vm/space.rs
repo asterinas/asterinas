@@ -4,7 +4,7 @@ use core::ops::Range;
 
 use bitflags::bitflags;
 
-use super::{is_page_aligned, page_table::CachePolicy, MapArea, MemorySet, VmFrameVec, VmIo};
+use super::{is_page_aligned, MapArea, MemorySet, VmFrameVec, VmIo};
 use crate::{
     arch::mm::PageTableFlags,
     prelude::*,
@@ -77,10 +77,7 @@ impl VmSpace {
             memory_set.map(MapArea::new(
                 addr,
                 PAGE_SIZE,
-                MapProperty {
-                    perm: options.perm,
-                    cache: CachePolicy::Writeback,
-                },
+                MapProperty::new_general(options.perm),
                 frames,
             ));
         }
@@ -145,13 +142,9 @@ impl VmSpace {
         let end_page = range.end / PAGE_SIZE;
         for page_idx in start_page..end_page {
             let addr = page_idx * PAGE_SIZE;
-            self.memory_set.lock().protect(
-                addr,
-                MapProperty {
-                    perm,
-                    cache: CachePolicy::Writeback,
-                },
-            )
+            self.memory_set
+                .lock()
+                .protect(addr, MapProperty::new_general(perm))
         }
         Ok(())
     }
@@ -267,9 +260,6 @@ bitflags! {
         const X = 0b00000100;
         /// User accessible.
         const U = 0b00001000;
-        /// Global.
-        /// A global page is not evicted from the TLB when TLB is flushed.
-        const G = 0b00010000;
         /// Readable + writable.
         const RW = Self::R.bits | Self::W.bits;
         /// Readable + execuable.

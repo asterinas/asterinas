@@ -14,7 +14,7 @@ use crate::{
     vm::{
         dma::{dma_type, Daddr, DmaType},
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
-        page_table::{CachePolicy, MapProperty},
+        page_table::{cache_policy_op, CachePolicy},
         HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
     },
 };
@@ -62,10 +62,7 @@ impl DmaCoherent {
             // Safety: the address is in the range of `vm_segment`.
             unsafe {
                 page_table
-                    .protect_unchecked(&va_range, |info| MapProperty {
-                        perm: info.prop.perm,
-                        cache: CachePolicy::Uncacheable,
-                    })
+                    .protect_unchecked(&va_range, cache_policy_op(CachePolicy::Uncacheable))
                     .unwrap();
             }
         }
@@ -152,10 +149,7 @@ impl Drop for DmaCoherentInner {
             // Safety: the address is in the range of `vm_segment`.
             unsafe {
                 page_table
-                    .protect_unchecked(&va_range, |info| MapProperty {
-                        perm: info.prop.perm,
-                        cache: CachePolicy::Writeback,
-                    })
+                    .protect_unchecked(&va_range, cache_policy_op(CachePolicy::Writeback))
                     .unwrap();
             }
         }
@@ -220,7 +214,7 @@ mod test {
         let vaddr = paddr_to_vaddr(vm_segment.paddr());
         assert!(
             page_table
-                .query(vaddr..vaddr + PAGE_SIZE)
+                .query(&(vaddr..vaddr + PAGE_SIZE))
                 .unwrap()
                 .next()
                 .unwrap()

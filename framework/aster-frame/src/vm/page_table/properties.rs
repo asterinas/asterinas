@@ -45,7 +45,7 @@ pub trait PageTableConstsTrait: Debug + 'static {
 
 bitflags::bitflags! {
     /// The status of a memory mapping recorded by the hardware.
-    pub struct MapStatus: u32 {
+    pub struct MapStatus: u8 {
         const ACCESSED = 0b0000_0001;
         const DIRTY    = 0b0000_0010;
     }
@@ -114,6 +114,13 @@ pub enum CachePolicy {
 #[derive(Clone, Copy, Debug)]
 pub struct MapProperty {
     pub perm: VmPerm,
+    /// Global.
+    /// A global page is not evicted from the TLB when TLB is flushed.
+    pub global: bool,
+    /// The properties of a memory mapping that is used and defined as flags in PTE
+    /// in specific architectures on an ad hoc basis. The logics provided by the
+    /// page table module will not be affected by this field.
+    pub extension: u64,
     pub cache: CachePolicy,
 }
 
@@ -125,6 +132,7 @@ pub struct MapProperty {
 /// let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
 /// let prop = MapProperty {
 ///     perm: VmPerm::R,
+///     global: true,
 ///     extension: 0,
 ///     cache: CachePolicy::Writeback,
 /// };
@@ -147,6 +155,7 @@ pub struct MapProperty {
 ///     assert!(info.prop.perm.contains(VmPerm::R));
 ///     MapProperty {
 ///         perm: info.prop.perm | VmPerm::W,
+///         global: info.prop.global,
 ///         extension: info.prop.extension,
 ///         cache: info.prop.cache,
 ///     }
@@ -178,6 +187,8 @@ impl Fn<(MapInfo,)> for MapProperty {
 pub fn cache_policy_op(cache: CachePolicy) -> impl MapOp {
     move |info| MapProperty {
         perm: info.prop.perm,
+        global: info.prop.global,
+        extension: info.prop.extension,
         cache,
     }
 }
@@ -186,14 +197,27 @@ pub fn cache_policy_op(cache: CachePolicy) -> impl MapOp {
 pub fn perm_op(op: impl Fn(VmPerm) -> VmPerm) -> impl MapOp {
     move |info| MapProperty {
         perm: op(info.prop.perm),
+        global: info.prop.global,
+        extension: info.prop.extension,
         cache: info.prop.cache,
     }
 }
 
 impl MapProperty {
+    pub fn new_general(perm: VmPerm) -> Self {
+        Self {
+            perm,
+            global: false,
+            extension: 0,
+            cache: CachePolicy::Writeback,
+        }
+    }
+
     pub fn new_invalid() -> Self {
         Self {
             perm: VmPerm::empty(),
+            global: false,
+            extension: 0,
             cache: CachePolicy::Uncacheable,
         }
     }

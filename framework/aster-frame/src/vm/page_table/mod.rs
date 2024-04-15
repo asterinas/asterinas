@@ -257,6 +257,8 @@ where
                         frame.inner.start_paddr(),
                         MapProperty {
                             perm: VmPerm::RWX,
+                            global: true,
+                            extension: 0,
                             cache: CachePolicy::Uncacheable,
                         },
                         false,

@@ -74,7 +74,9 @@ pub fn init_kernel_page_table() {
     let from = LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + linear_mapping_size;
     let to = 0..linear_mapping_size;
     let prop = MapProperty {
-        perm: VmPerm::RW | VmPerm::G,
+        perm: VmPerm::RW,
+        global: true,
+        extension: 0,
         cache: CachePolicy::Writeback,
     };
     // Safety: we are doing the linear mapping for the kernel.
@@ -87,7 +89,9 @@ pub fn init_kernel_page_table() {
     let to = 0x8_0000_0000..0x9_0000_0000;
     let from = LINEAR_MAPPING_BASE_VADDR + to.start..LINEAR_MAPPING_BASE_VADDR + to.end;
     let prop = MapProperty {
-        perm: VmPerm::RW | VmPerm::G,
+        perm: VmPerm::RW,
+        global: true,
+        extension: 0,
         cache: CachePolicy::Uncacheable,
     };
     // Safety: we are doing I/O mappings for the kernel.
@@ -105,7 +109,9 @@ pub fn init_kernel_page_table() {
         region.base().align_down(PAGE_SIZE)..(region.base() + region.len()).align_up(PAGE_SIZE);
     let from = to.start + offset..to.end + offset;
     let prop = MapProperty {
-        perm: VmPerm::RWX | VmPerm::G,
+        perm: VmPerm::RWX,
+        global: true,
+        extension: 0,
         cache: CachePolicy::Writeback,
     };
     // Safety: we are doing mappings for the kernel.
