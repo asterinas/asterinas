@@ -122,7 +122,12 @@ impl PageTableEntryTrait for PageTableEntry {
             status |= MapStatus::DIRTY;
         }
         MapInfo {
-            prop: MapProperty { perm, cache },
+            prop: MapProperty {
+                perm,
+                global: false,
+                extension: self.0 & !Self::PHYS_MASK as u64,
+                cache,
+            },
             status,
         }
     }

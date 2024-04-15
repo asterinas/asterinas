@@ -130,7 +130,7 @@ impl PageTableEntryTrait for PageTableEntry {
             if prop.perm.contains(VmPerm::U) {
                 flags |= PageTableFlags::USER;
             }
-            if prop.perm.contains(VmPerm::G) {
+            if prop.global {
                 flags |= PageTableFlags::GLOBAL;
             }
         }
@@ -142,6 +142,10 @@ impl PageTableEntryTrait for PageTableEntry {
         }
         if huge {
             flags |= PageTableFlags::HUGE;
+        }
+        #[cfg(feature = "intel_tdx")]
+        if prop.extension as usize & PageTableFlags::SHARED.bits() != 0 {
+            flags |= PageTableFlags::SHARED;
         }
         Self(paddr & Self::PHYS_ADDR_MASK | flags.bits())
     }
@@ -164,9 +168,7 @@ impl PageTableEntryTrait for PageTableEntry {
         if self.0 & PageTableFlags::USER.bits() != 0 {
             perm |= VmPerm::U;
         }
-        if self.0 & PageTableFlags::GLOBAL.bits() != 0 {
-            perm |= VmPerm::G;
-        }
+        let global = self.0 & PageTableFlags::GLOBAL.bits() != 0;
         let cache = if self.0 & PageTableFlags::NO_CACHE.bits() != 0 {
             CachePolicy::Uncacheable
         } else if self.0 & PageTableFlags::WRITE_THROUGH.bits() != 0 {
@@ -182,7 +184,12 @@ impl PageTableEntryTrait for PageTableEntry {
             status |= MapStatus::DIRTY;
         }
         MapInfo {
-            prop: MapProperty { perm, cache },
+            prop: MapProperty {
+                perm,
+                global,
+                extension: (self.0 & !Self::PHYS_ADDR_MASK) as u64,
+                cache,
+            },
             status,
         }
     }

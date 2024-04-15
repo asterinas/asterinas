@@ -6,7 +6,7 @@ use core::mem::size_of;
 use log::warn;
 use pod::Pod;
 
-use super::second_stage::{DeviceMode, PageTableConsts, PageTableEntry};
+use super::second_stage::{DeviceMode, PageTableConsts, PageTableEntry, PageTableFlags};
 use crate::{
     bus::pci::PciDeviceLocation,
     vm::{
@@ -296,6 +296,8 @@ impl ContextTable {
             &(paddr..paddr + PAGE_SIZE),
             MapProperty {
                 perm: VmPerm::RW,
+                global: false,
+                extension: PageTableFlags::empty().bits(),
                 cache: CachePolicy::Uncacheable,
             },
         );

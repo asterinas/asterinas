@@ -68,8 +68,8 @@ impl FileIo for TdxGuest {
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         match cmd {
             IoctlCmd::TDXGETREPORT => {
-                let mut tdx_report: TdxReportRequest = read_val_from_user(arg)?;
-                match get_report(&mut tdx_report.tdreport, &tdx_report.reportdata) {
+                let tdx_report: TdxReportRequest = read_val_from_user(arg)?;
+                match get_report(&tdx_report.tdreport, &tdx_report.reportdata) {
                     Ok(_) => {}
                     Err(err) => return Err(err.into()),
                 };

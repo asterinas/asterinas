@@ -9,9 +9,8 @@ use tdx_guest::tdcall;
 use trapframe::TrapFrame;
 
 #[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
-#[cfg(feature = "intel_tdx")]
 use crate::arch::{
+    cpu::VIRTUALIZATION_EXCEPTION,
     mm::PageTableFlags,
     tdx_guest::{handle_virtual_exception, TdxTrapFrame},
 };
@@ -233,7 +232,12 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
             &(vaddr..vaddr + PAGE_SIZE),
             &(paddr..paddr + PAGE_SIZE),
             MapProperty {
-                perm: VmPerm::RW | VmPerm::G,
+                perm: VmPerm::RW,
+                global: true,
+                #[cfg(feature = "intel_tdx")]
+                extension: PageTableFlags::SHARED.bits() as u64,
+                #[cfg(not(feature = "intel_tdx"))]
+                extension: 0,
                 cache: CachePolicy::Uncacheable,
             },
         )

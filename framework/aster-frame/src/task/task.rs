@@ -13,7 +13,7 @@ use crate::{
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
     vm::{
-        kspace::KERNEL_PAGE_TABLE, page_table::MapProperty, VmAllocOptions, VmPerm, VmSegment,
+        kspace::KERNEL_PAGE_TABLE, page_table::perm_op, VmAllocOptions, VmPerm, VmSegment,
         PAGE_SIZE,
     },
 };
@@ -72,16 +72,10 @@ impl KernelStack {
         // Safety: the physical guard page address is exclusively used since we allocated it.
         unsafe {
             page_table
-                .protect_unchecked(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |info| {
-                    assert!(
-                        info.prop.perm.contains(VmPerm::RW),
-                        "linear mapping shoud be readable and writable"
-                    );
-                    MapProperty {
-                        perm: info.prop.perm - VmPerm::RW,
-                        cache: info.prop.cache,
-                    }
-                })
+                .protect_unchecked(
+                    &(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE),
+                    perm_op(|p| p - VmPerm::RW),
+                )
                 .unwrap();
         }
         Ok(Self {
@@ -107,16 +101,10 @@ impl Drop for KernelStack {
             // Safety: the physical guard page address is exclusively used since we allocated it.
             unsafe {
                 page_table
-                    .protect_unchecked(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |info| {
-                        assert!(
-                            !info.prop.perm.contains(VmPerm::RW),
-                            "we should have removed the permission of the guard page"
-                        );
-                        MapProperty {
-                            perm: info.prop.perm | VmPerm::RW,
-                            cache: info.prop.cache,
-                        }
-                    })
+                    .protect_unchecked(
+                        &(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE),
+                        perm_op(|p| p | VmPerm::RW),
+                    )
                     .unwrap();
             }
         }
