@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use aster_virtio::device::socket::{register_recv_callback, DEVICE_NAME};
+use aster_virtio::device::socket::{get_device, register_recv_callback, DEVICE_NAME};
 use common::VsockSpace;
 use spin::Once;
 
@@ -15,9 +15,11 @@ pub use stream::VsockStreamSocket;
 pub static VSOCK_GLOBAL: Once<Arc<VsockSpace>> = Once::new();
 
 pub fn init() {
-    VSOCK_GLOBAL.call_once(|| Arc::new(VsockSpace::new()));
-    register_recv_callback(DEVICE_NAME, || {
-        let vsockspace = VSOCK_GLOBAL.get().unwrap();
-        let _ = vsockspace.poll();
-    })
+    if get_device(DEVICE_NAME).is_some() {
+        VSOCK_GLOBAL.call_once(|| Arc::new(VsockSpace::new()));
+        register_recv_callback(DEVICE_NAME, || {
+            let vsockspace = VSOCK_GLOBAL.get().unwrap();
+            let _ = vsockspace.poll();
+        })
+    }
 }
