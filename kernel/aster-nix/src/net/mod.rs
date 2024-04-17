@@ -27,6 +27,9 @@ pub fn init() {
             iface_virtio.poll();
         })
     }
+
+    socket::netlink::init();
+
     poll_ifaces();
 }
 

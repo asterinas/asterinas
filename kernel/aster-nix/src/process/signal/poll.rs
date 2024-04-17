@@ -16,21 +16,27 @@ use crate::{
 /// Types that uses `Pollee` to store internal status
 /// and thus can be poll.
 pub trait CanPoll {
-    fn pollee(&self) -> &Pollee;
+    fn poll_object(&self) -> &dyn CanPoll;
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee().poll(mask, poller)
+        self.poll_object().poll(mask, poller)
     }
 
     fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
-        self.pollee().register_observer(observer, mask)
+        self.poll_object().register_observer(observer, mask)
     }
 
     fn unregister_observer(
         &self,
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee().unregister_observer(observer)
+        self.poll_object().unregister_observer(observer)
+    }
+}
+
+impl CanPoll for Pollee {
+    fn poll_object(&self) -> &dyn CanPoll {
+        self
     }
 }
 

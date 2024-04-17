@@ -3,7 +3,7 @@
 use crate::{
     net::{
         iface::{IpAddress, IpEndpoint, Ipv4Address},
-        socket::unix::UnixSocketAddr,
+        socket::{netlink::NetlinkSocketAddr, unix::UnixSocketAddr},
     },
     prelude::*,
 };
@@ -15,6 +15,7 @@ pub enum SocketAddr {
     Unix(UnixSocketAddr),
     IPv4(Ipv4Address, PortNum),
     IPv6,
+    Netlink(NetlinkSocketAddr),
 }
 
 impl TryFrom<SocketAddr> for IpEndpoint {

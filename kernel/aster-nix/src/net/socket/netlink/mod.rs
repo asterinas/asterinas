@@ -36,9 +36,17 @@
 //! The destination address needs to be specified when sending a message.
 //!
 
+pub use addr::NetlinkSocketAddr;
 use aster_frame::sync::RwMutex;
 
-use self::{bound::BoundNetlink, unbound::UnboundNetlink};
+use self::{
+    addr::FamilyId, bound::BoundNetlink, family::NETLINK_FAMILIES, unbound::UnboundNetlink,
+};
+use super::{options::SocketOption, SendRecvFlags, Socket, SocketAddr};
+use crate::{
+    events::IoEvents, fs::file_handle::FileLike, net::socket::netlink::multicast_group::GroupIdSet,
+    prelude::*,
+};
 
 mod addr;
 mod bound;
@@ -58,8 +66,161 @@ enum Inner {
     Bound(BoundNetlink),
 }
 
-impl NetlinkSocket {
-    pub fn new(is_nonblocking: bool) -> Self {
-        todo!()
+impl Inner {
+    fn do_bind(&mut self, addr: NetlinkSocketAddr) -> Result<()> {
+        let Inner::Unbound(unbound) = self else {
+            return_errno_with_message!(Errno::EINVAL, "the socket is already bound");
+        };
+
+        let is_nonblocking = unbound.is_nonblocking();
+
+        let (sender, receiver) = receiver::new_pair(is_nonblocking)?;
+        NETLINK_FAMILIES.bind(&netlink_addr, sender)?;
+
+        let bound = BoundNetlink::new(netlink_addr, receiver);
+        *self = Inner::Bound(bound);
+
+        Ok(())
     }
+
+    fn is_bound(&self) -> bool {
+        matches!(self, Inner::Bound(..))
+    }
+
+    fn do_connect(&mut self, remote: NetlinkSocketAddr) -> Result<()> {
+        if let Inner::Unbound(unbound) = self {
+            let default_addr = {
+                let family_id = unbound.family_id();
+                let port = current!().pid();
+                NetlinkSocketAddr::new(family_id, port, GroupIdSet::new_empty())
+            };
+
+            self.do_bind(default_addr)?;
+        }
+
+        let Inner::Bound(bound) = self else {
+            unreachable!("the socket should always be bound");
+        };
+
+        bound.set_remote(remote);
+
+        Ok(())
+    }
+
+    fn remote(&self) -> Option<&NetlinkSocketAddr> {
+        match self {
+            Inner::Unbound(unbound) => None,
+            Inner::Bound(bound) => bound.remote(),
+        }
+    }
+}
+
+impl NetlinkSocket {
+    pub fn new(is_nonblocking: bool, family: FamilyId) -> Self {
+        let unbound = UnboundNetlink::new(is_nonblocking, family);
+        Self {
+            inner: RwMutex::new(Inner::Unbound(unbound)),
+        }
+    }
+}
+
+impl FileLike for NetlinkSocket {
+    fn read(&self, buf: &mut [u8]) -> crate::Result<usize> {
+        return_errno_with_message!(Errno::EINVAL, "read is not supported");
+    }
+
+    fn write(&self, buf: &[u8]) -> crate::Result<usize> {
+        return_errno_with_message!(Errno::EINVAL, "write is not supported");
+    }
+
+    fn poll(
+        &self,
+        _mask: IoEvents,
+        _poller: Option<&crate::process::signal::Poller>,
+    ) -> crate::events::IoEvents {
+        crate::events::IoEvents::empty()
+    }
+
+    fn register_observer(
+        &self,
+        observer: alloc::sync::Weak<dyn crate::events::Observer<crate::events::IoEvents>>,
+        mask: crate::events::IoEvents,
+    ) -> crate::Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "register_observer is not supported")
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &alloc::sync::Weak<dyn crate::events::Observer<crate::events::IoEvents>>,
+    ) -> crate::Result<alloc::sync::Weak<dyn crate::events::Observer<crate::events::IoEvents>>>
+    {
+        return_errno_with_message!(Errno::EINVAL, "unregister_observer is not supported")
+    }
+
+    fn as_socket(self: alloc::sync::Arc<Self>) -> Option<alloc::sync::Arc<dyn Socket>> {
+        None
+    }
+
+    fn as_device(&self) -> Option<alloc::sync::Arc<dyn crate::fs::device::Device>> {
+        None
+    }
+}
+
+impl Socket for NetlinkSocket {
+    fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
+        let SocketAddr::Netlink(netlink_addr) = socket_addr else {
+            return_errno_with_message!(Errno::EAFNOSUPPORT, "the address is invalid");
+        };
+
+        let mut inner = self.inner.write();
+        inner.do_bind(netlink_addr)?;
+
+        Ok(())
+    }
+
+    fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
+        let SocketAddr::Netlink(netlink_addr) = socket_addr else {
+            return_errno_with_message!(Errno::EAFNOSUPPORT, "the address is invalie");
+        };
+
+        let mut inner = self.inner.write();
+        inner.do_connect(netlink_addr)
+    }
+
+    fn addr(&self) -> Result<SocketAddr> {
+        let inner = self.inner.read();
+        let netlink_addr = match &*self.inner.read() {
+            Inner::Unbound(unbound_socket) => {
+                NetlinkSocketAddr::new_unspecified(unbound_socket.family_id())
+            }
+            Inner::Bound(bound_socket) => bound_socket.addr().clone(),
+        };
+
+        Ok(SocketAddr::Netlink(netlink_addr))
+    }
+
+    fn peer_addr(&self) -> Result<SocketAddr> {
+        self.inner
+            .read()
+            .remote()
+            .map(Clone::clone)
+            .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected"))
+    }
+
+    fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+        return_errno_with_message!(Errno::EOPNOTSUPP, "recvfrom() is not supported");
+    }
+
+    fn sendto(
+        &self,
+        buf: &[u8],
+        remote: Option<SocketAddr>,
+        flags: SendRecvFlags,
+    ) -> Result<usize> {
+        return_errno_with_message!(Errno::EOPNOTSUPP, "recvfrom() is not supported");
+    }
+}
+
+pub fn init() {
+    family::init();
 }

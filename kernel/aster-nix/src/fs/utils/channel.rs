@@ -10,7 +10,7 @@ use super::StatusFlags;
 use crate::{
     events::{IoEvents, Observer},
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{CanPoll, Pollee, Poller},
 };
 
 /// A unidirectional communication channel, intended to implement IPC, e.g., pipe,
@@ -53,6 +53,18 @@ impl<T> Channel<T> {
 pub struct Producer<T>(EndPoint<T, WriteOp>);
 
 pub struct Consumer<T>(EndPoint<T, ReadOp>);
+
+impl<T> CanPoll for Producer<T> {
+    fn poll_object(&self) -> &dyn CanPoll {
+        &self.this_end().pollee
+    }
+}
+
+impl<T> CanPoll for Consumer<T> {
+    fn poll_object(&self) -> &dyn CanPoll {
+        &self.this_end().pollee
+    }
+}
 
 macro_rules! impl_common_methods_for_channel {
     () => {

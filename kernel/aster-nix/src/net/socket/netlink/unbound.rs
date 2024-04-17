@@ -13,21 +13,21 @@ use crate::{
 /// An unbound netlink socket
 pub struct UnboundNetlink {
     is_nonblocking: AtomicBool,
-    family: FamilyId,
+    family_id: FamilyId,
     pollee: Pollee,
 }
 
 impl UnboundNetlink {
-    pub fn new(is_nonblocking: bool, family: FamilyId) -> Self {
+    pub fn new(is_nonblocking: bool, family_id: FamilyId) -> Self {
         Self {
             is_nonblocking: AtomicBool::new(is_nonblocking),
-            family,
+            family_id,
             pollee: Pollee::new(IoEvents::empty()),
         }
     }
 
-    pub fn family(&self) -> FamilyId {
-        self.family
+    pub fn family_id(&self) -> FamilyId {
+        self.family_id
     }
 
     pub fn is_nonblocking(&self) -> bool {
@@ -36,7 +36,7 @@ impl UnboundNetlink {
 }
 
 impl CanPoll for UnboundNetlink {
-    fn pollee(&self) -> &Pollee {
+    fn poll_object(&self) -> &dyn CanPoll {
         &self.pollee
     }
 }
