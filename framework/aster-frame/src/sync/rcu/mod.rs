@@ -2,6 +2,7 @@
 
 //! Read-copy update (RCU).
 
+use alloc::sync::Arc;
 use core::{
     marker::PhantomData,
     ops::Deref,
@@ -17,7 +18,7 @@ use self::monitor::RcuMonitor;
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86::cpu;
 use crate::{
-    sync::SpinLock,
+    sync::{SpinLock, WaitQueue},
     task::{disable_preempt, DisablePreemptGuard},
 };
 
@@ -30,26 +31,27 @@ pub use owner_ptr::OwnerPtr;
 ///
 /// # Overview
 ///
-/// RCU avoids the use of lock primitives lock primitives while multiple threads
-/// concurrently read and update elements that are linked through pointers and that
-/// belong to shared data structures.
+/// Read-Copy Update (RCU) avoids the use of lock primitives lock primitives while
+/// multiple threads concurrently read and update elements that are linked through
+/// pointers and that belong to shared data structures.
 ///
 /// Whenever a thread is inserting or deleting elements of data structures in shared
 /// memory, all readers are guaranteed to see and traverse either the older or the
 /// new structure, therefore avoiding inconsistencies and allowing readers to not be
 /// blocked by writers.
 ///
-/// The type parameter `P` represents the data that this rcu is protecting. The type
+/// The type parameter `P` represents the data that this `Rcu` is protecting. The type
 /// parameter `P` must implement `OwnerPtr`.
 ///
 /// # Usage
+///
 /// It is used when performance of reads is crucial and is an example of space–time
 /// tradeoff, enabling fast operations at the cost of more space.
 ///
-/// Use `Rcu` in scenarios that require frequent reads and infrequent updates(read-mostly).
+/// Use `Rcu` in scenarios that require frequent reads and infrequent updates (read-mostly).
 /// Use `Rcu` in scenarios that require high real-time reading.
 ///
-/// Rcu should not to be used in the scenarios that write-mostly and which need
+/// RCU should not to be used in the scenarios that write-mostly and which need
 /// consistent data.
 ///
 /// # Examples
@@ -81,7 +83,7 @@ pub struct Rcu<P: OwnerPtr> {
 }
 
 impl<P: OwnerPtr> Rcu<P> {
-    /// Creates a new instance of Rcu with the given pointer.
+    /// Creates a new instance of `Rcu` with the given pointer.
     pub fn new(ptr: P) -> Self {
         let ptr = AtomicPtr::new(OwnerPtr::into_raw(ptr) as *mut _);
         Self {
@@ -95,25 +97,28 @@ impl<P: OwnerPtr> Rcu<P> {
     /// This method returns a `RcuReadGuard` which allows read-only access to the
     /// underlying data protected by the RCU mechanism.   
     ///
-    /// This function has the semantics of _subscribe_ in RCU mechanism.
+    /// This function has _subscription semantics_.
     ///
     /// # Safety
     ///
-    /// The pointer protected by the Rcu must be valid and point to a valid object.
-    ///
-    /// # Non-Preemptible RCU
-    ///
-    /// In non-preemptible RCU, the read-side critical section is delimited using
-    /// a `PreemptGuard`.
-    // TODO: Distinguish different type RCU
+    /// The pointer protected by the `Rcu` must be valid and point to a valid object.
     pub fn get(&self) -> RcuReadGuard<'_, P> {
-        let guard = disable_preempt();
+        let preempt_guard = disable_preempt();
         let obj = unsafe { &*self.ptr.load(Acquire) };
         RcuReadGuard {
             obj,
             rcu: self,
-            inner_guard: InnerGuard::Preempt(guard),
+            preempt_guard,
         }
+    }
+}
+
+impl<P: OwnerPtr> Rcu<P>
+where
+    P::Target: Clone,
+{
+    pub fn copy(&self) -> P::Target {
+        unsafe { (*self.ptr.load(Acquire)).clone() }
     }
 }
 
@@ -121,7 +126,7 @@ impl<P: OwnerPtr + Send> Rcu<P> {
     /// Replaces the current pointer with a new pointer and returns a `RcuReclaimer` that
     /// can be used to reclaim the old pointer.
     ///
-    /// This function has the semantics of _publish_ in RCU mechanism.
+    /// This function has _publication semantics_.
     pub fn replace(&self, new_ptr: P) -> RcuReclaimer<P> {
         let new_ptr = <P as OwnerPtr>::into_raw(new_ptr) as *mut _;
         let old_ptr = {
@@ -132,15 +137,10 @@ impl<P: OwnerPtr + Send> Rcu<P> {
     }
 }
 
-enum InnerGuard {
-    Preempt(DisablePreemptGuard),
-    Empty,
-}
-
 pub struct RcuReadGuard<'a, P: OwnerPtr> {
     obj: &'a <P as OwnerPtr>::Target,
     rcu: &'a Rcu<P>,
-    inner_guard: InnerGuard,
+    preempt_guard: DisablePreemptGuard,
 }
 
 impl<'a, P: OwnerPtr> Deref for RcuReadGuard<'a, P> {
@@ -157,22 +157,15 @@ pub struct RcuReclaimer<P> {
 }
 
 impl<P: Send + 'static> RcuReclaimer<P> {
-    pub fn delay(mut self) {
-        let ptr: P = unsafe {
-            // SAFETY. It is ok to have this uninitialized value because
-            // 1) Its memory won't be acccessed;
-            // 2) It will be forgotten rather than being dropped;
-            // 3) Before it gets forgtten, the code won't return prematurely or panic.
-            #[allow(clippy::mem_replace_with_uninit, clippy::uninit_assumed_init)]
-            let ptr = core::mem::replace(
-                &mut self.ptr,
-                core::mem::MaybeUninit::uninit().assume_init(),
-            );
-
-            core::mem::forget(self);
-
-            ptr
-        };
+    pub fn delay(self) {
+        // SAFETY: The `read` behavior is not undefined because
+        // 1) The pointer is valid for reads;
+        // 2) The pointer points to a properly initialized value;
+        // 3) The pointer will be forgotten rather than being dropped so the value will
+        //    be only dropped once by `drop(ptr)`;
+        // 4) Before `self` gets forgtten, the code won't return prematurely or panic.
+        let ptr = unsafe { core::ptr::read(&self.ptr) };
+        core::mem::forget(self);
 
         let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
         rcu_monitor.after_grace_period(move || {
@@ -181,18 +174,33 @@ impl<P: Send + 'static> RcuReclaimer<P> {
     }
 }
 
-/// Passes the quiescent state to the singleton RcuMonitor and take the callbacks if
-/// the current GP is complete.
+impl<P> Drop for RcuReclaimer<P> {
+    fn drop(&mut self) {
+        let wait_queue = Arc::new(WaitQueue::new());
+        let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
+        rcu_monitor.after_grace_period({
+            let wait_queue = Arc::clone(&wait_queue);
+            move || {
+                wait_queue.wake_one();
+            }
+        });
+        // Release the lock held by `rcu_monitor` before calling `wait()` to avoid deadlock.
+        drop(rcu_monitor);
+        wait_queue.wait();
+    }
+}
+
+/// Inform the RCU mechanism that the current task has reached a quiescent state.
+/// A quiescent state is a point in the execution of a task at which
+/// it is guaranteed not to be holding any references to RCU-protected data.
 ///
 /// # Safety
 ///
-/// This function may disable the local IRQs.
-///
-/// # Non-Preemptible RCU
-///
-/// This function is commonly used when the thread is in the user state or idle loop,
-/// or when calling `schedule()` to indicate that the cpu is entering the quiescent state.
-pub unsafe fn pass_quiescent_state() {
+/// Determining whether the current task has reached a quiescent state
+/// is fundamental for the RCU mechanism to work properly.
+/// This responsibility falls on the shoulder of the caller of this function.
+/// Failing to do so leads to undefined behaviors.
+pub(crate) unsafe fn pass_quiescent_state() {
     let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
     rcu_monitor.pass_quiescent_state()
 }

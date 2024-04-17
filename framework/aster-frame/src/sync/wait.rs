@@ -26,6 +26,13 @@ impl WaitQueue {
         }
     }
 
+    /// Wait until being woken up.
+    pub fn wait(&self) {
+        let (waiter, waker) = Waiter::new_pair();
+        self.enqueue(waker.clone());
+        waiter.wait();
+    }
+
     /// Wait until some condition becomes true.
     ///
     /// This method takes a closure that tests a user-given condition.

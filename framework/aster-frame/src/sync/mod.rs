@@ -10,10 +10,12 @@ mod rwmutex;
 mod spin;
 mod wait;
 
+pub(crate) use rcu::pass_quiescent_state;
+
 pub use self::{
     atomic_bits::AtomicBits,
     mutex::{Mutex, MutexGuard},
-    rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer},
+    rcu::{OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer},
     rwlock::{RwLock, RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard},
     rwmutex::{RwMutex, RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard},
     spin::{SpinLock, SpinLockGuard},

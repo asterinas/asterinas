@@ -2,6 +2,8 @@
 
 use core::time::Duration;
 
+use aster_frame::sync::Rcu;
+
 pub use self::{
     builder::{ProcDirBuilder, ProcFileBuilder, ProcSymBuilder},
     dir::{DirOps, ProcDir},
@@ -21,7 +23,8 @@ mod file;
 mod sym;
 
 struct Common {
-    metadata: RwLock<Metadata>,
+    metadata: Rcu<Box<Metadata>>,
+    writer_lock: SpinLock<()>,
     fs: Weak<dyn FileSystem>,
     is_volatile: bool,
 }
@@ -29,7 +32,8 @@ struct Common {
 impl Common {
     pub fn new(metadata: Metadata, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Self {
         Self {
-            metadata: RwLock::new(metadata),
+            metadata: Rcu::new(Box::new(metadata)),
+            writer_lock: SpinLock::new(()),
             fs,
             is_volatile,
         }
@@ -40,57 +44,87 @@ impl Common {
     }
 
     pub fn metadata(&self) -> Metadata {
-        *self.metadata.read()
+        *self.metadata.get()
     }
 
     pub fn ino(&self) -> u64 {
-        self.metadata.read().ino as _
+        self.metadata.get().ino as _
     }
 
     pub fn size(&self) -> usize {
-        self.metadata.read().size
+        self.metadata.get().size
     }
 
     pub fn atime(&self) -> Duration {
-        self.metadata.read().atime
+        self.metadata.get().atime
     }
 
     pub fn set_atime(&self, time: Duration) {
-        self.metadata.write().atime = time;
+        self.writer_lock.lock();
+        let reclaimer = self.metadata.replace({
+            let mut metadata = self.metadata.copy();
+            metadata.atime = time;
+            Box::new(metadata)
+        });
+        reclaimer.delay();
     }
 
     pub fn mtime(&self) -> Duration {
-        self.metadata.read().mtime
+        self.metadata.get().mtime
     }
 
     pub fn set_mtime(&self, time: Duration) {
-        self.metadata.write().mtime = time;
+        self.writer_lock.lock();
+        let reclaimer = self.metadata.replace({
+            let mut metadata = self.metadata.copy();
+            metadata.mtime = time;
+            Box::new(metadata)
+        });
+        reclaimer.delay();
     }
 
     pub fn mode(&self) -> Result<InodeMode> {
-        Ok(self.metadata.read().mode)
+        Ok(self.metadata.get().mode)
     }
 
     pub fn set_mode(&self, mode: InodeMode) -> Result<()> {
-        self.metadata.write().mode = mode;
+        self.writer_lock.lock();
+        let reclaimer = self.metadata.replace({
+            let mut metadata = self.metadata.copy();
+            metadata.mode = mode;
+            Box::new(metadata)
+        });
+        reclaimer.delay();
         Ok(())
     }
 
     pub fn owner(&self) -> Result<Uid> {
-        Ok(self.metadata.read().uid)
+        Ok(self.metadata.get().uid)
     }
 
     pub fn set_owner(&self, uid: Uid) -> Result<()> {
-        self.metadata.write().uid = uid;
+        self.writer_lock.lock();
+        let reclaimer = self.metadata.replace({
+            let mut metadata = self.metadata.copy();
+            metadata.uid = uid;
+            Box::new(metadata)
+        });
+        reclaimer.delay();
         Ok(())
     }
 
     pub fn group(&self) -> Result<Gid> {
-        Ok(self.metadata.read().gid)
+        Ok(self.metadata.get().gid)
     }
 
     pub fn set_group(&self, gid: Gid) -> Result<()> {
-        self.metadata.write().gid = gid;
+        self.writer_lock.lock();
+        let reclaimer = self.metadata.replace({
+            let mut metadata = self.metadata.copy();
+            metadata.gid = gid;
+            Box::new(metadata)
+        });
+        reclaimer.delay();
         Ok(())
     }
 
