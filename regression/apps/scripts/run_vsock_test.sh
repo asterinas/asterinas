@@ -8,6 +8,6 @@ VSOCK_DIR=/regression/vsock
 cd ${VSOCK_DIR}
 
 echo "Start vsock test......"
-# ./vsock_server
 ./vsock_client
+./vsock_server
 echo "Vsock test passed."
