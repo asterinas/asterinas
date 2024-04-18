@@ -20,7 +20,8 @@ use crate::{
     vm::{perms::VmPerms, vmar::Vmar, vmo::VmoOptions},
 };
 
-pub const INIT_STACK_SIZE: usize = 64 * 1024; // 64 KiB
+/// Set the initial stack size to 8 megabytes, following the default Linux stack size limit.
+pub const INIT_STACK_SIZE: usize = 8 * 1024 * 1024; // 8 MB
 
 /*
  * Illustration of the virtual memory space containing the processes' init stack:
