@@ -23,7 +23,7 @@ Options related with debugging:
 Requires [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb).
 - `--gdb-server-addr <ADDR>`: The network address on which the GDB server listens,
 it can be either a path for the UNIX domain socket or a TCP port on an IP address.
-[default: .aster-gdb-socket]
+[default: `.aster-gdb-socket`(a local UNIX socket)]
 
 See [Debug Command](debug.md) to interact with the GDB server in terminal.
 
