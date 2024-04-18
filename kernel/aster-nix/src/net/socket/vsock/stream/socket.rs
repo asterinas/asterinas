@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{connected::Connected, init::Init, listen::Listen};
+use super::{connected::Connected, connecting::Connecting, init::Init, listen::Listen};
 use crate::{
     events::IoEvents,
     fs::file_handle::FileLike,
@@ -101,7 +101,7 @@ impl Socket for VsockStreamSocket {
             init.bind(VsockSocketAddr::any_addr())?;
         }
 
-        let connecting = Arc::new(Connected::new(remote_addr, init.bound_addr().unwrap()));
+        let connecting = Arc::new(Connecting::new(remote_addr, init.bound_addr().unwrap()));
         let vsockspace = VSOCK_GLOBAL.get().unwrap();
         vsockspace
             .connecting_sockets
@@ -112,7 +112,7 @@ impl Socket for VsockStreamSocket {
         vsockspace
             .driver
             .lock_irq_disabled()
-            .request(&connecting.get_info())
+            .request(&connecting.info())
             .map_err(|e| Error::with_message(Errno::EAGAIN, "can not send connect packet"))?;
 
         // wait for response from driver
@@ -124,18 +124,19 @@ impl Socket for VsockStreamSocket {
         {
             poller.wait()?;
         }
-
-        *self.0.write() = Status::Connected(connecting.clone());
-        // move connecting socket map to connected sockmap
         vsockspace
             .connecting_sockets
             .lock_irq_disabled()
             .remove(&connecting.local_addr())
             .unwrap();
+
+        let connected = Arc::new(Connected::from_connecting(connecting));
+        *self.0.write() = Status::Connected(connected.clone());
+        // move connecting socket map to connected sockmap
         vsockspace
             .connected_sockets
             .lock_irq_disabled()
-            .insert(connecting.id(), connecting);
+            .insert(connected.id(), connected);
 
         Ok(())
     }
