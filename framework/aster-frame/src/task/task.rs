@@ -301,3 +301,26 @@ impl TaskOptions {
         Ok(task)
     }
 }
+
+#[cfg(ktest)]
+mod test {
+    #[ktest]
+    fn create_task() {
+        let task = || {
+            assert_eq!(1, 1);
+        };
+        let task_option = crate::task::TaskOptions::new(task)
+            .data(())
+            .build()
+            .unwrap();
+        task_option.run();
+    }
+
+    #[ktest]
+    fn spawn_task() {
+        let task = || {
+            assert_eq!(1, 1);
+        };
+        let _ = crate::task::TaskOptions::new(task).data(()).spawn();
+    }
+}

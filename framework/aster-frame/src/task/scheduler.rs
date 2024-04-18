@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::collections::VecDeque;
+
 use lazy_static::lazy_static;
 
 use crate::{prelude::*, sync::SpinLock, task::Task};
@@ -59,4 +61,41 @@ pub fn fetch_task() -> Option<Arc<Task>> {
 
 pub fn add_task(task: Arc<Task>) {
     GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(task);
+}
+
+/// A simple FIFO (First-In-First-Out) task scheduler.
+pub struct FifoScheduler {
+    /// A thread-safe queue to hold tasks waiting to be executed.
+    task_queue: SpinLock<VecDeque<Arc<Task>>>,
+}
+
+impl FifoScheduler {
+    /// Creates a new instance of `FifoScheduler`.
+    pub const fn new() -> Self {
+        FifoScheduler {
+            task_queue: SpinLock::new(VecDeque::new()),
+        }
+    }
+}
+
+impl Default for FifoScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Scheduler for FifoScheduler {
+    /// Enqueues a task to the end of the queue.
+    fn enqueue(&self, task: Arc<Task>) {
+        self.task_queue.lock_irq_disabled().push_back(task);
+    }
+    /// Dequeues a task from the front of the queue, if any.
+    fn dequeue(&self) -> Option<Arc<Task>> {
+        self.task_queue.lock_irq_disabled().pop_front()
+    }
+    /// In this simple implementation, task preemption is not supported.
+    /// Once a task starts running, it will continue to run until completion.
+    fn should_preempt(&self, _task: &Arc<Task>) -> bool {
+        false
+    }
 }

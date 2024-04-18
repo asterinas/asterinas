@@ -36,13 +36,9 @@ impl PreemptScheduler {
 impl Scheduler for PreemptScheduler {
     fn enqueue(&self, task: Arc<Task>) {
         if task.is_real_time() {
-            self.real_time_tasks
-                .lock_irq_disabled()
-                .push_back(task.clone());
+            self.real_time_tasks.lock_irq_disabled().push_back(task);
         } else {
-            self.normal_tasks
-                .lock_irq_disabled()
-                .push_back(task.clone());
+            self.normal_tasks.lock_irq_disabled().push_back(task);
         }
     }
 
