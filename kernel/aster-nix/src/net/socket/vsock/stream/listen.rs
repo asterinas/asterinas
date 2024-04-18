@@ -50,7 +50,9 @@ impl Listen {
             .incoming_connection
             .lock_irq_disabled()
             .pop_front()
-            .unwrap();
+            .ok_or_else(|| {
+                Error::with_message(Errno::EAGAIN, "no pending connection is available")
+            })?;
 
         Ok(connection)
     }

@@ -13,6 +13,7 @@ use super::{
     addr::VsockSocketAddr,
     stream::{
         connected::{Connected, ConnectionID},
+        connecting::Connecting,
         listen::Listen,
     },
 };
@@ -22,7 +23,7 @@ use crate::{events::IoEvents, prelude::*, return_errno_with_message};
 pub struct VsockSpace {
     pub driver: Arc<SpinLock<SocketDevice>>,
     // (key, value) = (local_addr, connecting)
-    pub connecting_sockets: SpinLock<BTreeMap<VsockSocketAddr, Arc<Connected>>>,
+    pub connecting_sockets: SpinLock<BTreeMap<VsockSocketAddr, Arc<Connecting>>>,
     // (key, value) = (local_addr, listen)
     pub listen_sockets: SpinLock<BTreeMap<VsockSocketAddr, Arc<Listen>>>,
     // (key, value) = (id(local_addr,peer_addr), connected)

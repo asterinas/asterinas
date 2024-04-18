@@ -5,6 +5,7 @@ use core::cmp::min;
 
 use aster_virtio::device::socket::connect::{ConnectionInfo, VsockEvent};
 
+use super::connecting::Connecting;
 use crate::{
     events::IoEvents,
     net::socket::{
@@ -28,6 +29,14 @@ impl Connected {
         Self {
             connection: SpinLock::new(Connection::new(peer_addr, local_addr.port)),
             id: ConnectionID::new(local_addr, peer_addr),
+            pollee: Pollee::new(IoEvents::empty()),
+        }
+    }
+
+    pub fn from_connecting(connecting: Arc<Connecting>) -> Self {
+        Self {
+            connection: SpinLock::new(Connection::from_info(connecting.info())),
+            id: connecting.id(),
             pollee: Pollee::new(IoEvents::empty()),
         }
     }
@@ -149,6 +158,15 @@ pub struct Connection {
 impl Connection {
     pub fn new(peer: VsockSocketAddr, local_port: u32) -> Self {
         let mut info = ConnectionInfo::new(peer.into(), local_port);
+        info.buf_alloc = PER_CONNECTION_BUFFER_CAPACITY.try_into().unwrap();
+        Self {
+            info,
+            buffer: RingBuffer::new(PER_CONNECTION_BUFFER_CAPACITY),
+            peer_requested_shutdown: false,
+        }
+    }
+    pub fn from_info(info: ConnectionInfo) -> Self {
+        let mut info = info.clone();
         info.buf_alloc = PER_CONNECTION_BUFFER_CAPACITY.try_into().unwrap();
         Self {
             info,
