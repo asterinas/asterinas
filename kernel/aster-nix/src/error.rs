@@ -180,6 +180,12 @@ impl From<Errno> for Error {
     }
 }
 
+impl AsRef<Error> for Error {
+    fn as_ref(&self) -> &Error {
+        self
+    }
+}
+
 impl From<aster_frame::Error> for Error {
     fn from(frame_error: aster_frame::Error) -> Self {
         match frame_error {
