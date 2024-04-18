@@ -60,6 +60,18 @@ pub fn execute_run_command(config: &RunConfig) {
                     .collect();
                 let mut manifest = config.manifest.clone();
                 manifest.qemu.args.extend(qemu_gdb_args);
+
+                // FIXME: Disable KVM from QEMU args in debug mode.
+                // Currently, the QEMU GDB server does not work properly with KVM enabled.
+                let args_num = manifest.qemu.args.len();
+                manifest.qemu.args.retain(|x| !x.contains("kvm"));
+                if manifest.qemu.args.len() != args_num {
+                    println!(
+                        "[WARNING] KVM is forced to be disabled in GDB server currently. \
+                         Options related with KVM are ignored."
+                    );
+                }
+
                 manifest
             } else {
                 config.manifest.clone()
@@ -69,7 +81,7 @@ pub fn execute_run_command(config: &RunConfig) {
     };
     let _vsc_launch_file = config.gdb_server_args.vsc_launch_file.then(|| {
         vsc::check_gdb_config(&config.gdb_server_args);
-        let profile = super::util::profile_adapter(&config.cargo_args.profile);
+        let profile = super::util::profile_name_adapter(&config.cargo_args.profile);
         vsc::VscLaunchConfig::new(profile, &config.gdb_server_args.gdb_server_addr)
     });
 

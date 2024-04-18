@@ -15,6 +15,7 @@ SKIP_GRUB_MENU ?= 1
 SYSCALL_TEST_DIR ?= /tmp
 EXTRA_BLOCKLISTS_DIRS ?= ""
 RELEASE_MODE ?= 0
+GDB_TCP_PORT ?= 1234
 # End of auto test features.
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
@@ -139,12 +140,12 @@ else ifeq ($(AUTO_TEST), boot)
 endif
 
 .PHONY: gdb_server
-gdb_server: build
-	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS) -G --vsc --gdb-server-addr :1234
+gdb_server: initramfs $(CARGO_OSDK)
+	@cargo osdk run $(CARGO_OSDK_ARGS) -G --vsc --gdb-server-addr :$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
 gdb_client: $(CARGO_OSDK)
-	@cd kernel && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :1234
+	@cd kernel && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
 
 .PHONY: test
 test:

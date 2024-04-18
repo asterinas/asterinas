@@ -7,7 +7,7 @@ use std::{path::Path, process};
 
 use bin::strip_elf_for_qemu;
 
-use super::util::{cargo, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
+use super::util::{cargo, profile_name_adapter, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
 use crate::{
     base_crate::new_base_crate,
     bundle::{
@@ -155,12 +155,9 @@ fn build_kernel_elf(
     }
 
     let aster_bin_path = cargo_target_directory.as_ref().join(target);
-    let aster_bin_path = if args.profile == "dev" {
-        aster_bin_path.join("debug")
-    } else {
-        aster_bin_path.join(&args.profile)
-    }
-    .join(get_current_crate_info().name);
+    let aster_bin_path = aster_bin_path
+        .join(profile_name_adapter(&args.profile))
+        .join(get_current_crate_info().name);
 
     AsterBin::new(
         aster_bin_path,
