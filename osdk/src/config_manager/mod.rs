@@ -147,15 +147,13 @@ fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S
 /// 1. Split `features` in `cargo_args` to ensure each string contains exactly one feature.
 /// 2. Change `profile` to `release` if `--release` is set.
 fn parse_cargo_args(cargo_args: &CargoArgs) -> CargoArgs {
-    let mut features = Vec::new();
-
-    for feature in cargo_args.features.iter() {
-        for feature in feature.split(',') {
-            if !feature.is_empty() {
-                features.push(feature.to_string());
-            }
-        }
-    }
+    let features = cargo_args
+        .features
+        .iter()
+        .flat_map(|feature| feature.split(','))
+        .filter(|feature| !feature.is_empty())
+        .map(|feature| feature.to_string())
+        .collect();
 
     let profile = if cargo_args.release {
         "release".to_string()
@@ -167,6 +165,7 @@ fn parse_cargo_args(cargo_args: &CargoArgs) -> CargoArgs {
         profile,
         release: cargo_args.release,
         features,
+        override_configs: cargo_args.override_configs.clone(),
     }
 }
 
