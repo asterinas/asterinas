@@ -148,6 +148,10 @@ fn build_kernel_elf(
         .arg(cargo_target_directory.as_ref());
     command.args(COMMON_CARGO_ARGS);
     command.arg("--profile=".to_string() + &args.profile);
+    for override_config in &args.override_configs {
+        command.arg("--config").arg(override_config);
+    }
+
     let status = command.status().unwrap();
     if !status.success() {
         error_msg!("Cargo build failed");

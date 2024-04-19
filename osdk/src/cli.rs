@@ -190,6 +190,12 @@ pub struct CargoArgs {
     pub release: bool,
     #[arg(long, value_name = "FEATURES", help = "List of features to activate")]
     pub features: Vec<String>,
+    #[arg(
+        long = "config",
+        help = "Override a configuration value",
+        value_name = "KEY=VALUE"
+    )]
+    pub override_configs: Vec<String>,
 }
 
 #[derive(Debug, Args)]
