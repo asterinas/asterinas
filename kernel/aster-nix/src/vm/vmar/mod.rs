@@ -8,7 +8,7 @@ mod options;
 mod static_cap;
 pub mod vm_mapping;
 
-use core::ops::Range;
+use core::{cmp::min, ops::Range};
 
 use align_ext::AlignExt;
 use aster_frame::vm::{VmSpace, MAX_USERSPACE_VADDR};
@@ -429,12 +429,27 @@ impl Vmar_ {
         }
 
         // If the read range is in mapped vmo.
+        let mut read_offset = 0;
         for vm_mapping in inner.vm_mappings.find(&read_range) {
             let vm_mapping_range = vm_mapping.range();
-            if vm_mapping_range.start <= read_start && read_end <= vm_mapping_range.end {
-                let vm_mapping_offset = read_start - vm_mapping_range.start;
-                return vm_mapping.read_bytes(vm_mapping_offset, buf);
+            let current_start = read_start + read_offset;
+            if vm_mapping_range.start <= current_start {
+                let buf_len = min(
+                    buf.len() - read_offset,
+                    vm_mapping_range.end - current_start,
+                );
+                let vm_mapping_offset = current_start - vm_mapping_range.start;
+                vm_mapping.read_bytes(
+                    vm_mapping_offset,
+                    buf.get_mut(read_offset..buf_len).unwrap(),
+                )?;
+                read_offset += buf_len;
+            } else {
+                return_errno_with_message!(Errno::EACCES, "read range is not fully mapped");
             }
+        }
+        if read_offset == buf.len() {
+            return Ok(());
         }
 
         // FIXME: If the read range is across different vmos or child vmars, should we directly return error?
@@ -464,12 +479,25 @@ impl Vmar_ {
         }
 
         // If the write range is in mapped vmo.
+        let mut write_offset = 0;
         for vm_mapping in inner.vm_mappings.find(&write_range) {
             let vm_mapping_range = vm_mapping.range();
-            if vm_mapping_range.start <= write_start && write_end <= vm_mapping_range.end {
-                let vm_mapping_offset = write_start - vm_mapping_range.start;
-                return vm_mapping.write_bytes(vm_mapping_offset, buf);
+            let current_start = write_start + write_offset;
+            if vm_mapping_range.start <= current_start {
+                let buf_len = min(
+                    buf.len() - write_offset,
+                    vm_mapping_range.end - current_start,
+                );
+                let vm_mapping_offset = current_start - vm_mapping_range.start;
+                vm_mapping
+                    .write_bytes(vm_mapping_offset, buf.get(write_offset..buf_len).unwrap())?;
+                write_offset += buf_len;
+            } else {
+                return_errno_with_message!(Errno::EACCES, "write range is not fully mapped");
             }
+        }
+        if write_offset == buf.len() {
+            return Ok(());
         }
 
         // FIXME: If the write range is across different vmos or child vmars, should we directly return error?
