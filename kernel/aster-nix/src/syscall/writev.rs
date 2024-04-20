@@ -41,7 +41,7 @@ fn do_sys_writev(fd: FileDescripter, io_vec_ptr: Vaddr, io_vec_count: usize) -> 
     let mut total_len = 0;
     for i in 0..io_vec_count {
         let io_vec = read_val_from_user::<IoVec>(io_vec_ptr + i * core::mem::size_of::<IoVec>())?;
-        if io_vec.base == 0 {
+        if io_vec.base == 0 || io_vec.len == 0 {
             continue;
         }
         let buffer = {
