@@ -25,7 +25,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-use log::debug;
 
 use super::{
     error::SocketError,
@@ -116,7 +115,6 @@ impl VsockEvent {
             }
             VirtioVsockOp::Rst | VirtioVsockOp::Shutdown => {
                 header.check_data_is_empty()?;
-                debug!("Disconnected from the peer");
                 let reason = if op == VirtioVsockOp::Rst {
                     DisconnectReason::Reset
                 } else {

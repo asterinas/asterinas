@@ -36,6 +36,13 @@ else ifeq ($(AUTO_TEST), boot)
 CARGO_OSDK_ARGS += --init_args="/regression/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
 CARGO_OSDK_ARGS += --init_args="/regression/run_vsock_test.sh"
+ifeq ($(QEMU_MACHINE), microvm)
+CARGO_OSDK_ARGS += --qemu.args="-device vhost-vsock-device,guest-cid=3"
+else ifeq ($(EMULATE_IOMMU), 1)
+CARGO_OSDK_ARGS += --qemu.args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on"
+else
+CARGO_OSDK_ARGS += --qemu.args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off"
+endif
 endif
 
 ifeq ($(RELEASE_LTO), 1)
