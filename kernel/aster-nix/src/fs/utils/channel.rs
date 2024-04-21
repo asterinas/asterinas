@@ -98,11 +98,8 @@ macro_rules! impl_common_methods_for_channel {
         pub fn unregister_observer(
             &self,
             observer: &Weak<dyn Observer<IoEvents>>,
-        ) -> Result<Weak<dyn Observer<IoEvents>>> {
-            self.this_end()
-                .pollee
-                .unregister_observer(observer)
-                .ok_or_else(|| Error::with_message(Errno::ENOENT, "the observer is not registered"))
+        ) -> Option<Weak<dyn Observer<IoEvents>>> {
+            self.this_end().pollee.unregister_observer(observer)
         }
     };
 }
