@@ -96,11 +96,12 @@ pub trait FileLike: Send + Sync + Any {
         return_errno_with_message!(Errno::EINVAL, "register_observer is not supported")
     }
 
+    #[must_use]
     fn unregister_observer(
         &self,
         observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Result<Weak<dyn Observer<IoEvents>>> {
-        return_errno_with_message!(Errno::EINVAL, "unregister_observer is not supported")
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
+        None
     }
 
     fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {

@@ -71,7 +71,7 @@ impl FileLike for PipeReader {
     fn unregister_observer(
         &self,
         observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
         self.consumer.unregister_observer(observer)
     }
 }
@@ -137,7 +137,7 @@ impl FileLike for PipeWriter {
     fn unregister_observer(
         &self,
         observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
         self.producer.unregister_observer(observer)
     }
 }
