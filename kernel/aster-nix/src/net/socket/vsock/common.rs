@@ -48,7 +48,6 @@ impl VsockSpace {
     pub fn poll(&self) -> Result<Option<VsockEvent>> {
         let mut driver = self.driver.lock_irq_disabled();
         let guest_cid: u32 = driver.guest_cid() as u32;
-
         // match the socket and store the buffer body (if valid)
         let result = driver
             .poll(|event, body| {
@@ -68,6 +67,7 @@ impl VsockSpace {
                         if !connected.connection_buffer_add(body) {
                             return Err(SocketError::BufferTooShort);
                         }
+                        connected.update_io_events();
                     } else {
                         return Ok(None);
                     }
@@ -104,6 +104,7 @@ impl VsockSpace {
                     let connected = Arc::new(Connected::new(peer.into(), listen.addr()));
                     connected.update_for_event(&event);
                     listen.push_incoming(connected).unwrap();
+                    listen.update_io_events();
                 } else {
                     return_errno_with_message!(
                         Errno::EINVAL,
@@ -117,7 +118,11 @@ impl VsockSpace {
                     .lock_irq_disabled()
                     .get(&event.destination.into())
                 {
-                    // debug!("match a connecting socket. Peer{:?}; local{:?}",connecting.peer_addr(),connecting.local_addr());
+                    debug!(
+                        "match a connecting socket. Peer{:?}; local{:?}",
+                        connecting.peer_addr(),
+                        connecting.local_addr()
+                    );
                     connecting.update_for_event(&event);
                     connecting.add_events(IoEvents::IN);
                 }
@@ -133,17 +138,7 @@ impl VsockSpace {
                     return_errno_with_message!(Errno::ENOTCONN, "The socket hasn't connected");
                 }
             }
-            VsockEventType::Received { length } => {
-                if let Some(connected) = self
-                    .connected_sockets
-                    .lock_irq_disabled()
-                    .get(&event.into())
-                {
-                    connected.add_events(IoEvents::IN);
-                } else {
-                    return_errno_with_message!(Errno::ENOTCONN, "The socket hasn't connected");
-                }
-            }
+            VsockEventType::Received { length } => {}
             VsockEventType::CreditRequest => {
                 if let Some(connected) = self
                     .connected_sockets

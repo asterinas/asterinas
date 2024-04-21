@@ -7,7 +7,7 @@ use aster_virtio::device::socket::connect::{ConnectionInfo, VsockEvent};
 
 use super::connecting::Connecting;
 use crate::{
-    events::IoEvents,
+    events::{IoEvents, Observer},
     net::socket::{
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
         SendRecvFlags, SockShutdownCmd,
@@ -52,21 +52,22 @@ impl Connected {
         self.id
     }
 
-    pub fn recv(&self, buf: &mut [u8]) -> Result<usize> {
-        let poller = Poller::new();
-        if !self
-            .poll(IoEvents::IN, Some(&poller))
-            .contains(IoEvents::IN)
-        {
-            poller.wait()?;
-        }
-
+    pub fn try_recv(&self, buf: &mut [u8]) -> Result<usize> {
         let mut connection = self.connection.lock_irq_disabled();
         let bytes_read = connection.buffer.drain(buf);
 
         connection.info.done_forwarding(bytes_read);
 
-        Ok(bytes_read)
+        match bytes_read {
+            0 => {
+                if !connection.peer_requested_shutdown {
+                    return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
+                } else {
+                    return_errno_with_message!(Errno::ECONNRESET, "the connection is reset");
+                }
+            }
+            bytes_read => Ok(bytes_read),
+        }
     }
 
     pub fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
@@ -91,9 +92,9 @@ impl Connected {
     }
 
     pub fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
-        let connection = self.connection.lock_irq_disabled();
         // TODO: deal with cmd
         if self.should_close() {
+            let connection = self.connection.lock_irq_disabled();
             let vsockspace = VSOCK_GLOBAL.get().unwrap();
             vsockspace
                 .driver
@@ -103,8 +104,11 @@ impl Connected {
             vsockspace
                 .connected_sockets
                 .lock_irq_disabled()
-                .remove(&self.id())
-                .unwrap();
+                .remove(&self.id());
+            vsockspace
+                .used_ports
+                .lock_irq_disabled()
+                .remove(&self.local_addr().port);
         }
         Ok(())
     }
@@ -120,7 +124,6 @@ impl Connected {
 
     pub fn connection_buffer_add(&self, bytes: &[u8]) -> bool {
         let mut connection = self.connection.lock_irq_disabled();
-        self.add_events(IoEvents::IN);
         connection.add(bytes)
     }
 
@@ -131,8 +134,35 @@ impl Connected {
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
-    pub fn add_events(&self, events: IoEvents) {
-        self.pollee.add_events(events)
+
+    pub fn update_io_events(&self) {
+        let connection = self.connection.lock_irq_disabled();
+        // receive
+        if !connection.buffer.is_empty() {
+            self.pollee.add_events(IoEvents::IN);
+        } else {
+            self.pollee.del_events(IoEvents::IN);
+        }
+    }
+
+    pub fn register_observer(
+        &self,
+        pollee: &Pollee,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        pollee.register_observer(observer, mask);
+        Ok(())
+    }
+
+    pub fn unregister_observer(
+        &self,
+        pollee: &Pollee,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        pollee
+            .unregister_observer(observer)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fails to unregister observer"))
     }
 }
 

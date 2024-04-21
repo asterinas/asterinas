@@ -1,17 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::boxed::Box;
-use core::cmp::min;
-
 use aster_virtio::device::socket::connect::{ConnectionInfo, VsockEvent};
 
 use super::connected::ConnectionID;
 use crate::{
     events::IoEvents,
-    net::socket::{
-        vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
-        SendRecvFlags, SockShutdownCmd,
-    },
+    net::socket::vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
     prelude::*,
     process::signal::{Pollee, Poller},
 };

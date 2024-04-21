@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    events::IoEvents,
+    events::{IoEvents, Observer},
     net::socket::vsock::{
         addr::{VsockSocketAddr, VMADDR_CID_ANY, VMADDR_PORT_ANY},
         VSOCK_GLOBAL,
@@ -74,8 +74,24 @@ impl Init {
         self.pollee.poll(mask, poller)
     }
 
-    pub fn add_events(&self, events: IoEvents) {
-        self.pollee.add_events(events)
+    pub fn register_observer(
+        &self,
+        pollee: &Pollee,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        pollee.register_observer(observer, mask);
+        Ok(())
+    }
+
+    pub fn unregister_observer(
+        &self,
+        pollee: &Pollee,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        pollee
+            .unregister_observer(observer)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fails to unregister observer"))
     }
 }
 

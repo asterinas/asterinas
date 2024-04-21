@@ -23,9 +23,9 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
     );
     let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let file_like = match (domain, sock_type, protocol) {
-        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM, _) => Arc::new(UnixStreamSocket::new(
-            sock_flags.contains(SockFlags::SOCK_NONBLOCK),
-        )) as Arc<dyn FileLike>,
+        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM, _) => {
+            Arc::new(UnixStreamSocket::new(nonblocking)) as Arc<dyn FileLike>
+        }
         (
             CSocketAddrFamily::AF_INET,
             SockType::SOCK_STREAM,
@@ -37,7 +37,7 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
             Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP,
         ) => DatagramSocket::new(nonblocking) as Arc<dyn FileLike>,
         (CSocketAddrFamily::AF_VSOCK, SockType::SOCK_STREAM, _) => {
-            Arc::new(VsockStreamSocket::new()) as Arc<dyn FileLike>
+            Arc::new(VsockStreamSocket::new(nonblocking)) as Arc<dyn FileLike>
         }
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };

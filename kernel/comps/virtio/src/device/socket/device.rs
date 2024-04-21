@@ -209,7 +209,7 @@ impl SocketDevice {
         connection_info: &mut ConnectionInfo,
         buffer_len: usize,
     ) -> Result<(), SocketError> {
-        debug!("connectin info {:?}", connection_info);
+        debug!("connection info {:?}", connection_info);
         debug!(
             "peer free from peer: {:?}, buffer len : {:?}",
             connection_info.peer_free(),

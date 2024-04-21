@@ -12,7 +12,7 @@
 int main()
 {
 	int sock;
-	char *hello = "Hello from client";
+	char *hello = "Hello from asterinas";
 	char buffer[1024] = { 0 };
 	struct sockaddr_vm serv_addr;
 
