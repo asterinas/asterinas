@@ -125,9 +125,18 @@ impl DatagramSocket {
             return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
         };
 
-        let (recv_bytes, remote_endpoint) = bound_datagram.try_recvfrom(buf, flags)?;
-        bound_datagram.update_io_events(&self.pollee);
-        Ok((recv_bytes, remote_endpoint.into()))
+        let received =
+            bound_datagram
+                .try_recvfrom(buf, flags)
+                .map(|(recv_bytes, remote_endpoint)| {
+                    bound_datagram.update_io_events(&self.pollee);
+                    (recv_bytes, remote_endpoint.into())
+                });
+
+        drop(inner);
+        poll_ifaces();
+
+        received
     }
 
     fn try_sendto(&self, buf: &[u8], remote: &IpEndpoint, flags: SendRecvFlags) -> Result<usize> {
@@ -137,9 +146,17 @@ impl DatagramSocket {
             return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
         };
 
-        let sent_bytes = bound_datagram.try_sendto(buf, remote, flags)?;
-        bound_datagram.update_io_events(&self.pollee);
-        Ok(sent_bytes)
+        let sent_bytes = bound_datagram
+            .try_sendto(buf, remote, flags)
+            .map(|sent_bytes| {
+                bound_datagram.update_io_events(&self.pollee);
+                sent_bytes
+            });
+
+        drop(inner);
+        poll_ifaces();
+
+        sent_bytes
     }
 
     // TODO: Support timeout
@@ -278,7 +295,6 @@ impl Socket for DatagramSocket {
     fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         debug_assert!(flags.is_all_supported());
 
-        poll_ifaces();
         if self.is_nonblocking() {
             self.try_recvfrom(buf, flags)
         } else {
@@ -309,9 +325,7 @@ impl Socket for DatagramSocket {
         };
 
         // TODO: Block if the send buffer is full
-        let sent_bytes = self.try_sendto(buf, &remote_endpoint, flags)?;
-        poll_ifaces();
-        Ok(sent_bytes)
+        self.try_sendto(buf, &remote_endpoint, flags)
     }
 }
 
