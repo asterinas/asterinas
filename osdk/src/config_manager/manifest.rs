@@ -5,13 +5,13 @@ use std::{
     process,
 };
 
-use regex::Regex;
 use serde::Deserialize;
 
 use super::{
     boot::Boot,
     qemu::{CfgQemu, Qemu},
 };
+use crate::config_manager::cfg::Cfg;
 use crate::{error::Errno, error_msg};
 
 /// The osdk manifest from configuration file and command line arguments.
@@ -24,9 +24,10 @@ pub struct OsdkManifest {
 }
 
 impl OsdkManifest {
-    pub fn from_toml_manifest<S: AsRef<str>>(
+    pub fn from_toml_manifest(
         toml_manifest: TomlManifest,
-        selection: Option<S>,
+        arch: Option<String>,
+        selection: Option<String>,
     ) -> Self {
         let TomlManifest {
             mut kcmd_args,
@@ -35,9 +36,9 @@ impl OsdkManifest {
             boot,
             qemu,
         } = toml_manifest;
-        let CfgQemu { default, cfg } = qemu;
+        let CfgQemu { default, cfg_map } = qemu;
 
-        let Some(cfg) = cfg else {
+        let Some(cfg_map) = cfg_map else {
             return Self {
                 kcmd_args,
                 initramfs,
@@ -46,32 +47,46 @@ impl OsdkManifest {
             };
         };
 
-        for cfg in cfg.keys() {
-            check_cfg(cfg);
+        for cfg in cfg_map.keys() {
+            const ALLOWED_KEYS: &[&str] = &["arch", "select"];
+            if !cfg.check_allowed(ALLOWED_KEYS) {
+                error_msg!("cfg {:#?} is not allowed to be used in `OSDK.toml`", cfg);
+                process::exit(Errno::ParseMetadata as _);
+            }
         }
 
         let mut qemu_args = None;
 
-        let mut selected_args: Vec<_> = if let Some(sel) = selection {
-            cfg.into_iter()
-                .filter_map(|(cfg, args)| {
-                    if cfg.contains(sel.as_ref()) {
-                        Some(args)
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        } else {
+        let mut args_matches: Vec<_> = if arch.is_none() && selection.is_none() {
             vec![]
+        } else {
+            let mut need_cfg = Cfg::new();
+            if let Some(arch) = arch {
+                need_cfg.insert("arch".to_string(), arch);
+            }
+            if let Some(selection) = selection {
+                need_cfg.insert("select".to_string(), selection);
+            }
+            cfg_map
+                .into_iter()
+                .filter_map(
+                    |(cfg, args)| {
+                        if need_cfg == cfg {
+                            Some(args)
+                        } else {
+                            None
+                        }
+                    },
+                )
+                .collect()
         };
 
-        if selected_args.len() > 1 {
-            error_msg!("Multiple selections are not allowed");
+        if args_matches.len() > 1 {
+            error_msg!("Multiple CFGs matched using the command line arguments");
             process::exit(Errno::ParseMetadata as _);
-        } else if selected_args.len() == 1 {
-            qemu_args = Some(selected_args.remove(0));
-        } else if selected_args.is_empty() {
+        } else if args_matches.len() == 1 {
+            qemu_args = Some(args_matches.remove(0));
+        } else if args_matches.is_empty() {
             qemu_args = Some(default);
         }
 
@@ -144,30 +159,5 @@ fn check_args(arg_name: &str, args: &[String]) {
             error_msg!("`{}` cannot have `--` as argument", arg_name);
             process::exit(Errno::ParseMetadata as _);
         }
-    }
-}
-
-/// Check cfg that is in the form that we can accept
-fn check_cfg(cfg: &str) {
-    if SELECT_REGEX.captures(cfg).is_none() {
-        error_msg!("{} is not allowed to be used after `qemu` in `OSDK.toml`. Currently we only allow cfgs like `cfg(select=\"foo\")`", cfg);
-        process::exit(Errno::ParseMetadata as _);
-    }
-}
-
-lazy_static::lazy_static! {
-    pub static ref SELECT_REGEX: Regex = Regex::new(r#"cfg\(select="(?P<select>\w+)"\)"#).unwrap();
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn extract_selection() {
-        let text = "cfg(select=\"abc123_\")";
-        let captures = SELECT_REGEX.captures(text).unwrap();
-        let selection = captures.name("select").unwrap().as_str();
-        assert_eq!(selection, "abc123_");
     }
 }
