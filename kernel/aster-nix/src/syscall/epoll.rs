@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use super::{SyscallReturn, SYS_EPOLL_CREATE1, SYS_EPOLL_CTL, SYS_EPOLL_WAIT};
+use super::{SyscallReturn, SYS_EPOLL_CREATE1, SYS_EPOLL_CTL, SYS_EPOLL_PWAIT, SYS_EPOLL_WAIT};
 use crate::{
     events::IoEvents,
     fs::{
@@ -135,6 +135,20 @@ pub fn sys_epoll_wait(
     }
 
     Ok(SyscallReturn::Return(epoll_events.len() as _))
+}
+
+pub fn sys_epoll_pwait(
+    epfd: FileDescripter,
+    events_addr: Vaddr,
+    max_events: i32,
+    timeout: i32,
+    sigmask: Vaddr, //TODO: handle sigmask
+) -> Result<SyscallReturn> {
+    log_syscall_entry!(SYS_EPOLL_PWAIT);
+    if sigmask != 0 {
+        warn!("epoll_pwait cannot handle signal mask, yet");
+    }
+    sys_epoll_wait(epfd, events_addr, max_events, timeout)
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
