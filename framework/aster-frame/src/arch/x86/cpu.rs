@@ -212,6 +212,28 @@ impl TdxTrapFrame for GeneralRegs {
     }
 }
 
+pub struct UserPreemption {
+    count: u32,
+}
+
+impl UserPreemption {
+    const PREEMPTION_INTERVAL: u32 = 100;
+
+    pub const fn new() -> Self {
+        UserPreemption { count: 0 }
+    }
+
+    pub fn might_preempt(&mut self) {
+        self.count = (self.count + 1) % Self::PREEMPTION_INTERVAL;
+
+        if self.count == 0 {
+            crate::arch::irq::enable_local();
+            crate::task::schedule();
+            crate::arch::irq::disable_local();
+        }
+    }
+}
+
 impl UserContext {
     pub fn general_regs(&self) -> &GeneralRegs {
         &self.user_context.general
@@ -241,6 +263,8 @@ impl UserContextApiInternal for UserContext {
         self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
 
         const SYSCALL_TRAPNUM: u16 = 0x100;
+
+        let mut user_preemption = UserPreemption::new();
         // return when it is syscall or cpu exception type is Fault or Trap.
         loop {
             self.user_context.run();
@@ -267,6 +291,8 @@ impl UserContextApiInternal for UserContext {
                 }
             };
             call_irq_callback_functions(&self.as_trap_frame());
+
+            user_preemption.might_preempt();
         }
 
         crate::arch::irq::enable_local();
