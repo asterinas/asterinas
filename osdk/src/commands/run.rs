@@ -3,7 +3,7 @@
 use super::{build::create_base_and_cached_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
     cli::GdbServerArgs,
-    config::{scheme::ActionChoice, Config},
+    config::{scheme::ActionChoice, unix_args::split_to_kv_array, Config},
     util::{get_current_crate_info, get_target_directory},
 };
 
@@ -40,10 +40,33 @@ pub fn execute_run_command(config: &Config, gdb_server_args: &GdbServerArgs) {
             }
         };
         config.run.qemu.args += &qemu_gdb_args;
+
+        // FIXME: Disable KVM from QEMU args in debug mode.
+        // Currently, the QEMU GDB server does not work properly with KVM enabled.
+        let mut splitted = split_to_kv_array(&config.run.qemu.args);
+        let args_num = splitted.len();
+        splitted.retain(|x| !x.contains("kvm"));
+        if splitted.len() != args_num {
+            println!(
+                "[WARNING] KVM is forced to be disabled in GDB server currently. \
+                    Options related with KVM are ignored."
+            );
+        }
+
+        config.run.qemu.args = splitted.join(" ");
+
+        // Ensure debug info added when debugging in the release profile.
+        if config.run.build.profile == "release" {
+            config
+                .run
+                .build
+                .override_configs
+                .push("profile.release.debug=true".to_owned());
+        }
     }
     let _vsc_launch_file = gdb_server_args.vsc_launch_file.then(|| {
         vsc::check_gdb_config(gdb_server_args);
-        let profile = super::util::profile_adapter(&config.build.profile);
+        let profile = super::util::profile_name_adapter(&config.build.profile);
         vsc::VscLaunchConfig::new(profile, &gdb_server_args.gdb_server_addr)
     });
 

@@ -8,6 +8,36 @@ use indexmap::{IndexMap, IndexSet};
 
 use crate::{error::Errno, error_msg};
 
+/// Split a string of Unix arguments into an array of key-value strings or switches.
+/// Positional arguments are not supported.
+pub fn split_to_kv_array(args: &str) -> Vec<String> {
+    let target = match shlex::split(args) {
+        Some(v) => v,
+        None => {
+            error_msg!("Failed to parse unix args: {:#?}", args);
+            process::exit(Errno::ParseMetadata as _);
+        }
+    };
+
+    // Join the key value arguments as a single element
+    let mut joined = Vec::<String>::new();
+    let mut last_has_value = false;
+    for elem in target {
+        if !elem.starts_with('-') && !last_has_value {
+            if let Some(last) = joined.last_mut() {
+                last.push(' ');
+                last.push_str(&elem);
+                last_has_value = true;
+                continue;
+            }
+        }
+        joined.push(elem);
+        last_has_value = false;
+    }
+
+    joined
+}
+
 /// Apply key-value pairs to an array of strings.
 ///
 /// The provided arguments will be appended to the array if the key is not already present or if the key is a multi-value key.

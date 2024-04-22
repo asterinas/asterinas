@@ -235,6 +235,13 @@ pub struct CargoArgs {
     pub features: Vec<String>,
     #[arg(long, help = "Do not activate the `default` features", global = true)]
     pub no_default_features: bool,
+    #[arg(
+        long = "config",
+        help = "Override a configuration value",
+        value_name = "KEY=VALUE",
+        global = true
+    )]
+    pub override_configs: Vec<String>,
 }
 
 impl CargoArgs {

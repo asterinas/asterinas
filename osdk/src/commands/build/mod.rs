@@ -12,7 +12,7 @@ use std::{
 
 use bin::strip_elf_for_qemu;
 
-use super::util::{cargo, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
+use super::util::{cargo, profile_name_adapter, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
 use crate::{
     arch::Arch,
     base_crate::new_base_crate,
@@ -153,6 +153,7 @@ pub fn do_build(
         &build.profile,
         &build.features[..],
         build.no_default_features,
+        &build.override_configs[..],
         &cargo_target_directory,
         rustflags,
     );
@@ -186,6 +187,7 @@ fn build_kernel_elf(
     profile: &str,
     features: &[String],
     no_default_features: bool,
+    override_configs: &[String],
     cargo_target_directory: impl AsRef<Path>,
     rustflags: &[&str],
 ) -> AsterBin {
@@ -219,6 +221,9 @@ fn build_kernel_elf(
         .arg(cargo_target_directory.as_ref());
     command.args(COMMON_CARGO_ARGS);
     command.arg("--profile=".to_string() + profile);
+    for override_config in override_configs {
+        command.arg("--config").arg(override_config);
+    }
 
     info!("Building kernel ELF using command: {:#?}", command);
 
@@ -228,13 +233,11 @@ fn build_kernel_elf(
         process::exit(Errno::ExecuteCommand as _);
     }
 
-    let aster_bin_path = cargo_target_directory.as_ref().join(&target_os_string);
-    let aster_bin_path = if profile == "dev" {
-        aster_bin_path.join("debug")
-    } else {
-        aster_bin_path.join(profile)
-    }
-    .join(get_current_crate_info().name);
+    let aster_bin_path = cargo_target_directory
+        .as_ref()
+        .join(&target_os_string)
+        .join(profile_name_adapter(profile))
+        .join(get_current_crate_info().name);
 
     AsterBin::new(
         aster_bin_path,

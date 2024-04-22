@@ -8,7 +8,7 @@ use crate::{
     arch::{get_default_arch, Arch},
     config::{
         eval::{eval, Vars},
-        unix_args::{apply_kv_array, get_key},
+        unix_args::{apply_kv_array, get_key, split_to_kv_array},
     },
     error::Errno,
     error_msg,
@@ -40,37 +40,9 @@ impl Default for Qemu {
 
 impl Qemu {
     pub fn apply_qemu_args(&mut self, args: &Vec<String>) {
-        let target = match shlex::split(&self.args) {
-            Some(v) => v,
-            None => {
-                error_msg!("Failed to parse qemu args: {:#?}", &self.args);
-                process::exit(Errno::ParseMetadata as _);
-            }
-        };
-
-        // Join the key value arguments as a single element
-        let mut joined = Vec::new();
-        let mut consumed = false;
-        for (first, second) in target.iter().zip(target.iter().skip(1)) {
-            if consumed {
-                consumed = false;
-                continue;
-            }
-            if first.starts_with('-') && !first.starts_with("--") && !second.starts_with('-') {
-                joined.push(format!("{} {}", first, second));
-                consumed = true;
-            } else {
-                joined.push(first.clone());
-            }
-        }
-        if !consumed {
-            joined.push(target.last().unwrap().clone());
-        }
+        let mut joined = split_to_kv_array(&self.args);
 
         // Check the soundness of qemu arguments
-        for arg in joined.iter() {
-            check_qemu_arg(arg);
-        }
         for arg in joined.iter() {
             check_qemu_arg(arg);
         }
