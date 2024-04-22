@@ -12,7 +12,7 @@ use crate::{cpu::UserContext, prelude::*, task::Task, vm::VmSpace};
 /// user mode.
 pub struct UserSpace {
     /// vm space
-    vm_space: VmSpace,
+    vm_space: Arc<VmSpace>,
     /// cpu context before entering user space
     init_ctx: UserContext,
 }
@@ -22,7 +22,7 @@ impl UserSpace {
     ///
     /// Each instance maintains a VM address space and the CPU state to enable
     /// execution in the user space.
-    pub fn new(vm_space: VmSpace, init_ctx: UserContext) -> Self {
+    pub fn new(vm_space: Arc<VmSpace>, init_ctx: UserContext) -> Self {
         Self { vm_space, init_ctx }
     }
 

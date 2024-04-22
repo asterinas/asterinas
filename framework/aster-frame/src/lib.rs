@@ -79,7 +79,6 @@ pub fn init() {
         vm::kspace::KERNEL_PAGE_TABLE
             .get()
             .unwrap()
-            .lock()
             .activate_unchecked();
     }
     invoke_ffi_init_funcs();

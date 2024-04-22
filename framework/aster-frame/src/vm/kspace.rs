@@ -8,7 +8,6 @@ use spin::Once;
 use super::page_table::PageTableConstsTrait;
 use crate::{
     arch::mm::{PageTableConsts, PageTableEntry},
-    sync::SpinLock,
     vm::{
         page_table::{page_walk, CachePolicy, KernelMode, MapProperty, PageTable},
         space::VmPerm,
@@ -36,7 +35,7 @@ pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
     } else {
         let root_paddr = crate::arch::mm::current_page_table_paddr();
         // Safety: the root page table is valid since we read it from the register.
-        unsafe { page_walk::<PageTableEntry, PageTableConsts>(root_paddr, va) }
+        unsafe { page_walk::<PageTableEntry, PageTableConsts>(root_paddr, va).map(|(pa, _)| pa) }
     }
 }
 
@@ -45,9 +44,8 @@ pub(crate) fn paddr_to_vaddr(pa: Paddr) -> usize {
     pa + LINEAR_MAPPING_BASE_VADDR
 }
 
-pub static KERNEL_PAGE_TABLE: Once<
-    SpinLock<PageTable<KernelMode, PageTableEntry, PageTableConsts>>,
-> = Once::new();
+pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PageTableConsts>> =
+    Once::new();
 
 /// Initialize the kernel page table.
 ///
@@ -58,7 +56,7 @@ pub static KERNEL_PAGE_TABLE: Once<
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
 pub fn init_kernel_page_table() {
-    let mut kpt = PageTable::<KernelMode>::empty();
+    let kpt = PageTable::<KernelMode>::empty();
     kpt.make_shared_tables(
         PageTableConsts::NR_ENTRIES_PER_FRAME / 2..PageTableConsts::NR_ENTRIES_PER_FRAME,
     );
@@ -118,5 +116,5 @@ pub fn init_kernel_page_table() {
     unsafe {
         kpt.map_unchecked(&from, &to, prop);
     }
-    KERNEL_PAGE_TABLE.call_once(|| SpinLock::new(kpt));
+    KERNEL_PAGE_TABLE.call_once(|| kpt);
 }

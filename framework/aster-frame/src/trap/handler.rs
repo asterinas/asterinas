@@ -214,10 +214,9 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
     );
 
     // Do the mapping
-    let mut page_table = KERNEL_PAGE_TABLE
+    let page_table = KERNEL_PAGE_TABLE
         .get()
-        .expect("The kernel page table is not initialized when kernel page fault happens")
-        .lock();
+        .expect("The kernel page table is not initialized when kernel page fault happens");
     let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 

@@ -14,7 +14,7 @@ use crate::vm::{
 
 /// The page table used by iommu maps the device address
 /// space to the physical address space.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(super) struct DeviceMode {}
 
 impl PageTableMode for DeviceMode {

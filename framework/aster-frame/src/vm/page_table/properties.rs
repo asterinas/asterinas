@@ -116,12 +116,12 @@ pub struct MapProperty {
     pub perm: VmPerm,
     /// Global.
     /// A global page is not evicted from the TLB when TLB is flushed.
-    pub global: bool,
+    pub(crate) global: bool,
     /// The properties of a memory mapping that is used and defined as flags in PTE
     /// in specific architectures on an ad hoc basis. The logics provided by the
     /// page table module will not be affected by this field.
-    pub extension: u64,
-    pub cache: CachePolicy,
+    pub(crate) extension: u64,
+    pub(crate) cache: CachePolicy,
 }
 
 /// Any functions that could be used to modify the map property of a memory mapping.
@@ -129,7 +129,7 @@ pub struct MapProperty {
 /// To protect a virtual address range, you can either directly use a `MapProperty` object,
 ///
 /// ```rust
-/// let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+/// let page_table = KERNEL_PAGE_TABLE.get().unwrap();
 /// let prop = MapProperty {
 ///     perm: VmPerm::R,
 ///     global: true,
@@ -142,7 +142,7 @@ pub struct MapProperty {
 /// use a map operation
 ///
 /// ```rust
-/// let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+/// let page_table = KERNEL_PAGE_TABLE.get().unwrap();
 /// page_table.map(0..PAGE_SIZE, cache_policy_op(CachePolicy::Writeback));
 /// page_table.map(0..PAGE_SIZE, perm_op(|perm| perm | VmPerm::R));
 /// ```
@@ -150,7 +150,7 @@ pub struct MapProperty {
 /// or even customize a map operation using a closure
 ///
 /// ```rust
-/// let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+/// let page_table = KERNEL_PAGE_TABLE.get().unwrap();
 /// page_table.map(0..PAGE_SIZE, |info| {
 ///     assert!(info.prop.perm.contains(VmPerm::R));
 ///     MapProperty {
@@ -164,8 +164,8 @@ pub struct MapProperty {
 pub trait MapOp: Fn(MapInfo) -> MapProperty {}
 impl<F> MapOp for F where F: Fn(MapInfo) -> MapProperty {}
 
-// These implementations allow a property to be used as an overriding map operation.
-// Other usages seems pointless.
+// These implementations allow a property or permission to be used as an
+// overriding map operation. Other usages seems pointless.
 impl FnOnce<(MapInfo,)> for MapProperty {
     type Output = MapProperty;
     extern "rust-call" fn call_once(self, _: (MapInfo,)) -> MapProperty {
@@ -180,6 +180,31 @@ impl FnMut<(MapInfo,)> for MapProperty {
 impl Fn<(MapInfo,)> for MapProperty {
     extern "rust-call" fn call(&self, _: (MapInfo,)) -> MapProperty {
         *self
+    }
+}
+impl FnOnce<(MapInfo,)> for VmPerm {
+    type Output = MapProperty;
+    extern "rust-call" fn call_once(self, info: (MapInfo,)) -> MapProperty {
+        MapProperty {
+            perm: self,
+            ..info.0.prop
+        }
+    }
+}
+impl FnMut<(MapInfo,)> for VmPerm {
+    extern "rust-call" fn call_mut(&mut self, info: (MapInfo,)) -> MapProperty {
+        MapProperty {
+            perm: *self,
+            ..info.0.prop
+        }
+    }
+}
+impl Fn<(MapInfo,)> for VmPerm {
+    extern "rust-call" fn call(&self, info: (MapInfo,)) -> MapProperty {
+        MapProperty {
+            perm: *self,
+            ..info.0.prop
+        }
     }
 }
 
@@ -227,6 +252,18 @@ impl MapProperty {
 pub struct MapInfo {
     pub prop: MapProperty,
     pub status: MapStatus,
+}
+
+impl MapInfo {
+    pub fn contains(&self, perm: VmPerm) -> bool {
+        self.prop.perm.contains(perm)
+    }
+    pub fn accessed(&self) -> bool {
+        self.status.contains(MapStatus::ACCESSED)
+    }
+    pub fn dirty(&self) -> bool {
+        self.status.contains(MapStatus::DIRTY)
+    }
 }
 
 pub trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {

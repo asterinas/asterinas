@@ -415,7 +415,7 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
         warn!("Misaligned address: {:x}", gpa);
     }
     let vaddr = paddr_to_vaddr(gpa);
-    let mut pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
+    let pt = KERNEL_PAGE_TABLE.get().unwrap();
     unsafe {
         pt.protect_unchecked(&(vaddr..page_num * PAGE_SIZE), |info| MapProperty {
             perm: info.prop.perm,
@@ -451,7 +451,7 @@ pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Page
         warn!("Misaligned address: {:x}", gpa);
     }
     let vaddr = paddr_to_vaddr(gpa);
-    let mut pt = KERNEL_PAGE_TABLE.get().unwrap().lock();
+    let pt = KERNEL_PAGE_TABLE.get().unwrap();
     unsafe {
         pt.protect_unchecked(&(vaddr..page_num * PAGE_SIZE), |info| MapProperty {
             perm: info.prop.perm,

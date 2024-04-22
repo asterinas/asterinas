@@ -131,22 +131,6 @@ impl VmMapping {
         &self.vmo
     }
 
-    /// Set the entries in the page table associated with the current `VmMapping` to read-only.
-    pub(super) fn set_pt_read_only(&self, vm_space: &VmSpace) -> Result<()> {
-        let map_inner = self.inner.lock();
-        let mapped_addr = &map_inner.mapped_pages;
-        let perm = map_inner.perm;
-        if !perm.contains(VmPerm::W) {
-            return Ok(());
-        }
-
-        for page_idx in mapped_addr {
-            let map_addr = map_inner.page_map_addr(*page_idx);
-            vm_space.protect(&(map_addr..map_addr + PAGE_SIZE), perm - VmPerm::W)?;
-        }
-        Ok(())
-    }
-
     /// Add a new committed page and map it to vmspace. If copy on write is set, it's allowed to unmap the page at the same address.
     /// FIXME: This implementation based on the truth that we map one page at a time. If multiple pages are mapped together, this implementation may have problems
     pub(super) fn map_one_page(
@@ -214,7 +198,9 @@ impl VmMapping {
             // The `VmMapping` has the write permission but the corresponding PTE is present and is read-only.
             // This means this PTE is set to read-only due to the COW mechanism. In this situation we need to trigger a
             // page fault before writing at the VMO to guarantee the consistency between VMO and the page table.
-            let need_page_fault = vm_space.is_mapped(page_addr) && !vm_space.is_writable(page_addr);
+            let need_page_fault = vm_space
+                .query(page_addr)?
+                .is_some_and(|info| !info.contains(VmPerm::W));
             if need_page_fault {
                 self.handle_page_fault(page_addr, false, true)?;
             }
@@ -478,7 +464,7 @@ impl VmMappingInner {
         };
 
         // Cow child allows unmapping the mapped page.
-        if vmo.is_cow_vmo() && vm_space.is_mapped(map_addr) {
+        if vmo.is_cow_vmo() && vm_space.query(map_addr)?.is_some() {
             vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
         }
 
@@ -490,7 +476,7 @@ impl VmMappingInner {
     fn unmap_one_page(&mut self, vm_space: &VmSpace, page_idx: usize) -> Result<()> {
         let map_addr = self.page_map_addr(page_idx);
         let range = map_addr..(map_addr + PAGE_SIZE);
-        if vm_space.is_mapped(map_addr) {
+        if vm_space.query(map_addr)?.is_some() {
             vm_space.unmap(&range)?;
         }
         self.mapped_pages.remove(&page_idx);
@@ -531,7 +517,7 @@ impl VmMappingInner {
         let perm = VmPerm::from(perms);
         for page_idx in start_page..end_page {
             let page_addr = self.page_map_addr(page_idx);
-            if vm_space.is_mapped(page_addr) {
+            if vm_space.query(page_addr)?.is_some() {
                 // If the page is already mapped, we will modify page table
                 let page_range = page_addr..(page_addr + PAGE_SIZE);
                 vm_space.protect(&page_range, perm)?;
