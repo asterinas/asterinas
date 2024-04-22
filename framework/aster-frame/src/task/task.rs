@@ -130,7 +130,7 @@ impl Task {
     }
 
     /// get inner
-    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<'_, TaskInner> {
+    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<TaskInner> {
         self.task_inner.lock_irq_disabled()
     }
 
