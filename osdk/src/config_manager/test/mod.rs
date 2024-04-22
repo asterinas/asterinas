@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
+use crate::config_manager::cfg::Cfg;
 
 #[test]
 fn split_kcmd_args_test() {
@@ -84,6 +85,26 @@ fn apply_kv_array_test() {
 }
 
 #[test]
+fn test_cfg_from_str() {
+    let cfg = Cfg::from([("arch", "x86_64"), ("select", "foo")]);
+    let cfg1 = Cfg::from_str(" cfg(arch =  \"x86_64\",     select=\"foo\", )").unwrap();
+    let cfg2 = Cfg::from_str("cfg(arch=\"x86_64\",select=\"foo\")").unwrap();
+    let cfg3 = Cfg::from_str(" cfg( arch=\"x86_64\", select=\"foo\" )").unwrap();
+    assert_eq!(cfg, cfg1);
+    assert_eq!(cfg, cfg2);
+    assert_eq!(cfg, cfg3);
+}
+
+#[test]
+fn test_cfg_display() {
+    let cfg = Cfg::from([("arch", "x86_64"), ("select", "foo")]);
+    let cfg_string = cfg.to_string();
+    let cfg_back = Cfg::from_str(&cfg_string).unwrap();
+    assert_eq!(cfg_string, "cfg(arch=\"x86_64\", select=\"foo\")");
+    assert_eq!(cfg, cfg_back);
+}
+
+#[test]
 fn deserialize_osdk_manifest() {
     let content = include_str!("OSDK.toml.empty");
     let osdk_manifest: TomlManifest = toml::from_str(content).unwrap();
@@ -116,37 +137,40 @@ fn conditional_manifest() {
         toml::from_str(content).unwrap()
     };
 
-    assert!(toml_manifest.qemu.cfg.is_some());
+    assert!(toml_manifest.qemu.cfg_map.is_some());
     assert!(toml_manifest
         .qemu
-        .cfg
+        .cfg_map
         .as_ref()
         .unwrap()
-        .contains_key(&String::from("cfg(select=\"intel_tdx\")")));
+        .contains_key(&Cfg::from([("arch", "x86_64"), ("select", "intel_tdx")])));
     assert!(toml_manifest
         .qemu
-        .cfg
+        .cfg_map
         .as_ref()
         .unwrap()
-        .contains_key(&String::from("cfg(select=\"iommu\")")));
+        .contains_key(&Cfg::from([("select", "iommu")])));
 
     // Default selection
-    let selection: Option<&str> = None;
-    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), selection);
+    let arch = None;
+    let selection: Option<String> = None;
+    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), arch, selection);
     assert!(manifest.qemu.args.contains(&String::from(
         "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off"
     )));
 
     // Iommu
-    let selection: Option<&str> = Some("iommu");
-    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), selection);
+    let arch = None;
+    let selection: Option<String> = Some("iommu".to_owned());
+    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), arch, selection);
     assert!(manifest
         .qemu
         .args
         .contains(&String::from("-device ioh3420,id=pcie.0,chassis=1")));
 
     // Tdx
-    let selection: Option<&str> = Some("intel_tdx");
-    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), selection);
+    let arch = Some("x86_64".to_owned());
+    let selection: Option<String> = Some("intel_tdx".to_owned());
+    let manifest = OsdkManifest::from_toml_manifest(toml_manifest.clone(), arch, selection);
     assert!(manifest.qemu.args.is_empty());
 }

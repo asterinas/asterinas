@@ -60,42 +60,16 @@ pub fn execute_run_command(config: &RunConfig) {
                     .collect();
                 let mut manifest = config.manifest.clone();
                 manifest.qemu.args.extend(qemu_gdb_args);
-
-                // FIXME: Disable KVM from QEMU args in debug mode.
-                // Currently, the QEMU GDB server does not work properly with KVM enabled.
-                let args_num = manifest.qemu.args.len();
-                manifest.qemu.args.retain(|x| !x.contains("kvm"));
-                if manifest.qemu.args.len() != args_num {
-                    println!(
-                        "[WARNING] KVM is forced to be disabled in GDB server currently. \
-                         Options related with KVM are ignored."
-                    );
-                }
-
                 manifest
             } else {
                 config.manifest.clone()
-            }
-        },
-        cargo_args: {
-            fn is_release_profile(cfg: &RunConfig) -> bool {
-                cfg.cargo_args.profile == "release" || cfg.cargo_args.release
-            }
-            if config.gdb_server_args.is_gdb_enabled && is_release_profile(config) {
-                let mut cargo_args = config.cargo_args.clone();
-                cargo_args
-                    .override_configs
-                    .push("profile.release.debug=true".to_owned());
-                cargo_args
-            } else {
-                config.cargo_args.clone()
             }
         },
         ..config.clone()
     };
     let _vsc_launch_file = config.gdb_server_args.vsc_launch_file.then(|| {
         vsc::check_gdb_config(&config.gdb_server_args);
-        let profile = super::util::profile_name_adapter(&config.cargo_args.profile);
+        let profile = super::util::profile_adapter(&config.cargo_args.profile);
         vsc::VscLaunchConfig::new(profile, &config.gdb_server_args.gdb_server_addr)
     });
 
@@ -121,9 +95,11 @@ pub fn execute_run_command(config: &RunConfig) {
     }
 
     let required_build_config = BuildConfig {
+        arch: config.arch.clone(),
         manifest: config.manifest.clone(),
         cargo_args: config.cargo_args.clone(),
     };
+
     let bundle = create_base_and_build(
         default_bundle_directory,
         &osdk_target_directory,

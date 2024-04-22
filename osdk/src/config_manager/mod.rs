@@ -6,6 +6,7 @@
 //! `RunConfig` and `TestConfig`. These `*Config` are used for `build`, `run` and `test` subcommand.
 
 pub mod boot;
+pub mod cfg;
 pub mod manifest;
 pub mod qemu;
 
@@ -22,6 +23,7 @@ use self::{
     manifest::{OsdkManifest, TomlManifest},
 };
 use crate::{
+    arch::{get_default_arch, Arch},
     cli::{BuildArgs, CargoArgs, DebugArgs, GdbServerArgs, OsdkArgs, RunArgs, TestArgs},
     error::Errno,
     error_msg,
@@ -39,14 +41,17 @@ fn get_final_manifest(cargo_args: &CargoArgs, osdk_args: &OsdkArgs) -> OsdkManif
 /// Configurations for build subcommand
 #[derive(Debug)]
 pub struct BuildConfig {
+    pub arch: Arch,
     pub manifest: OsdkManifest,
     pub cargo_args: CargoArgs,
 }
 
 impl BuildConfig {
     pub fn parse(args: &BuildArgs) -> Self {
+        let arch = args.osdk_args.arch.clone().unwrap_or_else(get_default_arch);
         let cargo_args = parse_cargo_args(&args.cargo_args);
         Self {
+            arch,
             manifest: get_final_manifest(&cargo_args, &args.osdk_args),
             cargo_args,
         }
@@ -56,6 +61,7 @@ impl BuildConfig {
 /// Configurations for run subcommand
 #[derive(Debug, Clone)]
 pub struct RunConfig {
+    pub arch: Arch,
     pub manifest: OsdkManifest,
     pub cargo_args: CargoArgs,
     pub gdb_server_args: GdbServerArgs,
@@ -63,8 +69,10 @@ pub struct RunConfig {
 
 impl RunConfig {
     pub fn parse(args: &RunArgs) -> Self {
+        let arch = args.osdk_args.arch.clone().unwrap_or_else(get_default_arch);
         let cargo_args = parse_cargo_args(&args.cargo_args);
         Self {
+            arch,
             manifest: get_final_manifest(&cargo_args, &args.osdk_args),
             cargo_args,
             gdb_server_args: args.gdb_server_args.clone(),
@@ -90,6 +98,7 @@ impl DebugConfig {
 /// Configurations for test subcommand
 #[derive(Debug)]
 pub struct TestConfig {
+    pub arch: Arch,
     pub manifest: OsdkManifest,
     pub cargo_args: CargoArgs,
     pub test_name: Option<String>,
@@ -97,8 +106,10 @@ pub struct TestConfig {
 
 impl TestConfig {
     pub fn parse(args: &TestArgs) -> Self {
+        let arch = args.osdk_args.arch.clone().unwrap_or_else(get_default_arch);
         let cargo_args = parse_cargo_args(&args.cargo_args);
         Self {
+            arch,
             manifest: get_final_manifest(&cargo_args, &args.osdk_args),
             cargo_args,
             test_name: args.test_name.clone(),
@@ -109,7 +120,7 @@ impl TestConfig {
 /// FIXME: I guess OSDK manifest is definitely NOT per workspace. It's per crate. When you cannot
 /// find a manifest per crate, find it in the upper levels.
 /// I don't bother to do it now, just fix the relpaths.
-fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S>) -> OsdkManifest {
+fn load_osdk_manifest(cargo_args: &CargoArgs, osdk_args: &OsdkArgs) -> OsdkManifest {
     let feature_strings = get_feature_strings(cargo_args);
     let cargo_metadata = get_cargo_metadata(None::<&str>, Some(&feature_strings)).unwrap();
     let workspace_root = PathBuf::from(
@@ -138,7 +149,14 @@ fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S
         );
         process::exit(Errno::ParseMetadata as _);
     });
-    let mut osdk_manifest = OsdkManifest::from_toml_manifest(toml_manifest, selection);
+    let mut osdk_manifest = OsdkManifest::from_toml_manifest(
+        toml_manifest,
+        osdk_args
+            .arch
+            .as_ref()
+            .map(|s| s.to_string()),
+        osdk_args.select.as_ref().map(|s| s.to_string()),
+    );
     osdk_manifest.check_canonicalize_all_paths(workspace_root);
     osdk_manifest
 }
@@ -147,13 +165,15 @@ fn load_osdk_manifest<S: AsRef<str>>(cargo_args: &CargoArgs, selection: Option<S
 /// 1. Split `features` in `cargo_args` to ensure each string contains exactly one feature.
 /// 2. Change `profile` to `release` if `--release` is set.
 fn parse_cargo_args(cargo_args: &CargoArgs) -> CargoArgs {
-    let features = cargo_args
-        .features
-        .iter()
-        .flat_map(|feature| feature.split(','))
-        .filter(|feature| !feature.is_empty())
-        .map(|feature| feature.to_string())
-        .collect();
+    let mut features = Vec::new();
+
+    for feature in cargo_args.features.iter() {
+        for feature in feature.split(',') {
+            if !feature.is_empty() {
+                features.push(feature.to_string());
+            }
+        }
+    }
 
     let profile = if cargo_args.release {
         "release".to_string()
@@ -165,7 +185,6 @@ fn parse_cargo_args(cargo_args: &CargoArgs) -> CargoArgs {
         profile,
         release: cargo_args.release,
         features,
-        override_configs: cargo_args.override_configs.clone(),
     }
 }
 

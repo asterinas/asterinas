@@ -1,26 +1,29 @@
 # SPDX-License-Identifier: MPL-2.0
 
+# Project-wide options.
+ARCH ?= x86_64
+# End of project-wide options.
+
 # The Makefile provides a way to run arbitrary tests in the kernel
 # mode using the kernel command line.
 # Here are the options for the auto test feature.
 AUTO_TEST ?= none
 BOOT_LOADER ?= grub
 BOOT_PROTOCOL ?= multiboot2
-QEMU_MACHINE ?= q35
 BUILD_SYSCALL_TEST ?= 0
 EMULATE_IOMMU ?= 0
 ENABLE_KVM ?= 1
+EXTRA_BLOCKLISTS_DIRS ?= ""
 INTEL_TDX ?= 0
+QEMU_MACHINE ?= q35
+RELEASE_MODE ?= 0
 SKIP_GRUB_MENU ?= 1
 SYSCALL_TEST_DIR ?= /tmp
-EXTRA_BLOCKLISTS_DIRS ?= ""
-RELEASE_MODE ?= 0
-GDB_TCP_PORT ?= 1234
 # End of auto test features.
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
-CARGO_OSDK_ARGS :=
+CARGO_OSDK_ARGS := --arch=$(ARCH)
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
@@ -140,12 +143,12 @@ else ifeq ($(AUTO_TEST), boot)
 endif
 
 .PHONY: gdb_server
-gdb_server: initramfs $(CARGO_OSDK)
-	@cargo osdk run $(CARGO_OSDK_ARGS) -G --vsc --gdb-server-addr :$(GDB_TCP_PORT)
+gdb_server: build
+	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS) -G --vsc --gdb-server-addr :1234
 
 .PHONY: gdb_client
 gdb_client: $(CARGO_OSDK)
-	@cd kernel && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
+	@cd kernel && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :1234
 
 .PHONY: test
 test:

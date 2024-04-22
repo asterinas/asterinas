@@ -14,6 +14,8 @@ pub use self::{
     run::execute_run_command, test::execute_test_command,
 };
 
+use crate::arch::get_default_arch;
+
 /// Execute the forwarded cargo command with args containing the subcommand and its arguments.
 pub fn execute_forwarded_command(subcommand: &str, args: &Vec<String>) -> ! {
     let mut cargo = util::cargo();
@@ -21,7 +23,7 @@ pub fn execute_forwarded_command(subcommand: &str, args: &Vec<String>) -> ! {
         .arg(subcommand)
         .args(util::COMMON_CARGO_ARGS)
         .arg("--target")
-        .arg("x86_64-unknown-none")
+        .arg(get_default_arch().triple())
         .args(args);
     let status = cargo.status().expect("Failed to execute cargo");
     std::process::exit(status.code().unwrap_or(1));

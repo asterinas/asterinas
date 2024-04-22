@@ -15,7 +15,7 @@ pub fn cargo() -> Command {
     Command::new("cargo")
 }
 
-pub fn profile_name_adapter(profile: &str) -> &str {
+pub fn profile_adapter(profile: &str) -> &str {
     match profile {
         "dev" => "debug",
         _ => profile,

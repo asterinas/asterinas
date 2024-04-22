@@ -74,10 +74,6 @@ Start a GDB-enabled VM of Asterinas with OSDK and wait for debugging connection:
 make gdb_server
 ```
 
-The server will listen at the default address specified in `Makefile`, i.e., a local TCP port `:1234`.
-Change the address in `Makefile` for your convenience,
-and check `cargo osdk run -h` for more details about the address.
-
 Two options are provided to interact with the debug server.
 
 - A GDB client: start a GDB client in another terminal.
