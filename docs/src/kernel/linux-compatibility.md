@@ -301,7 +301,7 @@ provided by Linux on x86-64 architecture.
 | 278     | vmsplice         | ❌              |
 | 279     | move_pages       | ❌              |
 | 280     | utimensat        | ✅              |
-| 281     | epoll_pwait      | ❌              |
+| 281     | epoll_pwait      | ✅              |
 | 282     | signalfd         | ❌              |
 | 283     | timerfd_create   | ❌              |
 | 284     | eventfd          | ❌              |
