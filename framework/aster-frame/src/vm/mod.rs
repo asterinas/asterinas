@@ -14,7 +14,6 @@ mod frame_allocator;
 pub(crate) mod heap_allocator;
 mod io;
 pub(crate) mod kspace;
-mod memory_set;
 mod offset;
 mod options;
 pub(crate) mod page_table;
@@ -25,17 +24,15 @@ use core::ops::Range;
 
 use spin::Once;
 
-pub(crate) use self::kspace::paddr_to_vaddr;
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter},
     io::VmIo,
     kspace::vaddr_to_paddr,
-    memory_set::{MapArea, MemorySet},
     options::VmAllocOptions,
-    page_table::PageTable,
     space::{VmMapOptions, VmPerm, VmSpace},
 };
+pub(crate) use self::{kspace::paddr_to_vaddr, page_table::PageTable};
 use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
 
 pub const PAGE_SIZE: usize = 0x1000;

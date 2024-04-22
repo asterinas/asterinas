@@ -64,19 +64,17 @@ impl KernelStack {
         let stack_segment =
             VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
         // FIXME: modifying the the linear mapping is bad.
-        let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let guard_page_vaddr = {
             let guard_page_paddr = stack_segment.start_paddr();
             crate::vm::paddr_to_vaddr(guard_page_paddr)
         };
         // Safety: the physical guard page address is exclusively used since we allocated it.
         unsafe {
-            page_table
-                .protect_unchecked(
-                    &(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE),
-                    perm_op(|p| p - VmPerm::RW),
-                )
-                .unwrap();
+            page_table.protect_unchecked(
+                &(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE),
+                perm_op(|p| p - VmPerm::RW),
+            );
         }
         Ok(Self {
             segment: stack_segment,
@@ -93,19 +91,17 @@ impl Drop for KernelStack {
     fn drop(&mut self) {
         if self.has_guard_page {
             // FIXME: modifying the the linear mapping is bad.
-            let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let guard_page_vaddr = {
                 let guard_page_paddr = self.segment.start_paddr();
                 crate::vm::paddr_to_vaddr(guard_page_paddr)
             };
             // Safety: the physical guard page address is exclusively used since we allocated it.
             unsafe {
-                page_table
-                    .protect_unchecked(
-                        &(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE),
-                        perm_op(|p| p | VmPerm::RW),
-                    )
-                    .unwrap();
+                page_table.protect_unchecked(
+                    &(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE),
+                    perm_op(|p| p | VmPerm::RW),
+                );
             }
         }
     }

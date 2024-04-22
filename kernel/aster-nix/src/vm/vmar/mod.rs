@@ -90,7 +90,7 @@ impl<R> PageFaultHandler for Vmar<R> {
 
 impl<R> Vmar<R> {
     /// FIXME: This function should require access control
-    pub fn vm_space(&self) -> &VmSpace {
+    pub fn vm_space(&self) -> &Arc<VmSpace> {
         self.0.vm_space()
     }
 }
@@ -103,7 +103,7 @@ pub(super) struct Vmar_ {
     /// The total size of the VMAR in bytes
     size: usize,
     /// The attached vmspace
-    vm_space: VmSpace,
+    vm_space: Arc<VmSpace>,
     /// The parent vmar. If points to none, this is a root vmar
     parent: Weak<Vmar_>,
 }
@@ -142,7 +142,7 @@ impl Interval<usize> for Arc<Vmar_> {
 impl Vmar_ {
     fn new(
         inner: VmarInner,
-        vm_space: VmSpace,
+        vm_space: Arc<VmSpace>,
         base: usize,
         size: usize,
         parent: Option<&Arc<Vmar_>>,
@@ -172,7 +172,13 @@ impl Vmar_ {
             vm_mappings: BTreeMap::new(),
             free_regions,
         };
-        Vmar_::new(vmar_inner, VmSpace::new(), 0, ROOT_VMAR_CAP_ADDR, None)
+        Vmar_::new(
+            vmar_inner,
+            Arc::new(VmSpace::new()),
+            0,
+            ROOT_VMAR_CAP_ADDR,
+            None,
+        )
     }
 
     fn is_root_vmar(&self) -> bool {
@@ -611,7 +617,7 @@ impl Vmar_ {
     }
 
     /// Returns the attached `VmSpace`.
-    pub(super) fn vm_space(&self) -> &VmSpace {
+    pub(super) fn vm_space(&self) -> &Arc<VmSpace> {
         &self.vm_space
     }
 
@@ -708,15 +714,6 @@ impl Vmar_ {
         self.new_cow(None)
     }
 
-    /// Set the entries in the page table associated with the current `Vmar` to read-only.
-    fn set_pt_read_only(&self) -> Result<()> {
-        let inner = self.inner.lock();
-        for (map_addr, vm_mapping) in &inner.vm_mappings {
-            vm_mapping.set_pt_read_only(self.vm_space())?;
-        }
-        Ok(())
-    }
-
     /// Create a new vmar by creating cow child for all mapped vmos.
     fn new_cow(&self, parent: Option<&Arc<Vmar_>>) -> Result<Arc<Self>> {
         let new_vmar_ = {
@@ -724,17 +721,11 @@ impl Vmar_ {
             // If this is not a root `Vmar`, we clone the `VmSpace` from parent.
             //
             // If this is a root `Vmar`, we leverage Copy-On-Write (COW) mechanism to
-            // clone the `VmSpace` to the child. We set all the page table entries
-            // in current `VmSpace` to be read-only, then clone the `VmSpace` to the child.
-            // In this way, initially, the child shares the same page table contents
-            // as the current `Vmar`. Later on, whether the current `Vmar` or the child
-            // `Vmar` needs to perform a write operation, the COW mechanism will be triggered,
-            // creating a new page for writing.
+            // clone the `VmSpace` to the child.
             let vm_space = if let Some(parent) = parent {
                 parent.vm_space().clone()
             } else {
-                self.set_pt_read_only()?;
-                self.vm_space().deep_copy()
+                Arc::new(self.vm_space().fork_copy_on_write())
             };
             Vmar_::new(vmar_inner, vm_space, self.base, self.size, parent)
         };

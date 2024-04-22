@@ -56,14 +56,12 @@ impl DmaCoherent {
         // Ensure that the addresses used later will not overflow
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         if !is_cache_coherent {
-            let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
             // Safety: the address is in the range of `vm_segment`.
             unsafe {
-                page_table
-                    .protect_unchecked(&va_range, cache_policy_op(CachePolicy::Uncacheable))
-                    .unwrap();
+                page_table.protect_unchecked(&va_range, cache_policy_op(CachePolicy::Uncacheable));
             }
         }
         let start_daddr = match dma_type() {
@@ -143,14 +141,12 @@ impl Drop for DmaCoherentInner {
             }
         }
         if !self.is_cache_coherent {
-            let mut page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
             // Safety: the address is in the range of `vm_segment`.
             unsafe {
-                page_table
-                    .protect_unchecked(&va_range, cache_policy_op(CachePolicy::Writeback))
-                    .unwrap();
+                page_table.protect_unchecked(&va_range, cache_policy_op(CachePolicy::Writeback));
             }
         }
         remove_dma_mapping(start_paddr, frame_count);
@@ -210,19 +206,9 @@ mod test {
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment.clone(), false).unwrap();
         assert!(dma_coherent.paddr() == vm_segment.paddr());
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap().lock();
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let vaddr = paddr_to_vaddr(vm_segment.paddr());
-        assert!(
-            page_table
-                .query(&(vaddr..vaddr + PAGE_SIZE))
-                .unwrap()
-                .next()
-                .unwrap()
-                .info
-                .prop
-                .cache
-                == CachePolicy::Uncacheable
-        );
+        assert!(page_table.query(vaddr).unwrap().1.prop.cache == CachePolicy::Uncacheable);
     }
 
     #[ktest]
