@@ -16,6 +16,6 @@ pub use self::{
     mutex::{Mutex, MutexGuard},
     rwlock::{RwLock, RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard},
     rwmutex::{RwMutex, RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard},
-    spin::{SpinLock, SpinLockGuard},
+    spin::{ArcSpinLockGuard, SpinLock, SpinLockGuard},
     wait::WaitQueue,
 };
