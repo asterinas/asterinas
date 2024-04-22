@@ -176,14 +176,9 @@ impl InitStack {
         ldso_load_info: &Option<LdsoLoadInfo>,
         aux_vec: &mut AuxVec,
     ) -> Result<()> {
-        // write a zero page. When a user program tries to read a cstring(like argv) from init stack,
-        // it will typically read 4096 bytes and then find the first '\0' in the buffer
-        // (we now read 128 bytes, which is set by MAX_FILENAME_LEN).
-        // If we don't have this zero page, the read may go into guard page,
-        // which will cause unrecoverable page fault(The guard page is not backed up by any vmo).
-        // So we add a zero page here, to ensure the read will not go into guard page.
-        // FIXME: Some other OSes put the first page of excutable file here.
-        self.write_bytes(&[0u8; PAGE_SIZE], root_vmar)?;
+        // FIXME: Some OSes may put the first page of excutable file here
+        // for interpreting elf headers.
+
         // write envp string
         let envp_pointers = self.write_envp_strings(root_vmar)?;
         // write argv string
