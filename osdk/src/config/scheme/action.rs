@@ -2,7 +2,10 @@
 
 use super::{inherit_optional, Boot, BootScheme, Grub, GrubScheme, Qemu, QemuScheme};
 
-use crate::config::{scheme::Vars, Arch};
+use crate::{
+    cli::CommonArgs,
+    config::{scheme::Vars, Arch},
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionChoice {
@@ -28,6 +31,8 @@ pub struct Build {
     pub features: Vec<String>,
     #[serde(default)]
     pub no_default_features: bool,
+    // The cargo `--config` values.
+    pub override_configs: Vec<String>,
     #[serde(default)]
     pub linux_x86_legacy_boot: bool,
 }
@@ -38,7 +43,26 @@ impl Default for Build {
             profile: "dev".to_string(),
             features: Vec::new(),
             no_default_features: false,
+            override_configs: Vec::new(),
             linux_x86_legacy_boot: false,
+        }
+    }
+}
+
+impl Build {
+    pub fn apply_common_args(&mut self, common_args: &CommonArgs) {
+        let build_args = &common_args.build_args;
+        if let Some(profile) = build_args.profile() {
+            self.profile = profile.clone();
+        }
+        self.features.extend(build_args.features.clone());
+        self.override_configs
+            .extend(build_args.override_configs.clone());
+        if common_args.build_args.no_default_features {
+            self.no_default_features = true;
+        }
+        if common_args.linux_x86_legacy_boot {
+            self.linux_x86_legacy_boot = true;
         }
     }
 }
@@ -64,6 +88,7 @@ impl BuildScheme {
             profile: self.profile.unwrap_or_else(|| "dev".to_string()),
             features: self.features,
             no_default_features: self.no_default_features,
+            override_configs: Vec::new(),
             linux_x86_legacy_boot: self.linux_x86_legacy_boot,
         }
     }

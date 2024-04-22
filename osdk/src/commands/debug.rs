@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::commands::util::bin_file_name;
-
-use crate::{cli::DebugArgs, util::get_target_directory};
+use crate::{
+    cli::DebugArgs,
+    commands::util::{bin_file_name, profile_name_adapter},
+    util::get_target_directory,
+};
 use std::process::Command;
 
-pub fn execute_debug_command(profile: &String, args: &DebugArgs) {
+pub fn execute_debug_command(profile: &str, args: &DebugArgs) {
     let remote = &args.remote;
 
     let file_path = get_target_directory()
         .join("x86_64-unknown-none")
-        .join(profile)
+        .join(profile_name_adapter(profile))
         .join(bin_file_name());
     println!("Debugging {}", file_path.display());
 

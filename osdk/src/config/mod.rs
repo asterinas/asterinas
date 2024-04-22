@@ -14,9 +14,7 @@ pub mod unix_args;
 #[cfg(test)]
 mod test;
 
-use scheme::{
-    Action, ActionScheme, BootScheme, Build, BuildScheme, GrubScheme, QemuScheme, Scheme,
-};
+use scheme::{Action, ActionScheme, BootScheme, Build, GrubScheme, QemuScheme, Scheme};
 
 use crate::{
     arch::{get_default_arch, Arch},
@@ -34,22 +32,6 @@ pub struct Config {
 }
 
 fn apply_args_before_finalize(action_scheme: &mut ActionScheme, args: &CommonArgs) {
-    if action_scheme.build.is_none() {
-        action_scheme.build = Some(BuildScheme::default());
-    }
-    if let Some(ref mut build) = action_scheme.build {
-        if let Some(profile) = &args.build_args.profile() {
-            build.profile = Some(profile.clone());
-        }
-        build.features.extend(args.build_args.features.clone());
-        if args.build_args.no_default_features {
-            build.no_default_features = true;
-        }
-        if args.linux_x86_legacy_boot {
-            build.linux_x86_legacy_boot = true;
-        }
-    }
-
     if action_scheme.grub.is_none() {
         action_scheme.grub = Some(GrubScheme::default());
     }
@@ -91,6 +73,7 @@ fn apply_args_before_finalize(action_scheme: &mut ActionScheme, args: &CommonArg
 }
 
 fn apply_args_after_finalize(action: &mut Action, args: &CommonArgs) {
+    action.build.apply_common_args(args);
     action.qemu.apply_qemu_args(&args.qemu_args);
     if args.display_grub_menu {
         action.grub.display_grub_menu = true;
