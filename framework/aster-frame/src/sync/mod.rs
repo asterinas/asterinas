@@ -18,7 +18,10 @@ pub use self::{
         ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
         RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard,
     },
-    rwmutex::{RwMutex, RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard},
+    rwmutex::{
+        ArcRwMutexReadGuard, ArcRwMutexUpgradeableGuard, ArcRwMutexWriteGuard, RwMutex,
+        RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard,
+    },
     spin::{ArcSpinLockGuard, SpinLock, SpinLockGuard},
     wait::WaitQueue,
 };
