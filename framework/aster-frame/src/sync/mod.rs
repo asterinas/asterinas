@@ -13,7 +13,7 @@ mod wait;
 // pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
 pub use self::{
     atomic_bits::AtomicBits,
-    mutex::{Mutex, MutexGuard},
+    mutex::{ArcMutexGuard, Mutex, MutexGuard},
     rwlock::{
         ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
         RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard,

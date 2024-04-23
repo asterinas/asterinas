@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -35,11 +36,29 @@ impl<T: ?Sized> Mutex<T> {
         self.queue.wait_until(|| self.try_lock())
     }
 
+    /// Acquire the mutex through an [`Arc`].
+    ///
+    /// The method is similar to [`Self::lock`], but it doesn't have the requirement
+    /// for compile-time checked lifetimes of the mutex guard.
+    pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<T> {
+        self.queue.wait_until(|| self.try_lock_arc())
+    }
+
     /// Try Acquire the mutex immedidately.
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
         // guard will cause an unexpected unlock.
-        self.acquire_lock().then(|| MutexGuard::new(self))
+        self.acquire_lock().then_some(MutexGuard { mutex: self })
+    }
+
+    /// Try acquire the mutex through an [`Arc`].
+    ///
+    /// The method is similar to [`Self::try_lock`], but it doesn't have the requirement
+    /// for compile-time checked lifetimes of the mutex guard.
+    pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcMutexGuard<T>> {
+        self.acquire_lock().then(|| ArcMutexGuard {
+            mutex: self.clone(),
+        })
     }
 
     /// Release the mutex and wake up one thread which is blocked on this mutex.
@@ -69,17 +88,14 @@ unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
 unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
 
 #[clippy::has_significant_drop]
-pub struct MutexGuard<'a, T: ?Sized> {
-    mutex: &'a Mutex<T>,
+pub struct MutexGuard_<T: ?Sized, R: Deref<Target = Mutex<T>>> {
+    mutex: R,
 }
 
-impl<'a, T: ?Sized> MutexGuard<'a, T> {
-    fn new(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
-        MutexGuard { mutex }
-    }
-}
+pub type MutexGuard<'a, T> = MutexGuard_<T, &'a Mutex<T>>;
+pub type ArcMutexGuard<T> = MutexGuard_<T, Arc<Mutex<T>>>;
 
-impl<'a, T: ?Sized> Deref for MutexGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = Mutex<T>>> Deref for MutexGuard_<T, R> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -87,24 +103,24 @@ impl<'a, T: ?Sized> Deref for MutexGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> DerefMut for MutexGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = Mutex<T>>> DerefMut for MutexGuard_<T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.mutex.val.get() }
     }
 }
 
-impl<'a, T: ?Sized> Drop for MutexGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = Mutex<T>>> Drop for MutexGuard_<T, R> {
     fn drop(&mut self) {
         self.mutex.unlock();
     }
 }
 
-impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'a, T> {
+impl<T: ?Sized + fmt::Debug, R: Deref<Target = Mutex<T>>> fmt::Debug for MutexGuard_<T, R> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<'a, T: ?Sized> !Send for MutexGuard<'a, T> {}
+impl<T: ?Sized, R: Deref<Target = Mutex<T>>> !Send for MutexGuard_<T, R> {}
 
-unsafe impl<T: ?Sized + Sync> Sync for MutexGuard<'_, T> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = Mutex<T>> + Sync> Sync for MutexGuard_<T, R> {}
