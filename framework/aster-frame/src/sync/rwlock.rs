@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -265,6 +266,20 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
+    /// Acquire a read lock through an [`Arc`].
+    ///
+    /// The method is similar to [`Self::read`], but it doesn't have the requirement
+    /// for compile-time checked lifetimes of the read guard.
+    pub fn read_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<T> {
+        loop {
+            if let Some(readguard) = self.try_read_arc() {
+                return readguard;
+            } else {
+                core::hint::spin_loop();
+            }
+        }
+    }
+
     /// Acquire a write lock and spin-wait until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no other writers,
@@ -280,6 +295,20 @@ impl<T: ?Sized> RwLock<T> {
     pub fn write(&self) -> RwLockWriteGuard<T> {
         loop {
             if let Some(writeguard) = self.try_write() {
+                return writeguard;
+            } else {
+                core::hint::spin_loop();
+            }
+        }
+    }
+
+    /// Acquire a write lock through an [`Arc`].
+    ///
+    /// The method is similar to [`Self::write`], but it doesn't have the requirement
+    /// for compile-time checked lifetimes of the lock guard.
+    pub fn write_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<T> {
+        loop {
+            if let Some(writeguard) = self.try_write_arc() {
                 return writeguard;
             } else {
                 core::hint::spin_loop();
@@ -313,6 +342,20 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
+    /// Acquire an upgradeable read lock through an [`Arc`].
+    ///
+    /// The method is similar to [`Self::upread`], but it doesn't have the requirement
+    /// for compile-time checked lifetimes of the lock guard.
+    pub fn upread_arc(self: &Arc<Self>) -> ArcRwLockUpgradeableGuard<T> {
+        loop {
+            if let Some(guard) = self.try_upread_arc() {
+                return guard;
+            } else {
+                core::hint::spin_loop();
+            }
+        }
+    }
+
     /// Attempt to acquire a read lock.
     ///
     /// This function will never spin-wait and will return immediately.
@@ -329,6 +372,24 @@ impl<T: ?Sized> RwLock<T> {
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(RwLockReadGuard {
                 inner: self,
+                inner_guard: InnerGuard::PreemptGuard(guard),
+            })
+        } else {
+            self.lock.fetch_sub(READER, Release);
+            None
+        }
+    }
+
+    /// Attempt to acquire an read lock through an [`Arc`].
+    ///
+    /// The method is similar to [`Self::try_read`], but it doesn't have the requirement
+    /// for compile-time checked lifetimes of the lock guard.
+    pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<T>> {
+        let guard = disable_preempt();
+        let lock = self.lock.fetch_add(READER, Acquire);
+        if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
+            Some(ArcRwLockReadGuard {
+                inner: self.clone(),
                 inner_guard: InnerGuard::PreemptGuard(guard),
             })
         } else {
@@ -363,6 +424,26 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
+    /// Attempt to acquire a write lock through an [`Arc`].
+    ///
+    /// The method is similar to [`Self::try_write`], but it doesn't have the requirement
+    /// for compile-time checked lifetimes of the lock guard.
+    fn try_write_arc(self: &Arc<Self>) -> Option<ArcRwLockWriteGuard<T>> {
+        let guard = disable_preempt();
+        if self
+            .lock
+            .compare_exchange(0, WRITER, Acquire, Relaxed)
+            .is_ok()
+        {
+            Some(ArcRwLockWriteGuard {
+                inner: self.clone(),
+                inner_guard: InnerGuard::PreemptGuard(guard),
+            })
+        } else {
+            None
+        }
+    }
+
     /// Attempt to acquire an upread lock.
     ///
     /// This function will never spin-wait and will return immediately.
@@ -386,6 +467,24 @@ impl<T: ?Sized> RwLock<T> {
         }
         None
     }
+
+    /// Attempt to acquire an upgradeable read lock through an [`Arc`].
+    ///
+    /// The method is similar to [`Self::try_upread`], but it doesn't have the requirement
+    /// for compile-time checked lifetimes of the lock guard.
+    pub fn try_upread_arc(self: &Arc<Self>) -> Option<ArcRwLockUpgradeableGuard<T>> {
+        let guard = disable_preempt();
+        let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
+        if lock == 0 {
+            return Some(ArcRwLockUpgradeableGuard {
+                inner: self.clone(),
+                inner_guard: InnerGuard::PreemptGuard(guard),
+            });
+        } else if lock == WRITER {
+            self.lock.fetch_sub(UPGRADEABLE_READER, Release);
+        }
+        None
+    }
 }
 
 impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
@@ -399,14 +498,23 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
 unsafe impl<T: ?Sized + Send> Send for RwLock<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
 
-impl<'a, T: ?Sized> !Send for RwLockWriteGuard<'a, T> {}
-unsafe impl<T: ?Sized + Sync> Sync for RwLockWriteGuard<'_, T> {}
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> !Send for RwLockWriteGuard_<T, R> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T>> + Clone + Sync> Sync
+    for RwLockWriteGuard_<T, R>
+{
+}
 
-impl<'a, T: ?Sized> !Send for RwLockReadGuard<'a, T> {}
-unsafe impl<T: ?Sized + Sync> Sync for RwLockReadGuard<'_, T> {}
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> !Send for RwLockReadGuard_<T, R> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T>> + Clone + Sync> Sync
+    for RwLockReadGuard_<T, R>
+{
+}
 
-impl<'a, T: ?Sized> !Send for RwLockUpgradeableGuard<'a, T> {}
-unsafe impl<T: ?Sized + Sync> Sync for RwLockUpgradeableGuard<'_, T> {}
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> !Send for RwLockUpgradeableGuard_<T, R> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T>> + Clone + Sync> Sync
+    for RwLockUpgradeableGuard_<T, R>
+{
+}
 
 enum InnerGuard {
     IrqGuard(DisabledLocalIrqGuard),
@@ -414,12 +522,15 @@ enum InnerGuard {
 }
 
 /// A guard that provides immutable data access.
-pub struct RwLockReadGuard<'a, T: ?Sized> {
+pub struct RwLockReadGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
     inner_guard: InnerGuard,
-    inner: &'a RwLock<T>,
+    inner: R,
 }
 
-impl<'a, T: ?Sized> Deref for RwLockReadGuard<'a, T> {
+pub type RwLockReadGuard<'a, T> = RwLockReadGuard_<T, &'a RwLock<T>>;
+pub type ArcRwLockReadGuard<T> = RwLockReadGuard_<T, Arc<RwLock<T>>>;
+
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockReadGuard_<T, R> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -427,25 +538,30 @@ impl<'a, T: ?Sized> Deref for RwLockReadGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Drop for RwLockReadGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Drop for RwLockReadGuard_<T, R> {
     fn drop(&mut self) {
         self.inner.lock.fetch_sub(READER, Release);
     }
 }
 
-impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for RwLockReadGuard<'a, T> {
+impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T>> + Clone> fmt::Debug
+    for RwLockReadGuard_<T, R>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
 /// A guard that provides mutable data access.
-pub struct RwLockWriteGuard<'a, T: ?Sized> {
+pub struct RwLockWriteGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
     inner_guard: InnerGuard,
-    inner: &'a RwLock<T>,
+    inner: R,
 }
 
-impl<'a, T: ?Sized> Deref for RwLockWriteGuard<'a, T> {
+pub type RwLockWriteGuard<'a, T> = RwLockWriteGuard_<T, &'a RwLock<T>>;
+pub type ArcRwLockWriteGuard<T> = RwLockWriteGuard_<T, Arc<RwLock<T>>>;
+
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockWriteGuard_<T, R> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -453,19 +569,21 @@ impl<'a, T: ?Sized> Deref for RwLockWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> DerefMut for RwLockWriteGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> DerefMut for RwLockWriteGuard_<T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.inner.val.get() }
     }
 }
 
-impl<'a, T: ?Sized> Drop for RwLockWriteGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Drop for RwLockWriteGuard_<T, R> {
     fn drop(&mut self) {
         self.inner.lock.fetch_and(!WRITER, Release);
     }
 }
 
-impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for RwLockWriteGuard<'a, T> {
+impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T>> + Clone> fmt::Debug
+    for RwLockWriteGuard_<T, R>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
@@ -473,18 +591,21 @@ impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for RwLockWriteGuard<'a, T> {
 
 /// A guard that provides immutable data access but can be atomically
 /// upgraded to `RwLockWriteGuard`.
-pub struct RwLockUpgradeableGuard<'a, T: ?Sized> {
+pub struct RwLockUpgradeableGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
     inner_guard: InnerGuard,
-    inner: &'a RwLock<T>,
+    inner: R,
 }
 
-impl<'a, T: ?Sized> RwLockUpgradeableGuard<'a, T> {
+pub type RwLockUpgradeableGuard<'a, T> = RwLockUpgradeableGuard_<T, &'a RwLock<T>>;
+pub type ArcRwLockUpgradeableGuard<T> = RwLockUpgradeableGuard_<T, Arc<RwLock<T>>>;
+
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockUpgradeableGuard_<T, R> {
     /// Upgrade this upread guard to a write guard atomically.
     ///
     /// After calling this method, subsequent readers will be blocked
     /// while previous readers remain unaffected. The calling thread
     /// will spin-wait until previous readers finish.
-    pub fn upgrade(mut self) -> RwLockWriteGuard<'a, T> {
+    pub fn upgrade(mut self) -> RwLockWriteGuard_<T, R> {
         self.inner.lock.fetch_or(BEING_UPGRADED, Acquire);
         loop {
             self = match self.try_upgrade() {
@@ -496,8 +617,7 @@ impl<'a, T: ?Sized> RwLockUpgradeableGuard<'a, T> {
     /// Attempts to upgrade this upread guard to a write guard atomically.
     ///
     /// This function will never spin-wait and will return immediately.
-    pub fn try_upgrade(mut self) -> Result<RwLockWriteGuard<'a, T>, Self> {
-        let inner = self.inner;
+    pub fn try_upgrade(mut self) -> Result<RwLockWriteGuard_<T, R>, Self> {
         let res = self.inner.lock.compare_exchange(
             UPGRADEABLE_READER | BEING_UPGRADED,
             WRITER | UPGRADEABLE_READER,
@@ -511,15 +631,16 @@ impl<'a, T: ?Sized> RwLockUpgradeableGuard<'a, T> {
                     InnerGuard::PreemptGuard(preempt_guard.transfer_to())
                 }
             };
+            let inner = self.inner.clone();
             drop(self);
-            Ok(RwLockWriteGuard { inner, inner_guard })
+            Ok(RwLockWriteGuard_ { inner, inner_guard })
         } else {
             Err(self)
         }
     }
 }
 
-impl<'a, T: ?Sized> Deref for RwLockUpgradeableGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockUpgradeableGuard_<T, R> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -527,13 +648,15 @@ impl<'a, T: ?Sized> Deref for RwLockUpgradeableGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Drop for RwLockUpgradeableGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Drop for RwLockUpgradeableGuard_<T, R> {
     fn drop(&mut self) {
         self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
     }
 }
 
-impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for RwLockUpgradeableGuard<'a, T> {
+impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T>> + Clone> fmt::Debug
+    for RwLockUpgradeableGuard_<T, R>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }

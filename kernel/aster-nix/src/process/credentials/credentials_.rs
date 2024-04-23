@@ -364,11 +364,11 @@ impl Credentials_ {
     }
 
     //  ******* Supplementary groups methods *******
-    pub(super) fn groups(&self) -> RwLockReadGuard<'_, BTreeSet<Gid>> {
+    pub(super) fn groups(&self) -> RwLockReadGuard<BTreeSet<Gid>> {
         self.supplementary_gids.read()
     }
 
-    pub(super) fn groups_mut(&self) -> RwLockWriteGuard<'_, BTreeSet<Gid>> {
+    pub(super) fn groups_mut(&self) -> RwLockWriteGuard<BTreeSet<Gid>> {
         self.supplementary_gids.write()
     }
 }

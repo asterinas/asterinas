@@ -14,7 +14,10 @@ mod wait;
 pub use self::{
     atomic_bits::AtomicBits,
     mutex::{Mutex, MutexGuard},
-    rwlock::{RwLock, RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard},
+    rwlock::{
+        ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
+        RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard,
+    },
     rwmutex::{RwMutex, RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard},
     spin::{ArcSpinLockGuard, SpinLock, SpinLockGuard},
     wait::WaitQueue,
