@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -201,21 +202,33 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for RwMutex<T> {
 unsafe impl<T: ?Sized + Send> Send for RwMutex<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for RwMutex<T> {}
 
-impl<'a, T: ?Sized> !Send for RwMutexWriteGuard<'a, T> {}
-unsafe impl<T: ?Sized + Sync> Sync for RwMutexWriteGuard<'_, T> {}
-
-impl<'a, T: ?Sized> !Send for RwMutexReadGuard<'a, T> {}
-unsafe impl<T: ?Sized + Sync> Sync for RwMutexReadGuard<'_, T> {}
-
-impl<'a, T: ?Sized> !Send for RwMutexUpgradeableGuard<'a, T> {}
-unsafe impl<T: ?Sized + Sync> Sync for RwMutexUpgradeableGuard<'_, T> {}
-
-/// A guard that provides immutable data access.
-pub struct RwMutexReadGuard<'a, T: ?Sized> {
-    inner: &'a RwMutex<T>,
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> !Send for RwMutexWriteGuard_<T, R> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwMutex<T>> + Sync> Sync
+    for RwMutexWriteGuard_<T, R>
+{
 }
 
-impl<'a, T: ?Sized> Deref for RwMutexReadGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> !Send for RwMutexReadGuard_<T, R> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwMutex<T>> + Sync> Sync
+    for RwMutexReadGuard_<T, R>
+{
+}
+
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> !Send for RwMutexUpgradeableGuard_<T, R> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwMutex<T>> + Sync> Sync
+    for RwMutexUpgradeableGuard_<T, R>
+{
+}
+
+/// A guard that provides immutable data access.
+pub struct RwMutexReadGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
+    inner: R,
+}
+
+pub type RwMutexReadGuard<'a, T> = RwMutexReadGuard_<T, &'a RwMutex<T>>;
+pub type ArcRwMutexReadGuard<T> = RwMutexReadGuard_<T, Arc<RwMutex<T>>>;
+
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Deref for RwMutexReadGuard_<T, R> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -223,7 +236,7 @@ impl<'a, T: ?Sized> Deref for RwMutexReadGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Drop for RwMutexReadGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Drop for RwMutexReadGuard_<T, R> {
     fn drop(&mut self) {
         // When there are no readers, wake up a waiting writer.
         if self.inner.lock.fetch_sub(READER, Release) == READER {
@@ -233,11 +246,14 @@ impl<'a, T: ?Sized> Drop for RwMutexReadGuard<'a, T> {
 }
 
 /// A guard that provides mutable data access.
-pub struct RwMutexWriteGuard<'a, T: ?Sized> {
-    inner: &'a RwMutex<T>,
+pub struct RwMutexWriteGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
+    inner: R,
 }
 
-impl<'a, T: ?Sized> Deref for RwMutexWriteGuard<'a, T> {
+pub type RwMutexWriteGuard<'a, T> = RwMutexWriteGuard_<T, &'a RwMutex<T>>;
+pub type ArcRwMutexWriteGuard<T> = RwMutexWriteGuard_<T, Arc<RwMutex<T>>>;
+
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Deref for RwMutexWriteGuard_<T, R> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -245,13 +261,13 @@ impl<'a, T: ?Sized> Deref for RwMutexWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> DerefMut for RwMutexWriteGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> DerefMut for RwMutexWriteGuard_<T, R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.inner.val.get() }
     }
 }
 
-impl<'a, T: ?Sized> Drop for RwMutexWriteGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Drop for RwMutexWriteGuard_<T, R> {
     fn drop(&mut self) {
         self.inner.lock.fetch_and(!WRITER, Release);
 
@@ -265,11 +281,14 @@ impl<'a, T: ?Sized> Drop for RwMutexWriteGuard<'a, T> {
 
 /// A guard that provides immutable data access but can be atomically
 /// upgraded to `RwMutexWriteGuard`.
-pub struct RwMutexUpgradeableGuard<'a, T: ?Sized> {
-    inner: &'a RwMutex<T>,
+pub struct RwMutexUpgradeableGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
+    inner: R,
 }
 
-impl<'a, T: ?Sized> RwMutexUpgradeableGuard<'a, T> {
+pub type RwMutexUpgradeableGuard<'a, T> = RwMutexUpgradeableGuard_<T, &'a RwMutex<T>>;
+pub type ArcRwMutexUpgradeableGuard<T> = RwMutexUpgradeableGuard_<T, Arc<RwMutex<T>>>;
+
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>> + Clone> RwMutexUpgradeableGuard_<T, R> {
     /// Upgrade this upread guard to a write guard atomically.
     ///
     /// After calling this method, subsequent readers will be blocked
@@ -279,7 +298,7 @@ impl<'a, T: ?Sized> RwMutexUpgradeableGuard<'a, T> {
     /// reader to be released. There are two main reasons.
     /// - First, it needs to sleep in an extra waiting queue and needs extra wake-up logic and overhead.
     /// - Second, upgrading method usually requires a high response time (because the mutex is being used now).
-    pub fn upgrade(mut self) -> RwMutexWriteGuard<'a, T> {
+    pub fn upgrade(mut self) -> RwMutexWriteGuard_<T, R> {
         self.inner.lock.fetch_or(BEING_UPGRADED, Acquire);
         loop {
             self = match self.try_upgrade() {
@@ -292,8 +311,7 @@ impl<'a, T: ?Sized> RwMutexUpgradeableGuard<'a, T> {
     /// Attempts to upgrade this upread guard to a write guard atomically.
     ///
     /// This function will return immediately.
-    pub fn try_upgrade(self) -> Result<RwMutexWriteGuard<'a, T>, Self> {
-        let inner = self.inner;
+    pub fn try_upgrade(self) -> Result<RwMutexWriteGuard_<T, R>, Self> {
         let res = self.inner.lock.compare_exchange(
             UPGRADEABLE_READER | BEING_UPGRADED,
             WRITER | UPGRADEABLE_READER,
@@ -301,15 +319,16 @@ impl<'a, T: ?Sized> RwMutexUpgradeableGuard<'a, T> {
             Relaxed,
         );
         if res.is_ok() {
+            let inner = self.inner.clone();
             drop(self);
-            Ok(RwMutexWriteGuard { inner })
+            Ok(RwMutexWriteGuard_ { inner })
         } else {
             Err(self)
         }
     }
 }
 
-impl<'a, T: ?Sized> Deref for RwMutexUpgradeableGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Deref for RwMutexUpgradeableGuard_<T, R> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -317,7 +336,7 @@ impl<'a, T: ?Sized> Deref for RwMutexUpgradeableGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Drop for RwMutexUpgradeableGuard<'a, T> {
+impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Drop for RwMutexUpgradeableGuard_<T, R> {
     fn drop(&mut self) {
         let res = self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
         if res == 0 {
