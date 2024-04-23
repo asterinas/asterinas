@@ -47,8 +47,6 @@ pub fn sys_fchmodat(
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
-    dentrymnt
-        .dentry()
-        .set_mode(InodeMode::from_bits_truncate(mode))?;
+    dentrymnt.set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))
 }

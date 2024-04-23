@@ -5,8 +5,7 @@
 pub use access_mode::AccessMode;
 pub use channel::{Channel, Consumer, Producer};
 pub use creation_flags::CreationFlags;
-pub use dentry::{Dentry, DentryKey};
-pub use dentrymnt::DentryMnt;
+pub use dentry::{Dentry, DentryKey, DentryMnt};
 pub use dirent_visitor::DirentVisitor;
 pub use direntry_vec::DirEntryVecExt;
 pub use file_creation_mask::FileCreationMask;
@@ -22,7 +21,6 @@ mod access_mode;
 mod channel;
 mod creation_flags;
 mod dentry;
-mod dentrymnt;
 mod dirent_visitor;
 mod direntry_vec;
 mod file_creation_mask;

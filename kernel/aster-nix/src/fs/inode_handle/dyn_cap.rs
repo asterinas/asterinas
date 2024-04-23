@@ -12,7 +12,7 @@ impl InodeHandle<Rights> {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
-        let inode = dentrymnt.dentry().inode();
+        let inode = dentrymnt.inode();
         if access_mode.is_readable() && !inode.mode()?.is_readable() {
             return_errno_with_message!(Errno::EACCES, "File is not readable");
         }
@@ -116,6 +116,6 @@ impl FileLike for InodeHandle<Rights> {
     }
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {
-        self.0.dentrymnt.dentry().inode().as_device()
+        self.0.dentrymnt.inode().as_device()
     }
 }

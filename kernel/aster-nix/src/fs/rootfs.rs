@@ -54,20 +54,20 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         let mode = InodeMode::from_bits_truncate(metadata.permission_mode());
         match metadata.file_type() {
             FileType::File => {
-                let dentry = parent.dentry().create(name, InodeType::File, mode)?;
-                entry.read_all(dentry.inode().writer(0))?;
+                let dentrymnt = parent.new_fs_child(name, InodeType::File, mode)?;
+                entry.read_all(dentrymnt.inode().writer(0))?;
             }
             FileType::Dir => {
-                let _ = parent.dentry().create(name, InodeType::Dir, mode)?;
+                let _ = parent.new_fs_child(name, InodeType::Dir, mode)?;
             }
             FileType::Link => {
-                let dentry = parent.dentry().create(name, InodeType::SymLink, mode)?;
+                let dentrymnt = parent.new_fs_child(name, InodeType::SymLink, mode)?;
                 let link_content = {
                     let mut link_data: Vec<u8> = Vec::new();
                     entry.read_all(&mut link_data)?;
                     core::str::from_utf8(&link_data)?.to_string()
                 };
-                dentry.inode().write_link(&link_content)?;
+                dentrymnt.inode().write_link(&link_content)?;
             }
             type_ => {
                 panic!("unsupported file type = {:?} in initramfs", type_);

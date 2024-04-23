@@ -11,7 +11,7 @@ use super::process_vm::ProcessVm;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        utils::{Dentry, DentryMnt},
+        utils::DentryMnt,
     },
     prelude::*,
 };
@@ -32,7 +32,7 @@ pub fn load_program_to_vm(
     recursion_limit: usize,
 ) -> Result<(String, ElfLoadInfo)> {
     let abs_path = elf_file.abs_path();
-    let inode = elf_file.dentry().inode();
+    let inode = elf_file.inode();
     let file_header = {
         // read the first page of file header
         let mut file_header_buffer = Box::new([0u8; PAGE_SIZE]);
@@ -49,7 +49,7 @@ pub fn load_program_to_vm(
             let fs_path = FsPath::new(AT_FDCWD, &filename)?;
             fs_resolver.lookup(&fs_path)?
         };
-        check_executable_file(interpreter.dentry())?;
+        check_executable_file(&interpreter)?;
         return load_program_to_vm(
             process_vm,
             interpreter,
@@ -68,16 +68,16 @@ pub fn load_program_to_vm(
     Ok((abs_path, elf_load_info))
 }
 
-pub fn check_executable_file(dentry: &Arc<Dentry>) -> Result<()> {
-    if dentry.type_().is_directory() {
+pub fn check_executable_file(dentrymnt: &Arc<DentryMnt>) -> Result<()> {
+    if dentrymnt.type_().is_directory() {
         return_errno_with_message!(Errno::EISDIR, "the file is a directory");
     }
 
-    if !dentry.type_().is_reguler_file() {
+    if !dentrymnt.type_().is_reguler_file() {
         return_errno_with_message!(Errno::EACCES, "the dentry is not a regular file");
     }
 
-    if !dentry.mode()?.is_executable() {
+    if !dentrymnt.mode()?.is_executable() {
         return_errno_with_message!(Errno::EACCES, "the dentry is not executable");
     }
 

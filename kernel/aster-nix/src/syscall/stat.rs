@@ -73,7 +73,7 @@ pub fn sys_fstatat(
             fs.lookup(&fs_path)?
         }
     };
-    let stat = Stat::from(dentrymnt.dentry().metadata());
+    let stat = Stat::from(dentrymnt.metadata());
     write_val_to_user(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }

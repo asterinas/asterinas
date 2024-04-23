@@ -11,15 +11,15 @@ pub fn sys_fsync(fd: FileDesc) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FSYNC);
     debug!("fd = {}", fd);
 
-    let dentry = {
+    let dentrymnt = {
         let current = current!();
         let file_table = current.file_table().lock();
         let file = file_table.get_file(fd)?;
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
             .ok_or(Error::with_message(Errno::EINVAL, "not inode"))?;
-        inode_handle.dentrymnt().dentry().clone()
+        inode_handle.dentrymnt().clone()
     };
-    dentry.sync()?;
+    dentrymnt.sync()?;
     Ok(SyscallReturn::Return(0))
 }

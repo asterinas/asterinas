@@ -12,35 +12,35 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-pub fn sys_unlinkat(dirfd: FileDesc, pathname_addr: Vaddr, flags: u32) -> Result<SyscallReturn> {
+pub fn sys_unlinkat(dirfd: FileDesc, path_addr: Vaddr, flags: u32) -> Result<SyscallReturn> {
     let flags =
         UnlinkFlags::from_bits(flags).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
     if flags.contains(UnlinkFlags::AT_REMOVEDIR) {
-        return super::rmdir::sys_rmdirat(dirfd, pathname_addr);
+        return super::rmdir::sys_rmdirat(dirfd, path_addr);
     }
 
     log_syscall_entry!(SYS_UNLINKAT);
-    let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
-    debug!("dirfd = {}, pathname = {:?}", dirfd, pathname);
+    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
+    debug!("dirfd = {}, path = {:?}", dirfd, path);
 
     let current = current!();
     let (dir_dentrymnt, name) = {
-        let pathname = pathname.to_string_lossy();
-        if pathname.is_empty() {
+        let path = path.to_string_lossy();
+        if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        if pathname.ends_with('/') {
+        if path.ends_with('/') {
             return_errno_with_message!(Errno::EISDIR, "unlink on directory");
         }
-        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        let fs_path = FsPath::new(dirfd, path.as_ref())?;
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
-    dir_dentrymnt.dentry().unlink(&name)?;
+    dir_dentrymnt.unlink(&name)?;
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_unlink(pathname_addr: Vaddr) -> Result<SyscallReturn> {
-    self::sys_unlinkat(AT_FDCWD, pathname_addr, 0)
+pub fn sys_unlink(path_addr: Vaddr) -> Result<SyscallReturn> {
+    self::sys_unlinkat(AT_FDCWD, path_addr, 0)
 }
 
 bitflags::bitflags! {

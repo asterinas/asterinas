@@ -161,8 +161,8 @@ impl Socket for UnixStreamSocket {
                 UnixSocketAddr::Abstract(abstract_name) => {
                     UnixSocketAddrBound::Abstract(abstract_name)
                 }
-                UnixSocketAddr::Path(pathname) => {
-                    let dentrymnt = lookup_socket_file(&pathname)?;
+                UnixSocketAddr::Path(path) => {
+                    let dentrymnt = lookup_socket_file(&path)?;
                     UnixSocketAddrBound::Path(dentrymnt)
                 }
             }
@@ -287,19 +287,19 @@ impl Drop for UnixStreamSocket {
     }
 }
 
-fn lookup_socket_file(pathname: &str) -> Result<Arc<DentryMnt>> {
+fn lookup_socket_file(path: &str) -> Result<Arc<DentryMnt>> {
     let dentrymnt = {
         let current = current!();
         let fs = current.fs().read();
-        let fs_path = FsPath::try_from(pathname)?;
+        let fs_path = FsPath::try_from(path)?;
         fs.lookup(&fs_path)?
     };
 
-    if dentrymnt.dentry().type_() != InodeType::Socket {
+    if dentrymnt.type_() != InodeType::Socket {
         return_errno_with_message!(Errno::ENOTSOCK, "not a socket file")
     }
 
-    if !dentrymnt.dentry().mode()?.is_readable() || !dentrymnt.dentry().mode()?.is_writable() {
+    if !dentrymnt.mode()?.is_readable() || !dentrymnt.mode()?.is_writable() {
         return_errno_with_message!(Errno::EACCES, "the socket cannot be read or written")
     }
     Ok(dentrymnt)

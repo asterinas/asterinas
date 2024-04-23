@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::inode_handle::FileIo;
+use super::{inode_handle::FileIo, utils::DentryMnt};
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
-        utils::{Dentry, InodeMode, InodeType},
+        utils::{InodeMode, InodeType},
     },
     prelude::*,
 };
@@ -84,15 +84,14 @@ impl From<DeviceId> for u64 {
 ///
 /// If the parent path is not existing, `mkdir -p` the parent path.
 /// This function is used in registering device.
-pub fn add_node(device: Arc<dyn Device>, pathname: &str) -> Result<Arc<Dentry>> {
+pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Arc<DentryMnt>> {
     let mut dentrymnt = {
         let fs_resolver = FsResolver::new();
         fs_resolver.lookup(&FsPath::try_from("/dev").unwrap())?
     };
-    let mut dentry = dentrymnt.dentry().clone();
 
     let mut relative_path = {
-        let relative_path = pathname.trim_start_matches('/');
+        let relative_path = path.trim_start_matches('/');
         if relative_path.is_empty() {
             return_errno_with_message!(Errno::EINVAL, "invalid device path");
         }
@@ -117,14 +116,14 @@ pub fn add_node(device: Arc<dyn Device>, pathname: &str) -> Result<Arc<Dentry>> 
             Err(_) => {
                 if path_remain.is_empty() {
                     // Create the device node
-                    dentry = dentrymnt.dentry().mknod(
+                    dentrymnt = dentrymnt.mknod(
                         next_name,
                         InodeMode::from_bits_truncate(0o666),
                         device.clone(),
                     )?;
                 } else {
                     // Mkdir parent path
-                    dentry = dentrymnt.dentry().create(
+                    dentrymnt = dentrymnt.new_fs_child(
                         next_name,
                         InodeType::Dir,
                         InodeMode::from_bits_truncate(0o755),
@@ -135,15 +134,15 @@ pub fn add_node(device: Arc<dyn Device>, pathname: &str) -> Result<Arc<Dentry>> 
         relative_path = path_remain;
     }
 
-    Ok(dentry)
+    Ok(dentrymnt)
 }
 
 /// Delete the device node from FS for the device.
 ///
 /// This function is used in unregistering device.
-pub fn delete_node(pathname: &str) -> Result<()> {
+pub fn delete_node(path: &str) -> Result<()> {
     let abs_path = {
-        let device_path = pathname.trim_start_matches('/');
+        let device_path = path.trim_start_matches('/');
         if device_path.is_empty() {
             return_errno_with_message!(Errno::EINVAL, "invalid device path");
         }
@@ -155,6 +154,6 @@ pub fn delete_node(pathname: &str) -> Result<()> {
         fs_resolver.lookup_dir_and_base_name(&FsPath::try_from(abs_path.as_str()).unwrap())?
     };
 
-    parent_dentrymnt.dentry().unlink(&name)?;
+    parent_dentrymnt.unlink(&name)?;
     Ok(())
 }
