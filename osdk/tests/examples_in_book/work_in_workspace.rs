@@ -70,13 +70,25 @@ fn work_in_workspace() {
     .unwrap();
 
     // Run subcommand build & run
-    cargo_osdk(&["build"]).ok().unwrap();
+    let output = cargo_osdk(&["build"]).ok().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("cargo osdk build: stdout = {}", stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("cargo osdk build: stderr = {}", stderr);
+
     let output = cargo_osdk(&["run"]).output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("The available memory is"));
+    println!("cargo osdk run: stdout = {}", stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("cargo osdk run: stderr = {}", stderr);
 
     // Run subcommand test
-    cargo_osdk(&["test"]).output().unwrap();
+    let output = cargo_osdk(&["test"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("cargo osdk test: stdout = {}", stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("cargo osdk test: stderr = {}", stderr);
 
     // Remove the directory
     fs::remove_dir_all(&workspace_dir).unwrap();

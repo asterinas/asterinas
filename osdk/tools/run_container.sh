@@ -9,4 +9,4 @@ ASTER_ROOT_DIR=${SCRIPT_DIR}/../..
 VERSION=$( cat ${ASTER_ROOT_DIR}/VERSION )
 IMAGE_NAME=asterinas/osdk:${VERSION}
 
-docker run -it -v ${ASTER_ROOT_DIR}:/root/asterinas ${IMAGE_NAME}
+docker run -it --name=jianfeng-osdk -v ${ASTER_ROOT_DIR}:/root/asterinas ${IMAGE_NAME}

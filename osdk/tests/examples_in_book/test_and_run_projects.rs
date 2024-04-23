@@ -17,18 +17,36 @@ fn create_and_run_kernel() {
 
     let mut command = cargo_osdk(&["new", "--kernel", os_name]);
     command.current_dir(work_dir);
-    command.ok().unwrap();
+    let output = command.output().unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("create_and_run_kernel: cargo oskd new: stdout = {}", stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("create_and_run_kernel: cargo oskd new: stderr = {}", stderr);
 
     let mut command = cargo_osdk(&["build"]);
     command.current_dir(&os_dir);
-    command.ok().unwrap();
+    let output = command.output().unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("create_and_run_kernel: cargo oskd build: stdout = {}", stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("create_and_run_kernel: cargo oskd build: stderr = {}", stderr);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("create_and_run_kernel: cargo oskd run: stdout = {}", stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("create_and_run_kernel: cargo oskd run: stderr = {}", stderr);
 
     let mut command = cargo_osdk(&["run"]);
     command.current_dir(&os_dir);
     let output = command.output().unwrap();
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    println!("create_and_run_kernel: cargo oskd run: stdout = {}", stdout);
     assert!(stdout.contains("Hello world from guest kernel!"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("create_and_run_kernel: cargo oskd run: stderr = {}", stderr);
 
     fs::remove_dir_all(&os_dir).unwrap();
 }

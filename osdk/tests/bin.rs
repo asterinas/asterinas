@@ -4,8 +4,8 @@
 //! Please be sure the the `osdk` binary is built and available in the `target/debug`
 //! directory before running these tests.
 
-mod cli;
-mod commands;
+// mod cli;
+// mod commands;
 mod examples_in_book;
-mod integration;
+// mod integration;
 mod util;

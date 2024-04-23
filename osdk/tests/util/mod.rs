@@ -11,8 +11,11 @@ use std::{
 
 use assert_cmd::Command;
 
+/// Creates a new command which invokes `cargo-osdk` of current crate.
+/// This function will set OSDK_LOG_LEVEL as debug.
 pub fn cargo_osdk<T: AsRef<OsStr>, I: IntoIterator<Item = T>>(args: I) -> Command {
     let mut command = Command::cargo_bin("cargo-osdk").unwrap();
+    command.env("OSDK_LOG_LEVEL", "debug");
     command.arg("osdk");
     command.args(args);
     command
