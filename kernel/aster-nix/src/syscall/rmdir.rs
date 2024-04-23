@@ -12,24 +12,24 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-pub fn sys_rmdir(pathname_addr: Vaddr) -> Result<SyscallReturn> {
-    self::sys_rmdirat(AT_FDCWD, pathname_addr)
+pub fn sys_rmdir(path_addr: Vaddr) -> Result<SyscallReturn> {
+    self::sys_rmdirat(AT_FDCWD, path_addr)
 }
 
-pub(super) fn sys_rmdirat(dirfd: FileDesc, pathname_addr: Vaddr) -> Result<SyscallReturn> {
+pub(super) fn sys_rmdirat(dirfd: FileDesc, path_addr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_RMDIR);
-    let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
-    debug!("dirfd = {}, pathname = {:?}", dirfd, pathname);
+    let path_addr = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
+    debug!("dirfd = {}, path_addr = {:?}", dirfd, path_addr);
 
     let current = current!();
     let (dir_dentrymnt, name) = {
-        let pathname = pathname.to_string_lossy();
-        if pathname == "/" {
+        let path_addr = path_addr.to_string_lossy();
+        if path_addr == "/" {
             return_errno_with_message!(Errno::EBUSY, "is root directory");
         }
-        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        let fs_path = FsPath::new(dirfd, path_addr.as_ref())?;
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
-    dir_dentrymnt.dentry().rmdir(name.trim_end_matches('/'))?;
+    dir_dentrymnt.rmdir(name.trim_end_matches('/'))?;
     Ok(SyscallReturn::Return(0))
 }

@@ -15,7 +15,7 @@ use super::elf_file::Elf;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-        utils::{Dentry, DentryMnt},
+        utils::DentryMnt,
     },
     prelude::*,
     process::{
@@ -96,7 +96,7 @@ fn lookup_and_parse_ldso(
     elf: &Elf,
     file_header: &[u8],
     fs_resolver: &FsResolver,
-) -> Result<(Arc<Dentry>, Elf)> {
+) -> Result<(Arc<DentryMnt>, Elf)> {
     let ldso_file = {
         let ldso_path = elf.ldso_path(file_header)?;
         let fs_path = FsPath::new(AT_FDCWD, &ldso_path)?;
@@ -104,14 +104,18 @@ fn lookup_and_parse_ldso(
     };
     let ldso_elf = {
         let mut buf = Box::new([0u8; PAGE_SIZE]);
-        let inode = ldso_file.dentry().inode();
+        let inode = ldso_file.inode();
         inode.read_at(0, &mut *buf)?;
         Elf::parse_elf(&*buf)?
     };
-    Ok((ldso_file.dentry().clone(), ldso_elf))
+    Ok((ldso_file.clone(), ldso_elf))
 }
 
-fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {
+fn load_ldso(
+    root_vmar: &Vmar<Full>,
+    ldso_file: &DentryMnt,
+    ldso_elf: &Elf,
+) -> Result<LdsoLoadInfo> {
     let map_addr = map_segment_vmos(ldso_elf, root_vmar, ldso_file)?;
     Ok(LdsoLoadInfo::new(
         ldso_elf.entry_point() + map_addr,
@@ -121,9 +125,9 @@ fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Resu
 
 fn init_and_map_vmos(
     process_vm: &ProcessVm,
-    ldso: Option<(Arc<Dentry>, Elf)>,
+    ldso: Option<(Arc<DentryMnt>, Elf)>,
     parsed_elf: &Elf,
-    elf_file: &Dentry,
+    elf_file: &DentryMnt,
 ) -> Result<(Vaddr, AuxVec)> {
     let root_vmar = process_vm.root_vmar();
 
@@ -202,7 +206,7 @@ impl ElfLoadInfo {
 }
 
 /// init vmo for each segment and then map segment to root vmar
-pub fn map_segment_vmos(elf: &Elf, root_vmar: &Vmar<Full>, elf_file: &Dentry) -> Result<Vaddr> {
+pub fn map_segment_vmos(elf: &Elf, root_vmar: &Vmar<Full>, elf_file: &DentryMnt) -> Result<Vaddr> {
     // all segments of the shared object must be mapped to a continuous vm range
     // to ensure the relative offset of each segment not changed.
     let base_addr = if elf.is_shared_object() {
@@ -291,7 +295,10 @@ fn map_segment_vmo(
 
 /// Create VMO for each segment. Return the segment VMO and the size of
 /// additional anonymous mapping it needs.
-fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Result<(Vmo, usize)> {
+fn init_segment_vmo(
+    program_header: &ProgramHeader64,
+    elf_file: &DentryMnt,
+) -> Result<(Vmo, usize)> {
     trace!(
         "mem range = 0x{:x} - 0x{:x}, mem_size = 0x{:x}",
         program_header.virtual_addr,

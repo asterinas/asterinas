@@ -47,12 +47,9 @@ impl InodeHandle_ {
         }
 
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentrymnt
-                .dentry()
-                .inode()
-                .read_direct_at(*offset, buf)?
+            self.dentrymnt.inode().read_direct_at(*offset, buf)?
         } else {
-            self.dentrymnt.dentry().inode().read_at(*offset, buf)?
+            self.dentrymnt.inode().read_at(*offset, buf)?
         };
 
         *offset += len;
@@ -67,15 +64,12 @@ impl InodeHandle_ {
         }
 
         if self.status_flags().contains(StatusFlags::O_APPEND) {
-            *offset = self.dentrymnt.dentry().size();
+            *offset = self.dentrymnt.size();
         }
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentrymnt
-                .dentry()
-                .inode()
-                .write_direct_at(*offset, buf)?
+            self.dentrymnt.inode().write_direct_at(*offset, buf)?
         } else {
-            self.dentrymnt.dentry().inode().write_at(*offset, buf)?
+            self.dentrymnt.inode().write_at(*offset, buf)?
         };
 
         *offset += len;
@@ -88,9 +82,9 @@ impl InodeHandle_ {
         }
 
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentrymnt.dentry().inode().read_direct_all(buf)?
+            self.dentrymnt.inode().read_direct_all(buf)?
         } else {
-            self.dentrymnt.dentry().inode().read_all(buf)?
+            self.dentrymnt.inode().read_all(buf)?
         };
         Ok(len)
     }
@@ -105,7 +99,7 @@ impl InodeHandle_ {
                 off as isize
             }
             SeekFrom::End(off /* as isize */) => {
-                let file_size = self.dentrymnt.dentry().size() as isize;
+                let file_size = self.dentrymnt.size() as isize;
                 assert!(file_size >= 0);
                 file_size
                     .checked_add(off)
@@ -133,7 +127,7 @@ impl InodeHandle_ {
         if self.status_flags().contains(StatusFlags::O_APPEND) {
             return_errno_with_message!(Errno::EPERM, "can not resize append-only file");
         }
-        self.dentrymnt.dentry().resize(new_size)
+        self.dentrymnt.resize(new_size)
     }
 
     pub fn access_mode(&self) -> AccessMode {
@@ -152,11 +146,7 @@ impl InodeHandle_ {
 
     pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let mut offset = self.offset.lock();
-        let read_cnt = self
-            .dentrymnt
-            .dentry()
-            .inode()
-            .readdir_at(*offset, visitor)?;
+        let read_cnt = self.dentrymnt.inode().readdir_at(*offset, visitor)?;
         *offset += read_cnt;
         Ok(read_cnt)
     }
@@ -166,7 +156,7 @@ impl InodeHandle_ {
             return file_io.poll(mask, poller);
         }
 
-        self.dentrymnt.dentry().inode().poll(mask, poller)
+        self.dentrymnt.inode().poll(mask, poller)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
@@ -174,11 +164,11 @@ impl InodeHandle_ {
             return file_io.ioctl(cmd, arg);
         }
 
-        self.dentrymnt.dentry().inode().ioctl(cmd, arg)
+        self.dentrymnt.inode().ioctl(cmd, arg)
     }
 }
 
-#[inherit_methods(from = "self.dentrymnt.dentry()")]
+#[inherit_methods(from = "self.dentrymnt")]
 impl InodeHandle_ {
     pub fn size(&self) -> usize;
     pub fn metadata(&self) -> Metadata;

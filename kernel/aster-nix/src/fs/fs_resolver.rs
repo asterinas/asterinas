@@ -37,8 +37,8 @@ impl Default for FsResolver {
 impl FsResolver {
     pub fn new() -> Self {
         Self {
-            root: DentryMnt::new(root_mount().clone(), root_mount().root_dentry().clone()),
-            cwd: DentryMnt::new(root_mount().clone(), root_mount().root_dentry().clone()),
+            root: DentryMnt::new_fs_root(root_mount().clone()),
+            cwd: DentryMnt::new_fs_root(root_mount().clone()),
         }
     }
 
@@ -63,7 +63,7 @@ impl FsResolver {
     }
 
     /// Open or create a file inode handler.
-    pub fn open(&self, pathname: &FsPath, flags: u32, mode: u16) -> Result<InodeHandle> {
+    pub fn open(&self, path: &FsPath, flags: u32, mode: u16) -> Result<InodeHandle> {
         let creation_flags = CreationFlags::from_bits_truncate(flags);
         let status_flags = StatusFlags::from_bits_truncate(flags);
         let access_mode = AccessMode::from_u32(flags)?;
@@ -72,9 +72,9 @@ impl FsResolver {
         let follow_tail_link = !(creation_flags.contains(CreationFlags::O_NOFOLLOW)
             || creation_flags.contains(CreationFlags::O_CREAT)
                 && creation_flags.contains(CreationFlags::O_EXCL));
-        let dentrymnt = match self.lookup_inner(pathname, follow_tail_link) {
+        let dentrymnt = match self.lookup_inner(path, follow_tail_link) {
             Ok(dentrymnt) => {
-                let inode = dentrymnt.dentry().inode();
+                let inode = dentrymnt.inode();
                 if inode.type_() == InodeType::SymLink
                     && creation_flags.contains(CreationFlags::O_NOFOLLOW)
                     && !status_flags.contains(StatusFlags::O_PATH)
@@ -104,18 +104,14 @@ impl FsResolver {
                     return_errno_with_message!(Errno::ENOTDIR, "cannot create directory");
                 }
                 let (dir_dentrymnt, file_name) =
-                    self.lookup_dir_and_base_name_inner(pathname, follow_tail_link)?;
+                    self.lookup_dir_and_base_name_inner(path, follow_tail_link)?;
                 if file_name.ends_with('/') {
                     return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
                 }
-                if !dir_dentrymnt.dentry().mode()?.is_writable() {
+                if !dir_dentrymnt.mode()?.is_writable() {
                     return_errno_with_message!(Errno::EACCES, "file cannot be created");
                 }
-                let dir_dentry =
-                    dir_dentrymnt
-                        .dentry()
-                        .create(&file_name, InodeType::File, inode_mode)?;
-                DentryMnt::new(dir_dentrymnt.mount_node().clone(), dir_dentry.clone())
+                dir_dentrymnt.new_fs_child(&file_name, InodeType::File, inode_mode)?
             }
             Err(e) => return Err(e),
         };
@@ -125,29 +121,27 @@ impl FsResolver {
     }
 
     /// Lookup dentrymnt according to FsPath, always follow symlinks
-    pub fn lookup(&self, pathname: &FsPath) -> Result<Arc<DentryMnt>> {
-        self.lookup_inner(pathname, true)
+    pub fn lookup(&self, path: &FsPath) -> Result<Arc<DentryMnt>> {
+        self.lookup_inner(path, true)
     }
 
     /// Lookup dentrymnt according to FsPath, do not follow it if last component is a symlink
-    pub fn lookup_no_follow(&self, pathname: &FsPath) -> Result<Arc<DentryMnt>> {
-        self.lookup_inner(pathname, false)
+    pub fn lookup_no_follow(&self, path: &FsPath) -> Result<Arc<DentryMnt>> {
+        self.lookup_inner(path, false)
     }
 
-    fn lookup_inner(&self, pathname: &FsPath, follow_tail_link: bool) -> Result<Arc<DentryMnt>> {
-        let dentrymnt = match pathname.inner {
-            FsPathInner::Absolute(pathname) => self.lookup_from_parent(
-                &self.root,
-                pathname.trim_start_matches('/'),
-                follow_tail_link,
-            )?,
-            FsPathInner::CwdRelative(pathname) => {
-                self.lookup_from_parent(&self.cwd, pathname, follow_tail_link)?
+    fn lookup_inner(&self, path: &FsPath, follow_tail_link: bool) -> Result<Arc<DentryMnt>> {
+        let dentrymnt = match path.inner {
+            FsPathInner::Absolute(path) => {
+                self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
+            }
+            FsPathInner::CwdRelative(path) => {
+                self.lookup_from_parent(&self.cwd, path, follow_tail_link)?
             }
             FsPathInner::Cwd => self.cwd.clone(),
-            FsPathInner::FdRelative(fd, pathname) => {
+            FsPathInner::FdRelative(fd, path) => {
                 let parent = self.lookup_from_fd(fd)?;
-                self.lookup_from_parent(&parent, pathname, follow_tail_link)?
+                self.lookup_from_parent(&parent, path, follow_tail_link)?
             }
             FsPathInner::Fd(fd) => self.lookup_from_fd(fd)?,
         };
@@ -196,8 +190,7 @@ impl FsResolver {
 
             // Iterate next dentry
             let next_dentrymnt = dentrymnt.lookup(next_name)?;
-            let next_dentry = next_dentrymnt.dentry();
-            let next_type = next_dentry.type_();
+            let next_type = next_dentrymnt.type_();
             let next_is_tail = path_remain.is_empty();
 
             // If next inode is a symlink, follow symlinks at most `SYMLINKS_MAX` times.
@@ -206,7 +199,7 @@ impl FsResolver {
                     return_errno_with_message!(Errno::ELOOP, "too many symlinks");
                 }
                 let link_path_remain = {
-                    let mut tmp_link_path = next_dentry.inode().read_link()?;
+                    let mut tmp_link_path = next_dentrymnt.inode().read_link()?;
                     if tmp_link_path.is_empty() {
                         return_errno_with_message!(Errno::ENOENT, "empty symlink");
                     }
@@ -241,7 +234,7 @@ impl FsResolver {
     }
 
     /// Lookup dentry from the giving fd
-    pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Arc<Dentry>> {
+    pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Arc<DentryMnt>> {
         let current = current!();
         let file_table = current.file_table().lock();
         let inode_handle = file_table
@@ -251,35 +244,35 @@ impl FsResolver {
         Ok(inode_handle.dentrymnt().clone())
     }
 
-    /// Lookup the dir dentrymnt and base file name of the giving pathname.
+    /// Lookup the dir dentrymnt and base file name of the giving path.
     ///
     /// If the last component is a symlink, do not deference it
-    pub fn lookup_dir_and_base_name(&self, pathname: &FsPath) -> Result<(Arc<DentryMnt>, String)> {
-        self.lookup_dir_and_base_name_inner(pathname, false)
+    pub fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Arc<DentryMnt>, String)> {
+        self.lookup_dir_and_base_name_inner(path, false)
     }
 
     fn lookup_dir_and_base_name_inner(
         &self,
-        pathname: &FsPath,
+        path: &FsPath,
         follow_tail_link: bool,
     ) -> Result<(Arc<DentryMnt>, String)> {
-        let (mut dir_dentrymnt, mut base_name) = match pathname.inner {
-            FsPathInner::Absolute(pathname) => {
-                let (dir, file_name) = split_path(pathname);
+        let (mut dir_dentrymnt, mut base_name) = match path.inner {
+            FsPathInner::Absolute(path) => {
+                let (dir, file_name) = split_path(path);
                 (
                     self.lookup_from_parent(&self.root, dir.trim_start_matches('/'), true)?,
                     String::from(file_name),
                 )
             }
-            FsPathInner::CwdRelative(pathname) => {
-                let (dir, file_name) = split_path(pathname);
+            FsPathInner::CwdRelative(path) => {
+                let (dir, file_name) = split_path(path);
                 (
                     self.lookup_from_parent(&self.cwd, dir, true)?,
                     String::from(file_name),
                 )
             }
-            FsPathInner::FdRelative(fd, pathname) => {
-                let (dir, file_name) = split_path(pathname);
+            FsPathInner::FdRelative(fd, path) => {
+                let (dir, file_name) = split_path(path);
                 let parent = self.lookup_from_fd(fd)?;
                 (
                     self.lookup_from_parent(&parent, dir, true)?,
@@ -295,9 +288,9 @@ impl FsResolver {
         // Dereference the tail symlinks if needed
         loop {
             match dir_dentrymnt.lookup(base_name.trim_end_matches('/')) {
-                Ok(dentrymnt) if dentrymnt.dentry().type_() == InodeType::SymLink => {
+                Ok(dentrymnt) if dentrymnt.type_() == InodeType::SymLink => {
                     let link = {
-                        let mut link = dentrymnt.dentry().inode().read_link()?;
+                        let mut link = dentrymnt.inode().read_link()?;
                         if link.is_empty() {
                             return_errno_with_message!(Errno::ENOENT, "invalid symlink");
                         }

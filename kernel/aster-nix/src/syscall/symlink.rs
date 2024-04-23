@@ -43,7 +43,7 @@ pub fn sys_symlinkat(
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
 
-    let new_dentry = dir_dentrymnt.dentry().create(
+    let new_dentry = dir_dentrymnt.new_fs_child(
         &link_name,
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),

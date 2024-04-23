@@ -14,12 +14,12 @@ use crate::{
 
 pub fn sys_utimensat(
     dirfd: FileDesc,
-    pathname_ptr: Vaddr,
+    path_addr: Vaddr,
     timespecs_ptr: Vaddr,
     flags: u32,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_UTIMENSAT);
-    let pathname = read_cstring_from_user(pathname_ptr, MAX_FILENAME_LEN)?;
+    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     let (atime, mtime) = {
         let (autime, mutime) = if timespecs_ptr == 0 {
             (timespec_t::utime_now(), timespec_t::utime_now())
@@ -53,8 +53,8 @@ pub fn sys_utimensat(
     let flags = UtimensFlags::from_bits(flags)
         .ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(
-        "dirfd = {}, pathname = {:?}, atime = {:?}, mtime = {:?}, flags = {:?}",
-        dirfd, pathname, atime, mtime, flags
+        "dirfd = {}, path = {:?}, atime = {:?}, mtime = {:?}, flags = {:?}",
+        dirfd, path, atime, mtime, flags
     );
 
     if atime.is_none() && mtime.is_none() {
@@ -62,11 +62,11 @@ pub fn sys_utimensat(
     }
     let current = current!();
     let dentrymnt = {
-        let pathname = pathname.to_string_lossy();
-        if pathname.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "pathname is empty");
+        let path = path.to_string_lossy();
+        if path.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
+        let fs_path = FsPath::new(dirfd, path.as_ref())?;
         let fs = current.fs().read();
         if flags.contains(UtimensFlags::AT_SYMLINK_NOFOLLOW) {
             fs.lookup_no_follow(&fs_path)?
@@ -75,10 +75,10 @@ pub fn sys_utimensat(
         }
     };
     if let Some(time) = atime {
-        dentrymnt.dentry().set_atime(Duration::from(time));
+        dentrymnt.set_atime(Duration::from(time));
     }
     if let Some(time) = mtime {
-        dentrymnt.dentry().set_mtime(Duration::from(time));
+        dentrymnt.set_mtime(Duration::from(time));
     }
     Ok(SyscallReturn::Return(0))
 }

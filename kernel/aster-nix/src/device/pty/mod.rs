@@ -22,22 +22,15 @@ pub fn init() -> Result<()> {
 
     let dev = fs.lookup(&FsPath::try_from("/dev")?)?;
     // Create the "pts" directory and mount devpts on it.
-    let devpts_dentry =
-        dev.dentry()
-            .create("pts", InodeType::Dir, InodeMode::from_bits_truncate(0o755))?;
-    let devpts_mount_node =
-        DentryMnt::new(dev.mount_node().clone(), devpts_dentry.clone()).mount(DevPts::new())?;
-    let devpts = DentryMnt::new(
-        devpts_mount_node.clone(),
-        devpts_mount_node.root_dentry().clone(),
-    );
-
-    devpts.mount(DevPts::new())?;
+    let devpts_dentrymnt =
+        dev.new_fs_child("pts", InodeType::Dir, InodeMode::from_bits_truncate(0o755))?;
+    let devpts_mount_node = devpts_dentrymnt.mount(DevPts::new())?;
+    let devpts = DentryMnt::new_fs_root(devpts_mount_node.clone());
 
     DEV_PTS.call_once(|| devpts);
 
     // Create the "ptmx" symlink.
-    let ptmx = dev.dentry().create(
+    let ptmx = dev.new_fs_child(
         "ptmx",
         InodeType::SymLink,
         InodeMode::from_bits_truncate(0o777),

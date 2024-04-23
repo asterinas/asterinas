@@ -37,8 +37,8 @@ impl Init {
 
         let bound_addr = match addr_to_bind {
             UnixSocketAddr::Abstract(_) => todo!(),
-            UnixSocketAddr::Path(pathname) => {
-                let dentrymnt = create_socket_file(pathname)?;
+            UnixSocketAddr::Path(path) => {
+                let dentrymnt = create_socket_file(path)?;
                 UnixSocketAddrBound::Path(dentrymnt)
             }
         };
@@ -87,19 +87,18 @@ impl Init {
     }
 }
 
-fn create_socket_file(pathname: &str) -> Result<Arc<DentryMnt>> {
-    let (parent_pathname, file_name) = split_path(pathname);
+fn create_socket_file(path: &str) -> Result<Arc<DentryMnt>> {
+    let (parent_pathname, file_name) = split_path(path);
     let parent = {
         let current = current!();
         let fs = current.fs().read();
         let parent_path = FsPath::try_from(parent_pathname)?;
         fs.lookup(&parent_path)?
     };
-    let dentry = parent.dentry().create(
+    let dentrymnt = parent.new_fs_child(
         file_name,
         InodeType::Socket,
         InodeMode::S_IRUSR | InodeMode::S_IWUSR,
     )?;
-    let dentrymnt = DentryMnt::new(parent.mount_node().clone(), dentry.clone());
     Ok(dentrymnt)
 }

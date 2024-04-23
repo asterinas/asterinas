@@ -90,10 +90,10 @@ pub fn sys_fchownat(
         }
     };
     if let Some(uid) = uid {
-        dentrymnt.dentry().set_owner(uid)?;
+        dentrymnt.set_owner(uid)?;
     }
     if let Some(gid) = gid {
-        dentrymnt.dentry().set_group(gid)?;
+        dentrymnt.set_group(gid)?;
     }
     Ok(SyscallReturn::Return(0))
 }

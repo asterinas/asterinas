@@ -213,7 +213,7 @@ impl Backlog {
 }
 
 fn create_keyable_inode(dentrymnt: &Arc<DentryMnt>) -> KeyableWeak<dyn Inode> {
-    let weak_inode = Arc::downgrade(dentrymnt.dentry().inode());
+    let weak_inode = Arc::downgrade(dentrymnt.inode());
     KeyableWeak::from(weak_inode)
 }
 

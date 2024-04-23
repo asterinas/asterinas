@@ -9,22 +9,22 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-pub fn sys_chdir(pathname_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_chdir(path_ptr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_CHDIR);
-    let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
-    debug!("pathname = {:?}", pathname);
+    let path = read_cstring_from_user(path_ptr, MAX_FILENAME_LEN)?;
+    debug!("path = {:?}", path);
 
     let current = current!();
     let mut fs = current.fs().write();
     let dentrymnt = {
-        let pathname = pathname.to_string_lossy();
-        if pathname.is_empty() {
+        let path = path.to_string_lossy();
+        if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        let fs_path = FsPath::try_from(pathname.as_ref())?;
+        let fs_path = FsPath::try_from(path.as_ref())?;
         fs.lookup(&fs_path)?
     };
-    if dentrymnt.dentry().type_() != InodeType::Dir {
+    if dentrymnt.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
     fs.set_cwd(dentrymnt);
@@ -44,7 +44,7 @@ pub fn sys_fchdir(fd: FileDesc) -> Result<SyscallReturn> {
             .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
         inode_handle.dentrymnt().clone()
     };
-    if dentrymnt.dentry().type_() != InodeType::Dir {
+    if dentrymnt.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
     current.fs().write().set_cwd(dentrymnt);
