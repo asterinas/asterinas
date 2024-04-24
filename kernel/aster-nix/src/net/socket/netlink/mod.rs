@@ -38,14 +38,10 @@
 
 pub use addr::NetlinkSocketAddr;
 use aster_frame::sync::RwMutex;
+pub use family::NetlinkFamilyType;
 pub use multicast_group::GroupIdSet;
 
-use self::{
-    addr::FamilyId,
-    bound::BoundNetlink,
-    family::{is_valid_family_id, NETLINK_FAMILIES},
-    unbound::UnboundNetlink,
-};
+use self::{bound::BoundNetlink, family::NETLINK_FAMILIES, unbound::UnboundNetlink};
 use super::{SendRecvFlags, Socket, SocketAddr};
 use crate::{
     events::{IoEvents, Observer},
@@ -101,22 +97,19 @@ impl Inner {
         matches!(self, Inner::Unbound(..))
     }
 
-    fn do_bind_default(&mut self) -> Result<()> {
+    fn do_bind_unspecified(&mut self) -> Result<()> {
         let Inner::Unbound(unbound) = self else {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound");
         };
 
-        let default_addr = {
-            let port = current!().pid();
-            NetlinkSocketAddr::new(port, GroupIdSet::new_empty())
-        };
+        let unspecified_addr = NetlinkSocketAddr::new_unspecified();
 
-        self.do_bind(default_addr)
+        self.do_bind(unspecified_addr)
     }
 
     fn do_connect(&mut self, remote: NetlinkSocketAddr) -> Result<()> {
         if self.is_unbound() {
-            self.do_bind_default()?;
+            self.do_bind_unspecified()?;
         }
 
         let Inner::Bound(bound) = self else {
@@ -137,15 +130,12 @@ impl Inner {
 }
 
 impl NetlinkSocket {
-    pub fn new(is_nonblocking: bool, family_id: FamilyId) -> Result<Self> {
-        if !is_valid_family_id(family_id) {
-            return_errno_with_message!(Errno::EAFNOSUPPORT, "");
-        }
-
+    pub fn new(is_nonblocking: bool, family_type: NetlinkFamilyType) -> Self {
+        let family_id = family_type.family_id();
         let unbound = UnboundNetlink::new(is_nonblocking, family_id);
-        Ok(Self {
+        Self {
             inner: RwMutex::new(Inner::Unbound(unbound)),
-        })
+        }
     }
 }
 
@@ -272,7 +262,7 @@ impl Socket for NetlinkSocket {
         let inner = self.inner.upread();
         if inner.is_unbound() {
             let mut inner = inner.upgrade();
-            inner.do_bind_default()?;
+            inner.do_bind_unspecified()?;
         } else {
             drop(inner);
         };
