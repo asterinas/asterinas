@@ -1,9 +1,5 @@
 project_type = "kernel"
 
-vars = [
-    ["OVMF_PATH", "/usr/share/OVMF"],
-]
-
 [boot]
 method = "grub-rescue-iso"
 
@@ -20,6 +16,6 @@ args = """\
     -chardev stdio,id=mux,mux=on,signal=off \
     -display none \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-    -drive if=pflash,format=raw,unit=0,readonly=on,file=$OVMF_PATH/OVMF_CODE.fd \
-    -drive if=pflash,format=raw,unit=1,file=$OVMF_PATH/OVMF_VARS.fd \
+    -drive if=pflash,format=raw,unit=0,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd \
+    -drive if=pflash,format=raw,unit=1,file=/usr/share/OVMF/OVMF_VARS.fd \
 """

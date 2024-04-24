@@ -23,7 +23,7 @@ will inherit values from the workspace manifest.
 ## Configurations
 
 Below, you will find a comprehensive version of
-the available configuration tree in the manifest.
+the available configurations in the manifest.
 
 Here are notes for some fields with special value treatings:
  - `*` marks the field as "will be evaluated", that the final
@@ -36,47 +36,41 @@ If values are given in the tree that's the default value inferred
 if that the field is not explicitly stated.
 
 ```
-project_type             # The type of the current crate. Can be lib/kernel[/module]
+project_type = "kernel"     # The type of the current crate. Can be lib/kernel[/module]
 
-# --------------------------- the default schema settings ---------------------
-vars = []                # List of lists. These are the env vars that will be set before
-                         # any evaluation happens. The variables will be evaluated
-                         # **SEQUENTIALLY**.
-                         # The reserved variables:
-                         #  - `OSDK_CWD`: The directory of the OSDK manifest.
-build
-|- features = []         # List of strings, the same as Cargo
-|- profile = "dev"       # String, the same as Cargo
-boot
-|- method                # "grub-rescue-iso"/"qemu-direct"/"grub-qcow2"
-|- kcmd_args             # <1>
-|- init_args             # <2>
-|- initramfs +           # The path to the initramfs
-grub                     # Grub options are only needed if boot method is related to GRUB
-|- mkrescue_path +       # The path to the `grub-mkrescue` executable
-|- protocol              # The protocol GRUB used. "linux"/"multiboot"/"multiboot2"
-|- display_grub_menu     # To display the GRUB menu when booting with GRUB
-qemu
-|- path +                # The path to the QEMU executable
-|- args *                # String. <3>
-run                      # Special settings for running, which will override default ones
-|- vars                  # The run specific variables evaluate after .vars
-|- build                 # Overriding .build
-|- boot                  # Overriding .boot
-|- grub                  # Overriding .grub
-|- qemu                  # Overriding .qemu
-test                     # Special settings for testing, which will override default ones
-|- vars                  # The test specific variables evaluate after .vars
-|- build                 # Overriding .build
-|- boot                  # Overriding .boot
-|- grub                  # Overriding .grub
-|- qemu                  # Overriding .qemu
-# ----------------------- end of the default schema settings ------------------
+# --------------------------- the default schema settings -------------------------------
+supported_archs = ["x86_64"]# List of strings, that the arch the schema can apply to
+[build]
+features = []               # List of strings, the same as Cargo
+profile = "dev"             # String, the same as Cargo
+[boot]
+method = "qemu-direct"      # "grub-rescue-iso"/"qemu-direct"/"grub-qcow2"
+kcmd_args = []              # <1>
+init_args = []              # <2>
+initramfs = "path/to/it"    # + The path to the initramfs
+[grub]                      # Grub options are only needed if boot method is related to GRUB
+mkrescue_path = "path/to/it"# + The path to the `grub-mkrescue` executable
+protocol = "multiboot2"     # The protocol GRUB used. "linux"/"multiboot"/"multiboot2"
+display_grub_menu = false   # To display the GRUB menu when booting with GRUB
+[qemu]
+path +                      # The path to the QEMU executable
+args *                      # String. <3>
+[run]                       # Special settings for running, which will override default ones
+build                       # Overriding [build]
+boot                        # Overriding [boot]
+grub                        # Overriding [grub]
+qemu                        # Overriding [qemu]
+[test]                      # Special settings for testing, which will override default ones
+build                       # Overriding [build]
+boot                        # Overriding [boot]
+grub                        # Overriding [grub]
+qemu                        # Overriding [qemu]
+# ----------------------- end of the default schema settings ----------------------------
 
-schema."user_custom_schema"
-|- ...                   # All the other fields in the default schema. Missing but
-                         # needed values will be firstly filled with the default
-                         # value then the corresponding field in the default schema
+[schema."user_custom_schema"]
+#...                        # All the other fields in the default schema. Missing but
+                            # needed values will be firstly filled with the default
+                            # value then the corresponding field in the default schema
 ```
 
 Here are some additional notes for the fields:
@@ -124,18 +118,10 @@ used to determine the actual set of qemu arguments.
 ```toml
 project_type = "kernel"
 
-vars = [
-    ["SMP", "1"],
-    ["MEM", "2G"],
-]
-
 [boot]
 method = "grub-rescue-iso"
 
 [run]
-vars = [
-    ["OVMF_PATH", "/usr/share/OVMF"],
-]
 boot.kcmd_args = [
     "SHELL=/bin/sh",
     "LOGNAME=root",
@@ -159,36 +145,22 @@ args = "$(./tools/qemu_args.sh)"
 
 [scheme."microvm"]
 boot.method = "qemu-direct"
-vars = [
-    ["MICROVM", "true"],
-]
-qemu.args = "$(./tools/qemu_args.sh)"
+qemu.args = "$(./tools/qemu_args.sh microvm)"
 
 [scheme."iommu"]
 supported_archs = ["x86_64"]
-vars = [
-    ["IOMMU_DEV_EXTRA", ",iommu_platform=on,ats=on"],
-    ["IOMMU_EXTRA_ARGS", """\
-        -device intel-iommu,intremap=on,device-iotlb=on \
-        -device ioh3420,id=pcie.0,chassis=1\
-    """],
-]
-qemu.args = "$(./tools/qemu_args.sh)"
+qemu.args = "$(./tools/qemu_args.sh iommu)"
 
 [scheme."intel_tdx"]
 supported_archs = ["x86_64"]
 build.features = ["intel_tdx"]
-vars = [
-    ["MEM", "8G"],
-    ["OVMF_PATH", "~/tdx-tools/ovmf"],
-]
 boot.method = "grub-qcow2"
 grub.mkrescue_path = "~/tdx-tools/grub"
 grub.protocol = "linux"
 qemu.args = """\
     -accel kvm \
     -name process=tdxvm,debug-threads=on \
-    -m $MEM \
+    -m ${MEM:-8G} \
     -smp $SMP \
     -vga none \
 """

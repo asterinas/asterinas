@@ -14,6 +14,8 @@ pub mod unix_args;
 #[cfg(test)]
 mod test;
 
+use std::{env, path::PathBuf};
+
 use scheme::{Action, ActionScheme, BootScheme, Build, GrubScheme, QemuScheme, Scheme};
 
 use crate::{
@@ -25,6 +27,7 @@ use crate::{
 /// The global configuration for the OSDK actions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
+    pub work_dir: PathBuf,
     pub target_arch: Arch,
     pub build: Build,
     pub run: Action,
@@ -84,7 +87,6 @@ impl Config {
     pub fn new(scheme: &Scheme, common_args: &CommonArgs) -> Self {
         let target_arch = common_args.target_arch.unwrap_or(get_default_arch());
         let default_scheme = ActionScheme {
-            vars: scheme.vars.clone(),
             boot: scheme.boot.clone(),
             grub: scheme.grub.clone(),
             qemu: scheme.qemu.clone(),
@@ -107,6 +109,10 @@ impl Config {
             test
         };
         Self {
+            work_dir: scheme
+                .work_dir
+                .clone()
+                .unwrap_or_else(|| env::current_dir().unwrap()),
             target_arch,
             build: scheme.build.clone().unwrap_or_default().finalize(),
             run,

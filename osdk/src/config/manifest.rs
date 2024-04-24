@@ -12,7 +12,7 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 
 use super::scheme::Scheme;
 
-use crate::{error::Errno, error_msg, util::get_cargo_metadata};
+use crate::{config::scheme::QemuScheme, error::Errno, error_msg, util::get_cargo_metadata};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsdkMeta {
@@ -150,6 +150,10 @@ fn deserialize_toml_manifest(path: impl AsRef<Path>) -> Option<TomlManifest> {
 
     // Preprocess the parsed manifest
     let cwd = path.as_ref().parent().unwrap();
+    manifest.default_scheme.work_dir = Some(cwd.to_path_buf());
+    for scheme in manifest.map.values_mut() {
+        scheme.work_dir = Some(cwd.to_path_buf());
+    }
     // Canonicalize all the path fields
     let canonicalize = |target: &mut PathBuf| {
         let last_cwd = std::env::current_dir().unwrap();
@@ -194,22 +198,37 @@ fn deserialize_toml_manifest(path: impl AsRef<Path>) -> Option<TomlManifest> {
         }
     };
     canonicalize_scheme(&mut manifest.default_scheme);
-    for (_, scheme) in manifest.map.iter_mut() {
+    for scheme in manifest.map.values_mut() {
         canonicalize_scheme(scheme);
     }
-    // Set the magic variable `OSDK_CWD` before any variable evaluation
-    let var = ("OSDK_CWD".to_owned(), cwd.to_string_lossy().to_string());
-    manifest.default_scheme.vars = {
-        let mut vars = vec![var.clone()];
-        vars.extend(manifest.default_scheme.vars.clone());
-        vars
-    };
-    for (_, scheme) in manifest.map.iter_mut() {
-        scheme.vars = {
-            let mut vars = vec![var.clone()];
-            vars.extend(scheme.vars.clone());
-            vars
+    // Do evaluations on the need to be evaluated string field, namely,
+    // QEMU arguments.
+    use super::eval::eval;
+    let eval_scheme = |scheme: &mut Scheme| {
+        let eval_qemu = |qemu: &mut Option<QemuScheme>| {
+            if let Some(ref mut qemu) = qemu {
+                if let Some(ref mut args) = qemu.args {
+                    *args = match eval(cwd, args) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error_msg!("Failed to evaluate qemu args: {:#?}", e);
+                            process::exit(Errno::ParseMetadata as _);
+                        }
+                    }
+                }
+            }
         };
+        eval_qemu(&mut scheme.qemu);
+        if let Some(ref mut run) = scheme.run {
+            eval_qemu(&mut run.qemu);
+        }
+        if let Some(ref mut test) = scheme.test {
+            eval_qemu(&mut test.qemu);
+        }
+    };
+    eval_scheme(&mut manifest.default_scheme);
+    for scheme in manifest.map.values_mut() {
+        eval_scheme(scheme);
     }
     Some(manifest)
 }
@@ -222,7 +241,6 @@ impl<'de> Deserialize<'de> for TomlManifest {
         enum Field {
             ProjectType,
             SupportedArchs,
-            Vars,
             Boot,
             Grub,
             Qemu,
@@ -235,7 +253,6 @@ impl<'de> Deserialize<'de> for TomlManifest {
         const EXPECTED: &[&str] = &[
             "project_type",
             "supported_archs",
-            "vars",
             "boot",
             "grub",
             "qemu",
@@ -266,7 +283,6 @@ impl<'de> Deserialize<'de> for TomlManifest {
                         match v {
                             "project_type" => Ok(Field::ProjectType),
                             "supported_archs" => Ok(Field::SupportedArchs),
-                            "vars" => Ok(Field::Vars),
                             "boot" => Ok(Field::Boot),
                             "grub" => Ok(Field::Grub),
                             "qemu" => Ok(Field::Qemu),
@@ -328,7 +344,6 @@ impl<'de> Deserialize<'de> for TomlManifest {
                             project_type = Some(value);
                         }
                         Field::SupportedArchs => match_and_add_vec!(supported_archs),
-                        Field::Vars => match_and_add_vec!(vars),
                         Field::Boot => match_and_add_option!(boot),
                         Field::Grub => match_and_add_option!(grub),
                         Field::Qemu => match_and_add_option!(qemu),
