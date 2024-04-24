@@ -440,13 +440,12 @@ impl ExfatInodeInner {
             Ok(child_inner.dentry_set_size)
         } else {
             // Otherwise, create a new node and insert it to hash map.
-            let ino = fs.alloc_inode_number();
-            let child_inode = ExfatInode::read_from_iterator(
+            let dentry_set = ExfatDentrySet::read_from_iterator(file_dentry, iter)?;
+            let child_inode = ExfatInode::build_from_dentry_set(
                 fs.clone(),
-                offset / DENTRY_SIZE,
+                &dentry_set,
                 dentry_position,
-                file_dentry,
-                iter,
+                (offset / DENTRY_SIZE) as u32,
                 self.hash_index(),
                 fs_guard,
             )?;
@@ -455,7 +454,7 @@ impl ExfatInodeInner {
 
             visitor.visit(
                 &child_inner.name.to_string(),
-                ino,
+                child_inner.ino,
                 child_inner.inode_type,
                 offset,
             )?;
@@ -520,7 +519,7 @@ impl ExfatInodeInner {
     }
 
     fn delete_associated_secondary_clusters(
-        &mut self,
+        &self,
         dentry: &ExfatDentry,
         fs_guard: &MutexGuard<()>,
     ) -> Result<()> {
@@ -531,12 +530,14 @@ impl ExfatInodeInner {
                 if !fs.is_valid_cluster(inner.start_cluster) {
                     return Ok(());
                 }
-                let num_to_free = (inner.size as usize / cluster_size) as u32;
+                let data_size = inner.size as usize;
+                let num_to_free = (data_size.align_up(cluster_size) / cluster_size) as u32;
+                let chain_flag = FatChainFlags::from_bits_truncate(inner.flags);
                 ExfatChain::new(
                     self.fs.clone(),
                     inner.start_cluster,
                     Some(num_to_free),
-                    FatChainFlags::ALLOC_POSSIBLE,
+                    chain_flag,
                 )?
                 .remove_clusters_from_tail(num_to_free, self.is_sync())?;
             }
@@ -544,12 +545,14 @@ impl ExfatInodeInner {
                 if !fs.is_valid_cluster(inner.start_cluster) {
                     return Ok(());
                 }
-                let num_to_free = (inner.size as usize / cluster_size) as u32;
+                let data_size = inner.size as usize;
+                let num_to_free = (data_size.align_up(cluster_size) / cluster_size) as u32;
+                let chain_flag = FatChainFlags::from_bits_truncate(inner.flags);
                 ExfatChain::new(
                     self.fs.clone(),
                     inner.start_cluster,
                     Some(num_to_free),
-                    FatChainFlags::ALLOC_POSSIBLE,
+                    chain_flag,
                 )?
                 .remove_clusters_from_tail(num_to_free, self.is_sync())?;
             }
@@ -781,27 +784,6 @@ impl ExfatInode {
         }
 
         Ok(inode)
-    }
-
-    /// The caller of the function should give a unique ino to assign to the inode.
-    pub(super) fn read_from_iterator(
-        fs: Arc<ExfatFS>,
-        dentry_entry: usize,
-        chain_pos: ExfatChainPosition,
-        file_dentry: &ExfatFileDentry,
-        iter: &mut ExfatDentryIterator,
-        parent_hash: usize,
-        fs_guard: &MutexGuard<()>,
-    ) -> Result<Arc<Self>> {
-        let dentry_set = ExfatDentrySet::read_from_iterator(file_dentry, iter)?;
-        Self::build_from_dentry_set(
-            fs,
-            &dentry_set,
-            chain_pos,
-            dentry_entry as u32,
-            parent_hash,
-            fs_guard,
-        )
     }
 
     /// Find empty dentry. If not found, expand the cluster chain.
