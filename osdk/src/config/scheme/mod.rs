@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::eval::Vars;
+use std::path::PathBuf;
 
 use crate::arch::Arch;
 
@@ -16,10 +16,12 @@ pub use qemu::*;
 /// All the configurable fields within a scheme.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scheme {
+    // The user is not allowed to set this field. However,
+    // the manifest loader set this and all actions such
+    // as runnning, testing, and building will use this field.
+    pub work_dir: Option<PathBuf>,
     #[serde(default)]
     pub supported_archs: Vec<Arch>,
-    #[serde(default)]
-    pub vars: Vars,
     pub boot: Option<BootScheme>,
     pub grub: Option<GrubScheme>,
     pub qemu: Option<QemuScheme>,
@@ -29,12 +31,12 @@ pub struct Scheme {
 }
 
 macro_rules! inherit_optional {
-    ($from: ident, $to:ident, .$field:ident) => {
-        if $from.$field.is_some() {
-            if let Some($field) = &mut $to.$field {
-                $field.inherit($from.$field.as_ref().unwrap());
-            } else {
-                $to.$field = $from.$field.clone();
+    ($from:ident, $to:ident, .$field:ident) => {
+        if $to.$field.is_none() {
+            $to.$field = $from.$field.clone();
+        } else {
+            if let Some($field) = &$from.$field {
+                $to.$field.as_mut().unwrap().inherit($field);
             }
         }
     };
@@ -44,8 +46,8 @@ use inherit_optional;
 impl Scheme {
     pub fn empty() -> Self {
         Scheme {
+            work_dir: None,
             supported_archs: vec![],
-            vars: vec![],
             boot: None,
             grub: None,
             qemu: None,
@@ -57,17 +59,27 @@ impl Scheme {
 
     pub fn inherit(&mut self, from: &Self) {
         // Supported archs are not inherited
-
-        self.vars = {
-            let mut vars = from.vars.clone();
-            vars.extend(self.vars.clone());
-            vars
-        };
         inherit_optional!(from, self, .boot);
         inherit_optional!(from, self, .grub);
-        inherit_optional!(from, self, .qemu);
         inherit_optional!(from, self, .build);
         inherit_optional!(from, self, .run);
         inherit_optional!(from, self, .test);
+        // The inheritance of `work_dir` depends on `qemu`, so
+        // here is a special treatment.
+        if let Some(qemu) = &mut self.qemu {
+            if let Some(from_qemu) = &from.qemu {
+                if qemu.args.is_none() {
+                    qemu.args = from_qemu.args.clone();
+                    self.work_dir = from.work_dir.clone();
+                }
+                if qemu.path.is_none() {
+                    qemu.path = from_qemu.path.clone();
+                    self.work_dir = from.work_dir.clone();
+                }
+            }
+        } else {
+            self.qemu = from.qemu.clone();
+            self.work_dir = from.work_dir.clone();
+        }
     }
 }

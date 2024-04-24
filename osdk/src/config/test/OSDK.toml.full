@@ -1,20 +1,11 @@
 project_type = "kernel"
 
 supported_archs = ["x86_64"]
-vars = [
-    ["SMP", "1"],
-    ["MEM", "2G"],
-    ["EXT2_IMG", "$OSDK_CWD/regression/build/ext2.img"],
-    ["EXFAT_IMG", "$OSDK_CWD/regression/build/exfat.img"],
-]
 
 [boot]
 method = "grub-rescue-iso"
 
 [run]
-vars = [
-    ["OVMF_PATH", "/usr/share/OVMF"],
-]
 boot.kcmd_args = [
     "SHELL=/bin/sh",
     "LOGNAME=root",
@@ -42,9 +33,6 @@ args = """\
 
 [scheme."iommu"]
 supported_archs = ["x86_64"]
-vars = [
-    ["IOMMU_DEV_EXTRA", ",iommu_platform=on,ats=on"],
-]
 qemu.args = """\
     -device intel-iommu,intremap=on,device-iotlb=on \
     -device ioh3420,id=pcie.0,chassis=1\
@@ -53,10 +41,6 @@ qemu.args = """\
 [scheme."tdx"]
 supported_archs = ["x86_64"]
 build.features = ["intel_tdx"]
-vars = [
-    ["MEM", "8G"],
-    ["OVMF_PATH", "~/tdx-tools/ovmf"],
-]
 boot.method = "grub-qcow2"
 grub.mkrescue_path = "/tmp/osdk_test_file"
 grub.protocol = "linux"

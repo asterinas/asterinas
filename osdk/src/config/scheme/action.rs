@@ -2,10 +2,7 @@
 
 use super::{inherit_optional, Boot, BootScheme, Grub, GrubScheme, Qemu, QemuScheme};
 
-use crate::{
-    cli::CommonArgs,
-    config::{scheme::Vars, Arch},
-};
+use crate::{cli::CommonArgs, config::Arch};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionChoice {
@@ -69,7 +66,7 @@ impl Build {
 
 impl BuildScheme {
     pub fn inherit(&mut self, parent: &Self) {
-        if parent.profile.is_some() {
+        if self.profile.is_none() {
             self.profile = parent.profile.clone();
         }
         self.features = {
@@ -96,8 +93,6 @@ impl BuildScheme {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionScheme {
-    #[serde(default)]
-    pub vars: Vars,
     pub boot: Option<BootScheme>,
     pub grub: Option<GrubScheme>,
     pub qemu: Option<QemuScheme>,
@@ -114,11 +109,6 @@ pub struct Action {
 
 impl ActionScheme {
     pub fn inherit(&mut self, from: &Self) {
-        self.vars = {
-            let mut vars = from.vars.clone();
-            vars.extend(self.vars.clone());
-            vars
-        };
         inherit_optional!(from, self, .boot);
         inherit_optional!(from, self, .grub);
         inherit_optional!(from, self, .qemu);
@@ -129,7 +119,7 @@ impl ActionScheme {
         Action {
             boot: self.boot.unwrap_or_default().finalize(),
             grub: self.grub.unwrap_or_default().finalize(),
-            qemu: self.qemu.unwrap_or_default().finalize(&self.vars, arch),
+            qemu: self.qemu.unwrap_or_default().finalize(arch),
             build: self.build.unwrap_or_default().finalize(),
         }
     }

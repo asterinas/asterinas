@@ -13,8 +13,6 @@ fn deserialize_toml_manifest() {
     let toml_manifest: manifest::TomlManifest = toml::from_str(content).unwrap();
     let type_ = toml_manifest.project_type.unwrap();
     assert!(type_ == manifest::ProjectType::Kernel);
-    let vars = toml_manifest.default_scheme.vars;
-    assert!(vars.contains(&("SMP".to_owned(), "1".to_owned())));
 }
 
 #[test]

@@ -200,6 +200,7 @@ impl Bundle {
             ActionChoice::Test => &config.test,
         };
         let mut qemu_cmd = Command::new(&action.qemu.path);
+        qemu_cmd.current_dir(&config.work_dir);
         match shlex::split(&action.qemu.args) {
             Some(v) => {
                 for arg in v {

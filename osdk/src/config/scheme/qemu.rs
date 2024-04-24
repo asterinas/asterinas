@@ -6,10 +6,7 @@ use std::{path::PathBuf, process};
 
 use crate::{
     arch::{get_default_arch, Arch},
-    config::{
-        eval::{eval, Vars},
-        unix_args::{apply_kv_array, get_key, split_to_kv_array},
-    },
+    config::unix_args::{apply_kv_array, get_key, split_to_kv_array},
     error::Errno,
     error_msg,
 };
@@ -55,26 +52,17 @@ impl Qemu {
 
 impl QemuScheme {
     pub fn inherit(&mut self, from: &Self) {
-        if from.args.is_some() {
+        if self.args.is_none() {
             self.args = from.args.clone();
         }
-        if from.path.is_some() {
+        if self.path.is_none() {
             self.path = from.path.clone();
         }
     }
 
-    pub fn finalize(self, vars: &Vars, arch: Arch) -> Qemu {
+    pub fn finalize(self, arch: Arch) -> Qemu {
         Qemu {
-            args: self
-                .args
-                .map(|args| match eval(vars, &args) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        error_msg!("Failed to evaluate qemu args: {:#?}", e);
-                        process::exit(Errno::ParseMetadata as _);
-                    }
-                })
-                .unwrap_or_default(),
+            args: self.args.unwrap_or_default(),
             path: self.path.unwrap_or(PathBuf::from(arch.system_qemu())),
         }
     }
