@@ -38,14 +38,20 @@
 
 pub use addr::NetlinkSocketAddr;
 use aster_frame::sync::RwMutex;
+pub use multicast_group::GroupIdSet;
 
 use self::{
-    addr::FamilyId, bound::BoundNetlink, family::NETLINK_FAMILIES, unbound::UnboundNetlink,
+    addr::FamilyId,
+    bound::BoundNetlink,
+    family::{is_valid_family_id, NETLINK_FAMILIES},
+    unbound::UnboundNetlink,
 };
-use super::{options::SocketOption, SendRecvFlags, Socket, SocketAddr};
+use super::{SendRecvFlags, Socket, SocketAddr};
 use crate::{
-    events::IoEvents, fs::file_handle::FileLike, net::socket::netlink::multicast_group::GroupIdSet,
+    events::{IoEvents, Observer},
+    fs::file_handle::FileLike,
     prelude::*,
+    process::signal::{CanPoll, Poller},
 };
 
 mod addr;
@@ -63,7 +69,10 @@ pub struct NetlinkSocket {
 
 enum Inner {
     Unbound(UnboundNetlink),
-    Bound(BoundNetlink),
+    // FIXME: the `Arc` is used here since we don't want to hold lock
+    // when calling `sendto` and recvfrom.
+    // Maybe we can think up a clever way to avoid using this `Arc`.
+    Bound(Arc<BoundNetlink>),
 }
 
 impl Inner {
@@ -72,12 +81,13 @@ impl Inner {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound");
         };
 
+        let family_id = unbound.family_id();
         let is_nonblocking = unbound.is_nonblocking();
 
         let (sender, receiver) = receiver::new_pair(is_nonblocking)?;
-        NETLINK_FAMILIES.bind(&netlink_addr, sender)?;
+        NETLINK_FAMILIES.bind(family_id, &addr, sender)?;
 
-        let bound = BoundNetlink::new(netlink_addr, receiver);
+        let bound = Arc::new(BoundNetlink::new(family_id, addr, receiver));
         *self = Inner::Bound(bound);
 
         Ok(())
@@ -87,15 +97,26 @@ impl Inner {
         matches!(self, Inner::Bound(..))
     }
 
-    fn do_connect(&mut self, remote: NetlinkSocketAddr) -> Result<()> {
-        if let Inner::Unbound(unbound) = self {
-            let default_addr = {
-                let family_id = unbound.family_id();
-                let port = current!().pid();
-                NetlinkSocketAddr::new(family_id, port, GroupIdSet::new_empty())
-            };
+    fn is_unbound(&self) -> bool {
+        matches!(self, Inner::Unbound(..))
+    }
 
-            self.do_bind(default_addr)?;
+    fn do_bind_default(&mut self) -> Result<()> {
+        let Inner::Unbound(unbound) = self else {
+            return_errno_with_message!(Errno::EINVAL, "the socket is already bound");
+        };
+
+        let default_addr = {
+            let port = current!().pid();
+            NetlinkSocketAddr::new(port, GroupIdSet::new_empty())
+        };
+
+        self.do_bind(default_addr)
+    }
+
+    fn do_connect(&mut self, remote: NetlinkSocketAddr) -> Result<()> {
+        if self.is_unbound() {
+            self.do_bind_default()?;
         }
 
         let Inner::Bound(bound) = self else {
@@ -107,7 +128,7 @@ impl Inner {
         Ok(())
     }
 
-    fn remote(&self) -> Option<&NetlinkSocketAddr> {
+    fn remote(&self) -> Option<NetlinkSocketAddr> {
         match self {
             Inner::Unbound(unbound) => None,
             Inner::Bound(bound) => bound.remote(),
@@ -116,45 +137,59 @@ impl Inner {
 }
 
 impl NetlinkSocket {
-    pub fn new(is_nonblocking: bool, family: FamilyId) -> Self {
-        let unbound = UnboundNetlink::new(is_nonblocking, family);
-        Self {
-            inner: RwMutex::new(Inner::Unbound(unbound)),
+    pub fn new(is_nonblocking: bool, family_id: FamilyId) -> Result<Self> {
+        if !is_valid_family_id(family_id) {
+            return_errno_with_message!(Errno::EAFNOSUPPORT, "");
         }
+
+        let unbound = UnboundNetlink::new(is_nonblocking, family_id);
+        Ok(Self {
+            inner: RwMutex::new(Inner::Unbound(unbound)),
+        })
     }
 }
 
 impl FileLike for NetlinkSocket {
-    fn read(&self, buf: &mut [u8]) -> crate::Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "read is not supported");
+    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+        self.recvfrom(buf, SendRecvFlags::empty())
+            .map(|(len, _)| len)
     }
 
-    fn write(&self, buf: &[u8]) -> crate::Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "write is not supported");
+    fn write(&self, buf: &[u8]) -> Result<usize> {
+        self.sendto(buf, None, SendRecvFlags::empty())
     }
 
-    fn poll(
-        &self,
-        _mask: IoEvents,
-        _poller: Option<&crate::process::signal::Poller>,
-    ) -> crate::events::IoEvents {
-        crate::events::IoEvents::empty()
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        match &*self.inner.read() {
+            Inner::Unbound(unbound) => unbound.poll(mask, poller),
+            Inner::Bound(bound) => bound.poll(mask, poller),
+        }
     }
 
     fn register_observer(
         &self,
-        observer: alloc::sync::Weak<dyn crate::events::Observer<crate::events::IoEvents>>,
-        mask: crate::events::IoEvents,
-    ) -> crate::Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "register_observer is not supported")
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        match &*self.inner.read() {
+            Inner::Unbound(unbound) => unbound.register_observer(observer, mask),
+            Inner::Bound(bound) => bound.register_observer(observer, mask),
+        }
+
+        Ok(())
     }
 
     fn unregister_observer(
         &self,
-        observer: &alloc::sync::Weak<dyn crate::events::Observer<crate::events::IoEvents>>,
-    ) -> crate::Result<alloc::sync::Weak<dyn crate::events::Observer<crate::events::IoEvents>>>
-    {
-        return_errno_with_message!(Errno::EINVAL, "unregister_observer is not supported")
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Result<Weak<dyn Observer<IoEvents>>> {
+        let observer = match &*self.inner.read() {
+            Inner::Unbound(unbound) => unbound.unregister_observer(observer),
+            Inner::Bound(bound) => bound.unregister_observer(observer),
+        };
+
+        // May be refactored after PR #771
+        observer.ok_or_else(|| Error::with_message(Errno::ENOENT, "the observer is not registered"))
     }
 
     fn as_socket(self: alloc::sync::Arc<Self>) -> Option<alloc::sync::Arc<dyn Socket>> {
@@ -190,10 +225,8 @@ impl Socket for NetlinkSocket {
     fn addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
         let netlink_addr = match &*self.inner.read() {
-            Inner::Unbound(unbound_socket) => {
-                NetlinkSocketAddr::new_unspecified(unbound_socket.family_id())
-            }
-            Inner::Bound(bound_socket) => bound_socket.addr().clone(),
+            Inner::Unbound(unbound_socket) => NetlinkSocketAddr::new_unspecified(),
+            Inner::Bound(bound_socket) => *bound_socket.addr(),
         };
 
         Ok(SocketAddr::Netlink(netlink_addr))
@@ -203,12 +236,21 @@ impl Socket for NetlinkSocket {
         self.inner
             .read()
             .remote()
-            .map(Clone::clone)
+            .map(SocketAddr::Netlink)
             .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected"))
     }
 
     fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "recvfrom() is not supported");
+        let bound_netlink = match &*self.inner.read() {
+            Inner::Unbound(_) => {
+                return_errno_with_message!(Errno::EADDRNOTAVAIL, "the netlink socket is not bound")
+            }
+            Inner::Bound(bound) => bound.clone(),
+        };
+
+        bound_netlink
+            .recvfrom(buf, flags)
+            .map(|(len, addr)| (len, SocketAddr::Netlink(addr)))
     }
 
     fn sendto(
@@ -217,7 +259,30 @@ impl Socket for NetlinkSocket {
         remote: Option<SocketAddr>,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "recvfrom() is not supported");
+        let remote = if let Some(addr) = remote {
+            let SocketAddr::Netlink(netlink_addr) = addr else {
+                return_errno_with_message!(Errno::EINVAL, "invalid socket address");
+            };
+            Some(netlink_addr)
+        } else {
+            None
+        };
+
+        // Ensure `self` is bound
+        let inner = self.inner.upread();
+        if inner.is_unbound() {
+            let mut inner = inner.upgrade();
+            inner.do_bind_default()?;
+        } else {
+            drop(inner);
+        };
+
+        let bound_netlink = match &*self.inner.read() {
+            Inner::Bound(bound_netlink) => bound_netlink.clone(),
+            Inner::Unbound(_) => unreachable!("the socket should always be bound"),
+        };
+
+        bound_netlink.sendto(remote, buf, flags)
     }
 }
 

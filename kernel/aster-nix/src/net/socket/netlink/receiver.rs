@@ -17,13 +17,13 @@ impl Receiver {
         self.msgs.is_nonblocking()
     }
 
-    pub fn set_nonblocking(&self) -> bool {
+    pub fn set_nonblocking(&self) {
         let status_flags = self.msgs.status_flags() | StatusFlags::O_NONBLOCK;
-        self.msgs.set_status_flags(status_flags);
+        self.msgs.set_status_flags(status_flags).unwrap();
     }
 
-    pub fn receive(&self) {
-        todo!()
+    pub fn receive(&self) -> Result<NetlinkMessage> {
+        self.msgs.pop()
     }
 }
 

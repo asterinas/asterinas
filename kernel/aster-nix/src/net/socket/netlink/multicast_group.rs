@@ -2,7 +2,7 @@
 
 use super::{
     addr::{GroupId, PortNum},
-    sender::Sender,
+    sender::{NetlinkMessage, Sender},
 };
 use crate::prelude::*;
 
@@ -41,11 +41,23 @@ impl MuilicastGroup {
         debug_assert!(self.members.contains_key(&port_num));
         self.members.remove(&port_num);
     }
+
+    /// Broadcasts netlink message to all members in the group
+    pub fn broadcast(&self, msg: NetlinkMessage) -> Result<()> {
+        for sender in self.members.values() {
+            // FIXME: the error is ignored here. Figure out what should be done
+            // if sending message to one member fails.
+            if let Err(e) = sender.send(msg.clone()) {
+                warn!("fails to send message to a group member");
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// A set of group IDs.
-#[derive(Debug, Clone, Copy, Pod)]
-#[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct GroupIdSet(u32);
 
 impl GroupIdSet {
@@ -70,7 +82,7 @@ impl GroupIdSet {
     ///
     /// If the group already exists, this method will return error.
     pub fn add_group(&mut self, group_id: GroupId) -> Result<()> {
-        assert!(group_id >= 0 && group_id <= 31);
+        assert!(group_id <= 31);
         let mask = 1u32 << group_id;
         if self.0 & mask != 0 {
             return_errno_with_message!(Errno::EINVAL, "group id already exists");
@@ -88,6 +100,14 @@ impl GroupIdSet {
     /// Clears all groups
     pub fn clear(&mut self) {
         self.0 = 0;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn as_u32(&self) -> u32 {
+        self.0
     }
 }
 

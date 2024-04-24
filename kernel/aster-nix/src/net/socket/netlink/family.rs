@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{btree_map::Entry, BTreeMap};
 
 use super::{
     addr::{FamilyId, NetlinkSocketAddr, PortNum},
-    multicast_group::{MuilicastGroup, MAX_GROUPS},
+    multicast_group::{GroupIdIter, MuilicastGroup, MAX_GROUPS},
     sender::Sender,
 };
-use crate::prelude::*;
+use crate::{
+    net::socket::netlink::{addr::UNSPECIFIED_PORT, sender::NetlinkMessage},
+    prelude::*,
+};
 
-pub const NETLINK_FAMILIES: FamilySet = FamilySet::new();
+pub static NETLINK_FAMILIES: FamilySet = FamilySet::new();
 
 /// All netlink families.
 ///
@@ -19,7 +22,7 @@ pub const NETLINK_FAMILIES: FamilySet = FamilySet::new();
 ///
 /// TODO: should temporary family IDs be recycled?
 pub struct FamilySet {
-    families: RwMutex<BTreeMap<FamilyId, Mutex<NetlinkFamily>>>,
+    families: RwMutex<BTreeMap<FamilyId, RwMutex<NetlinkFamily>>>,
 }
 
 impl FamilySet {
@@ -35,12 +38,16 @@ impl FamilySet {
         if families.contains_key(&family_id) {
             return;
         }
-        let new_family = Mutex::new(NetlinkFamily::new(family_id));
+        let new_family = RwMutex::new(NetlinkFamily::new(family_id));
         families.insert(family_id, new_family);
     }
 
-    pub fn bind(&self, addr: &NetlinkSocketAddr, sender: Sender) -> Result<()> {
-        let family_id = addr.family_id();
+    pub fn bind(
+        &self,
+        family_id: FamilyId,
+        addr: &NetlinkSocketAddr,
+        sender: Sender,
+    ) -> Result<()> {
         if !is_valid_family_id(family_id) {
             return_errno_with_message!(Errno::EINVAL, "the socket address is invalid");
         }
@@ -48,24 +55,51 @@ impl FamilySet {
         // Fast path: if the family already exists
         let families = self.families.upread();
         if let Some(family) = families.get(&family_id) {
-            let mut family = family.lock();
+            let mut family = family.write();
             return family.bind(addr, sender);
         }
 
         // Add a new family, if the family does not exist
         let mut families = families.upgrade();
-        if !families.contains_key(&family_id) {
+        if let Entry::Vacant(e) = families.entry(family_id) {
             debug_assert!(is_temporary_family(family_id));
             let mut new_family = NetlinkFamily::new(family_id);
             new_family.bind(addr, sender)?;
-            families.insert(family_id, Mutex::new(new_family));
+            e.insert(RwMutex::new(new_family));
         }
 
         Ok(())
     }
 
-    pub fn send(&self, msg: &[u8], remote: NetlinkSocketAddr) -> Result<()> {
-        todo!()
+    pub fn send(
+        &self,
+        family_id: FamilyId,
+        src_addr: &NetlinkSocketAddr,
+        msg: &[u8],
+        remote: &NetlinkSocketAddr,
+    ) -> Result<()> {
+        let msg = NetlinkMessage::new(*src_addr, msg);
+
+        let families = self.families.read();
+        let family = {
+            let family = families.get(&family_id).unwrap();
+            family.read()
+        };
+
+        if remote.port() != UNSPECIFIED_PORT {
+            if let Some(sender) = family.get_unicast_sender(remote.port()) {
+                sender.send(msg.clone())?;
+            }
+        }
+
+        let group_ids = remote.groups();
+        for multicast_group in family.get_multicast_groups(group_ids.ids_iter()) {
+            // FIXME: should we broadcast message to next group if some error occurs?
+            // Currently, this won't be a problem since `broadcast` won't return errors.
+            multicast_group.broadcast(msg.clone())?;
+        }
+
+        Ok(())
     }
 }
 
@@ -105,7 +139,6 @@ impl NetlinkFamily {
     /// Meanwhile, this socket can join one or more multicast groups,
     /// which is `specified` in groups.
     pub fn bind(&mut self, addr: &NetlinkSocketAddr, sender: Sender) -> Result<()> {
-        debug_assert_eq!(self.id, addr.family_id());
         debug_assert!(addr.port() != 0);
 
         let port = addr.port();
@@ -128,6 +161,17 @@ impl NetlinkFamily {
         }
 
         Ok(())
+    }
+
+    fn get_unicast_sender(&self, port: PortNum) -> Option<&Sender> {
+        self.unitcast_sockets.get(&port)
+    }
+
+    fn get_multicast_groups<'a>(
+        &'a self,
+        iter: GroupIdIter<'a>,
+    ) -> impl Iterator<Item = &'a MuilicastGroup> + '_ {
+        iter.filter_map(|group_id| self.multicast_groups.get(group_id as usize))
     }
 }
 
