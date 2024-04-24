@@ -579,12 +579,21 @@ impl ExfatInodeInner {
         Ok(())
     }
 
-    /// Update the metadata for current directory after a delete.
-    /// Set is_dir if the deleted file is a directory.
-    fn update_metadata_for_delete(&mut self, is_dir: bool) {
-        self.num_sub_inodes -= 1;
-        if is_dir {
-            self.num_sub_dirs -= 1;
+    /// Update the sub counts for current directory.
+    /// Set is_dir if the changed file is a directory.
+    /// Set is_create if the operation is create.
+    fn update_num_sub(&mut self, is_dir: bool, is_create: bool) {
+        if is_create {
+            self.num_sub_inodes += 1;
+            if is_dir {
+                self.num_sub_dirs += 1;
+            }
+        }
+        else {
+            self.num_sub_inodes -= 1;
+            if is_dir {
+                self.num_sub_dirs -= 1;
+            }
         }
     }
 
@@ -599,13 +608,61 @@ impl ExfatInodeInner {
         self.mtime = now;
         Ok(())
     }
+
+    /// Copy metadata from the given inode.
+    /// There will be no deadlock since this function is only used in rename and the arg "inode".
+    /// is a temporary inode which is only accessible to current thread.
+    fn copy_metadata_from(&mut self, inode: Arc<ExfatInode>) {
+        let other_inner = inode.inner.read();
+
+        self.dentry_set_position = other_inner.dentry_set_position.clone();
+        self.dentry_set_size = other_inner.dentry_set_size;
+        self.dentry_entry = other_inner.dentry_entry;
+        self.atime = other_inner.atime;
+        self.ctime = other_inner.ctime;
+        self.mtime = other_inner.mtime;
+        self.name = other_inner.name.clone();
+        self.is_deleted = other_inner.is_deleted;
+        self.parent_hash = other_inner.parent_hash;
+    }
+
+    fn update_subdir_parent_hash(&self, fs_guard: &MutexGuard<()>) -> Result<()> {
+        if !self.inode_type.is_directory() {
+            return Ok(());
+        }
+        let new_parent_hash = self.hash_index();
+        let sub_dir = self.num_sub_inodes;
+        let mut child_offsets: Vec<usize> = vec![];
+        impl DirentVisitor for Vec<usize> {
+            fn visit(
+                &mut self,
+                name: &str,
+                ino: u64,
+                type_: InodeType,
+                offset: usize,
+            ) -> Result<()> {
+                self.push(offset);
+                Ok(())
+            }
+        }
+        self.visit_sub_inodes(0, sub_dir as usize, &mut child_offsets, fs_guard)?;
+
+        let start_chain = self.start_chain.clone();
+        for offset in child_offsets {
+            let child_dentry_pos = start_chain.walk_to_cluster_at_offset(offset)?;
+            let child_hash =
+                make_hash_index(child_dentry_pos.0.cluster_id(), child_dentry_pos.1 as u32);
+            let child_inode = self.fs().find_opened_inode(child_hash).unwrap();
+            child_inode.inner.write().parent_hash = new_parent_hash;
+        }
+        Ok(())
+    }
 }
 
 impl ExfatInode {
     // TODO: Should be called when inode is evicted from fs.
     pub(super) fn reclaim_space(&self) -> Result<()> {
-        let inner = self.inner.write();
-        let fs = inner.fs();
+        let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
         self.inner.write().resize(0, &fs_guard)?;
         self.inner.read().page_cache.pages().resize(0)?;
@@ -882,10 +939,11 @@ impl ExfatInode {
 
         let mut inner = inner.upgrade();
 
-        inner.num_sub_inodes += 1;
-        if inode_type.is_directory() {
-            inner.num_sub_dirs += 1;
-        }
+        //inner.num_sub_inodes += 1;
+        //if inode_type.is_directory() {
+        //    inner.num_sub_dirs += 1;
+        //}
+        inner.update_num_sub(inode_type.is_directory(), true);
 
         let pos = inner.start_chain.walk_to_cluster_at_offset(start_off)?;
 
@@ -906,7 +964,7 @@ impl ExfatInode {
     }
 
     // Delete dentry set for current directory.
-    fn delete_dentry_set(
+    fn delete_entry(
         &self,
         offset: usize,
         len: usize,
@@ -947,57 +1005,6 @@ impl ExfatInode {
         Ok(())
     }
 
-    /// Copy metadata from the given inode.
-    /// There will be no deadlock since this function is only used in rename and the arg "inode".
-    /// is a temporary inode which is only accessible to current thread.
-    fn copy_metadata_from(&self, inode: Arc<ExfatInode>) {
-        let mut self_inner = self.inner.write();
-        let other_inner = inode.inner.read();
-
-        self_inner.dentry_set_position = other_inner.dentry_set_position.clone();
-        self_inner.dentry_set_size = other_inner.dentry_set_size;
-        self_inner.dentry_entry = other_inner.dentry_entry;
-        self_inner.atime = other_inner.atime;
-        self_inner.ctime = other_inner.ctime;
-        self_inner.mtime = other_inner.mtime;
-        self_inner.name = other_inner.name.clone();
-        self_inner.is_deleted = other_inner.is_deleted;
-        self_inner.parent_hash = other_inner.parent_hash;
-    }
-
-    fn update_subdir_parent_hash(&self, fs_guard: &MutexGuard<()>) -> Result<()> {
-        let inner = self.inner.read();
-        if !inner.inode_type.is_directory() {
-            return Ok(());
-        }
-        let new_parent_hash = self.hash_index();
-        let sub_dir = inner.num_sub_inodes;
-        let mut child_offsets: Vec<usize> = vec![];
-        impl DirentVisitor for Vec<usize> {
-            fn visit(
-                &mut self,
-                name: &str,
-                ino: u64,
-                type_: InodeType,
-                offset: usize,
-            ) -> Result<()> {
-                self.push(offset);
-                Ok(())
-            }
-        }
-        inner.visit_sub_inodes(0, sub_dir as usize, &mut child_offsets, fs_guard)?;
-
-        let start_chain = inner.start_chain.clone();
-        for offset in child_offsets {
-            let child_dentry_pos = start_chain.walk_to_cluster_at_offset(offset)?;
-            let child_hash =
-                make_hash_index(child_dentry_pos.0.cluster_id(), child_dentry_pos.1 as u32);
-            let child_inode = inner.fs().find_opened_inode(child_hash).unwrap();
-            child_inode.inner.write().parent_hash = new_parent_hash;
-        }
-        Ok(())
-    }
-
     /// Unlink a file or remove a directory.
     /// Need to delete dentry set and inode.
     /// Delete the file contents if delete_content is set.
@@ -1022,8 +1029,8 @@ impl ExfatInode {
         // Remove dentry set.
         let dentry_set_offset = inode.inner.read().dentry_entry as usize * DENTRY_SIZE;
         let dentry_set_len = inode.inner.read().dentry_set_size;
-        self.delete_dentry_set(dentry_set_offset, dentry_set_len, fs_guard)?;
-        self.inner.write().update_metadata_for_delete(is_dir);
+        self.delete_entry(dentry_set_offset, dentry_set_len, fs_guard)?;
+        self.inner.write().update_num_sub(is_dir, false);
         Ok(())
     }
 }
@@ -1605,9 +1612,9 @@ impl Inode for ExfatInode {
         let new_inode =
             target_.add_entry(new_name, old_inode.type_(), old_inode.mode()?, &fs_guard)?;
         // Update metadata.
-        old_inode.copy_metadata_from(new_inode);
+        old_inode.inner.write().copy_metadata_from(new_inode);
         // Update its children's parent_hash.
-        old_inode.update_subdir_parent_hash(&fs_guard)?;
+        old_inode.inner.read().update_subdir_parent_hash(&fs_guard)?;
         // Insert back.
         let _ = fs.insert_inode(old_inode.clone());
         // Remove the exist 'new_name' file.
