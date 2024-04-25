@@ -22,8 +22,12 @@ pub fn execute_new_command(args: &NewArgs) {
 
 /// OSDK assumes that the toolchain used by the kernel should be same same as the toolchain
 /// specified in the asterinas workspace.
-fn aster_rust_toolchain() -> &'static str {
-    include_str!("../../../../rust-toolchain.toml")
+fn aster_rust_toolchain() -> String {
+    // Here we can't just include it in the repository root because that can't be
+    // read when publishing. Please ensure update both files when updating the toolchain.
+    let template = include_str!("./rust-toolchain.toml.template");
+    // Delete first two lines of comments.
+    template.lines().skip(2).collect::<Vec<_>>().join("\n")
 }
 
 fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &str) {
@@ -190,7 +194,7 @@ fn get_package_metadata<'a>(
 fn check_rust_toolchain(toolchain: &toml::Table) {
     let expected = {
         let contents = aster_rust_toolchain();
-        toml::Table::from_str(contents).unwrap()
+        toml::Table::from_str(&contents).unwrap()
     };
 
     let expected = expected.get("toolchain").unwrap().as_table().unwrap();
