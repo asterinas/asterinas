@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 set -e
+set -x
 
 check_file_size() {
     local file_name="$1"
@@ -29,10 +30,15 @@ cd ${EXT2_DIR}
 echo "Start ext2 fs test......"
 
 # Test case for the big file feature
-truncate -s 500M test_file.txt
-check_file_size test_file.txt $((500 * 1024 * 1024))
-truncate -s 2K test_file.txt
-check_file_size test_file.txt $((2 * 1024))
+for i in $(seq 1 10); do
+    truncate -s 500M test_file.txt
+    check_file_size test_file.txt $((500 * 1024 * 1024))
+    truncate -s 2K test_file.txt
+    check_file_size test_file.txt $((2 * 1024))
+done
+
+# Clean up
+rm -f test_file.txt
 sync
 
 echo "All ext2 fs test passed."
