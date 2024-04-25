@@ -5,15 +5,23 @@ edition = "2021"
 description = "Accelerate OS development with Asterinas OSDK"
 license = "MPL-2.0"
 readme = "README.md"
+repository = "https://github.com/asterinas/asterinas"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies.linux-bzimage-builder]
+git = "https://github.com/asterinas/asterinas"
+# Make sure it syncs with `crate::util::ASTER_GIT_REV`
+rev = "cc4111c"
+# When publishing, the crate.io version is used, make sure
+# the builder is published
+version = "0.1.0"
 
 [dependencies]
 clap = { version = "4.4.17", features = ["cargo", "derive"] }
 env_logger = "0.11.0"
 indexmap = "2.2.1"
 lazy_static = "1.4.0"
-linux-bzimage-builder = { path = "../framework/libs/linux-bzimage/builder" }
 log = "0.4.20"
 quote = "1.0.35"
 serde = { version = "1.0.195", features = ["derive"] }

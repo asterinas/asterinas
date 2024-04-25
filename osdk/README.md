@@ -80,6 +80,7 @@ Currently we support following commands:
 - **test**: Execute kernel mode unit test by starting a VMM
 - **check**: Analyze the current package and report errors
 - **clippy**: Check the current package and catch common mistakes
+- **doc**: Build Rust documentations
 
 The following command can be used to discover the available options for each command.
 ```bash
@@ -92,7 +93,7 @@ cargo osdk help <COMMAND>
 
 ### Contributing
 
-Asterinas OSDK is developed as a sub-project of [Asterinas](https://github.com/asterinas/asterinas). It shares the same repository with the kernel. Please contribute to OSDK according to the contribution guide of Asterinas.
+Asterinas OSDK is developed as a sub-project of [Asterinas](https://github.com/asterinas/asterinas). It shares the same repository and versioning rules with the kernel. Please contribute to OSDK according to the contribution guide of Asterinas.
 
 #### Note for Visual Studio Code users
 

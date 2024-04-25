@@ -1,3 +1,5 @@
+# One should also update asterinas/src/commands/new/rust-toolchain.toml.template
+# when updating this
 [toolchain]
 channel = "nightly-2024-01-01"
 components = ["rust-src", "rustc-dev", "llvm-tools-preview"]
