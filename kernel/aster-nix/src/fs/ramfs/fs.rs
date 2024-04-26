@@ -7,7 +7,7 @@ use core::{
 
 use aster_block::bio::BioWaiter;
 use aster_frame::{
-    sync::RwLockWriteGuard,
+    sync::RwMutexWriteGuard,
     vm::{VmFrame, VmIo},
 };
 use aster_rights::Full;
@@ -38,7 +38,7 @@ pub struct RamFS {
 impl RamFS {
     pub fn new() -> Arc<Self> {
         let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX);
-        let root = Arc::new(RamInode(RwLock::new(Inode_::new_dir(
+        let root = Arc::new(RamInode(RwMutex::new(Inode_::new_dir(
             ROOT_INO,
             InodeMode::from_bits_truncate(0o755),
             &sb,
@@ -85,7 +85,7 @@ impl FileSystem for RamFS {
     }
 }
 
-struct RamInode(RwLock<Inode_>);
+struct RamInode(RwMutex<Inode_>);
 
 struct Inode_ {
     inner: Inner,
@@ -351,7 +351,7 @@ impl DirEntry {
 impl RamInode {
     fn new_dir(fs: &Arc<RamFS>, mode: InodeMode, parent: &Weak<Self>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| {
-            let inode = RamInode(RwLock::new(Inode_::new_dir(fs.alloc_id(), mode, &fs.sb())));
+            let inode = RamInode(RwMutex::new(Inode_::new_dir(fs.alloc_id(), mode, &fs.sb())));
             inode.0.write().fs = Arc::downgrade(fs);
             inode.0.write().this = weak_self.clone();
             inode
@@ -367,7 +367,7 @@ impl RamInode {
 
     fn new_file(fs: &Arc<RamFS>, mode: InodeMode) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| {
-            let inode = RamInode(RwLock::new(Inode_::new_file(
+            let inode = RamInode(RwMutex::new(Inode_::new_file(
                 fs.alloc_id(),
                 mode,
                 &fs.sb(),
@@ -381,7 +381,7 @@ impl RamInode {
 
     fn new_socket(fs: &Arc<RamFS>, mode: InodeMode) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| {
-            let inode = RamInode(RwLock::new(Inode_::new_socket(
+            let inode = RamInode(RwMutex::new(Inode_::new_socket(
                 fs.alloc_id(),
                 mode,
                 &fs.sb(),
@@ -394,7 +394,7 @@ impl RamInode {
 
     fn new_symlink(fs: &Arc<RamFS>, mode: InodeMode) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| {
-            let inode = RamInode(RwLock::new(Inode_::new_symlink(
+            let inode = RamInode(RwMutex::new(Inode_::new_symlink(
                 fs.alloc_id(),
                 mode,
                 &fs.sb(),
@@ -407,7 +407,7 @@ impl RamInode {
 
     fn new_device(fs: &Arc<RamFS>, mode: InodeMode, device: Arc<dyn Device>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| {
-            let inode = RamInode(RwLock::new(Inode_::new_device(
+            let inode = RamInode(RwMutex::new(Inode_::new_device(
                 fs.alloc_id(),
                 mode,
                 &fs.sb(),
@@ -930,7 +930,7 @@ impl Inode for RamInode {
 fn write_lock_two_inodes<'a>(
     this: &'a RamInode,
     other: &'a RamInode,
-) -> (RwLockWriteGuard<'a, Inode_>, RwLockWriteGuard<'a, Inode_>) {
+) -> (RwMutexWriteGuard<'a, Inode_>, RwMutexWriteGuard<'a, Inode_>) {
     if this.0.read().metadata.ino < other.0.read().metadata.ino {
         let this = this.0.write();
         let other = other.0.write();
