@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'docs/**'
+      - '.github/workflows/update-website.yml'
 
 jobs:
   build_and_deploy:
@@ -36,6 +37,8 @@ jobs:
           GIT_SSH_COMMAND="ssh -i ./book_publish_key -o UserKnownHostsFile=./known_hosts" git clone git@github.com:asterinas/book.git temp_book
           cd temp_book
           git checkout --orphan newBranch
+          git rm -rf *
+          cp -r ../asterinas/docs/book/* ./
           git add -A
           git commit -am "Update website"
           git branch -D main
