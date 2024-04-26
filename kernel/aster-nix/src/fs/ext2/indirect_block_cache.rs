@@ -92,10 +92,7 @@ impl IndirectBlockCache {
             return Ok(());
         }
         // TODO: How to determine the number of evictions each time?
-        //
-        // FIXME: When we set it to `Self::MAX_SIZE / 2` here,
-        // running the `/regression/ext2.sh` test may cause a deadlock issue.
-        let evict_num = 1;
+        let evict_num = Self::MAX_SIZE / 2;
         self.evict(evict_num)
     }
 
