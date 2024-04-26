@@ -48,7 +48,7 @@ fn is_tsc_deadline_mode_supported() -> bool {
 }
 
 fn init_tsc_mode() {
-    let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
+    let mut apic_lock = APIC_INSTANCE.get().unwrap().lock_irq_disabled();
     // Enable tsc deadline mode
     apic_lock.set_lvt_timer(super::TIMER_IRQ_NUM.load(Ordering::Relaxed) as u64 | (1 << 18));
     drop(apic_lock);
@@ -74,7 +74,7 @@ fn init_periodic_mode() {
     super::pit::enable_ioapic_line(irq.clone());
 
     // Set APIC timer count
-    let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
+    let mut apic_lock = APIC_INSTANCE.get().unwrap().lock_irq_disabled();
     apic_lock.set_timer_div_config(DivideConfig::Divide64);
     apic_lock.set_timer_init_count(0xFFFF_FFFF);
     drop(apic_lock);
@@ -95,7 +95,7 @@ fn init_periodic_mode() {
 
         if IN_TIME.load(Ordering::Relaxed) < CALLBACK_TIMES || IS_FINISH.load(Ordering::Acquire) {
             if IN_TIME.load(Ordering::Relaxed) == 0 {
-                let apic_lock = APIC_INSTANCE.get().unwrap().lock();
+                let apic_lock = APIC_INSTANCE.get().unwrap().lock_irq_disabled();
                 let remain_ticks = apic_lock.timer_current_count();
                 APIC_FIRST_COUNT.store(0xFFFF_FFFF - remain_ticks, Ordering::Relaxed);
             }
@@ -105,7 +105,7 @@ fn init_periodic_mode() {
 
         // Stop PIT and APIC Timer
         super::pit::disable_ioapic_line();
-        let mut apic_lock = APIC_INSTANCE.get().unwrap().lock();
+        let mut apic_lock = APIC_INSTANCE.get().unwrap().lock_irq_disabled();
         let remain_ticks = apic_lock.timer_current_count();
         apic_lock.set_timer_init_count(0);
 
