@@ -189,10 +189,9 @@ impl VmMapping {
 
         // TODO: the current logic is vulnerable to TOCTTOU attack, since the permission may change after check.
         let page_idx_range = get_page_idx_range(&(vmo_read_offset..vmo_read_offset + buf.len()));
+        self.check_page_idx_range(&page_idx_range)?;
         let read_perm = VmPerm::R;
-        for page_idx in page_idx_range {
-            self.check_perm(&page_idx, &read_perm)?;
-        }
+        self.check_perm(&read_perm)?;
 
         self.vmo.read_bytes(vmo_read_offset, buf)?;
         Ok(())
@@ -202,13 +201,13 @@ impl VmMapping {
         let vmo_write_offset = self.vmo_offset() + offset;
 
         let page_idx_range = get_page_idx_range(&(vmo_write_offset..vmo_write_offset + buf.len()));
+        self.check_page_idx_range(&page_idx_range)?;
         let write_perm = VmPerm::W;
+        self.check_perm(&write_perm)?;
 
         let mut page_addr =
             self.map_to_addr() - self.vmo_offset() + page_idx_range.start * PAGE_SIZE;
         for page_idx in page_idx_range {
-            self.check_perm(&page_idx, &write_perm)?;
-
             let parent = self.parent.upgrade().unwrap();
             let vm_space = parent.vm_space();
 
@@ -255,7 +254,7 @@ impl VmMapping {
         }
 
         let required_perm = if write { VmPerm::W } else { VmPerm::R };
-        self.check_perm(&page_idx, &required_perm)?;
+        self.check_perm(&required_perm)?;
 
         let frame = self.vmo.get_committed_frame(page_idx, write)?;
 
@@ -442,8 +441,12 @@ impl VmMapping {
         self.inner.lock().trim_right(vm_space, vaddr)
     }
 
-    fn check_perm(&self, page_idx: &usize, perm: &VmPerm) -> Result<()> {
-        self.inner.lock().check_perm(page_idx, perm)
+    fn check_perm(&self, perm: &VmPerm) -> Result<()> {
+        self.inner.lock().check_perm(perm)
+    }
+
+    fn check_page_idx_range(&self, page_idx_range: &Range<usize>) -> Result<()> {
+        self.inner.lock().check_page_idx_range(page_idx_range)
     }
 }
 
@@ -501,7 +504,9 @@ impl VmMappingInner {
             ..(range.end - map_to_addr + self.vmo_offset);
         let page_idx_range = get_page_idx_range(&vmo_map_range);
         for page_idx in page_idx_range {
-            self.unmap_one_page(vm_space, page_idx)?;
+            if self.mapped_pages.contains(&page_idx) {
+                self.unmap_one_page(vm_space, page_idx)?;
+            }
         }
         if may_destroy && *range == self.range() {
             self.is_destroyed = false;
@@ -590,17 +595,19 @@ impl VmMappingInner {
         self.map_to_addr..self.map_to_addr + self.map_size
     }
 
-    fn check_perm(&self, page_idx: &usize, perm: &VmPerm) -> Result<()> {
-        // Check if the page is in current VmMapping.
-        if page_idx * PAGE_SIZE < self.vmo_offset
-            || (page_idx + 1) * PAGE_SIZE > self.vmo_offset + self.map_size
-        {
-            return_errno_with_message!(Errno::EINVAL, "invalid page idx");
-        }
+    fn check_perm(&self, perm: &VmPerm) -> Result<()> {
         if !self.perm.contains(*perm) {
             return_errno_with_message!(Errno::EACCES, "perm check fails");
         }
+        Ok(())
+    }
 
+    fn check_page_idx_range(&self, page_idx_range: &Range<usize>) -> Result<()> {
+        if page_idx_range.start * PAGE_SIZE < self.vmo_offset
+            || page_idx_range.end * PAGE_SIZE > self.vmo_offset + self.map_size
+        {
+            return_errno_with_message!(Errno::EINVAL, "invalid page idx");
+        }
         Ok(())
     }
 }
