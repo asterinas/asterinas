@@ -3,7 +3,7 @@
 use core::{fmt::Debug, marker::PhantomData};
 
 use aster_frame::{
-    vm::{HasPaddr, Paddr, VmIo},
+    vm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, VmIo},
     Result,
 };
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
@@ -320,6 +320,20 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
             rights: TRightSet(R1::new()),
             phantom: PhantomData,
         }
+    }
+}
+
+impl<T, M: HasDaddr, R> HasDaddr for SafePtr<T, M, R> {
+    fn daddr(&self) -> Daddr {
+        self.offset + self.vm_obj.daddr()
+    }
+}
+
+impl<T, R> SafePtr<T, DmaStream, R> {
+    /// Synchronize the object in the streaming DMA mapping
+    pub fn sync(&self) -> Result<()> {
+        self.vm_obj
+            .sync(self.offset..self.offset + core::mem::size_of::<T>())
     }
 }
 
