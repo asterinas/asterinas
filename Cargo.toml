@@ -9,7 +9,6 @@ members = [
     "framework/libs/linux-bzimage/setup",
     "framework/libs/ktest",
     "framework/libs/ktest-proc-macro",
-    "framework/libs/tdx-guest",
     "kernel",
     "kernel/aster-nix",
     "kernel/comps/block",

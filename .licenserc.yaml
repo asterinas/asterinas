@@ -16,7 +16,6 @@ header:
     paths-ignore:
       # These directories are licensed under licenses other than MPL-2.0.
       - 'kernel/libs/comp-sys/cargo-component'
-      - 'framework/libs/tdx-guest'
     license:
       content: |
         SPDX-License-Identifier: MPL-2.0
@@ -27,17 +26,6 @@ header:
         extensions:
           - ".S"
         comment_style_id: SlashAsterisk
-
-  # Files under tdx-guest are licensed under BSD-3-Clause license.
-  - paths: 
-      - 'framework/libs/tdx-guest/**'
-    paths-ignore:
-      - 'Cargo.toml'
-      - '.gitignore'
-    license:
-      content: |
-        SPDX-License-Identifier: BSD-3-Clause
-        Copyright(c) 2023-2024 Intel Corporation.
 
   # Files under cargo-component are licensed under Apache-2.0 or MIT license.
   - paths:
