@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use align_ext::AlignExt;
 use inherit_methods_macro::inherit_methods;
 use pod::Pod;
 
@@ -64,6 +65,67 @@ pub trait VmIo: Send + Sync {
     fn write_slice<T: Pod>(&self, offset: usize, slice: &[T]) -> Result<()> {
         let buf = unsafe { core::mem::transmute(slice) };
         self.write_bytes(offset, buf)
+    }
+
+    /// Write a sequence of values given by an iterator (`iter`) from the specified offset (`offset`).
+    ///
+    /// The write process stops until the VM object does not have enough remaining space
+    /// or the iterator returns `None`. If any value is written, the function returns `Ok(nr_written)`,
+    /// where `nr_written` is the number of the written values.
+    ///
+    /// The offset of every value written by this method is aligned to the `align`-byte boundary.
+    /// Naturally, when `align` equals to `0` or `1`, then the argument takes no effect:
+    /// the values will be written in the most compact way.
+    ///
+    /// # Example
+    ///
+    /// Initializing an VM object with the same value can be done easily with `write_values`.
+    ///
+    /// ```
+    /// use core::iter::self;
+    ///
+    /// let _nr_values = vm_obj.write_values(0, iter::repeat(0_u32), 0).unwrap();
+    /// ```
+    ///
+    /// # Panic
+    ///
+    /// This method panics if `align` is greater than two,
+    /// but not a power of two, in release mode.
+    fn write_vals<'a, T: Pod + 'a, I: Iterator<Item = &'a T>>(
+        &self,
+        offset: usize,
+        iter: I,
+        align: usize,
+    ) -> Result<usize> {
+        let mut nr_written = 0;
+
+        let (mut offset, item_size) = if (align >> 1) == 0 {
+            // align is 0 or 1
+            (offset, core::mem::size_of::<T>())
+        } else {
+            // align is more than 2
+            (
+                offset.align_up(align),
+                core::mem::size_of::<T>().align_up(align),
+            )
+        };
+
+        for item in iter {
+            match self.write_val(offset, item) {
+                Ok(_) => {
+                    offset += item_size;
+                    nr_written += 1;
+                }
+                Err(e) => {
+                    if nr_written > 0 {
+                        return Ok(nr_written);
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(nr_written)
     }
 }
 

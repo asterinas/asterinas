@@ -6,7 +6,7 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
-use core::{fmt::Debug, mem};
+use core::{fmt::Debug, iter, mem};
 
 use aster_frame::{
     io_mem::IoMem,
@@ -244,10 +244,9 @@ impl EventTable {
         let vm_segment = VmAllocOptions::new(1).alloc_contiguous().unwrap();
 
         let default_event = VirtioInputEvent::default();
-        for idx in 0..num_events {
-            let offset = idx * EVENT_SIZE;
-            vm_segment.write_val(offset, &default_event).unwrap();
-        }
+        let iter = iter::repeat(&default_event);
+        let nr_written = vm_segment.write_vals(0, iter, 0).unwrap();
+        assert_eq!(nr_written, EVENT_SIZE);
 
         let stream = DmaStream::map(vm_segment, DmaDirection::FromDevice, false).unwrap();
         Self { stream, num_events }
