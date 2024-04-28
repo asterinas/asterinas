@@ -13,7 +13,7 @@ use aster_frame::{
     offset_of,
     sync::{RwLock, SpinLock},
     trap::TrapFrame,
-    vm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmIo, VmReader, PAGE_SIZE},
+    vm::{DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmIo, PAGE_SIZE},
 };
 use aster_input::{
     key::{Key, KeyStatus},
@@ -153,9 +153,9 @@ impl InputDevice {
         // one interrupt may contain several input events, so it should loop
         while let Ok((token, _)) = event_queue.pop_used() {
             debug_assert!(token < QUEUE_SIZE);
-            let event_buf = self.event_table.get(token as usize);
-            let res = handle_event(&event_buf);
-            let new_token = event_queue.add_dma_buf(&[], &[&event_buf]).unwrap();
+            let ptr = self.event_table.get(token as usize);
+            let res = handle_event(&ptr);
+            let new_token = event_queue.add_dma_buf(&[], &[&ptr]).unwrap();
             // This only works because nothing happen between `pop_used` and `add` that affects
             // the list of free descriptors in the queue, so `add` reuses the descriptor which
             // was just freed by `pop_used`.
@@ -190,10 +190,8 @@ impl InputDevice {
         let callbacks = self.callbacks.read_irq_disabled();
         // Returns ture if there may be more events to handle
         let handle_event = |event: &EventBuf| -> bool {
-            let event: VirtioInputEvent = {
-                let mut reader = event.reader();
-                reader.read_val()
-            };
+            event.sync().unwrap();
+            let event: VirtioInputEvent = event.read().unwrap();
 
             match event.event_type {
                 0 => return false,
@@ -244,7 +242,7 @@ impl EventTable {
         let vm_segment = VmAllocOptions::new(1).alloc_contiguous().unwrap();
 
         let default_event = VirtioInputEvent::default();
-        let iter = iter::repeat(&default_event);
+        let iter = iter::repeat(&default_event).take(EVENT_SIZE);
         let nr_written = vm_segment.write_vals(0, iter, 0).unwrap();
         assert_eq!(nr_written, EVENT_SIZE);
 
@@ -252,15 +250,11 @@ impl EventTable {
         Self { stream, num_events }
     }
 
-    fn get(&self, idx: usize) -> EventBuf<'_> {
+    fn get(&self, idx: usize) -> EventBuf {
         assert!(idx < self.num_events);
 
         let offset = idx * EVENT_SIZE;
-        EventBuf {
-            event_table: self,
-            offset,
-            size: EVENT_SIZE,
-        }
+        SafePtr::new(self.stream.clone(), offset)
     }
 
     const fn num_events(&self) -> usize {
@@ -269,38 +263,11 @@ impl EventTable {
 }
 
 const EVENT_SIZE: usize = core::mem::size_of::<VirtioInputEvent>();
+type EventBuf = SafePtr<VirtioInputEvent, DmaStream>;
 
-/// A buffer stores exact one `VirtioInputEvent`
-struct EventBuf<'a> {
-    event_table: &'a EventTable,
-    offset: usize,
-    size: usize,
-}
-
-impl<'a> HasDaddr for EventBuf<'a> {
-    fn daddr(&self) -> Daddr {
-        self.event_table.stream.daddr() + self.offset
-    }
-}
-
-impl<'a> DmaBuf for EventBuf<'a> {
+impl<T, M: HasDaddr> DmaBuf for SafePtr<T, M> {
     fn len(&self) -> usize {
-        self.size
-    }
-}
-
-impl<'a> EventBuf<'a> {
-    fn reader(&self) -> VmReader<'a> {
-        self.event_table
-            .stream
-            .sync(self.offset..self.offset + self.size)
-            .unwrap();
-        self.event_table
-            .stream
-            .reader()
-            .unwrap()
-            .skip(self.offset)
-            .limit(self.size)
+        core::mem::size_of::<T>()
     }
 }
 
