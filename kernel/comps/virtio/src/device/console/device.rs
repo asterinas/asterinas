@@ -6,7 +6,7 @@ use core::hint::spin_loop;
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use aster_frame::{
     io_mem::IoMem,
-    sync::SpinLock,
+    sync::{RwLock, SpinLock},
     trap::TrapFrame,
     vm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmReader},
 };
@@ -27,7 +27,7 @@ pub struct ConsoleDevice {
     transmit_queue: SpinLock<VirtQueue>,
     send_buffer: DmaStream,
     receive_buffer: DmaStream,
-    callbacks: SpinLock<Vec<&'static ConsoleCallback>>,
+    callbacks: RwLock<Vec<&'static ConsoleCallback>>,
 }
 
 impl AnyConsoleDevice for ConsoleDevice {
@@ -54,7 +54,7 @@ impl AnyConsoleDevice for ConsoleDevice {
     }
 
     fn register_callback(&self, callback: &'static ConsoleCallback) {
-        self.callbacks.lock_irq_disabled().push(callback);
+        self.callbacks.write_irq_disabled().push(callback);
     }
 }
 
@@ -103,7 +103,7 @@ impl ConsoleDevice {
             transmit_queue,
             send_buffer,
             receive_buffer,
-            callbacks: SpinLock::new(Vec::new()),
+            callbacks: RwLock::new(Vec::new()),
         });
 
         let mut receive_queue = device.receive_queue.lock_irq_disabled();
@@ -143,7 +143,7 @@ impl ConsoleDevice {
         let (_, len) = receive_queue.pop_used().unwrap();
         self.receive_buffer.sync(0..len as usize).unwrap();
 
-        let callbacks = self.callbacks.lock_irq_disabled();
+        let callbacks = self.callbacks.read_irq_disabled();
 
         for callback in callbacks.iter() {
             let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
