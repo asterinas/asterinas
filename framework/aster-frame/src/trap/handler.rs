@@ -227,18 +227,20 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
     //    correctness follows the semantics of the direct mapping of physical memory.
     // Do the mapping
     unsafe {
-        page_table.map_unchecked(
-            &(vaddr..vaddr + PAGE_SIZE),
-            &(paddr..paddr + PAGE_SIZE),
-            MapProperty {
-                perm: VmPerm::RW,
-                global: true,
-                #[cfg(feature = "intel_tdx")]
-                extension: PageTableFlags::SHARED.bits() as u64,
-                #[cfg(not(feature = "intel_tdx"))]
-                extension: 0,
-                cache: CachePolicy::Uncacheable,
-            },
-        )
+        page_table
+            .map(
+                &(vaddr..vaddr + PAGE_SIZE),
+                &(paddr..paddr + PAGE_SIZE),
+                MapProperty {
+                    perm: VmPerm::RW,
+                    global: true,
+                    #[cfg(feature = "intel_tdx")]
+                    extension: PageTableFlags::SHARED.bits() as u64,
+                    #[cfg(not(feature = "intel_tdx"))]
+                    extension: 0,
+                    cache: CachePolicy::Uncacheable,
+                },
+            )
+            .unwrap();
     }
 }

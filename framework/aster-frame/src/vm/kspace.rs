@@ -79,7 +79,7 @@ pub fn init_kernel_page_table() {
     };
     // Safety: we are doing the linear mapping for the kernel.
     unsafe {
-        kpt.map_unchecked(&from, &to, prop);
+        kpt.map(&from, &to, prop).unwrap();
     }
     // Map for the I/O area.
     // TODO: we need to have an allocator to allocate kernel space for
@@ -94,7 +94,7 @@ pub fn init_kernel_page_table() {
     };
     // Safety: we are doing I/O mappings for the kernel.
     unsafe {
-        kpt.map_unchecked(&from, &to, prop);
+        kpt.map(&from, &to, prop).unwrap();
     }
     // Map for the kernel code itself.
     // TODO: set separated permissions for each segments in the kernel.
@@ -114,7 +114,7 @@ pub fn init_kernel_page_table() {
     };
     // Safety: we are doing mappings for the kernel.
     unsafe {
-        kpt.map_unchecked(&from, &to, prop);
+        kpt.map(&from, &to, prop).unwrap();
     }
     KERNEL_PAGE_TABLE.call_once(|| kpt);
 }

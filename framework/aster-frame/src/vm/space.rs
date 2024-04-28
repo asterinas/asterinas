@@ -9,7 +9,8 @@ use super::{
     is_page_aligned,
     kspace::KERNEL_PAGE_TABLE,
     page_table::{
-        MapInfo, MapOp, PageTable, PageTableConstsTrait, PageTableQueryResult as PtQr, UserMode,
+        MapInfo, MapOp, PageTable, PageTableConstsTrait, PageTableMode,
+        PageTableQueryResult as PtQr, PageTableQueryResult, UserMode,
     },
     VmFrameVec, VmIo, PAGE_SIZE,
 };
@@ -17,7 +18,7 @@ use crate::{
     arch::mm::{PageTableConsts, PageTableEntry},
     prelude::*,
     vm::{
-        page_table::{CachePolicy, MapProperty, PageTableIter},
+        page_table::{CachePolicy, Cursor, MapProperty},
         VmFrame, MAX_USERSPACE_VADDR,
     },
     Error,
@@ -63,27 +64,44 @@ impl VmSpace {
         }
 
         let addr = options.addr.unwrap();
+
+        if addr % PAGE_SIZE != 0 {
+            return Err(Error::InvalidArgs);
+        }
+
         let size = frames.nbytes();
+        let end = addr.checked_add(size).ok_or(Error::InvalidArgs)?;
+
+        let va_range = addr..end;
+        if !UserMode::covers(&va_range) {
+            return Err(Error::InvalidArgs);
+        }
+
+        let mut cursor = self.pt.cursor_mut(&va_range)?;
 
         // If overwrite is forbidden, we should check if there are existing mappings
         if !options.can_overwrite {
-            let end = addr.checked_add(size).ok_or(Error::Overflow)?;
-            for qr in self.query_range(&(addr..end)).unwrap() {
-                if matches!(qr, VmQueryResult::Mapped { .. }) {
+            while let Some(qr) = cursor.query() {
+                if matches!(qr, PageTableQueryResult::Mapped { .. }) {
                     return Err(Error::MapAlreadyMappedVaddr);
                 }
             }
+            cursor.jump(va_range.start);
         }
-        self.pt.map_frames(
-            addr,
-            frames,
-            MapProperty {
-                perm: options.perm,
-                global: false,
-                extension: 0,
-                cache: CachePolicy::Writeback,
-            },
-        )?;
+
+        let prop = MapProperty {
+            perm: options.perm,
+            global: false,
+            extension: 0,
+            cache: CachePolicy::Writeback,
+        };
+
+        for frame in frames.into_iter() {
+            // Safety: mapping in the user space with `VmFrame` is safe.
+            unsafe {
+                cursor.map(frame, prop);
+            }
+        }
 
         Ok(addr)
     }
@@ -93,7 +111,7 @@ impl VmSpace {
     /// each parts of the range.
     pub fn query_range(&self, range: &Range<Vaddr>) -> Result<VmQueryIter> {
         Ok(VmQueryIter {
-            inner: self.pt.query_range(range)?,
+            cursor: self.pt.cursor(range)?,
         })
     }
 
@@ -112,8 +130,16 @@ impl VmSpace {
     /// The range is allowed to contain gaps, where no physical memory pages
     /// are mapped.
     pub fn unmap(&self, range: &Range<Vaddr>) -> Result<()> {
-        assert!(is_page_aligned(range.start) && is_page_aligned(range.end));
-        self.pt.unmap(range)?;
+        if !is_page_aligned(range.start) || !is_page_aligned(range.end) {
+            return Err(Error::InvalidArgs);
+        }
+        if !UserMode::covers(range) {
+            return Err(Error::InvalidArgs);
+        }
+        // Safety: unmapping in the user space is safe.
+        unsafe {
+            self.pt.unmap(range)?;
+        }
         Ok(())
     }
 
@@ -122,7 +148,7 @@ impl VmSpace {
         // Safety: unmapping user space is safe, and we don't care unmapping
         // invalid ranges.
         unsafe {
-            self.pt.unmap_unchecked(&(0..MAX_USERSPACE_VADDR));
+            self.pt.unmap(&(0..MAX_USERSPACE_VADDR)).unwrap();
         }
         #[cfg(target_arch = "x86_64")]
         x86_64::instructions::tlb::flush_all();
@@ -138,8 +164,16 @@ impl VmSpace {
     /// partial huge page happens, and efforts are not reverted, leaving us
     /// in a bad state.
     pub fn protect(&self, range: &Range<Vaddr>, op: impl MapOp) -> Result<()> {
-        assert!(is_page_aligned(range.start) && is_page_aligned(range.end));
-        self.pt.protect(range, op)?;
+        if !is_page_aligned(range.start) || !is_page_aligned(range.end) {
+            return Err(Error::InvalidArgs);
+        }
+        if !UserMode::covers(range) {
+            return Err(Error::InvalidArgs);
+        }
+        // Safety: protecting in the user space is safe.
+        unsafe {
+            self.pt.protect(range, op)?;
+        }
         Ok(())
     }
 
@@ -306,7 +340,7 @@ impl TryFrom<u64> for VmPerm {
 
 /// The iterator for querying over the VM space without modifying it.
 pub struct VmQueryIter<'a> {
-    inner: PageTableIter<'a, UserMode, PageTableEntry, PageTableConsts>,
+    cursor: Cursor<'a, UserMode, PageTableEntry, PageTableConsts>,
 }
 
 pub enum VmQueryResult {
@@ -325,11 +359,11 @@ impl Iterator for VmQueryIter<'_> {
     type Item = VmQueryResult;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|ptqr| match ptqr {
+        self.cursor.next().map(|ptqr| match ptqr {
             PtQr::NotMapped { va, len } => VmQueryResult::NotMapped { va, len },
             PtQr::Mapped { va, frame, info } => VmQueryResult::Mapped { va, frame, info },
             // It is not possible to map untyped memory in user space.
-            PtQr::MappedUntyped { va, pa, len, info } => unreachable!(),
+            PtQr::MappedUntyped { .. } => unreachable!(),
         })
     }
 }
