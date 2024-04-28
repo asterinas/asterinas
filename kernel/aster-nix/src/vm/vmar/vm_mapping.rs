@@ -503,13 +503,13 @@ impl VmMappingInner {
         let vmo_map_range = (range.start - map_to_addr + self.vmo_offset)
             ..(range.end - map_to_addr + self.vmo_offset);
         let page_idx_range = get_page_idx_range(&vmo_map_range);
-        for page_idx in page_idx_range {
-            if self.mapped_pages.contains(&page_idx) {
-                self.unmap_one_page(vm_space, page_idx)?;
-            }
+        let original_mapped_pages = self.mapped_pages.clone();
+        let mapped_pages_in_range = original_mapped_pages.range(page_idx_range);
+        for page_idx in mapped_pages_in_range {
+            self.unmap_one_page(vm_space, *page_idx)?;
         }
         if may_destroy && *range == self.range() {
-            self.is_destroyed = false;
+            self.is_destroyed = true;
         }
         Ok(())
     }
