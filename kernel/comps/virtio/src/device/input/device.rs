@@ -11,7 +11,7 @@ use core::{fmt::Debug, mem};
 use aster_frame::{
     io_mem::IoMem,
     offset_of,
-    sync::SpinLock,
+    sync::{RwLock, SpinLock},
     trap::TrapFrame,
     vm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmIo, VmReader, PAGE_SIZE},
 };
@@ -76,7 +76,7 @@ pub struct InputDevice {
     status_queue: VirtQueue,
     event_table: EventTable,
     #[allow(clippy::type_complexity)]
-    callbacks: SpinLock<Vec<Arc<dyn Fn(InputEvent) + Send + Sync + 'static>>>,
+    callbacks: RwLock<Vec<Arc<dyn Fn(InputEvent) + Send + Sync + 'static>>>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
 }
 
@@ -109,7 +109,7 @@ impl InputDevice {
             status_queue,
             event_table,
             transport: SpinLock::new(transport),
-            callbacks: SpinLock::new(Vec::new()),
+            callbacks: RwLock::new(Vec::new()),
         });
 
         let mut raw_name: [u8; 128] = [0; 128];
@@ -187,6 +187,7 @@ impl InputDevice {
     }
 
     fn handle_irq(&self) {
+        let callbacks = self.callbacks.read_irq_disabled();
         // Returns ture if there may be more events to handle
         let handle_event = |event: &EventBuf| -> bool {
             let event: VirtioInputEvent = {
@@ -211,7 +212,6 @@ impl InputDevice {
             let event = InputEvent::KeyBoard(Key::try_from(event.code).unwrap(), status);
             info!("Input Event:{:?}", event);
 
-            let callbacks = self.callbacks.lock();
             for callback in callbacks.iter() {
                 callback(event);
             }
@@ -307,7 +307,7 @@ impl<'a> EventBuf<'a> {
 
 impl aster_input::InputDevice for InputDevice {
     fn register_callbacks(&self, function: &'static (dyn Fn(InputEvent) + Send + Sync)) {
-        self.callbacks.lock_irq_disabled().push(Arc::new(function))
+        self.callbacks.write_irq_disabled().push(Arc::new(function))
     }
 }
 
