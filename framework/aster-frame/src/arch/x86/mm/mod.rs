@@ -183,11 +183,23 @@ impl PageTableEntryTrait for PageTableEntry {
         if self.0 & PageTableFlags::DIRTY.bits() != 0 {
             status |= MapStatus::DIRTY;
         }
+        let extension = {
+            #[cfg(feature = "intel_tdx")]
+            {
+                let mut ext = PageTableFlags::empty();
+                if self.0 & PageTableFlags::SHARED.bits() != 0 {
+                    ext |= PageTableFlags::SHARED;
+                }
+                ext
+            }
+            #[cfg(not(feature = "intel_tdx"))]
+            0
+        };
         MapInfo {
             prop: MapProperty {
                 perm,
                 global,
-                extension: (self.0 & !Self::PHYS_ADDR_MASK) as u64,
+                extension,
                 cache,
             },
             status,

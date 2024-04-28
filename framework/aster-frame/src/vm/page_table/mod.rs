@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc};
-use core::{fmt::Debug, marker::PhantomData, mem::size_of, ops::Range, panic};
+use alloc::sync::Arc;
+use core::{fmt::Debug, marker::PhantomData, ops::Range, panic};
 
 use crate::{
     arch::mm::{activate_page_table, PageTableConsts, PageTableEntry},
     sync::SpinLock,
-    vm::{paddr_to_vaddr, Paddr, Vaddr, VmAllocOptions, VmFrameVec, VmPerm},
+    vm::{paddr_to_vaddr, Paddr, Vaddr, VmPerm},
 };
 
 mod properties;
@@ -14,21 +14,20 @@ pub use properties::*;
 mod frame;
 use frame::*;
 mod cursor;
-use cursor::*;
-pub(crate) use cursor::{PageTableIter, PageTableQueryResult};
+pub(crate) use cursor::{Cursor, CursorMut, PageTableQueryResult};
 #[cfg(ktest)]
 mod test;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageTableError {
-    InvalidVaddr(Vaddr),
+    /// The virtual address range is invalid.
     InvalidVaddrRange(Vaddr, Vaddr),
-    VaddrNotAligned(Vaddr),
-    VaddrRangeNotAligned(Vaddr, Vaddr),
-    PaddrNotAligned(Paddr),
-    PaddrRangeNotAligned(Vaddr, Vaddr),
-    // Protecting a mapping that does not exist.
+    /// Using virtual address not aligned.
+    UnalignedVaddr,
+    /// Protecting a mapping that does not exist.
     ProtectingInvalid,
+    /// Protecting a part of an already mapped page.
+    ProtectingPartial,
 }
 
 /// This is a compile-time technique to force the frame developers to distinguish
@@ -38,8 +37,8 @@ pub trait PageTableMode: Clone + Debug + 'static {
     /// The range of virtual addresses that the page table can manage.
     const VADDR_RANGE: Range<Vaddr>;
 
-    /// Check if the given range is within the valid virtual address range.
-    fn encloses(r: &Range<Vaddr>) -> bool {
+    /// Check if the given range is covered by the valid virtual address range.
+    fn covers(r: &Range<Vaddr>) -> bool {
         Self::VADDR_RANGE.start <= r.start && r.end <= Self::VADDR_RANGE.end
     }
 }
@@ -78,61 +77,6 @@ where
     [(); C::NR_ENTRIES_PER_FRAME]:,
     [(); C::NR_LEVELS]:,
 {
-    pub(crate) fn map_frames(
-        &self,
-        vaddr: Vaddr,
-        frames: VmFrameVec,
-        prop: MapProperty,
-    ) -> Result<(), PageTableError> {
-        if vaddr % C::BASE_PAGE_SIZE != 0 {
-            return Err(PageTableError::VaddrNotAligned(vaddr));
-        }
-        let va_range = vaddr
-            ..vaddr
-                .checked_add(frames.nbytes())
-                .ok_or(PageTableError::InvalidVaddr(vaddr))?;
-        if !UserMode::encloses(&va_range) {
-            return Err(PageTableError::InvalidVaddrRange(
-                va_range.start,
-                va_range.end,
-            ));
-        }
-        // Safety: modification to the user page table is safe.
-        unsafe {
-            self.map_frames_unchecked(vaddr, frames, prop);
-        }
-        Ok(())
-    }
-
-    pub(crate) fn unmap(&self, vaddr: &Range<Vaddr>) -> Result<(), PageTableError> {
-        if vaddr.start % C::BASE_PAGE_SIZE != 0 || vaddr.end % C::BASE_PAGE_SIZE != 0 {
-            return Err(PageTableError::VaddrRangeNotAligned(vaddr.start, vaddr.end));
-        }
-        if !UserMode::encloses(vaddr) {
-            return Err(PageTableError::InvalidVaddrRange(vaddr.start, vaddr.end));
-        }
-        // Safety: modification to the user page table is safe.
-        unsafe {
-            self.unmap_unchecked(vaddr);
-        }
-        Ok(())
-    }
-
-    pub(crate) fn protect(
-        &self,
-        vaddr: &Range<Vaddr>,
-        op: impl MapOp,
-    ) -> Result<(), PageTableError> {
-        if vaddr.start % C::BASE_PAGE_SIZE != 0 || vaddr.end % C::BASE_PAGE_SIZE != 0 {
-            return Err(PageTableError::VaddrRangeNotAligned(vaddr.start, vaddr.end));
-        }
-        if !UserMode::encloses(vaddr) {
-            return Err(PageTableError::InvalidVaddrRange(vaddr.start, vaddr.end));
-        }
-        // Safety: modification to the user page table is safe.
-        unsafe { self.cursor(vaddr.start).protect(vaddr.len(), op, false) }
-    }
-
     pub(crate) fn activate(&self) {
         // Safety: The usermode page table is safe to activate since the kernel
         // mappings are shared.
@@ -141,55 +85,60 @@ where
         }
     }
 
-    /// Remove all write permissions from the user page table and mark the page
-    /// table as copy-on-write, and the create a handle to the new page table.
+    /// Remove all write permissions from the user page table and create a cloned
+    /// new page table.
     ///
-    /// That is, new page tables will be created when needed if a write operation
-    /// is performed on either of the user page table handles. Calling this function
-    /// performs no significant operations.
+    /// TODO: We may consider making the page table itself copy-on-write.
     pub(crate) fn fork_copy_on_write(&self) -> Self {
+        let mut cursor = self.cursor_mut(&UserMode::VADDR_RANGE).unwrap();
+        // Safety: Protecting the user page table is safe.
         unsafe {
-            self.protect_unchecked(&UserMode::VADDR_RANGE, perm_op(|perm| perm & !VmPerm::W));
-        }
-        // TODO: implement the copy-on-write mechanism. This is a simple workaround.
-        let new_root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
-        let root_frame = self.root_frame.lock();
+            cursor
+                .protect(
+                    UserMode::VADDR_RANGE.len(),
+                    perm_op(|perm| perm & !VmPerm::W),
+                    true,
+                )
+                .unwrap();
+        };
+        let root_frame = cursor.leak_root_guard().unwrap();
+        let mut new_root_frame = PageTableFrame::<E, C>::new();
         let half_of_entries = C::NR_ENTRIES_PER_FRAME / 2;
-        let new_ptr = new_root_frame.as_mut_ptr() as *mut E;
-        let ptr = root_frame.inner.as_ptr() as *const E;
-        let child = Box::new(core::array::from_fn(|i| {
-            if i < half_of_entries {
-                // This is user space, deep copy the child.
-                root_frame.child[i].as_ref().map(|child| match child {
-                    Child::PageTable(ptf) => unsafe {
-                        let frame = ptf.lock();
+        for i in 0..half_of_entries {
+            // This is user space, deep copy the child.
+            match root_frame.child(i) {
+                Child::PageTable(node) => {
+                    let frame = node.lock();
+                    // Possibly a cursor is waiting for the root lock to recycle this node.
+                    // We can skip copying empty page table nodes.
+                    if frame.nr_valid_children() != 0 {
                         let cloned = frame.clone();
-                        let pte = ptr.add(i).read();
-                        new_ptr.add(i).write(E::new(
-                            cloned.inner.start_paddr(),
-                            pte.info().prop,
+                        let pt = Child::PageTable(Arc::new(SpinLock::new(cloned)));
+                        new_root_frame.set_child(
+                            i,
+                            pt,
+                            Some(root_frame.read_pte_info(i).prop),
                             false,
-                            false,
-                        ));
-                        Child::PageTable(Arc::new(SpinLock::new(cloned)))
-                    },
-                    Child::Frame(_) => panic!("Unexpected frame child."),
-                })
-            } else {
-                // This is kernel space, share the child.
-                unsafe {
-                    let pte = ptr.add(i).read();
-                    new_ptr.add(i).write(pte);
+                        );
+                    }
                 }
-                root_frame.child[i].clone()
+                Child::None => {}
+                Child::Frame(_) | Child::Untracked(_) => {
+                    panic!("Unexpected map child.");
+                }
             }
-        }));
+        }
+        for i in half_of_entries..C::NR_ENTRIES_PER_FRAME {
+            // This is kernel space, share the child.
+            new_root_frame.set_child(
+                i,
+                root_frame.child(i).clone(),
+                Some(root_frame.read_pte_info(i).prop),
+                false,
+            )
+        }
         PageTable::<UserMode, E, C> {
-            root_frame: Arc::new(SpinLock::new(PageTableFrame::<E, C> {
-                inner: new_root_frame,
-                child,
-                map_count: root_frame.map_count,
-            })),
+            root_frame: Arc::new(SpinLock::new(new_root_frame)),
             _phantom: PhantomData,
         }
     }
@@ -208,17 +157,18 @@ where
     /// Then, one can use a user page table to call [`fork_copy_on_write`], creating
     /// other child page tables.
     pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode, E, C> {
-        let new_root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
+        let mut new_root_frame = PageTableFrame::<E, C>::new();
         let root_frame = self.root_frame.lock();
-        let half_of_entries = C::NR_ENTRIES_PER_FRAME / 2;
-        new_root_frame.copy_from_frame(&root_frame.inner);
-        let child = Box::new(core::array::from_fn(|i| root_frame.child[i].clone()));
+        for i in C::NR_ENTRIES_PER_FRAME / 2..C::NR_ENTRIES_PER_FRAME {
+            new_root_frame.set_child(
+                i,
+                root_frame.child(i).clone(),
+                Some(root_frame.read_pte_info(i).prop),
+                false,
+            )
+        }
         PageTable::<UserMode, E, C> {
-            root_frame: Arc::new(SpinLock::new(PageTableFrame::<E, C> {
-                inner: new_root_frame,
-                child,
-                map_count: root_frame.map_count,
-            })),
+            root_frame: Arc::new(SpinLock::new(new_root_frame)),
             _phantom: PhantomData,
         }
     }
@@ -230,30 +180,26 @@ where
     /// instead of the virtual address range.
     pub(crate) fn make_shared_tables(&self, root_index: Range<usize>) {
         let start = root_index.start;
-        assert!(start < C::NR_ENTRIES_PER_FRAME);
+        debug_assert!(start >= C::NR_ENTRIES_PER_FRAME / 2);
+        debug_assert!(start < C::NR_ENTRIES_PER_FRAME);
         let end = root_index.end;
-        assert!(end <= C::NR_ENTRIES_PER_FRAME);
+        debug_assert!(end <= C::NR_ENTRIES_PER_FRAME);
         let mut root_frame = self.root_frame.lock();
         for i in start..end {
-            let no_such_child = root_frame.child[i].is_none();
+            let no_such_child = root_frame.child(i).is_none();
             if no_such_child {
-                let frame = PageTableFrame::<E, C>::new();
-                let pte_ptr = (root_frame.inner.start_paddr() + i * size_of::<E>()) as *mut E;
-                unsafe {
-                    pte_ptr.write(E::new(
-                        frame.inner.start_paddr(),
-                        MapProperty {
-                            perm: VmPerm::RWX,
-                            global: true,
-                            extension: 0,
-                            cache: CachePolicy::Uncacheable,
-                        },
-                        false,
-                        false,
-                    ));
-                }
-                root_frame.child[i] = Some(Child::PageTable(Arc::new(SpinLock::new(frame))));
-                root_frame.map_count += 1;
+                let frame = Arc::new(SpinLock::new(PageTableFrame::<E, C>::new()));
+                root_frame.set_child(
+                    i,
+                    Child::PageTable(frame),
+                    Some(MapProperty {
+                        perm: VmPerm::RWX,
+                        global: true,
+                        extension: 0,
+                        cache: CachePolicy::Uncacheable,
+                    }),
+                    false,
+                )
             }
         }
     }
@@ -274,60 +220,40 @@ where
 
     /// The physical address of the root page table.
     pub(crate) fn root_paddr(&self) -> Paddr {
-        self.root_frame.lock().inner.start_paddr()
+        self.root_frame.lock().start_paddr()
     }
 
-    pub(crate) unsafe fn map_frames_unchecked(
-        &self,
-        vaddr: Vaddr,
-        frames: VmFrameVec,
-        prop: MapProperty,
-    ) {
-        let mut cursor = self.cursor(vaddr);
-        for frame in frames.into_iter() {
-            cursor.map(MapOption::Map { frame, prop });
-        }
-    }
-
-    pub(crate) unsafe fn map_unchecked(
+    pub(crate) unsafe fn map(
         &self,
         vaddr: &Range<Vaddr>,
         paddr: &Range<Paddr>,
         prop: MapProperty,
-    ) {
-        self.cursor(vaddr.start).map(MapOption::MapUntyped {
-            pa: paddr.start,
-            len: vaddr.len(),
-            prop,
-        });
+    ) -> Result<(), PageTableError> {
+        self.cursor_mut(vaddr)?.map_pa(paddr, prop);
+        Ok(())
     }
 
-    pub(crate) unsafe fn unmap_unchecked(&self, vaddr: &Range<Vaddr>) {
-        self.cursor(vaddr.start)
-            .map(MapOption::Unmap { len: vaddr.len() });
+    pub(crate) unsafe fn unmap(&self, vaddr: &Range<Vaddr>) -> Result<(), PageTableError> {
+        self.cursor_mut(vaddr)?.unmap(vaddr.len());
+        Ok(())
     }
 
-    pub(crate) unsafe fn protect_unchecked(&self, vaddr: &Range<Vaddr>, op: impl MapOp) {
-        self.cursor(vaddr.start)
+    pub(crate) unsafe fn protect(
+        &self,
+        vaddr: &Range<Vaddr>,
+        op: impl MapOp,
+    ) -> Result<(), PageTableError> {
+        self.cursor_mut(vaddr)?
             .protect(vaddr.len(), op, true)
             .unwrap();
-    }
-
-    /// Query about the mappings of a range of virtual addresses.
-    pub(crate) fn query_range(
-        &'a self,
-        vaddr: &Range<Vaddr>,
-    ) -> Result<PageTableIter<'a, M, E, C>, PageTableError> {
-        if vaddr.start % C::BASE_PAGE_SIZE != 0 || vaddr.end % C::BASE_PAGE_SIZE != 0 {
-            return Err(PageTableError::InvalidVaddrRange(vaddr.start, vaddr.end));
-        }
-        if !M::encloses(vaddr) {
-            return Err(PageTableError::InvalidVaddrRange(vaddr.start, vaddr.end));
-        }
-        Ok(PageTableIter::new(self, vaddr))
+        Ok(())
     }
 
     /// Query about the mapping of a single byte at the given virtual address.
+    ///
+    /// Note that this function may fail reflect an accurate result if there are
+    /// cursors concurrently accessing the same virtual address range, just like what
+    /// happens for the hardware MMU walk.
     pub(crate) fn query(&self, vaddr: Vaddr) -> Option<(Paddr, MapInfo)> {
         // Safety: The root frame is a valid page table frame so the address is valid.
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
@@ -337,10 +263,26 @@ where
         activate_page_table(self.root_paddr(), CachePolicy::Writeback);
     }
 
-    /// Create a new mutating cursor for the page table.
-    /// The cursor is initialized atthe given virtual address.
-    fn cursor(&self, va: usize) -> PageTableCursor<'a, M, E, C> {
-        PageTableCursor::new(self, va)
+    /// Create a new cursor exclusively accessing the virtual address range for mapping.
+    ///
+    /// If another cursor is already accessing the range, the new cursor will wait until the
+    /// previous cursor is dropped.
+    pub(crate) fn cursor_mut(
+        &'a self,
+        va: &Range<Vaddr>,
+    ) -> Result<CursorMut<'a, M, E, C>, PageTableError> {
+        CursorMut::new(self, va)
+    }
+
+    /// Create a new cursor exclusively accessing the virtual address range for querying.
+    ///
+    /// If another cursor is already accessing the range, the new cursor will wait until the
+    /// previous cursor is dropped.
+    pub(crate) fn cursor(
+        &'a self,
+        va: &Range<Vaddr>,
+    ) -> Result<Cursor<'a, M, E, C>, PageTableError> {
+        Cursor::new(self, va)
     }
 
     /// Create a new reference to the same page table.

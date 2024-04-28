@@ -59,9 +59,11 @@ impl DmaCoherent {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
-            // Safety: the address is in the range of `vm_segment`.
+            // Safety: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
-                page_table.protect_unchecked(&va_range, cache_policy_op(CachePolicy::Uncacheable));
+                page_table
+                    .protect(&va_range, cache_policy_op(CachePolicy::Uncacheable))
+                    .unwrap();
             }
         }
         let start_daddr = match dma_type() {
@@ -144,9 +146,11 @@ impl Drop for DmaCoherentInner {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
-            // Safety: the address is in the range of `vm_segment`.
+            // Safety: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
-                page_table.protect_unchecked(&va_range, cache_policy_op(CachePolicy::Writeback));
+                page_table
+                    .protect(&va_range, cache_policy_op(CachePolicy::Writeback))
+                    .unwrap();
             }
         }
         remove_dma_mapping(start_paddr, frame_count);

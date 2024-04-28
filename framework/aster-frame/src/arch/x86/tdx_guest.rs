@@ -416,14 +416,12 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
     }
     let vaddr = paddr_to_vaddr(gpa);
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    unsafe {
-        pt.protect_unchecked(&(vaddr..page_num * PAGE_SIZE), |info| MapProperty {
-            perm: info.prop.perm,
-            extension: PageTableFlags::SHARED.bits() as u64,
-            cache: info.prop.cache,
-        })
-        .map_err(PageConvertError::PageTableError)?;
-    };
+    pt.protect(&(vaddr..page_num * PAGE_SIZE), |info| MapProperty {
+        perm: info.prop.perm,
+        extension: PageTableFlags::SHARED.bits() as u64,
+        cache: info.prop.cache,
+    })
+    .map_err(PageConvertError::PageTableError)?;
     map_gpa(
         (gpa & (!PAGE_MASK)) as u64 | SHARED_MASK,
         (page_num * PAGE_SIZE) as u64,
@@ -452,16 +450,14 @@ pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Page
     }
     let vaddr = paddr_to_vaddr(gpa);
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    unsafe {
-        pt.protect_unchecked(&(vaddr..page_num * PAGE_SIZE), |info| MapProperty {
-            perm: info.prop.perm,
-            extension: (PageTableFlags::from_bits_truncate(info.prop.extension as usize)
-                - PageTableFlags::SHARED)
-                .bits() as u64,
-            cache: info.prop.cache,
-        })
-        .map_err(PageConvertError::PageTableError)?;
-    };
+    pt.protect(&(vaddr..page_num * PAGE_SIZE), |info| MapProperty {
+        perm: info.prop.perm,
+        extension: (PageTableFlags::from_bits_truncate(info.prop.extension as usize)
+            - PageTableFlags::SHARED)
+            .bits() as u64,
+        cache: info.prop.cache,
+    })
+    .map_err(PageConvertError::PageTableError)?;
     map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)
         .map_err(PageConvertError::TdVmcallError)?;
     for i in 0..page_num {

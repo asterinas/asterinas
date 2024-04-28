@@ -291,16 +291,18 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
-        self.get_or_create_page_table(device).map_unchecked(
-            &(daddr..daddr + PAGE_SIZE),
-            &(paddr..paddr + PAGE_SIZE),
-            MapProperty {
-                perm: VmPerm::RW,
-                global: false,
-                extension: PageTableFlags::empty().bits(),
-                cache: CachePolicy::Uncacheable,
-            },
-        );
+        self.get_or_create_page_table(device)
+            .map(
+                &(daddr..daddr + PAGE_SIZE),
+                &(paddr..paddr + PAGE_SIZE),
+                MapProperty {
+                    perm: VmPerm::RW,
+                    global: false,
+                    extension: PageTableFlags::empty().bits(),
+                    cache: CachePolicy::Uncacheable,
+                },
+            )
+            .unwrap();
         Ok(())
     }
 
@@ -310,7 +312,8 @@ impl ContextTable {
         }
         unsafe {
             self.get_or_create_page_table(device)
-                .unmap_unchecked(&(daddr..daddr + PAGE_SIZE));
+                .unmap(&(daddr..daddr + PAGE_SIZE))
+                .unwrap();
         }
         Ok(())
     }
