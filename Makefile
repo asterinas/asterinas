@@ -77,7 +77,6 @@ NON_OSDK_CRATES := \
 	framework/libs/linux-bzimage/boot-params \
 	framework/libs/ktest \
 	framework/libs/ktest-proc-macro \
-	framework/libs/tdx-guest \
 	kernel/libs/cpio-decoder \
 	kernel/libs/int-to-c-enum \
 	kernel/libs/int-to-c-enum/derive \
