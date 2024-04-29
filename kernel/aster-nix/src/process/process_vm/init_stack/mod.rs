@@ -23,7 +23,7 @@ use aster_rights::{Full, Rights};
 use self::aux_vec::{AuxKey, AuxVec};
 use crate::{
     prelude::*,
-    util::read_cstring_from_vmar,
+    util::{random::getrandom, read_cstring_from_vmar},
     vm::{perms::VmPerms, vmar::Vmar, vmo::VmoOptions},
 };
 
@@ -107,7 +107,7 @@ impl InitStack {
     pub(super) fn new() -> Self {
         let nr_pages_padding = {
             let mut random_nr_pages_padding: u8 = 0;
-            getrandom::getrandom(random_nr_pages_padding.as_bytes_mut()).unwrap();
+            getrandom(random_nr_pages_padding.as_bytes_mut()).unwrap();
             random_nr_pages_padding as usize
         };
         let initial_top = MAX_USERSPACE_VADDR - PAGE_SIZE * nr_pages_padding;
@@ -340,7 +340,7 @@ impl<'a> InitStackWriter<'a> {
 
 fn generate_random_for_aux_vec() -> [u8; 16] {
     let mut rand_val = [0; 16];
-    getrandom::getrandom(&mut rand_val).unwrap();
+    getrandom(&mut rand_val).unwrap();
     rand_val
 }
 

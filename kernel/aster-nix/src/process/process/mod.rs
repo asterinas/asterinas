@@ -600,6 +600,7 @@ mod test {
     use super::*;
 
     fn new_process(parent: Option<Arc<Process>>) -> Arc<Process> {
+        crate::util::random::init();
         crate::fs::rootfs::init_root_mount();
         let pid = allocate_tid();
         let parent = if let Some(parent) = parent {

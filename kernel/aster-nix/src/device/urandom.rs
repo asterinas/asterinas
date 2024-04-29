@@ -8,13 +8,14 @@ use crate::{
     },
     prelude::*,
     process::signal::Poller,
+    util::random::getrandom,
 };
 
 pub struct Urandom;
 
 impl Urandom {
     pub fn getrandom(buf: &mut [u8]) -> Result<usize> {
-        getrandom::getrandom(buf)?;
+        getrandom(buf)?;
         Ok(buf.len())
     }
 }

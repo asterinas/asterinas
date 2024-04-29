@@ -8,13 +8,14 @@ use crate::{
     },
     prelude::*,
     process::signal::Poller,
+    util::random::getrandom,
 };
 
 pub struct Random;
 
 impl Random {
     pub fn getrandom(buf: &mut [u8]) -> Result<usize> {
-        getrandom::getrandom(buf)?;
+        getrandom(buf)?;
         Ok(buf.len())
     }
 }
@@ -42,11 +43,5 @@ impl FileIo for Random {
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
-    }
-}
-
-impl From<getrandom::Error> for Error {
-    fn from(value: getrandom::Error) -> Self {
-        Error::with_message(Errno::ENOSYS, "cannot generate random bytes")
     }
 }
