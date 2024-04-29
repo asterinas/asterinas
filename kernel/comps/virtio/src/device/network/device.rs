@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, string::ToString, sync::Arc};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
-use aster_network::{
-    AnyNetworkDevice, EthernetAddr, NetDeviceIrqHandler, RxBuffer, TxBuffer, VirtioNetError,
-};
+use aster_network::{AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError};
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
 use smoltcp::phy::{DeviceCapabilities, Medium};
@@ -24,7 +22,6 @@ pub struct NetworkDevice {
     send_queue: VirtQueue,
     recv_queue: VirtQueue,
     rx_buffers: SlotVec<RxBuffer>,
-    callbacks: Vec<Box<dyn NetDeviceIrqHandler>>,
     transport: Box<dyn VirtioTransport>,
 }
 
@@ -76,7 +73,6 @@ impl NetworkDevice {
             recv_queue,
             rx_buffers,
             transport,
-            callbacks: Vec::new(),
         };
 
         /// Interrupt handler if network device config space changes
@@ -220,4 +216,3 @@ const QUEUE_RECV: u16 = 0;
 const QUEUE_SEND: u16 = 1;
 
 const QUEUE_SIZE: u16 = 64;
-const RX_BUFFER_LEN: usize = 4096;
