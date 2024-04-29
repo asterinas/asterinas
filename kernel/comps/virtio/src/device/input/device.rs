@@ -250,11 +250,11 @@ impl EventTable {
         Self { stream, num_events }
     }
 
-    fn get(&self, idx: usize) -> EventBuf {
+    fn get(&self, idx: usize) -> EventBuf<'_> {
         assert!(idx < self.num_events);
 
         let offset = idx * EVENT_SIZE;
-        SafePtr::new(self.stream.clone(), offset)
+        SafePtr::new(&self.stream, offset)
     }
 
     const fn num_events(&self) -> usize {
@@ -263,7 +263,7 @@ impl EventTable {
 }
 
 const EVENT_SIZE: usize = core::mem::size_of::<VirtioInputEvent>();
-type EventBuf = SafePtr<VirtioInputEvent, DmaStream>;
+type EventBuf<'a> = SafePtr<VirtioInputEvent, &'a DmaStream>;
 
 impl<T, M: HasDaddr> DmaBuf for SafePtr<T, M> {
     fn len(&self) -> usize {

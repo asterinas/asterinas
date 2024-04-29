@@ -7,6 +7,7 @@ use alloc::collections::BTreeSet;
 
 pub use dma_coherent::DmaCoherent;
 pub use dma_stream::{DmaDirection, DmaStream, DmaStreamSlice};
+use inherit_methods_macro::inherit_methods;
 use spin::Once;
 
 use super::Paddr;
@@ -33,6 +34,11 @@ pub enum DmaError {
 pub trait HasDaddr {
     /// Get the base address of the mapping in the
     /// device address space.
+    fn daddr(&self) -> Daddr;
+}
+
+#[inherit_methods(from = "(**self)")]
+impl<T: HasDaddr> HasDaddr for &T {
     fn daddr(&self) -> Daddr;
 }
 
