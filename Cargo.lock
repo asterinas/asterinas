@@ -209,6 +209,7 @@ dependencies = [
  "bitvec",
  "bytemuck",
  "bytemuck_derive",
+ "cfg-if",
  "controlled",
  "core2",
  "cpio-decoder",

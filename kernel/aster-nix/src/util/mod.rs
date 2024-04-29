@@ -7,6 +7,7 @@ use aster_rights::Full;
 
 use crate::{prelude::*, vm::vmar::Vmar};
 pub mod net;
+pub mod random;
 
 /// Read bytes into the `dest` buffer
 /// from the user space of the current process.

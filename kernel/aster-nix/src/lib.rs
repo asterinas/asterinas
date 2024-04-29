@@ -67,6 +67,7 @@ pub(crate) mod vdso;
 pub mod vm;
 
 pub fn init() {
+    util::random::init();
     driver::init();
     time::init();
     net::init();
