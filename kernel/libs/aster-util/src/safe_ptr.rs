@@ -8,6 +8,7 @@ use aster_frame::{
 };
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
+use inherit_methods_macro::inherit_methods;
 pub use pod::Pod;
 pub use typeflags_util::SetContain;
 
@@ -335,6 +336,11 @@ impl<T, R> SafePtr<T, DmaStream, R> {
         self.vm_obj
             .sync(self.offset..self.offset + core::mem::size_of::<T>())
     }
+}
+
+#[inherit_methods(from = "(*self)")]
+impl<'a, T, R> SafePtr<T, &'a DmaStream, R> {
+    pub fn sync(&self) -> Result<()>;
 }
 
 #[require(R > Dup)]

@@ -12,5 +12,6 @@ typeflags-util = { path = "../typeflags-util" }
 aster-rights-proc = { path = "../aster-rights-proc" }
 aster-rights = { path = "../aster-rights" }
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
+inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
 ktest = { path = "../../../framework/libs/ktest" }
 [features]

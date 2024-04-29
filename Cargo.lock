@@ -277,6 +277,7 @@ dependencies = [
  "aster-rights",
  "aster-rights-proc",
  "bitvec",
+ "inherit-methods-macro",
  "ktest",
  "pod",
  "typeflags-util",
