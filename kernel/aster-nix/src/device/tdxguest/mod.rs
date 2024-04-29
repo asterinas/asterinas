@@ -2,9 +2,9 @@
 
 use alloc::vec;
 
-use aster_frame::config::PAGE_SIZE;
+use aster_frame::vm::{vaddr_to_paddr, DmaCoherent, HasPaddr, VmAllocOptions, VmIo, PAGE_SIZE};
 use tdx_guest::{
-    tdcall::{get_report, TdCallError},
+    tdcall::{extend_rtmr, get_report, TdCallError},
     tdvmcall::{get_quote, TdVmcallError},
     SHARED_MASK,
 };
@@ -15,11 +15,12 @@ use crate::{
     events::IoEvents,
     fs::{inode_handle::FileIo, utils::IoctlCmd},
     process::signal::Poller,
-    util::{read_bytes_from_user, read_val_from_user, write_bytes_to_user, write_val_to_user},
+    util::{read_bytes_from_user, read_val_from_user, write_bytes_to_user},
 };
 
 const TDX_REPORTDATA_LEN: usize = 64;
 const TDX_REPORT_LEN: usize = 1024;
+const TDX_EXTEND_RTMR_DATA_LEN: usize = 48;
 
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
@@ -35,6 +36,13 @@ pub struct TdxQuoteRequest {
     len: usize,
 }
 
+#[derive(Debug, Clone, Copy, Pod)]
+#[repr(C)]
+struct TdxExtendRtmrReq {
+    data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
+    index: u8,
+}
+
 #[repr(align(64))]
 #[repr(C)]
 struct ReportDataWapper {
@@ -45,6 +53,13 @@ struct ReportDataWapper {
 #[repr(C)]
 struct TdxReportWapper {
     tdx_report: [u8; TDX_REPORT_LEN],
+}
+
+#[repr(align(64))]
+#[repr(C)]
+struct ExtendRtmrWapper {
+    data: [u8; TDX_EXTEND_RTMR_DATA_LEN],
+    index: u8,
 }
 
 struct QuoteEntry {
@@ -136,6 +151,7 @@ impl FileIo for TdxGuest {
         match cmd {
             IoctlCmd::TDXGETREPORT => handle_get_report(arg),
             IoctlCmd::TDXGETQUOTE => handle_get_quote(arg),
+            IoctlCmd::TDXEXTENDRTMR => handle_extend_rtmr(arg),
             _ => return_errno_with_message!(Errno::EPERM, "Unsupported ioctl"),
         }
     }
@@ -197,6 +213,25 @@ fn handle_get_quote(arg: usize) -> Result<i32> {
     }
     entry.buf.read_bytes(0, &mut quote_buffer)?;
     write_bytes_to_user(tdx_quote.buf, &mut quote_buffer)?;
+    Ok(0)
+}
+
+fn handle_extend_rtmr(arg: usize) -> Result<i32> {
+    let extend_rtmr_req: TdxExtendRtmrReq = read_val_from_user(arg)?;
+    if extend_rtmr_req.index < 2 {
+        return Err(Error::with_message(Errno::EINVAL, "Invalid parameter"));
+    }
+    let wrapped_extend_rtmr = ExtendRtmrWapper {
+        data: extend_rtmr_req.data,
+        index: extend_rtmr_req.index,
+    };
+    if let Err(err) = extend_rtmr(
+        vaddr_to_paddr(wrapped_extend_rtmr.data.as_ptr() as usize).unwrap() as u64,
+        wrapped_extend_rtmr.index as u64,
+    ) {
+        println!("[kernel]: TDX extend rtmr error");
+        return Err(err.into());
+    }
     Ok(0)
 }
 

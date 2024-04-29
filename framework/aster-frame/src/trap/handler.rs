@@ -8,12 +8,9 @@ use tdx_guest::tdcall;
 use trapframe::TrapFrame;
 
 #[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
+use crate::arch::cpu::VIRTUALIZATION_EXCEPTION;
 #[cfg(feature = "intel_tdx")]
-use crate::arch::{
-    mm::PageTableFlags,
-    tdx_guest::{handle_virtual_exception, TdxTrapFrame},
-};
+use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
 use crate::{
     arch::{
         irq::IRQ_LIST,

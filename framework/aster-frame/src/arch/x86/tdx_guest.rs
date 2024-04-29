@@ -15,8 +15,8 @@ use crate::{
     vm::{
         paddr_to_vaddr,
         page_table::{PageTableError, KERNEL_PAGE_TABLE},
+        PAGE_SIZE,
     },
-    PAGE_SIZE,
 };
 
 const SHARED_BIT: u8 = 51;
