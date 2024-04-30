@@ -23,5 +23,5 @@ pub use self::{
         RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard,
     },
     spin::{ArcSpinLockGuard, SpinLock, SpinLockGuard},
-    wait::WaitQueue,
+    wait::{WaitQueue, Waiter, Waker},
 };

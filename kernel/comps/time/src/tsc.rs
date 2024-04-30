@@ -4,11 +4,12 @@
 //!
 //! Use `init` to initialize this module.
 use alloc::sync::Arc;
-use core::time::Duration;
+use core::sync::atomic::{AtomicU64, Ordering};
 
-use aster_frame::{
-    arch::{read_tsc, x86::tsc_freq},
-    timer::Timer,
+use aster_frame::arch::{
+    read_tsc,
+    timer::{self, TIMER_FREQ},
+    x86::tsc_freq,
 };
 use spin::Once;
 
@@ -53,7 +54,7 @@ pub(super) fn read_instant() -> Instant {
     clock.read_instant()
 }
 
-fn update_clocksource(timer: Arc<Timer>) {
+fn update_clocksource() {
     let clock = CLOCK.get().unwrap();
     clock.update();
 
@@ -62,20 +63,28 @@ fn update_clocksource(timer: Arc<Timer>) {
         let (last_instant, last_cycles) = clock.last_record();
         update_fn(last_instant, last_cycles);
     }
-    // Setting the timer as `clock.max_delay_secs() - 1` is to avoid
-    // the actual delay time is greater than the maximum delay seconds due to the latency of execution.
-    timer.set(Duration::from_secs(clock.max_delay_secs() - 1));
 }
 
+static TSC_UPDATE_COUNTER: AtomicU64 = AtomicU64::new(1);
+
 fn init_timer() {
-    let timer = Timer::new(update_clocksource).unwrap();
-    // The initial timer should be set as `clock.max_delay_secs() >> 1` or something much smaller than `max_delay_secs`.
+    // The `max_delay_secs` should be set as `clock.max_delay_secs() >> 1` or something much smaller than `max_delay_secs`.
     // This is because the initialization of this timer occurs during system startup,
     // and the system will also undergo other initialization processes, during which time interrupts are disabled.
     // This results in the actual trigger time of the timer being delayed by about 5 seconds compared to the set time.
     // If without KVM, the delayed time will be larger.
     // TODO: This is a temporary solution, and should be modified in the future.
-    timer.set(Duration::from_secs(
-        CLOCK.get().unwrap().max_delay_secs() >> 1,
-    ));
+    let max_delay_secs = CLOCK.get().unwrap().max_delay_secs() >> 1;
+    let delay_counts = TIMER_FREQ * max_delay_secs;
+
+    let update = move || {
+        let counter = TSC_UPDATE_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+        if counter % delay_counts == 0 {
+            update_clocksource();
+        }
+    };
+
+    // TODO: re-organize the code structure and use the `Timer` to achieve the updating.
+    timer::register_callback(update);
 }

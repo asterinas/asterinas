@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use aster_frame::{task::Priority, timer::read_monotonic_milli_seconds};
+use aster_frame::{arch::timer::Jiffies, task::Priority};
 
 use super::Iface;
 use crate::{
@@ -11,6 +11,7 @@ use crate::{
         kernel_thread::{KernelThreadExt, ThreadOptions},
         Thread,
     },
+    time::wait::WaitTimeout,
 };
 
 pub enum BindPortConfig {
@@ -58,7 +59,7 @@ pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
                 wait_queue.wait_until(|| iface.next_poll_at_ms())
             };
 
-            let now_as_ms = read_monotonic_milli_seconds();
+            let now_as_ms = Jiffies::elapsed().as_duration().as_millis() as u64;
 
             // FIXME: Ideally, we should perform the `poll` just before `next_poll_at_ms`.
             // However, this approach may result in a spinning busy loop
