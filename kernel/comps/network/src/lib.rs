@@ -19,7 +19,7 @@ use aster_frame::sync::SpinLock;
 use aster_util::safe_ptr::Pod;
 pub use buffer::{RxBuffer, TxBuffer};
 use component::{init_component, ComponentInitError};
-pub use dma_pool::DmaSegment;
+pub use dma_pool::{DmaPool, DmaSegment};
 use smoltcp::phy;
 use spin::Once;
 

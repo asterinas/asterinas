@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_frame::early_println;
 use aster_network::AnyNetworkDevice;
 use aster_virtio::device::network::DEVICE_NAME;
 use smoltcp::{
@@ -76,7 +77,7 @@ impl IfaceVirtio {
                 ipaddrs.push(ip_addr).unwrap();
             }
         });
-        println!(
+        early_println!(
             "DHCP update IP address: {:?}",
             interface.ipv4_addr().unwrap()
         );

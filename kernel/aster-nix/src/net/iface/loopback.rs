@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_frame::early_println;
 use smoltcp::{
     iface::{Config, Routes},
     phy::{Loopback, Medium},
@@ -35,7 +36,7 @@ impl IfaceLoopback {
             });
             interface
         };
-        println!("Loopback ipaddr: {}", interface.ipv4_addr().unwrap());
+        early_println!("Loopback ipaddr: {}", interface.ipv4_addr().unwrap());
         let common = IfaceCommon::new(interface);
         Arc::new_cyclic(|weak| Self {
             driver: Mutex::new(loopback),
