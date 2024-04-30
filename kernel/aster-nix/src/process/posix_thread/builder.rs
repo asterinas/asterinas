@@ -2,15 +2,12 @@
 
 use aster_frame::user::UserSpace;
 
-use super::{PosixThread, PosixThreadExt, RealTimer};
+use super::PosixThread;
 use crate::{
     prelude::*,
     process::{
         posix_thread::name::ThreadName,
-        signal::{
-            constants::SIGALRM, sig_mask::SigMask, sig_queues::SigQueues,
-            signals::kernel::KernelSignal,
-        },
+        signal::{sig_mask::SigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
     thread::{status::ThreadStatus, task, thread_table, Thread, Tid},
@@ -94,20 +91,6 @@ impl PosixThreadBuilder {
             is_main_thread,
         } = self;
 
-        let real_timer = RealTimer::new(move || {
-            let process = {
-                let Some(current_thread) = thread_table::get_thread(tid) else {
-                    return;
-                };
-                let posix_thread = current_thread.as_posix_thread().unwrap();
-                posix_thread.process()
-            };
-
-            let signal = KernelSignal::new(SIGALRM);
-            process.enqueue_signal(signal);
-        })
-        .unwrap();
-
         let thread = Arc::new_cyclic(|thread_ref| {
             let task = task::create_new_user_task(user_space, thread_ref.clone());
             let status = ThreadStatus::Init;
@@ -118,7 +101,6 @@ impl PosixThreadBuilder {
                 set_child_tid: Mutex::new(set_child_tid),
                 clear_child_tid: Mutex::new(clear_child_tid),
                 credentials,
-                real_timer: Mutex::new(real_timer),
                 sig_mask: Mutex::new(sig_mask),
                 sig_queues,
                 sig_context: Mutex::new(None),

@@ -26,13 +26,11 @@ pub mod futex;
 mod name;
 mod posix_thread_ext;
 mod robust_list;
-mod timer;
 
 pub use builder::PosixThreadBuilder;
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::PosixThreadExt;
 pub use robust_list::RobustListHead;
-pub use timer::RealTimer;
 
 pub struct PosixThread {
     // Immutable part
@@ -51,9 +49,6 @@ pub struct PosixThread {
 
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
-
-    /// The timer counts down in real (i.e., wall clock) time
-    real_timer: Mutex<RealTimer>,
 
     // Signal
     /// Blocked signals
@@ -144,10 +139,6 @@ impl PosixThread {
         }
 
         return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
-    }
-
-    pub fn real_timer(&self) -> &Mutex<RealTimer> {
-        &self.real_timer
     }
 
     pub(in crate::process) fn enqueue_signal(&self, signal: Box<dyn Signal>) {
@@ -241,8 +232,6 @@ impl PosixThread {
             // Main thread are removed when the whole process is reaped.
             thread_table::remove_thread(tid);
         }
-
-        self.real_timer.lock().clear();
 
         if self.is_main_thread() || self.is_last_thread() {
             // exit current process.
