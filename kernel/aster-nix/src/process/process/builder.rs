@@ -173,7 +173,7 @@ impl<'a> ProcessBuilder<'a> {
 
         let process = {
             let threads = Vec::new();
-            Arc::new(Process::new(
+            Process::new(
                 pid,
                 parent,
                 threads,
@@ -185,7 +185,7 @@ impl<'a> ProcessBuilder<'a> {
                 sig_dispositions,
                 resource_limits,
                 nice,
-            ))
+            )
         };
 
         let thread = if let Some(thread_builder) = main_thread_builder {

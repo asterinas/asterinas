@@ -6,7 +6,10 @@ use super::{
     process_vm::{Heap, InitStackReader, ProcessVm},
     rlimit::ResourceLimits,
     signal::{
-        constants::SIGCHLD, sig_disposition::SigDispositions, sig_mask::SigMask, signals::Signal,
+        constants::{SIGALRM, SIGCHLD},
+        sig_disposition::SigDispositions,
+        sig_mask::SigMask,
+        signals::{kernel::KernelSignal, Signal},
         Pauser,
     },
     status::ProcessStatus,
@@ -17,7 +20,12 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     sched::nice::Nice,
-    thread::{allocate_tid, Thread},
+    thread::{
+        allocate_tid,
+        work_queue::{submit_work_item, work_item::WorkItem},
+        Thread,
+    },
+    time::{clocks::RealTimeClock, Timer},
     vm::vmar::Vmar,
 };
 
@@ -52,7 +60,8 @@ pub struct Process {
     process_vm: ProcessVm,
     /// Wait for child status changed
     children_pauser: Arc<Pauser>,
-
+    /// The timer counts down in real (i.e., wall clock) time
+    alarm_timer: Arc<Timer>,
     // Mutable Part
     /// The executable path.
     executable_path: RwLock<String>,
@@ -84,6 +93,26 @@ pub struct Process {
     sig_dispositions: Arc<Mutex<SigDispositions>>,
 }
 
+fn create_process_timer_callback(process_ref: &Weak<Process>) -> impl Fn() {
+    let current_process = process_ref.clone();
+    let sent_signal = move || {
+        let signal = KernelSignal::new(SIGALRM);
+        if let Some(process) = current_process.upgrade() {
+            process.enqueue_signal(signal);
+        }
+    };
+
+    let work_func = Box::new(sent_signal);
+    let work_item = Arc::new(WorkItem::new(work_func));
+
+    move || {
+        submit_work_item(
+            work_item.clone(),
+            crate::thread::work_queue::WorkPriority::High,
+        );
+    }
+}
+
 impl Process {
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -98,7 +127,7 @@ impl Process {
         sig_dispositions: Arc<Mutex<SigDispositions>>,
         resource_limits: ResourceLimits,
         nice: Nice,
-    ) -> Self {
+    ) -> Arc<Self> {
         let children_pauser = {
             // SIGCHID does not interrupt pauser. Child process will
             // resume paused parent when doing exit.
@@ -106,23 +135,29 @@ impl Process {
             Pauser::new_with_mask(sigmask)
         };
 
-        Self {
-            pid,
-            threads: Mutex::new(threads),
-            executable_path: RwLock::new(executable_path),
-            process_vm,
-            children_pauser,
-            status: Mutex::new(ProcessStatus::Uninit),
-            parent: Mutex::new(parent),
-            children: Mutex::new(BTreeMap::new()),
-            process_group: Mutex::new(Weak::new()),
-            file_table,
-            fs,
-            umask,
-            sig_dispositions,
-            resource_limits: Mutex::new(resource_limits),
-            nice: Atomic::new(nice),
-        }
+        Arc::new_cyclic(|process_ref: &Weak<Process>| {
+            let callback = create_process_timer_callback(process_ref);
+            let alarm_timer = RealTimeClock::timer_manager().create_timer(callback);
+
+            Self {
+                pid,
+                threads: Mutex::new(threads),
+                executable_path: RwLock::new(executable_path),
+                process_vm,
+                children_pauser,
+                alarm_timer,
+                status: Mutex::new(ProcessStatus::Uninit),
+                parent: Mutex::new(parent),
+                children: Mutex::new(BTreeMap::new()),
+                process_group: Mutex::new(Weak::new()),
+                file_table,
+                fs,
+                umask,
+                sig_dispositions,
+                resource_limits: Mutex::new(resource_limits),
+                nice: Atomic::new(nice),
+            }
+        })
     }
 
     /// init a user process and run the process
@@ -196,6 +231,10 @@ impl Process {
 
     pub fn pid(&self) -> Pid {
         self.pid
+    }
+
+    pub fn alarm_timer(&self) -> &Arc<Timer> {
+        &self.alarm_timer
     }
 
     pub fn threads(&self) -> &Mutex<Vec<Arc<Thread>>> {
@@ -597,6 +636,9 @@ pub fn current() -> Arc<Process> {
 
 #[cfg(ktest)]
 mod test {
+
+    use spin::Once;
+
     use super::*;
 
     fn new_process(parent: Option<Arc<Process>>) -> Arc<Process> {
@@ -608,7 +650,7 @@ mod test {
         } else {
             Weak::new()
         };
-        Arc::new(Process::new(
+        Process::new(
             pid,
             parent,
             vec![],
@@ -620,7 +662,7 @@ mod test {
             Arc::new(Mutex::new(SigDispositions::default())),
             ResourceLimits::default(),
             Nice::default(),
-        ))
+        )
     }
 
     fn new_process_in_session(parent: Option<Arc<Process>>) -> Arc<Process> {
@@ -660,6 +702,7 @@ mod test {
 
     #[ktest]
     fn init_process() {
+        crate::time::clocks::init_for_ktest();
         let process = new_process(None);
         assert!(process.process_group().is_none());
         assert!(process.session().is_none());
@@ -667,6 +710,7 @@ mod test {
 
     #[ktest]
     fn init_process_in_session() {
+        crate::time::clocks::init_for_ktest();
         let process = new_process_in_session(None);
         assert!(process.is_group_leader());
         assert!(process.is_session_leader());
@@ -675,6 +719,7 @@ mod test {
 
     #[ktest]
     fn to_new_session() {
+        crate::time::clocks::init_for_ktest();
         let process = new_process_in_session(None);
         let sess = process.session().unwrap();
         sess.inner.lock().leader = None;
