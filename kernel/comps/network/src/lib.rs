@@ -12,10 +12,18 @@ mod driver;
 
 extern crate alloc;
 
-use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, VecDeque},
+    string::String,
+    sync::Arc,
+    vec::Vec,
+};
 use core::{any::Any, fmt::Debug};
 
-use aster_frame::sync::SpinLock;
+use aster_frame::{
+    sync::{RwLock, SpinLock},
+    vm::VmReader,
+};
 use aster_util::safe_ptr::Pod;
 pub use buffer::{RxBuffer, TxBuffer};
 use component::{init_component, ComponentInitError};
@@ -42,34 +50,57 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
 
     // ================Device Operation===================
 
+    /// Returns whether the device has packet available for receiving
     fn can_receive(&self) -> bool;
+
+    /// Returns whether the device can send another packet
     fn can_send(&self) -> bool;
+
     /// Receive a packet from network. If packet is ready, returns a RxBuffer containing the packet.
     /// Otherwise, return NotReady error.
     fn receive(&mut self) -> Result<RxBuffer, VirtioNetError>;
-    /// Send a packet to network. Return until the request completes.
-    fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError>;
+
+    /// Send a packet to the network.
+    ///
+    /// Before calling this method,
+    /// the user should always use `can_send` to check the device status
+    /// and only call this method when `can_send` returns true.
+    ///
+    /// Additionally, ensure that the packet size does not exceed the MTU length,
+    /// which is currently set to 1536 bytes.
+    fn send(&mut self, packet: &mut VmReader) -> Result<(), VirtioNetError>;
+
+    /// Send multiple tx buffers to the device.
+    ///
+    /// This method should only send buffers freed by `free_processed_tx_buffers`.
+    /// If you want to send packet with new tx buffer, use `send` method instead.
+    fn send_buffers(&mut self, buffers: VecDeque<TxBuffer>) -> Result<(), VirtioNetError>;
+
+    /// Free processed tx buffers.
+    ///
+    /// Returns the processed buffers for reuse.
+    fn free_processed_tx_buffers(&mut self) -> Vec<TxBuffer>;
 }
 
 pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;
 
-pub fn register_device(name: String, device: Arc<SpinLock<dyn AnyNetworkDevice>>) {
+pub fn register_device(name: String, device: NetworkDeviceRef) {
     COMPONENT
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled()
-        .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
+        .write_irq_disabled()
+        .insert(name, NetworkDeviceIrqCallbackSet::new(device));
 }
 
-pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice>>> {
-    let table = COMPONENT
+pub fn get_device(str: &str) -> Option<NetworkDeviceRef> {
+    let device_table = COMPONENT
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
-    let (_, device) = table.get(str)?;
-    Some(device.clone())
+        .read_irq_disabled();
+    let callback_set = device_table.get(str)?;
+    Some(callback_set.device.clone())
 }
 
 /// Registers callback which will be called when receiving message.
@@ -81,24 +112,63 @@ pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
-    let Some((callbacks, _)) = device_table.get(name) else {
+        .read_irq_disabled();
+    let Some(callbacks) = device_table.get(name) else {
         return;
     };
-    callbacks.lock_irq_disabled().push(Arc::new(callback));
+    callbacks.recv_callbacks.write().push(Arc::new(callback));
 }
 
-pub fn handle_recv_irq(name: &str) {
+/// Registers callback which will be called when sending message are finished.
+///
+/// Since the callback will be called in interrupt context,
+/// the callback function should NOT sleep.
+pub fn register_send_callback(name: &str, callback: impl NetDeviceIrqHandler) {
     let device_table = COMPONENT
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
-    let Some((callbacks, _)) = device_table.get(name) else {
+        .read_irq_disabled();
+    let Some(callbacks) = device_table.get(name) else {
         return;
     };
-    let callbacks = callbacks.lock_irq_disabled();
-    for callback in callbacks.iter() {
+    callbacks.send_callbacks.write().push(Arc::new(callback));
+}
+
+pub fn handle_recv_irq(name: &str) {
+    let recv_callbacks = {
+        let device_table = COMPONENT
+            .get()
+            .unwrap()
+            .network_device_table
+            .read_irq_disabled();
+        if let Some(callback_set) = device_table.get(name) {
+            callback_set.recv_callbacks.clone()
+        } else {
+            return;
+        }
+    };
+
+    for callback in recv_callbacks.read_irq_disabled().iter() {
+        callback();
+    }
+}
+
+pub fn handle_send_irq(name: &str) {
+    let send_callbacks = {
+        let device_table = COMPONENT
+            .get()
+            .unwrap()
+            .network_device_table
+            .read_irq_disabled();
+        if let Some(callback_set) = device_table.get(name) {
+            callback_set.send_callbacks.clone()
+        } else {
+            return;
+        }
+    };
+
+    for callback in send_callbacks.read_irq_disabled().iter() {
         callback();
     }
 }
@@ -108,39 +178,51 @@ pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .read_irq_disabled();
     network_devs
         .iter()
-        .map(|(name, (_, device))| (name.clone(), device.clone()))
+        .map(|(name, callback_set)| (name.clone(), callback_set.device.clone()))
         .collect()
 }
 
 static COMPONENT: Once<Component> = Once::new();
-pub(crate) static NETWORK_IRQ_HANDLERS: Once<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>> =
-    Once::new();
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
-    let a = Component::init()?;
-    COMPONENT.call_once(|| a);
-    NETWORK_IRQ_HANDLERS.call_once(|| SpinLock::new(Vec::new()));
+    let component = Component::init()?;
     buffer::init();
+    COMPONENT.call_once(|| component);
     Ok(())
 }
 
-type NetDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>>;
+type NetDeviceIrqHandlerListRef = Arc<RwLock<Vec<Arc<dyn NetDeviceIrqHandler>>>>;
 type NetworkDeviceRef = Arc<SpinLock<dyn AnyNetworkDevice>>;
 
 struct Component {
     /// Device list, the key is device name, value is (callbacks, device);
-    network_device_table:
-        SpinLock<BTreeMap<String, (NetDeviceIrqHandlerListRef, NetworkDeviceRef)>>,
+    network_device_table: RwLock<BTreeMap<String, NetworkDeviceIrqCallbackSet>>,
+}
+
+struct NetworkDeviceIrqCallbackSet {
+    device: NetworkDeviceRef,
+    recv_callbacks: NetDeviceIrqHandlerListRef,
+    send_callbacks: NetDeviceIrqHandlerListRef,
+}
+
+impl NetworkDeviceIrqCallbackSet {
+    fn new(device: NetworkDeviceRef) -> Self {
+        Self {
+            device,
+            recv_callbacks: Arc::new(RwLock::new(Vec::new())),
+            send_callbacks: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
 }
 
 impl Component {
     pub fn init() -> Result<Self, ComponentInitError> {
         Ok(Self {
-            network_device_table: SpinLock::new(BTreeMap::new()),
+            network_device_table: RwLock::new(BTreeMap::new()),
         })
     }
 }

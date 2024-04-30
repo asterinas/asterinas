@@ -33,7 +33,8 @@ impl IfaceVirtio {
                 ));
                 config
             };
-            let mut interface = smoltcp::iface::Interface::new(config, &mut *virtio_net.lock());
+            let mut interface =
+                smoltcp::iface::Interface::new(config, &mut *virtio_net.lock_irq_disabled());
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.is_empty());
                 ip_addrs.push(ip_addr).unwrap();
