@@ -6,6 +6,8 @@
 use alloc::{vec, vec::Vec};
 use core::mem::swap;
 
+use crate::vm::kspace::kernel_loaded_offset;
+
 /// The type of initial memory regions that are needed for the kernel.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum MemoryRegionType {
@@ -53,7 +55,7 @@ impl MemoryRegion {
             fn __kernel_end();
         }
         MemoryRegion {
-            base: __kernel_start as usize,
+            base: __kernel_start as usize - kernel_loaded_offset(),
             len: __kernel_end as usize - __kernel_start as usize,
             typ: MemoryRegionType::Kernel,
         }
