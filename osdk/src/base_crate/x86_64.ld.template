@@ -8,18 +8,16 @@ KERNEL_VMA = 0xffffffff80000000;
 
 SECTIONS
 {
-    . = KERNEL_LMA;
+    . = KERNEL_LMA + KERNEL_VMA;
 
     __kernel_start = .;
-    
-    .multiboot_header       : { KEEP(*(.multiboot_header)) }
-    .multiboot2_header      : { KEEP(*(.multiboot2_header)) }
 
-    . = LINUX_32_ENTRY;
-    
-    .boot                   : { KEEP(*(.boot)) }
+    .multiboot_header       : AT(ADDR(.multiboot_header) - KERNEL_VMA) { KEEP(*(.multiboot_header)) }
+    .multiboot2_header      : AT(ADDR(.multiboot2_header) - KERNEL_VMA) { KEEP(*(.multiboot2_header)) }
 
-    . += KERNEL_VMA;
+    . = LINUX_32_ENTRY + KERNEL_VMA;
+
+    .boot                   : AT(ADDR(.boot) - KERNEL_VMA) { KEEP(*(.boot)) }
 
     .text                   : AT(ADDR(.text) - KERNEL_VMA) {
         *(.text .text.*)
@@ -71,5 +69,5 @@ SECTIONS
 
     . = DATA_SEGMENT_END(.);
 
-    __kernel_end = . - KERNEL_VMA;
+    __kernel_end = .;
 }

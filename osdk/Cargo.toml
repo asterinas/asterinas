@@ -12,7 +12,7 @@ repository = "https://github.com/asterinas/asterinas"
 [dependencies.linux-bzimage-builder]
 git = "https://github.com/asterinas/asterinas"
 # Make sure it syncs with `crate::util::ASTER_GIT_REV`
-rev = "cc4111c"
+rev = "c9b66bd"
 # When publishing, the crate.io version is used, make sure
 # the builder is published
 # FIXME: The version is currently commented out as it is no longer in use. 
