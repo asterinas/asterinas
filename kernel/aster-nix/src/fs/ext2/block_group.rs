@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_util::id_allocator::IdAlloc;
+use id_alloc::IdAlloc;
 
 use super::{
     block_ptr::Ext2Bid,

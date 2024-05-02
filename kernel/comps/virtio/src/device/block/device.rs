@@ -13,7 +13,8 @@ use aster_frame::{
     trap::TrapFrame,
     vm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmIo},
 };
-use aster_util::{id_allocator::IdAlloc, safe_ptr::SafePtr};
+use aster_util::safe_ptr::SafePtr;
+use id_alloc::IdAlloc;
 use log::info;
 use pod::Pod;
 

@@ -76,6 +76,7 @@ export
 NON_OSDK_CRATES := \
 	framework/libs/align_ext \
 	framework/libs/aster-main \
+	framework/libs/id-alloc \
 	framework/libs/linux-bzimage/builder \
 	framework/libs/linux-bzimage/boot-params \
 	framework/libs/ktest \

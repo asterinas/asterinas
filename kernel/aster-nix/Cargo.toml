@@ -21,6 +21,7 @@ typeflags = { path = "../libs/typeflags" }
 typeflags-util = { path = "../libs/typeflags-util" }
 aster-rights-proc = { path = "../libs/aster-rights-proc" }
 aster-util = { path = "../libs/aster-util" }
+id-alloc = { path = "../../framework/libs/id-alloc" }
 int-to-c-enum = { path = "../libs/int-to-c-enum" }
 cpio-decoder = { path = "../libs/cpio-decoder" }
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }

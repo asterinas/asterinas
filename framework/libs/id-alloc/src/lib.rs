@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![cfg_attr(not(test), no_std)]
+#![forbid(unsafe_code)]
+
 use core::{fmt::Debug, ops::Range};
 
 use bitvec::prelude::BitVec;
@@ -143,6 +146,27 @@ impl IdAlloc {
         if id < self.first_available_id {
             self.first_available_id = id;
         }
+    }
+
+    /// Allocate a specific ID.
+    ///
+    /// If the ID is already allocated, it returns `None`, otherwise it
+    /// returns the allocated ID.
+    ///
+    /// # Panic
+    ///
+    /// If the `id` is out of bounds, this method will panic.
+    pub fn alloc_specific(&mut self, id: usize) -> Option<usize> {
+        if self.bitset[id] {
+            return None;
+        }
+        self.bitset.set(id, true);
+        if id == self.first_available_id {
+            self.first_available_id = (id + 1..self.bitset.len())
+                .find(|&i| !self.bitset[i])
+                .map_or(self.bitset.len(), |i| i);
+        }
+        Some(id)
     }
 
     /// Returns true if the `id` is allocated.

@@ -2,7 +2,8 @@
 
 use core::time::Duration;
 
-use aster_util::{id_allocator::IdAlloc, slot_vec::SlotVec};
+use aster_util::slot_vec::SlotVec;
+use id_alloc::IdAlloc;
 
 use self::{ptmx::Ptmx, slave::PtySlaveInode};
 use crate::{
