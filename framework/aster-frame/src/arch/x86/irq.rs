@@ -2,17 +2,14 @@
 
 use alloc::{boxed::Box, fmt::Debug, sync::Arc, vec::Vec};
 
+use id_alloc::IdAlloc;
 use spin::Once;
 use trapframe::TrapFrame;
 
-use crate::{
-    sync::{Mutex, SpinLock, SpinLockGuard},
-    util::recycle_allocator::RecycleAllocator,
-};
+use crate::sync::{Mutex, SpinLock, SpinLockGuard};
 
-/// The IRQ numbers which are not using
-pub(crate) static NOT_USING_IRQ: SpinLock<RecycleAllocator> =
-    SpinLock::new(RecycleAllocator::with_start_max(32, 256));
+/// The global allocator for software defined IRQ lines.
+pub(crate) static IRQ_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 
 pub(crate) static IRQ_LIST: Once<Vec<IrqLine>> = Once::new();
 
@@ -25,6 +22,18 @@ pub(crate) fn init() {
         });
     }
     IRQ_LIST.call_once(|| list);
+    CALLBACK_ID_ALLOCATOR.call_once(|| Mutex::new(IdAlloc::with_capacity(256)));
+    IRQ_ALLOCATOR.call_once(|| {
+        // As noted in the Intel 64 and IA-32 rchitectures Software Developer’s Manual,
+        // Volume 3A, Section 6.2, the first 32 interrupts are reserved for specific
+        // usages. And the rest from 32 to 255 are available for external user-defined
+        // interrupts.
+        let mut id_alloc = IdAlloc::with_capacity(256);
+        for i in 0..32 {
+            id_alloc.alloc_specific(i).unwrap();
+        }
+        SpinLock::new(id_alloc)
+    });
 }
 
 pub(crate) fn enable_local() {
@@ -43,7 +52,7 @@ pub(crate) fn is_local_enabled() -> bool {
     x86_64::instructions::interrupts::are_enabled()
 }
 
-static ID_ALLOCATOR: Mutex<RecycleAllocator> = Mutex::new(RecycleAllocator::new());
+static CALLBACK_ID_ALLOCATOR: Once<Mutex<IdAlloc>> = Once::new();
 
 pub struct CallbackElement {
     function: Box<dyn Fn(&TrapFrame) + Send + Sync + 'static>,
@@ -102,14 +111,14 @@ impl IrqLine {
     where
         F: Fn(&TrapFrame) + Sync + Send + 'static,
     {
-        let allocate_id = ID_ALLOCATOR.lock().alloc();
+        let allocated_id = CALLBACK_ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
         self.callback_list.lock().push(CallbackElement {
             function: Box::new(callback),
-            id: allocate_id,
+            id: allocated_id,
         });
         IrqCallbackHandle {
             irq_num: self.irq_num,
-            id: allocate_id,
+            id: allocated_id,
         }
     }
 }
@@ -134,6 +143,6 @@ impl Drop for IrqCallbackHandle {
             .callback_list
             .lock();
         a.retain(|item| item.id != self.id);
-        ID_ALLOCATOR.lock().dealloc(self.id);
+        CALLBACK_ID_ALLOCATOR.get().unwrap().lock().free(self.id);
     }
 }

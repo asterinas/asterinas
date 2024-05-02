@@ -41,7 +41,6 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod user;
-mod util;
 pub mod vm;
 
 #[cfg(feature = "intel_tdx")]

@@ -5,7 +5,7 @@ use core::fmt::Debug;
 use trapframe::TrapFrame;
 
 use crate::{
-    arch::irq::{self, IrqCallbackHandle, NOT_USING_IRQ},
+    arch::irq::{self, IrqCallbackHandle, IRQ_ALLOCATOR},
     prelude::*,
     task::{disable_preempt, DisablePreemptGuard},
     Error,
@@ -28,20 +28,20 @@ pub struct IrqLine {
 
 impl IrqLine {
     pub fn alloc_specific(irq: u8) -> Result<Self> {
-        if NOT_USING_IRQ.lock().get_target(irq as usize) {
-            Ok(Self::new(irq))
-        } else {
-            Err(Error::NotEnoughResources)
-        }
+        IRQ_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc_specific(irq as usize)
+            .map(|irq_num| Self::new(irq_num as u8))
+            .ok_or(Error::NotEnoughResources)
     }
 
     pub fn alloc() -> Result<Self> {
-        let irq_num = NOT_USING_IRQ.lock().alloc();
-        if irq_num == usize::MAX {
-            Err(Error::NotEnoughResources)
-        } else {
-            Ok(Self::new(irq_num as u8))
-        }
+        let Some(irq_num) = IRQ_ALLOCATOR.get().unwrap().lock().alloc() else {
+            return Err(Error::NotEnoughResources);
+        };
+        Ok(Self::new(irq_num as u8))
     }
 
     fn new(irq_num: u8) -> Self {
@@ -87,7 +87,11 @@ impl Clone for IrqLine {
 impl Drop for IrqLine {
     fn drop(&mut self) {
         if Arc::strong_count(&self.irq) == 1 {
-            NOT_USING_IRQ.lock().dealloc(self.irq_num as usize);
+            IRQ_ALLOCATOR
+                .get()
+                .unwrap()
+                .lock()
+                .free(self.irq_num as usize);
         }
     }
 }

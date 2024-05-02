@@ -17,6 +17,7 @@ aster-console = { path = "../console" }
 aster-frame = { path = "../../../framework/aster-frame" }
 aster-util = { path = "../../libs/aster-util" }
 aster-rights = { path = "../../libs/aster-rights" }
+id-alloc = { path = "../../../framework/libs/id-alloc" }
 typeflags-util = { path = "../../libs/typeflags-util" }
 pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 component = { path = "../../libs/comp-sys/component" }
