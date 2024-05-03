@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_PRCTL};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::posix_thread::{PosixThreadExt, MAX_THREAD_NAME_LEN},
     util::{read_cstring_from_user, write_bytes_to_user},
 };
 pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_PRCTL);
     let prctl_cmd = PrctlCmd::from_args(option, arg2, arg3, arg4, arg5)?;
     debug!("prctl cmd = {:x?}", prctl_cmd);
     let current_thread = current_thread!();

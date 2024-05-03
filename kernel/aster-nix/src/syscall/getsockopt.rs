@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SETSOCKOPT};
+use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    log_syscall_entry,
     prelude::*,
     util::{
         net::{get_socket_from_fd, new_raw_socket_option, CSocketOptionLevel},
@@ -18,7 +17,6 @@ pub fn sys_getsockopt(
     optval: Vaddr,
     optlen_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SETSOCKOPT);
     let level = CSocketOptionLevel::try_from(level)?;
     if optval == 0 || optlen_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "optval or optlen_addr is null pointer");

@@ -2,19 +2,16 @@
 
 use core::{cell::Cell, time::Duration};
 
-use super::{SyscallReturn, SYS_POLL};
+use super::SyscallReturn;
 use crate::{
     events::IoEvents,
     fs::file_table::FileDesc,
-    log_syscall_entry,
     prelude::*,
     process::signal::Poller,
     util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_POLL);
-
     let poll_fds = {
         let mut read_addr = fds;
         let mut poll_fds = Vec::with_capacity(nfds as _);

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_LINKAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
@@ -19,7 +18,6 @@ pub fn sys_linkat(
     new_path_addr: Vaddr,
     flags: u32,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_LINKAT);
     let old_path = read_cstring_from_user(old_path_addr, MAX_FILENAME_LEN)?;
     let new_path = read_cstring_from_user(new_path_addr, MAX_FILENAME_LEN)?;
     let flags =

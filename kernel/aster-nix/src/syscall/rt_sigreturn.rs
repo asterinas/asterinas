@@ -2,16 +2,14 @@
 
 use aster_frame::cpu::UserContext;
 
-use super::{SyscallReturn, SYS_RT_SIGRETURN};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{posix_thread::PosixThreadExt, signal::c_types::ucontext_t},
     util::read_val_from_user,
 };
 
 pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_RT_SIGRETURN);
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let mut sig_context = posix_thread.sig_context().lock();

@@ -11,14 +11,12 @@ use crate::{
         path::Dentry,
         utils::InodeType,
     },
-    log_syscall_entry,
     prelude::*,
     process::{
         check_executable_file, credentials_mut, load_program_to_vm,
         posix_thread::{PosixThreadExt, ThreadName},
         Credentials, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
-    syscall::{SYS_EXECVE, SYS_EXECVEAT},
     util::{read_cstring_from_user, read_val_from_user},
 };
 
@@ -28,7 +26,6 @@ pub fn sys_execve(
     envp_ptr_ptr: Vaddr,
     context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EXECVE);
     let elf_file = {
         let executable_path = read_filename(filename_ptr)?;
         lookup_executable_file(AT_FDCWD, executable_path, OpenFlags::empty())?
@@ -46,8 +43,6 @@ pub fn sys_execveat(
     flags: u32,
     context: &mut UserContext,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EXECVEAT);
-
     let elf_file = {
         let flags = OpenFlags::from_bits_truncate(flags);
         let filename = read_filename(filename_ptr)?;

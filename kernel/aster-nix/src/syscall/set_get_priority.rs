@@ -2,16 +2,14 @@
 
 use core::sync::atomic::Ordering;
 
-use super::{SyscallReturn, SYS_GET_PRIORITY, SYS_SET_PRIORITY};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{credentials, posix_thread::PosixThreadExt, process_table, Pgid, Pid, Process, Uid},
     sched::nice::Nice,
 };
 
 pub fn sys_set_priority(which: i32, who: u32, prio: i32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SET_PRIORITY);
     let prio_target = PriorityTarget::new(which, who)?;
     let new_nice = {
         let norm_prio = if prio > i8::MAX as i32 {
@@ -38,7 +36,6 @@ pub fn sys_set_priority(which: i32, who: u32, prio: i32) -> Result<SyscallReturn
 }
 
 pub fn sys_get_priority(which: i32, who: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_GET_PRIORITY);
     let prio_target = PriorityTarget::new(which, who)?;
     debug!("get_priority prio_target: {:?}", prio_target);
 

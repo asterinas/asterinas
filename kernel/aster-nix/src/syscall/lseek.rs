@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_LSEEK};
+use super::SyscallReturn;
 use crate::{
     fs::{file_table::FileDesc, utils::SeekFrom},
-    log_syscall_entry,
     prelude::*,
 };
 
 pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_LSEEK);
     debug!("fd = {}, offset = {}, whence = {}", fd, offset, whence);
     let seek_from = match whence {
         0 => {

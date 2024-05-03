@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_RT_SIGSUSPEND};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::signal::{
         constants::{SIGKILL, SIGSTOP},
@@ -13,7 +12,6 @@ use crate::{
 };
 
 pub fn sys_rt_sigsuspend(sigmask_addr: Vaddr, sigmask_size: usize) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_RT_SIGSUSPEND);
     debug!(
         "sigmask_addr = 0x{:x}, sigmask_size = {}",
         sigmask_addr, sigmask_size

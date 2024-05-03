@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_KILL};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{
         credentials, kill, kill_all, kill_group,
@@ -15,7 +14,6 @@ use crate::{
 };
 
 pub fn sys_kill(process_filter: u64, sig_num: u64) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_KILL);
     let process_filter = ProcessFilter::from_id(process_filter as _);
     let sig_num = if sig_num == 0 {
         None

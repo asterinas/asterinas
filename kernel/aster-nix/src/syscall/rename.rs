@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_RENAMEAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::InodeType,
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
@@ -19,7 +18,6 @@ pub fn sys_renameat(
     new_dirfd: FileDesc,
     new_path_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_RENAMEAT);
     let old_path = read_cstring_from_user(old_path_addr, MAX_FILENAME_LEN)?;
     let new_path = read_cstring_from_user(new_path_addr, MAX_FILENAME_LEN)?;
     debug!(

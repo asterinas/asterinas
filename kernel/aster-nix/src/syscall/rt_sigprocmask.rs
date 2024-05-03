@@ -2,9 +2,8 @@
 
 use aster_frame::vm::VmIo;
 
-use super::{SyscallReturn, SYS_RT_SIGPROCMASK};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{
         posix_thread::PosixThreadExt,
@@ -21,7 +20,6 @@ pub fn sys_rt_sigprocmask(
     oldset_ptr: Vaddr,
     sigset_size: usize,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_RT_SIGPROCMASK);
     let mask_op = MaskOp::try_from(how).unwrap();
     debug!(
         "mask op = {:?}, set_ptr = 0x{:x}, oldset_ptr = 0x{:x}, sigset_size = {}",

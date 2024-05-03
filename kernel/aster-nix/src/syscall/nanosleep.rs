@@ -2,9 +2,8 @@
 
 use core::time::Duration;
 
-use super::{SyscallReturn, SYS_CLOCK_NANOSLEEP, SYS_NANOSLEEP};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::signal::Pauser,
     time::{clockid_t, now_as_duration, timespec_t, ClockID, TIMER_ABSTIME},
@@ -15,7 +14,6 @@ pub fn sys_nanosleep(
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_NANOSLEEP);
     let clock_id = ClockID::CLOCK_MONOTONIC;
 
     do_clock_nanosleep(clock_id, false, request_timespec_addr, remain_timespec_addr)
@@ -27,7 +25,6 @@ pub fn sys_clock_nanosleep(
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_CLOCK_NANOSLEEP);
     let clock_id = ClockID::try_from(clockid)?;
     let is_abs_time = if flags == 0 {
         false

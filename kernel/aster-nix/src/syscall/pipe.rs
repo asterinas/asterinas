@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_PIPE2};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::{FdFlags, FileDesc},
         pipe::{PipeReader, PipeWriter},
         utils::{Channel, CreationFlags, StatusFlags},
     },
-    log_syscall_entry,
     prelude::*,
     util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_PIPE2);
     debug!("flags: {:?}", flags);
 
     let mut pipe_fds = read_val_from_user::<PipeFds>(fds)?;

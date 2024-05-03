@@ -3,10 +3,9 @@
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
-use crate::{log_syscall_entry, prelude::*, syscall::SYS_MPROTECT, vm::perms::VmPerms};
+use crate::{prelude::*, vm::perms::VmPerms};
 
 pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_MPROTECT);
     let vm_perms = VmPerms::from_bits_truncate(perms as u32);
     debug!(
         "addr = 0x{:x}, len = 0x{:x}, perms = {:?}",

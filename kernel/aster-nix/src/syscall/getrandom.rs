@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{
-    device, log_syscall_entry, prelude::*, syscall::SYS_GETRANDOM, util::write_bytes_to_user,
-};
+use crate::{device, prelude::*, util::write_bytes_to_user};
 
 pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_GETRANDOM);
     let flags = GetRandomFlags::from_bits_truncate(flags);
     debug!(
         "buf = 0x{:x}, count = 0x{:x}, flags = {:?}",

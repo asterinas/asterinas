@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_CHROOT};
+use super::SyscallReturn;
 use crate::{
     fs::{fs_resolver::FsPath, utils::InodeType},
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
 };
 
 pub fn sys_chroot(path_ptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_CHROOT);
     let path = read_cstring_from_user(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path = {:?}", path);
 

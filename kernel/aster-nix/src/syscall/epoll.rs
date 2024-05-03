@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use super::{SyscallReturn, SYS_EPOLL_CREATE1, SYS_EPOLL_CTL, SYS_EPOLL_PWAIT, SYS_EPOLL_WAIT};
+use super::SyscallReturn;
 use crate::{
     events::IoEvents,
     fs::{
@@ -10,7 +10,6 @@ use crate::{
         file_table::{FdFlags, FileDesc},
         utils::CreationFlags,
     },
-    log_syscall_entry,
     prelude::*,
     util::{read_val_from_user, write_val_to_user},
 };
@@ -23,7 +22,6 @@ pub fn sys_epoll_create(size: i32) -> Result<SyscallReturn> {
 }
 
 pub fn sys_epoll_create1(flags: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EPOLL_CREATE1);
     debug!("flags = 0x{:x}", flags);
 
     let fd_flags = {
@@ -52,7 +50,6 @@ pub fn sys_epoll_ctl(
     fd: FileDesc,
     event_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EPOLL_CTL);
     debug!(
         "epfd = {}, op = {}, fd = {}, event_addr = 0x{:x}",
         epfd, op, fd, event_addr
@@ -98,8 +95,6 @@ pub fn sys_epoll_wait(
     max_events: i32,
     timeout: i32,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EPOLL_WAIT);
-
     let max_events = {
         if max_events <= 0 {
             return_errno_with_message!(Errno::EINVAL, "max_events is not positive");
@@ -144,7 +139,6 @@ pub fn sys_epoll_pwait(
     timeout: i32,
     sigmask: Vaddr, //TODO: handle sigmask
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EPOLL_PWAIT);
     if sigmask != 0 {
         warn!("epoll_pwait cannot handle signal mask, yet");
     }

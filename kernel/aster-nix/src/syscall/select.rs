@@ -4,12 +4,11 @@ use core::time::Duration;
 
 use super::{
     poll::{do_poll, PollFd},
-    SyscallReturn, SYS_SELECT,
+    SyscallReturn,
 };
 use crate::{
     events::IoEvents,
     fs::file_table::FileDesc,
-    log_syscall_entry,
     prelude::*,
     time::timeval_t,
     util::{read_val_from_user, write_val_to_user},
@@ -22,8 +21,6 @@ pub fn sys_select(
     exceptfds_addr: Vaddr,
     timeval_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SELECT);
-
     if nfds < 0 || nfds as usize > FD_SETSIZE {
         return_errno_with_message!(Errno::EINVAL, "nfds is negative or exceeds the FD_SETSIZE");
     }

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::posix_thread::futex::{
         futex_op_and_flags_from_u32, futex_requeue, futex_wait, futex_wait_bitset, futex_wake,
         futex_wake_bitset, FutexOp, FutexTimeout,
     },
-    syscall::{SyscallReturn, SYS_FUTEX},
+    syscall::SyscallReturn,
 };
 
 pub fn sys_futex(
@@ -18,7 +17,6 @@ pub fn sys_futex(
     futex_new_addr: u64,
     bitset: u64,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FUTEX);
     // FIXME: we current ignore futex flags
     let (futex_op, futex_flags) = futex_op_and_flags_from_u32(futex_op as _).unwrap();
     debug!(

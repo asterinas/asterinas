@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SETRESUID};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{credentials_mut, Uid},
 };
 
 pub fn sys_setresuid(ruid: i32, euid: i32, suid: i32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SETRESUID);
-
     let ruid = if ruid > 0 {
         Some(Uid::new(ruid as u32))
     } else {

@@ -2,20 +2,18 @@
 
 use core::marker::PhantomData;
 
-use super::{SyscallReturn, SYS_GETDENTS64};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         inode_handle::InodeHandle,
         utils::{DirentVisitor, InodeType},
     },
-    log_syscall_entry,
     prelude::*,
     util::write_bytes_to_user,
 };
 
 pub fn sys_getdents64(fd: FileDesc, buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_GETDENTS64);
     debug!(
         "fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
         fd, buf_addr, buf_len

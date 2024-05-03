@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_FCHOWN, SYS_FCHOWNAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::PATH_MAX,
     },
-    log_syscall_entry,
     prelude::*,
     process::{Gid, Uid},
     util::read_cstring_from_user,
 };
 
 pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FCHOWN);
     debug!("fd = {}, uid = {}, gid = {}", fd, uid, gid);
 
     let uid = to_optional_id(uid, Uid::new)?;
@@ -56,7 +54,6 @@ pub fn sys_fchownat(
     gid: i32,
     flags: u32,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FCHOWNAT);
     let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
     let flags = ChownFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;

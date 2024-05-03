@@ -4,10 +4,8 @@ use aster_frame::cpu::UserContext;
 
 use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{clone_child, CloneArgs, CloneFlags},
-    syscall::SYS_CLONE,
 };
 
 // The order of arguments for clone differs in different architecture.
@@ -18,12 +16,11 @@ pub fn sys_clone(
     parent_tidptr: Vaddr,
     child_tidptr: Vaddr,
     tls: u64,
-    parent_context: UserContext,
+    parent_context: &UserContext,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_CLONE);
     let clone_flags = CloneFlags::from(clone_flags);
     debug!("flags = {:?}, child_stack_ptr = 0x{:x}, parent_tid_ptr = 0x{:x}, child tid ptr = 0x{:x}, tls = 0x{:x}", clone_flags, new_sp, parent_tidptr, child_tidptr, tls);
     let clone_args = CloneArgs::new(new_sp, parent_tidptr, child_tidptr, tls, clone_flags);
-    let child_pid = clone_child(parent_context, clone_args).unwrap();
+    let child_pid = clone_child(*parent_context, clone_args).unwrap();
     Ok(SyscallReturn::Return(child_pid as _))
 }

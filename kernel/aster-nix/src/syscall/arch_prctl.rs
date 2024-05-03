@@ -3,7 +3,7 @@
 use aster_frame::cpu::UserContext;
 
 use super::SyscallReturn;
-use crate::{log_syscall_entry, prelude::*, syscall::SYS_ARCH_PRCTL};
+use crate::prelude::*;
 
 #[allow(non_camel_case_types)]
 #[repr(u64)]
@@ -16,7 +16,6 @@ pub enum ArchPrctlCode {
 }
 
 pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut UserContext) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_ARCH_PRCTL);
     let arch_prctl_code = ArchPrctlCode::try_from(code)?;
     debug!(
         "arch_prctl_code: {:?}, addr = 0x{:x}",

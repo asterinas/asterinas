@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_GETRESGID};
-use crate::{log_syscall_entry, prelude::*, process::credentials, util::write_val_to_user};
+use super::SyscallReturn;
+use crate::{prelude::*, process::credentials, util::write_val_to_user};
 
 pub fn sys_getresgid(rgid_ptr: Vaddr, egid_ptr: Vaddr, sgid_ptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_GETRESGID);
     debug!("rgid_ptr = 0x{rgid_ptr:x}, egid_ptr = 0x{egid_ptr:x}, sgid_ptr = 0x{sgid_ptr:x}");
 
     let credentials = credentials();

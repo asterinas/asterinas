@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SETREGID};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{credentials_mut, Gid},
 };
 
 pub fn sys_setregid(rgid: i32, egid: i32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SETREGID);
     debug!("rgid = {}, egid = {}", rgid, egid);
 
     let rgid = if rgid > 0 {

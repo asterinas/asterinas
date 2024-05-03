@@ -2,11 +2,10 @@
 
 use core::time::Duration;
 
-use super::{SyscallReturn, SYS_ALARM};
-use crate::{log_syscall_entry, prelude::*, process::posix_thread::PosixThreadExt};
+use super::SyscallReturn;
+use crate::{prelude::*, process::posix_thread::PosixThreadExt};
 
 pub fn sys_alarm(seconds: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_ALARM);
     debug!("seconds = {}", seconds);
 
     let current_thread = current_thread!();

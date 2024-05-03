@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SETPGID};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{process_table, Pgid, Pid},
 };
 
 pub fn sys_setpgid(pid: Pid, pgid: Pgid) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SETPGID);
     let current = current!();
     // if pid is 0, pid should be the pid of current process
     let pid = if pid == 0 { current.pid() } else { pid };

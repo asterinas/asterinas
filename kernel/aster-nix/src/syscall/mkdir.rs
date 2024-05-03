@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_MKDIRAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType},
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
 };
 
 pub fn sys_mkdirat(dirfd: FileDesc, path_addr: Vaddr, mode: u16) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_MKDIRAT);
     let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}, mode = {}", dirfd, path, mode);
 
