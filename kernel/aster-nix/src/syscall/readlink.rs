@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_READLINKAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::{read_cstring_from_user, write_bytes_to_user},
@@ -18,7 +17,6 @@ pub fn sys_readlinkat(
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_READLINKAT);
     let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     debug!(
         "dirfd = {}, path = {:?}, usr_buf_addr = 0x{:x}, usr_buf_len = 0x{:x}",

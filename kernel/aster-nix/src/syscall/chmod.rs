@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_FCHMOD, SYS_FCHMODAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, PATH_MAX},
     },
-    log_syscall_entry,
     prelude::*,
     util::read_cstring_from_user,
 };
 
 pub fn sys_fchmod(fd: FileDesc, mode: u16) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FCHMOD);
     debug!("fd = {}, mode = 0o{:o}", fd, mode);
 
     let current = current!();
@@ -34,7 +32,6 @@ pub fn sys_fchmodat(
     mode: u16,
     /* flags: u32, */
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FCHMODAT);
     let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
     debug!("dirfd = {}, path = {:?}, mode = 0o{:o}", dirfd, path, mode,);
 

@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_GETSID};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{process_table, Pid},
 };
 
 pub fn sys_getsid(pid: Pid) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_GETSID);
     debug!("pid = {}", pid);
 
     let session = current!().session().unwrap();

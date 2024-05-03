@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_CLOCK_GETTIME};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     time::{clockid_t, now_as_duration, timespec_t, ClockID},
     util::write_val_to_user,
 };
 
 pub fn sys_clock_gettime(clockid: clockid_t, timespec_addr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_CLOCK_GETTIME);
     let clock_id = ClockID::try_from(clockid)?;
     debug!("clockid = {:?}", clock_id);
 

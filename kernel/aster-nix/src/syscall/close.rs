@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_CLOSE};
-use crate::{fs::file_table::FileDesc, log_syscall_entry, prelude::*};
+use super::SyscallReturn;
+use crate::{fs::file_table::FileDesc, prelude::*};
 
 pub fn sys_close(fd: FileDesc) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_CLOSE);
     debug!("fd = {}", fd);
     let current = current!();
     let mut file_table = current.file_table().lock();

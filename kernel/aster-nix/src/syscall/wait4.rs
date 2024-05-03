@@ -2,15 +2,12 @@
 
 use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{wait_child_exit, ProcessFilter, WaitOptions},
-    syscall::SYS_WAIT4,
     util::write_val_to_user,
 };
 
 pub fn sys_wait4(wait_pid: u64, exit_status_ptr: u64, wait_options: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_WAIT4);
     let wait_options = WaitOptions::from_bits(wait_options)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown wait option"))?;
     debug!(

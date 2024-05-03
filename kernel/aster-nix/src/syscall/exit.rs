@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{posix_thread::PosixThreadExt, TermStatus},
-    syscall::{SyscallReturn, SYS_EXIT},
+    syscall::SyscallReturn,
 };
 
 pub fn sys_exit(exit_code: i32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EXIT);
     debug!("exid code = {}", exit_code);
 
     let current_thread = current_thread!();

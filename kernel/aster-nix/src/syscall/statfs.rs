@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_FSTATFS, SYS_STATFS};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
@@ -8,13 +8,11 @@ use crate::{
         inode_handle::InodeHandle,
         utils::{SuperBlock, PATH_MAX},
     },
-    log_syscall_entry,
     prelude::*,
     util::{read_cstring_from_user, write_val_to_user},
 };
 
 pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_STATFS);
     let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, statfs_buf_ptr = 0x{:x}", path, statfs_buf_ptr,);
 
@@ -30,7 +28,6 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr) -> Result<SyscallRetur
 }
 
 pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FSTATFS);
     debug!("fd = {}, statfs_buf_addr = 0x{:x}", fd, statfs_buf_ptr);
 
     let current = current!();

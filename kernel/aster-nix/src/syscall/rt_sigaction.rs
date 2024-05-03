@@ -2,10 +2,8 @@
 
 use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::signal::{c_types::sigaction_t, sig_action::SigAction, sig_num::SigNum},
-    syscall::SYS_RT_SIGACTION,
     util::{read_val_from_user, write_val_to_user},
 };
 
@@ -15,7 +13,6 @@ pub fn sys_rt_sigaction(
     old_sig_action_addr: Vaddr,
     sigset_size: u64,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_RT_SIGACTION);
     let sig_num = SigNum::try_from(sig_num)?;
     debug!(
         "signal = {}, sig_action_addr = 0x{:x}, old_sig_action_addr = 0x{:x}, sigset_size = {}",

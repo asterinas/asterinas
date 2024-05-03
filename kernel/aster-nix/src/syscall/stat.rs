@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_FSTAT, SYS_FSTATAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::Metadata,
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     time::timespec_t,
@@ -15,7 +14,6 @@ use crate::{
 };
 
 pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FSTAT);
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
     let current = current!();
@@ -45,7 +43,6 @@ pub fn sys_fstatat(
     stat_buf_ptr: Vaddr,
     flags: u32,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FSTATAT);
     let filename = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
     let flags =
         StatFlags::from_bits(flags).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;

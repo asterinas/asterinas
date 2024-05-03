@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_FTRUNCATE, SYS_TRUNCATE};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::PATH_MAX,
     },
-    log_syscall_entry,
     prelude::*,
     process::ResourceType,
     util::read_cstring_from_user,
 };
 
 pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FTRUNCATE);
     debug!("fd = {}, lentgh = {}", fd, len);
 
     check_length(len)?;
@@ -27,7 +25,6 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
 }
 
 pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_TRUNCATE);
     let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, length = {}", path, len);
 

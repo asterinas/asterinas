@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_FSYNC};
+use super::SyscallReturn;
 use crate::{
     fs::{file_table::FileDesc, inode_handle::InodeHandle},
-    log_syscall_entry,
     prelude::*,
 };
 
 pub fn sys_fsync(fd: FileDesc) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FSYNC);
     debug!("fd = {}", fd);
 
     let dentry = {

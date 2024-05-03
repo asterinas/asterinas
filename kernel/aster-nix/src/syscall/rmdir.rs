@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_RMDIR};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
@@ -17,7 +16,6 @@ pub fn sys_rmdir(path_addr: Vaddr) -> Result<SyscallReturn> {
 }
 
 pub(super) fn sys_rmdirat(dirfd: FileDesc, path_addr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_RMDIR);
     let path_addr = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path_addr = {:?}", dirfd, path_addr);
 

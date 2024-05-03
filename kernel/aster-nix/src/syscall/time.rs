@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_TIME};
-use crate::{log_syscall_entry, prelude::*, time::SystemTime, util::write_val_to_user};
+use super::SyscallReturn;
+use crate::{prelude::*, time::SystemTime, util::write_val_to_user};
 
 pub fn sys_time(tloc: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_TIME);
     debug!("tloc = 0x{tloc:x}");
 
     let now_as_secs = {

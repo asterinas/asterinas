@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_ACCEPT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::{FdFlags, FileDesc},
         utils::{CreationFlags, StatusFlags},
     },
-    log_syscall_entry,
     prelude::*,
-    syscall::SYS_ACCEPT4,
     util::net::{get_socket_from_fd, write_socket_addr_to_user},
 };
 
@@ -17,7 +15,6 @@ pub fn sys_accept(
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_ACCEPT);
     debug!("sockfd = {sockfd}, sockaddr_ptr = 0x{sockaddr_ptr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
     let fd = do_accept(sockfd, sockaddr_ptr, addrlen_ptr, Flags::empty())?;
@@ -30,7 +27,6 @@ pub fn sys_accept4(
     addrlen_ptr: Vaddr,
     flags: u32,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_ACCEPT4);
     trace!("raw flags = 0x{:x}", flags);
     let flags = Flags::from_bits_truncate(flags);
     debug!(

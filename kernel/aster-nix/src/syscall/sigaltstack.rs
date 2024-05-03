@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SIGALTSTACK};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{
         posix_thread::PosixThreadExt,
@@ -12,8 +11,6 @@ use crate::{
 };
 
 pub fn sys_sigaltstack(sig_stack_addr: Vaddr, old_sig_stack_addr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SIGALTSTACK);
-
     debug!(
         "sig_stack_addr = 0x{:x}, old_sig_stack_addr: 0x{:x}",
         sig_stack_addr, old_sig_stack_addr

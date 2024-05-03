@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SET_TID_ADDRESS};
-use crate::{log_syscall_entry, prelude::*, process::posix_thread::PosixThreadExt};
+use super::SyscallReturn;
+use crate::{prelude::*, process::posix_thread::PosixThreadExt};
 
 pub fn sys_set_tid_address(tidptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SET_TID_ADDRESS);
     debug!("tidptr = 0x{:x}", tidptr);
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();

@@ -8,9 +8,7 @@ use aster_rights::Rights;
 use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    log_syscall_entry,
     prelude::*,
-    syscall::SYS_MMAP,
     vm::{
         perms::VmPerms,
         vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp},
@@ -25,7 +23,6 @@ pub fn sys_mmap(
     fd: u64,
     offset: u64,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_MMAP);
     let perms = VmPerms::from_posix_prot_bits(perms as u32).unwrap();
     let option = MMapOptions::try_from(flags as u32)?;
     let res = do_sys_mmap(

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SET_ROBUST_LIST};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::posix_thread::{PosixThreadExt, RobustListHead},
     util::read_val_from_user,
 };
 
 pub fn sys_set_robust_list(robust_list_head_ptr: Vaddr, len: usize) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SET_ROBUST_LIST);
     debug!(
         "robust list head ptr: 0x{:x}, len = {}",
         robust_list_head_ptr, len

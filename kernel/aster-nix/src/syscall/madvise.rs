@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_MADVISE};
-use crate::{log_syscall_entry, prelude::*, util::read_bytes_from_user};
+use super::SyscallReturn;
+use crate::{prelude::*, util::read_bytes_from_user};
 
 pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_MADVISE);
     let behavior = MadviseBehavior::try_from(behavior)?;
     debug!(
         "start = 0x{:x}, len = 0x{:x}, behavior = {:?}",

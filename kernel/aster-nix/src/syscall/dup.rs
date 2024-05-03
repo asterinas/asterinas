@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_DUP, SYS_DUP2};
+use super::SyscallReturn;
 use crate::{
     fs::file_table::{FdFlags, FileDesc},
-    log_syscall_entry,
     prelude::*,
 };
 
 pub fn sys_dup(old_fd: FileDesc) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_DUP);
     debug!("old_fd = {}", old_fd);
 
     let current = current!();
@@ -20,7 +18,6 @@ pub fn sys_dup(old_fd: FileDesc) -> Result<SyscallReturn> {
 }
 
 pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_DUP2);
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     let current = current!();

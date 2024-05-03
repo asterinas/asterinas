@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_RECVFROM};
+use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    log_syscall_entry,
     net::socket::SendRecvFlags,
     prelude::*,
     util::{
@@ -20,7 +19,6 @@ pub fn sys_recvfrom(
     src_addr: Vaddr,
     addrlen_ptr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_RECVFROM);
     let flags = SendRecvFlags::from_bits_truncate(flags);
     debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 

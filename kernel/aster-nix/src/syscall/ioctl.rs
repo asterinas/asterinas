@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_IOCTL};
+use super::SyscallReturn;
 use crate::{
     fs::{file_table::FileDesc, utils::IoctlCmd},
-    log_syscall_entry,
     prelude::*,
 };
 
 pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_IOCTL);
     let ioctl_cmd = IoctlCmd::try_from(cmd)?;
     debug!(
         "fd = {}, ioctl_cmd = {:?}, arg = 0x{:x}",

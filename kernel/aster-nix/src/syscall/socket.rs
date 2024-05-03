@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SOCKET};
+use super::SyscallReturn;
 use crate::{
     fs::{file_handle::FileLike, file_table::FdFlags},
-    log_syscall_entry,
     net::socket::{
         ip::{DatagramSocket, StreamSocket},
         unix::UnixStreamSocket,
@@ -13,7 +12,6 @@ use crate::{
 };
 
 pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SOCKET);
     let domain = CSocketAddrFamily::try_from(domain)?;
     let sock_type = SockType::try_from(type_ & SOCK_TYPE_MASK)?;
     let sock_flags = SockFlags::from_bits_truncate(type_ & !SOCK_TYPE_MASK);

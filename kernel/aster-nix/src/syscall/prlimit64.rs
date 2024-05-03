@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_PRLIMIT64};
+use super::SyscallReturn;
 use crate::{
-    log_syscall_entry,
     prelude::*,
     process::{Pid, ResourceType},
     util::{read_val_from_user, write_val_to_user},
@@ -14,7 +13,6 @@ pub fn sys_prlimit64(
     new_rlim_addr: Vaddr,
     old_rlim_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_PRLIMIT64);
     let resource = ResourceType::try_from(resource)?;
     debug!(
         "pid = {}, resource = {:?}, new_rlim_addr = 0x{:x}, old_rlim_addr = 0x{:x}",

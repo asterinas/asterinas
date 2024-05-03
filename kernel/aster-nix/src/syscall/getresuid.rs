@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_GETRESUID};
-use crate::{log_syscall_entry, prelude::*, process::credentials, util::write_val_to_user};
+use super::SyscallReturn;
+use crate::{prelude::*, process::credentials, util::write_val_to_user};
 
 pub fn sys_getresuid(ruid_ptr: Vaddr, euid_ptr: Vaddr, suid_ptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_GETRESUID);
     debug!("ruid_ptr = 0x{ruid_ptr:x}, euid_ptr = 0x{euid_ptr:x}, suid_ptr = 0x{suid_ptr:x}");
 
     let credentials = credentials();

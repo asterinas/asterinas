@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_CHDIR, SYS_FCHDIR};
+use super::SyscallReturn;
 use crate::{
     fs::{file_table::FileDesc, fs_resolver::FsPath, inode_handle::InodeHandle, utils::InodeType},
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
 };
 
 pub fn sys_chdir(path_ptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_CHDIR);
     let path = read_cstring_from_user(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path = {:?}", path);
 
@@ -32,7 +30,6 @@ pub fn sys_chdir(path_ptr: Vaddr) -> Result<SyscallReturn> {
 }
 
 pub fn sys_fchdir(fd: FileDesc) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_FCHDIR);
     debug!("fd = {}", fd);
 
     let current = current!();

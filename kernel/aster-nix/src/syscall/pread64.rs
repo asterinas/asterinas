@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_PREAD64};
+use super::SyscallReturn;
 use crate::{
     fs::{file_table::FileDesc, utils::SeekFrom},
-    log_syscall_entry,
     prelude::*,
     util::write_bytes_to_user,
 };
 
 pub fn sys_pread64(fd: FileDesc, buf_ptr: Vaddr, count: usize, pos: i64) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_PREAD64);
     debug!(
         "fd = {}, buf = 0x{:x}, count = 0x{:x}, pos = 0x{:x}",
         fd, buf_ptr, count, pos

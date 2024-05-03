@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_UNLINKAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
@@ -19,7 +18,6 @@ pub fn sys_unlinkat(dirfd: FileDesc, path_addr: Vaddr, flags: u32) -> Result<Sys
         return super::rmdir::sys_rmdirat(dirfd, path_addr);
     }
 
-    log_syscall_entry!(SYS_UNLINKAT);
     let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}", dirfd, path);
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_OPENAT};
+use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
@@ -8,7 +8,6 @@ use crate::{
         fs_resolver::{FsPath, AT_FDCWD},
         utils::CreationFlags,
     },
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     util::read_cstring_from_user,
@@ -20,7 +19,6 @@ pub fn sys_openat(
     flags: u32,
     mode: u16,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_OPENAT);
     let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     debug!(
         "dirfd = {}, path = {:?}, flags = {}, mode = {}",

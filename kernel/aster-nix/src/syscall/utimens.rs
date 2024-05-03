@@ -2,10 +2,9 @@
 
 use core::time::Duration;
 
-use super::{SyscallReturn, SYS_UTIMENSAT};
+use super::SyscallReturn;
 use crate::{
     fs::{file_table::FileDesc, fs_resolver::FsPath},
-    log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     time::timespec_t,
@@ -18,7 +17,6 @@ pub fn sys_utimensat(
     timespecs_ptr: Vaddr,
     flags: u32,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_UTIMENSAT);
     let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
     let (atime, mtime) = {
         let (autime, mutime) = if timespecs_ptr == 0 {

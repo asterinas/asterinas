@@ -14,7 +14,7 @@
 //! refer to the man 2 eventfd documentation.
 //!
 
-use super::{SyscallReturn, SYS_EVENTFD, SYS_EVENTFD2};
+use super::SyscallReturn;
 use crate::{
     events::{IoEvents, Observer},
     fs::{
@@ -22,13 +22,11 @@ use crate::{
         file_table::{FdFlags, FileDesc},
         utils::{CreationFlags, StatusFlags},
     },
-    log_syscall_entry,
     prelude::*,
     process::signal::{Pauser, Pollee, Poller},
 };
 
 pub fn sys_eventfd(init_val: u64) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EVENTFD);
     debug!("init_val = 0x{:x}", init_val);
 
     let fd = do_sys_eventfd2(init_val, Flags::empty());
@@ -37,7 +35,6 @@ pub fn sys_eventfd(init_val: u64) -> Result<SyscallReturn> {
 }
 
 pub fn sys_eventfd2(init_val: u64, flags: u32) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_EVENTFD2);
     trace!("raw flags = {}", flags);
     let flags = Flags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;

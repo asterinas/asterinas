@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_GETSOCKNAME};
+use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    log_syscall_entry,
     prelude::*,
     util::net::{get_socket_from_fd, write_socket_addr_to_user},
 };
 
 pub fn sys_getsockname(sockfd: FileDesc, addr: Vaddr, addrlen_ptr: Vaddr) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_GETSOCKNAME);
     debug!("sockfd = {sockfd}, addr = 0x{addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
     let socket_addr = {

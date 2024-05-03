@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{SyscallReturn, SYS_SENDTO};
+use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
-    log_syscall_entry,
     net::socket::SendRecvFlags,
     prelude::*,
     util::{
@@ -20,7 +19,6 @@ pub fn sys_sendto(
     dest_addr: Vaddr,
     addrlen: usize,
 ) -> Result<SyscallReturn> {
-    log_syscall_entry!(SYS_SENDTO);
     let flags = SendRecvFlags::from_bits_truncate(flags);
     let socket_addr = if dest_addr == 0 {
         None
