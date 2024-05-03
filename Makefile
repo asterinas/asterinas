@@ -178,7 +178,6 @@ format:
 
 .PHONY: check
 check: $(CARGO_OSDK)
-	@cd osdk && cargo clippy -- -D warnings
 	@./tools/format_all.sh --check   	# Check Rust format issues
 	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
 	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | \
@@ -197,6 +196,10 @@ check: $(CARGO_OSDK)
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
 	@make --no-print-directory -C regression check
+
+.PHONY: check_osdk
+check_osdk:
+	@cd osdk && cargo clippy -- -D warnings
 
 .PHONY: clean
 clean:
