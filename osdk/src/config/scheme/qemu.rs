@@ -53,10 +53,10 @@ impl Qemu {
 impl QemuScheme {
     pub fn inherit(&mut self, from: &Self) {
         if self.args.is_none() {
-            self.args = from.args.clone();
+            self.args.clone_from(&from.args);
         }
         if self.path.is_none() {
-            self.path = from.path.clone();
+            self.path.clone_from(&from.path);
         }
     }
 

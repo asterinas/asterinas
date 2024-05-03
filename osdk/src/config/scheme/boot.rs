@@ -60,7 +60,7 @@ impl BootScheme {
             init_args
         };
         if self.initramfs.is_none() {
-            self.initramfs = from.initramfs.clone();
+            self.initramfs.clone_from(&from.initramfs);
         }
         if self.method.is_none() {
             self.method = from.method;

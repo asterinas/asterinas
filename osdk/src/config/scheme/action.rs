@@ -50,7 +50,7 @@ impl Build {
     pub fn apply_common_args(&mut self, common_args: &CommonArgs) {
         let build_args = &common_args.build_args;
         if let Some(profile) = build_args.profile() {
-            self.profile = profile.clone();
+            self.profile.clone_from(&profile);
         }
         self.features.extend(build_args.features.clone());
         self.override_configs
@@ -67,7 +67,7 @@ impl Build {
 impl BuildScheme {
     pub fn inherit(&mut self, parent: &Self) {
         if self.profile.is_none() {
-            self.profile = parent.profile.clone();
+            self.profile.clone_from(&parent.profile);
         }
         self.features = {
             let mut features = parent.features.clone();

@@ -43,7 +43,7 @@ impl Default for Grub {
 impl GrubScheme {
     pub fn inherit(&mut self, from: &Self) {
         if self.grub_mkrescue.is_none() {
-            self.grub_mkrescue = from.grub_mkrescue.clone();
+            self.grub_mkrescue.clone_from(&from.grub_mkrescue);
         }
         if self.boot_protocol.is_none() {
             self.boot_protocol = from.boot_protocol;

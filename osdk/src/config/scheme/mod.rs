@@ -69,17 +69,17 @@ impl Scheme {
         if let Some(qemu) = &mut self.qemu {
             if let Some(from_qemu) = &from.qemu {
                 if qemu.args.is_none() {
-                    qemu.args = from_qemu.args.clone();
-                    self.work_dir = from.work_dir.clone();
+                    qemu.args.clone_from(&from_qemu.args);
+                    self.work_dir.clone_from(&from.work_dir);
                 }
                 if qemu.path.is_none() {
-                    qemu.path = from_qemu.path.clone();
-                    self.work_dir = from.work_dir.clone();
+                    qemu.path.clone_from(&from_qemu.path);
+                    self.work_dir.clone_from(&from.work_dir);
                 }
             }
         } else {
-            self.qemu = from.qemu.clone();
-            self.work_dir = from.work_dir.clone();
+            self.qemu.clone_from(&from.qemu);
+            self.work_dir.clone_from(&from.work_dir);
         }
     }
 }
