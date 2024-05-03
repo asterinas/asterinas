@@ -23,7 +23,7 @@ jobs:
 
       - name: Lint
         id: lint
-        run: cd osdk && cargo clippy -- -D warnings
+        run: make check_osdk
 
         # The OSDK unit test features a recursive call of Cargo,
         # which will break when RUSTUP_HOME is altered in the case
