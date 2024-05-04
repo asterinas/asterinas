@@ -6,7 +6,7 @@ mod remapping;
 mod second_stage;
 
 use log::info;
-use second_stage::{DeviceMode, PageTableConsts, PageTableEntry};
+use second_stage::{DeviceMode, PageTableEntry, PagingConsts};
 use spin::Once;
 
 use crate::{
@@ -61,7 +61,7 @@ pub(crate) fn unmap(daddr: Daddr) -> Result<(), IommuError> {
 pub(crate) fn init() -> Result<(), IommuError> {
     let mut root_table = RootTable::new();
     // For all PCI Device, use the same page table.
-    let page_table = PageTable::<DeviceMode, PageTableEntry, PageTableConsts>::empty();
+    let page_table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
     for table in PciDeviceLocation::all() {
         root_table.specify_device_page_table(table, unsafe { page_table.shallow_copy() })
     }

@@ -6,22 +6,20 @@ use pod::Pod;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::vm::{
-    page_table::{
-        CachePolicy, MapInfo, MapProperty, MapStatus, PageTableConstsTrait, PageTableEntryTrait,
-    },
-    Paddr, Vaddr, VmPerm,
+    page_table::{CachePolicy, MapInfo, MapProperty, MapStatus, PageTableEntryTrait},
+    Paddr, PagingConstsTrait, Vaddr, VmPerm,
 };
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
 #[derive(Debug)]
-pub struct PageTableConsts {}
+pub struct PagingConsts {}
 
-impl PageTableConstsTrait for PageTableConsts {
+impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
     const NR_LEVELS: usize = 4;
     const HIGHEST_TRANSLATION_LEVEL: usize = 2;
-    const ENTRY_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+    const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
 
 bitflags::bitflags! {

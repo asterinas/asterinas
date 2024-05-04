@@ -78,18 +78,18 @@ fn test_user_copy_on_write() {
 type Qr = PageTableQueryResult;
 
 #[derive(Debug)]
-struct BasePageTableConsts {}
+struct BasePagingConsts {}
 
-impl PageTableConstsTrait for BasePageTableConsts {
+impl PagingConstsTrait for BasePagingConsts {
     const NR_LEVELS: usize = 4;
     const BASE_PAGE_SIZE: usize = PAGE_SIZE;
     const HIGHEST_TRANSLATION_LEVEL: usize = 1;
-    const ENTRY_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+    const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
 
 #[ktest]
 fn test_base_protect_query() {
-    let pt = PageTable::<UserMode, PageTableEntry, BasePageTableConsts>::empty();
+    let pt = PageTable::<UserMode, PageTableEntry, BasePagingConsts>::empty();
     let from_ppn = 1..1000;
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
     let to = PAGE_SIZE * 1000..PAGE_SIZE * 1999;
@@ -115,18 +115,18 @@ fn test_base_protect_query() {
 }
 
 #[derive(Debug)]
-struct VeryHugePageTableConsts {}
+struct VeryHugePagingConsts {}
 
-impl PageTableConstsTrait for VeryHugePageTableConsts {
+impl PagingConstsTrait for VeryHugePagingConsts {
     const NR_LEVELS: usize = 4;
     const BASE_PAGE_SIZE: usize = PAGE_SIZE;
     const HIGHEST_TRANSLATION_LEVEL: usize = 3;
-    const ENTRY_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+    const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
 
 #[ktest]
 fn test_large_protect_query() {
-    let pt = PageTable::<UserMode, PageTableEntry, VeryHugePageTableConsts>::empty();
+    let pt = PageTable::<UserMode, PageTableEntry, VeryHugePagingConsts>::empty();
     let gmult = 512 * 512;
     let from_ppn = gmult - 512..gmult + gmult + 514;
     let to_ppn = gmult - 512 - 512..gmult + gmult - 512 + 514;

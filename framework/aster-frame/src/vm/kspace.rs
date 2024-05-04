@@ -5,15 +5,12 @@
 use align_ext::AlignExt;
 use spin::Once;
 
-use super::page_table::PageTableConstsTrait;
-use crate::{
-    arch::mm::{PageTableConsts, PageTableEntry},
-    vm::{
-        page_table::{page_walk, CachePolicy, KernelMode, MapProperty, PageTable},
-        space::VmPerm,
-        MemoryRegionType, Paddr, Vaddr, PAGE_SIZE,
-    },
+use super::{
+    page_table::{nr_ptes_per_node, page_walk, CachePolicy, KernelMode, MapProperty, PageTable},
+    space::VmPerm,
+    MemoryRegionType, Paddr, Vaddr, PAGE_SIZE,
 };
+use crate::arch::mm::{PageTableEntry, PagingConsts};
 
 /// The base address of the linear mapping of all physical
 /// memory in the kernel address space.
@@ -35,7 +32,7 @@ pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
     } else {
         let root_paddr = crate::arch::mm::current_page_table_paddr();
         // Safety: the root page table is valid since we read it from the register.
-        unsafe { page_walk::<PageTableEntry, PageTableConsts>(root_paddr, va).map(|(pa, _)| pa) }
+        unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, va).map(|(pa, _)| pa) }
     }
 }
 
@@ -44,7 +41,7 @@ pub(crate) fn paddr_to_vaddr(pa: Paddr) -> usize {
     pa + LINEAR_MAPPING_BASE_VADDR
 }
 
-pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PageTableConsts>> =
+pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingConsts>> =
     Once::new();
 
 /// Initialize the kernel page table.
@@ -58,7 +55,7 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PageTab
 pub fn init_kernel_page_table() {
     let kpt = PageTable::<KernelMode>::empty();
     kpt.make_shared_tables(
-        PageTableConsts::NR_ENTRIES_PER_FRAME / 2..PageTableConsts::NR_ENTRIES_PER_FRAME,
+        nr_ptes_per_node::<PagingConsts>() / 2..nr_ptes_per_node::<PagingConsts>(),
     );
     let regions = crate::boot::memory_regions();
     // Do linear mappings for the kernel.

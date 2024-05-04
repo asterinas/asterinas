@@ -6,7 +6,7 @@ use core::mem::size_of;
 use log::warn;
 use pod::Pod;
 
-use super::second_stage::{DeviceMode, PageTableConsts, PageTableEntry, PageTableFlags};
+use super::second_stage::{DeviceMode, PageTableEntry, PageTableFlags, PagingConsts};
 use crate::{
     bus::pci::PciDeviceLocation,
     vm::{
@@ -123,7 +123,7 @@ impl RootTable {
     pub fn specify_device_page_table(
         &mut self,
         device_id: PciDeviceLocation,
-        page_table: PageTable<DeviceMode, PageTableEntry, PageTableConsts>,
+        page_table: PageTable<DeviceMode, PageTableEntry, PagingConsts>,
     ) {
         let context_table = self.get_or_create_context_table(device_id);
 
@@ -233,7 +233,7 @@ pub enum AddressWidth {
 pub struct ContextTable {
     /// Total 32 devices, each device has 8 functions.
     entries_frame: VmFrame,
-    page_tables: BTreeMap<Paddr, PageTable<DeviceMode, PageTableEntry, PageTableConsts>>,
+    page_tables: BTreeMap<Paddr, PageTable<DeviceMode, PageTableEntry, PagingConsts>>,
 }
 
 impl ContextTable {
@@ -251,7 +251,7 @@ impl ContextTable {
     fn get_or_create_page_table(
         &mut self,
         device: PciDeviceLocation,
-    ) -> &mut PageTable<DeviceMode, PageTableEntry, PageTableConsts> {
+    ) -> &mut PageTable<DeviceMode, PageTableEntry, PagingConsts> {
         let bus_entry = self
             .entries_frame
             .read_val::<ContextEntry>(
@@ -260,7 +260,7 @@ impl ContextTable {
             .unwrap();
 
         if !bus_entry.is_present() {
-            let table = PageTable::<DeviceMode, PageTableEntry, PageTableConsts>::empty();
+            let table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
             let address = table.root_paddr();
             self.page_tables.insert(address, table);
             let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
