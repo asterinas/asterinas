@@ -9,13 +9,13 @@ use super::{
     is_page_aligned,
     kspace::KERNEL_PAGE_TABLE,
     page_table::{
-        MapInfo, MapOp, PageTable, PageTableConstsTrait, PageTableMode,
-        PageTableQueryResult as PtQr, PageTableQueryResult, UserMode,
+        MapInfo, MapOp, PageTable, PageTableMode, PageTableQueryResult as PtQr,
+        PageTableQueryResult, UserMode,
     },
-    VmFrameVec, VmIo, PAGE_SIZE,
+    PagingConstsTrait, VmFrameVec, VmIo, PAGE_SIZE,
 };
 use crate::{
-    arch::mm::{PageTableConsts, PageTableEntry},
+    arch::mm::{PageTableEntry, PagingConsts},
     prelude::*,
     vm::{
         page_table::{CachePolicy, Cursor, MapProperty},
@@ -250,7 +250,7 @@ impl VmMapOptions {
     pub fn new() -> Self {
         Self {
             addr: None,
-            align: PageTableConsts::BASE_PAGE_SIZE,
+            align: PagingConsts::BASE_PAGE_SIZE,
             perm: VmPerm::empty(),
             can_overwrite: false,
         }
@@ -340,7 +340,7 @@ impl TryFrom<u64> for VmPerm {
 
 /// The iterator for querying over the VM space without modifying it.
 pub struct VmQueryIter<'a> {
-    cursor: Cursor<'a, UserMode, PageTableEntry, PageTableConsts>,
+    cursor: Cursor<'a, UserMode, PageTableEntry, PagingConsts>,
 }
 
 pub enum VmQueryResult {

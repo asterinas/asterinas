@@ -2,35 +2,35 @@
 
 use alloc::{boxed::Box, sync::Arc};
 
-use super::{MapInfo, MapProperty, PageTableConstsTrait, PageTableEntryTrait};
+use super::{nr_ptes_per_node, page_size, MapInfo, MapProperty, PageTableEntryTrait};
 use crate::{
     sync::SpinLock,
-    vm::{Paddr, VmAllocOptions, VmFrame},
+    vm::{Paddr, PagingConstsTrait, VmAllocOptions, VmFrame},
 };
 
 /// A page table frame.
 /// It's also frequently referred to as a page table in many architectural documentations.
 /// Cloning a page table frame will create a deep copy of the page table.
 #[derive(Debug)]
-pub(super) struct PageTableFrame<E: PageTableEntryTrait, C: PageTableConstsTrait>
+pub(super) struct PageTableFrame<E: PageTableEntryTrait, C: PagingConstsTrait>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     inner: VmFrame,
     /// TODO: all the following fields can be removed if frame metadata is introduced.
     /// Here we allow 2x space overhead each frame temporarily.
     #[allow(clippy::type_complexity)]
-    children: Box<[Child<E, C>; C::NR_ENTRIES_PER_FRAME]>,
+    children: Box<[Child<E, C>; nr_ptes_per_node::<C>()]>,
     nr_valid_children: usize,
 }
 
 pub(super) type PtfRef<E, C> = Arc<SpinLock<PageTableFrame<E, C>>>;
 
 #[derive(Debug)]
-pub(super) enum Child<E: PageTableEntryTrait, C: PageTableConstsTrait>
+pub(super) enum Child<E: PageTableEntryTrait, C: PagingConstsTrait>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     PageTable(PtfRef<E, C>),
@@ -40,9 +40,9 @@ where
     None,
 }
 
-impl<E: PageTableEntryTrait, C: PageTableConstsTrait> Child<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     pub(super) fn is_pt(&self) -> bool {
@@ -78,9 +78,9 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PageTableConstsTrait> Clone for Child<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Clone for Child<E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     /// This is a shallow copy.
@@ -94,9 +94,9 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PageTableConstsTrait> PageTableFrame<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableFrame<E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     pub(super) fn new() -> Self {
@@ -112,7 +112,7 @@ where
     }
 
     pub(super) fn child(&self, idx: usize) -> &Child<E, C> {
-        debug_assert!(idx < C::NR_ENTRIES_PER_FRAME);
+        debug_assert!(idx < nr_ptes_per_node::<C>());
         &self.children[idx]
     }
 
@@ -129,15 +129,15 @@ where
 
     /// Split the untracked huge page mapped at `idx` to smaller pages.
     pub(super) fn split_untracked_huge(&mut self, cur_level: usize, idx: usize) {
-        debug_assert!(idx < C::NR_ENTRIES_PER_FRAME);
+        debug_assert!(idx < nr_ptes_per_node::<C>());
         debug_assert!(cur_level > 1);
         let Child::Untracked(pa) = self.children[idx] else {
             panic!("split_untracked_huge: not an untyped huge page");
         };
         let info = self.read_pte_info(idx);
         let mut new_frame = Self::new();
-        for i in 0..C::NR_ENTRIES_PER_FRAME {
-            let small_pa = pa + i * C::page_size(cur_level - 1);
+        for i in 0..nr_ptes_per_node::<C>() {
+            let small_pa = pa + i * page_size::<C>(cur_level - 1);
             new_frame.set_child(
                 i,
                 Child::Untracked(small_pa),
@@ -162,7 +162,7 @@ where
         prop: Option<MapProperty>,
         huge: bool,
     ) {
-        assert!(idx < C::NR_ENTRIES_PER_FRAME);
+        assert!(idx < nr_ptes_per_node::<C>());
         // Safety: the index is within the bound and the PTE to be written is valid.
         // And the physical address of PTE points to initialized memory.
         // This applies to all the following `write_pte` invocations.
@@ -211,7 +211,7 @@ where
     }
 
     fn read_pte(&self, idx: usize) -> E {
-        assert!(idx < C::NR_ENTRIES_PER_FRAME);
+        assert!(idx < nr_ptes_per_node::<C>());
         // Safety: the index is within the bound and PTE is plain-old-data.
         unsafe { (self.inner.as_ptr() as *const E).add(idx).read() }
     }
@@ -228,9 +228,9 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PageTableConstsTrait> Clone for PageTableFrame<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Clone for PageTableFrame<E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     /// Make a deep copy of the page table.

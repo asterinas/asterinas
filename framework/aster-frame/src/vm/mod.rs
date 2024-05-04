@@ -20,7 +20,7 @@ pub(crate) mod page_table;
 mod space;
 
 use alloc::{borrow::ToOwned, vec::Vec};
-use core::ops::Range;
+use core::{fmt::Debug, ops::Range};
 
 use spin::Once;
 
@@ -35,7 +35,31 @@ pub use self::{
 pub(crate) use self::{kspace::paddr_to_vaddr, page_table::PageTable};
 use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
 
+/// DEPRECATED: use the property of `VmFrame` instead.
+/// The size of a [`VmFrame`].
 pub const PAGE_SIZE: usize = 0x1000;
+
+/// A minimal set of constants that determines the paging system.
+/// This provides an abstraction over most paging modes in common architectures.
+pub(crate) trait PagingConstsTrait: Debug + 'static {
+    /// The smallest page size.
+    /// This is also the page size at level 1 page tables.
+    const BASE_PAGE_SIZE: usize;
+
+    /// The number of levels in the page table.
+    /// The numbering of levels goes from deepest node to the root node. For example,
+    /// the level 1 to 5 on AMD64 corresponds to Page Tables, Page Directory Tables,
+    /// Page Directory Pointer Tables, Page-Map Level-4 Table, and Page-Map Level-5
+    /// Table, respectively.
+    const NR_LEVELS: usize;
+
+    /// The highest level that a PTE can be directly used to translate a VA.
+    /// This affects the the largest page size supported by the page table.
+    const HIGHEST_TRANSLATION_LEVEL: usize;
+
+    /// The size of a PTE.
+    const PTE_SIZE: usize;
+}
 
 /// The maximum virtual address of user space (non inclusive).
 ///

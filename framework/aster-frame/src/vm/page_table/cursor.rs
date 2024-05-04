@@ -56,8 +56,9 @@ use core::{any::TypeId, ops::Range};
 use align_ext::AlignExt;
 
 use super::{
-    Child, KernelMode, MapInfo, MapOp, MapProperty, PageTable, PageTableConstsTrait,
-    PageTableEntryTrait, PageTableError, PageTableFrame, PageTableMode,
+    nr_ptes_per_node, page_size, pte_index, Child, KernelMode, MapInfo, MapOp, MapProperty,
+    PageTable, PageTableEntryTrait, PageTableError, PageTableFrame, PageTableMode,
+    PagingConstsTrait,
 };
 use crate::{
     sync::{ArcSpinLockGuard, SpinLock},
@@ -77,9 +78,9 @@ use crate::{
 /// that we modify the tree while traversing it. We use a guard stack to
 /// simulate the recursion, and adpot a page table locking protocol to
 /// provide concurrency.
-pub(crate) struct CursorMut<'a, M: PageTableMode, E: PageTableEntryTrait, C: PageTableConstsTrait>
+pub(crate) struct CursorMut<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     pt: &'a PageTable<M, E, C>,
@@ -90,9 +91,9 @@ where
     barrier_va: Range<Vaddr>, // virtual address range that is locked
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PageTableConstsTrait> CursorMut<'a, M, E, C>
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorMut<'a, M, E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     /// Create a cursor exclusively owning the locks for the given range.
@@ -131,8 +132,8 @@ where
         // While going down, previous guards of too-high levels will be released.
         loop {
             let level_too_high = {
-                let start_idx = C::in_frame_index(va.start, cursor.level);
-                let end_idx = C::in_frame_index(va.end - 1, cursor.level);
+                let start_idx = pte_index::<C>(va.start, cursor.level);
+                let end_idx = pte_index::<C>(va.end - 1, cursor.level);
                 start_idx == end_idx
             };
             if !level_too_high || !cursor.cur_child().is_pt() {
@@ -153,8 +154,8 @@ where
         assert!(self.barrier_va.contains(&va));
         assert!(va % C::BASE_PAGE_SIZE == 0);
         loop {
-            let cur_node_start = self.va & !(C::page_size(self.level + 1) - 1);
-            let cur_node_end = cur_node_start + C::page_size(self.level + 1);
+            let cur_node_start = self.va & !(page_size::<C>(self.level + 1) - 1);
+            let cur_node_end = cur_node_start + page_size::<C>(self.level + 1);
             // If the address is within the current node, we can jump directly.
             if cur_node_start <= va && va < cur_node_end {
                 self.va = va;
@@ -188,8 +189,8 @@ where
         assert!(end <= self.barrier_va.end);
         // Go down if not applicable.
         while self.level > C::HIGHEST_TRANSLATION_LEVEL
-            || self.va % C::page_size(self.level) != 0
-            || self.va + C::page_size(self.level) > end
+            || self.va % page_size::<C>(self.level) != 0
+            || self.va + page_size::<C>(self.level) > end
         {
             self.level_down(Some(prop));
             continue;
@@ -235,9 +236,9 @@ where
                 TypeId::of::<M>() == TypeId::of::<KernelMode>() && self.level >= C::NR_LEVELS - 1;
             if self.level > C::HIGHEST_TRANSLATION_LEVEL
                 || is_kernel_shared_node
-                || self.va % C::page_size(self.level) != 0
-                || self.va + C::page_size(self.level) > end
-                || pa % C::page_size(self.level) != 0
+                || self.va % page_size::<C>(self.level) != 0
+                || self.va + page_size::<C>(self.level) > end
+                || pa % page_size::<C>(self.level) != 0
             {
                 self.level_down(Some(prop));
                 continue;
@@ -247,7 +248,7 @@ where
             let level = self.level;
             self.cur_node_mut()
                 .set_child(idx, Child::Untracked(pa), Some(prop), level > 1);
-            pa += C::page_size(level);
+            pa += page_size::<C>(level);
             self.move_forward();
         }
     }
@@ -270,7 +271,7 @@ where
         while self.va < end {
             // Skip if it is already invalid.
             if self.cur_child().is_none() {
-                if self.va + C::page_size(self.level) > end {
+                if self.va + page_size::<C>(self.level) > end {
                     break;
                 }
                 self.move_forward();
@@ -282,8 +283,8 @@ where
             let is_kernel_shared_node =
                 TypeId::of::<M>() == TypeId::of::<KernelMode>() && self.level >= C::NR_LEVELS - 1;
             if is_kernel_shared_node
-                || self.va % C::page_size(self.level) != 0
-                || self.va + C::page_size(self.level) > end
+                || self.va % page_size::<C>(self.level) != 0
+                || self.va + page_size::<C>(self.level) > end
             {
                 self.level_down(Some(MapProperty::new_invalid()));
                 continue;
@@ -330,8 +331,8 @@ where
                 self.level_down(None);
                 continue;
             }
-            let vaddr_not_fit =
-                self.va % C::page_size(self.level) != 0 || self.va + C::page_size(self.level) > end;
+            let vaddr_not_fit = self.va % page_size::<C>(self.level) != 0
+                || self.va + page_size::<C>(self.level) > end;
             let cur_pte_info = self.read_cur_pte_info();
             let protected_prop = op(cur_pte_info);
             // Go down if the page size is too big and we are protecting part
@@ -378,7 +379,7 @@ where
                     return Some(PageTableQueryResult::MappedUntyped {
                         va,
                         pa,
-                        len: C::page_size(level),
+                        len: page_size::<C>(level),
                         info: map_info,
                     });
                 }
@@ -386,7 +387,7 @@ where
                     self.move_forward();
                     return Some(PageTableQueryResult::NotMapped {
                         va,
-                        len: C::page_size(level),
+                        len: page_size::<C>(level),
                     });
                 }
             }
@@ -413,9 +414,9 @@ where
     /// If reached the end of a page table frame, it leads itself up to the next frame of the parent
     /// frame if possible.
     fn move_forward(&mut self) {
-        let page_size = C::page_size(self.level);
+        let page_size = page_size::<C>(self.level);
         let next_va = self.va.align_down(page_size) + page_size;
-        while self.level < self.guard_level && C::in_frame_index(next_va, self.level) == 0 {
+        while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0 {
             self.level_up();
         }
         self.va = next_va;
@@ -452,7 +453,7 @@ where
         debug_assert!(self.level > 1);
         // Check if the child frame exists.
         let nxt_lvl_frame = {
-            let idx = C::in_frame_index(self.va, self.level);
+            let idx = pte_index::<C>(self.va, self.level);
             let child = self.cur_child();
             if let Child::PageTable(nxt_lvl_frame) = child {
                 Some(nxt_lvl_frame.clone())
@@ -499,7 +500,7 @@ where
     }
 
     fn cur_idx(&self) -> usize {
-        C::in_frame_index(self.va, self.level)
+        pte_index::<C>(self.va, self.level)
     }
 
     fn cur_child(&self) -> &Child<E, C> {
@@ -511,10 +512,9 @@ where
     }
 }
 
-impl<M: PageTableMode, E: PageTableEntryTrait, C: PageTableConstsTrait> Drop
-    for CursorMut<'_, M, E, C>
+impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Drop for CursorMut<'_, M, E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     fn drop(&mut self) {
@@ -566,17 +566,17 @@ pub(crate) enum PageTableQueryResult {
 /// The read-only cursor for traversal over the page table.
 ///
 /// It implements the `Iterator` trait to provide a convenient way to query over the page table.
-pub(crate) struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PageTableConstsTrait>
+pub(crate) struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     inner: CursorMut<'a, M, E, C>,
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PageTableConstsTrait> Cursor<'a, M, E, C>
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     pub(super) fn new(
@@ -587,10 +587,10 @@ where
     }
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PageTableConstsTrait> Iterator
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Iterator
     for Cursor<'a, M, E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     type Item = PageTableQueryResult;

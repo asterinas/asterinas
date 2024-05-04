@@ -4,44 +4,7 @@ use core::fmt::Debug;
 
 use pod::Pod;
 
-use crate::vm::{Paddr, Vaddr, VmPerm};
-
-/// A minimal set of constants that determines the flags of the page table.
-/// This provides an abstraction over most paging modes in common architectures.
-pub trait PageTableConstsTrait: Debug + 'static {
-    /// The smallest page size.
-    const BASE_PAGE_SIZE: usize;
-
-    /// The number of levels in the page table.
-    /// The level 1 is the leaf level, and the level `NR_LEVELS` is the root level.
-    const NR_LEVELS: usize;
-
-    /// The highest level that a PTE can be directly used to translate a VA.
-    /// This affects the the largest page size supported by the page table.
-    const HIGHEST_TRANSLATION_LEVEL: usize;
-
-    /// The size of a PTE.
-    const ENTRY_SIZE: usize;
-
-    // Here are some const values that are determined by the page table constants.
-
-    /// The number of PTEs per page table frame.
-    const NR_ENTRIES_PER_FRAME: usize = Self::BASE_PAGE_SIZE / Self::ENTRY_SIZE;
-
-    /// The number of bits used to index a PTE in a page table frame.
-    const IN_FRAME_INDEX_BITS: usize = Self::NR_ENTRIES_PER_FRAME.ilog2() as usize;
-
-    /// The index of a VA's PTE in a page table frame at the given level.
-    fn in_frame_index(va: Vaddr, level: usize) -> usize {
-        va >> (Self::BASE_PAGE_SIZE.ilog2() as usize + Self::IN_FRAME_INDEX_BITS * (level - 1))
-            & (Self::NR_ENTRIES_PER_FRAME - 1)
-    }
-
-    /// The page size at a given level.
-    fn page_size(level: usize) -> usize {
-        Self::BASE_PAGE_SIZE << (Self::IN_FRAME_INDEX_BITS * (level - 1))
-    }
-}
+use crate::vm::{Paddr, VmPerm};
 
 bitflags::bitflags! {
     /// The status of a memory mapping recorded by the hardware.

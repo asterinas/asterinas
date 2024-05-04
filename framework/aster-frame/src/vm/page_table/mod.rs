@@ -3,10 +3,10 @@
 use alloc::sync::Arc;
 use core::{fmt::Debug, marker::PhantomData, ops::Range, panic};
 
+use super::{paddr_to_vaddr, Paddr, PagingConstsTrait, Vaddr, VmPerm};
 use crate::{
-    arch::mm::{activate_page_table, PageTableConsts, PageTableEntry},
+    arch::mm::{activate_page_table, PageTableEntry, PagingConsts},
     sync::SpinLock,
-    vm::{paddr_to_vaddr, Paddr, Vaddr, VmPerm},
 };
 
 mod properties;
@@ -57,24 +57,47 @@ impl PageTableMode for KernelMode {
     const VADDR_RANGE: Range<Vaddr> = super::KERNEL_BASE_VADDR..super::KERNEL_END_VADDR;
 }
 
+// Here are some const values that are determined by the paging constants.
+
+/// The page size at a given level.
+pub(crate) const fn page_size<C: PagingConstsTrait>(level: usize) -> usize {
+    C::BASE_PAGE_SIZE << (nr_pte_index_bits::<C>() * (level - 1))
+}
+
+/// The number of page table entries per page table frame.
+pub(crate) const fn nr_ptes_per_node<C: PagingConstsTrait>() -> usize {
+    C::BASE_PAGE_SIZE / C::PTE_SIZE
+}
+
+/// The number of virtual address bits used to index a PTE in a frame.
+const fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize {
+    nr_ptes_per_node::<C>().ilog2() as usize
+}
+
+/// The index of a VA's PTE in a page table frame at the given level.
+const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: usize) -> usize {
+    va >> (C::BASE_PAGE_SIZE.ilog2() as usize + nr_pte_index_bits::<C>() * (level - 1))
+        & (nr_ptes_per_node::<C>() - 1)
+}
+
 /// A handle to a page table.
 /// A page table can track the lifetime of the mapped physical frames.
 #[derive(Debug)]
 pub(crate) struct PageTable<
     M: PageTableMode,
     E: PageTableEntryTrait = PageTableEntry,
-    C: PageTableConstsTrait = PageTableConsts,
+    C: PagingConstsTrait = PagingConsts,
 > where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     root_frame: PtfRef<E, C>,
     _phantom: PhantomData<M>,
 }
 
-impl<E: PageTableEntryTrait, C: PageTableConstsTrait> PageTable<UserMode, E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<UserMode, E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     pub(crate) fn activate(&self) {
@@ -103,7 +126,7 @@ where
         };
         let root_frame = cursor.leak_root_guard().unwrap();
         let mut new_root_frame = PageTableFrame::<E, C>::new();
-        let half_of_entries = C::NR_ENTRIES_PER_FRAME / 2;
+        let half_of_entries = nr_ptes_per_node::<C>() / 2;
         for i in 0..half_of_entries {
             // This is user space, deep copy the child.
             match root_frame.child(i) {
@@ -128,7 +151,7 @@ where
                 }
             }
         }
-        for i in half_of_entries..C::NR_ENTRIES_PER_FRAME {
+        for i in half_of_entries..nr_ptes_per_node::<C>() {
             // This is kernel space, share the child.
             new_root_frame.set_child(
                 i,
@@ -144,9 +167,9 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PageTableConstsTrait> PageTable<KernelMode, E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<KernelMode, E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     /// Create a new user page table.
@@ -159,7 +182,7 @@ where
     pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode, E, C> {
         let mut new_root_frame = PageTableFrame::<E, C>::new();
         let root_frame = self.root_frame.lock();
-        for i in C::NR_ENTRIES_PER_FRAME / 2..C::NR_ENTRIES_PER_FRAME {
+        for i in nr_ptes_per_node::<C>() / 2..nr_ptes_per_node::<C>() {
             new_root_frame.set_child(
                 i,
                 root_frame.child(i).clone(),
@@ -180,10 +203,10 @@ where
     /// instead of the virtual address range.
     pub(crate) fn make_shared_tables(&self, root_index: Range<usize>) {
         let start = root_index.start;
-        debug_assert!(start >= C::NR_ENTRIES_PER_FRAME / 2);
-        debug_assert!(start < C::NR_ENTRIES_PER_FRAME);
+        debug_assert!(start >= nr_ptes_per_node::<C>() / 2);
+        debug_assert!(start < nr_ptes_per_node::<C>());
         let end = root_index.end;
-        debug_assert!(end <= C::NR_ENTRIES_PER_FRAME);
+        debug_assert!(end <= nr_ptes_per_node::<C>());
         let mut root_frame = self.root_frame.lock();
         for i in start..end {
             let no_such_child = root_frame.child(i).is_none();
@@ -205,9 +228,9 @@ where
     }
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PageTableConstsTrait> PageTable<M, E, C>
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
@@ -296,9 +319,9 @@ where
     }
 }
 
-impl<M: PageTableMode, E: PageTableEntryTrait, C: PageTableConstsTrait> Clone for PageTable<M, E, C>
+impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Clone for PageTable<M, E, C>
 where
-    [(); C::NR_ENTRIES_PER_FRAME]:,
+    [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
     fn clone(&self) -> Self {
@@ -318,14 +341,14 @@ where
 ///
 /// The caller must ensure that the root_paddr is a valid pointer to the root
 /// page table frame.
-pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PageTableConstsTrait>(
+pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
     root_paddr: Paddr,
     vaddr: Vaddr,
 ) -> Option<(Paddr, MapInfo)> {
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {
         let frame_addr = paddr_to_vaddr(root_paddr);
-        let offset = C::in_frame_index(vaddr, cur_level);
+        let offset = pte_index::<C>(vaddr, cur_level);
         // Safety: The offset does not exceed the value of PAGE_SIZE.
         unsafe { (frame_addr as *const E).add(offset).read() }
     };
@@ -341,7 +364,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PageTableConstsTrait>(
         cur_level -= 1;
         cur_pte = {
             let frame_addr = paddr_to_vaddr(cur_pte.paddr());
-            let offset = C::in_frame_index(vaddr, cur_level);
+            let offset = pte_index::<C>(vaddr, cur_level);
             // Safety: The offset does not exceed the value of PAGE_SIZE.
             unsafe { (frame_addr as *const E).add(offset).read() }
         };
@@ -349,7 +372,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PageTableConstsTrait>(
 
     if cur_pte.is_valid() {
         Some((
-            cur_pte.paddr() + (vaddr & (C::page_size(cur_level) - 1)),
+            cur_pte.paddr() + (vaddr & (page_size::<C>(cur_level) - 1)),
             cur_pte.info(),
         ))
     } else {
