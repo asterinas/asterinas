@@ -5,7 +5,7 @@ use core::{mem::size_of, ops::Range};
 use pod::Pod;
 
 use crate::{
-    vm::{paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
+    vm::{kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
     Error, Result,
 };
 
@@ -54,7 +54,7 @@ impl VmIo for IoMem {
 
 impl HasPaddr for IoMem {
     fn paddr(&self) -> Paddr {
-        crate::vm::vaddr_to_paddr(self.virtual_address).unwrap()
+        self.virtual_address - LINEAR_MAPPING_BASE_VADDR
     }
 }
 
@@ -70,7 +70,7 @@ impl IoMem {
     }
 
     pub fn paddr(&self) -> Paddr {
-        crate::vm::vaddr_to_paddr(self.virtual_address).unwrap()
+        self.virtual_address - LINEAR_MAPPING_BASE_VADDR
     }
 
     pub fn length(&self) -> usize {

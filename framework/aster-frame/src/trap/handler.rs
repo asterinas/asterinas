@@ -19,9 +19,9 @@ use crate::{
     cpu::{CpuException, PageFaultErrorCode, PAGE_FAULT},
     cpu_local,
     vm::{
-        kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR},
+        kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
-        PageFlags, PrivilegedPageFlags as PrivFlags, PAGE_SIZE, PHYS_MEM_VADDR_RANGE,
+        PageFlags, PrivilegedPageFlags as PrivFlags, PAGE_SIZE,
     },
 };
 
@@ -192,8 +192,8 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
     );
 
     assert!(
-        PHYS_MEM_VADDR_RANGE.contains(&(page_fault_vaddr as usize)),
-        "kernel page fault: the address is outside the range of the direct mapping",
+        LINEAR_MAPPING_VADDR_RANGE.contains(&(page_fault_vaddr as usize)),
+        "kernel page fault: the address is outside the range of the linear mapping",
     );
 
     const SUPPORTED_ERROR_CODES: PageFaultErrorCode = PageFaultErrorCode::PRESENT

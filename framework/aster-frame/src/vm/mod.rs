@@ -29,7 +29,6 @@ pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter},
     io::VmIo,
-    kspace::vaddr_to_paddr,
     options::VmAllocOptions,
     page_prop::{CachePolicy, PageFlags, PageProperty},
     space::{VmMapOptions, VmSpace},
@@ -76,47 +75,10 @@ pub(crate) trait PagingConstsTrait: Debug + 'static {
 /// for the rationale.
 pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE;
 
-/// The base address of the direct mapping of physical memory.
-pub(crate) const PHYS_MEM_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000;
-
-/// The maximum size of the direct mapping of physical memory.
-///
-/// This size acts as a cap. If the actual memory size exceeds this value,
-/// the remaining memory cannot be included in the direct mapping because
-/// the maximum size of the direct mapping is limited by this value. On
-/// the other hand, if the actual memory size is smaller, the direct
-/// mapping can shrink to save memory consumption due to the page table.
-///
-/// We do not currently have APIs to manually map MMIO pages, so we have
-/// to rely on the direct mapping to perform MMIO operations. Therefore,
-/// we set the maximum size to 127 TiB, which makes some surprisingly
-/// high MMIO addresses usable (e.g., `0x7000_0000_7004` for VirtIO
-/// devices in the TDX environment) and leaves the last 1 TiB for other
-/// uses (e.g., the kernel code starting at [`kernel_loaded_offset()`]).
-pub(crate) const PHYS_MEM_MAPPING_MAX_SIZE: usize = 127 << 40;
-
-/// The address range of the direct mapping of physical memory.
-///
-/// This range is constructed based on [`PHYS_MEM_BASE_VADDR`] and
-/// [`PHYS_MEM_MAPPING_MAX_SIZE`].
-pub(crate) const PHYS_MEM_VADDR_RANGE: Range<Vaddr> =
-    PHYS_MEM_BASE_VADDR..(PHYS_MEM_BASE_VADDR + PHYS_MEM_MAPPING_MAX_SIZE);
-
-/// The kernel code is linear mapped to this address.
-///
-/// FIXME: This offset should be randomly chosen by the loader or the
-/// boot compatibility layer. But we disabled it because the framework
-/// doesn't support relocatable kernel yet.
-pub const fn kernel_loaded_offset() -> usize {
-    0xffff_ffff_8000_0000
-}
-const_assert!(PHYS_MEM_VADDR_RANGE.end < kernel_loaded_offset());
-
-/// Start of the kernel address space.
-/// This is the _lowest_ address of the x86-64's _high_ canonical addresses.
-pub(crate) const KERNEL_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000;
-/// End of the kernel address space (non inclusive).
-pub(crate) const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000;
+/// The kernel address space.
+/// There are the high canonical addresses defined in most 48-bit width
+/// architectures.
+pub(crate) const KERNEL_VADDR_RANGE: Range<Vaddr> = 0xffff_8000_0000_0000..0xffff_ffff_ffff_0000;
 
 /// Get physical address trait
 pub trait HasPaddr {

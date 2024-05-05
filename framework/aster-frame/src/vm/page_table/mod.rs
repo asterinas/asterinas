@@ -58,7 +58,7 @@ impl PageTableMode for UserMode {
 pub struct KernelMode {}
 
 impl PageTableMode for KernelMode {
-    const VADDR_RANGE: Range<Vaddr> = super::KERNEL_BASE_VADDR..super::KERNEL_END_VADDR;
+    const VADDR_RANGE: Range<Vaddr> = super::KERNEL_VADDR_RANGE;
 }
 
 // Here are some const values that are determined by the paging constants.
