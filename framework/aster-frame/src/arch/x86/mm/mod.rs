@@ -60,6 +60,21 @@ pub fn tlb_flush(vaddr: Vaddr) {
     tlb::flush(VirtAddr::new(vaddr as u64));
 }
 
+pub fn tlb_flush_all_including_global() {
+    // Safety: updates to CR4 here only change the global-page bit, the side effect
+    // is only to invalidate the TLB, which doesn't affect the memory safety.
+    unsafe {
+        // To invalidate all entries, including global-page
+        // entries, disable global-page extensions (CR4.PGE=0).
+        x86_64::registers::control::Cr4::update(|cr4| {
+            *cr4 -= x86_64::registers::control::Cr4Flags::PAGE_GLOBAL;
+        });
+        x86_64::registers::control::Cr4::update(|cr4| {
+            *cr4 |= x86_64::registers::control::Cr4Flags::PAGE_GLOBAL;
+        });
+    }
+}
+
 #[derive(Clone, Copy, Pod)]
 #[repr(C)]
 pub struct PageTableEntry(usize);

@@ -79,6 +79,7 @@ pub fn init() {
             .get()
             .unwrap()
             .activate_unchecked();
+        crate::arch::mm::tlb_flush_all_including_global();
     }
     invoke_ffi_init_funcs();
 }
