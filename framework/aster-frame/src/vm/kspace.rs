@@ -2,11 +2,13 @@
 
 //! Kernel memory space management.
 
+use core::ops::Range;
+
 use align_ext::AlignExt;
 use spin::Once;
 
 use super::{
-    page_table::{nr_ptes_per_node, page_walk, KernelMode, PageTable},
+    page_table::{nr_ptes_per_node, KernelMode, PageTable},
     CachePolicy, MemoryRegionType, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr,
     PAGE_SIZE,
 };
@@ -16,25 +18,38 @@ use crate::arch::mm::{PageTableEntry, PagingConsts};
 /// memory in the kernel address space.
 pub(crate) const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000;
 
+/// The maximum size of the direct mapping of physical memory.
+///
+/// This size acts as a cap. If the actual memory size exceeds this value,
+/// the remaining memory cannot be included in the direct mapping because
+/// the maximum size of the direct mapping is limited by this value. On
+/// the other hand, if the actual memory size is smaller, the direct
+/// mapping can shrink to save memory consumption due to the page table.
+///
+/// We do not currently have APIs to manually map MMIO pages, so we have
+/// to rely on the direct mapping to perform MMIO operations. Therefore,
+/// we set the maximum size to 127 TiB, which makes some surprisingly
+/// high MMIO addresses usable (e.g., `0x7000_0000_7004` for VirtIO
+/// devices in the TDX environment) and leaves the last 1 TiB for other
+/// uses (e.g., the kernel code starting at [`kernel_loaded_offset()`]).
+pub(crate) const LINEAR_MAPPING_MAX_SIZE: usize = 127 << 40;
+
+/// The address range of the direct mapping of physical memory.
+///
+/// This range is constructed based on [`PHYS_MEM_BASE_VADDR`] and
+/// [`PHYS_MEM_MAPPING_MAX_SIZE`].
+pub(crate) const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> =
+    LINEAR_MAPPING_BASE_VADDR..(LINEAR_MAPPING_BASE_VADDR + LINEAR_MAPPING_MAX_SIZE);
+
 /// The kernel code is linear mapped to this address.
 ///
 /// FIXME: This offset should be randomly chosen by the loader or the
 /// boot compatibility layer. But we disabled it because the framework
 /// doesn't support relocatable kernel yet.
-pub fn kernel_loaded_offset() -> usize {
+pub const fn kernel_loaded_offset() -> usize {
     0xffff_ffff_8000_0000
 }
-
-pub fn vaddr_to_paddr(va: Vaddr) -> Option<Paddr> {
-    if (LINEAR_MAPPING_BASE_VADDR..=kernel_loaded_offset()).contains(&va) {
-        // can use offset to get the physical address
-        Some(va - LINEAR_MAPPING_BASE_VADDR)
-    } else {
-        let root_paddr = crate::arch::mm::current_page_table_paddr();
-        // Safety: the root page table is valid since we read it from the register.
-        unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, va).map(|(pa, _)| pa) }
-    }
-}
+const_assert!(LINEAR_MAPPING_VADDR_RANGE.end < kernel_loaded_offset());
 
 /// Convert physical address to virtual address using offset, only available inside aster-frame
 pub(crate) fn paddr_to_vaddr(pa: Paddr) -> usize {
