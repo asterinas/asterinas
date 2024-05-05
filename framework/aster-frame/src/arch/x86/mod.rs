@@ -77,7 +77,11 @@ pub fn read_tsc() -> u64 {
 fn enable_common_cpu_features() {
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
     let mut cr4 = x86_64::registers::control::Cr4::read();
-    cr4 |= Cr4Flags::FSGSBASE | Cr4Flags::OSXSAVE | Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE;
+    cr4 |= Cr4Flags::FSGSBASE
+        | Cr4Flags::OSXSAVE
+        | Cr4Flags::OSFXSR
+        | Cr4Flags::OSXMMEXCPT_ENABLE
+        | Cr4Flags::PAGE_GLOBAL;
     unsafe {
         x86_64::registers::control::Cr4::write(cr4);
     }
