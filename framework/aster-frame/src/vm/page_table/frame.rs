@@ -2,10 +2,10 @@
 
 use alloc::{boxed::Box, sync::Arc};
 
-use super::{nr_ptes_per_node, page_size, MapInfo, MapProperty, PageTableEntryTrait};
+use super::{nr_ptes_per_node, page_size, PageTableEntryTrait};
 use crate::{
     sync::SpinLock,
-    vm::{Paddr, PagingConstsTrait, VmAllocOptions, VmFrame},
+    vm::{page_prop::PageProperty, Paddr, PagingConstsTrait, VmAllocOptions, VmFrame},
 };
 
 /// A page table frame.
@@ -123,8 +123,8 @@ where
     }
 
     /// Read the info from a page table entry at a given index.
-    pub(super) fn read_pte_info(&self, idx: usize) -> MapInfo {
-        self.read_pte(idx).info()
+    pub(super) fn read_pte_prop(&self, idx: usize) -> PageProperty {
+        self.read_pte(idx).prop()
     }
 
     /// Split the untracked huge page mapped at `idx` to smaller pages.
@@ -134,21 +134,16 @@ where
         let Child::Untracked(pa) = self.children[idx] else {
             panic!("split_untracked_huge: not an untyped huge page");
         };
-        let info = self.read_pte_info(idx);
+        let prop = self.read_pte_prop(idx);
         let mut new_frame = Self::new();
         for i in 0..nr_ptes_per_node::<C>() {
             let small_pa = pa + i * page_size::<C>(cur_level - 1);
-            new_frame.set_child(
-                i,
-                Child::Untracked(small_pa),
-                Some(info.prop),
-                cur_level - 1 > 1,
-            );
+            new_frame.set_child(i, Child::Untracked(small_pa), Some(prop), cur_level - 1 > 1);
         }
         self.set_child(
             idx,
             Child::PageTable(Arc::new(SpinLock::new(new_frame))),
-            Some(info.prop),
+            Some(prop),
             false,
         );
     }
@@ -159,7 +154,7 @@ where
         &mut self,
         idx: usize,
         child: Child<E, C>,
-        prop: Option<MapProperty>,
+        prop: Option<PageProperty>,
         huge: bool,
     ) {
         assert!(idx < nr_ptes_per_node::<C>());
@@ -187,7 +182,7 @@ where
                     self.nr_valid_children += 1;
                 }
                 Child::None => {
-                    self.write_pte(idx, E::new_invalid());
+                    self.write_pte(idx, E::new_absent());
                 }
             }
         }
@@ -198,7 +193,7 @@ where
     }
 
     /// Protect an already mapped child at a given index.
-    pub(super) fn protect(&mut self, idx: usize, prop: MapProperty, level: usize) {
+    pub(super) fn protect(&mut self, idx: usize, prop: PageProperty, level: usize) {
         debug_assert!(self.children[idx].is_some());
         let paddr = self.children[idx].paddr().unwrap();
         // Safety: the index is within the bound and the PTE is valid.
@@ -248,7 +243,7 @@ where
                     let pte = self.read_pte(i);
                     new_ptr.add(i).write(E::new(
                         cloned.inner.start_paddr(),
-                        pte.info().prop,
+                        pte.prop(),
                         false,
                         false,
                     ));

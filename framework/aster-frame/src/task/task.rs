@@ -12,10 +12,7 @@ use crate::{
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
-    vm::{
-        kspace::KERNEL_PAGE_TABLE, page_table::perm_op, VmAllocOptions, VmPerm, VmSegment,
-        PAGE_SIZE,
-    },
+    vm::{kspace::KERNEL_PAGE_TABLE, PageFlags, VmAllocOptions, VmSegment, PAGE_SIZE},
 };
 
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
@@ -72,10 +69,9 @@ impl KernelStack {
         // Safety: the segment allocated is not used by others so we can protect it.
         unsafe {
             page_table
-                .protect(
-                    &(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE),
-                    perm_op(|p| p - VmPerm::RW),
-                )
+                .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
+                    p.flags -= PageFlags::RW
+                })
                 .unwrap();
         }
         Ok(Self {
@@ -101,10 +97,9 @@ impl Drop for KernelStack {
             // Safety: the segment allocated is not used by others so we can protect it.
             unsafe {
                 page_table
-                    .protect(
-                        &(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE),
-                        perm_op(|p| p | VmPerm::RW),
-                    )
+                    .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
+                        p.flags |= PageFlags::RW
+                    })
                     .unwrap();
             }
         }

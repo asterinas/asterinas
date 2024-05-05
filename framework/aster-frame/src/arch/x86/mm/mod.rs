@@ -6,8 +6,9 @@ use pod::Pod;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::vm::{
-    page_table::{CachePolicy, MapInfo, MapProperty, MapStatus, PageTableEntryTrait},
-    Paddr, PagingConstsTrait, Vaddr, VmPerm,
+    page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
+    page_table::PageTableEntryTrait,
+    Paddr, PagingConstsTrait, Vaddr,
 };
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
@@ -101,72 +102,95 @@ impl PageTableEntry {
     const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
 }
 
+/// Parse a bit-flag bits `val` in the representation of `from` to `to` in bits.
+macro_rules! parse_flags {
+    ($val:expr, $from:expr, $to:expr) => {
+        ($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2()
+    };
+}
+
 impl PageTableEntryTrait for PageTableEntry {
-    fn new_invalid() -> Self {
+    fn new_absent() -> Self {
         Self(0)
     }
 
-    fn is_valid(&self) -> bool {
+    fn is_present(&self) -> bool {
         self.0 & PageTableFlags::PRESENT.bits() != 0
     }
 
-    fn new(paddr: Paddr, prop: MapProperty, huge: bool, last: bool) -> Self {
-        let mut flags = PageTableFlags::PRESENT;
+    fn new(paddr: Paddr, prop: PageProperty, huge: bool, last: bool) -> Self {
+        let mut flags =
+            PageTableFlags::PRESENT.bits() | (huge as usize) << PageTableFlags::HUGE.bits().ilog2();
         if !huge && !last {
             // In x86 if it's an intermediate PTE, it's better to have the same permissions
             // as the most permissive child (to reduce hardware page walk accesses). But we
             // don't have a mechanism to keep it generic across architectures, thus just
             // setting it to be the most permissive.
-            flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER;
+            flags |= PageTableFlags::WRITABLE.bits() | PageTableFlags::USER.bits();
+            #[cfg(feature = "intel_tdx")]
+            {
+                flags |= parse_flags!(
+                    prop.priv_flags.bits(),
+                    PrivFlags::SHARED,
+                    PageTableFlags::SHARED
+                );
+            }
         } else {
-            if prop.perm.contains(VmPerm::W) {
-                flags |= PageTableFlags::WRITABLE;
+            flags |= parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
+                | parse_flags!(!prop.flags.bits(), PageFlags::X, PageTableFlags::NO_EXECUTE)
+                | parse_flags!(
+                    prop.flags.bits(),
+                    PageFlags::ACCESSED,
+                    PageTableFlags::ACCESSED
+                )
+                | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY)
+                | parse_flags!(
+                    prop.priv_flags.bits(),
+                    PrivFlags::USER,
+                    PageTableFlags::USER
+                )
+                | parse_flags!(
+                    prop.priv_flags.bits(),
+                    PrivFlags::GLOBAL,
+                    PageTableFlags::GLOBAL
+                );
+            #[cfg(feature = "intel_tdx")]
+            {
+                flags |= parse_flags!(
+                    prop.priv_flags.bits(),
+                    PrivFlags::SHARED,
+                    PageTableFlags::SHARED
+                );
             }
-            if !prop.perm.contains(VmPerm::X) {
-                flags |= PageTableFlags::NO_EXECUTE;
+        }
+        match prop.cache {
+            CachePolicy::Writeback => {}
+            CachePolicy::Writethrough => {
+                flags |= PageTableFlags::WRITE_THROUGH.bits();
             }
-            if prop.perm.contains(VmPerm::U) {
-                flags |= PageTableFlags::USER;
+            CachePolicy::Uncacheable => {
+                flags |= PageTableFlags::NO_CACHE.bits();
             }
-            if prop.global {
-                flags |= PageTableFlags::GLOBAL;
-            }
+            _ => panic!("unsupported cache policy"),
         }
-        if prop.cache == CachePolicy::Uncacheable {
-            flags |= PageTableFlags::NO_CACHE;
-        }
-        if prop.cache == CachePolicy::Writethrough {
-            flags |= PageTableFlags::WRITE_THROUGH;
-        }
-        if huge {
-            flags |= PageTableFlags::HUGE;
-        }
-        #[cfg(feature = "intel_tdx")]
-        if prop.extension as usize & PageTableFlags::SHARED.bits() != 0 {
-            flags |= PageTableFlags::SHARED;
-        }
-        Self(paddr & Self::PHYS_ADDR_MASK | flags.bits())
+        Self(paddr & Self::PHYS_ADDR_MASK | flags)
     }
 
     fn paddr(&self) -> Paddr {
         self.0 & Self::PHYS_ADDR_MASK
     }
 
-    fn info(&self) -> MapInfo {
-        let mut perm = VmPerm::empty();
-        if self.0 & PageTableFlags::PRESENT.bits() != 0 {
-            perm |= VmPerm::R;
-        }
-        if self.0 & PageTableFlags::WRITABLE.bits() != 0 {
-            perm |= VmPerm::W;
-        }
-        if self.0 & PageTableFlags::NO_EXECUTE.bits() == 0 {
-            perm |= VmPerm::X;
-        }
-        if self.0 & PageTableFlags::USER.bits() != 0 {
-            perm |= VmPerm::U;
-        }
-        let global = self.0 & PageTableFlags::GLOBAL.bits() != 0;
+    fn prop(&self) -> PageProperty {
+        let flags = parse_flags!(self.0, PageTableFlags::PRESENT, PageFlags::R)
+            | parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W)
+            | parse_flags!(!self.0, PageTableFlags::NO_EXECUTE, PageFlags::X)
+            | parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED)
+            | parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY);
+        let priv_flags = parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER)
+            | parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL);
+        #[cfg(feature = "intel_tdx")]
+        let priv_flags =
+            priv_flags | parse_flags!(self.0, PageTableFlags::SHARED, PrivFlags::SHARED);
         let cache = if self.0 & PageTableFlags::NO_CACHE.bits() != 0 {
             CachePolicy::Uncacheable
         } else if self.0 & PageTableFlags::WRITE_THROUGH.bits() != 0 {
@@ -174,33 +198,10 @@ impl PageTableEntryTrait for PageTableEntry {
         } else {
             CachePolicy::Writeback
         };
-        let mut status = MapStatus::empty();
-        if self.0 & PageTableFlags::ACCESSED.bits() != 0 {
-            status |= MapStatus::ACCESSED;
-        }
-        if self.0 & PageTableFlags::DIRTY.bits() != 0 {
-            status |= MapStatus::DIRTY;
-        }
-        let extension = {
-            #[cfg(feature = "intel_tdx")]
-            {
-                let mut ext = PageTableFlags::empty();
-                if self.0 & PageTableFlags::SHARED.bits() != 0 {
-                    ext |= PageTableFlags::SHARED;
-                }
-                ext
-            }
-            #[cfg(not(feature = "intel_tdx"))]
-            0
-        };
-        MapInfo {
-            prop: MapProperty {
-                perm,
-                global,
-                extension,
-                cache,
-            },
-            status,
+        PageProperty {
+            flags: PageFlags::from_bits(flags as u8).unwrap(),
+            cache,
+            priv_flags: PrivFlags::from_bits(priv_flags as u8).unwrap(),
         }
     }
 
@@ -214,12 +215,12 @@ impl fmt::Debug for PageTableEntry {
         let mut f = f.debug_struct("PageTableEntry");
         f.field("raw", &format_args!("{:#x}", self.0))
             .field("paddr", &format_args!("{:#x}", self.paddr()))
-            .field("valid", &self.is_valid())
+            .field("present", &self.is_present())
             .field(
                 "flags",
                 &PageTableFlags::from_bits_truncate(self.0 & !Self::PHYS_ADDR_MASK),
             )
-            .field("info", &self.info())
+            .field("prop", &self.prop())
             .finish()
     }
 }

@@ -3,14 +3,18 @@
 use alloc::sync::Arc;
 use core::{fmt::Debug, marker::PhantomData, ops::Range, panic};
 
-use super::{paddr_to_vaddr, Paddr, PagingConstsTrait, Vaddr, VmPerm};
+use pod::Pod;
+
+use super::{
+    paddr_to_vaddr,
+    page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
+    Paddr, PagingConstsTrait, Vaddr,
+};
 use crate::{
     arch::mm::{activate_page_table, PageTableEntry, PagingConsts},
     sync::SpinLock,
 };
 
-mod properties;
-pub use properties::*;
 mod frame;
 use frame::*;
 mod cursor;
@@ -119,7 +123,7 @@ where
             cursor
                 .protect(
                     UserMode::VADDR_RANGE.len(),
-                    perm_op(|perm| perm & !VmPerm::W),
+                    |p: &mut PageProperty| p.flags -= PageFlags::W,
                     true,
                 )
                 .unwrap();
@@ -137,12 +141,7 @@ where
                     if frame.nr_valid_children() != 0 {
                         let cloned = frame.clone();
                         let pt = Child::PageTable(Arc::new(SpinLock::new(cloned)));
-                        new_root_frame.set_child(
-                            i,
-                            pt,
-                            Some(root_frame.read_pte_info(i).prop),
-                            false,
-                        );
+                        new_root_frame.set_child(i, pt, Some(root_frame.read_pte_prop(i)), false);
                     }
                 }
                 Child::None => {}
@@ -156,7 +155,7 @@ where
             new_root_frame.set_child(
                 i,
                 root_frame.child(i).clone(),
-                Some(root_frame.read_pte_info(i).prop),
+                Some(root_frame.read_pte_prop(i)),
                 false,
             )
         }
@@ -186,7 +185,7 @@ where
             new_root_frame.set_child(
                 i,
                 root_frame.child(i).clone(),
-                Some(root_frame.read_pte_info(i).prop),
+                Some(root_frame.read_pte_prop(i)),
                 false,
             )
         }
@@ -215,11 +214,10 @@ where
                 root_frame.set_child(
                     i,
                     Child::PageTable(frame),
-                    Some(MapProperty {
-                        perm: VmPerm::RWX,
-                        global: true,
-                        extension: 0,
-                        cache: CachePolicy::Uncacheable,
+                    Some(PageProperty {
+                        flags: PageFlags::RWX,
+                        cache: CachePolicy::Writeback,
+                        priv_flags: PrivilegedPageFlags::GLOBAL,
                     }),
                     false,
                 )
@@ -250,7 +248,7 @@ where
         &self,
         vaddr: &Range<Vaddr>,
         paddr: &Range<Paddr>,
-        prop: MapProperty,
+        prop: PageProperty,
     ) -> Result<(), PageTableError> {
         self.cursor_mut(vaddr)?.map_pa(paddr, prop);
         Ok(())
@@ -264,7 +262,7 @@ where
     pub(crate) unsafe fn protect(
         &self,
         vaddr: &Range<Vaddr>,
-        op: impl MapOp,
+        op: impl FnMut(&mut PageProperty),
     ) -> Result<(), PageTableError> {
         self.cursor_mut(vaddr)?
             .protect(vaddr.len(), op, true)
@@ -277,7 +275,7 @@ where
     /// Note that this function may fail reflect an accurate result if there are
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
-    pub(crate) fn query(&self, vaddr: Vaddr) -> Option<(Paddr, MapInfo)> {
+    pub(crate) fn query(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
         // Safety: The root frame is a valid page table frame so the address is valid.
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
     }
@@ -344,7 +342,7 @@ where
 pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
     root_paddr: Paddr,
     vaddr: Vaddr,
-) -> Option<(Paddr, MapInfo)> {
+) -> Option<(Paddr, PageProperty)> {
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {
         let frame_addr = paddr_to_vaddr(root_paddr);
@@ -354,7 +352,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
     };
 
     while cur_level > 1 {
-        if !cur_pte.is_valid() {
+        if !cur_pte.is_present() {
             return None;
         }
         if cur_pte.is_huge() {
@@ -370,12 +368,40 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
         };
     }
 
-    if cur_pte.is_valid() {
+    if cur_pte.is_present() {
         Some((
             cur_pte.paddr() + (vaddr & (page_size::<C>(cur_level) - 1)),
-            cur_pte.info(),
+            cur_pte.prop(),
         ))
     } else {
         None
     }
+}
+
+/// The interface for defining architecture-specific page table entries.
+pub(crate) trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
+    /// Create a set of new invalid page table flags that indicates an absent page.
+    ///
+    /// Note that currently the implementation requires an all zero PTE to be an absent PTE.
+    fn new_absent() -> Self;
+    /// If the flags are present with valid mappings.
+    fn is_present(&self) -> bool;
+
+    /// Create a new PTE with the given physical address and flags.
+    /// The huge flag indicates that the PTE maps a huge page.
+    /// The last flag indicates that the PTE is the last level page table.
+    /// If the huge and last flags are both false, the PTE maps a page
+    /// table node.
+    fn new(paddr: Paddr, prop: PageProperty, huge: bool, last: bool) -> Self;
+
+    /// Get the physical address from the PTE.
+    /// The physical address recorded in the PTE is either:
+    /// - the physical address of the next level page table;
+    /// - or the physical address of the page frame it maps to.
+    fn paddr(&self) -> Paddr;
+
+    fn prop(&self) -> PageProperty;
+
+    /// If the PTE maps a huge page or a page table frame.
+    fn is_huge(&self) -> bool;
 }

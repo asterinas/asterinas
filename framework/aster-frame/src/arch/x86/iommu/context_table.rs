@@ -6,13 +6,14 @@ use core::mem::size_of;
 use log::warn;
 use pod::Pod;
 
-use super::second_stage::{DeviceMode, PageTableEntry, PageTableFlags, PagingConsts};
+use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
 use crate::{
     bus::pci::PciDeviceLocation,
     vm::{
         dma::Daddr,
-        page_table::{CachePolicy, MapProperty, PageTableError},
-        Paddr, PageTable, VmAllocOptions, VmFrame, VmIo, VmPerm, PAGE_SIZE,
+        page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
+        page_table::PageTableError,
+        Paddr, PageFlags, PageTable, VmAllocOptions, VmFrame, VmIo, PAGE_SIZE,
     },
 };
 
@@ -295,11 +296,10 @@ impl ContextTable {
             .map(
                 &(daddr..daddr + PAGE_SIZE),
                 &(paddr..paddr + PAGE_SIZE),
-                MapProperty {
-                    perm: VmPerm::RW,
-                    global: false,
-                    extension: PageTableFlags::empty().bits(),
+                PageProperty {
+                    flags: PageFlags::RW,
                     cache: CachePolicy::Uncacheable,
+                    priv_flags: PrivFlags::empty(),
                 },
             )
             .unwrap();

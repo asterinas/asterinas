@@ -2,7 +2,7 @@
 
 use core::ops::Range;
 
-use aster_frame::vm::{VmFrame, VmFrameVec, VmIo, VmMapOptions, VmPerm, VmSpace};
+use aster_frame::vm::{PageFlags, VmFrame, VmFrameVec, VmIo, VmMapOptions, VmSpace};
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
 use crate::{
@@ -51,9 +51,9 @@ struct VmMappingInner {
     is_destroyed: bool,
     /// The pages already mapped. The key is the page index in vmo.
     mapped_pages: BTreeSet<usize>,
-    /// The permission of pages in the mapping.
-    /// All pages within the same VmMapping have the same permission.
-    perm: VmPerm,
+    /// The permissions of pages in the mapping.
+    /// All pages within the same VmMapping have the same permissions.
+    perms: VmPerms,
 }
 
 impl Interval<usize> for Arc<VmMapping> {
@@ -95,7 +95,7 @@ impl VmMapping {
             map_to_addr,
             is_destroyed: false,
             mapped_pages: BTreeSet::new(),
-            perm: VmPerm::from(perms),
+            perms,
         };
 
         Ok(Self {
@@ -113,15 +113,15 @@ impl VmMapping {
     fn clone_partial(
         &self,
         range: Range<usize>,
-        new_perm: Option<VmPerm>,
+        new_perms: Option<VmPerms>,
     ) -> Result<Arc<VmMapping>> {
         let partial_mapping = Arc::new(self.try_clone()?);
         // Adjust the mapping range and the permission.
         {
             let mut inner = partial_mapping.inner.lock();
             inner.shrink_to(range);
-            if let Some(perm) = new_perm {
-                inner.perm = perm;
+            if let Some(perms) = new_perms {
+                inner.perms = perms;
             }
         }
         Ok(partial_mapping)
@@ -174,8 +174,8 @@ impl VmMapping {
         // TODO: the current logic is vulnerable to TOCTTOU attack, since the permission may change after check.
         let page_idx_range = get_page_idx_range(&(vmo_read_offset..vmo_read_offset + buf.len()));
         self.check_page_idx_range(&page_idx_range)?;
-        let read_perm = VmPerm::R;
-        self.check_perm(&read_perm)?;
+        let read_perms = VmPerms::READ;
+        self.check_perms(&read_perms)?;
 
         self.vmo.read_bytes(vmo_read_offset, buf)?;
         Ok(())
@@ -186,8 +186,8 @@ impl VmMapping {
 
         let page_idx_range = get_page_idx_range(&(vmo_write_offset..vmo_write_offset + buf.len()));
         self.check_page_idx_range(&page_idx_range)?;
-        let write_perm = VmPerm::W;
-        self.check_perm(&write_perm)?;
+        let write_perms = VmPerms::WRITE;
+        self.check_perms(&write_perms)?;
 
         let mut page_addr =
             self.map_to_addr() - self.vmo_offset() + page_idx_range.start * PAGE_SIZE;
@@ -200,7 +200,7 @@ impl VmMapping {
             // page fault before writing at the VMO to guarantee the consistency between VMO and the page table.
             let need_page_fault = vm_space
                 .query(page_addr)?
-                .is_some_and(|info| !info.contains(VmPerm::W));
+                .is_some_and(|prop| !prop.flags.contains(PageFlags::W));
             if need_page_fault {
                 self.handle_page_fault(page_addr, false, true)?;
             }
@@ -239,8 +239,8 @@ impl VmMapping {
             self.vmo.check_rights(Rights::READ)?;
         }
 
-        let required_perm = if write { VmPerm::W } else { VmPerm::R };
-        self.check_perm(&required_perm)?;
+        let required_perm = if write { VmPerms::WRITE } else { VmPerms::READ };
+        self.check_perms(&required_perm)?;
 
         let frame = self.vmo.get_committed_frame(page_idx, write)?;
 
@@ -257,7 +257,7 @@ impl VmMapping {
     /// it should not be called during the direct iteration of the `vm_mappings`.
     pub(super) fn protect(&self, new_perms: VmPerms, range: Range<usize>) -> Result<()> {
         // If `new_perms` is equal to `old_perms`, `protect()` will not modify any permission in the VmMapping.
-        let old_perms = VmPerms::from(self.inner.lock().perm);
+        let old_perms = self.inner.lock().perms;
         if old_perms == new_perms {
             return Ok(());
         }
@@ -265,7 +265,7 @@ impl VmMapping {
         let rights = Rights::from(new_perms);
         self.vmo().check_rights(rights)?;
         // Protect permission for the perm in the VmMapping.
-        self.protect_with_subdivision(&range, VmPerm::from(new_perms))?;
+        self.protect_with_subdivision(&range, new_perms)?;
         // Protect permission in the VmSpace.
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
@@ -291,7 +291,7 @@ impl VmMapping {
                 map_to_addr: inner.map_to_addr,
                 is_destroyed: inner.is_destroyed,
                 mapped_pages: BTreeSet::new(),
-                perm: inner.perm,
+                perms: inner.perms,
             }
         };
 
@@ -321,12 +321,16 @@ impl VmMapping {
     /// Generally, this function is only used in `protect()` method.
     /// This method modifies the parent `Vmar` in the end if subdividing is required.
     /// It removes current mapping and add splitted mapping to the Vmar.
-    fn protect_with_subdivision(&self, intersect_range: &Range<usize>, perm: VmPerm) -> Result<()> {
+    fn protect_with_subdivision(
+        &self,
+        intersect_range: &Range<usize>,
+        perms: VmPerms,
+    ) -> Result<()> {
         let mut additional_mappings = Vec::new();
         let range = self.range();
         // Condition 4, the `additional_mappings` will be empty.
         if range.start == intersect_range.start && range.end == intersect_range.end {
-            self.inner.lock().perm = perm;
+            self.inner.lock().perms = perms;
             return Ok(());
         }
         // Condition 1 or 3, which needs an additional new VmMapping with range (range.start..intersect_range.start)
@@ -342,7 +346,7 @@ impl VmMapping {
             additional_mappings.push(additional_right_mapping);
         }
         // The protected VmMapping must exist and its range is `intersect_range`.
-        let protected_mapping = self.clone_partial(intersect_range.clone(), Some(perm))?;
+        let protected_mapping = self.clone_partial(intersect_range.clone(), Some(perms))?;
 
         // Begin to modify the `Vmar`.
         let vmar = self.parent.upgrade().unwrap();
@@ -427,8 +431,8 @@ impl VmMapping {
         self.inner.lock().trim_right(vm_space, vaddr)
     }
 
-    fn check_perm(&self, perm: &VmPerm) -> Result<()> {
-        self.inner.lock().check_perm(perm)
+    fn check_perms(&self, perms: &VmPerms) -> Result<()> {
+        self.inner.lock().check_perms(perms)
     }
 
     fn check_page_idx_range(&self, page_idx_range: &Range<usize>) -> Result<()> {
@@ -447,19 +451,19 @@ impl VmMappingInner {
     ) -> Result<()> {
         let map_addr = self.page_map_addr(page_idx);
 
-        let vm_perm = {
-            let mut perm = self.perm;
+        let vm_perms = {
+            let mut perms = self.perms;
             if is_readonly {
                 debug_assert!(vmo.is_cow_vmo());
-                perm -= VmPerm::W;
+                perms -= VmPerms::WRITE;
             }
-            perm
+            perms
         };
 
         let vm_map_options = {
             let mut options = VmMapOptions::new();
             options.addr(Some(map_addr));
-            options.perm(vm_perm);
+            options.flags(vm_perms.into());
             options
         };
 
@@ -514,13 +518,13 @@ impl VmMappingInner {
         debug_assert!(range.end % PAGE_SIZE == 0);
         let start_page = (range.start - self.map_to_addr + self.vmo_offset) / PAGE_SIZE;
         let end_page = (range.end - self.map_to_addr + self.vmo_offset) / PAGE_SIZE;
-        let perm = VmPerm::from(perms);
+        let flags: PageFlags = perms.into();
         for page_idx in start_page..end_page {
             let page_addr = self.page_map_addr(page_idx);
             if vm_space.query(page_addr)?.is_some() {
                 // If the page is already mapped, we will modify page table
                 let page_range = page_addr..(page_addr + PAGE_SIZE);
-                vm_space.protect(&page_range, perm)?;
+                vm_space.protect(&page_range, |p| p.flags = flags)?;
             }
         }
         Ok(())
@@ -581,8 +585,8 @@ impl VmMappingInner {
         self.map_to_addr..self.map_to_addr + self.map_size
     }
 
-    fn check_perm(&self, perm: &VmPerm) -> Result<()> {
-        if !self.perm.contains(*perm) {
+    fn check_perms(&self, perms: &VmPerms) -> Result<()> {
+        if !self.perms.contains(*perms) {
             return_errno_with_message!(Errno::EACCES, "perm check fails");
         }
         Ok(())
@@ -617,7 +621,7 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
     /// permissions.
     ///
     /// The VMO must have access rights that correspond to the memory
-    /// access permissions. For example, if `perms` contains `VmPerm::Write`,
+    /// access permissions. For example, if `perms` contains `VmPerms::Write`,
     /// then `vmo.rights()` should contain `Rights::WRITE`.
     pub fn new(parent: Vmar<R1>, vmo: Vmo<R2>, perms: VmPerms) -> Self {
         let size = vmo.size();

@@ -4,10 +4,7 @@
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
 
 use align_ext::AlignExt;
-use aster_frame::{
-    task::Task,
-    vm::{VmIo, VmPerm},
-};
+use aster_frame::{task::Task, vm::VmIo};
 use aster_rights::{Full, Rights};
 use xmas_elf::program::{self, ProgramHeader64};
 
@@ -262,7 +259,7 @@ fn map_segment_vmo(
     root_vmar: &Vmar<Full>,
     base_addr: Vaddr,
 ) -> Result<()> {
-    let perms = VmPerms::from(parse_segment_perm(program_header.flags));
+    let perms = parse_segment_perm(program_header.flags);
     let offset = (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
     trace!(
         "map segment vmo: virtual addr = 0x{:x}, size = 0x{:x}, perms = {:?}",
@@ -359,16 +356,16 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     Ok((segment_vmo.to_dyn(), anonymous_map_size))
 }
 
-fn parse_segment_perm(flags: xmas_elf::program::Flags) -> VmPerm {
-    let mut vm_perm = VmPerm::empty();
+fn parse_segment_perm(flags: xmas_elf::program::Flags) -> VmPerms {
+    let mut vm_perm = VmPerms::empty();
     if flags.is_read() {
-        vm_perm |= VmPerm::R;
+        vm_perm |= VmPerms::READ;
     }
     if flags.is_write() {
-        vm_perm |= VmPerm::W;
+        vm_perm |= VmPerms::WRITE;
     }
     if flags.is_execute() {
-        vm_perm |= VmPerm::X;
+        vm_perm |= VmPerms::EXEC;
     }
     vm_perm
 }

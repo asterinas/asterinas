@@ -14,7 +14,7 @@ use crate::{
     vm::{
         dma::{dma_type, Daddr, DmaType},
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
-        page_table::{cache_policy_op, CachePolicy},
+        page_prop::CachePolicy,
         HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
     },
 };
@@ -62,7 +62,7 @@ impl DmaCoherent {
             // Safety: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
                 page_table
-                    .protect(&va_range, cache_policy_op(CachePolicy::Uncacheable))
+                    .protect(&va_range, |p| p.cache = CachePolicy::Uncacheable)
                     .unwrap();
             }
         }
@@ -149,7 +149,7 @@ impl Drop for DmaCoherentInner {
             // Safety: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
                 page_table
-                    .protect(&va_range, cache_policy_op(CachePolicy::Writeback))
+                    .protect(&va_range, |p| p.cache = CachePolicy::Writeback)
                     .unwrap();
             }
         }
@@ -212,7 +212,7 @@ mod test {
         assert!(dma_coherent.paddr() == vm_segment.paddr());
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let vaddr = paddr_to_vaddr(vm_segment.paddr());
-        assert!(page_table.query(vaddr).unwrap().1.prop.cache == CachePolicy::Uncacheable);
+        assert!(page_table.query(vaddr).unwrap().1.cache == CachePolicy::Uncacheable);
     }
 
     #[ktest]
