@@ -20,8 +20,8 @@ use crate::{
     cpu_local,
     vm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR},
-        page_table::{CachePolicy, MapProperty},
-        VmPerm, PAGE_SIZE, PHYS_MEM_VADDR_RANGE,
+        page_prop::{CachePolicy, PageProperty},
+        PageFlags, PrivilegedPageFlags as PrivFlags, PAGE_SIZE, PHYS_MEM_VADDR_RANGE,
     },
 };
 
@@ -231,14 +231,13 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
             .map(
                 &(vaddr..vaddr + PAGE_SIZE),
                 &(paddr..paddr + PAGE_SIZE),
-                MapProperty {
-                    perm: VmPerm::RW,
-                    global: true,
-                    #[cfg(feature = "intel_tdx")]
-                    extension: PageTableFlags::SHARED.bits() as u64,
-                    #[cfg(not(feature = "intel_tdx"))]
-                    extension: 0,
+                PageProperty {
+                    flags: PageFlags::RW,
                     cache: CachePolicy::Uncacheable,
+                    #[cfg(not(feature = "intel_tdx"))]
+                    priv_flags: PrivFlags::GLOBAL,
+                    #[cfg(feature = "intel_tdx")]
+                    priv_flags: PrivFlags::SHARED | PrivFlags::GLOBAL,
                 },
             )
             .unwrap();

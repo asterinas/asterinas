@@ -56,13 +56,12 @@ use core::{any::TypeId, ops::Range};
 use align_ext::AlignExt;
 
 use super::{
-    nr_ptes_per_node, page_size, pte_index, Child, KernelMode, MapInfo, MapOp, MapProperty,
-    PageTable, PageTableEntryTrait, PageTableError, PageTableFrame, PageTableMode,
-    PagingConstsTrait,
+    nr_ptes_per_node, page_size, pte_index, Child, KernelMode, PageTable, PageTableEntryTrait,
+    PageTableError, PageTableFrame, PageTableMode, PagingConstsTrait,
 };
 use crate::{
     sync::{ArcSpinLockGuard, SpinLock},
-    vm::{Paddr, Vaddr, VmFrame},
+    vm::{Paddr, PageProperty, Vaddr, VmFrame},
 };
 
 /// The cursor for traversal over the page table.
@@ -184,7 +183,7 @@ where
     ///
     /// The caller should ensure that the virtual range being mapped does
     /// not affect kernel's memory safety.
-    pub(crate) unsafe fn map(&mut self, frame: VmFrame, prop: MapProperty) {
+    pub(crate) unsafe fn map(&mut self, frame: VmFrame, prop: PageProperty) {
         let end = self.va + C::BASE_PAGE_SIZE;
         assert!(end <= self.barrier_va.end);
         // Go down if not applicable.
@@ -224,7 +223,7 @@ where
     /// The caller should ensure that
     ///  - the range being mapped does not affect kernel's memory safety;
     ///  - the physical address to be mapped is valid and safe to use.
-    pub(crate) unsafe fn map_pa(&mut self, pa: &Range<Paddr>, prop: MapProperty) {
+    pub(crate) unsafe fn map_pa(&mut self, pa: &Range<Paddr>, prop: PageProperty) {
         let end = self.va + pa.len();
         let mut pa = pa.start;
         assert!(end <= self.barrier_va.end);
@@ -286,7 +285,7 @@ where
                 || self.va % page_size::<C>(self.level) != 0
                 || self.va + page_size::<C>(self.level) > end
             {
-                self.level_down(Some(MapProperty::new_invalid()));
+                self.level_down(Some(PageProperty::new_absent()));
                 continue;
             }
 
@@ -313,7 +312,7 @@ where
     pub(crate) unsafe fn protect(
         &mut self,
         len: usize,
-        op: impl MapOp,
+        mut op: impl FnMut(&mut PageProperty),
         allow_protect_invalid: bool,
     ) -> Result<(), PageTableError> {
         let end = self.va + len;
@@ -333,19 +332,19 @@ where
             }
             let vaddr_not_fit = self.va % page_size::<C>(self.level) != 0
                 || self.va + page_size::<C>(self.level) > end;
-            let cur_pte_info = self.read_cur_pte_info();
-            let protected_prop = op(cur_pte_info);
+            let mut pte_prop = self.read_cur_pte_prop();
+            op(&mut pte_prop);
             // Go down if the page size is too big and we are protecting part
             // of untyped huge pages.
             if self.cur_child().is_untyped() && vaddr_not_fit {
-                self.level_down(Some(protected_prop));
+                self.level_down(Some(pte_prop));
                 continue;
             } else if vaddr_not_fit {
                 return Err(PageTableError::ProtectingPartial);
             }
             let idx = self.cur_idx();
             let level = self.level;
-            self.cur_node_mut().protect(idx, protected_prop, level);
+            self.cur_node_mut().protect(idx, pte_prop, level);
             self.move_forward();
         }
         Ok(())
@@ -359,14 +358,14 @@ where
         loop {
             let level = self.level;
             let va = self.va;
-            let map_info = self.read_cur_pte_info();
+            let map_prop = self.read_cur_pte_prop();
             match self.cur_child().clone() {
                 Child::Frame(frame) => {
                     self.move_forward();
                     return Some(PageTableQueryResult::Mapped {
                         va,
                         frame,
-                        info: map_info,
+                        prop: map_prop,
                     });
                 }
                 Child::PageTable(_) => {
@@ -380,7 +379,7 @@ where
                         va,
                         pa,
                         len: page_size::<C>(level),
-                        info: map_info,
+                        prop: map_prop,
                     });
                 }
                 Child::None => {
@@ -449,7 +448,7 @@ where
     ///
     /// Also, the staticness of the page table is guaranteed if the caller make sure
     /// that there is a child node for the current node.
-    fn level_down(&mut self, prop: Option<MapProperty>) {
+    fn level_down(&mut self, prop: Option<PageProperty>) {
         debug_assert!(self.level > 1);
         // Check if the child frame exists.
         let nxt_lvl_frame = {
@@ -507,8 +506,8 @@ where
         self.cur_node().child(self.cur_idx())
     }
 
-    fn read_cur_pte_info(&self) -> MapInfo {
-        self.cur_node().read_pte_info(self.cur_idx())
+    fn read_cur_pte_prop(&self) -> PageProperty {
+        self.cur_node().read_pte_prop(self.cur_idx())
     }
 }
 
@@ -553,13 +552,13 @@ pub(crate) enum PageTableQueryResult {
     Mapped {
         va: Vaddr,
         frame: VmFrame,
-        info: MapInfo,
+        prop: PageProperty,
     },
     MappedUntyped {
         va: Vaddr,
         pa: Paddr,
         len: usize,
-        info: MapInfo,
+        prop: PageProperty,
     },
 }
 

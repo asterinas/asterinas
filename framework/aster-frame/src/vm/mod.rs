@@ -16,6 +16,7 @@ mod io;
 pub(crate) mod kspace;
 mod offset;
 mod options;
+pub(crate) mod page_prop;
 pub(crate) mod page_table;
 mod space;
 
@@ -30,12 +31,14 @@ pub use self::{
     io::VmIo,
     kspace::vaddr_to_paddr,
     options::VmAllocOptions,
-    space::{VmMapOptions, VmPerm, VmSpace},
+    page_prop::{CachePolicy, PageFlags, PageProperty},
+    space::{VmMapOptions, VmSpace},
 };
-pub(crate) use self::{kspace::paddr_to_vaddr, page_table::PageTable};
+pub(crate) use self::{
+    kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags, page_table::PageTable,
+};
 use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
 
-/// DEPRECATED: use the property of `VmFrame` instead.
 /// The size of a [`VmFrame`].
 pub const PAGE_SIZE: usize = 0x1000;
 

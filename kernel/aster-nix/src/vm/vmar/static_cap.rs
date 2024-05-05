@@ -53,7 +53,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     ///
     /// This method requires the following access rights:
     /// 1. The VMAR contains the rights corresponding to the memory permissions of
-    /// the mapping. For example, if `perms` contains `VmPerm::WRITE`,
+    /// the mapping. For example, if `perms` contains `VmPerms::WRITE`,
     /// then the VMAR must have the Write right.
     /// 2. Similarly, the VMO contains the rights corresponding to the memory
     /// permissions of the mapping.  

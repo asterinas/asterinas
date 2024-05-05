@@ -3,7 +3,6 @@
 //! This mod defines mmap flags and the handler to syscall mmap
 
 use align_ext::AlignExt;
-use aster_frame::vm::VmPerm;
 use aster_rights::Rights;
 
 use super::SyscallReturn;
@@ -27,7 +26,7 @@ pub fn sys_mmap(
     offset: u64,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MMAP);
-    let perms = VmPerm::try_from(perms).unwrap();
+    let perms = VmPerms::from_posix_prot_bits(perms as u32).unwrap();
     let option = MMapOptions::try_from(flags as u32)?;
     let res = do_sys_mmap(
         addr as usize,
@@ -43,14 +42,14 @@ pub fn sys_mmap(
 fn do_sys_mmap(
     addr: Vaddr,
     len: usize,
-    vm_perm: VmPerm,
+    vm_perms: VmPerms,
     option: MMapOptions,
     fd: FileDesc,
     offset: usize,
 ) -> Result<Vaddr> {
     debug!(
         "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, option = {:?}, fd = {}, offset = 0x{:x}",
-        addr, len, vm_perm, option, fd, offset
+        addr, len, vm_perms, option, fd, offset
     );
 
     let len = len.align_up(PAGE_SIZE);
@@ -58,7 +57,6 @@ fn do_sys_mmap(
     if offset % PAGE_SIZE != 0 {
         return_errno_with_message!(Errno::EINVAL, "mmap only support page-aligned offset");
     }
-    let perms = VmPerms::from(vm_perm);
 
     let vmo = if option.flags.contains(MMapFlags::MAP_ANONYMOUS) {
         if offset != 0 {
@@ -72,7 +70,7 @@ fn do_sys_mmap(
     let current = current!();
     let root_vmar = current.root_vmar();
     let vm_map_options = {
-        let mut options = root_vmar.new_map(vmo.to_dyn(), perms)?;
+        let mut options = root_vmar.new_map(vmo.to_dyn(), vm_perms)?;
         let flags = option.flags;
         if flags.contains(MMapFlags::MAP_FIXED) {
             options = options.offset(addr).can_overwrite(true);

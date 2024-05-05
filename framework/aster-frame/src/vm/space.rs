@@ -3,22 +3,19 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use bitflags::bitflags;
 
 use super::{
     is_page_aligned,
     kspace::KERNEL_PAGE_TABLE,
-    page_table::{
-        MapInfo, MapOp, PageTable, PageTableMode, PageTableQueryResult as PtQr,
-        PageTableQueryResult, UserMode,
-    },
-    PagingConstsTrait, VmFrameVec, VmIo, PAGE_SIZE,
+    page_table::{PageTable, PageTableMode, UserMode},
+    CachePolicy, PageFlags, PageProperty, PagingConstsTrait, PrivilegedPageFlags, VmFrameVec, VmIo,
+    PAGE_SIZE,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     prelude::*,
     vm::{
-        page_table::{CachePolicy, Cursor, MapProperty},
+        page_table::{Cursor, PageTableQueryResult as PtQr},
         VmFrame, MAX_USERSPACE_VADDR,
     },
     Error,
@@ -82,18 +79,17 @@ impl VmSpace {
         // If overwrite is forbidden, we should check if there are existing mappings
         if !options.can_overwrite {
             while let Some(qr) = cursor.query() {
-                if matches!(qr, PageTableQueryResult::Mapped { .. }) {
+                if matches!(qr, PtQr::Mapped { .. }) {
                     return Err(Error::MapAlreadyMappedVaddr);
                 }
             }
             cursor.jump(va_range.start);
         }
 
-        let prop = MapProperty {
-            perm: options.perm,
-            global: false,
-            extension: 0,
+        let prop = PageProperty {
+            flags: options.flags,
             cache: CachePolicy::Writeback,
+            priv_flags: PrivilegedPageFlags::USER,
         };
 
         for frame in frames.into_iter() {
@@ -118,11 +114,11 @@ impl VmSpace {
     /// Query about the mapping information about a byte in virtual memory.
     /// This is more handy than [`query_range`], but less efficient if you want
     /// to query in a batch.
-    pub fn query(&self, vaddr: Vaddr) -> Result<Option<MapInfo>> {
+    pub fn query(&self, vaddr: Vaddr) -> Result<Option<PageProperty>> {
         if !(0..MAX_USERSPACE_VADDR).contains(&vaddr) {
             return Err(Error::AccessDenied);
         }
-        Ok(self.pt.query(vaddr).map(|(_pa, info)| info))
+        Ok(self.pt.query(vaddr).map(|(_pa, prop)| prop))
     }
 
     /// Unmaps the physical memory pages within the VM address range.
@@ -160,10 +156,13 @@ impl VmSpace {
     /// The method panics when virtual address is not aligned to base page
     /// size.
     ///
+    /// It is guarenteed that the operation is called once for each valid
+    /// page found in the range.
+    ///
     /// TODO: It returns error when invalid operations such as protect
     /// partial huge page happens, and efforts are not reverted, leaving us
     /// in a bad state.
-    pub fn protect(&self, range: &Range<Vaddr>, op: impl MapOp) -> Result<()> {
+    pub fn protect(&self, range: &Range<Vaddr>, op: impl FnMut(&mut PageProperty)) -> Result<()> {
         if !is_page_aligned(range.start) || !is_page_aligned(range.end) {
             return Err(Error::InvalidArgs);
         }
@@ -217,8 +216,8 @@ impl VmIo for VmSpace {
         for qr in self.query_range(&(vaddr..vaddr + range_end))? {
             match qr {
                 VmQueryResult::NotMapped { .. } => return Err(Error::AccessDenied),
-                VmQueryResult::Mapped { info, .. } => {
-                    if !info.prop.perm.contains(VmPerm::W) {
+                VmQueryResult::Mapped { prop, .. } => {
+                    if !prop.flags.contains(PageFlags::W) {
                         return Err(Error::AccessDenied);
                     }
                 }
@@ -239,8 +238,8 @@ pub struct VmMapOptions {
     addr: Option<Vaddr>,
     /// map align
     align: usize,
-    /// permission
-    perm: VmPerm,
+    /// page permissions and status
+    flags: PageFlags,
     /// can overwrite
     can_overwrite: bool,
 }
@@ -251,7 +250,7 @@ impl VmMapOptions {
         Self {
             addr: None,
             align: PagingConsts::BASE_PAGE_SIZE,
-            perm: VmPerm::empty(),
+            flags: PageFlags::empty(),
             can_overwrite: false,
         }
     }
@@ -271,8 +270,8 @@ impl VmMapOptions {
     /// the mapping can be read, written, or executed.
     ///
     /// The default value of this option is read-only.
-    pub fn perm(&mut self, perm: VmPerm) -> &mut Self {
-        self.perm = perm;
+    pub fn flags(&mut self, flags: PageFlags) -> &mut Self {
+        self.flags = flags;
         self
     }
 
@@ -304,40 +303,6 @@ impl Default for VmMapOptions {
     }
 }
 
-bitflags! {
-    /// Virtual memory protection permissions.
-    pub struct VmPerm: u8 {
-        /// Readable.
-        const R = 0b00000001;
-        /// Writable.
-        const W = 0b00000010;
-        /// Executable.
-        const X = 0b00000100;
-        /// User accessible.
-        const U = 0b00001000;
-        /// Readable + writable.
-        const RW = Self::R.bits | Self::W.bits;
-        /// Readable + execuable.
-        const RX = Self::R.bits | Self::X.bits;
-        /// Readable + writable + executable.
-        const RWX = Self::R.bits | Self::W.bits | Self::X.bits;
-        /// Readable + writable + user.
-        const RWU = Self::R.bits | Self::W.bits | Self::U.bits;
-        /// Readable + execuable + user.
-        const RXU = Self::R.bits | Self::X.bits | Self::U.bits;
-        /// Readable + writable + executable + user.
-        const RWXU = Self::R.bits | Self::W.bits | Self::X.bits | Self::U.bits;
-    }
-}
-
-impl TryFrom<u64> for VmPerm {
-    type Error = Error;
-
-    fn try_from(value: u64) -> Result<Self> {
-        VmPerm::from_bits(value as u8).ok_or(Error::InvalidArgs)
-    }
-}
-
 /// The iterator for querying over the VM space without modifying it.
 pub struct VmQueryIter<'a> {
     cursor: Cursor<'a, UserMode, PageTableEntry, PagingConsts>,
@@ -351,7 +316,7 @@ pub enum VmQueryResult {
     Mapped {
         va: Vaddr,
         frame: VmFrame,
-        info: MapInfo,
+        prop: PageProperty,
     },
 }
 
@@ -361,7 +326,7 @@ impl Iterator for VmQueryIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         self.cursor.next().map(|ptqr| match ptqr {
             PtQr::NotMapped { va, len } => VmQueryResult::NotMapped { va, len },
-            PtQr::Mapped { va, frame, info } => VmQueryResult::Mapped { va, frame, info },
+            PtQr::Mapped { va, frame, prop } => VmQueryResult::Mapped { va, frame, prop },
             // It is not possible to map untyped memory in user space.
             PtQr::MappedUntyped { .. } => unreachable!(),
         })

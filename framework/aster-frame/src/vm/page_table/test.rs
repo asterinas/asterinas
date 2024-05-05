@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
-use crate::vm::{kspace::LINEAR_MAPPING_BASE_VADDR, space::VmPerm, VmAllocOptions};
+use crate::vm::{
+    kspace::LINEAR_MAPPING_BASE_VADDR,
+    page_prop::{CachePolicy, PageFlags},
+    VmAllocOptions,
+};
 
 const PAGE_SIZE: usize = 4096;
 
@@ -26,7 +30,7 @@ fn test_map_unmap() {
     let from = PAGE_SIZE..PAGE_SIZE * 2;
     let frame = VmAllocOptions::new(1).alloc_single().unwrap();
     let start_paddr = frame.start_paddr();
-    let prop = MapProperty::new_general(VmPerm::RW);
+    let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(frame.clone(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     unsafe { pt.unmap(&from).unwrap() };
@@ -59,7 +63,7 @@ fn test_user_copy_on_write() {
     let from = PAGE_SIZE..PAGE_SIZE * 2;
     let frame = VmAllocOptions::new(1).alloc_single().unwrap();
     let start_paddr = frame.start_paddr();
-    let prop = MapProperty::new_general(VmPerm::RW);
+    let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(frame.clone(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     unsafe { pt.unmap(&from).unwrap() };
@@ -93,23 +97,23 @@ fn test_base_protect_query() {
     let from_ppn = 1..1000;
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
     let to = PAGE_SIZE * 1000..PAGE_SIZE * 1999;
-    let prop = MapProperty::new_general(VmPerm::RW);
+    let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.map(&from, &to, prop).unwrap() };
     for (qr, i) in pt.cursor(&from).unwrap().zip(from_ppn) {
-        let Qr::MappedUntyped { va, pa, len, info } = qr else {
+        let Qr::MappedUntyped { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntyped, got {:#x?}", qr);
         };
-        assert_eq!(info.prop.perm, VmPerm::RW);
-        assert_eq!(info.prop.cache, CachePolicy::Writeback);
+        assert_eq!(prop.flags, PageFlags::RW);
+        assert_eq!(prop.cache, CachePolicy::Writeback);
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
     let prot = PAGE_SIZE * 18..PAGE_SIZE * 20;
-    unsafe { pt.protect(&prot, perm_op(|p| p - VmPerm::W)).unwrap() };
+    unsafe { pt.protect(&prot, |p| p.flags -= PageFlags::W).unwrap() };
     for (qr, i) in pt.cursor(&prot).unwrap().zip(18..20) {
-        let Qr::MappedUntyped { va, pa, len, info } = qr else {
+        let Qr::MappedUntyped { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntyped, got {:#x?}", qr);
         };
-        assert_eq!(info.prop.perm, VmPerm::R);
+        assert_eq!(prop.flags, PageFlags::R);
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
 }
@@ -137,14 +141,14 @@ fn test_large_protect_query() {
     // Thus all mappings except the last few pages are mapped in 2M huge pages
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
     let to = PAGE_SIZE * to_ppn.start..PAGE_SIZE * to_ppn.end;
-    let prop = MapProperty::new_general(VmPerm::RW);
+    let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.map(&from, &to, prop).unwrap() };
     for (qr, i) in pt.cursor(&from).unwrap().zip(0..512 + 2 + 2) {
-        let Qr::MappedUntyped { va, pa, len, info } = qr else {
+        let Qr::MappedUntyped { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntyped, got {:#x?}", qr);
         };
-        assert_eq!(info.prop.perm, VmPerm::RW);
-        assert_eq!(info.prop.cache, CachePolicy::Writeback);
+        assert_eq!(prop.flags, PageFlags::RW);
+        assert_eq!(prop.cache, CachePolicy::Writeback);
         if i < 512 + 2 {
             assert_eq!(va, from.start + i * PAGE_SIZE * 512);
             assert_eq!(va + len, from.start + (i + 1) * PAGE_SIZE * 512);
@@ -161,23 +165,23 @@ fn test_large_protect_query() {
     }
     let ppn = from_ppn.start + 18..from_ppn.start + 20;
     let va = PAGE_SIZE * ppn.start..PAGE_SIZE * ppn.end;
-    unsafe { pt.protect(&va, perm_op(|p| p - VmPerm::W)).unwrap() };
+    unsafe { pt.protect(&va, |p| p.flags -= PageFlags::W).unwrap() };
     for (qr, i) in pt
         .cursor(&(va.start - PAGE_SIZE..va.start))
         .unwrap()
         .zip(ppn.start - 1..ppn.start)
     {
-        let Qr::MappedUntyped { va, pa, len, info } = qr else {
+        let Qr::MappedUntyped { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntyped, got {:#x?}", qr);
         };
-        assert_eq!(info.prop.perm, VmPerm::RW);
+        assert_eq!(prop.flags, PageFlags::RW);
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
     for (qr, i) in pt.cursor(&va).unwrap().zip(ppn.clone()) {
-        let Qr::MappedUntyped { va, pa, len, info } = qr else {
+        let Qr::MappedUntyped { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntyped, got {:#x?}", qr);
         };
-        assert_eq!(info.prop.perm, VmPerm::R);
+        assert_eq!(prop.flags, PageFlags::R);
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
     for (qr, i) in pt
@@ -185,10 +189,10 @@ fn test_large_protect_query() {
         .unwrap()
         .zip(ppn.end..ppn.end + 1)
     {
-        let Qr::MappedUntyped { va, pa, len, info } = qr else {
+        let Qr::MappedUntyped { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntyped, got {:#x?}", qr);
         };
-        assert_eq!(info.prop.perm, VmPerm::RW);
+        assert_eq!(prop.flags, PageFlags::RW);
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
 }

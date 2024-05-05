@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::vm::VmPerm;
+use aster_frame::vm::PageFlags;
 use aster_rights::Rights;
 use bitflags::bitflags;
 
@@ -13,6 +13,12 @@ bitflags! {
         const WRITE   = 1 << 1;
         /// Executable.
         const EXEC   = 1 << 2;
+    }
+}
+
+impl VmPerms {
+    pub fn from_posix_prot_bits(bits: u32) -> Option<Self> {
+        VmPerms::from_bits(bits)
     }
 }
 
@@ -48,34 +54,34 @@ impl From<VmPerms> for Rights {
     }
 }
 
-impl From<VmPerm> for VmPerms {
-    fn from(perm: VmPerm) -> Self {
+impl From<PageFlags> for VmPerms {
+    fn from(flags: PageFlags) -> Self {
         let mut perms = VmPerms::empty();
-        if perm.contains(VmPerm::R) {
+        if flags.contains(PageFlags::R) {
             perms |= VmPerms::READ;
         }
-        if perm.contains(VmPerm::W) {
+        if flags.contains(PageFlags::W) {
             perms |= VmPerms::WRITE;
         }
-        if perm.contains(VmPerm::X) {
+        if flags.contains(PageFlags::X) {
             perms |= VmPerms::EXEC;
         }
         perms
     }
 }
 
-impl From<VmPerms> for VmPerm {
-    fn from(perms: VmPerms) -> Self {
-        let mut perm = VmPerm::U;
-        if perms.contains(VmPerms::READ) {
-            perm |= VmPerm::R;
+impl From<VmPerms> for PageFlags {
+    fn from(val: VmPerms) -> Self {
+        let mut flags = PageFlags::empty();
+        if val.contains(VmPerms::READ) {
+            flags |= PageFlags::R;
         }
-        if perms.contains(VmPerms::WRITE) {
-            perm |= VmPerm::W;
+        if val.contains(VmPerms::WRITE) {
+            flags |= PageFlags::W;
         }
-        if perms.contains(VmPerms::EXEC) {
-            perm |= VmPerm::X;
+        if val.contains(VmPerms::EXEC) {
+            flags |= PageFlags::X;
         }
-        perm
+        flags
     }
 }

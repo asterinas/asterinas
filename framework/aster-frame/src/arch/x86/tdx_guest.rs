@@ -15,7 +15,8 @@ use crate::{
     vm::{
         kspace::KERNEL_PAGE_TABLE,
         paddr_to_vaddr,
-        page_table::{MapProperty, PageTableError},
+        page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
+        page_table::PageTableError,
         KERNEL_BASE_VADDR, KERNEL_END_VADDR, PAGE_SIZE,
     },
 };
@@ -416,10 +417,12 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
     }
     let vaddr = paddr_to_vaddr(gpa);
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    pt.protect(&(vaddr..page_num * PAGE_SIZE), |info| MapProperty {
-        perm: info.prop.perm,
-        extension: PageTableFlags::SHARED.bits() as u64,
-        cache: info.prop.cache,
+    pt.protect(&(vaddr..page_num * PAGE_SIZE), |prop| {
+        prop = PageProperty {
+            flags: prop.flags,
+            cache: prop.cache,
+            priv_flags: prop.priv_flags | PrivFlags::SHARED,
+        }
     })
     .map_err(PageConvertError::PageTableError)?;
     map_gpa(
@@ -450,12 +453,12 @@ pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Page
     }
     let vaddr = paddr_to_vaddr(gpa);
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    pt.protect(&(vaddr..page_num * PAGE_SIZE), |info| MapProperty {
-        perm: info.prop.perm,
-        extension: (PageTableFlags::from_bits_truncate(info.prop.extension as usize)
-            - PageTableFlags::SHARED)
-            .bits() as u64,
-        cache: info.prop.cache,
+    pt.protect(&(vaddr..page_num * PAGE_SIZE), |prop| {
+        prop = PageProperty {
+            flags: prop.flags,
+            cache: prop.cache,
+            priv_flags: prop.priv_flags - PrivFlags::SHARED,
+        }
     })
     .map_err(PageConvertError::PageTableError)?;
     map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)

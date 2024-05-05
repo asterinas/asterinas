@@ -5,10 +5,9 @@ use core::ops::Range;
 use pod::Pod;
 
 use crate::vm::{
-    page_table::{
-        CachePolicy, MapInfo, MapProperty, MapStatus, PageTableEntryTrait, PageTableMode,
-    },
-    Paddr, PagingConstsTrait, Vaddr, VmPerm,
+    page_prop::{CachePolicy, PageFlags, PrivilegedPageFlags as PrivFlags},
+    page_table::{PageTableEntryTrait, PageTableMode},
+    Paddr, PageProperty, PagingConstsTrait, Vaddr,
 };
 
 /// The page table used by iommu maps the device address
@@ -71,13 +70,16 @@ impl PageTableEntry {
 }
 
 impl PageTableEntryTrait for PageTableEntry {
-    fn new(paddr: crate::vm::Paddr, prop: MapProperty, huge: bool, last: bool) -> Self {
+    fn new(paddr: crate::vm::Paddr, prop: PageProperty, huge: bool, last: bool) -> Self {
         let mut flags = PageTableFlags::empty();
-        if prop.perm.contains(VmPerm::W) {
+        if prop.flags.contains(PageFlags::W) {
             flags |= PageTableFlags::WRITABLE;
         }
-        if prop.perm.contains(VmPerm::R) {
+        if prop.flags.contains(PageFlags::R) {
             flags |= PageTableFlags::READABLE;
+        }
+        if prop.cache != CachePolicy::Uncacheable {
+            flags |= PageTableFlags::SNOOP;
         }
         if last {
             flags |= PageTableFlags::LAST_PAGE;
@@ -92,42 +94,39 @@ impl PageTableEntryTrait for PageTableEntry {
         (self.0 & Self::PHYS_MASK as u64) as usize
     }
 
-    fn new_invalid() -> Self {
+    fn new_absent() -> Self {
         Self(0)
     }
 
-    fn is_valid(&self) -> bool {
+    fn is_present(&self) -> bool {
         self.0 & (PageTableFlags::READABLE | PageTableFlags::WRITABLE).bits() != 0
     }
 
-    fn info(&self) -> MapInfo {
-        let mut perm = VmPerm::empty();
+    fn prop(&self) -> PageProperty {
+        let mut flags = PageFlags::empty();
         if self.0 & PageTableFlags::READABLE.bits() != 0 {
-            perm |= VmPerm::R;
+            flags |= PageFlags::R;
         }
         if self.0 & PageTableFlags::WRITABLE.bits() != 0 {
-            perm |= VmPerm::W;
+            flags |= PageFlags::W;
         }
+        if self.0 & PageTableFlags::ACCESSED.bits() != 0 {
+            flags |= PageFlags::ACCESSED;
+        }
+        if self.0 & PageTableFlags::DIRTY.bits() != 0 {
+            flags |= PageFlags::DIRTY;
+        }
+        // TODO: The determination cache policy is not rigorous. We should revise it.
         let cache = if self.0 & PageTableFlags::SNOOP.bits() != 0 {
             CachePolicy::Writeback
         } else {
             CachePolicy::Uncacheable
         };
-        let mut status = MapStatus::empty();
-        if self.0 & PageTableFlags::ACCESSED.bits() != 0 {
-            status |= MapStatus::ACCESSED;
-        }
-        if self.0 & PageTableFlags::DIRTY.bits() != 0 {
-            status |= MapStatus::DIRTY;
-        }
-        MapInfo {
-            prop: MapProperty {
-                perm,
-                global: false,
-                extension: self.0 & !Self::PHYS_MASK as u64,
-                cache,
-            },
-            status,
+
+        PageProperty {
+            flags,
+            cache,
+            priv_flags: PrivFlags::empty(),
         }
     }
 

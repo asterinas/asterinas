@@ -16,7 +16,6 @@
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
 #![feature(pointer_is_aligned)]
-#![feature(unboxed_closures)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 // The `generic_const_exprs` feature is incomplete however required for the page table

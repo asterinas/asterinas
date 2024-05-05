@@ -6,9 +6,9 @@ use align_ext::AlignExt;
 use spin::Once;
 
 use super::{
-    page_table::{nr_ptes_per_node, page_walk, CachePolicy, KernelMode, MapProperty, PageTable},
-    space::VmPerm,
-    MemoryRegionType, Paddr, Vaddr, PAGE_SIZE,
+    page_table::{nr_ptes_per_node, page_walk, KernelMode, PageTable},
+    CachePolicy, MemoryRegionType, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr,
+    PAGE_SIZE,
 };
 use crate::arch::mm::{PageTableEntry, PagingConsts};
 
@@ -58,60 +58,67 @@ pub fn init_kernel_page_table() {
         nr_ptes_per_node::<PagingConsts>() / 2..nr_ptes_per_node::<PagingConsts>(),
     );
     let regions = crate::boot::memory_regions();
+
     // Do linear mappings for the kernel.
-    let linear_mapping_size = {
-        let mut end = 0;
-        for r in regions {
-            end = end.max(r.base() + r.len());
+    {
+        let linear_mapping_size = {
+            let mut end = 0;
+            for r in regions {
+                end = end.max(r.base() + r.len());
+            }
+            end.align_up(PAGE_SIZE)
+        };
+        let from = LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + linear_mapping_size;
+        let to = 0..linear_mapping_size;
+        let prop = PageProperty {
+            flags: PageFlags::RW,
+            cache: CachePolicy::Writeback,
+            priv_flags: PrivilegedPageFlags::GLOBAL,
+        };
+        // Safety: we are doing the linear mapping for the kernel.
+        unsafe {
+            kpt.map(&from, &to, prop).unwrap();
         }
-        end.align_up(PAGE_SIZE)
-    };
-    let from = LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + linear_mapping_size;
-    let to = 0..linear_mapping_size;
-    let prop = MapProperty {
-        perm: VmPerm::RW,
-        global: true,
-        extension: 0,
-        cache: CachePolicy::Writeback,
-    };
-    // Safety: we are doing the linear mapping for the kernel.
-    unsafe {
-        kpt.map(&from, &to, prop).unwrap();
     }
+
     // Map for the I/O area.
     // TODO: we need to have an allocator to allocate kernel space for
     // the I/O areas, rather than doing it using the linear mappings.
-    let to = 0x8_0000_0000..0x9_0000_0000;
-    let from = LINEAR_MAPPING_BASE_VADDR + to.start..LINEAR_MAPPING_BASE_VADDR + to.end;
-    let prop = MapProperty {
-        perm: VmPerm::RW,
-        global: true,
-        extension: 0,
-        cache: CachePolicy::Uncacheable,
-    };
-    // Safety: we are doing I/O mappings for the kernel.
-    unsafe {
-        kpt.map(&from, &to, prop).unwrap();
+    {
+        let to = 0x8_0000_0000..0x9_0000_0000;
+        let from = LINEAR_MAPPING_BASE_VADDR + to.start..LINEAR_MAPPING_BASE_VADDR + to.end;
+        let prop = PageProperty {
+            flags: PageFlags::RW,
+            cache: CachePolicy::Uncacheable,
+            priv_flags: PrivilegedPageFlags::GLOBAL,
+        };
+        // Safety: we are doing I/O mappings for the kernel.
+        unsafe {
+            kpt.map(&from, &to, prop).unwrap();
+        }
     }
+
     // Map for the kernel code itself.
     // TODO: set separated permissions for each segments in the kernel.
-    let region = regions
-        .iter()
-        .find(|r| r.typ() == MemoryRegionType::Kernel)
-        .unwrap();
-    let offset = kernel_loaded_offset();
-    let to =
-        region.base().align_down(PAGE_SIZE)..(region.base() + region.len()).align_up(PAGE_SIZE);
-    let from = to.start + offset..to.end + offset;
-    let prop = MapProperty {
-        perm: VmPerm::RWX,
-        global: true,
-        extension: 0,
-        cache: CachePolicy::Writeback,
-    };
-    // Safety: we are doing mappings for the kernel.
-    unsafe {
-        kpt.map(&from, &to, prop).unwrap();
+    {
+        let region = regions
+            .iter()
+            .find(|r| r.typ() == MemoryRegionType::Kernel)
+            .unwrap();
+        let offset = kernel_loaded_offset();
+        let to =
+            region.base().align_down(PAGE_SIZE)..(region.base() + region.len()).align_up(PAGE_SIZE);
+        let from = to.start + offset..to.end + offset;
+        let prop = PageProperty {
+            flags: PageFlags::RWX,
+            cache: CachePolicy::Writeback,
+            priv_flags: PrivilegedPageFlags::GLOBAL,
+        };
+        // Safety: we are doing mappings for the kernel.
+        unsafe {
+            kpt.map(&from, &to, prop).unwrap();
+        }
     }
+
     KERNEL_PAGE_TABLE.call_once(|| kpt);
 }

@@ -56,7 +56,7 @@ use aster_frame::cpu::UserContext;
 use aster_frame::prelude::*;
 use aster_frame::task::{Task, TaskOptions};
 use aster_frame::user::{UserEvent, UserMode, UserSpace};
-use aster_frame::vm::{Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmPerm, VmSpace, PAGE_SIZE};
+use aster_frame::vm::{PageFlags, PAGE_SIZE, Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmSpace};
 
 /// The kernel's boot and initialization process is managed by Asterinas Framework.
 /// After the process is done, the kernel's execution environment
@@ -87,7 +87,7 @@ fn create_user_space(program: &[u8]) -> UserSpace {
         // the VmSpace abstraction.
         let vm_space = VmSpace::new();
         let mut options = VmMapOptions::new();
-        options.addr(Some(MAP_ADDR)).perm(VmPerm::RWX);
+        options.addr(Some(MAP_ADDR)).flags(PageFlags::RWX);
         vm_space.map(user_pages, &options).unwrap();
         vm_space
     };
