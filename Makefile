@@ -8,7 +8,8 @@ BUILD_SYSCALL_TEST ?= 0
 ENABLE_KVM ?= 1
 GDB_TCP_PORT ?= 1234
 INTEL_TDX ?= 0
-RELEASE_MODE ?= 0
+RELEASE ?= 0
+RELEASE_LTO ?= 0
 SCHEME ?= ""
 # End of global options.
 
@@ -35,8 +36,10 @@ else ifeq ($(AUTO_TEST), boot)
 CARGO_OSDK_ARGS += --init-args="/regression/boot_hello.sh"
 endif
 
-ifeq ($(RELEASE_MODE), 1)
-CARGO_OSDK_ARGS += --profile release
+ifeq ($(RELEASE_LTO), 1)
+CARGO_OSDK_ARGS += --profile release-lto
+else ifeq ($(RELEASE), 1)
+CARGO_OSDK_ARGS += --release
 endif
 
 ifeq ($(INTEL_TDX), 1)

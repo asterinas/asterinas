@@ -36,3 +36,23 @@ exclude = [
     "osdk",
     "target/osdk/base",
 ]
+
+# Cargo only looks at the profile settings 
+# in the Cargo.toml manifest at the root of the workspace
+
+[profile.release]
+lto = "thin"
+
+# Release profile configuration with Link Time Optimization (LTO) enabled.
+#
+# This profile is optimized for maximum runtime performance, 
+# (achieving a 2% reduction in latency for the getpid system call).
+# However, enabling LTO significantly increases compilation times,
+# approximately doubling them compared to when LTO is not enabled.
+[profile.release-lto]
+inherits = "release"
+lto = true
+# lto can only be enabled when panic strategy is abort
+panic = "abort"
+# set codegen-units as the smallest number
+codegen-units = 1
