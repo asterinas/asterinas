@@ -118,6 +118,10 @@ fn switch_to_task(next_task: Arc<Task>) {
     // change the current task to the next task
     PROCESSOR.lock().current = Some(next_task.clone());
 
+    if let Some(next_user_space) = next_task.user_space() {
+        next_user_space.vm_space().activate();
+    }
+
     // SAFETY:
     // 1. `ctx` is only used in `schedule()`. We have exclusive access to both the current task
     //    context and the next task context.
