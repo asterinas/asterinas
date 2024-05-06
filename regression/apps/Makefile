@@ -11,6 +11,7 @@ REGRESSION_BUILD_DIR ?= $(INITRAMFS)/regression
 # These test apps are sorted by name
 TEST_APPS := \
 	alarm \
+	capability \
 	clone3 \
 	cpu_affinity \
 	eventfd2 \

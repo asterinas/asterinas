@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod clone;
-mod credentials;
+pub mod credentials;
 mod exit;
 mod kill;
 pub mod posix_thread;

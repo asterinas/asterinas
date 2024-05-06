@@ -14,6 +14,8 @@ mod arch;
 mod arch_prctl;
 mod bind;
 mod brk;
+mod capget;
+mod capset;
 mod chdir;
 mod chmod;
 mod chown;

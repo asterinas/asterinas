@@ -6,7 +6,7 @@ use aster_frame::sync::{RwLockReadGuard, RwLockWriteGuard};
 use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
 
-use super::{credentials_::Credentials_, Credentials, Gid, Uid};
+use super::{capabilities::CapSet, credentials_::Credentials_, Credentials, Gid, Uid};
 use crate::prelude::*;
 
 impl<R: TRights> Credentials<R> {
@@ -14,7 +14,8 @@ impl<R: TRights> Credentials<R> {
     pub fn new_root() -> Self {
         let uid = Uid::new_root();
         let gid = Gid::new_root();
-        let credentials_ = Arc::new(Credentials_::new(uid, gid));
+        let cap = CapSet::new_root();
+        let credentials_ = Arc::new(Credentials_::new(uid, gid, cap));
         Self(credentials_, R::new())
     }
 
@@ -248,5 +249,55 @@ impl<R: TRights> Credentials<R> {
     #[require(R > Write)]
     pub fn groups_mut(&self) -> RwLockWriteGuard<BTreeSet<Gid>> {
         self.0.groups_mut()
+    }
+
+    // *********** Linux Capability methods **********
+
+    /// Gets the capabilities that child process can inherit.
+    ///
+    /// This method requies the `Read` right.
+    #[require(R > Read)]
+    pub fn inheritable_capset(&self) -> CapSet {
+        self.0.inheritable_capset()
+    }
+
+    /// Gets the capabilities that are permitted.
+    ///
+    /// This method requies the `Read` right.
+    #[require(R > Read)]
+    pub fn permitted_capset(&self) -> CapSet {
+        self.0.permitted_capset()
+    }
+
+    /// Gets the capabilities that actually use.
+    ///
+    /// This method requies the `Read` right.
+    #[require(R > Read)]
+    pub fn effective_capset(&self) -> CapSet {
+        self.0.effective_capset()
+    }
+
+    /// Sets the capabilities that child process can inherit.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_inheritable_capset(&self, inheritable_capset: CapSet) {
+        self.0.set_inheritable_capset(inheritable_capset);
+    }
+
+    /// Sets the capabilities that are permitted.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_permitted_capset(&self, permitted_capset: CapSet) {
+        self.0.set_permitted_capset(permitted_capset);
+    }
+
+    /// Sets the capabilities that actually use.
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn set_effective_capset(&self, effective_capset: CapSet) {
+        self.0.set_effective_capset(effective_capset);
     }
 }
