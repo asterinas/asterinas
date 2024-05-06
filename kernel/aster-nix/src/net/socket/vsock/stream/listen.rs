@@ -2,7 +2,7 @@
 
 use super::connected::Connected;
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     net::socket::vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
     prelude::*,
     process::signal::{Pollee, Poller},
@@ -30,7 +30,7 @@ impl Listen {
     pub fn push_incoming(&self, connect: Arc<Connected>) -> Result<()> {
         let mut incoming_connections = self.incoming_connection.lock_irq_disabled();
         if incoming_connections.len() >= self.backlog {
-            return_errno_with_message!(Errno::ENOMEM, "Queue in listenging socket is full")
+            return_errno_with_message!(Errno::ENOMEM, "queue in listenging socket is full")
         }
         incoming_connections.push_back(connect);
         Ok(())
@@ -59,34 +59,10 @@ impl Listen {
             self.pollee.del_events(IoEvents::IN);
         }
     }
-    pub fn register_observer(
-        &self,
-        pollee: &Pollee,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    pub fn unregister_observer(
-        &self,
-        pollee: &Pollee,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Result<Weak<dyn Observer<IoEvents>>> {
-        pollee
-            .unregister_observer(observer)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fails to unregister observer"))
-    }
 }
 
 impl Drop for Listen {
     fn drop(&mut self) {
-        VSOCK_GLOBAL
-            .get()
-            .unwrap()
-            .used_ports
-            .lock_irq_disabled()
-            .remove(&self.addr.port);
+        VSOCK_GLOBAL.get().unwrap().recycle_port(&self.addr.port);
     }
 }

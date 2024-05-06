@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
-use core::{fmt::Debug, hint::spin_loop};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec, vec::Vec};
+use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
-use aster_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
+use aster_frame::{offset_of, sync::SpinLock, trap::TrapFrame, vm::VmWriter};
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
 use pod::Pod;
 
 use super::{
-    buffer::RxBuffer,
+    buffer::{RxBuffer, RX_BUFFER_LEN},
     config::{VirtioVsockConfig, VsockFeatures},
     connect::{ConnectionInfo, VsockEvent},
     error::SocketError,
@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     device::{
-        socket::{handle_recv_irq, register_device},
+        socket::{buffer::TxBuffer, handle_recv_irq, register_device},
         VirtioDeviceError,
     },
     queue::{QueueError, VirtQueue},
@@ -29,9 +29,6 @@ const QUEUE_SIZE: u16 = 64;
 const QUEUE_RECV: u16 = 0;
 const QUEUE_SEND: u16 = 1;
 const QUEUE_EVENT: u16 = 2;
-
-/// The size in bytes of each buffer used in the RX virtqueue. This must be bigger than `size_of::<VirtioVsockHdr>()`.
-const RX_BUFFER_SIZE: usize = 512;
 
 /// Vsock device driver
 pub struct SocketDevice {
@@ -71,8 +68,8 @@ impl SocketDevice {
         // Allocate and add buffers for the RX queue.
         let mut rx_buffers = SlotVec::new();
         for i in 0..QUEUE_SIZE {
-            let mut rx_buffer = RxBuffer::new(RX_BUFFER_SIZE);
-            let token = recv_queue.add_buf(&[], &[rx_buffer.buf_mut()])?;
+            let rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>());
+            let token = recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
         }
@@ -187,7 +184,10 @@ impl SocketDevice {
         header: &VirtioVsockHdr,
         buffer: &[u8],
     ) -> Result<(), SocketError> {
-        let _token = self.send_queue.add_buf(&[header.as_bytes(), buffer], &[])?;
+        debug!("buffer in send_packet_to_tx_queue: {:?}", buffer);
+        let tx_buffer = TxBuffer::new(header, buffer);
+
+        let token = self.send_queue.add_dma_buf(&[&tx_buffer], &[])?;
 
         if self.send_queue.should_notify() {
             self.send_queue.notify();
@@ -198,9 +198,13 @@ impl SocketDevice {
             spin_loop();
         }
 
-        self.send_queue.pop_used()?;
-
-        debug!("buffer in send_packet_to_tx_queue: {:?}", buffer);
+        // Pop out the buffer, so we can reuse the send queue further
+        let (pop_token, _) = self.send_queue.pop_used()?;
+        debug_assert!(pop_token == token);
+        if pop_token != token {
+            return Err(SocketError::QueueError(QueueError::WrongToken));
+        }
+        debug!("send packet succeeds");
         Ok(())
     }
 
@@ -223,6 +227,7 @@ impl SocketDevice {
             if !connection_info.has_pending_credit_request {
                 self.credit_request(connection_info)?;
                 connection_info.has_pending_credit_request = true;
+                //TODO check if the update needed
             }
             Err(SocketError::InsufficientBufferSpaceInPeer)
         }
@@ -261,9 +266,13 @@ impl SocketDevice {
             .rx_buffers
             .remove(token as usize)
             .ok_or(QueueError::WrongToken)?;
-        rx_buffer.set_packet_len(RX_BUFFER_SIZE);
+        rx_buffer.set_packet_len(len as usize);
 
-        let (header, payload) = read_header_and_body(rx_buffer.buf())?;
+        let mut buf_reader = rx_buffer.buf();
+        let mut temp_buffer = vec![0u8; buf_reader.remain()];
+        buf_reader.read(&mut VmWriter::from(&mut temp_buffer as &mut [u8]));
+
+        let (header, payload) = read_header_and_body(&temp_buffer)?;
         // The length written should be equal to len(header)+len(packet)
         assert_eq!(len, header.len() + VIRTIO_VSOCK_HDR_LEN as u32);
         debug!("Received packet {:?}. Op {:?}", header, header.op());
@@ -285,15 +294,15 @@ impl SocketDevice {
         if !self.recv_queue.can_pop() {
             return Ok(None);
         }
-        let mut body = RxBuffer::new(RX_BUFFER_SIZE);
-        let header = self.receive(body.buf_mut())?;
+        let mut body = vec![0u8; RX_BUFFER_LEN];
+        let header = self.receive(&mut body)?;
 
-        VsockEvent::from_header(&header).and_then(|event| handler(event, body.buf()))
+        VsockEvent::from_header(&header).and_then(|event| handler(event, &body))
     }
 
     /// Add a used rx buffer to recv queue,@index is only to check the correctness
-    fn add_rx_buffer(&mut self, mut rx_buffer: RxBuffer, index: u16) -> Result<(), SocketError> {
-        let token = self.recv_queue.add_buf(&[], &[rx_buffer.buf_mut()])?;
+    fn add_rx_buffer(&mut self, rx_buffer: RxBuffer, index: u16) -> Result<(), SocketError> {
+        let token = self.recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
         assert_eq!(index, token);
         assert!(self.rx_buffers.put_at(token as usize, rx_buffer).is_none());
         if self.recv_queue.should_notify() {

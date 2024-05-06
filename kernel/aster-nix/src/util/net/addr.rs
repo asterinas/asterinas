@@ -6,7 +6,7 @@
 use crate::{
     net::{
         iface::Ipv4Address,
-        socket::{unix::UnixSocketAddr, SocketAddr},
+        socket::{unix::UnixSocketAddr, vsock::VsockSocketAddr, SocketAddr},
     },
     prelude::*,
     util::{read_bytes_from_user, read_val_from_user, write_val_to_user},
@@ -58,7 +58,10 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
         CSocketAddrFamily::AF_VSOCK => {
             debug_assert!(addr_len >= core::mem::size_of::<CSocketAddrVm>());
             let sock_addr_vm: CSocketAddrVm = read_val_from_user(addr)?;
-            SocketAddr::Vsock(sock_addr_vm.svm_cid, sock_addr_vm.svm_port)
+            SocketAddr::Vsock(VsockSocketAddr::new(
+                sock_addr_vm.svm_cid,
+                sock_addr_vm.svm_port,
+            ))
         }
         _ => {
             return_errno_with_message!(Errno::EAFNOSUPPORT, "cannot support address for the family")
@@ -94,8 +97,8 @@ pub fn write_socket_addr_to_user(
             write_size as i32
         }
         SocketAddr::IPv6 => todo!(),
-        SocketAddr::Vsock(cid, port) => {
-            let vm_addr = CSocketAddrVm::new(*cid, *port);
+        SocketAddr::Vsock(addr) => {
+            let vm_addr = CSocketAddrVm::new(addr.cid, addr.port);
             let write_size = core::mem::size_of::<CSocketAddrVm>();
             write_val_to_user(dest, &vm_addr)?;
             write_size as i32

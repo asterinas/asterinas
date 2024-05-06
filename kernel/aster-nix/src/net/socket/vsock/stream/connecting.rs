@@ -38,7 +38,7 @@ impl Connecting {
     pub fn info(&self) -> ConnectionInfo {
         self.info.lock_irq_disabled().clone()
     }
-    pub fn update_for_event(&self, event: &VsockEvent) {
+    pub fn update_info(&self, event: &VsockEvent) {
         self.info.lock_irq_disabled().update_for_event(event)
     }
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -52,9 +52,6 @@ impl Connecting {
 impl Drop for Connecting {
     fn drop(&mut self) {
         let vsockspace = VSOCK_GLOBAL.get().unwrap();
-        vsockspace
-            .used_ports
-            .lock_irq_disabled()
-            .remove(&self.local_addr().port);
+        vsockspace.recycle_port(&self.local_addr().port);
     }
 }

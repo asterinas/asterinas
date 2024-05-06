@@ -28,7 +28,7 @@
 
 use super::{
     error::SocketError,
-    header::{VirtioVsockHdr, VirtioVsockOp, VsockAddr},
+    header::{VirtioVsockHdr, VirtioVsockOp, VsockDeviceAddr},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,9 +74,9 @@ pub enum VsockEventType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VsockEvent {
     /// The source of the event, i.e. the peer who sent it.
-    pub source: VsockAddr,
+    pub source: VsockDeviceAddr,
     /// The destination of the event, i.e. the CID and port on our side.
-    pub destination: VsockAddr,
+    pub destination: VsockDeviceAddr,
     /// The peer's buffer status for the connection.
     pub buffer_status: VsockBufferStatus,
     /// The type of event.
@@ -143,7 +143,7 @@ impl VsockEvent {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ConnectionInfo {
-    pub dst: VsockAddr,
+    pub dst: VsockDeviceAddr,
     pub src_port: u32,
     /// The last `buf_alloc` value the peer sent to us, indicating how much receive buffer space in
     /// bytes it has allocated for packet bodies.
@@ -166,7 +166,7 @@ pub struct ConnectionInfo {
 }
 
 impl ConnectionInfo {
-    pub fn new(destination: VsockAddr, src_port: u32) -> Self {
+    pub fn new(destination: VsockDeviceAddr, src_port: u32) -> Self {
         Self {
             dst: destination,
             src_port,

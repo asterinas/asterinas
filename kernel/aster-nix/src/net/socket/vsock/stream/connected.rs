@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::boxed::Box;
-use core::cmp::min;
-
 use aster_virtio::device::socket::connect::{ConnectionInfo, VsockEvent};
+use ringbuf::{ring_buffer::RbBase, HeapRb, Rb};
 
 use super::connecting::Connecting;
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     net::socket::{
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
         SendRecvFlags, SockShutdownCmd,
@@ -54,8 +52,8 @@ impl Connected {
 
     pub fn try_recv(&self, buf: &mut [u8]) -> Result<usize> {
         let mut connection = self.connection.lock_irq_disabled();
-        let bytes_read = connection.buffer.drain(buf);
-
+        let bytes_read = connection.buffer.len().min(buf.len());
+        connection.buffer.pop_slice(&mut buf[..bytes_read]);
         connection.info.done_forwarding(bytes_read);
 
         match bytes_read {
@@ -77,10 +75,8 @@ impl Connected {
         VSOCK_GLOBAL
             .get()
             .unwrap()
-            .driver
-            .lock_irq_disabled()
-            .send(buf, &mut connection.info)
-            .map_err(|e| Error::with_message(Errno::ENOBUFS, "cannot send packet"))?;
+            .send(buf, &mut connection.info)?;
+
         Ok(buf_len)
     }
 
@@ -96,23 +92,13 @@ impl Connected {
         if self.should_close() {
             let connection = self.connection.lock_irq_disabled();
             let vsockspace = VSOCK_GLOBAL.get().unwrap();
-            vsockspace
-                .driver
-                .lock_irq_disabled()
-                .reset(&connection.info)
-                .map_err(|e| Error::with_message(Errno::ENOMEM, "can not send close packet"))?;
-            vsockspace
-                .connected_sockets
-                .lock_irq_disabled()
-                .remove(&self.id());
-            vsockspace
-                .used_ports
-                .lock_irq_disabled()
-                .remove(&self.local_addr().port);
+            vsockspace.reset(&connection.info).unwrap();
+            vsockspace.remove_connected_socket(&self.id());
+            vsockspace.recycle_port(&self.local_addr().port);
         }
         Ok(())
     }
-    pub fn update_for_event(&self, event: &VsockEvent) {
+    pub fn update_info(&self, event: &VsockEvent) {
         let mut connection = self.connection.lock_irq_disabled();
         connection.update_for_event(event)
     }
@@ -122,7 +108,7 @@ impl Connected {
         connection.info.clone()
     }
 
-    pub fn connection_buffer_add(&self, bytes: &[u8]) -> bool {
+    pub fn add_connection_buffer(&self, bytes: &[u8]) -> bool {
         let mut connection = self.connection.lock_irq_disabled();
         connection.add(bytes)
     }
@@ -144,42 +130,18 @@ impl Connected {
             self.pollee.del_events(IoEvents::IN);
         }
     }
-
-    pub fn register_observer(
-        &self,
-        pollee: &Pollee,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    pub fn unregister_observer(
-        &self,
-        pollee: &Pollee,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Result<Weak<dyn Observer<IoEvents>>> {
-        pollee
-            .unregister_observer(observer)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fails to unregister observer"))
-    }
 }
 
 impl Drop for Connected {
     fn drop(&mut self) {
         let vsockspace = VSOCK_GLOBAL.get().unwrap();
-        vsockspace
-            .used_ports
-            .lock_irq_disabled()
-            .remove(&self.local_addr().port);
+        vsockspace.recycle_port(&self.local_addr().port);
     }
 }
 
-#[derive(Debug)]
 pub struct Connection {
     info: ConnectionInfo,
-    buffer: RingBuffer,
+    buffer: HeapRb<u8>,
     /// The peer sent a SHUTDOWN request, but we haven't yet responded with a RST because there is
     /// still data in the buffer.
     pub peer_requested_shutdown: bool,
@@ -191,16 +153,15 @@ impl Connection {
         info.buf_alloc = PER_CONNECTION_BUFFER_CAPACITY.try_into().unwrap();
         Self {
             info,
-            buffer: RingBuffer::new(PER_CONNECTION_BUFFER_CAPACITY),
+            buffer: HeapRb::new(PER_CONNECTION_BUFFER_CAPACITY),
             peer_requested_shutdown: false,
         }
     }
-    pub fn from_info(info: ConnectionInfo) -> Self {
-        let mut info = info.clone();
+    pub fn from_info(mut info: ConnectionInfo) -> Self {
         info.buf_alloc = PER_CONNECTION_BUFFER_CAPACITY.try_into().unwrap();
         Self {
             info,
-            buffer: RingBuffer::new(PER_CONNECTION_BUFFER_CAPACITY),
+            buffer: HeapRb::new(PER_CONNECTION_BUFFER_CAPACITY),
             peer_requested_shutdown: false,
         }
     }
@@ -208,7 +169,11 @@ impl Connection {
         self.info.update_for_event(event)
     }
     pub fn add(&mut self, bytes: &[u8]) -> bool {
-        self.buffer.add(bytes)
+        if bytes.len() > self.buffer.free_len() {
+            return false;
+        }
+        self.buffer.push_slice(bytes);
+        true
     }
 }
 
@@ -229,87 +194,5 @@ impl ConnectionID {
 impl From<VsockEvent> for ConnectionID {
     fn from(event: VsockEvent) -> Self {
         Self::new(event.destination.into(), event.source.into())
-    }
-}
-
-#[derive(Debug)]
-struct RingBuffer {
-    buffer: Box<[u8]>,
-    /// The number of bytes currently in the buffer.
-    used: usize,
-    /// The index of the first used byte in the buffer.
-    start: usize,
-}
-//TODO: ringbuf
-impl RingBuffer {
-    pub fn new(capacity: usize) -> Self {
-        // TODO: can be optimized.
-        let temp = vec![0; capacity];
-        Self {
-            // FIXME: if the capacity is excessive, elements move will be executed.
-            buffer: temp.into_boxed_slice(),
-            used: 0,
-            start: 0,
-        }
-    }
-    /// Returns the number of bytes currently used in the buffer.
-    pub fn used(&self) -> usize {
-        self.used
-    }
-
-    /// Returns true iff there are currently no bytes in the buffer.
-    pub fn is_empty(&self) -> bool {
-        self.used == 0
-    }
-
-    /// Returns the number of bytes currently free in the buffer.
-    pub fn available(&self) -> usize {
-        self.buffer.len() - self.used
-    }
-
-    /// Adds the given bytes to the buffer if there is enough capacity for them all.
-    ///
-    /// Returns true if they were added, or false if they were not.
-    pub fn add(&mut self, bytes: &[u8]) -> bool {
-        if bytes.len() > self.available() {
-            return false;
-        }
-
-        // The index of the first available position in the buffer.
-        let first_available = (self.start + self.used) % self.buffer.len();
-        // The number of bytes to copy from `bytes` to `buffer` between `first_available` and
-        // `buffer.len()`.
-        let copy_length_before_wraparound = min(bytes.len(), self.buffer.len() - first_available);
-        self.buffer[first_available..first_available + copy_length_before_wraparound]
-            .copy_from_slice(&bytes[0..copy_length_before_wraparound]);
-        if let Some(bytes_after_wraparound) = bytes.get(copy_length_before_wraparound..) {
-            self.buffer[0..bytes_after_wraparound.len()].copy_from_slice(bytes_after_wraparound);
-        }
-        self.used += bytes.len();
-
-        true
-    }
-
-    /// Reads and removes as many bytes as possible from the buffer, up to the length of the given
-    /// buffer.
-    pub fn drain(&mut self, out: &mut [u8]) -> usize {
-        let bytes_read = min(self.used, out.len());
-
-        // The number of bytes to copy out between `start` and the end of the buffer.
-        let read_before_wraparound = min(bytes_read, self.buffer.len() - self.start);
-        // The number of bytes to copy out from the beginning of the buffer after wrapping around.
-        let read_after_wraparound = bytes_read
-            .checked_sub(read_before_wraparound)
-            .unwrap_or_default();
-
-        out[0..read_before_wraparound]
-            .copy_from_slice(&self.buffer[self.start..self.start + read_before_wraparound]);
-        out[read_before_wraparound..bytes_read]
-            .copy_from_slice(&self.buffer[0..read_after_wraparound]);
-
-        self.used -= bytes_read;
-        self.start = (self.start + bytes_read) % self.buffer.len();
-
-        bytes_read
     }
 }

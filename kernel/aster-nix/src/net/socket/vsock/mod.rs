@@ -9,6 +9,7 @@ use spin::Once;
 pub mod addr;
 pub mod common;
 pub mod stream;
+pub use addr::VsockSocketAddr;
 pub use stream::VsockStreamSocket;
 
 // init static driver
@@ -19,7 +20,7 @@ pub fn init() {
         VSOCK_GLOBAL.call_once(|| Arc::new(VsockSpace::new()));
         register_recv_callback(DEVICE_NAME, || {
             let vsockspace = VSOCK_GLOBAL.get().unwrap();
-            let _ = vsockspace.poll();
+            vsockspace.poll().unwrap();
         })
     }
 }
