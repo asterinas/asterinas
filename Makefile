@@ -33,15 +33,15 @@ CARGO_OSDK_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
 else ifeq ($(AUTO_TEST), regression)
 CARGO_OSDK_ARGS += --init-args="/regression/run_regression_test.sh"
 else ifeq ($(AUTO_TEST), boot)
-CARGO_OSDK_ARGS += --init_args="/regression/boot_hello.sh"
+CARGO_OSDK_ARGS += --init-args="/regression/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
-CARGO_OSDK_ARGS += --init_args="/regression/run_vsock_test.sh"
-ifeq ($(QEMU_MACHINE), microvm)
-CARGO_OSDK_ARGS += --qemu.args="-device vhost-vsock-device,guest-cid=3"
-else ifeq ($(EMULATE_IOMMU), 1)
-CARGO_OSDK_ARGS += --qemu.args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on"
+CARGO_OSDK_ARGS += --init-args="/regression/run_vsock_test.sh"
+ifeq ($(SCHEME), microvm)
+CARGO_OSDK_ARGS += --qemu-args="-device vhost-vsock-device,guest-cid=3"
+else ifeq ($(SCHEME), iommu)
+CARGO_OSDK_ARGS += --qemu-args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on"
 else
-CARGO_OSDK_ARGS += --qemu.args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off"
+CARGO_OSDK_ARGS += --qemu-args="-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3,disable-legacy=on,disable-modern=off"
 endif
 endif
 

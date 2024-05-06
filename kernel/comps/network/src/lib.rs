@@ -7,7 +7,7 @@
 #![feature(linked_list_cursors)]
 
 mod buffer;
-mod dma_pool;
+pub mod dma_pool;
 mod driver;
 
 extern crate alloc;

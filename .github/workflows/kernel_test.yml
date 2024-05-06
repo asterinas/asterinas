@@ -82,4 +82,29 @@ jobs:
         
       - name: Regression Test (Linux EFI Handover Boot Protocol)
         id: regression_test_linux
-        run: make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
+        run: make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE=1
+
+  vsock-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Vsock Server on Host
+        id: host_vsock_server
+        run: |
+          sudo modprobe vhost_vsock
+          sudo apt-get install socat
+          echo "Run vsock server on host...."
+          socat -dd vsock-listen:1234 SYSTEM:"sleep 3s; echo 'Hello from host';sleep 2s;kill -INT $$" &
+      - name: Run Vsock Client and Server on Guest
+        id: guest_vsock_client_server
+        run: |
+          docker run  --privileged --network=host --device=/dev/kvm -v ./:/root/asterinas asterinas/asterinas:0.4.2 \
+          make run AUTO_TEST=vsock ENABLE_KVM=0 QEMU_MACHINE=microvm RELEASE_MODE=1 &
+      - name: Run Vsock Client on Host
+        id: host_vsock_client
+        run: |
+          sleep 5m
+          echo "Run vsock client on host...."
+          echo "Hello from host" | socat -dd - vsock-connect:3:4321

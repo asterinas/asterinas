@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_virtio::device::socket::header::VsockAddr;
+use aster_virtio::device::socket::header::VsockDeviceAddr;
 
 use crate::{net::socket::SocketAddr, prelude::*};
 
@@ -27,23 +27,21 @@ impl TryFrom<SocketAddr> for VsockSocketAddr {
     type Error = Error;
 
     fn try_from(value: SocketAddr) -> Result<Self> {
-        let (cid, port) = if let SocketAddr::Vsock(cid, port) = value {
-            (cid, port)
-        } else {
+        let SocketAddr::Vsock(vsock_addr) = value else {
             return_errno_with_message!(Errno::EINVAL, "invalid vsock socket addr");
         };
-        Ok(Self { cid, port })
+        Ok(vsock_addr)
     }
 }
 
 impl From<VsockSocketAddr> for SocketAddr {
     fn from(value: VsockSocketAddr) -> Self {
-        SocketAddr::Vsock(value.cid, value.port)
+        SocketAddr::Vsock(value)
     }
 }
 
-impl From<VsockAddr> for VsockSocketAddr {
-    fn from(value: VsockAddr) -> Self {
+impl From<VsockDeviceAddr> for VsockSocketAddr {
+    fn from(value: VsockDeviceAddr) -> Self {
         VsockSocketAddr {
             cid: value.cid as u32,
             port: value.port,
@@ -51,9 +49,9 @@ impl From<VsockAddr> for VsockSocketAddr {
     }
 }
 
-impl From<VsockSocketAddr> for VsockAddr {
+impl From<VsockSocketAddr> for VsockDeviceAddr {
     fn from(value: VsockSocketAddr) -> Self {
-        VsockAddr {
+        VsockDeviceAddr {
             cid: value.cid as u64,
             port: value.port,
         }

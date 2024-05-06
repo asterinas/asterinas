@@ -44,7 +44,6 @@ QEMU_ARGS="\
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
-    -device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3$IOMMU_DEV_EXTRA \
     -device virtconsole,chardev=mux \
     $IOMMU_EXTRA_ARGS \
 "
@@ -60,7 +59,6 @@ MICROVM_QEMU_ARGS="\
     -device virtio-net-device,netdev=net01 \
     -device virtio-serial-device \
     -device virtconsole,chardev=mux \
-    -device vhost-vsock-device,guest-cid=3 \
 "
 
 if [ "$1" = "microvm" ]; then

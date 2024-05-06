@@ -35,7 +35,7 @@ pub const VIRTIO_VSOCK_HDR_LEN: usize = core::mem::size_of::<VirtioVsockHdr>();
 
 /// Socket address.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct VsockAddr {
+pub struct VsockDeviceAddr {
     /// Context Identifier.
     pub cid: u64,
     /// Port number.
@@ -93,15 +93,15 @@ impl VirtioVsockHdr {
         VirtioVsockOp::try_from(self.op).map_err(|err| err.into())
     }
 
-    pub fn source(&self) -> VsockAddr {
-        VsockAddr {
+    pub fn source(&self) -> VsockDeviceAddr {
+        VsockDeviceAddr {
             cid: self.src_cid,
             port: self.src_port,
         }
     }
 
-    pub fn destination(&self) -> VsockAddr {
-        VsockAddr {
+    pub fn destination(&self) -> VsockDeviceAddr {
+        VsockDeviceAddr {
             cid: self.dst_cid,
             port: self.dst_port,
         }

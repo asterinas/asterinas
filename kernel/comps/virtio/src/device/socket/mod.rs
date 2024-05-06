@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! This mod is modified from virtio-drivers project.
+// ! #![feature(linked_list_cursors)]
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 
 use aster_frame::sync::SpinLock;
@@ -61,6 +61,7 @@ pub fn handle_recv_irq(name: &str) {
 
 pub fn init() {
     VSOCK_DEVICE_TABLE.call_once(|| SpinLock::new(BTreeMap::new()));
+    buffer::init();
 }
 
 type VsockDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn VsockDeviceIrqHandler>>>>;
