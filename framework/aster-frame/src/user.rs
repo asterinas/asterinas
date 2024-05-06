@@ -133,7 +133,6 @@ impl<'a> UserMode<'a> {
     where
         F: FnMut() -> bool,
     {
-        self.user_space.vm_space().activate();
         debug_assert!(Arc::ptr_eq(&self.current, &Task::current()));
         self.context.execute(has_kernel_event)
     }
