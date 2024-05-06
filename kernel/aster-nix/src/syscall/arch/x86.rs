@@ -7,6 +7,8 @@ use crate::syscall::{
     arch_prctl::sys_arch_prctl,
     bind::sys_bind,
     brk::sys_brk,
+    capget::sys_capget,
+    capset::sys_capset,
     chdir::{sys_chdir, sys_fchdir},
     chmod::{sys_chmod, sys_fchmod, sys_fchmodat},
     chown::{sys_chown, sys_fchown, sys_fchownat, sys_lchown},
@@ -216,6 +218,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SETFSUID = 122         => sys_setfsuid(args[..1]);
     SYS_SETFSGID = 123         => sys_setfsgid(args[..1]);
     SYS_GETSID = 124           => sys_getsid(args[..1]);
+    SYS_CAPGET = 125           => sys_capget(args[..2]);
+    SYS_CAPSET = 126           => sys_capset(args[..2]);
     SYS_RT_SIGPENDING = 127    => sys_rt_sigpending(args[..2]);
     SYS_RT_SIGSUSPEND = 130    => sys_rt_sigsuspend(args[..2]);
     SYS_SIGALTSTACK = 131      => sys_sigaltstack(args[..2]);
