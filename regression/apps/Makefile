@@ -10,7 +10,8 @@ REGRESSION_BUILD_DIR ?= $(INITRAMFS)/regression
 
 TEST_APPS := signal_c pthread network hello_world hello_pie hello_c fork_c fork execve pty mongoose
 
-C_SOURCES := $(shell find . -type f \( -name "*.c" -or -name "*.h" \) )
+# The C head and source files of all the apps, excluding the downloaded mongoose files
+C_SOURCES := $(shell find . -type f \( -name "*.c" -or -name "*.h" \) ! -name "mongoose.c" ! -name "mongoose.h")
 
 .PHONY: all
 all: $(TEST_APPS) scripts

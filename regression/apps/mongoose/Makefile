@@ -2,7 +2,7 @@
 
 CUR_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 BUILD_DIR := $(CUR_DIR)/../../build/initramfs/regression/network
-MONGOOSE_DIR := $(CUR_DIR)/../../build/mongoose
+MONGOOSE_DIR := $(CUR_DIR)
 MONGOOSE_C := $(MONGOOSE_DIR)/mongoose.c
 MONGOOSE_H := $(MONGOOSE_DIR)/mongoose.h
 MONGOOSE_FILES := $(MONGOOSE_C) $(MONGOOSE_H)
@@ -28,8 +28,7 @@ $(MONGOOSE_O): $(MONGOOSE_FILES)
 	$(CC) -c $(MONGOOSE_C) $(CFLAGS) -o $@
 
 $(MONGOOSE_FILES): | $(MONGOOSE_DIR)
-	wget --header="Accept: application/vnd.github.v3.raw" \
-		-O $@ "https://api.github.com/repos/cesanta/mongoose/contents/$(notdir $@)?ref=7.13"
+	wget -O $@ "https://raw.githubusercontent.com/cesanta/mongoose/7.13/$(notdir $@)"
 
 $(BUILD_DIR) $(MONGOOSE_DIR):
 	@mkdir -p $@
