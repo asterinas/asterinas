@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements 120 out of the 310+ system calls
+Asterinas implements 130 out of the 310+ system calls
 provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |
@@ -112,9 +112,9 @@ provided by Linux on x86-64 architecture.
 | 89      | readlink         | ✅              |
 | 90      | chmod            | ✅              |
 | 91      | fchmod           | ✅              |
-| 92      | chown            | ❌              |
-| 93      | fchown           | ❌              |
-| 94      | lchown           | ❌              |
+| 92      | chown            | ✅              |
+| 93      | fchown           | ✅              |
+| 94      | lchown           | ✅              |
 | 95      | umask            | ✅              |
 | 96      | gettimeofday     | ✅              |
 | 97      | getrlimit        | ❌              |
@@ -280,7 +280,7 @@ provided by Linux on x86-64 architecture.
 | 257     | openat           | ✅              |
 | 258     | mkdirat          | ✅              |
 | 259     | mknodat          | ❌              |
-| 260     | fchownat         | ❌              |
+| 260     | fchownat         | ✅              |
 | 261     | futimesat        | ❌              |
 | 262     | newfstatat       | ✅              |
 | 263     | unlinkat         | ✅              |
