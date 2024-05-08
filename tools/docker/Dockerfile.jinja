@@ -2,22 +2,22 @@
 
 #= Install packages for Docker building ====================================
 
-FROM ubuntu:22.04 as build-base
+FROM {{ base_image }} as build-base
 
 SHELL ["/bin/bash", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Please keep the list sorted by name
-RUN apt update && apt-get install -y --no-install-recommends \
-    build-essential \
-    ca-certificates \
-    curl \
-    git-core \
-    gnupg \
-    libssl-dev \
-    python3-pip \
-    python-is-python3 \
+RUN apt update && apt-get install -y --no-install-recommends \ 
+    build-essential \ 
+    ca-certificates \ 
+    curl \ 
+    git-core \ 
+    gnupg \ 
+    libssl-dev \ 
+    python3-pip \ 
+    python-is-python3 \ 
     wget
 
 #= Build benchmark =========================================================
@@ -26,37 +26,37 @@ FROM build-base as build-benchmarks
 
 # Download the source files of benchmarks
 WORKDIR /root
-RUN apt install -y automake \
-    libtool \
+RUN apt install -y automake \ 
+    libtool \ 
     pkg-config
-RUN wget https://github.com/akopytov/sysbench/archive/1.0.20.tar.gz \
-    && tar -zxvf 1.0.20.tar.gz \
+RUN wget https://github.com/akopytov/sysbench/archive/1.0.20.tar.gz \ 
+    && tar -zxvf 1.0.20.tar.gz \ 
     && rm 1.0.20.tar.gz
 RUN git clone https://github.com/nicktehrany/membench.git
 RUN git clone https://github.com/esnet/iperf.git
 
 # Build sysbench
 WORKDIR /root/sysbench-1.0.20
-RUN ./autogen.sh \
-    && ./configure --without-mysql --prefix=/usr/local/benchmark/sysbench \
-    && make -j \
+RUN ./autogen.sh \ 
+    && ./configure --without-mysql --prefix=/usr/local/benchmark/sysbench \ 
+    && make -j \ 
     && make install
 
 # Build membench
 WORKDIR /root/membench
 RUN make -j \ 
-    && mkdir /usr/local/benchmark/membench \
+    && mkdir /usr/local/benchmark/membench \ 
     && cp membench /usr/local/benchmark/membench/
 
 # Build iperf
 WORKDIR /root/iperf
-RUN ./configure --prefix=/usr/local/benchmark/iperf \
-    && make -j \
+RUN ./configure --prefix=/usr/local/benchmark/iperf \ 
+    && make -j \ 
     && make install
- 
+
 WORKDIR /root
-RUN rm -rf sysbench-1.0.20 \
-    membench \
+RUN rm -rf sysbench-1.0.20 \ 
+    membench \ 
     iperf
 
 #= Build syscall test =========================================================
@@ -77,18 +77,19 @@ FROM build-bazel as syscall_test
 # Build the syscall test binaries
 COPY regression/syscall_test /root/syscall_test
 WORKDIR /root/syscall_test
-RUN export BUILD_DIR=build && \
+RUN export BUILD_DIR=build && \ 
     make ${BUILD_DIR}/syscall_test_bins
 
+{% if not intel_tdx %}
 #= Build QEMU =================================================================
 
 FROM build-base as build-qemu
 
-RUN apt update && apt-get install -y --no-install-recommends \
-    libgcrypt-dev   `# optional build dependency` \
-    libglib2.0-dev  `# build dependency` \
-    libpixman-1-dev `# build dependency` \
-    libusb-dev      `# optional build dependency` \
+RUN apt update && apt-get install -y --no-install-recommends \ 
+    libgcrypt-dev   `# optional build dependency` \ 
+    libglib2.0-dev  `# build dependency` \ 
+    libpixman-1-dev `# build dependency` \ 
+    libusb-dev      `# optional build dependency` \ 
     meson \
     ninja-build
 RUN apt clean && rm -rf /var/lib/apt/lists/*
@@ -100,13 +101,13 @@ FROM build-qemu as qemu
 # The QEMU version in the Ubuntu 22.04 repository is 6.*, which has a bug to cause OVMF debug to fail.
 # The libslirp dependency is for QEMU's network backend.
 WORKDIR /root
-RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-8.2.1.tar.xz \
-    && mkdir /root/qemu \
-    && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \
+RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-8.2.1.tar.xz \ 
+    && mkdir /root/qemu \ 
+    && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \ 
     && rm qemu.tar.xz
 WORKDIR /root/qemu
-RUN ./configure --target-list=x86_64-softmmu --prefix=/usr/local/qemu --enable-slirp \
-    && make -j \
+RUN ./configure --target-list=x86_64-softmmu --prefix=/usr/local/qemu --enable-slirp \ 
+    && make -j \ 
     && make install
 WORKDIR /root
 RUN rm -rf /root/qemu
@@ -115,11 +116,11 @@ RUN rm -rf /root/qemu
 
 FROM build-base as build-ovmf
 
-RUN apt update && apt-get install -y --no-install-recommends \
-    bison \
-    flex \
-    iasl \
-    nasm \
+RUN apt update && apt-get install -y --no-install-recommends \ 
+    bison \ 
+    flex \ 
+    iasl \ 
+    nasm \ 
     uuid-dev
 RUN apt clean && rm -rf /var/lib/apt/lists/*
 
@@ -129,24 +130,24 @@ FROM build-ovmf as ovmf
 WORKDIR /root
 RUN git clone --depth 1 --branch edk2-stable202402 --recurse-submodules --shallow-submodules https://github.com/tianocore/edk2.git
 WORKDIR /root/edk2
-RUN source ./edksetup.sh \
-    && make -C BaseTools \
-    && build -a X64 -t GCC5 -b DEBUG -p OvmfPkg/OvmfPkgX64.dsc -D DEBUG_ON_SERIAL_PORT \
+RUN source ./edksetup.sh \ 
+    && make -C BaseTools \ 
+    && build -a X64 -t GCC5 -b DEBUG -p OvmfPkg/OvmfPkgX64.dsc -D DEBUG_ON_SERIAL_PORT \ 
     && build -a X64 -t GCC5 -b RELEASE -p OvmfPkg/OvmfPkgX64.dsc
 
 #= Build GRUB =================================================================
 
 FROM build-base as build-grub
 
-RUN apt update && apt-get install -y --no-install-recommends \
-    autoconf \
-    automake \
-    autopoint \
-    bison \
-    flex \
-    gawk \
-    gettext \
-    libfreetype6-dev \
+RUN apt update && apt-get install -y --no-install-recommends \ 
+    autoconf \ 
+    automake \ 
+    autopoint \ 
+    bison \ 
+    flex \ 
+    gawk \ 
+    gettext \ 
+    libfreetype6-dev \ 
     pkg-config
 RUN apt clean && rm -rf /var/lib/apt/lists/*
 
@@ -158,28 +159,29 @@ FROM build-grub as grub
 # in the GRUB release. The Ubuntu release notoriously modifies the GRUB source code and enforce
 # EFI handover boot, which is deprecated. So we have to build GRUB from source.
 WORKDIR /root
-RUN wget -O grub.tar.xz https://ftp.gnu.org/gnu/grub/grub-2.12.tar.xz \
-    && mkdir /root/grub \
-    && tar xf grub.tar.xz --strip-components=1 -C /root/grub \
+RUN wget -O grub.tar.xz https://ftp.gnu.org/gnu/grub/grub-2.12.tar.xz \ 
+    && mkdir /root/grub \ 
+    && tar xf grub.tar.xz --strip-components=1 -C /root/grub \ 
     && rm grub.tar.xz
 # Fetch and install the Unicode font data for grub.
-RUN wget -O unifont.pcf.gz https://unifoundry.com/pub/unifont/unifont-15.1.04/font-builds/unifont-15.1.04.pcf.gz \
-    && mkdir -pv /usr/share/fonts/unifont \
-    && gunzip -c unifont.pcf.gz > /usr/share/fonts/unifont/unifont.pcf \
+RUN wget -O unifont.pcf.gz https://unifoundry.com/pub/unifont/unifont-15.1.04/font-builds/unifont-15.1.04.pcf.gz \ 
+    && mkdir -pv /usr/share/fonts/unifont \ 
+    && gunzip -c unifont.pcf.gz > /usr/share/fonts/unifont/unifont.pcf \ 
     && rm unifont.pcf.gz
 WORKDIR /root/grub
-RUN echo depends bli part_gpt > grub-core/extra_deps.lst \
-    && ./configure \
-        --target=x86_64 \
-        --disable-efiemu \
-        --with-platform=efi \
-        --enable-grub-mkfont \
-        --prefix=/usr/local/grub \
-        --disable-werror \
-    && make -j \
+RUN echo depends bli part_gpt > grub-core/extra_deps.lst \ 
+    && ./configure \ 
+        --target=x86_64 \ 
+        --disable-efiemu \ 
+        --with-platform=efi \ 
+        --enable-grub-mkfont \ 
+        --prefix=/usr/local/grub \ 
+        --disable-werror \ 
+    && make -j \ 
     && make install
 WORKDIR /root
 RUN rm -rf /root/grub
+{% endif %}
 
 #= Build busybox ==============================================================
 
@@ -191,13 +193,13 @@ FROM build-busybox as busybox
 
 WORKDIR /root
 RUN wget -O busybox.tar.bz2 https://busybox.net/downloads/busybox-1.35.0.tar.bz2 \ 
-    && mkdir /root/busybox \
-    && tar xf busybox.tar.bz2 --strip-components=1 -C /root/busybox \
+    && mkdir /root/busybox \ 
+    && tar xf busybox.tar.bz2 --strip-components=1 -C /root/busybox \ 
     && rm busybox.tar.bz2
 WORKDIR /root/busybox
-RUN make defconfig \
-    && sed -i "s/# CONFIG_STATIC is not set/CONFIG_STATIC=y/g" .config \
-    && sed -i "s/# CONFIG_FEATURE_SH_STANDALONE is not set/CONFIG_FEATURE_SH_STANDALONE=y/g" .config \
+RUN make defconfig \ 
+    && sed -i "s/# CONFIG_STATIC is not set/CONFIG_STATIC=y/g" .config \ 
+    && sed -i "s/# CONFIG_FEATURE_SH_STANDALONE is not set/CONFIG_FEATURE_SH_STANDALONE=y/g" .config \ 
     && make -j
 
 #= The final stages to produce the Asterinas development image ====================
@@ -207,42 +209,44 @@ FROM build-base as rust
 # Install Rust with both nightly and stable
 ENV PATH="/root/.cargo/bin:${PATH}"
 ARG ASTER_RUST_VERSION
-RUN curl https://sh.rustup.rs -sSf | \
-        sh -s -- --default-toolchain ${ASTER_RUST_VERSION} -y \
-    && rustup toolchain install stable \
-    && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \
-    && cargo -V \
+RUN curl https://sh.rustup.rs -sSf | \ 
+        sh -s -- --default-toolchain ${ASTER_RUST_VERSION} -y \ 
+    && rustup toolchain install stable \ 
+    && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \ 
+    && cargo -V \ 
     && rustup component add rust-src rustc-dev llvm-tools-preview
 
 # Install cargo tools
-RUN cargo install \
-    cargo-binutils \
+RUN cargo install \ 
+    cargo-binutils \ 
     mdbook
 
 FROM rust
 
 # Install all Asterinas dependent packages
-RUN apt update && apt-get install -y --no-install-recommends \
-    clang-format       `# formatting regression tests` \
-    cpio \
-    cpuid \
-    exfatprogs \
-    file \
-    gdb \
-    grub-efi-amd64 \
-    grub-efi-amd64-bin \
-    grub-efi-amd64-dbg \
-    libpixman-1-dev     `# running dependency for QEMU` \
-    mtools              `# used by grub-mkrescue` \
-    net-tools \
-    openssh-server \
-    ovmf                `# provide an alternative stable firmware`\
-    pkg-config \
-    strace \
-    sudo \
-    unzip \
-    vim \
-    xorriso \
+RUN apt update && apt-get install -y --no-install-recommends \ 
+    clang-format       `# formatting regression tests` \ 
+    cpio \ 
+    cpuid \ 
+    exfatprogs \ 
+    file \ 
+    gdb \ 
+    grub-efi-amd64 \ 
+    {% if not intel_tdx %}
+    grub-efi-amd64-bin \ 
+    grub-efi-amd64-dbg \ 
+    ovmf                `# provide an alternative stable firmware` \ 
+    {% endif %}
+    libpixman-1-dev     `# running dependency for QEMU` \ 
+    mtools              `# used by grub-mkrescue` \ 
+    net-tools \ 
+    openssh-server \ 
+    pkg-config \ 
+    strace \ 
+    sudo \ 
+    unzip \ 
+    vim \ 
+    xorriso \ 
     zip
 # Clean apt cache
 RUN apt clean && rm -rf /var/lib/apt/lists/*
@@ -251,6 +255,7 @@ RUN apt clean && rm -rf /var/lib/apt/lists/*
 COPY --from=syscall_test /root/syscall_test/build/syscall_test_bins /root/syscall_test_bins
 ENV ASTER_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
 
+{% if not intel_tdx %}
 # Install QEMU built from the previous stages
 COPY --from=qemu /usr/local/qemu /usr/local/qemu
 ENV PATH="/usr/local/qemu/bin:${PATH}"
@@ -265,6 +270,7 @@ COPY --from=grub /usr/local/grub /usr/local/grub
 ENV PATH="/usr/local/grub/bin:${PATH}"
 # Make a symbolic link for `unicode.pf2` from Ubuntu 22.04 package
 RUN ln -sf /usr/share/grub/unicode.pf2 /usr/local/grub/share/grub/unicode.pf2
+{% endif %}
 
 # Install Busybox built from the previous stages
 COPY --from=busybox /root/busybox/busybox /bin/busybox

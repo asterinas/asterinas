@@ -24,6 +24,7 @@ update_image_versions() {
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 ASTER_SRC_DIR=${SCRIPT_DIR}/..
+DOCS_DIR=${ASTER_SRC_DIR}/docs
 CARGO_TOML_PATH=${ASTER_SRC_DIR}/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
@@ -47,6 +48,7 @@ cargo update -p asterinas --precise $new_version
 update_image_versions ${ASTER_SRC_DIR}/README.md
 update_image_versions ${ASTER_SRC_DIR}/README_CN.md
 update_image_versions ${SCRIPT_DIR}/docker/README.md
+update_image_versions ${DOCS_DIR}/src/kernel/intel_tdx.md
 
 # Update Docker image versions in workflows
 WORKFLOWS=$(find "${ASTER_SRC_DIR}/.github/workflows/" -type f -name "*.yml")

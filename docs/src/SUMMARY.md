@@ -6,6 +6,7 @@
 
 * [Getting Started](kernel/README.md)
 * [Advanced Build and Test Instructions](kernel/advanced-instructions.md)
+    * [Intel TDX](kernel/intel_tdx.md)
 * [The Framekernel Architecture](kernel/the-framekernel-architecture.md)
 * [Linux Compatibility](kernel/linux-compatibility.md)
 * [Roadmap](kernel/roadmap.md)

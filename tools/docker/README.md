@@ -7,17 +7,37 @@ Asterinas development Docker images are provided to facilitate developing and te
 To build a Docker image for Asterinas and test it on your local machine, navigate to the root directory of the Asterinas source code tree and execute the following command:
 
 ```bash
+cd <asterinas dir>/tools/docker
+# Generate Dockerfile
+python3 gen_dockerfile.py
+cd <asterinas dir>
+# Build Docker image
 docker buildx build \
-    -f tools/docker/Dockerfile.ubuntu22.04 \
-    --build-arg ASTER_RUST_VERSION=$RUST_VERSION \
-    -t asterinas/asterinas:$ASTER_VERSION \
+    -f tools/docker/Dockerfile \
+    --build-arg ASTER_RUST_VERSION=${RUST_VERSION} \
+    -t asterinas/asterinas:${ASTER_VERSION} \
     .
 ```
 
 The meanings of the two environment variables in the command are as follows:
 
-- `$ASTER_VERSION`: Represents the version number of Asterinas. You can find this in the `VERSION` file.
-- `$RUST_VERSION`: Denotes the required Rust toolchain version, as specified in the `rust-toolchain` file.
+- `${ASTER_VERSION}`: Represents the version number of Asterinas. You can find this in the `VERSION` file.
+- `${RUST_VERSION}`: Denotes the required Rust toolchain version, as specified in the `rust-toolchain` file.
+
+For Intel TDX Docker Image, you can execute the following command:
+
+```bash
+cd <asterinas dir>/tools/docker
+# Generate Dockerfile for Intel TDX
+python3 gen_dockerfile.py --intel-tdx
+cd <asterinas dir>
+# Build Docker image
+docker buildx build \
+    -f tools/docker/Dockerfile \
+    --build-arg ASTER_RUST_VERSION=${RUST_VERSION} \
+    -t asterinas/asterinas:${ASTER_VERSION}-tdx \
+    .
+```
 
 ## Tagging Docker Images
 

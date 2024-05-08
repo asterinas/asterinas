@@ -29,14 +29,35 @@ jobs:
           echo "aster_version=$( cat VERSION )" >> "$GITHUB_OUTPUT"
           echo "rust_version=$( grep -m1 -o 'nightly-[0-9]\+-[0-9]\+-[0-9]\+' rust-toolchain.toml )" >> "$GITHUB_OUTPUT"
 
+      - name: Generate Dockerfile
+        run: |
+          pip install Jinja2
+          python3 ./tools/docker/gen_dockerfile.py
+
       - name: Build and push development image
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./tools/docker/Dockerfile.ubuntu22.04
+          file: ./tools/docker/Dockerfile
           platforms: linux/amd64
           push: true
           tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}
+          build-args: |
+            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+
+      - name: Generate Dockerfile for Intel TDX
+        run: |
+          pip install Jinja2
+          python3 ./tools/docker/gen_dockerfile.py
+
+      - name: Build and push development image for Intel TDX
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./tools/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}-tdx
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
 
