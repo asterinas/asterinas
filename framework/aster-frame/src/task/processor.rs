@@ -15,6 +15,9 @@ use crate::{cpu_local, CpuLocal};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
+    /// A temporary variable used in [`switch_to_task`] to avoid dropping `current` while running
+    /// as `current`.
+    prev_task: Option<Arc<Task>>,
     idle_task_ctx: TaskContext,
 }
 
@@ -22,6 +25,7 @@ impl Processor {
     pub const fn new() -> Self {
         Self {
             current: None,
+            prev_task: None,
             idle_task_ctx: TaskContext::new(),
         }
     }
@@ -120,22 +124,35 @@ fn switch_to_task(next_task: Arc<Task>) {
 
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
 
-    // Change the current task to the next task.
-    CpuLocal::borrow_with(&PROCESSOR, |processor| {
-        processor.borrow_mut().current = Some(next_task.clone());
-    });
-
     if let Some(next_user_space) = next_task.user_space() {
         next_user_space.vm_space().activate();
     }
+
+    // Change the current task to the next task.
+    CpuLocal::borrow_with(&PROCESSOR, |processor| {
+        let mut processor = processor.borrow_mut();
+
+        // We cannot directly overwrite `current` at this point. Since we are running as `current`,
+        // we must avoid dropping `current`. Otherwise, the kernel stack may be unmapped, leading
+        // to soundness problems.
+        let old_current = processor.current.replace(next_task);
+        processor.prev_task = old_current;
+    });
 
     // SAFETY:
     // 1. `ctx` is only used in `schedule()`. We have exclusive access to both the current task
     //    context and the next task context.
     // 2. The next task context is a valid task context.
     unsafe {
+        // This function may not return, for example, when the current task exits. So make sure
+        // that all variables on the stack can be forgotten without causing resource leakage.
         context_switch(current_task_ctx_ptr, next_task_ctx_ptr);
     }
+
+    // Now it's fine to drop `prev_task`. However, we choose not to do this because it is not
+    // always possible. For example, `context_switch` can switch directly to the entry point of the
+    // next task. Not dropping is just fine because the only consequence is that we delay the drop
+    // to the next task switching.
 }
 
 cpu_local! {
