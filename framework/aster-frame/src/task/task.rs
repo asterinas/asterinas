@@ -178,8 +178,19 @@ impl Task {
         }
     }
 
-    pub fn exit(&self) -> ! {
+    /// Exits the current task.
+    ///
+    /// The task `self` must be the task that is currently running.
+    ///
+    /// **NOTE:** If there is anything left on the stack, it will be forgotten. This behavior may
+    /// lead to resource leakage.
+    fn exit(self: Arc<Self>) -> ! {
         self.inner_exclusive_access().task_status = TaskStatus::Exited;
+
+        // `current_task()` still holds a strong reference, so nothing is destroyed at this point,
+        // neither is the kernel stack.
+        drop(self);
+
         schedule();
         unreachable!()
     }

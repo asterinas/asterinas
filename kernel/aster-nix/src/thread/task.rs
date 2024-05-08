@@ -57,22 +57,20 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
                 break;
             }
             handle_pending_signal(context, &current_thread).unwrap();
-            if current_thread.status().is_exited() {
-                debug!("exit due to signal");
-                break;
-            }
             // If current is suspended, wait for a signal to wake up self
             while current_thread.status().is_stopped() {
                 Thread::yield_now();
                 debug!("{} is suspended.", current_thread.tid());
                 handle_pending_signal(context, &current_thread).unwrap();
             }
+            if current_thread.status().is_exited() {
+                debug!("exit due to signal");
+                break;
+            }
             // a preemption point after handling user event.
             preempt(current_task);
         }
         debug!("exit user loop");
-        // FIXME: This is a work around: exit in kernel task entry may be not called. Why this will happen?
-        current_task.exit();
     }
 
     TaskOptions::new(user_task_entry)

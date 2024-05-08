@@ -7,7 +7,7 @@
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
 
 use align_ext::AlignExt;
-use aster_frame::{mm::VmIo, task::Task};
+use aster_frame::mm::VmIo;
 use aster_rights::{Full, Rights};
 use xmas_elf::program::{self, ProgramHeader64};
 
@@ -75,7 +75,7 @@ pub fn load_elf_to_vm(
                 user_stack_top,
             })
         }
-        Err(_) => {
+        Err(err) => {
             // Since the process_vm is in invalid state,
             // the process cannot return to user space again,
             // so `Vmar::clear` and `do_exit_group` are called here.
@@ -87,7 +87,9 @@ pub fn load_elf_to_vm(
             // the macro will panic. This corner case should be handled later.
             // FIXME: how to set the correct exit status?
             do_exit_group(TermStatus::Exited(1));
-            Task::current().exit();
+
+            // The process will exit and the error code will be ignored.
+            Err(err)
         }
     }
 }
