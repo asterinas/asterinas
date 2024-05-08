@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::collections::VecDeque;
-use core::sync::atomic::{
-    AtomicBool,
-    Ordering::{Acquire, Relaxed, Release},
-};
+use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::x86::cpu;
-use crate::prelude::*;
-use crate::sync::AtomicBits;
-use crate::sync::SpinLock;
+use crate::{
+    prelude::*,
+    sync::{AtomicBits, SpinLock},
+};
 
 /// A RCU monitor ensures the completion of _grace periods_ by keeping track
 /// of each CPU's passing _quiescent states_.
@@ -20,6 +18,7 @@ pub struct RcuMonitor {
 }
 
 impl RcuMonitor {
+    /// Creates a new RCU monitor.
     pub fn new(num_cpus: usize) -> Self {
         Self {
             is_monitoring: AtomicBool::new(false),
@@ -50,7 +49,7 @@ impl RcuMonitor {
             // Now that the current GP is complete, take its callbacks
             let current_callbacks = state.current_gp.take_callbacks();
 
-            // Check if we need to70G watch for a next GP
+            // Check if we need to watch for a next GP
             if !state.next_callbacks.is_empty() {
                 let callbacks = core::mem::take(&mut state.next_callbacks);
                 state.current_gp.restart(callbacks);
@@ -69,7 +68,7 @@ impl RcuMonitor {
 
     pub fn after_grace_period<F>(&self, f: F)
     where
-        F: FnOnce() -> () + Send + 'static,
+        F: FnOnce() + Send + 'static,
     {
         let mut state = self.state.lock_irq_disabled();
 
@@ -99,7 +98,7 @@ impl State {
     }
 }
 
-type Callbacks = VecDeque<Box<dyn FnOnce() -> () + Send + 'static>>;
+type Callbacks = VecDeque<Box<dyn FnOnce() + Send + 'static>>;
 
 struct GracePeriod {
     callbacks: Callbacks,
@@ -112,7 +111,7 @@ impl GracePeriod {
         Self {
             callbacks: Default::default(),
             cpu_mask: AtomicBits::new_zeroes(num_cpus),
-            is_complete: false,
+            is_complete: true,
         }
     }
 

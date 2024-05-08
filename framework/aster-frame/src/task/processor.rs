@@ -10,7 +10,10 @@ use super::{
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, sync::Mutex};
+use crate::{
+    cpu_local,
+    sync::{pass_quiescent_state, Mutex},
+};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -56,6 +59,9 @@ pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
 pub fn schedule() {
+    unsafe {
+        pass_quiescent_state();
+    }
     if let Some(task) = fetch_task() {
         switch_to_task(task);
     }

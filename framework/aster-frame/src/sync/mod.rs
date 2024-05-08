@@ -4,18 +4,24 @@ mod atomic_bits;
 mod mutex;
 // TODO: refactor this rcu implementation
 // Comment out this module since it raises lint error
-// mod rcu;
+mod rcu;
 mod rwlock;
 mod rwmutex;
 mod spin;
 mod wait;
 
-// pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
+pub(crate) use rcu::pass_quiescent_state;
+
 pub use self::{
     atomic_bits::AtomicBits,
     mutex::{Mutex, MutexGuard},
+    rcu::{OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer},
     rwlock::{RwLock, RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard},
     rwmutex::{RwMutex, RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard},
     spin::{SpinLock, SpinLockGuard},
     wait::WaitQueue,
 };
+
+pub(crate) fn init() {
+    rcu::init();
+}
