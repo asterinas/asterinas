@@ -97,12 +97,9 @@ fn switch_to_task(next_task: Arc<Task>) {
     let current_task_cx_ptr = match current_task() {
         None => PROCESSOR.lock().get_idle_task_cx_ptr(),
         Some(current_task) => {
-            let mut task = current_task.inner_exclusive_access();
+            let cx_ptr = current_task.ctx().get();
 
-            // FIXME: `task.ctx` should be put in a separate `UnsafeCell`, not as a part of
-            // `TaskInner`. Otherwise, it violates the sematics of `SpinLock` and Rust's memory
-            // model which requires that mutable references must be exclusive.
-            let cx_ptr = &mut task.ctx as *mut TaskContext;
+            let mut task = current_task.inner_exclusive_access();
 
             debug_assert_ne!(task.task_status, TaskStatus::Sleeping);
             if task.task_status == TaskStatus::Runnable {
@@ -116,10 +113,15 @@ fn switch_to_task(next_task: Arc<Task>) {
         }
     };
 
-    let next_task_cx_ptr = &next_task.inner_ctx() as *const TaskContext;
+    let next_task_cx_ptr = next_task.ctx().get().cast_const();
 
     // change the current task to the next task
     PROCESSOR.lock().current = Some(next_task.clone());
+
+    // SAFETY:
+    // 1. `ctx` is only used in `schedule()`. We have exclusive access to both the current task
+    //    context and the next task context.
+    // 2. The next task context is a valid task context.
     unsafe {
         context_switch(current_task_cx_ptr, next_task_cx_ptr);
     }

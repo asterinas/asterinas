@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::cell::UnsafeCell;
+
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
@@ -116,21 +118,24 @@ pub struct Task {
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
     task_inner: SpinLock<TaskInner>,
-    exit_code: usize,
+    ctx: UnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
     priority: Priority,
-    // TODO:: add multiprocessor support
+    // TODO: add multiprocessor support
     cpu_affinity: CpuSet,
 }
 
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
 intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLink });
 
+// SAFETY: `UnsafeCell<TaskContext>` is not `Sync`. However, we only use it in `schedule()` where
+// we have exclusive access to the field.
+unsafe impl Sync for Task {}
+
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
-    pub ctx: TaskContext,
 }
 
 impl Task {
@@ -144,9 +149,8 @@ impl Task {
         self.task_inner.lock_irq_disabled()
     }
 
-    /// get inner
-    pub(crate) fn inner_ctx(&self) -> TaskContext {
-        self.task_inner.lock_irq_disabled().ctx
+    pub(super) fn ctx(&self) -> &UnsafeCell<TaskContext> {
+        &self.ctx
     }
 
     /// Yields execution so that another task may be scheduled.
@@ -273,32 +277,32 @@ impl TaskOptions {
             current_task.func.call(());
             current_task.exit();
         }
-        let result = Task {
+
+        let mut result = Task {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
             task_inner: SpinLock::new(TaskInner {
                 task_status: TaskStatus::Runnable,
-                ctx: TaskContext::default(),
             }),
-            exit_code: 0,
+            ctx: UnsafeCell::new(TaskContext::default()),
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
             cpu_affinity: self.cpu_affinity,
         };
 
-        result.task_inner.lock().task_status = TaskStatus::Runnable;
-        result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        let ctx = result.ctx.get_mut();
+        ctx.rip = kernel_task_entry as usize;
         // We should reserve space for the return address in the stack, otherwise
         // we will write across the page boundary due to the implementation of
         // the context switch.
+        //
         // According to the System V AMD64 ABI, the stack pointer should be aligned
         // to at least 16 bytes. And a larger alignment is needed if larger arguments
         // are passed to the function. The `kernel_task_entry` function does not
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        result.task_inner.lock().ctx.regs.rsp =
-            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr() - 16)) as u64;
+        ctx.regs.rsp = (crate::vm::paddr_to_vaddr(result.kstack.end_paddr() - 16)) as u64;
 
         Ok(Arc::new(result))
     }
