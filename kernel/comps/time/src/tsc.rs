@@ -14,7 +14,7 @@ use spin::Once;
 
 use crate::{
     clocksource::{ClockSource, Instant},
-    START_TIME, VDSO_DATA_UPDATE,
+    START_TIME, VDSO_DATA_HIGH_RES_UPDATE_FN,
 };
 
 /// A instance of TSC clocksource.
@@ -58,8 +58,9 @@ fn update_clocksource(timer: Arc<Timer>) {
     clock.update();
 
     // Update vdso data.
-    if VDSO_DATA_UPDATE.is_completed() {
-        VDSO_DATA_UPDATE.get().unwrap()(clock.last_instant(), clock.last_cycles());
+    if let Some(update_fn) = VDSO_DATA_HIGH_RES_UPDATE_FN.get() {
+        let (last_instant, last_cycles) = clock.last_record();
+        update_fn(last_instant, last_cycles);
     }
     // Setting the timer as `clock.max_delay_secs() - 1` is to avoid
     // the actual delay time is greater than the maximum delay seconds due to the latency of execution.

@@ -3,6 +3,7 @@
 use core::time::Duration;
 
 use aster_time::{read_monotonic_time, read_start_time};
+use spin::Once;
 use time::{Date, Month, PrimitiveDateTime, Time};
 
 use crate::prelude::*;
@@ -10,6 +11,13 @@ use crate::prelude::*;
 /// This struct corresponds to `SystemTime` in Rust std.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SystemTime(PrimitiveDateTime);
+
+pub static START_TIME: Once<SystemTime> = Once::new();
+
+pub(super) fn init_start_time() {
+    let start_time = convert_system_time(read_start_time()).unwrap();
+    START_TIME.call_once(|| start_time);
+}
 
 impl SystemTime {
     /// The unix epoch, which represents 1970-01-01 00:00:00
@@ -29,10 +37,8 @@ impl SystemTime {
 
     /// Returns the current system time
     pub fn now() -> Self {
-        let start = read_start_time();
-
-        // The get real time result should always be valid
-        convert_system_time(start)
+        START_TIME
+            .get()
             .unwrap()
             .checked_add(read_monotonic_time())
             .unwrap()

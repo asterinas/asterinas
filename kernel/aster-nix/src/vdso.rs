@@ -12,20 +12,22 @@
 //! use. It also hooks up the VDSO data update routine to the time management subsystem for periodic updates.
 
 use alloc::{boxed::Box, sync::Arc};
+use core::time::Duration;
 
 use aster_frame::{
-    sync::Mutex,
-    vm::{VmIo, PAGE_SIZE},
+    sync::SpinLock,
+    timer::Timer,
+    vm::{VmFrame, VmIo, PAGE_SIZE},
 };
 use aster_rights::Rights;
-use aster_time::Instant;
+use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
 use pod::Pod;
 use spin::Once;
 
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-    time::{ClockID, SystemTime, ALL_SUPPORTED_CLOCK_IDS},
+    time::{ClockID, SystemTime, START_TIME},
     vm::vmo::{Vmo, VmoOptions},
 };
 
@@ -46,20 +48,25 @@ enum VdsoClockMode {
 }
 
 /// Instant used in `VdsoData`.
-/// The `VdsoInstant` records the second of an instant,
-/// and the calculation results of multiplying `nanos` with `mult` in the corresponding `VdsoData`.
+///
+/// Each `VdsoInstant` will store a instant information for a specified `ClockID`.
+/// The `secs` field will record the seconds of the instant,
+/// and the `nanos_info` will store the nanoseconds of the instant
+/// (for `CLOCK_REALTIME_COARSE` and `CLOCK_MONOTONIC_COARSE`) or
+/// the calculation results of left-shift `nanos` with `lshift`
+/// (for other high-resolution `ClockID`s).
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
 struct VdsoInstant {
     secs: u64,
-    nanos_lshift: u64,
+    nanos_info: u64,
 }
 
 impl VdsoInstant {
     const fn zero() -> Self {
         Self {
             secs: 0,
-            nanos_lshift: 0,
+            nanos_info: 0,
         }
     }
 }
@@ -70,7 +77,7 @@ struct ArchVdsoData {}
 
 /// A POD (Plain Old Data) structure maintaining timing information that required for userspace.
 ///
-/// Since currently we directly use the vdso shared library of Linux,
+/// Since currently we directly use the VDSO shared library of Linux,
 /// currently it aligns with the Linux VDSO shared library format and contents
 /// (Linux v6.2.10)
 #[repr(C)]
@@ -93,6 +100,18 @@ struct VdsoData {
     arch_data: ArchVdsoData,
 }
 
+const HIGH_RES_CLOCK_IDS: [ClockID; 4] = [
+    ClockID::CLOCK_REALTIME,
+    ClockID::CLOCK_MONOTONIC,
+    ClockID::CLOCK_MONOTONIC_RAW,
+    ClockID::CLOCK_BOOTTIME,
+];
+
+const COARSE_RES_CLOCK_IDS: [ClockID; 2] = [
+    ClockID::CLOCK_REALTIME_COARSE,
+    ClockID::CLOCK_MONOTONIC_COARSE,
+];
+
 impl VdsoData {
     const fn empty() -> Self {
         VdsoData {
@@ -111,13 +130,16 @@ impl VdsoData {
         }
     }
 
-    /// Init vdso data based on the default clocksource.
+    /// Init VDSO data based on the default clocksource.
     fn init(&mut self) {
         let clocksource = aster_time::default_clocksource();
         let coeff = clocksource.coeff();
         self.set_clock_mode(DEFAULT_CLOCK_MODE);
         self.set_coeff(coeff);
-        self.update_instant(clocksource.last_instant(), clocksource.last_cycles());
+
+        let (last_instant, last_cycles) = clocksource.last_record();
+        self.update_high_res_instant(last_instant, last_cycles);
+        self.update_coarse_res_instant(last_instant);
     }
 
     fn set_clock_mode(&mut self, mode: VdsoClockMode) {
@@ -129,21 +151,20 @@ impl VdsoData {
         self.shift = coeff.shift();
     }
 
-    fn update_clock_instant(&mut self, clockid: usize, secs: u64, nanos_lshift: u64) {
+    fn update_clock_instant(&mut self, clockid: usize, secs: u64, nanos_info: u64) {
         self.basetime[clockid].secs = secs;
-        self.basetime[clockid].nanos_lshift = nanos_lshift;
+        self.basetime[clockid].nanos_info = nanos_info;
     }
 
-    fn update_instant(&mut self, instant: Instant, instant_cycles: u64) {
+    fn update_high_res_instant(&mut self, instant: Instant, instant_cycles: u64) {
         self.last_cycles = instant_cycles;
-        const REALTIME_IDS: [ClockID; 2] =
-            [ClockID::CLOCK_REALTIME, ClockID::CLOCK_REALTIME_COARSE];
-        for clock_id in ALL_SUPPORTED_CLOCK_IDS {
-            let secs = if REALTIME_IDS.contains(&clock_id) {
+        for clock_id in HIGH_RES_CLOCK_IDS {
+            let secs = if clock_id == ClockID::CLOCK_REALTIME {
                 instant.secs() + START_SECS_COUNT.get().unwrap()
             } else {
                 instant.secs()
             };
+
             self.update_clock_instant(
                 clock_id as usize,
                 secs,
@@ -151,31 +172,48 @@ impl VdsoData {
             );
         }
     }
+
+    fn update_coarse_res_instant(&mut self, instant: Instant) {
+        for clock_id in COARSE_RES_CLOCK_IDS {
+            let secs = if clock_id == ClockID::CLOCK_REALTIME_COARSE {
+                instant.secs() + START_SECS_COUNT.get().unwrap()
+            } else {
+                instant.secs()
+            };
+            self.update_clock_instant(clock_id as usize, secs, instant.nanos() as u64);
+        }
+    }
 }
 
 /// Vdso (virtual dynamic shared object) is used to export some safe kernel space routines to user space applications
 /// so that applications can call these kernel space routines in-process, without context switching.
 ///
-/// Vdso maintains a `VdsoData` instance that contains data information required for vdso mechanism,
-/// and a `Vmo` that contains all vdso-related information, including the vdso data and the vdso calling interfaces.
+/// Vdso maintains a `VdsoData` instance that contains data information required for VDSO mechanism,
+/// and a `Vmo` that contains all VDSO-related information, including the VDSO data and the VDSO calling interfaces.
 /// This `Vmo` must be mapped to every userspace process.
 struct Vdso {
     /// A VdsoData instance.
-    data: Mutex<VdsoData>,
-    /// the vmo of the entire vdso, including the library text and the vdso data.
+    data: SpinLock<VdsoData>,
+    /// The vmo of the entire VDSO, including the library text and the VDSO data.
     vmo: Arc<Vmo>,
+    /// The `VmFrame` that contains the VDSO data. This frame is contained in and
+    /// will not be removed from the VDSO vmo.
+    data_frame: VmFrame,
 }
 
+/// A `SpinLock` for the `seq` field in `VdsoData`.
+static SEQ_LOCK: SpinLock<()> = SpinLock::new(());
+
 impl Vdso {
-    /// Construct a new Vdso, including an initialized `VdsoData` and a vmo of the vdso.
+    /// Construct a new Vdso, including an initialized `VdsoData` and a vmo of the VDSO.
     fn new() -> Self {
         let mut vdso_data = VdsoData::empty();
         vdso_data.init();
 
-        let vdso_vmo = {
+        let (vdso_vmo, data_frame) = {
             let vmo_options = VmoOptions::<Rights>::new(5 * PAGE_SIZE);
             let vdso_vmo = vmo_options.alloc().unwrap();
-            // Write vdso data to vdso vmo.
+            // Write VDSO data to VDSO vmo.
             vdso_vmo.write_bytes(0x80, vdso_data.as_bytes()).unwrap();
 
             let vdso_lib_vmo = {
@@ -186,62 +224,87 @@ impl Vdso {
             };
             let mut vdso_text = Box::new([0u8; PAGE_SIZE]);
             vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();
-            // Write vdso library to vdso vmo.
+            // Write VDSO library to VDSO vmo.
             vdso_vmo.write_bytes(0x4000, &*vdso_text).unwrap();
 
-            vdso_vmo
+            let data_frame = vdso_vmo.get_committed_frame(0, true).unwrap();
+            (vdso_vmo, data_frame)
         };
         Self {
-            data: Mutex::new(vdso_data),
+            data: SpinLock::new(vdso_data),
             vmo: Arc::new(vdso_vmo),
+            data_frame,
         }
     }
 
-    /// Return the vdso vmo.
-    fn vmo(&self) -> Arc<Vmo> {
-        self.vmo.clone()
-    }
-
-    fn update_instant(&self, instant: Instant, instant_cycles: u64) {
-        self.data.lock().update_instant(instant, instant_cycles);
+    fn update_high_res_instant(&self, instant: Instant, instant_cycles: u64) {
+        let seq_lock = SEQ_LOCK.lock();
+        self.data
+            .lock()
+            .update_high_res_instant(instant, instant_cycles);
 
         // Update begins.
-        self.vmo.write_val(0x80, &1).unwrap();
-        self.vmo.write_val(0x88, &instant_cycles).unwrap();
-        for clock_id in ALL_SUPPORTED_CLOCK_IDS {
-            self.update_vmo_instant(clock_id);
+        self.data_frame.write_val(0x80, &1).unwrap();
+        self.data_frame.write_val(0x88, &instant_cycles).unwrap();
+        for clock_id in HIGH_RES_CLOCK_IDS {
+            self.update_data_frame_instant(clock_id);
         }
+
         // Update finishes.
-        self.vmo.write_val(0x80, &0).unwrap();
+        self.data_frame.write_val(0x80, &0).unwrap();
     }
 
-    /// Update the requisite fields of the vdso data in the vmo.
-    fn update_vmo_instant(&self, clockid: ClockID) {
+    fn update_coarse_res_instant(&self, instant: Instant) {
+        let seq_lock = SEQ_LOCK.lock();
+        self.data.lock().update_coarse_res_instant(instant);
+
+        // Update begins.
+        self.data_frame.write_val(0x80, &1).unwrap();
+        for clock_id in COARSE_RES_CLOCK_IDS {
+            self.update_data_frame_instant(clock_id);
+        }
+
+        // Update finishes.
+        self.data_frame.write_val(0x80, &0).unwrap();
+    }
+
+    /// Update the requisite fields of the VDSO data in the `data_frame`.
+    fn update_data_frame_instant(&self, clockid: ClockID) {
         let clock_index = clockid as usize;
         let secs_offset = 0xA0 + clock_index * 0x10;
-        let nanos_lshift_offset = 0xA8 + clock_index * 0x10;
+        let nanos_info_offset = 0xA8 + clock_index * 0x10;
         let data = self.data.lock();
-        self.vmo
+        self.data_frame
             .write_val(secs_offset, &data.basetime[clock_index].secs)
             .unwrap();
-        self.vmo
-            .write_val(
-                nanos_lshift_offset,
-                &data.basetime[clock_index].nanos_lshift,
-            )
+        self.data_frame
+            .write_val(nanos_info_offset, &data.basetime[clock_index].nanos_info)
             .unwrap();
     }
 }
 
-/// Update the `VdsoInstant` in Vdso.
-fn update_vdso_instant(instant: Instant, instant_cycles: u64) {
-    VDSO.get().unwrap().update_instant(instant, instant_cycles);
+/// Update the `VdsoInstant` for clock IDs with high resolution in Vdso.
+fn update_vdso_high_res_instant(instant: Instant, instant_cycles: u64) {
+    VDSO.get()
+        .unwrap()
+        .update_high_res_instant(instant, instant_cycles);
+}
+
+/// Update the `VdsoInstant` for clock IDs with coarse resolution in Vdso.
+fn update_vdso_coarse_res_instant(timer: Arc<Timer>) {
+    let instant = Instant::from(read_monotonic_time());
+    VDSO.get().unwrap().update_coarse_res_instant(instant);
+
+    timer.set(Duration::from_millis(100));
 }
 
 /// Init `START_SECS_COUNT`, which is used to record the seconds passed since 1970-01-01 00:00:00.
 fn init_start_secs_count() {
-    let now = SystemTime::now();
-    let time_duration = now.duration_since(&SystemTime::UNIX_EPOCH).unwrap();
+    let time_duration = START_TIME
+        .get()
+        .unwrap()
+        .duration_since(&SystemTime::UNIX_EPOCH)
+        .unwrap();
     START_SECS_COUNT.call_once(|| time_duration.as_secs());
 }
 
@@ -250,15 +313,20 @@ fn init_vdso() {
     VDSO.call_once(|| Arc::new(vdso));
 }
 
-/// Init vdso module.
+/// Init this module.
 pub(super) fn init() {
     init_start_secs_count();
     init_vdso();
-    aster_time::VDSO_DATA_UPDATE.call_once(|| Arc::new(update_vdso_instant));
+    aster_time::VDSO_DATA_HIGH_RES_UPDATE_FN.call_once(|| Arc::new(update_vdso_high_res_instant));
+
+    // Coarse resolution clock IDs directly read the instant stored in VDSO data without
+    // using coefficients for calculation, thus the related instant requires more frequent updating.
+    let coarse_instant_timer = Timer::new(update_vdso_coarse_res_instant).unwrap();
+    coarse_instant_timer.set(Duration::from_millis(100));
 }
 
-/// Return the vdso vmo.
+/// Return the VDSO vmo.
 pub(crate) fn vdso_vmo() -> Option<Arc<Vmo>> {
-    // We allow that vdso does not exist
-    VDSO.get().map(|vdso| vdso.vmo())
+    // We allow that VDSO does not exist
+    VDSO.get().map(|vdso| vdso.vmo.clone())
 }

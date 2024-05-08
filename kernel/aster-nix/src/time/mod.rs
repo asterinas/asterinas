@@ -9,12 +9,16 @@ use crate::prelude::*;
 
 mod system_time;
 
-pub use system_time::SystemTime;
+pub use system_time::{SystemTime, START_TIME};
 
 pub type clockid_t = i32;
 pub type time_t = i64;
 pub type suseconds_t = i64;
 pub type clock_t = i64;
+
+pub(super) fn init() {
+    system_time::init_start_time();
+}
 
 #[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
