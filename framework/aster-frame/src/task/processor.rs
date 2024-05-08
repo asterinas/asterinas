@@ -10,7 +10,7 @@ use super::{
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, sync::Mutex};
+use crate::{cpu_local, sync::SpinLock};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -39,7 +39,7 @@ impl Processor {
 }
 
 lazy_static! {
-    static ref PROCESSOR: Mutex<Processor> = Mutex::new(Processor::new());
+    static ref PROCESSOR: SpinLock<Processor> = SpinLock::new(Processor::new());
 }
 
 pub fn take_current_task() -> Option<Arc<Task>> {
