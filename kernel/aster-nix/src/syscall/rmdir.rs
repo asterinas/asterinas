@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_RMDIR};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
     log_syscall_entry,
@@ -16,7 +16,7 @@ pub fn sys_rmdir(pathname_addr: Vaddr) -> Result<SyscallReturn> {
     self::sys_rmdirat(AT_FDCWD, pathname_addr)
 }
 
-pub(super) fn sys_rmdirat(dirfd: FileDescripter, pathname_addr: Vaddr) -> Result<SyscallReturn> {
+pub(super) fn sys_rmdirat(dirfd: FileDesc, pathname_addr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_RMDIR);
     let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, pathname = {:?}", dirfd, pathname);

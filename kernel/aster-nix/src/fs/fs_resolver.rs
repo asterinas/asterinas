@@ -3,7 +3,7 @@
 use alloc::str;
 
 use super::{
-    file_table::FileDescripter,
+    file_table::FileDesc,
     inode_handle::InodeHandle,
     rootfs::root_mount,
     utils::{
@@ -234,7 +234,7 @@ impl FsResolver {
     }
 
     /// Lookup dentry from the giving fd
-    pub fn lookup_from_fd(&self, fd: FileDescripter) -> Result<Arc<Dentry>> {
+    pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Arc<Dentry>> {
         let current = current!();
         let file_table = current.file_table().lock();
         let inode_handle = file_table
@@ -317,7 +317,7 @@ impl FsResolver {
     }
 }
 
-pub const AT_FDCWD: FileDescripter = -100;
+pub const AT_FDCWD: FileDesc = -100;
 
 #[derive(Debug)]
 pub struct FsPath<'a> {
@@ -333,13 +333,13 @@ enum FsPathInner<'a> {
     // Cwd
     Cwd,
     // path is relative to DirFd
-    FdRelative(FileDescripter, &'a str),
+    FdRelative(FileDesc, &'a str),
     // Fd
-    Fd(FileDescripter),
+    Fd(FileDesc),
 }
 
 impl<'a> FsPath<'a> {
-    pub fn new(dirfd: FileDescripter, path: &'a str) -> Result<Self> {
+    pub fn new(dirfd: FileDesc, path: &'a str) -> Result<Self> {
         if path.len() > PATH_MAX {
             return_errno_with_message!(Errno::ENAMETOOLONG, "path name too long");
         }

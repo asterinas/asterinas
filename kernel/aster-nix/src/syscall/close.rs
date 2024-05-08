@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{SyscallReturn, SYS_CLOSE};
-use crate::{fs::file_table::FileDescripter, log_syscall_entry, prelude::*};
+use crate::{fs::file_table::FileDesc, log_syscall_entry, prelude::*};
 
-pub fn sys_close(fd: FileDescripter) -> Result<SyscallReturn> {
+pub fn sys_close(fd: FileDesc) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_CLOSE);
     debug!("fd = {}", fd);
     let current = current!();

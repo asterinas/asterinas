@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_PIPE2};
 use crate::{
     fs::{
-        file_table::{FdFlags, FileDescripter},
+        file_table::{FdFlags, FileDesc},
         pipe::{PipeReader, PipeWriter},
         utils::{Channel, CreationFlags, StatusFlags},
     },
@@ -50,8 +50,8 @@ pub fn sys_pipe(fds: Vaddr) -> Result<SyscallReturn> {
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
 struct PipeFds {
-    reader_fd: FileDescripter,
-    writer_fd: FileDescripter,
+    reader_fd: FileDesc,
+    writer_fd: FileDesc,
 }
 
 const PIPE_BUF_SIZE: usize = 1024 * 1024;

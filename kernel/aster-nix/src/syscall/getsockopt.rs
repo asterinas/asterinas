@@ -2,7 +2,7 @@
 
 use super::{SyscallReturn, SYS_SETSOCKOPT};
 use crate::{
-    fs::file_table::FileDescripter,
+    fs::file_table::FileDesc,
     log_syscall_entry,
     prelude::*,
     util::{
@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn sys_getsockopt(
-    sockfd: FileDescripter,
+    sockfd: FileDesc,
     level: i32,
     optname: i32,
     optval: Vaddr,

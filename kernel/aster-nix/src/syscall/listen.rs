@@ -2,10 +2,10 @@
 
 use super::{SyscallReturn, SYS_LISTEN};
 use crate::{
-    fs::file_table::FileDescripter, log_syscall_entry, prelude::*, util::net::get_socket_from_fd,
+    fs::file_table::FileDesc, log_syscall_entry, prelude::*, util::net::get_socket_from_fd,
 };
 
-pub fn sys_listen(sockfd: FileDescripter, backlog: i32) -> Result<SyscallReturn> {
+pub fn sys_listen(sockfd: FileDesc, backlog: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_LISTEN);
     debug!("sockfd = {sockfd}, backlog = {backlog}");
 

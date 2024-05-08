@@ -2,12 +2,12 @@
 
 use super::{SyscallReturn, SYS_FSYNC};
 use crate::{
-    fs::{file_table::FileDescripter, inode_handle::InodeHandle},
+    fs::{file_table::FileDesc, inode_handle::InodeHandle},
     log_syscall_entry,
     prelude::*,
 };
 
-pub fn sys_fsync(fd: FileDescripter) -> Result<SyscallReturn> {
+pub fn sys_fsync(fd: FileDesc) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FSYNC);
     debug!("fd = {}", fd);
 

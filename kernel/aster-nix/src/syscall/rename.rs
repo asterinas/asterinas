@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_RENAMEAT};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::InodeType,
     },
@@ -14,9 +14,9 @@ use crate::{
 };
 
 pub fn sys_renameat(
-    old_dirfd: FileDescripter,
+    old_dirfd: FileDesc,
     old_pathname_addr: Vaddr,
-    new_dirfd: FileDescripter,
+    new_dirfd: FileDesc,
     new_pathname_addr: Vaddr,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_RENAMEAT);

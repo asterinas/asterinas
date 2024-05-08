@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_FCHOWN, SYS_FCHOWNAT};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::PATH_MAX,
     },
@@ -13,7 +13,7 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-pub fn sys_fchown(fd: FileDescripter, uid: i32, gid: i32) -> Result<SyscallReturn> {
+pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FCHOWN);
     debug!("fd = {}, uid = {}, gid = {}", fd, uid, gid);
 
@@ -50,7 +50,7 @@ pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32) -> Result<SyscallReturn> 
 }
 
 pub fn sys_fchownat(
-    dirfd: FileDescripter,
+    dirfd: FileDesc,
     path_ptr: Vaddr,
     uid: i32,
     gid: i32,

@@ -15,7 +15,7 @@ use crate::{
     prelude::*,
 };
 
-pub type FileDescripter = i32;
+pub type FileDesc = i32;
 
 pub struct FileTable {
     table: SlotVec<FileTableEntry>,
@@ -58,12 +58,7 @@ impl FileTable {
         }
     }
 
-    pub fn dup(
-        &mut self,
-        fd: FileDescripter,
-        new_fd: FileDescripter,
-        flags: FdFlags,
-    ) -> Result<FileDescripter> {
+    pub fn dup(&mut self, fd: FileDesc, new_fd: FileDesc, flags: FdFlags) -> Result<FileDesc> {
         let file = self
             .table
             .get(fd as usize)
@@ -88,17 +83,17 @@ impl FileTable {
         let min_free_fd = get_min_free_fd();
         let entry = FileTableEntry::new(file, flags);
         self.table.put_at(min_free_fd, entry);
-        Ok(min_free_fd as FileDescripter)
+        Ok(min_free_fd as FileDesc)
     }
 
-    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDescripter {
+    pub fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
         let entry = FileTableEntry::new(item, flags);
-        self.table.put(entry) as FileDescripter
+        self.table.put(entry) as FileDesc
     }
 
     pub fn insert_at(
         &mut self,
-        fd: FileDescripter,
+        fd: FileDesc,
         item: Arc<dyn FileLike>,
         flags: FdFlags,
     ) -> Option<Arc<dyn FileLike>> {
@@ -112,7 +107,7 @@ impl FileTable {
         entry.map(|e| e.file)
     }
 
-    pub fn close_file(&mut self, fd: FileDescripter) -> Option<Arc<dyn FileLike>> {
+    pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
         let entry = self.table.remove(fd as usize);
         if entry.is_some() {
             let events = FdEvents::Close(fd);
@@ -124,10 +119,10 @@ impl FileTable {
 
     pub fn close_all(&mut self) -> Vec<Arc<dyn FileLike>> {
         let mut closed_files = Vec::new();
-        let closed_fds: Vec<FileDescripter> = self
+        let closed_fds: Vec<FileDesc> = self
             .table
             .idxes_and_items()
-            .map(|(idx, _)| idx as FileDescripter)
+            .map(|(idx, _)| idx as FileDesc)
             .collect();
         for fd in closed_fds {
             let entry = self.table.remove(fd as usize).unwrap();
@@ -141,12 +136,12 @@ impl FileTable {
 
     pub fn close_files_on_exec(&mut self) -> Vec<Arc<dyn FileLike>> {
         let mut closed_files = Vec::new();
-        let closed_fds: Vec<FileDescripter> = self
+        let closed_fds: Vec<FileDesc> = self
             .table
             .idxes_and_items()
             .filter_map(|(idx, entry)| {
                 if entry.flags().contains(FdFlags::CLOEXEC) {
-                    Some(idx as FileDescripter)
+                    Some(idx as FileDesc)
                 } else {
                     None
                 }
@@ -162,30 +157,30 @@ impl FileTable {
         closed_files
     }
 
-    pub fn get_file(&self, fd: FileDescripter) -> Result<&Arc<dyn FileLike>> {
+    pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
         self.table
             .get(fd as usize)
             .map(|entry| &entry.file)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn get_socket(&self, sockfd: FileDescripter) -> Result<Arc<dyn Socket>> {
+    pub fn get_socket(&self, sockfd: FileDesc) -> Result<Arc<dyn Socket>> {
         let file_like = self.get_file(sockfd)?.clone();
         file_like
             .as_socket()
             .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the fd is not a socket"))
     }
 
-    pub fn get_entry(&self, fd: FileDescripter) -> Result<&FileTableEntry> {
+    pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
         self.table
             .get(fd as usize)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
-    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDescripter, &'_ Arc<dyn FileLike>)> {
+    pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
         self.table
             .idxes_and_items()
-            .map(|(idx, entry)| (idx as FileDescripter, &entry.file))
+            .map(|(idx, entry)| (idx as FileDesc, &entry.file))
     }
 
     pub fn register_observer(&self, observer: Weak<dyn Observer<FdEvents>>) {
@@ -219,7 +214,7 @@ impl Drop for FileTable {
 
 #[derive(Copy, Clone)]
 pub enum FdEvents {
-    Close(FileDescripter),
+    Close(FileDesc),
     DropFileTable,
 }
 

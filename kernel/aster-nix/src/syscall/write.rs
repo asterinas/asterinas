@@ -2,18 +2,14 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDescripter, log_syscall_entry, prelude::*, syscall::SYS_WRITE,
+    fs::file_table::FileDesc, log_syscall_entry, prelude::*, syscall::SYS_WRITE,
     util::read_bytes_from_user,
 };
 
 const STDOUT: u64 = 1;
 const STDERR: u64 = 2;
 
-pub fn sys_write(
-    fd: FileDescripter,
-    user_buf_ptr: Vaddr,
-    user_buf_len: usize,
-) -> Result<SyscallReturn> {
+pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_WRITE);
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}",

@@ -2,12 +2,12 @@
 
 use super::{SyscallReturn, SYS_LSEEK};
 use crate::{
-    fs::{file_table::FileDescripter, utils::SeekFrom},
+    fs::{file_table::FileDesc, utils::SeekFrom},
     log_syscall_entry,
     prelude::*,
 };
 
-pub fn sys_lseek(fd: FileDescripter, offset: isize, whence: u32) -> Result<SyscallReturn> {
+pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_LSEEK);
     debug!("fd = {}, offset = {}, whence = {}", fd, offset, whence);
     let seek_from = match whence {

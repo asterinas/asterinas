@@ -2,12 +2,12 @@
 
 use super::{SyscallReturn, SYS_IOCTL};
 use crate::{
-    fs::{file_table::FileDescripter, utils::IoctlCmd},
+    fs::{file_table::FileDesc, utils::IoctlCmd},
     log_syscall_entry,
     prelude::*,
 };
 
-pub fn sys_ioctl(fd: FileDescripter, cmd: u32, arg: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_IOCTL);
     let ioctl_cmd = IoctlCmd::try_from(cmd)?;
     debug!(

@@ -2,7 +2,7 @@
 
 use super::{SyscallReturn, SYS_SOCKETPAIR};
 use crate::{
-    fs::file_table::{FdFlags, FileDescripter},
+    fs::file_table::{FdFlags, FileDesc},
     log_syscall_entry,
     net::socket::unix::UnixStreamSocket,
     prelude::*,
@@ -54,4 +54,4 @@ pub fn sys_socketpair(domain: i32, type_: i32, protocol: i32, sv: Vaddr) -> Resu
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
-struct SocketFds(FileDescripter, FileDescripter);
+struct SocketFds(FileDesc, FileDesc);

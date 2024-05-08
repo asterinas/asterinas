@@ -2,12 +2,12 @@
 
 use super::{SyscallReturn, SYS_DUP, SYS_DUP2};
 use crate::{
-    fs::file_table::{FdFlags, FileDescripter},
+    fs::file_table::{FdFlags, FileDesc},
     log_syscall_entry,
     prelude::*,
 };
 
-pub fn sys_dup(old_fd: FileDescripter) -> Result<SyscallReturn> {
+pub fn sys_dup(old_fd: FileDesc) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_DUP);
     debug!("old_fd = {}", old_fd);
 
@@ -19,7 +19,7 @@ pub fn sys_dup(old_fd: FileDescripter) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(new_fd as _))
 }
 
-pub fn sys_dup2(old_fd: FileDescripter, new_fd: FileDescripter) -> Result<SyscallReturn> {
+pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_DUP2);
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 

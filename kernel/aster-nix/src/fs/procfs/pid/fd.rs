@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
-use crate::fs::{file_handle::FileLike, file_table::FileDescripter, inode_handle::InodeHandle};
+use crate::fs::{file_handle::FileLike, file_table::FileDesc, inode_handle::InodeHandle};
 
 /// Represents the inode at `/proc/[pid]/fd`.
 pub struct FdDirOps(Arc<Process>);
@@ -36,7 +36,7 @@ impl DirOps for FdDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let file = {
             let fd = name
-                .parse::<FileDescripter>()
+                .parse::<FileDesc>()
                 .map_err(|_| Error::new(Errno::ENOENT))?;
             let file_table = self.0.file_table().lock();
             file_table

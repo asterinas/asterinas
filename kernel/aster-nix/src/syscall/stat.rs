@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_FSTAT, SYS_FSTATAT};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::Metadata,
     },
@@ -14,7 +14,7 @@ use crate::{
     util::{read_cstring_from_user, write_val_to_user},
 };
 
-pub fn sys_fstat(fd: FileDescripter, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FSTAT);
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
@@ -40,7 +40,7 @@ pub fn sys_lstat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr) -> Result<SyscallRetu
 }
 
 pub fn sys_fstatat(
-    dirfd: FileDescripter,
+    dirfd: FileDesc,
     filename_ptr: Vaddr,
     stat_buf_ptr: Vaddr,
     flags: u32,

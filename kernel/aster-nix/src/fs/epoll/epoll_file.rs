@@ -26,7 +26,7 @@ use crate::{
 /// event happens on the file.
 pub struct EpollFile {
     // All interesting entries.
-    interest: Mutex<BTreeMap<FileDescripter, Arc<EpollEntry>>>,
+    interest: Mutex<BTreeMap<FileDesc, Arc<EpollEntry>>>,
     // Entries that are probably ready (having events happened).
     ready: Mutex<VecDeque<Arc<EpollEntry>>>,
     // EpollFile itself is also pollable
@@ -59,12 +59,7 @@ impl EpollFile {
         }
     }
 
-    fn add_interest(
-        &self,
-        fd: FileDescripter,
-        ep_event: EpollEvent,
-        ep_flags: EpollFlags,
-    ) -> Result<()> {
+    fn add_interest(&self, fd: FileDesc, ep_event: EpollEvent, ep_flags: EpollFlags) -> Result<()> {
         self.warn_unsupported_flags(&ep_flags);
 
         let current = current!();
@@ -96,7 +91,7 @@ impl EpollFile {
         Ok(())
     }
 
-    fn del_interest(&self, fd: FileDescripter) -> Result<()> {
+    fn del_interest(&self, fd: FileDesc) -> Result<()> {
         let mut interest = self.interest.lock();
         let entry = interest
             .remove(&fd)
@@ -123,7 +118,7 @@ impl EpollFile {
 
     fn mod_interest(
         &self,
-        fd: FileDescripter,
+        fd: FileDesc,
         new_ep_event: EpollEvent,
         new_ep_flags: EpollFlags,
     ) -> Result<()> {
@@ -154,7 +149,7 @@ impl EpollFile {
         Ok(())
     }
 
-    fn unregister_from_file_table_entry(&self, fd: FileDescripter) {
+    fn unregister_from_file_table_entry(&self, fd: FileDesc) {
         let current = current!();
         let file_table = current.file_table().lock();
         if let Ok(entry) = file_table.get_entry(fd) {
@@ -361,7 +356,7 @@ impl FileLike for EpollFile {
 /// An epoll entry contained in an epoll file. Each epoll entry is added, modified,
 /// or deleted by the `EpollCtl` command.
 pub struct EpollEntry {
-    fd: FileDescripter,
+    fd: FileDesc,
     file: Weak<dyn FileLike>,
     inner: Mutex<Inner>,
     // Whether the entry is in the ready list
@@ -382,7 +377,7 @@ struct Inner {
 impl EpollEntry {
     /// Creates a new epoll entry associated with the given epoll file.
     pub fn new(
-        fd: FileDescripter,
+        fd: FileDesc,
         file: Weak<dyn FileLike>,
         event: EpollEvent,
         flags: EpollFlags,
@@ -482,7 +477,7 @@ impl EpollEntry {
     }
 
     /// Get the file descriptor associated with the epoll entry.
-    pub fn fd(&self) -> FileDescripter {
+    pub fn fd(&self) -> FileDesc {
         self.fd
     }
 }

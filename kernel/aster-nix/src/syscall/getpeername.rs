@@ -2,17 +2,13 @@
 
 use super::{SyscallReturn, SYS_GETPEERNAME};
 use crate::{
-    fs::file_table::FileDescripter,
+    fs::file_table::FileDesc,
     log_syscall_entry,
     prelude::*,
     util::net::{get_socket_from_fd, write_socket_addr_to_user},
 };
 
-pub fn sys_getpeername(
-    sockfd: FileDescripter,
-    addr: Vaddr,
-    addrlen_ptr: Vaddr,
-) -> Result<SyscallReturn> {
+pub fn sys_getpeername(sockfd: FileDesc, addr: Vaddr, addrlen_ptr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_GETPEERNAME);
     debug!("sockfd = {sockfd}, addr = 0x{addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 

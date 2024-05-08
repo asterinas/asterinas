@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use super::{SyscallReturn, SYS_UTIMENSAT};
 use crate::{
-    fs::{file_table::FileDescripter, fs_resolver::FsPath},
+    fs::{file_table::FileDesc, fs_resolver::FsPath},
     log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub fn sys_utimensat(
-    dirfd: FileDescripter,
+    dirfd: FileDesc,
     pathname_ptr: Vaddr,
     timespecs_ptr: Vaddr,
     flags: u32,
