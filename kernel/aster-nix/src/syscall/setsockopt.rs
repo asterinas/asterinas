@@ -2,14 +2,14 @@
 
 use super::{SyscallReturn, SYS_SETSOCKOPT};
 use crate::{
-    fs::file_table::FileDescripter,
+    fs::file_table::FileDesc,
     log_syscall_entry,
     prelude::*,
     util::net::{get_socket_from_fd, new_raw_socket_option, CSocketOptionLevel},
 };
 
 pub fn sys_setsockopt(
-    sockfd: FileDescripter,
+    sockfd: FileDesc,
     level: i32,
     optname: i32,
     optval: Vaddr,

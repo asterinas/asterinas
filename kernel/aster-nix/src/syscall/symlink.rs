@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_SYMLINKAT};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType},
     },
@@ -15,7 +15,7 @@ use crate::{
 
 pub fn sys_symlinkat(
     target_addr: Vaddr,
-    dirfd: FileDescripter,
+    dirfd: FileDesc,
     linkpath_addr: Vaddr,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_SYMLINKAT);

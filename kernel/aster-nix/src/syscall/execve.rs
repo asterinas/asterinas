@@ -6,7 +6,7 @@ use aster_rights::WriteOp;
 use super::{constants::*, SyscallReturn};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{Dentry, InodeType},
     },
@@ -38,7 +38,7 @@ pub fn sys_execve(
 }
 
 pub fn sys_execveat(
-    dfd: FileDescripter,
+    dfd: FileDesc,
     filename_ptr: Vaddr,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
@@ -58,7 +58,7 @@ pub fn sys_execveat(
 }
 
 fn lookup_executable_file(
-    dfd: FileDescripter,
+    dfd: FileDesc,
     filename: String,
     flags: OpenFlags,
 ) -> Result<Arc<Dentry>> {

@@ -7,7 +7,7 @@ use crate::{
     events::IoEvents,
     fs::{
         epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
-        file_table::{FdFlags, FileDescripter},
+        file_table::{FdFlags, FileDesc},
         utils::CreationFlags,
     },
     log_syscall_entry,
@@ -47,9 +47,9 @@ pub fn sys_epoll_create1(flags: u32) -> Result<SyscallReturn> {
 }
 
 pub fn sys_epoll_ctl(
-    epfd: FileDescripter,
+    epfd: FileDesc,
     op: i32,
-    fd: FileDescripter,
+    fd: FileDesc,
     event_addr: Vaddr,
 ) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_EPOLL_CTL);
@@ -93,7 +93,7 @@ pub fn sys_epoll_ctl(
 }
 
 pub fn sys_epoll_wait(
-    epfd: FileDescripter,
+    epfd: FileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
@@ -138,7 +138,7 @@ pub fn sys_epoll_wait(
 }
 
 pub fn sys_epoll_pwait(
-    epfd: FileDescripter,
+    epfd: FileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,

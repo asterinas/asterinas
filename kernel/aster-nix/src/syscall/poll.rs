@@ -5,7 +5,7 @@ use core::{cell::Cell, time::Duration};
 use super::{SyscallReturn, SYS_POLL};
 use crate::{
     events::IoEvents,
-    fs::file_table::FileDescripter,
+    fs::file_table::FileDesc,
     log_syscall_entry,
     prelude::*,
     process::signal::Poller,
@@ -112,13 +112,13 @@ struct c_pollfd {
 
 #[derive(Debug, Clone)]
 pub struct PollFd {
-    fd: Option<FileDescripter>,
+    fd: Option<FileDesc>,
     events: IoEvents,
     revents: Cell<IoEvents>,
 }
 
 impl PollFd {
-    pub fn new(fd: Option<FileDescripter>, events: IoEvents) -> Self {
+    pub fn new(fd: Option<FileDesc>, events: IoEvents) -> Self {
         let revents = Cell::new(IoEvents::empty());
         Self {
             fd,
@@ -127,7 +127,7 @@ impl PollFd {
         }
     }
 
-    pub fn fd(&self) -> Option<FileDescripter> {
+    pub fn fd(&self) -> Option<FileDesc> {
         self.fd
     }
 
@@ -143,7 +143,7 @@ impl PollFd {
 impl From<c_pollfd> for PollFd {
     fn from(raw: c_pollfd) -> Self {
         let fd = if raw.fd >= 0 {
-            Some(raw.fd as FileDescripter)
+            Some(raw.fd as FileDesc)
         } else {
             None
         };

@@ -8,7 +8,7 @@ use aster_rights::Rights;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDescripter,
+    fs::file_table::FileDesc,
     log_syscall_entry,
     prelude::*,
     syscall::SYS_MMAP,
@@ -45,7 +45,7 @@ fn do_sys_mmap(
     len: usize,
     vm_perm: VmPerm,
     option: MMapOptions,
-    fd: FileDescripter,
+    fd: FileDesc,
     offset: usize,
 ) -> Result<Vaddr> {
     debug!(
@@ -94,7 +94,7 @@ fn alloc_anonyous_vmo(len: usize) -> Result<Vmo> {
 }
 
 fn alloc_filebacked_vmo(
-    fd: FileDescripter,
+    fd: FileDesc,
     len: usize,
     offset: usize,
     option: &MMapOptions,

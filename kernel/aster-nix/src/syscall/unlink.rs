@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_UNLINKAT};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
     log_syscall_entry,
@@ -12,11 +12,7 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-pub fn sys_unlinkat(
-    dirfd: FileDescripter,
-    pathname_addr: Vaddr,
-    flags: u32,
-) -> Result<SyscallReturn> {
+pub fn sys_unlinkat(dirfd: FileDesc, pathname_addr: Vaddr, flags: u32) -> Result<SyscallReturn> {
     let flags =
         UnlinkFlags::from_bits(flags).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
     if flags.contains(UnlinkFlags::AT_REMOVEDIR) {

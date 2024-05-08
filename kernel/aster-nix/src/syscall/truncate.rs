@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_FTRUNCATE, SYS_TRUNCATE};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::PATH_MAX,
     },
@@ -13,7 +13,7 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-pub fn sys_ftruncate(fd: FileDescripter, len: isize) -> Result<SyscallReturn> {
+pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FTRUNCATE);
     debug!("fd = {}, lentgh = {}", fd, len);
 

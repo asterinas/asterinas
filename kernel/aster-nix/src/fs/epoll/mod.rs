@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::file_table::FileDescripter;
+use super::file_table::FileDesc;
 use crate::{events::IoEvents, prelude::*};
 
 mod epoll_file;
@@ -10,9 +10,9 @@ pub use self::epoll_file::EpollFile;
 /// An epoll control command.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EpollCtl {
-    Add(FileDescripter, EpollEvent, EpollFlags),
-    Del(FileDescripter),
-    Mod(FileDescripter, EpollEvent, EpollFlags),
+    Add(FileDesc, EpollEvent, EpollFlags),
+    Del(FileDesc),
+    Mod(FileDesc, EpollEvent, EpollFlags),
 }
 
 bitflags! {

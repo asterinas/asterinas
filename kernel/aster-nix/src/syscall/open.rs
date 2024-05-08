@@ -4,7 +4,7 @@ use super::{SyscallReturn, SYS_OPENAT};
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, FileDescripter},
+        file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
         utils::CreationFlags,
     },
@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub fn sys_openat(
-    dirfd: FileDescripter,
+    dirfd: FileDesc,
     pathname_addr: Vaddr,
     flags: u32,
     mode: u16,

@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDescripter,
+    fs::file_table::FileDesc,
     log_syscall_entry,
     prelude::*,
     syscall::SYS_WRITEV,
@@ -18,17 +18,13 @@ pub struct IoVec {
     len: usize,
 }
 
-pub fn sys_writev(
-    fd: FileDescripter,
-    io_vec_ptr: Vaddr,
-    io_vec_count: usize,
-) -> Result<SyscallReturn> {
+pub fn sys_writev(fd: FileDesc, io_vec_ptr: Vaddr, io_vec_count: usize) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_WRITEV);
     let res = do_sys_writev(fd, io_vec_ptr, io_vec_count)?;
     Ok(SyscallReturn::Return(res as _))
 }
 
-fn do_sys_writev(fd: FileDescripter, io_vec_ptr: Vaddr, io_vec_count: usize) -> Result<usize> {
+fn do_sys_writev(fd: FileDesc, io_vec_ptr: Vaddr, io_vec_count: usize) -> Result<usize> {
     debug!(
         "fd = {}, io_vec_ptr = 0x{:x}, io_vec_counter = 0x{:x}",
         fd, io_vec_ptr, io_vec_count

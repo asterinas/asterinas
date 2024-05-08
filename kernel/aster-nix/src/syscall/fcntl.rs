@@ -3,14 +3,14 @@
 use super::{SyscallReturn, SYS_FCNTL};
 use crate::{
     fs::{
-        file_table::{FdFlags, FileDescripter},
+        file_table::{FdFlags, FileDesc},
         utils::StatusFlags,
     },
     log_syscall_entry,
     prelude::*,
 };
 
-pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn> {
+pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FCNTL);
     let fcntl_cmd = FcntlCmd::try_from(cmd)?;
     debug!("fd = {}, cmd = {:?}, arg = {}", fd, fcntl_cmd, arg);
@@ -18,13 +18,13 @@ pub fn sys_fcntl(fd: FileDescripter, cmd: i32, arg: u64) -> Result<SyscallReturn
         FcntlCmd::F_DUPFD => {
             let current = current!();
             let mut file_table = current.file_table().lock();
-            let new_fd = file_table.dup(fd, arg as FileDescripter, FdFlags::empty())?;
+            let new_fd = file_table.dup(fd, arg as FileDesc, FdFlags::empty())?;
             Ok(SyscallReturn::Return(new_fd as _))
         }
         FcntlCmd::F_DUPFD_CLOEXEC => {
             let current = current!();
             let mut file_table = current.file_table().lock();
-            let new_fd = file_table.dup(fd, arg as FileDescripter, FdFlags::CLOEXEC)?;
+            let new_fd = file_table.dup(fd, arg as FileDesc, FdFlags::CLOEXEC)?;
             Ok(SyscallReturn::Return(new_fd as _))
         }
         FcntlCmd::F_GETFD => {

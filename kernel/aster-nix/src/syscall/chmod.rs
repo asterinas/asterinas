@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_FCHMOD, SYS_FCHMODAT};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, PATH_MAX},
     },
@@ -12,7 +12,7 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-pub fn sys_fchmod(fd: FileDescripter, mode: u16) -> Result<SyscallReturn> {
+pub fn sys_fchmod(fd: FileDesc, mode: u16) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FCHMOD);
     debug!("fd = {}, mode = 0o{:o}", fd, mode);
 
@@ -29,7 +29,7 @@ pub fn sys_chmod(path_ptr: Vaddr, mode: u16) -> Result<SyscallReturn> {
 
 // Glibc handles the `flags` argument, so we just ignore it.
 pub fn sys_fchmodat(
-    dirfd: FileDescripter,
+    dirfd: FileDesc,
     path_ptr: Vaddr,
     mode: u16,
     /* flags: u32, */

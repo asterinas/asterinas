@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_FSTATFS, SYS_STATFS};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::FsPath,
         inode_handle::InodeHandle,
         utils::{SuperBlock, PATH_MAX},
@@ -29,7 +29,7 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr) -> Result<SyscallRetur
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fstatfs(fd: FileDescripter, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FSTATFS);
     debug!("fd = {}, statfs_buf_addr = 0x{:x}", fd, statfs_buf_ptr);
 

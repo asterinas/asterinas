@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_READLINKAT};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
     },
     log_syscall_entry,
@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub fn sys_readlinkat(
-    dirfd: FileDescripter,
+    dirfd: FileDesc,
     pathname_addr: Vaddr,
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,

@@ -2,14 +2,14 @@
 
 use super::{SyscallReturn, SYS_ACCEPT};
 use crate::{
-    fs::file_table::{FdFlags, FileDescripter},
+    fs::file_table::{FdFlags, FileDesc},
     log_syscall_entry,
     prelude::*,
     util::net::{get_socket_from_fd, write_socket_addr_to_user},
 };
 
 pub fn sys_accept(
-    sockfd: FileDescripter,
+    sockfd: FileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
 ) -> Result<SyscallReturn> {

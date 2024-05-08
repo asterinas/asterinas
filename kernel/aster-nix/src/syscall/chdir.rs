@@ -2,10 +2,7 @@
 
 use super::{SyscallReturn, SYS_CHDIR, SYS_FCHDIR};
 use crate::{
-    fs::{
-        file_table::FileDescripter, fs_resolver::FsPath, inode_handle::InodeHandle,
-        utils::InodeType,
-    },
+    fs::{file_table::FileDesc, fs_resolver::FsPath, inode_handle::InodeHandle, utils::InodeType},
     log_syscall_entry,
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -34,7 +31,7 @@ pub fn sys_chdir(pathname_addr: Vaddr) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fchdir(fd: FileDescripter) -> Result<SyscallReturn> {
+pub fn sys_fchdir(fd: FileDesc) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_FCHDIR);
     debug!("fd = {}", fd);
 

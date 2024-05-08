@@ -2,7 +2,7 @@
 
 use super::{SyscallReturn, SYS_SENDTO};
 use crate::{
-    fs::file_table::FileDescripter,
+    fs::file_table::FileDesc,
     log_syscall_entry,
     net::socket::SendRecvFlags,
     prelude::*,
@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub fn sys_sendto(
-    sockfd: FileDescripter,
+    sockfd: FileDesc,
     buf: Vaddr,
     len: usize,
     flags: i32,

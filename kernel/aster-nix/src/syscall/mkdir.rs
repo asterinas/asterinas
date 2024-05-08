@@ -3,7 +3,7 @@
 use super::{SyscallReturn, SYS_MKDIRAT};
 use crate::{
     fs::{
-        file_table::FileDescripter,
+        file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{InodeMode, InodeType},
     },
@@ -13,11 +13,7 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-pub fn sys_mkdirat(
-    dirfd: FileDescripter,
-    pathname_addr: Vaddr,
-    mode: u16,
-) -> Result<SyscallReturn> {
+pub fn sys_mkdirat(dirfd: FileDesc, pathname_addr: Vaddr, mode: u16) -> Result<SyscallReturn> {
     log_syscall_entry!(SYS_MKDIRAT);
     let pathname = read_cstring_from_user(pathname_addr, MAX_FILENAME_LEN)?;
     debug!(
