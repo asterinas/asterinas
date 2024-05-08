@@ -21,7 +21,8 @@ mod rtc;
 mod tsc;
 
 pub const NANOS_PER_SECOND: u32 = 1_000_000_000;
-pub static VDSO_DATA_UPDATE: Once<Arc<dyn Fn(Instant, u64) + Sync + Send>> = Once::new();
+pub static VDSO_DATA_HIGH_RES_UPDATE_FN: Once<Arc<dyn Fn(Instant, u64) + Sync + Send>> =
+    Once::new();
 
 #[init_component]
 fn time_init() -> Result<(), ComponentInitError> {

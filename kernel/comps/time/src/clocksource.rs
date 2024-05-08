@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! This module provides abstractions for hardware-assisted timing mechanisms, encapsulated by the `ClockSource` struct.
-//! A `ClockSource` can be constructed from any counter with a stable frequency, enabling precise time measurements to be taken
-//! by retrieving instances of `Instant`.
+//! This module provides abstractions for hardware-assisted timing mechanisms, encapsulated
+//! by the `ClockSource` struct.
 //!
-//! The `ClockSource` module is a fundamental building block for timing in systems that require high precision and accuracy.
-//! It can be integrated into larger systems to provide timing capabilities, or used standalone for time tracking and elapsed time measurements.
+//! A `ClockSource` can be constructed from any counter with a stable frequency, enabling precise
+//! time measurements to be taken by retrieving instances of `Instant`.
+//!
+//! The `ClockSource` module is a fundamental building block for timing in systems that require
+//! high precision and accuracy. It can be integrated into larger systems to provide timing capabilities,
+//! or used standalone for time tracking and elapsed time measurements.
 
 use alloc::sync::Arc;
 use core::{cmp::max, ops::Add, time::Duration};
 
-use aster_frame::sync::SpinLock;
+use aster_frame::sync::RwLock;
 use aster_util::coeff::Coeff;
 
 use crate::NANOS_PER_SECOND;
@@ -20,15 +23,21 @@ use crate::NANOS_PER_SECOND;
 /// Users are able to measure time by retrieving `Instant` from this source.
 ///
 /// # Implementation
-/// The `ClockSource` relies on obtaining the frequency of the counter and the method for reading the cycles in order to measure time.
+/// The `ClockSource` relies on obtaining the frequency of the counter and the method for
+/// reading the cycles in order to measure time.
+///
 /// The **cycles** here refer the counts of the base time counter.
-/// Additionally, the `ClockSource` also holds a last recorded instant, which acts as a reference point for subsequent time retrieval.
-/// To prevent numerical overflow during the calculation of `Instant`, this last recorded instant **must be periodically refreshed**.
-/// The maximum interval for these updates must be determined at the time of the `ClockSource` initialization.
+///
+/// Additionally, the `ClockSource` also holds a last record for an `Instant` and the
+/// corresponding cycles, which acts as a reference point for subsequent time retrieval.
+/// To prevent numerical overflow during  the calculation of `Instant`, this last recorded instant
+/// **must be periodically refreshed**. The maximum interval for these updates must be determined
+/// at the time of the `ClockSource` initialization.
 ///
 /// # Examples
-/// Suppose we have a counter called `counter` which have the frequency `counter.freq`, and the method to read its cycles called `read_counter()`.
-/// We can create a corresponding `ClockSource` and use it as follows:
+/// Suppose we have a counter called `counter` which have the frequency `counter.freq`, and the method
+/// to read its cycles called `read_counter()`. We can create a corresponding `ClockSource` and
+/// use it as follows:
 ///
 /// ```rust
 /// // here we set the max_delay_secs = 10
@@ -45,16 +54,17 @@ pub struct ClockSource {
     read_cycles: Arc<dyn Fn() -> u64 + Sync + Send>,
     base: ClockSourceBase,
     coeff: Coeff,
-    last_instant: SpinLock<Instant>,
-    last_cycles: SpinLock<u64>,
+    /// A record to an `Instant` and the corresponding cycles of this `ClockSource`.
+    last_record: RwLock<(Instant, u64)>,
 }
 
 impl ClockSource {
     /// Create a new `ClockSource` instance.
-    /// Require basic information of based time counter, including the function for reading cycles, the frequency
-    /// and the maximum delay seconds to update this `ClockSource`.
-    /// The `ClockSource` also calculates a reliable `Coeff` based on the counter's frequency and the maximum delay seconds.
-    /// This `Coeff` is used to convert the number of cycles into the duration of time that has passed for those cycles.
+    /// Require basic information of based time counter, including the function for reading cycles,
+    /// the frequency and the maximum delay seconds to update this `ClockSource`.
+    /// The `ClockSource` also calculates a reliable `Coeff` based on the counter's frequency and
+    /// the maximum delay seconds. This `Coeff` is used to convert the number of cycles into
+    /// the duration of time that has passed for those cycles.
     pub fn new(
         freq: u64,
         max_delay_secs: u64,
@@ -68,8 +78,7 @@ impl ClockSource {
             read_cycles,
             base,
             coeff,
-            last_instant: SpinLock::new(Instant::zero()),
-            last_cycles: SpinLock::new(0),
+            last_record: RwLock::new((Instant::zero(), 0)),
         }
     }
 
@@ -78,25 +87,23 @@ impl ClockSource {
     }
 
     /// Use the instant cycles to calculate the instant.
-    /// It first calculates the difference between the instant cycles and the last recorded cycles stored in the clocksource.
-    /// Then `ClockSource` will convert the passed cycles into passed time and calculate the current instant.
+    ///
+    /// It first calculates the difference between the instant cycles and the last
+    /// recorded cycles stored in the clocksource. Then `ClockSource` will convert
+    /// the passed cycles into passed time and calculate the current instant.
     fn calculate_instant(&self, instant_cycles: u64) -> Instant {
+        let (last_instant, last_cycles) = *self.last_record.read_irq_disabled();
         let delta_nanos = {
-            let delta_cycles = instant_cycles - self.last_cycles();
+            let delta_cycles = instant_cycles - last_cycles;
             self.cycles_to_nanos(delta_cycles)
         };
         let duration = Duration::from_nanos(delta_nanos);
-        self.last_instant() + duration
+        last_instant + duration
     }
 
-    /// Use an input instant to update the internal instant in the `ClockSource`.
-    fn update_last_instant(&self, instant: &Instant) {
-        *self.last_instant.lock() = *instant;
-    }
-
-    /// Use an input cycles to update the internal instant in the `ClockSource`.
-    fn update_last_cycles(&self, cycles: u64) {
-        *self.last_cycles.lock() = cycles;
+    /// Use an input instant and cycles to update the `last_record` in the `ClockSource`.
+    fn update_last_record(&self, record: (Instant, u64)) {
+        *self.last_record.write_irq_disabled() = record;
     }
 
     /// read current cycles of the `ClockSource`.
@@ -104,19 +111,14 @@ impl ClockSource {
         (self.read_cycles)()
     }
 
-    /// Return the last instant recorded in the `ClockSource`.
-    pub fn last_instant(&self) -> Instant {
-        return *self.last_instant.lock();
-    }
-
-    /// Return the last cycles recorded in the `ClockSource`.
-    pub fn last_cycles(&self) -> u64 {
-        return *self.last_cycles.lock();
+    /// Return the last instant and last cycles recorded in the `ClockSource`.
+    pub fn last_record(&self) -> (Instant, u64) {
+        return *self.last_record.read_irq_disabled();
     }
 
     /// Return the maximum delay seconds for updating of the `ClockSource`.
     pub fn max_delay_secs(&self) -> u64 {
-        self.base.max_delay_secs()
+        self.base.max_delay_secs
     }
 
     /// Return the reference to the generated cycles coeff of the `ClockSource`.
@@ -126,26 +128,24 @@ impl ClockSource {
 
     /// Return the frequency of the counter used in the `ClockSource`.
     pub fn freq(&self) -> u64 {
-        self.base.freq()
+        self.base.freq
     }
 
     /// Calibrate the recorded `Instant` to zero, and record the instant cycles.
     pub(crate) fn calibrate(&self, instant_cycles: u64) {
-        self.update_last_cycles(instant_cycles);
-        self.update_last_instant(&Instant::zero());
+        self.update_last_record((Instant::zero(), instant_cycles));
     }
 
     /// Get the instant to update the internal instant in the `ClockSource`.
     pub(crate) fn update(&self) {
         let instant_cycles = self.read_cycles();
         let instant = self.calculate_instant(instant_cycles);
-        self.update_last_cycles(instant_cycles);
-        self.update_last_instant(&instant);
+        self.update_last_record((instant, instant_cycles));
     }
 
     /// Read the instant corresponding to the current time.
-    /// When trying to read an instant from the clocksource, it will use the reading method to read instant cycles.
-    /// Then leverage it to calculate the instant.
+    /// When trying to read an instant from the clocksource, it will use the reading method
+    /// to read instant cycles. Then leverage it to calculate the instant.
     pub(crate) fn read_instant(&self) -> Instant {
         let instant_cycles = self.read_cycles();
         self.calculate_instant(instant_cycles)
@@ -162,10 +162,12 @@ pub struct Instant {
 }
 
 impl Instant {
+    /// Create a zeroed `Instant`.
     pub const fn zero() -> Self {
         Self { secs: 0, nanos: 0 }
     }
 
+    /// Create an new `Instant` based on the inputting `secs` and `nanos`.
     pub fn new(secs: u64, nanos: u32) -> Self {
         Self { secs, nanos }
     }
@@ -178,6 +180,15 @@ impl Instant {
     /// Return the nanoseconds recorded in the Instant.
     pub fn nanos(&self) -> u32 {
         self.nanos
+    }
+}
+
+impl From<Duration> for Instant {
+    fn from(value: Duration) -> Self {
+        Self {
+            secs: value.as_secs(),
+            nanos: value.subsec_nanos(),
+        }
     }
 }
 
@@ -209,13 +220,5 @@ impl ClockSourceBase {
             freq,
             max_delay_secs,
         }
-    }
-
-    fn max_delay_secs(&self) -> u64 {
-        self.max_delay_secs
-    }
-
-    fn freq(&self) -> u64 {
-        self.freq
     }
 }
