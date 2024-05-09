@@ -723,17 +723,32 @@ impl<'a> VmWriter<'a> {
 
     /// Fills the available space by repeating `value`.
     ///
+    /// Returns the number of values written.
+    ///
     /// # Panic
     ///
     /// The size of the available space must be a multiple of the size of `value`.
     /// Otherwise, the method would panic.
-    pub fn fill<T: Pod>(&mut self, value: T) {
-        assert!(self.avail() / value.as_bytes().len() > 0);
-        assert!(self.avail() % value.as_bytes().len() == 0);
+    pub fn fill<T: Pod>(&mut self, value: T) -> usize {
+        let avail = self.avail();
 
-        while self.avail() > 0 {
-            self.write(&mut value.as_bytes().into());
+        assert!((self.cursor as *mut T).is_aligned());
+        assert!(avail % core::mem::size_of::<T>() == 0);
+
+        let written_num = avail / core::mem::size_of::<T>();
+
+        for i in 0..written_num {
+            // Safety: `written_num` is calculated by the avail size and the size of the type `T`,
+            // hence the `add` operation and `write` operation are valid and will only manipulate
+            // the memory managed by this writer.
+            unsafe {
+                (self.cursor as *mut T).add(i).write(value);
+            }
         }
+
+        // The available space has been filled so this cursor can be moved to the end.
+        self.cursor = self.end;
+        written_num
     }
 }
 
