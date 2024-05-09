@@ -17,11 +17,6 @@ use crate::{
 /// create new task with userspace and parent process
 pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>) -> Arc<Task> {
     fn user_task_entry() {
-        fn has_pending_signal(current_thread: &Arc<Thread>) -> bool {
-            let posix_thread = current_thread.as_posix_thread().unwrap();
-            posix_thread.has_pending_signal()
-        }
-
         let current_thread = current_thread!();
         let current_task = current_thread.task();
         let user_space = current_task
@@ -41,8 +36,8 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
             user_mode.context().syscall_ret()
         );
 
-        #[allow(clippy::redundant_closure)]
-        let has_kernel_event_fn = || has_pending_signal(&current_thread);
+        let posix_thread = current_thread.as_posix_thread().unwrap();
+        let has_kernel_event_fn = || posix_thread.has_pending();
         loop {
             let return_reason = user_mode.execute(has_kernel_event_fn);
             let context = user_mode.context_mut();
@@ -52,7 +47,7 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
                 ReturnReason::UserSyscall => handle_syscall(context),
                 ReturnReason::KernelEvent => {}
             };
-            // should be do this comparison before handle signal?
+
             if current_thread.status().is_exited() {
                 break;
             }

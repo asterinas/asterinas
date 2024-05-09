@@ -111,25 +111,28 @@ impl Pauser {
     {
         self.is_interrupted.store(false, Ordering::Release);
 
-        // Register observer on sigqueue
-        let observer = Arc::downgrade(self) as Weak<dyn Observer<SigEvents>>;
-        let filter = {
-            let sig_mask = {
-                let current_thread = current_thread!();
-                let poxis_thread = current_thread.as_posix_thread().unwrap();
-                let mut current_sigmask = *poxis_thread.sig_mask().lock();
-                current_sigmask.block(self.sig_mask.as_u64());
-                current_sigmask
-            };
-            SigEventsFilter::new(sig_mask)
-        };
-
         let current_thread = current_thread!();
         let posix_thread = current_thread.as_posix_thread().unwrap();
+
+        // Block `self.sig_mask`
+        let (old_mask, filter) = {
+            let mut current_mask = posix_thread.sig_mask().lock();
+            let old_mask = *current_mask;
+
+            let new_mask = {
+                current_mask.block(self.sig_mask.as_u64());
+                *current_mask
+            };
+
+            (old_mask, SigEventsFilter::new(new_mask))
+        };
+
+        // Register observer on sigqueue
+        let observer = Arc::downgrade(self) as Weak<dyn Observer<SigEvents>>;
         posix_thread.register_sigqueue_observer(observer.clone(), filter);
 
         // Some signal may come before we register observer, so we do another check here.
-        if posix_thread.has_pending_signal() {
+        if posix_thread.has_pending_signals() {
             self.is_interrupted.store(true, Ordering::Release);
         }
 
@@ -159,6 +162,7 @@ impl Pauser {
         };
 
         posix_thread.unregiser_sigqueue_observer(&observer);
+        posix_thread.sig_mask().lock().set(old_mask.as_u64());
 
         match res? {
             Res::Ok(r) => Ok(r),
