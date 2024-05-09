@@ -15,7 +15,12 @@ git = "https://github.com/asterinas/asterinas"
 rev = "cc4111c"
 # When publishing, the crate.io version is used, make sure
 # the builder is published
-version = "0.1.0"
+# FIXME: The version is currently commented out as it is no longer in use. 
+# If this version is being used, 
+# please ensure to update `bump_version.sh` appropriately. 
+# `bump_version.sh will also update this version, 
+# however, the dependent crate may not share the same version as the whole project.
+# version = "0.1.0"
 
 [dependencies]
 clap = { version = "4.4.17", features = ["cargo", "derive"] }
