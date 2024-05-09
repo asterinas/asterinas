@@ -120,7 +120,7 @@ impl PosixThreadBuilder {
                 credentials,
                 real_timer: Mutex::new(real_timer),
                 sig_mask: Mutex::new(sig_mask),
-                sig_queues: Mutex::new(sig_queues),
+                sig_queues,
                 sig_context: Mutex::new(None),
                 sig_stack: Mutex::new(None),
                 robust_list: Mutex::new(None),

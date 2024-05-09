@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use super::{
     constants::*, sig_mask::SigMask, sig_num::SigNum, signals::Signal, SigEvents, SigEventsFilter,
 };
@@ -9,31 +11,87 @@ use crate::{
 };
 
 pub struct SigQueues {
-    count: usize,
-    std_queues: Vec<Option<Box<dyn Signal>>>,
-    rt_queues: Vec<VecDeque<Box<dyn Signal>>>,
+    // The number of pending signals.
+    // Useful for quickly determining if any signals are pending without locking `queues`.
+    count: AtomicUsize,
+    queues: Mutex<Queues>,
     subject: Subject<SigEvents, SigEventsFilter>,
 }
 
 impl SigQueues {
     pub fn new() -> Self {
-        let count = 0;
-        let std_queues = (0..COUNT_STD_SIGS).map(|_| None).collect();
-        let rt_queues = (0..COUNT_RT_SIGS).map(|_| Default::default()).collect();
-        let subject = Subject::new();
-        SigQueues {
-            count,
-            std_queues,
-            rt_queues,
-            subject,
+        Self {
+            count: AtomicUsize::new(0),
+            queues: Mutex::new(Queues::new()),
+            subject: Subject::new(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.count == 0
+        self.count.load(Ordering::Relaxed) == 0
     }
 
-    pub fn enqueue(&mut self, signal: Box<dyn Signal>) {
+    pub fn enqueue(&self, signal: Box<dyn Signal>) {
+        let signum = signal.num();
+
+        let mut queues = self.queues.lock();
+        if queues.enqueue(signal) {
+            self.count.fetch_add(1, Ordering::Relaxed);
+            // Avoid holding lock when notifying observers
+            drop(queues);
+            self.subject.notify_observers(&SigEvents::new(signum));
+        }
+    }
+
+    pub fn dequeue(&self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
+        // Fast path for the common case of no pending signals
+        if self.is_empty() {
+            return None;
+        }
+
+        let mut queues = self.queues.lock();
+        let signal = queues.dequeue(blocked);
+        if signal.is_some() {
+            self.count.fetch_sub(1, Ordering::Relaxed);
+        }
+        signal
+    }
+
+    pub fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<SigEvents>>,
+        filter: SigEventsFilter,
+    ) {
+        self.subject.register_observer(observer, filter);
+    }
+
+    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
+        self.subject.unregister_observer(observer);
+    }
+}
+
+impl Default for SigQueues {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct Queues {
+    std_queues: Vec<Option<Box<dyn Signal>>>,
+    rt_queues: Vec<VecDeque<Box<dyn Signal>>>,
+}
+
+impl Queues {
+    fn new() -> Self {
+        let std_queues = (0..COUNT_STD_SIGS).map(|_| None).collect();
+        let rt_queues = (0..COUNT_RT_SIGS).map(|_| Default::default()).collect();
+        Self {
+            std_queues,
+            rt_queues,
+        }
+    }
+
+    fn enqueue(&mut self, signal: Box<dyn Signal>) -> bool {
         let signum = signal.num();
         if signum.is_std() {
             // Standard signals
@@ -52,26 +110,19 @@ impl SigQueues {
             let queue = self.get_std_queue_mut(signum);
             if queue.is_some() {
                 // If there is already a signal pending, just ignore all subsequent signals
-                return;
+                return false;
             }
             *queue = Some(signal);
-            self.count += 1;
         } else {
             // Real-time signals
             let queue = self.get_rt_queue_mut(signum);
             queue.push_back(signal);
-            self.count += 1;
         }
 
-        self.subject.notify_observers(&SigEvents::new(signum));
+        true
     }
 
-    pub fn dequeue(&mut self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
-        // Fast path for the common case of no pending signals
-        if self.is_empty() {
-            return None;
-        }
-
+    fn dequeue(&mut self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
         // Deliver standard signals.
         //
         // According to signal(7):
@@ -100,7 +151,6 @@ impl SigQueues {
             let queue = self.get_std_queue_mut(signum);
             let signal = queue.take();
             if signal.is_some() {
-                self.count -= 1;
                 return signal;
             }
         }
@@ -122,7 +172,6 @@ impl SigQueues {
             let queue = self.get_rt_queue_mut(signum);
             let signal = queue.pop_front();
             if signal.is_some() {
-                self.count -= 1;
                 return signal;
             }
         }
@@ -141,23 +190,5 @@ impl SigQueues {
         debug_assert!(signum.is_real_time());
         let idx = (signum.as_u8() - MIN_RT_SIG_NUM) as usize;
         &mut self.rt_queues[idx]
-    }
-
-    pub fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<SigEvents>>,
-        filter: SigEventsFilter,
-    ) {
-        self.subject.register_observer(observer, filter);
-    }
-
-    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
-        self.subject.unregister_observer(observer);
-    }
-}
-
-impl Default for SigQueues {
-    fn default() -> Self {
-        Self::new()
     }
 }
