@@ -49,6 +49,10 @@ for workflow in $WORKFLOWS; do
     update_image_versions $workflow
 done
 
+# Update Docker image versions in the documentation
+GET_STARTED_PATH=${ASTER_SRC_DIR}/docs/src/kernel/README.md
+update_image_versions $GET_STARTED_PATH
+
 # Create or update VERSION
 echo "${new_version}" > ${VERSION_PATH}
 
