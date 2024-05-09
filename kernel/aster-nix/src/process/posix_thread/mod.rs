@@ -101,8 +101,11 @@ impl PosixThread {
         self.sig_queues.sig_pending()
     }
 
-    pub fn has_pending_signal(&self) -> bool {
-        !self.sig_queues.is_empty()
+    /// Returns whether the thread has some pending signals
+    /// that are not blocked.
+    pub fn has_pending(&self) -> bool {
+        let blocked = *self.sig_mask().lock();
+        self.sig_queues.has_pending(blocked)
     }
 
     /// Returns whether the signal is blocked by the thread.

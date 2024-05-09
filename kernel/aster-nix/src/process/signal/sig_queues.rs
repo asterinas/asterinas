@@ -61,9 +61,15 @@ impl SigQueues {
         signal
     }
 
+    /// Returns the pending signals
     pub fn sig_pending(&self) -> SigSet {
         let queues = self.queues.lock();
         queues.sig_pending()
+    }
+
+    /// Returns whether there's some pending signals that are not blocked
+    pub fn has_pending(&self, blocked: SigMask) -> bool {
+        self.queues.lock().has_pending(blocked)
     }
 
     pub fn register_observer(
@@ -187,6 +193,15 @@ impl Queues {
 
         // There must be pending but blocked signals
         None
+    }
+
+    /// Returns whether the `SigQueues` has some pending signals which are not blocked
+    fn has_pending(&self, blocked: SigMask) -> bool {
+        self.std_queues.iter().any(|signal| {
+            signal
+                .as_ref()
+                .is_some_and(|signal| !blocked.contains(signal.num()))
+        }) || self.rt_queues.iter().any(|rt_queue| !rt_queue.is_empty())
     }
 
     fn get_std_queue_mut(&mut self, signum: SigNum) -> &mut Option<Box<dyn Signal>> {
