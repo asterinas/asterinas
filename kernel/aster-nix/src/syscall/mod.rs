@@ -568,12 +568,14 @@ pub fn syscall_dispatch(
 #[macro_export]
 macro_rules! log_syscall_entry {
     ($syscall_name: tt) => {
-        let syscall_name_str = stringify!($syscall_name);
-        let pid = $crate::current!().pid();
-        let tid = $crate::current_thread!().tid();
-        info!(
-            "[pid={}][tid={}][id={}][{}]",
-            pid, tid, $syscall_name, syscall_name_str
-        );
+        if log_enabled!(log::Level::Info) {
+            let syscall_name_str = stringify!($syscall_name);
+            let pid = $crate::current!().pid();
+            let tid = $crate::current_thread!().tid();
+            info!(
+                "[pid={}][tid={}][id={}][{}]",
+                pid, tid, $syscall_name, syscall_name_str
+            );
+        }
     };
 }

@@ -19,7 +19,7 @@ pub(crate) use aster_frame::{
 };
 pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;
-pub(crate) use log::{debug, error, info, trace, warn};
+pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
 pub(crate) use pod::Pod;
 
 /// return current process
