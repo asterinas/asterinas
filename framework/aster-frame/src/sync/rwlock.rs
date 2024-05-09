@@ -521,6 +521,21 @@ enum InnerGuard {
     PreemptGuard(DisablePreemptGuard),
 }
 
+impl InnerGuard {
+    /// Transfers the current guard to a new `InnerGuard` instance ensuring atomicity during lock upgrades or downgrades.
+    ///
+    /// This function guarantees that there will be no 'gaps' between the destruction of the old guard and
+    /// the creation of the new guard, maintaining the atomicity of lock transitions.
+    fn transfer_to(&mut self) -> Self {
+        match self {
+            InnerGuard::IrqGuard(irq_guard) => InnerGuard::IrqGuard(irq_guard.transfer_to()),
+            InnerGuard::PreemptGuard(preempt_guard) => {
+                InnerGuard::PreemptGuard(preempt_guard.transfer_to())
+            }
+        }
+    }
+}
+
 /// A guard that provides immutable data access.
 pub struct RwLockReadGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
     inner_guard: InnerGuard,
@@ -566,6 +581,37 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockWriteGuard
 
     fn deref(&self) -> &T {
         unsafe { &*self.inner.val.get() }
+    }
+}
+
+impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockWriteGuard_<T, R> {
+    /// Atomically downgrades a write guard to an upgradeable reader guard.
+    ///
+    /// This method always succeeds because the lock is exclusively held by the writer.
+    pub fn downgrade(mut self) -> RwLockUpgradeableGuard_<T, R> {
+        loop {
+            self = match self.try_downgrade() {
+                Ok(guard) => return guard,
+                Err(e) => e,
+            };
+        }
+    }
+
+    /// This is not exposed as a public method to prevent intermediate lock states from affecting the
+    /// downgrade process.
+    fn try_downgrade(mut self) -> Result<RwLockUpgradeableGuard_<T, R>, Self> {
+        let inner = self.inner.clone();
+        let res = self
+            .inner
+            .lock
+            .compare_exchange(WRITER, UPGRADEABLE_READER, AcqRel, Relaxed);
+        if res.is_ok() {
+            let inner_guard = self.inner_guard.transfer_to();
+            drop(self);
+            Ok(RwLockUpgradeableGuard_ { inner, inner_guard })
+        } else {
+            Err(self)
+        }
     }
 }
 
@@ -625,13 +671,8 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockUpgradeableGuard_<T,
             Relaxed,
         );
         if res.is_ok() {
-            let inner_guard = match &mut self.inner_guard {
-                InnerGuard::IrqGuard(irq_guard) => InnerGuard::IrqGuard(irq_guard.transfer_to()),
-                InnerGuard::PreemptGuard(preempt_guard) => {
-                    InnerGuard::PreemptGuard(preempt_guard.transfer_to())
-                }
-            };
             let inner = self.inner.clone();
+            let inner_guard = self.inner_guard.transfer_to();
             drop(self);
             Ok(RwLockWriteGuard_ { inner, inner_guard })
         } else {
