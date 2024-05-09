@@ -153,14 +153,14 @@ impl Pauser {
         let res = if let Some(timeout) = timeout {
             self.wait_queue
                 .wait_until_or_timeout(cond, timeout)
-                .ok_or_else(|| Error::with_message(Errno::ETIME, "timeout is reached"))?
+                .ok_or_else(|| Error::with_message(Errno::ETIME, "timeout is reached"))
         } else {
-            self.wait_queue.wait_until(cond)
+            Ok(self.wait_queue.wait_until(cond))
         };
 
         posix_thread.unregiser_sigqueue_observer(&observer);
 
-        match res {
+        match res? {
             Res::Ok(r) => Ok(r),
             Res::Interrupted => return_errno_with_message!(Errno::EINTR, "interrupted by signal"),
         }
