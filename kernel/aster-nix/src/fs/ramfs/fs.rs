@@ -516,6 +516,7 @@ impl Inode for RamInode {
 
         let mut self_inode = self_inode.upgrade();
         self_inode.resize(new_size);
+        let self_inode = self_inode.downgrade();
         let page_cache = self_inode.inner.as_file().unwrap();
         page_cache.pages().resize(new_size)?;
 
