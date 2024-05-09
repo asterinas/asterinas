@@ -15,8 +15,11 @@ use crate::{
 /// create new task with userspace and parent process
 pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>) -> Arc<Task> {
     fn user_task_entry() {
-        let cur = Task::current();
-        let user_space = cur.user_space().expect("user task should have user space");
+        let current_thread = current_thread!();
+        let current_task = current_thread.task();
+        let user_space = current_task
+            .user_space()
+            .expect("user task should have user space");
         let mut user_mode = UserMode::new(user_space);
         debug!(
             "[Task entry] rip = 0x{:x}",
@@ -30,17 +33,17 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
             "[Task entry] rax = 0x{:x}",
             user_mode.context().syscall_ret()
         );
+
         loop {
             let user_event = user_mode.execute();
             let context = user_mode.context_mut();
             // handle user event:
             handle_user_event(user_event, context);
-            let current_thread = current_thread!();
             // should be do this comparison before handle signal?
             if current_thread.status().lock().is_exited() {
                 break;
             }
-            handle_pending_signal(context).unwrap();
+            handle_pending_signal(context, &current_thread).unwrap();
             if current_thread.status().lock().is_exited() {
                 debug!("exit due to signal");
                 break;
@@ -49,14 +52,14 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
             while current_thread.status().lock().is_stopped() {
                 Thread::yield_now();
                 debug!("{} is suspended.", current_thread.tid());
-                handle_pending_signal(context).unwrap();
+                handle_pending_signal(context, &current_thread).unwrap();
             }
             // a preemption point after handling user event.
-            preempt();
+            preempt(current_task);
         }
         debug!("exit user loop");
         // FIXME: This is a work around: exit in kernel task entry may be not called. Why this will happen?
-        Task::current().exit();
+        current_task.exit();
     }
 
     TaskOptions::new(user_task_entry)

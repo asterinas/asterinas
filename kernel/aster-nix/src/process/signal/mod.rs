@@ -30,17 +30,20 @@ use super::posix_thread::{PosixThread, PosixThreadExt};
 use crate::{
     prelude::*,
     process::{do_exit_group, TermStatus},
+    thread::Thread,
     util::{write_bytes_to_user, write_val_to_user},
 };
 
-/// Handle pending signal for current process
-pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
-    let current = current!();
-    let current_thread = current_thread!();
-
+// TODO: This interface of this method is error prone.
+// The method takes an argument for the current thread to optimize its efficiency.
+/// Handle pending signal for current process.
+pub fn handle_pending_signal(
+    context: &mut UserContext,
+    current_thread: &Arc<Thread>,
+) -> Result<()> {
     // We first deal with signal in current thread, then signal in current process.
+    let posix_thread = current_thread.as_posix_thread().unwrap();
     let signal = {
-        let posix_thread = current_thread.as_posix_thread().unwrap();
         let sig_mask = *posix_thread.sig_mask().lock();
         if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
             signal
@@ -51,6 +54,7 @@ pub fn handle_pending_signal(context: &mut UserContext) -> Result<()> {
 
     let sig_num = signal.num();
     trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
+    let current = posix_thread.process();
     let sig_action = current.sig_dispositions().lock().get(sig_num);
     trace!("sig action: {:x?}", sig_action);
     match sig_action {

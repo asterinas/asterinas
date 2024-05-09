@@ -61,14 +61,15 @@ pub fn schedule() {
     }
 }
 
-pub fn preempt() {
+// TODO: This interface of this method is error prone.
+// The method takes an argument for the current task to optimize its efficiency,
+// but the argument provided by the caller may not be the current task, really.
+// Thus, this method should be removed or reworked in the future.
+pub fn preempt(task: &Arc<Task>) {
     // TODO: Refactor `preempt` and `schedule`
     // after the Atomic mode and `might_break` is enabled.
-    let Some(curr_task) = current_task() else {
-        return;
-    };
     let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(&curr_task) {
+    if !scheduler.should_preempt(task) {
         return;
     }
     let Some(next_task) = scheduler.dequeue() else {

@@ -61,6 +61,10 @@ impl Thread {
             .expect("[Internal Error] current thread cannot be None")
     }
 
+    pub(in crate::thread) fn task(&self) -> &Arc<Task> {
+        &self.task
+    }
+
     /// Run this thread at once.
     pub fn run(&self) {
         self.status.lock().set_running();
