@@ -44,3 +44,6 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [ "no_std"
 
 [features]
 intel_tdx = ["dep:tdx-guest", "dep:iced-x86"]
+# To actively recycle page table nodes while the `VmSpace` is alive, this saves
+# memory but may lead to the page table free-reuse-then-read problem.
+page_table_recycle = []

@@ -339,10 +339,24 @@ where
 ///
 /// The caller must ensure that the root_paddr is a valid pointer to the root
 /// page table frame.
+///
+/// # Notes on the page table free-reuse-then-read problem
+///
+/// Because neither the hardware MMU nor the software page walk method
+/// would get the locks of the page table while reading, they can enter
+/// a to-be-recycled page table frame and read the page table entries
+/// after the frame is recycled and reused.
+///
+/// To mitigate this problem, the page table nodes are by default not
+/// actively recycled, until we find an appropriate solution.
 pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
     root_paddr: Paddr,
     vaddr: Vaddr,
 ) -> Option<(Paddr, PageProperty)> {
+    // We disable preemt here to mimic the MMU walk, which will not be interrupted
+    // then must finish within a given time.
+    let _guard = crate::task::disable_preempt();
+
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {
         let frame_addr = paddr_to_vaddr(root_paddr);
