@@ -104,14 +104,6 @@ where
     [(); nr_ptes_per_node::<C>()]:,
     [(); C::NR_LEVELS]:,
 {
-    pub(crate) fn activate(&self) {
-        // Safety: The usermode page table is safe to activate since the kernel
-        // mappings are shared.
-        unsafe {
-            self.activate_unchecked();
-        }
-    }
-
     /// Remove all write permissions from the user page table and create a cloned
     /// new page table.
     ///
@@ -226,6 +218,32 @@ where
     }
 }
 
+impl<M: PageTableMode> PageTable<M, PageTableEntry, PagingConsts> {
+    /// Activate a page table by giving the address to the current CPU.
+    pub(crate) unsafe fn activate_unchecked(&self) {
+        // Ensure that the root `PageTableFrame` always outlives the root page translation
+        // table given to the CPU.
+        {
+            use core::sync::atomic::{AtomicPtr, Ordering::Relaxed};
+
+            use crate::cpu_local;
+            type RawPageTableFrame = SpinLock<PageTableFrame<PageTableEntry, PagingConsts>>;
+            cpu_local! {
+                static PAGE_TABLE_ROOT: AtomicPtr<RawPageTableFrame> = AtomicPtr::new(0 as *mut RawPageTableFrame);
+            }
+
+            let new_root_frame_ptr =
+                Arc::into_raw(self.root_frame.clone()) as *mut RawPageTableFrame;
+            let old_root_frame_ptr = PAGE_TABLE_ROOT.swap(new_root_frame_ptr, Relaxed);
+            if !old_root_frame_ptr.is_null() {
+                drop(Arc::from_raw(old_root_frame_ptr));
+            }
+        }
+
+        activate_page_table(self.root_paddr(), CachePolicy::Writeback);
+    }
+}
+
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
 where
     [(); nr_ptes_per_node::<C>()]:,
@@ -278,10 +296,6 @@ where
     pub(crate) fn query(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
         // Safety: The root frame is a valid page table frame so the address is valid.
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
-    }
-
-    pub(crate) unsafe fn activate_unchecked(&self) {
-        activate_page_table(self.root_paddr(), CachePolicy::Writeback);
     }
 
     /// Create a new cursor exclusively accessing the virtual address range for mapping.

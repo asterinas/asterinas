@@ -44,9 +44,13 @@ impl VmSpace {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
         }
     }
-    /// Activate the page table.
+    /// Activate the page table and invalidate TLB entries.
     pub(crate) fn activate(&self) {
-        self.pt.activate();
+        // Safety: The usermode page table is safe to activate since the kernel
+        // mappings are shared.
+        unsafe {
+            self.pt.activate_unchecked();
+        }
     }
 
     /// Maps some physical memory pages into the VM space according to the given
