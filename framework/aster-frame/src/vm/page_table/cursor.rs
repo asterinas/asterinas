@@ -427,14 +427,18 @@ where
     ///
     /// This method requires locks acquired before calling it. The discarded level will be unlocked.
     fn level_up(&mut self) {
+        #[cfg(feature = "page_table_recycle")]
         let last_node_all_unmapped = self.cur_node().nr_valid_children() == 0;
         self.guards[C::NR_LEVELS - self.level] = None;
         self.level += 1;
-        let can_release_child =
-            TypeId::of::<M>() == TypeId::of::<KernelMode>() && self.level < C::NR_LEVELS;
-        if can_release_child && last_node_all_unmapped {
-            let idx = self.cur_idx();
-            self.cur_node_mut().set_child(idx, Child::None, None, false);
+        #[cfg(feature = "page_table_recycle")]
+        {
+            let can_release_child =
+                TypeId::of::<M>() == TypeId::of::<KernelMode>() && self.level < C::NR_LEVELS;
+            if can_release_child && last_node_all_unmapped {
+                let idx = self.cur_idx();
+                self.cur_node_mut().set_child(idx, Child::None, None, false);
+            }
         }
     }
 
@@ -511,6 +515,7 @@ where
     }
 }
 
+#[cfg(feature = "page_table_recycle")]
 impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Drop for CursorMut<'_, M, E, C>
 where
     [(); nr_ptes_per_node::<C>()]:,
