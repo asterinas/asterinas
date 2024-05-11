@@ -84,7 +84,7 @@ impl Vmo<Rights> {
     /// The method requires the Write right.
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
         self.check_rights(Rights::WRITE)?;
-        self.0.commit(range, false)?;
+        self.0.commit_and_operate(&range, |_| {}, false)?;
         Ok(())
     }
 
