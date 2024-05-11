@@ -2,10 +2,12 @@
 
 use alloc::vec::Vec;
 
+use aster_frame::arch::pci::PciDeviceLocation;
+
 use super::{
     capability::Capability,
     cfg_space::{AddrLen, Bar, Command, PciDeviceCommonCfgOffset, Status},
-    device_info::{PciDeviceId, PciDeviceLocation},
+    device_info::PciDeviceId,
 };
 
 /// PCI common device, Contains a range of information and functions common to PCI devices.
@@ -76,6 +78,7 @@ impl PciCommonDevice {
         &mut self.bar_manager
     }
 
+    #[allow(unused)]
     pub(super) fn capabilities_mut(&mut self) -> &mut Vec<Capability> {
         &mut self.capabilities
     }
@@ -135,7 +138,7 @@ impl BarManager {
             };
             self.bars[idx as usize] = Some((bar, false));
         }
-        let Some((_, visible)) = self.bars[idx as usize] else {
+        let Some((_, _visible)) = self.bars[idx as usize] else {
             return;
         };
     }

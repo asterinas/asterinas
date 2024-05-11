@@ -3,10 +3,10 @@
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
+use aster_frame::bus::BusProbeError;
 use log::{debug, error};
 
 use super::{device_info::PciDeviceId, PciCommonDevice};
-use crate::bus::BusProbeError;
 
 pub trait PciDevice: Sync + Send + Debug {
     fn device_id(&self) -> PciDeviceId;
@@ -43,7 +43,7 @@ impl PciBus {
     pub fn register_driver(&mut self, driver: Arc<dyn PciDriver>) {
         debug!("Register driver:{:#x?}", driver);
         let length = self.common_devices.len();
-        for i in (0..length).rev() {
+        for _ in (0..length).rev() {
             let common_device = self.common_devices.pop_front().unwrap();
             let device_id = *common_device.device_id();
             let device = match driver.probe(common_device) {

@@ -5,7 +5,7 @@ use core::hint::spin_loop;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use aster_frame::{
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     sync::{RwLock, SpinLock},
     trap::TrapFrame,
     vm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmReader},
