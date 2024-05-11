@@ -44,8 +44,12 @@ impl VmSpace {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
         }
     }
-    /// Activate the page table and invalidate TLB entries.
+    /// Activate the page table and invalidate TLB entries if not currently activated.
     pub(crate) fn activate(&self) {
+        let current_pt = crate::arch::mm::current_page_table_paddr();
+        if current_pt == self.pt.root_paddr() {
+            return;
+        }
         // Safety: The usermode page table is safe to activate since the kernel
         // mappings are shared.
         unsafe {
