@@ -29,10 +29,10 @@ impl WaitQueue {
     /// Wait until some condition becomes true.
     ///
     /// This method takes a closure that tests a user-given condition.
-    /// The method only returns if the condition returns Some(_).
-    /// A waker thread should first make the condition Some(_), then invoke the
+    /// The method only returns if the condition returns `Some(_)`.
+    /// A waker thread should first make the condition `Some(_)`, then invoke the
     /// `wake`-family method. This ordering is important to ensure that waiter
-    /// threads do not lose any wakeup notifiations.
+    /// threads do not lose any wakeup notifications.
     ///
     /// By taking a condition closure, his wait-wakeup mechanism becomes
     /// more efficient and robust.
@@ -44,36 +44,43 @@ impl WaitQueue {
             return res;
         }
 
-        let (waiter, waker) = Waiter::new_pair();
+        let (waiter, _) = Waiter::new_pair();
 
-        loop {
-            // Enqueue the waker before checking `cond()` to avoid races
-            self.enqueue(waker.clone());
-
-            if let Some(res) = cond() {
-                return res;
-            };
-            waiter.wait();
-        }
+        self.wait_until_or_cancelled(cond, waiter, || false)
+            .unwrap()
     }
 
-    pub fn wait_until_or_cancelled<F, R>(&self, mut cond: F) -> R
+    /// Wait until some condition becomes true or the cancel condition becomes true.
+    ///
+    /// This method will return `Some(_)` if the condition returns `Some(_)`, and will return
+    /// the condition test result regardless what it is when the cancel condition becomes true.
+    #[doc(hidden)]
+    pub fn wait_until_or_cancelled<F, R, FCancel>(
+        &self,
+        mut cond: F,
+        waiter: Waiter,
+        cancel_cond: FCancel,
+    ) -> Option<R>
     where
         F: FnMut() -> Option<R>,
+        FCancel: Fn() -> bool,
     {
-        if let Some(res) = cond() {
-            return res;
-        }
-
-        let (waiter, waker) = Waiter::new_pair();
+        let waker = waiter.waker();
 
         loop {
             // Enqueue the waker before checking `cond()` to avoid races
             self.enqueue(waker.clone());
 
             if let Some(res) = cond() {
-                return res;
+                return Some(res);
             };
+
+            if cancel_cond() {
+                // Drop the waiter and check again to avoid missing a wake event.
+                drop(waiter);
+                return cond();
+            }
+
             waiter.wait();
         }
     }
@@ -120,6 +127,7 @@ impl WaitQueue {
         }
     }
 
+    /// Return whether the current wait queue is empty.
     pub fn is_empty(&self) -> bool {
         self.num_wakers.load(Ordering::Acquire) == 0
     }
@@ -173,6 +181,11 @@ impl Waiter {
     /// before). Otherwise, it puts the current thread to sleep until the waiter is woken up.
     pub fn wait(&self) {
         self.waker.do_wait();
+    }
+
+    /// Gets the associated [`Waker`] of the current waiter.
+    pub fn waker(&self) -> Arc<Waker> {
+        self.waker.clone()
     }
 }
 
@@ -235,11 +248,5 @@ impl Waker {
 
     fn close(&self) {
         self.has_woken.store(true, Ordering::Release);
-    }
-}
-
-impl Default for Waiter {
-    fn default() -> Self {
-        Self::new()
     }
 }

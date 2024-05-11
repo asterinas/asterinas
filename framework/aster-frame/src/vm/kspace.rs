@@ -6,6 +6,7 @@ use core::ops::Range;
 
 use align_ext::AlignExt;
 use spin::Once;
+use static_assertions::const_assert;
 
 use super::{
     page_table::{nr_ptes_per_node, KernelMode, PageTable},

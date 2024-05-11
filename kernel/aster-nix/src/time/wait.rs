@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::time::Duration;
 
-use aster_frame::sync::{WaitQueue, Waiter, Waker};
+use aster_frame::sync::{WaitQueue, Waiter};
 
-use super::clock::JIFFIES_TIMER_MANAGER;
+use super::clocks::JIFFIES_TIMER_MANAGER;
 
-/// A trait that provide the timeout related function for WaitQueue.
+/// A trait that provide the timeout related function for [`WaitQueue`]`.
 pub trait WaitTimeout {
     /// Wait until some condition returns `Some(_)`, or a given timeout is reached. If
     /// the condition does not becomes `Some(_)` before the timeout is reached, the
@@ -22,36 +21,32 @@ impl WaitTimeout for WaitQueue {
     where
         F: FnMut() -> Option<R>,
     {
+        if *timeout == Duration::ZERO {
+            return cond();
+        }
+
         if let Some(res) = cond() {
             return Some(res);
         }
 
         let (waiter, waker) = Waiter::new_pair();
-        let wake_up = {
-            let waker = waker.clone();
-            move || {
-                waker.wake_up();
-            }
-        };
 
-        let jiffies_timer = JIFFIES_TIMER_MANAGER.get().unwrap().create_timer(wake_up);
+        let jiffies_timer = JIFFIES_TIMER_MANAGER.get().unwrap().create_timer(move || {
+            waker.wake_up();
+        });
         jiffies_timer.set_timeout(*timeout);
 
-        loop {
-            // Enqueue the waker before checking `cond()` to avoid races
-            self.enqueue(waker.clone());
+        let cancel_cond = {
+            let jiffies_timer = jiffies_timer.clone();
+            move || jiffies_timer.remain() == Duration::ZERO
+        };
+        let res = self.wait_until_or_cancelled(cond, waiter, cancel_cond);
 
-            if let Some(res) = cond() {
-                jiffies_timer.clear();
-                return Some(res);
-            };
-
-            if jiffies_timer.remain() == Duration::ZERO {
-                drop(waiter);
-                return cond();
-            }
-
-            waiter.wait();
+        // If res is `Some`, then the timeout may not have been expired. We cancel it manually.
+        if res.is_some() {
+            jiffies_timer.cancel();
         }
+
+        res
     }
 }
