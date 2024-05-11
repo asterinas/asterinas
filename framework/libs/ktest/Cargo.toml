@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 owo-colors = "3.5.0"
+paste = "1.0.15"
 ktest-proc-macro = { path = "../ktest-proc-macro" }

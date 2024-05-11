@@ -91,6 +91,7 @@
 
 pub mod path;
 pub mod runner;
+pub(crate) mod sync;
 pub mod tree;
 
 extern crate alloc;
@@ -138,7 +139,7 @@ pub struct KtestItem {
     info: KtestItemInfo,
 }
 
-type CatchUnwindImpl = fn(f: fn() -> ()) -> Result<(), Box<dyn core::any::Any + Send>>;
+type CatchUnwindFn = fn(f: fn() -> ()) -> Result<(), Box<dyn core::any::Any + Send>>;
 
 impl KtestItem {
     pub const fn new(
@@ -158,7 +159,7 @@ impl KtestItem {
     }
 
     /// Run the test with a given catch_unwind implementation.
-    pub fn run(&self, catch_unwind_impl: &CatchUnwindImpl) -> Result<(), KtestError> {
+    pub fn run(&self, catch_unwind_impl: &CatchUnwindFn) -> Result<(), KtestError> {
         let test_result = catch_unwind_impl(self.fn_);
         if !self.should_panic.0 {
             // Should not panic.
