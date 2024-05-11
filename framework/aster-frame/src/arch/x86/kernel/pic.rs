@@ -9,10 +9,10 @@ use crate::{
     trap::IrqLine,
 };
 
-static MASTER_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x20) };
-static MASTER_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x21) };
-static SLAVE_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0xA0) };
-static SLAVE_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0xA1) };
+static MASTER_CMD: IoPort<WriteOnlyAccess, u8> = unsafe { IoPort::new(0x20) };
+static MASTER_DATA: IoPort<WriteOnlyAccess, u8> = unsafe { IoPort::new(0x21) };
+static SLAVE_CMD: IoPort<WriteOnlyAccess, u8> = unsafe { IoPort::new(0xA0) };
+static SLAVE_DATA: IoPort<WriteOnlyAccess, u8> = unsafe { IoPort::new(0xA1) };
 
 const IRQ_OFFSET: u8 = 0x20;
 
