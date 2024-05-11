@@ -25,7 +25,7 @@ use crate::{Error, Result};
 /// ```
 ///
 #[derive(Debug)]
-pub struct IoPort<A, T = RunTimeReadWrite> {
+pub struct IoPort<A, T = PortReadWrite> {
     base: u16,
     size: u16,
     value_marker: PhantomData<T>,
@@ -57,7 +57,7 @@ impl<T, A> IoPort<T, A> {
     }
 }
 
-impl<A> IoPort<RunTimeReadWrite, A> {
+impl<A> IoPort<PortReadWrite, A> {
     /// Create an I/O port with size.
     ///
     /// # Safety
@@ -127,4 +127,4 @@ impl<A: IoPortWriteAccess, T: PortWrite> IoPort<A, T> {
 pub(crate) const IO_PORT_MAX: u16 = u16::MAX;
 
 #[derive(Debug)]
-pub struct RunTimeReadWrite {}
+pub struct PortReadWrite {}

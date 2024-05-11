@@ -7,7 +7,7 @@ use log::info;
 use spin::Once;
 
 use crate::{
-    arch::device::io_port::{IoPort, RunTimeReadWrite, IO_PORT_MAX},
+    arch::device::io_port::{IoPort, PortReadWrite, IO_PORT_MAX},
     sync::SpinLock,
 };
 
@@ -20,7 +20,7 @@ pub struct IoPortDispatcher {
 
 impl IoPortDispatcher {
     /// Get the `IoPort`. Return None if any region in 'port' cannot be allocated.
-    pub fn get<A>(&self, port: u16, size: u16) -> Option<IoPort<A, RunTimeReadWrite>> {
+    pub fn get<A>(&self, port: u16, size: u16) -> Option<IoPort<A, PortReadWrite>> {
         let mut allocator = self.allocator.lock_irq_disabled();
         if (port..(port + size)).any(|i| allocator.is_allocated(i as usize)) {
             return None;
