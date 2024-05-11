@@ -12,8 +12,8 @@ use spin::Once;
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    arch::x86::kernel::acpi::ACPI_TABLES, sync::SpinLock, trap::IrqLine, vm::paddr_to_vaddr, Error,
-    Result,
+    arch::x86::kernel::acpi::ACPI_TABLES, device::dispatcher::io_mem::IO_MEM_DISPATCHER,
+    sync::SpinLock, trap::IrqLine, vm::paddr_to_vaddr, Error, Result,
 };
 
 /// I/O Advanced Programmable Interrupt Controller. It is used to distribute external interrupts
@@ -166,6 +166,7 @@ pub fn init() {
                     tdx_guest::unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap();
                 }
             }
+            IO_MEM_DISPATCHER.remove(IO_APIC_DEFAULT_ADDRESS..(IO_APIC_DEFAULT_ADDRESS + 0x20));
             let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS) };
             io_apic.set_id(0);
             let id = io_apic.id();
@@ -192,6 +193,8 @@ pub fn init() {
             for id in 0..apic.io_apics.len() {
                 let io_apic = apic.io_apics.get(id).unwrap();
                 let interrupt_base = io_apic.global_system_interrupt_base;
+                IO_MEM_DISPATCHER
+                    .remove(io_apic.address as usize..(io_apic.address as usize + 0x20));
                 let mut io_apic = unsafe { IoApicAccess::new(io_apic.address as usize) };
                 io_apic.set_id(id as u8);
                 let id = io_apic.id();

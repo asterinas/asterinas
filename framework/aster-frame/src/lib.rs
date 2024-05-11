@@ -35,8 +35,8 @@ pub mod bus;
 pub mod collections;
 pub mod console;
 pub mod cpu;
+pub mod device;
 mod error;
-pub mod io_mem;
 pub mod logger;
 pub mod panicking;
 pub mod prelude;
@@ -66,6 +66,7 @@ pub fn init() {
     boot::init();
     vm::init();
     trap::init();
+    device::dispatcher::init();
     arch::after_all_init();
     bus::init();
     // TODO: We activate the kernel page table here because the new kernel page table
