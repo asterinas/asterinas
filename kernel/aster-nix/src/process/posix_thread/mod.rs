@@ -193,7 +193,7 @@ impl PosixThread {
         let threads = process.threads().lock();
         threads
             .iter()
-            .filter(|thread| !thread.status().lock().is_exited())
+            .filter(|thread| !thread.status().is_exited())
             .count()
             == 0
     }

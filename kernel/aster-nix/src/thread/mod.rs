@@ -6,7 +6,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_frame::task::Task;
 
-use self::status::ThreadStatus;
+use self::status::{AtomicThreadStatus, ThreadStatus};
 use crate::prelude::*;
 
 pub mod exception;
@@ -31,7 +31,7 @@ pub struct Thread {
     data: Box<dyn Send + Sync + Any>,
 
     // mutable part
-    status: Mutex<ThreadStatus>,
+    status: AtomicThreadStatus,
 }
 
 impl Thread {
@@ -46,7 +46,7 @@ impl Thread {
             tid,
             task,
             data: Box::new(data),
-            status: Mutex::new(status),
+            status: AtomicThreadStatus::new(status),
         }
     }
 
@@ -67,23 +67,27 @@ impl Thread {
 
     /// Run this thread at once.
     pub fn run(&self) {
-        self.status.lock().set_running();
+        self.set_status(ThreadStatus::Running);
         self.task.run();
     }
 
     pub fn exit(&self) {
-        let mut status = self.status.lock();
-        if !status.is_exited() {
-            status.set_exited();
-        }
+        self.set_status(ThreadStatus::Exited);
     }
 
-    pub fn is_exited(&self) -> bool {
-        self.status.lock().is_exited()
-    }
-
-    pub fn status(&self) -> &Mutex<ThreadStatus> {
+    /// Returns the reference to the atomic status.
+    pub fn atomic_status(&self) -> &AtomicThreadStatus {
         &self.status
+    }
+
+    /// Returns the current status.
+    pub fn status(&self) -> ThreadStatus {
+        self.status.load(Ordering::Acquire)
+    }
+
+    /// Updates the status with the `new` value.
+    pub fn set_status(&self, new_status: ThreadStatus) {
+        self.status.store(new_status, Ordering::Release);
     }
 
     pub fn yield_now() {

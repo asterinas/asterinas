@@ -56,11 +56,9 @@ impl KernelThreadExt for Thread {
 
     fn join(&self) {
         loop {
-            let status = self.status.lock();
-            if status.is_exited() {
+            if self.status().is_exited() {
                 return;
             } else {
-                drop(status);
                 Thread::yield_now();
             }
         }
