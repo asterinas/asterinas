@@ -13,7 +13,7 @@ pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
 
-use core::mem;
+use core::{mem, sync::atomic::Ordering};
 
 use align_ext::AlignExt;
 use aster_frame::{cpu::UserContext, task::Task};
@@ -30,7 +30,7 @@ use super::posix_thread::{PosixThread, PosixThreadExt};
 use crate::{
     prelude::*,
     process::{do_exit_group, TermStatus},
-    thread::Thread,
+    thread::{status::ThreadStatus, Thread},
     util::{write_bytes_to_user, write_val_to_user},
 };
 
@@ -91,18 +91,20 @@ pub fn handle_pending_signal(
                 }
                 SigDefaultAction::Ign => {}
                 SigDefaultAction::Stop => {
-                    let mut status = current_thread.status().lock();
-                    if status.is_running() {
-                        status.set_stopped();
-                    }
-                    drop(status);
+                    let _ = current_thread.atomic_status().compare_exchange(
+                        ThreadStatus::Running,
+                        ThreadStatus::Stopped,
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                    );
                 }
                 SigDefaultAction::Cont => {
-                    let mut status = current_thread.status().lock();
-                    if status.is_stopped() {
-                        status.set_running();
-                    }
-                    drop(status);
+                    let _ = current_thread.atomic_status().compare_exchange(
+                        ThreadStatus::Stopped,
+                        ThreadStatus::Running,
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                    );
                 }
             }
         }

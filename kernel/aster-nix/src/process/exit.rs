@@ -20,7 +20,7 @@ pub fn do_exit_group(term_status: TermStatus) {
     // Exit all threads
     let threads = current.threads().lock().clone();
     for thread in threads {
-        if thread.is_exited() {
+        if thread.status().is_exited() {
             continue;
         }
 
