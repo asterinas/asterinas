@@ -7,7 +7,7 @@ use core::ops::Range;
 use align_ext::AlignExt;
 use aster_frame::{
     collections::xarray::{CursorMut, XArray, XMark},
-    vm::{VmAllocOptions, VmFrame, VmFrameVec, VmIo},
+    vm::{VmAllocOptions, VmFrame, VmReader, VmWriter},
 };
 use aster_rights::Rights;
 
@@ -301,27 +301,35 @@ impl Vmo_ {
         })
     }
 
-    /// Commit a range of pages in the VMO, returns the pages in this range.
-    pub fn commit(&self, range: Range<usize>, will_write: bool) -> Result<VmFrameVec> {
+    /// Commit a range of pages in the VMO, and perform the operation
+    /// on each page in the range in turn.
+    pub fn commit_and_operate<F>(
+        &self,
+        range: &Range<usize>,
+        mut operate: F,
+        will_write: bool,
+    ) -> Result<()>
+    where
+        F: FnMut(VmFrame),
+    {
         self.pages.with(|pages, size| {
             if range.end > size {
                 return_errno_with_message!(Errno::EINVAL, "operated range exceeds the vmo size");
             }
 
-            let raw_page_idx_range = get_page_idx_range(&range);
+            let raw_page_idx_range = get_page_idx_range(range);
             let page_idx_range = (raw_page_idx_range.start + self.page_idx_offset)
                 ..(raw_page_idx_range.end + self.page_idx_offset);
-            let mut frames = VmFrameVec::new_with_capacity(page_idx_range.len());
 
             let is_cow_vmo = pages.is_marked(VmoMark::CowVmo);
             let mut cursor = pages.cursor_mut(page_idx_range.start as u64);
             for page_idx in page_idx_range {
                 let committed_page =
                     self.commit_with_cursor(&mut cursor, is_cow_vmo, will_write)?;
-                frames.push(committed_page);
+                operate(committed_page);
                 cursor.next();
             }
-            Ok(frames)
+            Ok(())
         })
     }
 
@@ -337,18 +345,31 @@ impl Vmo_ {
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         let read_len = buf.len();
         let read_range = offset..(offset + read_len);
-        let frames = self.commit(read_range, false)?;
-        let read_offset = offset % PAGE_SIZE;
-        Ok(frames.read_bytes(read_offset, buf)?)
+        let mut read_offset = offset % PAGE_SIZE;
+        let mut buf_writer: VmWriter = buf.into();
+
+        let read = move |page: VmFrame| {
+            page.reader().skip(read_offset).read(&mut buf_writer);
+            read_offset = 0;
+        };
+
+        self.commit_and_operate(&read_range, read, false)
     }
 
     /// Write the specified amount of buffer content starting from the target offset in the VMO.
     pub fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         let write_len = buf.len();
         let write_range = offset..(offset + write_len);
-        let frames = self.commit(write_range.clone(), true)?;
-        let write_offset = offset % PAGE_SIZE;
-        frames.write_bytes(write_offset, buf)?;
+        let mut write_offset = offset % PAGE_SIZE;
+        let mut buf_reader: VmReader = buf.into();
+
+        let write = move |page: VmFrame| {
+            page.writer().skip(write_offset).write(&mut buf_reader);
+            write_offset = 0;
+        };
+
+        self.commit_and_operate(&write_range, write, true)?;
+
         let is_cow_vmo = self.is_cow_vmo();
         if let Some(pager) = &self.pager
             && !is_cow_vmo
