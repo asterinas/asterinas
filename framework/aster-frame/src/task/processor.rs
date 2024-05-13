@@ -99,14 +99,14 @@ fn switch_to_task(next_task: Arc<Task>) {
         Some(current_task) => {
             let cx_ptr = current_task.ctx().get();
 
-            let mut task = current_task.inner_exclusive_access();
+            let mut task_inner = current_task.inner_exclusive_access();
 
-            debug_assert_ne!(task.task_status, TaskStatus::Sleeping);
-            if task.task_status == TaskStatus::Runnable {
-                drop(task);
+            debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
+            if task_inner.task_status == TaskStatus::Runnable {
+                drop(task_inner);
                 GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
-            } else if task.task_status == TaskStatus::Sleepy {
-                task.task_status = TaskStatus::Sleeping;
+            } else if task_inner.task_status == TaskStatus::Sleepy {
+                task_inner.task_status = TaskStatus::Sleeping;
             }
 
             cx_ptr

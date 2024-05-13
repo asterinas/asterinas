@@ -278,7 +278,7 @@ impl TaskOptions {
             current_task.exit();
         }
 
-        let mut result = Task {
+        let mut new_task = Task {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
@@ -292,7 +292,7 @@ impl TaskOptions {
             cpu_affinity: self.cpu_affinity,
         };
 
-        let ctx = result.ctx.get_mut();
+        let ctx = new_task.ctx.get_mut();
         ctx.rip = kernel_task_entry as usize;
         // We should reserve space for the return address in the stack, otherwise
         // we will write across the page boundary due to the implementation of
@@ -302,9 +302,9 @@ impl TaskOptions {
         // to at least 16 bytes. And a larger alignment is needed if larger arguments
         // are passed to the function. The `kernel_task_entry` function does not
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        ctx.regs.rsp = (crate::vm::paddr_to_vaddr(result.kstack.end_paddr() - 16)) as u64;
+        ctx.regs.rsp = (crate::vm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16)) as u64;
 
-        Ok(Arc::new(result))
+        Ok(Arc::new(new_task))
     }
 
     /// Build a new task and run it immediately.
