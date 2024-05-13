@@ -338,26 +338,23 @@ FN_TEST(sendmsg_and_recvmsg)
 
 	// Send two message and receive two message
 
-	// This test is commented out due to a known issue:
-	// See <https://github.com/asterinas/asterinas/issues/819>
+	iov[0].iov_base = message;
+	iov[0].iov_len = strlen(message);
+	msg.msg_iovlen = 1;
+	TEST_RES(sendmsg(sk_accepted, &msg, 0), _ret == strlen(message));
+	TEST_RES(sendmsg(sk_accepted, &msg, 0), _ret == strlen(message));
 
-	// iov[0].iov_base = message;
-	// iov[0].iov_len = strlen(message);
-	// msg.msg_iovlen = 1;
-	// TEST_RES(sendmsg(sk_accepted, &msg, 0), _ret == strlen(message));
-	// TEST_RES(sendmsg(sk_accepted, &msg, 0), _ret == strlen(message));
+	char first_buffer[BUFFER_SIZE] = { 0 };
+	char second_buffer[BUFFER_SIZE] = { 0 };
+	iov[0].iov_base = first_buffer;
+	iov[0].iov_len = BUFFER_SIZE;
+	iov[1].iov_base = second_buffer;
+	iov[1].iov_len = BUFFER_SIZE;
+	msg.msg_iovlen = 2;
 
-	// char first_buffer[BUFFER_SIZE] = { 0 };
-	// char second_buffer[BUFFER_SIZE] = { 0 };
-	// iov[0].iov_base = first_buffer;
-	// iov[0].iov_len = BUFFER_SIZE;
-	// iov[1].iov_base = second_buffer;
-	// iov[1].iov_len = BUFFER_SIZE;
-	// msg.msg_iovlen = 2;
+	// Ensure two messages are prepared for receiving
+	sleep(1);
 
-	// // Ensure two messages are prepared for receiving
-	// sleep(1);
-
-	// TEST_RES(recvmsg(sk_connected, &msg, 0), _ret == strlen(message) * 2);
+	TEST_RES(recvmsg(sk_connected, &msg, 0), _ret == strlen(message) * 2);
 }
 END_TEST()
