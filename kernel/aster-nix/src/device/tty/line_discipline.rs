@@ -115,11 +115,11 @@ impl LineDiscipline {
         };
 
         if self.may_send_signal(&termios, ch) {
-            // The char is already dealt with, so just return
-            return;
+            submit_work_item(self.work_item.clone(), WorkPriority::High);
+            // CBREAK mode may require the character to be outputted, so just go ahead.
         }
 
-        // Typically, a tty in raw mode does not echo. But the tty can also be in a cbreak mode,
+        // Typically, a tty in raw mode does not echo. But the tty can also be in a CBREAK mode,
         // with ICANON closed and ECHO opened.
         if termios.contain_echo() {
             self.output_char(ch, &termios, echo_callback);
@@ -413,9 +413,9 @@ fn is_ctrl_char(ch: u8) -> bool {
     (0..0x20).contains(&ch)
 }
 
-fn get_printable_char(ctrl_char: u8) -> u8 {
+fn get_printable_char(ctrl_char: u8) -> char {
     debug_assert!(is_ctrl_char(ctrl_char));
-    ctrl_char + b'A' - 1
+    char::from_u32((ctrl_char + b'A' - 1) as u32).unwrap()
 }
 
 enum PolleeType {
