@@ -177,7 +177,7 @@ impl IfaceCommon {
             let new_instant = instant.total_millis() as u64;
             self.next_poll_at_ms.store(new_instant, Ordering::Relaxed);
 
-            if new_instant < old_instant {
+            if old_instant == 0 || new_instant < old_instant {
                 self.polling_wait_queue.wake_all();
             }
         } else {
