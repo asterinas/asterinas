@@ -24,7 +24,7 @@ impl Processor {
             idle_task_cx: TaskContext::default(),
         }
     }
-    fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
+    fn get_idle_task_ctx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
     pub fn take_current(&mut self) -> Option<Arc<Task>> {
@@ -50,8 +50,8 @@ pub fn current_task() -> Option<Arc<Task>> {
     PROCESSOR.lock().current()
 }
 
-pub(crate) fn get_idle_task_cx_ptr() -> *mut TaskContext {
-    PROCESSOR.lock().get_idle_task_cx_ptr()
+pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
+    PROCESSOR.lock().get_idle_task_ctx_ptr()
 }
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
@@ -94,10 +94,10 @@ fn switch_to_task(next_task: Arc<Task>) {
         );
     }
 
-    let current_task_cx_ptr = match current_task() {
-        None => PROCESSOR.lock().get_idle_task_cx_ptr(),
+    let current_task_ctx_ptr = match current_task() {
+        None => PROCESSOR.lock().get_idle_task_ctx_ptr(),
         Some(current_task) => {
-            let cx_ptr = current_task.ctx().get();
+            let ctx_ptr = current_task.ctx().get();
 
             let mut task_inner = current_task.inner_exclusive_access();
 
@@ -109,11 +109,11 @@ fn switch_to_task(next_task: Arc<Task>) {
                 task_inner.task_status = TaskStatus::Sleeping;
             }
 
-            cx_ptr
+            ctx_ptr
         }
     };
 
-    let next_task_cx_ptr = next_task.ctx().get().cast_const();
+    let next_task_ctx_ptr = next_task.ctx().get().cast_const();
 
     // change the current task to the next task
     PROCESSOR.lock().current = Some(next_task.clone());
@@ -123,7 +123,7 @@ fn switch_to_task(next_task: Arc<Task>) {
     //    context and the next task context.
     // 2. The next task context is a valid task context.
     unsafe {
-        context_switch(current_task_cx_ptr, next_task_cx_ptr);
+        context_switch(current_task_ctx_ptr, next_task_ctx_ptr);
     }
 }
 
