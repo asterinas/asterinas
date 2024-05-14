@@ -50,7 +50,7 @@ fn create_and_test_library() {
 
     let mut command = cargo_osdk(&["test"]);
     command.current_dir(&module_dir);
-    command.output().unwrap();
+    command.ok().unwrap();
 
     fs::remove_dir_all(&module_dir).unwrap();
 }
