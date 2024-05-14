@@ -27,6 +27,7 @@ impl Listen {
     pub fn addr(&self) -> VsockSocketAddr {
         self.addr
     }
+
     pub fn push_incoming(&self, connect: Arc<Connected>) -> Result<()> {
         let mut incoming_connections = self.incoming_connection.lock_irq_disabled();
         if incoming_connections.len() >= self.backlog {
@@ -47,13 +48,14 @@ impl Listen {
 
         Ok(connection)
     }
+
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 
     pub fn update_io_events(&self) {
-        let can_accept = !self.incoming_connection.lock_irq_disabled().is_empty();
-        if can_accept {
+        let incomming_connection = self.incoming_connection.lock_irq_disabled();
+        if !incomming_connection.is_empty() {
             self.pollee.add_events(IoEvents::IN);
         } else {
             self.pollee.del_events(IoEvents::IN);
@@ -63,6 +65,8 @@ impl Listen {
 
 impl Drop for Listen {
     fn drop(&mut self) {
-        VSOCK_GLOBAL.get().unwrap().recycle_port(&self.addr.port);
+        let vsockspace = VSOCK_GLOBAL.get().unwrap();
+        vsockspace.recycle_port(&self.addr.port);
+        vsockspace.remove_listen_socket(&self.addr);
     }
 }

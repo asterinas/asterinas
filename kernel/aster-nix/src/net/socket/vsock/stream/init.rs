@@ -44,7 +44,7 @@ impl Init {
             } else {
                 return_errno_with_message!(Errno::EAGAIN, "cannot find unused high port");
             }
-        } else if !vsockspace.insert_port(new_addr.port) {
+        } else if !vsockspace.bind_port(new_addr.port) {
             return_errno_with_message!(Errno::EADDRNOTAVAIL, "the port in address is occupied");
         }
 

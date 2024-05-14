@@ -9,7 +9,7 @@ use log::debug;
 use pod::Pod;
 
 use super::{
-    buffer::{RxBuffer, RX_BUFFER_LEN},
+    buffer::RxBuffer,
     config::{VirtioVsockConfig, VsockFeatures},
     connect::{ConnectionInfo, VsockEvent},
     error::SocketError,
@@ -99,6 +99,7 @@ impl SocketDevice {
         fn handle_vsock_event(_: &TrapFrame) {
             handle_recv_irq(super::DEVICE_NAME);
         }
+        // FIXME: handle event virtqueue notification in live migration
 
         device
             .transport
@@ -184,6 +185,7 @@ impl SocketDevice {
         header: &VirtioVsockHdr,
         buffer: &[u8],
     ) -> Result<(), SocketError> {
+        debug!("Sent packet {:?}. Op {:?}", header, header.op());
         debug!("buffer in send_packet_to_tx_queue: {:?}", buffer);
         let tx_buffer = TxBuffer::new(header, buffer);
 
@@ -254,9 +256,8 @@ impl SocketDevice {
     /// Receive bytes from peer, returns the header
     pub fn receive(
         &mut self,
-        buffer: &mut [u8],
         // connection_info: &mut ConnectionInfo,
-    ) -> Result<VirtioVsockHdr, SocketError> {
+    ) -> Result<RxBuffer, SocketError> {
         let (token, len) = self.recv_queue.pop_used()?;
         debug!(
             "receive packet in rx_queue: token = {}, len = {}",
@@ -268,21 +269,10 @@ impl SocketDevice {
             .ok_or(QueueError::WrongToken)?;
         rx_buffer.set_packet_len(len as usize);
 
-        let mut buf_reader = rx_buffer.buf();
-        let mut temp_buffer = vec![0u8; buf_reader.remain()];
-        buf_reader.read(&mut VmWriter::from(&mut temp_buffer as &mut [u8]));
+        let new_rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>());
+        self.add_rx_buffer(new_rx_buffer, token)?;
 
-        let (header, payload) = read_header_and_body(&temp_buffer)?;
-        // The length written should be equal to len(header)+len(packet)
-        assert_eq!(len, header.len() + VIRTIO_VSOCK_HDR_LEN as u32);
-        debug!("Received packet {:?}. Op {:?}", header, header.op());
-        debug!("body is {:?}", payload);
-
-        assert!(buffer.len() >= payload.len());
-        buffer[..payload.len()].copy_from_slice(payload);
-
-        self.add_rx_buffer(rx_buffer, token)?;
-        Ok(header)
+        Ok(rx_buffer)
     }
 
     /// Polls the RX virtqueue for the next event, and calls the given handler function to handle it.
@@ -294,10 +284,17 @@ impl SocketDevice {
         if !self.recv_queue.can_pop() {
             return Ok(None);
         }
-        let mut body = vec![0u8; RX_BUFFER_LEN];
-        let header = self.receive(&mut body)?;
+        let rx_buffer = self.receive()?;
 
-        VsockEvent::from_header(&header).and_then(|event| handler(event, &body))
+        let mut buf_reader = rx_buffer.buf();
+        let mut temp_buffer = vec![0u8; buf_reader.remain()];
+        buf_reader.read(&mut VmWriter::from(&mut temp_buffer as &mut [u8]));
+
+        let (header, payload) = read_header_and_body(&temp_buffer)?;
+        // The length written should be equal to len(header)+len(packet)
+        debug!("Received packet {:?}. Op {:?}", header, header.op());
+        debug!("body is {:?}", payload);
+        VsockEvent::from_header(&header).and_then(|event| handler(event, payload))
     }
 
     /// Add a used rx buffer to recv queue,@index is only to check the correctness

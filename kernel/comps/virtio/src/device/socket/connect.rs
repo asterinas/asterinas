@@ -53,7 +53,7 @@ pub enum VsockEventType {
     /// The peer requests to establish a connection with us.
     ConnectionRequest,
     /// The connection was successfully established.
-    Connected,
+    ConnectionResponse,
     /// The connection was closed.
     Disconnected {
         /// The reason for the disconnection.
@@ -107,7 +107,7 @@ impl VsockEvent {
             }
             VirtioVsockOp::Response => {
                 header.check_data_is_empty()?;
-                VsockEventType::Connected
+                VsockEventType::ConnectionResponse
             }
             VirtioVsockOp::CreditUpdate => {
                 header.check_data_is_empty()?;

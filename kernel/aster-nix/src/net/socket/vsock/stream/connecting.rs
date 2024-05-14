@@ -24,6 +24,7 @@ impl Connecting {
             pollee: Pollee::new(IoEvents::empty()),
         }
     }
+
     pub fn peer_addr(&self) -> VsockSocketAddr {
         self.id.peer_addr
     }
@@ -35,15 +36,19 @@ impl Connecting {
     pub fn id(&self) -> ConnectionID {
         self.id
     }
+
     pub fn info(&self) -> ConnectionInfo {
         self.info.lock_irq_disabled().clone()
     }
+
     pub fn update_info(&self, event: &VsockEvent) {
         self.info.lock_irq_disabled().update_for_event(event)
     }
+
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
+
     pub fn add_events(&self, events: IoEvents) {
         self.pollee.add_events(events)
     }
@@ -53,5 +58,6 @@ impl Drop for Connecting {
     fn drop(&mut self) {
         let vsockspace = VSOCK_GLOBAL.get().unwrap();
         vsockspace.recycle_port(&self.local_addr().port);
+        vsockspace.remove_connecting_socket(&self.local_addr());
     }
 }
