@@ -4,6 +4,7 @@ use crate::net::iface::{IpAddress, IpEndpoint, Ipv4Address};
 
 mod common;
 mod datagram;
+pub mod options;
 pub mod stream;
 
 pub use datagram::DatagramSocket;

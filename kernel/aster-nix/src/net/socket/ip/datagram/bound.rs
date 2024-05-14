@@ -67,7 +67,7 @@ impl BoundDatagram {
                 return_errno_with_message!(Errno::EAGAIN, "the send buffer is full")
             }
             Some(Err(SendError::Unaddressable)) => {
-                return_errno_with_message!(Errno::EINVAL, "the destionation address is invalid")
+                return_errno_with_message!(Errno::EINVAL, "the destination address is invalid")
             }
             None => return_errno_with_message!(Errno::EMSGSIZE, "the message is too large"),
         }

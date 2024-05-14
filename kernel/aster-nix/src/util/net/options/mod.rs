@@ -55,11 +55,12 @@ use aster_rights::Full;
 
 use crate::{net::socket::options::SocketOption, prelude::*, vm::vmar::Vmar};
 
+mod ip;
 mod socket;
 mod tcp;
 mod utils;
 
-use self::{socket::new_socket_option, tcp::new_tcp_option};
+use self::{ip::new_ip_option, socket::new_socket_option, tcp::new_tcp_option};
 
 pub trait RawSocketOption: SocketOption {
     fn read_from_user(&mut self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<()>;
@@ -144,6 +145,7 @@ pub fn new_raw_socket_option(
     name: i32,
 ) -> Result<Box<dyn RawSocketOption>> {
     match level {
+        CSocketOptionLevel::SOL_IP => new_ip_option(name),
         CSocketOptionLevel::SOL_SOCKET => new_socket_option(name),
         CSocketOptionLevel::SOL_TCP => new_tcp_option(name),
         _ => todo!(),

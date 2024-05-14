@@ -141,6 +141,42 @@ impl WriteToUser for LingerOption {
     }
 }
 
+impl ReadFromUser for Duration {
+    fn read_from_user(vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<Self> {
+        if (max_len as usize) < core::mem::size_of::<Duration>() {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+        let mut bytes = vec![0; max_len as usize];
+        vmar.read_bytes(addr, &mut bytes)?;
+
+        let secs_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
+        let nanos_bytes: [u8; 4] = bytes[8..12].try_into().unwrap();
+
+        let secs = u64::from_ne_bytes(secs_bytes);
+        let nanos = u32::from_ne_bytes(nanos_bytes);
+
+        Ok(Duration::new(secs, nanos))
+    }
+}
+
+impl WriteToUser for Duration {
+    fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = core::mem::size_of::<Duration>();
+
+        if (max_len as usize) < write_len {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+
+        let secs_bytes = self.as_secs().to_ne_bytes();
+        let nanos_bytes = self.subsec_nanos().to_ne_bytes();
+
+        vmar.write_bytes(addr, &secs_bytes)?;
+        vmar.write_bytes(addr + secs_bytes.len(), &nanos_bytes)?;
+
+        Ok(write_len)
+    }
+}
+
 impl ReadFromUser for CongestionControl {
     fn read_from_user(vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<Self> {
         let mut bytes = vec![0; max_len as usize];
