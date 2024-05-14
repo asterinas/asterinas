@@ -6,7 +6,6 @@ use aster_virtio::device::socket::{
     connect::{ConnectionInfo, VsockEvent, VsockEventType},
     device::SocketDevice,
     error::SocketError,
-    get_device, DEVICE_NAME,
 };
 
 use super::{
@@ -34,8 +33,7 @@ pub struct VsockSpace {
 
 impl VsockSpace {
     /// Create a new global VsockSpace
-    pub fn new() -> Self {
-        let driver = get_device(DEVICE_NAME).unwrap();
+    pub fn new(driver: Arc<SpinLock<SocketDevice>>) -> Self {
         Self {
             driver,
             connecting_sockets: SpinLock::new(BTreeMap::new()),
@@ -44,6 +42,7 @@ impl VsockSpace {
             used_ports: SpinLock::new(BTreeSet::new()),
         }
     }
+
     /// Check whether the event is for this socket space
     fn is_event_for_socket(&self, event: &VsockEvent) -> bool {
         self.connecting_sockets
@@ -58,10 +57,12 @@ impl VsockSpace {
                 .read_irq_disabled()
                 .contains_key(&(*event).into())
     }
+
     /// Alloc an unused port range
     pub fn alloc_ephemeral_port(&self) -> Result<u32> {
         let mut used_ports = self.used_ports.lock_irq_disabled();
-        for port in 1024..=u32::MAX {
+        // FIXME: the maximal port number is not defined by spec
+        for port in 1024..u32::MAX {
             if !used_ports.contains(&port) {
                 used_ports.insert(port);
                 return Ok(port);
@@ -69,15 +70,20 @@ impl VsockSpace {
         }
         return_errno_with_message!(Errno::EAGAIN, "cannot find unused high port");
     }
-    pub fn insert_port(&self, port: u32) -> bool {
+
+    /// Bind a port
+    pub fn bind_port(&self, port: u32) -> bool {
         let mut used_ports = self.used_ports.lock_irq_disabled();
         used_ports.insert(port)
     }
+
+    /// Recycle a port
     pub fn recycle_port(&self, port: &u32) -> bool {
         let mut used_ports = self.used_ports.lock_irq_disabled();
         used_ports.remove(port)
     }
 
+    /// Insert a connected socket
     pub fn insert_connected_socket(
         &self,
         id: ConnectionID,
@@ -86,10 +92,14 @@ impl VsockSpace {
         let mut connected_sockets = self.connected_sockets.write_irq_disabled();
         connected_sockets.insert(id, connected)
     }
+
+    /// Remove a connected socket
     pub fn remove_connected_socket(&self, id: &ConnectionID) -> Option<Arc<Connected>> {
         let mut connected_sockets = self.connected_sockets.write_irq_disabled();
         connected_sockets.remove(id)
     }
+
+    /// Insert a connecting socket
     pub fn insert_connecting_socket(
         &self,
         addr: VsockSocketAddr,
@@ -98,10 +108,14 @@ impl VsockSpace {
         let mut connecting_sockets = self.connecting_sockets.lock_irq_disabled();
         connecting_sockets.insert(addr, connecting)
     }
+
+    /// Remove a connecting socket
     pub fn remove_connecting_socket(&self, addr: &VsockSocketAddr) -> Option<Arc<Connecting>> {
         let mut connecting_sockets = self.connecting_sockets.lock_irq_disabled();
         connecting_sockets.remove(addr)
     }
+
+    /// Insert a listening socket
     pub fn insert_listen_socket(
         &self,
         addr: VsockSocketAddr,
@@ -110,6 +124,8 @@ impl VsockSpace {
         let mut listen_sockets = self.listen_sockets.lock_irq_disabled();
         listen_sockets.insert(addr, listen)
     }
+
+    /// Remove a listening socket
     pub fn remove_listen_socket(&self, addr: &VsockSocketAddr) -> Option<Arc<Listen>> {
         let mut listen_sockets = self.listen_sockets.lock_irq_disabled();
         listen_sockets.remove(addr)
@@ -117,58 +133,66 @@ impl VsockSpace {
 }
 
 impl VsockSpace {
+    /// Get the CID of the guest
     pub fn guest_cid(&self) -> u32 {
         let driver = self.driver.lock_irq_disabled();
         driver.guest_cid() as u32
     }
 
+    /// Send a request packet for initializing a new connection.
     pub fn request(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.lock_irq_disabled();
         driver
             .request(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "can not send connect packet"))
+            .map_err(|_| Error::with_message(Errno::EIO, "cannot send connect packet"))
     }
 
+    /// Send a response packet for accepting a new connection.
     pub fn response(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.lock_irq_disabled();
         driver
             .response(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "can not send response packet"))
+            .map_err(|_| Error::with_message(Errno::EIO, "cannot send response packet"))
     }
 
+    /// Send a shutdown packet to close a connection
     pub fn shutdown(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.lock_irq_disabled();
         driver
             .shutdown(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "can not send shutdown packet"))
+            .map_err(|_| Error::with_message(Errno::EIO, "cannot send shutdown packet"))
     }
 
+    /// Send a reset packet to reset a connection
     pub fn reset(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.lock_irq_disabled();
         driver
             .reset(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "can not send reset packet"))
+            .map_err(|_| Error::with_message(Errno::EIO, "cannot send reset packet"))
     }
 
+    /// Send a credit request packet
     pub fn request_credit(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.lock_irq_disabled();
         driver
             .credit_request(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "can not send credit request packet"))
+            .map_err(|_| Error::with_message(Errno::EIO, "cannot send credit request packet"))
     }
 
+    /// Send a credit update packet
     pub fn update_credit(&self, info: &ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.lock_irq_disabled();
         driver
             .credit_update(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "can not send credit update packet"))
+            .map_err(|_| Error::with_message(Errno::EIO, "cannot send credit update packet"))
     }
 
+    /// Send a data packet
     pub fn send(&self, buffer: &[u8], info: &mut ConnectionInfo) -> Result<()> {
         let mut driver = self.driver.lock_irq_disabled();
         driver
             .send(buffer, info)
-            .map_err(|_| Error::with_message(Errno::EIO, "can not send data packet"))
+            .map_err(|_| Error::with_message(Errno::EIO, "cannot send data packet"))
     }
 
     /// Poll for each event from the driver
@@ -233,7 +257,7 @@ impl VsockSpace {
                 listen.push_incoming(connected).unwrap();
                 listen.update_io_events();
             }
-            VsockEventType::Connected => {
+            VsockEventType::ConnectionResponse => {
                 let connecting_sockets = self.connecting_sockets.lock_irq_disabled();
                 let Some(connecting) = connecting_sockets.get(&event.destination.into()) else {
                     return_errno_with_message!(
@@ -254,7 +278,7 @@ impl VsockSpace {
                 let Some(connected) = connected_sockets.get(&event.into()) else {
                     return_errno_with_message!(Errno::ENOTCONN, "the socket hasn't connected");
                 };
-                connected.peer_requested_shutdown();
+                connected.set_peer_requested_shutdown();
             }
             VsockEventType::Received { length } => {}
             VsockEventType::CreditRequest => {
@@ -275,11 +299,5 @@ impl VsockSpace {
             }
         }
         Ok(Some(event))
-    }
-}
-
-impl Default for VsockSpace {
-    fn default() -> Self {
-        Self::new()
     }
 }

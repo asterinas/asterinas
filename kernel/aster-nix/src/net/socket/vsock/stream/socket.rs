@@ -35,12 +35,14 @@ impl VsockStreamSocket {
             is_nonblocking: AtomicBool::new(nonblocking),
         }
     }
+
     pub(super) fn new_from_connected(connected: Arc<Connected>) -> Self {
         Self {
             status: RwLock::new(Status::Connected(connected)),
             is_nonblocking: AtomicBool::new(false),
         }
     }
+
     fn is_nonblocking(&self) -> bool {
         self.is_nonblocking.load(Ordering::Relaxed)
     }
@@ -103,7 +105,8 @@ impl VsockStreamSocket {
         VSOCK_GLOBAL
             .get()
             .unwrap()
-            .response(&connected.get_info())?;
+            .response(&connected.get_info())
+            .unwrap();
 
         let socket = Arc::new(VsockStreamSocket::new_from_connected(connected));
         Ok((socket, peer_addr.into()))
@@ -123,7 +126,6 @@ impl VsockStreamSocket {
         let peer_addr = self.peer_addr()?;
         // If buffer is now empty and the peer requested shutdown, finish shutting down the
         // connection.
-        // TODO: properly place the close request
         if connected.should_close() {
             if let Err(e) = self.shutdown(SockShutdownCmd::SHUT_RDWR) {
                 debug!("The error is {:?}", e);
@@ -189,7 +191,7 @@ impl Socket for VsockStreamSocket {
     }
 
     // Since blocking mode is supported, there is no need to store the connecting status.
-    // TODO: Refactor when blocking mode is supported.
+    // TODO: Refactor when nonblocking mode is supported.
     fn connect(&self, sockaddr: SocketAddr) -> Result<()> {
         let init = match &*self.status.read() {
             Status::Init(init) => init.clone(),
@@ -223,7 +225,12 @@ impl Socket for VsockStreamSocket {
             .poll(IoEvents::IN, Some(&poller))
             .contains(IoEvents::IN)
         {
-            poller.wait()?;
+            if let Err(e) = poller.wait() {
+                vsockspace
+                    .remove_connecting_socket(&connecting.local_addr())
+                    .unwrap();
+                return Err(e);
+            }
         }
 
         vsockspace

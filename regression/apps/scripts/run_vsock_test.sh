@@ -9,5 +9,5 @@ cd ${VSOCK_DIR}
 
 echo "Start vsock test......"
 ./vsock_client
-# ./vsock_server
+./vsock_server
 echo "Vsock test passed."

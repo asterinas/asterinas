@@ -33,7 +33,7 @@ impl Connected {
 
     pub fn from_connecting(connecting: Arc<Connecting>) -> Self {
         Self {
-            connection: SpinLock::new(Connection::from_info(connecting.info())),
+            connection: SpinLock::new(Connection::new_from_info(connecting.info())),
             id: connecting.id(),
             pollee: Pollee::new(IoEvents::empty()),
         }
@@ -58,7 +58,7 @@ impl Connected {
 
         match bytes_read {
             0 => {
-                if !connection.peer_requested_shutdown {
+                if !connection.is_peer_requested_shutdown() {
                     return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
                 } else {
                     return_errno_with_message!(Errno::ECONNRESET, "the connection is reset");
@@ -84,17 +84,26 @@ impl Connected {
         let connection = self.connection.lock_irq_disabled();
         // If buffer is now empty and the peer requested shutdown, finish shutting down the
         // connection.
-        connection.peer_requested_shutdown && connection.buffer.is_empty()
+        connection.is_peer_requested_shutdown() && connection.buffer.is_empty()
+    }
+
+    pub fn is_closed(&self) -> bool {
+        let connection = self.connection.lock_irq_disabled();
+        connection.is_local_shutdown()
     }
 
     pub fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
         // TODO: deal with cmd
         if self.should_close() {
-            let connection = self.connection.lock_irq_disabled();
+            let mut connection = self.connection.lock_irq_disabled();
+            if connection.is_local_shutdown() {
+                return Ok(());
+            }
             let vsockspace = VSOCK_GLOBAL.get().unwrap();
             vsockspace.reset(&connection.info).unwrap();
             vsockspace.remove_connected_socket(&self.id());
             vsockspace.recycle_port(&self.local_addr().port);
+            connection.set_local_shutdown();
         }
         Ok(())
     }
@@ -113,8 +122,10 @@ impl Connected {
         connection.add(bytes)
     }
 
-    pub fn peer_requested_shutdown(&self) {
-        self.connection.lock_irq_disabled().peer_requested_shutdown = true
+    pub fn set_peer_requested_shutdown(&self) {
+        self.connection
+            .lock_irq_disabled()
+            .set_peer_requested_shutdown()
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -134,41 +145,69 @@ impl Connected {
 
 impl Drop for Connected {
     fn drop(&mut self) {
+        let connection = self.connection.lock_irq_disabled();
+        if connection.is_local_shutdown() {
+            return;
+        }
         let vsockspace = VSOCK_GLOBAL.get().unwrap();
+        vsockspace.reset(&connection.info).unwrap();
+        vsockspace.remove_connected_socket(&self.id());
         vsockspace.recycle_port(&self.local_addr().port);
     }
 }
 
-pub struct Connection {
+struct Connection {
     info: ConnectionInfo,
     buffer: HeapRb<u8>,
     /// The peer sent a SHUTDOWN request, but we haven't yet responded with a RST because there is
     /// still data in the buffer.
-    pub peer_requested_shutdown: bool,
+    peer_requested_shutdown: bool,
+    local_shutdown: bool,
 }
 
 impl Connection {
-    pub fn new(peer: VsockSocketAddr, local_port: u32) -> Self {
+    fn new(peer: VsockSocketAddr, local_port: u32) -> Self {
         let mut info = ConnectionInfo::new(peer.into(), local_port);
         info.buf_alloc = PER_CONNECTION_BUFFER_CAPACITY.try_into().unwrap();
         Self {
             info,
             buffer: HeapRb::new(PER_CONNECTION_BUFFER_CAPACITY),
             peer_requested_shutdown: false,
+            local_shutdown: false,
         }
     }
-    pub fn from_info(mut info: ConnectionInfo) -> Self {
+
+    fn is_peer_requested_shutdown(&self) -> bool {
+        self.peer_requested_shutdown
+    }
+
+    fn set_peer_requested_shutdown(&mut self) {
+        self.peer_requested_shutdown = true
+    }
+
+    fn is_local_shutdown(&self) -> bool {
+        self.local_shutdown
+    }
+
+    fn set_local_shutdown(&mut self) {
+        self.local_shutdown = true
+    }
+
+    fn new_from_info(mut info: ConnectionInfo) -> Self {
         info.buf_alloc = PER_CONNECTION_BUFFER_CAPACITY.try_into().unwrap();
         Self {
             info,
             buffer: HeapRb::new(PER_CONNECTION_BUFFER_CAPACITY),
             peer_requested_shutdown: false,
+            local_shutdown: false,
         }
     }
-    pub fn update_for_event(&mut self, event: &VsockEvent) {
+
+    fn update_for_event(&mut self, event: &VsockEvent) {
         self.info.update_for_event(event)
     }
-    pub fn add(&mut self, bytes: &[u8]) -> bool {
+
+    fn add(&mut self, bytes: &[u8]) -> bool {
         if bytes.len() > self.buffer.free_len() {
             return false;
         }
