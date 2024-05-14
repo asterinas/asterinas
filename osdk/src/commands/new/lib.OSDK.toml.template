@@ -1,4 +1,4 @@
-project_type = "lib"
+project_type = "library"
 
 [boot]
 method = "qemu-direct"

@@ -7,7 +7,9 @@ use crate::{
     base_crate::new_base_crate,
     cli::TestArgs,
     config::{scheme::ActionChoice, Config},
-    util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
+    util::{
+        get_cargo_metadata, get_current_crate_info, get_target_directory, parse_package_id_string,
+    },
 };
 
 pub fn execute_test_command(config: &Config, args: &TestArgs) {
@@ -81,12 +83,9 @@ fn get_workspace_default_members() -> Vec<String> {
     default_members
         .iter()
         .map(|value| {
-            // The default member is in the form of "<crate_name> <crate_version> (path+file://<crate_path>)"
             let default_member = value.as_str().unwrap();
-            let path = default_member.split(' ').nth(2).unwrap();
-            path.trim_start_matches("(path+file://")
-                .trim_end_matches(')')
-                .to_string()
+            let crate_info = parse_package_id_string(default_member);
+            crate_info.path
         })
         .collect()
 }

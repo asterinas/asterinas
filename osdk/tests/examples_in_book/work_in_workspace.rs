@@ -76,7 +76,7 @@ fn work_in_workspace() {
     assert!(stdout.contains("The available memory is"));
 
     // Run subcommand test
-    cargo_osdk(&["test"]).output().unwrap();
+    cargo_osdk(&["test"]).ok().unwrap();
 
     // Remove the directory
     fs::remove_dir_all(&workspace_dir).unwrap();
