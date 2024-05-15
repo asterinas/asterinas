@@ -24,6 +24,8 @@
     * [Creating an OS Project](osdk/guide/create-project.md)
     * [Testing or Running an OS Project](osdk/guide/run-project.md)
     * [Working in a Workspace](osdk/guide/work-in-workspace.md)
+    * Advanced Topics
+        * [Intel TDX](osdk/guide/intel-tdx.md)
 * [OSDK User Reference](osdk/reference/README.md)
     * [Commands](osdk/reference/commands/README.md)
         * [cargo osdk new](osdk/reference/commands/new.md)
