@@ -220,6 +220,11 @@ impl BioWaiter {
 
         ret
     }
+
+    /// Clears all `Bio` requests in this waiter.
+    pub fn clear(&mut self) {
+        self.bios.clear();
+    }
 }
 
 impl Default for BioWaiter {
