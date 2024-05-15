@@ -24,7 +24,7 @@ pub fn sys_unlinkat(dirfd: FileDesc, path_addr: Vaddr, flags: u32) -> Result<Sys
     debug!("dirfd = {}, path = {:?}", dirfd, path);
 
     let current = current!();
-    let (dir_dentrymnt, name) = {
+    let (dir_dentry, name) = {
         let path = path.to_string_lossy();
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
@@ -35,7 +35,7 @@ pub fn sys_unlinkat(dirfd: FileDesc, path_addr: Vaddr, flags: u32) -> Result<Sys
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
         current.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
-    dir_dentrymnt.unlink(&name)?;
+    dir_dentry.unlink(&name)?;
     Ok(SyscallReturn::Return(0))
 }
 

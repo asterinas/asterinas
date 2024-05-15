@@ -30,7 +30,7 @@ pub fn sys_renameat(
     let current = current!();
     let fs = current.fs().read();
 
-    let (old_dir_dentrymnt, old_name) = {
+    let (old_dir_dentry, old_name) = {
         let old_path = old_path.to_string_lossy();
         if old_path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "oldpath is empty");
@@ -38,14 +38,14 @@ pub fn sys_renameat(
         let old_fs_path = FsPath::new(old_dirfd, old_path.as_ref())?;
         fs.lookup_dir_and_base_name(&old_fs_path)?
     };
-    let old_dentrymnt = old_dir_dentrymnt.lookup(&old_name)?;
+    let old_dentry = old_dir_dentry.lookup(&old_name)?;
 
-    let (new_dir_dentrymnt, new_name) = {
+    let (new_dir_dentry, new_name) = {
         let new_path = new_path.to_string_lossy();
         if new_path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "newpath is empty");
         }
-        if new_path.ends_with('/') && old_dentrymnt.type_() != InodeType::Dir {
+        if new_path.ends_with('/') && old_dentry.type_() != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "oldpath is not dir");
         }
         let new_fs_path = FsPath::new(new_dirfd, new_path.as_ref().trim_end_matches('/'))?;
@@ -53,8 +53,8 @@ pub fn sys_renameat(
     };
 
     // Check abs_path
-    let old_abs_path = old_dentrymnt.abs_path();
-    let new_abs_path = new_dir_dentrymnt.abs_path() + "/" + &new_name;
+    let old_abs_path = old_dentry.abs_path();
+    let new_abs_path = new_dir_dentry.abs_path() + "/" + &new_name;
     if new_abs_path.starts_with(&old_abs_path) {
         if new_abs_path.len() == old_abs_path.len() {
             return Ok(SyscallReturn::Return(0));
@@ -66,7 +66,7 @@ pub fn sys_renameat(
         }
     }
 
-    old_dir_dentrymnt.rename(&old_name, &new_dir_dentrymnt, &new_name)?;
+    old_dir_dentry.rename(&old_name, &new_dir_dentry, &new_name)?;
 
     Ok(SyscallReturn::Return(0))
 }

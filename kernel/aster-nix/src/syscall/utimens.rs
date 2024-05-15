@@ -61,7 +61,7 @@ pub fn sys_utimensat(
         return Ok(SyscallReturn::Return(0));
     }
     let current = current!();
-    let dentrymnt = {
+    let dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
@@ -75,10 +75,10 @@ pub fn sys_utimensat(
         }
     };
     if let Some(time) = atime {
-        dentrymnt.set_atime(Duration::from(time));
+        dentry.set_atime(Duration::from(time));
     }
     if let Some(time) = mtime {
-        dentrymnt.set_mtime(Duration::from(time));
+        dentry.set_mtime(Duration::from(time));
     }
     Ok(SyscallReturn::Return(0))
 }

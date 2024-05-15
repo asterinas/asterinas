@@ -30,7 +30,7 @@ pub fn sys_linkat(
     );
 
     let current = current!();
-    let (old_dentrymnt, new_dir_dentrymnt, new_name) = {
+    let (old_dentry, new_dir_dentry, new_name) = {
         let old_path = old_path.to_string_lossy();
         if old_path.ends_with('/') {
             return_errno_with_message!(Errno::EPERM, "oldpath is dir");
@@ -46,16 +46,16 @@ pub fn sys_linkat(
         let old_fs_path = FsPath::new(old_dirfd, old_path.as_ref())?;
         let new_fs_path = FsPath::new(new_dirfd, new_path.as_ref())?;
         let fs = current.fs().read();
-        let old_dentrymnt = if flags.contains(LinkFlags::AT_SYMLINK_FOLLOW) {
+        let old_dentry = if flags.contains(LinkFlags::AT_SYMLINK_FOLLOW) {
             fs.lookup(&old_fs_path)?
         } else {
             fs.lookup_no_follow(&old_fs_path)?
         };
-        let (new_dir_dentrymnt, new_name) = fs.lookup_dir_and_base_name(&new_fs_path)?;
-        (old_dentrymnt, new_dir_dentrymnt, new_name)
+        let (new_dir_dentry, new_name) = fs.lookup_dir_and_base_name(&new_fs_path)?;
+        (old_dentry, new_dir_dentry, new_name)
     };
 
-    new_dir_dentrymnt.link(&old_dentrymnt, &new_name)?;
+    new_dir_dentry.link(&old_dentry, &new_name)?;
     Ok(SyscallReturn::Return(0))
 }
 

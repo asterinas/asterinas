@@ -63,7 +63,7 @@ pub fn sys_fstatat(
     }
 
     let current = current!();
-    let dentrymnt = {
+    let dentry = {
         let filename = filename.to_string_lossy();
         let fs_path = FsPath::new(dirfd, filename.as_ref())?;
         let fs = current.fs().read();
@@ -73,7 +73,7 @@ pub fn sys_fstatat(
             fs.lookup(&fs_path)?
         }
     };
-    let stat = Stat::from(dentrymnt.metadata());
+    let stat = Stat::from(dentry.metadata());
     write_val_to_user(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }

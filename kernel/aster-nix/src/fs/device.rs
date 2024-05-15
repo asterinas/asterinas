@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{inode_handle::FileIo, utils::DentryMnt};
+use super::inode_handle::FileIo;
 use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver},
+        path::Dentry,
         utils::{InodeMode, InodeType},
     },
     prelude::*,
@@ -84,12 +85,11 @@ impl From<DeviceId> for u64 {
 ///
 /// If the parent path is not existing, `mkdir -p` the parent path.
 /// This function is used in registering device.
-pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Arc<DentryMnt>> {
-    let mut dentrymnt = {
+pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Arc<Dentry>> {
+    let mut dentry = {
         let fs_resolver = FsResolver::new();
         fs_resolver.lookup(&FsPath::try_from("/dev").unwrap())?
     };
-
     let mut relative_path = {
         let relative_path = path.trim_start_matches('/');
         if relative_path.is_empty() {
@@ -106,24 +106,24 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Arc<DentryMnt>> {
             (relative_path, "")
         };
 
-        match dentrymnt.lookup(next_name) {
-            Ok(next_dentrymnt) => {
+        match dentry.lookup(next_name) {
+            Ok(next_dentry) => {
                 if path_remain.is_empty() {
                     return_errno_with_message!(Errno::EEXIST, "device node is existing");
                 }
-                dentrymnt = next_dentrymnt;
+                dentry = next_dentry;
             }
             Err(_) => {
                 if path_remain.is_empty() {
                     // Create the device node
-                    dentrymnt = dentrymnt.mknod(
+                    dentry = dentry.mknod(
                         next_name,
                         InodeMode::from_bits_truncate(0o666),
                         device.clone(),
                     )?;
                 } else {
                     // Mkdir parent path
-                    dentrymnt = dentrymnt.new_fs_child(
+                    dentry = dentry.new_fs_child(
                         next_name,
                         InodeType::Dir,
                         InodeMode::from_bits_truncate(0o755),
@@ -134,7 +134,7 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Arc<DentryMnt>> {
         relative_path = path_remain;
     }
 
-    Ok(dentrymnt)
+    Ok(dentry)
 }
 
 /// Delete the device node from FS for the device.
@@ -149,11 +149,11 @@ pub fn delete_node(path: &str) -> Result<()> {
         String::from("/dev") + "/" + device_path
     };
 
-    let (parent_dentrymnt, name) = {
+    let (parent_dentry, name) = {
         let fs_resolver = FsResolver::new();
         fs_resolver.lookup_dir_and_base_name(&FsPath::try_from(abs_path.as_str()).unwrap())?
     };
 
-    parent_dentrymnt.unlink(&name)?;
+    parent_dentry.unlink(&name)?;
     Ok(())
 }

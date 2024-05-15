@@ -79,7 +79,7 @@ pub fn sys_fchownat(
     }
 
     let current = current!();
-    let dentrymnt = {
+    let dentry = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
         let fs = current.fs().read();
@@ -90,10 +90,10 @@ pub fn sys_fchownat(
         }
     };
     if let Some(uid) = uid {
-        dentrymnt.set_owner(uid)?;
+        dentry.set_owner(uid)?;
     }
     if let Some(gid) = gid {
-        dentrymnt.set_group(gid)?;
+        dentry.set_group(gid)?;
     }
     Ok(SyscallReturn::Return(0))
 }

@@ -26,7 +26,7 @@ pub fn sys_readlinkat(
     );
 
     let current = current!();
-    let dentrymnt = {
+    let dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
@@ -34,7 +34,7 @@ pub fn sys_readlinkat(
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
         current.fs().read().lookup_no_follow(&fs_path)?
     };
-    let linkpath = dentrymnt.inode().read_link()?;
+    let linkpath = dentry.inode().read_link()?;
     let bytes = linkpath.as_bytes();
     let write_len = bytes.len().min(usr_buf_len);
     write_bytes_to_user(usr_buf_addr, &bytes[..write_len])?;

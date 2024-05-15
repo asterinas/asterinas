@@ -7,9 +7,10 @@ use spin::Once;
 
 use super::{
     fs_resolver::{FsPath, FsResolver},
+    path::MountNode,
     procfs::ProcFS,
     ramfs::RamFS,
-    utils::{FileSystem, InodeMode, InodeType, MountNode},
+    utils::{FileSystem, InodeMode, InodeType},
 };
 use crate::prelude::*;
 
@@ -54,20 +55,20 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         let mode = InodeMode::from_bits_truncate(metadata.permission_mode());
         match metadata.file_type() {
             FileType::File => {
-                let dentrymnt = parent.new_fs_child(name, InodeType::File, mode)?;
-                entry.read_all(dentrymnt.inode().writer(0))?;
+                let dentry = parent.new_fs_child(name, InodeType::File, mode)?;
+                entry.read_all(dentry.inode().writer(0))?;
             }
             FileType::Dir => {
                 let _ = parent.new_fs_child(name, InodeType::Dir, mode)?;
             }
             FileType::Link => {
-                let dentrymnt = parent.new_fs_child(name, InodeType::SymLink, mode)?;
+                let dentry = parent.new_fs_child(name, InodeType::SymLink, mode)?;
                 let link_content = {
                     let mut link_data: Vec<u8> = Vec::new();
                     entry.read_all(&mut link_data)?;
                     core::str::from_utf8(&link_data)?.to_string()
                 };
-                dentrymnt.inode().write_link(&link_content)?;
+                dentry.inode().write_link(&link_content)?;
             }
             type_ => {
                 panic!("unsupported file type = {:?} in initramfs", type_);
@@ -75,11 +76,11 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         }
     }
     // Mount ProcFS
-    let proc_dentrymnt = fs.lookup(&FsPath::try_from("/proc")?)?;
-    proc_dentrymnt.mount(ProcFS::new())?;
+    let proc_dentry = fs.lookup(&FsPath::try_from("/proc")?)?;
+    proc_dentry.mount(ProcFS::new())?;
     // Mount DevFS
-    let dev_dentrymnt = fs.lookup(&FsPath::try_from("/dev")?)?;
-    dev_dentrymnt.mount(RamFS::new())?;
+    let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
+    dev_dentry.mount(RamFS::new())?;
 
     println!("[kernel] rootfs is ready");
 
@@ -87,8 +88,8 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
 }
 
 pub fn mount_fs_at(fs: Arc<dyn FileSystem>, fs_path: &FsPath) -> Result<()> {
-    let target_dentrymnt = FsResolver::new().lookup(fs_path)?;
-    target_dentrymnt.mount(fs)?;
+    let target_dentry = FsResolver::new().lookup(fs_path)?;
+    target_dentry.mount(fs)?;
     Ok(())
 }
 

@@ -34,7 +34,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
     check_length(len)?;
 
     let current = current!();
-    let dir_dentrymnt = {
+    let dir_dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
@@ -42,7 +42,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
         let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
-    dir_dentrymnt.resize(len as usize)?;
+    dir_dentry.resize(len as usize)?;
     Ok(SyscallReturn::Return(0))
 }
 
