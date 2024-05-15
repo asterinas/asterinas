@@ -40,13 +40,32 @@ jobs:
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
 
+      - name: Generate OSDK Dockerfile
+        run: |
+          python3 ./osdk/tools/docker/gen_dockerfile.py
+
       - name: Build and push OSDK test image
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./osdk/tools/Dockerfile.ubuntu22.04
+          file: ./osdk/tools/docker/Dockerfile
           platforms: linux/amd64
           push: true
           tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}
+          build-args: |
+            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+
+      - name: Generate OSDK Dockerfile for Intel TDX
+        run: |
+          python3 ./osdk/tools/docker/gen_dockerfile.py --intel-tdx
+
+      - name: Build and push OSDK test image for Intel TDX
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./osdk/tools/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}-tdx
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
