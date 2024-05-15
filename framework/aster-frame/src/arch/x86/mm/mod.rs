@@ -9,18 +9,19 @@ use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 use crate::vm::{
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
     page_table::PageTableEntryTrait,
-    Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
+    Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
 };
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
-    const NR_LEVELS: usize = 4;
-    const HIGHEST_TRANSLATION_LEVEL: usize = 2;
+    const NR_LEVELS: PagingLevel = 4;
+    const ADDRESS_WIDTH: usize = 48;
+    const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
 

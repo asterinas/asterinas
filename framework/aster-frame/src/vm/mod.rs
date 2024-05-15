@@ -10,7 +10,6 @@ pub type Paddr = usize;
 
 pub(crate) mod dma;
 mod frame;
-mod frame_allocator;
 pub(crate) mod heap_allocator;
 mod io;
 pub(crate) mod kspace;
@@ -27,19 +26,23 @@ use spin::Once;
 
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
-    frame::{VmFrame, VmFrameVec, VmFrameVecIter, VmReader, VmSegment, VmWriter},
-    io::VmIo,
+    frame::{FrameVecIter, VmFrame, VmFrameVec, VmSegment},
+    io::{VmIo, VmReader, VmWriter},
     options::VmAllocOptions,
     page_prop::{CachePolicy, PageFlags, PageProperty},
     space::{VmMapOptions, VmSpace},
 };
 pub(crate) use self::{
-    kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags, page_table::PageTable,
+    frame::meta::FrameMetaRef, kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags,
+    page_table::PageTable,
 };
-use crate::boot::memory_region::{MemoryRegion, MemoryRegionType};
+use crate::{
+    arch::mm::PagingConsts,
+    boot::memory_region::{MemoryRegion, MemoryRegionType},
+};
 
-/// The size of a [`VmFrame`].
-pub const PAGE_SIZE: usize = 0x1000;
+/// The level of a page table node or a frame.
+pub type PagingLevel = u8;
 
 /// A minimal set of constants that determines the paging system.
 /// This provides an abstraction over most paging modes in common architectures.
@@ -53,14 +56,35 @@ pub(crate) trait PagingConstsTrait: Debug + 'static {
     /// the level 1 to 5 on AMD64 corresponds to Page Tables, Page Directory Tables,
     /// Page Directory Pointer Tables, Page-Map Level-4 Table, and Page-Map Level-5
     /// Table, respectively.
-    const NR_LEVELS: usize;
+    const NR_LEVELS: PagingLevel;
 
     /// The highest level that a PTE can be directly used to translate a VA.
     /// This affects the the largest page size supported by the page table.
-    const HIGHEST_TRANSLATION_LEVEL: usize;
+    const HIGHEST_TRANSLATION_LEVEL: PagingLevel;
 
     /// The size of a PTE.
     const PTE_SIZE: usize;
+
+    /// The address width may be BASE_PAGE_SIZE.ilog2() + NR_LEVELS * IN_FRAME_INDEX_BITS.
+    /// If it is shorter than that, the higher bits in the highest level are ignored.
+    const ADDRESS_WIDTH: usize;
+}
+
+pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
+
+/// The page size at a given level.
+pub(crate) const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
+}
+
+/// The number of sub pages in a huge page.
+pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
+    C::BASE_PAGE_SIZE / C::PTE_SIZE
+}
+
+/// The number of base pages in a huge page at a given level.
+pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    page_size::<C>(level) / C::BASE_PAGE_SIZE
 }
 
 /// The maximum virtual address of user space (non inclusive).
@@ -96,7 +120,7 @@ pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 
 pub(crate) fn init() {
     let memory_regions = crate::boot::memory_regions().to_owned();
-    frame_allocator::init(&memory_regions);
+    frame::allocator::init(&memory_regions);
     kspace::init_kernel_page_table();
     dma::init();
 

@@ -6,9 +6,9 @@ use core::{fmt::Debug, marker::PhantomData, ops::Range, panic};
 use pod::Pod;
 
 use super::{
-    paddr_to_vaddr,
+    nr_subpage_per_huge, paddr_to_vaddr,
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-    Paddr, PagingConstsTrait, Vaddr,
+    page_size, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
 };
 use crate::{
     arch::mm::{activate_page_table, PageTableEntry, PagingConsts},
@@ -21,6 +21,8 @@ mod cursor;
 pub(crate) use cursor::{Cursor, CursorMut, PageTableQueryResult};
 #[cfg(ktest)]
 mod test;
+
+pub(in crate::vm) mod boot_pt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageTableError {
@@ -63,25 +65,15 @@ impl PageTableMode for KernelMode {
 
 // Here are some const values that are determined by the paging constants.
 
-/// The page size at a given level.
-pub(crate) const fn page_size<C: PagingConstsTrait>(level: usize) -> usize {
-    C::BASE_PAGE_SIZE << (nr_pte_index_bits::<C>() * (level - 1))
-}
-
-/// The number of page table entries per page table frame.
-pub(crate) const fn nr_ptes_per_node<C: PagingConstsTrait>() -> usize {
-    C::BASE_PAGE_SIZE / C::PTE_SIZE
-}
-
 /// The number of virtual address bits used to index a PTE in a frame.
 const fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize {
-    nr_ptes_per_node::<C>().ilog2() as usize
+    nr_subpage_per_huge::<C>().ilog2() as usize
 }
 
 /// The index of a VA's PTE in a page table frame at the given level.
-const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: usize) -> usize {
-    va >> (C::BASE_PAGE_SIZE.ilog2() as usize + nr_pte_index_bits::<C>() * (level - 1))
-        & (nr_ptes_per_node::<C>() - 1)
+const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
+    va >> (C::BASE_PAGE_SIZE.ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1))
+        & (nr_subpage_per_huge::<C>() - 1)
 }
 
 /// A handle to a page table.
@@ -92,8 +84,8 @@ pub(crate) struct PageTable<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     root_frame: PtfRef<E, C>,
     _phantom: PhantomData<M>,
@@ -101,8 +93,8 @@ pub(crate) struct PageTable<
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<UserMode, E, C>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     pub(crate) fn activate(&self) {
         // SAFETY: The usermode page table is safe to activate since the kernel
@@ -130,7 +122,7 @@ where
         };
         let root_frame = cursor.leak_root_guard().unwrap();
         let mut new_root_frame = PageTableFrame::<E, C>::new();
-        let half_of_entries = nr_ptes_per_node::<C>() / 2;
+        let half_of_entries = nr_subpage_per_huge::<C>() / 2;
         for i in 0..half_of_entries {
             // This is user space, deep copy the child.
             match root_frame.child(i) {
@@ -150,7 +142,7 @@ where
                 }
             }
         }
-        for i in half_of_entries..nr_ptes_per_node::<C>() {
+        for i in half_of_entries..nr_subpage_per_huge::<C>() {
             // This is kernel space, share the child.
             new_root_frame.set_child(
                 i,
@@ -168,8 +160,8 @@ where
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<KernelMode, E, C>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     /// Create a new user page table.
     ///
@@ -181,7 +173,7 @@ where
     pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode, E, C> {
         let mut new_root_frame = PageTableFrame::<E, C>::new();
         let root_frame = self.root_frame.lock();
-        for i in nr_ptes_per_node::<C>() / 2..nr_ptes_per_node::<C>() {
+        for i in nr_subpage_per_huge::<C>() / 2..nr_subpage_per_huge::<C>() {
             new_root_frame.set_child(
                 i,
                 root_frame.child(i).clone(),
@@ -202,10 +194,10 @@ where
     /// instead of the virtual address range.
     pub(crate) fn make_shared_tables(&self, root_index: Range<usize>) {
         let start = root_index.start;
-        debug_assert!(start >= nr_ptes_per_node::<C>() / 2);
-        debug_assert!(start < nr_ptes_per_node::<C>());
+        debug_assert!(start >= nr_subpage_per_huge::<C>() / 2);
+        debug_assert!(start < nr_subpage_per_huge::<C>());
         let end = root_index.end;
-        debug_assert!(end <= nr_ptes_per_node::<C>());
+        debug_assert!(end <= nr_subpage_per_huge::<C>());
         let mut root_frame = self.root_frame.lock();
         for i in start..end {
             let no_such_child = root_frame.child(i).is_none();
@@ -228,8 +220,8 @@ where
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub(crate) fn empty() -> Self {
@@ -319,8 +311,8 @@ where
 
 impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Clone for PageTable<M, E, C>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     fn clone(&self) -> Self {
         let frame = self.root_frame.lock();

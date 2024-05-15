@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::vec::Vec;
+use alloc::{alloc::Layout, vec::Vec};
 
 use align_ext::AlignExt;
 use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
-use super::{frame::VmFrameFlags, VmFrame, VmFrameVec, VmSegment};
+use super::{VmFrame, VmFrameVec, VmSegment};
 use crate::{
+    arch::mm::PagingConsts,
     boot::memory_region::{MemoryRegion, MemoryRegionType},
     sync::SpinLock,
-    vm::PAGE_SIZE,
+    vm::{nr_base_per_page, PagingLevel, PAGE_SIZE},
 };
 
-pub(super) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
+pub(in crate::vm) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 
-pub(crate) fn alloc(nframes: usize, flags: VmFrameFlags) -> Option<VmFrameVec> {
+pub(crate) fn alloc(nframes: usize) -> Option<VmFrameVec> {
     FRAME_ALLOCATOR
         .get()
         .unwrap()
@@ -24,27 +25,36 @@ pub(crate) fn alloc(nframes: usize, flags: VmFrameFlags) -> Option<VmFrameVec> {
         .alloc(nframes)
         .map(|start| {
             let mut vector = Vec::new();
-            // SAFETY: The frame index is valid.
-            unsafe {
-                for i in 0..nframes {
-                    let frame = VmFrame::new(
-                        (start + i) * PAGE_SIZE,
-                        flags.union(VmFrameFlags::NEED_DEALLOC),
-                    );
-                    vector.push(frame);
-                }
+            for i in 0..nframes {
+                let paddr = (start + i) * PAGE_SIZE;
+                // SAFETY: The frame index is valid.
+                let frame = unsafe { VmFrame::from_free_raw(paddr, 1) };
+                vector.push(frame);
             }
             VmFrameVec(vector)
         })
 }
 
-pub(crate) fn alloc_single(flags: VmFrameFlags) -> Option<VmFrame> {
-    FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx|
+pub(crate) fn alloc_single(level: PagingLevel) -> Option<VmFrame> {
+    FRAME_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .alloc_aligned(
+            Layout::from_size_align(
+                nr_base_per_page::<PagingConsts>(level),
+                nr_base_per_page::<PagingConsts>(level),
+            )
+            .unwrap(),
+        )
+        .map(|idx| {
+            let paddr = idx * PAGE_SIZE;
             // SAFETY: The frame index is valid.
-            unsafe { VmFrame::new(idx * PAGE_SIZE, flags.union(VmFrameFlags::NEED_DEALLOC)) })
+            unsafe { VmFrame::from_free_raw(paddr, level) }
+        })
 }
 
-pub(crate) fn alloc_contiguous(nframes: usize, flags: VmFrameFlags) -> Option<VmSegment> {
+pub(crate) fn alloc_contiguous(nframes: usize) -> Option<VmSegment> {
     FRAME_ALLOCATOR
         .get()
         .unwrap()
@@ -56,19 +66,8 @@ pub(crate) fn alloc_contiguous(nframes: usize, flags: VmFrameFlags) -> Option<Vm
             VmSegment::new(
                 start * PAGE_SIZE,
                 nframes,
-                flags.union(VmFrameFlags::NEED_DEALLOC),
             )
         })
-}
-
-/// Deallocate a frame.
-///
-/// # Safety
-///
-/// User should ensure the index is valid
-///
-pub(crate) unsafe fn dealloc_single(index: usize) {
-    FRAME_ALLOCATOR.get().unwrap().lock().dealloc(index, 1);
 }
 
 /// Deallocate a contiguous range of page frames.
@@ -96,6 +95,7 @@ pub(crate) fn init(regions: &[MemoryRegion]) {
             if end <= start {
                 continue;
             }
+            // Add global free pages to the frame allocator.
             allocator.add_frame(start, end);
             info!(
                 "Found usable region, start:{:x}, end:{:x}",

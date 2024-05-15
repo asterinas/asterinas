@@ -196,7 +196,7 @@ pub(super) struct Vmo_ {
 
 fn clone_page(page: &VmFrame) -> Result<VmFrame> {
     let new_page = VmAllocOptions::new(1).alloc_single()?;
-    new_page.copy_from_frame(page);
+    new_page.copy_from(page);
     Ok(new_page)
 }
 

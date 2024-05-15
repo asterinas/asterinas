@@ -68,17 +68,7 @@ pub fn init() {
     trap::init();
     arch::after_all_init();
     bus::init();
-    // TODO: We activate the kernel page table here because the new kernel page table
-    // has mappings for MMIO which is required for the components initialization. We
-    // should refactor the initialization process to avoid this.
-    // SAFETY: we are activating the unique kernel page table.
-    unsafe {
-        vm::kspace::KERNEL_PAGE_TABLE
-            .get()
-            .unwrap()
-            .activate_unchecked();
-        crate::arch::mm::tlb_flush_all_including_global();
-    }
+    vm::kspace::activate_kernel_page_table();
     invoke_ffi_init_funcs();
 }
 
