@@ -41,40 +41,62 @@ struct InodeHandle_ {
 
 impl InodeHandle_ {
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        let mut offset = self.offset.lock();
-
         if let Some(ref file_io) = self.file_io {
             return file_io.read(buf);
         }
 
-        let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().read_direct_at(*offset, buf)?
-        } else {
-            self.dentry.inode().read_at(*offset, buf)?
-        };
+        let mut offset = self.offset.lock();
+
+        let len = self.read_at(*offset, buf)?;
 
         *offset += len;
         Ok(len)
     }
 
     pub fn write(&self, buf: &[u8]) -> Result<usize> {
-        let mut offset = self.offset.lock();
-
         if let Some(ref file_io) = self.file_io {
             return file_io.write(buf);
         }
 
+        let mut offset = self.offset.lock();
+
         if self.status_flags().contains(StatusFlags::O_APPEND) {
             *offset = self.dentry.size();
         }
-        let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().write_direct_at(*offset, buf)?
-        } else {
-            self.dentry.inode().write_at(*offset, buf)?
-        };
+
+        let len = self.write_at(*offset, buf)?;
 
         *offset += len;
         Ok(len)
+    }
+
+    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        if let Some(ref file_io) = self.file_io {
+            todo!("support read_at for FileIo");
+        }
+
+        if self.status_flags().contains(StatusFlags::O_DIRECT) {
+            self.dentry.inode().read_direct_at(offset, buf)
+        } else {
+            self.dentry.inode().read_at(offset, buf)
+        }
+    }
+
+    pub fn write_at(&self, mut offset: usize, buf: &[u8]) -> Result<usize> {
+        if let Some(ref file_io) = self.file_io {
+            todo!("support write_at for FileIo");
+        }
+
+        if self.status_flags().contains(StatusFlags::O_APPEND) {
+            // If the file has the O_APPEND flag, the offset is ignored
+            offset = self.dentry.size();
+        }
+
+        if self.status_flags().contains(StatusFlags::O_DIRECT) {
+            self.dentry.inode().write_direct_at(offset, buf)
+        } else {
+            self.dentry.inode().write_at(offset, buf)
+        }
     }
 
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {

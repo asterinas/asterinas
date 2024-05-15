@@ -98,6 +98,20 @@ impl FileLike for InodeHandle<Rights> {
         self.0.write(buf)
     }
 
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        if !self.1.contains(Rights::READ) {
+            return_errno_with_message!(Errno::EBADF, "file is not readable");
+        }
+        self.0.read_at(offset, buf)
+    }
+
+    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        if !self.1.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EBADF, "file is not writable");
+        }
+        self.0.write_at(offset, buf)
+    }
+
     fn resize(&self, new_size: usize) -> Result<()> {
         if !self.1.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EINVAL, "File is not writable");

@@ -23,6 +23,23 @@ pub trait FileLike: Send + Sync + Any {
         return_errno_with_message!(Errno::EINVAL, "write is not supported");
     }
 
+    /// Read at the given file offset.
+    ///
+    /// The file must be seekable to support `read_at`.
+    /// Unlike [`read`], `read_at` will not change the file offset.
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        return_errno_with_message!(Errno::EINVAL, "read_at is not supported");
+    }
+
+    /// Write at the given file offset.
+    ///
+    /// The file must be seekable to support `write_at`.
+    /// Unlike [`write`], `write_at` will not change the file offset.
+    /// If the file is append-only, the `offset` will be ignored.
+    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        return_errno_with_message!(Errno::EINVAL, "write_at is not supported");
+    }
+
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
     }
