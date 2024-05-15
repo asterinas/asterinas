@@ -19,7 +19,7 @@ impl VmIo for IoMem {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> crate::Result<()> {
         self.check_range(offset, buf.len())?;
         unsafe {
-            core::ptr::copy(
+            crate::arch::mm::fast_copy(
                 (self.virtual_address + offset) as *const u8,
                 buf.as_mut_ptr(),
                 buf.len(),
@@ -31,7 +31,7 @@ impl VmIo for IoMem {
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> crate::Result<()> {
         self.check_range(offset, buf.len())?;
         unsafe {
-            core::ptr::copy(
+            crate::arch::mm::fast_copy(
                 buf.as_ptr(),
                 (self.virtual_address + offset) as *mut u8,
                 buf.len(),

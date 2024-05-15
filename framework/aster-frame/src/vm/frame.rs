@@ -249,7 +249,7 @@ impl VmFrame {
 
         // Safety: src and dst is not overlapped.
         unsafe {
-            core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), PAGE_SIZE);
+            crate::arch::mm::fast_copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), PAGE_SIZE);
         }
     }
 }
@@ -589,7 +589,7 @@ impl<'a> VmReader<'a> {
         // Safety: the memory range is valid since `copy_len` is the minimum
         // of the reader's remaining data and the writer's available space.
         unsafe {
-            core::ptr::copy(self.cursor, writer.cursor, copy_len);
+            crate::arch::mm::fast_copy(self.cursor, writer.cursor, copy_len);
             self.cursor = self.cursor.add(copy_len);
             writer.cursor = writer.cursor.add(copy_len);
         }
@@ -714,7 +714,7 @@ impl<'a> VmWriter<'a> {
         // Safety: the memory range is valid since `copy_len` is the minimum
         // of the reader's remaining data and the writer's available space.
         unsafe {
-            core::ptr::copy(reader.cursor, self.cursor, copy_len);
+            crate::arch::mm::fast_copy(reader.cursor, self.cursor, copy_len);
             self.cursor = self.cursor.add(copy_len);
             reader.cursor = reader.cursor.add(copy_len);
         }
