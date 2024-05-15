@@ -3,13 +3,12 @@
 //! This module introduces the xarray crate and provides relevant support and interfaces for `XArray`.
 extern crate xarray as xarray_crate;
 
-use alloc::sync::Arc;
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref};
 
 use xarray_crate::ItemEntry;
 pub use xarray_crate::{Cursor, CursorMut, XArray, XMark};
 
-use crate::vm::VmFrame;
+use crate::vm::{FrameMetaRef, VmFrame};
 
 /// `VmFrameRef` is a struct that can work as `&'a VmFrame`.
 pub struct VmFrameRef<'a> {
@@ -25,20 +24,20 @@ impl<'a> Deref for VmFrameRef<'a> {
     }
 }
 
-// SAFETY: `VmFrame` is essentially an `Arc` smart pointer that points to a location which is aligned to 4,
-// meeting the requirements of the `ItemEntry` for `XArray`.
+// SAFETY: `VmFrame` is essentially an `*const FrameMeta` that could be used as a `*const` pointer.
+// The pointer is also aligned to 4.
 unsafe impl ItemEntry for VmFrame {
     type Ref<'a> = VmFrameRef<'a> where Self: 'a;
 
     fn into_raw(self) -> *const () {
-        let ptr = Arc::as_ptr(&self.frame_index);
+        let ptr = self.meta.inner;
         let _ = ManuallyDrop::new(self);
         ptr.cast()
     }
 
     unsafe fn from_raw(raw: *const ()) -> Self {
         Self {
-            frame_index: Arc::from_raw(raw.cast()),
+            meta: FrameMetaRef { inner: raw.cast() },
         }
     }
 

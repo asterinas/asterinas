@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
-    vm::{frame_allocator::FRAME_ALLOCATOR, PAGE_SIZE},
+    vm::{frame::allocator::FRAME_ALLOCATOR, PAGE_SIZE},
     Error,
 };
 

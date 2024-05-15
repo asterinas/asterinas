@@ -7,7 +7,7 @@ use core::fmt::Debug;
 use bitflags::bitflags;
 
 /// The property of a mapped virtual memory page.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageProperty {
     pub flags: PageFlags,
     pub cache: CachePolicy,
@@ -37,7 +37,7 @@ impl PageProperty {
 /// A type to control the cacheability of the main memory.
 ///
 /// The type currently follows the definition as defined by the AMD64 manual.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CachePolicy {
     /// Uncacheable (UC).
     ///

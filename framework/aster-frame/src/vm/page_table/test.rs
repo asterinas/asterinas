@@ -85,9 +85,10 @@ type Qr = PageTableQueryResult;
 struct BasePagingConsts {}
 
 impl PagingConstsTrait for BasePagingConsts {
-    const NR_LEVELS: usize = 4;
+    const NR_LEVELS: PagingLevel = 4;
     const BASE_PAGE_SIZE: usize = PAGE_SIZE;
-    const HIGHEST_TRANSLATION_LEVEL: usize = 1;
+    const ADDRESS_WIDTH: usize = 48;
+    const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 1;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
 
@@ -122,9 +123,10 @@ fn test_base_protect_query() {
 struct VeryHugePagingConsts {}
 
 impl PagingConstsTrait for VeryHugePagingConsts {
-    const NR_LEVELS: usize = 4;
+    const NR_LEVELS: PagingLevel = 4;
     const BASE_PAGE_SIZE: usize = PAGE_SIZE;
-    const HIGHEST_TRANSLATION_LEVEL: usize = 3;
+    const ADDRESS_WIDTH: usize = 48;
+    const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 3;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
 

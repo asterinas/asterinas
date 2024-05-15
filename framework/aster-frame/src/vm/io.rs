@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::marker::PhantomData;
+
 use align_ext::AlignExt;
 use inherit_methods_macro::inherit_methods;
 use pod::Pod;
@@ -147,3 +149,238 @@ impl_vmio_pointer!(&T, "(**self)");
 impl_vmio_pointer!(&mut T, "(**self)");
 impl_vmio_pointer!(Box<T>, "(**self)");
 impl_vmio_pointer!(Arc<T>, "(**self)");
+
+/// VmReader is a reader for reading data from a contiguous range of memory.
+pub struct VmReader<'a> {
+    cursor: *const u8,
+    end: *const u8,
+    phantom: PhantomData<&'a [u8]>,
+}
+
+impl<'a> VmReader<'a> {
+    /// Constructs a VmReader from a pointer and a length.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the memory from `ptr` to `ptr.add(len)` is contiguous.
+    /// User must ensure the memory is valid during the entire period of `'a`.
+    pub const unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Self {
+        Self {
+            cursor: ptr,
+            end: ptr.add(len),
+            phantom: PhantomData,
+        }
+    }
+
+    /// Returns the number of bytes for the remaining data.
+    pub const fn remain(&self) -> usize {
+        // Safety: the end is equal to or greater than the cursor.
+        unsafe { self.end.sub_ptr(self.cursor) }
+    }
+
+    /// Returns the cursor pointer, which refers to the address of the next byte to read.
+    pub const fn cursor(&self) -> *const u8 {
+        self.cursor
+    }
+
+    /// Returns if it has remaining data to read.
+    pub const fn has_remain(&self) -> bool {
+        self.remain() > 0
+    }
+
+    /// Limits the length of remaining data.
+    ///
+    /// This method ensures the postcondition of `self.remain() <= max_remain`.
+    pub const fn limit(mut self, max_remain: usize) -> Self {
+        if max_remain < self.remain() {
+            // Safety: the new end is less than the old end.
+            unsafe { self.end = self.cursor.add(max_remain) };
+        }
+        self
+    }
+
+    /// Skips the first `nbytes` bytes of data.
+    /// The length of remaining data is decreased accordingly.
+    ///
+    /// # Panic
+    ///
+    /// If `nbytes` is greater than `self.remain()`, then the method panics.
+    pub fn skip(mut self, nbytes: usize) -> Self {
+        assert!(nbytes <= self.remain());
+
+        // Safety: the new cursor is less than or equal to the end.
+        unsafe { self.cursor = self.cursor.add(nbytes) };
+        self
+    }
+
+    /// Reads all data into the writer until one of the two conditions is met:
+    /// 1. The reader has no remaining data.
+    /// 2. The writer has no available space.
+    ///
+    /// Returns the number of bytes read.
+    ///
+    /// It pulls the number of bytes data from the reader and
+    /// fills in the writer with the number of bytes.
+    pub fn read(&mut self, writer: &mut VmWriter<'_>) -> usize {
+        let copy_len = self.remain().min(writer.avail());
+        if copy_len == 0 {
+            return 0;
+        }
+
+        // Safety: the memory range is valid since `copy_len` is the minimum
+        // of the reader's remaining data and the writer's available space.
+        unsafe {
+            core::ptr::copy(self.cursor, writer.cursor, copy_len);
+            self.cursor = self.cursor.add(copy_len);
+            writer.cursor = writer.cursor.add(copy_len);
+        }
+        copy_len
+    }
+
+    /// Read a value of `Pod` type.
+    ///
+    /// # Panic
+    ///
+    /// If the length of the `Pod` type exceeds `self.remain()`, then this method will panic.
+    pub fn read_val<T: Pod>(&mut self) -> T {
+        assert!(self.remain() >= core::mem::size_of::<T>());
+
+        let mut val = T::new_uninit();
+        let mut writer = VmWriter::from(val.as_bytes_mut());
+        let read_len = self.read(&mut writer);
+
+        val
+    }
+}
+
+impl<'a> From<&'a [u8]> for VmReader<'a> {
+    fn from(slice: &'a [u8]) -> Self {
+        // Safety: the range of memory is contiguous and is valid during `'a`.
+        unsafe { Self::from_raw_parts(slice.as_ptr(), slice.len()) }
+    }
+}
+
+/// VmWriter is a writer for writing data to a contiguous range of memory.
+pub struct VmWriter<'a> {
+    cursor: *mut u8,
+    end: *mut u8,
+    phantom: PhantomData<&'a mut [u8]>,
+}
+
+impl<'a> VmWriter<'a> {
+    /// Constructs a VmWriter from a pointer and a length.
+    ///
+    /// # Safety
+    ///
+    /// User must ensure the memory from `ptr` to `ptr.add(len)` is contiguous.
+    /// User must ensure the memory is valid during the entire period of `'a`.
+    pub const unsafe fn from_raw_parts_mut(ptr: *mut u8, len: usize) -> Self {
+        Self {
+            cursor: ptr,
+            end: ptr.add(len),
+            phantom: PhantomData,
+        }
+    }
+
+    /// Returns the number of bytes for the available space.
+    pub const fn avail(&self) -> usize {
+        // Safety: the end is equal to or greater than the cursor.
+        unsafe { self.end.sub_ptr(self.cursor) }
+    }
+
+    /// Returns the cursor pointer, which refers to the address of the next byte to write.
+    pub const fn cursor(&self) -> *mut u8 {
+        self.cursor
+    }
+
+    /// Returns if it has avaliable space to write.
+    pub const fn has_avail(&self) -> bool {
+        self.avail() > 0
+    }
+
+    /// Limits the length of available space.
+    ///
+    /// This method ensures the postcondition of `self.avail() <= max_avail`.
+    pub const fn limit(mut self, max_avail: usize) -> Self {
+        if max_avail < self.avail() {
+            // Safety: the new end is less than the old end.
+            unsafe { self.end = self.cursor.add(max_avail) };
+        }
+        self
+    }
+
+    /// Skips the first `nbytes` bytes of data.
+    /// The length of available space is decreased accordingly.
+    ///
+    /// # Panic
+    ///
+    /// If `nbytes` is greater than `self.avail()`, then the method panics.
+    pub fn skip(mut self, nbytes: usize) -> Self {
+        assert!(nbytes <= self.avail());
+
+        // Safety: the new cursor is less than or equal to the end.
+        unsafe { self.cursor = self.cursor.add(nbytes) };
+        self
+    }
+
+    /// Writes data from the reader until one of the two conditions is met:
+    /// 1. The writer has no available space.
+    /// 2. The reader has no remaining data.
+    ///
+    /// Returns the number of bytes written.
+    ///
+    /// It pulls the number of bytes data from the reader and
+    /// fills in the writer with the number of bytes.
+    pub fn write(&mut self, reader: &mut VmReader<'_>) -> usize {
+        let copy_len = self.avail().min(reader.remain());
+        if copy_len == 0 {
+            return 0;
+        }
+
+        // Safety: the memory range is valid since `copy_len` is the minimum
+        // of the reader's remaining data and the writer's available space.
+        unsafe {
+            core::ptr::copy(reader.cursor, self.cursor, copy_len);
+            self.cursor = self.cursor.add(copy_len);
+            reader.cursor = reader.cursor.add(copy_len);
+        }
+        copy_len
+    }
+
+    /// Fills the available space by repeating `value`.
+    ///
+    /// Returns the number of values written.
+    ///
+    /// # Panic
+    ///
+    /// The size of the available space must be a multiple of the size of `value`.
+    /// Otherwise, the method would panic.
+    pub fn fill<T: Pod>(&mut self, value: T) -> usize {
+        let avail = self.avail();
+
+        assert!((self.cursor as *mut T).is_aligned());
+        assert!(avail % core::mem::size_of::<T>() == 0);
+
+        let written_num = avail / core::mem::size_of::<T>();
+
+        for i in 0..written_num {
+            // Safety: `written_num` is calculated by the avail size and the size of the type `T`,
+            // hence the `add` operation and `write` operation are valid and will only manipulate
+            // the memory managed by this writer.
+            unsafe {
+                (self.cursor as *mut T).add(i).write(value);
+            }
+        }
+
+        // The available space has been filled so this cursor can be moved to the end.
+        self.cursor = self.end;
+        written_num
+    }
+}
+
+impl<'a> From<&'a mut [u8]> for VmWriter<'a> {
+    fn from(slice: &'a mut [u8]) -> Self {
+        // Safety: the range of memory is contiguous and is valid during `'a`.
+        unsafe { Self::from_raw_parts_mut(slice.as_mut_ptr(), slice.len()) }
+    }
+}

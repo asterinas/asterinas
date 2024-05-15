@@ -7,7 +7,7 @@ use pod::Pod;
 use crate::vm::{
     page_prop::{CachePolicy, PageFlags, PrivilegedPageFlags as PrivFlags},
     page_table::{PageTableEntryTrait, PageTableMode},
-    Paddr, PageProperty, PagingConstsTrait, Vaddr,
+    Paddr, PageProperty, PagingConstsTrait, PagingLevel, Vaddr,
 };
 
 /// The page table used by iommu maps the device address
@@ -20,13 +20,14 @@ impl PageTableMode for DeviceMode {
     const VADDR_RANGE: Range<Vaddr> = 0..0x1_0000_0000;
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
-    const NR_LEVELS: usize = 3;
-    const HIGHEST_TRANSLATION_LEVEL: usize = 1;
+    const NR_LEVELS: PagingLevel = 3;
+    const ADDRESS_WIDTH: usize = 39;
+    const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 1;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
 

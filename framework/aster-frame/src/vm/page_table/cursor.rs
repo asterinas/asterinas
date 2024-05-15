@@ -56,12 +56,12 @@ use core::{any::TypeId, ops::Range};
 use align_ext::AlignExt;
 
 use super::{
-    nr_ptes_per_node, page_size, pte_index, Child, KernelMode, PageTable, PageTableEntryTrait,
+    nr_subpage_per_huge, page_size, pte_index, Child, KernelMode, PageTable, PageTableEntryTrait,
     PageTableError, PageTableFrame, PageTableMode, PagingConstsTrait,
 };
 use crate::{
     sync::{ArcSpinLockGuard, SpinLock},
-    vm::{Paddr, PageProperty, Vaddr, VmFrame},
+    vm::{Paddr, PageProperty, PagingLevel, Vaddr, VmFrame},
 };
 
 /// The cursor for traversal over the page table.
@@ -79,21 +79,21 @@ use crate::{
 /// provide concurrency.
 pub(crate) struct CursorMut<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     pt: &'a PageTable<M, E, C>,
-    guards: [Option<ArcSpinLockGuard<PageTableFrame<E, C>>>; C::NR_LEVELS],
-    level: usize,             // current level
-    guard_level: usize,       // from guard_level to level, the locks are held
+    guards: [Option<ArcSpinLockGuard<PageTableFrame<E, C>>>; C::NR_LEVELS as usize],
+    level: PagingLevel,       // current level
+    guard_level: PagingLevel, // from guard_level to level, the locks are held
     va: Vaddr,                // current virtual address
     barrier_va: Range<Vaddr>, // virtual address range that is locked
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorMut<'a, M, E, C>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     /// Create a cursor exclusively owning the locks for the given range.
     ///
@@ -139,7 +139,7 @@ where
                 break;
             }
             cursor.level_down(None);
-            cursor.guards[C::NR_LEVELS - cursor.level - 1] = None;
+            cursor.guards[(C::NR_LEVELS - cursor.level) as usize - 1] = None;
             cursor.guard_level -= 1;
         }
         Ok(cursor)
@@ -429,7 +429,7 @@ where
     fn level_up(&mut self) {
         #[cfg(feature = "page_table_recycle")]
         let last_node_all_unmapped = self.cur_node().nr_valid_children() == 0;
-        self.guards[C::NR_LEVELS - self.level] = None;
+        self.guards[(C::NR_LEVELS - self.level) as usize] = None;
         self.level += 1;
         #[cfg(feature = "page_table_recycle")]
         {
@@ -490,16 +490,20 @@ where
                 panic!("Trying to level down when it is mapped to a typed frame");
             }
         });
-        self.guards[C::NR_LEVELS - self.level + 1] = Some(nxt_lvl_frame.lock_arc());
+        self.guards[(C::NR_LEVELS - self.level) as usize + 1] = Some(nxt_lvl_frame.lock_arc());
         self.level -= 1;
     }
 
     fn cur_node(&self) -> &ArcSpinLockGuard<PageTableFrame<E, C>> {
-        self.guards[C::NR_LEVELS - self.level].as_ref().unwrap()
+        self.guards[(C::NR_LEVELS - self.level) as usize]
+            .as_ref()
+            .unwrap()
     }
 
     fn cur_node_mut(&mut self) -> &mut ArcSpinLockGuard<PageTableFrame<E, C>> {
-        self.guards[C::NR_LEVELS - self.level].as_mut().unwrap()
+        self.guards[(C::NR_LEVELS - self.level) as usize]
+            .as_mut()
+            .unwrap()
     }
 
     fn cur_idx(&self) -> usize {
@@ -518,8 +522,8 @@ where
 #[cfg(feature = "page_table_recycle")]
 impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Drop for CursorMut<'_, M, E, C>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     fn drop(&mut self) {
         // Recycle what we can recycle now.
@@ -572,16 +576,16 @@ pub(crate) enum PageTableQueryResult {
 /// It implements the `Iterator` trait to provide a convenient way to query over the page table.
 pub(crate) struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     inner: CursorMut<'a, M, E, C>,
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     pub(super) fn new(
         pt: &'a PageTable<M, E, C>,
@@ -594,8 +598,8 @@ where
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Iterator
     for Cursor<'a, M, E, C>
 where
-    [(); nr_ptes_per_node::<C>()]:,
-    [(); C::NR_LEVELS]:,
+    [(); nr_subpage_per_huge::<C>()]:,
+    [(); C::NR_LEVELS as usize]:,
 {
     type Item = PageTableQueryResult;
 
