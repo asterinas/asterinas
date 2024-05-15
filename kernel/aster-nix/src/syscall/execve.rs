@@ -8,7 +8,8 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::{DentryMnt, InodeType},
+        path::Dentry,
+        utils::InodeType,
     },
     log_syscall_entry,
     prelude::*,
@@ -61,29 +62,29 @@ fn lookup_executable_file(
     dfd: FileDesc,
     filename: String,
     flags: OpenFlags,
-) -> Result<Arc<DentryMnt>> {
+) -> Result<Arc<Dentry>> {
     let current = current!();
     let fs_resolver = current.fs().read();
-    let dentrymnt = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
+    let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
         fs_resolver.lookup_from_fd(dfd)
     } else {
         let fs_path = FsPath::new(dfd, &filename)?;
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            let dentrymnt = fs_resolver.lookup_no_follow(&fs_path)?;
-            if dentrymnt.type_() == InodeType::SymLink {
+            let dentry = fs_resolver.lookup_no_follow(&fs_path)?;
+            if dentry.type_() == InodeType::SymLink {
                 return_errno_with_message!(Errno::ELOOP, "the executable file is a symlink");
             }
-            Ok(dentrymnt)
+            Ok(dentry)
         } else {
             fs_resolver.lookup(&fs_path)
         }
     }?;
-    check_executable_file(&dentrymnt)?;
-    Ok(dentrymnt)
+    check_executable_file(&dentry)?;
+    Ok(dentry)
 }
 
 fn do_execve(
-    elf_file: Arc<DentryMnt>,
+    elf_file: Arc<Dentry>,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     context: &mut UserContext,
@@ -180,7 +181,7 @@ fn read_cstring_vec(
 }
 
 /// Sets uid for credentials as the same of uid of elf file if elf file has `set_uid` bit.
-fn set_uid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<DentryMnt>) -> Result<()> {
+fn set_uid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) -> Result<()> {
     if elf_file.mode()?.has_set_uid() {
         let uid = elf_file.owner()?;
         credentials.set_euid(uid);
@@ -192,7 +193,7 @@ fn set_uid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<DentryMnt
 }
 
 /// Sets gid for credentials as the same of gid of elf file if elf file has `set_gid` bit.
-fn set_gid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<DentryMnt>) -> Result<()> {
+fn set_gid_from_elf(credentials: &Credentials<WriteOp>, elf_file: &Arc<Dentry>) -> Result<()> {
     if elf_file.mode()?.has_set_gid() {
         let gid = elf_file.group()?;
         credentials.set_egid(gid);

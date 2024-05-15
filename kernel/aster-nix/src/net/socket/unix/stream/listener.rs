@@ -7,10 +7,7 @@ use keyable_arc::KeyableWeak;
 use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
-        utils::{DentryMnt, Inode},
-    },
+    fs::{file_handle::FileLike, path::Dentry, utils::Inode},
     net::socket::{
         unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
         SocketAddr,
@@ -91,10 +88,10 @@ impl BacklogTable {
 
     fn add_backlog(&self, addr: &UnixSocketAddrBound, backlog: usize) -> Result<()> {
         let inode = {
-            let UnixSocketAddrBound::Path(dentrymnt) = addr else {
+            let UnixSocketAddrBound::Path(dentry) = addr else {
                 todo!()
             };
-            create_keyable_inode(dentrymnt)
+            create_keyable_inode(dentry)
         };
 
         let mut backlog_sockets = self.backlog_sockets.write();
@@ -108,10 +105,10 @@ impl BacklogTable {
 
     fn get_backlog(&self, addr: &UnixSocketAddrBound) -> Result<Arc<Backlog>> {
         let inode = {
-            let UnixSocketAddrBound::Path(dentrymnt) = addr else {
+            let UnixSocketAddrBound::Path(dentry) = addr else {
                 todo!()
             };
-            create_keyable_inode(dentrymnt)
+            create_keyable_inode(dentry)
         };
 
         let backlog_sockets = self.backlog_sockets.read();
@@ -162,11 +159,11 @@ impl BacklogTable {
     }
 
     fn remove_backlog(&self, addr: &UnixSocketAddrBound) {
-        let UnixSocketAddrBound::Path(dentrymnt) = addr else {
+        let UnixSocketAddrBound::Path(dentry) = addr else {
             todo!()
         };
 
-        let inode = create_keyable_inode(dentrymnt);
+        let inode = create_keyable_inode(dentry);
         self.backlog_sockets.write().remove(&inode);
     }
 }
@@ -212,8 +209,8 @@ impl Backlog {
     }
 }
 
-fn create_keyable_inode(dentrymnt: &Arc<DentryMnt>) -> KeyableWeak<dyn Inode> {
-    let weak_inode = Arc::downgrade(dentrymnt.inode());
+fn create_keyable_inode(dentry: &Arc<Dentry>) -> KeyableWeak<dyn Inode> {
+    let weak_inode = Arc::downgrade(dentry.inode());
     KeyableWeak::from(weak_inode)
 }
 

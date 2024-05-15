@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{Dentry, DentryKey, DentryMnt, FileSystem, InodeType};
-use crate::prelude::*;
+use crate::{
+    fs::{
+        path::dentry::{Dentry, DentryKey, Dentry_},
+        utils::{FileSystem, InodeType},
+    },
+    prelude::*,
+};
 
 /// The MountNode can form a mount tree to maintain the mount information.
 pub struct MountNode {
-    /// Root dentry.
-    root_dentry: Arc<Dentry>,
-    /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
+    /// Root Dentry_.
+    root_dentry: Arc<Dentry_>,
+    /// Mountpoint Dentry_. A mount node can be mounted on one dentry of another mount node,
     /// which makes the mount being the child of the mount node.
-    mountpoint_dentry: RwLock<Option<Arc<Dentry>>>,
+    mountpoint_dentry: RwLock<Option<Arc<Dentry_>>>,
     /// The associated FS.
     fs: Arc<dyn FileSystem>,
     /// The parent mount node.
@@ -24,7 +29,7 @@ impl MountNode {
     /// Create a root mount node with an associated FS.
     ///
     /// The root mount node is not mounted on other mount nodes(which means it has no
-    /// parent). The root inode of the fs will form the root dentry of it.
+    /// parent). The root inode of the fs will form the root dentryinner of it.
     ///
     /// It is allowed to create a mount node even if the fs has been provided to another
     /// mount node. It is the fs's responsibility to ensure the data consistency.
@@ -42,7 +47,7 @@ impl MountNode {
     /// mount nodes must be explicitly assigned a mountpoint to maintain structural integrity.
     fn new(fs: Arc<dyn FileSystem>, parent_mount: Option<Weak<MountNode>>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
-            root_dentry: Dentry::new_root(fs.root_inode()),
+            root_dentry: Dentry_::new_root(fs.root_inode()),
             mountpoint_dentry: RwLock::new(None),
             parent: RwLock::new(parent_mount),
             children: Mutex::new(BTreeMap::new()),
@@ -62,7 +67,7 @@ impl MountNode {
     /// mountpoint. It is the fs's responsibility to ensure the data consistency.
     ///
     /// Return the mounted child mount.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Arc<DentryMnt>) -> Result<Arc<Self>> {
+    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Arc<Dentry>) -> Result<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
@@ -79,7 +84,7 @@ impl MountNode {
     /// Unmount a child mount node from the mountpoint and return it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
-    pub fn umount(&self, mountpoint: &DentryMnt) -> Result<Arc<Self>> {
+    pub fn umount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
@@ -93,20 +98,20 @@ impl MountNode {
     }
 
     /// Try to get a child mount node from the mountpoint.
-    pub fn get(&self, mountpoint: &DentryMnt) -> Option<Arc<Self>> {
+    pub fn get(&self, mountpoint: &Dentry) -> Option<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return None;
         }
         self.children.lock().get(&mountpoint.key()).cloned()
     }
 
-    /// Get the root dentry of this mount node.
-    pub fn root_dentry(&self) -> &Arc<Dentry> {
+    /// Get the root Dentry_ of this mount node.
+    pub fn root_dentry(&self) -> &Arc<Dentry_> {
         &self.root_dentry
     }
 
-    /// Try to get the mountpoint dentry of this mount node.
-    pub fn mountpoint_dentry(&self) -> Option<Arc<Dentry>> {
+    /// Try to get the mountpoint Dentry_ of this mount node.
+    pub fn mountpoint_dentry(&self) -> Option<Arc<Dentry_>> {
         self.mountpoint_dentry.read().clone()
     }
 
@@ -114,9 +119,9 @@ impl MountNode {
     ///
     /// In some cases we may need to reset the mountpoint of
     /// the created MountNode, such as move mount.
-    pub fn set_mountpoint_dentry(&self, dentry: Arc<Dentry>) {
+    pub fn set_mountpoint_dentry(&self, inner: Arc<Dentry_>) {
         let mut mountpoint_dentry = self.mountpoint_dentry.write();
-        *mountpoint_dentry = Some(dentry);
+        *mountpoint_dentry = Some(inner);
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
