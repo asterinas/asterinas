@@ -513,7 +513,7 @@ mod test {
     #[ktest]
     fn slice_child() {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
-        let parent_dup = parent.dup().unwrap();
+        let parent_dup = parent.dup();
         let slice_child = VmoChildOptions::new_slice(parent_dup, 0..PAGE_SIZE)
             .alloc()
             .unwrap();
@@ -530,7 +530,7 @@ mod test {
         let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
         parent.write_val(1, &42u8).unwrap();
         parent.write_val(2, &16u8).unwrap();
-        let parent_dup = parent.dup().unwrap();
+        let parent_dup = parent.dup();
         let cow_child = VmoChildOptions::new_cow(parent_dup, 0..10 * PAGE_SIZE)
             .alloc()
             .unwrap();
