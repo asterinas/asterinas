@@ -8,7 +8,7 @@ use id_alloc::IdAlloc;
 use log::{debug, info};
 
 use crate::{
-    arch::dispatcher::init_io_mem_dispatcher, device::io_mem::IoMem, sync::SpinLock, vm::PAGE_SIZE
+    arch::dispatcher::init_io_mem_dispatcher, device::io_mem::IoMem, sync::SpinLock, vm::PAGE_SIZE,
 };
 
 struct IoMemAllocator {
@@ -133,4 +133,56 @@ pub static IO_MEM_DISPATCHER: IoMemDispatcher = IoMemDispatcher::new();
 pub(crate) fn init() {
     // Initialize the allocator of the IoMemDispatcher based on the system memory info.
     init_io_mem_dispatcher(crate::boot::memory_regions().to_owned(), &IO_MEM_DISPATCHER);
+}
+
+#[cfg(ktest)]
+mod test {
+    use super::IoMemDispatcher;
+    use crate::vm::PAGE_SIZE;
+
+    #[ktest]
+    fn illegal_region() {
+        let dispatcher = IoMemDispatcher::new();
+        let io_mem_region = 0x4000_0000..0x4200_0000;
+        unsafe {
+            dispatcher.add_range(io_mem_region);
+        }
+        assert!(dispatcher.get(0..0).is_none());
+        assert!(dispatcher.get(0x4000_0000..0x4000_0000).is_none());
+        assert!(dispatcher.get(0x4000_1000..0x4000_0000).is_none());
+        assert!(dispatcher.get(usize::MAX..0).is_none());
+    }
+
+    #[ktest]
+    fn conflict_region() {
+        let dispatcher = IoMemDispatcher::new();
+        let io_mem_region_a = 0x4000_0000..0x4200_0000;
+        let io_mem_region_b =
+            (io_mem_region_a.end + PAGE_SIZE)..(io_mem_region_a.end + 10 * PAGE_SIZE);
+        unsafe {
+            dispatcher.add_range(io_mem_region_a.clone());
+            dispatcher.add_range(io_mem_region_b.clone());
+        }
+
+        assert!(dispatcher
+            .get((io_mem_region_a.start - 1)..io_mem_region_a.start)
+            .is_none());
+        assert!(dispatcher
+            .get(io_mem_region_a.start..(io_mem_region_a.start + 1))
+            .is_some());
+
+        assert!(dispatcher
+            .get((io_mem_region_a.end + 1)..(io_mem_region_b.start - 1))
+            .is_none());
+        assert!(dispatcher
+            .get((io_mem_region_a.end - 1)..(io_mem_region_b.start + 1))
+            .is_none());
+
+        assert!(dispatcher
+            .get((io_mem_region_a.end - 1)..io_mem_region_a.end)
+            .is_some());
+        assert!(dispatcher
+            .get(io_mem_region_a.end..(io_mem_region_a.end + 1))
+            .is_none());
+    }
 }
