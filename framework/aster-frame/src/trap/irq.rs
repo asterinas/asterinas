@@ -16,7 +16,7 @@ pub type IrqCallbackFunction = dyn Fn(&TrapFrame) + Sync + Send + 'static;
 /// An Interrupt ReQuest(IRQ) line. User can use `alloc` or `alloc_specific` to get specific IRQ line.
 ///
 /// The IRQ number is guaranteed to be external IRQ number and user can register callback functions to this IRQ resource.
-/// When this resrouce is dropped, all the callback in this will be unregistered automatically.
+/// When this resource is dropped, all the callback in this will be unregistered automatically.
 #[derive(Debug)]
 #[must_use]
 pub struct IrqLine {

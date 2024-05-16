@@ -27,14 +27,16 @@ use crate::{
     trap::IrqLine,
 };
 
-pub fn init() {
+/// Init APIC with tsc deadline mode or periodic mode.
+/// Return the corresponding `IrqLine` for the System Timer.
+pub(super) fn init() -> IrqLine {
     init_tsc_freq();
     if is_tsc_deadline_mode_supported() {
         info!("[Timer]: Enable APIC TSC deadline mode.");
-        init_tsc_mode();
+        init_tsc_mode()
     } else {
         info!("[Timer]: Enable APIC periodic mode.");
-        init_periodic_mode();
+        init_periodic_mode()
     }
 }
 
@@ -47,10 +49,11 @@ fn is_tsc_deadline_mode_supported() -> bool {
     (cpuid.ecx & TSC_DEADLINE_MODE_SUPPORT) > 0
 }
 
-fn init_tsc_mode() {
+fn init_tsc_mode() -> IrqLine {
+    let timer_irq = IrqLine::alloc().unwrap();
     let mut apic_lock = APIC_INSTANCE.get().unwrap().lock_irq_disabled();
     // Enable tsc deadline mode
-    apic_lock.set_lvt_timer(super::TIMER_IRQ_NUM.load(Ordering::Relaxed) as u64 | (1 << 18));
+    apic_lock.set_lvt_timer(timer_irq.num() as u64 | (1 << 18));
     drop(apic_lock);
     let tsc_step = TSC_FREQ.load(Ordering::Relaxed) / TIMER_FREQ;
 
@@ -62,11 +65,13 @@ fn init_tsc_mode() {
 
     callback.call(());
     APIC_TIMER_CALLBACK.call_once(|| Arc::new(callback));
+
+    timer_irq
 }
 
-fn init_periodic_mode() {
+fn init_periodic_mode() -> IrqLine {
     // Allocate IRQ
-    let mut irq = IrqLine::alloc_specific(super::TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
+    let mut irq = IrqLine::alloc().unwrap();
     irq.on_active(pit_callback);
 
     // Enable PIT
@@ -80,12 +85,24 @@ fn init_periodic_mode() {
     drop(apic_lock);
 
     static IS_FINISH: AtomicBool = AtomicBool::new(false);
+    static INIT_COUNT: AtomicU64 = AtomicU64::new(0);
+
     x86_64::instructions::interrupts::enable();
     while !IS_FINISH.load(Ordering::Acquire) {
         x86_64::instructions::hlt();
     }
     x86_64::instructions::interrupts::disable();
     drop(irq);
+
+    // Init APIC Timer
+    let timer_irq = IrqLine::alloc().unwrap();
+
+    let mut apic_lock = APIC_INSTANCE.get().unwrap().lock_irq_disabled();
+    apic_lock.set_timer_init_count(INIT_COUNT.load(Ordering::Relaxed));
+    apic_lock.set_lvt_timer(timer_irq.num() as u64 | (1 << 17));
+    apic_lock.set_timer_div_config(DivideConfig::Divide64);
+
+    return timer_irq;
 
     fn pit_callback(trap_frame: &TrapFrame) {
         static IN_TIME: AtomicU64 = AtomicU64::new(0);
@@ -108,17 +125,13 @@ fn init_periodic_mode() {
         let mut apic_lock = APIC_INSTANCE.get().unwrap().lock_irq_disabled();
         let remain_ticks = apic_lock.timer_current_count();
         apic_lock.set_timer_init_count(0);
-
-        // Init APIC Timer
         let ticks = (0xFFFF_FFFF - remain_ticks - APIC_FIRST_COUNT.load(Ordering::Relaxed))
             / CALLBACK_TIMES;
-        apic_lock.set_timer_init_count(ticks);
-        apic_lock.set_lvt_timer(super::TIMER_IRQ_NUM.load(Ordering::Relaxed) as u64 | (1 << 17));
-        apic_lock.set_timer_div_config(DivideConfig::Divide64);
         info!(
             "APIC Timer ticks count:{:x}, remain ticks: {:x},Timer Freq:{} Hz",
             ticks, remain_ticks, TIMER_FREQ
         );
+        INIT_COUNT.store(ticks, Ordering::Release);
         IS_FINISH.store(true, Ordering::Release);
     }
 }

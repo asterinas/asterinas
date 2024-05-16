@@ -13,9 +13,12 @@ use crate::prelude::*;
 pub struct SystemTime(PrimitiveDateTime);
 
 pub static START_TIME: Once<SystemTime> = Once::new();
+pub(super) static START_TIME_AS_DURATION: Once<Duration> = Once::new();
 
-pub(super) fn init_start_time() {
+pub(super) fn init() {
     let start_time = convert_system_time(read_start_time()).unwrap();
+    START_TIME_AS_DURATION
+        .call_once(|| start_time.duration_since(&SystemTime::UNIX_EPOCH).unwrap());
     START_TIME.call_once(|| start_time);
 }
 
@@ -37,6 +40,7 @@ impl SystemTime {
 
     /// Returns the current system time
     pub fn now() -> Self {
+        // The get real time result should always be valid
         START_TIME
             .get()
             .unwrap()

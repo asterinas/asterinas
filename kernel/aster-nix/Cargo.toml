@@ -26,6 +26,7 @@ int-to-c-enum = { path = "../libs/int-to-c-enum" }
 cpio-decoder = { path = "../libs/cpio-decoder" }
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 intrusive-collections = "0.9.5"
+paste = "1.0"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
 smoltcp = { version = "0.9.1", default-features = false, features = [
     "alloc",

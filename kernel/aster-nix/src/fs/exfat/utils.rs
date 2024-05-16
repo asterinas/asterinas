@@ -5,7 +5,7 @@ use core::{ops::Range, time::Duration};
 use time::{OffsetDateTime, PrimitiveDateTime, Time};
 
 use super::fat::ClusterID;
-use crate::prelude::*;
+use crate::{prelude::*, time::clocks::RealTimeClock};
 
 pub fn make_hash_index(cluster: ClusterID, offset: u32) -> usize {
     (cluster as usize) << 32usize | (offset as usize & 0xffffffffusize)
@@ -59,8 +59,7 @@ impl DosTimestamp {
     pub fn now() -> Result<Self> {
         #[cfg(not(ktest))]
         {
-            use crate::time::now_as_duration;
-            DosTimestamp::from_duration(now_as_duration(&crate::time::ClockID::CLOCK_REALTIME)?)
+            DosTimestamp::from_duration(RealTimeClock::get().read_time())
         }
 
         // When ktesting, the time module has not been initialized yet, return a fake value instead.

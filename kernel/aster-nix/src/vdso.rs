@@ -16,7 +16,6 @@ use core::time::Duration;
 
 use aster_frame::{
     sync::SpinLock,
-    timer::Timer,
     vm::{VmFrame, VmIo, PAGE_SIZE},
 };
 use aster_rights::Rights;
@@ -27,7 +26,8 @@ use spin::Once;
 
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-    time::{ClockID, SystemTime, START_TIME},
+    syscall::ClockID,
+    time::{clocks::MonotonicClock, SystemTime, START_TIME},
     vm::vmo::{Vmo, VmoOptions},
 };
 
@@ -291,11 +291,9 @@ fn update_vdso_high_res_instant(instant: Instant, instant_cycles: u64) {
 }
 
 /// Update the `VdsoInstant` for clock IDs with coarse resolution in Vdso.
-fn update_vdso_coarse_res_instant(timer: Arc<Timer>) {
+fn update_vdso_coarse_res_instant() {
     let instant = Instant::from(read_monotonic_time());
     VDSO.get().unwrap().update_coarse_res_instant(instant);
-
-    timer.set(Duration::from_millis(100));
 }
 
 /// Init `START_SECS_COUNT`, which is used to record the seconds passed since 1970-01-01 00:00:00.
@@ -321,8 +319,10 @@ pub(super) fn init() {
 
     // Coarse resolution clock IDs directly read the instant stored in VDSO data without
     // using coefficients for calculation, thus the related instant requires more frequent updating.
-    let coarse_instant_timer = Timer::new(update_vdso_coarse_res_instant).unwrap();
-    coarse_instant_timer.set(Duration::from_millis(100));
+    let coarse_instant_timer =
+        MonotonicClock::timer_manager().create_timer(update_vdso_coarse_res_instant);
+    coarse_instant_timer.set_interval(Duration::from_millis(100));
+    coarse_instant_timer.set_timeout(Duration::from_millis(100));
 }
 
 /// Return the VDSO vmo.
