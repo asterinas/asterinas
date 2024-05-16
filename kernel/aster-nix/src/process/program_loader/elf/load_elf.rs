@@ -325,7 +325,7 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
             start..end
         };
         debug_assert!(vmo_size >= (program_header.file_size as usize).align_up(PAGE_SIZE));
-        page_cache_vmo.new_cow_child(parent_range)?.alloc()?
+        page_cache_vmo.new_cow_child(parent_range).alloc()?
     };
 
     let anonymous_map_size: usize = if vmo_size > segment_vmo.size() {

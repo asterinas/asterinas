@@ -270,7 +270,7 @@ impl ExfatDentrySet {
     }
 
     pub(super) fn read_from(page_cache: Vmo<Full>, offset: usize) -> Result<Self> {
-        let mut iter = ExfatDentryIterator::new(page_cache.dup().unwrap(), offset, None)?;
+        let mut iter = ExfatDentryIterator::new(page_cache, offset, None)?;
         let primary_dentry_result = iter.next();
 
         if primary_dentry_result.is_none() {
