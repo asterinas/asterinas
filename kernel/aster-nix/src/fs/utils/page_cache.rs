@@ -44,8 +44,8 @@ impl PageCache {
     /// Returns the Vmo object.
     // TODO: The capability is too high，restrict it to eliminate the possibility of misuse.
     //       For example, the `resize` api should be forbidded.
-    pub fn pages(&self) -> Vmo<Full> {
-        self.pages.dup()
+    pub fn pages(&self) -> &Vmo<Full> {
+        &self.pages
     }
 
     /// Evict the data within a specified range from the page cache and persist

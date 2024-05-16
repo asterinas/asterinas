@@ -67,7 +67,7 @@ impl Inode {
     }
 
     pub fn page_cache(&self) -> Vmo<Full> {
-        self.inner.read().page_cache.pages()
+        self.inner.read().page_cache.pages().dup()
     }
 
     pub fn create(
