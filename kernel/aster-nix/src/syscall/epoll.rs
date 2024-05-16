@@ -11,6 +11,7 @@ use crate::{
         utils::CreationFlags,
     },
     prelude::*,
+    process::posix_thread::PosixThreadExt,
     util::{read_val_from_user, write_val_to_user},
 };
 
@@ -89,12 +90,7 @@ pub fn sys_epoll_ctl(
     Ok(SyscallReturn::Return(0 as _))
 }
 
-pub fn sys_epoll_wait(
-    epfd: FileDesc,
-    events_addr: Vaddr,
-    max_events: i32,
-    timeout: i32,
-) -> Result<SyscallReturn> {
+fn do_epoll_wait(epfd: FileDesc, max_events: i32, timeout: i32) -> Result<Vec<EpollEvent>> {
     let max_events = {
         if max_events <= 0 {
             return_errno_with_message!(Errno::EINVAL, "max_events is not positive");
@@ -106,20 +102,30 @@ pub fn sys_epoll_wait(
     } else {
         None
     };
+
+    let current = current!();
+    let file_table = current.file_table().lock();
+    let epoll_file = file_table
+        .get_file(epfd)?
+        .downcast_ref::<EpollFile>()
+        .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
+    let epoll_events = epoll_file.wait(max_events, timeout.as_ref())?;
+
+    Ok(epoll_events)
+}
+
+pub fn sys_epoll_wait(
+    epfd: FileDesc,
+    events_addr: Vaddr,
+    max_events: i32,
+    timeout: i32,
+) -> Result<SyscallReturn> {
     debug!(
         "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout = {:?}",
         epfd, events_addr, max_events, timeout
     );
 
-    let current = current!();
-    let file = {
-        let file_table = current.file_table().lock();
-        file_table.get_file(epfd)?.clone()
-    };
-    let epoll_file = file
-        .downcast_ref::<EpollFile>()
-        .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
-    let epoll_events = epoll_file.wait(max_events, timeout.as_ref())?;
+    let epoll_events = do_epoll_wait(epfd, max_events, timeout)?;
 
     // Write back
     let mut write_addr = events_addr;
@@ -132,17 +138,74 @@ pub fn sys_epoll_wait(
     Ok(SyscallReturn::Return(epoll_events.len() as _))
 }
 
+fn set_signal_mask(set_ptr: Vaddr) -> Result<u64> {
+    let new_set: Option<u64> = if set_ptr != 0 {
+        Some(read_val_from_user::<u64>(set_ptr)?)
+    } else {
+        None
+    };
+
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
+    let mut sig_mask = posix_thread.sig_mask().lock();
+
+    let old_sig_mask_value = sig_mask.as_u64();
+
+    if let Some(new_set) = new_set {
+        sig_mask.set(new_set);
+    }
+
+    Ok(old_sig_mask_value)
+}
+
+fn restore_signal_mask(sig_mask_val: u64) {
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
+    let mut sig_mask = posix_thread.sig_mask().lock();
+
+    sig_mask.set(sig_mask_val);
+}
+
 pub fn sys_epoll_pwait(
     epfd: FileDesc,
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
-    sigmask: Vaddr, //TODO: handle sigmask
+    sigmask: Vaddr,
+    sigset_size: usize,
 ) -> Result<SyscallReturn> {
-    if sigmask != 0 {
-        warn!("epoll_pwait cannot handle signal mask, yet");
+    debug!(
+        "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout = {:?}, sigmask = 0x{:x}, sigset_size = {}",
+        epfd, events_addr, max_events, timeout, sigmask, sigset_size
+    );
+
+    if sigset_size != 8 {
+        error!("sigset size is not equal to 8");
     }
-    sys_epoll_wait(epfd, events_addr, max_events, timeout)
+
+    let old_sig_mask_value = set_signal_mask(sigmask)?;
+
+    let ready_events = match do_epoll_wait(epfd, max_events, timeout) {
+        Ok(events) => {
+            restore_signal_mask(old_sig_mask_value);
+            events
+        }
+        Err(e) => {
+            // Restore the signal mask even if an error occurs
+            restore_signal_mask(old_sig_mask_value);
+            return Err(e);
+        }
+    };
+
+    // Write back
+    let mut write_addr = events_addr;
+    for event in ready_events.iter() {
+        let c_event = c_epoll_event::from(event);
+        write_val_to_user(write_addr, &c_event)?;
+        write_addr += core::mem::size_of::<c_epoll_event>();
+    }
+
+    Ok(SyscallReturn::Return(ready_events.len() as _))
 }
 
 #[derive(Debug, Clone, Copy, Pod)]

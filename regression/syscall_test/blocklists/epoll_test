@@ -1,9 +1,4 @@
-EpollTest.AllWritable
-EpollTest.LastReadable
-EpollTest.LastNonWritable
 EpollTest.Timeout_NoRandomSave
-EpollTest.WaitThenUnblock
-EpollTest.UnblockWithSignal
 EpollTest.TimeoutNoFds
 EpollTest.UnblockWithNewFD
 EpollTest.Oneshot

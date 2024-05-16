@@ -11,5 +11,6 @@ cd ${SCRIPT_DIR}
 ./ext2.sh
 ./process.sh
 ./network.sh
+./test_epoll_pwait.sh
 
 echo "All regression tests passed."

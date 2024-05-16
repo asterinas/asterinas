@@ -255,7 +255,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FCHMODAT = 268         => sys_fchmodat(args[..3]);
     SYS_SET_ROBUST_LIST = 273  => sys_set_robust_list(args[..2]);
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
-    SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..5]);
+    SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);
     SYS_EVENTFD = 284          => sys_eventfd(args[..1]);
     SYS_ACCEPT4 = 288          => sys_accept4(args[..4]);
     SYS_EVENTFD2 = 290         => sys_eventfd2(args[..2]);
