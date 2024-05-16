@@ -101,8 +101,6 @@ impl Connected {
             }
             let vsockspace = VSOCK_GLOBAL.get().unwrap();
             vsockspace.reset(&connection.info).unwrap();
-            vsockspace.remove_connected_socket(&self.id());
-            vsockspace.recycle_port(&self.local_addr().port);
             connection.set_local_shutdown();
         }
         Ok(())
@@ -140,19 +138,6 @@ impl Connected {
         } else {
             self.pollee.del_events(IoEvents::IN);
         }
-    }
-}
-
-impl Drop for Connected {
-    fn drop(&mut self) {
-        let connection = self.connection.lock_irq_disabled();
-        if connection.is_local_shutdown() {
-            return;
-        }
-        let vsockspace = VSOCK_GLOBAL.get().unwrap();
-        vsockspace.reset(&connection.info).unwrap();
-        vsockspace.remove_connected_socket(&self.id());
-        vsockspace.recycle_port(&self.local_addr().port);
     }
 }
 
