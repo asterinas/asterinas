@@ -7,7 +7,7 @@
 //!
 //! ```text
 //! +-+ <- the highest used address (0xffff_ffff_ffff_0000)
-//! | |         For the kernel code, 1 GiB.
+//! | |         For the kernel code, 1 GiB. Mapped frames are tracked with handles.
 //! +-+ <- 0xffff_ffff_8000_0000
 //! | |
 //! | |         Unused hole.
@@ -42,14 +42,13 @@ use spin::Once;
 use super::{
     frame::{
         allocator::FRAME_ALLOCATOR,
-        meta,
-        meta::{FrameMeta, FrameType},
+        meta::{self, FrameMeta, FrameType},
     },
     nr_subpage_per_huge,
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_size,
     page_table::{boot_pt::BootPageTable, KernelMode, PageTable},
-    MemoryRegionType, Paddr, PagingConstsTrait, Vaddr, VmFrame, PAGE_SIZE,
+    FrameMetaRef, MemoryRegionType, Paddr, PagingConstsTrait, Vaddr, VmFrame, PAGE_SIZE,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -161,7 +160,7 @@ pub fn init_kernel_page_table() {
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame in meta_frames {
-            // Safety: we are doing the metadata mappings for the kernel.
+            // SAFETY: we are doing the metadata mappings for the kernel.
             unsafe {
                 cursor.map(frame, prop);
             }
@@ -201,9 +200,18 @@ pub fn init_kernel_page_table() {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        // SAFETY: we are doing mappings for the kernel.
-        unsafe {
-            kpt.map(&from, &to, prop).unwrap();
+        let mut cursor = kpt.cursor_mut(&from).unwrap();
+        for frame_paddr in to.step_by(PAGE_SIZE) {
+            let mut meta = unsafe { FrameMetaRef::from_raw(frame_paddr, 1) };
+            // SAFETY: we are marking the type of the frame containing loaded kernel code.
+            unsafe {
+                meta.deref_mut().frame_type = FrameType::KernelCode;
+            }
+            let frame = VmFrame { meta };
+            // SAFETY: we are doing mappings for the kernel.
+            unsafe {
+                cursor.map(frame, prop);
+            }
         }
     }
 
@@ -211,7 +219,7 @@ pub fn init_kernel_page_table() {
 }
 
 pub fn activate_kernel_page_table() {
-    // Safety: the kernel page table is initialized properly.
+    // SAFETY: the kernel page table is initialized properly.
     unsafe {
         KERNEL_PAGE_TABLE.get().unwrap().activate_unchecked();
         crate::arch::mm::tlb_flush_all_including_global();
@@ -252,9 +260,9 @@ fn init_boot_page_table_and_page_meta(
     let meta_frames = meta_frames
         .into_iter()
         .map(|paddr| {
-            // Safety: the frame is allocated but not initialized thus not referenced.
+            // SAFETY: the frame is allocated but not initialized thus not referenced.
             let mut frame = unsafe { VmFrame::from_free_raw(paddr, 1) };
-            // Safety: this is the only reference to the frame so it's exclusive.
+            // SAFETY: this is the only reference to the frame so it's exclusive.
             unsafe { frame.meta.deref_mut().frame_type = FrameType::Meta };
             frame
         })

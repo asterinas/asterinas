@@ -33,7 +33,9 @@ pub use self::{
     space::{VmMapOptions, VmSpace},
 };
 pub(crate) use self::{
-    frame::meta::FrameMetaRef, kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags,
+    frame::meta::{FrameMetaRef, FrameType},
+    kspace::paddr_to_vaddr,
+    page_prop::PrivilegedPageFlags,
     page_table::PageTable,
 };
 use crate::{
@@ -46,7 +48,7 @@ pub type PagingLevel = u8;
 
 /// A minimal set of constants that determines the paging system.
 /// This provides an abstraction over most paging modes in common architectures.
-pub(crate) trait PagingConstsTrait: Debug + 'static {
+pub(crate) trait PagingConstsTrait: Clone + Debug + 'static {
     /// The smallest page size.
     /// This is also the page size at level 1 page tables.
     const BASE_PAGE_SIZE: usize;

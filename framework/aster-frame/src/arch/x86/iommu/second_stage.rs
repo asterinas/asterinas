@@ -13,7 +13,7 @@ use crate::vm::{
 /// The page table used by iommu maps the device address
 /// space to the physical address space.
 #[derive(Clone, Debug)]
-pub(super) struct DeviceMode {}
+pub struct DeviceMode {}
 
 impl PageTableMode for DeviceMode {
     /// The device address space is 32-bit.
@@ -67,32 +67,23 @@ bitflags::bitflags! {
 pub struct PageTableEntry(u64);
 
 impl PageTableEntry {
-    const PHYS_MASK: usize = 0xFFFF_FFFF_F000;
+    const PHYS_MASK: u64 = 0xFFFF_FFFF_F000;
+    const PROP_MASK: u64 = !Self::PHYS_MASK & !PageTableFlags::LAST_PAGE.bits();
 }
 
 impl PageTableEntryTrait for PageTableEntry {
-    fn new(paddr: crate::vm::Paddr, prop: PageProperty, huge: bool, last: bool) -> Self {
-        let mut flags = PageTableFlags::empty();
-        if prop.flags.contains(PageFlags::W) {
-            flags |= PageTableFlags::WRITABLE;
-        }
-        if prop.flags.contains(PageFlags::R) {
-            flags |= PageTableFlags::READABLE;
-        }
-        if prop.cache != CachePolicy::Uncacheable {
-            flags |= PageTableFlags::SNOOP;
-        }
-        if last {
-            flags |= PageTableFlags::LAST_PAGE;
-        }
-        if huge {
-            panic!("Huge page is not supported in iommu page table");
-        }
-        Self((paddr & Self::PHYS_MASK) as u64 | flags.bits)
+    fn new_frame(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
+        let mut pte = Self(paddr as u64 & Self::PHYS_MASK | PageTableFlags::LAST_PAGE.bits());
+        pte.set_prop(prop);
+        pte
+    }
+
+    fn new_pt(paddr: Paddr) -> Self {
+        Self(paddr as u64 & Self::PHYS_MASK)
     }
 
     fn paddr(&self) -> Paddr {
-        (self.0 & Self::PHYS_MASK as u64) as usize
+        (self.0 & Self::PHYS_MASK) as usize
     }
 
     fn new_absent() -> Self {
@@ -131,7 +122,21 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    fn is_huge(&self) -> bool {
-        false
+    fn set_prop(&mut self, prop: PageProperty) {
+        let mut flags = PageTableFlags::empty();
+        if prop.flags.contains(PageFlags::W) {
+            flags |= PageTableFlags::WRITABLE;
+        }
+        if prop.flags.contains(PageFlags::R) {
+            flags |= PageTableFlags::READABLE;
+        }
+        if prop.cache != CachePolicy::Uncacheable {
+            flags |= PageTableFlags::SNOOP;
+        }
+        self.0 = self.0 & !Self::PROP_MASK | flags.bits();
+    }
+
+    fn is_last(&self, level: PagingLevel) -> bool {
+        level == 1
     }
 }

@@ -138,7 +138,7 @@ impl RootTable {
         if bus_entry.is_present() {
             warn!("IOMMU: Overwritting the existing device page table");
         }
-        let address = page_table.root_paddr();
+        let address = unsafe { page_table.root_paddr() };
         context_table.page_tables.insert(address, page_table);
         let entry = ContextEntry(address as u128 | 1 | 0x1_0000_0000_0000_0000);
         context_table
@@ -262,7 +262,7 @@ impl ContextTable {
 
         if !bus_entry.is_present() {
             let table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
-            let address = table.root_paddr();
+            let address = unsafe { table.root_paddr() };
             self.page_tables.insert(address, table);
             let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
             self.entries_frame

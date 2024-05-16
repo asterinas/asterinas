@@ -6,7 +6,8 @@ mod remapping;
 mod second_stage;
 
 use log::info;
-use second_stage::{DeviceMode, PageTableEntry, PagingConsts};
+pub use second_stage::DeviceMode;
+use second_stage::{PageTableEntry, PagingConsts};
 use spin::Once;
 
 use crate::{

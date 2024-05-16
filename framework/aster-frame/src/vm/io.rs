@@ -174,7 +174,7 @@ impl<'a> VmReader<'a> {
 
     /// Returns the number of bytes for the remaining data.
     pub const fn remain(&self) -> usize {
-        // Safety: the end is equal to or greater than the cursor.
+        // SAFETY: the end is equal to or greater than the cursor.
         unsafe { self.end.sub_ptr(self.cursor) }
     }
 
@@ -193,7 +193,7 @@ impl<'a> VmReader<'a> {
     /// This method ensures the postcondition of `self.remain() <= max_remain`.
     pub const fn limit(mut self, max_remain: usize) -> Self {
         if max_remain < self.remain() {
-            // Safety: the new end is less than the old end.
+            // SAFETY: the new end is less than the old end.
             unsafe { self.end = self.cursor.add(max_remain) };
         }
         self
@@ -208,7 +208,7 @@ impl<'a> VmReader<'a> {
     pub fn skip(mut self, nbytes: usize) -> Self {
         assert!(nbytes <= self.remain());
 
-        // Safety: the new cursor is less than or equal to the end.
+        // SAFETY: the new cursor is less than or equal to the end.
         unsafe { self.cursor = self.cursor.add(nbytes) };
         self
     }
@@ -227,7 +227,7 @@ impl<'a> VmReader<'a> {
             return 0;
         }
 
-        // Safety: the memory range is valid since `copy_len` is the minimum
+        // SAFETY: the memory range is valid since `copy_len` is the minimum
         // of the reader's remaining data and the writer's available space.
         unsafe {
             core::ptr::copy(self.cursor, writer.cursor, copy_len);
@@ -255,7 +255,7 @@ impl<'a> VmReader<'a> {
 
 impl<'a> From<&'a [u8]> for VmReader<'a> {
     fn from(slice: &'a [u8]) -> Self {
-        // Safety: the range of memory is contiguous and is valid during `'a`.
+        // SAFETY: the range of memory is contiguous and is valid during `'a`.
         unsafe { Self::from_raw_parts(slice.as_ptr(), slice.len()) }
     }
 }
@@ -284,7 +284,7 @@ impl<'a> VmWriter<'a> {
 
     /// Returns the number of bytes for the available space.
     pub const fn avail(&self) -> usize {
-        // Safety: the end is equal to or greater than the cursor.
+        // SAFETY: the end is equal to or greater than the cursor.
         unsafe { self.end.sub_ptr(self.cursor) }
     }
 
@@ -303,7 +303,7 @@ impl<'a> VmWriter<'a> {
     /// This method ensures the postcondition of `self.avail() <= max_avail`.
     pub const fn limit(mut self, max_avail: usize) -> Self {
         if max_avail < self.avail() {
-            // Safety: the new end is less than the old end.
+            // SAFETY: the new end is less than the old end.
             unsafe { self.end = self.cursor.add(max_avail) };
         }
         self
@@ -318,7 +318,7 @@ impl<'a> VmWriter<'a> {
     pub fn skip(mut self, nbytes: usize) -> Self {
         assert!(nbytes <= self.avail());
 
-        // Safety: the new cursor is less than or equal to the end.
+        // SAFETY: the new cursor is less than or equal to the end.
         unsafe { self.cursor = self.cursor.add(nbytes) };
         self
     }
@@ -337,7 +337,7 @@ impl<'a> VmWriter<'a> {
             return 0;
         }
 
-        // Safety: the memory range is valid since `copy_len` is the minimum
+        // SAFETY: the memory range is valid since `copy_len` is the minimum
         // of the reader's remaining data and the writer's available space.
         unsafe {
             core::ptr::copy(reader.cursor, self.cursor, copy_len);
@@ -364,7 +364,7 @@ impl<'a> VmWriter<'a> {
         let written_num = avail / core::mem::size_of::<T>();
 
         for i in 0..written_num {
-            // Safety: `written_num` is calculated by the avail size and the size of the type `T`,
+            // SAFETY: `written_num` is calculated by the avail size and the size of the type `T`,
             // hence the `add` operation and `write` operation are valid and will only manipulate
             // the memory managed by this writer.
             unsafe {
@@ -380,7 +380,7 @@ impl<'a> VmWriter<'a> {
 
 impl<'a> From<&'a mut [u8]> for VmWriter<'a> {
     fn from(slice: &'a mut [u8]) -> Self {
-        // Safety: the range of memory is contiguous and is valid during `'a`.
+        // SAFETY: the range of memory is contiguous and is valid during `'a`.
         unsafe { Self::from_raw_parts_mut(slice.as_mut_ptr(), slice.len()) }
     }
 }
