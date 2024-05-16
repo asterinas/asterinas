@@ -28,6 +28,6 @@ jobs:
       - name: Run Vsock Client on Host
         id: host_vsock_client
         run: |
-          sleep 5m
+          sleep 6m
           echo "Run vsock client on host...."
           echo "Hello from host" | socat -dd - vsock-connect:3:4321

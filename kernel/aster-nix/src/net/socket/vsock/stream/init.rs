@@ -66,15 +66,6 @@ impl Init {
     }
 }
 
-impl Drop for Init {
-    fn drop(&mut self) {
-        if let Some(addr) = *self.bound_addr.lock() {
-            let vsockspace = VSOCK_GLOBAL.get().unwrap();
-            vsockspace.recycle_port(&addr.port);
-        }
-    }
-}
-
 impl Default for Init {
     fn default() -> Self {
         Self::new()

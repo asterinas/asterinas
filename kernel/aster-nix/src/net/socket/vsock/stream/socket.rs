@@ -339,3 +339,28 @@ impl Socket for VsockStreamSocket {
         }
     }
 }
+
+impl Drop for VsockStreamSocket {
+    fn drop(&mut self) {
+        let vsockspace = VSOCK_GLOBAL.get().unwrap();
+        let inner = self.status.read();
+        match &*inner {
+            Status::Init(init) => {
+                if let Some(addr) = init.bound_addr() {
+                    vsockspace.recycle_port(&addr.port);
+                }
+            }
+            Status::Listen(listen) => {
+                vsockspace.recycle_port(&listen.addr().port);
+                vsockspace.remove_listen_socket(&listen.addr());
+            }
+            Status::Connected(connected) => {
+                if !connected.is_closed() {
+                    vsockspace.reset(&connected.get_info()).unwrap();
+                }
+                vsockspace.remove_connected_socket(&connected.id());
+                vsockspace.recycle_port(&connected.local_addr().port);
+            }
+        }
+    }
+}
