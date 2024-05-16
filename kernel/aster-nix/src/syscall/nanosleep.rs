@@ -2,11 +2,11 @@
 
 use core::time::Duration;
 
-use super::SyscallReturn;
+use super::{clock_gettime::read_clock, ClockID, SyscallReturn};
 use crate::{
     prelude::*,
     process::signal::Pauser,
-    time::{clockid_t, now_as_duration, timespec_t, ClockID, TIMER_ABSTIME},
+    time::{clockid_t, timespec_t, TIMER_ABSTIME},
     util::{read_val_from_user, write_val_to_user},
 };
 
@@ -58,7 +58,7 @@ fn do_clock_nanosleep(
         clock_id, is_abs_time, request_time, remain_timespec_addr
     );
 
-    let start_time = now_as_duration(&clock_id)?;
+    let start_time = read_clock(&clock_id)?;
     let timeout = if is_abs_time {
         if request_time < start_time {
             return Ok(SyscallReturn::Return(0));
@@ -77,7 +77,7 @@ fn do_clock_nanosleep(
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
         Err(e) if e.error() == Errno::EINTR => {
-            let end_time = now_as_duration(&clock_id)?;
+            let end_time = read_clock(&clock_id)?;
 
             if end_time >= start_time + timeout {
                 return Ok(SyscallReturn::Return(0));

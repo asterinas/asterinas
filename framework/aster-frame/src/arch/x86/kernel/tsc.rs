@@ -12,7 +12,7 @@ use x86::cpuid::cpuid;
 use crate::{
     arch::timer::{
         pit::{self, OperatingMode},
-        TIMER_FREQ, TIMER_IRQ_NUM,
+        TIMER_FREQ,
     },
     trap::IrqLine,
 };
@@ -71,7 +71,7 @@ pub fn determine_tsc_freq_via_cpuid() -> Option<u64> {
 /// the PIT to calculate this frequency.
 pub fn determine_tsc_freq_via_pit() -> u64 {
     // Allocate IRQ
-    let mut irq = IrqLine::alloc_specific(TIMER_IRQ_NUM.load(Ordering::Relaxed)).unwrap();
+    let mut irq = IrqLine::alloc().unwrap();
     irq.on_active(pit_callback);
 
     // Enable PIT

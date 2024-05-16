@@ -3,6 +3,7 @@
 //! Read the Cpu context content then dispatch syscall to corrsponding handler
 //! The each sub module contains functions that handle real syscall logic.
 use aster_frame::cpu::UserContext;
+pub use clock_gettime::ClockID;
 
 use crate::prelude::*;
 

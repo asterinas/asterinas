@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![allow(non_camel_case_types)]
-use core::time::Duration;
 
-use aster_time::read_monotonic_time;
+pub use core::{timer, Clock};
+
+use ::core::time::Duration;
+pub use system_time::{SystemTime, START_TIME};
+pub use timer::{Timer, TimerManager};
 
 use crate::prelude::*;
 
+pub mod clocks;
+mod core;
 mod system_time;
-
-pub use system_time::{SystemTime, START_TIME};
+pub mod wait;
 
 pub type clockid_t = i32;
 pub type time_t = i64;
@@ -17,31 +21,9 @@ pub type suseconds_t = i64;
 pub type clock_t = i64;
 
 pub(super) fn init() {
-    system_time::init_start_time();
+    system_time::init();
+    clocks::init();
 }
-
-#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
-#[repr(i32)]
-pub enum ClockID {
-    CLOCK_REALTIME = 0,
-    CLOCK_MONOTONIC = 1,
-    CLOCK_PROCESS_CPUTIME_ID = 2,
-    CLOCK_THREAD_CPUTIME_ID = 3,
-    CLOCK_MONOTONIC_RAW = 4,
-    CLOCK_REALTIME_COARSE = 5,
-    CLOCK_MONOTONIC_COARSE = 6,
-    CLOCK_BOOTTIME = 7,
-}
-
-/// A list of all supported clock IDs for time-related functions.
-pub const ALL_SUPPORTED_CLOCK_IDS: [ClockID; 6] = [
-    ClockID::CLOCK_REALTIME,
-    ClockID::CLOCK_REALTIME_COARSE,
-    ClockID::CLOCK_MONOTONIC,
-    ClockID::CLOCK_MONOTONIC_COARSE,
-    ClockID::CLOCK_MONOTONIC_RAW,
-    ClockID::CLOCK_BOOTTIME,
-];
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
@@ -89,27 +71,6 @@ impl From<timeval_t> for Duration {
 
 /// The various flags for setting POSIX.1b interval timers:
 pub const TIMER_ABSTIME: i32 = 0x01;
-
-pub fn now_as_duration(clock_id: &ClockID) -> Result<Duration> {
-    match clock_id {
-        ClockID::CLOCK_MONOTONIC
-        | ClockID::CLOCK_MONOTONIC_COARSE
-        | ClockID::CLOCK_MONOTONIC_RAW
-        | ClockID::CLOCK_BOOTTIME => Ok(read_monotonic_time()),
-        ClockID::CLOCK_REALTIME | ClockID::CLOCK_REALTIME_COARSE => {
-            let now = SystemTime::now();
-            now.duration_since(&SystemTime::UNIX_EPOCH)
-        }
-        _ => {
-            warn!(
-                "unsupported clock_id: {:?}, treat it as CLOCK_REALTIME",
-                clock_id
-            );
-            let now = SystemTime::now();
-            now.duration_since(&SystemTime::UNIX_EPOCH)
-        }
-    }
-}
 
 /// Unix time measures time by the number of seconds that have elapsed since
 /// the Unix epoch, without adjustments made due to leap seconds.

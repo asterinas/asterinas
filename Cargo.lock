@@ -227,6 +227,7 @@ dependencies = [
  "libflate",
  "log",
  "lru",
+ "paste",
  "pod",
  "rand",
  "ringbuf",
