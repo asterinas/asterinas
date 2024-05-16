@@ -2,7 +2,7 @@
 
 use core::{
     ops::Deref,
-    sync::atomic::{AtomicU32, AtomicU8},
+    sync::atomic::{AtomicU16, AtomicU32, AtomicU8},
 };
 
 use static_assertions::const_assert_eq;
@@ -132,17 +132,18 @@ impl Deref for FrameMetaRef {
 pub struct FrameMeta {
     pub frame_type: FrameType, // 1 byte
     /// The first 8-bit counter.
-    /// Currently unused.
+    ///  - For [`FrameType::Anonymous`], it is not used.
+    ///  - For [`FrameType::PageTable`], it is used as a spinlock.
     pub counter8_1: AtomicU8, // 1 byte
-    /// The second 8-bit counter.
-    /// Currently unused.
-    pub counter8_2: AtomicU8, // 1 byte
-    /// The third 8-bit counter.
-    /// Currently unused.
-    pub counter8_3: AtomicU8, // 1 byte
+    /// The first 16-bit counter.
+    ///  - For [`FrameType::Anonymous`], it is not used.
+    ///  - For [`FrameType::PageTable`], it is used as the map count. The map
+    ///    count is the number of present children.
+    pub counter16_1: AtomicU16, // 2 bytes
     /// The first 32-bit counter.
-    /// It is used in different type of frame with different semantics.
     ///  - For [`FrameType::Anonymous`], it is the handle count.
+    ///  - For [`FrameType::PageTable`], it is used as the reference count. The referencer
+    ///    can be either a handle, a PTE or a CPU that loads it.
     pub counter32_1: AtomicU32, // 4 bytes
 }
 
@@ -155,4 +156,6 @@ pub enum FrameType {
     Meta,
     Anonymous,
     PageTable,
+    /// Frames that contains kernel code.
+    KernelCode,
 }

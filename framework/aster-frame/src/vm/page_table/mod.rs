@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-use core::{fmt::Debug, marker::PhantomData, ops::Range, panic};
+use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
 use pod::Pod;
 
 use super::{
     nr_subpage_per_huge, paddr_to_vaddr,
-    page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
+    page_prop::{PageFlags, PageProperty},
     page_size, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
 };
-use crate::{
-    arch::mm::{activate_page_table, PageTableEntry, PagingConsts},
-    sync::SpinLock,
-};
+use crate::arch::mm::{PageTableEntry, PagingConsts};
 
 mod frame;
 use frame::*;
@@ -31,7 +27,7 @@ pub enum PageTableError {
     /// Using virtual address not aligned.
     UnalignedVaddr,
     /// Protecting a mapping that does not exist.
-    ProtectingInvalid,
+    ProtectingAbsent,
     /// Protecting a part of an already mapped page.
     ProtectingPartial,
 }
@@ -84,23 +80,18 @@ pub(crate) struct PageTable<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > where
-    [(); nr_subpage_per_huge::<C>()]:,
     [(); C::NR_LEVELS as usize]:,
 {
-    root_frame: PtfRef<E, C>,
+    root: RawPageTableFrame<E, C>,
     _phantom: PhantomData<M>,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<UserMode, E, C>
-where
-    [(); nr_subpage_per_huge::<C>()]:,
-    [(); C::NR_LEVELS as usize]:,
-{
+impl PageTable<UserMode> {
     pub(crate) fn activate(&self) {
         // SAFETY: The usermode page table is safe to activate since the kernel
         // mappings are shared.
         unsafe {
-            self.activate_unchecked();
+            self.root.activate();
         }
     }
 
@@ -121,48 +112,21 @@ where
                 .unwrap();
         };
         let root_frame = cursor.leak_root_guard().unwrap();
-        let mut new_root_frame = PageTableFrame::<E, C>::new();
-        let half_of_entries = nr_subpage_per_huge::<C>() / 2;
-        for i in 0..half_of_entries {
-            // This is user space, deep copy the child.
-            match root_frame.child(i) {
-                Child::PageTable(node) => {
-                    let frame = node.lock();
-                    // Possibly a cursor is waiting for the root lock to recycle this node.
-                    // We can skip copying empty page table nodes.
-                    if frame.nr_valid_children() != 0 {
-                        let cloned = frame.clone();
-                        let pt = Child::PageTable(Arc::new(SpinLock::new(cloned)));
-                        new_root_frame.set_child(i, pt, Some(root_frame.read_pte_prop(i)), false);
-                    }
-                }
-                Child::None => {}
-                Child::Frame(_) | Child::Untracked(_) => {
-                    panic!("Unexpected map child.");
-                }
-            }
-        }
-        for i in half_of_entries..nr_subpage_per_huge::<C>() {
-            // This is kernel space, share the child.
-            new_root_frame.set_child(
-                i,
-                root_frame.child(i).clone(),
-                Some(root_frame.read_pte_prop(i)),
-                false,
+        const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
+        let new_root_frame = unsafe {
+            root_frame.make_copy(
+                0..NR_PTES_PER_NODE / 2,
+                NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE,
             )
-        }
-        PageTable::<UserMode, E, C> {
-            root_frame: Arc::new(SpinLock::new(new_root_frame)),
+        };
+        PageTable::<UserMode> {
+            root: new_root_frame.into_raw(),
             _phantom: PhantomData,
         }
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<KernelMode, E, C>
-where
-    [(); nr_subpage_per_huge::<C>()]:,
-    [(); C::NR_LEVELS as usize]:,
-{
+impl PageTable<KernelMode> {
     /// Create a new user page table.
     ///
     /// This should be the only way to create the first user page table, that is
@@ -170,19 +134,13 @@ where
     ///
     /// Then, one can use a user page table to call [`fork_copy_on_write`], creating
     /// other child page tables.
-    pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode, E, C> {
-        let mut new_root_frame = PageTableFrame::<E, C>::new();
-        let root_frame = self.root_frame.lock();
-        for i in nr_subpage_per_huge::<C>() / 2..nr_subpage_per_huge::<C>() {
-            new_root_frame.set_child(
-                i,
-                root_frame.child(i).clone(),
-                Some(root_frame.read_pte_prop(i)),
-                false,
-            )
-        }
-        PageTable::<UserMode, E, C> {
-            root_frame: Arc::new(SpinLock::new(new_root_frame)),
+    pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode> {
+        let root_frame = self.root.copy_handle().lock();
+        const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
+        let new_root_frame =
+            unsafe { root_frame.make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE) };
+        PageTable::<UserMode> {
+            root: new_root_frame.into_raw(),
             _phantom: PhantomData,
         }
     }
@@ -193,26 +151,17 @@ where
     /// usize overflows, the caller should provide the index range of the root level pages
     /// instead of the virtual address range.
     pub(crate) fn make_shared_tables(&self, root_index: Range<usize>) {
+        const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         let start = root_index.start;
-        debug_assert!(start >= nr_subpage_per_huge::<C>() / 2);
-        debug_assert!(start < nr_subpage_per_huge::<C>());
+        debug_assert!(start >= NR_PTES_PER_NODE / 2);
+        debug_assert!(start < NR_PTES_PER_NODE);
         let end = root_index.end;
-        debug_assert!(end <= nr_subpage_per_huge::<C>());
-        let mut root_frame = self.root_frame.lock();
+        debug_assert!(end <= NR_PTES_PER_NODE);
+        let mut root_frame = self.root.copy_handle().lock();
         for i in start..end {
-            let no_such_child = root_frame.child(i).is_none();
-            if no_such_child {
-                let frame = Arc::new(SpinLock::new(PageTableFrame::<E, C>::new()));
-                root_frame.set_child(
-                    i,
-                    Child::PageTable(frame),
-                    Some(PageProperty {
-                        flags: PageFlags::RWX,
-                        cache: CachePolicy::Writeback,
-                        priv_flags: PrivilegedPageFlags::GLOBAL,
-                    }),
-                    false,
-                )
+            if !root_frame.read_pte(i).is_present() {
+                let frame = PageTableFrame::alloc(PagingConsts::NR_LEVELS - 1);
+                root_frame.set_child_pt(i, frame.into_raw(), i < NR_PTES_PER_NODE * 3 / 4);
             }
         }
     }
@@ -220,20 +169,26 @@ where
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
 where
-    [(); nr_subpage_per_huge::<C>()]:,
     [(); C::NR_LEVELS as usize]:,
 {
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub(crate) fn empty() -> Self {
         PageTable {
-            root_frame: Arc::new(SpinLock::new(PageTableFrame::<E, C>::new())),
+            root: PageTableFrame::<E, C>::alloc(C::NR_LEVELS).into_raw(),
             _phantom: PhantomData,
         }
     }
 
+    pub(crate) unsafe fn activate_unchecked(&self) {
+        self.root.activate();
+    }
+
     /// The physical address of the root page table.
-    pub(crate) fn root_paddr(&self) -> Paddr {
-        self.root_frame.lock().start_paddr()
+    ///
+    /// It is dangerous to directly provide the physical address of the root page table to the
+    /// hardware since the page table frame may be dropped, resulting in UAF.
+    pub(crate) unsafe fn root_paddr(&self) -> Paddr {
+        self.root.paddr()
     }
 
     pub(crate) unsafe fn map(
@@ -272,10 +227,6 @@ where
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
     }
 
-    pub(crate) unsafe fn activate_unchecked(&self) {
-        activate_page_table(self.root_paddr(), CachePolicy::Writeback);
-    }
-
     /// Create a new cursor exclusively accessing the virtual address range for mapping.
     ///
     /// If another cursor is already accessing the range, the new cursor will wait until the
@@ -303,21 +254,7 @@ where
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
     pub(crate) unsafe fn shallow_copy(&self) -> Self {
         PageTable {
-            root_frame: self.root_frame.clone(),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Clone for PageTable<M, E, C>
-where
-    [(); nr_subpage_per_huge::<C>()]:,
-    [(); C::NR_LEVELS as usize]:,
-{
-    fn clone(&self) -> Self {
-        let frame = self.root_frame.lock();
-        PageTable {
-            root_frame: Arc::new(SpinLock::new(frame.clone())),
+            root: self.root.copy_handle(),
             _phantom: PhantomData,
         }
     }
@@ -361,7 +298,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
         if !cur_pte.is_present() {
             return None;
         }
-        if cur_pte.is_huge() {
+        if cur_pte.is_last(cur_level) {
             debug_assert!(cur_level <= C::HIGHEST_TRANSLATION_LEVEL);
             break;
         }
@@ -393,12 +330,11 @@ pub(crate) trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
     /// If the flags are present with valid mappings.
     fn is_present(&self) -> bool;
 
-    /// Create a new PTE with the given physical address and flags.
-    /// The huge flag indicates that the PTE maps a huge page.
-    /// The last flag indicates that the PTE is the last level page table.
-    /// If the huge and last flags are both false, the PTE maps a page
-    /// table node.
-    fn new(paddr: Paddr, prop: PageProperty, huge: bool, last: bool) -> Self;
+    /// Create a new PTE with the given physical address and flags that map to a frame.
+    fn new_frame(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self;
+
+    /// Create a new PTE that map to a child page table.
+    fn new_pt(paddr: Paddr) -> Self;
 
     /// Get the physical address from the PTE.
     /// The physical address recorded in the PTE is either:
@@ -408,6 +344,11 @@ pub(crate) trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
 
     fn prop(&self) -> PageProperty;
 
-    /// If the PTE maps a huge page or a page table frame.
-    fn is_huge(&self) -> bool;
+    fn set_prop(&mut self, prop: PageProperty);
+
+    /// If the PTE maps a page rather than a child page table.
+    ///
+    /// The level of the page table the entry resides is given since architectures
+    /// like amd64 only uses a huge bit in intermediate levels.
+    fn is_last(&self, level: PagingLevel) -> bool;
 }

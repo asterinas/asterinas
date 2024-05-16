@@ -127,6 +127,7 @@ impl PageTableEntry {
     const PHYS_ADDR_MASK: usize = 0xF_FFFF_FFFF_F000;
     #[cfg(feature = "intel_tdx")]
     const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
+    const PROP_MASK: usize = !Self::PHYS_ADDR_MASK & !PageTableFlags::HUGE.bits();
 }
 
 /// Parse a bit-flag bits `val` in the representation of `from` to `to` in bits.
@@ -145,61 +146,30 @@ impl PageTableEntryTrait for PageTableEntry {
         self.0 & PageTableFlags::PRESENT.bits() != 0
     }
 
-    fn new(paddr: Paddr, prop: PageProperty, huge: bool, last: bool) -> Self {
-        let mut flags =
-            PageTableFlags::PRESENT.bits() | (huge as usize) << PageTableFlags::HUGE.bits().ilog2();
-        if !huge && !last {
-            // In x86 if it's an intermediate PTE, it's better to have the same permissions
-            // as the most permissive child (to reduce hardware page walk accesses). But we
-            // don't have a mechanism to keep it generic across architectures, thus just
-            // setting it to be the most permissive.
-            flags |= PageTableFlags::WRITABLE.bits() | PageTableFlags::USER.bits();
-            #[cfg(feature = "intel_tdx")]
-            {
-                flags |= parse_flags!(
-                    prop.priv_flags.bits(),
-                    PrivFlags::SHARED,
-                    PageTableFlags::SHARED
-                );
-            }
-        } else {
-            flags |= parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
-                | parse_flags!(!prop.flags.bits(), PageFlags::X, PageTableFlags::NO_EXECUTE)
-                | parse_flags!(
-                    prop.flags.bits(),
-                    PageFlags::ACCESSED,
-                    PageTableFlags::ACCESSED
-                )
-                | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY)
-                | parse_flags!(
-                    prop.priv_flags.bits(),
-                    PrivFlags::USER,
-                    PageTableFlags::USER
-                )
-                | parse_flags!(
-                    prop.priv_flags.bits(),
-                    PrivFlags::GLOBAL,
-                    PageTableFlags::GLOBAL
-                );
-            #[cfg(feature = "intel_tdx")]
-            {
-                flags |= parse_flags!(
-                    prop.priv_flags.bits(),
-                    PrivFlags::SHARED,
-                    PageTableFlags::SHARED
-                );
-            }
-        }
-        match prop.cache {
-            CachePolicy::Writeback => {}
-            CachePolicy::Writethrough => {
-                flags |= PageTableFlags::WRITE_THROUGH.bits();
-            }
-            CachePolicy::Uncacheable => {
-                flags |= PageTableFlags::NO_CACHE.bits();
-            }
-            _ => panic!("unsupported cache policy"),
-        }
+    fn new_frame(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
+        let mut pte = Self(
+            paddr & Self::PHYS_ADDR_MASK
+                | ((level != 1) as usize) << PageTableFlags::HUGE.bits().ilog2(),
+        );
+        pte.set_prop(prop);
+        pte
+    }
+
+    fn new_pt(paddr: Paddr) -> Self {
+        // In x86 if it's an intermediate PTE, it's better to have the same permissions
+        // as the most permissive child (to reduce hardware page walk accesses). But we
+        // don't have a mechanism to keep it generic across architectures, thus just
+        // setting it to be the most permissive.
+        let flags = PageTableFlags::PRESENT.bits()
+            | PageTableFlags::WRITABLE.bits()
+            | PageTableFlags::USER.bits();
+        #[cfg(feature = "intel_tdx")]
+        let flags = flags
+            | parse_flags!(
+                prop.priv_flags.bits(),
+                PrivFlags::SHARED,
+                PageTableFlags::SHARED
+            );
         Self(paddr & Self::PHYS_ADDR_MASK | flags)
     }
 
@@ -232,8 +202,49 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    fn is_huge(&self) -> bool {
-        self.0 & PageTableFlags::HUGE.bits() != 0
+    fn set_prop(&mut self, prop: PageProperty) {
+        let mut flags = PageTableFlags::PRESENT.bits();
+        flags |= parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
+            | parse_flags!(!prop.flags.bits(), PageFlags::X, PageTableFlags::NO_EXECUTE)
+            | parse_flags!(
+                prop.flags.bits(),
+                PageFlags::ACCESSED,
+                PageTableFlags::ACCESSED
+            )
+            | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY)
+            | parse_flags!(
+                prop.priv_flags.bits(),
+                PrivFlags::USER,
+                PageTableFlags::USER
+            )
+            | parse_flags!(
+                prop.priv_flags.bits(),
+                PrivFlags::GLOBAL,
+                PageTableFlags::GLOBAL
+            );
+        #[cfg(feature = "intel_tdx")]
+        {
+            flags |= parse_flags!(
+                prop.priv_flags.bits(),
+                PrivFlags::SHARED,
+                PageTableFlags::SHARED
+            );
+        }
+        match prop.cache {
+            CachePolicy::Writeback => {}
+            CachePolicy::Writethrough => {
+                flags |= PageTableFlags::WRITE_THROUGH.bits();
+            }
+            CachePolicy::Uncacheable => {
+                flags |= PageTableFlags::NO_CACHE.bits();
+            }
+            _ => panic!("unsupported cache policy"),
+        }
+        self.0 = self.0 & !Self::PROP_MASK | flags;
+    }
+
+    fn is_last(&self, level: PagingLevel) -> bool {
+        level == 1 || (self.0 & PageTableFlags::HUGE.bits() != 0)
     }
 }
 

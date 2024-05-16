@@ -49,10 +49,9 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
             let pte = unsafe { pte_ptr.read() };
             pt = if !pte.is_present() {
                 let frame = self.alloc_frame();
-                let new_pte = E::new(frame * C::BASE_PAGE_SIZE, pte.prop(), false, false);
-                unsafe { pte_ptr.write(new_pte) };
+                unsafe { pte_ptr.write(E::new_pt(frame * C::BASE_PAGE_SIZE)) };
                 frame
-            } else if pte.is_huge() {
+            } else if pte.is_last(level) {
                 panic!("mapping an already mapped huge page in the boot page table");
             } else {
                 pte.paddr() / C::BASE_PAGE_SIZE
@@ -66,8 +65,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         if pte.is_present() {
             panic!("mapping an already mapped page in the boot page table");
         }
-        let new_pte = E::new(to * C::BASE_PAGE_SIZE, prop, false, true);
-        unsafe { pte_ptr.write(new_pte) };
+        unsafe { pte_ptr.write(E::new_frame(to * C::BASE_PAGE_SIZE, 1, prop)) };
     }
 
     fn alloc_frame(&mut self) -> FrameNumber {

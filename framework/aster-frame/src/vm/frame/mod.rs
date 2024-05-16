@@ -239,6 +239,10 @@ impl VmFrame {
         self.meta.size()
     }
 
+    pub fn level(&self) -> PagingLevel {
+        self.meta.level()
+    }
+
     pub fn end_paddr(&self) -> Paddr {
         self.start_paddr() + self.size()
     }
@@ -258,7 +262,7 @@ impl VmFrame {
         if self.size() != src.size() {
             panic!("The size of the source frame is different from the destination frame");
         }
-        // Safety: the source and the destination does not overlap.
+        // SAFETY: the source and the destination does not overlap.
         unsafe {
             core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), self.size());
         }
@@ -268,13 +272,13 @@ impl VmFrame {
 impl<'a> VmFrame {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
-        // Safety: the memory of the page is contiguous and is valid during `'a`.
+        // SAFETY: the memory of the page is contiguous and is valid during `'a`.
         unsafe { VmReader::from_raw_parts(self.as_ptr(), self.size()) }
     }
 
     /// Returns a writer to write data into it.
     pub fn writer(&'a self) -> VmWriter<'a> {
-        // Safety: the memory of the page is contiguous and is valid during `'a`.
+        // SAFETY: the memory of the page is contiguous and is valid during `'a`.
         unsafe { VmWriter::from_raw_parts_mut(self.as_mut_ptr(), self.size()) }
     }
 }
@@ -309,10 +313,10 @@ impl Drop for VmFrame {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             atomic::fence(Ordering::Acquire);
-            // Safety: the reference counter is 1 before decremented, so this is the only
+            // SAFETY: the reference counter is 1 before decremented, so this is the only
             // (exclusive) handle.
             unsafe { self.meta.deref_mut().frame_type = FrameType::Free };
-            // Safety: the page frame is valid.
+            // SAFETY: the page frame is valid.
             unsafe {
                 allocator::dealloc_contiguous(self.paddr() / PAGE_SIZE, self.size() / PAGE_SIZE);
             }
@@ -460,13 +464,13 @@ impl VmSegment {
 impl<'a> VmSegment {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
-        // Safety: the memory of the page frames is contiguous and is valid during `'a`.
+        // SAFETY: the memory of the page frames is contiguous and is valid during `'a`.
         unsafe { VmReader::from_raw_parts(self.as_ptr(), self.nbytes()) }
     }
 
     /// Returns a writer to write data into it.
     pub fn writer(&'a self) -> VmWriter<'a> {
-        // Safety: the memory of the page frames is contiguous and is valid during `'a`.
+        // SAFETY: the memory of the page frames is contiguous and is valid during `'a`.
         unsafe { VmWriter::from_raw_parts_mut(self.as_mut_ptr(), self.nbytes()) }
     }
 }
@@ -501,10 +505,10 @@ impl Drop for VmSegment {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             atomic::fence(Ordering::Acquire);
-            // Safety: the reference counter is 1 before decremented, so this is the only
+            // SAFETY: the reference counter is 1 before decremented, so this is the only
             // (exclusive) handle.
             unsafe { self.inner.meta.deref_mut().frame_type = FrameType::Free };
-            // Safety: the range of contiguous page frames is valid.
+            // SAFETY: the range of contiguous page frames is valid.
             unsafe {
                 allocator::dealloc_contiguous(self.inner.start_frame_index(), self.inner.nframes);
             }

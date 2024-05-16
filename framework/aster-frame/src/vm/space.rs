@@ -90,7 +90,7 @@ impl VmSpace {
 
         // If overwrite is forbidden, we should check if there are existing mappings
         if !options.can_overwrite {
-            while let Some(qr) = cursor.query() {
+            while let Some(qr) = cursor.next() {
                 if matches!(qr, PtQr::Mapped { .. }) {
                     return Err(Error::MapAlreadyMappedVaddr);
                 }
@@ -350,7 +350,7 @@ impl Iterator for VmQueryIter<'_> {
             PtQr::NotMapped { va, len } => VmQueryResult::NotMapped { va, len },
             PtQr::Mapped { va, frame, prop } => VmQueryResult::Mapped { va, frame, prop },
             // It is not possible to map untyped memory in user space.
-            PtQr::MappedUntyped { .. } => unreachable!(),
+            PtQr::MappedUntracked { .. } => unreachable!(),
         })
     }
 }
