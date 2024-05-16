@@ -7,7 +7,10 @@ use log::info;
 use spin::Once;
 
 use crate::{
-    arch::device::io_port::{IoPort, PortReadWrite, IO_PORT_MAX},
+    arch::{
+        device::io_port::{IoPort, PortReadWrite},
+        dispatcher::init_io_port_dispatcher,
+    },
     sync::SpinLock,
 };
 
@@ -47,12 +50,17 @@ impl IoPortDispatcher {
             allocator.alloc_specific(i as usize);
         }
     }
+
+    /// Create a IoPortDispatcher based on `max_port`. The based of IO port is 0.
+    pub(crate) fn new(max_port: u16) -> Self {
+        Self {
+            allocator: SpinLock::new(IdAlloc::with_capacity(max_port as usize)),
+        }
+    }
 }
 
 pub static IO_PORT_DISPATCHER: Once<IoPortDispatcher> = Once::new();
 
 pub(crate) fn init() {
-    IO_PORT_DISPATCHER.call_once(|| IoPortDispatcher {
-        allocator: SpinLock::new(IdAlloc::with_capacity(IO_PORT_MAX as usize)),
-    });
+    IO_PORT_DISPATCHER.call_once(init_io_port_dispatcher);
 }
