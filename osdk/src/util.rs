@@ -2,7 +2,8 @@
 
 use std::{
     ffi::OsStr,
-    fs,
+    fs::{self, File},
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -209,6 +210,46 @@ pub fn parse_package_id_string(package_id: &str) -> CrateInfo {
                 .trim_start_matches("(path+file://")
                 .trim_end_matches(')')
                 .to_string(),
+        }
+    }
+}
+
+/// Print source line stack trace if a panic is detected from QEMU log.
+///
+/// The source line is produced with the `addr2line` command using the PC values in the panic
+/// stack trace.
+pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
+    // We read last 500 lines since more than 100 layers of stack trace is unlikely.
+    let reader = rev_buf_reader::RevBufReader::new(qemu_log);
+    let lines: Vec<String> = reader.lines().take(500).map(|l| l.unwrap()).collect();
+    let mut trace_exists = false;
+    let mut stack_num = 0;
+    let pc_matcher = regex::Regex::new(r" - pc (0x[0-9a-fA-F]+)").unwrap();
+    let exe = bin_path.to_string_lossy();
+    let mut addr2line = Command::new("addr2line");
+    addr2line.args(["-e", &exe]);
+    let mut addr2line_proc = addr2line
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    for line in lines.into_iter().rev() {
+        if line.contains("printing stack trace:") {
+            println!("[OSDK] The kernel seems panicked. Parsing stack trace for source lines:");
+            trace_exists = true;
+        }
+        if trace_exists {
+            if let Some(cap) = pc_matcher.captures(&line) {
+                let pc = cap.get(1).unwrap().as_str();
+                let mut stdin = addr2line_proc.stdin.as_ref().unwrap();
+                stdin.write_all(pc.as_bytes()).unwrap();
+                stdin.write_all(b"\n").unwrap();
+                let mut line = String::new();
+                let mut stdout = BufReader::new(addr2line_proc.stdout.as_mut().unwrap());
+                stdout.read_line(&mut line).unwrap();
+                stack_num += 1;
+                println!("({: >3}) {}", stack_num, line.trim());
+            }
         }
     }
 }
