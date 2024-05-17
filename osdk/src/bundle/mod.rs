@@ -247,6 +247,18 @@ impl Bundle {
         info!("Running QEMU: {:#?}", qemu_cmd);
 
         let exit_status = qemu_cmd.status().unwrap();
+
+        // Find the QEMU output in "qemu.log", read it and check if it failed with a panic.
+        // Setting a QEMU log is required for source line stack trace because piping the output
+        // is less desirable when running QEMU with serial redirected to standard I/O.
+        let qemu_log_path = config.work_dir.join("qemu.log");
+        if let Ok(file) = std::fs::File::open(qemu_log_path) {
+            if let Some(aster_bin) = &self.manifest.aster_bin {
+                crate::util::trace_panic_from_log(file, self.path.join(aster_bin.path()));
+            }
+        }
+
+        // FIXME: When panicking it sometimes returns success, why?
         if !exit_status.success() {
             // FIXME: Exit code manipulation is not needed when using non-x86 QEMU
             let qemu_exit_code = exit_status.code().unwrap();
