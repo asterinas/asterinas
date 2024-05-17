@@ -43,6 +43,7 @@ supported_archs = ["x86_64"]# List of strings, that the arch the schema can appl
 [build]
 features = []               # List of strings, the same as Cargo
 profile = "dev"             # String, the same as Cargo
+strip_elf = false           # Whether to strip the built kernel ELF using `rust-strip`
 [boot]
 method = "qemu-direct"      # "grub-rescue-iso"/"qemu-direct"/"grub-qcow2"
 kcmd_args = []              # <1>

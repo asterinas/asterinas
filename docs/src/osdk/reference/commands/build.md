@@ -54,6 +54,8 @@ To display the GRUB menu if booting with GRUB
 Path of QEMU
 - `--qemu-args <ARGS>`:
 Extra arguments for running QEMU
+- `--strip-elf`:
+Whether to strip the built kernel ELF using `rust-strip`
 
 ## Examples
 

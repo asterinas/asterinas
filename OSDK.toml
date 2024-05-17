@@ -27,6 +27,7 @@ args = "$(./tools/qemu_args.sh test)"
 
 [scheme."microvm"]
 boot.method = "qemu-direct"
+build.strip_elf = true
 qemu.args = "$(./tools/qemu_args.sh microvm)"
 
 [scheme."iommu"]

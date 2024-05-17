@@ -10,7 +10,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use bin::strip_elf_for_qemu;
+use bin::make_elf_for_qemu;
 
 use super::util::{cargo, profile_name_adapter, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
 use crate::{
@@ -169,10 +169,11 @@ pub fn do_build(
                 action,
             );
             bundle.consume_vm_image(bootdev_image);
+            bundle.consume_aster_bin(aster_elf);
         }
         BootMethod::QemuDirect => {
-            let stripped_elf = strip_elf_for_qemu(&osdk_output_directory, &aster_elf);
-            bundle.consume_aster_bin(stripped_elf);
+            let qemu_elf = make_elf_for_qemu(&osdk_output_directory, &aster_elf, build.strip_elf);
+            bundle.consume_aster_bin(qemu_elf);
         }
         BootMethod::GrubQcow2 => {
             todo!()
