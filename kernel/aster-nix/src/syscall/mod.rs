@@ -59,6 +59,7 @@ mod lseek;
 mod madvise;
 mod mkdir;
 mod mmap;
+mod mount;
 mod mprotect;
 mod munmap;
 mod nanosleep;
