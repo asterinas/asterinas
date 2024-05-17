@@ -265,6 +265,12 @@ pub struct CommonArgs {
     )]
     pub linux_x86_legacy_boot: bool,
     #[arg(
+        long = "strip-elf",
+        help = "Strip the built kernel ELF file for a smaller size",
+        global = true
+    )]
+    pub strip_elf: bool,
+    #[arg(
         long = "target-arch",
         value_name = "ARCH",
         help = "The architecture to build for",

@@ -68,8 +68,8 @@ pub fn make_install_bzimage(
     )
 }
 
-pub fn strip_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin) -> AsterBin {
-    let stripped_elf_path = {
+pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: bool) -> AsterBin {
+    let result_elf_path = {
         let elf_name = elf
             .path()
             .file_name()
@@ -77,29 +77,34 @@ pub fn strip_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin) -> Aste
             .to_str()
             .unwrap()
             .to_string();
-        install_dir.as_ref().join(elf_name + ".stripped.elf")
+        install_dir.as_ref().join(elf_name + ".qemu_elf")
     };
 
-    // We use rust-strip to reduce the kernel image size.
-    let status = Command::new("rust-strip")
-        .arg(elf.path())
-        .arg("-o")
-        .arg(stripped_elf_path.as_os_str())
-        .status();
+    if strip {
+        // We use rust-strip to reduce the kernel image size.
+        let status = Command::new("rust-strip")
+            .arg(elf.path())
+            .arg("-o")
+            .arg(result_elf_path.as_os_str())
+            .status();
 
-    match status {
-        Ok(status) => {
-            if !status.success() {
-                panic!("Failed to strip kernel elf.");
+        match status {
+            Ok(status) => {
+                if !status.success() {
+                    panic!("Failed to strip kernel elf.");
+                }
             }
+            Err(err) => match err.kind() {
+                std::io::ErrorKind::NotFound => panic!(
+                    "`rust-strip` command not found. Please
+                    try `cargo install cargo-binutils` and then rerun."
+                ),
+                _ => panic!("Strip kernel elf failed, err:{:#?}", err),
+            },
         }
-        Err(err) => match err.kind() {
-            std::io::ErrorKind::NotFound => panic!(
-                "`rust-strip` command not found. Please 
-                try `cargo install cargo-binutils` and then rerun."
-            ),
-            _ => panic!("Strip kernel elf failed, err:{:#?}", err),
-        },
+    } else {
+        // Copy the ELF file.
+        std::fs::copy(elf.path(), &result_elf_path).unwrap();
     }
 
     // Because QEMU denies a x86_64 multiboot ELF file (GRUB2 accept it, btw),
@@ -110,7 +115,7 @@ pub fn strip_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin) -> Aste
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
-        .open(&stripped_elf_path)
+        .open(&result_elf_path)
         .unwrap();
 
     let bytes: [u8; 2] = [0x03, 0x00];
@@ -120,7 +125,7 @@ pub fn strip_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin) -> Aste
     file.flush().unwrap();
 
     AsterBin::new(
-        &stripped_elf_path,
+        &result_elf_path,
         AsterBinType::Elf(AsterElfMeta {
             has_linux_header: false,
             has_pvh_header: false,
@@ -128,7 +133,7 @@ pub fn strip_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin) -> Aste
             has_multiboot2_header: true,
         }),
         elf.version().clone(),
-        true,
+        strip,
     )
 }
 

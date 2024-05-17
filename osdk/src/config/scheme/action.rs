@@ -13,6 +13,7 @@ pub enum ActionChoice {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildScheme {
     pub profile: Option<String>,
+    #[serde(default)]
     pub features: Vec<String>,
     #[serde(default)]
     pub no_default_features: bool,
@@ -20,11 +21,14 @@ pub struct BuildScheme {
     /// [Linux legacy x86 32-bit boot protocol](https://www.kernel.org/doc/html/v5.6/x86/boot.html)
     #[serde(default)]
     pub linux_x86_legacy_boot: bool,
+    #[serde(default)]
+    pub strip_elf: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Build {
     pub profile: String,
+    #[serde(default)]
     pub features: Vec<String>,
     #[serde(default)]
     pub no_default_features: bool,
@@ -32,6 +36,8 @@ pub struct Build {
     pub override_configs: Vec<String>,
     #[serde(default)]
     pub linux_x86_legacy_boot: bool,
+    #[serde(default)]
+    pub strip_elf: bool,
 }
 
 impl Default for Build {
@@ -42,6 +48,7 @@ impl Default for Build {
             no_default_features: false,
             override_configs: Vec::new(),
             linux_x86_legacy_boot: false,
+            strip_elf: false,
         }
     }
 }
@@ -61,6 +68,9 @@ impl Build {
         if common_args.linux_x86_legacy_boot {
             self.linux_x86_legacy_boot = true;
         }
+        if common_args.strip_elf {
+            self.strip_elf = true;
+        }
     }
 }
 
@@ -74,9 +84,12 @@ impl BuildScheme {
             features.extend(self.features.clone());
             features
         };
-        // no_default_features is not inherited
+        // `no_default_features` is not inherited
         if parent.linux_x86_legacy_boot {
             self.linux_x86_legacy_boot = true;
+        }
+        if parent.strip_elf {
+            self.strip_elf = true;
         }
     }
 
@@ -87,6 +100,7 @@ impl BuildScheme {
             no_default_features: self.no_default_features,
             override_configs: Vec::new(),
             linux_x86_legacy_boot: self.linux_x86_legacy_boot,
+            strip_elf: self.strip_elf,
         }
     }
 }
