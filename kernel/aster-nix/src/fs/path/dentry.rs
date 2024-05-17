@@ -104,6 +104,18 @@ impl Dentry_ {
         DentryFlags::from_bits(flags).unwrap()
     }
 
+    /// Check if the Dentry_ is a subdir of the given Dentry_.
+    pub fn is_subdir(&self, dentry: Arc<Self>) -> bool {
+        let mut parent = self.parent();
+        while let Some(p) = parent {
+            if Arc::ptr_eq(&p, &dentry) {
+                return true;
+            }
+            parent = p.parent();
+        }
+        false
+    }
+
     pub fn is_mountpoint(&self) -> bool {
         self.flags().contains(DentryFlags::MOUNTED)
     }
@@ -561,7 +573,7 @@ impl Dentry {
 
     /// Make this Dentry' inner to be a mountpoint,
     /// and set the mountpoint of the child mount to this Dentry's inner.
-    fn set_mountpoint(&self, child_mount: Arc<MountNode>) {
+    pub fn set_mountpoint(&self, child_mount: Arc<MountNode>) {
         child_mount.set_mountpoint_dentry(self.inner.clone());
         self.inner.set_mountpoint_dentry();
     }
@@ -638,6 +650,14 @@ impl Dentry {
         self.inner.rename(old_name, &new_dir.inner, new_name)
     }
 
+    pub fn do_loopback(&self, recursive: bool) -> Arc<MountNode> {
+        if recursive {
+            self.mount_node.copy_mount_tree(self.inner.clone())
+        } else {
+            self.mount_node.clone_mount(self.inner.clone())
+        }
+    }
+
     /// Get the arc reference to self.
     fn this(&self) -> Arc<Self> {
         self.this.upgrade().unwrap()
@@ -669,4 +689,6 @@ impl Dentry {
     pub fn set_mtime(&self, time: Duration);
     pub fn key(&self) -> DentryKey;
     pub fn inode(&self) -> &Arc<dyn Inode>;
+    pub fn is_root_of_mount(&self) -> bool;
+    pub fn is_mountpoint(&self) -> bool;
 }
