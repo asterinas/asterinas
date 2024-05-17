@@ -47,6 +47,7 @@ int perform_sequential_io(int fd, ssize_t (*io_func)(int, void *, size_t),
 	char buffer[BUFFER_SIZE];
 	ssize_t ret, offset = 0;
 	long total_nanoseconds = 0, avg_latency;
+	double throughput;
 
 	memset(buffer, 0, BUFFER_SIZE);
 	lseek(fd, 0, SEEK_SET);
@@ -67,9 +68,12 @@ int perform_sequential_io(int fd, ssize_t (*io_func)(int, void *, size_t),
 	}
 
 	avg_latency = total_nanoseconds / NUM_OF_CALLS;
+	throughput = ((double)BUFFER_SIZE * NUM_OF_CALLS) /
+		     ((double)total_nanoseconds / 1e9);
 	printf("Executed the sequential %s (buffer size: %dKB, file size: %dMB) syscall %d times.\n",
 	       op_name, BUFFER_SIZE / KB, FILE_SIZE / MB, NUM_OF_CALLS);
-	printf("Syscall average latency: %ld nanoseconds.\n", avg_latency);
+	printf("Syscall average latency: %ld nanoseconds, throughput: %.2f MB/s\n",
+	       avg_latency, throughput / MB);
 
 	return 0;
 }
