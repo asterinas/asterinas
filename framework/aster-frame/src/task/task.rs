@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+use core::mem::size_of;
 
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
@@ -13,7 +14,7 @@ use crate::{
     prelude::*,
     sync::{Mutex, MutexGuard},
     user::UserSpace,
-    vm::{page_table::KERNEL_PAGE_TABLE, VmAllocOptions, VmSegment, PAGE_SIZE},
+    vm::{kvmar::Kvmar, kvmar_allocator, page_table::{PageTableFlagsTrait, KERNEL_PAGE_TABLE}, VmAllocOptions, VmSegment, PAGE_SIZE},
 };
 
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
@@ -41,6 +42,16 @@ pub(crate) struct TaskContext {
 
 extern "C" {
     pub(crate) fn context_switch(cur: *mut TaskContext, nxt: *const TaskContext);
+}
+
+pub fn alloc_kernel_stack() -> Kvmar {
+    let mut flags = PageTableFlags::empty();
+    flags = flags.set_readable(true);
+    flags = flags.set_writable(true);
+    flags = flags.set_present(true);
+    flags = flags.union(PageTableFlags::GLOBAL);
+    let kvmar = kvmar_allocator::alloc_contiguous(KERNEL_STACK_SIZE / PAGE_SIZE + 1, flags).unwrap();
+    kvmar
 }
 
 pub struct KernelStack {
@@ -107,7 +118,8 @@ pub struct Task {
     task_inner: Mutex<TaskInner>,
     exit_code: usize,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
-    kstack: KernelStack,
+    // kstack: Kvmar,
+    kstack: Kvmar,
     link: LinkedListAtomicLink,
     priority: Priority,
     // TODO:: add multiprocessor support
@@ -269,7 +281,8 @@ impl TaskOptions {
                 ctx: TaskContext::default(),
             }),
             exit_code: 0,
-            kstack: KernelStack::new_with_guard_page()?,
+            kstack: alloc_kernel_stack(),
+            // kstack:KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
             cpu_affinity: self.cpu_affinity,
@@ -277,8 +290,13 @@ impl TaskOptions {
 
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        // Subtract 8 bytes to reserve space for the return address, otherwise
+        // we will write across the page bondary.
         result.task_inner.lock().ctx.regs.rsp =
-            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
+            (crate::vm::paddr_to_vaddr(result.kstack.end_vaddr().unwrap() - 16)) as u64;
+        // result.task_inner.lock().ctx.regs.rsp =
+        //     // (crate::vm::paddr_to_vaddr(result.kstack.end_paddr() - size_of::<u64>() * 2)) as u64;
+        //     (result.kstack.end_vaddr().unwrap() - (size_of::<u64>()) as usize * 2) as u64;
 
         Ok(Arc::new(result))
     }
@@ -306,7 +324,8 @@ impl TaskOptions {
                 ctx: TaskContext::default(),
             }),
             exit_code: 0,
-            kstack: KernelStack::new_with_guard_page()?,
+            kstack: alloc_kernel_stack(),
+            // kstack:KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
             cpu_affinity: self.cpu_affinity,
@@ -314,8 +333,13 @@ impl TaskOptions {
 
         result.task_inner.lock().task_status = TaskStatus::Runnable;
         result.task_inner.lock().ctx.rip = kernel_task_entry as usize;
+        // Subtract 8 bytes to reserve space for the return address, otherwise
+        // we will write across the page bondary.
+        // result.task_inner.lock().ctx.regs.rsp =
+        //     // (crate::vm::paddr_to_vaddr(result.kstack.end_paddr() - size_of::<u64>() * 2)) as u64;
+        //     (result.kstack.end_vaddr().unwrap() - (size_of::<u64>()) as usize * 2) as u64;
         result.task_inner.lock().ctx.regs.rsp =
-            (crate::vm::paddr_to_vaddr(result.kstack.end_paddr())) as u64;
+            (crate::vm::paddr_to_vaddr(result.kstack.end_vaddr().unwrap() - 16)) as u64;
 
         let arc_self = Arc::new(result);
         arc_self.run();

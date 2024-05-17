@@ -221,6 +221,13 @@ impl<T: PageTableEntryTrait> PageTable<T, KernelMode> {
         }
         self.do_protect(vaddr, flags)
     }
+
+    pub fn guard(&mut self, vaddr: Vaddr, flags: T::F) -> Result<T::F, PageTableError> {
+        if is_user_vaddr(vaddr) {
+            return Err(PageTableError::InvalidVaddr); 
+        }
+        unsafe { self.do_guard(vaddr, flags) }
+    }
 }
 
 impl<T: PageTableEntryTrait> PageTable<T, DeviceMode> {
@@ -379,6 +386,19 @@ impl<T: PageTableEntryTrait, M> PageTable<T, M> {
         if !last_entry.is_used() || !old_flags.is_present() {
             return Err(PageTableError::InvalidModification);
         }
+        last_entry.update(last_entry.paddr(), new_flags);
+        tlb_flush(vaddr);
+        Ok(old_flags)
+    }
+
+    unsafe fn do_guard(&mut self, vaddr: Vaddr, new_flags: T::F) -> Result<T::F, PageTableError> {
+        let last_entry = self.page_walk(vaddr, false).unwrap();
+        let old_flags = last_entry.flags();
+        trace!(
+            "Page Table: Protect vaddr:{:x?}, flags:{:x?}",
+            vaddr,
+            new_flags
+        );
         last_entry.update(last_entry.paddr(), new_flags);
         tlb_flush(vaddr);
         Ok(old_flags)

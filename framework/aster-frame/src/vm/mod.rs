@@ -12,6 +12,8 @@ pub(crate) mod dma;
 mod frame;
 mod frame_allocator;
 pub(crate) mod heap_allocator;
+pub(crate) mod kvmar_allocator;
+pub(crate) mod kvmar;
 mod io;
 mod memory_set;
 mod offset;
@@ -56,6 +58,10 @@ pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE;
 /// memory in the kernel address space.
 pub(crate) const PHYS_MEM_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000;
 
+pub const KERNEL_STACK_BASE_VADDR: Vaddr = 0xffff_ffff_0000_0000;
+
+pub const KERNEL_STACK_END_VADDR: Vaddr = 0xffff_ffff_8000_0000;
+
 /// The kernel code is linear mapped to this address.
 ///
 /// FIXME: This offset should be randomly chosen by the loader or the
@@ -98,6 +104,8 @@ pub(crate) fn init() {
     frame_allocator::init(&memory_regions);
     page_table::init();
     dma::init();
+
+    kvmar_allocator::init(KERNEL_STACK_BASE_VADDR, KERNEL_STACK_END_VADDR);
 
     let mut framebuffer_regions = Vec::new();
     for i in memory_regions.iter() {
