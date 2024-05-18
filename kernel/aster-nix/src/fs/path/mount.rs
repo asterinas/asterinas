@@ -98,11 +98,9 @@ impl MountNode {
     }
 
     /// Clone a mount node with the an root Dentry_.
-    /// The new mount node will have the same fs as the original one.
-    /// The new mount node root Dentry_ will be the given one.
-    /// The new mount node will have no parent and children.
-    /// We should set the parent and children manually.
-    pub fn clone_mount(&self, root_dentry: Arc<Dentry_>) -> Arc<Self> {
+    /// The new mount node will have the same fs as the original one and
+    /// have no parent and children. We should set the parent and children manually.
+    pub fn clone_mount_node(&self, root_dentry: Arc<Dentry_>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             root_dentry,
             mountpoint_dentry: RwLock::new(None),
@@ -113,12 +111,12 @@ impl MountNode {
         })
     }
 
-    /// Copy a mount tree with the given root Dentry_.
-    /// The new mount tree will have the same structure as the original one.
-    /// But the new mount tree is a subtree which is rooted at the given root Dentry_.
-    /// The new mount tree is a new tree, which means the original one is not affected.
-    pub fn copy_mount_tree(&self, root_dentry: Arc<Dentry_>) -> Arc<Self> {
-        let new_root_mount = self.clone_mount(root_dentry);
+    /// Copies a mount tree starting from the specified root `Dentry_`.
+    /// The new mount tree will replicate the structure of the original tree.
+    /// The new tree is a separate entity rooted at the given `Dentry_`,
+    /// and the original tree remains unchanged.
+    pub fn copy_mount_node_tree(&self, root_dentry: Arc<Dentry_>) -> Arc<Self> {
+        let new_root_mount = self.clone_mount_node(root_dentry);
         let mut stack = vec![self.this()];
         let mut new_stack = vec![new_root_mount.clone()];
 
@@ -133,7 +131,7 @@ impl MountNode {
                 }
                 stack.push(old_child_mount.clone());
                 let new_child_mount =
-                    old_child_mount.clone_mount(old_child_mount.root_dentry.clone());
+                    old_child_mount.clone_mount_node(old_child_mount.root_dentry.clone());
                 let key = mountpoint_dentry.key();
                 new_parent_mount
                     .children
@@ -149,8 +147,8 @@ impl MountNode {
         new_root_mount.clone()
     }
 
-    /// Unattach the mount node from the parent mount node.
-    fn unattach_mount(&self) {
+    /// Detach the mount node from the parent mount node.
+    fn detach_mount_node(&self) {
         if let Some(parent) = self.parent() {
             let parent = parent.upgrade().unwrap();
             parent
@@ -161,7 +159,7 @@ impl MountNode {
     }
 
     /// Attach the mount node to the mountpoint.
-    fn attach_mount(&self, mountpoint: Arc<Dentry>) {
+    fn attach_mount_node(&self, mountpoint: Arc<Dentry>) {
         let key = mountpoint.key();
         mountpoint
             .mount_node()
@@ -172,13 +170,13 @@ impl MountNode {
         mountpoint.set_mountpoint(self.this());
     }
 
-    /// Graft the mount tree to the mountpoint.
-    pub fn graft_mount_tree(&self, mountpoint: Arc<Dentry>) -> Result<()> {
+    /// Graft the mount node tree to the mountpoint.
+    pub fn graft_mount_node_tree(&self, mountpoint: Arc<Dentry>) -> Result<()> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
-        self.unattach_mount();
-        self.attach_mount(mountpoint.clone());
+        self.detach_mount_node();
+        self.attach_mount_node(mountpoint.clone());
         Ok(())
     }
 

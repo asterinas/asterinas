@@ -109,6 +109,7 @@ mod tgkill;
 mod time;
 mod truncate;
 mod umask;
+mod umount;
 mod uname;
 mod unlink;
 mod utimens;
