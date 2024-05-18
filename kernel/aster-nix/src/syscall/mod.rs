@@ -116,6 +116,7 @@ mod timer_create;
 mod timer_settime;
 mod truncate;
 mod umask;
+mod umount;
 mod uname;
 mod unlink;
 mod utimens;

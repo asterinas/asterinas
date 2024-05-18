@@ -652,9 +652,9 @@ impl Dentry {
 
     pub fn do_loopback(&self, recursive: bool) -> Arc<MountNode> {
         if recursive {
-            self.mount_node.copy_mount_tree(self.inner.clone())
+            self.mount_node.copy_mount_node_tree(self.inner.clone())
         } else {
-            self.mount_node.clone_mount(self.inner.clone())
+            self.mount_node.clone_mount_node(self.inner.clone())
         }
     }
 

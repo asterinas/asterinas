@@ -109,6 +109,7 @@ use crate::syscall::{
     timer_settime::{sys_timer_gettime, sys_timer_settime},
     truncate::{sys_ftruncate, sys_truncate},
     umask::sys_umask,
+    umount::sys_umount,
     uname::sys_uname,
     unlink::{sys_unlink, sys_unlinkat},
     utimens::sys_utimensat,
@@ -227,6 +228,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CHROOT = 161           => sys_chroot(args[..1]);
     SYS_SYNC = 162             => sys_sync(args[..0]);
     SYS_MOUNT = 165            => sys_mount(args[..5]);
+    SYS_UMOUNT = 166           => sys_umount(args[..2]);
     SYS_GETTID = 186           => sys_gettid(args[..0]);
     SYS_TIME = 201             => sys_time(args[..1]);
     SYS_FUTEX = 202            => sys_futex(args[..6]);

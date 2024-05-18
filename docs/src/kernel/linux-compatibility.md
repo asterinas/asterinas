@@ -185,8 +185,8 @@ provided by Linux on x86-64 architecture.
 | 162     | sync             | ✅              |
 | 163     | acct             | ❌              |
 | 164     | settimeofday     | ❌              |
-| 165     | mount            | ❌              |
-| 166     | umount2          | ❌              |
+| 165     | mount            | ✅              |
+| 166     | umount2          | ✅              |
 | 167     | swapon           | ❌              |
 | 168     | swapoff          | ❌              |
 | 169     | reboot           | ❌              |

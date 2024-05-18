@@ -23,7 +23,6 @@ use crate::{
         exfat::{ExfatFS, ExfatMountOptions},
         ext2::Ext2,
         fs_resolver::FsPath,
-        utils::FileSystem,
     },
     prelude::*,
     thread::kernel_thread::KernelThreadExt,
@@ -63,28 +62,5 @@ pub fn lazy_init() {
         let target_path = FsPath::try_from("/exfat").unwrap();
         println!("[kernel] Mount ExFat fs at {:?} ", target_path);
         self::rootfs::mount_fs_at(exfat_fs, &target_path).unwrap();
-    }
-}
-
-pub fn get_fs(fs_type: &str) -> Result<Arc<dyn FileSystem>> {
-    match fs_type {
-        "ext2" => {
-            if let Ok(block_device_ext2) = start_block_device("vext2") {
-                let ext2_fs = Ext2::open(block_device_ext2).unwrap();
-                Ok(ext2_fs)
-            } else {
-                return_errno_with_message!(Errno::EINVAL, "Ext2 fs does not exist")
-            }
-        }
-        "exfat" => {
-            if let Ok(block_device_exfat) = start_block_device("vexfat") {
-                let exfat_fs =
-                    ExfatFS::open(block_device_exfat, ExfatMountOptions::default()).unwrap();
-                Ok(exfat_fs)
-            } else {
-                return_errno_with_message!(Errno::EINVAL, "Exfat fs dose not exist")
-            }
-        }
-        _ => return_errno_with_message!(Errno::EINVAL, "Invalid fs type"),
     }
 }
