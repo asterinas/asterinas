@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::cpu::UserContext;
+use aster_frame::{cpu::UserContext, user::UserContextApi};
 
 use super::SyscallReturn;
 use crate::{
@@ -20,13 +20,13 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     // FIXME: This assertion is not always true, if RESTORER flag is not presented.
     // In this case, we will put restorer code on user stack, then the assertion will fail.
     // However, for most glibc applications, the restorer codes is provided by glibc and RESTORER flag is set.
-    debug_assert!(sig_context_addr == context.rsp() as Vaddr);
+    debug_assert!(sig_context_addr == context.stack_pointer() as Vaddr);
 
     let ucontext = read_val_from_user::<ucontext_t>(sig_context_addr)?;
 
     // If the sig stack is active and used by current handler, decrease handler counter.
     if let Some(sig_stack) = posix_thread.sig_stack().lock().as_mut() {
-        let rsp = context.rsp();
+        let rsp = context.stack_pointer();
         if rsp >= sig_stack.base() && rsp <= sig_stack.base() + sig_stack.size() {
             sig_stack.decrease_handler_counter();
         }

@@ -3,7 +3,7 @@
 use aster_frame::cpu::UserContext;
 
 use super::SyscallReturn;
-use crate::prelude::*;
+use crate::{cpu::LinuxAbi, prelude::*};
 
 #[allow(non_camel_case_types)]
 #[repr(u64)]
@@ -28,10 +28,10 @@ pub fn sys_arch_prctl(code: u64, addr: u64, context: &mut UserContext) -> Result
 pub fn do_arch_prctl(code: ArchPrctlCode, addr: u64, context: &mut UserContext) -> Result<u64> {
     match code {
         ArchPrctlCode::ARCH_SET_FS => {
-            context.set_fsbase(addr as usize);
+            context.set_tls_pointer(addr as usize);
             Ok(0)
         }
-        ArchPrctlCode::ARCH_GET_FS => Ok(context.fsbase() as u64),
+        ArchPrctlCode::ARCH_GET_FS => Ok(context.tls_pointer() as u64),
         ArchPrctlCode::ARCH_GET_GS | ArchPrctlCode::ARCH_SET_GS => {
             return_errno_with_message!(Errno::EINVAL, "GS cannot be accessed from the user space")
         }

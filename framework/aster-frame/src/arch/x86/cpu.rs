@@ -471,29 +471,6 @@ impl UserContextApi for UserContext {
         self.user_context.error_code
     }
 
-    fn syscall_num(&self) -> usize {
-        self.rax()
-    }
-
-    fn syscall_ret(&self) -> usize {
-        self.rax()
-    }
-
-    fn set_syscall_ret(&mut self, ret: usize) {
-        self.set_rax(ret);
-    }
-
-    fn syscall_args(&self) -> [usize; 6] {
-        [
-            self.rdi(),
-            self.rsi(),
-            self.rdx(),
-            self.r10(),
-            self.r8(),
-            self.r9(),
-        ]
-    }
-
     fn set_instruction_pointer(&mut self, ip: usize) {
         self.set_rip(ip);
     }
