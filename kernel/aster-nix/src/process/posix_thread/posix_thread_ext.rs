@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::{cpu::UserContext, user::UserSpace};
+use aster_frame::{
+    cpu::UserContext,
+    user::{UserContextApi, UserSpace},
+};
 
 use super::{builder::PosixThreadBuilder, name::ThreadName, PosixThread};
 use crate::{
@@ -45,8 +48,8 @@ impl PosixThreadExt for Thread {
 
         let vm_space = process_vm.root_vmar().vm_space().clone();
         let mut cpu_ctx = UserContext::default();
-        cpu_ctx.set_rip(elf_load_info.entry_point() as _);
-        cpu_ctx.set_rsp(elf_load_info.user_stack_top() as _);
+        cpu_ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
+        cpu_ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
         let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
         let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
         let thread_builder = PosixThreadBuilder::new(tid, user_space, credentials)

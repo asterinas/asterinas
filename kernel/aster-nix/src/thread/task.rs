@@ -8,7 +8,7 @@ use aster_frame::{
 
 use super::Thread;
 use crate::{
-    prelude::*, process::signal::handle_pending_signal, syscall::handle_syscall,
+    cpu::LinuxAbi, prelude::*, process::signal::handle_pending_signal, syscall::handle_syscall,
     thread::exception::handle_exception,
 };
 

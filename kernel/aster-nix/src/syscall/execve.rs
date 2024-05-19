@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::cpu::UserContext;
+use aster_frame::{cpu::UserContext, user::UserContextApi};
 use aster_rights::WriteOp;
 
 use super::{constants::*, SyscallReturn};
 use crate::{
+    cpu::LinuxAbi,
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
@@ -127,13 +128,13 @@ fn do_execve(
     // set cpu context to default
     let default_content = UserContext::default();
     *context.general_regs_mut() = *default_content.general_regs();
-    context.set_fsbase(default_content.fsbase());
+    context.set_tls_pointer(default_content.tls_pointer());
     *context.fp_regs_mut() = *default_content.fp_regs();
     // set new entry point
-    context.set_rip(elf_load_info.entry_point() as _);
+    context.set_instruction_pointer(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
     // set new user stack top
-    context.set_rsp(elf_load_info.user_stack_top() as _);
+    context.set_stack_pointer(elf_load_info.user_stack_top() as _);
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
     Ok(())
 }

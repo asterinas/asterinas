@@ -2,7 +2,11 @@
 
 use core::sync::atomic::Ordering;
 
-use aster_frame::{cpu::UserContext, user::UserSpace, vm::VmIo};
+use aster_frame::{
+    cpu::UserContext,
+    user::{UserContextApi, UserSpace},
+    vm::VmIo,
+};
 use aster_rights::Full;
 
 use super::{
@@ -14,6 +18,7 @@ use super::{
     Credentials, Process, ProcessBuilder,
 };
 use crate::{
+    cpu::LinuxAbi,
     current_thread,
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
@@ -370,18 +375,17 @@ fn clone_cpu_context(
 ) -> UserContext {
     let mut child_context = parent_context;
     // The return value of child thread is zero
-    child_context.set_rax(0);
+    child_context.set_syscall_ret(0);
 
     if clone_flags.contains(CloneFlags::CLONE_VM) {
         // if parent and child shares the same address space, a new stack must be specified.
         debug_assert!(new_sp != 0);
     }
     if new_sp != 0 {
-        child_context.set_rsp(new_sp as usize);
+        child_context.set_stack_pointer(new_sp as usize);
     }
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
-        // x86_64 specific: TLS is the fsbase register
-        child_context.set_fsbase(tls as usize);
+        child_context.set_tls_pointer(tls as usize);
     }
 
     child_context

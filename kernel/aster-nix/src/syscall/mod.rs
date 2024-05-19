@@ -5,7 +5,7 @@
 use aster_frame::cpu::UserContext;
 pub use clock_gettime::ClockID;
 
-use crate::prelude::*;
+use crate::{cpu::LinuxAbi, prelude::*};
 
 mod accept;
 mod access;
@@ -204,14 +204,8 @@ pub enum SyscallReturn {
 
 impl SyscallArgument {
     fn new_from_context(context: &UserContext) -> Self {
-        let syscall_number = context.rax() as u64;
-        let mut args = [0u64; 6];
-        args[0] = context.rdi() as u64;
-        args[1] = context.rsi() as u64;
-        args[2] = context.rdx() as u64;
-        args[3] = context.r10() as u64;
-        args[4] = context.r8() as u64;
-        args[5] = context.r9() as u64;
+        let syscall_number = context.syscall_num() as u64;
+        let args = context.syscall_args().map(|x| x as u64);
         Self {
             syscall_number,
             args,
@@ -227,13 +221,13 @@ pub fn handle_syscall(context: &mut UserContext) {
     match syscall_return {
         Ok(return_value) => {
             if let SyscallReturn::Return(return_value) = return_value {
-                context.set_rax(return_value as usize);
+                context.set_syscall_ret(return_value as usize);
             }
         }
         Err(err) => {
             debug!("syscall return error: {:?}", err);
             let errno = err.error() as i32;
-            context.set_rax((-errno) as usize)
+            context.set_syscall_ret((-errno) as usize)
         }
     }
 }

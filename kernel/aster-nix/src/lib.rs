@@ -49,7 +49,9 @@ extern crate ktest;
 #[macro_use]
 extern crate getset;
 
+pub mod arch;
 pub mod console;
+pub mod cpu;
 pub mod device;
 pub mod driver;
 pub mod error;
