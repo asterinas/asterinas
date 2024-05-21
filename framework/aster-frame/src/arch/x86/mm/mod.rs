@@ -3,6 +3,7 @@
 mod util;
 
 use alloc::fmt;
+use core::ops::Range;
 
 use pod::Pod;
 pub use util::{fast_copy, fast_copy_nonoverlapping};
@@ -11,7 +12,7 @@ use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 use crate::vm::{
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
     page_table::PageTableEntryTrait,
-    Paddr, PagingConstsTrait, Vaddr,
+    Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
 };
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
@@ -59,11 +60,21 @@ bitflags::bitflags! {
     }
 }
 
-pub fn tlb_flush(vaddr: Vaddr) {
+pub(crate) fn tlb_flush_addr(vaddr: Vaddr) {
     tlb::flush(VirtAddr::new(vaddr as u64));
 }
 
-pub fn tlb_flush_all_including_global() {
+pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
+    for vaddr in range.clone().step_by(PAGE_SIZE) {
+        tlb_flush_addr(vaddr);
+    }
+}
+
+pub(crate) fn tlb_flush_all_excluding_global() {
+    tlb::flush_all();
+}
+
+pub(crate) fn tlb_flush_all_including_global() {
     // SAFETY: updates to CR4 here only change the global-page bit, the side effect
     // is only to invalidate the TLB, which doesn't affect the memory safety.
     unsafe {
