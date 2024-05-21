@@ -203,7 +203,7 @@ impl IoBar {
         if self.size < size_of::<T>() as u32 || offset > self.size - size_of::<T>() as u32 {
             return Err(Error::InvalidArgs);
         }
-        // Safety: The range of ports accessed is within the scope managed by the IoBar and
+        // SAFETY: The range of ports accessed is within the scope managed by the IoBar and
         // an out-of-bounds check is performed.
         unsafe { Ok(T::read_from_port((self.base + offset) as u16)) }
     }
@@ -217,7 +217,7 @@ impl IoBar {
         if size_of::<T>() as u32 > self.size || offset > self.size - size_of::<T>() as u32 {
             return Err(Error::InvalidArgs);
         }
-        // Safety: The range of ports accessed is within the scope managed by the IoBar and
+        // SAFETY: The range of ports accessed is within the scope managed by the IoBar and
         // an out-of-bounds check is performed.
         unsafe { T::write_to_port((self.base + offset) as u16, value) }
         Ok(())

@@ -38,7 +38,7 @@ fn get_payload(boot_params: &BootParams) -> &'static [u8] {
     let loaded_offset = x86::get_image_loaded_offset();
     let payload_offset = (loaded_offset + hdr.payload_offset as isize) as usize;
     let payload_length = hdr.payload_length as usize;
-    // Safety: the payload_offset and payload_length is valid if we assume that the
+    // SAFETY: the payload_offset and payload_length is valid if we assume that the
     // boot_params struct is correct.
     unsafe { core::slice::from_raw_parts_mut(payload_offset as *mut u8, payload_length) }
 }

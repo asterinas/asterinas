@@ -184,7 +184,7 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
                         Register::CL => (trapframe.rcx() & 0xFF) as u64,
                         _ => todo!(),
                     };
-                    // Safety: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
+                    // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
                     unsafe {
                         write_mmio(size, ve_info.guest_physical_address, value)
                             .map_err(MmioError::TdVmcallError)?
@@ -192,14 +192,14 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
                 }
                 InstrMmioType::WriteImm => {
                     let value = instr.immediate(0);
-                    // Safety: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
+                    // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
                     unsafe {
                         write_mmio(size, ve_info.guest_physical_address, value)
                             .map_err(MmioError::TdVmcallError)?
                     }
                 }
                 InstrMmioType::Read =>
-                // Safety: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
+                // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
                 unsafe {
                     let read_res = read_mmio(size, ve_info.guest_physical_address)
                         .map_err(MmioError::TdVmcallError)?
@@ -294,7 +294,7 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
                     }
                 },
                 InstrMmioType::ReadZeroExtend =>
-                // Safety: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
+                // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
                 unsafe {
                     let read_res = read_mmio(size, ve_info.guest_physical_address)
                         .map_err(MmioError::TdVmcallError)?
@@ -331,7 +331,7 @@ fn decode_instr(rip: usize) -> Result<Instruction, MmioError> {
     let code_data = {
         const MAX_X86_INSTR_LEN: usize = 15;
         let mut data = [0u8; MAX_X86_INSTR_LEN];
-        // Safety:
+        // SAFETY:
         // This is safe because we are ensuring that 'rip' is a valid kernel virtual address before this operation.
         // We are also ensuring that the size of the data we are copying does not exceed 'MAX_X86_INSTR_LEN'.
         // Therefore, we are not reading any memory that we shouldn't be, and we are not causing any undefined behavior.

@@ -91,7 +91,7 @@ pub fn init_kernel_page_table() {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        // Safety: we are doing the linear mapping for the kernel.
+        // SAFETY: we are doing the linear mapping for the kernel.
         unsafe {
             kpt.map(&from, &to, prop).unwrap();
         }
@@ -108,7 +108,7 @@ pub fn init_kernel_page_table() {
             cache: CachePolicy::Uncacheable,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        // Safety: we are doing I/O mappings for the kernel.
+        // SAFETY: we are doing I/O mappings for the kernel.
         unsafe {
             kpt.map(&from, &to, prop).unwrap();
         }
@@ -130,7 +130,7 @@ pub fn init_kernel_page_table() {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        // Safety: we are doing mappings for the kernel.
+        // SAFETY: we are doing mappings for the kernel.
         unsafe {
             kpt.map(&from, &to, prop).unwrap();
         }

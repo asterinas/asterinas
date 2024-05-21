@@ -200,7 +200,7 @@ macro_rules! ktest_array {
         }
         let item_size = core::mem::size_of::<KtestItem>();
         let l = (__ktest_array_end as usize - __ktest_array as usize) / item_size;
-        // Safety: __ktest_array is a static section consisting of KtestItem.
+        // SAFETY: __ktest_array is a static section consisting of KtestItem.
         unsafe { core::slice::from_raw_parts(__ktest_array as *const KtestItem, l) }
     }};
 }

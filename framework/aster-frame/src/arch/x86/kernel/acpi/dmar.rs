@@ -68,7 +68,7 @@ impl Dmar {
             return None;
         }
         let acpi_table_lock = super::ACPI_TABLES.get().unwrap().lock();
-        // Safety: The DmarHeader is the header for the DMAR structure, it fits all the field described in Intel manual.
+        // SAFETY: The DmarHeader is the header for the DMAR structure, it fits all the field described in Intel manual.
         let dmar_mapping = unsafe {
             acpi_table_lock
                 .get_sdt::<DmarHeader>(Signature::DMAR)
@@ -77,7 +77,7 @@ impl Dmar {
 
         let physical_address = dmar_mapping.physical_start();
         let len = dmar_mapping.mapped_length();
-        // Safety: The target address is the start of the remapping structures,
+        // SAFETY: The target address is the start of the remapping structures,
         // and the length is valid since the value is read from the length field in SDTHeader minus the size of DMAR header.
         let dmar_slice = unsafe {
             core::slice::from_raw_parts_mut(
@@ -89,7 +89,7 @@ impl Dmar {
         let mut remapping_structures = Vec::new();
         let mut index = 0;
         let mut remain_length = len - size_of::<DmarHeader>();
-        // Safety: Indexes and offsets are strictly followed by the manual.
+        // SAFETY: Indexes and offsets are strictly followed by the manual.
         unsafe {
             while remain_length > 0 {
                 // Common header: type: u16, length: u16

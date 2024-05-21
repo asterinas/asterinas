@@ -24,7 +24,7 @@ fn init_bootloader_name(bootloader_name: &'static Once<String>) {
         let mut name = "";
         let info = MB1_INFO.get().unwrap();
         if info.boot_loader_name != 0 {
-            // Safety: the bootloader name is C-style zero-terminated string.
+            // SAFETY: the bootloader name is C-style zero-terminated string.
             unsafe {
                 let cstr = paddr_to_vaddr(info.boot_loader_name as usize) as *const u8;
                 let mut len = 0;
@@ -45,7 +45,7 @@ fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
         let mut cmdline = "";
         let info = MB1_INFO.get().unwrap();
         if info.cmdline != 0 {
-            // Safety: the command line is C-style zero-terminated string.
+            // SAFETY: the command line is C-style zero-terminated string.
             unsafe {
                 let cstr = paddr_to_vaddr(info.cmdline as usize) as *const u8;
                 let mut len = 0;

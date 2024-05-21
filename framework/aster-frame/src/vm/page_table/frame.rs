@@ -158,7 +158,7 @@ where
         huge: bool,
     ) {
         assert!(idx < nr_ptes_per_node::<C>());
-        // Safety: the index is within the bound and the PTE to be written is valid.
+        // SAFETY: the index is within the bound and the PTE to be written is valid.
         // And the physical address of PTE points to initialized memory.
         // This applies to all the following `write_pte` invocations.
         unsafe {
@@ -196,7 +196,7 @@ where
     pub(super) fn protect(&mut self, idx: usize, prop: PageProperty, level: usize) {
         debug_assert!(self.children[idx].is_some());
         let paddr = self.children[idx].paddr().unwrap();
-        // Safety: the index is within the bound and the PTE is valid.
+        // SAFETY: the index is within the bound and the PTE is valid.
         unsafe {
             self.write_pte(
                 idx,
@@ -207,7 +207,7 @@ where
 
     fn read_pte(&self, idx: usize) -> E {
         assert!(idx < nr_ptes_per_node::<C>());
-        // Safety: the index is within the bound and PTE is plain-old-data.
+        // SAFETY: the index is within the bound and PTE is plain-old-data.
         unsafe { (self.inner.as_ptr() as *const E).add(idx).read() }
     }
 

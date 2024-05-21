@@ -68,7 +68,7 @@ impl KernelStack {
             let guard_page_paddr = stack_segment.start_paddr();
             crate::vm::paddr_to_vaddr(guard_page_paddr)
         };
-        // Safety: the segment allocated is not used by others so we can protect it.
+        // SAFETY: the segment allocated is not used by others so we can protect it.
         unsafe {
             page_table
                 .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
@@ -96,7 +96,7 @@ impl Drop for KernelStack {
                 let guard_page_paddr = self.segment.start_paddr();
                 crate::vm::paddr_to_vaddr(guard_page_paddr)
             };
-            // Safety: the segment allocated is not used by others so we can protect it.
+            // SAFETY: the segment allocated is not used by others so we can protect it.
             unsafe {
                 page_table
                     .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {

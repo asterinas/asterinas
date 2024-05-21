@@ -105,7 +105,7 @@ where
     [(); C::NR_LEVELS]:,
 {
     pub(crate) fn activate(&self) {
-        // Safety: The usermode page table is safe to activate since the kernel
+        // SAFETY: The usermode page table is safe to activate since the kernel
         // mappings are shared.
         unsafe {
             self.activate_unchecked();
@@ -118,7 +118,7 @@ where
     /// TODO: We may consider making the page table itself copy-on-write.
     pub(crate) fn fork_copy_on_write(&self) -> Self {
         let mut cursor = self.cursor_mut(&UserMode::VADDR_RANGE).unwrap();
-        // Safety: Protecting the user page table is safe.
+        // SAFETY: Protecting the user page table is safe.
         unsafe {
             cursor
                 .protect(
@@ -276,7 +276,7 @@ where
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
     pub(crate) fn query(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
-        // Safety: The root frame is a valid page table frame so the address is valid.
+        // SAFETY: The root frame is a valid page table frame so the address is valid.
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
     }
 
@@ -361,7 +361,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
     let mut cur_pte = {
         let frame_addr = paddr_to_vaddr(root_paddr);
         let offset = pte_index::<C>(vaddr, cur_level);
-        // Safety: The offset does not exceed the value of PAGE_SIZE.
+        // SAFETY: The offset does not exceed the value of PAGE_SIZE.
         unsafe { (frame_addr as *const E).add(offset).read() }
     };
 
@@ -377,7 +377,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
         cur_pte = {
             let frame_addr = paddr_to_vaddr(cur_pte.paddr());
             let offset = pte_index::<C>(vaddr, cur_level);
-            // Safety: The offset does not exceed the value of PAGE_SIZE.
+            // SAFETY: The offset does not exceed the value of PAGE_SIZE.
             unsafe { (frame_addr as *const E).add(offset).read() }
         };
     }

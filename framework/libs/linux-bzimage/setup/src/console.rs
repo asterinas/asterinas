@@ -12,13 +12,13 @@ static mut STDOUT: Stdout = Stdout {
     serial_port: unsafe { SerialPort::new(0x0) },
 };
 
-/// safety: this function must only be called once
+/// SAFETY: this function must only be called once
 pub unsafe fn init() {
     STDOUT = Stdout::init();
 }
 
 impl Stdout {
-    /// safety: this function must only be called once
+    /// SAFETY: this function must only be called once
     pub unsafe fn init() -> Self {
         let mut serial_port = unsafe { SerialPort::new(0x3F8) };
         serial_port.init();
@@ -35,7 +35,7 @@ impl Write for Stdout {
 
 /// This is used when dyn Trait is not supported or fmt::Arguments is fragile to use in PIE.
 ///
-/// Safety: init() must be called before print_str() and there should be no race conditions.
+/// SAFETY: init() must be called before print_str() and there should be no race conditions.
 pub unsafe fn print_str(s: &str) {
     STDOUT.write_str(s).unwrap();
 }
@@ -46,7 +46,7 @@ unsafe fn print_char(c: char) {
 
 /// This is used when dyn Trait is not supported or fmt::Arguments is fragile to use in PIE.
 ///
-/// Safety: init() must be called before print_hex() and there should be no race conditions.
+/// SAFETY: init() must be called before print_hex() and there should be no race conditions.
 pub unsafe fn print_hex(n: u64) {
     print_str("0x");
     for i in (0..16).rev() {
@@ -65,7 +65,7 @@ pub unsafe fn print_hex(n: u64) {
 
 /// Glue code for print!() and println!() macros.
 ///
-/// Safety: init() must be called before print_fmt() and there should be no race conditions.
+/// SAFETY: init() must be called before print_fmt() and there should be no race conditions.
 pub unsafe fn print_fmt(args: fmt::Arguments) {
     STDOUT.write_fmt(args).unwrap();
 }

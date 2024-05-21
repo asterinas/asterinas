@@ -31,7 +31,7 @@ const INIT_KERNEL_HEAP_SIZE: usize = PAGE_SIZE * 256;
 static mut HEAP_SPACE: [u8; INIT_KERNEL_HEAP_SIZE] = [0; INIT_KERNEL_HEAP_SIZE];
 
 pub fn init() {
-    // Safety: The HEAP_SPACE is a static memory range, so it's always valid.
+    // SAFETY: The HEAP_SPACE is a static memory range, so it's always valid.
     unsafe {
         HEAP_ALLOCATOR.init(HEAP_SPACE.as_ptr(), INIT_KERNEL_HEAP_SIZE);
     }
@@ -51,12 +51,12 @@ impl<const ORDER: usize> LockedHeapWithRescue<ORDER> {
         }
     }
 
-    /// Safety: The range [start, start + size) must be a valid memory region.
+    /// SAFETY: The range [start, start + size) must be a valid memory region.
     pub unsafe fn init(&self, start: *const u8, size: usize) {
         self.heap.lock_irq_disabled().init(start as usize, size);
     }
 
-    /// Safety: The range [start, start + size) must be a valid memory region.
+    /// SAFETY: The range [start, start + size) must be a valid memory region.
     unsafe fn add_to_heap(&self, start: usize, size: usize) {
         self.heap
             .lock_irq_disabled()
@@ -122,7 +122,7 @@ fn rescue<const ORDER: usize>(heap: &LockedHeapWithRescue<ORDER>, layout: &Layou
     // So if the heap is nearly run out, allocating frame will fail too.
     let vaddr = paddr_to_vaddr(allocation_start * PAGE_SIZE);
 
-    // Safety: the frame is allocated from FramAllocator and never be deallocated,
+    // SAFETY: the frame is allocated from FramAllocator and never be deallocated,
     // so the addr is always valid.
     unsafe {
         debug!(

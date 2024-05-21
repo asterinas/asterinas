@@ -32,7 +32,7 @@ impl X2Apic {
             const EXTD_BIT_IDX: u8 = 10;
             (1 << EN_BIT_IDX) | (1 << EXTD_BIT_IDX)
         };
-        // Safety:
+        // SAFETY:
         // This is safe because we are ensuring that the operations are performed on valid MSRs.
         // We are using them to read and write to the `IA32_APIC_BASE` and `IA32_X2APIC_SIVR` MSRs, which are well-defined and valid MSRs in x86 systems.
         // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `rdmsr` and `wrmsr` functions.

@@ -27,7 +27,7 @@ static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
 pub fn init() {
     #[cfg(feature = "intel_tdx")]
-    // Safety:
+    // SAFETY:
     // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
     // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
     // We are also ensuring that we are only unprotecting four pages.
@@ -55,10 +55,10 @@ fn iter_range(range: Range<usize>) {
     let mut device_count = 0;
     while current > range.start {
         current -= 0x100;
-        // Safety: It only read the value and judge if the magic value fit 0x74726976
+        // SAFETY: It only read the value and judge if the magic value fit 0x74726976
         let value = unsafe { *(paddr_to_vaddr(current) as *const u32) };
         if value == VIRTIO_MMIO_MAGIC {
-            // Safety: It only read the device id
+            // SAFETY: It only read the device id
             let device_id = unsafe { *(paddr_to_vaddr(current + 8) as *const u32) };
             device_count += 1;
             if device_id == 0 {

@@ -22,7 +22,7 @@ fn load_segment(file: &xmas_elf::ElfFile, program: &xmas_elf::program::ProgramHe
     let SegmentData::Undefined(header_data) = program.get_data(file).unwrap() else {
         panic!("[setup] Unexpected segment data type!");
     };
-    // Safety: the physical address from the ELF file is valid
+    // SAFETY: the physical address from the ELF file is valid
     let dst_slice = unsafe {
         core::slice::from_raw_parts_mut(program.physical_addr as *mut u8, program.mem_size as usize)
     };
@@ -40,7 +40,7 @@ fn load_segment(file: &xmas_elf::ElfFile, program: &xmas_elf::program::ProgramHe
         print_hex(program.mem_size as u64);
         print_str("\n");
     }
-    // Safety: the ELF file is valid
+    // SAFETY: the ELF file is valid
     // dst_slice[..program.file_size as usize].copy_from_slice(header_data);
     unsafe {
         memcpy(

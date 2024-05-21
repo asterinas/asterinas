@@ -64,7 +64,7 @@ impl DmaStream {
         let start_daddr = match dma_type() {
             DmaType::Direct => {
                 #[cfg(feature = "intel_tdx")]
-                // Safety:
+                // SAFETY:
                 // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
                 // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
                 // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
@@ -79,7 +79,7 @@ impl DmaStream {
             DmaType::Iommu => {
                 for i in 0..frame_count {
                     let paddr = start_paddr + (i * PAGE_SIZE);
-                    // Safety: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `vm_segment`.
+                    // SAFETY: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `vm_segment`.
                     unsafe {
                         iommu::map(paddr as Daddr, paddr).unwrap();
                     }
@@ -134,7 +134,7 @@ impl DmaStream {
         let start_va = self.inner.vm_segment.as_ptr();
         // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
         for i in byte_range.step_by(64) {
-            // Safety: the addresses is limited by a valid `byte_range`.
+            // SAFETY: the addresses is limited by a valid `byte_range`.
             unsafe {
                 _mm_clflush(start_va.wrapping_add(i));
             }
@@ -158,7 +158,7 @@ impl Drop for DmaStreamInner {
         match dma_type() {
             DmaType::Direct => {
                 #[cfg(feature = "intel_tdx")]
-                // Safety:
+                // SAFETY:
                 // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
                 // The `start_paddr()` ensures the `start_paddr` is page-aligned.
                 // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
