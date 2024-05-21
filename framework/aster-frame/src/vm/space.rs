@@ -12,7 +12,9 @@ use super::{
     PAGE_SIZE,
 };
 use crate::{
-    arch::mm::{PageTableEntry, PagingConsts},
+    arch::mm::{
+        tlb_flush_addr_range, tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
+    },
     prelude::*,
     vm::{
         page_table::{Cursor, PageTableQueryResult as PtQr},
@@ -37,6 +39,15 @@ pub struct VmSpace {
     pt: PageTable<UserMode>,
 }
 
+// Notes on TLB flushing:
+//
+// We currently assume that:
+// 1. `VmSpace` _might_ be activated on the current CPU and the user memory _might_ be used
+//    immediately after we make changes to the page table entries. So we must invalidate the
+//    corresponding TLB caches accordingly.
+// 2. `VmSpace` must _not_ be activated on another CPU. This assumption is trivial, since SMP
+//    support is not yet available. But we need to consider this situation in the future (TODO).
+
 impl VmSpace {
     /// Creates a new VM address space.
     pub fn new() -> Self {
@@ -44,6 +55,7 @@ impl VmSpace {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
         }
     }
+
     /// Activate the page table.
     pub(crate) fn activate(&self) {
         self.pt.activate();
@@ -99,6 +111,9 @@ impl VmSpace {
             }
         }
 
+        drop(cursor);
+        tlb_flush_addr_range(&va_range);
+
         Ok(addr)
     }
 
@@ -132,10 +147,13 @@ impl VmSpace {
         if !UserMode::covers(range) {
             return Err(Error::InvalidArgs);
         }
+
         // SAFETY: unmapping in the user space is safe.
         unsafe {
             self.pt.unmap(range)?;
         }
+        tlb_flush_addr_range(range);
+
         Ok(())
     }
 
@@ -146,8 +164,7 @@ impl VmSpace {
         unsafe {
             self.pt.unmap(&(0..MAX_USERSPACE_VADDR)).unwrap();
         }
-        #[cfg(target_arch = "x86_64")]
-        x86_64::instructions::tlb::flush_all();
+        tlb_flush_all_excluding_global();
     }
 
     /// Update the VM protection permissions within the VM address range.
@@ -169,10 +186,13 @@ impl VmSpace {
         if !UserMode::covers(range) {
             return Err(Error::InvalidArgs);
         }
+
         // SAFETY: protecting in the user space is safe.
         unsafe {
             self.pt.protect(range, op)?;
         }
+        tlb_flush_addr_range(range);
+
         Ok(())
     }
 
@@ -182,9 +202,11 @@ impl VmSpace {
     /// read-only. And both the VM space will take handles to the same
     /// physical memory pages.
     pub fn fork_copy_on_write(&self) -> Self {
-        Self {
+        let new_space = Self {
             pt: self.pt.fork_copy_on_write(),
-        }
+        };
+        tlb_flush_all_excluding_global();
+        new_space
     }
 }
 
