@@ -48,7 +48,7 @@ impl AtomicBits {
         assert!(index < self.num_bits);
         let i = index / 64;
         let j = index % 64;
-        // Safety. Variable i is in range as variable index is in range.
+        // SAFETY: Variable i is in range as variable index is in range.
         let u64_atomic = unsafe { self.u64s.get_unchecked(i) };
         (u64_atomic.load(Relaxed) & 1 << j) != 0
     }
@@ -58,7 +58,7 @@ impl AtomicBits {
         assert!(index < self.num_bits);
         let i = index / 64;
         let j = index % 64;
-        // Safety. Variable i is in range as variable index is in range.
+        // SAFETY: Variable i is in range as variable index is in range.
         let u64_atomic = unsafe { self.u64s.get_unchecked(i) };
         if new_bit {
             u64_atomic.fetch_or(1 << j, Relaxed);

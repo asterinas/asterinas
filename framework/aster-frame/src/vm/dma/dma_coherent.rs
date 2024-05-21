@@ -59,7 +59,7 @@ impl DmaCoherent {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
-            // Safety: the physical mappings is only used by DMA so protecting it is safe.
+            // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
                 page_table
                     .protect(&va_range, |p| p.cache = CachePolicy::Uncacheable)
@@ -69,7 +69,7 @@ impl DmaCoherent {
         let start_daddr = match dma_type() {
             DmaType::Direct => {
                 #[cfg(feature = "intel_tdx")]
-                // Safety:
+                // SAFETY:
                 // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
                 // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
                 // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
@@ -84,7 +84,7 @@ impl DmaCoherent {
             DmaType::Iommu => {
                 for i in 0..frame_count {
                     let paddr = start_paddr + (i * PAGE_SIZE);
-                    // Safety: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `vm_segment`.
+                    // SAFETY: the `paddr` is restricted by the `start_paddr` and `frame_count` of the `vm_segment`.
                     unsafe {
                         iommu::map(paddr as Daddr, paddr).unwrap();
                     }
@@ -124,7 +124,7 @@ impl Drop for DmaCoherentInner {
         match dma_type() {
             DmaType::Direct => {
                 #[cfg(feature = "intel_tdx")]
-                // Safety:
+                // SAFETY:
                 // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
                 // The `start_paddr()` ensures the `start_paddr` is page-aligned.
                 // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
@@ -146,7 +146,7 @@ impl Drop for DmaCoherentInner {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
-            // Safety: the physical mappings is only used by DMA so protecting it is safe.
+            // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
                 page_table
                     .protect(&va_range, |p| p.cache = CachePolicy::Writeback)

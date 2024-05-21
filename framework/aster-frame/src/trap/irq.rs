@@ -45,7 +45,7 @@ impl IrqLine {
     }
 
     fn new(irq_num: u8) -> Self {
-        // Safety: The IRQ number is allocated through `RecycleAllocator`, and it is guaranteed that the
+        // SAFETY: The IRQ number is allocated through `RecycleAllocator`, and it is guaranteed that the
         // IRQ is not one of the important IRQ like cpu exception IRQ.
         Self {
             irq_num,

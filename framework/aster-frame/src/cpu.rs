@@ -62,7 +62,7 @@ macro_rules! cpu_local {
 /// TODO: re-implement `CpuLocal`
 pub struct CpuLocal<T>(UnsafeCell<T>);
 
-// Safety. At any given time, only one task can access the inner value T of a cpu-local variable.
+// SAFETY: At any given time, only one task can access the inner value T of a cpu-local variable.
 unsafe impl<T> Sync for CpuLocal<T> {}
 
 impl<T> CpuLocal<T> {
@@ -82,7 +82,7 @@ impl<T> CpuLocal<T> {
         // FIXME: implement disable preemption
         // Disable interrupts when accessing cpu-local variable
         let _guard = disable_local();
-        // Safety. Now that the local IRQs are disabled, this CPU-local object can only be
+        // SAFETY: Now that the local IRQs are disabled, this CPU-local object can only be
         // accessed by the current task/thread. So it is safe to get its immutable reference
         // regardless of whether `T` implements `Sync` or not.
         let val_ref = unsafe { this.do_borrow() };

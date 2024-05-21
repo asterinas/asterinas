@@ -93,7 +93,7 @@ impl VmSpace {
         };
 
         for frame in frames.into_iter() {
-            // Safety: mapping in the user space with `VmFrame` is safe.
+            // SAFETY: mapping in the user space with `VmFrame` is safe.
             unsafe {
                 cursor.map(frame, prop);
             }
@@ -132,7 +132,7 @@ impl VmSpace {
         if !UserMode::covers(range) {
             return Err(Error::InvalidArgs);
         }
-        // Safety: unmapping in the user space is safe.
+        // SAFETY: unmapping in the user space is safe.
         unsafe {
             self.pt.unmap(range)?;
         }
@@ -141,7 +141,7 @@ impl VmSpace {
 
     /// clear all mappings
     pub fn clear(&self) {
-        // Safety: unmapping user space is safe, and we don't care unmapping
+        // SAFETY: unmapping user space is safe, and we don't care unmapping
         // invalid ranges.
         unsafe {
             self.pt.unmap(&(0..MAX_USERSPACE_VADDR)).unwrap();
@@ -169,7 +169,7 @@ impl VmSpace {
         if !UserMode::covers(range) {
             return Err(Error::InvalidArgs);
         }
-        // Safety: protecting in the user space is safe.
+        // SAFETY: protecting in the user space is safe.
         unsafe {
             self.pt.protect(range, op)?;
         }

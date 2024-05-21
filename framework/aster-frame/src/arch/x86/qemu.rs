@@ -23,7 +23,7 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
     use x86_64::instructions::port::Port;
     let mut port = Port::new(0xf4);
 
-    // Safety: The write to the ISA debug exit port is safe and `0xf4` should
+    // SAFETY: The write to the ISA debug exit port is safe and `0xf4` should
     // be the port number.
     unsafe {
         port.write(exit_code as u32);

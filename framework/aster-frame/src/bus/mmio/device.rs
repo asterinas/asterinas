@@ -22,11 +22,11 @@ pub struct MmioCommonDevice {
 impl MmioCommonDevice {
     pub(super) fn new(paddr: Paddr, handle: IrqLine) -> Self {
         // Read magic value
-        // Safety: It only read the value and judge if the magic value fit 0x74726976
+        // SAFETY: It only read the value and judge if the magic value fit 0x74726976
         unsafe {
             debug_assert_eq!(*(paddr_to_vaddr(paddr) as *const u32), VIRTIO_MMIO_MAGIC);
         }
-        // Safety: This range is virtio-mmio device space.
+        // SAFETY: This range is virtio-mmio device space.
         let io_mem = unsafe { IoMem::new(paddr..paddr + 0x200) };
         let res = Self {
             io_mem,

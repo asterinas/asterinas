@@ -43,7 +43,7 @@ fn get_rela_array() -> &'static [Elf64Rela] {
         print_hex(end as u64);
         print_str("\n");
     }
-    // Safety: the linker will ensure that the symbols are valid.
+    // SAFETY: the linker will ensure that the symbols are valid.
     unsafe { core::slice::from_raw_parts(start, len) }
 }
 

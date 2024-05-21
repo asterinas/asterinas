@@ -56,7 +56,7 @@ impl RemappingRegisters {
         };
 
         let vaddr: usize = paddr_to_vaddr(base_address as usize);
-        // Safety: All offsets and sizes are strictly adhered to in the manual, and the base address is obtained from Drhd.
+        // SAFETY: All offsets and sizes are strictly adhered to in the manual, and the base address is obtained from Drhd.
         let mut remapping_reg = unsafe {
             fault::init(vaddr);
             let version = Volatile::new_read_only(&*(vaddr as *const u32));

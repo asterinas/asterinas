@@ -24,7 +24,7 @@ pub(crate) fn alloc(nframes: usize, flags: VmFrameFlags) -> Option<VmFrameVec> {
         .alloc(nframes)
         .map(|start| {
             let mut vector = Vec::new();
-            // Safety: The frame index is valid.
+            // SAFETY: The frame index is valid.
             unsafe {
                 for i in 0..nframes {
                     let frame = VmFrame::new(
@@ -40,7 +40,7 @@ pub(crate) fn alloc(nframes: usize, flags: VmFrameFlags) -> Option<VmFrameVec> {
 
 pub(crate) fn alloc_single(flags: VmFrameFlags) -> Option<VmFrame> {
     FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx|
-            // Safety: The frame index is valid.
+            // SAFETY: The frame index is valid.
             unsafe { VmFrame::new(idx * PAGE_SIZE, flags.union(VmFrameFlags::NEED_DEALLOC)) })
 }
 
@@ -51,7 +51,7 @@ pub(crate) fn alloc_contiguous(nframes: usize, flags: VmFrameFlags) -> Option<Vm
         .lock()
         .alloc(nframes)
         .map(|start|
-            // Safety: The range of page frames is contiguous and valid.
+            // SAFETY: The range of page frames is contiguous and valid.
             unsafe {
             VmSegment::new(
                 start * PAGE_SIZE,

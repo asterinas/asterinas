@@ -96,7 +96,7 @@ impl CapabilityMsixData {
         // Set message address 0xFEE0_0000
         for i in 0..table_size {
             #[cfg(feature = "intel_tdx")]
-            // Safety:
+            // SAFETY:
             // This is safe because we are ensuring that the physical address of the MSI-X table is valid before this operation.
             // We are also ensuring that we are only unprotecting a single page.
             // The MSI-X table will not exceed one page size, because the size of an MSI-X entry is 16 bytes, and 256 entries are required to fill a page,

@@ -124,7 +124,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for SpinLock<T> {
     }
 }
 
-// Safety. Only a single lock holder is permitted to access the inner data of Spinlock.
+// SAFETY: Only a single lock holder is permitted to access the inner data of Spinlock.
 unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
 unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
 
@@ -170,6 +170,6 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = SpinLock<T>>> fmt::Debug for Spin
 
 impl<T: ?Sized, R: Deref<Target = SpinLock<T>>> !Send for SpinLockGuard_<T, R> {}
 
-// Safety. `SpinLockGuard_` can be shared between tasks/threads in same CPU.
+// SAFETY: `SpinLockGuard_` can be shared between tasks/threads in same CPU.
 // As `lock()` is only called when there are no race conditions caused by interrupts.
 unsafe impl<T: ?Sized + Sync, R: Deref<Target = SpinLock<T>> + Sync> Sync for SpinLockGuard_<T, R> {}

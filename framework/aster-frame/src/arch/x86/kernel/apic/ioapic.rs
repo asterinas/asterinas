@@ -110,7 +110,7 @@ impl IoApicAccess {
     }
 
     pub fn read(&mut self, register: u8) -> u32 {
-        // Safety: Since the base address is valid, the read/write should be safe.
+        // SAFETY: Since the base address is valid, the read/write should be safe.
         unsafe {
             self.register.write_volatile(register as u32);
             self.data.read_volatile()
@@ -118,7 +118,7 @@ impl IoApicAccess {
     }
 
     pub fn write(&mut self, register: u8, data: u32) {
-        // Safety: Since the base address is valid, the read/write should be safe.
+        // SAFETY: Since the base address is valid, the read/write should be safe.
         unsafe {
             self.register.write_volatile(register as u32);
             self.data.write_volatile(data);
@@ -156,7 +156,7 @@ pub fn init() {
             // Need to find a way to determine if it is a valid address or not.
             const IO_APIC_DEFAULT_ADDRESS: usize = 0xFEC0_0000;
             #[cfg(feature = "intel_tdx")]
-            // Safety:
+            // SAFETY:
             // This is safe because we are ensuring that the `IO_APIC_DEFAULT_ADDRESS` is a valid MMIO address before this operation.
             // The `IO_APIC_DEFAULT_ADDRESS` is a well-known address used for IO APICs in x86 systems, and it is page-aligned, which is a requirement for the `unprotect_gpa_range` function.
             // We are also ensuring that we are only unprotecting a single page.

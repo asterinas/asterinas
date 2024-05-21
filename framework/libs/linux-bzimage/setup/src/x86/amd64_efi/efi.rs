@@ -47,10 +47,10 @@ fn efi_phase_boot(
     system_table: SystemTable<Boot>,
     boot_params_ptr: *mut BootParams,
 ) -> ! {
-    // Safety: this init function is only called once.
+    // SAFETY: this init function is only called once.
     unsafe { crate::console::init() };
 
-    // Safety: this is the right time to apply relocations.
+    // SAFETY: this is the right time to apply relocations.
     unsafe { apply_rela_dyn_relocations() };
 
     uefi_services::println!("[EFI stub] Relocations applied.");

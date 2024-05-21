@@ -64,7 +64,7 @@ pub fn tlb_flush(vaddr: Vaddr) {
 }
 
 pub fn tlb_flush_all_including_global() {
-    // Safety: updates to CR4 here only change the global-page bit, the side effect
+    // SAFETY: updates to CR4 here only change the global-page bit, the side effect
     // is only to invalidate the TLB, which doesn't affect the memory safety.
     unsafe {
         // To invalidate all entries, including global-page

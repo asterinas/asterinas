@@ -71,7 +71,7 @@ pub fn init() {
     // TODO: We activate the kernel page table here because the new kernel page table
     // has mappings for MMIO which is required for the components initialization. We
     // should refactor the initialization process to avoid this.
-    // Safety: we are activating the unique kernel page table.
+    // SAFETY: we are activating the unique kernel page table.
     unsafe {
         vm::kspace::KERNEL_PAGE_TABLE
             .get()

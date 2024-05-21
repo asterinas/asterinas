@@ -70,7 +70,7 @@ pub fn tsc_freq() -> u64 {
 
 /// Reads the current value of the processor’s time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
-    // Safety: It is safe to read a time-related counter.
+    // SAFETY: It is safe to read a time-related counter.
     unsafe { _rdtsc() }
 }
 
