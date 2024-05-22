@@ -73,7 +73,7 @@ pub fn check_executable_file(dentry: &Arc<Dentry>) -> Result<()> {
         return_errno_with_message!(Errno::EISDIR, "the file is a directory");
     }
 
-    if !dentry.type_().is_reguler_file() {
+    if !dentry.type_().is_regular_file() {
         return_errno_with_message!(Errno::EACCES, "the dentry is not a regular file");
     }
 
