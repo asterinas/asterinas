@@ -22,6 +22,9 @@ Use the kernel template.
 If this option is not set,
 the library template will be used by default.
 
+`--library`:
+Use the library template. This is the default option.
+
 ## Examples
 
 - Create a new kernel named `myos`: 
