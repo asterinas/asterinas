@@ -2,7 +2,7 @@
 
 #![no_std]
 #![no_main]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 extern crate aster_frame;
 
 use aster_frame::prelude::*;

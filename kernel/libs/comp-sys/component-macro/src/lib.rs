@@ -5,7 +5,7 @@
 
 #![feature(proc_macro_diagnostic)]
 #![allow(dead_code)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 mod init_comp;
 mod priority;

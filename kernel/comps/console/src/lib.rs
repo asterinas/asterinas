@@ -2,7 +2,7 @@
 
 //! The console device of Asterinas.
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![feature(fn_traits)]
 
 extern crate alloc;
