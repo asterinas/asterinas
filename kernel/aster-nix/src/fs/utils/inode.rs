@@ -41,7 +41,7 @@ impl InodeType {
         )
     }
 
-    pub fn is_reguler_file(&self) -> bool {
+    pub fn is_regular_file(&self) -> bool {
         *self == InodeType::File
     }
 
