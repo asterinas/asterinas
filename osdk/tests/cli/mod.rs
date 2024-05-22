@@ -6,7 +6,7 @@ use crate::util::*;
 fn cli_help_message() {
     let output = cargo_osdk(&["-h"]).output().unwrap();
     assert_success(&output);
-    assert_stdout_contains_msg(&output, "cargo osdk [OPTIONS] <COMMAND>");
+    assert_stdout_contains_msg(&output, "cargo osdk <COMMAND>");
 }
 
 #[test]

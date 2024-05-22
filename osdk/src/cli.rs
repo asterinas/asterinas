@@ -18,32 +18,34 @@ use crate::{
 };
 
 pub fn main() {
-    let (osdk_subcommand, common_args) = match Cli::parse() {
-        Cli {
-            cargo_subcommand: CargoSubcommand::Osdk(osdk_subcommand),
-            common_args,
-        } => (osdk_subcommand, common_args),
-    };
-
-    let load_config = || {
+    let load_config = |common_args: &CommonArgs| {
         let manifest = TomlManifest::load();
         let scheme = manifest.get_scheme(common_args.scheme.as_ref());
-        Config::new(scheme, &common_args)
+        Config::new(scheme, common_args)
     };
 
-    match &osdk_subcommand {
+    let cli = Cli::parse();
+    let CargoSubcommand::Osdk(osdk_subcommand) = &cli.cargo_subcommand;
+
+    match osdk_subcommand {
         OsdkSubcommand::New(args) => execute_new_command(args),
         OsdkSubcommand::Build(build_args) => {
-            execute_build_command(&load_config(), build_args);
+            execute_build_command(&load_config(&build_args.common_args), build_args);
         }
         OsdkSubcommand::Run(run_args) => {
-            execute_run_command(&load_config(), &run_args.gdb_server_args);
+            execute_run_command(
+                &load_config(&run_args.common_args),
+                &run_args.gdb_server_args,
+            );
         }
         OsdkSubcommand::Debug(debug_args) => {
-            execute_debug_command(&load_config().run.build.profile, debug_args);
+            execute_debug_command(
+                &load_config(&debug_args.common_args).run.build.profile,
+                debug_args,
+            );
         }
         OsdkSubcommand::Test(test_args) => {
-            execute_test_command(&load_config(), test_args);
+            execute_test_command(&load_config(&test_args.common_args), test_args);
         }
         OsdkSubcommand::Check(args) => execute_forwarded_command("check", &args.args),
         OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", &args.args),
@@ -57,8 +59,6 @@ pub fn main() {
 pub struct Cli {
     #[clap(subcommand)]
     cargo_subcommand: CargoSubcommand,
-    #[command(flatten)]
-    common_args: CommonArgs,
 }
 
 #[derive(Debug, Parser)]
@@ -154,12 +154,16 @@ pub struct BuildArgs {
         value_name = "DIR"
     )]
     pub output: Option<PathBuf>,
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
 #[derive(Debug, Parser)]
 pub struct RunArgs {
     #[command(flatten)]
     pub gdb_server_args: GdbServerArgs,
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -197,6 +201,8 @@ pub struct DebugArgs {
         default_value = ".aster-gdb-socket"
     )]
     pub remote: String,
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
 #[derive(Debug, Parser)]
@@ -206,6 +212,8 @@ pub struct TestArgs {
         help = "Only run tests containing this string in their names"
     )]
     pub test_name: Option<String>,
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
 #[derive(Debug, Args, Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -255,6 +263,7 @@ impl CargoArgs {
 }
 
 #[derive(Debug, Args)]
+/// Common args used for build, run, test and debug subcommand
 pub struct CommonArgs {
     #[command(flatten)]
     pub build_args: CargoArgs,
