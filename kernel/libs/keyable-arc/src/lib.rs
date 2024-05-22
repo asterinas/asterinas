@@ -104,7 +104,7 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(coerce_unsized)]
 #![feature(unsize)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 extern crate alloc;
 

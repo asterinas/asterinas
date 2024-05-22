@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![feature(trait_alias)]
 #![feature(fn_traits)]
 #![feature(linked_list_cursors)]
