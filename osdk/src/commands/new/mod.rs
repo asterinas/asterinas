@@ -107,6 +107,17 @@ fn create_osdk_manifest(cargo_metadata: &serde_json::Value, type_: &ProjectType)
             todo!()
         }
     };
+
+    if is_in_virtual_workspace(cargo_metadata) {
+        // If the project is created in a workspace,
+        // the project type should be neither a project nor a library.
+        // FIXME: This is only a temporary fix to remove the project type,
+        // we may decide the actual type in the future.
+        let contents = contents.lines().skip(2).collect::<Vec<_>>().join("\n");
+        fs::write(osdk_manifest_path, contents).unwrap();
+        return;
+    }
+
     fs::write(osdk_manifest_path, contents).unwrap();
 }
 
@@ -220,4 +231,18 @@ fn check_rust_toolchain(toolchain: &toml::Table) {
             process::exit(Errno::AddRustToolchain as _);
         }
     }
+}
+
+fn is_in_virtual_workspace(cargo_metadata: &serde_json::Value) -> bool {
+    let cargo_manifeset_path = {
+        let workspace_root = get_workspace_root(cargo_metadata);
+        PathBuf::from(workspace_root).join("Cargo.toml")
+    };
+
+    let cargo_manifest = {
+        let content = fs::read_to_string(cargo_manifeset_path).unwrap();
+        toml::Table::from_str(&content).unwrap()
+    };
+
+    !cargo_manifest.contains_key("package")
 }
