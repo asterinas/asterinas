@@ -57,12 +57,6 @@ The kernel
 will print `Hello world from the guest kernel!`to the console 
 and then abort.
 
-There is also a code snippet that demonstrates
-how to write kernel mode unit tests.
-It follows a similar code pattern as user mode unit tests.
-The test module is marked with the `#[cfg(ktest)]` macro,
-and each test case is marked with `#[ktest]`.
-
 ```rust
 {{#include ../../../../osdk/src/commands/new/kernel.template}}
 ```
@@ -71,6 +65,9 @@ and each test case is marked with `#[ktest]`.
 
 The `src/lib.rs` of library project only contains
 a simple kernel mode unit test.
+It follows a similar code pattern as user mode unit tests.
+The test module is marked with the `#[cfg(ktest)]` macro,
+and each test case is marked with `#[ktest]`.
 
 ```rust
 {{#include ../../../../osdk/src/commands/new/lib.template}}
@@ -93,19 +90,27 @@ git = "https://github.com/asterinas/asterinas"
 branch = "main"
 ```
 
+OSDK will also exclude the directory 
+which is used to generate temporary files.
+```toml
+[workspace]
+exclude = ["target/osdk/base"]
+```
+
 ### `OSDK.toml`
 
 The `OSDK.toml` file is a manifest
 that defines the exact behavior of OSDK.
-By default, it contains the following contents.
-It includes settings on how to start QEMU to run a kernel.
+By default, it includes settings on how to start QEMU to run a kernel.
 The meaning of each key can be found
 in the [manifest documentation](../reference/manifest.md).
 Please avoid changing the default settings
 unless you know what you are doing.
 
+The default manifest of a kernel project:
+
 ```toml
-{{#include ../../../../osdk/src/commands/new/lib.OSDK.toml.template}}
+{{#include ../../../../osdk/src/commands/new/kernel.OSDK.toml.template}}
 ```
 
 ### `rust-toolchain.toml`

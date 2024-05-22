@@ -15,11 +15,12 @@ pub struct GrubScheme {
     pub display_grub_menu: bool,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum BootProtocol {
     Linux,
     Multiboot,
+    #[default]
     Multiboot2,
 }
 
@@ -34,7 +35,7 @@ impl Default for Grub {
     fn default() -> Self {
         Grub {
             grub_mkrescue: PathBuf::from("grub-mkrescue"),
-            boot_protocol: BootProtocol::Multiboot2,
+            boot_protocol: BootProtocol::default(),
             display_grub_menu: false,
         }
     }

@@ -36,7 +36,7 @@ fn create_and_run_kernel() {
 #[test]
 fn create_and_test_library() {
     let work_dir = "/tmp";
-    let module_name = "mymodule";
+    let module_name = "mylib";
 
     let module_dir = PathBuf::from(work_dir).join(module_name);
 

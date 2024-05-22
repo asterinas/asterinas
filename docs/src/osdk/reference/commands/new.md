@@ -30,8 +30,8 @@ the library template will be used by default.
 cargo osdk new --kernel myos
 ```
 
-- Create a new library named `mymodule`:
+- Create a new library named `mylib`:
 
 ```bash
-cargo osdk new mymodule
+cargo osdk new mylib
 ```

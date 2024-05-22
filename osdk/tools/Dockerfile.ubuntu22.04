@@ -20,8 +20,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt update \ 
     && apt install -y \ 
     build-essential \ 
-    gdb \
     curl \ 
+    gdb \
     grub-efi-amd64 \
     grub2-common \ 
     libpixman-1-dev     `# running dependency for QEMU` \
