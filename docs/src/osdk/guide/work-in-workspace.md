@@ -17,7 +17,9 @@ touch Cargo.toml
 
 Then, add the following content to `Cargo.toml`:
 
+```toml
 {{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/Cargo.toml}}
+```
 
 ## Creating a kernel project and a library project
 
@@ -25,7 +27,7 @@ The two projects can be created using the following commands:
 
 ```bash
 cargo osdk new --kernel myos
-cargo osdk new mymodule
+cargo osdk new mylib
 ```
 
 The generated directory structure will be as follows:
@@ -39,7 +41,7 @@ myworkspace/
   │   ├── Cargo.toml
   │   └── src/
   │       └── lib.rs
-  └── mymodule/
+  └── mylib/
       ├── Cargo.toml
       └── src/
           └── lib.rs
@@ -52,21 +54,27 @@ In addition to the two projects,
 OSDK will also generate `OSDK.toml` and `rust-toolchain.toml`
 at the root of the workspace.
 
-Next, add the following function to `mymodule/src/lib.rs`.
+Next, add the following function to `mylib/src/lib.rs`.
 This function will calculate the available memory
 after booting:
 
-{{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/mymodule/src/lib.rs}}
+```rust
+{{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/mylib/src/lib.rs}}
+```
 
-Then, add a dependency on `mymodule` to `myos/Cargo.toml`:
+Then, add a dependency on `mylib` to `myos/Cargo.toml`:
 
+```toml
 {{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/myos/Cargo.toml}}
+```
 
 In `myos/src/lib.rs`,
 modify the file content as follows.
-This main function will call the function from `mymodule`:
+This main function will call the function from `mylib`:
 
+```rust
 {{#include ../../../../osdk/tests/examples_in_book/work_in_workspace_templates/myos/src/lib.rs}}
+```
 
 ## Building and Running the kernel
 
@@ -92,9 +100,9 @@ cargo osdk test
 If you want to run test cases from a specific crate,
 navigate to the crate's folder
 and run `cargo osdk test`.
-For example, if you want to test `myos`,
+For example, if you want to test `mylib`,
 use the following command:
 
 ```bash
-cd myos && cargo osdk test
+cd mylib && cargo osdk test
 ```

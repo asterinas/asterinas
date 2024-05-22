@@ -18,7 +18,7 @@ pub struct BootScheme {
     pub method: Option<BootMethod>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum BootMethod {
     /// Boot the kernel by making a rescue CD image.
@@ -27,24 +27,15 @@ pub enum BootMethod {
     GrubQcow2,
     /// Use the [QEMU direct boot](https://qemu-project.gitlab.io/qemu/system/linuxboot.html)
     /// to boot the kernel with QEMU's built-in Seabios and Coreboot utilites.
+    #[default]
     QemuDirect,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Boot {
     pub kcmdline: Vec<String>,
     pub initramfs: Option<PathBuf>,
     pub method: BootMethod,
-}
-
-impl Default for Boot {
-    fn default() -> Self {
-        Boot {
-            kcmdline: vec![],
-            initramfs: None,
-            method: BootMethod::QemuDirect,
-        }
-    }
 }
 
 impl BootScheme {

@@ -1,7 +1,7 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-#[macro_use]
+#[cfg_attr(ktest, macro_use)]
 extern crate ktest;
 extern crate aster_frame;
 

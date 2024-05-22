@@ -1,2 +1,2 @@
 [dependencies]
-mymodule = { path = "../mymodule" }
+mylib = { path = "../mylib" }

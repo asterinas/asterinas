@@ -20,9 +20,9 @@ Refer to the [documentation](build.md) of `cargo osdk build`
 for more details.
 
 ## Examples
-- Execute tests containing foo in their names
-with q35 as the QEMU machine type:
+- Execute tests that include *foo* in their names 
+using QEMU with 3GB of memory
 
 ```bash
-cargo osdk test foo --qemu.machine="q35"
+cargo osdk test foo --qemu-args="-m 3G"
 ```

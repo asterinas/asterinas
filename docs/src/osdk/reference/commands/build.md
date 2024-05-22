@@ -29,6 +29,14 @@ Build artifacts in release mode, with optimizations
 - `--features <FEATURES>`:
 Space or comma separated list of features to activate
 
+- `--no-default-features`:
+Do not activate the `default` features
+
+- `--config <KEY=VALUE>`:
+Override a configuration value
+
+More Cargo options will be supported in future versions of OSDK.
+
 ### Manifest options
 
 These options can also be defined
@@ -46,16 +54,21 @@ Command line arguments for the init process
 Path of the initramfs
 - `--boot-method <METHOD>`:
 The method to boot the kernel
+- `--grub-mkrescue <PATH>`:
+Path of grub-mkrescue
 - `--grub-boot-protocol <PROTOCOL>`:
 The boot protocol for booting the kernel
 - `--display-grub-menu`:
 To display the GRUB menu if booting with GRUB
-- `--qemu-path <PATH>`:
-Path of QEMU
+- `--qemu-exe <FILE>`:
+The QEMU executable file
 - `--qemu-args <ARGS>`:
 Extra arguments for running QEMU
 - `--strip-elf`:
 Whether to strip the built kernel ELF using `rust-strip`
+- `--scheme <SCHEME>`:
+Select the specific configuration scheme provided in the OSDK manifest
+
 
 ## Examples
 
