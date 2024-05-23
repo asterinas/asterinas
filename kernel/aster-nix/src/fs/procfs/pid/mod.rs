@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use self::{comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps};
-use super::template::{
-    DirOps, FileOps, ProcDir, ProcDirBuilder, ProcFileBuilder, ProcSymBuilder, SymOps,
-};
+use self::{cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps};
+use super::template::{DirOps, ProcDir, ProcDirBuilder};
 use crate::{
     events::Observer,
     fs::{
@@ -14,6 +12,7 @@ use crate::{
     process::Process,
 };
 
+mod cmdline;
 mod comm;
 mod exe;
 mod fd;
@@ -51,6 +50,7 @@ impl DirOps for PidDirOps {
             "exe" => ExeSymOps::new_inode(self.0.clone(), this_ptr.clone()),
             "comm" => CommFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -70,6 +70,9 @@ impl DirOps for PidDirOps {
         });
         cached_children.put_entry_if_not_found("fd", || {
             FdDirOps::new_inode(self.0.clone(), this_ptr.clone())
-        })
+        });
+        cached_children.put_entry_if_not_found("cmdline", || {
+            CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
     }
 }
