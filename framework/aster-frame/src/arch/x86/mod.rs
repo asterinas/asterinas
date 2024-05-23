@@ -10,6 +10,7 @@ pub(crate) mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
+pub mod task;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
 pub mod timer;
