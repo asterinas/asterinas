@@ -127,6 +127,8 @@ impl VmSpace {
     /// Query about the mapping information about a byte in virtual memory.
     /// This is more handy than [`query_range`], but less efficient if you want
     /// to query in a batch.
+    /// 
+    /// [`query_range`]: VmSpace::query_range
     pub fn query(&self, vaddr: Vaddr) -> Result<Option<PageProperty>> {
         if !(0..MAX_USERSPACE_VADDR).contains(&vaddr) {
             return Err(Error::AccessDenied);

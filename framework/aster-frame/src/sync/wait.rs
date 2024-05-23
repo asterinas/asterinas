@@ -160,7 +160,7 @@ impl !Sync for Waiter {}
 
 /// A waker that can wake up the associated [`Waiter`].
 ///
-/// A waker can be created by calling [`Waiter::new`]. This method creates an `Arc<Waker>` that can
+/// A waker can be created by calling [`Waiter::new_pair`]. This method creates an `Arc<Waker>` that can
 /// be used across different threads.
 pub struct Waker {
     has_woken: AtomicBool,
