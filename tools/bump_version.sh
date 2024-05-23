@@ -2,13 +2,18 @@
 
 # SPDX-License-Identifier: MPL-2.0
 
+set -e
+
 # This script is used to update Asterinas version numbers in all relevant files in the repository.
 # Usage: ./tools/bump_version.sh <new_version>
 
-# Update Cargo style versions (`version = "{version}"`) in file $1
-update_cargo_versions() {
+# Update the package version (`version = "{version}"`) in file $1
+update_package_version() {
     echo "Updating file $1"
-    sed -i "s/^version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\"$/version = \"${new_version}\"/g" $1
+    # Package version is usually the first version in Cargo.toml,
+    # so only the first matched version is updated.
+    pattern="^version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\"$"
+    sed -i "0,/${pattern}/s/${pattern}/version = \"${new_version}\"/1" $1
 }
 
 # Update Docker image versions (`asterinas/asterinas:{version}`) in file $1
@@ -31,9 +36,9 @@ else
     exit -1
 fi
 
-# Update Cargo.toml
-update_cargo_versions ${CARGO_TOML_PATH}
-update_cargo_versions ${OSDK_CARGO_TOML_PATH}
+# Update the package version in Cargo.toml
+update_package_version ${CARGO_TOML_PATH}
+update_package_version ${OSDK_CARGO_TOML_PATH}
 
 # Automatically bump Cargo.lock file
 cargo update -p asterinas --precise $new_version
