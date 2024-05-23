@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::*;
+use crate::{
+    fs::{
+        procfs::{ProcSymBuilder, SymOps},
+        utils::Inode,
+    },
+    prelude::*,
+    Process,
+};
 
 /// Represents the inode at `/proc/[pid]/exe`.
 pub struct ExeSymOps(Arc<Process>);
