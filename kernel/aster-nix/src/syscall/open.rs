@@ -50,6 +50,12 @@ pub fn sys_open(path_addr: Vaddr, flags: u32, mode: u16) -> Result<SyscallReturn
     self::sys_openat(AT_FDCWD, path_addr, flags, mode)
 }
 
+pub fn sys_creat(path_addr: Vaddr, mode: u16) -> Result<SyscallReturn> {
+    // CreationFlags::O_CREAT | AccessMode::O_WRONLY | CreationFlags::O_TRUNC;
+    let flags: u32 = 0x241;
+    self::sys_openat(AT_FDCWD, path_addr, flags, mode)
+}
+
 /// File for output busybox ash log.
 struct BusyBoxTraceFile;
 

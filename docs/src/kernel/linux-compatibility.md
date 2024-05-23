@@ -105,7 +105,7 @@ provided by Linux on x86-64 architecture.
 | 82      | rename           | ✅              |
 | 83      | mkdir            | ✅              |
 | 84      | rmdir            | ✅              |
-| 85      | creat            | ❌              |
+| 85      | creat            | ✅              |
 | 86      | link             | ✅              |
 | 87      | unlink           | ✅              |
 | 88      | symlink          | ✅              |
