@@ -200,18 +200,9 @@ impl Bundle {
             ActionChoice::Test => &config.test,
         };
         let mut qemu_cmd = Command::new(&action.qemu.path);
+
         qemu_cmd.current_dir(&config.work_dir);
-        match shlex::split(&action.qemu.args) {
-            Some(v) => {
-                for arg in v {
-                    qemu_cmd.arg(arg);
-                }
-            }
-            None => {
-                error_msg!("Failed to parse qemu args: {:#?}", &action.qemu.args);
-                process::exit(Errno::ParseMetadata as _);
-            }
-        }
+
         match action.boot.method {
             BootMethod::QemuDirect => {
                 let aster_bin = self.manifest.aster_bin.as_ref().unwrap();
@@ -228,21 +219,32 @@ impl Bundle {
             BootMethod::GrubRescueIso => {
                 let vm_image = self.manifest.vm_image.as_ref().unwrap();
                 assert!(matches!(vm_image.typ(), AsterVmImageType::GrubIso(_)));
-                qemu_cmd.arg("-cdrom").arg(self.path.join(vm_image.path()));
+                qemu_cmd.arg("-drive").arg(format!(
+                    "file={},index=2,media=cdrom",
+                    self.path.join(vm_image.path()).to_string_lossy()
+                ));
             }
             BootMethod::GrubQcow2 => {
                 let vm_image = self.manifest.vm_image.as_ref().unwrap();
                 assert!(matches!(vm_image.typ(), AsterVmImageType::Qcow2(_)));
                 qemu_cmd.arg("-drive").arg(format!(
                     "file={},index=0,media=disk,format=qcow2",
-                    self.path
-                        .join(vm_image.path())
-                        .into_os_string()
-                        .into_string()
-                        .unwrap()
+                    self.path.join(vm_image.path()).to_string_lossy()
                 ));
             }
         };
+
+        match shlex::split(&action.qemu.args) {
+            Some(v) => {
+                for arg in v {
+                    qemu_cmd.arg(arg);
+                }
+            }
+            None => {
+                error_msg!("Failed to parse qemu args: {:#?}", &action.qemu.args);
+                process::exit(Errno::ParseMetadata as _);
+            }
+        }
 
         info!("Running QEMU: {:#?}", qemu_cmd);
 

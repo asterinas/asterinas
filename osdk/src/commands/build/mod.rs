@@ -2,6 +2,7 @@
 
 mod bin;
 mod grub;
+mod qcow2;
 
 use std::{
     ffi::OsString,
@@ -159,7 +160,7 @@ pub fn do_build(
     );
 
     match boot.method {
-        BootMethod::GrubRescueIso => {
+        BootMethod::GrubRescueIso | BootMethod::GrubQcow2 => {
             info!("Building boot device image");
             let bootdev_image = grub::create_bootdev_image(
                 &osdk_output_directory,
@@ -168,15 +169,17 @@ pub fn do_build(
                 config,
                 action,
             );
-            bundle.consume_vm_image(bootdev_image);
+            if matches!(boot.method, BootMethod::GrubQcow2) {
+                let qcow2_image = qcow2::convert_iso_to_qcow2(bootdev_image);
+                bundle.consume_vm_image(qcow2_image);
+            } else {
+                bundle.consume_vm_image(bootdev_image);
+            }
             bundle.consume_aster_bin(aster_elf);
         }
         BootMethod::QemuDirect => {
             let qemu_elf = make_elf_for_qemu(&osdk_output_directory, &aster_elf, build.strip_elf);
             bundle.consume_aster_bin(qemu_elf);
-        }
-        BootMethod::GrubQcow2 => {
-            todo!()
         }
     }
 
