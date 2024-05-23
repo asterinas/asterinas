@@ -13,12 +13,16 @@ use crate::{
     Error,
 };
 
+/// Type alias for the irq callback function.
 pub type IrqCallbackFunction = dyn Fn(&TrapFrame) + Sync + Send + 'static;
 
-/// An Interrupt ReQuest(IRQ) line. User can use `alloc` or `alloc_specific` to get specific IRQ line.
+/// An Interrupt ReQuest(IRQ) line. User can use [`alloc`] or [`alloc_specific`] to get specific IRQ line.
 ///
 /// The IRQ number is guaranteed to be external IRQ number and user can register callback functions to this IRQ resource.
 /// When this resource is dropped, all the callback in this will be unregistered automatically.
+///
+/// [`alloc`]: Self::alloc
+/// [`alloc_specific`]: Self::alloc_specific
 #[derive(Debug)]
 #[must_use]
 pub struct IrqLine {
@@ -29,6 +33,7 @@ pub struct IrqLine {
 }
 
 impl IrqLine {
+    /// Allocates a specific IRQ line.
     pub fn alloc_specific(irq: u8) -> Result<Self> {
         IRQ_ALLOCATOR
             .get()
@@ -39,6 +44,7 @@ impl IrqLine {
             .ok_or(Error::NotEnoughResources)
     }
 
+    /// Allocates an available IRQ line.
     pub fn alloc() -> Result<Self> {
         let Some(irq_num) = IRQ_ALLOCATOR.get().unwrap().lock().alloc() else {
             return Err(Error::NotEnoughResources);
@@ -71,6 +77,7 @@ impl IrqLine {
         self.callbacks.push(self.irq.on_active(callback))
     }
 
+    /// Checks if there are no registered callbacks.
     pub fn is_empty(&self) -> bool {
         self.callbacks.is_empty()
     }

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! I/O memory.
+
 use core::{mem::size_of, ops::Range};
 
 use pod::Pod;
@@ -9,6 +11,7 @@ use crate::{
     Error, Result,
 };
 
+/// I/O memory.
 #[derive(Debug, Clone)]
 pub struct IoMem {
     virtual_address: Vaddr,
@@ -59,6 +62,8 @@ impl HasPaddr for IoMem {
 }
 
 impl IoMem {
+    /// Creates a new `IoMem`.
+    ///
     /// # Safety
     ///
     /// User must ensure the given physical range is in the I/O memory region.
@@ -69,14 +74,21 @@ impl IoMem {
         }
     }
 
+    /// Returns the physical address of the I/O memory.
     pub fn paddr(&self) -> Paddr {
         self.virtual_address - LINEAR_MAPPING_BASE_VADDR
     }
 
+    /// Returns the length of the I/O memory region.
     pub fn length(&self) -> usize {
         self.limit
     }
 
+    /// Resizes the I/O memory region to the new `range`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the new `range` is not within the current range.
     pub fn resize(&mut self, range: Range<Paddr>) -> Result<()> {
         let start_vaddr = paddr_to_vaddr(range.start);
         let virtual_end = self

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+// FIXME: the `intrusive_adapter` macro will generate methods without docs.
+// So we temporary allow missing_docs for this module.
+#![allow(missing_docs)]
 #![allow(dead_code)]
 
 use core::cell::UnsafeCell;
@@ -22,6 +25,7 @@ use crate::{
 
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
 
+/// Trait for manipulating the task context.
 pub trait TaskContextApi {
     /// Set instruction pointer
     fn set_instruction_pointer(&mut self, ip: usize);
@@ -195,6 +199,7 @@ impl Task {
         unreachable!()
     }
 
+    /// Checks if the task has a real-time priority.
     pub fn is_real_time(&self) -> bool {
         self.priority.is_real_time()
     }
@@ -238,6 +243,7 @@ impl TaskOptions {
         }
     }
 
+    /// Sets the function that represents the entry point of the task.
     pub fn func<F>(mut self, func: F) -> Self
     where
         F: Fn() + Send + Sync + 'static,
@@ -246,6 +252,7 @@ impl TaskOptions {
         self
     }
 
+    /// Sets the data associated with the task.
     pub fn data<T>(mut self, data: T) -> Self
     where
         T: Any + Send + Sync,
@@ -266,6 +273,10 @@ impl TaskOptions {
         self
     }
 
+    /// Sets the CPU affinity mask for the task.
+    ///
+    /// The `cpu_affinity` parameter is an instance of the [`CpuSet`] struct
+    /// that represents the desired set of CPUs to run the task on.
     pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
         self.cpu_affinity = cpu_affinity;
         self

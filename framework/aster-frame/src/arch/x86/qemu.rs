@@ -10,7 +10,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode {
+    /// The code that indicates a successful exit.
     Success = 0x10,
+    /// The code that indicates a failed exit.
     Failed = 0x20,
 }
 

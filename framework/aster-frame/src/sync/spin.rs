@@ -135,7 +135,9 @@ enum InnerGuard {
     PreemptGuard(DisablePreemptGuard),
 }
 
+/// A guard that provides exclusive access to the data protected by a [`SpinLock`].
 pub type SpinLockGuard<'a, T> = SpinLockGuard_<T, &'a SpinLock<T>>;
+/// A guard that provides exclusive access to the data protected by a [`Arc<SpinLock>`].
 pub type ArcSpinLockGuard<T> = SpinLockGuard_<T, Arc<SpinLock<T>>>;
 
 /// The guard of a spin lock that disables the local IRQs.

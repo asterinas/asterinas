@@ -92,7 +92,10 @@ pub struct MutexGuard_<T: ?Sized, R: Deref<Target = Mutex<T>>> {
     mutex: R,
 }
 
+/// A guard that provides exclusive access to the data protected by a [`Mutex`].
 pub type MutexGuard<'a, T> = MutexGuard_<T, &'a Mutex<T>>;
+
+/// An guard that provides exclusive access to the data protected by a [`Arc<Mutex>`].
 pub type ArcMutexGuard<T> = MutexGuard_<T, Arc<Mutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = Mutex<T>>> Deref for MutexGuard_<T, R> {

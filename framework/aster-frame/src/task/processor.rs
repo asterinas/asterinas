@@ -55,6 +55,7 @@ pub fn take_current_task() -> Option<Arc<Task>> {
     })
 }
 
+/// Retrieves the current task running on the processor.
 pub fn current_task() -> Option<Arc<Task>> {
     CpuLocal::borrow_with(&PROCESSOR, |processor| processor.borrow().current())
 }
@@ -72,10 +73,10 @@ pub fn schedule() {
     }
 }
 
-// TODO: This interface of this method is error prone.
-// The method takes an argument for the current task to optimize its efficiency,
-// but the argument provided by the caller may not be the current task, really.
-// Thus, this method should be removed or reworked in the future.
+/// TODO: This interface of this method is error prone.
+/// The method takes an argument for the current task to optimize its efficiency,
+/// but the argument provided by the caller may not be the current task, really.
+/// Thus, this method should be removed or reworked in the future.
 pub fn preempt(task: &Arc<Task>) {
     // TODO: Refactor `preempt` and `schedule`
     // after the Atomic mode and `might_break` is enabled.
@@ -219,6 +220,7 @@ impl Drop for DisablePreemptGuard {
     }
 }
 
+/// Disables preemption.
 #[must_use]
 pub fn disable_preempt() -> DisablePreemptGuard {
     DisablePreemptGuard::new()

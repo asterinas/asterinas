@@ -71,6 +71,7 @@ impl MemoryRegion {
         self.len
     }
 
+    /// Checks whether the region is empty
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }

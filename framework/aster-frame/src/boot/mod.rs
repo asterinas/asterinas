@@ -36,8 +36,11 @@ pub enum BootloaderAcpiArg {
 /// The framebuffer arguments.
 #[derive(Copy, Clone, Debug)]
 pub struct BootloaderFramebufferArg {
+    /// The address of the buffer.
     pub address: usize,
+    /// The width of the buffer.
     pub width: usize,
+    /// The height of the buffer.
     pub height: usize,
     /// Bits per pixel of the buffer.
     pub bpp: usize,

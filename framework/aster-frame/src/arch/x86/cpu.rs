@@ -38,12 +38,14 @@ pub fn this_cpu() -> u32 {
     0
 }
 
+/// A set of CPUs.
 #[derive(Default)]
 pub struct CpuSet {
     bitset: BitVec,
 }
 
 impl CpuSet {
+    /// Creates a new `CpuSet` with all CPUs included.
     pub fn new_full() -> Self {
         let num_cpus = num_cpus();
         let mut bitset = BitVec::with_capacity(num_cpus as usize);
@@ -51,6 +53,7 @@ impl CpuSet {
         Self { bitset }
     }
 
+    /// Creates a new `CpuSet` with no CPUs included.
     pub fn new_empty() -> Self {
         let num_cpus = num_cpus();
         let mut bitset = BitVec::with_capacity(num_cpus as usize);
@@ -58,38 +61,46 @@ impl CpuSet {
         Self { bitset }
     }
 
+    /// Adds a CPU with identifier `cpu_id` to the `CpuSet`.
     pub fn add(&mut self, cpu_id: u32) {
         self.bitset.set(cpu_id as usize, true);
     }
 
+    /// Adds multiple CPUs from a vector to the `CpuSet`.
     pub fn add_from_vec(&mut self, cpu_ids: Vec<u32>) {
         for cpu_id in cpu_ids {
             self.add(cpu_id)
         }
     }
 
+    /// Adds all available CPUs to the `CpuSet`.
     pub fn add_all(&mut self) {
         self.bitset.fill(true);
     }
 
+    /// Removes a CPU with identifier `cpu_id` from the `CpuSet`.
     pub fn remove(&mut self, cpu_id: u32) {
         self.bitset.set(cpu_id as usize, false);
     }
 
+    /// Removes multiple CPUs from a vector from the `CpuSet`.
     pub fn remove_from_vec(&mut self, cpu_ids: Vec<u32>) {
         for cpu_id in cpu_ids {
             self.remove(cpu_id);
         }
     }
 
+    /// Clears the `CpuSet`, removing all CPUs.
     pub fn clear(&mut self) {
         self.bitset.fill(false);
     }
 
+    /// Checks if the `CpuSet` contains a specific CPU.
     pub fn contains(&self, cpu_id: u32) -> bool {
         self.bitset.get(cpu_id as usize).as_deref() == Some(&true)
     }
 
+    /// Returns an iterator over the set CPUs.
     pub fn iter(&self) -> IterOnes<'_, usize, Lsb0> {
         self.bitset.iter_ones()
     }
@@ -104,11 +115,15 @@ pub struct UserContext {
     cpu_exception_info: CpuExceptionInfo,
 }
 
+/// CPU exception information.
 #[derive(Clone, Default, Copy, Debug)]
 #[repr(C)]
 pub struct CpuExceptionInfo {
+    /// The ID of the exception.
     pub id: usize,
+    /// The error code associated with the exception.
     pub error_code: usize,
+    /// The virtual address where a page fault occurred.
     pub page_fault_addr: usize,
 }
 
@@ -212,6 +227,7 @@ impl TdxTrapFrame for GeneralRegs {
     }
 }
 
+/// User Preemption.
 pub struct UserPreemption {
     count: u32,
 }
@@ -219,10 +235,12 @@ pub struct UserPreemption {
 impl UserPreemption {
     const PREEMPTION_INTERVAL: u32 = 100;
 
+    /// Creates a new instance of `UserPreemption`.
     pub const fn new() -> Self {
         UserPreemption { count: 0 }
     }
 
+    /// Checks if preemption might occur and takes necessary actions.
     pub fn might_preempt(&mut self) {
         self.count = (self.count + 1) % Self::PREEMPTION_INTERVAL;
 
@@ -235,22 +253,27 @@ impl UserPreemption {
 }
 
 impl UserContext {
+    /// Returns a reference to the general registers.
     pub fn general_regs(&self) -> &GeneralRegs {
         &self.user_context.general
     }
 
+    /// Returns a mutable reference to the general registers
     pub fn general_regs_mut(&mut self) -> &mut GeneralRegs {
         &mut self.user_context.general
     }
 
+    /// Returns the trap information.
     pub fn trap_information(&self) -> &CpuExceptionInfo {
         &self.cpu_exception_info
     }
 
+    /// Returns a reference to the floating point registers
     pub fn fp_regs(&self) -> &FpRegs {
         &self.fp_regs
     }
 
+    /// Returns a mutable reference to the floating point registers
     pub fn fp_regs_mut(&mut self) -> &mut FpRegs {
         &mut self.fp_regs
     }
@@ -358,17 +381,26 @@ impl UserContextApiInternal for UserContext {
 /// So here we also define FaultOrTrap and Interrupt
 #[derive(PartialEq, Eq, Debug)]
 pub enum CpuExceptionType {
+    /// CPU faults. Faults can be corrected, and the program may continue as if nothing happened.
     Fault,
+    /// CPU traps. Traps are reported immediately after the execution of the trapping instruction
     Trap,
+    /// Faults or traps
     FaultOrTrap,
+    /// CPU interrupts
     Interrupt,
+    /// Some severe unrecoverable error
     Abort,
+    /// Reserved for future use
     Reserved,
 }
 
+/// CPU exception.
 #[derive(Debug, Eq, PartialEq)]
 pub struct CpuException {
+    /// The ID of the CPU exception.
     pub number: u16,
+    /// The type of the CPU exception.
     pub typ: CpuExceptionType,
 }
 
@@ -390,6 +422,7 @@ macro_rules! define_cpu_exception {
             $($name,)*
         ];
         $(
+            #[doc = concat!("The ", stringify!($name), " exception")]
             pub const $name : CpuException = CpuException{
                 number: $exception_num,
                 typ: CpuExceptionType::$exception_type,
@@ -462,10 +495,12 @@ bitflags! {
 }
 
 impl CpuException {
+    /// Checks if the given `trap_num` is a valid CPU exception.
     pub fn is_cpu_exception(trap_num: u16) -> bool {
         trap_num < EXCEPTION_LIST.len() as u16
     }
 
+    /// Maps a `trap_num` to its corresponding CPU exception.
     pub fn to_cpu_exception(trap_num: u16) -> Option<&'static CpuException> {
         EXCEPTION_LIST.get(trap_num as usize)
     }
@@ -501,11 +536,13 @@ macro_rules! cpu_context_impl_getter_setter {
     ( $( [ $field: ident, $setter_name: ident] ),*) => {
         impl UserContext {
             $(
+                #[doc = concat!("Gets the value of ", stringify!($field))]
                 #[inline(always)]
                 pub fn $field(&self) -> usize {
                     self.user_context.general.$field
                 }
 
+                #[doc = concat!("Sets the value of ", stringify!(field))]
                 #[inline(always)]
                 pub fn $setter_name(&mut self, $field: usize) {
                     self.user_context.general.$field = $field;

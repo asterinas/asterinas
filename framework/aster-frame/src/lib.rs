@@ -20,6 +20,7 @@
 // const generic implementation. We are using this feature in a conservative manner.
 #![allow(incomplete_features)]
 #![no_std]
+#![warn(missing_docs)]
 
 extern crate alloc;
 #[cfg(ktest)]

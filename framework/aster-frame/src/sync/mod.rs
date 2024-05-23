@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Useful synchronization primitives.
+
 mod atomic_bits;
 mod mutex;
 // TODO: refactor this rcu implementation

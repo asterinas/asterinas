@@ -9,7 +9,9 @@ use bitflags::bitflags;
 /// The property of a mapped virtual memory page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageProperty {
+    /// The flags associated with the page,
     pub flags: PageFlags,
+    /// The cache policy for the page.
     pub cache: CachePolicy,
     pub(crate) priv_flags: PrivilegedPageFlags,
 }

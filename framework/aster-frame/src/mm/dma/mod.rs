@@ -31,6 +31,7 @@ pub enum DmaError {
     AlreadyMapped,
 }
 
+/// Has mapped address in the device address space.
 pub trait HasDaddr {
     /// Get the base address of the mapping in the
     /// device address space.

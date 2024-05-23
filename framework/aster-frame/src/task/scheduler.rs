@@ -18,8 +18,10 @@ lazy_static! {
 /// An implementation of scheduler can attach scheduler-related information
 /// with the `TypeMap` returned from `task.data()`.
 pub trait Scheduler: Sync + Send {
+    /// Enqueues a task to the scheduler.
     fn enqueue(&self, task: Arc<Task>);
 
+    /// Dequeues a task from the scheduler.
     fn dequeue(&self) -> Option<Arc<Task>>;
 
     /// Tells whether the given task should be preempted by other tasks in the queue.
@@ -61,6 +63,7 @@ pub fn fetch_task() -> Option<Arc<Task>> {
     GLOBAL_SCHEDULER.lock_irq_disabled().dequeue()
 }
 
+/// Adds a task to the global scheduler.
 pub fn add_task(task: Arc<Task>) {
     GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(task);
 }

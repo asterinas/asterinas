@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Logging support.
+
 use log::{Level, Metadata, Record};
 
 use crate::early_println;

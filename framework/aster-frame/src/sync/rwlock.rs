@@ -544,7 +544,10 @@ pub struct RwLockReadGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
     inner: R,
 }
 
+/// A guard that provides shared read access to the data protected by a [`RwLock`].
 pub type RwLockReadGuard<'a, T> = RwLockReadGuard_<T, &'a RwLock<T>>;
+
+/// A guard that provides shared read access to the data protected by a [`Arc<RwLock>`].
 pub type ArcRwLockReadGuard<T> = RwLockReadGuard_<T, Arc<RwLock<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockReadGuard_<T, R> {
@@ -575,7 +578,9 @@ pub struct RwLockWriteGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
     inner: R,
 }
 
+/// A guard that provides exclusive write access to the data protected by a [`RwLock`].
 pub type RwLockWriteGuard<'a, T> = RwLockWriteGuard_<T, &'a RwLock<T>>;
+/// A guard that provides exclusive write access to the data protected by a [`Arc<RwLock>`].
 pub type ArcRwLockWriteGuard<T> = RwLockWriteGuard_<T, Arc<RwLock<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockWriteGuard_<T, R> {
@@ -644,7 +649,9 @@ pub struct RwLockUpgradeableGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clo
     inner: R,
 }
 
+/// A upgradable guard that provides read access to the data protected by a [`RwLock`].
 pub type RwLockUpgradeableGuard<'a, T> = RwLockUpgradeableGuard_<T, &'a RwLock<T>>;
+/// A upgradable guard that provides read access to the data protected by a [`Arc<RwLock>`].
 pub type ArcRwLockUpgradeableGuard<T> = RwLockUpgradeableGuard_<T, Arc<RwLock<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockUpgradeableGuard_<T, R> {

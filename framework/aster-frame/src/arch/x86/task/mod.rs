@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! The architecture support of context switch.
+
 use crate::task::TaskContextApi;
 
 core::arch::global_asm!(include_str!("switch.S"));
@@ -23,12 +25,19 @@ impl TaskContext {
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct CalleeRegs {
+    /// RSP
     pub rsp: u64,
+    /// RBX
     pub rbx: u64,
+    /// RBP
     pub rbp: u64,
+    /// R12
     pub r12: u64,
+    /// R13
     pub r13: u64,
+    /// R14
     pub r14: u64,
+    /// R15
     pub r15: u64,
 }
 

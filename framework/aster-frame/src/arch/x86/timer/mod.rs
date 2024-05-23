@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! The timer support.
+
 mod apic;
 mod hpet;
 mod jiffies;
