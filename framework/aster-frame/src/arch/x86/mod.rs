@@ -14,6 +14,7 @@ pub mod task;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
 pub mod timer;
+pub mod trap;
 
 use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
 
