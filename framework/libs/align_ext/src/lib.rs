@@ -6,7 +6,7 @@
 /// `u64`, and `usize`, to provide methods to make integers aligned to a
 /// power of two.
 pub trait AlignExt {
-    /// returns whether the number is a power of two
+    /// Returns whether the number is a power of two
     fn is_power_of_two(&self) -> bool;
 
     /// Returns to the smallest number that is greater than or equal to

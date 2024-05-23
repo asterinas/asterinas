@@ -2,5 +2,7 @@
 name = "align_ext"
 version = "0.1.0"
 edition = "2021"
+description = " An extension trait for Rust integer types to make integers aligned to a power of two"
+license = "MPL-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
