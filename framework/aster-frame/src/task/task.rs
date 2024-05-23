@@ -9,6 +9,7 @@ use super::{
     priority::Priority,
     processor::{current_task, schedule},
 };
+pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     cpu::CpuSet,
     prelude::*,
@@ -19,29 +20,18 @@ use crate::{
 
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
 
-core::arch::global_asm!(include_str!("switch.S"));
+pub trait TaskContextApi {
+    /// Set instruction pointer
+    fn set_instruction_pointer(&mut self, ip: usize);
 
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub struct CalleeRegs {
-    pub rsp: u64,
-    pub rbx: u64,
-    pub rbp: u64,
-    pub r12: u64,
-    pub r13: u64,
-    pub r14: u64,
-    pub r15: u64,
-}
+    /// Get instruction pointer
+    fn instruction_pointer(&self) -> usize;
 
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub(crate) struct TaskContext {
-    pub regs: CalleeRegs,
-    pub rip: usize,
-}
+    /// Set stack pointer
+    fn set_stack_pointer(&mut self, sp: usize);
 
-extern "C" {
-    pub(crate) fn context_switch(cur: *mut TaskContext, nxt: *const TaskContext);
+    /// Get stack pointer
+    fn stack_pointer(&self) -> usize;
 }
 
 pub struct KernelStack {
@@ -294,7 +284,7 @@ impl TaskOptions {
         };
 
         let ctx = new_task.ctx.get_mut();
-        ctx.rip = kernel_task_entry as usize;
+        ctx.set_instruction_pointer(kernel_task_entry as usize);
         // We should reserve space for the return address in the stack, otherwise
         // we will write across the page boundary due to the implementation of
         // the context switch.
@@ -303,7 +293,7 @@ impl TaskOptions {
         // to at least 16 bytes. And a larger alignment is needed if larger arguments
         // are passed to the function. The `kernel_task_entry` function does not
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        ctx.regs.rsp = (crate::vm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16)) as u64;
+        ctx.set_stack_pointer(crate::vm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16));
 
         Ok(Arc::new(new_task))
     }
