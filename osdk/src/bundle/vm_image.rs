@@ -72,4 +72,8 @@ impl AsterVmImage {
             sha256sum: self.sha256sum,
         }
     }
+
+    pub fn aster_version(&self) -> &String {
+        &self.aster_version
+    }
 }
