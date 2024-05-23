@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Platform-specific code for the x86 platform.
+
 pub mod boot;
 pub mod console;
 pub(crate) mod cpu;

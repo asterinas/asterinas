@@ -112,6 +112,7 @@ pub struct UserMode<'a> {
 impl<'a> !Send for UserMode<'a> {}
 
 impl<'a> UserMode<'a> {
+    /// Creates a new `UserMode`.
     pub fn new(user_space: &'a Arc<UserSpace>) -> Self {
         Self {
             current: Task::current(),

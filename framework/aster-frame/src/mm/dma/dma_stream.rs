@@ -40,13 +40,16 @@ struct DmaStreamInner {
 /// prevents users from reading and writing to `DmaStream` unexpectedly.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum DmaDirection {
+    /// Data flows to the device
     ToDevice,
+    /// Data flows form the device
     FromDevice,
+    /// Data flows both from and to the device
     Bidirectional,
 }
 
 impl DmaStream {
-    /// Establish DMA stream mapping for a given `Segment`.
+    /// Establishes DMA stream mapping for a given [`Segment`].
     ///
     /// The method fails if the segment already belongs to a DMA mapping.
     pub fn map(
@@ -98,7 +101,7 @@ impl DmaStream {
         })
     }
 
-    /// Get the underlying VM segment.
+    /// Get the underlying [`VmSegment`].
     ///
     /// Usually, the CPU side should not access the memory
     /// after the DMA mapping is established because
@@ -108,10 +111,12 @@ impl DmaStream {
         &self.inner.vm_segment
     }
 
+    /// Returns the number of frames
     pub fn nframes(&self) -> usize {
         self.inner.vm_segment.nframes()
     }
 
+    /// Returns the number of bytes
     pub fn nbytes(&self) -> usize {
         self.inner.vm_segment.nbytes()
     }
@@ -120,10 +125,13 @@ impl DmaStream {
     ///
     /// This method should be called under one of the two conditions:
     /// 1. The data of the stream DMA mapping has been updated by the device side.
-    /// The CPU side needs to call the `sync` method before reading data (e.g., using `read_bytes`).
+    /// The CPU side needs to call the `sync` method before reading data (e.g., using [`read_bytes`]).
     /// 2. The data of the stream DMA mapping has been updated by the CPU side
-    /// (e.g., using `write_bytes`).
+    /// (e.g., using [`write_bytes`]).
     /// Before the CPU side notifies the device side to read, it must call the `sync` method first.
+    ///
+    /// [`read_bytes`]: Self::read_bytes
+    /// [`write_bytes`]: Self::write_bytes
     pub fn sync(&self, byte_range: Range<usize>) -> Result<(), Error> {
         if byte_range.end > self.nbytes() {
             return Err(Error::InvalidArgs);

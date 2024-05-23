@@ -27,9 +27,12 @@ struct InitprocArgs {
     envp: Vec<CString>,
 }
 
+/// Kernel module arguments
 #[derive(PartialEq, Debug, Clone)]
 pub enum ModuleArg {
+    /// A string argument
     Arg(CString),
+    /// A key-value argument
     KeyVal(CString, CString),
 }
 

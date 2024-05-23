@@ -225,7 +225,9 @@ pub struct RwMutexReadGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
     inner: R,
 }
 
+/// A guard that provides shared read access to the data protected by a [`RwMutex`].
 pub type RwMutexReadGuard<'a, T> = RwMutexReadGuard_<T, &'a RwMutex<T>>;
+/// A guard that provides shared read access to the data protected by a [`Arc<RwMutex>`].
 pub type ArcRwMutexReadGuard<T> = RwMutexReadGuard_<T, Arc<RwMutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Deref for RwMutexReadGuard_<T, R> {
@@ -250,7 +252,9 @@ pub struct RwMutexWriteGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
     inner: R,
 }
 
+/// A guard that provides exclusive write access to the data protected by a [`RwMutex`].
 pub type RwMutexWriteGuard<'a, T> = RwMutexWriteGuard_<T, &'a RwMutex<T>>;
+/// A guard that provides exclusive write access to the data protected by a [`Arc<RwMutex>`].
 pub type ArcRwMutexWriteGuard<T> = RwMutexWriteGuard_<T, Arc<RwMutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Deref for RwMutexWriteGuard_<T, R> {
@@ -315,7 +319,9 @@ pub struct RwMutexUpgradeableGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
     inner: R,
 }
 
+/// A upgradable guard that provides read access to the data protected by a [`RwMutex`].
 pub type RwMutexUpgradeableGuard<'a, T> = RwMutexUpgradeableGuard_<T, &'a RwMutex<T>>;
+/// A upgradable guard that provides read access to the data protected by a [`Arc<RwMutex>`].
 pub type ArcRwMutexUpgradeableGuard<T> = RwMutexUpgradeableGuard_<T, Arc<RwMutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwMutex<T>> + Clone> RwMutexUpgradeableGuard_<T, R> {

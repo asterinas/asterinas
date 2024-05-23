@@ -107,13 +107,16 @@ pub(crate) const KERNEL_VADDR_RANGE: Range<Vaddr> = 0xffff_8000_0000_0000..0xfff
 
 /// Get physical address trait
 pub trait HasPaddr {
+    /// Returns the physical address.
     fn paddr(&self) -> Paddr;
 }
 
+/// Checks if the given address is page-aligned.
 pub const fn is_page_aligned(p: usize) -> bool {
     (p & (PAGE_SIZE - 1)) == 0
 }
 
+/// Memory regions used for frame buffer.
 pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 
 pub(crate) fn misc_init() {

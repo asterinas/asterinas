@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! The console I/O.
+
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
@@ -13,13 +15,16 @@ use trapframe::TrapFrame;
 use super::{device::serial::SerialPort, kernel::IO_APIC};
 use crate::{sync::SpinLock, trap::IrqLine};
 
+/// Prints the formatted arguments to the standard output.
 #[inline]
 pub fn print(args: fmt::Arguments) {
     Stdout.write_fmt(args).unwrap();
 }
 
+/// The callback function for console input.
 pub type InputCallback = dyn Fn(u8) + Send + Sync + 'static;
 
+/// Registers a callback function to be called when there is console input.
 pub fn register_console_input_callback(f: &'static InputCallback) {
     SERIAL_INPUT_CALLBACKS.lock_irq_disabled().push(Arc::new(f));
 }

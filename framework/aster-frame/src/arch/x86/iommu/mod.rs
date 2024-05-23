@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! The IOMMU support.
+
 mod context_table;
 mod fault;
 mod remapping;
@@ -17,9 +19,12 @@ use crate::{
     sync::Mutex,
 };
 
+/// An enumeration representing possible errors related to IOMMU.
 #[derive(Debug)]
 pub enum IommuError {
+    /// No IOMMU is available.
     NoIommu,
+    /// Error encountered during modification of the page table.
     ModificationError(PageTableError),
 }
 
