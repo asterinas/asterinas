@@ -22,7 +22,7 @@ impl PtySlaveInode {
     pub fn new(device: Arc<PtySlave>, fs: Weak<DevPts>) -> Arc<Self> {
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
-                device.index() as usize + FIRST_SLAVE_INO,
+                device.index() as u64 + FIRST_SLAVE_INO,
                 InodeMode::from_bits_truncate(0o620),
                 super::BLOCK_SIZE,
                 device.as_ref(),

@@ -120,7 +120,7 @@ impl InodeMode {
 #[derive(Debug, Clone, Copy)]
 pub struct Metadata {
     pub dev: u64,
-    pub ino: usize,
+    pub ino: u64,
     pub size: usize,
     pub blk_size: usize,
     pub blocks: usize,
@@ -136,7 +136,7 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new_dir(ino: usize, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_dir(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
         Self {
             dev: 0,
             ino,
@@ -155,7 +155,7 @@ impl Metadata {
         }
     }
 
-    pub fn new_file(ino: usize, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_file(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
         Self {
             dev: 0,
             ino,
@@ -174,7 +174,7 @@ impl Metadata {
         }
     }
 
-    pub fn new_symlink(ino: usize, mode: InodeMode, blk_size: usize) -> Self {
+    pub fn new_symlink(ino: u64, mode: InodeMode, blk_size: usize) -> Self {
         Self {
             dev: 0,
             ino,
@@ -192,7 +192,7 @@ impl Metadata {
             rdev: 0,
         }
     }
-    pub fn new_device(ino: usize, mode: InodeMode, blk_size: usize, device: &dyn Device) -> Self {
+    pub fn new_device(ino: u64, mode: InodeMode, blk_size: usize, device: &dyn Device) -> Self {
         Self {
             dev: 0,
             ino,
@@ -211,7 +211,7 @@ impl Metadata {
         }
     }
 
-    pub fn new_socket(ino: usize, mode: InodeMode, blk_size: usize) -> Metadata {
+    pub fn new_socket(ino: u64, mode: InodeMode, blk_size: usize) -> Metadata {
         Self {
             dev: 0,
             ino,

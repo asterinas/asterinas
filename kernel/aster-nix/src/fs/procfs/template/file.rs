@@ -22,7 +22,7 @@ impl<F: FileOps> ProcFile<F> {
             let arc_fs = fs.upgrade().unwrap();
             let procfs = arc_fs.downcast_ref::<ProcFS>().unwrap();
             let metadata = Metadata::new_file(
-                procfs.alloc_id() as _,
+                procfs.alloc_id(),
                 InodeMode::from_bits_truncate(0o444),
                 super::BLOCK_SIZE,
             );

@@ -40,11 +40,8 @@ impl<D: DirOps> ProcDir<D> {
                 procfs.alloc_id()
             });
 
-            let metadata = Metadata::new_dir(
-                ino as _,
-                InodeMode::from_bits_truncate(0o555),
-                super::BLOCK_SIZE,
-            );
+            let metadata =
+                Metadata::new_dir(ino, InodeMode::from_bits_truncate(0o555), super::BLOCK_SIZE);
             Common::new(metadata, fs, is_volatile)
         };
         Arc::new_cyclic(|weak_self| Self {
