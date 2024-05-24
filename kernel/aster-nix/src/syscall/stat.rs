@@ -90,7 +90,7 @@ pub struct Stat {
     /// ID of device containing file
     st_dev: u64,
     /// Inode number
-    st_ino: usize,
+    st_ino: u64,
     /// Number of hard links
     st_nlink: usize,
     /// File type and mode

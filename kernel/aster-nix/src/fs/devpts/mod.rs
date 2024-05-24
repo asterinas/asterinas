@@ -27,9 +27,9 @@ mod slave;
 const DEVPTS_MAGIC: u64 = 0x1cd1;
 const BLOCK_SIZE: usize = 1024;
 
-const ROOT_INO: usize = 1;
-const PTMX_INO: usize = 2;
-const FIRST_SLAVE_INO: usize = 3;
+const ROOT_INO: u64 = 1;
+const PTMX_INO: u64 = 2;
+const FIRST_SLAVE_INO: u64 = 3;
 
 /// The max number of pty pairs.
 const MAX_PTY_NUM: usize = 4096;

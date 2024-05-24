@@ -1125,7 +1125,7 @@ impl Inode for ExfatInode {
 
         Metadata {
             dev: 0,
-            ino: inner.ino as usize,
+            ino: inner.ino,
             size: inner.size,
             blk_size,
             blocks: (inner.size + blk_size - 1) / blk_size,

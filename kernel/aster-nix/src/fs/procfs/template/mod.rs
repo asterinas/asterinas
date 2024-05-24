@@ -44,7 +44,7 @@ impl Common {
     }
 
     pub fn ino(&self) -> u64 {
-        self.metadata.read().ino as _
+        self.metadata.read().ino
     }
 
     pub fn type_(&self) -> InodeType {
