@@ -24,13 +24,13 @@ pub struct Ptmx {
 struct Inner(Weak<DevPts>);
 
 impl Ptmx {
-    pub fn new(sb: &SuperBlock, fs: Weak<DevPts>) -> Arc<Self> {
+    pub fn new(fs: Weak<DevPts>) -> Arc<Self> {
         let inner = Inner(fs);
         Arc::new(Self {
             metadata: RwLock::new(Metadata::new_device(
                 PTMX_INO,
                 InodeMode::from_bits_truncate(0o666),
-                sb,
+                super::BLOCK_SIZE,
                 &inner,
             )),
             inner,
