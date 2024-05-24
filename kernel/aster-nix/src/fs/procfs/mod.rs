@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use self::{
     pid::PidDirOps,
@@ -21,33 +21,26 @@ mod template;
 /// Magic number.
 const PROC_MAGIC: u64 = 0x9fa0;
 /// Root Inode ID.
-const PROC_ROOT_INO: usize = 1;
+const PROC_ROOT_INO: u64 = 1;
 /// Block size.
 const BLOCK_SIZE: usize = 1024;
 
 pub struct ProcFS {
-    sb: RwLock<SuperBlock>,
-    root: RwLock<Option<Arc<dyn Inode>>>,
-    inode_allocator: AtomicUsize,
+    sb: SuperBlock,
+    root: Arc<dyn Inode>,
+    inode_allocator: AtomicU64,
 }
 
 impl ProcFS {
     pub fn new() -> Arc<Self> {
-        let procfs = {
-            let sb = SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX);
-            Arc::new(Self {
-                sb: RwLock::new(sb),
-                root: RwLock::new(None),
-                inode_allocator: AtomicUsize::new(PROC_ROOT_INO),
-            })
-        };
-
-        let root = RootDirOps::new_inode(&procfs);
-        *procfs.root.write() = Some(root);
-        procfs
+        Arc::new_cyclic(|weak_fs| Self {
+            sb: SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX),
+            root: RootDirOps::new_inode(weak_fs.clone()),
+            inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
+        })
     }
 
-    pub(in crate::fs::procfs) fn alloc_id(&self) -> usize {
+    pub(in crate::fs::procfs) fn alloc_id(&self) -> u64 {
         self.inode_allocator.fetch_add(1, Ordering::SeqCst)
     }
 }
@@ -58,11 +51,11 @@ impl FileSystem for ProcFS {
     }
 
     fn root_inode(&self) -> Arc<dyn Inode> {
-        self.root.read().as_ref().unwrap().clone()
+        self.root.clone()
     }
 
     fn sb(&self) -> SuperBlock {
-        self.sb.read().clone()
+        self.sb.clone()
     }
 
     fn flags(&self) -> FsFlags {
@@ -74,8 +67,12 @@ impl FileSystem for ProcFS {
 struct RootDirOps;
 
 impl RootDirOps {
-    pub fn new_inode(fs: &Arc<ProcFS>) -> Arc<dyn Inode> {
-        let root_inode = ProcDirBuilder::new(Self).fs(fs.clone()).build().unwrap();
+    pub fn new_inode(fs: Weak<ProcFS>) -> Arc<dyn Inode> {
+        let root_inode = ProcDirBuilder::new(Self)
+            .fs(fs)
+            .ino(PROC_ROOT_INO)
+            .build()
+            .unwrap();
         let weak_ptr = Arc::downgrade(&root_inode);
         process_table::register_observer(weak_ptr);
         root_inode

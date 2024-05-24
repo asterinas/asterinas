@@ -17,15 +17,16 @@ pub struct ProcFile<F: FileOps> {
 }
 
 impl<F: FileOps> ProcFile<F> {
-    pub fn new(file: F, fs: Arc<dyn FileSystem>, is_volatile: bool) -> Arc<Self> {
+    pub fn new(file: F, fs: Weak<dyn FileSystem>, is_volatile: bool) -> Arc<Self> {
         let common = {
-            let procfs = fs.downcast_ref::<ProcFS>().unwrap();
+            let arc_fs = fs.upgrade().unwrap();
+            let procfs = arc_fs.downcast_ref::<ProcFS>().unwrap();
             let metadata = Metadata::new_file(
-                procfs.alloc_id(),
+                procfs.alloc_id() as _,
                 InodeMode::from_bits_truncate(0o444),
-                &fs.sb(),
+                super::BLOCK_SIZE,
             );
-            Common::new(metadata, Arc::downgrade(&fs), is_volatile)
+            Common::new(metadata, fs, is_volatile)
         };
         Arc::new(Self {
             inner: file,

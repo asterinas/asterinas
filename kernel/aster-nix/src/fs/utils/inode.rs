@@ -7,7 +7,7 @@ use core::time::Duration;
 use aster_rights::Full;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 
-use super::{DirentVisitor, FileSystem, IoctlCmd, SuperBlock};
+use super::{DirentVisitor, FileSystem, IoctlCmd};
 use crate::{
     events::IoEvents,
     fs::device::{Device, DeviceType},
@@ -136,12 +136,12 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn new_dir(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
+    pub fn new_dir(ino: usize, mode: InodeMode, blk_size: usize) -> Self {
         Self {
             dev: 0,
             ino,
             size: 2,
-            blk_size: sb.bsize,
+            blk_size,
             blocks: 1,
             atime: Default::default(),
             mtime: Default::default(),
@@ -155,12 +155,12 @@ impl Metadata {
         }
     }
 
-    pub fn new_file(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
+    pub fn new_file(ino: usize, mode: InodeMode, blk_size: usize) -> Self {
         Self {
             dev: 0,
             ino,
             size: 0,
-            blk_size: sb.bsize,
+            blk_size,
             blocks: 0,
             atime: Default::default(),
             mtime: Default::default(),
@@ -174,12 +174,12 @@ impl Metadata {
         }
     }
 
-    pub fn new_symlink(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Self {
+    pub fn new_symlink(ino: usize, mode: InodeMode, blk_size: usize) -> Self {
         Self {
             dev: 0,
             ino,
             size: 0,
-            blk_size: sb.bsize,
+            blk_size,
             blocks: 0,
             atime: Default::default(),
             mtime: Default::default(),
@@ -192,12 +192,12 @@ impl Metadata {
             rdev: 0,
         }
     }
-    pub fn new_device(ino: usize, mode: InodeMode, sb: &SuperBlock, device: &dyn Device) -> Self {
+    pub fn new_device(ino: usize, mode: InodeMode, blk_size: usize, device: &dyn Device) -> Self {
         Self {
             dev: 0,
             ino,
             size: 0,
-            blk_size: sb.bsize,
+            blk_size,
             blocks: 0,
             atime: Default::default(),
             mtime: Default::default(),
@@ -211,12 +211,12 @@ impl Metadata {
         }
     }
 
-    pub fn new_socket(ino: usize, mode: InodeMode, sb: &SuperBlock) -> Metadata {
+    pub fn new_socket(ino: usize, mode: InodeMode, blk_size: usize) -> Metadata {
         Self {
             dev: 0,
             ino,
             size: 0,
-            blk_size: sb.bsize,
+            blk_size,
             blocks: 0,
             atime: Default::default(),
             mtime: Default::default(),

@@ -32,7 +32,7 @@ impl<O: DirOps> ProcDirBuilder<O> {
         self.optional_builder(|ob| ob.parent(parent))
     }
 
-    pub fn fs(self, fs: Arc<dyn FileSystem>) -> Self {
+    pub fn fs(self, fs: Weak<dyn FileSystem>) -> Self {
         self.optional_builder(|ob| ob.fs(fs))
     }
 
@@ -40,9 +40,13 @@ impl<O: DirOps> ProcDirBuilder<O> {
         self.optional_builder(|ob| ob.volatile())
     }
 
+    pub fn ino(self, ino: u64) -> Self {
+        self.optional_builder(|ob| ob.ino(ino))
+    }
+
     pub fn build(mut self) -> Result<Arc<ProcDir<O>>> {
-        let (fs, parent, is_volatile) = self.optional_builder.take().unwrap().build()?;
-        Ok(ProcDir::new(self.dir, fs, parent, is_volatile))
+        let (fs, parent, ino, is_volatile) = self.optional_builder.take().unwrap().build()?;
+        Ok(ProcDir::new(self.dir, fs, parent, ino, is_volatile))
     }
 
     fn optional_builder<F>(mut self, f: F) -> Self
@@ -80,7 +84,7 @@ impl<O: FileOps> ProcFileBuilder<O> {
     }
 
     pub fn build(mut self) -> Result<Arc<ProcFile<O>>> {
-        let (fs, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
+        let (fs, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
         Ok(ProcFile::new(self.file, fs, is_volatile))
     }
 
@@ -119,7 +123,7 @@ impl<O: SymOps> ProcSymBuilder<O> {
     }
 
     pub fn build(mut self) -> Result<Arc<ProcSym<O>>> {
-        let (fs, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
+        let (fs, _, _, is_volatile) = self.optional_builder.take().unwrap().build()?;
         Ok(ProcSym::new(self.sym, fs, is_volatile))
     }
 
@@ -136,7 +140,8 @@ impl<O: SymOps> ProcSymBuilder<O> {
 #[derive(Default)]
 struct OptionalBuilder {
     parent: Option<Weak<dyn Inode>>,
-    fs: Option<Arc<dyn FileSystem>>,
+    fs: Option<Weak<dyn FileSystem>>,
+    ino: Option<u64>,
     is_volatile: bool,
 }
 
@@ -146,8 +151,13 @@ impl OptionalBuilder {
         self
     }
 
-    pub fn fs(mut self, fs: Arc<dyn FileSystem>) -> Self {
+    pub fn fs(mut self, fs: Weak<dyn FileSystem>) -> Self {
         self.fs = Some(fs);
+        self
+    }
+
+    pub fn ino(mut self, ino: u64) -> Self {
+        self.ino = Some(ino);
         self
     }
 
@@ -157,13 +167,20 @@ impl OptionalBuilder {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn build(self) -> Result<(Arc<dyn FileSystem>, Option<Weak<dyn Inode>>, bool)> {
+    pub fn build(
+        self,
+    ) -> Result<(
+        Weak<dyn FileSystem>,
+        Option<Weak<dyn Inode>>,
+        Option<u64>,
+        bool,
+    )> {
         if self.parent.is_none() && self.fs.is_none() {
             return_errno_with_message!(Errno::EINVAL, "must have parent or fs");
         }
-        let fs = self
-            .fs
-            .unwrap_or_else(|| self.parent.as_ref().unwrap().upgrade().unwrap().fs());
+        let fs = self.fs.unwrap_or_else(|| {
+            Arc::downgrade(&self.parent.as_ref().unwrap().upgrade().unwrap().fs())
+        });
 
         // The volatile property is inherited from parent.
         let is_volatile = {
@@ -176,6 +193,6 @@ impl OptionalBuilder {
             is_volatile
         };
 
-        Ok((fs, self.parent, is_volatile))
+        Ok((fs, self.parent, self.ino, is_volatile))
     }
 }
