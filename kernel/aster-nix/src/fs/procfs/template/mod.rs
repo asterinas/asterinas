@@ -8,9 +8,9 @@ pub use self::{
     file::FileOps,
     sym::SymOps,
 };
-use super::ProcFS;
+use super::{ProcFS, BLOCK_SIZE};
 use crate::{
-    fs::utils::{FileSystem, InodeMode, Metadata},
+    fs::utils::{FileSystem, InodeMode, InodeType, Metadata},
     prelude::*,
     process::{Gid, Uid},
 };
@@ -45,6 +45,10 @@ impl Common {
 
     pub fn ino(&self) -> u64 {
         self.metadata.read().ino as _
+    }
+
+    pub fn type_(&self) -> InodeType {
+        self.metadata.read().type_
     }
 
     pub fn size(&self) -> usize {
