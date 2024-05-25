@@ -79,6 +79,7 @@ mod rt_sigaction;
 mod rt_sigprocmask;
 mod rt_sigreturn;
 mod rt_sigsuspend;
+mod sched_getaffinity;
 mod sched_yield;
 mod select;
 mod sendfile;

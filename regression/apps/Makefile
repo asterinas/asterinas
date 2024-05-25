@@ -12,6 +12,7 @@ REGRESSION_BUILD_DIR ?= $(INITRAMFS)/regression
 TEST_APPS := \
 	alarm \
 	clone3 \
+	cpu_affinity \
 	eventfd2 \
 	execve \
 	file_io \

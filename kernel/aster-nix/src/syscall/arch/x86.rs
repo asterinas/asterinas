@@ -72,6 +72,7 @@ use crate::syscall::{
     rt_sigprocmask::sys_rt_sigprocmask,
     rt_sigreturn::sys_rt_sigreturn,
     rt_sigsuspend::sys_rt_sigsuspend,
+    sched_getaffinity::sys_sched_getaffinity,
     sched_yield::sys_sched_yield,
     select::sys_select,
     sendfile::sys_sendfile,
@@ -220,6 +221,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETTID = 186           => sys_gettid(args[..0]);
     SYS_TIME = 201             => sys_time(args[..1]);
     SYS_FUTEX = 202            => sys_futex(args[..6]);
+    SYS_SCHED_GETAFFINITY = 204 => sys_sched_getaffinity(args[..3]);
     SYS_EPOLL_CREATE = 213     => sys_epoll_create(args[..1]);
     SYS_GETDENTS64 = 217       => sys_getdents64(args[..3]);
     SYS_SET_TID_ADDRESS = 218  => sys_set_tid_address(args[..1]);

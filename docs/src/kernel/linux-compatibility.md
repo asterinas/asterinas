@@ -224,7 +224,7 @@ provided by Linux on x86-64 architecture.
 | 201     | time             | ✅              |
 | 202     | futex            | ✅              |
 | 203     | sched_setaffinity | ❌             |
-| 204     | sched_getaffinity | ❌             |
+| 204     | sched_getaffinity | ✅             |
 | 205     | set_thread_area  | ❌              |
 | 206     | io_setup         | ❌              |
 | 207     | io_destroy       | ❌              |
