@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{alloc::Layout, vec::Vec};
+use alloc::vec::Vec;
 
 use align_ext::AlignExt;
 use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
-use super::{VmFrame, VmFrameVec, VmSegment};
-use crate::{
-    arch::mm::PagingConsts,
-    boot::memory_region::{MemoryRegion, MemoryRegionType},
-    sync::SpinLock,
-    vm::{nr_base_per_page, PagingLevel, PAGE_SIZE},
-};
+use super::{meta::FrameMeta, Page, VmFrame, VmFrameVec, VmSegment};
+use crate::{boot::memory_region::MemoryRegionType, sync::SpinLock, vm::PAGE_SIZE};
 
 pub(in crate::vm) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 
@@ -28,30 +23,22 @@ pub(crate) fn alloc(nframes: usize) -> Option<VmFrameVec> {
             for i in 0..nframes {
                 let paddr = (start + i) * PAGE_SIZE;
                 // SAFETY: The frame index is valid.
-                let frame = unsafe { VmFrame::from_free_raw(paddr, 1) };
+                let frame = VmFrame {
+                    page: Page::<FrameMeta>::from_unused(paddr).unwrap(),
+                };
                 vector.push(frame);
             }
             VmFrameVec(vector)
         })
 }
 
-pub(crate) fn alloc_single(level: PagingLevel) -> Option<VmFrame> {
-    FRAME_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc_aligned(
-            Layout::from_size_align(
-                nr_base_per_page::<PagingConsts>(level),
-                nr_base_per_page::<PagingConsts>(level),
-            )
-            .unwrap(),
-        )
-        .map(|idx| {
-            let paddr = idx * PAGE_SIZE;
-            // SAFETY: The frame index is valid.
-            unsafe { VmFrame::from_free_raw(paddr, level) }
-        })
+pub(crate) fn alloc_single() -> Option<VmFrame> {
+    FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx| {
+        let paddr = idx * PAGE_SIZE;
+        VmFrame {
+            page: Page::<FrameMeta>::from_unused(paddr).unwrap(),
+        }
+    })
 }
 
 pub(crate) fn alloc_contiguous(nframes: usize) -> Option<VmSegment> {
@@ -76,7 +63,7 @@ pub(crate) fn alloc_contiguous(nframes: usize) -> Option<VmSegment> {
 ///
 /// User should ensure the range of page frames is valid.
 ///
-pub(crate) unsafe fn dealloc_contiguous(start_index: usize, nframes: usize) {
+pub(crate) unsafe fn dealloc(start_index: usize, nframes: usize) {
     FRAME_ALLOCATOR
         .get()
         .unwrap()
@@ -84,7 +71,8 @@ pub(crate) unsafe fn dealloc_contiguous(start_index: usize, nframes: usize) {
         .dealloc(start_index, nframes);
 }
 
-pub(crate) fn init(regions: &[MemoryRegion]) {
+pub(crate) fn init() {
+    let regions = crate::boot::memory_regions();
     let mut allocator = FrameAllocator::<32>::new();
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {

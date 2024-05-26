@@ -9,33 +9,31 @@ pub type Vaddr = usize;
 pub type Paddr = usize;
 
 pub(crate) mod dma;
-mod frame;
 pub(crate) mod heap_allocator;
 mod io;
 pub(crate) mod kspace;
 mod offset;
 mod options;
+pub(crate) mod page;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
 mod space;
 
-use alloc::{borrow::ToOwned, vec::Vec};
+use alloc::vec::Vec;
 use core::{fmt::Debug, ops::Range};
 
 use spin::Once;
 
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
-    frame::{FrameVecIter, VmFrame, VmFrameVec, VmSegment},
     io::{VmIo, VmReader, VmWriter},
     options::VmAllocOptions,
+    page::{FrameVecIter, VmFrame, VmFrameVec, VmSegment},
     page_prop::{CachePolicy, PageFlags, PageProperty},
     space::{VmMapOptions, VmSpace},
 };
 pub(crate) use self::{
-    frame::meta::{FrameMetaRef, FrameType},
-    kspace::paddr_to_vaddr,
-    page_prop::PrivilegedPageFlags,
+    kspace::paddr_to_vaddr, page::meta::init as init_page_meta, page_prop::PrivilegedPageFlags,
     page_table::PageTable,
 };
 use crate::{
@@ -115,24 +113,20 @@ pub const fn is_page_aligned(p: usize) -> bool {
     (p & (PAGE_SIZE - 1)) == 0
 }
 
-/// Only available inside aster-frame
-pub(crate) static MEMORY_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
-
 pub static FRAMEBUFFER_REGIONS: Once<Vec<MemoryRegion>> = Once::new();
 
-pub(crate) fn init() {
-    let memory_regions = crate::boot::memory_regions().to_owned();
-    frame::allocator::init(&memory_regions);
-    kspace::init_kernel_page_table();
+pub(crate) fn misc_init() {
     dma::init();
 
     let mut framebuffer_regions = Vec::new();
-    for i in memory_regions.iter() {
+    for i in crate::boot::memory_regions() {
         if i.typ() == MemoryRegionType::Framebuffer {
             framebuffer_regions.push(*i);
         }
     }
     FRAMEBUFFER_REGIONS.call_once(|| framebuffer_regions);
+}
 
-    MEMORY_REGIONS.call_once(|| memory_regions);
+pub(crate) fn get_boot_pt() -> page_table::boot_pt::BootPageTable {
+    unsafe { page_table::boot_pt::BootPageTable::from_current_pt() }
 }

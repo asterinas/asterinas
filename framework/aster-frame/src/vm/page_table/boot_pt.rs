@@ -7,9 +7,12 @@
 use alloc::vec::Vec;
 
 use super::{pte_index, PageTableEntryTrait};
-use crate::vm::{
-    frame::allocator::FRAME_ALLOCATOR, paddr_to_vaddr, Paddr, PageProperty, PagingConstsTrait,
-    Vaddr, PAGE_SIZE,
+use crate::{
+    arch::mm::{PageTableEntry, PagingConsts},
+    vm::{
+        paddr_to_vaddr, page::allocator::FRAME_ALLOCATOR, PageProperty, PagingConstsTrait, Vaddr,
+        PAGE_SIZE,
+    },
 };
 
 type FrameNumber = usize;
@@ -17,7 +20,10 @@ type FrameNumber = usize;
 /// A simple boot page table for boot stage mapping management.
 /// If applicable, the boot page table could track the lifetime of page table
 /// frames that are set up by the firmware, loader or the setup code.
-pub struct BootPageTable<E: PageTableEntryTrait, C: PagingConstsTrait> {
+pub struct BootPageTable<
+    E: PageTableEntryTrait = PageTableEntry,
+    C: PagingConstsTrait = PagingConsts,
+> {
     root_pt: FrameNumber,
     // The frames allocated for this page table are not tracked with
     // metadata [`crate::vm::frame::meta`]. Here is a record of it
@@ -27,9 +33,12 @@ pub struct BootPageTable<E: PageTableEntryTrait, C: PagingConstsTrait> {
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
-    /// Create a new boot page table from the a page table root physical address.
-    /// The anonymous page table may be set up by the firmware, loader or the setup code.
-    pub fn from_anonymous_boot_pt(root_paddr: Paddr) -> Self {
+    /// Create a new boot page table from the current page table root physical address.
+    ///
+    /// The caller must ensure that the current page table may be set up by the firmware,
+    /// loader or the setup code.
+    pub unsafe fn from_current_pt() -> Self {
+        let root_paddr = crate::arch::mm::current_page_table_paddr();
         Self {
             root_pt: root_paddr / C::BASE_PAGE_SIZE,
             frames: Vec::new(),
@@ -98,8 +107,11 @@ fn test_boot_pt() {
     let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
     let root_paddr = root_frame.start_paddr();
 
-    let mut boot_pt =
-        BootPageTable::<PageTableEntry, PagingConsts>::from_anonymous_boot_pt(root_paddr);
+    let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts> {
+        root_pt: root_paddr / PagingConsts::BASE_PAGE_SIZE,
+        frames: Vec::new(),
+        _pretend_to_use: core::marker::PhantomData,
+    };
 
     let from1 = 0x1000;
     let to1 = 0x2;

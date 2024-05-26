@@ -274,7 +274,8 @@ where
     /// page table are untracked.
     fn in_untracked_range(&self) -> bool {
         TypeId::of::<M>() == TypeId::of::<crate::arch::iommu::DeviceMode>()
-            || crate::vm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&self.va)
+            || TypeId::of::<M>() == TypeId::of::<KernelMode>()
+                && !crate::vm::kspace::VMALLOC_VADDR_RANGE.contains(&self.va)
     }
 }
 
