@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::{cpu::*, vm::VmIo};
+use aster_frame::cpu::*;
 
 use crate::{
     prelude::*, process::signal::signals::fault::FaultSignal,
@@ -45,11 +45,6 @@ fn handle_page_fault(trap_info: &CpuExceptionInfo) {
                 page_fault_addr, e
             );
             generate_fault_signal(trap_info);
-        } else {
-            // ensure page fault is successfully handled
-            // FIXME: this check can be removed
-            let vm_space = root_vmar.vm_space();
-            let _: u8 = vm_space.read_val(page_fault_addr).unwrap();
         }
     } else {
         // Otherwise, the page fault cannot be handled

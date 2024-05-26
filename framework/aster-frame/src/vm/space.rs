@@ -2,13 +2,11 @@
 
 use core::ops::Range;
 
-use align_ext::AlignExt;
-
 use super::{
     is_page_aligned,
     kspace::KERNEL_PAGE_TABLE,
     page_table::{PageTable, PageTableMode, UserMode},
-    CachePolicy, PageFlags, PageProperty, PagingConstsTrait, PrivilegedPageFlags, VmFrameVec, VmIo,
+    CachePolicy, PageFlags, PageProperty, PagingConstsTrait, PrivilegedPageFlags, VmFrameVec,
     PAGE_SIZE,
 };
 use crate::{
@@ -213,42 +211,6 @@ impl VmSpace {
 impl Default for VmSpace {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl VmIo for VmSpace {
-    fn read_bytes(&self, vaddr: usize, buf: &mut [u8]) -> Result<()> {
-        let range_end = vaddr.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        let vaddr = vaddr.align_down(PAGE_SIZE);
-        let range_end = range_end.align_up(PAGE_SIZE);
-        for qr in self.query_range(&(vaddr..range_end))? {
-            if matches!(qr, VmQueryResult::NotMapped { .. }) {
-                return Err(Error::AccessDenied);
-            }
-        }
-        self.activate();
-        buf.clone_from_slice(unsafe { core::slice::from_raw_parts(vaddr as *const u8, buf.len()) });
-        Ok(())
-    }
-
-    fn write_bytes(&self, vaddr: usize, buf: &[u8]) -> Result<()> {
-        let range_end = vaddr.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        let vaddr = vaddr.align_down(PAGE_SIZE);
-        let range_end = range_end.align_up(PAGE_SIZE);
-        for qr in self.query_range(&(vaddr..vaddr + range_end))? {
-            match qr {
-                VmQueryResult::NotMapped { .. } => return Err(Error::AccessDenied),
-                VmQueryResult::Mapped { prop, .. } => {
-                    if !prop.flags.contains(PageFlags::W) {
-                        return Err(Error::AccessDenied);
-                    }
-                }
-            }
-        }
-        self.activate();
-        unsafe { core::slice::from_raw_parts_mut(vaddr as *mut u8, buf.len()) }
-            .clone_from_slice(buf);
-        Ok(())
     }
 }
 
