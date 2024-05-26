@@ -3,7 +3,7 @@
 use core::{fmt::Debug, marker::PhantomData};
 
 use aster_frame::{
-    vm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, VmIo},
+    mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, VmIo},
     Result,
 };
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
@@ -56,7 +56,7 @@ pub use typeflags_util::SetContain;
 ///
 /// The generic parameter `M` of `SafePtr<_, M, _>` must implement the `VmIo`
 /// trait. The most important `VmIo` types are `Vmar`, `Vmo`, `IoMem`, and
-/// `VmFrame`. The blanket implementations of `VmIo` also include pointer-like
+/// `Frame`. The blanket implementations of `VmIo` also include pointer-like
 /// types that refer to a `VmIo` type. Some examples are `&Vmo`, `Box<Vmar>`,
 /// and `Arc<IoMem>`.
 ///
@@ -382,7 +382,7 @@ impl<T, M: Debug, R> Debug for SafePtr<T, M, R> {
 macro_rules! field_ptr {
     ($ptr:expr, $type:ty, $($field:tt)+) => {{
         use aster_frame::offset_of;
-        use aster_frame::vm::VmIo;
+        use aster_frame::mm::VmIo;
         use aster_rights::Dup;
         use aster_rights::TRightSet;
         use aster_rights::TRights;

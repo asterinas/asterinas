@@ -5,19 +5,19 @@ use core::ops::Range;
 use super::{
     allocator,
     meta::{PageMeta, PageUsage, SegmentHeadMeta},
-    Page, VmFrame,
+    Frame, Page,
 };
 use crate::{
-    vm::{HasPaddr, Paddr, VmIo, VmReader, VmWriter, PAGE_SIZE},
+    mm::{HasPaddr, Paddr, VmIo, VmReader, VmWriter, PAGE_SIZE},
     Error, Result,
 };
 
 /// A handle to a contiguous range of page frames (physical memory pages).
 ///
-/// The biggest difference between `VmSegment` and `VmFrameVec` is that
-/// the page frames must be contiguous for `VmSegment`.
+/// The biggest difference between `Segment` and `VmFrameVec` is that
+/// the page frames must be contiguous for `Segment`.
 ///
-/// A cloned `VmSegment` refers to the same page frames as the original.
+/// A cloned `Segment` refers to the same page frames as the original.
 /// As the original and cloned instances point to the same physical address,  
 /// they are treated as equal to each other.
 ///
@@ -30,25 +30,25 @@ use crate::{
 /// vm_segment.write_bytes(0, buf)?;
 /// ```
 #[derive(Debug, Clone)]
-pub struct VmSegment {
+pub struct Segment {
     head_page: Page<SegmentHeadMeta>,
     range: Range<usize>,
 }
 
-impl HasPaddr for VmSegment {
+impl HasPaddr for Segment {
     fn paddr(&self) -> Paddr {
         self.start_paddr()
     }
 }
 
-impl VmSegment {
-    /// Creates a new `VmSegment`.
+impl Segment {
+    /// Creates a new `Segment`.
     ///
     /// # Safety
     ///
     /// The given range of page frames must be contiguous and valid for use.
     /// The given range of page frames must not have been allocated before,
-    /// as part of either a `VmFrame` or `VmSegment`.
+    /// as part of either a `Frame` or `Segment`.
     pub(crate) unsafe fn new(paddr: Paddr, nframes: usize) -> Self {
         let mut head = Page::<SegmentHeadMeta>::from_unused(paddr).unwrap();
         head.meta_mut().seg_len = (nframes * PAGE_SIZE) as u64;
@@ -58,11 +58,11 @@ impl VmSegment {
         }
     }
 
-    /// Returns a part of the `VmSegment`.
+    /// Returns a part of the `Segment`.
     ///
     /// # Panic
     ///
-    /// If `range` is not within the range of this `VmSegment`,
+    /// If `range` is not within the range of this `Segment`,
     /// then the method panics.
     pub fn range(&self, range: Range<usize>) -> Self {
         let orig_range = &self.range;
@@ -108,7 +108,7 @@ impl VmSegment {
     }
 }
 
-impl<'a> VmSegment {
+impl<'a> Segment {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
         // SAFETY: the memory of the page frames is contiguous and is valid during `'a`.
@@ -122,7 +122,7 @@ impl<'a> VmSegment {
     }
 }
 
-impl VmIo for VmSegment {
+impl VmIo for Segment {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
@@ -156,8 +156,8 @@ impl PageMeta for SegmentHeadMeta {
     }
 }
 
-impl From<VmFrame> for VmSegment {
-    fn from(frame: VmFrame) -> Self {
+impl From<Frame> for Segment {
+    fn from(frame: Frame) -> Self {
         Self {
             head_page: frame.page.into(),
             range: 0..1,

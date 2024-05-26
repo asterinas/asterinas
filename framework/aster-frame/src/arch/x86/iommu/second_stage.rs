@@ -4,7 +4,7 @@ use core::ops::Range;
 
 use pod::Pod;
 
-use crate::vm::{
+use crate::mm::{
     page_prop::{CachePolicy, PageFlags, PrivilegedPageFlags as PrivFlags},
     page_table::{PageTableEntryTrait, PageTableMode},
     Paddr, PageProperty, PagingConstsTrait, PagingLevel, Vaddr,

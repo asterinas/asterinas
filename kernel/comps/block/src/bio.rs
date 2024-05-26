@@ -2,8 +2,8 @@
 
 use align_ext::AlignExt;
 use aster_frame::{
+    mm::{Frame, Segment, VmReader, VmWriter},
     sync::WaitQueue,
-    vm::{VmFrame, VmReader, VmSegment, VmWriter},
 };
 use int_to_c_enum::TryFromInt;
 
@@ -359,7 +359,7 @@ pub enum BioStatus {
 #[derive(Debug, Clone)]
 pub struct BioSegment {
     /// The contiguous pages on which this segment resides.
-    pages: VmSegment,
+    pages: Segment,
     /// The starting offset (in bytes) within the first page.
     /// The offset should always be aligned to the sector size and
     /// must not exceed the size of a single page.
@@ -373,8 +373,8 @@ pub struct BioSegment {
 const SECTOR_SIZE: u16 = super::SECTOR_SIZE as u16;
 
 impl<'a> BioSegment {
-    /// Constructs a new `BioSegment` from `VmSegment`.
-    pub fn from_segment(segment: VmSegment, offset: usize, len: usize) -> Self {
+    /// Constructs a new `BioSegment` from `Segment`.
+    pub fn from_segment(segment: Segment, offset: usize, len: usize) -> Self {
         assert!(offset + len <= segment.nbytes());
 
         Self {
@@ -384,12 +384,12 @@ impl<'a> BioSegment {
         }
     }
 
-    /// Constructs a new `BioSegment` from `VmFrame`.
-    pub fn from_frame(frame: VmFrame, offset: usize, len: usize) -> Self {
+    /// Constructs a new `BioSegment` from `Frame`.
+    pub fn from_frame(frame: Frame, offset: usize, len: usize) -> Self {
         assert!(offset + len <= super::BLOCK_SIZE);
 
         Self {
-            pages: VmSegment::from(frame),
+            pages: Segment::from(frame),
             offset: AlignedUsize::<SECTOR_SIZE>::new(offset).unwrap(),
             len: AlignedUsize::<SECTOR_SIZE>::new(len).unwrap(),
         }
@@ -411,7 +411,7 @@ impl<'a> BioSegment {
     }
 
     /// Returns the contiguous pages on which this segment resides.
-    pub fn pages(&self) -> &VmSegment {
+    pub fn pages(&self) -> &Segment {
         &self.pages
     }
 

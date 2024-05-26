@@ -11,7 +11,7 @@ use inherit_methods_macro::inherit_methods;
 use spin::Once;
 
 use super::Paddr;
-use crate::{arch::iommu::has_iommu, sync::SpinLock, vm::PAGE_SIZE};
+use crate::{arch::iommu::has_iommu, mm::PAGE_SIZE, sync::SpinLock};
 
 /// If a device performs DMA to read or write system
 /// memory, the addresses used by the device are device addresses.

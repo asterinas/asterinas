@@ -28,7 +28,7 @@ pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     io::{VmIo, VmReader, VmWriter},
     options::VmAllocOptions,
-    page::{FrameVecIter, VmFrame, VmFrameVec, VmSegment},
+    page::{Frame, FrameVecIter, Segment, VmFrameVec},
     page_prop::{CachePolicy, PageFlags, PageProperty},
     space::{VmMapOptions, VmSpace},
 };

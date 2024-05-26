@@ -12,7 +12,7 @@ use spin::Once;
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    arch::x86::kernel::acpi::ACPI_TABLES, sync::SpinLock, trap::IrqLine, vm::paddr_to_vaddr, Error,
+    arch::x86::kernel::acpi::ACPI_TABLES, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine, Error,
     Result,
 };
 

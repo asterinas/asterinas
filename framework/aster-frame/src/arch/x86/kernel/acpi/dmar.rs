@@ -9,7 +9,7 @@ use super::{
     remapping::{Andd, Atsr, Drhd, Rhsa, Rmrr, Satc, Sidp},
     SdtHeaderWrapper,
 };
-use crate::vm::paddr_to_vaddr;
+use crate::mm::paddr_to_vaddr;
 
 /// DMA Remapping structure. When IOMMU is enabled, the structure should be present in the ACPI table,
 /// and the user can use the DRHD table in this structure to obtain the register base addresses used to configure functions such as IOMMU.

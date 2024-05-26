@@ -7,8 +7,8 @@ use core::{
 
 use aster_block::bio::BioWaiter;
 use aster_frame::{
+    mm::{Frame, VmIo},
     sync::RwMutexWriteGuard,
-    vm::{VmFrame, VmIo},
 };
 use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
@@ -436,13 +436,13 @@ impl RamInode {
 }
 
 impl PageCacheBackend for RamInode {
-    fn read_page(&self, _idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
+    fn read_page(&self, _idx: usize, frame: &Frame) -> Result<BioWaiter> {
         // Initially, any block/page in a RamFs inode contains all zeros
         frame.writer().fill(0);
         Ok(BioWaiter::new())
     }
 
-    fn write_page(&self, _idx: usize, _frame: &VmFrame) -> Result<BioWaiter> {
+    fn write_page(&self, _idx: usize, _frame: &Frame) -> Result<BioWaiter> {
         // do nothing
         Ok(BioWaiter::new())
     }

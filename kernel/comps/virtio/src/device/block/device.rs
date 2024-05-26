@@ -9,9 +9,9 @@ use aster_block::{
 };
 use aster_frame::{
     io_mem::IoMem,
+    mm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmIo},
     sync::SpinLock,
     trap::TrapFrame,
-    vm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmIo},
 };
 use aster_util::safe_ptr::SafePtr;
 use id_alloc::IdAlloc;

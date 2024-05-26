@@ -7,10 +7,10 @@ use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
-use super::{meta::FrameMeta, Page, VmFrame, VmFrameVec, VmSegment};
-use crate::{boot::memory_region::MemoryRegionType, sync::SpinLock, vm::PAGE_SIZE};
+use super::{meta::FrameMeta, Frame, Page, Segment, VmFrameVec};
+use crate::{boot::memory_region::MemoryRegionType, mm::PAGE_SIZE, sync::SpinLock};
 
-pub(in crate::vm) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
+pub(in crate::mm) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 
 pub(crate) fn alloc(nframes: usize) -> Option<VmFrameVec> {
     FRAME_ALLOCATOR
@@ -23,7 +23,7 @@ pub(crate) fn alloc(nframes: usize) -> Option<VmFrameVec> {
             for i in 0..nframes {
                 let paddr = (start + i) * PAGE_SIZE;
                 // SAFETY: The frame index is valid.
-                let frame = VmFrame {
+                let frame = Frame {
                     page: Page::<FrameMeta>::from_unused(paddr).unwrap(),
                 };
                 vector.push(frame);
@@ -32,16 +32,16 @@ pub(crate) fn alloc(nframes: usize) -> Option<VmFrameVec> {
         })
 }
 
-pub(crate) fn alloc_single() -> Option<VmFrame> {
+pub(crate) fn alloc_single() -> Option<Frame> {
     FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx| {
         let paddr = idx * PAGE_SIZE;
-        VmFrame {
+        Frame {
             page: Page::<FrameMeta>::from_unused(paddr).unwrap(),
         }
     })
 }
 
-pub(crate) fn alloc_contiguous(nframes: usize) -> Option<VmSegment> {
+pub(crate) fn alloc_contiguous(nframes: usize) -> Option<Segment> {
     FRAME_ALLOCATOR
         .get()
         .unwrap()
@@ -50,7 +50,7 @@ pub(crate) fn alloc_contiguous(nframes: usize) -> Option<VmSegment> {
         .map(|start|
             // SAFETY: The range of page frames is contiguous and valid.
             unsafe {
-            VmSegment::new(
+            Segment::new(
                 start * PAGE_SIZE,
                 nframes,
             )

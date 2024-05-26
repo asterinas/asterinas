@@ -18,7 +18,7 @@ pub(crate) use cursor::{Cursor, CursorMut, PageTableQueryResult};
 #[cfg(ktest)]
 mod test;
 
-pub(in crate::vm) mod boot_pt;
+pub(in crate::mm) mod boot_pt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageTableError {
@@ -82,7 +82,7 @@ pub(crate) struct PageTable<
 > where
     [(); C::NR_LEVELS as usize]:,
 {
-    root: RawPageTableFrame<E, C>,
+    root: RawPageTableNode<E, C>,
     _phantom: PhantomData<M>,
 }
 
@@ -160,7 +160,7 @@ impl PageTable<KernelMode> {
         let mut root_frame = self.root.copy_handle().lock();
         for i in start..end {
             if !root_frame.read_pte(i).is_present() {
-                let frame = PageTableFrame::alloc(PagingConsts::NR_LEVELS - 1);
+                let frame = PageTableNode::alloc(PagingConsts::NR_LEVELS - 1);
                 root_frame.set_child_pt(i, frame.into_raw(), i < NR_PTES_PER_NODE * 3 / 4);
             }
         }
@@ -174,7 +174,7 @@ where
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub(crate) fn empty() -> Self {
         PageTable {
-            root: PageTableFrame::<E, C>::alloc(C::NR_LEVELS).into_raw(),
+            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS).into_raw(),
             _phantom: PhantomData,
         }
     }

@@ -21,7 +21,7 @@ pub struct Ext2 {
     blocks_per_group: Ext2Bid,
     inode_size: usize,
     block_size: usize,
-    group_descriptors_segment: VmSegment,
+    group_descriptors_segment: Segment,
     self_ref: Weak<Self>,
 }
 
@@ -55,7 +55,7 @@ impl Ext2 {
         // Load the block groups information
         let load_block_groups = |fs: Weak<Ext2>,
                                  block_device: &dyn BlockDevice,
-                                 group_descriptors_segment: &VmSegment|
+                                 group_descriptors_segment: &Segment|
          -> Result<Vec<BlockGroup>> {
             let block_groups_count = super_block.block_groups_count() as usize;
             let mut block_groups = Vec::with_capacity(block_groups_count);
@@ -291,7 +291,7 @@ impl Ext2 {
     }
 
     /// Reads contiguous blocks starting from the `bid` synchronously.
-    pub(super) fn read_blocks(&self, bid: Ext2Bid, segment: &VmSegment) -> Result<()> {
+    pub(super) fn read_blocks(&self, bid: Ext2Bid, segment: &Segment) -> Result<()> {
         let status = self
             .block_device
             .read_blocks_sync(Bid::new(bid as u64), segment)?;
@@ -302,7 +302,7 @@ impl Ext2 {
     }
 
     /// Reads one block indicated by the `bid` synchronously.
-    pub(super) fn read_block(&self, bid: Ext2Bid, frame: &VmFrame) -> Result<()> {
+    pub(super) fn read_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
         let status = self
             .block_device
             .read_block_sync(Bid::new(bid as u64), frame)?;
@@ -313,13 +313,13 @@ impl Ext2 {
     }
 
     /// Reads one block indicated by the `bid` asynchronously.
-    pub(super) fn read_block_async(&self, bid: Ext2Bid, frame: &VmFrame) -> Result<BioWaiter> {
+    pub(super) fn read_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
         let waiter = self.block_device.read_block(Bid::new(bid as u64), frame)?;
         Ok(waiter)
     }
 
     /// Writes contiguous blocks starting from the `bid` synchronously.
-    pub(super) fn write_blocks(&self, bid: Ext2Bid, segment: &VmSegment) -> Result<()> {
+    pub(super) fn write_blocks(&self, bid: Ext2Bid, segment: &Segment) -> Result<()> {
         let status = self
             .block_device
             .write_blocks_sync(Bid::new(bid as u64), segment)?;
@@ -330,7 +330,7 @@ impl Ext2 {
     }
 
     /// Writes one block indicated by the `bid` synchronously.
-    pub(super) fn write_block(&self, bid: Ext2Bid, frame: &VmFrame) -> Result<()> {
+    pub(super) fn write_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
         let status = self
             .block_device
             .write_block_sync(Bid::new(bid as u64), frame)?;
@@ -341,7 +341,7 @@ impl Ext2 {
     }
 
     /// Writes one block indicated by the `bid` asynchronously.
-    pub(super) fn write_block_async(&self, bid: Ext2Bid, frame: &VmFrame) -> Result<BioWaiter> {
+    pub(super) fn write_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
         let waiter = self.block_device.write_block(Bid::new(bid as u64), frame)?;
         Ok(waiter)
     }

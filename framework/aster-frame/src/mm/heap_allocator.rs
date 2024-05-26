@@ -11,10 +11,10 @@ use log::debug;
 
 use super::paddr_to_vaddr;
 use crate::{
+    mm::{page::allocator::FRAME_ALLOCATOR, PAGE_SIZE},
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
-    vm::{page::allocator::FRAME_ALLOCATOR, PAGE_SIZE},
     Error,
 };
 

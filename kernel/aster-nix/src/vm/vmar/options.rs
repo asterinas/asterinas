@@ -2,7 +2,7 @@
 
 //! Options for allocating child VMARs.
 
-use aster_frame::{vm::PAGE_SIZE, Error, Result};
+use aster_frame::{mm::PAGE_SIZE, Error, Result};
 
 use super::Vmar;
 
@@ -14,7 +14,7 @@ use super::Vmar;
 /// A child VMAR created from a parent VMAR of _dynamic_ capability is also a
 /// _dynamic_ capability.
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, Vmar};
+/// use aster_nix::vm::{PAGE_SIZE, Vmar};
 ///
 /// let parent_vmar = Vmar::new();
 /// let child_size = 10 * PAGE_SIZE;
@@ -29,8 +29,8 @@ use super::Vmar;
 /// A child VMAR created from a parent VMAR of _static_ capability is also a
 /// _static_ capability.
 /// ```
-/// use aster_std::prelude::*;
-/// use aster_std::vm::{PAGE_SIZE, Vmar};
+/// use aster_nix::prelude::*;
+/// use aster_nix::vm::{PAGE_SIZE, Vmar};
 ///
 /// let parent_vmar: Vmar<Full> = Vmar::new();
 /// let child_size = 10 * PAGE_SIZE;
@@ -135,7 +135,7 @@ impl<R> VmarChildOptions<R> {
 
 #[cfg(ktest)]
 mod test {
-    use aster_frame::vm::VmIo;
+    use aster_frame::mm::VmIo;
     use aster_rights::Full;
 
     use super::*;

@@ -6,7 +6,7 @@
 use alloc::{vec, vec::Vec};
 use core::mem::swap;
 
-use crate::vm::kspace::kernel_loaded_offset;
+use crate::mm::kspace::kernel_loaded_offset;
 
 /// The type of initial memory regions that are needed for the kernel.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]

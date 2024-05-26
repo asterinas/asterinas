@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub use aster_frame::arch::console;
-use aster_frame::vm::VmReader;
+use aster_frame::mm::VmReader;
 use spin::Once;
 
 use crate::{

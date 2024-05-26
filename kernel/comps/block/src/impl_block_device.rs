@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::vm::{VmAllocOptions, VmFrame, VmIo, VmSegment};
+use aster_frame::mm::{Frame, Segment, VmAllocOptions, VmIo};
 
 use super::{
     bio::{Bio, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter, SubmittedBio},
@@ -16,7 +16,7 @@ impl dyn BlockDevice {
     pub fn read_blocks_sync(
         &self,
         bid: Bid,
-        segment: &VmSegment,
+        segment: &Segment,
     ) -> Result<BioStatus, BioEnqueueError> {
         let bio = create_bio_from_segment(BioType::Read, bid, segment);
         let status = bio.submit_sync(self)?;
@@ -24,20 +24,20 @@ impl dyn BlockDevice {
     }
 
     /// Asynchronously reads contiguous blocks starting from the `bid`.
-    pub fn read_blocks(&self, bid: Bid, segment: &VmSegment) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn read_blocks(&self, bid: Bid, segment: &Segment) -> Result<BioWaiter, BioEnqueueError> {
         let bio = create_bio_from_segment(BioType::Read, bid, segment);
         bio.submit(self)
     }
 
     /// Synchronously reads one block indicated by the `bid`.
-    pub fn read_block_sync(&self, bid: Bid, frame: &VmFrame) -> Result<BioStatus, BioEnqueueError> {
+    pub fn read_block_sync(&self, bid: Bid, frame: &Frame) -> Result<BioStatus, BioEnqueueError> {
         let bio = create_bio_from_frame(BioType::Read, bid, frame);
         let status = bio.submit_sync(self)?;
         Ok(status)
     }
 
     /// Asynchronously reads one block indicated by the `bid`.
-    pub fn read_block(&self, bid: Bid, frame: &VmFrame) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn read_block(&self, bid: Bid, frame: &Frame) -> Result<BioWaiter, BioEnqueueError> {
         let bio = create_bio_from_frame(BioType::Read, bid, frame);
         bio.submit(self)
     }
@@ -46,7 +46,7 @@ impl dyn BlockDevice {
     pub fn write_blocks_sync(
         &self,
         bid: Bid,
-        segment: &VmSegment,
+        segment: &Segment,
     ) -> Result<BioStatus, BioEnqueueError> {
         let bio = create_bio_from_segment(BioType::Write, bid, segment);
         let status = bio.submit_sync(self)?;
@@ -54,28 +54,20 @@ impl dyn BlockDevice {
     }
 
     /// Asynchronously writes contiguous blocks starting from the `bid`.
-    pub fn write_blocks(
-        &self,
-        bid: Bid,
-        segment: &VmSegment,
-    ) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn write_blocks(&self, bid: Bid, segment: &Segment) -> Result<BioWaiter, BioEnqueueError> {
         let bio = create_bio_from_segment(BioType::Write, bid, segment);
         bio.submit(self)
     }
 
     /// Synchronously writes one block indicated by the `bid`.
-    pub fn write_block_sync(
-        &self,
-        bid: Bid,
-        frame: &VmFrame,
-    ) -> Result<BioStatus, BioEnqueueError> {
+    pub fn write_block_sync(&self, bid: Bid, frame: &Frame) -> Result<BioStatus, BioEnqueueError> {
         let bio = create_bio_from_frame(BioType::Write, bid, frame);
         let status = bio.submit_sync(self)?;
         Ok(status)
     }
 
     /// Asynchronously writes one block indicated by the `bid`.
-    pub fn write_block(&self, bid: Bid, frame: &VmFrame) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn write_block(&self, bid: Bid, frame: &Frame) -> Result<BioWaiter, BioEnqueueError> {
         let bio = create_bio_from_frame(BioType::Write, bid, frame);
         bio.submit(self)
     }
@@ -202,7 +194,7 @@ impl dyn BlockDevice {
 }
 
 // TODO: Maybe we should have a builder for `Bio`.
-fn create_bio_from_segment(type_: BioType, bid: Bid, segment: &VmSegment) -> Bio {
+fn create_bio_from_segment(type_: BioType, bid: Bid, segment: &Segment) -> Bio {
     let bio_segment = BioSegment::from_segment(segment.clone(), 0, segment.nbytes());
     Bio::new(
         type_,
@@ -213,7 +205,7 @@ fn create_bio_from_segment(type_: BioType, bid: Bid, segment: &VmSegment) -> Bio
 }
 
 // TODO: Maybe we should have a builder for `Bio`.
-fn create_bio_from_frame(type_: BioType, bid: Bid, frame: &VmFrame) -> Bio {
+fn create_bio_from_frame(type_: BioType, bid: Bid, frame: &Frame) -> Bio {
     let bio_segment = BioSegment::from_frame(frame.clone(), 0, BLOCK_SIZE);
     Bio::new(
         type_,

@@ -7,7 +7,7 @@ use core::{marker::PhantomData, ops::Range};
 use align_ext::AlignExt;
 use aster_frame::{
     collections::xarray::XArray,
-    vm::{VmAllocOptions, VmFrame},
+    mm::{Frame, VmAllocOptions},
 };
 use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
@@ -22,7 +22,7 @@ use crate::{prelude::*, vm::vmo::Vmo_};
 ///
 /// Creating a VMO as a _dynamic_ capability with full access rights:
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions};
+/// use aster_nix::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -31,8 +31,8 @@ use crate::{prelude::*, vm::vmo::Vmo_};
 ///
 /// Creating a VMO as a _static_ capability with all access rights:
 /// ```
-/// use aster_std::prelude::*;
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions};
+/// use aster_nix::prelude::*;
+/// use aster_nix::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let vmo = VmoOptions::<Full>::new(PAGE_SIZE)
 ///     .alloc()
@@ -43,7 +43,7 @@ use crate::{prelude::*, vm::vmo::Vmo_};
 /// physically contiguous:
 ///
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions, VmoFlags};
+/// use aster_nix::vm::{PAGE_SIZE, VmoOptions, VmoFlags};
 ///
 /// let vmo = VmoOptions::new(10 * PAGE_SIZE)
 ///     .flags(VmoFlags::RESIZABLE)
@@ -140,7 +140,7 @@ fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Re
     })
 }
 
-fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<VmFrame, VmoMark>> {
+fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<Frame, VmoMark>> {
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
@@ -168,7 +168,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
 /// A child VMO created from a parent VMO of _dynamic_ capability is also a
 /// _dynamic_ capability.
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions};
+/// use aster_nix::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -182,8 +182,8 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
 /// A child VMO created from a parent VMO of _static_ capability is also a
 /// _static_ capability.
 /// ```
-/// use aster_std::prelude::*;
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
+/// use aster_nix::prelude::*;
+/// use aster_nix::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
 ///
 /// let parent_vmo: Vmo<Full> = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -200,7 +200,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
 /// right regardless of whether the parent is writable or not.
 ///
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
+/// use aster_nix::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
 ///
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -215,7 +215,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
 /// The above rule for COW VMO children also applies to static capabilities.
 ///
 /// ```
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
+/// use aster_nix::vm::{PAGE_SIZE, VmoOptions, VmoChildOptions};
 ///
 /// let parent_vmo = VmoOptions::<TRights![Read, Dup]>::new(PAGE_SIZE)
 ///     .alloc()
@@ -231,7 +231,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
 /// Note that a slice VMO child and its parent cannot not be resizable.
 ///
 /// ```rust
-/// use aster_std::vm::{PAGE_SIZE, VmoOptions};
+/// use aster_nix::vm::{PAGE_SIZE, VmoOptions};
 ///
 /// let parent_vmo = VmoOptions::new(PAGE_SIZE)
 ///     .alloc()
@@ -474,7 +474,7 @@ impl VmoChildType for VmoCowChild {}
 
 #[cfg(ktest)]
 mod test {
-    use aster_frame::vm::VmIo;
+    use aster_frame::mm::VmIo;
     use aster_rights::Full;
 
     use super::*;

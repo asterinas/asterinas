@@ -12,10 +12,10 @@ use super::{
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     cpu::CpuSet,
+    mm::{kspace::KERNEL_PAGE_TABLE, PageFlags, Segment, VmAllocOptions, PAGE_SIZE},
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
-    vm::{kspace::KERNEL_PAGE_TABLE, PageFlags, VmAllocOptions, VmSegment, PAGE_SIZE},
 };
 
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
@@ -35,7 +35,7 @@ pub trait TaskContextApi {
 }
 
 pub struct KernelStack {
-    segment: VmSegment,
+    segment: Segment,
     has_guard_page: bool,
 }
 
@@ -56,7 +56,7 @@ impl KernelStack {
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let guard_page_vaddr = {
             let guard_page_paddr = stack_segment.start_paddr();
-            crate::vm::paddr_to_vaddr(guard_page_paddr)
+            crate::mm::paddr_to_vaddr(guard_page_paddr)
         };
         // SAFETY: the segment allocated is not used by others so we can protect it.
         unsafe {
@@ -84,7 +84,7 @@ impl Drop for KernelStack {
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let guard_page_vaddr = {
                 let guard_page_paddr = self.segment.start_paddr();
-                crate::vm::paddr_to_vaddr(guard_page_paddr)
+                crate::mm::paddr_to_vaddr(guard_page_paddr)
             };
             // SAFETY: the segment allocated is not used by others so we can protect it.
             unsafe {
@@ -293,7 +293,7 @@ impl TaskOptions {
         // to at least 16 bytes. And a larger alignment is needed if larger arguments
         // are passed to the function. The `kernel_task_entry` function does not
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        ctx.set_stack_pointer(crate::vm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16));
+        ctx.set_stack_pointer(crate::mm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16));
 
         Ok(Arc::new(new_task))
     }

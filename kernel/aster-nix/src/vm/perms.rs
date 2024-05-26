@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::vm::PageFlags;
+use aster_frame::mm::PageFlags;
 use aster_rights::Rights;
 use bitflags::bitflags;
 

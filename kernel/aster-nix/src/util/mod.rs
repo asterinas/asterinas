@@ -2,7 +2,7 @@
 
 use core::mem;
 
-use aster_frame::vm::VmIo;
+use aster_frame::mm::VmIo;
 use aster_rights::Full;
 
 use crate::{prelude::*, vm::vmar::Vmar};

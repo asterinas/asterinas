@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::vm::VmIo;
+use aster_frame::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{

@@ -3,7 +3,7 @@
 use alloc::boxed::Box;
 use core::fmt::Debug;
 
-use aster_frame::{io_mem::IoMem, trap::IrqCallbackFunction, vm::DmaCoherent};
+use aster_frame::{io_mem::IoMem, mm::DmaCoherent, trap::IrqCallbackFunction};
 use aster_util::safe_ptr::SafePtr;
 
 use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};

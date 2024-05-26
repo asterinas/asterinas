@@ -3,7 +3,7 @@
 use core::mem::ManuallyDrop;
 
 use super::*;
-use crate::vm::{
+use crate::mm::{
     kspace::LINEAR_MAPPING_BASE_VADDR,
     page_prop::{CachePolicy, PageFlags},
     VmAllocOptions,
@@ -43,7 +43,7 @@ fn test_tracked_map_unmap() {
 #[ktest]
 fn test_untracked_map_unmap() {
     let pt = PageTable::<KernelMode>::empty();
-    const UNTRACKED_OFFSET: usize = crate::vm::kspace::LINEAR_MAPPING_BASE_VADDR;
+    const UNTRACKED_OFFSET: usize = crate::mm::kspace::LINEAR_MAPPING_BASE_VADDR;
 
     let from_ppn = 13245..512 * 512 + 23456;
     let to_ppn = from_ppn.start - 11010..from_ppn.end - 11010;
@@ -172,7 +172,7 @@ impl PagingConstsTrait for VeryHugePagingConsts {
 #[ktest]
 fn test_untracked_large_protect_query() {
     let pt = PageTable::<KernelMode, PageTableEntry, VeryHugePagingConsts>::empty();
-    const UNTRACKED_OFFSET: usize = crate::vm::kspace::LINEAR_MAPPING_BASE_VADDR;
+    const UNTRACKED_OFFSET: usize = crate::mm::kspace::LINEAR_MAPPING_BASE_VADDR;
 
     let gmult = 512 * 512;
     let from_ppn = gmult - 512..gmult + gmult + 514;

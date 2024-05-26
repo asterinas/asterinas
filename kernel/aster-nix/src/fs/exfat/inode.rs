@@ -9,7 +9,7 @@ use aster_block::{
     id::{Bid, BlockId},
     BLOCK_SIZE,
 };
-use aster_frame::vm::{VmAllocOptions, VmFrame, VmIo};
+use aster_frame::mm::{Frame, VmAllocOptions, VmIo};
 use aster_rights::Full;
 
 use super::{
@@ -132,7 +132,7 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
+    fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
@@ -145,7 +145,7 @@ impl PageCacheBackend for ExfatInode {
         Ok(waiter)
     }
 
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
+    fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 

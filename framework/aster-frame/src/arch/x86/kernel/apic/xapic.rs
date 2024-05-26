@@ -4,7 +4,7 @@ use spin::Once;
 use x86::apic::xapic;
 
 use super::ApicTimer;
-use crate::{sync::Mutex, vm};
+use crate::{mm, sync::Mutex};
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 const IA32_APIC_BASE_MSR_BSP: u32 = 0x100; // Processor is a BSP
@@ -24,7 +24,7 @@ impl XApic {
         if !Self::has_xapic() {
             return None;
         }
-        let address = vm::paddr_to_vaddr(get_apic_base_address());
+        let address = mm::paddr_to_vaddr(get_apic_base_address());
         let region: &'static mut [u32] = unsafe { &mut *(address as *mut [u32; 256]) };
         Some(Self {
             mmio_region: region,

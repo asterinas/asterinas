@@ -838,7 +838,7 @@ impl InodeImpl_ {
         self.inode().fs()
     }
 
-    pub fn read_block_async(&self, bid: Ext2Bid, block: &VmFrame) -> Result<BioWaiter> {
+    pub fn read_block_async(&self, bid: Ext2Bid, block: &Frame) -> Result<BioWaiter> {
         if bid >= self.desc.blocks_count() {
             return_errno!(Errno::EINVAL);
         }
@@ -852,14 +852,14 @@ impl InodeImpl_ {
         self.fs().read_block_async(device_range.start, block)
     }
 
-    pub fn read_block_sync(&self, bid: Ext2Bid, block: &VmFrame) -> Result<()> {
+    pub fn read_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
         match self.read_block_async(bid, block)?.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
         }
     }
 
-    pub fn write_block_async(&self, bid: Ext2Bid, block: &VmFrame) -> Result<BioWaiter> {
+    pub fn write_block_async(&self, bid: Ext2Bid, block: &Frame) -> Result<BioWaiter> {
         if bid >= self.desc.blocks_count() {
             return_errno!(Errno::EINVAL);
         }
@@ -872,7 +872,7 @@ impl InodeImpl_ {
         Ok(waiter)
     }
 
-    pub fn write_block_sync(&self, bid: Ext2Bid, block: &VmFrame) -> Result<()> {
+    pub fn write_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
         match self.write_block_async(bid, block)?.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
@@ -1525,19 +1525,19 @@ impl InodeImpl {
         self.0.read().desc.ctime
     }
 
-    pub fn read_block_sync(&self, bid: Ext2Bid, block: &VmFrame) -> Result<()> {
+    pub fn read_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
         self.0.read().read_block_sync(bid, block)
     }
 
-    pub fn read_block_async(&self, bid: Ext2Bid, block: &VmFrame) -> Result<BioWaiter> {
+    pub fn read_block_async(&self, bid: Ext2Bid, block: &Frame) -> Result<BioWaiter> {
         self.0.read().read_block_async(bid, block)
     }
 
-    pub fn write_block_sync(&self, bid: Ext2Bid, block: &VmFrame) -> Result<()> {
+    pub fn write_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
         self.0.read().write_block_sync(bid, block)
     }
 
-    pub fn write_block_async(&self, bid: Ext2Bid, block: &VmFrame) -> Result<BioWaiter> {
+    pub fn write_block_async(&self, bid: Ext2Bid, block: &Frame) -> Result<BioWaiter> {
         self.0.read().write_block_async(bid, block)
     }
 
@@ -1612,12 +1612,12 @@ impl InodeImpl {
 }
 
 impl PageCacheBackend for InodeImpl {
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
+    fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.read_block_async(bid, frame)
     }
 
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter> {
+    fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.write_block_async(bid, frame)
     }

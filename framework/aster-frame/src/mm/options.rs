@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{page::allocator, VmFrame, VmFrameVec, VmSegment};
+use super::{page::allocator, Frame, Segment, VmFrameVec};
 use crate::{prelude::*, Error};
 
 /// Options for allocating physical memory pages (or frames).
@@ -66,7 +66,7 @@ impl VmAllocOptions {
     }
 
     /// Allocate a single page frame according to the given options.
-    pub fn alloc_single(&self) -> Result<VmFrame> {
+    pub fn alloc_single(&self) -> Result<Frame> {
         if self.nframes != 1 {
             return Err(Error::InvalidArgs);
         }
@@ -81,8 +81,8 @@ impl VmAllocOptions {
 
     /// Allocate a contiguous range of page frames according to the given options.
     ///
-    /// The returned `VmSegment` contains at least one page frame.
-    pub fn alloc_contiguous(&self) -> Result<VmSegment> {
+    /// The returned `Segment` contains at least one page frame.
+    pub fn alloc_contiguous(&self) -> Result<Segment> {
         // It's no use to checking `self.is_contiguous` here.
         if self.nframes == 0 {
             return Err(Error::InvalidArgs);

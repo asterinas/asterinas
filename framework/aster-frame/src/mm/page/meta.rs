@@ -9,7 +9,7 @@ pub mod mapping {
     use core::mem::size_of;
 
     use super::MetaSlot;
-    use crate::vm::{kspace::FRAME_METADATA_RANGE, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
+    use crate::mm::{kspace::FRAME_METADATA_RANGE, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
 
     /// Convert a physical address of a base page to the virtual address of the metadata slot.
     pub const fn page_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
@@ -40,7 +40,7 @@ use static_assertions::const_assert_eq;
 use super::Page;
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
-    vm::{
+    mm::{
         paddr_to_vaddr,
         page::allocator::FRAME_ALLOCATOR,
         page_size,

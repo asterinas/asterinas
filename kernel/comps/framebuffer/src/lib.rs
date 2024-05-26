@@ -16,8 +16,8 @@ use core::{
 use aster_frame::{
     boot,
     io_mem::IoMem,
+    mm::{VmIo, PAGE_SIZE},
     sync::SpinLock,
-    vm::{VmIo, PAGE_SIZE},
 };
 use component::{init_component, ComponentInitError};
 use font8x8::UnicodeFonts;
@@ -39,7 +39,7 @@ pub(crate) fn init() {
     let mut writer = {
         let framebuffer = boot::framebuffer_arg();
         let mut size = 0;
-        for i in aster_frame::vm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
+        for i in aster_frame::mm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
             size = i.len();
         }
 

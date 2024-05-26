@@ -13,7 +13,7 @@ use trapframe::TrapFrame;
 
 use crate::{
     arch::mm::PageTableFlags,
-    vm::{
+    mm::{
         kspace::KERNEL_PAGE_TABLE,
         paddr_to_vaddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},

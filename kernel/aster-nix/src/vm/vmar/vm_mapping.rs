@@ -2,7 +2,7 @@
 
 use core::ops::Range;
 
-use aster_frame::vm::{PageFlags, VmFrame, VmFrameVec, VmIo, VmMapOptions, VmSpace};
+use aster_frame::mm::{Frame, PageFlags, VmFrameVec, VmIo, VmMapOptions, VmSpace};
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
 use crate::{
@@ -143,7 +143,7 @@ impl VmMapping {
     pub(super) fn map_one_page(
         &self,
         page_idx: usize,
-        frame: VmFrame,
+        frame: Frame,
         is_readonly: bool,
     ) -> Result<()> {
         let parent = self.parent.upgrade().unwrap();
@@ -458,7 +458,7 @@ impl VmMappingInner {
         vmo: &Vmo<Rights>,
         vm_space: &VmSpace,
         page_idx: usize,
-        frame: VmFrame,
+        frame: Frame,
         is_readonly: bool,
     ) -> Result<()> {
         let map_addr = self.page_map_addr(page_idx);
