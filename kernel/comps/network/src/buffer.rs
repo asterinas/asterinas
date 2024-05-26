@@ -1,72 +1,81 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::LinkedList, sync::Arc};
+use alloc::sync::Arc;
 
-use align_ext::AlignExt;
-use aster_frame::{
-    sync::SpinLock,
-    vm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmReader, VmWriter, PAGE_SIZE},
-};
+use aster_frame::vm::{Daddr, DmaDirection, HasDaddr, VmReader, VmWriter};
 use pod::Pod;
 use spin::Once;
 
 use crate::dma_pool::{DmaPool, DmaSegment};
 
 pub struct TxBuffer {
-    dma_stream: DmaStream,
+    dma_segment: DmaSegment,
     nbytes: usize,
+    header_len: usize,
 }
 
 impl TxBuffer {
-    pub fn new<H: Pod>(header: &H, packet: &[u8]) -> Self {
-        let header = header.as_bytes();
-        let nbytes = header.len() + packet.len();
+    pub fn new<H: Pod>(header: &H, packet: &mut VmReader) -> Self {
+        let header_len = core::mem::size_of::<H>();
+        assert!(header_len + packet.remain() <= TX_BUFFER_LEN);
 
-        let dma_stream = if let Some(stream) = get_tx_stream_from_pool(nbytes) {
-            stream
-        } else {
-            let segment = {
-                let nframes = (nbytes.align_up(PAGE_SIZE)) / PAGE_SIZE;
-                VmAllocOptions::new(nframes).alloc_contiguous().unwrap()
-            };
-            DmaStream::map(segment, DmaDirection::ToDevice, false).unwrap()
+        let header = header.as_bytes();
+
+        let dma_segment = TX_BUFFER_POOL
+            .get()
+            .unwrap()
+            .alloc_segment()
+            .expect("fail to allocate dma block");
+
+        let tx_buffer = {
+            let mut writer = dma_segment.writer().unwrap();
+            writer.write(&mut VmReader::from(header));
+            let packet_len = writer.write(packet);
+            let nbytes = header.len() + packet_len;
+            Self {
+                dma_segment,
+                nbytes,
+                header_len,
+            }
         };
 
-        let mut writer = dma_stream.writer().unwrap();
-        writer.write(&mut VmReader::from(header));
-        writer.write(&mut VmReader::from(packet));
-
-        let tx_buffer = Self { dma_stream, nbytes };
         tx_buffer.sync();
         tx_buffer
     }
 
+    pub fn set_packet(&mut self, packet: &mut VmReader) {
+        assert!(packet.remain() + self.header_len <= TX_BUFFER_LEN);
+
+        let mut writer = self.dma_segment.writer().unwrap().skip(self.header_len);
+        let len = writer.write(packet);
+        self.nbytes = self.header_len + len;
+        self.dma_segment.sync(self.header_len..self.nbytes).unwrap();
+    }
+
+    pub fn clear_packet(&mut self) {
+        self.nbytes = self.header_len;
+    }
+
+    pub const fn contains_packet(&self) -> bool {
+        self.nbytes > self.header_len
+    }
+
     pub fn writer(&self) -> VmWriter<'_> {
-        self.dma_stream.writer().unwrap().limit(self.nbytes)
+        self.dma_segment.writer().unwrap().limit(self.nbytes)
     }
 
     fn sync(&self) {
-        self.dma_stream.sync(0..self.nbytes).unwrap();
+        self.dma_segment.sync(0..self.nbytes).unwrap();
     }
 
-    pub fn nbytes(&self) -> usize {
+    pub const fn nbytes(&self) -> usize {
         self.nbytes
     }
 }
 
 impl HasDaddr for TxBuffer {
     fn daddr(&self) -> Daddr {
-        self.dma_stream.daddr()
-    }
-}
-
-impl Drop for TxBuffer {
-    fn drop(&mut self) {
-        TX_BUFFER_POOL
-            .get()
-            .unwrap()
-            .lock_irq_disabled()
-            .push_back(self.dma_stream.clone());
+        self.dma_segment.daddr()
     }
 }
 
@@ -119,21 +128,9 @@ impl HasDaddr for RxBuffer {
 }
 
 const RX_BUFFER_LEN: usize = 4096;
+const TX_BUFFER_LEN: usize = 2048;
 static RX_BUFFER_POOL: Once<Arc<DmaPool>> = Once::new();
-static TX_BUFFER_POOL: Once<SpinLock<LinkedList<DmaStream>>> = Once::new();
-
-fn get_tx_stream_from_pool(nbytes: usize) -> Option<DmaStream> {
-    let mut pool = TX_BUFFER_POOL.get().unwrap().lock_irq_disabled();
-    let mut cursor = pool.cursor_front_mut();
-    while let Some(current) = cursor.current() {
-        if current.nbytes() >= nbytes {
-            return cursor.remove_current();
-        }
-        cursor.move_next();
-    }
-
-    None
-}
+static TX_BUFFER_POOL: Once<Arc<DmaPool>> = Once::new();
 
 pub fn init() {
     const POOL_INIT_SIZE: usize = 32;
@@ -147,5 +144,13 @@ pub fn init() {
             false,
         )
     });
-    TX_BUFFER_POOL.call_once(|| SpinLock::new(LinkedList::new()));
+    TX_BUFFER_POOL.call_once(|| {
+        DmaPool::new(
+            TX_BUFFER_LEN,
+            POOL_INIT_SIZE,
+            POOL_HIGH_WATERMARK,
+            DmaDirection::ToDevice,
+            false,
+        )
+    });
 }
