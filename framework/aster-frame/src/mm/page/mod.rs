@@ -11,10 +11,10 @@
 //! address space of the users are backed by frames.
 
 pub(crate) mod allocator;
-pub(in crate::vm) mod meta;
+pub(in crate::mm) mod meta;
 use meta::{mapping, MetaSlot, PageMeta};
 mod frame;
-pub use frame::{VmFrame, VmFrameRef};
+pub use frame::{Frame, VmFrameRef};
 mod vm_frame_vec;
 pub use vm_frame_vec::{FrameVecIter, VmFrameVec};
 mod segment;
@@ -23,10 +23,10 @@ use core::{
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
 
-pub use segment::VmSegment;
+pub use segment::Segment;
 
 use super::PAGE_SIZE;
-use crate::vm::{paddr_to_vaddr, Paddr, PagingConsts, Vaddr};
+use crate::mm::{paddr_to_vaddr, Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
@@ -54,7 +54,7 @@ pub enum PageHandleError {
 
 impl<M: PageMeta> Page<M> {
     /// Convert an unused page to a `Page` handle for a specific usage.
-    pub(in crate::vm) fn from_unused(paddr: Paddr) -> Result<Self, PageHandleError> {
+    pub(in crate::mm) fn from_unused(paddr: Paddr) -> Result<Self, PageHandleError> {
         if paddr % PAGE_SIZE != 0 {
             return Err(PageHandleError::NotAligned);
         }
@@ -100,7 +100,7 @@ impl<M: PageMeta> Page<M> {
     ///
     /// Also, the caller ensures that the usage of the page is correct. There's
     /// no checking of the usage in this function.
-    pub(in crate::vm) unsafe fn restore(paddr: Paddr) -> Self {
+    pub(in crate::mm) unsafe fn restore(paddr: Paddr) -> Self {
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
@@ -118,7 +118,7 @@ impl<M: PageMeta> Page<M> {
     /// # Safety
     ///
     /// The safety requirements are the same as [`Page::restore`].
-    pub(in crate::vm) unsafe fn clone_restore(paddr: &Paddr) -> Self {
+    pub(in crate::mm) unsafe fn clone_restore(paddr: &Paddr) -> Self {
         let vaddr = mapping::page_to_meta::<PagingConsts>(*paddr);
         let ptr = vaddr as *const MetaSlot;
 
@@ -158,7 +158,7 @@ impl<M: PageMeta> Page<M> {
     /// # Safety
     ///
     /// The caller should be sure that the page is exclusively owned.
-    pub(in crate::vm) unsafe fn meta_mut(&mut self) -> &mut M {
+    pub(in crate::mm) unsafe fn meta_mut(&mut self) -> &mut M {
         unsafe { &mut *(self.ptr as *mut M) }
     }
 

@@ -2,7 +2,7 @@
 
 use core::ops::Range;
 
-use aster_frame::vm::{VmFrame, VmIo};
+use aster_frame::mm::{Frame, VmIo};
 use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 
@@ -68,7 +68,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     }
 
     /// commit a page at specific offset
-    pub fn commit_page(&self, offset: usize) -> Result<VmFrame> {
+    pub fn commit_page(&self, offset: usize) -> Result<Frame> {
         self.check_rights(Rights::WRITE)?;
         self.0.commit_page(offset, false)
     }

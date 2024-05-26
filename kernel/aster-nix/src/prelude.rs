@@ -14,8 +14,8 @@ pub(crate) use alloc::{
 pub(crate) use core::{any::Any, ffi::CStr, fmt::Debug};
 
 pub(crate) use aster_frame::{
+    mm::{Vaddr, PAGE_SIZE},
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
-    vm::{Vaddr, PAGE_SIZE},
 };
 pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;

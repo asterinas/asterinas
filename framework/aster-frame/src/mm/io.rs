@@ -9,7 +9,7 @@ use pod::Pod;
 use crate::prelude::*;
 
 /// A trait that enables reading/writing data from/to a VM object,
-/// e.g., `VmSpace`, `VmFrameVec`, and `VmFrame`.
+/// e.g., `VmSpace`, `VmFrameVec`, and `Frame`.
 ///
 /// # Concurrency
 ///

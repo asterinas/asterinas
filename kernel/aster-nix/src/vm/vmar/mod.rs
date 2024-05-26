@@ -11,7 +11,7 @@ pub mod vm_mapping;
 use core::{cmp::min, ops::Range};
 
 use align_ext::AlignExt;
-use aster_frame::vm::{VmSpace, MAX_USERSPACE_VADDR};
+use aster_frame::mm::{VmSpace, MAX_USERSPACE_VADDR};
 use aster_rights::Rights;
 
 use self::{
@@ -39,15 +39,6 @@ use crate::{prelude::*, vm::perms::VmPerms};
 ///
 /// VMARs are implemented with two flavors of capabilities:
 /// the dynamic one (`Vmar<Rights>`) and the static one (`Vmar<R: TRights>).
-///
-/// # Implementation
-///
-/// `Vmar` provides high-level APIs for address space management by wrapping
-/// around its low-level counterpart `_frame::vm::VmFrames`.
-/// Compared with `VmFrames`,
-/// `Vmar` is easier to use (by offering more powerful APIs) and
-/// harder to misuse (thanks to its nature of being capability).
-///
 pub struct Vmar<R = Rights>(Arc<Vmar_>, R);
 
 pub trait VmarRightsOp {

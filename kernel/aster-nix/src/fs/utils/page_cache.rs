@@ -3,7 +3,7 @@
 use core::ops::Range;
 
 use aster_block::bio::{BioStatus, BioWaiter};
-use aster_frame::vm::{VmAllocOptions, VmFrame};
+use aster_frame::mm::{Frame, VmAllocOptions};
 use aster_rights::Full;
 use lru::LruCache;
 
@@ -151,7 +151,7 @@ impl Debug for PageCacheManager {
 }
 
 impl Pager for PageCacheManager {
-    fn commit_page(&self, idx: usize) -> Result<VmFrame> {
+    fn commit_page(&self, idx: usize) -> Result<Frame> {
         if let Some(page) = self.pages.lock().get(&idx) {
             return Ok(page.frame.clone());
         }
@@ -202,7 +202,7 @@ impl Pager for PageCacheManager {
 
 #[derive(Debug)]
 struct Page {
-    frame: VmFrame,
+    frame: Frame,
     state: PageState,
 }
 
@@ -223,7 +223,7 @@ impl Page {
         })
     }
 
-    pub fn frame(&self) -> &VmFrame {
+    pub fn frame(&self) -> &Frame {
         &self.frame
     }
 
@@ -252,16 +252,16 @@ enum PageState {
 /// This trait represents the backend for the page cache.
 pub trait PageCacheBackend: Sync + Send {
     /// Reads a page from the backend asynchronously.
-    fn read_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter>;
+    fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter>;
     /// Writes a page to the backend asynchronously.
-    fn write_page(&self, idx: usize, frame: &VmFrame) -> Result<BioWaiter>;
+    fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter>;
     /// Returns the number of pages in the backend.
     fn npages(&self) -> usize;
 }
 
 impl dyn PageCacheBackend {
     /// Reads a page from the backend synchronously.
-    fn read_page_sync(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+    fn read_page_sync(&self, idx: usize, frame: &Frame) -> Result<()> {
         let waiter = self.read_page(idx, frame)?;
         match waiter.wait() {
             Some(BioStatus::Complete) => Ok(()),
@@ -269,7 +269,7 @@ impl dyn PageCacheBackend {
         }
     }
     /// Writes a page to the backend synchronously.
-    fn write_page_sync(&self, idx: usize, frame: &VmFrame) -> Result<()> {
+    fn write_page_sync(&self, idx: usize, frame: &Frame) -> Result<()> {
         let waiter = self.write_page(idx, frame)?;
         match waiter.wait() {
             Some(BioStatus::Complete) => Ok(()),

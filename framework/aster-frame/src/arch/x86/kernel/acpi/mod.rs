@@ -15,8 +15,8 @@ use spin::Once;
 
 use crate::{
     boot::{self, BootloaderAcpiArg},
+    mm::paddr_to_vaddr,
     sync::SpinLock,
-    vm::paddr_to_vaddr,
 };
 
 /// RSDP information, key is the signature, value is the virtual address of the signature

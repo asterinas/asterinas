@@ -11,11 +11,11 @@ use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr
 use crate::arch::tdx_guest;
 use crate::{
     arch::iommu,
-    vm::{
+    mm::{
         dma::{dma_type, Daddr, DmaType},
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
         page_prop::CachePolicy,
-        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
+        HasPaddr, Paddr, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 
@@ -32,7 +32,7 @@ pub struct DmaCoherent {
 
 #[derive(Debug)]
 struct DmaCoherentInner {
-    vm_segment: VmSegment,
+    vm_segment: Segment,
     start_daddr: Daddr,
     is_cache_coherent: bool,
 }
@@ -47,7 +47,7 @@ impl DmaCoherent {
     ///
     /// The method fails if any part of the given VM segment
     /// already belongs to a DMA mapping.
-    pub fn map(vm_segment: VmSegment, is_cache_coherent: bool) -> Result<Self, DmaError> {
+    pub fn map(vm_segment: Segment, is_cache_coherent: bool) -> Result<Self, DmaError> {
         let frame_count = vm_segment.nframes();
         let start_paddr = vm_segment.start_paddr();
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
@@ -109,7 +109,7 @@ impl HasDaddr for DmaCoherent {
 }
 
 impl Deref for DmaCoherent {
-    type Target = VmSegment;
+    type Target = Segment;
     fn deref(&self) -> &Self::Target {
         &self.inner.vm_segment
     }
@@ -190,7 +190,7 @@ mod test {
     use alloc::vec;
 
     use super::*;
-    use crate::vm::VmAllocOptions;
+    use crate::mm::VmAllocOptions;
 
     #[ktest]
     fn map_with_coherent_device() {

@@ -9,10 +9,10 @@ use aster_frame::{
         device::{MmioCommonDevice, VirtioMmioVersion},
     },
     io_mem::IoMem,
+    mm::{DmaCoherent, PAGE_SIZE},
     offset_of,
     sync::RwLock,
     trap::IrqCallbackFunction,
-    vm::{DmaCoherent, PAGE_SIZE},
 };
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};

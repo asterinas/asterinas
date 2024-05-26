@@ -15,8 +15,8 @@ use alloc::{boxed::Box, sync::Arc};
 use core::{mem::ManuallyDrop, time::Duration};
 
 use aster_frame::{
+    mm::{Frame, VmIo, PAGE_SIZE},
     sync::SpinLock,
-    vm::{VmFrame, VmIo, PAGE_SIZE},
 };
 use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
@@ -196,9 +196,9 @@ struct Vdso {
     data: SpinLock<VdsoData>,
     /// The vmo of the entire VDSO, including the library text and the VDSO data.
     vmo: Arc<Vmo>,
-    /// The `VmFrame` that contains the VDSO data. This frame is contained in and
+    /// The `Frame` that contains the VDSO data. This frame is contained in and
     /// will not be removed from the VDSO vmo.
-    data_frame: VmFrame,
+    data_frame: Frame,
 }
 
 /// A `SpinLock` for the `seq` field in `VdsoData`.

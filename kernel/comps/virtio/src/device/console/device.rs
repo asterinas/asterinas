@@ -6,9 +6,9 @@ use core::hint::spin_loop;
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use aster_frame::{
     io_mem::IoMem,
+    mm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmReader},
     sync::{RwLock, SpinLock},
     trap::TrapFrame,
-    vm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmReader},
 };
 use aster_util::safe_ptr::SafePtr;
 use log::debug;

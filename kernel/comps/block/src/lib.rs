@@ -49,7 +49,7 @@ use self::{
     prelude::*,
 };
 
-pub const BLOCK_SIZE: usize = aster_frame::vm::PAGE_SIZE;
+pub const BLOCK_SIZE: usize = aster_frame::mm::PAGE_SIZE;
 pub const SECTOR_SIZE: usize = 512;
 
 pub trait BlockDevice: Send + Sync + Any + Debug {

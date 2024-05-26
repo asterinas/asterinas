@@ -4,7 +4,7 @@
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
 
 use align_ext::AlignExt;
-use aster_frame::{task::Task, vm::VmIo};
+use aster_frame::{mm::VmIo, task::Task};
 use aster_rights::{Full, Rights};
 use xmas_elf::program::{self, ProgramHeader64};
 

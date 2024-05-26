@@ -7,7 +7,7 @@ use core::ops::Range;
 use align_ext::AlignExt;
 use aster_frame::{
     collections::xarray::{CursorMut, XArray, XMark},
-    vm::{VmAllocOptions, VmFrame, VmReader, VmWriter},
+    mm::{Frame, VmAllocOptions, VmReader, VmWriter},
 };
 use aster_rights::Rights;
 
@@ -139,8 +139,8 @@ pub(super) enum VmoMark {
     /// The VMO whose `pages` is marked as `CowVmo` may require a Copy-On-Write (COW) operation
     /// when performing a write action.
     CowVmo,
-    /// Marks used for the `VmFrame` stored within the pages marked as `CowVmo`,
-    /// `VmFrame`s marked as `ExclusivePage` are newly created through the COW mechanism
+    /// Marks used for the `Frame` stored within the pages marked as `CowVmo`,
+    /// `Frame`s marked as `ExclusivePage` are newly created through the COW mechanism
     /// and do not require further COW operations.
     ExclusivePage,
 }
@@ -154,19 +154,19 @@ impl From<VmoMark> for XMark {
     }
 }
 
-/// `Pages` is the struct that manages the `VmFrame`s stored in `Vmo_`.
+/// `Pages` is the struct that manages the `Frame`s stored in `Vmo_`.
 pub(super) enum Pages {
     /// `Pages` that cannot be resized. This kind of `Pages` will have a constant size.
-    Nonresizable(Arc<Mutex<XArray<VmFrame, VmoMark>>>, usize),
+    Nonresizable(Arc<Mutex<XArray<Frame, VmoMark>>>, usize),
     /// `Pages` that can be resized and have a variable size, and such `Pages` cannot
     /// be shared between different VMOs.
-    Resizable(Mutex<(XArray<VmFrame, VmoMark>, usize)>),
+    Resizable(Mutex<(XArray<Frame, VmoMark>, usize)>),
 }
 
 impl Pages {
     fn with<R, F>(&self, func: F) -> R
     where
-        F: FnOnce(&mut XArray<VmFrame, VmoMark>, usize) -> R,
+        F: FnOnce(&mut XArray<Frame, VmoMark>, usize) -> R,
     {
         match self {
             Self::Nonresizable(pages, size) => func(&mut pages.lock(), *size),
@@ -194,14 +194,14 @@ pub(super) struct Vmo_ {
     pages: Pages,
 }
 
-fn clone_page(page: &VmFrame) -> Result<VmFrame> {
+fn clone_page(page: &Frame) -> Result<Frame> {
     let new_page = VmAllocOptions::new(1).alloc_single()?;
     new_page.copy_from(page);
     Ok(new_page)
 }
 
 impl Vmo_ {
-    /// Prepare a new `VmFrame` for the target index in pages, returning the new page as well as
+    /// Prepare a new `Frame` for the target index in pages, returning the new page as well as
     /// whether this page needs to be marked as exclusive.
     ///
     /// Based on the type of VMO and the impending operation on the prepared page, there are 3 conditions:
@@ -216,7 +216,7 @@ impl Vmo_ {
         page_idx: usize,
         is_cow_vmo: bool,
         will_write: bool,
-    ) -> Result<(VmFrame, bool)> {
+    ) -> Result<(Frame, bool)> {
         let (page, should_mark_exclusive) = match &self.pager {
             None => {
                 // Condition 1. The new anonymous page only need to be marked as `ExclusivePage`
@@ -227,8 +227,8 @@ impl Vmo_ {
                 let page = pager.commit_page(page_idx)?;
                 // The prerequisite for triggering the COW mechanism here is that the current
                 // VMO requires COW and the prepared page is about to undergo a write operation.
-                // At this point, the `VmFrame` obtained from the pager needs to be cloned to
-                // avoid subsequent modifications affecting the content of the `VmFrame` in the pager.
+                // At this point, the `Frame` obtained from the pager needs to be cloned to
+                // avoid subsequent modifications affecting the content of the `Frame` in the pager.
                 let trigger_cow = is_cow_vmo && will_write;
                 if trigger_cow {
                     // Condition 3.
@@ -244,10 +244,10 @@ impl Vmo_ {
 
     fn commit_with_cursor(
         &self,
-        cursor: &mut CursorMut<'_, VmFrame, VmoMark>,
+        cursor: &mut CursorMut<'_, Frame, VmoMark>,
         is_cow_vmo: bool,
         will_write: bool,
-    ) -> Result<VmFrame> {
+    ) -> Result<Frame> {
         let (new_page, is_exclusive) = {
             let is_exclusive = cursor.is_marked(VmoMark::ExclusivePage);
             if let Some(committed_page) = cursor.load() {
@@ -276,7 +276,7 @@ impl Vmo_ {
     /// Commit the page corresponding to the target offset in the VMO and return that page.
     /// If the current offset has already been committed, the page will be returned directly.
     /// During the commit process, the Copy-On-Write (COW) mechanism may be triggered depending on the circumstances.
-    pub fn commit_page(&self, offset: usize, will_write: bool) -> Result<VmFrame> {
+    pub fn commit_page(&self, offset: usize, will_write: bool) -> Result<Frame> {
         let page_idx = offset / PAGE_SIZE + self.page_idx_offset;
         self.pages.with(|pages, size| {
             let is_cow_vmo = pages.is_marked(VmoMark::CowVmo);
@@ -310,7 +310,7 @@ impl Vmo_ {
         will_write: bool,
     ) -> Result<()>
     where
-        F: FnMut(VmFrame),
+        F: FnMut(Frame),
     {
         self.pages.with(|pages, size| {
             if range.end > size {
@@ -348,7 +348,7 @@ impl Vmo_ {
         let mut read_offset = offset % PAGE_SIZE;
         let mut buf_writer: VmWriter = buf.into();
 
-        let read = move |page: VmFrame| {
+        let read = move |page: Frame| {
             page.reader().skip(read_offset).read(&mut buf_writer);
             read_offset = 0;
         };
@@ -363,7 +363,7 @@ impl Vmo_ {
         let mut write_offset = offset % PAGE_SIZE;
         let mut buf_reader: VmReader = buf.into();
 
-        let write = move |page: VmFrame| {
+        let write = move |page: Frame| {
             page.writer().skip(write_offset).write(&mut buf_reader);
             write_offset = 0;
         };
@@ -518,7 +518,7 @@ impl Vmo_ {
 
     fn decommit_pages(
         &self,
-        pages: &mut XArray<VmFrame, VmoMark>,
+        pages: &mut XArray<Frame, VmoMark>,
         range: Range<usize>,
     ) -> Result<()> {
         let raw_page_idx_range = get_page_idx_range(&range);
@@ -575,7 +575,7 @@ impl<R> Vmo<R> {
         self.0.is_page_committed(page_idx)
     }
 
-    pub fn get_committed_frame(&self, page_idx: usize, write_page: bool) -> Result<VmFrame> {
+    pub fn get_committed_frame(&self, page_idx: usize, write_page: bool) -> Result<Frame> {
         self.0.commit_page(page_idx * PAGE_SIZE, write_page)
     }
 

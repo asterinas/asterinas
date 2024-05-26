@@ -4,7 +4,7 @@
 
 use trapframe::TrapFrame;
 
-use crate::{cpu::UserContext, prelude::*, task::Task, vm::VmSpace};
+use crate::{cpu::UserContext, mm::VmSpace, prelude::*, task::Task};
 
 /// A user space.
 ///

@@ -56,9 +56,9 @@ use align_ext::AlignExt;
 
 use super::{
     page_size, pte_index, Child, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
-    PageTableFrame, PageTableMode, PagingConstsTrait, PagingLevel,
+    PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel,
 };
-use crate::vm::{Paddr, PageProperty, Vaddr, VmFrame};
+use crate::mm::{Frame, Paddr, PageProperty, Vaddr};
 
 #[derive(Clone, Debug)]
 pub(crate) enum PageTableQueryResult {
@@ -68,7 +68,7 @@ pub(crate) enum PageTableQueryResult {
     },
     Mapped {
         va: Vaddr,
-        frame: VmFrame,
+        frame: Frame,
         prop: PageProperty,
     },
     MappedUntracked {
@@ -94,7 +94,7 @@ where
     [(); C::NR_LEVELS as usize]:,
 {
     pt: &'a PageTable<M, E, C>,
-    guards: [Option<PageTableFrame<E, C>>; C::NR_LEVELS as usize],
+    guards: [Option<PageTableNode<E, C>>; C::NR_LEVELS as usize],
     level: PagingLevel,       // current level
     guard_level: PagingLevel, // from guard_level to level, the locks are held
     va: Vaddr,                // current virtual address
@@ -246,7 +246,7 @@ where
         }
     }
 
-    fn cur_node(&self) -> &PageTableFrame<E, C> {
+    fn cur_node(&self) -> &PageTableNode<E, C> {
         self.guards[(C::NR_LEVELS - self.level) as usize]
             .as_ref()
             .unwrap()
@@ -267,7 +267,7 @@ where
 
     /// Tell if the current virtual range must contain untracked mappings.
     ///
-    /// In the kernel mode, this is aligned with the definition in [`crate::vm::kspace`].
+    /// In the kernel mode, this is aligned with the definition in [`crate::mm::kspace`].
     /// Only linear mappings in the kernel are considered as untracked mappings.
     ///
     /// All mappings in the user mode are tracked. And all mappings in the IOMMU
@@ -275,7 +275,7 @@ where
     fn in_untracked_range(&self) -> bool {
         TypeId::of::<M>() == TypeId::of::<crate::arch::iommu::DeviceMode>()
             || TypeId::of::<M>() == TypeId::of::<KernelMode>()
-                && !crate::vm::kspace::VMALLOC_VADDR_RANGE.contains(&self.va)
+                && !crate::mm::kspace::VMALLOC_VADDR_RANGE.contains(&self.va)
     }
 }
 
@@ -385,7 +385,7 @@ where
         }
     }
 
-    /// Map the range starting from the current address to a `VmFrame`.
+    /// Map the range starting from the current address to a `Frame`.
     ///
     /// # Panic
     ///
@@ -398,7 +398,7 @@ where
     ///
     /// The caller should ensure that the virtual range being mapped does
     /// not affect kernel's memory safety.
-    pub(crate) unsafe fn map(&mut self, frame: VmFrame, prop: PageProperty) {
+    pub(crate) unsafe fn map(&mut self, frame: Frame, prop: PageProperty) {
         let end = self.0.va + frame.size();
         assert!(end <= self.0.barrier_va.end);
         debug_assert!(!self.0.in_untracked_range());
@@ -599,7 +599,7 @@ where
     /// Consume itself and leak the root guard for the caller if it locked the root level.
     ///
     /// It is useful when the caller wants to keep the root guard while the cursor should be dropped.
-    pub(super) fn leak_root_guard(mut self) -> Option<PageTableFrame<E, C>> {
+    pub(super) fn leak_root_guard(mut self) -> Option<PageTableNode<E, C>> {
         if self.0.guard_level != C::NR_LEVELS {
             return None;
         }
@@ -616,7 +616,7 @@ where
     /// This method will create a new child frame and go down to it.
     fn level_down_create(&mut self) {
         debug_assert!(self.0.level > 1);
-        let new_frame = PageTableFrame::<E, C>::alloc(self.0.level - 1);
+        let new_frame = PageTableNode::<E, C>::alloc(self.0.level - 1);
         let idx = self.0.cur_idx();
         let untracked = self.0.in_untracked_range();
         self.cur_node_mut()
@@ -640,7 +640,7 @@ where
         self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_frame.lock());
     }
 
-    fn cur_node_mut(&mut self) -> &mut PageTableFrame<E, C> {
+    fn cur_node_mut(&mut self) -> &mut PageTableNode<E, C> {
         self.0.guards[(C::NR_LEVELS - self.0.level) as usize]
             .as_mut()
             .unwrap()

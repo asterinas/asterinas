@@ -11,9 +11,9 @@ use aster_frame::{
         BusProbeError,
     },
     io_mem::IoMem,
+    mm::DmaCoherent,
     offset_of,
     trap::IrqCallbackFunction,
-    vm::DmaCoherent,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::{info, warn};

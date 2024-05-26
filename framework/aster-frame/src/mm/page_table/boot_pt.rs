@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use super::{pte_index, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
-    vm::{
+    mm::{
         paddr_to_vaddr, page::allocator::FRAME_ALLOCATOR, PageProperty, PagingConstsTrait, Vaddr,
         PAGE_SIZE,
     },
@@ -26,7 +26,7 @@ pub struct BootPageTable<
 > {
     root_pt: FrameNumber,
     // The frames allocated for this page table are not tracked with
-    // metadata [`crate::vm::frame::meta`]. Here is a record of it
+    // metadata [`crate::mm::frame::meta`]. Here is a record of it
     // for deallocation.
     frames: Vec<FrameNumber>,
     _pretend_to_use: core::marker::PhantomData<(E, C)>,
@@ -101,7 +101,7 @@ fn test_boot_pt() {
     use super::page_walk;
     use crate::{
         arch::mm::{PageTableEntry, PagingConsts},
-        vm::{CachePolicy, PageFlags, VmAllocOptions},
+        mm::{CachePolicy, PageFlags, VmAllocOptions},
     };
 
     let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();

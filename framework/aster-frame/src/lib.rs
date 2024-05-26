@@ -38,13 +38,13 @@ pub mod cpu;
 mod error;
 pub mod io_mem;
 pub mod logger;
+pub mod mm;
 pub mod panicking;
 pub mod prelude;
 pub mod sync;
 pub mod task;
 pub mod trap;
 pub mod user;
-pub mod vm;
 
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
@@ -64,20 +64,20 @@ pub fn init() {
         td_info.attributes
     );
 
-    vm::heap_allocator::init();
+    mm::heap_allocator::init();
 
     boot::init();
 
-    vm::page::allocator::init();
-    let mut boot_pt = vm::get_boot_pt();
-    let meta_pages = vm::init_page_meta(&mut boot_pt);
-    vm::misc_init();
+    mm::page::allocator::init();
+    let mut boot_pt = mm::get_boot_pt();
+    let meta_pages = mm::init_page_meta(&mut boot_pt);
+    mm::misc_init();
 
     trap::init();
     arch::after_all_init();
     bus::init();
 
-    vm::kspace::init_kernel_page_table(boot_pt, meta_pages);
+    mm::kspace::init_kernel_page_table(boot_pt, meta_pages);
 
     invoke_ffi_init_funcs();
 }

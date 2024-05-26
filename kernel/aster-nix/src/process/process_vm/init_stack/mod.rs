@@ -17,7 +17,7 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use aster_frame::vm::{VmIo, MAX_USERSPACE_VADDR};
+use aster_frame::mm::{VmIo, MAX_USERSPACE_VADDR};
 use aster_rights::{Full, Rights};
 
 use self::aux_vec::{AuxKey, AuxVec};

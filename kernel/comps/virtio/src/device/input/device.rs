@@ -10,10 +10,10 @@ use core::{fmt::Debug, iter, mem};
 
 use aster_frame::{
     io_mem::IoMem,
+    mm::{DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmIo, PAGE_SIZE},
     offset_of,
     sync::{RwLock, SpinLock},
     trap::TrapFrame,
-    vm::{DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmIo, PAGE_SIZE},
 };
 use aster_input::{
     key::{Key, KeyStatus},

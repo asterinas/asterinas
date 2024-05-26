@@ -9,8 +9,8 @@ use alloc::{
 use core::ops::Range;
 
 use aster_frame::{
+    mm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmReader, VmWriter, PAGE_SIZE},
     sync::{RwLock, SpinLock},
-    vm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmReader, VmWriter, PAGE_SIZE},
 };
 use bitvec::{array::BitArray, prelude::Lsb0};
 use ktest::ktest;

@@ -15,7 +15,7 @@ use crate::{
         memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    vm::kspace::paddr_to_vaddr,
+    mm::kspace::paddr_to_vaddr,
 };
 
 global_asm!(include_str!("header.S"));

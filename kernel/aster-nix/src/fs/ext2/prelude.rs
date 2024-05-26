@@ -12,8 +12,8 @@ pub(super) use aster_block::{
     BlockDevice, BLOCK_SIZE,
 };
 pub(super) use aster_frame::{
+    mm::{Frame, Segment, VmAllocOptions, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
-    vm::{VmAllocOptions, VmFrame, VmIo, VmSegment},
 };
 pub(super) use aster_rights::Full;
 pub(super) use static_assertions::const_assert;

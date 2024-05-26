@@ -4,8 +4,8 @@ use core::sync::atomic::Ordering;
 
 use aster_frame::{
     cpu::UserContext,
+    mm::VmIo,
     user::{UserContextApi, UserSpace},
-    vm::VmIo,
 };
 use aster_rights::Full;
 

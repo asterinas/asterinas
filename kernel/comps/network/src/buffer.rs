@@ -4,8 +4,8 @@ use alloc::{collections::LinkedList, sync::Arc};
 
 use align_ext::AlignExt;
 use aster_frame::{
+    mm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmReader, VmWriter, PAGE_SIZE},
     sync::SpinLock,
-    vm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmReader, VmWriter, PAGE_SIZE},
 };
 use pod::Pod;
 use spin::Once;

@@ -28,7 +28,7 @@ use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, panic, sync::atom
 use super::{nr_subpage_per_huge, page_size, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
-    vm::{
+    mm::{
         paddr_to_vaddr,
         page::{
             allocator::FRAME_ALLOCATOR,
@@ -36,7 +36,7 @@ use crate::{
             Page,
         },
         page_prop::PageProperty,
-        Paddr, PagingConstsTrait, PagingLevel, VmFrame, PAGE_SIZE,
+        Frame, Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
     },
 };
 
@@ -47,9 +47,9 @@ use crate::{
 /// the page table frame and subsequent children will be freed.
 ///
 /// Only the CPU or a PTE can access a page table frame using a raw handle. To access the page
-/// table frame from the kernel code, use the handle [`PageTableFrame`].
+/// table frame from the kernel code, use the handle [`PageTableNode`].
 #[derive(Debug)]
-pub(super) struct RawPageTableFrame<E: PageTableEntryTrait, C: PagingConstsTrait>
+pub(super) struct RawPageTableNode<E: PageTableEntryTrait, C: PagingConstsTrait>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -58,7 +58,7 @@ where
     _phantom: PhantomData<(E, C)>,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> RawPageTableFrame<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> RawPageTableNode<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -67,7 +67,7 @@ where
     }
 
     /// Convert a raw handle to an accessible handle by pertaining the lock.
-    pub(super) fn lock(self) -> PageTableFrame<E, C> {
+    pub(super) fn lock(self) -> PageTableNode<E, C> {
         let page = unsafe { Page::<PageTablePageMeta<E, C>>::restore(self.paddr()) };
         debug_assert!(page.meta().level == self.level);
         // Acquire the lock.
@@ -81,7 +81,7 @@ where
         }
         // Prevent dropping the handle.
         let _ = ManuallyDrop::new(self);
-        PageTableFrame::<E, C> { page }
+        PageTableNode::<E, C> { page }
     }
 
     /// Create a copy of the handle.
@@ -116,7 +116,7 @@ where
 
         use crate::{
             arch::mm::{activate_page_table, current_page_table_paddr},
-            vm::CachePolicy,
+            mm::CachePolicy,
         };
 
         debug_assert_eq!(self.level, PagingConsts::NR_LEVELS);
@@ -137,7 +137,7 @@ where
 
         // Decrement the reference count of the last activated page table.
 
-        // Boot page tables are not tracked with [`PageTableFrame`], but
+        // Boot page tables are not tracked with [`PageTableNode`], but
         // all page tables after the boot stage are tracked.
         //
         // TODO: the `cpu_local` implementation currently is underpowered,
@@ -158,7 +158,7 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for RawPageTableFrame<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for RawPageTableNode<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -175,7 +175,7 @@ where
 /// table frame has no references. You can set the page table frame as a child of another
 /// page table frame.
 #[derive(Debug)]
-pub(super) struct PageTableFrame<
+pub(super) struct PageTableNode<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > where
@@ -190,14 +190,14 @@ pub(super) enum Child<E: PageTableEntryTrait = PageTableEntry, C: PagingConstsTr
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    PageTable(RawPageTableFrame<E, C>),
-    Frame(VmFrame),
+    PageTable(RawPageTableNode<E, C>),
+    Frame(Frame),
     /// Frames not tracked by handles.
     Untracked(Paddr),
     None,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableFrame<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -227,12 +227,12 @@ where
     }
 
     /// Convert the handle into a raw handle to be stored in a PTE or CPU.
-    pub(super) fn into_raw(self) -> RawPageTableFrame<E, C> {
+    pub(super) fn into_raw(self) -> RawPageTableNode<E, C> {
         let level = self.level();
         let raw = self.page.paddr();
         self.page.meta().lock.store(0, Ordering::Release);
         core::mem::forget(self);
-        RawPageTableFrame {
+        RawPageTableNode {
             raw,
             level,
             _phantom: PhantomData,
@@ -240,9 +240,9 @@ where
     }
 
     /// Get a raw handle while still preserving the original handle.
-    pub(super) fn clone_raw(&self) -> RawPageTableFrame<E, C> {
+    pub(super) fn clone_raw(&self) -> RawPageTableNode<E, C> {
         core::mem::forget(self.page.clone());
-        RawPageTableFrame {
+        RawPageTableNode {
             raw: self.page.paddr(),
             level: self.level(),
             _phantom: PhantomData,
@@ -261,7 +261,7 @@ where
                 core::mem::forget(unsafe {
                     Page::<PageTablePageMeta<E, C>>::clone_restore(&paddr)
                 });
-                Child::PageTable(RawPageTableFrame {
+                Child::PageTable(RawPageTableNode {
                     raw: paddr,
                     level: self.level() - 1,
                     _phantom: PhantomData,
@@ -269,7 +269,7 @@ where
             } else if tracked {
                 let page = unsafe { Page::<FrameMeta>::restore(paddr) };
                 core::mem::forget(page.clone());
-                Child::Frame(VmFrame { page })
+                Child::Frame(Frame { page })
             } else {
                 Child::Untracked(paddr)
             }
@@ -335,7 +335,7 @@ where
     pub(super) fn set_child_pt(
         &mut self,
         idx: usize,
-        pt: RawPageTableFrame<E, C>,
+        pt: RawPageTableNode<E, C>,
         in_untracked_range: bool,
     ) {
         // They should be ensured by the cursor.
@@ -348,7 +348,7 @@ where
     }
 
     /// Map a frame at a given index.
-    pub(super) fn set_child_frame(&mut self, idx: usize, frame: VmFrame, prop: PageProperty) {
+    pub(super) fn set_child_frame(&mut self, idx: usize, frame: Frame, prop: PageProperty) {
         // They should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert_eq!(frame.level(), self.level());
@@ -391,7 +391,7 @@ where
             panic!("`split_untracked_huge` not called on an untracked huge page");
         };
         let prop = self.read_pte_prop(idx);
-        let mut new_frame = PageTableFrame::<E, C>::alloc(self.level() - 1);
+        let mut new_frame = PageTableNode::<E, C>::alloc(self.level() - 1);
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(self.level() - 1);
             unsafe { new_frame.set_child_untracked(i, small_pa, prop) };
@@ -467,7 +467,7 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableFrame<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableNode<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {

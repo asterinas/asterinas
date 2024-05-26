@@ -17,7 +17,7 @@ use crate::{
             ACPI_TABLES,
         },
     },
-    vm::paddr_to_vaddr,
+    mm::paddr_to_vaddr,
 };
 
 #[derive(Debug)]

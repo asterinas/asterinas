@@ -8,7 +8,7 @@ use super::{
     Page,
 };
 use crate::{
-    vm::{
+    mm::{
         io::{VmIo, VmReader, VmWriter},
         paddr_to_vaddr, HasPaddr, Paddr, PagingLevel, PAGE_SIZE,
     },
@@ -17,30 +17,25 @@ use crate::{
 
 /// A handle to a page frame.
 ///
-/// The referenced page frame could either be huge or regular, which can be
-/// told by the [`VmFrame::size`] method. It is ensured that there would be
-/// only one TLB entry for such a frame if it is mapped to a virtual address
-/// and the architecture supports huge TLB entries.
-///
-/// An instance of `VmFrame` is a handle to a page frame (a physical memory
-/// page). A cloned `VmFrame` refers to the same page frame as the original.
+/// An instance of `Frame` is a handle to a page frame (a physical memory
+/// page). A cloned `Frame` refers to the same page frame as the original.
 /// As the original and cloned instances point to the same physical address,  
 /// they are treated as equal to each other. Behind the scene, a reference
 /// counter is maintained for each page frame so that when all instances of
-/// `VmFrame` that refer to the same page frame are dropped, the page frame
+/// `Frame` that refer to the same page frame are dropped, the page frame
 /// will be globally freed.
 #[derive(Debug, Clone)]
-pub struct VmFrame {
-    pub(in crate::vm) page: Page<FrameMeta>,
+pub struct Frame {
+    pub(in crate::mm) page: Page<FrameMeta>,
 }
 
-impl HasPaddr for VmFrame {
+impl HasPaddr for Frame {
     fn paddr(&self) -> Paddr {
         self.start_paddr()
     }
 }
 
-impl VmFrame {
+impl Frame {
     /// Returns the physical address of the page frame.
     pub fn start_paddr(&self) -> Paddr {
         self.page.paddr()
@@ -73,7 +68,7 @@ impl VmFrame {
         paddr_to_vaddr(self.start_paddr()) as *mut u8
     }
 
-    pub fn copy_from(&self, src: &VmFrame) {
+    pub fn copy_from(&self, src: &Frame) {
         if self.paddr() == src.paddr() {
             return;
         }
@@ -84,7 +79,7 @@ impl VmFrame {
     }
 }
 
-impl<'a> VmFrame {
+impl<'a> Frame {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
         // SAFETY: the memory of the page is contiguous and is valid during `'a`.
@@ -98,7 +93,7 @@ impl<'a> VmFrame {
     }
 }
 
-impl VmIo for VmFrame {
+impl VmIo for Frame {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
@@ -134,23 +129,23 @@ impl PageMeta for FrameMeta {
 
 use core::{marker::PhantomData, ops::Deref};
 
-/// `VmFrameRef` is a struct that can work as `&'a VmFrame`.
+/// `VmFrameRef` is a struct that can work as `&'a Frame`.
 pub struct VmFrameRef<'a> {
-    inner: ManuallyDrop<VmFrame>,
-    _marker: PhantomData<&'a VmFrame>,
+    inner: ManuallyDrop<Frame>,
+    _marker: PhantomData<&'a Frame>,
 }
 
 impl<'a> Deref for VmFrameRef<'a> {
-    type Target = VmFrame;
+    type Target = Frame;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-// SAFETY: `VmFrame` is essentially an `*const FrameMeta` that could be used as a `*const` pointer.
+// SAFETY: `Frame` is essentially an `*const FrameMeta` that could be used as a `*const` pointer.
 // The pointer is also aligned to 4.
-unsafe impl xarray::ItemEntry for VmFrame {
+unsafe impl xarray::ItemEntry for Frame {
     type Ref<'a> = VmFrameRef<'a> where Self: 'a;
 
     fn into_raw(self) -> *const () {
@@ -165,7 +160,7 @@ unsafe impl xarray::ItemEntry for VmFrame {
 
     unsafe fn raw_as_ref<'a>(raw: *const ()) -> Self::Ref<'a> {
         Self::Ref {
-            inner: ManuallyDrop::new(VmFrame::from_raw(raw)),
+            inner: ManuallyDrop::new(Frame::from_raw(raw)),
             _marker: PhantomData,
         }
     }

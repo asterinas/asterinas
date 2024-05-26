@@ -13,11 +13,11 @@ use crate::{
     arch::mm::{
         tlb_flush_addr_range, tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
     },
-    prelude::*,
-    vm::{
+    mm::{
         page_table::{Cursor, PageTableQueryResult as PtQr},
-        VmFrame, MAX_USERSPACE_VADDR,
+        Frame, MAX_USERSPACE_VADDR,
     },
+    prelude::*,
     Error,
 };
 
@@ -31,7 +31,7 @@ use crate::{
 ///
 /// A newly-created `VmSpace` is not backed by any physical memory pages.
 /// To provide memory pages for a `VmSpace`, one can allocate and map
-/// physical memory (`VmFrame`s) to the `VmSpace`.
+/// physical memory (`Frame`s) to the `VmSpace`.
 #[derive(Debug)]
 pub struct VmSpace {
     pt: PageTable<UserMode>,
@@ -103,7 +103,7 @@ impl VmSpace {
         };
 
         for frame in frames.into_iter() {
-            // SAFETY: mapping in the user space with `VmFrame` is safe.
+            // SAFETY: mapping in the user space with `Frame` is safe.
             unsafe {
                 cursor.map(frame, prop);
             }
@@ -299,7 +299,7 @@ pub enum VmQueryResult {
     },
     Mapped {
         va: Vaddr,
-        frame: VmFrame,
+        frame: Frame,
         prop: PageProperty,
     },
 }

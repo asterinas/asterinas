@@ -2,7 +2,7 @@
 
 use core::ops::Range;
 
-use aster_frame::vm::VmIo;
+use aster_frame::mm::VmIo;
 use aster_rights::{Dup, Rights, TRightSet, TRights};
 use aster_rights_proc::require;
 
@@ -31,8 +31,8 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// # Example
     ///
     /// ```
-    /// use aster_std::prelude::*;
-    /// use aster_std::vm::{PAGE_SIZE, Vmar, VmoOptions};
+    /// use aster_nix::prelude::*;
+    /// use aster_nix::vm::{PAGE_SIZE, Vmar, VmoOptions};
     ///
     /// let vmar = Vmar::<RightsWrapper<Full>>::new().unwrap();
     /// let vmo = VmoOptions::new(PAGE_SIZE).alloc().unwrap();

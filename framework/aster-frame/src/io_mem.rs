@@ -5,7 +5,7 @@ use core::{mem::size_of, ops::Range};
 use pod::Pod;
 
 use crate::{
-    vm::{kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
+    mm::{kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
     Error, Result,
 };
 

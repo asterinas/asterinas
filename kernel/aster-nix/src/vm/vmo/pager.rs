@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::vm::VmFrame;
+use aster_frame::mm::Frame;
 
 use crate::prelude::*;
 
@@ -26,7 +26,7 @@ pub trait Pager: Send + Sync {
     /// whatever frame that may or may not be the same as the last time.
     ///
     /// It is up to the pager to decide the range of valid indices.
-    fn commit_page(&self, idx: usize) -> Result<VmFrame>;
+    fn commit_page(&self, idx: usize) -> Result<Frame>;
 
     /// Notify the pager that the frame at a specified index has been updated.
     ///

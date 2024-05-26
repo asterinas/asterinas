@@ -12,9 +12,9 @@ use crate::arch::tdx_guest;
 use crate::{
     arch::iommu,
     error::Error,
-    vm::{
+    mm::{
         dma::{dma_type, Daddr, DmaType},
-        HasPaddr, Paddr, VmIo, VmReader, VmSegment, VmWriter, PAGE_SIZE,
+        HasPaddr, Paddr, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 
@@ -30,7 +30,7 @@ pub struct DmaStream {
 
 #[derive(Debug)]
 struct DmaStreamInner {
-    vm_segment: VmSegment,
+    vm_segment: Segment,
     start_daddr: Daddr,
     is_cache_coherent: bool,
     direction: DmaDirection,
@@ -46,11 +46,11 @@ pub enum DmaDirection {
 }
 
 impl DmaStream {
-    /// Establish DMA stream mapping for a given `VmSegment`.
+    /// Establish DMA stream mapping for a given `Segment`.
     ///
     /// The method fails if the segment already belongs to a DMA mapping.
     pub fn map(
-        vm_segment: VmSegment,
+        vm_segment: Segment,
         direction: DmaDirection,
         is_cache_coherent: bool,
     ) -> Result<Self, DmaError> {
@@ -104,7 +104,7 @@ impl DmaStream {
     /// after the DMA mapping is established because
     /// there is a chance that the device is updating
     /// the memory. Do this at your own risk.
-    pub fn vm_segment(&self) -> &VmSegment {
+    pub fn vm_segment(&self) -> &Segment {
         &self.inner.vm_segment
     }
 
@@ -294,7 +294,7 @@ mod test {
     use alloc::vec;
 
     use super::*;
-    use crate::vm::VmAllocOptions;
+    use crate::mm::VmAllocOptions;
 
     #[ktest]
     fn streaming_map() {

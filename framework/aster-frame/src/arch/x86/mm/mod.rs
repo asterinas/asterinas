@@ -6,7 +6,7 @@ use core::ops::Range;
 use pod::Pod;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
-use crate::vm::{
+use crate::mm::{
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
     page_table::PageTableEntryTrait,
     Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,

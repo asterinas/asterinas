@@ -3,26 +3,26 @@
 use alloc::{vec, vec::Vec};
 
 use crate::{
-    vm::{VmFrame, VmIo, VmReader, VmWriter, PAGE_SIZE},
+    mm::{Frame, VmIo, VmReader, VmWriter, PAGE_SIZE},
     Error, Result,
 };
 
 /// A collection of base page frames (regular physical memory pages).
 ///
-/// For the most parts, `VmFrameVec` is like `Vec<VmFrame>`. But the
+/// For the most parts, `VmFrameVec` is like `Vec<Frame>`. But the
 /// implementation may or may not be based on `Vec`. Having a dedicated
 /// type to represent a series of page frames is convenient because,
 /// more often than not, one needs to operate on a batch of frames rather
 /// a single frame.
 #[derive(Debug, Clone)]
-pub struct VmFrameVec(pub(crate) Vec<VmFrame>);
+pub struct VmFrameVec(pub(crate) Vec<Frame>);
 
 impl VmFrameVec {
-    pub fn get(&self, index: usize) -> Option<&VmFrame> {
+    pub fn get(&self, index: usize) -> Option<&Frame> {
         self.0.get(index)
     }
 
-    /// returns an empty VmFrame vec
+    /// returns an empty Frame vec
     pub fn empty() -> Self {
         Self(Vec::new())
     }
@@ -32,17 +32,17 @@ impl VmFrameVec {
     }
 
     /// Pushs a new frame to the collection.
-    pub fn push(&mut self, new_frame: VmFrame) {
+    pub fn push(&mut self, new_frame: Frame) {
         self.0.push(new_frame);
     }
 
     /// Pop a frame from the collection.
-    pub fn pop(&mut self) -> Option<VmFrame> {
+    pub fn pop(&mut self) -> Option<Frame> {
         self.0.pop()
     }
 
     /// Removes a frame at a position.
-    pub fn remove(&mut self, at: usize) -> VmFrame {
+    pub fn remove(&mut self, at: usize) -> Frame {
         self.0.remove(at)
     }
 
@@ -63,7 +63,7 @@ impl VmFrameVec {
     }
 
     /// Returns an iterator
-    pub fn iter(&self) -> core::slice::Iter<'_, VmFrame> {
+    pub fn iter(&self) -> core::slice::Iter<'_, Frame> {
         self.0.iter()
     }
 
@@ -84,13 +84,13 @@ impl VmFrameVec {
         self.0.len() * PAGE_SIZE
     }
 
-    pub fn from_one_frame(frame: VmFrame) -> Self {
+    pub fn from_one_frame(frame: Frame) -> Self {
         Self(vec![frame])
     }
 }
 
 impl IntoIterator for VmFrameVec {
-    type Item = VmFrame;
+    type Item = Frame;
 
     type IntoIter = alloc::vec::IntoIter<Self::Item>;
 
@@ -154,7 +154,7 @@ impl<'a> FrameVecIter<'a> {
 }
 
 impl<'a> Iterator for FrameVecIter<'a> {
-    type Item = &'a VmFrame;
+    type Item = &'a Frame;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current >= self.frames.0.len() {

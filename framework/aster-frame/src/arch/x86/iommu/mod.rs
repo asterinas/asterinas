@@ -13,8 +13,8 @@ use spin::Once;
 use crate::{
     arch::iommu::context_table::RootTable,
     bus::pci::PciDeviceLocation,
+    mm::{dma::Daddr, page_table::PageTableError, Paddr, PageTable},
     sync::Mutex,
-    vm::{dma::Daddr, page_table::PageTableError, Paddr, PageTable},
 };
 
 #[derive(Debug)]
