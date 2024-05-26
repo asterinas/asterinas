@@ -7,12 +7,12 @@
 //!
 //! ```text
 //! +-+ <- the highest used address (0xffff_ffff_ffff_0000)
-//! | |         For the kernel code, 1 GiB. Mapped frames are tracked with handles.
+//! | |         For the kernel code, 1 GiB. Mapped frames are untracked.
 //! +-+ <- 0xffff_ffff_8000_0000
 //! | |
 //! | |         Unused hole.
-//! +-+ <- 0xffff_e200_0000_0000
-//! | |         For frame metadata, 2 TiB. Mapped frames are tracked with handles.
+//! +-+ <- 0xffff_e100_0000_0000
+//! | |         For frame metadata, 1 TiB. Mapped frames are untracked.
 //! +-+ <- 0xffff_e000_0000_0000
 //! | |
 //! | |         For vm alloc/io mappings, 32 TiB.
@@ -34,26 +34,23 @@
 //! 39 bits or 57 bits, the memory space just adjust porportionally.
 
 use alloc::vec::Vec;
-use core::{mem::size_of, ops::Range};
+use core::ops::Range;
 
 use align_ext::AlignExt;
+use log::info;
 use spin::Once;
 
 use super::{
-    frame::{
-        allocator::FRAME_ALLOCATOR,
-        meta::{self, FrameMeta, FrameType},
-    },
     nr_subpage_per_huge,
+    page::{
+        meta::{mapping, KernelMeta},
+        Page,
+    },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-    page_size,
     page_table::{boot_pt::BootPageTable, KernelMode, PageTable},
-    FrameMetaRef, MemoryRegionType, Paddr, PagingConstsTrait, Vaddr, VmFrame, PAGE_SIZE,
+    MemoryRegionType, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
 };
-use crate::{
-    arch::mm::{PageTableEntry, PagingConsts},
-    sync::SpinLock,
-};
+use crate::arch::mm::{PageTableEntry, PagingConsts};
 
 /// The shortest supported address width is 39 bits. And the literal
 /// values are written for 48 bits address width. Adjust the values
@@ -77,11 +74,13 @@ pub fn kernel_loaded_offset() -> usize {
 
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
 
-pub(in crate::vm) const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e200_0000_0000 << ADDR_WIDTH_SHIFT;
-pub(in crate::vm) const FRAME_METADATA_BASE_VADDR: Vaddr =
-    0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e100_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub(in crate::vm) const FRAME_METADATA_RANGE: Range<Vaddr> =
+    FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
 const VMALLOC_BASE_VADDR: Vaddr = 0xffff_c000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
 
 /// The base address of the linear mapping of all physical
 /// memory in the kernel address space.
@@ -94,9 +93,6 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
     pa + LINEAR_MAPPING_BASE_VADDR
 }
 
-/// This is for destructing the boot page table.
-static BOOT_PAGE_TABLE: SpinLock<Option<BootPageTable<PageTableEntry, PagingConsts>>> =
-    SpinLock::new(None);
 pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingConsts>> =
     Once::new();
 
@@ -108,22 +104,14 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 ///
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
-pub fn init_kernel_page_table() {
-    let regions = crate::boot::memory_regions();
-    let phys_mem_cap = {
-        let mut end = 0;
-        for r in regions {
-            end = end.max(r.base() + r.len());
-        }
-        end.align_up(PAGE_SIZE)
-    };
+pub fn init_kernel_page_table(
+    boot_pt: BootPageTable<PageTableEntry, PagingConsts>,
+    meta_pages: Vec<Range<Paddr>>,
+) {
+    info!("Initializing the kernel page table");
 
-    // The kernel page table should be built afther the metadata pages are initialized.
-    let (boot_pt, meta_frames) = init_boot_page_table_and_page_meta(phys_mem_cap);
-    // Move it to the global static to prolong it's life.
-    // There's identical mapping in it so we can't drop it and activate the kernel page table
-    // immediately in this function.
-    *BOOT_PAGE_TABLE.lock() = Some(boot_pt);
+    let regions = crate::boot::memory_regions();
+    let phys_mem_cap = regions.iter().map(|r| r.base() + r.len()).max().unwrap();
 
     // Starting to initialize the kernel page table.
     let kpt = PageTable::<KernelMode>::empty();
@@ -151,18 +139,18 @@ pub fn init_kernel_page_table() {
 
     // Map the metadata pages.
     {
-        let start_va = meta::mapping::page_to_meta::<PagingConsts>(0, 1);
-        let from = start_va..start_va + meta_frames.len() * PAGE_SIZE;
+        let start_va = mapping::page_to_meta::<PagingConsts>(0);
+        let from = start_va..start_va + meta_pages.len() * PAGE_SIZE;
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
-        for frame in meta_frames {
+        for frame in meta_pages {
             // SAFETY: we are doing the metadata mappings for the kernel.
             unsafe {
-                cursor.map(frame, prop);
+                cursor.map_pa(&frame, prop);
             }
         }
     }
@@ -202,90 +190,22 @@ pub fn init_kernel_page_table() {
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
-            let mut meta = unsafe { FrameMetaRef::from_raw(frame_paddr, 1) };
-            // SAFETY: we are marking the type of the frame containing loaded kernel code.
-            unsafe {
-                meta.deref_mut().frame_type = FrameType::KernelCode;
-            }
-            let frame = VmFrame { meta };
+            let page = Page::<KernelMeta>::from_unused(frame_paddr).unwrap();
+            let paddr = page.forget();
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
-                cursor.map(frame, prop);
+                cursor.map_pa(&(paddr..paddr + PAGE_SIZE), prop);
             }
         }
     }
 
-    KERNEL_PAGE_TABLE.call_once(|| kpt);
-}
-
-pub fn activate_kernel_page_table() {
     // SAFETY: the kernel page table is initialized properly.
     unsafe {
-        KERNEL_PAGE_TABLE.get().unwrap().activate_unchecked();
+        kpt.activate_unchecked();
         crate::arch::mm::tlb_flush_all_including_global();
     }
-    // Drop the boot page table.
-    *BOOT_PAGE_TABLE.lock() = None;
-}
 
-/// Initialize the boot page table and the page metadata for all physical memories.
-/// The boot page table created should be dropped after the kernel page table is initialized.
-///
-/// It returns the metadata frames for each level of the page table.
-fn init_boot_page_table_and_page_meta(
-    phys_mem_cap: usize,
-) -> (BootPageTable<PageTableEntry, PagingConsts>, Vec<VmFrame>) {
-    let mut boot_pt = {
-        let cur_pt_paddr = crate::arch::mm::current_page_table_paddr();
-        BootPageTable::from_anonymous_boot_pt(cur_pt_paddr)
-    };
+    KERNEL_PAGE_TABLE.call_once(|| kpt);
 
-    let num_pages = phys_mem_cap / page_size::<PagingConsts>(1);
-    let num_meta_pages = (num_pages * size_of::<FrameMeta>()).div_ceil(PAGE_SIZE);
-    let meta_frames = alloc_meta_frames(num_meta_pages);
-
-    // Map the metadata pages.
-    for (i, frame_paddr) in meta_frames.iter().enumerate() {
-        let vaddr = meta::mapping::page_to_meta::<PagingConsts>(0, 1) + i * PAGE_SIZE;
-        let prop = PageProperty {
-            flags: PageFlags::RW,
-            cache: CachePolicy::Writeback,
-            priv_flags: PrivilegedPageFlags::GLOBAL,
-        };
-        boot_pt.map_base_page(vaddr, frame_paddr / PAGE_SIZE, prop);
-    }
-
-    // Now the metadata pages are mapped, we can initialize the metadata and
-    // turn meta frame addresses into `VmFrame`s.
-    let meta_frames = meta_frames
-        .into_iter()
-        .map(|paddr| {
-            // SAFETY: the frame is allocated but not initialized thus not referenced.
-            let mut frame = unsafe { VmFrame::from_free_raw(paddr, 1) };
-            // SAFETY: this is the only reference to the frame so it's exclusive.
-            unsafe { frame.meta.deref_mut().frame_type = FrameType::Meta };
-            frame
-        })
-        .collect();
-
-    (boot_pt, meta_frames)
-}
-
-fn alloc_meta_frames(nframes: usize) -> Vec<Paddr> {
-    let mut meta_pages = Vec::new();
-    let start_frame = FRAME_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(nframes)
-        .unwrap()
-        * PAGE_SIZE;
-    // Zero them out as initialization.
-    let vaddr = paddr_to_vaddr(start_frame) as *mut u8;
-    unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };
-    for i in 0..nframes {
-        let paddr = start_frame + i * PAGE_SIZE;
-        meta_pages.push(paddr);
-    }
-    meta_pages
+    drop(boot_pt);
 }

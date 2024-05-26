@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{frame::allocator, PagingLevel, VmFrame, VmFrameVec, VmSegment};
+use super::{page::allocator, VmFrame, VmFrameVec, VmSegment};
 use crate::{prelude::*, Error};
 
 /// Options for allocating physical memory pages (or frames).
@@ -11,7 +11,6 @@ use crate::{prelude::*, Error};
 /// the code and data segments of the OS kernel, the stack and heap
 /// allocated for the OS kernel.
 pub struct VmAllocOptions {
-    level: PagingLevel,
     nframes: usize,
     is_contiguous: bool,
     uninit: bool,
@@ -21,17 +20,10 @@ impl VmAllocOptions {
     /// Creates new options for allocating the specified number of frames.
     pub fn new(nframes: usize) -> Self {
         Self {
-            level: 1,
             nframes,
             is_contiguous: false,
             uninit: false,
         }
-    }
-
-    /// Sets the paging level for the allocated frames.
-    pub fn level(&mut self, level: PagingLevel) -> &mut Self {
-        self.level = level;
-        self
     }
 
     /// Sets whether the allocated frames should be contiguous.
@@ -60,7 +52,7 @@ impl VmAllocOptions {
         } else {
             let mut frame_list = Vec::new();
             for _ in 0..self.nframes {
-                frame_list.push(allocator::alloc_single(self.level).ok_or(Error::NoMemory)?);
+                frame_list.push(allocator::alloc_single().ok_or(Error::NoMemory)?);
             }
             VmFrameVec(frame_list)
         };
@@ -79,7 +71,7 @@ impl VmAllocOptions {
             return Err(Error::InvalidArgs);
         }
 
-        let frame = allocator::alloc_single(self.level).ok_or(Error::NoMemory)?;
+        let frame = allocator::alloc_single().ok_or(Error::NoMemory)?;
         if !self.uninit {
             frame.writer().fill(0);
         }

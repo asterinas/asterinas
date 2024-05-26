@@ -54,6 +54,7 @@ pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
 pub fn init() {
     arch::before_all_init();
     logger::init();
+
     #[cfg(feature = "intel_tdx")]
     let td_info = init_tdx().unwrap();
     #[cfg(feature = "intel_tdx")]
@@ -62,13 +63,22 @@ pub fn init() {
         td_info.gpaw,
         td_info.attributes
     );
+
     vm::heap_allocator::init();
+
     boot::init();
-    vm::init();
+
+    vm::page::allocator::init();
+    let mut boot_pt = vm::get_boot_pt();
+    let meta_pages = vm::init_page_meta(&mut boot_pt);
+    vm::misc_init();
+
     trap::init();
     arch::after_all_init();
     bus::init();
-    vm::kspace::activate_kernel_page_table();
+
+    vm::kspace::init_kernel_page_table(boot_pt, meta_pages);
+
     invoke_ffi_init_funcs();
 }
 
