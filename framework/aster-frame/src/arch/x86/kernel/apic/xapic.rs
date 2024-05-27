@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::mem::size_of;
+
 use spin::Once;
 use x86::apic::xapic;
 
 use super::ApicTimer;
-use crate::{sync::Mutex, vm};
+use crate::{device::dispatcher::io_mem::IO_MEM_DISPATCHER, sync::Mutex, vm};
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 const IA32_APIC_BASE_MSR_BSP: u32 = 0x100; // Processor is a BSP
@@ -24,7 +26,9 @@ impl XApic {
         if !Self::has_xapic() {
             return None;
         }
-        let address = vm::paddr_to_vaddr(get_apic_base_address());
+        let base_addr = get_apic_base_address();
+        IO_MEM_DISPATCHER.remove(base_addr..(base_addr + size_of::<[u32; 256]>()));
+        let address = vm::paddr_to_vaddr(base_addr);
         let region: &'static mut [u32] = unsafe { &mut *(address as *mut [u32; 256]) };
         Some(Self {
             mmio_region: region,

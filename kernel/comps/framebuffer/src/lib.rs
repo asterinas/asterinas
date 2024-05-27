@@ -15,7 +15,7 @@ use core::{
 
 use aster_frame::{
     boot,
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     sync::SpinLock,
     vm::{VmIo, PAGE_SIZE},
 };

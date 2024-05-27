@@ -12,6 +12,7 @@ use super::{
 pub mod msix;
 pub mod vendor;
 
+#[allow(unused)]
 #[derive(Debug)]
 pub struct Capability {
     id: u8,

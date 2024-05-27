@@ -9,7 +9,7 @@ use core::{
 };
 
 use aster_frame::{
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     offset_of,
     vm::{DmaCoherent, VmAllocOptions},
 };

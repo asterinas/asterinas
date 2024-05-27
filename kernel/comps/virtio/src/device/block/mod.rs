@@ -2,7 +2,7 @@
 
 pub mod device;
 
-use aster_frame::io_mem::IoMem;
+use aster_frame::device::io_mem::IoMem;
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;

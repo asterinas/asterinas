@@ -4,7 +4,7 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
 use aster_frame::{
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     sync::RwLock,
     trap::{IrqCallbackFunction, IrqLine, TrapFrame},
 };

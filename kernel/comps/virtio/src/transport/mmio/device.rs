@@ -8,7 +8,7 @@ use aster_frame::{
         bus::MmioDevice,
         device::{MmioCommonDevice, VirtioMmioVersion},
     },
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     offset_of,
     sync::RwLock,
     trap::IrqCallbackFunction,

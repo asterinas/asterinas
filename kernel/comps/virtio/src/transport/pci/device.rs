@@ -4,16 +4,11 @@ use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
 use aster_frame::{
-    bus::{
-        pci::{
-            bus::PciDevice, capability::CapabilityData, common_device::PciCommonDevice, PciDeviceId,
-        },
-        BusProbeError,
-    },
-    io_mem::IoMem,
-    offset_of,
-    trap::IrqCallbackFunction,
+    bus::BusProbeError, device::io_mem::IoMem, offset_of, trap::IrqCallbackFunction,
     vm::DmaCoherent,
+};
+use aster_pci::{
+    bus::PciDevice, capability::CapabilityData, common_device::PciCommonDevice, PciDeviceId,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::{info, warn};

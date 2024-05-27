@@ -49,6 +49,13 @@
 //!     PCI_BUS.lock().register_driver(driver_a);
 //! }
 //! ```
+#![no_std]
+#![forbid(unsafe_code)]
+#![feature(strict_provenance)]
+#![feature(coroutines)]
+#![feature(iter_from_coroutine)]
+
+extern crate alloc;
 
 pub mod bus;
 pub mod capability;
@@ -56,14 +63,17 @@ pub mod cfg_space;
 pub mod common_device;
 mod device_info;
 
-pub use device_info::{PciDeviceId, PciDeviceLocation};
+pub use aster_frame::arch::pci::PciDeviceLocation;
+use aster_frame::sync::Mutex;
+use component::{init_component, ComponentInitError};
+pub use device_info::PciDeviceId;
 
-use self::{bus::PciBus, common_device::PciCommonDevice};
-use crate::sync::Mutex;
+use crate::{bus::PciBus, common_device::PciCommonDevice};
 
 pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
-pub(crate) fn init() {
+#[init_component]
+fn pci_init() -> Result<(), ComponentInitError> {
     let mut lock = PCI_BUS.lock();
     for location in PciDeviceLocation::all() {
         let Some(device) = PciCommonDevice::new(location) else {
@@ -71,4 +81,5 @@ pub(crate) fn init() {
         };
         lock.register_common_device(device);
     }
+    Ok(())
 }

@@ -2,15 +2,10 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use aster_frame::{
-    bus::{
-        pci::{
-            bus::{PciDevice, PciDriver},
-            common_device::PciCommonDevice,
-        },
-        BusProbeError,
-    },
-    sync::SpinLock,
+use aster_frame::{bus::BusProbeError, sync::SpinLock};
+use aster_pci::{
+    bus::{PciDevice, PciDriver},
+    common_device::PciCommonDevice,
 };
 
 use super::device::VirtioPciTransport;

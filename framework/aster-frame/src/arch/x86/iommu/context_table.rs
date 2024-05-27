@@ -8,7 +8,7 @@ use pod::Pod;
 
 use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
 use crate::{
-    bus::pci::PciDeviceLocation,
+    arch::pci::PciDeviceLocation,
     vm::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},

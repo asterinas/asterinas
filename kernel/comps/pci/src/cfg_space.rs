@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::mem::size_of;
 
+use aster_frame::{
+    arch::device::io_port::{IoPort, PortRead, PortWrite, ReadWriteAccess},
+    device::{
+        dispatcher::{io_mem::IO_MEM_DISPATCHER, io_port::IO_PORT_DISPATCHER},
+        io_mem::IoMem,
+    },
+    vm::PAGE_SIZE,
+    Error, Result,
+};
 use bitflags::bitflags;
 
 use super::PciDeviceLocation;
-use crate::{
-    arch::device::io_port::{PortRead, PortWrite},
-    io_mem::IoMem,
-    Error, Result,
-};
 
 #[repr(u16)]
 pub enum PciDeviceCommonCfgOffset {
@@ -161,13 +164,16 @@ impl MemoryBar {
         // length
         let size = !(len_encoded & !0xF).wrapping_add(1);
         let prefetchable = raw & 0b1000 != 0;
+        assert!(base % PAGE_SIZE as u64 == 0);
         // The BAR is located in I/O memory region
         Ok(MemoryBar {
             base,
             size,
             prefetchable,
             address_length,
-            io_memory: unsafe { IoMem::new((base as usize)..((base + size as u64) as usize)) },
+            io_memory: IO_MEM_DISPATCHER
+                .get((base as usize)..((base + size as u64) as usize))
+                .unwrap(),
         })
     }
 }
@@ -179,48 +185,26 @@ pub enum AddrLen {
     Bits64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct IoBar {
-    base: u32,
-    size: u32,
+    io_port: IoPort<ReadWriteAccess>,
 }
 
 impl IoBar {
     pub fn base(&self) -> u32 {
-        self.base
+        self.io_port.base() as u32
     }
 
     pub fn size(&self) -> u32 {
-        self.size
+        self.io_port.size() as u32
     }
 
     pub fn read<T: PortRead>(&self, offset: u32) -> Result<T> {
-        // Check alignment
-        if (self.base + offset) % size_of::<T>() as u32 != 0 {
-            return Err(Error::InvalidArgs);
-        }
-        // Check overflow
-        if self.size < size_of::<T>() as u32 || offset > self.size - size_of::<T>() as u32 {
-            return Err(Error::InvalidArgs);
-        }
-        // SAFETY: The range of ports accessed is within the scope managed by the IoBar and
-        // an out-of-bounds check is performed.
-        unsafe { Ok(T::read_from_port((self.base + offset) as u16)) }
+        self.io_port.read(offset as u16)
     }
 
     pub fn write<T: PortWrite>(&self, offset: u32, value: T) -> Result<()> {
-        // Check alignment
-        if (self.base + offset) % size_of::<T>() as u32 != 0 {
-            return Err(Error::InvalidArgs);
-        }
-        // Check overflow
-        if size_of::<T>() as u32 > self.size || offset > self.size - size_of::<T>() as u32 {
-            return Err(Error::InvalidArgs);
-        }
-        // SAFETY: The range of ports accessed is within the scope managed by the IoBar and
-        // an out-of-bounds check is performed.
-        unsafe { T::write_to_port((self.base + offset) as u16, value) }
-        Ok(())
+        self.io_port.write(offset as u16, value)
     }
 
     fn new(location: &PciDeviceLocation, index: u8) -> Result<Self> {
@@ -230,9 +214,13 @@ impl IoBar {
         let len_encoded = location.read32(offset);
         location.write32(offset, raw);
         let len = !(len_encoded & !0x3) + 1;
+        let base = raw & !0x3;
         Ok(Self {
-            base: raw & !0x3,
-            size: len,
+            io_port: IO_PORT_DISPATCHER
+                .get()
+                .unwrap()
+                .get(base as u16, len as u16)
+                .unwrap(),
         })
     }
 }

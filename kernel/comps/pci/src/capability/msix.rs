@@ -4,17 +4,13 @@ use alloc::{sync::Arc, vec::Vec};
 
 #[cfg(feature = "intel_tdx")]
 use ::tdx_guest::tdx_is_enabled;
+use aster_frame::{arch::pci::PciDeviceLocation, trap::IrqLine, vm::VmIo};
 
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    bus::pci::{
-        cfg_space::{Bar, Command, MemoryBar},
-        common_device::PciCommonDevice,
-        device_info::PciDeviceLocation,
-    },
-    trap::IrqLine,
-    vm::VmIo,
+    cfg_space::{Bar, Command, MemoryBar},
+    common_device::PciCommonDevice,
 };
 
 /// MSI-X capability. It will set the BAR space it uses to be hidden.
@@ -131,7 +127,7 @@ impl CapabilityMsixData {
         dev.set_command(dev.command() | Command::INTERRUPT_DISABLE | Command::BUS_MASTER);
 
         let mut irqs = Vec::with_capacity(table_size as usize);
-        for i in 0..table_size {
+        for _ in 0..table_size {
             irqs.push(None);
         }
 
@@ -163,7 +159,7 @@ impl CapabilityMsixData {
                 &(handle.num() as u32),
             )
             .unwrap();
-        let old_handles = core::mem::replace(&mut self.irqs[index as usize], Some(handle));
+        let _ = core::mem::replace(&mut self.irqs[index as usize], Some(handle));
         // Enable this msix vector
         self.table_bar
             .io_mem()
@@ -174,8 +170,4 @@ impl CapabilityMsixData {
     pub fn irq_mut(&mut self, index: usize) -> Option<&mut IrqLine> {
         self.irqs[index].as_mut()
     }
-}
-
-fn set_bit(origin_value: u16, offset: usize, set: bool) -> u16 {
-    (origin_value & (!(1 << offset))) | ((set as u16) << offset)
 }

@@ -12,6 +12,7 @@ members = [
     "framework/libs/ktest-proc-macro",
     "kernel",
     "kernel/aster-nix",
+    "kernel/comps/pci",
     "kernel/comps/block",
     "kernel/comps/console",
     "kernel/comps/framebuffer",

@@ -9,9 +9,9 @@ use log::info;
 use second_stage::{DeviceMode, PageTableEntry, PagingConsts};
 use spin::Once;
 
+use super::pci::PciDeviceLocation;
 use crate::{
     arch::iommu::context_table::RootTable,
-    bus::pci::PciDeviceLocation,
     sync::Mutex,
     vm::{dma::Daddr, page_table::PageTableError, Paddr, PageTable},
 };

@@ -8,7 +8,7 @@ use aster_block::{
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
 use aster_frame::{
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     sync::SpinLock,
     trap::TrapFrame,
     vm::{DmaDirection, DmaStream, DmaStreamSlice, VmAllocOptions, VmIo},

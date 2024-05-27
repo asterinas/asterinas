@@ -9,7 +9,7 @@ use alloc::{
 use core::{fmt::Debug, iter, mem};
 
 use aster_frame::{
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     offset_of,
     sync::{RwLock, SpinLock},
     trap::TrapFrame,

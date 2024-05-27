@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{
-    bus::pci::{common_device::PciCommonDevice, device_info::PciDeviceLocation},
-    Error, Result,
-};
+use aster_frame::{arch::pci::PciDeviceLocation, Error, Result};
+
+use crate::common_device::PciCommonDevice;
 
 /// Vendor specific capability. Users can access this capability area at will,
 /// except for the PCI configuration space which cannot be accessed at will through this structure.

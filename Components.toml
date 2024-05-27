@@ -1,6 +1,7 @@
 # template
 [components]
 nix = { name = "aster-nix" }
+pci = { name = "aster-pci" }
 virtio = { name = "aster-virtio" }
 input = { name = "aster-input" }
 block = { name = "aster-block" }

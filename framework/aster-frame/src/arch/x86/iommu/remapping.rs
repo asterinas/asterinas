@@ -17,7 +17,8 @@ use crate::{
             ACPI_TABLES,
         },
     },
-    vm::paddr_to_vaddr,
+    device::dispatcher::io_mem::IO_MEM_DISPATCHER,
+    vm::{paddr_to_vaddr, PAGE_SIZE},
 };
 
 #[derive(Debug)]
@@ -55,6 +56,7 @@ impl RemappingRegisters {
             addr
         };
 
+        IO_MEM_DISPATCHER.remove(base_address as usize..(base_address as usize + PAGE_SIZE));
         let vaddr: usize = paddr_to_vaddr(base_address as usize);
         // SAFETY: All offsets and sizes are strictly adhered to in the manual, and the base address is obtained from Drhd.
         let mut remapping_reg = unsafe {
