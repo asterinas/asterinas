@@ -4,5 +4,3 @@
 extern crate xarray as xarray_crate;
 
 pub use xarray_crate::{Cursor, CursorMut, XArray, XMark};
-
-pub use crate::mm::page::VmFrameRef;

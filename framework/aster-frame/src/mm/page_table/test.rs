@@ -114,7 +114,7 @@ fn test_user_copy_on_write() {
 
 type Qr = PageTableQueryResult;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct BasePagingConsts {}
 
 impl PagingConstsTrait for BasePagingConsts {
@@ -158,7 +158,7 @@ fn test_base_protect_query() {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct VeryHugePagingConsts {}
 
 impl PagingConstsTrait for VeryHugePagingConsts {

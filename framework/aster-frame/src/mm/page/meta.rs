@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Metadata management of pages.
+//!
+//! You can picture a globally shared, static, gigantic arrary of metadata initialized for each page.
+//! An entry in the array is called a `MetaSlot`, which contains the metadata of a page. There would
+//! be a dedicated small "heap" space in each slot for dynamic metadata. You can store anything as the
+//! metadata of a page as long as it's [`Sync`].
+//!
+//! In the implemetation level, the slots are placed in the metadata pages mapped to a certain virtual
+//! address. It is faster, simpler, safer and more versatile compared with an actual static array
+//! implementation.
 
 pub mod mapping {
     //! The metadata of each physical page is linear mapped to fixed virtual addresses
@@ -53,8 +62,8 @@ use crate::{
 /// Represents the usage of a page.
 #[repr(u8)]
 pub enum PageUsage {
-    // The zero variant is reserved for the unused type. A page can only
-    // be designated for one of the Other purposes if it is unused.
+    // The zero variant is reserved for the unused type. Only an unused page
+    // can be designated for one of the other purposes.
     Unused = 0,
     /// The page is reserved or unusable. The kernel should not touch it.
     Reserved = 1,
@@ -76,14 +85,11 @@ pub enum PageUsage {
 pub(super) struct MetaSlot {
     /// The metadata of the page.
     ///
-    /// It is placed at the first field to save memory if the metadata end
-    /// with an alignment not fitting a `u64`.
-    ///
     /// The implementation may cast a `*const MetaSlot` to a `*const PageMeta`.
     _inner: MetaSlotInner,
     /// To store [`PageUsage`].
     pub(super) usage: AtomicU8,
-    pub(super) refcnt: AtomicU32,
+    pub(super) ref_count: AtomicU32,
 }
 
 pub(super) union MetaSlotInner {
@@ -109,7 +115,7 @@ const_assert_eq!(size_of::<MetaSlot>(), 16);
 /// If a page type needs specific drop behavior, it should specify
 /// when implementing this trait. When we drop the last handle to
 /// this page, the `on_drop` method will be called.
-pub trait PageMeta: private::Sealed + Sized {
+pub trait PageMeta: Default + Sync + private::Sealed + Sized {
     const USAGE: PageUsage;
 
     fn on_drop(page: &mut Page<Self>);
@@ -123,13 +129,13 @@ mod private {
 
 use private::Sealed;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[repr(C)]
 pub struct FrameMeta {}
 
 impl Sealed for FrameMeta {}
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[repr(C)]
 pub struct SegmentHeadMeta {
     /// Length of the segment in bytes.
@@ -144,9 +150,9 @@ impl From<Page<FrameMeta>> for Page<SegmentHeadMeta> {
         // and a frame handle. However, `Vmo` holds a frame handle while block IO needs a
         // segment handle from the same page.
         // A segment cannot be mapped. So we have to introduce this enforcement soon:
-        // assert_eq!(page.ref_count(), 1);
+        // assert_eq!(page.count(), 1);
         unsafe {
-            let mut head = Page::<SegmentHeadMeta>::restore(page.forget());
+            let mut head = Page::<SegmentHeadMeta>::from_raw(page.into_raw());
             (*head.ptr)
                 .usage
                 .store(PageUsage::SegmentHead as u8, Ordering::Relaxed);
@@ -156,7 +162,7 @@ impl From<Page<FrameMeta>> for Page<SegmentHeadMeta> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[repr(C)]
 pub struct PageTablePageMeta<E: PageTableEntryTrait, C: PagingConstsTrait>
 where
@@ -173,6 +179,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sealed for PageTablePageMeta<
 {
 }
 
+#[derive(Debug, Default)]
 #[repr(C)]
 pub struct MetaPageMeta {}
 
@@ -184,6 +191,7 @@ impl PageMeta for MetaPageMeta {
     }
 }
 
+#[derive(Debug, Default)]
 #[repr(C)]
 pub struct KernelMeta {}
 
@@ -232,7 +240,7 @@ pub(crate) fn init(boot_pt: &mut BootPageTable) -> Vec<Range<Paddr>> {
     meta_pages
         .into_iter()
         .map(|paddr| {
-            let pa = Page::<MetaPageMeta>::from_unused(paddr).unwrap().forget();
+            let pa = Page::<MetaPageMeta>::from_unused(paddr).into_raw();
             pa..pa + PAGE_SIZE
         })
         .collect()

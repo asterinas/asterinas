@@ -4,7 +4,7 @@ use core::mem::ManuallyDrop;
 
 use super::{
     allocator,
-    meta::{FrameMeta, PageMeta, PageUsage},
+    meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
     Page,
 };
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
     Error, Result,
 };
 
-/// A handle to a page frame.
+/// A handle to a physical memory page of untyped memory.
 ///
 /// An instance of `Frame` is a handle to a page frame (a physical memory
 /// page). A cloned `Frame` refers to the same page frame as the original.
@@ -129,13 +129,15 @@ impl PageMeta for FrameMeta {
 
 use core::{marker::PhantomData, ops::Deref};
 
-/// `VmFrameRef` is a struct that can work as `&'a Frame`.
-pub struct VmFrameRef<'a> {
+/// `FrameRef` is a struct that can work as `&'a Frame`.
+///
+/// This is solely useful for [`crate::collections::xarray`].
+pub struct FrameRef<'a> {
     inner: ManuallyDrop<Frame>,
     _marker: PhantomData<&'a Frame>,
 }
 
-impl<'a> Deref for VmFrameRef<'a> {
+impl<'a> Deref for FrameRef<'a> {
     type Target = Frame;
 
     fn deref(&self) -> &Self::Target {
@@ -143,18 +145,23 @@ impl<'a> Deref for VmFrameRef<'a> {
     }
 }
 
-// SAFETY: `Frame` is essentially an `*const FrameMeta` that could be used as a `*const` pointer.
+// SAFETY: `Frame` is essentially an `*const MetaSlot` that could be used as a `*const` pointer.
 // The pointer is also aligned to 4.
 unsafe impl xarray::ItemEntry for Frame {
-    type Ref<'a> = VmFrameRef<'a> where Self: 'a;
+    type Ref<'a> = FrameRef<'a> where Self: 'a;
 
     fn into_raw(self) -> *const () {
-        self.page.forget() as *const ()
+        let ptr = self.page.ptr;
+        core::mem::forget(self);
+        ptr as *const ()
     }
 
     unsafe fn from_raw(raw: *const ()) -> Self {
         Self {
-            page: Page::<FrameMeta>::restore(raw as Paddr),
+            page: Page::<FrameMeta> {
+                ptr: raw as *mut MetaSlot,
+                _marker: PhantomData,
+            },
         }
     }
 

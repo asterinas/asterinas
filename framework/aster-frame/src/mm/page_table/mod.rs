@@ -322,11 +322,18 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 }
 
 /// The interface for defining architecture-specific page table entries.
-pub(crate) trait PageTableEntryTrait: Clone + Copy + Sized + Pod + Debug {
+///
+/// Note that a default PTE shoud be a PTE that points to nothing.
+pub(crate) trait PageTableEntryTrait:
+    Clone + Copy + Debug + Default + Pod + Sized + Sync
+{
     /// Create a set of new invalid page table flags that indicates an absent page.
     ///
     /// Note that currently the implementation requires an all zero PTE to be an absent PTE.
-    fn new_absent() -> Self;
+    fn new_absent() -> Self {
+        Self::default()
+    }
+
     /// If the flags are present with valid mappings.
     fn is_present(&self) -> bool;
 

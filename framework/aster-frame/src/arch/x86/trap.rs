@@ -17,12 +17,12 @@ use crate::arch::{
 use crate::{
     cpu::{CpuException, PageFaultErrorCode, PAGE_FAULT},
     cpu_local,
-    trap::call_irq_callback_functions,
-    vm::{
+    mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, PAGE_SIZE,
     },
+    trap::call_irq_callback_functions,
 };
 
 cpu_local! {

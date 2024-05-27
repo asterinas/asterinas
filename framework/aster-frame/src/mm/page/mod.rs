@@ -11,19 +11,20 @@
 //! address space of the users are backed by frames.
 
 pub(crate) mod allocator;
-pub(in crate::mm) mod meta;
-use meta::{mapping, MetaSlot, PageMeta};
 mod frame;
-pub use frame::{Frame, VmFrameRef};
-mod vm_frame_vec;
-pub use vm_frame_vec::{FrameVecIter, VmFrameVec};
+pub(in crate::mm) mod meta;
 mod segment;
+mod vm_frame_vec;
+
 use core::{
     marker::PhantomData,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
 
+pub use frame::Frame;
+use meta::{mapping, MetaSlot, PageMeta};
 pub use segment::Segment;
+pub use vm_frame_vec::{FrameVecIter, VmFrameVec};
 
 use super::PAGE_SIZE;
 use crate::mm::{paddr_to_vaddr, Paddr, PagingConsts, Vaddr};
@@ -53,8 +54,32 @@ pub enum PageHandleError {
 }
 
 impl<M: PageMeta> Page<M> {
-    /// Convert an unused page to a `Page` handle for a specific usage.
-    pub(in crate::mm) fn from_unused(paddr: Paddr) -> Result<Self, PageHandleError> {
+    /// Get a `Page` handle with a specific usage from a raw, unused page.
+    ///
+    /// If the provided physical address is invalid or not aligned, this
+    /// function will panic.
+    ///
+    /// If the provided page is already in use this function will block
+    /// until the page is released. This is a workaround since the page
+    /// allocator is decoupled from metadata management and page would be
+    /// reusable in the page allocator before resetting all metadata.
+    ///
+    /// TODO: redesign the page allocator to be aware of metadata management.
+    pub fn from_unused(paddr: Paddr) -> Self {
+        loop {
+            match Self::try_from_unused(paddr) {
+                Ok(page) => return page,
+                Err(PageHandleError::InUse) => {
+                    // Wait for the page to be released.
+                    core::hint::spin_loop();
+                }
+                Err(e) => panic!("Failed to get a page handle: {:?}", e),
+            }
+        }
+    }
+
+    /// Get a `Page` handle with a specific usage from a raw, unused page.
+    pub(in crate::mm) fn try_from_unused(paddr: Paddr) -> Result<Self, PageHandleError> {
         if paddr % PAGE_SIZE != 0 {
             return Err(PageHandleError::NotAligned);
         }
@@ -66,12 +91,17 @@ impl<M: PageMeta> Page<M> {
         let ptr = vaddr as *const MetaSlot;
 
         let usage = unsafe { &(*ptr).usage };
-        let refcnt = unsafe { &(*ptr).refcnt };
+        let get_ref_count = unsafe { &(*ptr).ref_count };
 
         usage
             .compare_exchange(0, M::USAGE as u8, Ordering::SeqCst, Ordering::Relaxed)
             .map_err(|_| PageHandleError::InUse)?;
-        refcnt.fetch_add(1, Ordering::Relaxed);
+
+        let old_get_ref_count = get_ref_count.fetch_add(1, Ordering::Relaxed);
+        debug_assert!(old_get_ref_count == 0);
+
+        // Initialize the metadata
+        unsafe { (ptr as *mut M).write(M::default()) }
 
         Ok(Self {
             ptr,
@@ -82,7 +112,11 @@ impl<M: PageMeta> Page<M> {
     /// Forget the handle to the page.
     ///
     /// This will result in the page being leaked without calling the custom dropper.
-    pub fn forget(self) -> Paddr {
+    ///
+    /// A physical address to the page is returned in case the page needs to be
+    /// restored using [`Page::from_raw`] later. This is useful when some architectural
+    /// data structures need to hold the page handle such as the page table.
+    pub(in crate::mm) fn into_raw(self) -> Paddr {
         let paddr = self.paddr();
         core::mem::forget(self);
         paddr
@@ -93,37 +127,16 @@ impl<M: PageMeta> Page<M> {
     /// # Safety
     ///
     /// The caller should only restore a `Page` that was previously forgotten using
-    /// [`Page::forget`].
+    /// [`Page::into_raw`].
     ///
     /// And the restoring operation should only be done once for a forgotten
     /// `Page`. Otherwise double-free will happen.
     ///
     /// Also, the caller ensures that the usage of the page is correct. There's
     /// no checking of the usage in this function.
-    pub(in crate::mm) unsafe fn restore(paddr: Paddr) -> Self {
+    pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
-
-        Self {
-            ptr,
-            _marker: PhantomData,
-        }
-    }
-
-    /// Clone a `Page` handle from a forgotten `Page` as a physical address.
-    ///
-    /// This is similar to [`Page::restore`], but it also increments the reference count
-    /// and the forgotten page will be still leaked unless restored later.
-    ///
-    /// # Safety
-    ///
-    /// The safety requirements are the same as [`Page::restore`].
-    pub(in crate::mm) unsafe fn clone_restore(paddr: &Paddr) -> Self {
-        let vaddr = mapping::page_to_meta::<PagingConsts>(*paddr);
-        let ptr = vaddr as *const MetaSlot;
-
-        let refcnt = unsafe { &(*ptr).refcnt };
-        refcnt.fetch_add(1, Ordering::Relaxed);
 
         Self {
             ptr,
@@ -136,7 +149,7 @@ impl<M: PageMeta> Page<M> {
         mapping::meta_to_page::<PagingConsts>(self.ptr as Vaddr)
     }
 
-    /// Get the reference count of this page.
+    /// Load the current reference count of this page.
     ///
     /// # Safety
     ///
@@ -144,8 +157,8 @@ impl<M: PageMeta> Page<M> {
     /// Another thread can change the reference count at any time, including
     /// potentially between calling this method and the action depending on the
     /// result.
-    fn ref_count(&self) -> u32 {
-        self.refcnt().load(Ordering::Relaxed)
+    pub fn count(&self) -> u32 {
+        self.get_ref_count().load(Ordering::Relaxed)
     }
 
     /// Get the metadata of this page.
@@ -162,14 +175,14 @@ impl<M: PageMeta> Page<M> {
         unsafe { &mut *(self.ptr as *mut M) }
     }
 
-    fn refcnt(&self) -> &AtomicU32 {
-        unsafe { &(*self.ptr).refcnt }
+    fn get_ref_count(&self) -> &AtomicU32 {
+        unsafe { &(*self.ptr).ref_count }
     }
 }
 
 impl<M: PageMeta> Clone for Page<M> {
     fn clone(&self) -> Self {
-        self.refcnt().fetch_add(1, Ordering::Relaxed);
+        self.get_ref_count().fetch_add(1, Ordering::Relaxed);
         Self {
             ptr: self.ptr,
             _marker: PhantomData,
@@ -179,13 +192,18 @@ impl<M: PageMeta> Clone for Page<M> {
 
 impl<M: PageMeta> Drop for Page<M> {
     fn drop(&mut self) {
-        if self.refcnt().fetch_sub(1, Ordering::Release) == 1 {
+        if self.get_ref_count().fetch_sub(1, Ordering::Release) == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             core::sync::atomic::fence(Ordering::Acquire);
             // Let the custom dropper handle the drop.
             M::on_drop(self);
-            // No handles means no usage.
+            // Drop the metadata.
+            unsafe {
+                core::ptr::drop_in_place(self.ptr as *mut M);
+            }
+            // No handles means no usage. This also releases the page as unused for further
+            // calls to `Page::from_unused`.
             unsafe { &*self.ptr }.usage.store(0, Ordering::Release);
         };
     }
