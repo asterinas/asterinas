@@ -1,1 +1,1 @@
-# General Guidlines
+# General Guidelines

@@ -38,7 +38,7 @@
 * [Code Organization]()
 * [Style Guidelines]()
     * [General Guidelines]() 
-    * [Rust Guidelines]() 
+    * [Rust Guidelines](to-contribute/style-guidelines/rust-guidelines.md) 
     * [Git Guidelines]() 
 * [Community]()
 * [Code of Conduct]()
