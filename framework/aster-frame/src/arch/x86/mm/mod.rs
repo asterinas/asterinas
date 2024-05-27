@@ -14,7 +14,7 @@ use crate::mm::{
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
@@ -87,7 +87,7 @@ pub(crate) fn tlb_flush_all_including_global() {
     }
 }
 
-#[derive(Clone, Copy, Pod)]
+#[derive(Clone, Copy, Pod, Default)]
 #[repr(C)]
 pub struct PageTableEntry(usize);
 
@@ -138,10 +138,6 @@ macro_rules! parse_flags {
 }
 
 impl PageTableEntryTrait for PageTableEntry {
-    fn new_absent() -> Self {
-        Self(0)
-    }
-
     fn is_present(&self) -> bool {
         self.0 & PageTableFlags::PRESENT.bits() != 0
     }

@@ -56,7 +56,7 @@ use aster_frame::cpu::UserContext;
 use aster_frame::prelude::*;
 use aster_frame::task::{Task, TaskOptions};
 use aster_frame::user::{ReturnReason, UserMode, UserSpace};
-use aster_frame::vm::{PageFlags, PAGE_SIZE, Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmSpace};
+use aster_frame::mm::{PageFlags, PAGE_SIZE, Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmSpace};
 
 /// The kernel's boot and initialization process is managed by Asterinas Framework.
 /// After the process is done, the kernel's execution environment

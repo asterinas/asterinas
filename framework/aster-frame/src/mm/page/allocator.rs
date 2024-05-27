@@ -22,9 +22,8 @@ pub(crate) fn alloc(nframes: usize) -> Option<VmFrameVec> {
             let mut vector = Vec::new();
             for i in 0..nframes {
                 let paddr = (start + i) * PAGE_SIZE;
-                // SAFETY: The frame index is valid.
                 let frame = Frame {
-                    page: Page::<FrameMeta>::from_unused(paddr).unwrap(),
+                    page: Page::<FrameMeta>::from_unused(paddr),
                 };
                 vector.push(frame);
             }
@@ -36,7 +35,7 @@ pub(crate) fn alloc_single() -> Option<Frame> {
     FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx| {
         let paddr = idx * PAGE_SIZE;
         Frame {
-            page: Page::<FrameMeta>::from_unused(paddr).unwrap(),
+            page: Page::<FrameMeta>::from_unused(paddr),
         }
     })
 }

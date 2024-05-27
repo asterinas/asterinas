@@ -50,7 +50,7 @@ impl Segment {
     /// The given range of page frames must not have been allocated before,
     /// as part of either a `Frame` or `Segment`.
     pub(crate) unsafe fn new(paddr: Paddr, nframes: usize) -> Self {
-        let mut head = Page::<SegmentHeadMeta>::from_unused(paddr).unwrap();
+        let mut head = Page::<SegmentHeadMeta>::from_unused(paddr);
         head.meta_mut().seg_len = (nframes * PAGE_SIZE) as u64;
         Self {
             head_page: head,

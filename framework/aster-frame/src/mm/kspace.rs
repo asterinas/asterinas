@@ -190,8 +190,8 @@ pub fn init_kernel_page_table(
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
-            let page = Page::<KernelMeta>::from_unused(frame_paddr).unwrap();
-            let paddr = page.forget();
+            let page = Page::<KernelMeta>::from_unused(frame_paddr);
+            let paddr = page.into_raw();
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
                 cursor.map_pa(&(paddr..paddr + PAGE_SIZE), prop);

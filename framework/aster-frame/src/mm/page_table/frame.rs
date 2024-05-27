@@ -68,7 +68,7 @@ where
 
     /// Convert a raw handle to an accessible handle by pertaining the lock.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::restore(self.paddr()) };
+        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
         debug_assert!(page.meta().level == self.level);
         // Acquire the lock.
         while page
@@ -86,7 +86,10 @@ where
 
     /// Create a copy of the handle.
     pub(super) fn copy_handle(&self) -> Self {
-        core::mem::forget(unsafe { Page::<PageTablePageMeta<E, C>>::clone_restore(&self.paddr()) });
+        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
+        let inc_ref = page.clone();
+        core::mem::forget(page);
+        core::mem::forget(inc_ref);
         Self {
             raw: self.raw,
             level: self.level,
@@ -95,7 +98,7 @@ where
     }
 
     pub(super) fn nr_valid_children(&self) -> u16 {
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::restore(self.paddr()) };
+        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
         page.meta().nr_children
     }
 
@@ -131,7 +134,7 @@ where
 
         // Increment the reference count of the current page table.
 
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::restore(self.paddr()) };
+        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
         core::mem::forget(page.clone());
         core::mem::forget(page);
 
@@ -163,7 +166,7 @@ where
     [(); C::NR_LEVELS as usize]:,
 {
     fn drop(&mut self) {
-        drop(unsafe { Page::<PageTablePageMeta<E, C>>::restore(self.paddr()) });
+        drop(unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) });
     }
 }
 
@@ -208,7 +211,7 @@ where
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel) -> Self {
         let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap() * PAGE_SIZE;
-        let mut page = Page::<PageTablePageMeta<E, C>>::from_unused(frame).unwrap();
+        let mut page = Page::<PageTablePageMeta<E, C>>::from_unused(frame);
         // The lock is initialized as held.
         page.meta().lock.store(1, Ordering::Relaxed);
 
@@ -258,16 +261,17 @@ where
         } else {
             let paddr = pte.paddr();
             if !pte.is_last(self.level()) {
-                core::mem::forget(unsafe {
-                    Page::<PageTablePageMeta<E, C>>::clone_restore(&paddr)
-                });
+                let node = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(paddr) };
+                let inc_ref = node.clone();
+                core::mem::forget(node);
+                core::mem::forget(inc_ref);
                 Child::PageTable(RawPageTableNode {
                     raw: paddr,
                     level: self.level() - 1,
                     _phantom: PhantomData,
                 })
             } else if tracked {
-                let page = unsafe { Page::<FrameMeta>::restore(paddr) };
+                let page = unsafe { Page::<FrameMeta>::from_raw(paddr) };
                 core::mem::forget(page.clone());
                 Child::Frame(Frame { page })
             } else {
@@ -446,10 +450,10 @@ where
             let paddr = existing_pte.paddr();
             if !existing_pte.is_last(self.level()) {
                 // This is a page table.
-                drop(unsafe { Page::<PageTablePageMeta<E, C>>::restore(paddr) });
+                drop(unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(paddr) });
             } else if !in_untracked_range {
                 // This is a frame.
-                drop(unsafe { Page::<FrameMeta>::restore(paddr) });
+                drop(unsafe { Page::<FrameMeta>::from_raw(paddr) });
             }
 
             if pte.is_none() {
@@ -497,11 +501,11 @@ where
                 // Just restore the handle and drop the handle.
                 if !pte.is_last(level) {
                     // This is a page table.
-                    drop(unsafe { Page::<Self>::restore(pte.paddr()) });
+                    drop(unsafe { Page::<Self>::from_raw(pte.paddr()) });
                 } else {
                     // This is a frame. You cannot drop a page table node that maps to
                     // untracked frames. This must be verified.
-                    drop(unsafe { Page::<FrameMeta>::restore(pte.paddr()) });
+                    drop(unsafe { Page::<FrameMeta>::from_raw(pte.paddr()) });
                 }
             }
         }

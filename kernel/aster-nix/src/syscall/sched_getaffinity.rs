@@ -32,7 +32,7 @@ pub fn sys_sched_getaffinity(
             // Placeholder for future implementation.
         }
         _ => {
-            match process_table::get_process(&pid) {
+            match process_table::get_process(pid) {
                 Some(_process) => { /* Placeholder if process-specific logic needed */ }
                 None => return Err(Error::with_message(Errno::ESRCH, "process does not exist")),
             }

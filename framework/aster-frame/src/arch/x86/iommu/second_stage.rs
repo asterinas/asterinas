@@ -20,7 +20,7 @@ impl PageTableMode for DeviceMode {
     const VADDR_RANGE: Range<Vaddr> = 0..0x1_0000_0000;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
@@ -62,7 +62,7 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
 pub struct PageTableEntry(u64);
 
@@ -84,10 +84,6 @@ impl PageTableEntryTrait for PageTableEntry {
 
     fn paddr(&self) -> Paddr {
         (self.0 & Self::PHYS_MASK) as usize
-    }
-
-    fn new_absent() -> Self {
-        Self(0)
     }
 
     fn is_present(&self) -> bool {
