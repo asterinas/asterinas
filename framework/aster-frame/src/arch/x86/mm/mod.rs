@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-mod util;
-
 use alloc::fmt;
 use core::ops::Range;
 
 use pod::Pod;
-pub use util::{fast_copy, fast_copy_nonoverlapping};
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::vm::{
