@@ -208,6 +208,13 @@ fn build_kernel_elf(
         "-C panic=unwind",
     ]);
 
+    if matches!(arch, Arch::X86_64) {
+        // This is a workaround for <https://github.com/asterinas/asterinas/issues/839>.
+        // It makes running on Intel CPUs after Ivy Bridge (2012) faster, but much slower
+        // on older CPUs.
+        rustflags.push("-C target-feature=+ermsb");
+    }
+
     let mut command = cargo();
     command.env_remove("RUSTUP_TOOLCHAIN");
     command.env("RUSTFLAGS", rustflags.join(" "));
