@@ -10,6 +10,7 @@ TESTS ?= \
 	chmod_test \
 	chown_test \
 	chroot_test \
+	creat_test \
 	epoll_test \
 	eventfd_test \
 	fsync_test \

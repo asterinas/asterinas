@@ -56,7 +56,7 @@ use crate::syscall::{
     mprotect::sys_mprotect,
     munmap::sys_munmap,
     nanosleep::{sys_clock_nanosleep, sys_nanosleep},
-    open::{sys_open, sys_openat},
+    open::{sys_creat, sys_open, sys_openat},
     pause::sys_pause,
     pipe::{sys_pipe, sys_pipe2},
     poll::sys_poll,
@@ -172,6 +172,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_RENAME = 82            => sys_rename(args[..2]);
     SYS_MKDIR = 83             => sys_mkdir(args[..2]);
     SYS_RMDIR = 84             => sys_rmdir(args[..1]);
+    SYS_CREAT = 85             => sys_creat(args[..2]);
     SYS_LINK = 86              => sys_link(args[..2]);
     SYS_UNLINK = 87            => sys_unlink(args[..1]);
     SYS_SYMLINK = 88           => sys_symlink(args[..2]);
