@@ -216,7 +216,7 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
     // Do the mapping
     let page_table = KERNEL_PAGE_TABLE
         .get()
-        .expect("The kernel page table is not initialized when kernel page fault happens");
+        .expect("kernel page fault: the kernel page table is not initialized");
     let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
@@ -225,7 +225,6 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
     //    mapping of physical memory.
     // 2. We map the address to the correct physical page with the correct flags, where the
     //    correctness follows the semantics of the direct mapping of physical memory.
-    // Do the mapping
     unsafe {
         page_table
             .map(
@@ -234,10 +233,7 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
                 PageProperty {
                     flags: PageFlags::RW,
                     cache: CachePolicy::Uncacheable,
-                    #[cfg(not(feature = "intel_tdx"))]
                     priv_flags: PrivFlags::GLOBAL,
-                    #[cfg(feature = "intel_tdx")]
-                    priv_flags: PrivFlags::SHARED | PrivFlags::GLOBAL,
                 },
             )
             .unwrap();
