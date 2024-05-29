@@ -154,7 +154,7 @@ pub mod test {
         let key = get_key(string1, "=").unwrap();
         assert_eq!(key.as_str(), "init");
 
-        let string2 = "-m 2G";
+        let string2 = "-m 8G";
         let key = get_key(string2, " ").unwrap();
         assert_eq!(key.as_str(), "-m");
 
@@ -170,7 +170,7 @@ pub mod test {
     fn test_apply_kv_array() {
         let qemu_args = &[
             "-enable-kvm",
-            "-m 2G",
+            "-m 8G",
             "-device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off",
             "-device virtio-keyboard-pci,disable-legacy=on,disable-modern=off",
         ];

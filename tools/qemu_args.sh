@@ -14,7 +14,7 @@ echo "[$1] Forwarded QEMU guest port: $RAND_PORT_NUM1->22; $RAND_PORT_NUM2->8080
 COMMON_QEMU_ARGS="\
     -cpu Icelake-Server,+x2apic \
     -smp ${SMP:-1} \
-    -m ${MEM:-2G} \
+    -m ${MEM:-8G} \
     --no-reboot \
     -nographic \
     -display none \
