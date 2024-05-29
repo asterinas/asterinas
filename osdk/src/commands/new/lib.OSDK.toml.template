@@ -8,7 +8,7 @@ args = """\
     -machine q35,kernel-irqchip=split \
     -cpu Icelake-Server,+x2apic \
     --no-reboot \
-    -m 2G \
+    -m 8G \
     -smp 1 \
     -nographic \
     -serial chardev:mux \
