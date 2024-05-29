@@ -114,7 +114,12 @@ impl FsResolver {
             Err(e) => return Err(e),
         };
 
+        if creation_flags.contains(CreationFlags::O_TRUNC) {
+            dentry.resize(0)?;
+        }
+
         let inode_handle = InodeHandle::new(dentry, access_mode, status_flags)?;
+
         Ok(inode_handle)
     }
 

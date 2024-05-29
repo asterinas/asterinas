@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements 130 out of the 310+ system calls
+Asterinas implements 138 out of the 310+ system calls
 provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |
@@ -49,15 +49,15 @@ provided by Linux on x86-64 architecture.
 | 26      | msync            | ❌              |
 | 27      | mincore          | ❌              |
 | 28      | madvise          | ✅              |
-| 29      | shmget           | ✅              |
-| 30      | shmat            | ✅              |
-| 31      | shmctl           | ✅              |
+| 29      | shmget           | ❌              |
+| 30      | shmat            | ❌              |
+| 31      | shmctl           | ❌              |
 | 32      | dup              | ✅              |
 | 33      | dup2             | ✅              |
 | 34      | pause            | ✅              |
 | 35      | nanosleep        | ✅              |
 | 36      | getitimer        | ❌              |
-| 37      | alarm            | ❌              |
+| 37      | alarm            | ✅              |
 | 38      | setitimer        | ❌              |
 | 39      | getpid           | ✅              |
 | 40      | sendfile         | ❌              |
@@ -96,8 +96,8 @@ provided by Linux on x86-64 architecture.
 | 73      | flock            | ❌              |
 | 74      | fsync            | ✅              |
 | 75      | fdatasync        | ❌              |
-| 76      | truncate         | ❌              |
-| 77      | ftruncate        | ❌              |
+| 76      | truncate         | ✅              |
+| 77      | ftruncate        | ✅              |
 | 78      | getdents         | ❌              |
 | 79      | getcwd           | ✅              |
 | 80      | chdir            | ✅              |
@@ -105,7 +105,7 @@ provided by Linux on x86-64 architecture.
 | 82      | rename           | ✅              |
 | 83      | mkdir            | ✅              |
 | 84      | rmdir            | ✅              |
-| 85      | creat            | ❌              |
+| 85      | creat            | ✅              |
 | 86      | link             | ✅              |
 | 87      | unlink           | ✅              |
 | 88      | symlink          | ✅              |
@@ -160,8 +160,8 @@ provided by Linux on x86-64 architecture.
 | 137     | statfs           | ✅              |
 | 138     | fstatfs          | ✅              |
 | 139     | sysfs            | ❌              |
-| 140     | getpriority      | ❌              |
-| 141     | setpriority      | ❌              |
+| 140     | getpriority      | ✅              |
+| 141     | setpriority      | ✅              |
 | 142     | sched_setparam   | ❌              |
 | 143     | sched_getparam   | ❌              |
 | 144     | sched_setscheduler | ❌            |
