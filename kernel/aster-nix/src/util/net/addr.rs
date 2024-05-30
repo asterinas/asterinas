@@ -3,9 +3,14 @@
 use crate::{
     net::{
         iface::Ipv4Address,
-        socket::{unix::UnixSocketAddr, SocketAddr},
+        socket::{
+            netlink::{GroupIdSet, NetlinkSocketAddr},
+            unix::UnixSocketAddr,
+            SocketAddr,
+        },
     },
     prelude::*,
+    process::Pid,
     util::{read_bytes_from_user, read_val_from_user, write_val_to_user},
 };
 
@@ -52,6 +57,11 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
             let sock_addr_in6: CSocketAddrInet6 = read_val_from_user(addr)?;
             todo!()
         }
+        CSocketAddrFamily::AF_NETLINK => {
+            debug_assert!(addr_len >= core::mem::size_of::<CSocketAddrNetlink>());
+            let sock_addr_nl: CSocketAddrNetlink = read_val_from_user(addr)?;
+            SocketAddr::from(sock_addr_nl)
+        }
         _ => {
             return_errno_with_message!(Errno::EAFNOSUPPORT, "cannot support address for the family")
         }
@@ -83,6 +93,13 @@ pub fn write_socket_addr_to_user(
             let write_size = core::mem::size_of::<CSocketAddrInet>();
             debug_assert!(max_len >= write_size);
             write_val_to_user(dest, &sock_addr_in)?;
+            write_size as i32
+        }
+        SocketAddr::Netlink(netlink_addr) => {
+            let sock_addr_nl = CSocketAddrNetlink::from(*netlink_addr);
+            let write_size = core::mem::size_of::<CSocketAddrNetlink>();
+            debug_assert!(max_len >= write_size);
+            write_val_to_user(dest, &sock_addr_nl)?;
             write_size as i32
         }
         SocketAddr::IPv6 => todo!(),
@@ -207,6 +224,31 @@ pub struct CSocketAddrInet6 {
     sin6_scope_id: u32,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct CSocketAddrNetlink {
+    /// Always SaFamily::AF_NETLINK
+    nl_family: u16,
+    /// Zero padding
+    nl_pad: u16,
+    /// Port ID. Uses the same type as process ID
+    nl_pid: Pid,
+    /// Multicast groups mask
+    nl_groups: u32,
+}
+
+impl CSocketAddrNetlink {
+    fn new(nl_pid: Pid, nl_groups: u32) -> Self {
+        let nl_family = CSocketAddrFamily::AF_NETLINK as u16;
+        Self {
+            nl_family,
+            nl_pad: 0,
+            nl_pid,
+            nl_groups,
+        }
+    }
+}
+
 /// Address family. The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
@@ -287,6 +329,23 @@ impl From<CSocketAddrInet> for SocketAddr {
         let port = value.sin_port_t.as_u16();
         let addr = Ipv4Address::from(value.sin_addr);
         SocketAddr::IPv4(addr, port)
+    }
+}
+
+impl From<CSocketAddrNetlink> for SocketAddr {
+    fn from(value: CSocketAddrNetlink) -> Self {
+        let port = value.nl_pid;
+        let groups = GroupIdSet::new(value.nl_groups);
+        let addr = NetlinkSocketAddr::new(port, groups);
+        SocketAddr::Netlink(addr)
+    }
+}
+
+impl From<NetlinkSocketAddr> for CSocketAddrNetlink {
+    fn from(value: NetlinkSocketAddr) -> Self {
+        let port = value.port();
+        let groups = value.groups().as_u32();
+        CSocketAddrNetlink::new(port, groups)
     }
 }
 
