@@ -71,6 +71,7 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Default + Sync + 'static {
     const ADDRESS_WIDTH: usize;
 }
 
+/// The page size
 pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
 
 /// The page size at a given level.
@@ -105,7 +106,7 @@ pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE;
 /// architectures.
 pub(crate) const KERNEL_VADDR_RANGE: Range<Vaddr> = 0xffff_8000_0000_0000..0xffff_ffff_ffff_0000;
 
-/// Get physical address trait
+/// Gets physical address trait
 pub trait HasPaddr {
     /// Returns the physical address.
     fn paddr(&self) -> Paddr;

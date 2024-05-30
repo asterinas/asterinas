@@ -23,14 +23,14 @@ pub mod mapping {
     use super::MetaSlot;
     use crate::mm::{kspace::FRAME_METADATA_RANGE, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
 
-    /// Convert a physical address of a base page to the virtual address of the metadata slot.
+    /// Converts a physical address of a base page to the virtual address of the metadata slot.
     pub const fn page_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
         let base = FRAME_METADATA_RANGE.start;
         let offset = paddr / PAGE_SIZE;
         base + offset * size_of::<MetaSlot>()
     }
 
-    /// Convert a virtual address of the metadata slot to the physical address of the page.
+    /// Converts a virtual address of the metadata slot to the physical address of the page.
     pub const fn meta_to_page<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
         let base = FRAME_METADATA_RANGE.start;
         let offset = (vaddr - base) / size_of::<MetaSlot>();
@@ -188,7 +188,7 @@ impl PageMeta for KernelMeta {
 
 // ======== End of all the specific metadata structures definitions ===========
 
-/// Initialize the metadata of all physical pages.
+/// Initializes the metadata of all physical pages.
 ///
 /// The function returns a list of `Page`s containing the metadata.
 pub(crate) fn init(boot_pt: &mut BootPageTable) -> Vec<Range<Paddr>> {

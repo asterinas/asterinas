@@ -66,13 +66,15 @@ pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
     })
 }
 
-/// call this function to switch to other task by using GLOBAL_SCHEDULER
+/// Calls this function to switch to other task by using GLOBAL_SCHEDULER
 pub fn schedule() {
     if let Some(task) = fetch_task() {
         switch_to_task(task);
     }
 }
 
+/// Preempts the `task`.
+///
 /// TODO: This interface of this method is error prone.
 /// The method takes an argument for the current task to optimize its efficiency,
 /// but the argument provided by the caller may not be the current task, really.
@@ -91,7 +93,7 @@ pub fn preempt(task: &Arc<Task>) {
     switch_to_task(next_task);
 }
 
-/// call this function to switch to other task
+/// Calls this function to switch to other task
 ///
 /// if current task is none, then it will use the default task context and it will not return to this function again
 ///
@@ -193,7 +195,7 @@ impl PreemptInfo {
     }
 }
 
-/// a guard for disable preempt.
+/// A guard for disable preempt.
 pub struct DisablePreemptGuard {
     // This private field prevents user from constructing values of this type directly.
     private: (),

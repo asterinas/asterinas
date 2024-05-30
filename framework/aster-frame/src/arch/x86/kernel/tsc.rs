@@ -29,7 +29,7 @@ pub fn init_tsc_freq() {
     info!("TSC frequency:{:?} Hz", tsc_freq);
 }
 
-/// Determine TSC frequency via CPUID. If the CPU does not support calculating TSC frequency by
+/// Determines TSC frequency via CPUID. If the CPU does not support calculating TSC frequency by
 /// CPUID, the function will return None. The unit of the return value is KHz.
 ///
 /// Ref: function `native_calibrate_tsc` in linux `arch/x86/kernel/tsc.c`

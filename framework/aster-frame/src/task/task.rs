@@ -27,16 +27,16 @@ pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
 
 /// Trait for manipulating the task context.
 pub trait TaskContextApi {
-    /// Set instruction pointer
+    /// Sets instruction pointer
     fn set_instruction_pointer(&mut self, ip: usize);
 
-    /// Get instruction pointer
+    /// Gets instruction pointer
     fn instruction_pointer(&self) -> usize;
 
-    /// Set stack pointer
+    /// Sets stack pointer
     fn set_stack_pointer(&mut self, sp: usize);
 
-    /// Get stack pointer
+    /// Gets stack pointer
     fn stack_pointer(&self) -> usize;
 }
 
@@ -53,7 +53,7 @@ impl KernelStack {
         })
     }
 
-    /// Generate a kernel stack with a guard page.
+    /// Generates a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
         let stack_segment =
@@ -140,7 +140,7 @@ impl Task {
         current_task().unwrap()
     }
 
-    /// get inner
+    /// Gets inner
     pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<TaskInner> {
         self.task_inner.lock_irq_disabled()
     }
@@ -275,14 +275,14 @@ impl TaskOptions {
 
     /// Sets the CPU affinity mask for the task.
     ///
-    /// The `cpu_affinity` parameter is an instance of the [`CpuSet`] struct
-    /// that represents the desired set of CPUs to run the task on.
+    /// The `cpu_affinity` parameter represents
+    /// the desired set of CPUs to run the task on.
     pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
         self.cpu_affinity = cpu_affinity;
         self
     }
 
-    /// Build a new task without running it immediately.
+    /// Builds a new task without running it immediately.
     pub fn build(self) -> Result<Arc<Task>> {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
@@ -322,7 +322,7 @@ impl TaskOptions {
         Ok(Arc::new(new_task))
     }
 
-    /// Build a new task and run it immediately.
+    /// Builds a new task and run it immediately.
     pub fn spawn(self) -> Result<Arc<Task>> {
         let task = self.build()?;
         task.run();

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Handles trap.
+
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use align_ext::AlignExt;

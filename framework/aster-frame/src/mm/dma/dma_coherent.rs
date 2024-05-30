@@ -38,14 +38,14 @@ struct DmaCoherentInner {
 }
 
 impl DmaCoherent {
-    /// Create a coherent DMA mapping backed by `vm_segment`.
+    /// Creates a coherent DMA mapping backed by `vm_segment`.
     ///
     /// The `is_cache_coherent` argument specifies whether
     /// the target device that the DMA mapping is prepared for
     /// can access the main memory in a CPU cache coherent way
     /// or not.
     ///
-    /// The method fails if any part of the given VM segment
+    /// The method fails if any part of the given `vm_segment`
     /// already belongs to a DMA mapping.
     pub fn map(vm_segment: Segment, is_cache_coherent: bool) -> Result<Self, DmaError> {
         let frame_count = vm_segment.nframes();

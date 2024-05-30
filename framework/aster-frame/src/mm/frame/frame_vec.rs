@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Page frames.
+
 use alloc::{vec, vec::Vec};
 
 use crate::{
@@ -10,7 +12,7 @@ use crate::{
 /// A collection of base page frames (regular physical memory pages).
 ///
 /// For the most parts, `FrameVec` is like `Vec<Frame>`. But the
-/// implementation may or may not be based on `Vec`. Having a dedicated
+/// implementation may or may not be based on [`Vec`]. Having a dedicated
 /// type to represent a series of page frames is convenient because,
 /// more often than not, one needs to operate on a batch of frames rather
 /// a single frame.
@@ -18,25 +20,27 @@ use crate::{
 pub struct FrameVec(pub(crate) Vec<Frame>);
 
 impl FrameVec {
+    /// Retrieves a reference to a [`Frame`] at the specified index.
     pub fn get(&self, index: usize) -> Option<&Frame> {
         self.0.get(index)
     }
 
-    /// returns an empty Frame vec
+    /// Creates an empty `FrameVec`.
     pub fn empty() -> Self {
         Self(Vec::new())
     }
 
+    /// Creates a new `FrameVec` with the specified capacity.
     pub fn new_with_capacity(capacity: usize) -> Self {
         Self(Vec::with_capacity(capacity))
     }
 
-    /// Pushs a new frame to the collection.
+    /// Pushes a new frame to the collection.
     pub fn push(&mut self, new_frame: Frame) {
         self.0.push(new_frame);
     }
 
-    /// Pop a frame from the collection.
+    /// Pops a frame from the collection.
     pub fn pop(&mut self) -> Option<Frame> {
         self.0.pop()
     }
@@ -46,13 +50,14 @@ impl FrameVec {
         self.0.remove(at)
     }
 
-    /// Append some frames.
+    /// Appends all the [`Frame`]s from `more` to the end of this collection.
+    /// and clears the frames in `more`.
     pub fn append(&mut self, more: &mut FrameVec) -> Result<()> {
         self.0.append(&mut more.0);
         Ok(())
     }
 
-    /// Truncate some frames.
+    /// Truncates the `FrameVec` to the specified length.
     ///
     /// If `new_len >= self.len()`, then this method has no effect.
     pub fn truncate(&mut self, new_len: usize) {
@@ -62,7 +67,7 @@ impl FrameVec {
         self.0.truncate(new_len)
     }
 
-    /// Returns an iterator
+    /// Returns an iterator over all frames.
     pub fn iter(&self) -> core::slice::Iter<'_, Frame> {
         self.0.iter()
     }
@@ -84,6 +89,7 @@ impl FrameVec {
         self.0.len() * PAGE_SIZE
     }
 
+    /// Creates a new `FrameVec` from a single [`Frame`].
     pub fn from_one_frame(frame: Frame) -> Self {
         Self(vec![frame])
     }
@@ -148,6 +154,7 @@ pub struct FrameVecIter<'a> {
 }
 
 impl<'a> FrameVecIter<'a> {
+    /// Creates a new `FrameVecIter` from the given [`FrameVec`].
     pub fn new(frames: &'a FrameVec) -> Self {
         Self { frames, current: 0 }
     }

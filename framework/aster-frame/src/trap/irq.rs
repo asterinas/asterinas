@@ -62,12 +62,12 @@ impl IrqLine {
         }
     }
 
-    /// Get the IRQ number.
+    /// Gets the IRQ number.
     pub fn num(&self) -> u8 {
         self.irq_num
     }
 
-    /// Register a callback that will be invoked when the IRQ is active.
+    /// Registers a callback that will be invoked when the IRQ is active.
     ///
     /// For each IRQ line, multiple callbacks may be registered.
     pub fn on_active<F>(&mut self, callback: F)
@@ -105,14 +105,16 @@ impl Drop for IrqLine {
     }
 }
 
-/// Disable all IRQs on the current CPU (i.e., locally).
+/// Disables all IRQs on the current CPU (i.e., locally).
 ///
 /// This function returns a guard object, which will automatically enable local IRQs again when
 /// it is dropped. This function works correctly even when it is called in a _nested_ way.
 /// The local IRQs shall only be re-enabled when the most outer guard is dropped.
 ///
-/// This function can play nicely with `SpinLock` as the type uses this function internally.
+/// This function can play nicely with [`SpinLock`] as the type uses this function internally.
 /// One can invoke this function even after acquiring a spin lock. And the reversed order is also ok.
+///
+/// [`SpinLock`]: crate::sync::SpinLock
 ///
 /// # Example
 ///
@@ -150,7 +152,7 @@ impl DisabledLocalIrqGuard {
         }
     }
 
-    /// Transfer the saved IRQ status of this guard to a new guard.
+    /// Transfers the saved IRQ status of this guard to a new guard.
     /// The saved IRQ status of this guard is cleared.
     pub fn transfer_to(&mut self) -> Self {
         let was_enabled = self.was_enabled;
@@ -170,6 +172,8 @@ impl Drop for DisabledLocalIrqGuard {
     }
 }
 
+/// Enables all IRQs on the current CPU.
+///
 /// FIXME: The reason we need to add this API is that currently IRQs
 /// are enabled when the CPU enters the user space for the first time,
 /// which is too late. During the OS initialization phase,

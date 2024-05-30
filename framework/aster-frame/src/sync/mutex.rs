@@ -18,7 +18,7 @@ pub struct Mutex<T: ?Sized> {
 }
 
 impl<T> Mutex<T> {
-    /// Create a new mutex.
+    /// Creates a new mutex.
     pub const fn new(val: T) -> Self {
         Self {
             lock: AtomicBool::new(false),
@@ -29,39 +29,43 @@ impl<T> Mutex<T> {
 }
 
 impl<T: ?Sized> Mutex<T> {
-    /// Acquire the mutex.
+    /// Acquires the mutex.
     ///
     /// This method runs in a block way until the mutex can be acquired.
     pub fn lock(&self) -> MutexGuard<T> {
         self.queue.wait_until(|| self.try_lock())
     }
 
-    /// Acquire the mutex through an [`Arc`].
+    /// Acquires the mutex through an [`Arc`].
     ///
-    /// The method is similar to [`Self::lock`], but it doesn't have the requirement
+    /// The method is similar to [`lock`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the mutex guard.
+    ///
+    /// [`lock`]: Self::lock
     pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<T> {
         self.queue.wait_until(|| self.try_lock_arc())
     }
 
-    /// Try Acquire the mutex immedidately.
+    /// Tries Acquire the mutex immedidately.
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
         // guard will cause an unexpected unlock.
         self.acquire_lock().then_some(MutexGuard { mutex: self })
     }
 
-    /// Try acquire the mutex through an [`Arc`].
+    /// Tries acquire the mutex through an [`Arc`].
     ///
-    /// The method is similar to [`Self::try_lock`], but it doesn't have the requirement
+    /// The method is similar to [`try_lock`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the mutex guard.
+    ///
+    /// [`try_lock`]: Self::try_lock
     pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcMutexGuard<T>> {
         self.acquire_lock().then(|| ArcMutexGuard {
             mutex: self.clone(),
         })
     }
 
-    /// Release the mutex and wake up one thread which is blocked on this mutex.
+    /// Releases the mutex and wake up one thread which is blocked on this mutex.
     fn unlock(&self) {
         self.release_lock();
         self.queue.wake_one();
@@ -95,7 +99,7 @@ pub struct MutexGuard_<T: ?Sized, R: Deref<Target = Mutex<T>>> {
 /// A guard that provides exclusive access to the data protected by a [`Mutex`].
 pub type MutexGuard<'a, T> = MutexGuard_<T, &'a Mutex<T>>;
 
-/// An guard that provides exclusive access to the data protected by a [`Arc<Mutex>`].
+/// An guard that provides exclusive access to the data protected by a `Arc<Mutex>`.
 pub type ArcMutexGuard<T> = MutexGuard_<T, Arc<Mutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = Mutex<T>>> Deref for MutexGuard_<T, R> {

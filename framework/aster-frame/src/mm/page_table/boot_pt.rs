@@ -33,7 +33,7 @@ pub struct BootPageTable<
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
-    /// Create a new boot page table from the current page table root physical address.
+    /// Creates a new boot page table from the current page table root physical address.
     ///
     /// The caller must ensure that the current page table may be set up by the firmware,
     /// loader or the setup code.
@@ -46,7 +46,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         }
     }
 
-    /// Map a base page to a frame.
+    /// Maps a base page to a frame.
     /// This function will panic if the page is already mapped.
     pub fn map_base_page(&mut self, from: Vaddr, to: FrameNumber, prop: PageProperty) {
         let mut pt = self.root_pt;
@@ -86,7 +86,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         frame
     }
 
-    /// Retire this boot-stage page table.
+    /// Retires this boot-stage page table.
     ///
     /// Do not drop a boot-stage page table. Instead, retire it.
     ///

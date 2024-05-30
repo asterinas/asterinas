@@ -115,7 +115,7 @@ impl IdAlloc {
 
     /// Releases the consecutive range of allocated `id`s.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `range` is out of bounds, this method will panic.
     pub fn free_consecutive(&mut self, range: Range<usize>) {
@@ -136,7 +136,7 @@ impl IdAlloc {
 
     /// Releases the allocated `id`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `id` is out of bounds, this method will panic.
     pub fn free(&mut self, id: usize) {
@@ -153,7 +153,7 @@ impl IdAlloc {
     /// If the ID is already allocated, it returns `None`, otherwise it
     /// returns the allocated ID.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `id` is out of bounds, this method will panic.
     pub fn alloc_specific(&mut self, id: usize) -> Option<usize> {
@@ -171,7 +171,7 @@ impl IdAlloc {
 
     /// Returns true if the `id` is allocated.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `id` is out of bounds, this method will panic.
     pub fn is_allocated(&self, id: usize) -> bool {

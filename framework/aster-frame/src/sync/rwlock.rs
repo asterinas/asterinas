@@ -43,9 +43,9 @@ use crate::{
 /// where a decision to write is made after reading.
 ///
 /// The type parameter `T` represents the data that this lock is protecting.
-/// It is necessary for `T` to satisfy `Send` to be shared across tasks and
-/// `Sync` to permit concurrent access via readers. The `Deref` method (and
-/// `DerefMut` for the writer) is implemented for the RAII guards returned
+/// It is necessary for `T` to satisfy [`Send`] to be shared across tasks and
+/// [`Sync`] to permit concurrent access via readers. The [`Deref`] method (and
+/// [`DerefMut`] for the writer) is implemented for the RAII guards returned
 /// by the locking methods, which allows for the access to the protected data
 /// while the lock is held.
 ///
@@ -126,7 +126,7 @@ impl<T> RwLock<T> {
 }
 
 impl<T: ?Sized> RwLock<T> {
-    /// Acquire a read lock while disabling the local IRQs and spin-wait
+    /// Acquires a read lock while disabling the local IRQs and spin-wait
     /// until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no writers or
@@ -144,11 +144,11 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquire a write lock while disabling the local IRQs and spin-wait
+    /// Acquires a write lock while disabling the local IRQs and spin-wait
     /// until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no other writers,
-    /// , upreaders or readers present. There is no guarantee for the order
+    /// upreaders or readers present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock. Once this lock is acquired, the calling thread
     /// will not be interrupted.
@@ -162,7 +162,7 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquire an upgradeable reader (upreader) while disabling local IRQs
+    /// Acquires an upgradeable reader (upreader) while disabling local IRQs
     /// and spin-wait until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no other writers,
@@ -184,7 +184,7 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Attempt to acquire a read lock while disabling local IRQs.
+    /// Attempts to acquire a read lock while disabling local IRQs.
     ///
     /// This function will never spin-wait and will return immediately. When
     /// multiple readers or writers attempt to acquire the lock, this method
@@ -204,7 +204,7 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Attempt to acquire a write lock while disabling local IRQs.
+    /// Attempts to acquire a write lock while disabling local IRQs.
     ///
     /// This function will never spin-wait and will return immediately. When
     /// multiple readers or writers attempt to acquire the lock, this method
@@ -226,7 +226,7 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Attempt to acquire a upread lock while disabling local IRQs.
+    /// Attempts to acquire a upread lock while disabling local IRQs.
     ///
     /// This function will never spin-wait and will return immediately. When
     /// multiple readers or writers attempt to acquire the lock, this method
@@ -246,7 +246,7 @@ impl<T: ?Sized> RwLock<T> {
         None
     }
 
-    /// Acquire a read lock and spin-wait until it can be acquired.
+    /// Acquires a read lock and spin-wait until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no writers or
     /// upgrading upreaders present. There is no guarantee for the order
@@ -254,10 +254,12 @@ impl<T: ?Sized> RwLock<T> {
     /// obtain the lock.
     ///
     /// This method does not disable interrupts, so any locks related to
-    /// interrupt context should avoid using this method, and use `read_irq_disabled`
+    /// interrupt context should avoid using this method, and use [`read_irq_disabled`]
     /// instead. When IRQ handlers are allowed to be executed while holding
-    /// this lock, it is preferable to use this method over the `read_irq_disabled`
+    /// this lock, it is preferable to use this method over the [`read_irq_disabled`]
     /// method as it has a higher efficiency.
+    ///
+    /// [`read_irq_disabled`]: Self::read_irq_disabled
     pub fn read(&self) -> RwLockReadGuard<T> {
         loop {
             if let Some(readguard) = self.try_read() {
@@ -268,10 +270,12 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquire a read lock through an [`Arc`].
+    /// Acquires a read lock through an [`Arc`].
     ///
-    /// The method is similar to [`Self::read`], but it doesn't have the requirement
+    /// The method is similar to [`read`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the read guard.
+    ///
+    /// [`read`]: Self::read
     pub fn read_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<T> {
         loop {
             if let Some(readguard) = self.try_read_arc() {
@@ -282,18 +286,20 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquire a write lock and spin-wait until it can be acquired.
+    /// Acquires a write lock and spin-wait until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no other writers,
-    /// , upreaders or readers present. There is no guarantee for the order
+    /// upreaders or readers present. There is no guarantee for the order
     /// in which other readers or writers waiting simultaneously will
     /// obtain the lock.
     ///
     /// This method does not disable interrupts, so any locks related to
-    /// interrupt context should avoid using this method, and use `write_irq_disabled`
+    /// interrupt context should avoid using this method, and use [`write_irq_disabled`]
     /// instead. When IRQ handlers are allowed to be executed while holding
-    /// this lock, it is preferable to use this method over the `write_irq_disabled`
+    /// this lock, it is preferable to use this method over the [`write_irq_disabled`]
     /// method as it has a higher efficiency.
+    ///
+    /// [`write_irq_disabled`]: Self::write_irq_disabled
     pub fn write(&self) -> RwLockWriteGuard<T> {
         loop {
             if let Some(writeguard) = self.try_write() {
@@ -304,10 +310,12 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquire a write lock through an [`Arc`].
+    /// Acquires a write lock through an [`Arc`].
     ///
-    /// The method is similar to [`Self::write`], but it doesn't have the requirement
+    /// The method is similar to [`write`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the lock guard.
+    ///
+    /// [`write`]: Self::write
     pub fn write_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<T> {
         loop {
             if let Some(writeguard) = self.try_write_arc() {
@@ -318,7 +326,7 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquire an upreader and spin-wait until it can be acquired.
+    /// Acquires an upreader and spin-wait until it can be acquired.
     ///
     /// The calling thread will spin-wait until there are no other writers,
     /// or upreaders. There is no guarantee for the order in which other
@@ -330,10 +338,12 @@ impl<T: ?Sized> RwLock<T> {
     /// upgread method.
     ///
     /// This method does not disable interrupts, so any locks related to
-    /// interrupt context should avoid using this method, and use `upread_irq_disabled`
+    /// interrupt context should avoid using this method, and use [`upread_irq_disabled`]
     /// instead. When IRQ handlers are allowed to be executed while holding
-    /// this lock, it is preferable to use this method over the `upread_irq_disabled`
+    /// this lock, it is preferable to use this method over the [`upread_irq_disabled`]
     /// method as it has a higher efficiency.
+    ///
+    /// [`upread_irq_disabled`]: Self::upread_irq_disabled
     pub fn upread(&self) -> RwLockUpgradeableGuard<T> {
         loop {
             if let Some(guard) = self.try_upread() {
@@ -344,10 +354,12 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquire an upgradeable read lock through an [`Arc`].
+    /// Acquires an upgradeable read lock through an [`Arc`].
     ///
-    /// The method is similar to [`Self::upread`], but it doesn't have the requirement
+    /// The method is similar to [`upread`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the lock guard.
+    ///
+    /// [`upread`]: Self::upread
     pub fn upread_arc(self: &Arc<Self>) -> ArcRwLockUpgradeableGuard<T> {
         loop {
             if let Some(guard) = self.try_upread_arc() {
@@ -358,16 +370,18 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Attempt to acquire a read lock.
+    /// Attempts to acquire a read lock.
     ///
     /// This function will never spin-wait and will return immediately.
     ///
     /// This method does not disable interrupts, so any locks related to
     /// interrupt context should avoid using this method, and use
-    /// `try_read_irq_disabled` instead. When IRQ handlers are allowed to
+    /// [`try_read_irq_disabled`] instead. When IRQ handlers are allowed to
     /// be executed while holding this lock, it is preferable to use this
-    /// method over the `try_read_irq_disabled` method as it has a higher
+    /// method over the [`try_read_irq_disabled`] method as it has a higher
     /// efficiency.
+    ///
+    /// [`try_read_irq_disabled`]: Self::try_read_irq_disabled
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
         let guard = disable_preempt();
         let lock = self.lock.fetch_add(READER, Acquire);
@@ -382,10 +396,12 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Attempt to acquire an read lock through an [`Arc`].
+    /// Attempts to acquire an read lock through an [`Arc`].
     ///
-    /// The method is similar to [`Self::try_read`], but it doesn't have the requirement
+    /// The method is similar to [`try_read`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the lock guard.
+    ///
+    /// [`try_read`]: Self::try_read
     pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<T>> {
         let guard = disable_preempt();
         let lock = self.lock.fetch_add(READER, Acquire);
@@ -400,16 +416,18 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Attempt to acquire a write lock.
+    /// Attempts to acquire a write lock.
     ///
     /// This function will never spin-wait and will return immediately.
     ///
     /// This method does not disable interrupts, so any locks related to
     /// interrupt context should avoid using this method, and use
-    /// `try_write_irq_disabled` instead. When IRQ handlers are allowed to
+    /// [`try_write_irq_disabled`] instead. When IRQ handlers are allowed to
     /// be executed while holding this lock, it is preferable to use this
-    /// method over the `try_write_irq_disabled` method as it has a higher
+    /// method over the [`try_write_irq_disabled`] method as it has a higher
     /// efficiency.
+    ///
+    /// [`try_write_irq_disabled`]: Self::try_write_irq_disabled
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
         let guard = disable_preempt();
         if self
@@ -426,10 +444,12 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Attempt to acquire a write lock through an [`Arc`].
+    /// Attempts to acquire a write lock through an [`Arc`].
     ///
-    /// The method is similar to [`Self::try_write`], but it doesn't have the requirement
+    /// The method is similar to [`try_write`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the lock guard.
+    ///
+    /// [`try_write`]: Self::try_write
     fn try_write_arc(self: &Arc<Self>) -> Option<ArcRwLockWriteGuard<T>> {
         let guard = disable_preempt();
         if self
@@ -446,16 +466,18 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Attempt to acquire an upread lock.
+    /// Attempts to acquire an upread lock.
     ///
     /// This function will never spin-wait and will return immediately.
     ///
     /// This method does not disable interrupts, so any locks related to
     /// interrupt context should avoid using this method, and use
-    /// `try_upread_irq_disabled` instead. When IRQ handlers are allowed to
+    /// [`try_upread_irq_disabled`] instead. When IRQ handlers are allowed to
     /// be executed while holding this lock, it is preferable to use this
-    /// method over the `try_upread_irq_disabled` method as it has a higher
+    /// method over the [`try_upread_irq_disabled`] method as it has a higher
     /// efficiency.
+    ///
+    /// [`try_upread_irq_disabled`]: Self::try_upread_irq_disabled
     pub fn try_upread(&self) -> Option<RwLockUpgradeableGuard<T>> {
         let guard = disable_preempt();
         let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
@@ -470,10 +492,12 @@ impl<T: ?Sized> RwLock<T> {
         None
     }
 
-    /// Attempt to acquire an upgradeable read lock through an [`Arc`].
+    /// Attempts to acquire an upgradeable read lock through an [`Arc`].
     ///
-    /// The method is similar to [`Self::try_upread`], but it doesn't have the requirement
+    /// The method is similar to [`try_upread`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the lock guard.
+    ///
+    /// [`try_upread`]: Self::try_upread
     pub fn try_upread_arc(self: &Arc<Self>) -> Option<ArcRwLockUpgradeableGuard<T>> {
         let guard = disable_preempt();
         let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
@@ -547,7 +571,7 @@ pub struct RwLockReadGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
 /// A guard that provides shared read access to the data protected by a [`RwLock`].
 pub type RwLockReadGuard<'a, T> = RwLockReadGuard_<T, &'a RwLock<T>>;
 
-/// A guard that provides shared read access to the data protected by a [`Arc<RwLock>`].
+/// A guard that provides shared read access to the data protected by a `Arc<RwLock>`.
 pub type ArcRwLockReadGuard<T> = RwLockReadGuard_<T, Arc<RwLock<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockReadGuard_<T, R> {
@@ -580,7 +604,7 @@ pub struct RwLockWriteGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
 
 /// A guard that provides exclusive write access to the data protected by a [`RwLock`].
 pub type RwLockWriteGuard<'a, T> = RwLockWriteGuard_<T, &'a RwLock<T>>;
-/// A guard that provides exclusive write access to the data protected by a [`Arc<RwLock>`].
+/// A guard that provides exclusive write access to the data protected by a `Arc<RwLock>`.
 pub type ArcRwLockWriteGuard<T> = RwLockWriteGuard_<T, Arc<RwLock<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockWriteGuard_<T, R> {
@@ -651,11 +675,11 @@ pub struct RwLockUpgradeableGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clo
 
 /// A upgradable guard that provides read access to the data protected by a [`RwLock`].
 pub type RwLockUpgradeableGuard<'a, T> = RwLockUpgradeableGuard_<T, &'a RwLock<T>>;
-/// A upgradable guard that provides read access to the data protected by a [`Arc<RwLock>`].
+/// A upgradable guard that provides read access to the data protected by a `Arc<RwLock>`.
 pub type ArcRwLockUpgradeableGuard<T> = RwLockUpgradeableGuard_<T, Arc<RwLock<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockUpgradeableGuard_<T, R> {
-    /// Upgrade this upread guard to a write guard atomically.
+    /// Upgrades this upread guard to a write guard atomically.
     ///
     /// After calling this method, subsequent readers will be blocked
     /// while previous readers remain unaffected. The calling thread

@@ -32,7 +32,7 @@ impl Jiffies {
         self.0
     }
 
-    /// Gets the `Duration` calculated from the jiffies counts.
+    /// Gets the [`Duration`] calculated from the jiffies counts.
     pub fn as_duration(self) -> Duration {
         Duration::from_millis(self.0 * 1000 / TIMER_FREQ)
     }

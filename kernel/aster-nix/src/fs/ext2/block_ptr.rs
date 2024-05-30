@@ -14,7 +14,7 @@ pub struct BlockPtrs {
 impl BlockPtrs {
     /// Returns the direct block ID.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `idx` is out of bounds, this method will panic.
     pub fn direct(&self, idx: usize) -> Ext2Bid {
@@ -24,7 +24,7 @@ impl BlockPtrs {
 
     /// Sets the direct block ID.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `idx` is out of bounds, this method will panic.
     pub fn set_direct(&mut self, idx: usize, bid: Ext2Bid) {

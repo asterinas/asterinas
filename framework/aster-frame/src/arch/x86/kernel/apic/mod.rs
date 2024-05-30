@@ -25,21 +25,21 @@ pub trait Apic: ApicTimer + Sync + Send {
 }
 
 pub trait ApicTimer: Sync + Send {
-    /// Set the initial timer count, the APIC timer will count down from this value.
+    /// Sets the initial timer count, the APIC timer will count down from this value.
     fn set_timer_init_count(&mut self, value: u64);
 
-    /// Get the current count of the timer.
+    /// Gets the current count of the timer.
     /// The interval can be expressed by the expression: `init_count` - `current_count`.
     fn timer_current_count(&self) -> u64;
 
-    /// Set the timer register in the APIC.
+    /// Sets the timer register in the APIC.
     /// Bit 0-7:   The interrupt vector of timer interrupt.
     /// Bit 12:    Delivery Status, 0 for Idle, 1 for Send Pending.
     /// Bit 16:    Mask bit.
     /// Bit 17-18: Timer Mode, 0 for One-shot, 1 for Periodic, 2 for TSC-Deadline.
     fn set_lvt_timer(&mut self, value: u64);
 
-    /// Set timer divide config register.
+    /// Sets timer divide config register.
     fn set_timer_div_config(&mut self, div_config: DivideConfig);
 }
 

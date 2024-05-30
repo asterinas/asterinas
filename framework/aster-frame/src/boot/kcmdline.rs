@@ -45,25 +45,25 @@ pub struct KCmdlineArg {
 
 // Define get APIs.
 impl KCmdlineArg {
-    /// Get the path of the initprocess.
+    /// Gets the path of the initprocess.
     pub fn get_initproc_path(&self) -> Option<&str> {
         self.initproc.path.as_deref()
     }
-    /// Get the argument vector(argv) of the initprocess.
+    /// Gets the argument vector(argv) of the initprocess.
     pub fn get_initproc_argv(&self) -> &Vec<CString> {
         &self.initproc.argv
     }
-    /// Get the environment vector(envp) of the initprocess.
+    /// Gets the environment vector(envp) of the initprocess.
     pub fn get_initproc_envp(&self) -> &Vec<CString> {
         &self.initproc.envp
     }
-    /// Get the argument vector of a kernel module.
+    /// Gets the argument vector of a kernel module.
     pub fn get_module_args(&self, module: &str) -> Option<&Vec<ModuleArg>> {
         self.module_args.get(module)
     }
 }
 
-// Split the command line string by spaces but preserve
+// Splits the command line string by spaces but preserve
 // ones that are protected by double quotes(`"`).
 fn split_arg(input: &str) -> impl Iterator<Item = &str> {
     let mut inside_quotes = false;

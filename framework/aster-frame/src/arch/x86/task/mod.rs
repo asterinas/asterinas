@@ -22,6 +22,7 @@ impl TaskContext {
     }
 }
 
+/// Callee-saved registers.
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct CalleeRegs {
@@ -42,6 +43,7 @@ pub struct CalleeRegs {
 }
 
 impl CalleeRegs {
+    /// Creates new `CalleeRegs`
     pub const fn new() -> Self {
         CalleeRegs {
             rsp: 0,

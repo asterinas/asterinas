@@ -22,7 +22,7 @@ static MASK_MASTER: AtomicU8 = AtomicU8::new(0x00);
 static MASK_SLAVE: AtomicU8 = AtomicU8::new(0x00);
 static CHANGE_LOCK: AtomicBool = AtomicBool::new(false);
 
-/// init the PIC device
+/// Initializes the PIC device
 pub fn init() {
     if CHANGE_LOCK.load(Relaxed) {
         return;
@@ -36,7 +36,7 @@ pub fn init() {
     set_mask(master_mask, slave_mask);
 }
 
-/// allocate irq, for example, if timer need IRQ0, it will return IrqAllocateHandle with irq num: IRQ_OFFSET+0
+/// Allocates irq, for example, if timer need IRQ0, it will return IrqAllocateHandle with irq num: IRQ_OFFSET+0
 pub fn allocate_irq(index: u8) -> Option<IrqLine> {
     if index >= 16 {
         return None;
@@ -53,14 +53,14 @@ pub fn allocate_irq(index: u8) -> Option<IrqLine> {
     }
 }
 
-/// enable the PIC device, this function will permanent enable all the interrupts
+/// Enables the PIC device, this function will permanent enable all the interrupts
 #[inline]
 pub fn enable() {
     CHANGE_LOCK.store(true, Relaxed);
     set_mask(0, 0);
 }
 
-/// disable the PIC device, this function will permanent disable all the interrupts
+/// Disables the PIC device, this function will permanent disable all the interrupts
 /// the interrupts mask may not exists after calling init function
 #[inline]
 pub fn disable() {
@@ -68,14 +68,14 @@ pub fn disable() {
     set_mask(0xFF, 0xFF);
 }
 
-/// enable the PIC device, this function will allow all the interrupts
+/// Enables the PIC device, this function will allow all the interrupts
 /// the interrupts mask may not exists after calling init function
 #[inline]
 pub fn enable_temp() {
     set_mask(0, 0);
 }
 
-/// disable the PIC device, this function will disable all the interrupts
+/// Disables the PIC device, this function will disable all the interrupts
 /// the interrupts mask may not exists after calling init function
 #[inline]
 pub fn disable_temp() {

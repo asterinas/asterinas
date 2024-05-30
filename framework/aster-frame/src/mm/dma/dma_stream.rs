@@ -36,8 +36,8 @@ struct DmaStreamInner {
     direction: DmaDirection,
 }
 
-/// `DmaDirection` limits the data flow direction of `DmaStream` and
-/// prevents users from reading and writing to `DmaStream` unexpectedly.
+/// `DmaDirection` limits the data flow direction of [`DmaStream`] and
+/// prevents users from reading and writing to [`DmaStream`] unexpectedly.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum DmaDirection {
     /// Data flows to the device
@@ -101,7 +101,7 @@ impl DmaStream {
         })
     }
 
-    /// Get the underlying [`VmSegment`].
+    /// Gets the underlying [`Segment`].
     ///
     /// Usually, the CPU side should not access the memory
     /// after the DMA mapping is established because
@@ -121,7 +121,7 @@ impl DmaStream {
         self.inner.vm_segment.nbytes()
     }
 
-    /// Synchronize the streaming DMA mapping with the device.
+    /// Synchronizes the streaming DMA mapping with the device.
     ///
     /// This method should be called under one of the two conditions:
     /// 1. The data of the stream DMA mapping has been updated by the device side.
@@ -189,7 +189,7 @@ impl Drop for DmaStreamInner {
 }
 
 impl VmIo for DmaStream {
-    /// Read data into the buffer.
+    /// Reads data into the buffer.
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<(), Error> {
         if self.inner.direction == DmaDirection::ToDevice {
             return Err(Error::AccessDenied);
@@ -197,7 +197,7 @@ impl VmIo for DmaStream {
         self.inner.vm_segment.read_bytes(offset, buf)
     }
 
-    /// Write data from the buffer.
+    /// Writes data from the buffer.
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<(), Error> {
         if self.inner.direction == DmaDirection::FromDevice {
             return Err(Error::AccessDenied);
@@ -239,9 +239,9 @@ pub struct DmaStreamSlice<'a> {
 }
 
 impl<'a> DmaStreamSlice<'a> {
-    /// Constructs a `DmaStreamSlice` from the `DmaStream`.
+    /// Constructs a `DmaStreamSlice` from the [`DmaStream`].
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `offset` is greater than or equal to the length of the stream,
     /// this method will panic.

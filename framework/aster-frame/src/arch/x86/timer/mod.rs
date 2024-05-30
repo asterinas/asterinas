@@ -52,7 +52,7 @@ cpu_local! {
     static INTERRUPT_CALLBACKS: RefCell<Vec<Box<dyn Fn() + Sync + Send>>> = RefCell::new(Vec::new());
 }
 
-/// Register a function that will be executed during the system timer interruption.
+/// Registers a function that will be executed during the system timer interruption.
 pub fn register_callback<F>(func: F)
 where
     F: Fn() + Sync + Send + 'static,

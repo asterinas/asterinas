@@ -11,7 +11,7 @@ use pod::Pod;
 use crate::prelude::*;
 
 /// A trait that enables reading/writing data from/to a VM object,
-/// e.g., `VmSpace`, `FrameVec`, and `Frame`.
+/// e.g., [`VmSpace`], [`FrameVec`], and [`Frame`].
 ///
 /// # Concurrency
 ///
@@ -19,8 +19,12 @@ use crate::prelude::*;
 /// threads. In this case, if the results of concurrent reads or writes
 /// desire predictability or atomicity, the users should add extra mechanism
 /// for such properties.
+///
+/// [`VmSpace`]: crate::mm::VmSpace
+/// [`FrameVec`]: crate::mm::FrameVec
+/// [`Frame`]: crate::mm::Frame
 pub trait VmIo: Send + Sync {
-    /// Read a specified number of bytes at a specified offset into a given buffer.
+    /// Reads a specified number of bytes at a specified offset into a given buffer.
     ///
     /// # No short reads
     ///
@@ -29,24 +33,26 @@ pub trait VmIo: Send + Sync {
     /// available, then the method shall return an error.
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()>;
 
-    /// Read a value of a specified type at a specified offset.
+    /// Reads a value of a specified type at a specified offset.
     fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
         let mut val = T::new_uninit();
         self.read_bytes(offset, val.as_bytes_mut())?;
         Ok(val)
     }
 
-    /// Read a slice of a specified type at a specified offset.
+    /// Reads a slice of a specified type at a specified offset.
     ///
     /// # No short reads
     ///
-    /// Similar to `read_bytes`.
+    /// Similar to [`read_bytes`].
+    ///
+    /// [`read_bytes`]: VmIo::read_bytes
     fn read_slice<T: Pod>(&self, offset: usize, slice: &mut [T]) -> Result<()> {
         let buf = unsafe { core::mem::transmute(slice) };
         self.read_bytes(offset, buf)
     }
 
-    /// Write a specified number of bytes from a given buffer at a specified offset.
+    /// Writes a specified number of bytes from a given buffer at a specified offset.
     ///
     /// # No short writes
     ///
@@ -55,23 +61,25 @@ pub trait VmIo: Send + Sync {
     /// then the method shall return an error.
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
 
-    /// Write a value of a specified type at a specified offset.
+    /// Writes a value of a specified type at a specified offset.
     fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
         self.write_bytes(offset, new_val.as_bytes())?;
         Ok(())
     }
 
-    /// Write a slice of a specified type at a specified offset.
+    /// Writes a slice of a specified type at a specified offset.
     ///
     /// # No short write
     ///
-    /// Similar to `write_bytes`.
+    /// Similar to [`write_bytes`].
+    ///
+    /// [`write_bytes`]: VmIo::write_bytes
     fn write_slice<T: Pod>(&self, offset: usize, slice: &[T]) -> Result<()> {
         let buf = unsafe { core::mem::transmute(slice) };
         self.write_bytes(offset, buf)
     }
 
-    /// Write a sequence of values given by an iterator (`iter`) from the specified offset (`offset`).
+    /// Writes a sequence of values given by an iterator (`iter`) from the specified offset (`offset`).
     ///
     /// The write process stops until the VM object does not have enough remaining space
     /// or the iterator returns `None`. If any value is written, the function returns `Ok(nr_written)`,
@@ -83,15 +91,15 @@ pub trait VmIo: Send + Sync {
     ///
     /// # Example
     ///
-    /// Initializing an VM object with the same value can be done easily with `write_values`.
+    /// Initializes an VM object with the same value can be done easily with `write_values`.
     ///
     /// ```
     /// use core::iter::self;
     ///
-    /// let _nr_values = vm_obj.write_values(0, iter::repeat(0_u32), 0).unwrap();
+    /// let _nr_values = vm_obj.write_vals(0, iter::repeat(0_u32), 0).unwrap();
     /// ```
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This method panics if `align` is greater than two,
     /// but not a power of two, in release mode.

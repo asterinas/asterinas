@@ -17,7 +17,7 @@ pub struct PageProperty {
 }
 
 impl PageProperty {
-    /// Create a new `PageProperty` with the given flags and cache policy for the user.
+    /// Creates a new `PageProperty` with the given flags and cache policy for the user.
     pub fn new(flags: PageFlags, cache: CachePolicy) -> Self {
         Self {
             flags,
@@ -25,7 +25,7 @@ impl PageProperty {
             priv_flags: PrivilegedPageFlags::USER,
         }
     }
-    /// Create a page property that implies an invalid page without mappings.
+    /// Creates a page property that implies an invalid page without mappings.
     pub fn new_absent() -> Self {
         Self {
             flags: PageFlags::empty(),

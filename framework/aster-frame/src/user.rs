@@ -35,12 +35,12 @@ impl UserSpace {
 
     /// Returns the user mode that is bound to the current task and user space.
     ///
-    /// See `UserMode` on how to use it to execute user code.
+    /// See [`UserMode`] on how to use it to execute user code.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This method is intended to only allow each task to have at most one
-    /// instance of `UserMode` initiated. If this method is called again before
+    /// instance of [`UserMode`] initiated. If this method is called again before
     /// the first instance for the current task is dropped, then the method
     /// panics.      
     pub fn user_mode(&self) -> UserMode<'_> {
@@ -48,7 +48,7 @@ impl UserSpace {
     }
 }
 
-/// Specific architectures need to implement this trait. This should only used in `UserMode`
+/// Specific architectures need to implement this trait. This should only used in [`UserMode`]
 ///
 /// Only visible in aster-frame
 pub(crate) trait UserContextApiInternal {
@@ -57,28 +57,28 @@ pub(crate) trait UserContextApiInternal {
     where
         F: FnMut() -> bool;
 
-    /// Use the information inside CpuContext to build a trapframe
+    /// Uses the information inside CpuContext to build a trapframe
     fn as_trap_frame(&self) -> TrapFrame;
 }
 
-/// The common interface that every CPU architecture-specific `CpuContext` implements.
+/// The common interface that every CPU architecture-specific [`UserContext`] implements.
 pub trait UserContextApi {
-    /// Get the trap number of this interrupt.
+    /// Gets the trap number of this interrupt.
     fn trap_number(&self) -> usize;
 
-    /// Get the trap error code of this interrupt.
+    /// Gets the trap error code of this interrupt.
     fn trap_error_code(&self) -> usize;
 
-    /// Set instruction pointer
+    /// Sets the instruction pointer
     fn set_instruction_pointer(&mut self, ip: usize);
 
-    /// Get instruction pointer
+    /// Gets the instruction pointer
     fn instruction_pointer(&self) -> usize;
 
-    /// Set stack pointer
+    /// Sets the stack pointer
     fn set_stack_pointer(&mut self, sp: usize);
 
-    /// Get stack pointer
+    /// Gets the stack pointer
     fn stack_pointer(&self) -> usize;
 }
 
@@ -123,7 +123,7 @@ impl<'a> UserMode<'a> {
 
     /// Starts executing in the user mode. Make sure current task is the task in `UserMode`.
     ///
-    /// The method returns for one of three possible reasons indicated by `ReturnReason`.
+    /// The method returns for one of three possible reasons indicated by [`ReturnReason`].
     /// 1. A system call is issued by the user space;
     /// 2. A CPU exception is triggered by the user space;
     /// 3. A kernel event is pending, as indicated by the given closure.

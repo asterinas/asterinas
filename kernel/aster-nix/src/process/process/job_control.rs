@@ -44,7 +44,7 @@ impl JobControl {
 
     /// Sets the terminal as the controlling terminal of the `session`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This terminal should not belong to any session.
     pub fn set_session(&self, session: &Arc<Session>) {
@@ -54,7 +54,7 @@ impl JobControl {
 
     /// Sets the terminal as the controlling terminal of the session of current process.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This function should only be called in process context.
     pub fn set_current_session(&self) -> Result<()> {
@@ -103,7 +103,7 @@ impl JobControl {
 
     /// Sets the foreground process group.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// The process group should belong to one session.
     pub fn set_foreground(&self, process_group: Option<&Arc<ProcessGroup>>) -> Result<()> {
@@ -136,7 +136,7 @@ impl JobControl {
     /// Wait until the current process is the foreground process group. If
     /// the foreground process group is None, returns true.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This function should only be called in process context.
     pub fn wait_until_in_foreground(&self) -> Result<()> {

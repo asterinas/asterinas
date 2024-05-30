@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Options for allocating frames
+
 use super::{Frame, FrameVec, Segment};
 use crate::{mm::page::allocator, prelude::*, Error};
 
@@ -45,7 +47,7 @@ impl FrameAllocOptions {
         self
     }
 
-    /// Allocate a collection of page frames according to the given options.
+    /// Allocates a collection of page frames according to the given options.
     pub fn alloc(&self) -> Result<FrameVec> {
         let frames = if self.is_contiguous {
             allocator::alloc(self.nframes).ok_or(Error::NoMemory)?
@@ -65,7 +67,7 @@ impl FrameAllocOptions {
         Ok(frames)
     }
 
-    /// Allocate a single page frame according to the given options.
+    /// Allocates a single page frame according to the given options.
     pub fn alloc_single(&self) -> Result<Frame> {
         if self.nframes != 1 {
             return Err(Error::InvalidArgs);
@@ -79,9 +81,9 @@ impl FrameAllocOptions {
         Ok(frame)
     }
 
-    /// Allocate a contiguous range of page frames according to the given options.
+    /// Allocates a contiguous range of page frames according to the given options.
     ///
-    /// The returned `Segment` contains at least one page frame.
+    /// The returned [`Segment`] contains at least one page frame.
     pub fn alloc_contiguous(&self) -> Result<Segment> {
         // It's no use to checking `self.is_contiguous` here.
         if self.nframes == 0 {

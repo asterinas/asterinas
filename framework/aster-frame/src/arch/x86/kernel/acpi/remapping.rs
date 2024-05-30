@@ -177,7 +177,7 @@ pub struct DeviceScopeHeader {
 macro_rules! impl_from_bytes {
     ($(($struct:tt,$header_struct:tt,$dst_name:ident)),*) => {
         $(impl $struct {
-            /// Create instance from bytes
+            /// Creates instance from bytes
             ///
             /// # Safety
             ///
@@ -219,7 +219,7 @@ impl_from_bytes!(
 );
 
 impl DeviceScope {
-    /// Create instance from bytes
+    /// Creates instance from bytes
     ///
     /// # Safety
     ///
@@ -245,7 +245,7 @@ impl DeviceScope {
 }
 
 impl Rhsa {
-    /// Create instance from bytes
+    /// Creates instance from bytes
     ///
     /// # Safety
     ///
@@ -259,7 +259,7 @@ impl Rhsa {
 }
 
 impl Andd {
-    /// Create instance from bytes
+    /// Creates instance from bytes
     ///
     /// # Safety
     ///

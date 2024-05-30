@@ -23,7 +23,7 @@ pub trait Terminal: Send + Sync + FileIo {
     ///
     /// If the terminal is not controlling terminal, this method returns `ENOTTY`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This method should be called in process context.
     fn set_foreground(&self, pgid: &Pgid) -> Result<()> {
@@ -40,7 +40,7 @@ pub trait Terminal: Send + Sync + FileIo {
 
     /// Returns whether the terminal is the controlling terminal of current process.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This method should be called in process context.
     fn is_controlling_terminal(&self) -> bool {
@@ -58,7 +58,7 @@ pub trait Terminal: Send + Sync + FileIo {
     /// If self is not session leader, or the terminal is controlling terminal of other session,
     /// or the session already has controlling terminal, this method returns `EPERM`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This method should only be called in process context.
     fn set_current_session(&self) -> Result<()> {
@@ -80,7 +80,7 @@ pub trait Terminal: Send + Sync + FileIo {
     ///
     /// If the terminal is not the controlling terminal of the session, this method will return `ENOTTY`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This method should only be called in process context.
     fn release_current_session(&self) -> Result<()> {

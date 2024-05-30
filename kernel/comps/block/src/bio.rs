@@ -73,7 +73,7 @@ impl Bio {
     ///
     /// Returns a `BioWaiter` to the caller to wait for its completion.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// The caller must not submit a `Bio` more than once. Otherwise, a panic shall be triggered.
     pub fn submit(&self, block_device: &dyn BlockDevice) -> Result<BioWaiter, BioEnqueueError> {
@@ -107,7 +107,7 @@ impl Bio {
     ///
     /// Returns the result status of the `Bio`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// The caller must not submit a `Bio` more than once. Otherwise, a panic shall be triggered.
     pub fn submit_sync(
@@ -167,7 +167,7 @@ impl BioWaiter {
 
     /// Gets the `index`-th `Bio` request associated with `self`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `index` is out of bounds, this method will panic.
     pub fn req(&self, index: usize) -> Bio {
@@ -176,7 +176,7 @@ impl BioWaiter {
 
     /// Returns the status of the `index`-th `Bio` request associated with `self`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `index` is out of bounds, this method will panic.
     pub fn status(&self, index: usize) -> BioStatus {

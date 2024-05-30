@@ -85,7 +85,7 @@ pub(crate) struct IrqLine {
 }
 
 impl IrqLine {
-    /// Acquire an interrupt request line.
+    /// Acquires an interrupt request line.
     ///
     /// # Safety
     ///
@@ -96,7 +96,7 @@ impl IrqLine {
         Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap())
     }
 
-    /// Get the IRQ number.
+    /// Gets the IRQ number.
     pub fn num(&self) -> u8 {
         self.irq_num
     }
@@ -105,7 +105,7 @@ impl IrqLine {
         self.callback_list.lock()
     }
 
-    /// Register a callback that will be invoked when the IRQ is active.
+    /// Registers a callback that will be invoked when the IRQ is active.
     ///
     /// A handle to the callback is returned. Dropping the handle
     /// automatically unregisters the callback.

@@ -108,7 +108,7 @@ pub fn init() {
     call_all_boot_init_callbacks();
 }
 
-/// Call the framework-user defined entrypoint of the actual kernel.
+/// Calls the framework-user defined entrypoint of the actual kernel.
 ///
 /// Any kernel that uses the aster-frame crate should define a function named
 /// `aster_main` as the entrypoint.

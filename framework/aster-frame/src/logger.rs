@@ -8,6 +8,8 @@ use crate::early_println;
 
 const LOGGER: Logger = Logger {};
 
+/// The log level.
+///
 /// FIXME: The logs should be able to be read from files in the userspace,
 /// and the log level should be configurable.
 pub const INIT_LOG_LEVEL: Level = Level::Error;

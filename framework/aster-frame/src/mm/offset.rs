@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-/// Get the offset of a field within a type as a pointer.
+/// Gets the offset of a field within a type as a pointer.
 ///
 /// ```rust
 /// #[repr(C)]
@@ -36,7 +36,7 @@ macro_rules! offset_of {
     });
 }
 
-/// Get the offset of a field within an object as a pointer.
+/// Gets the offset of a field within an object as a pointer.
 ///
 /// ```rust
 /// #[repr(C)]
