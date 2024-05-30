@@ -82,4 +82,6 @@ jobs:
         
       - name: Regression Test (Multiboot2)
         id: regression_test_linux
-        run: make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE=1
+        run: |
+          touch regression/build/initramfs.cpio.gz
+          make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE=1
