@@ -2,8 +2,8 @@
 
 //! Untyped physical memory management.
 //!
-//! A frame is a special page (defined in [`super::page`]) that is _untyped_
-//! memory. It is used to store data irrelevant to the integrity of the kernel.
+//! A frame is a special page that is _untyped_ memory.
+//! It is used to store data irrelevant to the integrity of the kernel.
 //! All pages mapped to the virtual address space of the users are backed by
 //! frames. Frames, with all the properties of pages, can additionally be safely
 //! read and written by the kernel or the user.
@@ -56,11 +56,12 @@ impl Frame {
         self.page.paddr()
     }
 
+    /// Returns the end physical address of the page frame.
     pub fn end_paddr(&self) -> Paddr {
         self.start_paddr() + PAGE_SIZE
     }
 
-    /// Get the paging level of the frame.
+    /// Gets the paging level of the frame.
     ///
     /// This is the level of the page table entry that maps the frame,
     /// which determines the size of the frame.
@@ -71,18 +72,22 @@ impl Frame {
         1
     }
 
-    pub fn size(&self) -> usize {
+    /// Returns the size of the frame
+    pub const fn size(&self) -> usize {
         PAGE_SIZE
     }
 
+    /// Returns a raw pointer to the starting virtual address of the frame.
     pub fn as_ptr(&self) -> *const u8 {
         paddr_to_vaddr(self.start_paddr()) as *const u8
     }
 
+    /// Returns a mutable raw pointer to the starting virtual address of the frame.
     pub fn as_mut_ptr(&self) -> *mut u8 {
         paddr_to_vaddr(self.start_paddr()) as *mut u8
     }
 
+    /// Copies the content of `src` to the frame.
     pub fn copy_from(&self, src: &Frame) {
         if self.paddr() == src.paddr() {
             return;

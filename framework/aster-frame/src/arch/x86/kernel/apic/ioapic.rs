@@ -34,7 +34,7 @@ pub struct IoApic {
 impl IoApic {
     const TABLE_REG_BASE: u8 = 0x10;
 
-    /// Enable an entry. The index should not exceed the `max_redirection_entry`
+    /// Enables an entry. The index should not exceed the `max_redirection_entry`
     pub fn enable(&mut self, index: u8, irq: IrqLine) -> Result<()> {
         if index >= self.max_redirection_entry() {
             return Err(Error::InvalidArgs);
@@ -50,7 +50,7 @@ impl IoApic {
         Ok(())
     }
 
-    /// Disable an entry. The index should not exceed the `max_redirection_entry`
+    /// Disables an entry. The index should not exceed the `max_redirection_entry`
     pub fn disable(&mut self, index: u8) -> Result<()> {
         if index >= self.max_redirection_entry() {
             return Err(Error::InvalidArgs);

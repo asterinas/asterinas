@@ -66,7 +66,7 @@ impl CpuSet {
         self.bitset.set(cpu_id as usize, true);
     }
 
-    /// Adds multiple CPUs from a vector to the `CpuSet`.
+    /// Adds multiple CPUs from `cpu_ids` to the `CpuSet`.
     pub fn add_from_vec(&mut self, cpu_ids: Vec<u32>) {
         for cpu_id in cpu_ids {
             self.add(cpu_id)
@@ -83,7 +83,7 @@ impl CpuSet {
         self.bitset.set(cpu_id as usize, false);
     }
 
-    /// Removes multiple CPUs from a vector from the `CpuSet`.
+    /// Removes multiple CPUs from `cpu_ids` from the `CpuSet`.
     pub fn remove_from_vec(&mut self, cpu_ids: Vec<u32>) {
         for cpu_id in cpu_ids {
             self.remove(cpu_id);
@@ -584,7 +584,7 @@ pub struct FpRegs {
 }
 
 impl FpRegs {
-    /// Create a new instance.
+    /// Creates a new instance.
     ///
     /// Note that a newly-created instance's floating point state is not
     /// initialized, thus considered invalid (i.e., `self.is_valid() == false`).
@@ -611,7 +611,7 @@ impl FpRegs {
         self.is_valid = true;
     }
 
-    /// Save the floating state given by a slice of u8.
+    /// Saves the floating state given by a slice of u8.
     ///
     /// After calling this method, the state of the instance will be considered valid.
     ///
@@ -629,7 +629,7 @@ impl FpRegs {
         self.is_valid
     }
 
-    /// Clear the state of the instance.
+    /// Clears the state of the instance.
     ///
     /// This method does not reset the underlying buffer that contains the floating
     /// point state; it only marks the buffer __invalid__.
@@ -637,9 +637,11 @@ impl FpRegs {
         self.is_valid = false;
     }
 
-    /// Restore CPU's CPU floating pointer states from this instance.
+    /// Restores CPU's CPU floating pointer states from this instance.
     ///
-    /// Panic. If the current state is invalid, the method will panic.
+    /// # Panics
+    ///
+    /// If the current state is invalid, the method will panic.
     pub fn restore(&self) {
         debug!("restore fpregs");
         assert!(self.is_valid);

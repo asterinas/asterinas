@@ -53,13 +53,17 @@ macro_rules! cpu_local {
 /// CPU-local objects.
 ///
 /// A CPU-local object only gives you immutable references to the underlying value.
-/// To mutate the value, one can use atomic values (e.g., `AtomicU32`) or internally mutable
-/// objects (e.g., `RefCell`).
+/// To mutate the value, one can use atomic values (e.g., [`AtomicU32`]) or internally mutable
+/// objects (e.g., [`RefCell`]).
 ///
 /// The `CpuLocal<T: Sync>` can be used directly.
-/// Otherwise, the `CpuLocal<T>` must be used through `CpuLocal::borrow_with`.
+/// Otherwise, the `CpuLocal<T>` must be used through [`borrow_with`].
 ///
 /// TODO: re-implement `CpuLocal`
+///
+/// [`AtomicU32`]: core::sync::atomic::AtomicU32
+/// [`RefCell`]: core::cell::RefCell
+/// [`borrow_with`]: CpuLocal::borrow_with
 pub struct CpuLocal<T>(UnsafeCell<T>);
 
 // SAFETY: At any given time, only one task can access the inner value T of a cpu-local variable.

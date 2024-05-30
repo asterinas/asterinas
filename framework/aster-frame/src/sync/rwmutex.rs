@@ -32,9 +32,9 @@ use super::WaitQueue;
 /// scenarios where a decision to write is made after reading.
 ///
 /// The type parameter `T` represents the data that this mutex is protecting.
-/// It is necessary for `T` to satisfy `Send` to be shared across tasks and
-/// `Sync` to permit concurrent access via readers. The `Deref` method (and
-/// `DerefMut` for the writer) is implemented for the RAII guards returned
+/// It is necessary for `T` to satisfy [`Send`] to be shared across tasks and
+/// [`Sync`] to permit concurrent access via readers. The [`Deref`] method (and
+/// [`DerefMut`] for the writer) is implemented for the RAII guards returned
 /// by the locking methods, which allows for the access to the protected data
 /// while the mutex is held.
 ///
@@ -115,30 +115,30 @@ impl<T> RwMutex<T> {
 }
 
 impl<T: ?Sized> RwMutex<T> {
-    /// Acquire a read mutex and sleep until it can be acquired.
+    /// Acquires a read mutex and sleep until it can be acquired.
     ///
     /// The calling thread will sleep until there are no writers or upgrading
-    /// upreaders present. The implementation of `WaitQueue` guarantees the
+    /// upreaders present. The implementation of [`WaitQueue`] guarantees the
     /// order in which other concurrent readers or writers waiting simultaneously
     /// will acquire the mutex.
     pub fn read(&self) -> RwMutexReadGuard<T> {
         self.queue.wait_until(|| self.try_read())
     }
 
-    /// Acquire a write mutex and sleep until it can be acquired.
+    /// Acquires a write mutex and sleep until it can be acquired.
     ///
     /// The calling thread will sleep until there are no writers, upreaders,
-    /// or readers present. The implementation of `WaitQueue` guarantees the
+    /// or readers present. The implementation of [`WaitQueue`] guarantees the
     /// order in which other concurrent readers or writers waiting simultaneously
     /// will acquire the mutex.
     pub fn write(&self) -> RwMutexWriteGuard<T> {
         self.queue.wait_until(|| self.try_write())
     }
 
-    /// Acquire a upread mutex and sleep until it can be acquired.
+    /// Acquires a upread mutex and sleep until it can be acquired.
     ///
     /// The calling thread will sleep until there are no writers or upreaders present.
-    /// The implementation of `WaitQueue` guarantees the order in which other concurrent
+    /// The implementation of [`WaitQueue`] guarantees the order in which other concurrent
     /// readers or writers waiting simultaneously will acquire the mutex.
     ///
     /// Upreader will not block new readers until it tries to upgrade. Upreader
@@ -149,7 +149,7 @@ impl<T: ?Sized> RwMutex<T> {
         self.queue.wait_until(|| self.try_upread())
     }
 
-    /// Attempt to acquire a read mutex.
+    /// Attempts to acquire a read mutex.
     ///
     /// This function will never sleep and will return immediately.
     pub fn try_read(&self) -> Option<RwMutexReadGuard<T>> {
@@ -162,7 +162,7 @@ impl<T: ?Sized> RwMutex<T> {
         }
     }
 
-    /// Attempt to acquire a write mutex.
+    /// Attempts to acquire a write mutex.
     ///
     /// This function will never sleep and will return immediately.
     pub fn try_write(&self) -> Option<RwMutexWriteGuard<T>> {
@@ -177,7 +177,7 @@ impl<T: ?Sized> RwMutex<T> {
         }
     }
 
-    /// Attempt to acquire a upread mutex.
+    /// Attempts to acquire a upread mutex.
     ///
     /// This function will never sleep and will return immediately.
     pub fn try_upread(&self) -> Option<RwMutexUpgradeableGuard<T>> {
@@ -227,7 +227,7 @@ pub struct RwMutexReadGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
 
 /// A guard that provides shared read access to the data protected by a [`RwMutex`].
 pub type RwMutexReadGuard<'a, T> = RwMutexReadGuard_<T, &'a RwMutex<T>>;
-/// A guard that provides shared read access to the data protected by a [`Arc<RwMutex>`].
+/// A guard that provides shared read access to the data protected by a `Arc<RwMutex>`.
 pub type ArcRwMutexReadGuard<T> = RwMutexReadGuard_<T, Arc<RwMutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Deref for RwMutexReadGuard_<T, R> {
@@ -254,7 +254,7 @@ pub struct RwMutexWriteGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
 
 /// A guard that provides exclusive write access to the data protected by a [`RwMutex`].
 pub type RwMutexWriteGuard<'a, T> = RwMutexWriteGuard_<T, &'a RwMutex<T>>;
-/// A guard that provides exclusive write access to the data protected by a [`Arc<RwMutex>`].
+/// A guard that provides exclusive write access to the data protected by a `Arc<RwMutex>`.
 pub type ArcRwMutexWriteGuard<T> = RwMutexWriteGuard_<T, Arc<RwMutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Deref for RwMutexWriteGuard_<T, R> {
@@ -314,18 +314,18 @@ impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Drop for RwMutexWriteGuard_<T, R>
 }
 
 /// A guard that provides immutable data access but can be atomically
-/// upgraded to `RwMutexWriteGuard`.
+/// upgraded to [`RwMutexWriteGuard`].
 pub struct RwMutexUpgradeableGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
     inner: R,
 }
 
 /// A upgradable guard that provides read access to the data protected by a [`RwMutex`].
 pub type RwMutexUpgradeableGuard<'a, T> = RwMutexUpgradeableGuard_<T, &'a RwMutex<T>>;
-/// A upgradable guard that provides read access to the data protected by a [`Arc<RwMutex>`].
+/// A upgradable guard that provides read access to the data protected by a `Arc<RwMutex>`.
 pub type ArcRwMutexUpgradeableGuard<T> = RwMutexUpgradeableGuard_<T, Arc<RwMutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = RwMutex<T>> + Clone> RwMutexUpgradeableGuard_<T, R> {
-    /// Upgrade this upread guard to a write guard atomically.
+    /// Upgrades this upread guard to a write guard atomically.
     ///
     /// After calling this method, subsequent readers will be blocked
     /// while previous readers remain unaffected.

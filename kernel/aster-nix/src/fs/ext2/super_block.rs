@@ -294,7 +294,7 @@ impl SuperBlock {
     /// Returns the starting block id of the super block
     /// inside the block group pointed by `block_group_idx`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If `block_group_idx` is neither 0 nor a backup block group index,
     /// then the method panics.
@@ -312,7 +312,7 @@ impl SuperBlock {
     /// Returns the starting block id of the block group descripter table
     /// inside the block group pointed by `block_group_idx`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If `block_group_idx` is neither 0 nor a backup block group index,
     /// then the method panics.

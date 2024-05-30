@@ -182,7 +182,7 @@ impl BioRequest {
     ///
     /// The merged `SubmittedBio` can only be placed at the front or back.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the `SubmittedBio` can not be merged, this method will panic.
     pub fn merge_bio(&mut self, rq_bio: SubmittedBio) {

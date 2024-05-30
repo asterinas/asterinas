@@ -98,7 +98,7 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
 pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingConsts>> =
     Once::new();
 
-/// Initialize the kernel page table.
+/// Initializes the kernel page table.
 ///
 /// This function should be called after:
 ///  - the page allocator and the heap allocator are initialized;
@@ -115,7 +115,7 @@ pub fn init_kernel_page_table(
     let regions = crate::boot::memory_regions();
     let phys_mem_cap = regions.iter().map(|r| r.base() + r.len()).max().unwrap();
 
-    // Starting to initialize the kernel page table.
+    // Start to initialize the kernel page table.
     let kpt = PageTable::<KernelMode>::empty();
 
     // Make shared the page tables mapped by the root table in the kernel space.

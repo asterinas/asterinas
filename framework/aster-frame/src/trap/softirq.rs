@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Software interrupt.
+
 #![allow(unused_variables)]
 
 use alloc::boxed::Box;
@@ -31,7 +33,7 @@ use crate::{cpu_local, task::disable_preempt, CpuLocal};
 /// // Enable the softirq line of this id.
 /// SoftIrqLine::get(MY_SOFTIRQ_ID).enable(|| {
 ///     // Define the action to take when the softirq with MY_SOFTIRQ_ID is raised
-///     ...
+///     // ...
 /// });
 /// // Later on:
 /// SoftIrqLine::get(MY_SOFTIRQ_ID).raise(); // This will trigger the registered callback
@@ -75,7 +77,7 @@ impl SoftIrqLine {
 
     /// Enables a softirq line by registering its callback.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// Each softirq can only be enabled once.
     pub fn enable<F>(&self, callback: F)
@@ -94,7 +96,7 @@ impl SoftIrqLine {
     }
 }
 
-/// A slice that stores the `SoftIrqLine`s, whose ID is equal to its offset in the slice.
+/// A slice that stores the [`SoftIrqLine`]s, whose ID is equal to its offset in the slice.
 static LINES: Once<[SoftIrqLine; SoftIrqLine::NR_LINES as usize]> = Once::new();
 
 pub(super) fn init() {

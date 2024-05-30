@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! A contiguous range of page frames.
+
 use alloc::sync::Arc;
 use core::ops::Range;
 
@@ -14,12 +16,14 @@ use crate::{
 
 /// A handle to a contiguous range of page frames (physical memory pages).
 ///
-/// The biggest difference between `Segment` and `FrameVec` is that
+/// The biggest difference between `Segment` and [`FrameVec`] is that
 /// the page frames must be contiguous for `Segment`.
 ///
 /// A cloned `Segment` refers to the same page frames as the original.
 /// As the original and cloned instances point to the same physical address,  
 /// they are treated as equal to each other.
+///
+/// [`FrameVec`]: crate::mm::FrameVec
 ///
 /// #Example
 ///
@@ -35,7 +39,7 @@ pub struct Segment {
     range: Range<usize>,
 }
 
-/// This behaves like a `[Frame]` that owns a list of frame handles.
+/// This behaves like a [`Frame`] that owns a list of frame handles.
 ///
 /// The ownership is acheived by the reference counting mechanism of
 /// frames. When constructing a `SegmentInner`, the frame handles are
@@ -71,7 +75,7 @@ impl Segment {
     ///
     /// The given range of page frames must be contiguous and valid for use.
     /// The given range of page frames must not have been allocated before,
-    /// as part of either a `Frame` or `Segment`.
+    /// as part of either a [`Frame`] or `Segment`.
     pub(crate) unsafe fn new(paddr: Paddr, nframes: usize) -> Self {
         for i in 0..nframes {
             let pa_i = paddr + i * PAGE_SIZE;
@@ -89,7 +93,7 @@ impl Segment {
 
     /// Returns a part of the `Segment`.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If `range` is not within the range of this `Segment`,
     /// then the method panics.
@@ -128,10 +132,12 @@ impl Segment {
         self.inner.start / PAGE_SIZE + self.range.start
     }
 
+    /// Returns a raw pointer to the starting virtual address of the `Segment`.
     pub fn as_ptr(&self) -> *const u8 {
         super::paddr_to_vaddr(self.start_paddr()) as *const u8
     }
 
+    /// Returns a mutable raw pointer to the starting virtual address of the `Segment`.
     pub fn as_mut_ptr(&self) -> *mut u8 {
         super::paddr_to_vaddr(self.start_paddr()) as *mut u8
     }

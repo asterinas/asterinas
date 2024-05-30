@@ -31,7 +31,7 @@ use crate::{
 ///
 /// A newly-created `VmSpace` is not backed by any physical memory pages.
 /// To provide memory pages for a `VmSpace`, one can allocate and map
-/// physical memory (`Frame`s) to the `VmSpace`.
+/// physical memory ([`Frame`]s) to the `VmSpace`.
 #[derive(Debug)]
 pub struct VmSpace {
     pt: PageTable<UserMode>,
@@ -54,7 +54,7 @@ impl VmSpace {
         }
     }
 
-    /// Activate the page table.
+    /// Activates the page table.
     pub(crate) fn activate(&self) {
         self.pt.activate();
     }
@@ -64,7 +64,7 @@ impl VmSpace {
     ///
     /// The ownership of the frames will be transferred to the `VmSpace`.
     ///
-    /// For more information, see `VmMapOptions`.
+    /// For more information, see [`VmMapOptions`].
     pub fn map(&self, frames: FrameVec, options: &VmMapOptions) -> Result<Vaddr> {
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
@@ -115,7 +115,7 @@ impl VmSpace {
         Ok(addr)
     }
 
-    /// Query about a range of virtual memory.
+    /// Queries about a range of virtual memory.
     /// You will get a iterator of `VmQueryResult` which contains the information of
     /// each parts of the range.
     pub fn query_range(&self, range: &Range<Vaddr>) -> Result<VmQueryIter> {
@@ -124,7 +124,7 @@ impl VmSpace {
         })
     }
 
-    /// Query about the mapping information about a byte in virtual memory.
+    /// Queries about the mapping information about a byte in virtual memory.
     /// This is more handy than [`query_range`], but less efficient if you want
     /// to query in a batch.
     ///
@@ -157,7 +157,7 @@ impl VmSpace {
         Ok(())
     }
 
-    /// clear all mappings
+    /// Clears all mappings
     pub fn clear(&self) {
         // SAFETY: unmapping user space is safe, and we don't care unmapping
         // invalid ranges.
@@ -167,7 +167,7 @@ impl VmSpace {
         tlb_flush_all_excluding_global();
     }
 
-    /// Update the VM protection permissions within the VM address range.
+    /// Updates the VM protection permissions within the VM address range.
     ///
     /// If any of the page in the given range is not mapped, it is skipped.
     /// The method panics when virtual address is not aligned to base page
@@ -196,7 +196,7 @@ impl VmSpace {
         Ok(())
     }
 
-    /// To fork a new VM space with copy-on-write semantics.
+    /// Forks a new VM space with copy-on-write semantics.
     ///
     /// Both the parent and the newly forked VM space will be marked as
     /// read-only. And both the VM space will take handles to the same
@@ -217,16 +217,16 @@ impl Default for VmSpace {
 }
 
 /// Options for mapping physical memory pages into a VM address space.
-/// See `VmSpace::map`.
+/// See [`VmSpace::map`].
 #[derive(Clone, Debug)]
 pub struct VmMapOptions {
-    /// start virtual address
+    /// Starting virtual address
     addr: Option<Vaddr>,
-    /// map align
+    /// Map align
     align: usize,
-    /// page permissions and status
+    /// Page permissions and status
     flags: PageFlags,
-    /// can overwrite
+    /// Can overwrite
     can_overwrite: bool,
 }
 

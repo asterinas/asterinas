@@ -67,7 +67,7 @@ pub(crate) fn interrupts_ack() {
     }
 }
 
-/// Return the frequency of TSC. The unit is Hz.
+/// Returns the frequency of TSC. The unit is Hz.
 pub fn tsc_freq() -> u64 {
     kernel::tsc::TSC_FREQ.load(Ordering::Acquire)
 }

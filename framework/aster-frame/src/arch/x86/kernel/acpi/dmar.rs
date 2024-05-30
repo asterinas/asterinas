@@ -64,7 +64,7 @@ impl AcpiTable for DmarHeader {
 }
 
 impl Dmar {
-    /// Create a instance from ACPI table.
+    /// Creates a instance from ACPI table.
     pub fn new() -> Option<Self> {
         if !super::ACPI_TABLES.is_completed() {
             return None;

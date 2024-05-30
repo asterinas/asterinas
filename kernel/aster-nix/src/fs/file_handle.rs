@@ -29,6 +29,8 @@ pub trait FileLike: Send + Sync + Any {
     ///
     /// The file must be seekable to support `read_at`.
     /// Unlike [`read`], `read_at` will not change the file offset.
+    ///
+    /// [`read`]: FileLike::read
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "read_at is not supported");
     }
@@ -38,6 +40,8 @@ pub trait FileLike: Send + Sync + Any {
     /// The file must be seekable to support `write_at`.
     /// Unlike [`write`], `write_at` will not change the file offset.
     /// If the file is append-only, the `offset` will be ignored.
+    ///
+    /// [`write`]: FileLike::write
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "write_at is not supported");
     }

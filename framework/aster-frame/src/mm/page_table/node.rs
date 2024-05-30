@@ -69,7 +69,7 @@ where
         self.raw
     }
 
-    /// Convert a raw handle to an accessible handle by pertaining the lock.
+    /// Converts a raw handle to an accessible handle by pertaining the lock.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
         // SAFETY: The physical address in the raw handle is valid and we are
         // transferring the ownership to a new handle. No increment of the reference
@@ -90,7 +90,7 @@ where
         PageTableNode::<E, C> { page }
     }
 
-    /// Create a copy of the handle.
+    /// Creates a copy of the handle.
     pub(super) fn clone_shallow(&self) -> Self {
         self.inc_ref();
         Self {
@@ -109,7 +109,7 @@ where
         nr
     }
 
-    /// Activate the page table assuming it is a root page table.
+    /// Activates the page table assuming it is a root page table.
     ///
     /// Here we ensure not dropping an active page table by making a
     /// processor a page table owner. When activating a page table, the
@@ -148,7 +148,7 @@ where
         });
     }
 
-    /// Activate the (root) page table assuming it is the first activation.
+    /// Activates the (root) page table assuming it is the first activation.
     ///
     /// It will not try dropping the last activate page table. It is the same
     /// with [`Self::activate()`] in other senses.
@@ -213,7 +213,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    /// Allocate a new empty page table node.
+    /// Allocates a new empty page table node.
     ///
     /// This function returns an owning handle. The newly created handle does not
     /// set the lock bit for performance as it is exclusive and unlocking is an
@@ -241,7 +241,7 @@ where
         self.page.meta().level
     }
 
-    /// Convert the handle into a raw handle to be stored in a PTE or CPU.
+    /// Converts the handle into a raw handle to be stored in a PTE or CPU.
     pub(super) fn into_raw(self) -> RawPageTableNode<E, C> {
         let level = self.level();
         let raw = self.page.paddr();
@@ -254,7 +254,7 @@ where
         }
     }
 
-    /// Get a raw handle while still preserving the original handle.
+    /// Gets a raw handle while still preserving the original handle.
     pub(super) fn clone_raw(&self) -> RawPageTableNode<E, C> {
         core::mem::forget(self.page.clone());
         RawPageTableNode {
@@ -264,7 +264,7 @@ where
         }
     }
 
-    /// Get an extra reference of the child at the given index.
+    /// Gets an extra reference of the child at the given index.
     pub(super) fn child(&self, idx: usize, tracked: bool) -> Child<E, C> {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         let pte = self.read_pte(idx);
@@ -298,7 +298,7 @@ where
         }
     }
 
-    /// Make a copy of the page table node.
+    /// Makes a copy of the page table node.
     ///
     /// This function allows you to control about the way to copy the children.
     /// For indexes in `deep`, the children are deep copied and this function will be recursively called.
@@ -347,13 +347,13 @@ where
         new_frame
     }
 
-    /// Remove a child if the child at the given index is present.
+    /// Removes a child if the child at the given index is present.
     pub(super) fn unset_child(&mut self, idx: usize, in_untracked_range: bool) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         self.overwrite_pte(idx, None, in_untracked_range);
     }
 
-    /// Set a child page table at a given index.
+    /// Sets a child page table at a given index.
     pub(super) fn set_child_pt(
         &mut self,
         idx: usize,
@@ -380,7 +380,7 @@ where
         let _ = ManuallyDrop::new(frame);
     }
 
-    /// Set an untracked child frame at a given index.
+    /// Sets an untracked child frame at a given index.
     ///
     /// # Safety
     ///
@@ -398,12 +398,12 @@ where
         self.page.meta().nr_children
     }
 
-    /// Read the info from a page table entry at a given index.
+    /// Reads the info from a page table entry at a given index.
     pub(super) fn read_pte_prop(&self, idx: usize) -> PageProperty {
         self.read_pte(idx).prop()
     }
 
-    /// Split the untracked huge page mapped at `idx` to smaller pages.
+    /// Splits the untracked huge page mapped at `idx` to smaller pages.
     pub(super) fn split_untracked_huge(&mut self, idx: usize) {
         // These should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
@@ -423,7 +423,7 @@ where
         self.set_child_pt(idx, new_frame.into_raw(), true);
     }
 
-    /// Protect an already mapped child at a given index.
+    /// Protects an already mapped child at a given index.
     pub(super) fn protect(&mut self, idx: usize, prop: PageProperty) {
         let mut pte = self.read_pte(idx);
         debug_assert!(pte.is_present()); // This should be ensured by the cursor.
@@ -445,7 +445,7 @@ where
         self.page.paddr()
     }
 
-    /// Replace a page table entry at a given index.
+    /// Replaces a page table entry at a given index.
     ///
     /// This method will ensure that the child presented by the overwritten
     /// PTE is dropped, and the child count is updated.

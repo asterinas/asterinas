@@ -18,12 +18,12 @@ pub struct AtomicBits {
 }
 
 impl AtomicBits {
-    /// Create a given number of bit 0s.
+    /// Creates a given number of bit 0s.
     pub fn new_zeroes(num_bits: usize) -> Self {
         Self::new(0, num_bits)
     }
 
-    /// Create a given number of bit 1s.
+    /// Creates a given number of bit 1s.
     pub fn new_ones(num_bits: usize) -> Self {
         Self::new(!0, num_bits)
     }
@@ -45,7 +45,7 @@ impl AtomicBits {
         self.num_bits
     }
 
-    /// Get the bit at a given position.
+    /// Gets the bit at a given position.
     pub fn get(&self, index: usize) -> bool {
         assert!(index < self.num_bits);
         let i = index / 64;
@@ -55,7 +55,7 @@ impl AtomicBits {
         (u64_atomic.load(Relaxed) & 1 << j) != 0
     }
 
-    /// Set the bit at a given position.
+    /// Sets the bit at a given position.
     pub fn set(&self, index: usize, new_bit: bool) {
         assert!(index < self.num_bits);
         let i = index / 64;
@@ -69,7 +69,7 @@ impl AtomicBits {
         }
     }
 
-    /// Clear all the bits.
+    /// Clears all the bits.
     pub fn clear(&self) {
         todo!()
     }
@@ -88,17 +88,17 @@ impl AtomicBits {
         todo!()
     }
 
-    /// Get an iterator for the bits.
+    /// Gets an iterator for the bits.
     pub fn iter(&self) -> Iter<'_> {
         Iter::new(self)
     }
 
-    /// Get an iterator that gives the positions of all 1s in the bits.
+    /// Gets an iterator that gives the positions of all 1s in the bits.
     pub fn iter_ones(&self) -> OnesIter<'_> {
         OnesIter::new(self)
     }
 
-    /// Get an iterator that gives the positions of all 0s in the bits.
+    /// Gets an iterator that gives the positions of all 0s in the bits.
     pub fn iter_zeroes(&self) -> ZeroesIter<'_> {
         ZeroesIter::new(self)
     }
@@ -130,7 +130,7 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-/// An iterator that returns the positions of 1s in an `AtomicBits`.
+/// An iterator that returns the positions of 1s in an [`AtomicBits`].
 pub struct OnesIter<'a> {
     bits: &'a AtomicBits,
     u64_idx: usize,
@@ -157,7 +157,7 @@ impl<'a> OnesIter<'a> {
         new_self
     }
 
-    /// Get the u64 value at the given position, removing the garbage bits if any.
+    /// Gets the u64 value at the given position, removing the garbage bits if any.
     fn get_u64_val(&self, idx: usize) -> u64 {
         let mut u64_val = self.bits.u64s[idx].load(Relaxed);
         // Clear the garbage bits, if any, in the last u64 so that they
@@ -195,7 +195,7 @@ impl<'a> Iterator for OnesIter<'a> {
     }
 }
 
-/// An iterator that returns the positions of 0s in an `AtomicBits`.
+/// An iterator that returns the positions of 0s in an [`AtomicBits`].
 pub struct ZeroesIter<'a> {
     bits: &'a AtomicBits,
     u64_idx: usize,
@@ -222,7 +222,7 @@ impl<'a> ZeroesIter<'a> {
         new_self
     }
 
-    /// Get the u64 value at the given position, removing the garbage bits if any.
+    /// Gets the u64 value at the given position, removing the garbage bits if any.
     fn get_u64_val(&self, idx: usize) -> u64 {
         let mut u64_val = self.bits.u64s[idx].load(Relaxed);
         // Set all garbage bits, if any, in the last u64 so that they

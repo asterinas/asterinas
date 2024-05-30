@@ -32,7 +32,7 @@ impl<T> SpinLock<T> {
 }
 
 impl<T: ?Sized> SpinLock<T> {
-    /// Acquire the spin lock with disabling the local IRQs. This is the most secure
+    /// Acquires the spin lock with disabling the local IRQs. This is the most secure
     /// locking way.
     ///
     /// This method runs in a busy loop until the lock can be acquired.
@@ -46,7 +46,7 @@ impl<T: ?Sized> SpinLock<T> {
         }
     }
 
-    /// Try acquiring the spin lock immedidately with disabling the local IRQs.
+    /// Tries acquiring the spin lock immedidately with disabling the local IRQs.
     pub fn try_lock_irq_disabled(&self) -> Option<SpinLockGuard<T>> {
         let irq_guard = disable_local();
         if self.try_acquire_lock() {
@@ -59,14 +59,16 @@ impl<T: ?Sized> SpinLock<T> {
         None
     }
 
-    /// Acquire the spin lock without disabling local IRQs.
+    /// Acquires the spin lock without disabling local IRQs.
     ///
-    /// This method is twice as fast as the `lock_irq_disabled` method.
-    /// So prefer using this method over the `lock_irq_disabled` method
+    /// This method is twice as fast as the [`lock_irq_disabled`] method.
+    /// So prefer using this method over the [`lock_irq_disabled`] method
     /// when IRQ handlers are allowed to get executed while
     /// holding this lock. For example, if a lock is never used
     /// in the interrupt context, then it is ok to use this method
     /// in the process context.
+    ///
+    /// [`lock_irq_disabled`]: Self::lock_irq_disabled
     pub fn lock(&self) -> SpinLockGuard<T> {
         let guard = disable_preempt();
         self.acquire_lock();
@@ -76,10 +78,12 @@ impl<T: ?Sized> SpinLock<T> {
         }
     }
 
-    /// Acquire the spin lock through an [`Arc`].
+    /// Acquires the spin lock through an [`Arc`].
     ///
-    /// The method is similar to [`Self::lock`], but it doesn't have the requirement
+    /// The method is similar to [`lock`], but it doesn't have the requirement
     /// for compile-time checked lifetimes of the lock guard.
+    ///
+    /// [`lock`]: Self::lock
     pub fn lock_arc(self: &Arc<Self>) -> ArcSpinLockGuard<T> {
         let guard = disable_preempt();
         self.acquire_lock();
@@ -89,7 +93,7 @@ impl<T: ?Sized> SpinLock<T> {
         }
     }
 
-    /// Try acquiring the spin lock immedidately without disabling the local IRQs.
+    /// Tries acquiring the spin lock immedidately without disabling the local IRQs.
     pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
         let guard = disable_preempt();
         if self.try_acquire_lock() {
@@ -102,7 +106,7 @@ impl<T: ?Sized> SpinLock<T> {
         None
     }
 
-    /// Access the spin lock, otherwise busy waiting
+    /// Acquires the spin lock, otherwise busy waiting
     fn acquire_lock(&self) {
         while !self.try_acquire_lock() {
             core::hint::spin_loop();
@@ -137,7 +141,7 @@ enum InnerGuard {
 
 /// A guard that provides exclusive access to the data protected by a [`SpinLock`].
 pub type SpinLockGuard<'a, T> = SpinLockGuard_<T, &'a SpinLock<T>>;
-/// A guard that provides exclusive access to the data protected by a [`Arc<SpinLock>`].
+/// A guard that provides exclusive access to the data protected by a `Arc<SpinLock>`.
 pub type ArcSpinLockGuard<T> = SpinLockGuard_<T, Arc<SpinLock<T>>>;
 
 /// The guard of a spin lock that disables the local IRQs.

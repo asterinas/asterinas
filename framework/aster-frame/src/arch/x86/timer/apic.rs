@@ -29,8 +29,8 @@ use crate::{
     trap::IrqLine,
 };
 
-/// Init APIC with tsc deadline mode or periodic mode.
-/// Return the corresponding `IrqLine` for the System Timer.
+/// Initializes APIC with tsc deadline mode or periodic mode.
+/// Return the corresponding [`IrqLine`] for the System Timer.
 pub(super) fn init() -> IrqLine {
     init_tsc_freq();
     if is_tsc_deadline_mode_supported() {
@@ -44,7 +44,7 @@ pub(super) fn init() -> IrqLine {
 
 pub(super) static APIC_TIMER_CALLBACK: Once<Arc<dyn Fn() + Sync + Send>> = Once::new();
 
-/// Determine if the current system supports tsc_deadline mode APIC timer
+/// Determines if the current system supports tsc_deadline mode APIC timer
 fn is_tsc_deadline_mode_supported() -> bool {
     const TSC_DEADLINE_MODE_SUPPORT: u32 = 1 << 24;
     let cpuid = cpuid!(1);

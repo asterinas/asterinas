@@ -1326,7 +1326,7 @@ struct DeviceRangeReader<'a> {
 impl<'a> DeviceRangeReader<'a> {
     /// Creates a new reader.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If the 'range' is empty, this method will panic.
     pub fn new(inode: &'a InodeImpl_, range: Range<Ext2Bid>) -> Result<Self> {

@@ -141,7 +141,7 @@ impl BlockGroup {
 
     /// Inserts the inode into the inode cache.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If `inode_idx` has not been allocated before, then the method panics.
     pub fn insert_cache(&self, inode_idx: u32, inode: Arc<Inode>) {
@@ -163,7 +163,7 @@ impl BlockGroup {
 
     /// Frees the allocated inode idx.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If `inode_idx` has not been allocated before, then the method panics.
     pub fn free_inode(&self, inode_idx: u32, is_dir: bool) {
@@ -192,7 +192,7 @@ impl BlockGroup {
 
     /// Frees the consecutive range of allocated block indices.
     ///
-    /// # Panic
+    /// # Panics
     ///
     ///  If the `range` is out of bounds, this method will panic.
     ///  If one of the `idx` in `range` has not been allocated before, then the method panics.

@@ -65,7 +65,7 @@ pub(crate) fn alloc_contiguous(nframes: usize) -> Option<Segment> {
         })
 }
 
-/// Deallocate a contiguous range of page frames.
+/// Deallocates a contiguous range of page frames.
 ///
 /// # Safety
 ///

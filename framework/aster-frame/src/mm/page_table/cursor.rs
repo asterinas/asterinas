@@ -108,7 +108,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    /// Create a cursor exclusively owning the locks for the given range.
+    /// Creates a cursor exclusively owning the locks for the given range.
     ///
     /// The cursor created will only be able to map, query or jump within the
     /// given range.
@@ -160,7 +160,7 @@ where
         Ok(cursor)
     }
 
-    /// Get the information of the current slot.
+    /// Gets the information of the current slot.
     pub(crate) fn query(&mut self) -> Option<PageTableQueryResult> {
         if self.va >= self.barrier_va.end {
             return None;
@@ -202,7 +202,7 @@ where
         }
     }
 
-    /// Traverse forward in the current level to the next PTE.
+    /// Traverses forward in the current level to the next PTE.
     ///
     /// If reached the end of a page table node, it leads itself up to the next frame of the parent
     /// frame if possible.
@@ -215,7 +215,7 @@ where
         self.va = next_va;
     }
 
-    /// Go up a level. We release the current frame if it has no mappings since the cursor only moves
+    /// Goes up a level. We release the current frame if it has no mappings since the cursor only moves
     /// forward. And if needed we will do the final cleanup using this method after re-walk when the
     /// cursor is dropped.
     ///
@@ -237,7 +237,7 @@ where
         }
     }
 
-    /// Go down a level assuming a child page table exists.
+    /// Goes down a level assuming a child page table exists.
     fn level_down(&mut self) {
         debug_assert!(self.level > 1);
         let idx = pte_index::<C>(self.va, self.level);
@@ -268,7 +268,7 @@ where
         self.cur_node().read_pte(self.cur_idx())
     }
 
-    /// Tell if the current virtual range must contain untracked mappings.
+    /// Tells if the current virtual range must contain untracked mappings.
     ///
     /// In the kernel mode, this is aligned with the definition in [`crate::mm::kspace`].
     /// Only linear mappings in the kernel are considered as untracked mappings.
@@ -354,7 +354,7 @@ where
         Cursor::new(pt, va).map(|inner| Self(inner))
     }
 
-    /// Get the information of the current slot and go to the next slot.
+    /// Gets the information of the current slot and go to the next slot.
     ///
     /// We choose not to implement `Iterator` or `IterMut` for [`CursorMut`]
     /// because the mutable cursor is indeed not an iterator.
@@ -362,9 +362,11 @@ where
         self.0.next()
     }
 
-    /// Jump to the given virtual address.
+    /// Jumps to the given virtual address.
     ///
-    /// It panics if the address is out of the range where the cursor is required to operate,
+    /// # Panics
+    ///
+    /// This method panics if the address is out of the range where the cursor is required to operate,
     /// or has bad alignment.
     pub(crate) fn jump(&mut self, va: Vaddr) {
         assert!(self.0.barrier_va.contains(&va));
@@ -388,9 +390,9 @@ where
         }
     }
 
-    /// Map the range starting from the current address to a `Frame`.
+    /// Maps the range starting from the current address to a [`Frame`].
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This function will panic if
     ///  - the virtual address range to be mapped is out of the range;
@@ -428,7 +430,7 @@ where
         self.0.move_forward();
     }
 
-    /// Map the range starting from the current address to a physical address range.
+    /// Maps the range starting from the current address to a physical address range.
     ///
     /// The function will map as more huge pages as possible, and it will split
     /// the huge pages into smaller pages if necessary. If the input range is
@@ -444,7 +446,7 @@ where
     ///
     /// In practice it is not suggested to use this method for safety and conciseness.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This function will panic if
     ///  - the virtual address range to be mapped is out of the range.
@@ -491,13 +493,13 @@ where
         }
     }
 
-    /// Unmap the range starting from the current address with the given length of virtual address.
+    /// Unmaps the range starting from the current address with the given length of virtual address.
     ///
     /// # Safety
     ///
     /// The caller should ensure that the range being unmapped does not affect kernel's memory safety.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This function will panic if:
     ///  - the range to be unmapped is out of the range where the cursor is required to operate;
@@ -544,7 +546,7 @@ where
         }
     }
 
-    /// Apply the given operation to all the mappings within the range.
+    /// Applies the given operation to all the mappings within the range.
     ///
     /// The funtction will return an error if it is not allowed to protect an invalid range and
     /// it does so, or if the range to be protected only covers a part of a page.
@@ -553,7 +555,7 @@ where
     ///
     /// The caller should ensure that the range being protected does not affect kernel's memory safety.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// This function will panic if:
     ///  - the range to be protected is out of the range where the cursor is required to operate.
@@ -599,7 +601,7 @@ where
         Ok(())
     }
 
-    /// Consume itself and leak the root guard for the caller if it locked the root level.
+    /// Consumes itself and leak the root guard for the caller if it locked the root level.
     ///
     /// It is useful when the caller wants to keep the root guard while the cursor should be dropped.
     pub(super) fn leak_root_guard(mut self) -> Option<PageTableNode<E, C>> {
@@ -614,7 +616,7 @@ where
         // level is the root level when running the dropping method.
     }
 
-    /// Go down a level assuming the current slot is absent.
+    /// Goes down a level assuming the current slot is absent.
     ///
     /// This method will create a new child frame and go down to it.
     fn level_down_create(&mut self) {
@@ -628,7 +630,7 @@ where
         self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_frame);
     }
 
-    /// Go down a level assuming the current slot is an untracked huge page.
+    /// Goes down a level assuming the current slot is an untracked huge page.
     ///
     /// This method will split the huge page and go down to the next level.
     fn level_down_split(&mut self) {

@@ -28,7 +28,7 @@ pub struct Credentials<R = FullOp>(Arc<Credentials_>, R);
 
 /// Gets read-only credentials of current thread.
 ///
-/// # Panic
+/// # Panics
 ///
 /// This method should only be called in process context.
 pub fn credentials() -> Credentials<ReadOp> {
@@ -39,7 +39,7 @@ pub fn credentials() -> Credentials<ReadOp> {
 
 /// Gets write-only credentials of current thread.
 ///
-/// # Panic
+/// # Panics
 ///
 /// This method should only be called in process context.
 pub fn credentials_mut() -> Credentials<WriteOp> {

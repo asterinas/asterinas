@@ -39,12 +39,12 @@ pub struct MemoryRegion {
 }
 
 impl MemoryRegion {
-    /// Construct a valid memory region.
+    /// Constructs a valid memory region.
     pub fn new(base: usize, len: usize, typ: MemoryRegionType) -> Self {
         MemoryRegion { base, len, typ }
     }
 
-    /// Construct a memory region where kernel sections are loaded.
+    /// Constructs a memory region where kernel sections are loaded.
     ///
     /// Most boot protocols do not mark the place where the kernel loads as unusable. In this case,
     /// we need to explicitly construct and append this memory region.
@@ -81,7 +81,7 @@ impl MemoryRegion {
         self.typ
     }
 
-    /// Remove range t from self, resulting in 0, 1 or 2 truncated ranges.
+    /// Removes range `t` from self, resulting in 0, 1 or 2 truncated ranges.
     /// We need to have this method since memory regions can overlap.
     pub fn truncate(&self, t: &MemoryRegion) -> Vec<MemoryRegion> {
         if self.base < t.base {
@@ -125,7 +125,7 @@ impl MemoryRegion {
     }
 }
 
-/// Truncate regions, resulting in a set of regions that does not overlap.
+/// Truncates regions, resulting in a set of regions that does not overlap.
 ///
 /// The truncation will be done according to the type of the regions, that
 /// usable and reclaimable regions will be truncated by the unusable regions.

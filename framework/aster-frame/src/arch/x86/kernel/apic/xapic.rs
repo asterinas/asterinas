@@ -33,14 +33,14 @@ impl XApic {
         })
     }
 
-    /// Read a register from the MMIO region.
+    /// Reads a register from the MMIO region.
     fn read(&self, offset: u32) -> u32 {
         assert!(offset as usize % 4 == 0);
         let index = offset as usize / 4;
         unsafe { core::ptr::read_volatile(&self.mmio_region[index]) }
     }
 
-    /// write a register in the MMIO region.
+    /// Writes a register in the MMIO region.
     fn write(&mut self, offset: u32, val: u32) {
         assert!(offset as usize % 4 == 0);
         let index = offset as usize / 4;
@@ -94,7 +94,7 @@ impl ApicTimer for XApic {
     }
 }
 
-/// set APIC base address and enable it
+/// Sets APIC base address and enables it
 fn set_apic_base_address(address: usize) {
     unsafe {
         x86_64::registers::model_specific::Msr::new(IA32_APIC_BASE_MSR)
@@ -102,7 +102,7 @@ fn set_apic_base_address(address: usize) {
     }
 }
 
-/// get APIC base address
+/// Gets APIC base address
 fn get_apic_base_address() -> usize {
     unsafe {
         (x86_64::registers::model_specific::Msr::new(IA32_APIC_BASE_MSR).read() & 0xf_ffff_f000)
