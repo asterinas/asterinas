@@ -115,6 +115,10 @@ fn do_execve(
         let process_vm = current.vm();
         load_program_to_vm(process_vm, elf_file.clone(), argv, envp, fs_resolver, 1)?
     };
+
+    // After the program has been successfully loaded, the virtual memory of the current process
+    // is initialized. Hence, it is necessary to clear the previously recorded robust list.
+    *posix_thread.robust_list().lock() = None;
     debug!("load elf in execve succeeds");
 
     let credentials = credentials_mut();
