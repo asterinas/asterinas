@@ -18,6 +18,8 @@ fork_c/fork
 getpid/getpid
 hello_pie/hello
 hello_world/hello_world
+itimer/setitimer
+itimer/timer_create
 mmap/map_shared_anon
 pthread/pthread_test
 pty/open_pty
