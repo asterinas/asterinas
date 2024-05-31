@@ -18,6 +18,7 @@ use crate::{
     prelude::*,
     process::signal::constants::SIGCONT,
     thread::{thread_table, Tid},
+    time::{clocks::ProfClock, Timer, TimerManager},
     util::write_val_to_user,
 };
 
@@ -59,6 +60,15 @@ pub struct PosixThread {
     /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
     sig_context: Mutex<Option<Vaddr>>,
     sig_stack: Mutex<Option<SigStack>>,
+
+    /// A profiling clock measures the user CPU time and kernel CPU time in the thread.
+    prof_clock: Arc<ProfClock>,
+
+    /// A manager that manages timers based on the user CPU time of the current thread.
+    virtual_timer_manager: Arc<TimerManager>,
+
+    /// A manager that manages timers based on the profiling clock of the current thread.
+    prof_timer_manager: Arc<TimerManager>,
 }
 
 impl PosixThread {
@@ -141,8 +151,37 @@ impl PosixThread {
         return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
     }
 
-    pub(in crate::process) fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+    /// Enqueues a thread-directed signal. This method should only be used for enqueue kernel
+    /// signal and fault signal.
+    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
         self.sig_queues.enqueue(signal);
+    }
+
+    /// Returns a reference to the profiling clock of the current thread.
+    pub fn prof_clock(&self) -> &Arc<ProfClock> {
+        &self.prof_clock
+    }
+
+    /// Creates a timer based on the profiling CPU clock of the current thread.
+    pub fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        self.prof_timer_manager.create_timer(func)
+    }
+
+    /// Creates a timer based on the user CPU clock of the current thread.
+    pub fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        self.virtual_timer_manager.create_timer(func)
+    }
+
+    /// Checks the `TimerCallback`s that are managed by the `prof_timer_manager`.
+    /// If any have timed out, call the corresponding callback functions.
+    pub fn process_expired_timers(&self) {
+        self.prof_timer_manager.process_expired_timers();
     }
 
     pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {

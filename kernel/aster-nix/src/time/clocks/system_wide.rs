@@ -124,6 +124,11 @@ impl BootTimeClock {
     pub fn get() -> &'static Arc<BootTimeClock> {
         CLOCK_BOOTTIME_INSTANCE.get().unwrap()
     }
+
+    /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
+    pub fn timer_manager() -> &'static Arc<TimerManager> {
+        CLOCK_BOOTTIME_MANAGER.get().unwrap()
+    }
 }
 
 impl Clock for JiffiesClock {
@@ -232,7 +237,7 @@ define_system_clocks! {
     CLOCK_BOOTTIME          => BootTimeClock,
 }
 
-define_timer_managers![CLOCK_REALTIME, CLOCK_MONOTONIC,];
+define_timer_managers![CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_BOOTTIME,];
 
 /// Init the system-wide clocks.
 fn init_system_wide_clocks() {

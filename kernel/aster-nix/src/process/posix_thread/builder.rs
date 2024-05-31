@@ -11,6 +11,7 @@ use crate::{
         Credentials, Process,
     },
     thread::{status::ThreadStatus, task, thread_table, Thread, Tid},
+    time::{clocks::ProfClock, TimerManager},
 };
 
 /// The builder to build a posix thread
@@ -94,6 +95,11 @@ impl PosixThreadBuilder {
         let thread = Arc::new_cyclic(|thread_ref| {
             let task = task::create_new_user_task(user_space, thread_ref.clone());
             let status = ThreadStatus::Init;
+
+            let prof_clock = ProfClock::new();
+            let virtual_timer_manager = TimerManager::new(prof_clock.user_clock().clone());
+            let prof_timer_manager = TimerManager::new(prof_clock.clone());
+
             let posix_thread = PosixThread {
                 process,
                 is_main_thread,
@@ -106,6 +112,9 @@ impl PosixThreadBuilder {
                 sig_context: Mutex::new(None),
                 sig_stack: Mutex::new(None),
                 robust_list: Mutex::new(None),
+                prof_clock,
+                virtual_timer_manager,
+                prof_timer_manager,
             };
 
             Thread::new(tid, task, posix_thread, status)
