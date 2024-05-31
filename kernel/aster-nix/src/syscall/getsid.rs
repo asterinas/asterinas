@@ -16,7 +16,7 @@ pub fn sys_getsid(pid: Pid) -> Result<SyscallReturn> {
         return Ok(SyscallReturn::Return(sid as _));
     }
 
-    let Some(process) = process_table::get_process(&pid) else {
+    let Some(process) = process_table::get_process(pid) else {
         return_errno_with_message!(Errno::ESRCH, "the process does not exist")
     };
 

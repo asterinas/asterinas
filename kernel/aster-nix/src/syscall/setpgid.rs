@@ -28,7 +28,7 @@ pub fn sys_setpgid(pid: Pid, pgid: Pgid) -> Result<SyscallReturn> {
         return_errno_with_message!(Errno::EPERM, "process group must exist");
     }
 
-    let process = process_table::get_process(&pid)
+    let process = process_table::get_process(pid)
         .ok_or(Error::with_message(Errno::ESRCH, "process does not exist"))?;
 
     process.to_other_group(pgid)?;

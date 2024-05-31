@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use super::{clock_gettime::read_clock, ClockID, SyscallReturn};
+use super::{clock_gettime::read_clock, ClockId, SyscallReturn};
 use crate::{
     prelude::*,
     process::signal::Pauser,
@@ -14,9 +14,14 @@ pub fn sys_nanosleep(
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    let clock_id = ClockID::CLOCK_MONOTONIC;
+    let clockid = ClockId::CLOCK_MONOTONIC;
 
-    do_clock_nanosleep(clock_id, false, request_timespec_addr, remain_timespec_addr)
+    do_clock_nanosleep(
+        clockid as clockid_t,
+        false,
+        request_timespec_addr,
+        remain_timespec_addr,
+    )
 }
 
 pub fn sys_clock_nanosleep(
@@ -25,7 +30,6 @@ pub fn sys_clock_nanosleep(
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    let clock_id = ClockID::try_from(clockid)?;
     let is_abs_time = if flags == 0 {
         false
     } else if flags == TIMER_ABSTIME {
@@ -35,7 +39,7 @@ pub fn sys_clock_nanosleep(
     };
 
     do_clock_nanosleep(
-        clock_id,
+        clockid,
         is_abs_time,
         request_timespec_addr,
         remain_timespec_addr,
@@ -43,7 +47,7 @@ pub fn sys_clock_nanosleep(
 }
 
 fn do_clock_nanosleep(
-    clock_id: ClockID,
+    clockid: clockid_t,
     is_abs_time: bool,
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
@@ -55,10 +59,10 @@ fn do_clock_nanosleep(
 
     debug!(
         "clockid = {:?}, is_abs_time = {}, request_time = {:?}, remain_timespec_addr = 0x{:x}",
-        clock_id, is_abs_time, request_time, remain_timespec_addr
+        clockid, is_abs_time, request_time, remain_timespec_addr
     );
 
-    let start_time = read_clock(&clock_id)?;
+    let start_time = read_clock(clockid)?;
     let timeout = if is_abs_time {
         if request_time < start_time {
             return Ok(SyscallReturn::Return(0));
@@ -77,7 +81,7 @@ fn do_clock_nanosleep(
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
         Err(e) if e.error() == Errno::EINTR => {
-            let end_time = read_clock(&clock_id)?;
+            let end_time = read_clock(clockid)?;
 
             if end_time >= start_time + timeout {
                 return Ok(SyscallReturn::Return(0));

@@ -20,7 +20,7 @@ use crate::{
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn kill(pid: Pid, signal: Option<UserSignal>) -> Result<()> {
-    let process = process_table::get_process(&pid)
+    let process = process_table::get_process(pid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process does not exist"))?;
 
     kill_process(&process, signal)
