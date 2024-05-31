@@ -3,7 +3,7 @@
 //! Read the Cpu context content then dispatch syscall to corrsponding handler
 //! The each sub module contains functions that handle real syscall logic.
 use aster_frame::cpu::UserContext;
-pub use clock_gettime::ClockID;
+pub use clock_gettime::ClockId;
 
 use crate::{cpu::LinuxAbi, prelude::*};
 
@@ -92,6 +92,7 @@ mod setfsgid;
 mod setfsuid;
 mod setgid;
 mod setgroups;
+mod setitimer;
 mod setpgid;
 mod setregid;
 mod setresgid;
@@ -110,6 +111,8 @@ mod symlink;
 mod sync;
 mod tgkill;
 mod time;
+mod timer_create;
+mod timer_settime;
 mod truncate;
 mod umask;
 mod uname;
