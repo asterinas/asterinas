@@ -6,6 +6,34 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use super::SpinLock;
 use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
 
+// # Explanation on the memory orders
+//
+// ```
+// [CPU 1 (the waker)]     [CPU 2 (the waiter)]
+// cond = true;
+// wake_up();
+//                         wait();
+//                         if cond { /* .. */ }
+// ```
+//
+// As soon as the waiter is woken up by the waker, it must see the true condition. This is
+// trivially satisfied if `wake_up()` and `wait()` synchronize with a lock. But if they synchronize
+// with an atomic variable, `wake_up()` must access the variable with `Ordering::Release` and
+// `wait()` must access the variable with `Ordering::Acquire`.
+//
+// Examples of `wake_up()`:
+//  - `WaitQueue::wake_one()`
+//  - `WaitQueue::wake_all()`
+//  - `Waker::wake_up()`
+//
+// Examples of `wait()`:
+//  - `WaitQueue::wait_until()`
+//  - `Waiter::wait()`
+//  - `Waiter::drop()`
+//
+// Note that dropping a waiter must be treated as a `wait()` with zero timeout, because we need to
+// make sure that the wake event isn't lost in this case.
+
 /// A wait queue.
 ///
 /// One may wait on a wait queue to put its executing thread to sleep.
@@ -136,13 +164,16 @@ impl WaitQueue {
     }
 
     fn is_empty(&self) -> bool {
-        self.num_wakers.load(Ordering::Acquire) == 0
+        // On x86-64, this generates `mfence; mov`, which is exactly the right way to implement
+        // atomic loading with `Ordering::Release`. It performs much better than naively
+        // translating `fetch_add(0)` to `lock; xadd`.
+        self.num_wakers.fetch_add(0, Ordering::Release) == 0
     }
 
     fn enqueue(&self, waker: Arc<Waker>) {
         let mut wakers = self.wakers.lock_irq_disabled();
         wakers.push_back(waker);
-        self.num_wakers.fetch_add(1, Ordering::Release);
+        self.num_wakers.fetch_add(1, Ordering::Acquire);
     }
 }
 
@@ -215,7 +246,7 @@ impl Waker {
     /// delivered, _or_ that the waiter will be dropped after being woken. It's up to the caller to
     /// handle the latter case properly to avoid missing the wake event.
     pub fn wake_up(&self) -> bool {
-        if self.has_woken.swap(true, Ordering::AcqRel) {
+        if self.has_woken.swap(true, Ordering::Release) {
             return false;
         }
 
@@ -238,10 +269,10 @@ impl Waker {
     }
 
     fn do_wait(&self) {
-        while !self.has_woken.load(Ordering::Acquire) {
+        while !self.has_woken.swap(false, Ordering::Acquire) {
             let mut task = self.task.inner_exclusive_access();
             // After holding the lock, check again to avoid races
-            if self.has_woken.load(Ordering::Acquire) {
+            if self.has_woken.swap(false, Ordering::Acquire) {
                 break;
             }
             task.task_status = TaskStatus::Sleepy;
@@ -249,12 +280,12 @@ impl Waker {
 
             schedule();
         }
-
-        self.has_woken.store(false, Ordering::Release);
     }
 
     fn close(&self) {
-        self.has_woken.store(true, Ordering::Release);
+        // This must use `Ordering::Acquire`, although we do not care about the return value. See
+        // the memory order explanation at the top of the file for details.
+        let _ = self.has_woken.swap(true, Ordering::Acquire);
     }
 }
 
