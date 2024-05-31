@@ -63,7 +63,7 @@ const INIT_PROCESS_PID: Pid = 1;
 
 /// Get the init process
 fn get_init_process() -> Option<Arc<Process>> {
-    process_table::get_process(&INIT_PROCESS_PID)
+    process_table::get_process(INIT_PROCESS_PID)
 }
 
 fn is_init_process(process: &Process) -> bool {
