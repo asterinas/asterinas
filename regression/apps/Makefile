@@ -20,6 +20,7 @@ TEST_APPS := \
 	hello_c \
 	hello_pie \
 	hello_world \
+	itimer \
 	mmap \
 	mongoose \
 	network \

@@ -29,6 +29,7 @@ TESTS ?= \
 	statfs_test \
 	symlink_test \
 	sync_test \
+	timers_test \
 	truncate_test \
 	uidgid_test \
 	unlink_test \
