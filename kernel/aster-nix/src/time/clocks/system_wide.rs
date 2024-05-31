@@ -288,4 +288,10 @@ pub fn init_for_ktest() {
         let clock = RealTimeClock { _private: () };
         TimerManager::new(Arc::new(clock))
     });
+    CLOCK_REALTIME_COARSE_INSTANCE.call_once(|| Arc::new(RealTimeCoarseClock { _private: () }));
+    RealTimeCoarseClock::current_ref().call_once(|| SpinLock::new(Duration::from_secs(0)));
+    JIFFIES_TIMER_MANAGER.call_once(|| {
+        let clock = JiffiesClock { _private: () };
+        TimerManager::new(Arc::new(clock))
+    });
 }

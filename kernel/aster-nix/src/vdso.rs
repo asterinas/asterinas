@@ -12,7 +12,7 @@
 //! use. It also hooks up the VDSO data update routine to the time management subsystem for periodic updates.
 
 use alloc::{boxed::Box, sync::Arc};
-use core::time::Duration;
+use core::{mem::ManuallyDrop, time::Duration};
 
 use aster_frame::{
     sync::SpinLock,
@@ -319,8 +319,9 @@ pub(super) fn init() {
 
     // Coarse resolution clock IDs directly read the instant stored in VDSO data without
     // using coefficients for calculation, thus the related instant requires more frequent updating.
-    let coarse_instant_timer =
-        MonotonicClock::timer_manager().create_timer(update_vdso_coarse_res_instant);
+    let coarse_instant_timer = ManuallyDrop::new(
+        MonotonicClock::timer_manager().create_timer(update_vdso_coarse_res_instant),
+    );
     coarse_instant_timer.set_interval(Duration::from_millis(100));
     coarse_instant_timer.set_timeout(Duration::from_millis(100));
 }
