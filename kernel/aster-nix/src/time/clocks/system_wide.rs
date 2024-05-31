@@ -3,17 +3,14 @@
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use aster_frame::{
-    arch::timer::{self, Jiffies},
-    cpu_local,
-    sync::SpinLock,
-    CpuLocal,
-};
+use aster_frame::{arch::timer::Jiffies, cpu_local, sync::SpinLock, CpuLocal};
 use aster_time::read_monotonic_time;
 use paste::paste;
 use spin::Once;
 
-use crate::time::{system_time::START_TIME_AS_DURATION, timer::TimerManager, Clock, SystemTime};
+use crate::time::{
+    self, system_time::START_TIME_AS_DURATION, timer::TimerManager, Clock, SystemTime,
+};
 
 /// The Clock that reads the jiffies, and turn the counter into `Duration`.
 pub struct JiffiesClock {
@@ -220,7 +217,7 @@ macro_rules! define_timer_managers {
                 let callback = move || {
                     clock_manager.process_expired_timers();
                 };
-                timer::register_callback(callback);
+                time::softirq::register_callback(callback);
             )*
         }
     }
@@ -258,7 +255,7 @@ fn init_jiffies_clock_manager() {
     let callback = move || {
         jiffies_timer_manager.process_expired_timers();
     };
-    timer::register_callback(callback);
+    time::softirq::register_callback(callback);
 }
 
 fn update_coarse_clock() {
@@ -270,7 +267,7 @@ fn update_coarse_clock() {
 fn init_coarse_clock() {
     let real_time = RealTimeClock::get().read_time();
     RealTimeCoarseClock::current_ref().call_once(|| SpinLock::new(real_time));
-    timer::register_callback(update_coarse_clock);
+    time::softirq::register_callback(update_coarse_clock);
 }
 
 pub(super) fn init() {

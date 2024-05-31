@@ -20,7 +20,8 @@ xarray = { git = "https://github.com/asterinas/xarray", rev = "72a4067" }
 int-to-c-enum = { path = "../../kernel/libs/int-to-c-enum" }
 # instrusive-collections of version 0.9.6 fails to compile with current rust toolchain,
 # So we set a fixed version 0.9.5 for this crate
-intrusive-collections = "=0.9.5"
+intrusive-collections = { version = "=0.9.5", features = ["nightly"] }
+array-init = "2.0"
 ktest = { path = "../libs/ktest" }
 id-alloc = { path = "../libs/id-alloc" }
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
