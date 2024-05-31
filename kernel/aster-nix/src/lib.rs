@@ -80,6 +80,7 @@ pub fn init() {
     device::init().unwrap();
     vdso::init();
     taskless::init();
+    process::init();
 }
 
 fn init_thread() {

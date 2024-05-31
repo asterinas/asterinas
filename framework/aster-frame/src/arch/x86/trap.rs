@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use align_ext::AlignExt;
 use log::debug;
 #[cfg(feature = "intel_tdx")]
@@ -14,6 +16,7 @@ use crate::arch::{
 };
 use crate::{
     cpu::{CpuException, PageFaultErrorCode, PAGE_FAULT},
+    cpu_local,
     trap::call_irq_callback_functions,
     vm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
@@ -21,6 +24,17 @@ use crate::{
         PageFlags, PrivilegedPageFlags as PrivFlags, PAGE_SIZE,
     },
 };
+
+cpu_local! {
+    static IS_KERNEL_INTERRUPTED: AtomicBool = AtomicBool::new(false);
+}
+
+/// Returns true if this function is called within the context of an IRQ handler
+/// and the IRQ occurs while the CPU is executing in the kernel mode.
+/// Otherwise, it returns false.
+pub fn is_kernel_interrupted() -> bool {
+    IS_KERNEL_INTERRUPTED.load(Ordering::Acquire)
+}
 
 /// Only from kernel
 #[no_mangle]
@@ -43,7 +57,9 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             }
         }
     } else {
+        IS_KERNEL_INTERRUPTED.store(true, Ordering::Release);
         call_irq_callback_functions(f);
+        IS_KERNEL_INTERRUPTED.store(false, Ordering::Release);
     }
 }
 
