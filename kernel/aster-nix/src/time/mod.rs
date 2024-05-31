@@ -12,6 +12,7 @@ use crate::prelude::*;
 
 pub mod clocks;
 mod core;
+mod softirq;
 mod system_time;
 pub mod wait;
 
@@ -23,6 +24,7 @@ pub type clock_t = i64;
 pub(super) fn init() {
     system_time::init();
     clocks::init();
+    softirq::init();
 }
 
 #[repr(C)]

@@ -18,11 +18,16 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame) {
     for callback_function in callback_functions.iter() {
         callback_function.call(trap_frame);
     }
+    drop(callback_functions);
+
     if !CpuException::is_cpu_exception(trap_frame.trap_num as u16) {
         crate::arch::interrupts_ack();
     }
 
     IN_INTERRUPT_CONTEXT.store(false, Ordering::Release);
+
+    crate::arch::irq::enable_local();
+    crate::trap::softirq::process_pending();
 }
 
 cpu_local! {
