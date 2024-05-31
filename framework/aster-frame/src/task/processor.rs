@@ -10,7 +10,7 @@ use super::{
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, sync::SpinLock};
+use crate::{arch::timer::Jiffies, cpu_local, sync::SpinLock};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -72,6 +72,19 @@ pub fn preempt(task: &Arc<Task>) {
     if !scheduler.should_preempt(task) {
         return;
     }
+
+    static mut LAST_JIFFIES: Jiffies = Jiffies::new(0);
+    const PREEMPT_DURATION_MS: u64 = 100;
+    // FIXME: This is a workaround that avoids preemptive scheduling triggering too frequently.
+    // # SAFETY: `LAST_JIFFIES` is only used here.
+    unsafe {
+        let temp = Jiffies::elapsed();
+        if (temp.as_u64() - LAST_JIFFIES.as_u64()) < PREEMPT_DURATION_MS {
+            return;
+        }
+        LAST_JIFFIES = temp;
+    }
+
     let Some(next_task) = scheduler.dequeue() else {
         return;
     };

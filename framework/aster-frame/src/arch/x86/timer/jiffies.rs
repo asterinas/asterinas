@@ -18,7 +18,7 @@ pub(super) static ELAPSED: AtomicU64 = AtomicU64::new(0);
 
 impl Jiffies {
     /// Creates a new instance.
-    pub fn new(value: u64) -> Self {
+    pub const fn new(value: u64) -> Self {
         Self(value)
     }
 
