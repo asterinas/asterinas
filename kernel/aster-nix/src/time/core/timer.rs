@@ -15,6 +15,14 @@ use aster_frame::sync::SpinLock;
 
 use super::Clock;
 
+/// A timeout, represented in one of the two ways.
+pub enum Timeout {
+    /// The timeout is reached _after_ the `Duration` time is elapsed.
+    After(Duration),
+    /// The timeout is reached _when_ the clock's time is equal to `Duration`.
+    When(Duration),
+}
+
 /// A timer with periodic functionality.
 ///
 /// Setting the timer will trigger a callback function upon expiration of
@@ -65,9 +73,15 @@ impl Timer {
     /// The registered callback function of this timer will be invoked
     /// when reaching timeout. If the timer has a valid interval, this timer
     /// will be set again with the interval when reaching timeout.
-    pub fn set_timeout(self: &Arc<Self>, timeout: Duration) {
-        let now = self.timer_manager.clock.read_time();
-        let expired_time = now + timeout;
+    pub fn set_timeout(self: &Arc<Self>, timeout: Timeout) {
+        let expired_time = match timeout {
+            Timeout::After(timeout) => {
+                let now = self.timer_manager.clock.read_time();
+                now + timeout
+            }
+            Timeout::When(timeout) => timeout,
+        };
+
         let timer_weak = Arc::downgrade(self);
         let new_timer_callback = Arc::new(TimerCallback::new(
             expired_time,
@@ -107,6 +121,11 @@ impl Timer {
     pub fn timer_manager(&self) -> &Arc<TimerManager> {
         &self.timer_manager
     }
+
+    /// Returns the interval time of the current timer.
+    pub fn interval(&self) -> Duration {
+        *self.interval.lock_irq_disabled()
+    }
 }
 
 fn interval_timer_callback(timer: &Weak<Timer>) {
@@ -117,7 +136,7 @@ fn interval_timer_callback(timer: &Weak<Timer>) {
     (timer.registered_callback)();
     let interval = timer.interval.lock_irq_disabled();
     if *interval != Duration::ZERO {
-        timer.set_timeout(*interval);
+        timer.set_timeout(Timeout::After(*interval));
     }
 }
 

@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use aster_frame::sync::{WaitQueue, Waiter};
 
-use super::clocks::JIFFIES_TIMER_MANAGER;
+use super::{clocks::JIFFIES_TIMER_MANAGER, timer::Timeout};
 
 /// A trait that provide the timeout related function for [`WaitQueue`]`.
 pub trait WaitTimeout {
@@ -34,7 +34,7 @@ impl WaitTimeout for WaitQueue {
         let jiffies_timer = JIFFIES_TIMER_MANAGER.get().unwrap().create_timer(move || {
             waker.wake_up();
         });
-        jiffies_timer.set_timeout(*timeout);
+        jiffies_timer.set_timeout(Timeout::After(*timeout));
 
         let cancel_cond = {
             let jiffies_timer = jiffies_timer.clone();

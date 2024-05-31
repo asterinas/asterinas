@@ -26,8 +26,8 @@ use spin::Once;
 
 use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-    syscall::ClockID,
-    time::{clocks::MonotonicClock, SystemTime, START_TIME},
+    syscall::ClockId,
+    time::{clocks::MonotonicClock, timer::Timeout, SystemTime, START_TIME},
     vm::vmo::{Vmo, VmoOptions},
 };
 
@@ -49,12 +49,12 @@ enum VdsoClockMode {
 
 /// Instant used in `VdsoData`.
 ///
-/// Each `VdsoInstant` will store a instant information for a specified `ClockID`.
+/// Each `VdsoInstant` will store a instant information for a specified `ClockId`.
 /// The `secs` field will record the seconds of the instant,
 /// and the `nanos_info` will store the nanoseconds of the instant
 /// (for `CLOCK_REALTIME_COARSE` and `CLOCK_MONOTONIC_COARSE`) or
 /// the calculation results of left-shift `nanos` with `lshift`
-/// (for other high-resolution `ClockID`s).
+/// (for other high-resolution `ClockId`s).
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
 struct VdsoInstant {
@@ -100,16 +100,16 @@ struct VdsoData {
     arch_data: ArchVdsoData,
 }
 
-const HIGH_RES_CLOCK_IDS: [ClockID; 4] = [
-    ClockID::CLOCK_REALTIME,
-    ClockID::CLOCK_MONOTONIC,
-    ClockID::CLOCK_MONOTONIC_RAW,
-    ClockID::CLOCK_BOOTTIME,
+const HIGH_RES_CLOCK_IDS: [ClockId; 4] = [
+    ClockId::CLOCK_REALTIME,
+    ClockId::CLOCK_MONOTONIC,
+    ClockId::CLOCK_MONOTONIC_RAW,
+    ClockId::CLOCK_BOOTTIME,
 ];
 
-const COARSE_RES_CLOCK_IDS: [ClockID; 2] = [
-    ClockID::CLOCK_REALTIME_COARSE,
-    ClockID::CLOCK_MONOTONIC_COARSE,
+const COARSE_RES_CLOCK_IDS: [ClockId; 2] = [
+    ClockId::CLOCK_REALTIME_COARSE,
+    ClockId::CLOCK_MONOTONIC_COARSE,
 ];
 
 impl VdsoData {
@@ -159,7 +159,7 @@ impl VdsoData {
     fn update_high_res_instant(&mut self, instant: Instant, instant_cycles: u64) {
         self.last_cycles = instant_cycles;
         for clock_id in HIGH_RES_CLOCK_IDS {
-            let secs = if clock_id == ClockID::CLOCK_REALTIME {
+            let secs = if clock_id == ClockId::CLOCK_REALTIME {
                 instant.secs() + START_SECS_COUNT.get().unwrap()
             } else {
                 instant.secs()
@@ -175,7 +175,7 @@ impl VdsoData {
 
     fn update_coarse_res_instant(&mut self, instant: Instant) {
         for clock_id in COARSE_RES_CLOCK_IDS {
-            let secs = if clock_id == ClockID::CLOCK_REALTIME_COARSE {
+            let secs = if clock_id == ClockId::CLOCK_REALTIME_COARSE {
                 instant.secs() + START_SECS_COUNT.get().unwrap()
             } else {
                 instant.secs()
@@ -269,7 +269,7 @@ impl Vdso {
     }
 
     /// Update the requisite fields of the VDSO data in the `data_frame`.
-    fn update_data_frame_instant(&self, clockid: ClockID) {
+    fn update_data_frame_instant(&self, clockid: ClockId) {
         let clock_index = clockid as usize;
         let secs_offset = 0xA0 + clock_index * 0x10;
         let nanos_info_offset = 0xA8 + clock_index * 0x10;
@@ -323,7 +323,7 @@ pub(super) fn init() {
         MonotonicClock::timer_manager().create_timer(update_vdso_coarse_res_instant),
     );
     coarse_instant_timer.set_interval(Duration::from_millis(100));
-    coarse_instant_timer.set_timeout(Duration::from_millis(100));
+    coarse_instant_timer.set_timeout(Timeout::After(Duration::from_millis(100)));
 }
 
 /// Return the VDSO vmo.
