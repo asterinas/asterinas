@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![allow(non_camel_case_types)]
-use core::mem;
+use core::mem::{self, size_of};
 
 use aster_frame::cpu::GeneralRegs;
 use aster_util::{read_union_fields, union_read_ptr::UnionReadPtr};
@@ -116,6 +116,16 @@ pub union sigval_t {
     sigval_ptr: Vaddr, //*mut c_void
 }
 
+impl sigval_t {
+    pub fn read_int(&self) -> i32 {
+        read_union_fields!(self.sigval_int)
+    }
+
+    pub fn read_ptr(&self) -> Vaddr {
+        read_union_fields!(self.sigval_ptr)
+    }
+}
+
 #[derive(Clone, Copy, Pod)]
 #[repr(C)]
 union siginfo_sigchild_t {
@@ -197,4 +207,56 @@ pub struct SignalCpuContext {
     pub gp_regs: GeneralRegs,
     pub fpregs_on_heap: u64,
     pub fpregs: Vaddr, // *mut FpRegs,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+pub struct _sigev_thread {
+    pub function: Vaddr,
+    pub attribute: Vaddr,
+}
+
+const SIGEV_MAX_SIZE: usize = 64;
+/// The total size of the fields `sigev_value`, `sigev_signo` and `sigev_notify`.
+const SIGEV_PREAMBLE_SIZE: usize = size_of::<i32>() * 2 + size_of::<sigval_t>();
+const SIGEV_PAD_SIZE: usize = (SIGEV_MAX_SIZE - SIGEV_PREAMBLE_SIZE) / size_of::<i32>();
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+pub union _sigev_un {
+    pub _pad: [i32; SIGEV_PAD_SIZE],
+    pub _tid: i32,
+    pub _sigev_thread: _sigev_thread,
+}
+
+impl _sigev_un {
+    pub fn read_tid(&self) -> i32 {
+        read_union_fields!(self._tid)
+    }
+
+    pub fn read_function(&self) -> Vaddr {
+        read_union_fields!(self._sigev_thread.function)
+    }
+
+    pub fn read_attribute(&self) -> Vaddr {
+        read_union_fields!(self._sigev_thread.attribute)
+    }
+}
+
+#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
+#[repr(i32)]
+pub enum SigNotify {
+    SIGEV_SIGNAL = 0,
+    SIGEV_NONE = 1,
+    SIGEV_THREAD = 2,
+    SIGEV_THREAD_ID = 4,
+}
+
+#[derive(Clone, Copy, Pod)]
+#[repr(C)]
+pub struct sigevent_t {
+    pub sigev_value: sigval_t,
+    pub sigev_signo: i32,
+    pub sigev_notify: i32,
+    pub sigev_un: _sigev_un,
 }

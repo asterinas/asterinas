@@ -95,3 +95,19 @@ impl From<UnixTime> for Duration {
         Duration::from_secs(time.sec as _)
     }
 }
+
+/// This struct is corresponding to the `itimerval` struct in Linux.
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Pod)]
+pub struct itimerval_t {
+    pub it_interval: timeval_t,
+    pub it_value: timeval_t,
+}
+
+/// This struct is corresponding to the `itimerspec` struct in Linux.
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Pod)]
+pub struct itimerspec_t {
+    pub it_interval: timespec_t,
+    pub it_value: timespec_t,
+}

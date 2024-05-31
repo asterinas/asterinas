@@ -83,6 +83,7 @@ use crate::syscall::{
     setfsuid::sys_setfsuid,
     setgid::sys_setgid,
     setgroups::sys_setgroups,
+    setitimer::{sys_getitimer, sys_setitimer},
     setpgid::sys_setpgid,
     setregid::sys_setregid,
     setresgid::sys_setresgid,
@@ -101,6 +102,8 @@ use crate::syscall::{
     sync::sys_sync,
     tgkill::sys_tgkill,
     time::sys_time,
+    timer_create::{sys_timer_create, sys_timer_delete},
+    timer_settime::{sys_timer_gettime, sys_timer_settime},
     truncate::{sys_ftruncate, sys_truncate},
     umask::sys_umask,
     uname::sys_uname,
@@ -141,7 +144,9 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_DUP2 = 33              => sys_dup2(args[..2]);
     SYS_PAUSE = 34             => sys_pause(args[..0]);
     SYS_NANOSLEEP = 35         => sys_nanosleep(args[..2]);
+    SYS_GETITIMER = 36         => sys_getitimer(args[..2]);
     SYS_ALARM = 37             => sys_alarm(args[..1]);
+    SYS_SETITIMER = 38         => sys_setitimer(args[..3]);
     SYS_GETPID = 39            => sys_getpid(args[..0]);
     SYS_SENDFILE = 40          => sys_sendfile(args[..4]);
     SYS_SOCKET = 41            => sys_socket(args[..3]);
@@ -223,6 +228,10 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EPOLL_CREATE = 213     => sys_epoll_create(args[..1]);
     SYS_GETDENTS64 = 217       => sys_getdents64(args[..3]);
     SYS_SET_TID_ADDRESS = 218  => sys_set_tid_address(args[..1]);
+    SYS_TIMER_CREATE = 222     => sys_timer_create(args[..3]);
+    SYS_TIMER_SETTIME = 223    => sys_timer_settime(args[..4]);
+    SYS_TIMER_GETTIME = 224    => sys_timer_gettime(args[..2]);
+    SYS_TIMER_DELETE = 226     => sys_timer_delete(args[..1]);
     SYS_CLOCK_GETTIME = 228    => sys_clock_gettime(args[..2]);
     SYS_CLOCK_NANOSLEEP = 230  => sys_clock_nanosleep(args[..4]);
     SYS_EXIT_GROUP = 231       => sys_exit_group(args[..1]);
