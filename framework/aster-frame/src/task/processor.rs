@@ -1,31 +1,32 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-
-use lazy_static::lazy_static;
+use core::{
+    cell::RefCell,
+    sync::atomic::{AtomicUsize, Ordering::Relaxed},
+};
 
 use super::{
     scheduler::{fetch_task, GLOBAL_SCHEDULER},
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, sync::SpinLock};
+use crate::{cpu_local, CpuLocal};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
-    idle_task_cx: TaskContext,
+    idle_task_ctx: TaskContext,
 }
 
 impl Processor {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             current: None,
-            idle_task_cx: TaskContext::default(),
+            idle_task_ctx: TaskContext::new(),
         }
     }
     fn get_idle_task_ctx_ptr(&mut self) -> *mut TaskContext {
-        &mut self.idle_task_cx as *mut _
+        &mut self.idle_task_ctx as *mut _
     }
     pub fn take_current(&mut self) -> Option<Arc<Task>> {
         self.current.take()
@@ -38,20 +39,24 @@ impl Processor {
     }
 }
 
-lazy_static! {
-    static ref PROCESSOR: SpinLock<Processor> = SpinLock::new(Processor::new());
+cpu_local! {
+    static PROCESSOR: RefCell<Processor> = RefCell::new(Processor::new());
 }
 
 pub fn take_current_task() -> Option<Arc<Task>> {
-    PROCESSOR.lock().take_current()
+    CpuLocal::borrow_with(&PROCESSOR, |processor| {
+        processor.borrow_mut().take_current()
+    })
 }
 
 pub fn current_task() -> Option<Arc<Task>> {
-    PROCESSOR.lock().current()
+    CpuLocal::borrow_with(&PROCESSOR, |processor| processor.borrow().current())
 }
 
 pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
-    PROCESSOR.lock().get_idle_task_ctx_ptr()
+    CpuLocal::borrow_with(&PROCESSOR, |processor| {
+        processor.borrow_mut().get_idle_task_ctx_ptr()
+    })
 }
 
 /// call this function to switch to other task by using GLOBAL_SCHEDULER
@@ -95,7 +100,7 @@ fn switch_to_task(next_task: Arc<Task>) {
     }
 
     let current_task_ctx_ptr = match current_task() {
-        None => PROCESSOR.lock().get_idle_task_ctx_ptr(),
+        None => get_idle_task_ctx_ptr(),
         Some(current_task) => {
             let ctx_ptr = current_task.ctx().get();
 
@@ -115,8 +120,10 @@ fn switch_to_task(next_task: Arc<Task>) {
 
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
 
-    // change the current task to the next task
-    PROCESSOR.lock().current = Some(next_task.clone());
+    // Change the current task to the next task.
+    CpuLocal::borrow_with(&PROCESSOR, |processor| {
+        processor.borrow_mut().current = Some(next_task.clone());
+    });
 
     if let Some(next_user_space) = next_task.user_space() {
         next_user_space.vm_space().activate();

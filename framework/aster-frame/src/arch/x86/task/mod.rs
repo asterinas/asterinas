@@ -11,6 +11,15 @@ pub(crate) struct TaskContext {
     pub rip: usize,
 }
 
+impl TaskContext {
+    pub const fn new() -> Self {
+        Self {
+            regs: CalleeRegs::new(),
+            rip: 0,
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct CalleeRegs {
@@ -21,6 +30,20 @@ pub struct CalleeRegs {
     pub r13: u64,
     pub r14: u64,
     pub r15: u64,
+}
+
+impl CalleeRegs {
+    pub const fn new() -> Self {
+        CalleeRegs {
+            rsp: 0,
+            rbx: 0,
+            rbp: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+        }
+    }
 }
 
 impl TaskContextApi for TaskContext {
