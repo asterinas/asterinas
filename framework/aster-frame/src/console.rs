@@ -15,6 +15,7 @@ macro_rules! early_print {
 
 #[macro_export]
 macro_rules! early_println {
+  () => { $crate::early_print!("\n") };
   ($fmt: literal $(, $($arg: tt)+)?) => {
     $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
   }
