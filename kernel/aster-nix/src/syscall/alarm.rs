@@ -3,13 +3,13 @@
 use core::time::Duration;
 
 use super::SyscallReturn;
-use crate::prelude::*;
+use crate::{prelude::*, time::timer::Timeout};
 
 pub fn sys_alarm(seconds: u32) -> Result<SyscallReturn> {
     debug!("seconds = {}", seconds);
 
     let current = current!();
-    let alarm_timer = current.alarm_timer();
+    let alarm_timer = current.timer_manager().alarm_timer();
 
     let remaining = alarm_timer.remain();
     let mut remaining_secs = remaining.as_secs();
@@ -23,7 +23,7 @@ pub fn sys_alarm(seconds: u32) -> Result<SyscallReturn> {
         return Ok(SyscallReturn::Return(remaining_secs as _));
     }
 
-    alarm_timer.set_timeout(Duration::from_secs(seconds as u64));
+    alarm_timer.set_timeout(Timeout::After(Duration::from_secs(seconds as u64)));
 
     Ok(SyscallReturn::Return(remaining_secs as _))
 }
