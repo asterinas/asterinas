@@ -87,11 +87,7 @@ impl LocalWorkerPool {
     }
 
     fn wake_worker(&self) -> bool {
-        if !self.idle_wait_queue.is_empty() {
-            self.idle_wait_queue.wake_one();
-            return true;
-        }
-        false
+        self.idle_wait_queue.wake_one()
     }
 
     fn has_pending_work_items(&self) -> bool {

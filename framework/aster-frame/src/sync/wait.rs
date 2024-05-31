@@ -11,7 +11,7 @@ use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
 /// One may wait on a wait queue to put its executing thread to sleep.
 /// Multiple threads may be the waiters of a wait queue.
 /// Other threads may invoke the `wake`-family methods of a wait queue to
-/// wake up one or many waiter threads.
+/// wake up one or many waiting threads.
 pub struct WaitQueue {
     // A copy of `wakers.len()`, used for the lock-free fast path in `wake_one` and `wake_all`.
     num_wakers: AtomicU32,
@@ -19,6 +19,7 @@ pub struct WaitQueue {
 }
 
 impl WaitQueue {
+    /// Creates a new, empty wait queue.
     pub const fn new() -> Self {
         WaitQueue {
             num_wakers: AtomicU32::new(0),
@@ -26,7 +27,7 @@ impl WaitQueue {
         }
     }
 
-    /// Wait until some condition becomes true.
+    /// Waits until some condition is met.
     ///
     /// This method takes a closure that tests a user-given condition.
     /// The method only returns if the condition returns `Some(_)`.
@@ -34,7 +35,7 @@ impl WaitQueue {
     /// `wake`-family method. This ordering is important to ensure that waiter
     /// threads do not lose any wakeup notifications.
     ///
-    /// By taking a condition closure, his wait-wakeup mechanism becomes
+    /// By taking a condition closure, this wait-wakeup mechanism becomes
     /// more efficient and robust.
     pub fn wait_until<F, R>(&self, mut cond: F) -> R
     where
@@ -50,7 +51,7 @@ impl WaitQueue {
             .unwrap()
     }
 
-    /// Wait until some condition becomes true or the cancel condition becomes true.
+    /// Waits until some condition is met or the cancel condition becomes true.
     ///
     /// This method will return `Some(_)` if the condition returns `Some(_)`, and will return
     /// the condition test result regardless what it is when the cancel condition becomes true.
@@ -85,12 +86,37 @@ impl WaitQueue {
         }
     }
 
-    /// Wake up one waiting thread.
-    pub fn wake_one(&self) {
+    /// Wakes up one waiting thread, if there is one at the point of time when this method is
+    /// called, returning whether such a thread was woken up.
+    pub fn wake_one(&self) -> bool {
         // Fast path
         if self.is_empty() {
-            return;
+            return false;
         }
+
+        loop {
+            let mut wakers = self.wakers.lock_irq_disabled();
+            let Some(waker) = wakers.pop_front() else {
+                return false;
+            };
+            self.num_wakers.fetch_sub(1, Ordering::Release);
+            // Avoid holding lock when calling `wake_up`
+            drop(wakers);
+
+            if waker.wake_up() {
+                return true;
+            }
+        }
+    }
+
+    /// Wakes up all waiting threads, returning the number of threads that were woken up.
+    pub fn wake_all(&self) -> usize {
+        // Fast path
+        if self.is_empty() {
+            return 0;
+        }
+
+        let mut num_woken = 0;
 
         loop {
             let mut wakers = self.wakers.lock_irq_disabled();
@@ -102,33 +128,14 @@ impl WaitQueue {
             drop(wakers);
 
             if waker.wake_up() {
-                return;
+                num_woken += 1;
             }
         }
+
+        num_woken
     }
 
-    /// Wake up all waiting threads.
-    pub fn wake_all(&self) {
-        // Fast path
-        if self.is_empty() {
-            return;
-        }
-
-        loop {
-            let mut wakers = self.wakers.lock_irq_disabled();
-            let Some(waker) = wakers.pop_front() else {
-                break;
-            };
-            self.num_wakers.fetch_sub(1, Ordering::Release);
-            // Avoid holding lock when calling `wake_up`
-            drop(wakers);
-
-            waker.wake_up();
-        }
-    }
-
-    /// Return whether the current wait queue is empty.
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.num_wakers.load(Ordering::Acquire) == 0
     }
 
