@@ -134,7 +134,7 @@ impl WorkerPool {
             }
             WorkerPool {
                 local_pools,
-                monitor: Monitor::new(pool_ref.clone()),
+                monitor: Monitor::new(pool_ref.clone(), &priority),
                 priority,
                 cpu_set,
                 scheduler: Arc::new(SimpleScheduler::new(pool_ref.clone())),
@@ -225,7 +225,7 @@ impl Drop for WorkerPool {
 }
 
 impl Monitor {
-    pub fn new(worker_pool: Weak<WorkerPool>) -> Arc<Self> {
+    pub fn new(worker_pool: Weak<WorkerPool>, priority: &WorkPriority) -> Arc<Self> {
         Arc::new_cyclic(|monitor_ref| {
             let weal_monitor = monitor_ref.clone();
             let task_fn = Box::new(move || {
@@ -233,10 +233,14 @@ impl Monitor {
                 current_monitor.run_monitor_loop();
             });
             let cpu_affinity = CpuSet::new_full();
+            let priority = match priority {
+                WorkPriority::High => Priority::high(),
+                WorkPriority::Normal => Priority::normal(),
+            };
             let bound_thread = Thread::new_kernel_thread(
                 ThreadOptions::new(task_fn)
                     .cpu_affinity(cpu_affinity)
-                    .priority(Priority::normal()),
+                    .priority(priority),
             );
             Self {
                 worker_pool,

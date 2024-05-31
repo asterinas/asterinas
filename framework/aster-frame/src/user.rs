@@ -51,7 +51,7 @@ impl UserSpace {
 /// Only visible in aster-frame
 pub(crate) trait UserContextApiInternal {
     /// Starts executing in the user mode.
-    fn execute(&mut self) -> UserEvent;
+    fn execute(&mut self, has_kernel_event: &dyn Fn() -> bool) -> ReturnReason;
 
     /// Use the information inside CpuContext to build a trapframe
     fn as_trap_frame(&self) -> TrapFrame;
@@ -125,10 +125,10 @@ impl<'a> UserMode<'a> {
     ///
     /// After handling the user event and updating the user-mode CPU context,
     /// this method can be invoked again to go back to the user space.
-    pub fn execute(&mut self) -> UserEvent {
+    pub fn execute(&mut self, has_kernel_event: &dyn Fn() -> bool) -> ReturnReason {
         self.user_space.vm_space().activate();
         debug_assert!(Arc::ptr_eq(&self.current, &Task::current()));
-        self.context.execute()
+        self.context.execute(has_kernel_event)
     }
 
     /// Returns an immutable reference the user-mode CPU context.
@@ -143,14 +143,17 @@ impl<'a> UserMode<'a> {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-/// A user event is what brings back the control of the CPU back from
-/// the user space to the kernel space.
+/// Reason for returning 'UserMode::execute'.
 ///
-/// Note that hardware interrupts are not considered user events as they
+/// Note that hardware interrupts will not return as they
 /// are triggered by devices and not visible to user programs.
 /// To handle interrupts, one should register callback funtions for
 /// IRQ lines (`IrqLine`).
-pub enum UserEvent {
-    Syscall,
-    Exception,
+pub enum ReturnReason {
+    /// User mode program triggers a syscall.
+    UserSyscall,
+    /// User mode program triggers an exception.
+    UserException,
+    /// KernelEvent indicates that the `has_kernel_event` function returns true.
+    KernelEvent,
 }

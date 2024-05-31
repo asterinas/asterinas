@@ -3,7 +3,7 @@
 use aster_frame::{
     cpu::UserContext,
     task::{preempt, Task, TaskOptions},
-    user::{UserContextApi, UserEvent, UserMode, UserSpace},
+    user::{ReturnReason, UserContextApi, UserMode, UserSpace},
 };
 
 use super::Thread;
@@ -33,9 +33,18 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
             "[Task entry] rax = 0x{:x}",
             user_mode.context().syscall_ret()
         );
+        let has_kernel_events_fn = {
+            use crate::process::posix_thread::PosixThreadExt;
+            let current_thread = current_thread!();
+
+            move || {
+                let posix_thread = current_thread.as_posix_thread().unwrap();
+                posix_thread.has_pending_signal()
+            }
+        };
 
         loop {
-            let user_event = user_mode.execute();
+            let user_event = user_mode.execute(&has_kernel_events_fn);
             let context = user_mode.context_mut();
             // handle user event:
             handle_user_event(user_event, context);
@@ -69,9 +78,10 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
         .expect("spawn task failed")
 }
 
-fn handle_user_event(user_event: UserEvent, context: &mut UserContext) {
+fn handle_user_event(user_event: ReturnReason, context: &mut UserContext) {
     match user_event {
-        UserEvent::Syscall => handle_syscall(context),
-        UserEvent::Exception => handle_exception(context),
+        ReturnReason::UserSyscall => handle_syscall(context),
+        ReturnReason::UserException => handle_exception(context),
+        ReturnReason::KernelEvent => {}
     }
 }

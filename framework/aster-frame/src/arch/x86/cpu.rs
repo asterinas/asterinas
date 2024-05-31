@@ -23,7 +23,7 @@ use x86_64::registers::rflags::RFlags;
 use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
 use crate::{
     trap::call_irq_callback_functions,
-    user::{UserContextApi, UserContextApiInternal, UserEvent},
+    user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
 /// Returns the number of CPUs.
@@ -257,7 +257,7 @@ impl UserContext {
 }
 
 impl UserContextApiInternal for UserContext {
-    fn execute(&mut self) -> crate::user::UserEvent {
+    fn execute(&mut self, has_kernel_event: &dyn Fn() -> bool) -> crate::user::ReturnReason {
         // set interrupt flag so that in user mode it can receive external interrupts
         // set ID flag which means cpu support CPUID instruction
         self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
@@ -265,7 +265,7 @@ impl UserContextApiInternal for UserContext {
         const SYSCALL_TRAPNUM: u16 = 0x100;
 
         let mut user_preemption = UserPreemption::new();
-        // return when it is syscall or cpu exception type is Fault or Trap.
+
         loop {
             self.user_context.run();
             match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
@@ -281,30 +281,42 @@ impl UserContextApiInternal for UserContext {
                         || exception.typ == CpuExceptionType::Fault
                         || exception.typ == CpuExceptionType::Trap
                     {
-                        break;
+                        // Cpu Exception (Critical exceptions are not included)
+                        crate::arch::irq::enable_local();
+                        self.cpu_exception_info = CpuExceptionInfo {
+                            page_fault_addr: unsafe { x86::controlregs::cr2() },
+                            id: self.user_context.trap_num,
+                            error_code: self.user_context.error_code,
+                        };
+                        return ReturnReason::UserException;
+                    } else {
+                        // Critical exceptions like Non-Maskable Interrupt or Abort
+                        log::error!(
+                            "Catch Exception: {:?} while running in user-space.",
+                            exception
+                        );
+                        // Try to handle the critical exception
+                        call_irq_callback_functions(&self.as_trap_frame());
                     }
                 }
                 None => {
                     if self.user_context.trap_num as u16 == SYSCALL_TRAPNUM {
-                        break;
+                        // Syscall
+                        crate::arch::irq::enable_local();
+                        return ReturnReason::UserSyscall;
+                    } else {
+                        // External Interrupt
+                        call_irq_callback_functions(&self.as_trap_frame());
+
+                        user_preemption.might_preempt();
+                        if has_kernel_event() {
+                            log::debug!("Calling kernel event");
+                            crate::arch::irq::enable_local();
+                            return ReturnReason::KernelEvent;
+                        }
                     }
                 }
             };
-            call_irq_callback_functions(&self.as_trap_frame());
-
-            user_preemption.might_preempt();
-        }
-
-        crate::arch::irq::enable_local();
-        if self.user_context.trap_num as u16 != SYSCALL_TRAPNUM {
-            self.cpu_exception_info = CpuExceptionInfo {
-                page_fault_addr: unsafe { x86::controlregs::cr2() },
-                id: self.user_context.trap_num,
-                error_code: self.user_context.error_code,
-            };
-            UserEvent::Exception
-        } else {
-            UserEvent::Syscall
         }
     }
 
