@@ -14,6 +14,7 @@ mod program_loader;
 mod rlimit;
 pub mod signal;
 mod status;
+pub mod sync;
 mod term_status;
 mod wait;
 

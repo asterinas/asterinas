@@ -124,3 +124,9 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = Mutex<T>>> fmt::Debug for MutexGu
 impl<T: ?Sized, R: Deref<Target = Mutex<T>>> !Send for MutexGuard_<T, R> {}
 
 unsafe impl<T: ?Sized + Sync, R: Deref<Target = Mutex<T>> + Sync> Sync for MutexGuard_<T, R> {}
+
+impl<'a, T: ?Sized> MutexGuard<'a, T> {
+    pub fn get_lock(guard: &MutexGuard<'a, T>) -> &'a Mutex<T> {
+        guard.mutex
+    }
+}
