@@ -20,10 +20,14 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
-        utils::{CreationFlags, StatusFlags},
+        utils::{CreationFlags, InodeMode, InodeType, Metadata, StatusFlags},
     },
     prelude::*,
-    process::signal::{Pauser, Pollee, Poller},
+    process::{
+        signal::{Pauser, Pollee, Poller},
+        Gid, Uid,
+    },
+    time::clocks::RealTimeClock,
 };
 
 pub fn sys_eventfd(init_val: u64) -> Result<SyscallReturn> {
@@ -252,5 +256,25 @@ impl FileLike for EventFile {
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Option<Weak<dyn Observer<IoEvents>>> {
         self.pollee.unregister_observer(observer)
+    }
+
+    fn metadata(&self) -> Metadata {
+        let now = RealTimeClock::get().read_time();
+        Metadata {
+            dev: 0,
+            ino: 0,
+            size: 0,
+            blk_size: 0,
+            blocks: 0,
+            atime: now,
+            mtime: now,
+            ctime: now,
+            type_: InodeType::NamedPipe,
+            mode: InodeMode::from_bits_truncate(0o200),
+            nlinks: 1,
+            uid: Uid::new_root(),
+            gid: Gid::new_root(),
+            rdev: 0,
+        }
     }
 }

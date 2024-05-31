@@ -15,7 +15,7 @@ use crate::syscall::{
     clone::{sys_clone, sys_clone3},
     close::sys_close,
     connect::sys_connect,
-    dup::{sys_dup, sys_dup2},
+    dup::{sys_dup, sys_dup2, sys_dup3},
     epoll::{sys_epoll_create, sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait, sys_epoll_wait},
     eventfd::{sys_eventfd, sys_eventfd2},
     execve::{sys_execve, sys_execveat},
@@ -247,6 +247,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_ACCEPT4 = 288          => sys_accept4(args[..4]);
     SYS_EVENTFD2 = 290         => sys_eventfd2(args[..2]);
     SYS_EPOLL_CREATE1 = 291    => sys_epoll_create1(args[..1]);
+    SYS_DUP3 = 292             => sys_dup3(args[..3]);
     SYS_PIPE2 = 293            => sys_pipe2(args[..2]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);

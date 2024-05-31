@@ -97,7 +97,7 @@ impl FileTable {
         item: Arc<dyn FileLike>,
         flags: FdFlags,
     ) -> Option<Arc<dyn FileLike>> {
-        let entry = FileTableEntry::new(item, FdFlags::empty());
+        let entry = FileTableEntry::new(item, flags);
         let entry = self.table.put_at(fd as usize, entry);
         if entry.is_some() {
             let events = FdEvents::Close(fd);
