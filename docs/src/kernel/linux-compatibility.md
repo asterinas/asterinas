@@ -312,7 +312,7 @@ provided by Linux on x86-64 architecture.
 | 289     | signalfd4        | ❌              |
 | 290     | eventfd2         | ✅              |
 | 291     | epoll_create1    | ✅              |
-| 292     | dup3             | ❌              |
+| 292     | dup3             | ✅              |
 | 293     | pipe2            | ✅              |
 | 294     | inotify_init1    | ❌              |
 | 295     | preadv           | ❌              |
