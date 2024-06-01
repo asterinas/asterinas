@@ -23,7 +23,7 @@ use x86_64::registers::rflags::RFlags;
 use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
 use crate::{
     trap::call_irq_callback_functions,
-    user::{UserContextApi, UserContextApiInternal, UserEvent},
+    user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
 /// Returns the number of CPUs.
@@ -257,11 +257,15 @@ impl UserContext {
 }
 
 impl UserContextApiInternal for UserContext {
-    fn execute(&mut self) -> crate::user::UserEvent {
+    fn execute<F>(&mut self, mut has_kernel_event: F) -> ReturnReason
+    where
+        F: FnMut() -> bool,
+    {
         // set interrupt flag so that in user mode it can receive external interrupts
         // set ID flag which means cpu support CPUID instruction
         self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
 
+        let return_reason: ReturnReason;
         const SYSCALL_TRAPNUM: u16 = 0x100;
 
         let mut user_preemption = UserPreemption::new();
@@ -281,31 +285,36 @@ impl UserContextApiInternal for UserContext {
                         || exception.typ == CpuExceptionType::Fault
                         || exception.typ == CpuExceptionType::Trap
                     {
+                        return_reason = ReturnReason::UserException;
                         break;
                     }
                 }
                 None => {
                     if self.user_context.trap_num as u16 == SYSCALL_TRAPNUM {
+                        return_reason = ReturnReason::UserSyscall;
                         break;
                     }
                 }
             };
             call_irq_callback_functions(&self.as_trap_frame());
+            if has_kernel_event() {
+                return_reason = ReturnReason::KernelEvent;
+                break;
+            }
 
             user_preemption.might_preempt();
         }
 
         crate::arch::irq::enable_local();
-        if self.user_context.trap_num as u16 != SYSCALL_TRAPNUM {
+        if return_reason == ReturnReason::UserException {
             self.cpu_exception_info = CpuExceptionInfo {
                 page_fault_addr: unsafe { x86::controlregs::cr2() },
                 id: self.user_context.trap_num,
                 error_code: self.user_context.error_code,
             };
-            UserEvent::Exception
-        } else {
-            UserEvent::Syscall
         }
+
+        return_reason
     }
 
     fn as_trap_frame(&self) -> trapframe::TrapFrame {

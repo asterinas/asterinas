@@ -1,20 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_frame::{
-    cpu::UserContext,
     task::{preempt, Task, TaskOptions},
-    user::{UserContextApi, UserEvent, UserMode, UserSpace},
+    user::{ReturnReason, UserContextApi, UserMode, UserSpace},
 };
 
 use super::Thread;
 use crate::{
-    cpu::LinuxAbi, prelude::*, process::signal::handle_pending_signal, syscall::handle_syscall,
+    cpu::LinuxAbi,
+    prelude::*,
+    process::{posix_thread::PosixThreadExt, signal::handle_pending_signal},
+    syscall::handle_syscall,
     thread::exception::handle_exception,
 };
 
 /// create new task with userspace and parent process
 pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>) -> Arc<Task> {
     fn user_task_entry() {
+        fn has_pending_signal(current_thread: &Arc<Thread>) -> bool {
+            let posix_thread = current_thread.as_posix_thread().unwrap();
+            posix_thread.has_pending_signal()
+        }
+
         let current_thread = current_thread!();
         let current_task = current_thread.task();
         let user_space = current_task
@@ -34,11 +41,17 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
             user_mode.context().syscall_ret()
         );
 
+        #[allow(clippy::redundant_closure)]
+        let has_kernel_event_fn = || has_pending_signal(&current_thread);
         loop {
-            let user_event = user_mode.execute();
+            let return_reason = user_mode.execute(has_kernel_event_fn);
             let context = user_mode.context_mut();
             // handle user event:
-            handle_user_event(user_event, context);
+            match return_reason {
+                ReturnReason::UserException => handle_exception(context),
+                ReturnReason::UserSyscall => handle_syscall(context),
+                ReturnReason::KernelEvent => {}
+            };
             // should be do this comparison before handle signal?
             if current_thread.status().is_exited() {
                 break;
@@ -67,11 +80,4 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
         .user_space(Some(user_space))
         .build()
         .expect("spawn task failed")
-}
-
-fn handle_user_event(user_event: UserEvent, context: &mut UserContext) {
-    match user_event {
-        UserEvent::Syscall => handle_syscall(context),
-        UserEvent::Exception => handle_exception(context),
-    }
 }

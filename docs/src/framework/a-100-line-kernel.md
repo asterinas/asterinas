@@ -55,7 +55,7 @@ use alloc::vec;
 use aster_frame::cpu::UserContext;
 use aster_frame::prelude::*;
 use aster_frame::task::{Task, TaskOptions};
-use aster_frame::user::{UserEvent, UserMode, UserSpace};
+use aster_frame::user::{ReturnReason, UserMode, UserSpace};
 use aster_frame::vm::{PageFlags, PAGE_SIZE, Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmSpace};
 
 /// The kernel's boot and initialization process is managed by Asterinas Framework.
@@ -116,13 +116,15 @@ fn create_user_task(user_space: Arc<UserSpace>) -> Arc<Task> {
 
         loop {
             // The execute method returns when system
-            // calls or CPU exceptions occur.
-            let user_event = user_mode.execute();
+            // calls or CPU exceptions occur or some
+            // events specified by the kernel occur.
+            let return_reason = user_mode.execute(|| false);
+
             // The CPU registers of the user space
             // can be accessed and manipulated via
             // the `UserContext` abstraction.
             let user_context = user_mode.context_mut();
-            if UserEvent::Syscall == user_event {
+            if ReturnReason::UserSyscall == return_reason {
                 handle_syscall(user_context, current.user_space().unwrap());
             }
         }
