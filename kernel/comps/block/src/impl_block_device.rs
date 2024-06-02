@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::mm::{Frame, Segment, VmAllocOptions, VmIo};
+use aster_frame::mm::{Frame, FrameAllocOptions, Segment, VmIo};
 
 use super::{
     bio::{Bio, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter, SubmittedBio},
@@ -89,7 +89,7 @@ impl VmIo for dyn BlockDevice {
                 let last = Bid::from_offset(offset + buf.len() - 1).to_raw();
                 last - first + 1
             };
-            let segment = VmAllocOptions::new(num_blocks as usize)
+            let segment = FrameAllocOptions::new(num_blocks as usize)
                 .uninit(true)
                 .alloc_contiguous()?;
             let bio_segment = BioSegment::from_segment(segment, offset % BLOCK_SIZE, buf.len());
@@ -130,7 +130,7 @@ impl VmIo for dyn BlockDevice {
                 let last = Bid::from_offset(offset + buf.len() - 1).to_raw();
                 last - first + 1
             };
-            let segment = VmAllocOptions::new(num_blocks as usize)
+            let segment = FrameAllocOptions::new(num_blocks as usize)
                 .uninit(true)
                 .alloc_contiguous()?;
             segment.write_bytes(offset % BLOCK_SIZE, buf)?;
@@ -171,7 +171,7 @@ impl dyn BlockDevice {
                 let last = Bid::from_offset(offset + buf.len() - 1).to_raw();
                 last - first + 1
             };
-            let segment = VmAllocOptions::new(num_blocks as usize)
+            let segment = FrameAllocOptions::new(num_blocks as usize)
                 .uninit(true)
                 .alloc_contiguous()?;
             segment.write_bytes(offset % BLOCK_SIZE, buf)?;

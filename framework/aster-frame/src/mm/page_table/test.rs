@@ -6,7 +6,7 @@ use super::*;
 use crate::mm::{
     kspace::LINEAR_MAPPING_BASE_VADDR,
     page_prop::{CachePolicy, PageFlags},
-    VmAllocOptions,
+    FrameAllocOptions,
 };
 
 const PAGE_SIZE: usize = 4096;
@@ -17,7 +17,7 @@ fn test_range_check() {
     let good_va = 0..PAGE_SIZE;
     let bad_va = 0..PAGE_SIZE + 1;
     let bad_va2 = LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + PAGE_SIZE;
-    let to = VmAllocOptions::new(1).alloc().unwrap();
+    let to = FrameAllocOptions::new(1).alloc().unwrap();
     assert!(pt.cursor_mut(&good_va).is_ok());
     assert!(pt.cursor_mut(&bad_va).is_err());
     assert!(pt.cursor_mut(&bad_va2).is_err());
@@ -31,7 +31,7 @@ fn test_tracked_map_unmap() {
     let pt = PageTable::<UserMode>::empty();
 
     let from = PAGE_SIZE..PAGE_SIZE * 2;
-    let frame = VmAllocOptions::new(1).alloc_single().unwrap();
+    let frame = FrameAllocOptions::new(1).alloc_single().unwrap();
     let start_paddr = frame.start_paddr();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(frame.clone(), prop) };
@@ -75,7 +75,7 @@ fn test_untracked_map_unmap() {
 fn test_user_copy_on_write() {
     let pt = PageTable::<UserMode>::empty();
     let from = PAGE_SIZE..PAGE_SIZE * 2;
-    let frame = VmAllocOptions::new(1).alloc_single().unwrap();
+    let frame = FrameAllocOptions::new(1).alloc_single().unwrap();
     let start_paddr = frame.start_paddr();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(frame.clone(), prop) };
@@ -131,7 +131,7 @@ fn test_base_protect_query() {
 
     let from_ppn = 1..1000;
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
-    let to = VmAllocOptions::new(999).alloc().unwrap();
+    let to = FrameAllocOptions::new(999).alloc().unwrap();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe {
         let mut cursor = pt.cursor_mut(&from).unwrap();

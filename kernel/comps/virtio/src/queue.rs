@@ -10,7 +10,7 @@ use core::{
 
 use aster_frame::{
     io_mem::IoMem,
-    mm::{DmaCoherent, VmAllocOptions},
+    mm::{DmaCoherent, FrameAllocOptions},
     offset_of,
 };
 use aster_rights::{Dup, TRightSet, TRights, Write};
@@ -82,7 +82,7 @@ impl VirtQueue {
             let desc_size = size_of::<Descriptor>() * size as usize;
 
             let (seg1, seg2) = {
-                let continue_segment = VmAllocOptions::new(2).alloc_contiguous().unwrap();
+                let continue_segment = FrameAllocOptions::new(2).alloc_contiguous().unwrap();
                 let seg1 = continue_segment.range(0..1);
                 let seg2 = continue_segment.range(1..2);
                 (seg1, seg2)
@@ -101,17 +101,17 @@ impl VirtQueue {
             }
             (
                 SafePtr::new(
-                    DmaCoherent::map(VmAllocOptions::new(1).alloc_contiguous().unwrap(), true)
+                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
                         .unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    DmaCoherent::map(VmAllocOptions::new(1).alloc_contiguous().unwrap(), true)
+                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
                         .unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    DmaCoherent::map(VmAllocOptions::new(1).alloc_contiguous().unwrap(), true)
+                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
                         .unwrap(),
                     0,
                 ),

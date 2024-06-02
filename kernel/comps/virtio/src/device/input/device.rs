@@ -10,7 +10,7 @@ use core::{fmt::Debug, iter, mem};
 
 use aster_frame::{
     io_mem::IoMem,
-    mm::{DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmIo, PAGE_SIZE},
+    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmIo, PAGE_SIZE},
     offset_of,
     sync::{RwLock, SpinLock},
     trap::TrapFrame,
@@ -239,7 +239,7 @@ impl EventTable {
     fn new(num_events: usize) -> Self {
         assert!(num_events * mem::size_of::<VirtioInputEvent>() <= PAGE_SIZE);
 
-        let vm_segment = VmAllocOptions::new(1).alloc_contiguous().unwrap();
+        let vm_segment = FrameAllocOptions::new(1).alloc_contiguous().unwrap();
 
         let default_event = VirtioInputEvent::default();
         let iter = iter::repeat(&default_event).take(EVENT_SIZE);

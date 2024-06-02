@@ -6,7 +6,7 @@ use super::{
     is_page_aligned,
     kspace::KERNEL_PAGE_TABLE,
     page_table::{PageTable, PageTableMode, UserMode},
-    CachePolicy, PageFlags, PageProperty, PagingConstsTrait, PrivilegedPageFlags, VmFrameVec,
+    CachePolicy, FrameVec, PageFlags, PageProperty, PagingConstsTrait, PrivilegedPageFlags,
     PAGE_SIZE,
 };
 use crate::{
@@ -65,7 +65,7 @@ impl VmSpace {
     /// The ownership of the frames will be transferred to the `VmSpace`.
     ///
     /// For more information, see `VmMapOptions`.
-    pub fn map(&self, frames: VmFrameVec, options: &VmMapOptions) -> Result<Vaddr> {
+    pub fn map(&self, frames: FrameVec, options: &VmMapOptions) -> Result<Vaddr> {
         if options.addr.is_none() {
             return Err(Error::InvalidArgs);
         }

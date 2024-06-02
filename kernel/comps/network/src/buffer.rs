@@ -4,7 +4,9 @@ use alloc::{collections::LinkedList, sync::Arc};
 
 use align_ext::AlignExt;
 use aster_frame::{
-    mm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmReader, VmWriter, PAGE_SIZE},
+    mm::{
+        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmReader, VmWriter, PAGE_SIZE,
+    },
     sync::SpinLock,
 };
 use pod::Pod;
@@ -27,7 +29,7 @@ impl TxBuffer {
         } else {
             let segment = {
                 let nframes = (nbytes.align_up(PAGE_SIZE)) / PAGE_SIZE;
-                VmAllocOptions::new(nframes).alloc_contiguous().unwrap()
+                FrameAllocOptions::new(nframes).alloc_contiguous().unwrap()
             };
             DmaStream::map(segment, DmaDirection::ToDevice, false).unwrap()
         };

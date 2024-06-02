@@ -13,7 +13,7 @@ use crate::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableError,
-        Frame, Paddr, PageFlags, PageTable, VmAllocOptions, VmIo, PAGE_SIZE,
+        Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
 };
 
@@ -51,7 +51,7 @@ pub enum ContextTableError {
 impl RootTable {
     pub fn new() -> Self {
         Self {
-            root_frame: VmAllocOptions::new(1).alloc_single().unwrap(),
+            root_frame: FrameAllocOptions::new(1).alloc_single().unwrap(),
             context_tables: BTreeMap::new(),
         }
     }
@@ -240,7 +240,7 @@ pub struct ContextTable {
 impl ContextTable {
     fn new() -> Self {
         Self {
-            entries_frame: VmAllocOptions::new(1).alloc_single().unwrap(),
+            entries_frame: FrameAllocOptions::new(1).alloc_single().unwrap(),
             page_tables: BTreeMap::new(),
         }
     }

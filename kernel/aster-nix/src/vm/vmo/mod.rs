@@ -7,7 +7,7 @@ use core::ops::Range;
 use align_ext::AlignExt;
 use aster_frame::{
     collections::xarray::{CursorMut, XArray, XMark},
-    mm::{Frame, VmAllocOptions, VmReader, VmWriter},
+    mm::{Frame, FrameAllocOptions, VmReader, VmWriter},
 };
 use aster_rights::Rights;
 
@@ -195,7 +195,7 @@ pub(super) struct Vmo_ {
 }
 
 fn clone_page(page: &Frame) -> Result<Frame> {
-    let new_page = VmAllocOptions::new(1).alloc_single()?;
+    let new_page = FrameAllocOptions::new(1).alloc_single()?;
     new_page.copy_from(page);
     Ok(new_page)
 }
@@ -221,7 +221,7 @@ impl Vmo_ {
             None => {
                 // Condition 1. The new anonymous page only need to be marked as `ExclusivePage`
                 // when current VMO is a cow VMO, otherwise this mark is meaningless.
-                (VmAllocOptions::new(1).alloc_single()?, is_cow_vmo)
+                (FrameAllocOptions::new(1).alloc_single()?, is_cow_vmo)
             }
             Some(pager) => {
                 let page = pager.commit_page(page_idx)?;

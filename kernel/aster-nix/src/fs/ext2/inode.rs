@@ -653,7 +653,10 @@ impl Inner {
 
         let mut buf_offset = 0;
         for bid in Bid::from_offset(offset)..Bid::from_offset(offset + read_len) {
-            let frame = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
+            let frame = FrameAllocOptions::new(1)
+                .uninit(true)
+                .alloc_single()
+                .unwrap();
             self.inode_impl
                 .read_block_sync(bid.to_raw() as Ext2Bid, &frame)?;
             frame.read_bytes(0, &mut buf[buf_offset..buf_offset + BLOCK_SIZE])?;
@@ -691,7 +694,10 @@ impl Inner {
         let mut buf_offset = 0;
         for bid in Bid::from_offset(offset)..Bid::from_offset(end_offset) {
             let frame = {
-                let frame = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
+                let frame = FrameAllocOptions::new(1)
+                    .uninit(true)
+                    .alloc_single()
+                    .unwrap();
                 frame.write_bytes(0, &buf[buf_offset..buf_offset + BLOCK_SIZE])?;
                 frame
             };
@@ -1572,7 +1578,7 @@ impl InodeImpl {
 
     pub fn sync_data_holes(&self) -> Result<()> {
         let inner = self.0.read();
-        let zero_frame = VmAllocOptions::new(1).alloc_single().unwrap();
+        let zero_frame = FrameAllocOptions::new(1).alloc_single().unwrap();
         for bid in 0..inner.desc.blocks_count() {
             let is_data_hole = inner.blocks_hole_desc.read().is_hole(bid as usize);
             if is_data_hole {

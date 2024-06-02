@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! The physical page memory allocator.
+//!
+//! TODO: Decouple it with the frame allocator in [`crate::mm::frame::options`] by
+//! allocating pages rather untyped memory from this module.
+
 use alloc::vec::Vec;
 
 use align_ext::AlignExt;
@@ -7,12 +12,16 @@ use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
-use super::{meta::FrameMeta, Frame, Page, Segment, VmFrameVec};
-use crate::{boot::memory_region::MemoryRegionType, mm::PAGE_SIZE, sync::SpinLock};
+use super::{meta::FrameMeta, Page};
+use crate::{
+    boot::memory_region::MemoryRegionType,
+    mm::{Frame, FrameVec, Segment, PAGE_SIZE},
+    sync::SpinLock,
+};
 
 pub(in crate::mm) static FRAME_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 
-pub(crate) fn alloc(nframes: usize) -> Option<VmFrameVec> {
+pub(crate) fn alloc(nframes: usize) -> Option<FrameVec> {
     FRAME_ALLOCATOR
         .get()
         .unwrap()
@@ -27,7 +36,7 @@ pub(crate) fn alloc(nframes: usize) -> Option<VmFrameVec> {
                 };
                 vector.push(frame);
             }
-            VmFrameVec(vector)
+            FrameVec(vector)
         })
 }
 

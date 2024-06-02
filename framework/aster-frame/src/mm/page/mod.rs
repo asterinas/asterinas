@@ -1,33 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Managing pages or frames.
+//! Physical memory page management.
 //!
 //! A page is an aligned, contiguous range of bytes in physical memory. The sizes
 //! of base pages and huge pages are architecture-dependent. A page can be mapped
 //! to a virtual address using the page table.
 //!
-//! A frame is a special page that is _untyped_ memory. It is used to store data
-//! irrelevant to the integrity of the kernel. All pages mapped to the virtual
-//! address space of the users are backed by frames.
+//! Pages can be accessed through page handles, namely, [`Page`]. A page handle
+//! is a reference-counted handle to a page. When all handles to a page are dropped,
+//! the page is released and can be reused.
+//!
+//! Pages can have dedicated metadata, which is implemented in the [`meta`] module.
+//! The reference count and usage of a page are stored in the metadata as well, leaving
+//! the handle only a pointer to the metadata.
 
 pub(crate) mod allocator;
-mod frame;
 pub(in crate::mm) mod meta;
-mod segment;
-mod vm_frame_vec;
 
 use core::{
     marker::PhantomData,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
 
-pub use frame::Frame;
 use meta::{mapping, MetaSlot, PageMeta};
-pub use segment::Segment;
-pub use vm_frame_vec::{FrameVecIter, VmFrameVec};
 
 use super::PAGE_SIZE;
-use crate::mm::{paddr_to_vaddr, Paddr, PagingConsts, Vaddr};
+use crate::mm::{Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
@@ -35,8 +33,8 @@ static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 /// whose metadata is represented by `M`.
 #[derive(Debug)]
 pub struct Page<M: PageMeta> {
-    ptr: *const MetaSlot,
-    _marker: PhantomData<M>,
+    pub(super) ptr: *const MetaSlot,
+    pub(super) _marker: PhantomData<M>,
 }
 
 unsafe impl<M: PageMeta> Send for Page<M> {}

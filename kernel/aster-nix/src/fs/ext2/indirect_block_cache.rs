@@ -132,7 +132,7 @@ impl IndirectBlock {
     /// Allocates an uninitialized block whose bytes are to be populated with
     /// data loaded from the disk.
     fn alloc_uninit() -> Result<Self> {
-        let frame = VmAllocOptions::new(1).uninit(true).alloc_single()?;
+        let frame = FrameAllocOptions::new(1).uninit(true).alloc_single()?;
         Ok(Self {
             frame,
             state: State::Uninit,
@@ -141,7 +141,7 @@ impl IndirectBlock {
 
     /// Allocates a new block with its bytes initialized to zero.
     pub fn alloc() -> Result<Self> {
-        let frame = VmAllocOptions::new(1).alloc_single()?;
+        let frame = FrameAllocOptions::new(1).alloc_single()?;
         Ok(Self {
             frame,
             state: State::Dirty,

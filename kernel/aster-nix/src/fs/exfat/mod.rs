@@ -21,7 +21,7 @@ mod test {
         bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
         BlockDevice,
     };
-    use aster_frame::mm::{Segment, VmAllocOptions, VmIo};
+    use aster_frame::mm::{FrameAllocOptions, Segment, VmIo};
     use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
     use crate::{
@@ -102,7 +102,7 @@ mod test {
     /// Read exfat disk image
     fn new_vm_segment_from_image() -> Segment {
         let vm_segment = {
-            VmAllocOptions::new(EXFAT_IMAGE.len() / PAGE_SIZE)
+            FrameAllocOptions::new(EXFAT_IMAGE.len() / PAGE_SIZE)
                 .is_contiguous(true)
                 .uninit(true)
                 .alloc_contiguous()

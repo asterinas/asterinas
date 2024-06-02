@@ -56,7 +56,7 @@ use aster_frame::cpu::UserContext;
 use aster_frame::prelude::*;
 use aster_frame::task::{Task, TaskOptions};
 use aster_frame::user::{ReturnReason, UserMode, UserSpace};
-use aster_frame::mm::{PageFlags, PAGE_SIZE, Vaddr, VmAllocOptions, VmIo, VmMapOptions, VmSpace};
+use aster_frame::mm::{PageFlags, PAGE_SIZE, Vaddr, FrameAllocOptions, VmIo, VmMapOptions, VmSpace};
 
 /// The kernel's boot and initialization process is managed by Asterinas Framework.
 /// After the process is done, the kernel's execution environment
@@ -73,7 +73,7 @@ pub fn main() {
 fn create_user_space(program: &[u8]) -> UserSpace {
     let user_pages = {
         let nframes = program.len().align_up(PAGE_SIZE) / PAGE_SIZE;
-        let vm_frames = VmAllocOptions::new(nframes).alloc().unwrap();
+        let vm_frames = FrameAllocOptions::new(nframes).alloc().unwrap();
         // Phyiscal memory pages can be only accessed
         // via the Frame abstraction.
         vm_frames.write_bytes(0, program).unwrap();

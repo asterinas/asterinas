@@ -2,7 +2,7 @@
 
 use core::ops::Range;
 
-use aster_frame::mm::{Frame, PageFlags, VmFrameVec, VmIo, VmMapOptions, VmSpace};
+use aster_frame::mm::{Frame, FrameVec, PageFlags, VmIo, VmMapOptions, VmSpace};
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
 use crate::{
@@ -484,7 +484,7 @@ impl VmMappingInner {
             vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
         }
 
-        vm_space.map(VmFrameVec::from_one_frame(frame), &vm_map_options)?;
+        vm_space.map(FrameVec::from_one_frame(frame), &vm_map_options)?;
         self.mapped_pages.insert(page_idx);
         Ok(())
     }
