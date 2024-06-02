@@ -92,7 +92,7 @@ pub(crate) fn tlb_flush_all_including_global() {
 pub struct PageTableEntry(usize);
 
 /// Activate the given level 4 page table.
-/// The cache policy of the root page table frame is controlled by `root_pt_cache`.
+/// The cache policy of the root page table node is controlled by `root_pt_cache`.
 ///
 /// ## Safety
 ///
