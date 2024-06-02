@@ -104,11 +104,12 @@ impl Dentry_ {
         DentryFlags::from_bits(flags).unwrap()
     }
 
-    /// Check if the Dentry_ is a subdir of the given Dentry_.
-    pub fn is_subdir(&self, dentry: Arc<Self>) -> bool {
+    /// Check if this dentry is a descendant (child, grandchild, or
+    /// great-grandchild, etc.) of another dentry.
+    pub fn is_descendant_of(&self, ancestor: &Arc<Self>) -> bool {
         let mut parent = self.parent();
         while let Some(p) = parent {
-            if Arc::ptr_eq(&p, &dentry) {
+            if Arc::ptr_eq(&p, ancestor) {
                 return true;
             }
             parent = p.parent();
@@ -571,10 +572,10 @@ impl Dentry {
         }
     }
 
-    /// Make this Dentry' inner to be a mountpoint,
+    /// Make this Dentry's inner to be a mountpoint,
     /// and set the mountpoint of the child mount to this Dentry's inner.
-    pub fn set_mountpoint(&self, child_mount: Arc<MountNode>) {
-        child_mount.set_mountpoint_dentry(self.inner.clone());
+    pub(super) fn set_mountpoint(&self, child_mount: Arc<MountNode>) {
+        child_mount.set_mountpoint_dentry(&self.inner);
         self.inner.set_mountpoint_dentry();
     }
 
@@ -600,7 +601,7 @@ impl Dentry {
     /// Unmount and return the mounted child mount.
     ///
     /// Note that the root mount cannot be unmounted.
-    pub fn umount(&self) -> Result<Arc<MountNode>> {
+    pub fn unmount(&self) -> Result<Arc<MountNode>> {
         if !self.inner.is_root_of_mount() {
             return_errno_with_message!(Errno::EINVAL, "not mounted");
         }
@@ -613,7 +614,7 @@ impl Dentry {
         let mountpoint_mount_node = mount_node.parent().unwrap().upgrade().unwrap();
         let mountpoint = Self::new(mountpoint_mount_node.clone(), mountpoint_dentry.clone());
 
-        let child_mount = mountpoint_mount_node.umount(&mountpoint)?;
+        let child_mount = mountpoint_mount_node.unmount(&mountpoint)?;
         mountpoint_dentry.clear_mountpoint();
         Ok(child_mount)
     }
@@ -650,12 +651,17 @@ impl Dentry {
         self.inner.rename(old_name, &new_dir.inner, new_name)
     }
 
-    pub fn do_loopback(&self, recursive: bool) -> Arc<MountNode> {
-        if recursive {
-            self.mount_node.copy_mount_node_tree(self.inner.clone())
-        } else {
-            self.mount_node.clone_mount_node(self.inner.clone())
-        }
+    /// Bind mount the Dentry to the destination Dentry.
+    ///
+    /// If recursive is true, it will bind mount the whole mount tree
+    /// to the destination Dentry. Otherwise, it will only bind mount
+    /// the root mount node.
+    pub fn bind_mount_to(&self, dst_dentry: &Arc<Self>, recursive: bool) -> Result<()> {
+        let src_mount = self
+            .mount_node
+            .clone_mount_node_tree(&self.inner, recursive);
+        src_mount.graft_mount_node_tree(dst_dentry)?;
+        Ok(())
     }
 
     /// Get the arc reference to self.

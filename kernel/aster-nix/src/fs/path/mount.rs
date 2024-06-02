@@ -84,7 +84,7 @@ impl MountNode {
     /// Unmount a child mount node from the mountpoint and return it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
-    pub fn umount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
+    pub fn unmount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
@@ -97,12 +97,13 @@ impl MountNode {
         Ok(child_mount)
     }
 
-    /// Clone a mount node with the an root Dentry_.
+    /// Clone a mount node with the an root `Dentry_`.
+    ///
     /// The new mount node will have the same fs as the original one and
     /// have no parent and children. We should set the parent and children manually.
-    pub fn clone_mount_node(&self, root_dentry: Arc<Dentry_>) -> Arc<Self> {
+    fn clone_mount_node(&self, root_dentry: &Arc<Dentry_>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
-            root_dentry,
+            root_dentry: root_dentry.clone(),
             mountpoint_dentry: RwLock::new(None),
             parent: RwLock::new(None),
             children: Mutex::new(BTreeMap::new()),
@@ -111,37 +112,46 @@ impl MountNode {
         })
     }
 
-    /// Copies a mount tree starting from the specified root `Dentry_`.
+    /// Clone a mount tree starting from the specified root `Dentry_`.
+    ///
     /// The new mount tree will replicate the structure of the original tree.
     /// The new tree is a separate entity rooted at the given `Dentry_`,
     /// and the original tree remains unchanged.
-    pub fn copy_mount_node_tree(&self, root_dentry: Arc<Dentry_>) -> Arc<Self> {
+    ///
+    /// If `recursive` is set to `true`, the entire tree will be copied.
+    /// Otherwise, only the root mount node will be copied.
+    pub(super) fn clone_mount_node_tree(
+        &self,
+        root_dentry: &Arc<Dentry_>,
+        recursive: bool,
+    ) -> Arc<Self> {
         let new_root_mount = self.clone_mount_node(root_dentry);
+        if !recursive {
+            return new_root_mount.clone();
+        }
         let mut stack = vec![self.this()];
         let mut new_stack = vec![new_root_mount.clone()];
 
-        let mut dentry = new_root_mount.root_dentry.clone();
         while let Some(old_mount) = stack.pop() {
             let new_parent_mount = new_stack.pop().unwrap().clone();
             let old_children = old_mount.children.lock();
             for old_child_mount in old_children.values() {
                 let mountpoint_dentry = old_child_mount.mountpoint_dentry().unwrap();
-                if !dentry.is_subdir(mountpoint_dentry.clone()) {
+                if !mountpoint_dentry.is_descendant_of(old_mount.root_dentry()) {
                     continue;
                 }
-                stack.push(old_child_mount.clone());
                 let new_child_mount =
-                    old_child_mount.clone_mount_node(old_child_mount.root_dentry.clone());
+                    old_child_mount.clone_mount_node(old_child_mount.root_dentry());
                 let key = mountpoint_dentry.key();
                 new_parent_mount
                     .children
                     .lock()
                     .insert(key, new_child_mount.clone());
-                new_child_mount.set_parent(new_parent_mount.clone());
+                new_child_mount.set_parent(&new_parent_mount);
                 new_child_mount
-                    .set_mountpoint_dentry(old_child_mount.mountpoint_dentry().unwrap().clone());
+                    .set_mountpoint_dentry(&old_child_mount.mountpoint_dentry().unwrap());
+                stack.push(old_child_mount.clone());
                 new_stack.push(new_child_mount.clone());
-                dentry = new_child_mount.root_dentry.clone();
             }
         }
         new_root_mount.clone()
@@ -159,24 +169,24 @@ impl MountNode {
     }
 
     /// Attach the mount node to the mountpoint.
-    fn attach_mount_node(&self, mountpoint: Arc<Dentry>) {
+    fn attach_mount_node(&self, mountpoint: &Arc<Dentry>) {
         let key = mountpoint.key();
         mountpoint
             .mount_node()
             .children
             .lock()
             .insert(key, self.this());
-        self.set_parent(mountpoint.mount_node().clone());
+        self.set_parent(mountpoint.mount_node());
         mountpoint.set_mountpoint(self.this());
     }
 
     /// Graft the mount node tree to the mountpoint.
-    pub fn graft_mount_node_tree(&self, mountpoint: Arc<Dentry>) -> Result<()> {
+    pub fn graft_mount_node_tree(&self, mountpoint: &Arc<Dentry>) -> Result<()> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         self.detach_mount_node();
-        self.attach_mount_node(mountpoint.clone());
+        self.attach_mount_node(mountpoint);
         Ok(())
     }
 
@@ -188,12 +198,12 @@ impl MountNode {
         self.children.lock().get(&mountpoint.key()).cloned()
     }
 
-    /// Get the root Dentry_ of this mount node.
+    /// Get the root `Dentry_` of this mount node.
     pub fn root_dentry(&self) -> &Arc<Dentry_> {
         &self.root_dentry
     }
 
-    /// Try to get the mountpoint Dentry_ of this mount node.
+    /// Try to get the mountpoint `Dentry_` of this mount node.
     pub fn mountpoint_dentry(&self) -> Option<Arc<Dentry_>> {
         self.mountpoint_dentry.read().clone()
     }
@@ -202,9 +212,9 @@ impl MountNode {
     ///
     /// In some cases we may need to reset the mountpoint of
     /// the created MountNode, such as move mount.
-    pub fn set_mountpoint_dentry(&self, inner: Arc<Dentry_>) {
+    pub fn set_mountpoint_dentry(&self, inner: &Arc<Dentry_>) {
         let mut mountpoint_dentry = self.mountpoint_dentry.write();
-        *mountpoint_dentry = Some(inner);
+        *mountpoint_dentry = Some(inner.clone());
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
@@ -228,9 +238,9 @@ impl MountNode {
     ///
     /// In some cases we may need to reset the parent of
     /// the created MountNode, such as move mount.
-    pub fn set_parent(&self, mount_node: Arc<MountNode>) {
+    pub fn set_parent(&self, mount_node: &Arc<MountNode>) {
         let mut parent = self.parent.write();
-        *parent = Some(Arc::downgrade(&mount_node));
+        *parent = Some(Arc::downgrade(mount_node));
     }
 
     /// Get strong reference to self.
