@@ -1,8 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Untyped physical memory management.
+//!
+//! A frame is a special page (defined in [`super::page`]) that is _untyped_
+//! memory. It is used to store data irrelevant to the integrity of the kernel.
+//! All pages mapped to the virtual address space of the users are backed by
+//! frames. Frames, with all the properties of pages, can additionally be safely
+//! read and written by the kernel or the user.
+
+pub mod frame_vec;
+pub mod options;
+pub mod segment;
+
 use core::mem::ManuallyDrop;
 
-use super::{
+pub use frame_vec::{FrameVec, FrameVecIter};
+pub use segment::Segment;
+
+use super::page::{
     allocator,
     meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
     Page,

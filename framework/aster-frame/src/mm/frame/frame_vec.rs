@@ -9,15 +9,15 @@ use crate::{
 
 /// A collection of base page frames (regular physical memory pages).
 ///
-/// For the most parts, `VmFrameVec` is like `Vec<Frame>`. But the
+/// For the most parts, `FrameVec` is like `Vec<Frame>`. But the
 /// implementation may or may not be based on `Vec`. Having a dedicated
 /// type to represent a series of page frames is convenient because,
 /// more often than not, one needs to operate on a batch of frames rather
 /// a single frame.
 #[derive(Debug, Clone)]
-pub struct VmFrameVec(pub(crate) Vec<Frame>);
+pub struct FrameVec(pub(crate) Vec<Frame>);
 
-impl VmFrameVec {
+impl FrameVec {
     pub fn get(&self, index: usize) -> Option<&Frame> {
         self.0.get(index)
     }
@@ -47,7 +47,7 @@ impl VmFrameVec {
     }
 
     /// Append some frames.
-    pub fn append(&mut self, more: &mut VmFrameVec) -> Result<()> {
+    pub fn append(&mut self, more: &mut FrameVec) -> Result<()> {
         self.0.append(&mut more.0);
         Ok(())
     }
@@ -89,7 +89,7 @@ impl VmFrameVec {
     }
 }
 
-impl IntoIterator for VmFrameVec {
+impl IntoIterator for FrameVec {
     type Item = Frame;
 
     type IntoIter = alloc::vec::IntoIter<Self::Item>;
@@ -99,7 +99,7 @@ impl IntoIterator for VmFrameVec {
     }
 }
 
-impl VmIo for VmFrameVec {
+impl VmIo for FrameVec {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
@@ -143,12 +143,12 @@ impl VmIo for VmFrameVec {
 
 /// An iterator for frames.
 pub struct FrameVecIter<'a> {
-    frames: &'a VmFrameVec,
+    frames: &'a FrameVec,
     current: usize,
 }
 
 impl<'a> FrameVecIter<'a> {
-    pub fn new(frames: &'a VmFrameVec) -> Self {
+    pub fn new(frames: &'a FrameVec) -> Self {
         Self { frames, current: 0 }
     }
 }

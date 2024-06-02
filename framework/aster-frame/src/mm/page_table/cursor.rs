@@ -122,7 +122,7 @@ where
         // Create a guard array that only hold the root node lock.
         let guards = core::array::from_fn(|i| {
             if i == 0 {
-                Some(pt.root.copy_handle().lock())
+                Some(pt.root.clone_shallow().lock())
             } else {
                 None
             }
@@ -313,7 +313,7 @@ where
         // Drop the lock on the guard level.
         self.guards[C::NR_LEVELS - self.guard_level] = None;
         // Re-walk the page table to retreive the locks.
-        self.guards[0] = Some(self.pt.root.copy_handle().lock());
+        self.guards[0] = Some(self.pt.root.clone_shallow().lock());
         self.level = C::NR_LEVELS;
         let cur_pte = self.read_cur_pte();
         let cur_child_is_pt = cur_pte.is_present() && !cur_pte.is_last(self.level);

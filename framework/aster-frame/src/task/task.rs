@@ -12,7 +12,7 @@ use super::{
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     cpu::CpuSet,
-    mm::{kspace::KERNEL_PAGE_TABLE, PageFlags, Segment, VmAllocOptions, PAGE_SIZE},
+    mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
@@ -42,7 +42,7 @@ pub struct KernelStack {
 impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            segment: VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).alloc_contiguous()?,
+            segment: FrameAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).alloc_contiguous()?,
             has_guard_page: false,
         })
     }
@@ -51,7 +51,7 @@ impl KernelStack {
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
         let stack_segment =
-            VmAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
+            FrameAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
         // FIXME: modifying the the linear mapping is bad.
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let guard_page_vaddr = {

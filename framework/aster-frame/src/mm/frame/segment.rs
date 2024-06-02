@@ -2,19 +2,22 @@
 
 use core::ops::Range;
 
-use super::{
-    allocator,
-    meta::{PageMeta, PageUsage, SegmentHeadMeta},
-    Frame, Page,
-};
+use super::Frame;
 use crate::{
-    mm::{HasPaddr, Paddr, VmIo, VmReader, VmWriter, PAGE_SIZE},
+    mm::{
+        page::{
+            allocator,
+            meta::{PageMeta, PageUsage, SegmentHeadMeta},
+            Page,
+        },
+        HasPaddr, Paddr, VmIo, VmReader, VmWriter, PAGE_SIZE,
+    },
     Error, Result,
 };
 
 /// A handle to a contiguous range of page frames (physical memory pages).
 ///
-/// The biggest difference between `Segment` and `VmFrameVec` is that
+/// The biggest difference between `Segment` and `FrameVec` is that
 /// the page frames must be contiguous for `Segment`.
 ///
 /// A cloned `Segment` refers to the same page frames as the original.
@@ -24,7 +27,7 @@ use crate::{
 /// #Example
 ///
 /// ```rust
-/// let vm_segment = VmAllocOptions::new(2)
+/// let vm_segment = FrameAllocOptions::new(2)
 ///     .is_contiguous(true)
 ///     .alloc_contiguous()?;
 /// vm_segment.write_bytes(0, buf)?;

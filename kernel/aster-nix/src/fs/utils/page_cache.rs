@@ -3,7 +3,7 @@
 use core::ops::Range;
 
 use aster_block::bio::{BioStatus, BioWaiter};
-use aster_frame::mm::{Frame, VmAllocOptions};
+use aster_frame::mm::{Frame, FrameAllocOptions};
 use aster_rights::Full;
 use lru::LruCache;
 
@@ -208,7 +208,7 @@ struct Page {
 
 impl Page {
     pub fn alloc() -> Result<Self> {
-        let frame = VmAllocOptions::new(1).uninit(true).alloc_single()?;
+        let frame = FrameAllocOptions::new(1).uninit(true).alloc_single()?;
         Ok(Self {
             frame,
             state: PageState::Uninit,
@@ -216,7 +216,7 @@ impl Page {
     }
 
     pub fn alloc_zero() -> Result<Self> {
-        let frame = VmAllocOptions::new(1).alloc_single()?;
+        let frame = FrameAllocOptions::new(1).alloc_single()?;
         Ok(Self {
             frame,
             state: PageState::Dirty,

@@ -51,6 +51,14 @@ use tdx_guest::init_tdx;
 
 pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
 
+/// Initialize the framework.
+///
+/// This function represents the first phase booting up the system. It makes
+/// all functionalities of the framework available after the call.
+///
+/// TODO: We need to refactor this function to make it more modular and
+/// make inter-initialization-dependencies more clear and reduce usages of
+/// boot stage only global variables.
 pub fn init() {
     arch::before_all_init();
     logger::init();

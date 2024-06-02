@@ -9,7 +9,9 @@ use alloc::{
 use core::ops::Range;
 
 use aster_frame::{
-    mm::{Daddr, DmaDirection, DmaStream, HasDaddr, VmAllocOptions, VmReader, VmWriter, PAGE_SIZE},
+    mm::{
+        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmReader, VmWriter, PAGE_SIZE,
+    },
     sync::{RwLock, SpinLock},
 };
 use bitvec::{array::BitArray, prelude::Lsb0};
@@ -145,7 +147,7 @@ impl DmaPage {
         pool: Weak<DmaPool>,
     ) -> Result<Self, aster_frame::Error> {
         let dma_stream = {
-            let vm_segment = VmAllocOptions::new(1).alloc_contiguous()?;
+            let vm_segment = FrameAllocOptions::new(1).alloc_contiguous()?;
 
             DmaStream::map(vm_segment, direction, is_cache_coherent)
                 .map_err(|_| aster_frame::Error::AccessDenied)?

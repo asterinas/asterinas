@@ -89,7 +89,7 @@ where
     }
 
     /// Create a copy of the handle.
-    pub(super) fn copy_handle(&self) -> Self {
+    pub(super) fn clone_shallow(&self) -> Self {
         self.inc_ref();
         Self {
             raw: self.raw,
@@ -321,7 +321,7 @@ where
         for i in deep {
             match self.child(i, /*meaningless*/ true) {
                 Child::PageTable(pt) => {
-                    let guard = pt.copy_handle().lock();
+                    let guard = pt.clone_shallow().lock();
                     let new_child = guard.make_copy(0..nr_subpage_per_huge::<C>(), 0..0);
                     new_frame.set_child_pt(i, new_child.into_raw(), /*meaningless*/ true);
                 }
@@ -339,7 +339,7 @@ where
             debug_assert_eq!(self.level(), C::NR_LEVELS);
             match self.child(i, /*meaningless*/ true) {
                 Child::PageTable(pt) => {
-                    new_frame.set_child_pt(i, pt.copy_handle(), /*meaningless*/ true);
+                    new_frame.set_child_pt(i, pt.clone_shallow(), /*meaningless*/ true);
                 }
                 Child::None => {}
                 Child::Frame(_) | Child::Untracked(_) => {

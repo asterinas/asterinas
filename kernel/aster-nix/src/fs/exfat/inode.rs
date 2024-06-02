@@ -9,7 +9,7 @@ use aster_block::{
     id::{Bid, BlockId},
     BLOCK_SIZE,
 };
-use aster_frame::mm::{Frame, VmAllocOptions, VmIo};
+use aster_frame::mm::{Frame, FrameAllocOptions, VmIo};
 use aster_rights::Full;
 
 use super::{
@@ -1242,7 +1242,10 @@ impl Inode for ExfatInode {
             .discard_range(read_off..read_off + read_len);
 
         let mut buf_offset = 0;
-        let frame = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
+        let frame = FrameAllocOptions::new(1)
+            .uninit(true)
+            .alloc_single()
+            .unwrap();
 
         let start_pos = inner.start_chain.walk_to_cluster_at_offset(read_off)?;
         let cluster_size = inner.fs().cluster_size();
@@ -1355,7 +1358,10 @@ impl Inode for ExfatInode {
         let mut cur_offset = start_pos.1;
         for _ in Bid::from_offset(offset)..Bid::from_offset(end_offset) {
             let frame = {
-                let frame = VmAllocOptions::new(1).uninit(true).alloc_single().unwrap();
+                let frame = FrameAllocOptions::new(1)
+                    .uninit(true)
+                    .alloc_single()
+                    .unwrap();
                 frame.write_bytes(0, &buf[buf_offset..buf_offset + BLOCK_SIZE])?;
                 frame
             };

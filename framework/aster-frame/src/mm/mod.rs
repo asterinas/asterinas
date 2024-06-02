@@ -9,11 +9,11 @@ pub type Vaddr = usize;
 pub type Paddr = usize;
 
 pub(crate) mod dma;
+pub mod frame;
 pub(crate) mod heap_allocator;
 mod io;
 pub(crate) mod kspace;
 mod offset;
-mod options;
 pub(crate) mod page;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
@@ -26,9 +26,8 @@ use spin::Once;
 
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
+    frame::{options::FrameAllocOptions, Frame, FrameVec, FrameVecIter, Segment},
     io::{VmIo, VmReader, VmWriter},
-    options::VmAllocOptions,
-    page::{Frame, FrameVecIter, Segment, VmFrameVec},
     page_prop::{CachePolicy, PageFlags, PageProperty},
     space::{VmMapOptions, VmSpace},
 };

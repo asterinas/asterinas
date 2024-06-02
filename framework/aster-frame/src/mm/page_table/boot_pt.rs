@@ -101,10 +101,10 @@ fn test_boot_pt() {
     use super::page_walk;
     use crate::{
         arch::mm::{PageTableEntry, PagingConsts},
-        mm::{CachePolicy, PageFlags, VmAllocOptions},
+        mm::{CachePolicy, FrameAllocOptions, PageFlags},
     };
 
-    let root_frame = VmAllocOptions::new(1).alloc_single().unwrap();
+    let root_frame = FrameAllocOptions::new(1).alloc_single().unwrap();
     let root_paddr = root_frame.start_paddr();
 
     let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts> {

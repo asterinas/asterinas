@@ -190,11 +190,11 @@ mod test {
     use alloc::vec;
 
     use super::*;
-    use crate::mm::VmAllocOptions;
+    use crate::mm::FrameAllocOptions;
 
     #[ktest]
     fn map_with_coherent_device() {
-        let vm_segment = VmAllocOptions::new(1)
+        let vm_segment = FrameAllocOptions::new(1)
             .is_contiguous(true)
             .alloc_contiguous()
             .unwrap();
@@ -204,7 +204,7 @@ mod test {
 
     #[ktest]
     fn map_with_incoherent_device() {
-        let vm_segment = VmAllocOptions::new(1)
+        let vm_segment = FrameAllocOptions::new(1)
             .is_contiguous(true)
             .alloc_contiguous()
             .unwrap();
@@ -217,7 +217,7 @@ mod test {
 
     #[ktest]
     fn duplicate_map() {
-        let vm_segment_parent = VmAllocOptions::new(2)
+        let vm_segment_parent = FrameAllocOptions::new(2)
             .is_contiguous(true)
             .alloc_contiguous()
             .unwrap();
@@ -229,7 +229,7 @@ mod test {
 
     #[ktest]
     fn read_and_write() {
-        let vm_segment = VmAllocOptions::new(2)
+        let vm_segment = FrameAllocOptions::new(2)
             .is_contiguous(true)
             .alloc_contiguous()
             .unwrap();
@@ -244,7 +244,7 @@ mod test {
 
     #[ktest]
     fn reader_and_wirter() {
-        let vm_segment = VmAllocOptions::new(2)
+        let vm_segment = FrameAllocOptions::new(2)
             .is_contiguous(true)
             .alloc_contiguous()
             .unwrap();

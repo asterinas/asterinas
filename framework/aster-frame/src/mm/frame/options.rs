@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{page::allocator, Frame, Segment, VmFrameVec};
-use crate::{prelude::*, Error};
+use super::{Frame, FrameVec, Segment};
+use crate::{mm::page::allocator, prelude::*, Error};
 
 /// Options for allocating physical memory pages (or frames).
 ///
@@ -10,13 +10,13 @@ use crate::{prelude::*, Error};
 /// may store Rust objects or affect Rust memory safety, e.g.,
 /// the code and data segments of the OS kernel, the stack and heap
 /// allocated for the OS kernel.
-pub struct VmAllocOptions {
+pub struct FrameAllocOptions {
     nframes: usize,
     is_contiguous: bool,
     uninit: bool,
 }
 
-impl VmAllocOptions {
+impl FrameAllocOptions {
     /// Creates new options for allocating the specified number of frames.
     pub fn new(nframes: usize) -> Self {
         Self {
@@ -46,7 +46,7 @@ impl VmAllocOptions {
     }
 
     /// Allocate a collection of page frames according to the given options.
-    pub fn alloc(&self) -> Result<VmFrameVec> {
+    pub fn alloc(&self) -> Result<FrameVec> {
         let frames = if self.is_contiguous {
             allocator::alloc(self.nframes).ok_or(Error::NoMemory)?
         } else {
@@ -54,7 +54,7 @@ impl VmAllocOptions {
             for _ in 0..self.nframes {
                 frame_list.push(allocator::alloc_single().ok_or(Error::NoMemory)?);
             }
-            VmFrameVec(frame_list)
+            FrameVec(frame_list)
         };
         if !self.uninit {
             for frame in frames.iter() {
@@ -102,9 +102,9 @@ impl VmAllocOptions {
 fn test_alloc_dealloc() {
     // Here we allocate and deallocate frames in random orders to test the allocator.
     // We expect the test to fail if the underlying implementation panics.
-    let single_options = VmAllocOptions::new(1);
-    let multi_options = VmAllocOptions::new(10);
-    let mut contiguous_options = VmAllocOptions::new(10);
+    let single_options = FrameAllocOptions::new(1);
+    let multi_options = FrameAllocOptions::new(10);
+    let mut contiguous_options = FrameAllocOptions::new(10);
     contiguous_options.is_contiguous(true);
     let mut remember_vec = Vec::new();
     for i in 0..10 {

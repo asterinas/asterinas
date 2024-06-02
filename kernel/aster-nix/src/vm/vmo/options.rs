@@ -7,7 +7,7 @@ use core::{marker::PhantomData, ops::Range};
 use align_ext::AlignExt;
 use aster_frame::{
     collections::xarray::XArray,
-    mm::{Frame, VmAllocOptions},
+    mm::{Frame, FrameAllocOptions},
 };
 use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
@@ -144,7 +144,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
-        let frames = VmAllocOptions::new(frames_num)
+        let frames = FrameAllocOptions::new(frames_num)
             .is_contiguous(true)
             .alloc()?;
         let mut committed_pages = XArray::new();

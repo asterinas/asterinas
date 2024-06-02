@@ -82,7 +82,7 @@ pub enum PageUsage {
 }
 
 #[repr(C)]
-pub(super) struct MetaSlot {
+pub(in crate::mm) struct MetaSlot {
     /// The metadata of the page.
     ///
     /// The implementation may cast a `*const MetaSlot` to a `*const PageMeta`.
@@ -139,7 +139,7 @@ impl Sealed for FrameMeta {}
 #[repr(C)]
 pub struct SegmentHeadMeta {
     /// Length of the segment in bytes.
-    pub(super) seg_len: u64,
+    pub(in crate::mm) seg_len: u64,
 }
 
 impl Sealed for SegmentHeadMeta {}

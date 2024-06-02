@@ -135,7 +135,7 @@ impl PageTable<KernelMode> {
     /// Then, one can use a user page table to call [`fork_copy_on_write`], creating
     /// other child page tables.
     pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let root_frame = self.root.copy_handle().lock();
+        let root_frame = self.root.clone_shallow().lock();
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         let new_root_frame =
             unsafe { root_frame.make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE) };
@@ -157,7 +157,7 @@ impl PageTable<KernelMode> {
         debug_assert!(start < NR_PTES_PER_NODE);
         let end = root_index.end;
         debug_assert!(end <= NR_PTES_PER_NODE);
-        let mut root_frame = self.root.copy_handle().lock();
+        let mut root_frame = self.root.clone_shallow().lock();
         for i in start..end {
             if !root_frame.read_pte(i).is_present() {
                 let frame = PageTableNode::alloc(PagingConsts::NR_LEVELS - 1);
@@ -254,7 +254,7 @@ where
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
     pub(crate) unsafe fn shallow_copy(&self) -> Self {
         PageTable {
-            root: self.root.copy_handle(),
+            root: self.root.clone_shallow(),
             _phantom: PhantomData,
         }
     }

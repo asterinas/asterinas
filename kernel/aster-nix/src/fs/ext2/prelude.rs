@@ -12,7 +12,7 @@ pub(super) use aster_block::{
     BlockDevice, BLOCK_SIZE,
 };
 pub(super) use aster_frame::{
-    mm::{Frame, Segment, VmAllocOptions, VmIo},
+    mm::{Frame, FrameAllocOptions, Segment, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
 };
 pub(super) use aster_rights::Full;

@@ -40,7 +40,7 @@ impl Ext2 {
             let npages = ((super_block.block_groups_count() as usize)
                 * core::mem::size_of::<RawGroupDescriptor>())
             .div_ceil(BLOCK_SIZE);
-            let segment = VmAllocOptions::new(npages)
+            let segment = FrameAllocOptions::new(npages)
                 .uninit(true)
                 .alloc_contiguous()?;
             match block_device.read_blocks_sync(super_block.group_descriptors_bid(0), &segment)? {
