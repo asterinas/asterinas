@@ -55,6 +55,7 @@ use crate::syscall::{
     lseek::sys_lseek,
     madvise::sys_madvise,
     mkdir::{sys_mkdir, sys_mkdirat},
+    mknod::{sys_mknod, sys_mknodat},
     mmap::sys_mmap,
     mount::sys_mount,
     mprotect::sys_mprotect,
@@ -236,6 +237,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_RT_SIGSUSPEND = 130    => sys_rt_sigsuspend(args[..2]);
     SYS_SIGALTSTACK = 131      => sys_sigaltstack(args[..2]);
     SYS_UTIME = 132            => sys_utime(args[..2]);
+    SYS_MKNOD = 133            => sys_mknod(args[..3]);
     SYS_STATFS = 137           => sys_statfs(args[..2]);
     SYS_FSTATFS = 138          => sys_fstatfs(args[..2]);
     SYS_GET_PRIORITY = 140     => sys_get_priority(args[..2]);
@@ -267,6 +269,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_WAITID = 247           => sys_waitid(args[..5]);
     SYS_OPENAT = 257           => sys_openat(args[..4]);
     SYS_MKDIRAT = 258          => sys_mkdirat(args[..3]);
+    SYS_MKNODAT = 259          => sys_mknodat(args[..4]);
     SYS_FCHOWNAT = 260         => sys_fchownat(args[..5]);
     SYS_FUTIMESAT = 261        => sys_futimesat(args[..3]);
     SYS_FSTATAT = 262          => sys_fstatat(args[..4]);

@@ -47,3 +47,20 @@ pub fn init() -> Result<()> {
     pty::init()?;
     Ok(())
 }
+
+pub fn get_device(dev: usize) -> Result<Arc<dyn Device>> {
+    if dev == 0 {
+        return_errno_with_message!(Errno::EPERM, "whiteout device")
+    }
+    let major = ((dev >> 32) & 0xffff_f000 | (dev >> 8) & 0x0000_0fff) as u32;
+    let minor = ((dev >> 12) & 0xffff_ff00 | dev & 0x0000_00ff) as u32;
+
+    match (major, minor) {
+        (1, 3) => Ok(Arc::new(null::Null)),
+        (1, 5) => Ok(Arc::new(zero::Zero)),
+        (5, 0) => Ok(Arc::new(tty::TtyDevice)),
+        (1, 8) => Ok(Arc::new(random::Random)),
+        (1, 9) => Ok(Arc::new(urandom::Urandom)),
+        _ => return_errno_with_message!(Errno::EINVAL, "unsupported device"),
+    }
+}
