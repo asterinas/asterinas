@@ -20,6 +20,7 @@ TESTS ?= \
 	link_test \
 	lseek_test \
 	mkdir_test \
+	mknod_test \
 	mmap_test \
 	mount_test \
 	open_create_test \

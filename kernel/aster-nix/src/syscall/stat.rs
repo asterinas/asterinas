@@ -77,11 +77,19 @@ pub fn sys_fstatat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub const S_IFMT: u32 = 0o170000;
-pub const S_IFCHR: u32 = 0o020000;
-pub const S_IFDIR: u32 = 0o040000;
-pub const S_IFREG: u32 = 0o100000;
-pub const S_IFLNK: u32 = 0o120000;
+bitflags! {
+    /// File type.
+    pub struct FileTypeFlags: u16 {
+        const S_IFMT   = 0o170000; // File type mask.
+        const S_IFSOCK = 0o140000; // Socket.
+        const S_IFCHR  = 0o020000; // Character device.
+        const S_IFBLK  = 0o060000; // Block device.
+        const S_IFDIR  = 0o040000; // Directory.
+        const S_IFIFO  = 0o010000; // FIFO (named pipe).
+        const S_IFREG  = 0o100000; // Regular file.
+        const S_IFLNK  = 0o120000; // Symbolic link.
+    }
+}
 
 /// File Stat
 #[derive(Debug, Clone, Copy, Pod, Default)]
