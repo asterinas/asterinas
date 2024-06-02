@@ -201,7 +201,7 @@ where
 
     /// Traverse forward in the current level to the next PTE.
     ///
-    /// If reached the end of a page table frame, it leads itself up to the next frame of the parent
+    /// If reached the end of a page table node, it leads itself up to the next frame of the parent
     /// frame if possible.
     fn move_forward(&mut self) {
         let page_size = page_size::<C>(self.level);

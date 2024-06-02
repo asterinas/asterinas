@@ -1,25 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! This module defines page table frame abstractions and the handle.
+//! This module defines page table node abstractions and the handle.
 //!
-//! The page table frame is also frequently referred to as a page table in many architectural
-//! documentations. We also call it the page table node if emphasizing the tree structure.
+//! The page table node is also frequently referred to as a page table in many architectural
+//! documentations. It is essentially a page that contains page table entries (PTEs) that map
+//! to child page tables nodes or mapped pages.
 //!
 //! This module leverages the frame metadata to manage the page table frames, which makes it
 //! easier to provide the following guarantees:
 //!
-//! The page table frame is not freed when it is still in use by:
-//!    - a parent page table frame,
-//!    - or a handle to a page table frame,
+//! The page table node is not freed when it is still in use by:
+//!    - a parent page table node,
+//!    - or a handle to a page table node,
 //!    - or a processor.
 //! This is implemented by using a reference counter in the frame metadata. If the above
-//! conditions are not met, the page table frame is ensured to be freed upon dropping the last
+//! conditions are not met, the page table node is ensured to be freed upon dropping the last
 //! reference.
 //!
-//! One can acquire exclusive access to a page table frame using merely the physical address of
-//! the page table frame. This is implemented by a lock in the frame metadata. Here the
+//! One can acquire exclusive access to a page table node using merely the physical address of
+//! the page table node. This is implemented by a lock in the frame metadata. Here the
 //! exclusiveness is only ensured for kernel code, and the processor's MMU is able to access the
-//! page table frame while a lock is held. So the modification to the PTEs should be done after
+//! page table node while a lock is held. So the modification to the PTEs should be done after
 //! the initialization of the entity that the PTE points to. This is taken care in this module.
 //!
 
@@ -40,13 +41,13 @@ use crate::{
     },
 };
 
-/// The raw handle to a page table frame.
+/// The raw handle to a page table node.
 ///
-/// This handle is a referencer of a page table frame. Thus creating and dropping it will affect
-/// the reference count of the page table frame. If dropped the raw handle as the last reference,
-/// the page table frame and subsequent children will be freed.
+/// This handle is a referencer of a page table node. Thus creating and dropping it will affect
+/// the reference count of the page table node. If dropped the raw handle as the last reference,
+/// the page table node and subsequent children will be freed.
 ///
-/// Only the CPU or a PTE can access a page table frame using a raw handle. To access the page
+/// Only the CPU or a PTE can access a page table node using a raw handle. To access the page
 /// table frame from the kernel code, use the handle [`PageTableNode`].
 #[derive(Debug)]
 pub(super) struct RawPageTableNode<E: PageTableEntryTrait, C: PagingConstsTrait>
@@ -68,6 +69,9 @@ where
 
     /// Convert a raw handle to an accessible handle by pertaining the lock.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
+        // SAFETY: The physical address in the raw handle is valid and we are
+        // transferring the ownership to a new handle. No increment of the reference
+        // count is needed.
         let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
         debug_assert!(page.meta().level == self.level);
         // Acquire the lock.
@@ -86,10 +90,7 @@ where
 
     /// Create a copy of the handle.
     pub(super) fn copy_handle(&self) -> Self {
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
-        let inc_ref = page.clone();
-        core::mem::forget(page);
-        core::mem::forget(inc_ref);
+        self.inc_ref();
         Self {
             raw: self.raw,
             level: self.level,
@@ -98,8 +99,12 @@ where
     }
 
     pub(super) fn nr_valid_children(&self) -> u16 {
+        // SAFETY: The physical address in the raw handle is valid and we are
+        // accessing the page table node. We forget the handle when finished.
         let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
-        page.meta().nr_children
+        let nr = page.meta().nr_children;
+        core::mem::forget(page);
+        nr
     }
 
     /// Activate the page table assuming it is a root page table.
@@ -133,10 +138,7 @@ where
         }
 
         // Increment the reference count of the current page table.
-
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
-        core::mem::forget(page.clone());
-        core::mem::forget(page);
+        self.inc_ref();
 
         // Decrement the reference count of the last activated page table.
 
@@ -159,6 +161,14 @@ where
             CURRENT_IS_BOOT_PT.store(false, Ordering::Release);
         }
     }
+
+    fn inc_ref(&self) {
+        // SAFETY: The physical address in the raw handle is valid and we are
+        // incrementing the reference count by cloning and forgetting.
+        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
+        core::mem::forget(page.clone());
+        core::mem::forget(page);
+    }
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for RawPageTableNode<E, C>
@@ -166,17 +176,19 @@ where
     [(); C::NR_LEVELS as usize]:,
 {
     fn drop(&mut self) {
+        // SAFETY: The physical address in the raw handle is valid. The restored
+        // handle is dropped to decrement the reference count.
         drop(unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) });
     }
 }
 
-/// A mutable handle to a page table frame.
+/// A mutable handle to a page table node.
 ///
-/// The page table frame can own a set of handles to children, ensuring that the children
-/// don't outlive the page table frame. Cloning a page table frame will create a deep copy
-/// of the page table. Dropping the page table frame will also drop all handles if the page
-/// table frame has no references. You can set the page table frame as a child of another
-/// page table frame.
+/// The page table node can own a set of handles to children, ensuring that the children
+/// don't outlive the page table node. Cloning a page table node will create a deep copy
+/// of the page table. Dropping the page table node will also drop all handles if the page
+/// table frame has no references. You can set the page table node as a child of another
+/// page table node.
 #[derive(Debug)]
 pub(super) struct PageTableNode<
     E: PageTableEntryTrait = PageTableEntry,
@@ -187,7 +199,7 @@ pub(super) struct PageTableNode<
     pub(super) page: Page<PageTablePageMeta<E, C>>,
 }
 
-/// A child of a page table frame.
+/// A child of a page table node.
 #[derive(Debug)]
 pub(super) enum Child<E: PageTableEntryTrait = PageTableEntry, C: PagingConstsTrait = PagingConsts>
 where
@@ -204,7 +216,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    /// Allocate a new empty page table frame.
+    /// Allocate a new empty page table node.
     ///
     /// This function returns an owning handle. The newly created handle does not
     /// set the lock bit for performance as it is exclusive and unlocking is an
@@ -218,9 +230,12 @@ where
         // SAFETY: here the page exclusively owned by the newly created handle.
         unsafe { page.meta_mut().level = level };
 
-        // Zero out the page table frame.
+        // Zero out the page table node.
         let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;
+        // SAFETY: The page is exclusively owned here. Pointers are valid also.
+        // We rely on the fact that 0 represents an absent entry to speed up `memset`.
         unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE) };
+        debug_assert!(E::new_absent().as_bytes().iter().all(|&b| b == 0));
 
         Self { page }
     }
@@ -261,6 +276,9 @@ where
         } else {
             let paddr = pte.paddr();
             if !pte.is_last(self.level()) {
+                // SAFETY: The physical address is recorded in a valid PTE
+                // which would be casted from a handle. We are incrementing
+                // the reference count so we restore, clone, and forget both.
                 let node = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(paddr) };
                 let inc_ref = node.clone();
                 core::mem::forget(node);
@@ -271,6 +289,9 @@ where
                     _phantom: PhantomData,
                 })
             } else if tracked {
+                // SAFETY: The physical address is recorded in a valid PTE
+                // which would be casted from a handle. We are incrementing
+                // the reference count so we restore and forget a cloned one.
                 let page = unsafe { Page::<FrameMeta>::from_raw(paddr) };
                 core::mem::forget(page.clone());
                 Child::Frame(Frame { page })
@@ -280,7 +301,7 @@ where
         }
     }
 
-    /// Make a copy of the page table frame.
+    /// Make a copy of the page table node.
     ///
     /// This function allows you to control about the way to copy the children.
     /// For indexes in `deep`, the children are deep copied and this function will be recursively called.
@@ -398,6 +419,8 @@ where
         let mut new_frame = PageTableNode::<E, C>::alloc(self.level() - 1);
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(self.level() - 1);
+            // SAFETY: the index is within the bound and either physical address and
+            // the property are valid.
             unsafe { new_frame.set_child_untracked(i, small_pa, prop) };
         }
         self.set_child_pt(idx, new_frame.into_raw(), true);
@@ -444,24 +467,31 @@ where
                     .write(pte.unwrap_or(E::new_absent()))
             };
 
-            // Drop the child. We must set the PTE before dropping the child. To
-            // drop the child just restore the handle and drop the handle.
+            // Drop the child. We must set the PTE before dropping the child.
+            // Just restore the handle and drop the handle.
 
             let paddr = existing_pte.paddr();
-            if !existing_pte.is_last(self.level()) {
-                // This is a page table.
-                drop(unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(paddr) });
-            } else if !in_untracked_range {
-                // This is a frame.
-                drop(unsafe { Page::<FrameMeta>::from_raw(paddr) });
+            // SAFETY: Both the `from_raw` operations here are safe as the physical
+            // address is valid and casted from a handle.
+            unsafe {
+                if !existing_pte.is_last(self.level()) {
+                    // This is a page table.
+                    drop(Page::<PageTablePageMeta<E, C>>::from_raw(paddr));
+                } else if !in_untracked_range {
+                    // This is a frame.
+                    drop(Page::<FrameMeta>::from_raw(paddr));
+                }
             }
 
+            // Update the child count.
             if pte.is_none() {
+                // SAFETY: Here we have an exclusive access to the page.
                 unsafe { self.page.meta_mut().nr_children -= 1 };
             }
         } else if let Some(e) = pte {
+            // SAFETY: This is safe as described in the above branch.
             unsafe { (self.as_ptr() as *mut E).add(idx).write(e) };
-
+            // SAFETY: Here we have an exclusive access to the page.
             unsafe { self.page.meta_mut().nr_children += 1 };
         }
     }
@@ -492,24 +522,29 @@ where
         let level = page.meta().level;
         // Drop the children.
         for i in 0..nr_subpage_per_huge::<C>() {
-            // SAFETY: the index is within the bound and PTE is plain-old-data. The
+            // SAFETY: The index is within the bound and PTE is plain-old-data. The
             // address is aligned as well. We also have an exclusive access ensured
             // by reference counting.
             let pte_ptr = unsafe { (paddr_to_vaddr(paddr) as *const E).add(i) };
+            // SAFETY: The pointer is valid and the PTE is plain-old-data.
             let pte = unsafe { pte_ptr.read() };
             if pte.is_present() {
                 // Just restore the handle and drop the handle.
                 if !pte.is_last(level) {
                     // This is a page table.
+                    // SAFETY: The physical address must be casted from a handle to a
+                    // page table node.
                     drop(unsafe { Page::<Self>::from_raw(pte.paddr()) });
                 } else {
                     // This is a frame. You cannot drop a page table node that maps to
                     // untracked frames. This must be verified.
+                    // SAFETY: The physical address must be casted from a handle to a
+                    // frame.
                     drop(unsafe { Page::<FrameMeta>::from_raw(pte.paddr()) });
                 }
             }
         }
-        // Recycle this page table frame.
+        // Recycle this page table node.
         FRAME_ALLOCATOR
             .get()
             .unwrap()

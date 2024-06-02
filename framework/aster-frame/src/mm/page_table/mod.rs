@@ -11,8 +11,8 @@ use super::{
 };
 use crate::arch::mm::{PageTableEntry, PagingConsts};
 
-mod frame;
-use frame::*;
+mod node;
+use node::*;
 mod cursor;
 pub(crate) use cursor::{Cursor, CursorMut, PageTableQueryResult};
 #[cfg(ktest)]
@@ -66,7 +66,7 @@ const fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize {
     nr_subpage_per_huge::<C>().ilog2() as usize
 }
 
-/// The index of a VA's PTE in a page table frame at the given level.
+/// The index of a VA's PTE in a page table node at the given level.
 const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
     va >> (C::BASE_PAGE_SIZE.ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1))
         & (nr_subpage_per_huge::<C>() - 1)
@@ -186,7 +186,7 @@ where
     /// The physical address of the root page table.
     ///
     /// It is dangerous to directly provide the physical address of the root page table to the
-    /// hardware since the page table frame may be dropped, resulting in UAF.
+    /// hardware since the page table node may be dropped, resulting in UAF.
     pub(crate) unsafe fn root_paddr(&self) -> Paddr {
         self.root.paddr()
     }
@@ -223,7 +223,7 @@ where
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
     pub(crate) fn query(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
-        // SAFETY: The root frame is a valid page table frame so the address is valid.
+        // SAFETY: The root frame is a valid page table node so the address is valid.
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
     }
 
@@ -267,13 +267,13 @@ where
 /// # Safety
 ///
 /// The caller must ensure that the root_paddr is a valid pointer to the root
-/// page table frame.
+/// page table node.
 ///
 /// # Notes on the page table free-reuse-then-read problem
 ///
 /// Because neither the hardware MMU nor the software page walk method
 /// would get the locks of the page table while reading, they can enter
-/// a to-be-recycled page table frame and read the page table entries
+/// a to-be-recycled page table node and read the page table entries
 /// after the frame is recycled and reused.
 ///
 /// To mitigate this problem, the page table nodes are by default not
