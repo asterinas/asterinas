@@ -14,10 +14,10 @@ use crate::{
     util::read_cstring_from_user,
 };
 
-/// The data argument is interpreted by the different filesystems.
+/// The `data` argument is interpreted by the different filesystems.
 /// Typically it is a string of comma-separated options understood by
 /// this filesystem. The current implementation only considers the case
-/// where it is NULL. Because it should be interpreted by the specific filesystems.
+/// where it is `NULL`. Because it should be interpreted by the specific filesystems.
 pub fn sys_mount(
     devname_addr: Vaddr,
     dirname_addr: Vaddr,
@@ -34,7 +34,7 @@ pub fn sys_mount(
     );
 
     let current = current!();
-    let target_dentry = {
+    let dst_dentry = {
         let dirname = dirname.to_string_lossy();
         if dirname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "dirname is empty");
@@ -48,9 +48,9 @@ pub fn sys_mount(
     } else if mount_flags.contains(MountFlags::MS_REMOUNT) {
         do_remount()?;
     } else if mount_flags.contains(MountFlags::MS_BIND) {
-        do_loopback(
-            devname.clone(),
-            target_dentry.clone(),
+        do_bind_mount(
+            devname,
+            dst_dentry,
             mount_flags.contains(MountFlags::MS_REC),
         )?;
     } else if mount_flags.contains(MountFlags::MS_SHARED)
@@ -60,69 +60,69 @@ pub fn sys_mount(
     {
         do_change_type()?;
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
-        do_move_mount_old(devname, target_dentry)?;
+        do_move_mount_old(devname, dst_dentry)?;
     } else {
-        do_new_mount(devname, fstype_addr, target_dentry)?;
+        do_new_mount(devname, fstype_addr, dst_dentry)?;
     }
 
     Ok(SyscallReturn::Return(0))
 }
 
 fn do_reconfigure_mnt() -> Result<()> {
-    todo!()
+    return_errno_with_message!(Errno::EINVAL, "do_reconfigure_mnt is not supported");
 }
 
 fn do_remount() -> Result<()> {
-    todo!()
+    return_errno_with_message!(Errno::EINVAL, "do_remount is not supported");
 }
 
-/// Bind a mount to a new location.
-fn do_loopback(old_name: CString, new_dentry: Arc<Dentry>, recursive: bool) -> Result<()> {
+/// Bind a mount to a dst location.
+///
+/// If recursive is true, then bind the mount recursively.
+/// Such as use user command `mount --rbind src dst`.
+fn do_bind_mount(src_name: CString, dst_dentry: Arc<Dentry>, recursive: bool) -> Result<()> {
     let current = current!();
-    let old_dentry = {
-        let old_name = old_name.to_string_lossy();
-        if old_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "old_name is empty");
+    let src_dentry = {
+        let src_name = src_name.to_string_lossy();
+        if src_name.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "src_name is empty");
         }
-        let fs_path = FsPath::new(AT_FDCWD, old_name.as_ref())?;
+        let fs_path = FsPath::new(AT_FDCWD, src_name.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
 
-    if old_dentry.type_() != InodeType::Dir {
-        return_errno_with_message!(Errno::ENOTDIR, "old_name must be directory");
+    if src_dentry.type_() != InodeType::Dir {
+        return_errno_with_message!(Errno::ENOTDIR, "src_name must be directory");
     };
 
-    let new_mount = old_dentry.do_loopback(recursive);
-    new_mount.graft_mount_node_tree(new_dentry.clone())?;
+    src_dentry.bind_mount_to(&dst_dentry, recursive)?;
     Ok(())
 }
 
 fn do_change_type() -> Result<()> {
-    todo!()
+    return_errno_with_message!(Errno::EINVAL, "do_change_type is not supported");
 }
 
-/// Move a mount from old location to new location.
-fn do_move_mount_old(old_name: CString, new_dentry: Arc<Dentry>) -> Result<()> {
+/// Move a mount from src location to dst location.
+fn do_move_mount_old(src_name: CString, dst_dentry: Arc<Dentry>) -> Result<()> {
     let current = current!();
-    let old_dentry = {
-        let old_name = old_name.to_string_lossy();
-        if old_name.is_empty() {
-            return_errno_with_message!(Errno::ENOENT, "old_name is empty");
+    let src_dentry = {
+        let src_name = src_name.to_string_lossy();
+        if src_name.is_empty() {
+            return_errno_with_message!(Errno::ENOENT, "src_name is empty");
         }
-        let fs_path = FsPath::new(AT_FDCWD, old_name.as_ref())?;
+        let fs_path = FsPath::new(AT_FDCWD, src_name.as_ref())?;
         current.fs().read().lookup(&fs_path)?
     };
 
-    if !old_dentry.is_root_of_mount() {
-        return_errno_with_message!(Errno::EINVAL, "old_name can not be moved");
+    if !src_dentry.is_root_of_mount() {
+        return_errno_with_message!(Errno::EINVAL, "src_name can not be moved");
     };
-    if old_dentry.mount_node().parent().is_none() {
-        return_errno_with_message!(Errno::EINVAL, "old_name can not be moved");
+    if src_dentry.mount_node().parent().is_none() {
+        return_errno_with_message!(Errno::EINVAL, "src_name can not be moved");
     }
 
-    old_dentry
-        .mount_node()
-        .graft_mount_node_tree(new_dentry.clone())?;
+    src_dentry.mount_node().graft_mount_node_tree(&dst_dentry)?;
 
     Ok(())
 }
@@ -165,27 +165,27 @@ fn get_fs(fs_type: CString, devname: CString) -> Result<Arc<dyn FileSystem>> {
 
 bitflags! {
     struct MountFlags: u32 {
-        const MS_RDONLY = 1;              /* Mount read-only */
-        const MS_NOSUID = 1<<1;           /* Ignore suid and sgid bits */
-        const MS_NODEV = 1<<2;            /* Disallow access to device special files */
-        const MS_NOEXEC = 1<<3;           /* Disallow program execution */
-        const MS_SYNCHRONOUS = 1<<4;      /* Writes are synced at once */
-        const MS_REMOUNT = 1<<5;          /* Alter flags of a mounted FS */
-        const MS_MANDLOCK = 1<<6;         /* Allow mandatory locks on an FS */
-        const MS_DIRSYNC = 1<<7;          /* Directory modifications are synchronous */
-        const MS_NOSYMFOLLOW = 1<<8;      /* Do not follow symlinks */
-        const MS_NOATIME = 1<<10;         /* Do not update access times. */
-        const MS_NODIRATIME = 1<<11;      /* Do not update directory access times. */
-        const MS_BIND = 1<<12;            /* Bind directory at different place. */
-        const MS_MOVE = 1<<13;            /* Move mount from old to new. */
-        const MS_REC = 1<<14;             /* Create recursive mount. */
-        const MS_SILENT = 1<<15;          /* Suppress certain messages in kernel log. */
-        const MS_POSIXACL = 1<<16;        /* VFS does not apply the umask. */
-        const MS_UNBINDABLE = 1<<17;      /* Change to unbindable. */
-        const MS_PRIVATE = 1<<18; 	      /* Change to private. */
-        const MS_SLAVE = 1<<19;           /* Change to slave. */
-        const MS_SHARED = 1<<20;          /* Change to shared. */
-        const MS_RELATIME = 1<<21; 	      /* Update atime relative to mtime/ctime. */
-        const MS_KERNMOUNT = 1<<22;       /* This is a kern_mount call. */
+        const MS_RDONLY        =   1 << 0;       // Mount read-only */
+        const MS_NOSUID        =   1 << 1;       // Ignore suid and sgid bits */
+        const MS_NODEV         =   1 << 2;       // Disallow access to device special files */
+        const MS_NOEXEC        =   1 << 3;       // Disallow program execution */
+        const MS_SYNCHRONOUS   =   1 << 4;       // Writes are synced at once
+        const MS_REMOUNT       =   1 << 5;       // Alter flags of a mounted FS.
+        const MS_MANDLOCK      =   1 << 6;       // Allow mandatory locks on an FS.
+        const MS_DIRSYNC       =   1 << 7;       // Directory modifications are synchronous
+        const MS_NOSYMFOLLOW   =   1 << 8;       // Do not follow symlinks.
+        const MS_NOATIME       =   1 << 10;      // Do not update access times.
+        const MS_NODIRATIME    =   1 << 11;      // Do not update directory access times.
+        const MS_BIND          =   1 << 12;      // Bind directory at different place.
+        const MS_MOVE          =   1 << 13;      // Move mount from old to new.
+        const MS_REC           =   1 << 14;      // Create recursive mount.
+        const MS_SILENT        =   1 << 15;      // Suppress certain messages in kernel log.
+        const MS_POSIXACL      =   1 << 16;      // VFS does not apply the umask.
+        const MS_UNBINDABLE    =   1 << 17;      // Change to unbindable.
+        const MS_PRIVATE       =   1 << 18; 	 // Change to private.
+        const MS_SLAVE         =   1 << 19;      // Change to slave.
+        const MS_SHARED        =   1 << 20;      // Change to shared.
+        const MS_RELATIME      =   1 << 21; 	 // Update atime relative to mtime/ctime.
+        const MS_KERNMOUNT     =   1 << 22;      // This is a kern_mount call.
     }
 }
