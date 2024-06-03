@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
 use crate::prelude::*;

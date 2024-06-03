@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 /// Standard signals
 pub(super) const MIN_STD_SIG_NUM: u8 = 1;
 pub(super) const MAX_STD_SIG_NUM: u8 = 31; // inclusive

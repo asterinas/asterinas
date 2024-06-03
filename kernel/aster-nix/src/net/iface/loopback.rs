@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use smoltcp::{
     iface::{Config, Routes},
     phy::{Loopback, Medium},

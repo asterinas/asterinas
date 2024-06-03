@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use alloc::{boxed::Box, fmt::Debug, sync::Arc, vec::Vec};
 
 use id_alloc::IdAlloc;

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use super::*;
 use crate::{events::IoEvents, fs::inode_handle::FileIo, process::signal::Poller};
 

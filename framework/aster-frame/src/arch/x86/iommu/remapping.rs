@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use bitflags::bitflags;
 use log::debug;
 use spin::Once;

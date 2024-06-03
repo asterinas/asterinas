@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use super::{
     file_handle::FileLike,
     utils::{AccessMode, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags},

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use super::SyscallReturn;
 use crate::{fs::file_table::FileDesc, prelude::*, util::read_bytes_from_user};
 

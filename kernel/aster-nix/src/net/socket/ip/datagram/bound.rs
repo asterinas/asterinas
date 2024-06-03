@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
+
+#![allow(unused_variables)]
+
 use smoltcp::socket::udp::{RecvError, SendError};
 
 use crate::{

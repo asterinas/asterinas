@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
 #![allow(non_camel_case_types)]
+
 use core::mem::{self, size_of};
 
 use aster_frame::cpu::GeneralRegs;

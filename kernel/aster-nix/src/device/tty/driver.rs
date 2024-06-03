@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 pub use aster_frame::arch::console;
 use aster_frame::mm::VmReader;
 use spin::Once;

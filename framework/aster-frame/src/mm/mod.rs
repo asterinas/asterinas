@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 //! Virtual memory (VM).
 
 /// Virtual addresses.

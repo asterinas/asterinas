@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use alloc::vec::Vec;
 use core::{fmt::Debug, mem::size_of, slice::Iter};
 

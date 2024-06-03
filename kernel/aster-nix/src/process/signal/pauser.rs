@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use core::{
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,

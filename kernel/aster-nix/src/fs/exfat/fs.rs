@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 
 use aster_block::{bio::BioWaiter, id::BlockId, BlockDevice};

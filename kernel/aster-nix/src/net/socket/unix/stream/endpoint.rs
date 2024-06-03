@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use crate::{
     events::IoEvents,
     fs::utils::{Channel, Consumer, Producer, StatusFlags},

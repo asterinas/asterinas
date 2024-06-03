@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use alloc::{collections::VecDeque, fmt::Debug, sync::Arc, vec::Vec};
 
 use log::{debug, error};
