@@ -70,8 +70,6 @@ pub enum PageUsage {
 
     /// The page is used as a frame, i.e., a page of untyped memory.
     Frame = 32,
-    /// The page is used as the head frame in a segment.
-    SegmentHead = 33,
 
     /// The page is used by a page table.
     PageTable = 64,
@@ -85,7 +83,11 @@ pub enum PageUsage {
 pub(in crate::mm) struct MetaSlot {
     /// The metadata of the page.
     ///
-    /// The implementation may cast a `*const MetaSlot` to a `*const PageMeta`.
+    /// It is placed at the beginning of a slot because:
+    ///  - the implementation can simply cast a `*const MetaSlot`
+    ///    to a `*const PageMeta` for manipulation;
+    ///  - the subsequent fields can utilize the end padding of the
+    ///    the inner union to save space.
     _inner: MetaSlotInner,
     /// To store [`PageUsage`].
     pub(super) usage: AtomicU8,
@@ -94,7 +96,6 @@ pub(in crate::mm) struct MetaSlot {
 
 pub(super) union MetaSlotInner {
     frame: ManuallyDrop<FrameMeta>,
-    seg_head: ManuallyDrop<SegmentHeadMeta>,
     // Make sure the the generic parameters don't effect the memory layout.
     pt: ManuallyDrop<PageTablePageMeta<PageTableEntry, PagingConsts>>,
 }
@@ -131,36 +132,15 @@ use private::Sealed;
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct FrameMeta {}
+pub struct FrameMeta {
+    // If not doing so, the page table metadata would fit
+    // in the front padding of meta slot and make it 12 bytes.
+    // We make it 16 bytes. Further usage of frame metadata
+    // is welcome to exploit this space.
+    _unused_for_layout_padding: [u8; 8],
+}
 
 impl Sealed for FrameMeta {}
-
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct SegmentHeadMeta {
-    /// Length of the segment in bytes.
-    pub(in crate::mm) seg_len: u64,
-}
-
-impl Sealed for SegmentHeadMeta {}
-
-impl From<Page<FrameMeta>> for Page<SegmentHeadMeta> {
-    fn from(page: Page<FrameMeta>) -> Self {
-        // FIXME: I intended to prevent a page simultaneously managed by a segment handle
-        // and a frame handle. However, `Vmo` holds a frame handle while block IO needs a
-        // segment handle from the same page.
-        // A segment cannot be mapped. So we have to introduce this enforcement soon:
-        // assert_eq!(page.count(), 1);
-        unsafe {
-            let mut head = Page::<SegmentHeadMeta>::from_raw(page.into_raw());
-            (*head.ptr)
-                .usage
-                .store(PageUsage::SegmentHead as u8, Ordering::Relaxed);
-            head.meta_mut().seg_len = PAGE_SIZE as u64;
-            head
-        }
-    }
-}
 
 #[derive(Debug, Default)]
 #[repr(C)]
