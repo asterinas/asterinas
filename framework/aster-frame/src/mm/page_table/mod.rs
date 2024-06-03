@@ -183,6 +183,10 @@ where
         self.root.activate();
     }
 
+    pub(in crate::mm) unsafe fn first_activate_unchecked(&self) {
+        self.root.first_activate();
+    }
+
     /// The physical address of the root page table.
     ///
     /// It is dangerous to directly provide the physical address of the root page table to the
