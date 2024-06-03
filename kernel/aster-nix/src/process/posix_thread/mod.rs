@@ -8,8 +8,11 @@ use super::{
     do_exit_group,
     kill::SignalSenderIds,
     signal::{
-        sig_mask::SigMask, sig_num::SigNum, sig_queues::SigQueues, signals::Signal, SigEvents,
-        SigEventsFilter, SigStack,
+        sig_mask::{SigMask, SigSet},
+        sig_num::SigNum,
+        sig_queues::SigQueues,
+        signals::Signal,
+        SigEvents, SigEventsFilter, SigStack,
     },
     Credentials, Process, TermStatus,
 };
@@ -80,6 +83,10 @@ impl PosixThread {
 
     pub fn sig_mask(&self) -> &Mutex<SigMask> {
         &self.sig_mask
+    }
+
+    pub fn sig_pending(&self) -> SigSet {
+        self.sig_queues.sig_pending()
     }
 
     pub fn has_pending_signal(&self) -> bool {

@@ -3,9 +3,12 @@
 use super::{constants::MIN_STD_SIG_NUM, sig_num::SigNum};
 use crate::prelude::*;
 
+/// A signal mask.
+pub type SigMask = SigSet;
+
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Pod)]
 #[repr(C)]
-pub struct SigMask {
+pub struct SigSet {
     bits: u64,
 }
 

@@ -76,6 +76,7 @@ mod recvfrom;
 mod rename;
 mod rmdir;
 mod rt_sigaction;
+mod rt_sigpending;
 mod rt_sigprocmask;
 mod rt_sigreturn;
 mod rt_sigsuspend;
