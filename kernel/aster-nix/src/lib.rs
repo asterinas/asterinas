@@ -3,9 +3,7 @@
 //! The std library of Asterinas.
 #![no_std]
 #![deny(unsafe_code)]
-#![allow(dead_code)]
 #![allow(incomplete_features)]
-#![allow(unused_variables)]
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
 #![feature(const_option)]
