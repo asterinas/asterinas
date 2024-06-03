@@ -201,11 +201,13 @@ pub fn init_kernel_page_table(
 
     // SAFETY: the kernel page table is initialized properly.
     unsafe {
-        kpt.activate_unchecked();
+        kpt.first_activate_unchecked();
         crate::arch::mm::tlb_flush_all_including_global();
     }
 
     KERNEL_PAGE_TABLE.call_once(|| kpt);
 
-    drop(boot_pt);
+    // SAFETY: the boot page table is OK to be retired now since
+    // the kernel page table is activated.
+    unsafe { boot_pt.retire() };
 }

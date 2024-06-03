@@ -120,8 +120,6 @@ where
     /// proper mappings for the kernel and has the correct const parameters
     /// matching the current CPU.
     pub(crate) unsafe fn activate(&self) {
-        use core::sync::atomic::AtomicBool;
-
         use crate::{
             arch::mm::{activate_page_table, current_page_table_paddr},
             mm::CachePolicy,
@@ -140,26 +138,23 @@ where
         // Increment the reference count of the current page table.
         self.inc_ref();
 
-        // Decrement the reference count of the last activated page table.
+        // Restore and drop the last activated page table.
+        drop(Self {
+            raw: last_activated_paddr,
+            level: PagingConsts::NR_LEVELS,
+            _phantom: PhantomData,
+        });
+    }
 
-        // Boot page tables are not tracked with [`PageTableNode`], but
-        // all page tables after the boot stage are tracked.
-        //
-        // TODO: the `cpu_local` implementation currently is underpowered,
-        // there's no need using `AtomicBool` here.
-        crate::cpu_local! {
-            static CURRENT_IS_BOOT_PT: AtomicBool = AtomicBool::new(true);
-        }
-        if !CURRENT_IS_BOOT_PT.load(Ordering::Acquire) {
-            // Restore and drop the last activated page table.
-            let _last_activated_pt = Self {
-                raw: last_activated_paddr,
-                level: PagingConsts::NR_LEVELS,
-                _phantom: PhantomData,
-            };
-        } else {
-            CURRENT_IS_BOOT_PT.store(false, Ordering::Release);
-        }
+    /// Activate the (root) page table assuming it is the first activation.
+    ///
+    /// It will not try dropping the last activate page table. It is the same
+    /// with [`Self::activate()`] in other senses.
+    pub(super) unsafe fn first_activate(&self) {
+        use crate::{arch::mm::activate_page_table, mm::CachePolicy};
+        debug_assert_eq!(self.level, PagingConsts::NR_LEVELS);
+        self.inc_ref();
+        activate_page_table(self.raw, CachePolicy::Writeback);
     }
 
     fn inc_ref(&self) {
