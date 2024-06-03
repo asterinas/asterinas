@@ -122,7 +122,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-osdk"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -323,7 +323,6 @@ checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 [[package]]
 name = "linux-bzimage-builder"
 version = "0.1.0"
-source = "git+https://github.com/asterinas/asterinas?rev=c9b66bd#c9b66bddd6b77dcddcbe1b66337a76ee1e16b640"
 dependencies = [
  "bitflags",
  "bytemuck",
