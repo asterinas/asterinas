@@ -1,12 +1,15 @@
 name: OSDK Publish
 
 on:
-  workflow_dispatch:
-  push:
+  pull_request:
     paths:
+      - VERSION
       - osdk/Cargo.toml
+  push:
     branches:
       - main
+    paths: 
+      - VERSION
 
 jobs:
   osdk-publish:
@@ -15,9 +18,19 @@ jobs:
     container: asterinas/asterinas:0.4.2
     steps:
       - uses: actions/checkout@v4
-      - uses: katyo/publish-crates@v2
-        with:
-          path: './osdk'
-          args: --no-verify
-          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          ignore-unpublished-changes: true
+
+      - name: Check Publish
+        # On pull request, set `--dry-run` to check whether OSDK can publish
+        if: github.event_name == 'pull_request'
+        run: |
+          cd osdk
+          cargo publish --dry-run
+        
+      - name: Publish
+        # On push, OSDK will be published
+        if: github.event_name == 'push'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          cd osdk
+          cargo publish --token ${REGISTRY_TOKEN}
