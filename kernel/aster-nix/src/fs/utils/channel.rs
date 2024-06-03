@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use aster_rights::{Read, ReadOp, TRights, Write, WriteOp};

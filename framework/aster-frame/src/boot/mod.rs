@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 //! The architecture-independent boot module, which provides a universal interface
 //! from the bootloader to the rest of the framework.
 //!

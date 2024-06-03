@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::{connected::Connected, endpoint::Endpoint, listener::push_incoming};

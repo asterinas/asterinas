@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 //! The page table cursor for mapping and querying over the page table.
 //!
 //! ## The page table lock protocol

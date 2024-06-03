@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use core::{
     fmt::{self},
     sync::atomic::{AtomicU64, Ordering::Relaxed},

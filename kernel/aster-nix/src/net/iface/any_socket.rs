@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use super::{Iface, IpAddress, IpEndpoint};
 use crate::{events::Observer, prelude::*};
 

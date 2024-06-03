@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};
 
 use log::info;

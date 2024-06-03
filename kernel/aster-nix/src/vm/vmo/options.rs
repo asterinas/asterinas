@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 //! Options for allocating root and child VMOs.
 
 use core::{marker::PhantomData, ops::Range};

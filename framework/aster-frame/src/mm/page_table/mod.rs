@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
 use pod::Pod;

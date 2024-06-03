@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 //! Kernel memory space management.
 //!
 //! The kernel memory space is currently managed as follows, if the

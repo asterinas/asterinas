@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
     block_ptr::Ext2Bid,

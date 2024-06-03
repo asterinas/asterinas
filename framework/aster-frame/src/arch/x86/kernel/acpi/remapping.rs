@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 //! Remapping structures of DMAR table.
 //! This file defines these structures and provides a "Debug" implementation to see the value inside these structures.
 //! Most of the introduction are copied from Intel vt-directed-io-specification.

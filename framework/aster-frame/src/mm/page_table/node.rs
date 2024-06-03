@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 //! This module defines page table node abstractions and the handle.
 //!
 //! The page table node is also frequently referred to as a page table in many architectural

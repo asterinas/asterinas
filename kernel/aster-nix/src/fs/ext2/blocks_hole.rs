@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use bitvec::prelude::BitVec;
 
 /// A blocks hole descriptor implemented by the `BitVec`.

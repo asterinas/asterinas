@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 //! Physical memory page management.
 //!
 //! A page is an aligned, contiguous range of bytes in physical memory. The sizes

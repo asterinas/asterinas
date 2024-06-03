@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 //! The Programmable Interval Timer (PIT) chip (Intel 8253/8254) basically consists of an oscillator,
 //! a prescaler and 3 independent frequency dividers. Each frequency divider has an output, which is
 //! used to allow the timer to control external circuitry (for example, IRQ 0).

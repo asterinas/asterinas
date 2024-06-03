@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use core::time::Duration;
 
 use aster_util::slot_vec::SlotVec;

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 //! Metadata management of pages.
 //!
 //! You can picture a globally shared, static, gigantic arrary of metadata initialized for each page.

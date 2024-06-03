@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use core::{
     arch::x86_64::_rdtsc,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::slot_vec::SlotVec;

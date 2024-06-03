@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use aster_rights::{ReadOp, WriteOp};
 use futex::futex_wake;
 use robust_list::wake_robust_futex;

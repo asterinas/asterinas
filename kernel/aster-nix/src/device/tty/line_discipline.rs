@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use alloc::format;
 
 use aster_frame::trap::{disable_local, in_interrupt_context};

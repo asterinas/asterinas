@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(dead_code)]
+
 use aster_frame::cpu::CpuSet;
 use spin::Once;
 use work_item::WorkItem;

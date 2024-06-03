@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use super::SyscallReturn;
 use crate::{prelude::*, process::posix_thread::PosixThreadExt, util::write_val_to_user};
 

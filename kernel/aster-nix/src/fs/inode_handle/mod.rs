@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 //! Opend Inode-backed File Handle
 
 mod dyn_cap;

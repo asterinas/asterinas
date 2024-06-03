@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![allow(unused_variables)]
+
 use aster_network::AnyNetworkDevice;
 use aster_virtio::device::network::DEVICE_NAME;
 use smoltcp::{
