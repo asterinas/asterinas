@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::{arch::x86_64::_mm_clflush, ops::Range};
+use core::ops::Range;
 
 #[cfg(feature = "intel_tdx")]
 use ::tdx_guest::tdx_is_enabled;
@@ -132,22 +132,28 @@ impl DmaStream {
     ///
     /// [`read_bytes`]: Self::read_bytes
     /// [`write_bytes`]: Self::write_bytes
-    pub fn sync(&self, byte_range: Range<usize>) -> Result<(), Error> {
-        if byte_range.end > self.nbytes() {
-            return Err(Error::InvalidArgs);
-        }
-        if self.inner.is_cache_coherent {
-            return Ok(());
-        }
-        let start_va = self.inner.vm_segment.as_ptr();
-        // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
-        for i in byte_range.step_by(64) {
-            // SAFETY: the addresses is limited by a valid `byte_range`.
-            unsafe {
-                _mm_clflush(start_va.wrapping_add(i));
+    pub fn sync(&self, _byte_range: Range<usize>) -> Result<(), Error> {
+        cfg_if::cfg_if! {
+            if #[cfg(target_arch = "x86_64")]{
+                // The streaming DMA mapping in x86_64 is cache coherent, and does not require synchronization.
+                // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>
+                Ok(())
+            } else {
+                if _byte_range.end > self.nbytes() {
+                    return Err(Error::InvalidArgs);
+                }
+                if self.inner.is_cache_coherent {
+                    return Ok(());
+                }
+                let start_va = self.inner.vm_segment.as_ptr();
+                // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
+                for i in _byte_range.step_by(64) {
+                    // TODO: Call the cache line flush command in the corresponding architecture.
+                    todo!()
+                }
+                Ok(())
             }
         }
-        Ok(())
     }
 }
 
