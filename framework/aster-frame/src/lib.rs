@@ -16,8 +16,6 @@
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
 #![feature(pointer_is_aligned)]
-#![allow(dead_code)]
-#![allow(unused_variables)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
 #![allow(incomplete_features)]
