@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 //! Physical memory page management.
 //!
 //! A page is an aligned, contiguous range of bytes in physical memory. The sizes
@@ -147,18 +145,6 @@ impl<M: PageMeta> Page<M> {
     /// Get the physical address.
     pub fn paddr(&self) -> Paddr {
         mapping::meta_to_page::<PagingConsts>(self.ptr as Vaddr)
-    }
-
-    /// Load the current reference count of this page.
-    ///
-    /// # Safety
-    ///
-    /// This method by itself is safe, but using it correctly requires extra care.
-    /// Another thread can change the reference count at any time, including
-    /// potentially between calling this method and the action depending on the
-    /// result.
-    pub fn count(&self) -> u32 {
-        self.get_ref_count().load(Ordering::Relaxed)
     }
 
     /// Get the metadata of this page.

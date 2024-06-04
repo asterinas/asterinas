@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 //! Virtual memory (VM).
 
 /// Virtual addresses.
@@ -84,6 +82,7 @@ pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
 }
 
 /// The number of base pages in a huge page at a given level.
+#[allow(dead_code)]
 pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     page_size::<C>(level) / C::BASE_PAGE_SIZE
 }
