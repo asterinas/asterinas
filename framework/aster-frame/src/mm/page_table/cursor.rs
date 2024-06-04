@@ -261,7 +261,7 @@ where
 
     fn cur_child(&self) -> Child<E, C> {
         self.cur_node()
-            .child(self.cur_idx(), !self.in_untracked_range())
+            .child(self.cur_idx(), self.in_tracked_range())
     }
 
     fn read_cur_pte(&self) -> E {
@@ -275,10 +275,10 @@ where
     ///
     /// All mappings in the user mode are tracked. And all mappings in the IOMMU
     /// page table are untracked.
-    fn in_untracked_range(&self) -> bool {
-        TypeId::of::<M>() == TypeId::of::<crate::arch::iommu::DeviceMode>()
-            || TypeId::of::<M>() == TypeId::of::<KernelMode>()
-                && !crate::mm::kspace::VMALLOC_VADDR_RANGE.contains(&self.va)
+    fn in_tracked_range(&self) -> bool {
+        TypeId::of::<M>() != TypeId::of::<crate::arch::iommu::DeviceMode>()
+            && (TypeId::of::<M>() != TypeId::of::<KernelMode>()
+                || crate::mm::kspace::VMALLOC_VADDR_RANGE.contains(&self.va))
     }
 }
 
@@ -375,7 +375,7 @@ where
     pub(crate) unsafe fn map(&mut self, frame: Frame, prop: PageProperty) {
         let end = self.0.va + frame.size();
         assert!(end <= self.0.barrier_va.end);
-        debug_assert!(!self.0.in_untracked_range());
+        debug_assert!(self.0.in_tracked_range());
 
         // Go down if not applicable.
         while self.0.level > C::HIGHEST_TRANSLATION_LEVEL
@@ -457,7 +457,7 @@ where
             }
 
             // Map the current page.
-            debug_assert!(self.0.in_untracked_range());
+            debug_assert!(!self.0.in_tracked_range());
             let idx = self.0.cur_idx();
             self.cur_node_mut().set_child_untracked(idx, pa, prop);
 
@@ -485,7 +485,7 @@ where
 
         while self.0.va < end {
             let cur_pte = self.0.read_cur_pte();
-            let untracked = self.0.in_untracked_range();
+            let is_tracked = self.0.in_tracked_range();
 
             // Skip if it is already invalid.
             if !cur_pte.is_present() {
@@ -506,7 +506,7 @@ where
             {
                 if cur_pte.is_present() && !cur_pte.is_last(self.0.level) {
                     self.0.level_down();
-                } else if untracked {
+                } else if !is_tracked {
                     self.level_down_split();
                 } else {
                     unreachable!();
@@ -516,7 +516,7 @@ where
 
             // Unmap the current page.
             let idx = self.0.cur_idx();
-            self.cur_node_mut().unset_child(idx, untracked);
+            self.cur_node_mut().unset_child(idx, is_tracked);
 
             self.0.move_forward();
         }
@@ -564,7 +564,7 @@ where
             // of untracked huge pages.
             let vaddr_not_fit = self.0.va % page_size::<C>(self.0.level) != 0
                 || self.0.va + page_size::<C>(self.0.level) > end;
-            if self.0.in_untracked_range() && vaddr_not_fit {
+            if !self.0.in_tracked_range() && vaddr_not_fit {
                 self.level_down_split();
                 continue;
             } else if vaddr_not_fit {
@@ -608,9 +608,9 @@ where
 
         let new_frame = PageTableNode::<E, C>::alloc(self.0.level - 1);
         let idx = self.0.cur_idx();
-        let untracked = self.0.in_untracked_range();
+        let is_tracked = self.0.in_tracked_range();
         self.cur_node_mut()
-            .set_child_pt(idx, new_frame.clone_raw(), untracked);
+            .set_child_pt(idx, new_frame.clone_raw(), is_tracked);
         self.0.level -= 1;
         self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_frame);
     }
@@ -620,7 +620,7 @@ where
     /// This method will split the huge page and go down to the next level.
     fn level_down_split(&mut self) {
         debug_assert!(self.0.level > 1);
-        debug_assert!(self.0.in_untracked_range());
+        debug_assert!(!self.0.in_tracked_range());
 
         let idx = self.0.cur_idx();
         self.cur_node_mut().split_untracked_huge(idx);
