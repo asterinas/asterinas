@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 //! The page table cursor for mapping and querying over the page table.
 //!
 //! ## The page table lock protocol
@@ -53,7 +50,7 @@
 //! required. The cursor unlock all locks, then lock all the way down to `B`, then
 //! check if `B` is empty, and finally recycle all the resources on the way back.
 
-use core::{any::TypeId, ops::Range};
+use core::{any::TypeId, marker::PhantomData, ops::Range};
 
 use align_ext::AlignExt;
 
@@ -74,6 +71,7 @@ pub(crate) enum PageTableQueryResult {
         frame: Frame,
         prop: PageProperty,
     },
+    #[allow(dead_code)]
     MappedUntracked {
         va: Vaddr,
         pa: Paddr,
@@ -96,12 +94,12 @@ pub(crate) struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    pt: &'a PageTable<M, E, C>,
     guards: [Option<PageTableNode<E, C>>; C::NR_LEVELS as usize],
     level: PagingLevel,       // current level
     guard_level: PagingLevel, // from guard_level to level, the locks are held
     va: Vaddr,                // current virtual address
     barrier_va: Range<Vaddr>, // virtual address range that is locked
+    phantom: PhantomData<&'a PageTable<M, E, C>>,
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C>
@@ -131,12 +129,12 @@ where
             }
         });
         let mut cursor = Self {
-            pt,
             guards,
             level: C::NR_LEVELS,
             guard_level: C::NR_LEVELS,
             va: va.start,
             barrier_va: va.clone(),
+            phantom: PhantomData,
         };
         // Go down and get proper locks. The cursor should hold a lock of a
         // page table node containing the virtual address range.
@@ -221,26 +219,15 @@ where
     ///
     /// This method requires locks acquired before calling it. The discarded level will be unlocked.
     fn level_up(&mut self) {
-        #[cfg(feature = "page_table_recycle")]
-        let last_node_all_unmapped = self.cur_node().nr_valid_children() == 0;
         self.guards[(C::NR_LEVELS - self.level) as usize] = None;
         self.level += 1;
-        #[cfg(feature = "page_table_recycle")]
-        {
-            let can_release_child =
-                TypeId::of::<M>() == TypeId::of::<KernelMode>() && self.level < C::NR_LEVELS;
-            if can_release_child && last_node_all_unmapped {
-                let idx = self.cur_idx();
-                let untracked = self.in_untracked_range();
-                self.cur_node_mut().unset_child(idx, false, untracked);
-            }
-        }
+
+        // TODO: Drop page tables if page tables become empty.
     }
 
     /// Goes down a level assuming a child page table exists.
     fn level_down(&mut self) {
         debug_assert!(self.level > 1);
-        let idx = pte_index::<C>(self.va, self.level);
         if let Child::PageTable(nxt_lvl_frame) = self.cur_child() {
             self.level -= 1;
             self.guards[(C::NR_LEVELS - self.level) as usize] = Some(nxt_lvl_frame.lock());
@@ -295,40 +282,6 @@ where
             self.move_forward();
         }
         result
-    }
-}
-
-#[cfg(feature = "page_table_recycle")]
-impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Drop for Cursor<'_, M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
-    fn drop(&mut self) {
-        // Recycle what we can recycle now.
-        while self.level < self.guard_level {
-            self.level_up();
-        }
-        // No need to do further cleanup if it is the root node or
-        // there are mappings left.
-        if self.level == self.guard_level || self.cur_node().nr_valid_children() != 0 {
-            return;
-        }
-        // Drop the lock on the guard level.
-        self.guards[C::NR_LEVELS - self.guard_level] = None;
-        // Re-walk the page table to retreive the locks.
-        self.guards[0] = Some(self.pt.root.clone_shallow().lock());
-        self.level = C::NR_LEVELS;
-        let cur_pte = self.read_cur_pte();
-        let cur_child_is_pt = cur_pte.is_present() && !cur_pte.is_last(self.level);
-        // Another cursor can unmap the guard level node before this cursor
-        // is dropped, we can just do our best here when re-walking.
-        while self.level > self.guard_level && cur_child_is_pt {
-            self.level_down();
-        }
-        // Doing final cleanup by [`CursorMut::level_up`] to the root.
-        while self.level < C::NR_LEVELS {
-            self.level_up();
-        }
     }
 }
 
@@ -425,7 +378,6 @@ where
         debug_assert_eq!(self.0.level, frame.level());
         // Map the current page.
         let idx = self.0.cur_idx();
-        let level = self.0.level;
         self.cur_node_mut().set_child_frame(idx, frame, prop);
         self.0.move_forward();
     }
@@ -592,7 +544,6 @@ where
                 return Err(PageTableError::ProtectingPartial);
             }
             let idx = self.0.cur_idx();
-            let level = self.0.level;
             let mut pte_prop = cur_pte.prop();
             op(&mut pte_prop);
             self.cur_node_mut().protect(idx, pte_prop);

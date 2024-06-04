@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
 use pod::Pod;
@@ -179,10 +177,6 @@ where
             root: PageTableNode::<E, C>::alloc(C::NR_LEVELS).into_raw(),
             _phantom: PhantomData,
         }
-    }
-
-    pub(crate) unsafe fn activate_unchecked(&self) {
-        self.root.activate();
     }
 
     pub(in crate::mm) unsafe fn first_activate_unchecked(&self) {
