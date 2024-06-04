@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 //! This module defines page table node abstractions and the handle.
 //!
 //! The page table node is also frequently referred to as a page table in many architectural
@@ -98,15 +96,6 @@ where
             level: self.level,
             _phantom: PhantomData,
         }
-    }
-
-    pub(super) fn nr_valid_children(&self) -> u16 {
-        // SAFETY: The physical address in the raw handle is valid and we are
-        // accessing the page table node. We forget the handle when finished.
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
-        let nr = page.meta().nr_children;
-        core::mem::forget(page);
-        nr
     }
 
     /// Activates the page table assuming it is a root page table.
@@ -390,12 +379,6 @@ where
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         let pte = Some(E::new_frame(pa, self.level(), prop));
         self.overwrite_pte(idx, pte, true);
-    }
-
-    /// The number of mapped frames or page tables.
-    /// This is to track if we can free itself.
-    pub(super) fn nr_valid_children(&self) -> u16 {
-        self.page.meta().nr_children
     }
 
     /// Reads the info from a page table entry at a given index.
