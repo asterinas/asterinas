@@ -265,7 +265,7 @@ where
     }
 
     /// Get an extra reference of the child at the given index.
-    pub(super) fn child(&self, idx: usize, tracked: bool) -> Child<E, C> {
+    pub(super) fn child(&self, idx: usize, in_tracked_range: bool) -> Child<E, C> {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
         let pte = self.read_pte(idx);
@@ -286,7 +286,7 @@ where
                     level: self.level() - 1,
                     _phantom: PhantomData,
                 })
-            } else if tracked {
+            } else if in_tracked_range {
                 // SAFETY: The physical address is recorded in a valid PTE
                 // which would be casted from a handle. We are incrementing
                 // the reference count so we restore and forget a cloned one.
@@ -319,7 +319,7 @@ where
         let mut new_frame = Self::alloc(self.level());
 
         for i in deep {
-            match self.child(i, /*meaningless*/ true) {
+            match self.child(i, true) {
                 Child::PageTable(pt) => {
                     let guard = pt.clone_shallow().lock();
                     let new_child = guard.make_copy(0..nr_subpage_per_huge::<C>(), 0..0);
@@ -353,10 +353,10 @@ where
     }
 
     /// Remove a child if the child at the given index is present.
-    pub(super) fn unset_child(&mut self, idx: usize, in_untracked_range: bool) {
+    pub(super) fn unset_child(&mut self, idx: usize, in_tracked_range: bool) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
-        self.overwrite_pte(idx, None, in_untracked_range);
+        self.overwrite_pte(idx, None, in_tracked_range);
     }
 
     /// Set a child page table at a given index.
@@ -364,14 +364,14 @@ where
         &mut self,
         idx: usize,
         pt: RawPageTableNode<E, C>,
-        in_untracked_range: bool,
+        in_tracked_range: bool,
     ) {
         // They should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert_eq!(pt.level, self.level() - 1);
 
         let pte = Some(E::new_pt(pt.paddr()));
-        self.overwrite_pte(idx, pte, in_untracked_range);
+        self.overwrite_pte(idx, pte, in_tracked_range);
         // The ownership is transferred to a raw PTE. Don't drop the handle.
         let _ = ManuallyDrop::new(pt);
     }
@@ -383,7 +383,7 @@ where
         debug_assert_eq!(frame.level(), self.level());
 
         let pte = Some(E::new_frame(frame.start_paddr(), self.level(), prop));
-        self.overwrite_pte(idx, pte, false);
+        self.overwrite_pte(idx, pte, true);
         // The ownership is transferred to a raw PTE. Don't drop the handle.
         let _ = ManuallyDrop::new(frame);
     }
@@ -398,7 +398,7 @@ where
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
         let pte = Some(E::new_frame(pa, self.level(), prop));
-        self.overwrite_pte(idx, pte, true);
+        self.overwrite_pte(idx, pte, false);
     }
 
     /// Read the info from a page table entry at a given index.
@@ -425,7 +425,7 @@ where
             unsafe { new_frame.set_child_untracked(i, small_pa, prop) };
         }
 
-        self.set_child_pt(idx, new_frame.into_raw(), true);
+        self.set_child_pt(idx, new_frame.into_raw(), false);
     }
 
     /// Protect an already mapped child at a given index.
@@ -460,7 +460,7 @@ where
     ///
     /// The caller in this module will ensure that the PTE points to initialized
     /// memory if the child is a page table.
-    fn overwrite_pte(&mut self, idx: usize, pte: Option<E>, in_untracked_range: bool) {
+    fn overwrite_pte(&mut self, idx: usize, pte: Option<E>, in_tracked_range: bool) {
         let existing_pte = self.read_pte(idx);
 
         if existing_pte.is_present() {
@@ -483,7 +483,7 @@ where
                 if !existing_pte.is_last(self.level()) {
                     // This is a page table.
                     drop(Page::<PageTablePageMeta<E, C>>::from_raw(paddr));
-                } else if !in_untracked_range {
+                } else if in_tracked_range {
                     // This is a frame.
                     drop(Page::<FrameMeta>::from_raw(paddr));
                 }
