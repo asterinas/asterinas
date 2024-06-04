@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! This module defines page table node abstractions and the handle.
+//! Page table nodes and handles.
 //!
 //! The page table node is also frequently referred to as a page table in many architectural
 //! documentations. It is essentially a page that contains page table entries (PTEs) that map
@@ -23,6 +23,24 @@
 //! page table node while a lock is held. So the modification to the PTEs should be done after
 //! the initialization of the entity that the PTE points to. This is taken care in this module.
 //!
+//! # Safety
+//!
+//! This module is primarily concerned with the memory safety of the page tables themselves. That
+//! is, by treating page table nodes as a special kind of container, we ensure the memory safety of
+//! the containers without worrying about the validity of the data they contain.
+//!
+//! For example, if a PTE points to another page table, it is necessary to ensure that it points to
+//! a valid page table. Otherwise, it breaks the memory safety of the page tables themselves.
+//!
+//! However, if a PTE points to a physical page, it can point to an arbitrary page (e.g., by
+//! calling a safe [`PageTableNode::set_child_untracked`] method). This will never break the memory
+//! safety of the page table itself.
+//!
+//! Users will need additional unsafe code to make further assumptions about the validity of the
+//! page table contents. For example, if users want to activate a page table, they need to call the
+//! unsafe method [`RawPageTableNode::activate`]; if users want to assume that the page table entry
+//! points to a tracked frame (instead of arbitrary regions of memory), they need to call
+//! [`MaybeTracked::assume_tracked`].
 
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, panic, sync::atomic::Ordering};
 
@@ -453,8 +471,6 @@ where
 
     /// Get an extra reference of the child at the given index.
     pub(super) fn child(&self, idx: usize) -> Child<MaybeTrackedPageRef<'_>, E, C> {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-
         let pte = self.read_pte(idx);
         if !pte.is_present() {
             return Child::None;
@@ -495,8 +511,6 @@ where
     ///
     /// The ranges must be disjoint.
     pub(super) unsafe fn make_copy(&self, deep: Range<usize>, shallow: Range<usize>) -> Self {
-        debug_assert!(deep.end <= nr_subpage_per_huge::<C>());
-        debug_assert!(shallow.end <= nr_subpage_per_huge::<C>());
         debug_assert!(deep.end <= shallow.start || deep.start >= shallow.end);
 
         let mut new_frame = Self::alloc(self.level());
@@ -534,9 +548,10 @@ where
 
     /// Remove a child if the child at the given index is present.
     pub(super) fn unset_child(&mut self, idx: usize) -> Child<MaybeTrackedPage, E, C> {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
+        assert!(idx < nr_subpage_per_huge::<C>());
 
-        self.overwrite_pte(idx, None)
+        // SAFETY: The PTE does not point to a page table.
+        unsafe { self.overwrite_pte(idx, None) }
     }
 
     /// Set a child page table at a given index.
@@ -545,11 +560,18 @@ where
         idx: usize,
         pt: RawPageTableNode<E, C>,
     ) -> Child<MaybeTrackedPage, E, C> {
-        // They should be ensured by the cursor.
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
+        assert!(self.level() > 1);
 
         let pte = Some(E::new_pt(pt.paddr()));
-        let child = self.overwrite_pte(idx, pte);
+
+        // SAFETY: The PTE points to a valid page table. The page table level is checked above to
+        // make sure the PTE can be correctly interpreted as a page table.
+        //
+        // There is still the possibility that the level of the given page table is incorrect,
+        // which breaks the structure of the page table, but does not affect the memory safety of
+        // the page table itself.
+        let child = unsafe { self.overwrite_pte(idx, pte) };
+
         // The ownership is transferred to a raw PTE. Don't drop the handle.
         let _ = ManuallyDrop::new(pt);
 
@@ -563,12 +585,13 @@ where
         frame: Frame,
         prop: PageProperty,
     ) -> Child<MaybeTrackedPage, E, C> {
-        // They should be ensured by the cursor.
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert_eq!(frame.level(), self.level());
 
         let pte = Some(E::new_frame(frame.start_paddr(), self.level(), prop));
-        let child = self.overwrite_pte(idx, pte);
+
+        // SAFETY: The PTE does not point to a page table.
+        let child = unsafe { self.overwrite_pte(idx, pte) };
+
         // The ownership is transferred to a raw PTE. Don't drop the handle.
         let _ = ManuallyDrop::new(frame);
 
@@ -576,29 +599,20 @@ where
     }
 
     /// Set an untracked child frame at a given index.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the physical address is valid and safe to map.
-    pub(super) unsafe fn set_child_untracked(
+    pub(super) fn set_child_untracked(
         &mut self,
         idx: usize,
         pa: Paddr,
         prop: PageProperty,
     ) -> Child<MaybeTrackedPage, E, C> {
-        // It should be ensured by the cursor.
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-
         let pte = Some(E::new_frame(pa, self.level(), prop));
-        self.overwrite_pte(idx, pte)
+
+        // SAFETY: The PTE does not point to a page table.
+        unsafe { self.overwrite_pte(idx, pte) }
     }
 
     /// Split the untracked huge page mapped at `idx` to smaller pages.
     pub(super) fn split_untracked_huge(&mut self, idx: usize) {
-        // These should be ensured by the cursor.
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-        debug_assert!(self.level() > 1);
-
         let Child::Page(maybe_tracked) = self.child(idx) else {
             panic!("`split_untracked_huge` not called on an untracked huge page");
         };
@@ -607,9 +621,7 @@ where
         let mut new_frame = PageTableNode::<E, C>::alloc(self.level() - 1);
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(self.level() - 1);
-            // SAFETY: the index is within the bound and either physical address and
-            // the property are valid.
-            unsafe { new_frame.set_child_untracked(i, small_pa, prop).drop_none() };
+            new_frame.set_child_untracked(i, small_pa, prop).drop_none();
         }
 
         self.set_child_pt(idx, new_frame.into_raw())
@@ -619,21 +631,21 @@ where
     /// Protect an already mapped child at a given index.
     pub(super) fn protect(&mut self, idx: usize, prop: PageProperty) {
         let mut pte = self.read_pte(idx);
-        debug_assert!(pte.is_present()); // This should be ensured by the cursor.
+        debug_assert!(pte.is_present());
 
         pte.set_prop(prop);
 
-        // SAFETY: the index is within the bound and the PTE is valid.
+        // SAFETY: The index is in bounds as checked by `read_pte`. The PTE is still valid as only
+        // the page property is changed.
         unsafe {
             (self.as_ptr() as *mut E).add(idx).write(pte);
         }
     }
 
     fn read_pte(&self, idx: usize) -> E {
-        // It should be ensured by the cursor.
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
+        assert!(idx < nr_subpage_per_huge::<C>());
 
-        // SAFETY: the index is within the bound and PTE is plain-old-data.
+        // SAFETY: The index is in bounds as checked above.
         unsafe { self.as_ptr().add(idx).read() }
     }
 
@@ -648,12 +660,20 @@ where
     /// an untracked region of memory. It's up to the caller to make further calls to
     /// [`Child::drop_deep_tracked`], [`Child::drop_deep_tracked`], or [`Child::drop_none`] to drop
     /// the child.
-    fn overwrite_pte(&mut self, idx: usize, pte: Option<E>) -> Child<MaybeTrackedPage, E, C> {
+    ///
+    /// # Safety
+    ///
+    /// If the PTE points to a page table, the caller must ensure that it must point to a valid
+    /// page table.
+    unsafe fn overwrite_pte(
+        &mut self,
+        idx: usize,
+        pte: Option<E>,
+    ) -> Child<MaybeTrackedPage, E, C> {
         let existing_pte = self.read_pte(idx);
 
-        // SAFETY: The index is within the bound and the address is aligned.
-        // The validity of the PTE is checked within this module.
-        // The safetiness also holds in the following branch.
+        // SAFETY: The index is in bounds as checked by `read_pte`. The PTE validity is upheld by
+        // the caller.
         unsafe {
             (self.as_ptr() as *mut E)
                 .add(idx)

@@ -19,7 +19,7 @@ pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 #[derive(Clone, Debug, Default)]
 pub struct PagingConsts {}
 
-impl PagingConstsTrait for PagingConsts {
+unsafe impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
     const NR_LEVELS: PagingLevel = 4;
     const ADDRESS_WIDTH: usize = 48;
@@ -139,7 +139,7 @@ macro_rules! parse_flags {
     };
 }
 
-impl PageTableEntryTrait for PageTableEntry {
+unsafe impl PageTableEntryTrait for PageTableEntry {
     fn is_present(&self) -> bool {
         self.0 & PageTableFlags::PRESENT.bits() != 0
     }

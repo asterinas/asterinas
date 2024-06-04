@@ -121,7 +121,7 @@ type Qr = PageTableQueryResult;
 #[derive(Clone, Debug, Default)]
 struct BasePagingConsts {}
 
-impl PagingConstsTrait for BasePagingConsts {
+unsafe impl PagingConstsTrait for BasePagingConsts {
     const NR_LEVELS: PagingLevel = 4;
     const BASE_PAGE_SIZE: usize = PAGE_SIZE;
     const ADDRESS_WIDTH: usize = 48;
@@ -168,7 +168,7 @@ fn test_base_protect_query() {
 #[derive(Clone, Debug, Default)]
 struct VeryHugePagingConsts {}
 
-impl PagingConstsTrait for VeryHugePagingConsts {
+unsafe impl PagingConstsTrait for VeryHugePagingConsts {
     const NR_LEVELS: PagingLevel = 4;
     const BASE_PAGE_SIZE: usize = PAGE_SIZE;
     const ADDRESS_WIDTH: usize = 48;

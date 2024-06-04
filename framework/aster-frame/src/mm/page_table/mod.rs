@@ -324,7 +324,13 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 /// The interface for defining architecture-specific page table entries.
 ///
 /// Note that a default PTE shoud be a PTE that points to nothing.
-pub(crate) trait PageTableEntryTrait:
+///
+/// # Safety
+///
+/// Implementors must respect certain invariants. For example, for a PTE pointing to a frame
+/// created by [`new_frame`], it is necessary that [`is_last`] returns true. Otherwise it will lead
+/// to serve memory safety issues.
+pub(crate) unsafe trait PageTableEntryTrait:
     Clone + Copy + Debug + Default + Pod + Sized + Sync
 {
     /// Create a set of new invalid page table flags that indicates an absent page.
