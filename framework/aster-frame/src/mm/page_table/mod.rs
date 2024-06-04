@@ -101,6 +101,7 @@ impl PageTable<UserMode> {
     /// TODO: We may consider making the page table itself copy-on-write.
     pub(crate) fn fork_copy_on_write(&self) -> Self {
         let mut cursor = self.cursor_mut(&UserMode::VADDR_RANGE).unwrap();
+
         // SAFETY: Protecting the user page table is safe.
         unsafe {
             cursor
@@ -111,7 +112,9 @@ impl PageTable<UserMode> {
                 )
                 .unwrap();
         };
+
         let root_frame = cursor.leak_root_guard().unwrap();
+
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         let new_root_frame = unsafe {
             root_frame.make_copy(
@@ -119,6 +122,7 @@ impl PageTable<UserMode> {
                 NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE,
             )
         };
+
         PageTable::<UserMode> {
             root: new_root_frame.into_raw(),
             _phantom: PhantomData,
@@ -136,9 +140,11 @@ impl PageTable<KernelMode> {
     /// other child page tables.
     pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode> {
         let root_frame = self.root.clone_shallow().lock();
+
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         let new_root_frame =
             unsafe { root_frame.make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE) };
+
         PageTable::<UserMode> {
             root: new_root_frame.into_raw(),
             _phantom: PhantomData,
@@ -152,11 +158,14 @@ impl PageTable<KernelMode> {
     /// instead of the virtual address range.
     pub(crate) fn make_shared_tables(&self, root_index: Range<usize>) {
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
+
         let start = root_index.start;
         debug_assert!(start >= NR_PTES_PER_NODE / 2);
         debug_assert!(start < NR_PTES_PER_NODE);
+
         let end = root_index.end;
         debug_assert!(end <= NR_PTES_PER_NODE);
+
         let mut root_frame = self.root.clone_shallow().lock();
         for i in start..end {
             if !root_frame.read_pte(i).is_present() {
@@ -298,10 +307,12 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
         if !cur_pte.is_present() {
             return None;
         }
+
         if cur_pte.is_last(cur_level) {
             debug_assert!(cur_level <= C::HIGHEST_TRANSLATION_LEVEL);
             break;
         }
+
         cur_level -= 1;
         cur_pte = {
             let frame_addr = paddr_to_vaddr(cur_pte.paddr());
