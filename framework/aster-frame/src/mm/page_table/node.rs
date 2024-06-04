@@ -75,6 +75,7 @@ where
         // count is needed.
         let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
         debug_assert!(page.meta().level == self.level);
+
         // Acquire the lock.
         while page
             .meta()
@@ -84,14 +85,17 @@ where
         {
             core::hint::spin_loop();
         }
+
         // Prevent dropping the handle.
         let _ = ManuallyDrop::new(self);
+
         PageTableNode::<E, C> { page }
     }
 
     /// Creates a copy of the handle.
     pub(super) fn clone_shallow(&self) -> Self {
         self.inc_ref();
+
         Self {
             raw: self.raw,
             level: self.level,
@@ -144,8 +148,11 @@ where
     /// with [`Self::activate()`] in other senses.
     pub(super) unsafe fn first_activate(&self) {
         use crate::{arch::mm::activate_page_table, mm::CachePolicy};
+
         debug_assert_eq!(self.level, PagingConsts::NR_LEVELS);
+
         self.inc_ref();
+
         activate_page_table(self.raw, CachePolicy::Writeback);
     }
 
@@ -211,6 +218,7 @@ where
     pub(super) fn alloc(level: PagingLevel) -> Self {
         let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap() * PAGE_SIZE;
         let mut page = Page::<PageTablePageMeta<E, C>>::from_unused(frame);
+
         // The lock is initialized as held.
         page.meta().lock.store(1, Ordering::Relaxed);
 
@@ -235,8 +243,10 @@ where
     pub(super) fn into_raw(self) -> RawPageTableNode<E, C> {
         let level = self.level();
         let raw = self.page.paddr();
+
         self.page.meta().lock.store(0, Ordering::Release);
         core::mem::forget(self);
+
         RawPageTableNode {
             raw,
             level,
@@ -247,6 +257,7 @@ where
     /// Gets a raw handle while still preserving the original handle.
     pub(super) fn clone_raw(&self) -> RawPageTableNode<E, C> {
         core::mem::forget(self.page.clone());
+
         RawPageTableNode {
             raw: self.page.paddr(),
             level: self.level(),
@@ -257,6 +268,7 @@ where
     /// Gets an extra reference of the child at the given index.
     pub(super) fn child(&self, idx: usize, tracked: bool) -> Child<E, C> {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
+
         let pte = self.read_pte(idx);
         if !pte.is_present() {
             Child::None
@@ -301,10 +313,12 @@ where
     ///
     /// The ranges must be disjoint.
     pub(super) unsafe fn make_copy(&self, deep: Range<usize>, shallow: Range<usize>) -> Self {
-        let mut new_frame = Self::alloc(self.level());
         debug_assert!(deep.end <= nr_subpage_per_huge::<C>());
         debug_assert!(shallow.end <= nr_subpage_per_huge::<C>());
         debug_assert!(deep.end <= shallow.start || deep.start >= shallow.end);
+
+        let mut new_frame = Self::alloc(self.level());
+
         for i in deep {
             match self.child(i, /*meaningless*/ true) {
                 Child::PageTable(pt) => {
@@ -322,6 +336,7 @@ where
                 }
             }
         }
+
         for i in shallow {
             debug_assert_eq!(self.level(), C::NR_LEVELS);
             match self.child(i, /*meaningless*/ true) {
@@ -334,12 +349,14 @@ where
                 }
             }
         }
+
         new_frame
     }
 
     /// Removes a child if the child at the given index is present.
     pub(super) fn unset_child(&mut self, idx: usize, in_untracked_range: bool) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
+
         self.overwrite_pte(idx, None, in_untracked_range);
     }
 
@@ -353,6 +370,7 @@ where
         // They should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert_eq!(pt.level, self.level() - 1);
+
         let pte = Some(E::new_pt(pt.paddr()));
         self.overwrite_pte(idx, pte, in_untracked_range);
         // The ownership is transferred to a raw PTE. Don't drop the handle.
@@ -364,6 +382,7 @@ where
         // They should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert_eq!(frame.level(), self.level());
+
         let pte = Some(E::new_frame(frame.start_paddr(), self.level(), prop));
         self.overwrite_pte(idx, pte, false);
         // The ownership is transferred to a raw PTE. Don't drop the handle.
@@ -378,6 +397,7 @@ where
     pub(super) unsafe fn set_child_untracked(&mut self, idx: usize, pa: Paddr, prop: PageProperty) {
         // It should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
+
         let pte = Some(E::new_frame(pa, self.level(), prop));
         self.overwrite_pte(idx, pte, true);
     }
@@ -397,6 +417,7 @@ where
             panic!("`split_untracked_huge` not called on an untracked huge page");
         };
         let prop = self.read_pte_prop(idx);
+
         let mut new_frame = PageTableNode::<E, C>::alloc(self.level() - 1);
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(self.level() - 1);
@@ -404,6 +425,7 @@ where
             // the property are valid.
             unsafe { new_frame.set_child_untracked(i, small_pa, prop) };
         }
+
         self.set_child_pt(idx, new_frame.into_raw(), true);
     }
 
@@ -411,7 +433,9 @@ where
     pub(super) fn protect(&mut self, idx: usize, prop: PageProperty) {
         let mut pte = self.read_pte(idx);
         debug_assert!(pte.is_present()); // This should be ensured by the cursor.
+
         pte.set_prop(prop);
+
         // SAFETY: the index is within the bound and the PTE is valid.
         unsafe {
             (self.as_ptr() as *mut E).add(idx).write(pte);
@@ -421,6 +445,7 @@ where
     pub(super) fn read_pte(&self, idx: usize) -> E {
         // It should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
+
         // SAFETY: the index is within the bound and PTE is plain-old-data.
         unsafe { self.as_ptr().add(idx).read() }
     }
@@ -438,6 +463,7 @@ where
     /// memory if the child is a page table.
     fn overwrite_pte(&mut self, idx: usize, pte: Option<E>, in_untracked_range: bool) {
         let existing_pte = self.read_pte(idx);
+
         if existing_pte.is_present() {
             // SAFETY: The index is within the bound and the address is aligned.
             // The validity of the PTE is checked within this module.
@@ -501,6 +527,7 @@ where
     fn on_drop(page: &mut Page<Self>) {
         let paddr = page.paddr();
         let level = page.meta().level;
+
         // Drop the children.
         for i in 0..nr_subpage_per_huge::<C>() {
             // SAFETY: The index is within the bound and PTE is plain-old-data. The
@@ -525,6 +552,7 @@ where
                 }
             }
         }
+
         // Recycle this page table node.
         FRAME_ALLOCATOR
             .get()
