@@ -136,6 +136,8 @@ pub enum BioEnqueueError {
     IsFull,
     /// Refuse to enqueue the bio
     Refused,
+    /// Too big bio
+    TooBig,
 }
 
 impl From<BioEnqueueError> for aster_frame::Error {

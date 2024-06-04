@@ -43,7 +43,11 @@ impl BlockDevice {
 
         let block_device = Arc::new(Self {
             device,
-            queue: BioRequestSingleQueue::new(),
+            // Each bio request includes an additional 1 request and 1 response descriptor,
+            // therefore this upper bound is set to (QUEUE_SIZE - 2).
+            queue: BioRequestSingleQueue::with_max_nr_segments_per_bio(
+                (DeviceInner::QUEUE_SIZE - 2) as usize,
+            ),
         });
 
         aster_block::register_device(device_id, block_device);
@@ -73,6 +77,10 @@ impl BlockDevice {
 impl aster_block::BlockDevice for BlockDevice {
     fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
         self.queue.enqueue(bio)
+    }
+
+    fn max_nr_segments_per_bio(&self) -> usize {
+        self.queue.max_nr_segments_per_bio()
     }
 }
 

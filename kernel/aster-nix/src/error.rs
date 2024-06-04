@@ -212,6 +212,9 @@ impl From<aster_block::bio::BioEnqueueError> for Error {
             aster_block::bio::BioEnqueueError::Refused => {
                 Error::with_message(Errno::EBUSY, "Refuse to enqueue the bio")
             }
+            aster_block::bio::BioEnqueueError::TooBig => {
+                Error::with_message(Errno::EINVAL, "Bio is too big")
+            }
         }
     }
 }

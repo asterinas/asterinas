@@ -95,6 +95,10 @@ mod test {
             bio.complete(BioStatus::Complete);
             Ok(())
         }
+
+        fn max_nr_segments_per_bio(&self) -> usize {
+            usize::MAX
+        }
     }
     /// Exfat disk image
     static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../../regression/build/exfat.img");
