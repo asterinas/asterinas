@@ -67,7 +67,7 @@ fn test_untracked_map_unmap() {
         }
     }
 
-    // Since untracked mappings cannot be dropped, we just leak it here.
+    // Since non-empty mappings cannot be dropped, we just leak it here.
     let _ = ManuallyDrop::new(pt);
 }
 
@@ -110,6 +110,10 @@ fn test_user_copy_on_write() {
         start_paddr + 10
     );
     assert!(child_pt.query(from.start + 10).is_none());
+
+    // Since non-empty mappings cannot be dropped, we just leak it here.
+    let _ = ManuallyDrop::new(sibling_pt);
+    let _ = ManuallyDrop::new(child_pt);
 }
 
 type Qr = PageTableQueryResult;
@@ -156,6 +160,9 @@ fn test_base_protect_query() {
         assert_eq!(prop.flags, PageFlags::R);
         assert_eq!(va..va + frame.size(), i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
+
+    // Since non-empty mappings cannot be dropped, we just leak it here.
+    let _ = ManuallyDrop::new(pt);
 }
 
 #[derive(Clone, Debug, Default)]
@@ -243,6 +250,6 @@ fn test_untracked_large_protect_query() {
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
 
-    // Since untracked mappings cannot be dropped, we just leak it here.
+    // Since non-empty mappings cannot be dropped, we just leak it here.
     let _ = ManuallyDrop::new(pt);
 }

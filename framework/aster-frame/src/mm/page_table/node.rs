@@ -192,17 +192,216 @@ pub(super) struct PageTableNode<
     pub(super) page: Page<PageTablePageMeta<E, C>>,
 }
 
-/// A child of a page table node.
+/// A tracked frame or an untracked physical memory region.
+pub(super) trait MaybeTracked {
+    /// Assumes that there is an untracked physical memory, returning the start physical address
+    /// and the page property.
+    ///
+    /// Calling this method on tracked frames alone does not break memory safety, but it can cause
+    /// resource leakage.
+    fn assume_untracked(self) -> (Paddr, PageProperty);
+
+    /// Assumes that there is a tracked frame, returning the frame and the page property.
+    ///
+    /// Note that if `self` does not have ownership of the tracked frame, this method should clone
+    /// the frame and return the cloned frame. Otherwise, ownership of the frame will be
+    /// transferred to the returned frame.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that a child frame has been previously set in the page table (with
+    /// [PageTableNode::set_child_frame]) and has not been overwritten or split.
+    ///
+    /// The page table itself does not maintain any information about whether its entries point to
+    /// tracked frames or untracked regions of memory, so it is up to the caller to ensure that the
+    /// above assumption actually holds.
+    unsafe fn assume_tracked(self) -> (Frame, PageProperty);
+}
+
+/// A page pointed by a page table entry, representing either a tracked frame or an untracked
+/// physical memory region.
+///
+/// An instance takes ownership of the underlying frame, so it may cause resource leakage or panic
+/// if it is dropped without knowning whether it represents a tracked frame or an untracked
+/// physical memory region.
 #[derive(Debug)]
-pub(super) enum Child<E: PageTableEntryTrait = PageTableEntry, C: PagingConstsTrait = PagingConsts>
+pub(super) struct MaybeTrackedPage {
+    paddr: Paddr,
+    prop: PageProperty,
+}
+
+impl MaybeTracked for MaybeTrackedPage {
+    fn assume_untracked(self) -> (Paddr, PageProperty) {
+        let this = ManuallyDrop::new(self);
+
+        (this.paddr, this.prop)
+    }
+
+    unsafe fn assume_tracked(self) -> (Frame, PageProperty) {
+        let this = ManuallyDrop::new(self);
+
+        (
+            Frame {
+                page: unsafe { Page::<FrameMeta>::from_raw(this.paddr) },
+            },
+            this.prop,
+        )
+    }
+}
+
+impl Drop for MaybeTrackedPage {
+    fn drop(&mut self) {
+        debug_assert!(
+            false,
+            "cannot drop `MaybeTrackedPage` without knowing whether the page is tracked"
+        );
+    }
+}
+
+/// A reference to a page pointed by a page table entry, representing either a tracked frame or an
+/// untracked physical memory region.
+///
+/// An instance does not take ownership of the underlying frame, so it can be dropped silently.
+#[derive(Debug)]
+pub(super) struct MaybeTrackedPageRef<'a> {
+    paddr: Paddr,
+    prop: PageProperty,
+    _phantom: PhantomData<&'a Frame>,
+}
+
+impl<'a> MaybeTrackedPageRef<'a> {
+    pub(super) fn prop(&self) -> PageProperty {
+        self.prop
+    }
+}
+
+impl<'a> MaybeTracked for MaybeTrackedPageRef<'a> {
+    fn assume_untracked(self) -> (Paddr, PageProperty) {
+        let paddr = self.paddr;
+        let prop = self.prop;
+        (paddr, prop)
+    }
+
+    unsafe fn assume_tracked(self) -> (Frame, PageProperty) {
+        let frame = Frame {
+            page: unsafe { Page::<FrameMeta>::from_raw(self.paddr) },
+        };
+        let prop = self.prop;
+        core::mem::forget(frame.clone());
+        (frame, prop)
+    }
+}
+
+/// A child of a page table node.
+///
+/// A child will point to either a page, a page table, or nothing.
+///
+/// When a child takes ownership (i.e., `T = MaybeTrackedPage`), either
+/// [`Child::drop_deep_tracked`], [`Child::drop_deep_untracked`], or [`Child::drop_none`] should be
+/// called to avoid restore leakage.
+///
+/// However, if a child takes a reference (i.e., `T = MaybeTrackedPageRef`), it is fine to silently
+/// drop the child.
+#[must_use]
+#[derive(Debug)]
+pub(super) enum Child<
+    T,
+    E: PageTableEntryTrait = PageTableEntry,
+    C: PagingConstsTrait = PagingConsts,
+> where
+    [(); C::NR_LEVELS as usize]:,
+{
+    Page(T),
+    PageTable(RawPageTableNode<E, C>),
+    None,
+}
+
+impl<T, E: PageTableEntryTrait, C: PagingConstsTrait> Child<T, E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    PageTable(RawPageTableNode<E, C>),
-    Frame(Frame),
-    /// Frames not tracked by handles.
-    Untracked(Paddr),
-    None,
+    pub(super) fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<MaybeTrackedPage, E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    pub(super) fn drop_deep_untracked(self) {
+        let mut pt = match self {
+            Self::Page(maybe_tracked) => {
+                let _ = maybe_tracked.assume_untracked();
+                return;
+            }
+            Self::PageTable(table) => table.lock(),
+            Self::None => return,
+        };
+
+        // Fast path
+        if pt.page.meta().nr_children == 0 {
+            return;
+        }
+
+        for i in 0..nr_subpage_per_huge::<C>() {
+            pt.unset_child(i).drop_deep_untracked();
+        }
+    }
+
+    pub(super) unsafe fn drop_deep_tracked(self) {
+        let mut pt = match self {
+            Self::Page(maybe_tracked) => {
+                drop(unsafe { maybe_tracked.assume_tracked() });
+                return;
+            }
+            Self::PageTable(table) => table.lock(),
+            Self::None => return,
+        };
+
+        // Fast path
+        if pt.page.meta().nr_children == 0 {
+            return;
+        }
+
+        for i in 0..nr_subpage_per_huge::<C>() {
+            unsafe {
+                pt.unset_child(i).drop_deep_tracked();
+            }
+        }
+    }
+
+    pub(super) fn drop_none(self) {
+        debug_assert!(matches!(self, Self::None));
+    }
+}
+
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<MaybeTrackedPage, E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    /// Takes ownership of the PTE and converts to a child.
+    ///
+    /// # Safety
+    ///
+    /// If the PTE points to a page table, the caller must ensure that it points to a valid page
+    /// table.
+    unsafe fn from_pte(pte: E, level: PagingLevel) -> Self {
+        if !pte.is_present() {
+            Self::None
+        } else if pte.is_last(level) {
+            Self::Page(MaybeTrackedPage {
+                paddr: pte.paddr(),
+                prop: pte.prop(),
+            })
+        } else {
+            Self::PageTable(RawPageTableNode {
+                raw: pte.paddr(),
+                level: level - 1,
+                _phantom: PhantomData,
+            })
+        }
+    }
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
@@ -265,38 +464,35 @@ where
     }
 
     /// Get an extra reference of the child at the given index.
-    pub(super) fn child(&self, idx: usize, in_tracked_range: bool) -> Child<E, C> {
+    pub(super) fn child(&self, idx: usize) -> Child<MaybeTrackedPageRef<'_>, E, C> {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
         let pte = self.read_pte(idx);
         if !pte.is_present() {
-            Child::None
-        } else {
-            let paddr = pte.paddr();
-            if !pte.is_last(self.level()) {
-                // SAFETY: The physical address is recorded in a valid PTE
-                // which would be casted from a handle. We are incrementing
-                // the reference count so we restore, clone, and forget both.
-                let node = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(paddr) };
-                let inc_ref = node.clone();
-                core::mem::forget(node);
-                core::mem::forget(inc_ref);
-                Child::PageTable(RawPageTableNode {
-                    raw: paddr,
-                    level: self.level() - 1,
-                    _phantom: PhantomData,
-                })
-            } else if in_tracked_range {
-                // SAFETY: The physical address is recorded in a valid PTE
-                // which would be casted from a handle. We are incrementing
-                // the reference count so we restore and forget a cloned one.
-                let page = unsafe { Page::<FrameMeta>::from_raw(paddr) };
-                core::mem::forget(page.clone());
-                Child::Frame(Frame { page })
-            } else {
-                Child::Untracked(paddr)
-            }
+            return Child::None;
         }
+
+        let paddr = pte.paddr();
+        if pte.is_last(self.level()) {
+            return Child::Page(MaybeTrackedPageRef {
+                paddr,
+                prop: pte.prop(),
+                _phantom: PhantomData,
+            });
+        }
+
+        // SAFETY: The physical address is recorded in a valid PTE
+        // which would be casted from a handle. We are incrementing
+        // the reference count so we restore, clone, and forget both.
+        let node = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(paddr) };
+        let inc_ref = node.clone();
+        core::mem::forget(node);
+        core::mem::forget(inc_ref);
+        Child::PageTable(RawPageTableNode {
+            raw: paddr,
+            level: self.level() - 1,
+            _phantom: PhantomData,
+        })
     }
 
     /// Make a copy of the page table node.
@@ -319,33 +515,30 @@ where
         let mut new_frame = Self::alloc(self.level());
 
         for i in deep {
-            match self.child(i, true) {
+            match self.child(i) {
                 Child::PageTable(pt) => {
                     let guard = pt.clone_shallow().lock();
                     let new_child = guard.make_copy(0..nr_subpage_per_huge::<C>(), 0..0);
-                    new_frame.set_child_pt(i, new_child.into_raw(), /*meaningless*/ true);
+                    new_frame.set_child_pt(i, new_child.into_raw()).drop_none();
                 }
-                Child::Frame(frame) => {
-                    let prop = self.read_pte_prop(i);
-                    new_frame.set_child_frame(i, frame.clone(), prop);
+                Child::Page(maybe_tracked) => {
+                    let (frame, prop) = unsafe { maybe_tracked.assume_tracked() };
+                    new_frame.set_child_frame(i, frame, prop).drop_none();
                 }
-                Child::None => {}
-                Child::Untracked(_) => {
-                    unreachable!();
-                }
+                Child::None => (),
             }
         }
 
         for i in shallow {
             debug_assert_eq!(self.level(), C::NR_LEVELS);
-            match self.child(i, /*meaningless*/ true) {
+            match self.child(i) {
                 Child::PageTable(pt) => {
-                    new_frame.set_child_pt(i, pt.clone_shallow(), /*meaningless*/ true);
+                    new_frame.set_child_pt(i, pt.clone_shallow()).drop_none();
                 }
-                Child::None => {}
-                Child::Frame(_) | Child::Untracked(_) => {
-                    unreachable!();
+                Child::Page(_) => {
+                    panic!("cannot make shallow copies to pages")
                 }
+                Child::None => (),
             }
         }
 
@@ -353,10 +546,10 @@ where
     }
 
     /// Remove a child if the child at the given index is present.
-    pub(super) fn unset_child(&mut self, idx: usize, in_tracked_range: bool) {
+    pub(super) fn unset_child(&mut self, idx: usize) -> Child<MaybeTrackedPage, E, C> {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
-        self.overwrite_pte(idx, None, in_tracked_range);
+        self.overwrite_pte(idx, None)
     }
 
     /// Set a child page table at a given index.
@@ -364,28 +557,36 @@ where
         &mut self,
         idx: usize,
         pt: RawPageTableNode<E, C>,
-        in_tracked_range: bool,
-    ) {
+    ) -> Child<MaybeTrackedPage, E, C> {
         // They should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert_eq!(pt.level, self.level() - 1);
 
         let pte = Some(E::new_pt(pt.paddr()));
-        self.overwrite_pte(idx, pte, in_tracked_range);
+        let child = self.overwrite_pte(idx, pte);
         // The ownership is transferred to a raw PTE. Don't drop the handle.
         let _ = ManuallyDrop::new(pt);
+
+        child
     }
 
     /// Map a frame at a given index.
-    pub(super) fn set_child_frame(&mut self, idx: usize, frame: Frame, prop: PageProperty) {
+    pub(super) fn set_child_frame(
+        &mut self,
+        idx: usize,
+        frame: Frame,
+        prop: PageProperty,
+    ) -> Child<MaybeTrackedPage, E, C> {
         // They should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert_eq!(frame.level(), self.level());
 
         let pte = Some(E::new_frame(frame.start_paddr(), self.level(), prop));
-        self.overwrite_pte(idx, pte, true);
+        let child = self.overwrite_pte(idx, pte);
         // The ownership is transferred to a raw PTE. Don't drop the handle.
         let _ = ManuallyDrop::new(frame);
+
+        child
     }
 
     /// Set an untracked child frame at a given index.
@@ -393,17 +594,17 @@ where
     /// # Safety
     ///
     /// The caller must ensure that the physical address is valid and safe to map.
-    pub(super) unsafe fn set_child_untracked(&mut self, idx: usize, pa: Paddr, prop: PageProperty) {
+    pub(super) unsafe fn set_child_untracked(
+        &mut self,
+        idx: usize,
+        pa: Paddr,
+        prop: PageProperty,
+    ) -> Child<MaybeTrackedPage, E, C> {
         // It should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
         let pte = Some(E::new_frame(pa, self.level(), prop));
-        self.overwrite_pte(idx, pte, false);
-    }
-
-    /// Read the info from a page table entry at a given index.
-    pub(super) fn read_pte_prop(&self, idx: usize) -> PageProperty {
-        self.read_pte(idx).prop()
+        self.overwrite_pte(idx, pte)
     }
 
     /// Split the untracked huge page mapped at `idx` to smaller pages.
@@ -412,20 +613,21 @@ where
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert!(self.level() > 1);
 
-        let Child::Untracked(pa) = self.child(idx, false) else {
+        let Child::Page(maybe_tracked) = self.child(idx) else {
             panic!("`split_untracked_huge` not called on an untracked huge page");
         };
-        let prop = self.read_pte_prop(idx);
+        let (pa, prop) = maybe_tracked.assume_untracked();
 
         let mut new_frame = PageTableNode::<E, C>::alloc(self.level() - 1);
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(self.level() - 1);
             // SAFETY: the index is within the bound and either physical address and
             // the property are valid.
-            unsafe { new_frame.set_child_untracked(i, small_pa, prop) };
+            unsafe { new_frame.set_child_untracked(i, small_pa, prop).drop_none() };
         }
 
-        self.set_child_pt(idx, new_frame.into_raw(), false);
+        self.set_child_pt(idx, new_frame.into_raw())
+            .drop_deep_untracked();
     }
 
     /// Protect an already mapped child at a given index.
@@ -441,7 +643,7 @@ where
         }
     }
 
-    pub(super) fn read_pte(&self, idx: usize) -> E {
+    fn read_pte(&self, idx: usize) -> E {
         // It should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
@@ -453,53 +655,35 @@ where
         self.page.paddr()
     }
 
-    /// Replace a page table entry at a given index.
+    /// Replaces a page table entry at a given index.
     ///
-    /// This method will ensure that the child presented by the overwritten
-    /// PTE is dropped, and the child count is updated.
-    ///
-    /// The caller in this module will ensure that the PTE points to initialized
-    /// memory if the child is a page table.
-    fn overwrite_pte(&mut self, idx: usize, pte: Option<E>, in_tracked_range: bool) {
+    /// The ownership of the replaced PTE is transferred to the return value. If the replaced PTE
+    /// points to a page, the method does not know whether the page represents a tracked frame or
+    /// an untracked region of memory. It's up to the caller to make further calls to
+    /// [`Child::drop_deep_tracked`], [`Child::drop_deep_tracked`], or [`Child::drop_none`] to drop
+    /// the child.
+    fn overwrite_pte(&mut self, idx: usize, pte: Option<E>) -> Child<MaybeTrackedPage, E, C> {
         let existing_pte = self.read_pte(idx);
 
-        if existing_pte.is_present() {
-            // SAFETY: The index is within the bound and the address is aligned.
-            // The validity of the PTE is checked within this module.
-            // The safetiness also holds in the following branch.
-            unsafe {
-                (self.as_ptr() as *mut E)
-                    .add(idx)
-                    .write(pte.unwrap_or(E::new_absent()))
-            };
+        // SAFETY: The index is within the bound and the address is aligned.
+        // The validity of the PTE is checked within this module.
+        // The safetiness also holds in the following branch.
+        unsafe {
+            (self.as_ptr() as *mut E)
+                .add(idx)
+                .write(pte.unwrap_or(E::new_absent()))
+        };
 
-            // Drop the child. We must set the PTE before dropping the child.
-            // Just restore the handle and drop the handle.
-
-            let paddr = existing_pte.paddr();
-            // SAFETY: Both the `from_raw` operations here are safe as the physical
-            // address is valid and casted from a handle.
-            unsafe {
-                if !existing_pte.is_last(self.level()) {
-                    // This is a page table.
-                    drop(Page::<PageTablePageMeta<E, C>>::from_raw(paddr));
-                } else if in_tracked_range {
-                    // This is a frame.
-                    drop(Page::<FrameMeta>::from_raw(paddr));
-                }
-            }
-
-            // Update the child count.
-            if pte.is_none() {
-                // SAFETY: Here we have an exclusive access to the page.
-                unsafe { self.page.meta_mut().nr_children -= 1 };
-            }
-        } else if let Some(e) = pte {
-            // SAFETY: This is safe as described in the above branch.
-            unsafe { (self.as_ptr() as *mut E).add(idx).write(e) };
+        // Update the child count.
+        if existing_pte.is_present() && pte.is_none() {
+            // SAFETY: Here we have an exclusive access to the page.
+            unsafe { self.page.meta_mut().nr_children -= 1 };
+        } else if !existing_pte.is_present() && pte.is_some() {
             // SAFETY: Here we have an exclusive access to the page.
             unsafe { self.page.meta_mut().nr_children += 1 };
         }
+
+        unsafe { Child::from_pte(existing_pte, self.level()) }
     }
 
     fn as_ptr(&self) -> *const E {
@@ -535,21 +719,14 @@ where
             let pte_ptr = unsafe { (paddr_to_vaddr(paddr) as *const E).add(i) };
             // SAFETY: The pointer is valid and the PTE is plain-old-data.
             let pte = unsafe { pte_ptr.read() };
-            if pte.is_present() {
-                // Just restore the handle and drop the handle.
-                if !pte.is_last(level) {
-                    // This is a page table.
-                    // SAFETY: The physical address must be casted from a handle to a
-                    // page table node.
-                    drop(unsafe { Page::<Self>::from_raw(pte.paddr()) });
-                } else {
-                    // This is a frame. You cannot drop a page table node that maps to
-                    // untracked frames. This must be verified.
-                    // SAFETY: The physical address must be casted from a handle to a
-                    // frame.
-                    drop(unsafe { Page::<FrameMeta>::from_raw(pte.paddr()) });
-                }
-            }
+
+            // Note that if the PTE points to a physical page, we have no way of knowing whether it
+            // points to a tracked frame or an untracked region of memory at that point. In this
+            // case it will cause panic or resource leakage (see the implementation of
+            // `MaybeTrackedPage::drop`).
+            //
+            // SAFETY: We can consume ownership of the PTE because we are dropping the page table.
+            drop(unsafe { Child::from_pte(pte, level) });
         }
 
         // Recycle this page table node.

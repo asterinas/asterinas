@@ -159,9 +159,9 @@ impl PageTable<KernelMode> {
         debug_assert!(end <= NR_PTES_PER_NODE);
         let mut root_frame = self.root.clone_shallow().lock();
         for i in start..end {
-            if !root_frame.read_pte(i).is_present() {
+            if !root_frame.child(i).is_none() {
                 let frame = PageTableNode::alloc(PagingConsts::NR_LEVELS - 1);
-                root_frame.set_child_pt(i, frame.into_raw(), i < NR_PTES_PER_NODE * 3 / 4);
+                root_frame.set_child_pt(i, frame.into_raw()).drop_none();
             }
         }
     }
