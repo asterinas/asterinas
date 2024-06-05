@@ -24,6 +24,7 @@ use crate::{
     current_thread,
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
+    process::namespaces::Namespaces,
     thread::{allocate_tid, thread_table, Thread, Tid},
     util::write_val_to_user,
     vm::vmar::Vmar,
@@ -120,7 +121,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_SETTLS
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
-            | CloneFlags::CLONE_CHILD_CLEARTID;
+            | CloneFlags::CLONE_CHILD_CLEARTID
+            | CloneFlags::CLONE_NEWNS;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             panic!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -311,6 +313,10 @@ fn clone_child_process(
         clone_flags,
     )?;
 
+    // clone namespaces and switch to new namespaces
+    let child_namespaces = clone_namespaces(&child, current.namespaces(), clone_flags);
+    child.switch_namespaces(child_namespaces);
+
     // Sets parent process and group for child process.
     set_parent_and_group(&current, &child);
 
@@ -419,6 +425,22 @@ fn clone_files(
     }
 }
 
+fn clone_namespaces(
+    process: &Arc<Process>,
+    parent_namespaces: &Arc<Mutex<Namespaces>>,
+    clone_flags: CloneFlags,
+) -> Arc<Mutex<Namespaces>> {
+    let parent_namespaces = parent_namespaces.lock();
+
+    let new_mnt_ns = if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
+        parent_namespaces.mnt_ns().copy_mnt_ns(process)
+    } else {
+        parent_namespaces.mnt_ns().clone()
+    };
+
+    Arc::new(Mutex::new(Namespaces::new(new_mnt_ns)))
+}
+
 fn clone_sighand(
     parent_sig_dispositions: &Arc<Mutex<SigDispositions>>,
     clone_flags: CloneFlags,
@@ -452,4 +474,11 @@ fn set_parent_and_group(parent: &Arc<Process>, child: &Arc<Process>) {
     *child_group_mut = Arc::downgrade(&process_group);
 
     process_table_mut.insert(child.pid(), child.clone());
+}
+
+pub fn unshare(unshare_flags: CloneFlags) -> Result<()> {
+    let current = current!();
+    let child_namespaces = clone_namespaces(&current, current.namespaces(), unshare_flags);
+    current.switch_namespaces(child_namespaces);
+    Ok(())
 }
