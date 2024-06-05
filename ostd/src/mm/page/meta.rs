@@ -37,6 +37,7 @@ pub mod mapping {
 
 use alloc::vec::Vec;
 use core::{
+    cell::UnsafeCell,
     marker::PhantomData,
     mem::{size_of, ManuallyDrop},
     panic,
@@ -174,6 +175,13 @@ pub struct FrameMeta {
 
 impl Sealed for FrameMeta {}
 
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct PageTablePageMetaInner {
+    pub level: PagingLevel,
+    pub nr_children: u16,
+}
+
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug, Default)]
@@ -185,12 +193,21 @@ pub struct PageTablePageMeta<
     [(); C::NR_LEVELS as usize]:,
 {
     pub lock: AtomicU8,
-    pub level: PagingLevel,
-    pub nr_children: u16,
+    pub inner: UnsafeCell<PageTablePageMetaInner>,
     _phantom: core::marker::PhantomData<(E, C)>,
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sealed for PageTablePageMeta<E, C> where
+    [(); C::NR_LEVELS as usize]:
+{
+}
+
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Send for PageTablePageMeta<E, C> where
+    [(); C::NR_LEVELS as usize]:
+{
+}
+
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sync for PageTablePageMeta<E, C> where
     [(); C::NR_LEVELS as usize]:
 {
 }

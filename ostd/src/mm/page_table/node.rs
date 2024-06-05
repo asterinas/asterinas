@@ -34,7 +34,7 @@ use crate::{
         paddr_to_vaddr,
         page::{
             self,
-            meta::{PageMeta, PageTablePageMeta, PageUsage},
+            meta::{PageMeta, PageTablePageMeta, PageTablePageMetaInner, PageUsage},
             DynPage, Page,
         },
         page_prop::PageProperty,
@@ -208,13 +208,14 @@ where
     /// set the lock bit for performance as it is exclusive and unlocking is an
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel) -> Self {
-        let mut page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>().unwrap();
+        let page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>().unwrap();
 
         // The lock is initialized as held.
         page.meta().lock.store(1, Ordering::Relaxed);
 
         // SAFETY: here the page exclusively owned by the newly created handle.
-        unsafe { page.meta_mut().level = level };
+        let inner = unsafe { &mut *page.meta().inner.get() };
+        inner.level = level;
 
         // Zero out the page table node.
         let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;
@@ -227,7 +228,7 @@ where
     }
 
     pub fn level(&self) -> PagingLevel {
-        self.page.meta().level
+        self.meta().level
     }
 
     /// Converts the handle into a raw handle to be stored in a PTE or CPU.
@@ -478,19 +479,30 @@ where
 
             // Update the child count.
             if pte.is_none() {
-                // SAFETY: Here we have an exclusive access to the page.
-                unsafe { self.page.meta_mut().nr_children -= 1 };
+                self.meta_mut().nr_children -= 1;
             }
         } else if let Some(e) = pte {
             // SAFETY: This is safe as described in the above branch.
             unsafe { (self.as_ptr() as *mut E).add(idx).write(e) };
-            // SAFETY: Here we have an exclusive access to the page.
-            unsafe { self.page.meta_mut().nr_children += 1 };
+
+            self.meta_mut().nr_children += 1;
         }
     }
 
     fn as_ptr(&self) -> *const E {
         paddr_to_vaddr(self.start_paddr()) as *const E
+    }
+
+    fn meta(&self) -> &PageTablePageMetaInner {
+        // SAFETY: We have exclusively locked the page, so we can derive an immutable reference
+        // from an immutable reference to the lock guard.
+        unsafe { &*self.page.meta().inner.get() }
+    }
+
+    fn meta_mut(&mut self) -> &mut PageTablePageMetaInner {
+        // SAFETY: We have exclusively locked the page, so we can derive a mutable reference from a
+        // mutable reference to the lock guard.
+        unsafe { &mut *self.page.meta().inner.get() }
     }
 }
 
@@ -512,7 +524,9 @@ where
 
     fn on_drop(page: &mut Page<Self>) {
         let paddr = page.paddr();
-        let level = page.meta().level;
+
+        let inner = unsafe { &mut *page.meta().inner.get() };
+        let level = inner.level;
 
         // Drop the children.
         for i in 0..nr_subpage_per_huge::<C>() {
