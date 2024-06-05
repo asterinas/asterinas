@@ -4,6 +4,7 @@ mod clone;
 pub mod credentials;
 mod exit;
 mod kill;
+mod namespaces;
 pub mod posix_thread;
 #[expect(clippy::module_inception)]
 mod process;
@@ -19,9 +20,10 @@ mod task_set;
 mod term_status;
 mod wait;
 
-pub use clone::{clone_child, CloneArgs, CloneFlags};
+pub use clone::{clone_child, unshare, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
+pub use namespaces::Namespaces;
 pub use process::{
     ExitCode, JobControl, Pgid, Pid, Process, ProcessBuilder, ProcessGroup, Session, Sid, Terminal,
 };

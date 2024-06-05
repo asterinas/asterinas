@@ -2,9 +2,8 @@
 
 #![expect(dead_code)]
 #![expect(unused_variables)]
-
 use core::{
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, AtomicU8, Ordering},
     time::Duration,
 };
 
@@ -16,6 +15,7 @@ use super::{is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
     fs::{
         path::mount::MountNode,
+        thread_info::ThreadFsInfo,
         utils::{
             FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, Permission, XattrName,
             XattrNamespace, XattrSetFlags, NAME_MAX,
@@ -41,6 +41,7 @@ pub struct Dentry_ {
     children: RwMutex<DentryChildren>,
     flags: AtomicU32,
     this: Weak<Dentry_>,
+    mountpoint_count: AtomicU8,
 }
 
 impl Dentry_ {
@@ -63,6 +64,7 @@ impl Dentry_ {
             children: RwMutex::new(DentryChildren::new()),
             flags: AtomicU32::new(DentryFlags::empty().bits()),
             this: weak_self.clone(),
+            mountpoint_count: AtomicU8::new(0),
         })
     }
 
@@ -110,6 +112,12 @@ impl Dentry_ {
         &self.inode
     }
 
+    /// Get the mountpoint count.
+    fn mountpoint_count(&self) -> u8 {
+        self.mountpoint_count.load(Ordering::Acquire)
+    }
+
+    /// Get the DentryFlags.
     fn flags(&self) -> DentryFlags {
         let flags = self.flags.load(Ordering::Relaxed);
         DentryFlags::from_bits(flags).unwrap()
@@ -133,13 +141,17 @@ impl Dentry_ {
     }
 
     pub fn set_mountpoint_dentry(&self) {
+        self.mountpoint_count.fetch_add(1, Ordering::AcqRel);
         self.flags
             .fetch_or(DentryFlags::MOUNTED.bits(), Ordering::Release);
     }
 
     pub fn clear_mountpoint(&self) {
-        self.flags
-            .fetch_and(!(DentryFlags::MOUNTED.bits()), Ordering::Release);
+        self.mountpoint_count.fetch_sub(1, Ordering::AcqRel);
+        if self.mountpoint_count() == 0 {
+            self.flags
+                .fetch_and(!(DentryFlags::MOUNTED.bits()), Ordering::Release);
+        }
     }
 
     /// Currently, the root `Dentry_` of a fs is the root of a mount.
@@ -746,6 +758,18 @@ impl Dentry {
             .clone_mount_node_tree(&self.inner, recursive);
         src_mount.graft_mount_node_tree(dst_dentry)?;
         Ok(())
+    }
+
+    /// Move process's root from this mount node to another.
+    pub(super) fn move_root(&self, mount_node: &Arc<MountNode>, fs: &Arc<ThreadFsInfo>) {
+        let root_dentry = Self::new(mount_node.clone(), self.inner.clone());
+        fs.resolver().write().set_root(root_dentry);
+    }
+
+    /// Move process's cwd from this mount node to another.
+    pub(super) fn move_cwd(&self, mount_node: &Arc<MountNode>, fs: &Arc<ThreadFsInfo>) {
+        let cwd_dentry = Self::new(mount_node.clone(), self.inner.clone());
+        fs.resolver().write().set_cwd(cwd_dentry);
     }
 
     fn this(&self) -> Self {
