@@ -55,7 +55,6 @@ where
     [(); C::NR_LEVELS as usize]:,
 {
     pub(super) raw: Paddr,
-    pub(super) level: PagingLevel,
     _phantom: PhantomData<(E, C)>,
 }
 
@@ -73,7 +72,6 @@ where
         // transferring the ownership to a new handle. No increment of the reference
         // count is needed.
         let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
-        debug_assert!(page.meta().level == self.level);
 
         // Acquire the lock.
         while page
@@ -97,7 +95,6 @@ where
 
         Self {
             raw: self.raw,
-            level: self.level,
             _phantom: PhantomData,
         }
     }
@@ -120,8 +117,6 @@ where
             mm::CachePolicy,
         };
 
-        debug_assert_eq!(self.level, PagingConsts::NR_LEVELS);
-
         let last_activated_paddr = current_page_table_paddr();
 
         activate_page_table(self.raw, CachePolicy::Writeback);
@@ -136,7 +131,6 @@ where
         // Restore and drop the last activated page table.
         drop(Self {
             raw: last_activated_paddr,
-            level: PagingConsts::NR_LEVELS,
             _phantom: PhantomData,
         });
     }
@@ -147,8 +141,6 @@ where
     /// with [`Self::activate()`] in other senses.
     pub(super) unsafe fn first_activate(&self) {
         use crate::{arch::mm::activate_page_table, mm::CachePolicy};
-
-        debug_assert_eq!(self.level, PagingConsts::NR_LEVELS);
 
         self.inc_ref();
 
@@ -397,7 +389,6 @@ where
         } else {
             Self::PageTable(RawPageTableNode {
                 raw: pte.paddr(),
-                level: level - 1,
                 _phantom: PhantomData,
             })
         }
@@ -439,7 +430,6 @@ where
 
     /// Convert the handle into a raw handle to be stored in a PTE or CPU.
     pub(super) fn into_raw(self) -> RawPageTableNode<E, C> {
-        let level = self.level();
         let raw = self.page.paddr();
 
         self.page.meta().lock.store(0, Ordering::Release);
@@ -447,7 +437,6 @@ where
 
         RawPageTableNode {
             raw,
-            level,
             _phantom: PhantomData,
         }
     }
@@ -458,7 +447,6 @@ where
 
         RawPageTableNode {
             raw: self.page.paddr(),
-            level: self.level(),
             _phantom: PhantomData,
         }
     }
@@ -490,7 +478,6 @@ where
         core::mem::forget(inc_ref);
         Child::PageTable(RawPageTableNode {
             raw: paddr,
-            level: self.level() - 1,
             _phantom: PhantomData,
         })
     }
@@ -560,7 +547,6 @@ where
     ) -> Child<MaybeTrackedPage, E, C> {
         // They should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        debug_assert_eq!(pt.level, self.level() - 1);
 
         let pte = Some(E::new_pt(pt.paddr()));
         let child = self.overwrite_pte(idx, pte);

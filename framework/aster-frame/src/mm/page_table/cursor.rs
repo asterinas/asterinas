@@ -245,8 +245,12 @@ where
         // SAFETY: The mutable access to `self`/`this` is exclusive at this moment.
         let this = unsafe { &mut *this };
 
+        let nxt_lvl_frame_locked = nxt_lvl_frame.lock();
+
         this.level -= 1;
-        this.guards[(C::NR_LEVELS - self.level) as usize] = Some(nxt_lvl_frame.lock());
+        debug_assert_eq!(this.level, nxt_lvl_frame_locked.level());
+
+        this.guards[(C::NR_LEVELS - self.level) as usize] = Some(nxt_lvl_frame_locked);
 
         Ok(())
     }
