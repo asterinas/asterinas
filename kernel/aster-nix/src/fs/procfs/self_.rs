@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::*;
+use crate::{
+    fs::{
+        procfs::{ProcSymBuilder, SymOps},
+        utils::Inode,
+    },
+    prelude::*,
+};
 
 /// Represents the inode at `/proc/self`.
 pub struct SelfSymOps;

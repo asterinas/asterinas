@@ -62,6 +62,12 @@ impl CapSet {
     pub const fn new_root() -> Self {
         CapSet::SYS_ADMIN
     }
+
+    /// The most significant bit in a 64-bit `CapSet` that may be set to represent a Linux capability.
+    pub fn most_significant_bit() -> u8 {
+        // CHECKPOINT_RESTORE is the Linux capability with the largest numerical value
+        40
+    }
 }
 
 #[derive(Debug)]
