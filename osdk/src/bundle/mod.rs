@@ -219,17 +219,30 @@ impl Bundle {
             BootMethod::GrubRescueIso => {
                 let vm_image = self.manifest.vm_image.as_ref().unwrap();
                 assert!(matches!(vm_image.typ(), AsterVmImageType::GrubIso(_)));
+                let bootdev_opts = action
+                    .qemu
+                    .bootdev_append_options
+                    .as_deref()
+                    .unwrap_or(",index=2,media=cdrom");
                 qemu_cmd.arg("-drive").arg(format!(
-                    "file={},index=2,media=cdrom",
-                    self.path.join(vm_image.path()).to_string_lossy()
+                    "file={},format=raw{}",
+                    self.path.join(vm_image.path()).to_string_lossy(),
+                    bootdev_opts,
                 ));
             }
             BootMethod::GrubQcow2 => {
                 let vm_image = self.manifest.vm_image.as_ref().unwrap();
                 assert!(matches!(vm_image.typ(), AsterVmImageType::Qcow2(_)));
+                // FIXME: this doesn't work for regular QEMU, but may work for TDX.
+                let bootdev_opts = action
+                    .qemu
+                    .bootdev_append_options
+                    .as_deref()
+                    .unwrap_or(",if=virtio");
                 qemu_cmd.arg("-drive").arg(format!(
-                    "file={},index=0,media=disk,format=qcow2",
-                    self.path.join(vm_image.path()).to_string_lossy()
+                    "file={},format=qcow2{}",
+                    self.path.join(vm_image.path()).to_string_lossy(),
+                    bootdev_opts,
                 ));
             }
         };

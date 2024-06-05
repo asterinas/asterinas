@@ -72,6 +72,9 @@ fn apply_args_before_finalize(action_scheme: &mut ActionScheme, args: &CommonArg
         if let Some(path) = &args.qemu_exe {
             qemu.path = Some(path.clone());
         }
+        if let Some(bootdev_options) = &args.bootdev_append_options {
+            qemu.bootdev_append_options = Some(bootdev_options.clone());
+        }
     }
 }
 
