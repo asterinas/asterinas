@@ -57,7 +57,7 @@ use crate::{
         paddr_to_vaddr,
         page::{
             allocator::FRAME_ALLOCATOR,
-            meta::{FrameMeta, PageMeta, PageTablePageMeta, PageUsage},
+            meta::{FrameMeta, PageMeta, PageTablePageMeta, PageTablePageMetaInner, PageUsage},
             Page,
         },
         page_prop::PageProperty,
@@ -308,7 +308,7 @@ where
         };
 
         // Fast path
-        if pt.page.meta().nr_children == 0 {
+        if pt.meta().nr_children == 0 {
             return;
         }
 
@@ -328,7 +328,7 @@ where
         };
 
         // Fast path
-        if pt.page.meta().nr_children == 0 {
+        if pt.meta().nr_children == 0 {
             return;
         }
 
@@ -382,13 +382,14 @@ where
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel) -> Self {
         let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap() * PAGE_SIZE;
-        let mut page = Page::<PageTablePageMeta<E, C>>::from_unused(frame);
+        let page = Page::<PageTablePageMeta<E, C>>::from_unused(frame);
 
         // The lock is initialized as held.
         page.meta().lock.store(1, Ordering::Relaxed);
 
         // SAFETY: here the page exclusively owned by the newly created handle.
-        unsafe { page.meta_mut().level = level };
+        let inner = unsafe { &mut *page.meta().inner.get() };
+        inner.level = level;
 
         // Zero out the page table node.
         let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;
@@ -401,7 +402,7 @@ where
     }
 
     pub fn level(&self) -> PagingLevel {
-        self.page.meta().level
+        self.meta().level
     }
 
     /// Convert the handle into a raw handle to be stored in a PTE or CPU.
@@ -592,11 +593,9 @@ where
 
         // Update the child count.
         if existing_pte.is_present() && pte.is_none() {
-            // SAFETY: Here we have an exclusive access to the page.
-            unsafe { self.page.meta_mut().nr_children -= 1 };
+            self.meta_mut().nr_children -= 1;
         } else if !existing_pte.is_present() && pte.is_some() {
-            // SAFETY: Here we have an exclusive access to the page.
-            unsafe { self.page.meta_mut().nr_children += 1 };
+            self.meta_mut().nr_children += 1;
         }
 
         unsafe { Child::from_pte(existing_pte, self.level()) }
@@ -604,6 +603,16 @@ where
 
     fn as_ptr(&self) -> *const E {
         paddr_to_vaddr(self.start_paddr()) as *const E
+    }
+
+    fn meta(&self) -> &PageTablePageMetaInner {
+        // SAFETY: Here we have an exclusive access to the page.
+        unsafe { &*self.page.meta().inner.get() }
+    }
+
+    fn meta_mut(&mut self) -> &mut PageTablePageMetaInner {
+        // SAFETY: Here we have an exclusive access to the page.
+        unsafe { &mut *self.page.meta().inner.get() }
     }
 }
 
@@ -625,7 +634,9 @@ where
 
     fn on_drop(page: &mut Page<Self>) {
         let paddr = page.paddr();
-        let level = page.meta().level;
+
+        let inner = unsafe { &mut *page.meta().inner.get() };
+        let level = inner.level;
 
         // Drop the children.
         for i in 0..nr_subpage_per_huge::<C>() {

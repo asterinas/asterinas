@@ -152,15 +152,6 @@ impl<M: PageMeta> Page<M> {
         unsafe { &*self.ptr.cast() }
     }
 
-    /// Get the mutable metadata of this page.
-    ///
-    /// # Safety
-    ///
-    /// The caller should be sure that the page is exclusively owned.
-    pub(in crate::mm) unsafe fn meta_mut(&mut self) -> &mut M {
-        unsafe { &mut *self.ptr.cast::<M>().cast_mut() }
-    }
-
     fn ref_count(&self) -> &AtomicU32 {
         unsafe { &*core::ptr::addr_of!((*self.ptr).ref_count) }
     }
