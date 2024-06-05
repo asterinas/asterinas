@@ -203,6 +203,27 @@ fn clone_page(page: &Frame) -> Result<Frame> {
     Ok(new_page)
 }
 
+bitflags! {
+    /// Commit Flags.
+    pub struct CommitFlags: u8 {
+        /// Set this flag if the page will be written soon.
+        const WILL_WRITE  = 1;
+        /// Set this flag if the page will be completely overwritten.
+        /// This flag contains the WILL_WRITE flag.
+        const WILL_OVERWRITE = 3;
+    }
+}
+
+impl CommitFlags {
+    pub fn will_write(&self) -> bool {
+        self.contains(Self::WILL_WRITE)
+    }
+
+    pub fn will_overwrite(&self) -> bool {
+        self.contains(Self::WILL_OVERWRITE)
+    }
+}
+
 impl Vmo_ {
     /// Prepare a new `Frame` for the target index in pages, returning the new page as well as
     /// whether this page needs to be marked as exclusive.
@@ -218,7 +239,7 @@ impl Vmo_ {
         &self,
         page_idx: usize,
         is_cow_vmo: bool,
-        will_write: bool,
+        commit_flags: CommitFlags,
     ) -> Result<(Frame, bool)> {
         let (page, should_mark_exclusive) = match &self.pager {
             None => {
@@ -232,7 +253,7 @@ impl Vmo_ {
                 // VMO requires COW and the prepared page is about to undergo a write operation.
                 // At this point, the `Frame` obtained from the pager needs to be cloned to
                 // avoid subsequent modifications affecting the content of the `Frame` in the pager.
-                let trigger_cow = is_cow_vmo && will_write;
+                let trigger_cow = is_cow_vmo && commit_flags.will_write();
                 if trigger_cow {
                     // Condition 3.
                     (clone_page(&page)?, true)
@@ -245,11 +266,25 @@ impl Vmo_ {
         Ok((page, should_mark_exclusive))
     }
 
+    /// Prepare a new `Frame` for the target index in pages, returning the new page.
+    /// This function is only used when the new `Frame` will be completely overwritten
+    /// and we do not care about the content on the page.
+    fn prepare_overwrite(&self, page_idx: usize, is_cow_vmo: bool) -> Result<Frame> {
+        let page = if let Some(pager) = &self.pager
+            && !is_cow_vmo
+        {
+            pager.commit_overwrite(page_idx)?
+        } else {
+            FrameAllocOptions::new(1).alloc_single()?
+        };
+        Ok(page)
+    }
+
     fn commit_with_cursor(
         &self,
         cursor: &mut CursorMut<'_, Frame, VmoMark>,
         is_cow_vmo: bool,
-        will_write: bool,
+        commit_flags: CommitFlags,
     ) -> Result<Frame> {
         let (new_page, is_exclusive) = {
             let is_exclusive = cursor.is_marked(VmoMark::ExclusivePage);
@@ -257,15 +292,26 @@ impl Vmo_ {
                 // The necessary and sufficient condition for triggering the COW mechanism is that
                 // the current VMO requires copy-on-write, there is an impending write operation to the page,
                 // and the page is not exclusive.
-                let trigger_cow = is_cow_vmo && will_write && !is_exclusive;
+                let trigger_cow = is_cow_vmo && commit_flags.will_write() && !is_exclusive;
                 if !trigger_cow {
                     // Fast path: return the page directly.
                     return Ok(committed_page.clone());
                 }
 
-                (clone_page(&committed_page)?, true)
+                if commit_flags.will_overwrite() {
+                    (FrameAllocOptions::new(1).alloc_single()?, true)
+                } else {
+                    (clone_page(&committed_page)?, true)
+                }
+            } else if commit_flags.will_overwrite() {
+                // In this case, the page will be completely overwritten. The page only needs to
+                // be marked as `ExclusivePage` when the current VMO is a cow VMO.
+                (
+                    self.prepare_overwrite(cursor.index() as usize, is_cow_vmo)?,
+                    is_cow_vmo,
+                )
             } else {
-                self.prepare_page(cursor.index() as usize, is_cow_vmo, will_write)?
+                self.prepare_page(cursor.index() as usize, is_cow_vmo, commit_flags)?
             }
         };
 
@@ -284,7 +330,12 @@ impl Vmo_ {
         self.pages.with(|pages, size| {
             let is_cow_vmo = pages.is_marked(VmoMark::CowVmo);
             let mut cursor = pages.cursor_mut(page_idx as u64);
-            self.commit_with_cursor(&mut cursor, is_cow_vmo, will_write)
+            let commit_flags = if will_write {
+                CommitFlags::WILL_WRITE
+            } else {
+                CommitFlags::empty()
+            };
+            self.commit_with_cursor(&mut cursor, is_cow_vmo, commit_flags)
         })
     }
 
@@ -310,7 +361,7 @@ impl Vmo_ {
         &self,
         range: &Range<usize>,
         mut operate: F,
-        will_write: bool,
+        commit_flags: CommitFlags,
     ) -> Result<()>
     where
         F: FnMut(Frame),
@@ -328,7 +379,7 @@ impl Vmo_ {
             let mut cursor = pages.cursor_mut(page_idx_range.start as u64);
             for page_idx in page_idx_range {
                 let committed_page =
-                    self.commit_with_cursor(&mut cursor, is_cow_vmo, will_write)?;
+                    self.commit_with_cursor(&mut cursor, is_cow_vmo, commit_flags)?;
                 operate(committed_page);
                 cursor.next();
             }
@@ -356,7 +407,7 @@ impl Vmo_ {
             read_offset = 0;
         };
 
-        self.commit_and_operate(&read_range, read, false)
+        self.commit_and_operate(&read_range, read, CommitFlags::empty())
     }
 
     /// Write the specified amount of buffer content starting from the target offset in the VMO.
@@ -366,12 +417,30 @@ impl Vmo_ {
         let mut write_offset = offset % PAGE_SIZE;
         let mut buf_reader: VmReader = buf.into();
 
-        let write = move |page: Frame| {
+        let mut write = move |page: Frame| {
             page.writer().skip(write_offset).write(&mut buf_reader);
             write_offset = 0;
         };
 
-        self.commit_and_operate(&write_range, write, true)?;
+        if write_range.len() < PAGE_SIZE {
+            self.commit_and_operate(&write_range, write, CommitFlags::WILL_WRITE)?;
+        } else {
+            let temp = write_range.start + PAGE_SIZE - 1;
+            let up_align_start = temp - temp % PAGE_SIZE;
+            let down_align_end = write_range.end - write_range.end % PAGE_SIZE;
+            if write_range.start != up_align_start {
+                let head_range = write_range.start..up_align_start;
+                self.commit_and_operate(&head_range, &mut write, CommitFlags::WILL_WRITE)?;
+            }
+            if up_align_start != down_align_end {
+                let mid_range = up_align_start..down_align_end;
+                self.commit_and_operate(&mid_range, &mut write, CommitFlags::WILL_OVERWRITE)?;
+            }
+            if down_align_end != write_range.end {
+                let tail_range = down_align_end..write_range.end;
+                self.commit_and_operate(&tail_range, &mut write, CommitFlags::WILL_WRITE)?;
+            }
+        }
 
         let is_cow_vmo = self.is_cow_vmo();
         if let Some(pager) = &self.pager
