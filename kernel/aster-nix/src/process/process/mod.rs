@@ -45,7 +45,7 @@ pub type Pgid = u32;
 /// Session Id.
 pub type Sid = u32;
 
-pub type ExitCode = i32;
+pub type ExitCode = u32;
 
 pub(super) fn init() {
     timer_manager::init();
@@ -605,7 +605,7 @@ impl Process {
         *self.status.lock() = ProcessStatus::Zombie(term_status);
     }
 
-    pub fn exit_code(&self) -> Option<u32> {
+    pub fn exit_code(&self) -> Option<ExitCode> {
         match &*self.status.lock() {
             ProcessStatus::Runnable | ProcessStatus::Uninit => None,
             ProcessStatus::Zombie(term_status) => Some(term_status.as_u32()),

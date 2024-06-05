@@ -27,9 +27,9 @@ impl WaitOptions {
 pub fn wait_child_exit(
     child_filter: ProcessFilter,
     wait_options: WaitOptions,
-) -> Result<(Pid, ExitCode)> {
+) -> Result<Option<Arc<Process>>> {
     let current = current!();
-    let (pid, exit_code) = current.children_pauser().pause_until(|| {
+    let zombie_child = current.children_pauser().pause_until(|| {
         let unwaited_children = current
             .children()
             .lock()
@@ -54,29 +54,28 @@ pub fn wait_child_exit(
 
         if let Some(zombie_child) = zombie_child {
             let zombie_pid = zombie_child.pid();
-            let exit_code = zombie_child.exit_code().unwrap();
             if wait_options.contains(WaitOptions::WNOWAIT) {
                 // does not reap child, directly return
-                return Some(Ok((zombie_pid, exit_code)));
+                return Some(Ok(Some(zombie_child.clone())));
             } else {
-                let exit_code = reap_zombie_child(&current, zombie_pid);
-                return Some(Ok((zombie_pid, exit_code)));
+                reap_zombie_child(&current, zombie_pid);
+                return Some(Ok(Some(zombie_child.clone())));
             }
         }
 
         if wait_options.contains(WaitOptions::WNOHANG) {
-            return Some(Ok((0, 0)));
+            return Some(Ok(None));
         }
 
         // wait
         None
     })??;
 
-    Ok((pid, exit_code as _))
+    Ok(zombie_child)
 }
 
 /// Free zombie child with pid, returns the exit code of child process.
-fn reap_zombie_child(process: &Process, pid: Pid) -> u32 {
+fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
     let child_process = process.children().lock().remove(&pid).unwrap();
     assert!(child_process.is_zombie());
     child_process.root_vmar().destroy_all().unwrap();
