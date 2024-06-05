@@ -271,12 +271,16 @@ where
     fn level_down(&mut self) {
         debug_assert!(self.level > 1);
 
-        if let Child::PageTable(nxt_lvl_ptn) = self.cur_child() {
-            self.level -= 1;
-            self.guards[(self.level - 1) as usize] = Some(nxt_lvl_ptn.lock());
-        } else {
+        let Child::PageTable(nxt_lvl_ptn) = self.cur_child() else {
             panic!("Trying to level down when it is not mapped to a page table");
-        }
+        };
+
+        let nxt_lvl_ptn_locked = nxt_lvl_ptn.lock();
+
+        self.level -= 1;
+        debug_assert_eq!(self.level, nxt_lvl_ptn_locked.level());
+
+        self.guards[(self.level - 1) as usize] = Some(nxt_lvl_ptn_locked);
     }
 
     fn cur_node(&self) -> &PageTableNode<E, C> {
