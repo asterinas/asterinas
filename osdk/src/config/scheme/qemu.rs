@@ -16,6 +16,20 @@ pub struct QemuScheme {
     /// The additional arguments for running QEMU, in the form of raw
     /// command line arguments.
     pub args: Option<String>,
+    /// The additional qemu argument after the `-drive` option for the
+    /// boot device, in the form of raw command line arguments, comma
+    /// included. For example, `",if=virtio,media=disk,index=2"`.
+    /// The `format` and the `file` options are not allowed to set.
+    ///
+    /// This option only works with [`super::BootMethod::GrubQcow2`] and
+    /// [`super::BootMethod::GrubRescueIso`].
+    ///
+    /// This option exist because different firmwares may need
+    /// different interface types for the boot drive.
+    ///
+    /// See <https://www.qemu.org/docs/master/system/invocation.html>
+    /// for details about `-drive` option.
+    pub bootdev_append_options: Option<String>,
     /// The path of qemu
     pub path: Option<PathBuf>,
 }
@@ -23,6 +37,11 @@ pub struct QemuScheme {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Qemu {
     pub args: String,
+    /// This finalized config has a unorthodox `Option` because
+    /// we cannot provide a default value for it. The default
+    /// value is determined by the final running routine
+    /// [`crate::bundle::Bundle::run`].
+    pub bootdev_append_options: Option<String>,
     pub path: PathBuf,
 }
 
@@ -30,6 +49,7 @@ impl Default for Qemu {
     fn default() -> Self {
         Qemu {
             args: String::new(),
+            bootdev_append_options: None,
             path: PathBuf::from(get_default_arch().system_qemu()),
         }
     }
@@ -63,6 +83,7 @@ impl QemuScheme {
     pub fn finalize(self, arch: Arch) -> Qemu {
         Qemu {
             args: self.args.unwrap_or_default(),
+            bootdev_append_options: self.bootdev_append_options,
             path: self.path.unwrap_or(PathBuf::from(arch.system_qemu())),
         }
     }

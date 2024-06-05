@@ -310,6 +310,13 @@ pub struct CommonArgs {
     )]
     pub boot_method: Option<BootMethod>,
     #[arg(
+        long = "bootdev-append-options",
+        help = "Additional QEMU `-drive` options for the boot device",
+        value_name = "OPTIONS",
+        global = true
+    )]
+    pub bootdev_append_options: Option<String>,
+    #[arg(
         long = "display-grub-menu",
         help = "Display the GRUB menu if booting with GRUB",
         global = true
