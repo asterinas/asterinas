@@ -15,7 +15,7 @@ use super::{
     },
     status::ProcessStatus,
     task_set::TaskSet,
-    Credentials,
+    Credentials, Namespaces,
 };
 use crate::{
     device::tty::open_ntty_as_controlling_terminal,
@@ -81,6 +81,8 @@ pub struct Process {
     children: Mutex<BTreeMap<Pid, Arc<Process>>>,
     /// Process group
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
+    /// Namespaces
+    namespaces: Arc<Mutex<Namespaces>>,
     /// resource limits
     resource_limits: Mutex<ResourceLimits>,
     /// Scheduling priority nice value
@@ -176,7 +178,7 @@ impl Process {
         parent: Weak<Process>,
         executable_path: String,
         process_vm: ProcessVm,
-
+        namespaces: Arc<Mutex<Namespaces>>,
         resource_limits: ResourceLimits,
         nice: Nice,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
@@ -197,6 +199,7 @@ impl Process {
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
+            namespaces,
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
@@ -598,6 +601,17 @@ impl Process {
         self.process_vm.init_stack_reader()
     }
 
+    // ************** Namespaces ****************
+
+    pub fn namespaces(&self) -> &Arc<Mutex<Namespaces>> {
+        &self.namespaces
+    }
+
+    pub fn switch_namespaces(&self, namespaces: Arc<Mutex<Namespaces>>) {
+        let mut old_ns = self.namespaces.lock();
+        old_ns.reset_namespaces(&namespaces);
+    }
+
     // ****************** Signal ******************
 
     pub fn sig_dispositions(&self) -> &Arc<Mutex<SigDispositions>> {
@@ -690,6 +704,7 @@ mod test {
             parent,
             String::new(),
             ProcessVm::alloc(),
+            Arc::new(Mutex::new(Namespaces::default())),
             ResourceLimits::default(),
             Nice::default(),
             Arc::new(Mutex::new(SigDispositions::default())),
