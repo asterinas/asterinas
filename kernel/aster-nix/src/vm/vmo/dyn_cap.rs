@@ -7,7 +7,7 @@ use aster_rights::{Rights, TRights};
 
 use super::{
     options::{VmoCowChild, VmoSliceChild},
-    Vmo, VmoChildOptions, VmoRightsOp,
+    CommitFlags, Vmo, VmoChildOptions, VmoRightsOp,
 };
 use crate::prelude::*;
 
@@ -84,7 +84,8 @@ impl Vmo<Rights> {
     /// The method requires the Write right.
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
         self.check_rights(Rights::WRITE)?;
-        self.0.commit_and_operate(&range, |_| {}, false)?;
+        self.0
+            .commit_and_operate(&range, |_| {}, CommitFlags::empty())?;
         Ok(())
     }
 

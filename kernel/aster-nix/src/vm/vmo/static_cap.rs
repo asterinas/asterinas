@@ -8,7 +8,7 @@ use aster_rights_proc::require;
 
 use super::{
     options::{VmoCowChild, VmoSliceChild},
-    Vmo, VmoChildOptions, VmoRightsOp,
+    CommitFlags, Vmo, VmoChildOptions, VmoRightsOp,
 };
 use crate::prelude::*;
 
@@ -84,7 +84,8 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// The method requires the Write right.
     #[require(R > Write)]
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
-        self.0.commit_and_operate(&range, |_| {}, false)?;
+        self.0
+            .commit_and_operate(&range, |_| {}, CommitFlags::empty())?;
         Ok(())
     }
 

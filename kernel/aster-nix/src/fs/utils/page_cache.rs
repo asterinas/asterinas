@@ -198,6 +198,15 @@ impl Pager for PageCacheManager {
 
         Ok(())
     }
+
+    fn commit_overwrite(&self, idx: usize) -> Result<Frame> {
+        if let Some(page) = self.pages.lock().get(&idx) {
+            return Ok(page.frame.clone());
+        }
+
+        let page = Page::alloc_zero()?;
+        Ok(self.pages.lock().get_or_insert(idx, || page).frame.clone())
+    }
 }
 
 #[derive(Debug)]

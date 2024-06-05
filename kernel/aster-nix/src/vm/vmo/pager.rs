@@ -50,4 +50,9 @@ pub trait Pager: Send + Sync {
     /// such an assumption for its correctness; instead, it should simply ignore the
     /// call or return an error.
     fn decommit_page(&self, idx: usize) -> Result<()>;
+
+    /// Ask the pager to provide a frame at a specified index.
+    /// Notify the pager that the frame will be fully overwritten soon, so pager can
+    /// choose not to initialize it.
+    fn commit_overwrite(&self, idx: usize) -> Result<Frame>;
 }
