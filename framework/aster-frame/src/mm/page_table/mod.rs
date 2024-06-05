@@ -82,7 +82,7 @@ pub(crate) struct PageTable<
 > where
     [(); C::NR_LEVELS as usize]:,
 {
-    root: RawPageTableNode<E, C>,
+    root: RootPageTableNode<E, C>,
     _phantom: PhantomData<M>,
 }
 
@@ -101,6 +101,7 @@ impl PageTable<UserMode> {
     /// TODO: We may consider making the page table itself copy-on-write.
     pub(crate) fn fork_copy_on_write(&self) -> Self {
         let mut cursor = self.cursor_mut(&UserMode::VADDR_RANGE).unwrap();
+
         // SAFETY: Protecting the user page table is safe.
         unsafe {
             cursor
@@ -111,16 +112,21 @@ impl PageTable<UserMode> {
                 )
                 .unwrap();
         };
+
         let root_frame = cursor.leak_root_guard().unwrap();
+
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
+
         let new_root_frame = unsafe {
-            root_frame.make_copy(
+            RootPageTableNode::make_copy_locked(
+                &root_frame,
                 0..NR_PTES_PER_NODE / 2,
                 NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE,
             )
         };
+
         PageTable::<UserMode> {
-            root: new_root_frame.into_raw(),
+            root: new_root_frame,
             _phantom: PhantomData,
         }
     }
@@ -135,12 +141,15 @@ impl PageTable<KernelMode> {
     /// Then, one can use a user page table to call [`fork_copy_on_write`], creating
     /// other child page tables.
     pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let root_frame = self.root.clone_shallow().lock();
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
-        let new_root_frame =
-            unsafe { root_frame.make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE) };
+
+        let new_root_frame = unsafe {
+            self.root
+                .make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE)
+        };
+
         PageTable::<UserMode> {
-            root: new_root_frame.into_raw(),
+            root: new_root_frame,
             _phantom: PhantomData,
         }
     }
@@ -174,7 +183,7 @@ where
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub(crate) fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS).into_raw(),
+            root: RootPageTableNode::alloc(),
             _phantom: PhantomData,
         }
     }
@@ -254,7 +263,7 @@ where
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
     pub(crate) unsafe fn shallow_copy(&self) -> Self {
         PageTable {
-            root: self.root.clone_shallow(),
+            root: self.root.clone_shallow_root(),
             _phantom: PhantomData,
         }
     }

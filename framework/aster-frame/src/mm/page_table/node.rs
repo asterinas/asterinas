@@ -38,11 +38,17 @@
 //!
 //! Users will need additional unsafe code to make further assumptions about the validity of the
 //! page table contents. For example, if users want to activate a page table, they need to call the
-//! unsafe method [`RawPageTableNode::activate`]; if users want to assume that the page table entry
-//! points to a tracked frame (instead of arbitrary regions of memory), they need to call
+//! unsafe method [`RootPageTableNode::activate`]; if users want to assume that the page table
+//! entry points to a tracked frame (instead of arbitrary regions of memory), they need to call
 //! [`MaybeTracked::assume_tracked`].
 
-use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, panic, sync::atomic::Ordering};
+use core::{
+    marker::PhantomData,
+    mem::ManuallyDrop,
+    ops::{Deref, DerefMut, Range},
+    panic,
+    sync::atomic::Ordering,
+};
 
 use super::{nr_subpage_per_huge, page_size, PageTableEntryTrait};
 use crate::{
@@ -115,54 +121,6 @@ where
             raw: self.raw,
             _phantom: PhantomData,
         }
-    }
-
-    /// Activate the page table assuming it is a root page table.
-    ///
-    /// Here we ensure not dropping an active page table by making a
-    /// processor a page table owner. When activating a page table, the
-    /// reference count of the last activated page table is decremented.
-    /// And that of the current page table is incremented.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the page table to be activated has
-    /// proper mappings for the kernel and has the correct const parameters
-    /// matching the current CPU.
-    pub(crate) unsafe fn activate(&self) {
-        use crate::{
-            arch::mm::{activate_page_table, current_page_table_paddr},
-            mm::CachePolicy,
-        };
-
-        let last_activated_paddr = current_page_table_paddr();
-
-        activate_page_table(self.raw, CachePolicy::Writeback);
-
-        if last_activated_paddr == self.raw {
-            return;
-        }
-
-        // Increment the reference count of the current page table.
-        self.inc_ref();
-
-        // Restore and drop the last activated page table.
-        drop(Self {
-            raw: last_activated_paddr,
-            _phantom: PhantomData,
-        });
-    }
-
-    /// Activate the (root) page table assuming it is the first activation.
-    ///
-    /// It will not try dropping the last activate page table. It is the same
-    /// with [`Self::activate()`] in other senses.
-    pub(super) unsafe fn first_activate(&self) {
-        use crate::{arch::mm::activate_page_table, mm::CachePolicy};
-
-        self.inc_ref();
-
-        activate_page_table(self.raw, CachePolicy::Writeback);
     }
 
     fn inc_ref(&self) {
@@ -498,54 +456,6 @@ where
         })
     }
 
-    /// Make a copy of the page table node.
-    ///
-    /// This function allows you to control about the way to copy the children.
-    /// For indexes in `deep`, the children are deep copied and this function will be recursively called.
-    /// For indexes in `shallow`, the children are shallow copied as new references.
-    ///
-    /// You cannot shallow copy a child that is mapped to a frame. Deep copying a frame child will not
-    /// copy the mapped frame but will copy the handle to the frame.
-    ///
-    /// You cannot either deep copy or shallow copy a child that is mapped to an untracked frame.
-    ///
-    /// The ranges must be disjoint.
-    pub(super) unsafe fn make_copy(&self, deep: Range<usize>, shallow: Range<usize>) -> Self {
-        debug_assert!(deep.end <= shallow.start || deep.start >= shallow.end);
-
-        let mut new_frame = Self::alloc(self.level());
-
-        for i in deep {
-            match self.child(i) {
-                Child::PageTable(pt) => {
-                    let guard = pt.clone_shallow().lock();
-                    let new_child = guard.make_copy(0..nr_subpage_per_huge::<C>(), 0..0);
-                    new_frame.set_child_pt(i, new_child.into_raw()).drop_none();
-                }
-                Child::Page(maybe_tracked) => {
-                    let (frame, prop) = unsafe { maybe_tracked.assume_tracked() };
-                    new_frame.set_child_frame(i, frame, prop).drop_none();
-                }
-                Child::None => (),
-            }
-        }
-
-        for i in shallow {
-            debug_assert_eq!(self.level(), C::NR_LEVELS);
-            match self.child(i) {
-                Child::PageTable(pt) => {
-                    new_frame.set_child_pt(i, pt.clone_shallow()).drop_none();
-                }
-                Child::Page(_) => {
-                    panic!("cannot make shallow copies to pages")
-                }
-                Child::None => (),
-            }
-        }
-
-        new_frame
-    }
-
     /// Remove a child if the child at the given index is present.
     pub(super) fn unset_child(&mut self, idx: usize) -> Child<MaybeTrackedPage, E, C> {
         assert!(idx < nr_subpage_per_huge::<C>());
@@ -741,5 +651,209 @@ where
             .unwrap()
             .lock()
             .dealloc(paddr / PAGE_SIZE, 1);
+    }
+}
+
+/// Most methods of [`PageTableNode`] do not make any assumption of the page table contents. But
+/// here are some exceptions.
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    /// Make a deep copy of the child at the given index.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the child and all its descendants contain only tracked frames
+    /// and no untracked memory regions.
+    unsafe fn deep_copy_child_from(&mut self, idx: usize, src: &PageTableNode<E, C>) {
+        match src.child(idx) {
+            Child::PageTable(pt) => {
+                let guard = pt.clone_shallow().lock();
+                // SAFETY: The safety is upheld by the caller.
+                let new_child = unsafe { guard.deep_copy() };
+                self.set_child_pt(idx, new_child.into_raw()).drop_none();
+            }
+            Child::Page(maybe_tracked) => {
+                // SAFETY: The safety is upheld by the caller.
+                let (frame, prop) = unsafe { maybe_tracked.assume_tracked() };
+                self.set_child_frame(idx, frame, prop).drop_none();
+            }
+            Child::None => (),
+        }
+    }
+
+    /// Makes a deep copy.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the page table and all its descendants contain only tracked
+    /// frames and no untracked memory regions.
+    unsafe fn deep_copy(&self) -> Self {
+        let mut new_frame = Self::alloc(self.level());
+
+        for i in 0..nr_subpage_per_huge::<C>() {
+            // SAFETY: The safety is upheld by the caller.
+            unsafe {
+                new_frame.deep_copy_child_from(i, self);
+            }
+        }
+
+        new_frame
+    }
+}
+
+/// A root page table node.
+#[derive(Debug)]
+pub(super) struct RootPageTableNode<E: PageTableEntryTrait, C: PagingConstsTrait>(
+    RawPageTableNode<E, C>,
+)
+where
+    [(); C::NR_LEVELS as usize]:;
+
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Deref for RootPageTableNode<E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    type Target = RawPageTableNode<E, C>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> DerefMut for RootPageTableNode<E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> RootPageTableNode<E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    pub(super) fn alloc() -> Self {
+        Self(PageTableNode::alloc(C::NR_LEVELS).into_raw())
+    }
+
+    /// Activate the page table assuming it is a root page table.
+    ///
+    /// Here we ensure not dropping an active page table by making a
+    /// processor a page table owner. When activating a page table, the
+    /// reference count of the last activated page table is decremented.
+    /// And that of the current page table is incremented.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the page table to be activated has
+    /// proper mappings for the kernel and has the correct const parameters
+    /// matching the current CPU.
+    pub(crate) unsafe fn activate(&self) {
+        use crate::{
+            arch::mm::{activate_page_table, current_page_table_paddr},
+            mm::CachePolicy,
+        };
+
+        let last_activated_paddr = current_page_table_paddr();
+
+        activate_page_table(self.raw, CachePolicy::Writeback);
+
+        if last_activated_paddr == self.raw {
+            return;
+        }
+
+        // Increment the reference count of the current page table.
+        self.inc_ref();
+
+        // Restore and drop the last activated page table.
+        drop(RawPageTableNode::<E, C> {
+            raw: last_activated_paddr,
+            _phantom: PhantomData,
+        });
+    }
+
+    /// Activate the (root) page table assuming it is the first activation.
+    ///
+    /// It will not try dropping the last activate page table. It is the same
+    /// with [`Self::activate()`] in other senses.
+    pub(super) unsafe fn first_activate(&self) {
+        use crate::{arch::mm::activate_page_table, mm::CachePolicy};
+
+        self.inc_ref();
+
+        activate_page_table(self.raw, CachePolicy::Writeback);
+    }
+
+    /// Makes a copy of the page table.
+    ///
+    /// This function allows the caller to control about the way to copy the children.
+    /// For indexes in `deep`, the children are deeply copied in a recursive manner.
+    /// For indexes in `shallow`, the children are shallowly copied as new references.
+    ///
+    /// # Panic
+    ///
+    /// The method will panic if the two ranges `deep` and `shallow` are not disjoint.
+    ///
+    /// The method will also panic if the children to be shallowly copied point to pages instead of
+    /// page tables.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the children to be deeply copied (recursively) contain only
+    /// tracked frames and no untracked memory regions.
+    pub(super) unsafe fn make_copy(&self, deep: Range<usize>, shallow: Range<usize>) -> Self {
+        Self::make_copy_locked(&self.clone_shallow().lock(), deep, shallow)
+    }
+
+    /// Makes a copy of the page table.
+    ///
+    /// This method is similar to [`Self::make_copy`], but takes a locked page table to avoid race
+    /// conditions.
+    ///
+    /// # Panic
+    ///
+    /// In addition to the scenarios described by [`Self::make_copy`], this method will
+    /// panic if the given page table is not a root page table.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the children to be deeply copied recursively contain only
+    /// tracked frames and no untracked memory regions.
+    pub(super) unsafe fn make_copy_locked(
+        locked: &PageTableNode<E, C>,
+        deep: Range<usize>,
+        shallow: Range<usize>,
+    ) -> Self {
+        // This is a heavy method and shouldn't be called that often, so a few more checks like
+        // this are just fine.
+        assert!(deep.end <= shallow.start || deep.start >= shallow.end);
+        assert!(locked.level() == C::NR_LEVELS);
+
+        let mut new_frame = PageTableNode::alloc(C::NR_LEVELS);
+
+        for i in deep {
+            new_frame.deep_copy_child_from(i, locked);
+        }
+
+        for i in shallow {
+            match locked.child(i) {
+                Child::PageTable(pt) => {
+                    new_frame.set_child_pt(i, pt.clone_shallow()).drop_none();
+                }
+                Child::Page(_) => {
+                    panic!("cannot make shallow copies to pages")
+                }
+                Child::None => (),
+            }
+        }
+
+        Self(new_frame.into_raw())
+    }
+
+    pub(super) fn clone_shallow_root(&self) -> Self {
+        Self(self.0.clone_shallow())
     }
 }
