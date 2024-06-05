@@ -4,6 +4,7 @@ mod clone;
 pub mod credentials;
 mod exit;
 mod kill;
+pub(super) mod namespaces;
 pub mod posix_thread;
 #[allow(clippy::module_inception)]
 mod process;
@@ -18,7 +19,7 @@ pub mod sync;
 mod term_status;
 mod wait;
 
-pub use clone::{clone_child, CloneArgs, CloneFlags};
+pub use clone::{clone_child, unshare, CloneArgs, CloneFlags};
 pub use credentials::{credentials, credentials_mut, Credentials, Gid, Uid};
 pub use exit::do_exit_group;
 pub use kill::{kill, kill_all, kill_group, tgkill};

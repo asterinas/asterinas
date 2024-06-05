@@ -33,6 +33,7 @@ TESTS ?= \
 	readv_test \
 	write_test \
 	utimes_test \
+	unshare_test \
 	# The end of the list
 
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
