@@ -19,7 +19,7 @@ pub(in crate::mm) mod meta;
 
 use core::{
     marker::PhantomData,
-    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicU32, AtomicU8, AtomicUsize, Ordering},
 };
 
 use meta::{mapping, MetaSlot, PageMeta};
@@ -88,18 +88,18 @@ impl<M: PageMeta> Page<M> {
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
-        let usage = unsafe { &(*ptr).usage };
-        let get_ref_count = unsafe { &(*ptr).ref_count };
+        let usage = unsafe { &*core::ptr::addr_of!((*ptr).usage) };
+        let ref_count = unsafe { &*core::ptr::addr_of!((*ptr).ref_count) };
 
         usage
             .compare_exchange(0, M::USAGE as u8, Ordering::SeqCst, Ordering::Relaxed)
             .map_err(|_| PageHandleError::InUse)?;
 
-        let old_get_ref_count = get_ref_count.fetch_add(1, Ordering::Relaxed);
-        debug_assert!(old_get_ref_count == 0);
+        let old_ref_count = ref_count.fetch_add(1, Ordering::Relaxed);
+        debug_assert!(old_ref_count == 0);
 
         // Initialize the metadata
-        unsafe { (ptr as *mut M).write(M::default()) }
+        unsafe { ptr.cast::<M>().cast_mut().write(M::default()) }
 
         Ok(Self {
             ptr,
@@ -149,7 +149,7 @@ impl<M: PageMeta> Page<M> {
 
     /// Get the metadata of this page.
     pub fn meta(&self) -> &M {
-        unsafe { &*(self.ptr as *const M) }
+        unsafe { &*self.ptr.cast() }
     }
 
     /// Get the mutable metadata of this page.
@@ -158,17 +158,21 @@ impl<M: PageMeta> Page<M> {
     ///
     /// The caller should be sure that the page is exclusively owned.
     pub(in crate::mm) unsafe fn meta_mut(&mut self) -> &mut M {
-        unsafe { &mut *(self.ptr as *mut M) }
+        unsafe { &mut *self.ptr.cast::<M>().cast_mut() }
     }
 
-    fn get_ref_count(&self) -> &AtomicU32 {
-        unsafe { &(*self.ptr).ref_count }
+    fn ref_count(&self) -> &AtomicU32 {
+        unsafe { &*core::ptr::addr_of!((*self.ptr).ref_count) }
+    }
+
+    fn usage(&self) -> &AtomicU8 {
+        unsafe { &*core::ptr::addr_of!((*self.ptr).usage) }
     }
 }
 
 impl<M: PageMeta> Clone for Page<M> {
     fn clone(&self) -> Self {
-        self.get_ref_count().fetch_add(1, Ordering::Relaxed);
+        self.ref_count().fetch_add(1, Ordering::Relaxed);
         Self {
             ptr: self.ptr,
             _marker: PhantomData,
@@ -178,7 +182,7 @@ impl<M: PageMeta> Clone for Page<M> {
 
 impl<M: PageMeta> Drop for Page<M> {
     fn drop(&mut self) {
-        if self.get_ref_count().fetch_sub(1, Ordering::Release) == 1 {
+        if self.ref_count().fetch_sub(1, Ordering::Release) == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             core::sync::atomic::fence(Ordering::Acquire);
@@ -186,11 +190,11 @@ impl<M: PageMeta> Drop for Page<M> {
             M::on_drop(self);
             // Drop the metadata.
             unsafe {
-                core::ptr::drop_in_place(self.ptr as *mut M);
+                core::ptr::drop_in_place(self.ptr.cast::<M>().cast_mut());
             }
             // No handles means no usage. This also releases the page as unused for further
             // calls to `Page::from_unused`.
-            unsafe { &*self.ptr }.usage.store(0, Ordering::Release);
+            self.usage().store(0, Ordering::Release);
         };
     }
 }
