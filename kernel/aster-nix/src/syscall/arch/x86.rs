@@ -40,6 +40,7 @@ use crate::syscall::{
     getrandom::sys_getrandom,
     getresgid::sys_getresgid,
     getresuid::sys_getresuid,
+    getrusage::sys_getrusage,
     getsid::sys_getsid,
     getsockname::sys_getsockname,
     getsockopt::sys_getsockopt,
@@ -172,7 +173,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FORK = 57              => sys_fork(args[..0], &context);
     SYS_EXECVE = 59            => sys_execve(args[..3], &mut context);
     SYS_EXIT = 60              => sys_exit(args[..1]);
-    SYS_WAIT4 = 61             => sys_wait4(args[..3]);
+    SYS_WAIT4 = 61             => sys_wait4(args[..4]);
     SYS_KILL = 62              => sys_kill(args[..2]);
     SYS_UNAME = 63             => sys_uname(args[..1]);
     SYS_FCNTL = 72             => sys_fcntl(args[..3]);
@@ -197,6 +198,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_LCHOWN = 94            => sys_lchown(args[..3]);
     SYS_UMASK = 95             => sys_umask(args[..1]);
     SYS_GETTIMEOFDAY = 96      => sys_gettimeofday(args[..1]);
+    SYS_GETRUSAGE = 98         => sys_getrusage(args[..2]);
     SYS_GETUID = 102           => sys_getuid(args[..0]);
     SYS_GETGID = 104           => sys_getgid(args[..0]);
     SYS_SETUID = 105           => sys_setuid(args[..1]);

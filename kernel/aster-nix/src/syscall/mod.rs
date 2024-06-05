@@ -48,6 +48,7 @@ mod getppid;
 mod getrandom;
 mod getresgid;
 mod getresuid;
+mod getrusage;
 mod getsid;
 mod getsockname;
 mod getsockopt;
