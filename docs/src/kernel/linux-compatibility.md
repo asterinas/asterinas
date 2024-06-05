@@ -56,9 +56,9 @@ provided by Linux on x86-64 architecture.
 | 33      | dup2             | ✅              |
 | 34      | pause            | ✅              |
 | 35      | nanosleep        | ✅              |
-| 36      | getitimer        | ❌              |
+| 36      | getitimer        | ✅              |
 | 37      | alarm            | ✅              |
-| 38      | setitimer        | ❌              |
+| 38      | setitimer        | ✅              |
 | 39      | getpid           | ✅              |
 | 40      | sendfile         | ✅              |
 | 41      | socket           | ✅              |
@@ -118,7 +118,7 @@ provided by Linux on x86-64 architecture.
 | 95      | umask            | ✅              |
 | 96      | gettimeofday     | ✅              |
 | 97      | getrlimit        | ❌              |
-| 98      | getrusage        | ❌              |
+| 98      | getrusage        | ✅              |
 | 99      | sysinfo          | ❌              |
 | 100     | times            | ❌              |
 | 101     | ptrace           | ❌              |
@@ -242,11 +242,11 @@ provided by Linux on x86-64 architecture.
 | 219     | restart_syscall  | ❌              |
 | 220     | semtimedop       | ❌              |
 | 221     | fadvise64        | ❌              |
-| 222     | timer_create     | ❌              |
-| 223     | timer_settime    | ❌              |
-| 224     | timer_gettime    | ❌              |
+| 222     | timer_create     | ✅              |
+| 223     | timer_settime    | ✅              |
+| 224     | timer_gettime    | ✅              |
 | 225     | timer_getoverrun | ❌              |
-| 226     | timer_delete     | ❌              |
+| 226     | timer_delete     | ✅              |
 | 227     | clock_settime    | ❌              |
 | 228     | clock_gettime    | ✅              |
 | 229     | clock_getres     | ❌              |
