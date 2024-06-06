@@ -26,7 +26,7 @@ use crate::syscall::{
     fsync::sys_fsync,
     futex::sys_futex,
     getcwd::sys_getcwd,
-    getdents64::sys_getdents64,
+    getdents64::{sys_getdents, sys_getdents64},
     getegid::sys_getegid,
     geteuid::sys_geteuid,
     getgid::sys_getgid,
@@ -168,6 +168,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FSYNC = 74             => sys_fsync(args[..1]);
     SYS_TRUNCATE = 76          => sys_truncate(args[..2]);
     SYS_FTRUNCATE = 77         => sys_ftruncate(args[..2]);
+    SYS_GETDENTS = 78          => sys_getdents(args[..3]);
     SYS_GETCWD = 79            => sys_getcwd(args[..2]);
     SYS_CHDIR = 80             => sys_chdir(args[..1]);
     SYS_FCHDIR = 81            => sys_fchdir(args[..1]);

@@ -98,7 +98,7 @@ provided by Linux on x86-64 architecture.
 | 75      | fdatasync        | ❌              |
 | 76      | truncate         | ✅              |
 | 77      | ftruncate        | ✅              |
-| 78      | getdents         | ❌              |
+| 78      | getdents         | ✅              |
 | 79      | getcwd           | ✅              |
 | 80      | chdir            | ✅              |
 | 81      | fchdir           | ✅              |
