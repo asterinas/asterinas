@@ -69,10 +69,13 @@ where
 
     /// Converts a raw handle to an accessible handle by pertaining the lock.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
+        // Prevent dropping the handle.
+        let this = ManuallyDrop::new(self);
+
         // SAFETY: The physical address in the raw handle is valid and we are
         // transferring the ownership to a new handle. No increment of the reference
         // count is needed.
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
+        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(this.paddr()) };
 
         // Acquire the lock.
         while page
@@ -83,9 +86,6 @@ where
         {
             core::hint::spin_loop();
         }
-
-        // Prevent dropping the handle.
-        let _ = ManuallyDrop::new(self);
 
         PageTableNode::<E, C> { page }
     }
@@ -149,11 +149,11 @@ where
     }
 
     fn inc_ref(&self) {
-        // SAFETY: The physical address in the raw handle is valid and we are
-        // incrementing the reference count by cloning and forgetting.
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
-        core::mem::forget(page.clone());
-        core::mem::forget(page);
+        // SAFETY: We have a reference count to the page and can safely increase the reference
+        // count by one more.
+        unsafe {
+            Page::<PageTablePageMeta<E, C>>::inc_ref(self.paddr());
+        }
     }
 }
 
@@ -264,24 +264,22 @@ where
         } else {
             let paddr = pte.paddr();
             if !pte.is_last(self.level()) {
-                // SAFETY: The physical address is recorded in a valid PTE
-                // which would be casted from a handle. We are incrementing
-                // the reference count so we restore, clone, and forget both.
-                let node = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(paddr) };
-                let inc_ref = node.clone();
-                core::mem::forget(node);
-                core::mem::forget(inc_ref);
+                // SAFETY: We have a reference count to the page and can safely increase the reference
+                // count by one more.
+                unsafe {
+                    Page::<PageTablePageMeta<E, C>>::inc_ref(paddr);
+                }
                 Child::PageTable(RawPageTableNode {
                     raw: paddr,
                     _phantom: PhantomData,
                 })
             } else if in_tracked_range {
-                // SAFETY: The physical address is recorded in a valid PTE
-                // which would be casted from a handle. We are incrementing
-                // the reference count so we restore and forget a cloned one.
-                let page = unsafe { DynPage::from_raw(paddr) };
-                core::mem::forget(page.clone());
-                Child::Page(page)
+                // SAFETY: We have a reference count to the page and can safely increase the reference
+                // count by one more.
+                unsafe {
+                    DynPage::inc_ref(paddr);
+                }
+                Child::Page(unsafe { DynPage::from_raw(paddr) })
             } else {
                 Child::Untracked(paddr)
             }
@@ -358,10 +356,11 @@ where
         // They should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
+        // The ownership is transferred to a raw PTE. Don't drop the handle.
+        let pt = ManuallyDrop::new(pt);
+
         let pte = Some(E::new_pt(pt.paddr()));
         self.overwrite_pte(idx, pte, in_tracked_range);
-        // The ownership is transferred to a raw PTE. Don't drop the handle.
-        let _ = ManuallyDrop::new(pt);
     }
 
     /// Map a page at a given index.
