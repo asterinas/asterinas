@@ -116,6 +116,17 @@ impl<M: PageMeta> Page<M> {
         }
     }
 
+    /// Increase the reference count of the page by one.
+    ///
+    /// # Safety
+    ///
+    /// The physical address must represent a valid page and the caller must already hold one
+    /// reference count.
+    pub(in crate::mm) unsafe fn inc_ref(paddr: Paddr) {
+        let page = unsafe { ManuallyDrop::new(Self::from_raw(paddr)) };
+        let _page = page.clone();
+    }
+
     /// Get the physical address.
     pub fn paddr(&self) -> Paddr {
         mapping::meta_to_page::<PagingConsts>(self.ptr as Vaddr)
@@ -209,6 +220,17 @@ impl DynPage {
         let ptr = vaddr as *const MetaSlot;
 
         Self { ptr }
+    }
+
+    /// Increase the reference count of the page by one.
+    ///
+    /// # Safety
+    ///
+    /// The physical address must represent a valid page and the caller must already hold one
+    /// reference count.
+    pub(in crate::mm) unsafe fn inc_ref(paddr: Paddr) {
+        let page = unsafe { ManuallyDrop::new(Self::from_raw(paddr)) };
+        let _page = page.clone();
     }
 
     /// Get the physical address of the start of the page
