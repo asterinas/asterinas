@@ -8,6 +8,7 @@ use ostd::mm::VmIo;
 use crate::{
     net::socket::{ip::stream::CongestionControl, LingerOption},
     prelude::*,
+    time::timeval_t,
     vm::vmar::Vmar,
 };
 
@@ -146,16 +147,9 @@ impl ReadFromUser for Duration {
         if (max_len as usize) < core::mem::size_of::<Duration>() {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
-        let mut bytes = vec![0; max_len as usize];
-        vmar.read_bytes(addr, &mut bytes)?;
+        let timeval: timeval_t = vmar.read_val(addr)?;
 
-        let secs_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
-        let nanos_bytes: [u8; 4] = bytes[8..12].try_into().unwrap();
-
-        let secs = u64::from_ne_bytes(secs_bytes);
-        let nanos = u32::from_ne_bytes(nanos_bytes);
-
-        Ok(Duration::new(secs, nanos))
+        Ok(Duration::from(timeval))
     }
 }
 
@@ -167,11 +161,8 @@ impl WriteToUser for Duration {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
 
-        let secs_bytes = self.as_secs().to_ne_bytes();
-        let nanos_bytes = self.subsec_nanos().to_ne_bytes();
-
-        vmar.write_bytes(addr, &secs_bytes)?;
-        vmar.write_bytes(addr + secs_bytes.len(), &nanos_bytes)?;
+        let timeval: timeval_t = timeval_t::from(*self);
+        vmar.write_val(addr, &timeval)?;
 
         Ok(write_len)
     }
