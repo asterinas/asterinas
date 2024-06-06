@@ -618,7 +618,7 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageMeta for PageTablePageMeta<E, C>
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageMeta for PageTablePageMeta<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {

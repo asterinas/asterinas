@@ -119,7 +119,12 @@ const_assert_eq!(size_of::<MetaSlot>(), 16);
 /// If a page type needs specific drop behavior, it should specify
 /// when implementing this trait. When we drop the last handle to
 /// this page, the `on_drop` method will be called.
-pub trait PageMeta: Default + Sync + private::Sealed + Sized {
+///
+/// # Safety
+///
+/// Implementers must ensure that the structure is listed in
+/// [`MetaSlotInner`] to avoid potential memory safety issues.
+pub unsafe trait PageMeta: Default + Sync + private::Sealed + Sized {
     const USAGE: PageUsage;
 
     fn on_drop(page: &mut Page<Self>);
@@ -183,7 +188,7 @@ unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sync for PageTablePage
 pub struct MetaPageMeta {}
 
 impl Sealed for MetaPageMeta {}
-impl PageMeta for MetaPageMeta {
+unsafe impl PageMeta for MetaPageMeta {
     const USAGE: PageUsage = PageUsage::Meta;
     fn on_drop(_page: &mut Page<Self>) {
         panic!("Meta pages are currently not allowed to be dropped");
@@ -195,7 +200,7 @@ impl PageMeta for MetaPageMeta {
 pub struct KernelMeta {}
 
 impl Sealed for KernelMeta {}
-impl PageMeta for KernelMeta {
+unsafe impl PageMeta for KernelMeta {
     const USAGE: PageUsage = PageUsage::Kernel;
     fn on_drop(_page: &mut Page<Self>) {
         panic!("Kernel pages are not allowed to be dropped");

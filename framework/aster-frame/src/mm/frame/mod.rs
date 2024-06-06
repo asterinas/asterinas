@@ -132,7 +132,7 @@ impl VmIo for Frame {
     }
 }
 
-impl PageMeta for FrameMeta {
+unsafe impl PageMeta for FrameMeta {
     const USAGE: PageUsage = PageUsage::Frame;
 
     fn on_drop(page: &mut Page<Self>) {
