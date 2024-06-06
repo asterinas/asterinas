@@ -90,7 +90,7 @@ impl Elf {
     }
 
     /// read the ldso path from the elf interpret section
-    pub fn ldso_path(&self, file_header_buf: &[u8]) -> Result<String> {
+    pub fn ldso_path(&self, file_header_buf: &[u8]) -> Result<Option<String>> {
         for program_header in &self.program_headers {
             let type_ = program_header.get_type().map_err(|_| {
                 Error::with_message(Errno::ENOEXEC, "parse program header type fails")
@@ -102,13 +102,10 @@ impl Elf {
                 let ldso = CStr::from_bytes_with_nul(
                     &file_header_buf[file_offset..file_offset + file_size],
                 )?;
-                return Ok(ldso.to_string_lossy().to_string());
+                return Ok(Some(ldso.to_string_lossy().to_string()));
             }
         }
-        return_errno_with_message!(
-            Errno::ENOEXEC,
-            "cannot find interpreter section in dyn-link program"
-        )
+        Ok(None)
     }
 
     // An offset to be subtracted from ELF vaddr for PIE

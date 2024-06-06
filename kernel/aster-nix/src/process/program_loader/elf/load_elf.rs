@@ -45,15 +45,7 @@ pub fn load_elf_to_vm(
 ) -> Result<ElfLoadInfo> {
     let parsed_elf = Elf::parse_elf(file_header)?;
 
-    let ldso = if parsed_elf.is_shared_object() {
-        Some(lookup_and_parse_ldso(
-            &parsed_elf,
-            file_header,
-            fs_resolver,
-        )?)
-    } else {
-        None
-    };
+    let ldso = lookup_and_parse_ldso(&parsed_elf, file_header, fs_resolver)?;
 
     match init_and_map_vmos(process_vm, ldso, &parsed_elf, &elf_file) {
         Ok((entry_point, mut aux_vec)) => {
@@ -98,9 +90,11 @@ fn lookup_and_parse_ldso(
     elf: &Elf,
     file_header: &[u8],
     fs_resolver: &FsResolver,
-) -> Result<(Arc<Dentry>, Elf)> {
+) -> Result<Option<(Arc<Dentry>, Elf)>> {
     let ldso_file = {
-        let ldso_path = elf.ldso_path(file_header)?;
+        let Some(ldso_path) = elf.ldso_path(file_header)? else {
+            return Ok(None);
+        };
         let fs_path = FsPath::new(AT_FDCWD, &ldso_path)?;
         fs_resolver.lookup(&fs_path)?
     };
@@ -110,7 +104,7 @@ fn lookup_and_parse_ldso(
         inode.read_at(0, &mut *buf)?;
         Elf::parse_elf(&*buf)?
     };
-    Ok((ldso_file, ldso_elf))
+    Ok(Some((ldso_file, ldso_elf)))
 }
 
 fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {
