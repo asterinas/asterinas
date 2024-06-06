@@ -25,7 +25,9 @@
 //! the initialization of the entity that the PTE points to. This is taken care in this module.
 //!
 
-use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, panic, sync::atomic::Ordering};
+use core::{
+    fmt, marker::PhantomData, mem::ManuallyDrop, ops::Range, panic, sync::atomic::Ordering,
+};
 
 use super::{nr_subpage_per_huge, page_size, PageTableEntryTrait};
 use crate::{
@@ -40,6 +42,7 @@ use crate::{
         page_prop::PageProperty,
         Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
     },
+    task::{disable_preempt, DisablePreemptGuard},
 };
 
 /// The raw handle to a page table node.
@@ -77,6 +80,8 @@ where
         // count is needed.
         let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(this.paddr()) };
 
+        let disable_preempt = disable_preempt();
+
         // Acquire the lock.
         while page
             .meta()
@@ -87,7 +92,10 @@ where
             core::hint::spin_loop();
         }
 
-        PageTableNode::<E, C> { page }
+        PageTableNode::<E, C> {
+            page,
+            preempt_guard: disable_preempt,
+        }
     }
 
     /// Creates a copy of the handle.
@@ -175,7 +183,6 @@ where
 /// of the page table. Dropping the page table node will also drop all handles if the page
 /// table node has no references. You can set the page table node as a child of another
 /// page table node.
-#[derive(Debug)]
 pub(super) struct PageTableNode<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
@@ -183,6 +190,22 @@ pub(super) struct PageTableNode<
     [(); C::NR_LEVELS as usize]:,
 {
     pub(super) page: Page<PageTablePageMeta<E, C>>,
+    preempt_guard: DisablePreemptGuard,
+}
+
+// FIXME: We cannot `#[derive(Debug)]` here due to `DisablePreemptGuard`. Should we skip
+// this field or implement the `Debug` trait also for `DisablePreemptGuard`?
+impl<E, C> fmt::Debug for PageTableNode<E, C>
+where
+    E: PageTableEntryTrait,
+    C: PagingConstsTrait,
+    [(); C::NR_LEVELS as usize]:,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PageTableEntryTrait")
+            .field("page", &self.page)
+            .finish()
+    }
 }
 
 /// A child of a page table node.
@@ -224,7 +247,10 @@ where
         unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE) };
         debug_assert!(E::new_absent().as_bytes().iter().all(|&b| b == 0));
 
-        Self { page }
+        Self {
+            page,
+            preempt_guard: disable_preempt(),
+        }
     }
 
     pub fn level(&self) -> PagingLevel {
@@ -233,10 +259,16 @@ where
 
     /// Converts the handle into a raw handle to be stored in a PTE or CPU.
     pub(super) fn into_raw(self) -> RawPageTableNode<E, C> {
-        let raw = self.page.paddr();
+        let mut this = ManuallyDrop::new(self);
 
-        self.page.meta().lock.store(0, Ordering::Release);
-        core::mem::forget(self);
+        let raw = this.page.paddr();
+
+        this.page.meta().lock.store(0, Ordering::Release);
+        // SAFETY: The field will no longer be accessed and we need to drop the field to release
+        // the preempt count.
+        unsafe {
+            core::ptr::drop_in_place(&mut this.preempt_guard);
+        }
 
         RawPageTableNode {
             raw,
