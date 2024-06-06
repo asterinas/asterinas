@@ -63,6 +63,7 @@ use crate::{
         page_prop::PageProperty,
         Frame, Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
     },
+    task::{disable_preempt, DisablePreemptGuard},
 };
 
 /// The raw handle to a page table node.
@@ -100,6 +101,8 @@ where
         // count is needed.
         let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(this.paddr()) };
 
+        let disable_preempt = disable_preempt();
+
         // Acquire the lock.
         while page
             .meta()
@@ -110,7 +113,10 @@ where
             core::hint::spin_loop();
         }
 
-        PageTableNode::<E, C> { page }
+        PageTableNode::<E, C> {
+            page,
+            preempt_guard: disable_preempt,
+        }
     }
 
     /// Create a copy of the handle.
@@ -158,6 +164,7 @@ pub(super) struct PageTableNode<
     [(); C::NR_LEVELS as usize]:,
 {
     pub(super) page: Page<PageTablePageMeta<E, C>>,
+    preempt_guard: DisablePreemptGuard,
 }
 
 /// A tracked frame or an untracked physical memory region.
@@ -398,7 +405,10 @@ where
         unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE) };
         debug_assert!(E::new_absent().as_bytes().iter().all(|&b| b == 0));
 
-        Self { page }
+        Self {
+            page,
+            preempt_guard: disable_preempt(),
+        }
     }
 
     pub fn level(&self) -> PagingLevel {
@@ -407,10 +417,16 @@ where
 
     /// Convert the handle into a raw handle to be stored in a PTE or CPU.
     pub(super) fn into_raw(self) -> RawPageTableNode<E, C> {
-        let raw = self.page.paddr();
+        let mut this = ManuallyDrop::new(self);
 
-        self.page.meta().lock.store(0, Ordering::Release);
-        core::mem::forget(self);
+        let raw = this.page.paddr();
+
+        this.page.meta().lock.store(0, Ordering::Release);
+        // SAFETY: The field will no longer be accessed and we need to drop the field to release
+        // the preempt count.
+        unsafe {
+            core::ptr::drop_in_place(&mut this.preempt_guard);
+        }
 
         RawPageTableNode {
             raw,
