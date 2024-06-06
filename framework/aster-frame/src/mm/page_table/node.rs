@@ -92,10 +92,13 @@ where
 
     /// Convert a raw handle to an accessible handle by pertaining the lock.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
+        // Prevent dropping the handle.
+        let this = ManuallyDrop::new(self);
+
         // SAFETY: The physical address in the raw handle is valid and we are
         // transferring the ownership to a new handle. No increment of the reference
         // count is needed.
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
+        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(this.paddr()) };
 
         // Acquire the lock.
         while page
@@ -107,15 +110,12 @@ where
             core::hint::spin_loop();
         }
 
-        // Prevent dropping the handle.
-        let _ = ManuallyDrop::new(self);
-
         PageTableNode::<E, C> { page }
     }
 
     /// Create a copy of the handle.
     pub(super) fn clone_shallow(&self) -> Self {
-        self.inc_ref();
+        self.increment_strong_count();
 
         Self {
             raw: self.raw,
@@ -123,12 +123,12 @@ where
         }
     }
 
-    fn inc_ref(&self) {
-        // SAFETY: The physical address in the raw handle is valid and we are
-        // incrementing the reference count by cloning and forgetting.
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) };
-        core::mem::forget(page.clone());
-        core::mem::forget(page);
+    fn increment_strong_count(&self) {
+        // SAFETY: We have a reference count to the page and can safely increase the reference
+        // count by one more.
+        unsafe {
+            Page::<PageTablePageMeta<E, C>>::increment_strong_count(self.paddr());
+        }
     }
 }
 
@@ -444,13 +444,9 @@ where
             });
         }
 
-        // SAFETY: The physical address is recorded in a valid PTE
-        // which would be casted from a handle. We are incrementing
-        // the reference count so we restore, clone, and forget both.
-        let node = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(paddr) };
-        let inc_ref = node.clone();
-        core::mem::forget(node);
-        core::mem::forget(inc_ref);
+        unsafe {
+            Page::<PageTablePageMeta<E, C>>::increment_strong_count(paddr);
+        }
         Child::PageTable(RawPageTableNode {
             raw: paddr,
             _phantom: PhantomData,
@@ -473,6 +469,9 @@ where
     ) -> Child<MaybeTrackedPage, E, C> {
         assert!(self.level() > 1);
 
+        // The ownership is transferred to a raw PTE. Don't drop the handle.
+        let pt = ManuallyDrop::new(pt);
+
         let pte = Some(E::new_pt(pt.paddr()));
 
         // SAFETY: The PTE points to a valid page table. The page table level is checked above to
@@ -481,12 +480,7 @@ where
         // There is still the possibility that the level of the given page table is incorrect,
         // which breaks the structure of the page table, but does not affect the memory safety of
         // the page table itself.
-        let child = unsafe { self.overwrite_pte(idx, pte) };
-
-        // The ownership is transferred to a raw PTE. Don't drop the handle.
-        let _ = ManuallyDrop::new(pt);
-
-        child
+        unsafe { self.overwrite_pte(idx, pte) }
     }
 
     /// Map a frame at a given index.
@@ -498,15 +492,13 @@ where
     ) -> Child<MaybeTrackedPage, E, C> {
         debug_assert_eq!(frame.level(), self.level());
 
+        // The ownership is transferred to a raw PTE. Don't drop the handle.
+        let frame = ManuallyDrop::new(frame);
+
         let pte = Some(E::new_frame(frame.start_paddr(), self.level(), prop));
 
         // SAFETY: The PTE does not point to a page table.
-        let child = unsafe { self.overwrite_pte(idx, pte) };
-
-        // The ownership is transferred to a raw PTE. Don't drop the handle.
-        let _ = ManuallyDrop::new(frame);
-
-        child
+        unsafe { self.overwrite_pte(idx, pte) }
     }
 
     /// Set an untracked child frame at a given index.
@@ -777,7 +769,7 @@ where
         }
 
         // Increment the reference count of the current page table.
-        self.inc_ref();
+        self.increment_strong_count();
 
         // Restore and drop the last activated page table.
         drop(RawPageTableNode::<E, C> {
@@ -793,7 +785,7 @@ where
     pub(super) unsafe fn first_activate(&self) {
         use crate::{arch::mm::activate_page_table, mm::CachePolicy};
 
-        self.inc_ref();
+        self.increment_strong_count();
 
         activate_page_table(self.raw, CachePolicy::Writeback);
     }

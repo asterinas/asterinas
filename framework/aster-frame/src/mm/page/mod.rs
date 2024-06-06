@@ -19,6 +19,7 @@ pub(in crate::mm) mod meta;
 
 use core::{
     marker::PhantomData,
+    mem::ManuallyDrop,
     sync::atomic::{AtomicU32, AtomicU8, AtomicUsize, Ordering},
 };
 
@@ -140,6 +141,11 @@ impl<M: PageMeta> Page<M> {
             ptr,
             _marker: PhantomData,
         }
+    }
+
+    pub(in crate::mm) unsafe fn increment_strong_count(paddr: Paddr) {
+        let page = unsafe { ManuallyDrop::new(Self::from_raw(paddr)) };
+        let _page = page.clone();
     }
 
     /// Get the physical address.
