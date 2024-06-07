@@ -156,7 +156,7 @@ impl Pager for PageCacheManager {
             return Ok(page.frame.clone());
         }
 
-        //Multiple threads may commit the same page, but the result is ok.
+        // Multiple threads may commit the same page, but the result is ok.
         let backend = self.backend();
         let page = if idx < backend.npages() {
             let mut page = Page::alloc()?;
@@ -167,9 +167,9 @@ impl Pager for PageCacheManager {
         } else {
             Page::alloc_zero()?
         };
-        let frame = page.frame().clone();
-        self.pages.lock().put(idx, page);
-        Ok(frame)
+
+        // If multiple threads commit the same page, only the first allocated page will be perserved.
+        Ok(self.pages.lock().get_or_insert(idx, || page).frame.clone())
     }
 
     fn update_page(&self, idx: usize) -> Result<()> {
