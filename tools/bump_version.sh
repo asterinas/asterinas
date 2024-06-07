@@ -5,7 +5,11 @@
 set -e
 
 # This script is used to update Asterinas version numbers in all relevant files in the repository.
-# Usage: ./tools/bump_version.sh <new_version>
+# Usage: ./tools/bump_version.sh bump_type
+# bump_type can be one of: patch, minor, or major.
+
+# TODO: we may remove the VERSION file in the future, 
+# and retrieve the current version from git tag.
 
 # Update the package version (`version = "{version}"`) in file $1
 update_package_version() {
@@ -22,19 +26,80 @@ update_image_versions() {
     sed -i "s/asterinas\/asterinas:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/asterinas\/asterinas:${new_version}/g" $1
 }
 
+# Print the help message
+print_help() {
+    echo "Usage: $0 bump_type"
+    echo ""
+    echo "The bump_type argument must be either \"patch\", \"minor\", or \"major\","
+    echo "which instructs the script to increment the patch, minor, and major part"
+    echo "of the semantic version number of Asterinas, respectively."
+}
+
+# Add the number $1 by 1
+# Bash cannot deal with 0 by using `$((num + 1))`,
+# So this function is defined to specially deal with 0.
+add_one() {
+    local num=$1
+    if [ "$num" == "0" ]; then
+        echo "1"
+    else
+        local bumped=$((num + 1))
+        echo "$bumped"
+    fi
+}
+
+# Bump the version based on $bump_type
+bump_version() {
+    local IFS="."
+    local version_parts=($current_version)
+
+    case "$bump_type" in
+        "patch")
+            version_parts[2]=$(add_one "${version_parts[2]}")
+            ;;
+        "minor")
+            version_parts[1]=$(add_one "${version_parts[1]}")
+            version_parts[2]=0
+            ;;
+        "major")
+            version_parts[0]=$(add_one "${version_parts[0]}")
+            version_parts[1]=0
+            version_parts[2]=0
+            ;;
+    esac
+
+    echo "${version_parts[*]}"
+}
+
+# Validate the bump type
+validate_bump_type() {
+    case "$bump_type" in
+        "patch" | "minor" | "major")
+            ;;
+        *)
+        echo "Error: Invalid bump_type. Allowed values are: patch, minor, or major."
+        print_help
+        exit 1
+        ;;
+    esac
+}
+
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 ASTER_SRC_DIR=${SCRIPT_DIR}/..
 CARGO_TOML_PATH=${ASTER_SRC_DIR}/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 
-# Get and check the new version number
-if [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    new_version=$1
-else
-    printf "Invalid version number: $1\nUsage: ./tools/bump_version.sh <new_version>\n"
-    exit -1
+current_version=$(cat ${VERSION_PATH})
+bump_type=$1
+
+if [[ "$bump_type" == "--help" || "$bump_type" == "-h" ]]; then
+  print_help
+  exit 0
 fi
+
+validate_bump_type
+new_version=$(bump_version ${current_version})
 
 # Update the package version in Cargo.toml
 update_package_version ${CARGO_TOML_PATH}
