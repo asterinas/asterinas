@@ -2,9 +2,16 @@
 
 #![allow(dead_code)]
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
-use aster_frame::{cpu::CpuSet, sync::WaitQueue, task::Priority};
+use aster_frame::{
+    cpu::CpuSet,
+    sync::WaitQueue,
+    task::{add_task, Priority},
+};
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
@@ -74,7 +81,7 @@ impl LocalWorkerPool {
     fn add_worker(&self) {
         let worker = Worker::new(self.parent.clone(), self.cpu_id);
         self.workers.lock_irq_disabled().push_back(worker.clone());
-        worker.run();
+        add_task(worker.bound_thread().task().clone());
     }
 
     fn remove_worker(&self) {

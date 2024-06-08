@@ -141,6 +141,9 @@ impl WorkQueue {
             .lock_irq_disabled()
             .pending_work_items
             .push(work_item);
+        if let Some(worker_pool) = self.worker_pool.upgrade() {
+            worker_pool.schedule()
+        }
         true
     }
 
