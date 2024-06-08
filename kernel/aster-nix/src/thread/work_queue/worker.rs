@@ -97,6 +97,10 @@ impl Worker {
         self.exit();
     }
 
+    pub(super) fn bound_thread(&self) -> &Arc<Thread> {
+        &self.bound_thread
+    }
+
     pub(super) fn is_idle(&self) -> bool {
         self.inner.lock_irq_disabled().worker_status == WorkerStatus::Idle
     }
