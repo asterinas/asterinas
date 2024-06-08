@@ -5,7 +5,7 @@
 # This script is used to generate QEMU arguments for OSDK.
 # The positional argument $1 is the scheme.
 # A switch "-ovmf" can be passed as an argument to enable OVMF.
-# The positional argument $2 can be passed as "vsock" to trigger vsock module.
+# The enrivonmental variable VSOCK can be passed as 1 to trigger vsock module.
 
 RAND_PORT_NUM1=$(shuf -i 1024-65535 -n 1)
 RAND_PORT_NUM2=$(shuf -i 1024-65535 -n 1)
