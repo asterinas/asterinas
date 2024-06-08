@@ -5,6 +5,7 @@
 # This script is used to generate QEMU arguments for OSDK.
 # The positional argument $1 is the scheme.
 # A switch "-ovmf" can be passed as an argument to enable OVMF.
+# The positional argument $2 can be passed as "vsock" to trigger vsock module.
 
 RAND_PORT_NUM1=$(shuf -i 1024-65535 -n 1)
 RAND_PORT_NUM2=$(shuf -i 1024-65535 -n 1)
@@ -60,6 +61,24 @@ MICROVM_QEMU_ARGS="\
     -device virtio-serial-device \
     -device virtconsole,chardev=mux \
 "
+
+if [ "$VSOCK" = "1" ]; then
+    # RAND_CID=$(shuf -i 3-65535 -n 1)
+    RAND_CID=3
+    echo "[$1] Launched QEMU VM with CID $RAND_CID" 1>&2
+    if [ "$1" = "microvm" ]; then
+        MICROVM_QEMU_ARGS="
+            $MICROVM_QEMU_ARGS \
+            -device vhost-vsock-device,guest-cid=$RAND_CID \
+        "
+    else
+        QEMU_ARGS="
+            $QEMU_ARGS \
+            -device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=$RAND_CID,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
+        "
+    fi
+fi
+
 
 if [ "$1" = "microvm" ]; then
     QEMU_ARGS=$MICROVM_QEMU_ARGS

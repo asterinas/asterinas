@@ -7,7 +7,6 @@
 #include <unistd.h>
 #include <string.h>
 
-#define CID 3
 #define PORT 4321
 
 int main()
@@ -23,8 +22,9 @@ int main()
 		return -1;
 	}
 	printf("\nCreate socket successfully\n");
+
 	serv_addr.svm_family = AF_VSOCK;
-	serv_addr.svm_cid = CID;
+	serv_addr.svm_cid = VMADDR_CID_ANY;
 	serv_addr.svm_port = PORT;
 
 	if (bind(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {

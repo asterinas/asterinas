@@ -4,7 +4,10 @@ use alloc::{boxed::Box, string::ToString, sync::Arc};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
-use aster_network::{AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError};
+use aster_network::{
+    AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError, RX_BUFFER_POOL,
+    TX_BUFFER_POOL,
+};
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
 use smoltcp::phy::{DeviceCapabilities, Medium};
@@ -55,7 +58,8 @@ impl NetworkDevice {
 
         let mut rx_buffers = SlotVec::new();
         for i in 0..QUEUE_SIZE {
-            let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>());
+            let rx_pool = RX_BUFFER_POOL.get().unwrap();
+            let rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool);
             // FIEME: Replace rx_buffer with VM segment-based data structure to use dma mapping.
             let token = recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
             assert_eq!(i, token);
@@ -128,7 +132,8 @@ impl NetworkDevice {
         rx_buffer.set_packet_len(len as usize);
         // FIXME: Ideally, we can reuse the returned buffer without creating new buffer.
         // But this requires locking device to be compatible with smoltcp interface.
-        let new_rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>());
+        let rx_pool = RX_BUFFER_POOL.get().unwrap();
+        let new_rx_buffer = RxBuffer::new(size_of::<VirtioNetHdr>(), rx_pool);
         self.add_rx_buffer(new_rx_buffer)?;
         Ok(rx_buffer)
     }
@@ -137,7 +142,8 @@ impl NetworkDevice {
     /// FIEME: Replace tx_buffer with VM segment-based data structure to use dma mapping.
     fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError> {
         let header = VirtioNetHdr::default();
-        let tx_buffer = TxBuffer::new(&header, packet);
+        let tx_pool = TX_BUFFER_POOL.get().unwrap();
+        let tx_buffer = TxBuffer::new(&header, packet, tx_pool);
 
         let token = self
             .send_queue
