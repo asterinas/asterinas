@@ -127,6 +127,11 @@ impl DmaPool {
     fn num_pages(&self) -> usize {
         self.all_pages.lock_irq_disabled().len()
     }
+
+    /// Return segment size in pool
+    pub fn segment_size(&self) -> usize {
+        self.segment_size
+    }
 }
 
 #[derive(Debug)]

@@ -3,13 +3,13 @@
 use alloc::{boxed::Box, string::ToString, sync::Arc, vec, vec::Vec};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
-use aster_frame::{offset_of, sync::SpinLock, trap::TrapFrame, vm::VmWriter};
+use aster_frame::{mm::VmWriter, offset_of, sync::SpinLock, trap::TrapFrame};
+use aster_network::{RxBuffer, TxBuffer};
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
 use pod::Pod;
 
 use super::{
-    buffer::RxBuffer,
     config::{VirtioVsockConfig, VsockFeatures},
     connect::{ConnectionInfo, VsockEvent},
     error::SocketError,
@@ -18,7 +18,10 @@ use super::{
 };
 use crate::{
     device::{
-        socket::{buffer::TxBuffer, handle_recv_irq, register_device},
+        socket::{
+            buffer::{RX_BUFFER_POOL, TX_BUFFER_POOL},
+            handle_recv_irq, register_device,
+        },
         VirtioDeviceError,
     },
     queue::{QueueError, VirtQueue},
@@ -68,7 +71,8 @@ impl SocketDevice {
         // Allocate and add buffers for the RX queue.
         let mut rx_buffers = SlotVec::new();
         for i in 0..QUEUE_SIZE {
-            let rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>());
+            let rx_pool = RX_BUFFER_POOL.get().unwrap();
+            let rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool);
             let token = recv_queue.add_dma_buf(&[], &[&rx_buffer])?;
             assert_eq!(i, token);
             assert_eq!(rx_buffers.put(rx_buffer) as u16, i);
@@ -187,7 +191,8 @@ impl SocketDevice {
     ) -> Result<(), SocketError> {
         debug!("Sent packet {:?}. Op {:?}", header, header.op());
         debug!("buffer in send_packet_to_tx_queue: {:?}", buffer);
-        let tx_buffer = TxBuffer::new(header, buffer);
+        let tx_pool = TX_BUFFER_POOL.get().unwrap();
+        let tx_buffer = TxBuffer::new(header, buffer, tx_pool);
 
         let token = self.send_queue.add_dma_buf(&[&tx_buffer], &[])?;
 
@@ -269,7 +274,8 @@ impl SocketDevice {
             .ok_or(QueueError::WrongToken)?;
         rx_buffer.set_packet_len(len as usize);
 
-        let new_rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>());
+        let rx_pool = RX_BUFFER_POOL.get().unwrap();
+        let new_rx_buffer = RxBuffer::new(size_of::<VirtioVsockHdr>(), rx_pool);
         self.add_rx_buffer(new_rx_buffer, token)?;
 
         Ok(rx_buffer)

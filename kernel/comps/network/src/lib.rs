@@ -17,7 +17,7 @@ use core::{any::Any, fmt::Debug};
 
 use aster_frame::sync::SpinLock;
 use aster_util::safe_ptr::Pod;
-pub use buffer::{RxBuffer, TxBuffer};
+pub use buffer::{RxBuffer, TxBuffer, RX_BUFFER_POOL, TX_BUFFER_POOL};
 use component::{init_component, ComponentInitError};
 pub use dma_pool::DmaSegment;
 use smoltcp::phy;

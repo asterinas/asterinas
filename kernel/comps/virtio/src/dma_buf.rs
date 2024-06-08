@@ -3,8 +3,6 @@
 use aster_frame::mm::{DmaCoherent, DmaStream, DmaStreamSlice, HasDaddr};
 use aster_network::{DmaSegment, RxBuffer, TxBuffer};
 
-use crate::device;
-
 /// A DMA-capable buffer.
 ///
 /// Any type implements this trait should also implements `HasDaddr` trait,
@@ -46,18 +44,6 @@ impl DmaBuf for TxBuffer {
 }
 
 impl DmaBuf for RxBuffer {
-    fn len(&self) -> usize {
-        self.buf_len()
-    }
-}
-
-impl DmaBuf for device::socket::buffer::TxBuffer {
-    fn len(&self) -> usize {
-        self.nbytes()
-    }
-}
-
-impl DmaBuf for device::socket::buffer::RxBuffer {
     fn len(&self) -> usize {
         self.buf_len()
     }
