@@ -193,6 +193,7 @@ impl PreemptInfo {
 }
 
 /// a guard for disable preempt.
+#[derive(Debug)]
 pub struct DisablePreemptGuard {
     // This private field prevents user from constructing values of this type directly.
     private: (),

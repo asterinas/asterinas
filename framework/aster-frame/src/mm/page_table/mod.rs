@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
 use pod::Pod;
@@ -84,7 +82,7 @@ pub(crate) struct PageTable<
 > where
     [(); C::NR_LEVELS as usize]:,
 {
-    root: RawPageTableNode<E, C>,
+    root: RootPageTableNode<E, C>,
     _phantom: PhantomData<M>,
 }
 
@@ -103,6 +101,7 @@ impl PageTable<UserMode> {
     /// TODO: We may consider making the page table itself copy-on-write.
     pub(crate) fn fork_copy_on_write(&self) -> Self {
         let mut cursor = self.cursor_mut(&UserMode::VADDR_RANGE).unwrap();
+
         // SAFETY: Protecting the user page table is safe.
         unsafe {
             cursor
@@ -113,16 +112,21 @@ impl PageTable<UserMode> {
                 )
                 .unwrap();
         };
+
         let root_frame = cursor.leak_root_guard().unwrap();
+
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
+
         let new_root_frame = unsafe {
-            root_frame.make_copy(
+            RootPageTableNode::make_copy_locked(
+                &root_frame,
                 0..NR_PTES_PER_NODE / 2,
                 NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE,
             )
         };
+
         PageTable::<UserMode> {
-            root: new_root_frame.into_raw(),
+            root: new_root_frame,
             _phantom: PhantomData,
         }
     }
@@ -137,12 +141,15 @@ impl PageTable<KernelMode> {
     /// Then, one can use a user page table to call [`fork_copy_on_write`], creating
     /// other child page tables.
     pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let root_frame = self.root.clone_shallow().lock();
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
-        let new_root_frame =
-            unsafe { root_frame.make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE) };
+
+        let new_root_frame = unsafe {
+            self.root
+                .make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE)
+        };
+
         PageTable::<UserMode> {
-            root: new_root_frame.into_raw(),
+            root: new_root_frame,
             _phantom: PhantomData,
         }
     }
@@ -161,9 +168,9 @@ impl PageTable<KernelMode> {
         debug_assert!(end <= NR_PTES_PER_NODE);
         let mut root_frame = self.root.clone_shallow().lock();
         for i in start..end {
-            if !root_frame.read_pte(i).is_present() {
+            if !root_frame.child(i).is_none() {
                 let frame = PageTableNode::alloc(PagingConsts::NR_LEVELS - 1);
-                root_frame.set_child_pt(i, frame.into_raw(), i < NR_PTES_PER_NODE * 3 / 4);
+                root_frame.set_child_pt(i, frame.into_raw()).drop_none();
             }
         }
     }
@@ -176,13 +183,9 @@ where
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub(crate) fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS).into_raw(),
+            root: RootPageTableNode::alloc(),
             _phantom: PhantomData,
         }
-    }
-
-    pub(crate) unsafe fn activate_unchecked(&self) {
-        self.root.activate();
     }
 
     pub(in crate::mm) unsafe fn first_activate_unchecked(&self) {
@@ -260,7 +263,7 @@ where
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
     pub(crate) unsafe fn shallow_copy(&self) -> Self {
         PageTable {
-            root: self.root.clone_shallow(),
+            root: self.root.clone_shallow_root(),
             _phantom: PhantomData,
         }
     }
@@ -330,7 +333,13 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 /// The interface for defining architecture-specific page table entries.
 ///
 /// Note that a default PTE shoud be a PTE that points to nothing.
-pub(crate) trait PageTableEntryTrait:
+///
+/// # Safety
+///
+/// Implementors must respect certain invariants. For example, for a PTE pointing to a frame
+/// created by [`new_frame`], it is necessary that [`is_last`] returns true. Otherwise it will lead
+/// to serve memory safety issues.
+pub(crate) unsafe trait PageTableEntryTrait:
     Clone + Copy + Debug + Default + Pod + Sized + Sync
 {
     /// Create a set of new invalid page table flags that indicates an absent page.

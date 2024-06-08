@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 //! Metadata management of pages.
 //!
 //! You can picture a globally shared, static, gigantic arrary of metadata initialized for each page.
@@ -40,6 +37,7 @@ pub mod mapping {
 
 use alloc::vec::Vec;
 use core::{
+    cell::UnsafeCell,
     mem::{size_of, ManuallyDrop},
     ops::Range,
     panic,
@@ -67,8 +65,10 @@ use crate::{
 pub enum PageUsage {
     // The zero variant is reserved for the unused type. Only an unused page
     // can be designated for one of the other purposes.
+    #[allow(dead_code)]
     Unused = 0,
     /// The page is reserved or unusable. The kernel should not touch it.
+    #[allow(dead_code)]
     Reserved = 1,
 
     /// The page is used as a frame, i.e., a page of untyped memory.
@@ -98,9 +98,9 @@ pub(in crate::mm) struct MetaSlot {
 }
 
 pub(super) union MetaSlotInner {
-    frame: ManuallyDrop<FrameMeta>,
+    _frame: ManuallyDrop<FrameMeta>,
     // Make sure the the generic parameters don't effect the memory layout.
-    pt: ManuallyDrop<PageTablePageMeta<PageTableEntry, PagingConsts>>,
+    _pt: ManuallyDrop<PageTablePageMeta<PageTableEntry, PagingConsts>>,
 }
 
 // Currently the sizes of the `MetaSlotInner` union variants are no larger
@@ -119,7 +119,12 @@ const_assert_eq!(size_of::<MetaSlot>(), 16);
 /// If a page type needs specific drop behavior, it should specify
 /// when implementing this trait. When we drop the last handle to
 /// this page, the `on_drop` method will be called.
-pub trait PageMeta: Default + Sync + private::Sealed + Sized {
+///
+/// # Safety
+///
+/// Implementers must ensure that the structure is listed in
+/// [`MetaSlotInner`] to avoid potential memory safety issues.
+pub unsafe trait PageMeta: Default + Sync + private::Sealed + Sized {
     const USAGE: PageUsage;
 
     fn on_drop(page: &mut Page<Self>);
@@ -147,17 +152,33 @@ impl Sealed for FrameMeta {}
 
 #[derive(Debug, Default)]
 #[repr(C)]
+pub struct PageTablePageMetaInner {
+    pub level: PagingLevel,
+    pub nr_children: u16,
+}
+
+#[derive(Debug, Default)]
+#[repr(C)]
 pub struct PageTablePageMeta<E: PageTableEntryTrait, C: PagingConstsTrait>
 where
     [(); C::NR_LEVELS as usize]:,
 {
     pub lock: AtomicU8,
-    pub level: PagingLevel,
-    pub nr_children: u16,
+    pub inner: UnsafeCell<PageTablePageMetaInner>,
     _phantom: core::marker::PhantomData<(E, C)>,
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sealed for PageTablePageMeta<E, C> where
+    [(); C::NR_LEVELS as usize]:
+{
+}
+
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Send for PageTablePageMeta<E, C> where
+    [(); C::NR_LEVELS as usize]:
+{
+}
+
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sync for PageTablePageMeta<E, C> where
     [(); C::NR_LEVELS as usize]:
 {
 }
@@ -167,9 +188,9 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sealed for PageTablePageMeta<
 pub struct MetaPageMeta {}
 
 impl Sealed for MetaPageMeta {}
-impl PageMeta for MetaPageMeta {
+unsafe impl PageMeta for MetaPageMeta {
     const USAGE: PageUsage = PageUsage::Meta;
-    fn on_drop(page: &mut Page<Self>) {
+    fn on_drop(_page: &mut Page<Self>) {
         panic!("Meta pages are currently not allowed to be dropped");
     }
 }
@@ -179,9 +200,9 @@ impl PageMeta for MetaPageMeta {
 pub struct KernelMeta {}
 
 impl Sealed for KernelMeta {}
-impl PageMeta for KernelMeta {
+unsafe impl PageMeta for KernelMeta {
     const USAGE: PageUsage = PageUsage::Kernel;
-    fn on_drop(page: &mut Page<Self>) {
+    fn on_drop(_page: &mut Page<Self>) {
         panic!("Kernel pages are not allowed to be dropped");
     }
 }

@@ -25,7 +25,7 @@ impl PageTableMode for DeviceMode {
 #[derive(Clone, Debug, Default)]
 pub(super) struct PagingConsts {}
 
-impl PagingConstsTrait for PagingConsts {
+unsafe impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
     const NR_LEVELS: PagingLevel = 3;
     const ADDRESS_WIDTH: usize = 39;
@@ -73,7 +73,7 @@ impl PageTableEntry {
     const PROP_MASK: u64 = !Self::PHYS_MASK & !PageTableFlags::LAST_PAGE.bits();
 }
 
-impl PageTableEntryTrait for PageTableEntry {
+unsafe impl PageTableEntryTrait for PageTableEntry {
     fn new_frame(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         let mut pte = Self(paddr as u64 & Self::PHYS_MASK | PageTableFlags::LAST_PAGE.bits());
         pte.set_prop(prop);
