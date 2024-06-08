@@ -82,4 +82,4 @@ jobs:
         
       - name: Regression Test (Linux EFI Handover Boot Protocol)
         id: regression_test_linux
-        run: make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE=1
+        run: make run AUTO_TEST=regression ENABLE_KVM=0 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
