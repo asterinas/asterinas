@@ -2,7 +2,7 @@
 
 //! Read the Cpu context content then dispatch syscall to corrsponding handler
 //! The each sub module contains functions that handle real syscall logic.
-use aster_frame::cpu::UserContext;
+use aster_frame::{cpu::UserContext, user::UserContextApi};
 pub use clock_gettime::ClockID;
 
 use crate::{cpu::LinuxAbi, prelude::*};
@@ -215,6 +215,7 @@ impl SyscallArgument {
 }
 
 pub fn handle_syscall(context: &mut UserContext) {
+    context.set_instruction_pointer(context.instruction_pointer() + 4);
     let syscall_frame = SyscallArgument::new_from_context(context);
     let syscall_return =
         arch::syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args, context);

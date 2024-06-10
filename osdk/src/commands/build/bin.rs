@@ -77,14 +77,23 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
             .to_str()
             .unwrap()
             .to_string();
-        install_dir.as_ref().join(elf_name + ".qemu_elf")
+        install_dir.as_ref().join(elf_name + ".qemu_bin")
     };
 
     if strip {
         // We use rust-strip to reduce the kernel image size.
-        let status = Command::new("rust-strip")
+        // let status = Command::new("rust-strip")
+        //     .arg(elf.path())
+        //     .arg("-o")
+        //     .arg(result_elf_path.as_os_str())
+        //     .status();
+
+        let status = Command::new("rust-objcopy")
+            .arg("--binary-architecture=riscv64")
             .arg(elf.path())
-            .arg("-o")
+            .arg("--strip-all")
+            .arg("-O")
+            .arg("binary")
             .arg(result_elf_path.as_os_str())
             .status();
 
@@ -112,17 +121,17 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
     //
     // https://github.com/qemu/qemu/blob/950c4e6c94b15cd0d8b63891dddd7a8dbf458e6a/hw/i386/multiboot.c#L197
     // Set EM_386 (0x0003) to em_machine.
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&result_elf_path)
-        .unwrap();
+    // let mut file = OpenOptions::new()
+    //     .read(true)
+    //     .write(true)
+    //     .open(&result_elf_path)
+    //     .unwrap();
 
-    let bytes: [u8; 2] = [0x03, 0x00];
+    // let bytes: [u8; 2] = [0x03, 0x00];
 
-    file.seek(SeekFrom::Start(18)).unwrap();
-    file.write_all(&bytes).unwrap();
-    file.flush().unwrap();
+    // file.seek(SeekFrom::Start(18)).unwrap();
+    // file.write_all(&bytes).unwrap();
+    // file.flush().unwrap();
 
     AsterBin::new(
         &result_elf_path,

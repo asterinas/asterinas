@@ -9,7 +9,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use aster_frame::arch::{
     read_tsc,
     timer::{self, TIMER_FREQ},
-    x86::tsc_freq,
+    // x86::tsc_freq,
 };
 use spin::Once;
 
@@ -33,7 +33,8 @@ pub(super) fn init() {
 fn init_clock() {
     CLOCK.call_once(|| {
         Arc::new(ClockSource::new(
-            tsc_freq(),
+            // tsc_freq(),
+            100000,
             MAX_DELAY_SECS,
             Arc::new(read_tsc),
         ))
@@ -50,6 +51,7 @@ fn calibrate() {
 
 /// Read an `Instant` of tsc clocksource.
 pub(super) fn read_instant() -> Instant {
+    return Instant::new(0, 0);
     let clock = CLOCK.get().unwrap();
     clock.read_instant()
 }

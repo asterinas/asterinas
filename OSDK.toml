@@ -1,67 +1,38 @@
 [boot]
-method = "grub-rescue-iso"
+method = "qemu-direct"
 
-[run.boot]
-kcmd_args = [
+[build]
+strip_elf = false
+
+[run]
+boot.kcmd_args = [
     "SHELL=/bin/sh",
     "LOGNAME=root",
     "HOME=/",
     "USER=root",
-    "PATH=/bin:/benchmark",
+    "PATH=/bin",
     "init=/usr/bin/busybox",
 ]
-init_args = ["sh", "-l"]
-initramfs = "regression/build/initramfs.cpio.gz"
-
-[test]
-boot.method = "qemu-direct"
-
-[grub]
-protocol = "multiboot2"
+#boot.init_args = ["sh", "-l"]
+boot.init_args = ["echo", "Hello, World"]
+#boot.initramfs = "regression/build/initramfs.cpio.gz"
+boot.initramfs = "../initramfs.cpio.gz"
 
 [qemu]
-args = "$(./tools/qemu_args.sh normal -ovmf)"
-
-[test.qemu]
-args = "$(./tools/qemu_args.sh test)"
-
-[scheme."microvm"]
-boot.method = "qemu-direct"
-build.strip_elf = true
-qemu.args = "$(./tools/qemu_args.sh microvm)"
-
-[scheme."iommu"]
-supported_archs = ["x86_64"]
-qemu.args = "$(./tools/qemu_args.sh iommu)"
-
-[scheme."tdx"]
-supported_archs = ["x86_64"]
-build.features = ["intel_tdx"]
-boot.method = "grub-qcow2"
-grub.mkrescue_path = "~/tdx-tools/grub"
-grub.protocol = "linux"
-qemu.args = """\
-    -accel kvm \
-    -name process=tdxvm,debug-threads=on \
-    -m ${MEM:-8G} \
-    -smp ${SMP:-1} \
-    -vga none \
+args = """\
+    -cpu rv64,zba=true,zbb=true \
+    -machine virt \
+    -m 2G \
+    --no-reboot \
     -nographic \
-    -monitor pty \
-    -no-hpet \
-    -nodefaults \
-    -monitor telnet:127.0.0.1:9003,server,nowait \
-    -object tdx-guest,sept-ve-disable,id=tdx,quote-generation-service=vsock:2:4050 \
-    -cpu host,-kvm-steal-time,pmu=off,tsc-freq=1000000000 \
-    -machine q35,kernel_irqchip=split,confidential-guest-support=tdx \
-    -device virtio-net-pci,netdev=mynet0,disable-legacy=on,disable-modern=off \
-    -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
-    -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off \
-    -drive file=fs.img,if=none,format=raw,id=x0 \
-    -netdev user,id=mynet0,hostfwd=tcp::10027-:22,hostfwd=tcp::54136-:8090 \
-    -chardev stdio,id=mux,mux=on,logfile=./$(date '+%Y-%m-%dT%H%M%S').log \
-    -device virtio-serial,romfile= \
-    -device virtconsole,chardev=mux \
-    -monitor chardev:mux \
+    -display none \
     -serial chardev:mux \
+    -monitor chardev:mux \
+    -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+    -drive if=none,format=raw,id=x0,file=./regression/build/ext2.img \
+    -drive if=none,format=raw,id=x1,file=./regression/build/exfat.img \
+    -device virtio-blk-device,drive=x0 \
+    -device virtio-keyboard-device \
+    -device virtio-serial-device \
+    -device virtconsole,chardev=mux \
 """

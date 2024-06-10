@@ -262,7 +262,7 @@ impl TaskOptions {
     pub fn build(self) -> Result<Arc<Task>> {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
-        extern "sysv64" fn kernel_task_entry() {
+        extern "C" fn kernel_task_entry() {
             let current_task = current_task()
                 .expect("no current task, it should have current task in kernel task entry");
             current_task.func.call(());

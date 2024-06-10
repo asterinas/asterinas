@@ -227,6 +227,7 @@ impl VmIo for VmSpace {
             }
         }
         self.activate();
+        unsafe { riscv::register::sstatus::set_sum(); }
         buf.clone_from_slice(unsafe { core::slice::from_raw_parts(vaddr as *const u8, buf.len()) });
         Ok(())
     }

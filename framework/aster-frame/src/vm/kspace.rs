@@ -48,7 +48,8 @@ pub(crate) const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> =
 /// boot compatibility layer. But we disabled it because the framework
 /// doesn't support relocatable kernel yet.
 pub const fn kernel_loaded_offset() -> usize {
-    0xffff_ffff_8000_0000
+    // 0xffff_ffff_8000_0000
+    0xffff_ffff_0000_0000
 }
 const_assert!(LINEAR_MAPPING_VADDR_RANGE.end < kernel_loaded_offset());
 

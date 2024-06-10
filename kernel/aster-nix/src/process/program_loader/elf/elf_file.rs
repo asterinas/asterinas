@@ -198,8 +198,8 @@ fn check_elf_header(elf_header: &ElfHeader) -> Result<()> {
     //     return Error::new(Errno::ENOEXEC);
     // }
     // x86_64 architecture
-    debug_assert_eq!(elf_header.pt2.machine.as_machine(), header::Machine::X86_64);
-    if elf_header.pt2.machine.as_machine() != header::Machine::X86_64 {
+    debug_assert_eq!(elf_header.pt2.machine.as_machine(), header::Machine::RISC_V);
+    if elf_header.pt2.machine.as_machine() != header::Machine::RISC_V {
         return_errno_with_message!(Errno::ENOEXEC, "Not x86_64 executable");
     }
     // Executable file or shared object

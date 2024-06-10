@@ -10,13 +10,15 @@ use crate::{
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(context: &UserContext) {
     let trap_info = context.trap_information();
-    let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
+    // let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
+    let exception = &trap_info.code;
     log_trap_info(exception, trap_info);
     let current = current!();
     let root_vmar = current.root_vmar();
 
     match *exception {
-        PAGE_FAULT => handle_page_fault(trap_info),
+        // PAGE_FAULT => handle_page_fault(trap_info),
+        CpuException::InstructionPageFault | CpuException::LoadPageFault | CpuException::StorePageFault => handle_page_fault(trap_info),
         _ => {
             // We current do nothing about other exceptions
             generate_fault_signal(trap_info);
@@ -34,7 +36,8 @@ fn handle_page_fault(trap_info: &CpuExceptionInfo) {
         page_fault_addr
     );
     let not_present = trap_info.error_code & PAGE_NOT_PRESENT_ERROR_MASK == 0;
-    let write = trap_info.error_code & WRITE_ACCESS_MASK != 0;
+    // let write = trap_info.error_code & WRITE_ACCESS_MASK != 0;
+    let write = trap_info.code == CpuException::StorePageFault;
     if not_present || write {
         // If page is not present or due to write access, we should ask the vmar try to commit this page
         let current = current!();
@@ -113,7 +116,7 @@ fn log_trap_info(exception: &CpuException, trap_info: &CpuExceptionInfo) {
         _ => {
             info!(
                 "[Trap][Unknown trap type][id = {}, err = {}]",
-                trap_info.id, trap_info.error_code
+                trap_info.code as usize, trap_info.error_code
             );
         }
     }

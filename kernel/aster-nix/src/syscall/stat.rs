@@ -89,18 +89,17 @@ pub struct Stat {
     st_dev: u64,
     /// Inode number
     st_ino: usize,
-    /// Number of hard links
-    st_nlink: usize,
     /// File type and mode
     st_mode: u32,
+    /// Number of hard links
+    st_nlink: u32,
     /// User ID of owner
     st_uid: u32,
     /// Group ID of owner
     st_gid: u32,
-    /// Padding bytes
-    __pad0: u32,
     /// Device ID (if special file)
     st_rdev: u64,
+    __pad0: u64,
     /// Total size, in bytes
     st_size: isize,
     /// Block size for filesystem I/O
@@ -114,7 +113,7 @@ pub struct Stat {
     /// Time of last status change
     st_ctime: timespec_t,
     /// Unused field
-    __unused: [i64; 3],
+    __unused: [u32; 2],
 }
 
 impl From<Metadata> for Stat {
@@ -122,7 +121,7 @@ impl From<Metadata> for Stat {
         Self {
             st_dev: info.dev,
             st_ino: info.ino,
-            st_nlink: info.nlinks,
+            st_nlink: info.nlinks as u32,
             st_mode: info.type_ as u32 | info.mode.bits() as u32,
             st_uid: info.uid.as_u32(),
             st_gid: info.gid.as_u32(),
@@ -134,7 +133,7 @@ impl From<Metadata> for Stat {
             st_atime: info.atime.into(),
             st_mtime: info.mtime.into(),
             st_ctime: info.ctime.into(),
-            __unused: [0; 3],
+            __unused: [0; 2],
         }
     }
 }

@@ -74,7 +74,7 @@ pub fn init() {
     util::random::init();
     driver::init();
     time::init();
-    net::init();
+    // net::init();
     sched::init();
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
@@ -93,7 +93,7 @@ fn init_thread() {
     // FIXME: Remove this if we move the step of mounting
     // the filesystems to be done within the init process.
     aster_frame::trap::enable_local();
-    net::lazy_init();
+    // net::lazy_init();
     fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {

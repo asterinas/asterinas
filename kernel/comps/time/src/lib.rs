@@ -46,10 +46,10 @@ pub struct SystemTime {
 impl SystemTime {
     pub(crate) const fn zero() -> Self {
         Self {
-            century: 0,
-            year: 0,
-            month: 0,
-            day: 0,
+            century: 20,
+            year: 1970,
+            month: 1,
+            day: 1,
             hour: 0,
             minute: 0,
             second: 0,

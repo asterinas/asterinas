@@ -17,9 +17,12 @@ pub(super) static START_TIME_AS_DURATION: Once<Duration> = Once::new();
 
 pub(super) fn init() {
     let start_time = convert_system_time(read_start_time()).unwrap();
+    // START_TIME_AS_DURATION
+    //     .call_once(|| start_time.duration_since(&SystemTime::UNIX_EPOCH).unwrap());
     START_TIME_AS_DURATION
-        .call_once(|| start_time.duration_since(&SystemTime::UNIX_EPOCH).unwrap());
-    START_TIME.call_once(|| start_time);
+        .call_once(|| Duration::from_secs(0));
+    START_TIME.call_once(|| SystemTime::UNIX_EPOCH);
+    // START_TIME.call_once(|| start_time);
 }
 
 impl SystemTime {

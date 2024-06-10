@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::{arch::x86_64::_mm_clflush, ops::Range};
+use core::ops::Range;
 
 #[cfg(feature = "intel_tdx")]
 use ::tdx_guest::tdx_is_enabled;
@@ -136,7 +136,8 @@ impl DmaStream {
         for i in byte_range.step_by(64) {
             // SAFETY: the addresses is limited by a valid `byte_range`.
             unsafe {
-                _mm_clflush(start_va.wrapping_add(i));
+                #[cfg(target_arch = "x86_64")]
+                core::arch::x86_64::_mm_clflush(start_va.wrapping_add(i));
             }
         }
         Ok(())

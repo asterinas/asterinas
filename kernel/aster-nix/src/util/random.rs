@@ -22,6 +22,13 @@ pub fn init() {
             use rand::SeedableRng;
 
             RNG.call_once(|| SpinLock::new(StdRng::from_entropy()));
+        } else if #[cfg(target_arch = "riscv64")] {
+            use aster_frame::arch::boot::DEVICE_TREE;
+            use rand::SeedableRng;
+
+            let chosen = DEVICE_TREE.get().unwrap().find_node("/chosen").unwrap();
+            let seed = chosen.property("rng-seed").unwrap().value.try_into().unwrap();
+            RNG.call_once(|| SpinLock::new(StdRng::from_seed(seed)));
         } else {
             compile_error!("unsupported target");
         }

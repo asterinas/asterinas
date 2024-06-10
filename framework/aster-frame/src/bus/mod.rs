@@ -10,6 +10,6 @@ pub enum BusProbeError {
 }
 
 pub fn init() {
-    pci::init();
+    // pci::init();
     mmio::init();
 }
