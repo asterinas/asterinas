@@ -127,6 +127,7 @@ pub struct KtestItemInfo {
     pub fn_name: &'static str,
     pub package: &'static str,
     pub source: &'static str,
+    pub is_init: bool,
     pub line: usize,
     pub col: usize,
 }

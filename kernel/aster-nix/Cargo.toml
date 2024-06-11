@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+component = { path = "../libs/comp-sys/component" }
 aster-frame = { path = "../../framework/aster-frame" }
 align_ext = { path = "../../framework/libs/align_ext" }
 pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }

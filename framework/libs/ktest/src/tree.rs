@@ -232,6 +232,7 @@ mod tests {
                         fn_name: f,
                         package: p,
                         source: "unrelated",
+                        is_init: false,
                         line: 0,
                         col: 0,
                     },

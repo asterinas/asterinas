@@ -153,3 +153,11 @@ fn print_banner() {
     );
     println!("\x1B[0m");
 }
+
+#[cfg(ktest)]
+#[ktest(init)]
+fn init_ktest() {
+    component::init_all(component::parse_metadata!()).expect("Failed to initialize components");
+    crate::time::init();
+    // TODO: Add more initialization functions here if needed.
+}

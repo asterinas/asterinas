@@ -276,22 +276,3 @@ pub(super) fn init() {
     init_jiffies_clock_manager();
     init_coarse_clock();
 }
-
-#[cfg(ktest)]
-/// Init `CLOCK_REALTIME_MANAGER` for process-related ktests.
-///
-/// TODO: `ktest` may require a feature that allows the registration of initialization functions
-/// to avoid functions like this one.
-pub fn init_for_ktest() {
-    // If `spin::Once` has initialized, this closure will not be executed.
-    CLOCK_REALTIME_MANAGER.call_once(|| {
-        let clock = RealTimeClock { _private: () };
-        TimerManager::new(Arc::new(clock))
-    });
-    CLOCK_REALTIME_COARSE_INSTANCE.call_once(|| Arc::new(RealTimeCoarseClock { _private: () }));
-    RealTimeCoarseClock::current_ref().call_once(|| SpinLock::new(Duration::from_secs(0)));
-    JIFFIES_TIMER_MANAGER.call_once(|| {
-        let clock = JiffiesClock { _private: () };
-        TimerManager::new(Arc::new(clock))
-    });
-}

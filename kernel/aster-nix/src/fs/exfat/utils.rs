@@ -57,19 +57,7 @@ pub struct DosTimestamp {
 
 impl DosTimestamp {
     pub fn now() -> Result<Self> {
-        #[cfg(not(ktest))]
-        {
-            DosTimestamp::from_duration(RealTimeClock::get().read_time())
-        }
-
-        // When ktesting, the time module has not been initialized yet, return a fake value instead.
-        #[cfg(ktest)]
-        {
-            use crate::time::SystemTime;
-            return DosTimestamp::from_duration(
-                SystemTime::UNIX_EPOCH.duration_since(&SystemTime::UNIX_EPOCH)?,
-            );
-        }
+        DosTimestamp::from_duration(RealTimeClock::get().read_time())
     }
 
     pub fn new(time: u16, date: u16, increament_10ms: u8, utc_offset: u8) -> Result<Self> {

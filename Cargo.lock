@@ -217,6 +217,7 @@ dependencies = [
  "bytemuck",
  "bytemuck_derive",
  "cfg-if",
+ "component",
  "controlled",
  "core2",
  "cpio-decoder",

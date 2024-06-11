@@ -102,6 +102,13 @@ fn invoke_ffi_init_funcs() {
 /// Simple unit tests for the ktest framework.
 #[cfg(ktest)]
 mod test {
+
+    #[ktest(init)]
+    fn init_ktest() {
+        // A dummy test to check if the #[ktest(init)] of multiple crates will conflict with each other.
+        assert_eq!(true, true);
+    }
+
     #[ktest]
     fn trivial_assertion() {
         assert_eq!(0, 0);

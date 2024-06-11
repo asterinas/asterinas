@@ -702,7 +702,6 @@ mod test {
 
     #[ktest]
     fn init_process() {
-        crate::time::clocks::init_for_ktest();
         let process = new_process(None);
         assert!(process.process_group().is_none());
         assert!(process.session().is_none());
@@ -710,7 +709,6 @@ mod test {
 
     #[ktest]
     fn init_process_in_session() {
-        crate::time::clocks::init_for_ktest();
         let process = new_process_in_session(None);
         assert!(process.is_group_leader());
         assert!(process.is_session_leader());
@@ -719,7 +717,6 @@ mod test {
 
     #[ktest]
     fn to_new_session() {
-        crate::time::clocks::init_for_ktest();
         let process = new_process_in_session(None);
         let sess = process.session().unwrap();
         sess.inner.lock().leader = None;
