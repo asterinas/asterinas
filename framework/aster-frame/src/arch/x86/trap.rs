@@ -11,11 +11,7 @@ use tdx_guest::tdcall;
 use trapframe::TrapFrame;
 
 #[cfg(feature = "intel_tdx")]
-use crate::arch::{
-    cpu::VIRTUALIZATION_EXCEPTION,
-    mm::PageTableFlags,
-    tdx_guest::{handle_virtual_exception, TdxTrapFrame},
-};
+use crate::arch::{cpu::VIRTUALIZATION_EXCEPTION, tdx_guest::handle_virtual_exception};
 use crate::{
     cpu::{CpuException, PageFaultErrorCode, PAGE_FAULT},
     cpu_local,

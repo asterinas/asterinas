@@ -161,13 +161,6 @@ impl PageTableEntryTrait for PageTableEntry {
         let flags = PageTableFlags::PRESENT.bits()
             | PageTableFlags::WRITABLE.bits()
             | PageTableFlags::USER.bits();
-        #[cfg(feature = "intel_tdx")]
-        let flags = flags
-            | parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::SHARED,
-                PageTableFlags::SHARED
-            );
         Self(paddr & Self::PHYS_ADDR_MASK | flags)
     }
 
