@@ -34,10 +34,7 @@ pub struct BootPageTable<
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     /// Creates a new boot page table from the current page table root physical address.
-    ///
-    /// The caller must ensure that the current page table may be set up by the firmware,
-    /// loader or the setup code.
-    pub unsafe fn from_current_pt() -> Self {
+    pub fn from_current_pt() -> Self {
         let root_paddr = crate::arch::mm::current_page_table_paddr();
         Self {
             root_pt: root_paddr / C::BASE_PAGE_SIZE,
@@ -48,7 +45,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
 
     /// Maps a base page to a frame.
     /// This function will panic if the page is already mapped.
-    pub fn map_base_page(&mut self, from: Vaddr, to: FrameNumber, prop: PageProperty) {
+    pub unsafe fn map_base_page(&mut self, from: Vaddr, to: FrameNumber, prop: PageProperty) {
         let mut pt = self.root_pt;
         let mut level = C::NR_LEVELS;
         // Walk to the last level of the page table.
@@ -85,37 +82,13 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
         frame
     }
-
-    /// Retires this boot-stage page table.
-    ///
-    /// Do not drop a boot-stage page table. Instead, retire it.
-    ///
-    /// # Safety
-    ///
-    /// This method can only be called when this boot-stage page table is no longer in use,
-    /// e.g., after the permanent kernel page table has been activated.
-    pub unsafe fn retire(mut self) {
-        // Manually free all heap and frame memory allocated.
-        let frames = core::mem::take(&mut self.frames);
-        for frame in frames {
-            FRAME_ALLOCATOR.get().unwrap().lock().dealloc(frame, 1);
-        }
-        // We do not want or need to trigger drop.
-        core::mem::forget(self);
-        // FIXME: an empty `Vec` is leaked on the heap here since the drop is not called
-        // and we have no ways to free it.
-        // The best solution to recycle the boot-phase page table is to initialize all
-        // page table page metadata of the boot page table by page walk after the metadata
-        // pages are mapped. Therefore the boot page table can be recycled or dropped by
-        // the routines in the [`super::node`] module. There's even without a need of
-        // `first_activate` concept if the boot page table can be managed by page table
-        // pages.
-    }
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> {
     fn drop(&mut self) {
-        panic!("the boot page table is dropped rather than retired.");
+        for frame in &self.frames {
+            FRAME_ALLOCATOR.get().unwrap().lock().dealloc(*frame, 1);
+        }
     }
 }
 

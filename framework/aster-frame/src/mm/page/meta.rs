@@ -53,12 +53,9 @@ use super::Page;
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        paddr_to_vaddr,
-        page::allocator::FRAME_ALLOCATOR,
-        page_size,
-        page_table::{boot_pt::BootPageTable, PageTableEntryTrait},
-        CachePolicy, Paddr, PageFlags, PageProperty, PagingConstsTrait, PagingLevel,
-        PrivilegedPageFlags, PAGE_SIZE,
+        kspace::BOOT_PAGE_TABLE, paddr_to_vaddr, page::allocator::FRAME_ALLOCATOR, page_size,
+        page_table::PageTableEntryTrait, CachePolicy, Paddr, PageFlags, PageProperty,
+        PagingConstsTrait, PagingLevel, PrivilegedPageFlags, PAGE_SIZE,
     },
 };
 
@@ -191,7 +188,7 @@ impl PageMeta for KernelMeta {
 /// Initializes the metadata of all physical pages.
 ///
 /// The function returns a list of `Page`s containing the metadata.
-pub(crate) fn init(boot_pt: &mut BootPageTable) -> Vec<Range<Paddr>> {
+pub(crate) fn init() -> Vec<Range<Paddr>> {
     let max_paddr = {
         let regions = crate::boot::memory_regions();
         regions.iter().map(|r| r.base() + r.len()).max().unwrap()
@@ -207,8 +204,11 @@ pub(crate) fn init(boot_pt: &mut BootPageTable) -> Vec<Range<Paddr>> {
     let num_pages = max_paddr / page_size::<PagingConsts>(1);
     let num_meta_pages = (num_pages * size_of::<MetaSlot>()).div_ceil(PAGE_SIZE);
     let meta_pages = alloc_meta_pages(num_meta_pages);
-
     // Map the metadata pages.
+    let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
+    let boot_pt = boot_pt_lock
+        .as_mut()
+        .expect("boot page table not initialized");
     for (i, frame_paddr) in meta_pages.iter().enumerate() {
         let vaddr = mapping::page_to_meta::<PagingConsts>(0) + i * PAGE_SIZE;
         let prop = PageProperty {
@@ -216,9 +216,9 @@ pub(crate) fn init(boot_pt: &mut BootPageTable) -> Vec<Range<Paddr>> {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        boot_pt.map_base_page(vaddr, frame_paddr / PAGE_SIZE, prop);
+        // SAFETY: we are doing the metadata mappings for the kernel.
+        unsafe { boot_pt.map_base_page(vaddr, frame_paddr / PAGE_SIZE, prop) };
     }
-
     // Now the metadata pages are mapped, we can initialize the metadata.
     meta_pages
         .into_iter()
