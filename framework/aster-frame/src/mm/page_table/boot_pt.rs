@@ -10,8 +10,8 @@ use super::{pte_index, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        paddr_to_vaddr, page::allocator::FRAME_ALLOCATOR, PageProperty, PagingConstsTrait, Vaddr,
-        PAGE_SIZE,
+        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::FRAME_ALLOCATOR, PageProperty,
+        PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
 };
 
@@ -44,7 +44,15 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     /// Maps a base page to a frame.
+    ///
+    /// # Panics
+    ///
     /// This function will panic if the page is already mapped.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it can cause undefined behavior if the caller
+    /// maps a page in the kernel address space.
     pub unsafe fn map_base_page(&mut self, from: Vaddr, to: FrameNumber, prop: PageProperty) {
         let mut pt = self.root_pt;
         let mut level = C::NR_LEVELS;
@@ -74,6 +82,67 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         unsafe { pte_ptr.write(E::new_frame(to * C::BASE_PAGE_SIZE, 1, prop)) };
     }
 
+    /// Maps a base page to a frame.
+    ///
+    /// This function may split a huge page into base pages, causing page allocations
+    /// if the original mapping is a huge page.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the page is already mapped.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it can cause undefined behavior if the caller
+    /// maps a page in the kernel address space.
+    pub unsafe fn protect_base_page(
+        &mut self,
+        virt_addr: Vaddr,
+        mut op: impl FnMut(&mut PageProperty),
+    ) {
+        let mut pt = self.root_pt;
+        let mut level = C::NR_LEVELS;
+        // Walk to the last level of the page table.
+        while level > 1 {
+            let index = pte_index::<C>(virt_addr, level);
+            let pte_ptr = unsafe { (paddr_to_vaddr(pt * C::BASE_PAGE_SIZE) as *mut E).add(index) };
+            let pte = unsafe { pte_ptr.read() };
+            pt = if !pte.is_present() {
+                panic!("protecting an unmapped page in the boot page table");
+            } else if pte.is_last(level) {
+                // Split the huge page.
+                let frame = self.alloc_frame();
+                let huge_pa = pte.paddr();
+                for i in 0..nr_subpage_per_huge::<C>() {
+                    let nxt_ptr =
+                        unsafe { (paddr_to_vaddr(frame * C::BASE_PAGE_SIZE) as *mut E).add(i) };
+                    unsafe {
+                        nxt_ptr.write(E::new_frame(
+                            huge_pa + i * C::BASE_PAGE_SIZE,
+                            level - 1,
+                            pte.prop(),
+                        ))
+                    };
+                }
+                unsafe { pte_ptr.write(E::new_pt(frame * C::BASE_PAGE_SIZE)) };
+                frame
+            } else {
+                pte.paddr() / C::BASE_PAGE_SIZE
+            };
+            level -= 1;
+        }
+        // Do protection in the last level page table.
+        let index = pte_index::<C>(virt_addr, 1);
+        let pte_ptr = unsafe { (paddr_to_vaddr(pt * C::BASE_PAGE_SIZE) as *mut E).add(index) };
+        let pte = unsafe { pte_ptr.read() };
+        if !pte.is_present() {
+            panic!("protecting an unmapped page in the boot page table");
+        }
+        let mut prop = pte.prop();
+        op(&mut prop);
+        unsafe { pte_ptr.write(E::new_frame(pte.paddr(), 1, prop)) };
+    }
+
     fn alloc_frame(&mut self) -> FrameNumber {
         let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
         self.frames.push(frame);
@@ -94,7 +163,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> 
 
 #[cfg(ktest)]
 #[ktest]
-fn test_boot_pt() {
+fn test_boot_pt_map_protect() {
     use super::page_walk;
     use crate::{
         arch::mm::{PageTableEntry, PagingConsts},
@@ -113,20 +182,34 @@ fn test_boot_pt() {
     let from1 = 0x1000;
     let to1 = 0x2;
     let prop1 = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-    boot_pt.map_base_page(from1, to1, prop1);
+    unsafe { boot_pt.map_base_page(from1, to1, prop1) };
     assert_eq!(
         unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from1 + 1) },
         Some((to1 * PAGE_SIZE + 1, prop1))
+    );
+    unsafe { boot_pt.protect_base_page(from1, |prop| prop.flags = PageFlags::RX) };
+    assert_eq!(
+        unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from1 + 1) },
+        Some((
+            to1 * PAGE_SIZE + 1,
+            PageProperty::new(PageFlags::RX, CachePolicy::Writeback)
+        ))
     );
 
     let from2 = 0x2000;
     let to2 = 0x3;
     let prop2 = PageProperty::new(PageFlags::RX, CachePolicy::Uncacheable);
-    boot_pt.map_base_page(from2, to2, prop2);
+    unsafe { boot_pt.map_base_page(from2, to2, prop2) };
     assert_eq!(
         unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from2 + 2) },
         Some((to2 * PAGE_SIZE + 2, prop2))
     );
-
-    unsafe { boot_pt.retire() }
+    unsafe { boot_pt.protect_base_page(from2, |prop| prop.flags = PageFlags::RW) };
+    assert_eq!(
+        unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from2 + 2) },
+        Some((
+            to2 * PAGE_SIZE + 2,
+            PageProperty::new(PageFlags::RW, CachePolicy::Uncacheable)
+        ))
+    );
 }

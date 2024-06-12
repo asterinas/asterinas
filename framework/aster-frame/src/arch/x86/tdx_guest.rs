@@ -11,15 +11,12 @@ use tdx_guest::{
 };
 use trapframe::TrapFrame;
 
-use crate::{
-    arch::mm::PageTableFlags,
-    mm::{
-        kspace::KERNEL_PAGE_TABLE,
-        paddr_to_vaddr,
-        page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableError,
-        KERNEL_BASE_VADDR, KERNEL_END_VADDR, PAGE_SIZE,
-    },
+use crate::mm::{
+    kspace::{BOOT_PAGE_TABLE, KERNEL_BASE_VADDR, KERNEL_END_VADDR, KERNEL_PAGE_TABLE},
+    paddr_to_vaddr,
+    page_prop::{PageProperty, PrivilegedPageFlags as PrivFlags},
+    page_table::PageTableError,
+    PAGE_SIZE,
 };
 
 const SHARED_BIT: u8 = 51;
@@ -416,16 +413,28 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
     if gpa & PAGE_MASK != 0 {
         warn!("Misaligned address: {:x}", gpa);
     }
-    let vaddr = paddr_to_vaddr(gpa);
+    // Protect the page in the kernel page table.
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    pt.protect(&(vaddr..page_num * PAGE_SIZE), |prop| {
-        prop = PageProperty {
+    let protect_op = |prop: &mut PageProperty| {
+        *prop = PageProperty {
             flags: prop.flags,
             cache: prop.cache,
             priv_flags: prop.priv_flags | PrivFlags::SHARED,
         }
-    })
-    .map_err(PageConvertError::PageTableError)?;
+    };
+    let vaddr = paddr_to_vaddr(gpa);
+    pt.protect(&(vaddr..page_num * PAGE_SIZE), protect_op)
+        .map_err(PageConvertError::PageTableError)?;
+    // Protect the page in the boot page table if in the boot phase.
+    {
+        let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
+        if let Some(boot_pt) = boot_pt_lock.as_mut() {
+            for i in 0..page_num {
+                let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
+                boot_pt.protect_base_page(vaddr, protect_op);
+            }
+        }
+    }
     map_gpa(
         (gpa & (!PAGE_MASK)) as u64 | SHARED_MASK,
         (page_num * PAGE_SIZE) as u64,
@@ -452,16 +461,28 @@ pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Page
     if gpa & !PAGE_MASK == 0 {
         warn!("Misaligned address: {:x}", gpa);
     }
-    let vaddr = paddr_to_vaddr(gpa);
+    // Protect the page in the kernel page table.
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
-    pt.protect(&(vaddr..page_num * PAGE_SIZE), |prop| {
-        prop = PageProperty {
+    let protect_op = |prop: &mut PageProperty| {
+        *prop = PageProperty {
             flags: prop.flags,
             cache: prop.cache,
             priv_flags: prop.priv_flags - PrivFlags::SHARED,
         }
-    })
-    .map_err(PageConvertError::PageTableError)?;
+    };
+    let vaddr = paddr_to_vaddr(gpa);
+    pt.protect(&(vaddr..page_num * PAGE_SIZE), protect_op)
+        .map_err(PageConvertError::PageTableError)?;
+    // Protect the page in the boot page table if in the boot phase.
+    {
+        let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
+        if let Some(boot_pt) = boot_pt_lock.as_mut() {
+            for i in 0..page_num {
+                let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
+                boot_pt.protect_base_page(vaddr, protect_op);
+            }
+        }
+    }
     map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)
         .map_err(PageConvertError::TdVmcallError)?;
     for i in 0..page_num {
