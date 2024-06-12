@@ -106,10 +106,7 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 ///
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
-pub fn init_kernel_page_table(
-    boot_pt: BootPageTable<PageTableEntry, PagingConsts>,
-    meta_pages: Vec<Range<Paddr>>,
-) {
+pub fn init_kernel_page_table(meta_pages: Vec<Range<Paddr>>) {
     info!("Initializing the kernel page table");
 
     let regions = crate::boot::memory_regions();
@@ -201,14 +198,18 @@ pub fn init_kernel_page_table(
         }
     }
 
+    KERNEL_PAGE_TABLE.call_once(|| kpt);
+}
+
+pub fn activate_kernel_page_table(boot_pt: BootPageTable<PageTableEntry, PagingConsts>) {
+    let kpt = KERNEL_PAGE_TABLE
+        .get()
+        .expect("The kernel page table is not initialized yet");
     // SAFETY: the kernel page table is initialized properly.
     unsafe {
         kpt.first_activate_unchecked();
         crate::arch::mm::tlb_flush_all_including_global();
     }
-
-    KERNEL_PAGE_TABLE.call_once(|| kpt);
-
     // SAFETY: the boot page table is OK to be retired now since
     // the kernel page table is activated.
     unsafe { boot_pt.retire() };
