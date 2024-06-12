@@ -77,14 +77,14 @@ pub fn init() {
 
     mm::page::allocator::init();
     let mut boot_pt = mm::get_boot_pt();
-    let meta_pages = mm::init_page_meta(&mut boot_pt);
+    mm::kspace::init_kernel_page_table(mm::init_page_meta(&mut boot_pt));
     mm::misc_init();
 
     trap::init();
     arch::after_all_init();
     bus::init();
 
-    mm::kspace::init_kernel_page_table(boot_pt, meta_pages);
+    mm::kspace::activate_kernel_page_table(boot_pt);
 
     invoke_ffi_init_funcs();
 }
