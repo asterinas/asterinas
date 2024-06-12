@@ -131,7 +131,3 @@ pub(crate) fn misc_init() {
     }
     FRAMEBUFFER_REGIONS.call_once(|| framebuffer_regions);
 }
-
-pub(crate) fn get_boot_pt() -> page_table::boot_pt::BootPageTable {
-    unsafe { page_table::boot_pt::BootPageTable::from_current_pt() }
-}
