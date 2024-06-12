@@ -7,24 +7,27 @@
 //! The kernel memory space is currently managed as follows, if the
 //! address width is 48 bits (with 47 bits kernel space).
 //!
+//! TODO: the cap of linear mapping (the start of vm alloc) are raised
+//! to workaround for high IO in TDX. We need actual vm alloc API to have
+//! a proper fix.
+//!
 //! ```text
 //! +-+ <- the highest used address (0xffff_ffff_ffff_0000)
 //! | |         For the kernel code, 1 GiB. Mapped frames are untracked.
 //! +-+ <- 0xffff_ffff_8000_0000
 //! | |
 //! | |         Unused hole.
-//! +-+ <- 0xffff_e100_0000_0000
-//! | |         For frame metadata, 1 TiB. Mapped frames are untracked.
-//! +-+ <- 0xffff_e000_0000_0000
-//! | |
-//! | |         For vm alloc/io mappings, 32 TiB.
+//! +-+ <- 0xffff_ff00_0000_0000
+//! | |         For frame metadata, 1 TiB.
+//! | |         Mapped frames are untracked.
+//! +-+ <- 0xffff_fe00_0000_0000
+//! | |         For vm alloc/io mappings, 1 TiB.
 //! | |         Mapped frames are tracked with handles.
-//! | |
-//! +-+ <- the middle of the higher half (0xffff_c000_0000_0000)
-//! | |
+//! +-+ <- 0xffff_fd00_0000_0000
 //! | |
 //! | |
-//! | |         For linear mappings, 64 TiB.
+//! | |
+//! | |         For linear mappings.
 //! | |         Mapped physical addresses are untracked.
 //! | |
 //! | |
@@ -79,12 +82,12 @@ pub fn kernel_loaded_offset() -> usize {
 
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
 
-const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e100_0000_0000 << ADDR_WIDTH_SHIFT;
-const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_ff00_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_fe00_0000_0000 << ADDR_WIDTH_SHIFT;
 pub(in crate::mm) const FRAME_METADATA_RANGE: Range<Vaddr> =
     FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
-const VMALLOC_BASE_VADDR: Vaddr = 0xffff_c000_0000_0000 << ADDR_WIDTH_SHIFT;
+const VMALLOC_BASE_VADDR: Vaddr = 0xffff_fd00_0000_0000 << ADDR_WIDTH_SHIFT;
 pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
 
 /// The base address of the linear mapping of all physical
