@@ -15,6 +15,7 @@ use super::{
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
     prelude::*,
 };
+use crate::time::clocks::RealTimeCoarseClock;
 
 /// Max length of file name.
 pub const MAX_FNAME_LEN: usize = 255;
@@ -649,6 +650,7 @@ impl Inode {
     pub fn set_gid(&self, gid: u32);
     pub fn set_atime(&self, time: Duration);
     pub fn set_mtime(&self, time: Duration);
+    pub fn set_ctime(&self, time: Duration);
 }
 
 impl Debug for Inode {
@@ -728,6 +730,7 @@ impl Inner {
     pub fn mtime(&self) -> Duration;
     pub fn set_mtime(&mut self, time: Duration);
     pub fn ctime(&self) -> Duration;
+    pub fn set_ctime(&mut self, time: Duration);
     pub fn set_device_id(&mut self, device_id: u64);
     pub fn device_id(&self) -> u64;
     pub fn sync_metadata(&self) -> Result<()>;
@@ -1653,6 +1656,11 @@ impl InodeImpl {
         self.0.read().desc.ctime
     }
 
+    pub fn set_ctime(&self, time: Duration) {
+        let mut inner = self.0.write();
+        inner.desc.ctime = time;
+    }
+
     pub fn read_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
         self.0.read().read_block_sync(bid, block)
     }
@@ -1829,15 +1837,16 @@ impl TryFrom<RawInode> for InodeDesc {
 
 impl InodeDesc {
     pub fn new(type_: FileType, perm: FilePerm) -> Dirty<Self> {
+        let now = RealTimeCoarseClock::get().read_time();
         Dirty::new_dirty(Self {
             type_,
             perm,
             uid: 0,
             gid: 0,
             size: 0,
-            atime: Duration::ZERO,
-            ctime: Duration::ZERO,
-            mtime: Duration::ZERO,
+            atime: now,
+            ctime: now,
+            mtime: now,
             dtime: Duration::ZERO,
             hard_links: 1,
             blocks_count: 0,

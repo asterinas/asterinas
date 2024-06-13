@@ -81,6 +81,8 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
     fn set_atime(&self, time: Duration);
     fn mtime(&self) -> Duration;
     fn set_mtime(&self, time: Duration);
+    fn ctime(&self) -> Duration;
+    fn set_ctime(&self, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     fn resize(&self, _new_size: usize) -> Result<()> {
