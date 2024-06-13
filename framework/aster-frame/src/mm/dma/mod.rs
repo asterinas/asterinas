@@ -11,7 +11,7 @@ use inherit_methods_macro::inherit_methods;
 use spin::Once;
 
 use super::Paddr;
-use crate::{arch::iommu::has_iommu, mm::PAGE_SIZE, sync::SpinLock};
+use crate::{arch::iommu::has_dma_remapping, mm::PAGE_SIZE, sync::SpinLock};
 
 /// The devide address.
 ///
@@ -49,7 +49,7 @@ impl<T: HasDaddr> HasDaddr for &T {
 static DMA_MAPPING_SET: Once<SpinLock<BTreeSet<Paddr>>> = Once::new();
 
 pub fn dma_type() -> DmaType {
-    if has_iommu() {
+    if has_dma_remapping() {
         DmaType::Iommu
     } else {
         DmaType::Direct

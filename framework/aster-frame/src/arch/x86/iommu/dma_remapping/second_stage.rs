@@ -23,7 +23,7 @@ impl PageTableMode for DeviceMode {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(super) struct PagingConsts {}
+pub struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
