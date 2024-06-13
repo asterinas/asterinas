@@ -25,6 +25,7 @@ use crate::{
     },
     prelude::*,
     process::{signal::Poller, Gid, Uid},
+    time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };
 
@@ -188,12 +189,13 @@ struct InodeMeta {
 
 impl InodeMeta {
     pub fn new(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+        let now = RealTimeCoarseClock::get().read_time();
         Self {
             size: 0,
             blocks: 0,
-            atime: Default::default(),
-            mtime: Default::default(),
-            ctime: Default::default(),
+            atime: now,
+            mtime: now,
+            ctime: now,
             mode,
             nlinks: 1,
             uid,
@@ -202,12 +204,13 @@ impl InodeMeta {
     }
 
     pub fn new_dir(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+        let now = RealTimeCoarseClock::get().read_time();
         Self {
             size: 2,
             blocks: 1,
-            atime: Default::default(),
-            mtime: Default::default(),
-            ctime: Default::default(),
+            atime: now,
+            mtime: now,
+            ctime: now,
             mode,
             nlinks: 2,
             uid,
@@ -572,6 +575,14 @@ impl Inode for RamInode {
 
     fn set_mtime(&self, time: Duration) {
         self.node.write().metadata.mtime = time;
+    }
+
+    fn ctime(&self) -> Duration {
+        self.node.read().metadata.ctime
+    }
+
+    fn set_ctime(&self, time: Duration) {
+        self.node.write().metadata.ctime = time;
     }
 
     fn ino(&self) -> u64 {

@@ -1171,6 +1171,14 @@ impl Inode for ExfatInode {
         self.inner.write().mtime = DosTimestamp::from_duration(time).unwrap_or_default();
     }
 
+    fn ctime(&self) -> Duration {
+        self.inner.read().ctime.as_duration().unwrap_or_default()
+    }
+
+    fn set_ctime(&self, time: Duration) {
+        self.inner.write().ctime = DosTimestamp::from_duration(time).unwrap_or_default();
+    }
+
     fn owner(&self) -> Result<Uid> {
         Ok(Uid::new(
             self.inner.read().fs().mount_option().fs_uid as u32,

@@ -314,6 +314,8 @@ impl Dentry_ {
     pub fn set_atime(&self, time: Duration);
     pub fn mtime(&self) -> Duration;
     pub fn set_mtime(&self, time: Duration);
+    pub fn ctime(&self) -> Duration;
+    pub fn set_ctime(&self, time: Duration);
 }
 
 impl Debug for Dentry_ {
@@ -693,6 +695,8 @@ impl Dentry {
     pub fn set_atime(&self, time: Duration);
     pub fn mtime(&self) -> Duration;
     pub fn set_mtime(&self, time: Duration);
+    pub fn ctime(&self) -> Duration;
+    pub fn set_ctime(&self, time: Duration);
     pub fn key(&self) -> DentryKey;
     pub fn inode(&self) -> &Arc<dyn Inode>;
     pub fn is_root_of_mount(&self) -> bool;

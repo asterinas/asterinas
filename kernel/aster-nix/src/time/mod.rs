@@ -43,6 +43,15 @@ impl From<Duration> for timespec_t {
     }
 }
 
+impl From<timeval_t> for timespec_t {
+    fn from(timeval: timeval_t) -> timespec_t {
+        let sec = timeval.sec;
+        let nsec = timeval.usec * 1000;
+        debug_assert!(sec >= 0); // nsec >= 0 always holds
+        timespec_t { sec, nsec }
+    }
+}
+
 impl From<timespec_t> for Duration {
     fn from(timespec: timespec_t) -> Self {
         Duration::new(timespec.sec as u64, timespec.nsec as u32)

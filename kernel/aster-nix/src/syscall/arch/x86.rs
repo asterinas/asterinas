@@ -115,7 +115,7 @@ use crate::syscall::{
     umount::sys_umount,
     uname::sys_uname,
     unlink::{sys_unlink, sys_unlinkat},
-    utimens::sys_utimensat,
+    utimens::{sys_futimesat, sys_utime, sys_utimensat, sys_utimes},
     wait4::sys_wait4,
     waitid::sys_waitid,
     write::sys_write,
@@ -225,6 +225,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_RT_SIGPENDING = 127    => sys_rt_sigpending(args[..2]);
     SYS_RT_SIGSUSPEND = 130    => sys_rt_sigsuspend(args[..2]);
     SYS_SIGALTSTACK = 131      => sys_sigaltstack(args[..2]);
+    SYS_UTIME = 132            => sys_utime(args[..2]);
     SYS_STATFS = 137           => sys_statfs(args[..2]);
     SYS_FSTATFS = 138          => sys_fstatfs(args[..2]);
     SYS_GET_PRIORITY = 140     => sys_get_priority(args[..2]);
@@ -252,10 +253,12 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EPOLL_WAIT = 232       => sys_epoll_wait(args[..4]);
     SYS_EPOLL_CTL = 233        => sys_epoll_ctl(args[..4]);
     SYS_TGKILL = 234           => sys_tgkill(args[..3]);
+    SYS_UTIMES = 235           => sys_utimes(args[..2]);
     SYS_WAITID = 247           => sys_waitid(args[..5]);
     SYS_OPENAT = 257           => sys_openat(args[..4]);
     SYS_MKDIRAT = 258          => sys_mkdirat(args[..3]);
     SYS_FCHOWNAT = 260         => sys_fchownat(args[..5]);
+    SYS_FUTIMESAT = 261        => sys_futimesat(args[..3]);
     SYS_FSTATAT = 262          => sys_fstatat(args[..4]);
     SYS_UNLINKAT = 263         => sys_unlinkat(args[..3]);
     SYS_RENAMEAT = 264         => sys_renameat(args[..4]);

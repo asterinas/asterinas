@@ -61,6 +61,14 @@ impl Inode for Ext2Inode {
         self.set_mtime(time)
     }
 
+    fn ctime(&self) -> Duration {
+        self.ctime()
+    }
+
+    fn set_ctime(&self, time: Duration) {
+        self.set_ctime(time)
+    }
+
     fn ino(&self) -> u64 {
         self.ino() as _
     }

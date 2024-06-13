@@ -152,7 +152,7 @@ provided by Linux on x86-64 architecture.
 | 129     | rt_sigqueueinfo  | ❌              |
 | 130     | rt_sigsuspend    | ✅              |
 | 131     | sigaltstack      | ✅              |
-| 132     | utime            | ❌              |
+| 132     | utime            | ✅              |
 | 133     | mknod            | ❌              |
 | 134     | uselib           | ❌              |
 | 135     | personality      | ❌              |
@@ -255,7 +255,7 @@ provided by Linux on x86-64 architecture.
 | 232     | epoll_wait       | ✅              |
 | 233     | epoll_ctl        | ✅              |
 | 234     | tgkill           | ✅              |
-| 235     | utimes           | ❌              |
+| 235     | utimes           | ✅              |
 | 236     | vserver          | ❌              |
 | 237     | mbind            | ❌              |
 | 238     | set_mempolicy    | ❌              |
@@ -281,7 +281,7 @@ provided by Linux on x86-64 architecture.
 | 258     | mkdirat          | ✅              |
 | 259     | mknodat          | ❌              |
 | 260     | fchownat         | ✅              |
-| 261     | futimesat        | ❌              |
+| 261     | futimesat        | ✅              |
 | 262     | newfstatat       | ✅              |
 | 263     | unlinkat         | ✅              |
 | 264     | renameat         | ✅              |

@@ -124,6 +124,14 @@ impl Inode for Ptmx {
         self.metadata.write().mtime = time;
     }
 
+    fn ctime(&self) -> Duration {
+        self.metadata.read().ctime
+    }
+
+    fn set_ctime(&self, time: Duration) {
+        self.metadata.write().ctime = time;
+    }
+
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         Ok(0)
     }

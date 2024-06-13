@@ -71,6 +71,14 @@ impl Common {
         self.metadata.write().mtime = time;
     }
 
+    pub fn ctime(&self) -> Duration {
+        self.metadata.read().ctime
+    }
+
+    pub fn set_ctime(&self, time: Duration) {
+        self.metadata.write().ctime = time;
+    }
+
     pub fn mode(&self) -> Result<InodeMode> {
         Ok(self.metadata.read().mode)
     }

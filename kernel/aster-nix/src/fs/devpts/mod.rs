@@ -210,6 +210,14 @@ impl Inode for RootInode {
         self.metadata.write().mtime = time;
     }
 
+    fn ctime(&self) -> Duration {
+        self.metadata.read().ctime
+    }
+
+    fn set_ctime(&self, time: Duration) {
+        self.metadata.write().ctime = time;
+    }
+
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
