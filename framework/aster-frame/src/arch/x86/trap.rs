@@ -113,7 +113,10 @@ fn handle_kernel_page_fault(f: &TrapFrame) {
                 PageProperty {
                     flags: PageFlags::RW,
                     cache: CachePolicy::Uncacheable,
+                    #[cfg(not(feature = "intel_tdx"))]
                     priv_flags: PrivFlags::GLOBAL,
+                    #[cfg(feature = "intel_tdx")]
+                    priv_flags: PrivFlags::SHARED | PrivFlags::GLOBAL,
                 },
             )
             .unwrap();
