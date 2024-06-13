@@ -11,12 +11,15 @@ use tdx_guest::{
 };
 use trapframe::TrapFrame;
 
-use crate::mm::{
-    kspace::{BOOT_PAGE_TABLE, KERNEL_BASE_VADDR, KERNEL_END_VADDR, KERNEL_PAGE_TABLE},
-    paddr_to_vaddr,
-    page_prop::{PageProperty, PrivilegedPageFlags as PrivFlags},
-    page_table::PageTableError,
-    PAGE_SIZE,
+use crate::{
+    mm::{
+        kspace::{BOOT_PAGE_TABLE, KERNEL_BASE_VADDR, KERNEL_END_VADDR, KERNEL_PAGE_TABLE},
+        paddr_to_vaddr,
+        page_prop::{PageProperty, PrivilegedPageFlags as PrivFlags},
+        page_table::PageTableError,
+        PAGE_SIZE,
+    },
+    prelude::Paddr,
 };
 
 const SHARED_BIT: u8 = 51;
@@ -80,7 +83,6 @@ enum MmioError {
 
 #[derive(Debug)]
 pub enum PageConvertError {
-    TdxPageStatusMismatch,
     PageTableError(PageTableError),
     TdCallError(tdcall::TdCallError),
     TdVmcallError((u64, tdvmcall::TdVmcallError)),
@@ -144,7 +146,7 @@ fn handle_io(trapframe: &mut dyn TdxTrapFrame, ve_info: &tdcall::TdgVeInfo) -> b
     } else {
         tdvmcall::Direction::In
     };
-    let operand = if (ve_info.exit_qualification >> 6) & 0x1 == 0 {
+    let _operand = if (ve_info.exit_qualification >> 6) & 0x1 == 0 {
         tdvmcall::Operand::Dx
     } else {
         tdvmcall::Operand::Immediate
@@ -403,13 +405,8 @@ fn decode_mmio(instr: &Instruction) -> Option<(InstrMmioType, IoSize)> {
 /// - The given guest physical address range is currently mapped in the page table.
 /// - The `page_num` argument represents a valid number of pages.
 /// - This function will erase any valid data in the range and should not assume that the data will still be there after the operation.
-pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), PageConvertError> {
+pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageConvertError> {
     const PAGE_MASK: usize = PAGE_SIZE - 1;
-    for i in 0..page_num {
-        if !is_protected_gpa(gpa + (i * PAGE_SIZE)) {
-            return Err(PageConvertError::TdxPageStatusMismatch);
-        }
-    }
     if gpa & PAGE_MASK != 0 {
         warn!("Misaligned address: {:x}", gpa);
     }
@@ -423,7 +420,7 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
         }
     };
     let vaddr = paddr_to_vaddr(gpa);
-    pt.protect(&(vaddr..page_num * PAGE_SIZE), protect_op)
+    pt.protect(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
         .map_err(PageConvertError::PageTableError)?;
     // Protect the page in the boot page table if in the boot phase.
     {
@@ -451,13 +448,8 @@ pub unsafe fn unprotect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Pa
 /// - The given guest physical address range is currently mapped in the page table.
 /// - The `page_num` argument represents a valid number of pages.
 ///
-pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), PageConvertError> {
+pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageConvertError> {
     const PAGE_MASK: usize = PAGE_SIZE - 1;
-    for i in 0..page_num {
-        if is_protected_gpa(gpa + (i * PAGE_SIZE)) {
-            return Err(PageConvertError::TdxPageStatusMismatch);
-        }
-    }
     if gpa & !PAGE_MASK == 0 {
         warn!("Misaligned address: {:x}", gpa);
     }
@@ -471,7 +463,7 @@ pub unsafe fn protect_gpa_range(gpa: TdxGpa, page_num: usize) -> Result<(), Page
         }
     };
     let vaddr = paddr_to_vaddr(gpa);
-    pt.protect(&(vaddr..page_num * PAGE_SIZE), protect_op)
+    pt.protect(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
         .map_err(PageConvertError::PageTableError)?;
     // Protect the page in the boot page table if in the boot phase.
     {
