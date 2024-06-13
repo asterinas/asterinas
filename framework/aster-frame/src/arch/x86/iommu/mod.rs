@@ -4,10 +4,11 @@
 
 mod context_table;
 mod fault;
-mod remapping;
+pub(crate) mod registers;
 mod second_stage;
 
 use log::info;
+use registers::IOMMU_REGS;
 pub use second_stage::DeviceMode;
 use second_stage::{PageTableEntry, PagingConsts};
 use spin::Once;
@@ -16,7 +17,7 @@ use crate::{
     arch::iommu::context_table::RootTable,
     bus::pci::PciDeviceLocation,
     mm::{dma::Daddr, page_table::PageTableError, Paddr, PageTable},
-    sync::Mutex,
+    sync::SpinLock,
 };
 
 /// An enumeration representing possible errors related to IOMMU.
@@ -28,6 +29,7 @@ pub enum IommuError {
     ModificationError(PageTableError),
 }
 
+/// Mapping device address to physical address.
 ///
 /// # Safety
 ///
@@ -65,15 +67,23 @@ pub(crate) fn unmap(daddr: Daddr) -> Result<(), IommuError> {
 }
 
 pub(crate) fn init() -> Result<(), IommuError> {
+    registers::init()?;
+
+    // Create Root Table instance
     let mut root_table = RootTable::new();
     // For all PCI Device, use the same page table.
     let page_table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
     for table in PciDeviceLocation::all() {
         root_table.specify_device_page_table(table, unsafe { page_table.shallow_copy() })
     }
-    remapping::init(&root_table)?;
-    PAGE_TABLE.call_once(|| Mutex::new(root_table));
-    info!("IOMMU enabled");
+    PAGE_TABLE.call_once(|| SpinLock::new(root_table));
+
+    // Enable DMA remapping
+    let mut iommu_regs = IOMMU_REGS.get().unwrap().lock_irq_disabled();
+    iommu_regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
+    info!("[IOMMU] DMA remapping enabled");
+    drop(iommu_regs);
+
     Ok(())
 }
 
@@ -81,4 +91,4 @@ pub(crate) fn has_iommu() -> bool {
     PAGE_TABLE.get().is_some()
 }
 
-static PAGE_TABLE: Once<Mutex<RootTable>> = Once::new();
+static PAGE_TABLE: Once<SpinLock<RootTable>> = Once::new();
