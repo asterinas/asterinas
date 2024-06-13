@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use tdx_guest::tdcall::{get_report, TdCallError};
+use tdx_guest::tdcall::TdCallError;
 
 use super::*;
 use crate::{
@@ -8,7 +8,6 @@ use crate::{
     events::IoEvents,
     fs::{inode_handle::FileIo, utils::IoctlCmd},
     process::signal::Poller,
-    util::{read_val_from_user, write_val_to_user},
 };
 
 const TDX_REPORTDATA_LEN: usize = 64;
@@ -57,30 +56,24 @@ impl From<TdCallError> for Error {
 }
 
 impl FileIo for TdxGuest {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, _buf: &mut [u8]) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Read operation not supported")
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, _buf: &[u8]) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Write operation not supported")
     }
 
-    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+    fn ioctl(&self, cmd: IoctlCmd, _arg: usize) -> Result<i32> {
         match cmd {
             IoctlCmd::TDXGETREPORT => {
-                let tdx_report: TdxReportRequest = read_val_from_user(arg)?;
-                match get_report(&tdx_report.tdreport, &tdx_report.reportdata) {
-                    Ok(_) => {}
-                    Err(err) => return Err(err.into()),
-                };
-                write_val_to_user(arg, &tdx_report)?;
-                Ok(0)
+                todo!()
             }
             _ => return_errno_with_message!(Errno::EPERM, "Unsupported ioctl"),
         }
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, _poller: Option<&Poller>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }
