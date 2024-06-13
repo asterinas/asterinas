@@ -81,7 +81,13 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     fn new_pt(paddr: Paddr) -> Self {
-        Self(paddr as u64 & Self::PHYS_MASK)
+        // FIXME: The IOMMU page table will check the permission of the PTE that map to a child page table.
+        // Here is a workaround to make sure devices can access memory.
+        Self(
+            paddr as u64 & Self::PHYS_MASK
+                | PageTableFlags::READABLE.bits()
+                | PageTableFlags::WRITABLE.bits(),
+        )
     }
 
     fn paddr(&self) -> Paddr {
