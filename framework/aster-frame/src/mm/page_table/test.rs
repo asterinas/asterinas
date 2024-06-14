@@ -5,8 +5,8 @@ use core::mem::ManuallyDrop;
 use super::*;
 use crate::mm::{
     kspace::LINEAR_MAPPING_BASE_VADDR,
+    page::{allocator, meta::FrameMeta},
     page_prop::{CachePolicy, PageFlags},
-    FrameAllocOptions,
 };
 
 const PAGE_SIZE: usize = 4096;
@@ -17,7 +17,6 @@ fn test_range_check() {
     let good_va = 0..PAGE_SIZE;
     let bad_va = 0..PAGE_SIZE + 1;
     let bad_va2 = LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + PAGE_SIZE;
-    let to = FrameAllocOptions::new(1).alloc().unwrap();
     assert!(pt.cursor_mut(&good_va).is_ok());
     assert!(pt.cursor_mut(&bad_va).is_err());
     assert!(pt.cursor_mut(&bad_va2).is_err());
@@ -31,10 +30,10 @@ fn test_tracked_map_unmap() {
     let pt = PageTable::<UserMode>::empty();
 
     let from = PAGE_SIZE..PAGE_SIZE * 2;
-    let frame = FrameAllocOptions::new(1).alloc_single().unwrap();
-    let start_paddr = frame.start_paddr();
+    let page = allocator::alloc_single::<FrameMeta>().unwrap();
+    let start_paddr = page.paddr();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-    unsafe { pt.cursor_mut(&from).unwrap().map(frame.clone(), prop) };
+    unsafe { pt.cursor_mut(&from).unwrap().map(page.into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     unsafe { pt.unmap(&from).unwrap() };
     assert!(pt.query(from.start + 10).is_none());
@@ -75,14 +74,14 @@ fn test_untracked_map_unmap() {
 fn test_user_copy_on_write() {
     let pt = PageTable::<UserMode>::empty();
     let from = PAGE_SIZE..PAGE_SIZE * 2;
-    let frame = FrameAllocOptions::new(1).alloc_single().unwrap();
-    let start_paddr = frame.start_paddr();
+    let page = allocator::alloc_single::<FrameMeta>().unwrap();
+    let start_paddr = page.paddr();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-    unsafe { pt.cursor_mut(&from).unwrap().map(frame.clone(), prop) };
+    unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     unsafe { pt.unmap(&from).unwrap() };
     assert!(pt.query(from.start + 10).is_none());
-    unsafe { pt.cursor_mut(&from).unwrap().map(frame.clone(), prop) };
+    unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
 
     let child_pt = pt.fork_copy_on_write();
@@ -103,7 +102,7 @@ fn test_user_copy_on_write() {
         sibling_pt
             .cursor_mut(&from)
             .unwrap()
-            .map(frame.clone(), prop)
+            .map(page.clone().into(), prop)
     };
     assert_eq!(
         sibling_pt.query(from.start + 10).unwrap().0,
@@ -131,30 +130,30 @@ fn test_base_protect_query() {
 
     let from_ppn = 1..1000;
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
-    let to = FrameAllocOptions::new(999).alloc().unwrap();
+    let to = allocator::alloc::<FrameMeta>(999 * PAGE_SIZE).unwrap();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe {
         let mut cursor = pt.cursor_mut(&from).unwrap();
-        for frame in to {
-            cursor.map(frame.clone(), prop);
+        for page in to {
+            cursor.map(page.clone().into(), prop);
         }
     }
     for (qr, i) in pt.cursor(&from).unwrap().zip(from_ppn) {
-        let Qr::Mapped { va, frame, prop } = qr else {
+        let Qr::Mapped { va, page, prop } = qr else {
             panic!("Expected Mapped, got {:#x?}", qr);
         };
         assert_eq!(prop.flags, PageFlags::RW);
         assert_eq!(prop.cache, CachePolicy::Writeback);
-        assert_eq!(va..va + frame.size(), i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
+        assert_eq!(va..va + page.size(), i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
     let prot = PAGE_SIZE * 18..PAGE_SIZE * 20;
     unsafe { pt.protect(&prot, |p| p.flags -= PageFlags::W).unwrap() };
     for (qr, i) in pt.cursor(&prot).unwrap().zip(18..20) {
-        let Qr::Mapped { va, frame, prop } = qr else {
+        let Qr::Mapped { va, page, prop } = qr else {
             panic!("Expected Mapped, got {:#x?}", qr);
         };
         assert_eq!(prop.flags, PageFlags::R);
-        assert_eq!(va..va + frame.size(), i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
+        assert_eq!(va..va + page.size(), i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
 }
 
@@ -185,12 +184,14 @@ fn test_untracked_large_protect_query() {
     let from =
         UNTRACKED_OFFSET + PAGE_SIZE * from_ppn.start..UNTRACKED_OFFSET + PAGE_SIZE * from_ppn.end;
     let to = PAGE_SIZE * to_ppn.start..PAGE_SIZE * to_ppn.end;
+    let mapped_pa_of_va = |va: Vaddr| va - (from.start - to.start);
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.map(&from, &to, prop).unwrap() };
     for (qr, i) in pt.cursor(&from).unwrap().zip(0..512 + 2 + 2) {
         let Qr::MappedUntracked { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntracked, got {:#x?}", qr);
         };
+        assert_eq!(pa, mapped_pa_of_va(va));
         assert_eq!(prop.flags, PageFlags::RW);
         assert_eq!(prop.cache, CachePolicy::Writeback);
         if i < 512 + 2 {
@@ -218,6 +219,7 @@ fn test_untracked_large_protect_query() {
         let Qr::MappedUntracked { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntracked, got {:#x?}", qr);
         };
+        assert_eq!(pa, mapped_pa_of_va(va));
         assert_eq!(prop.flags, PageFlags::RW);
         let va = va - UNTRACKED_OFFSET;
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
@@ -226,6 +228,7 @@ fn test_untracked_large_protect_query() {
         let Qr::MappedUntracked { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntracked, got {:#x?}", qr);
         };
+        assert_eq!(pa, mapped_pa_of_va(va));
         assert_eq!(prop.flags, PageFlags::R);
         let va = va - UNTRACKED_OFFSET;
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
@@ -238,6 +241,7 @@ fn test_untracked_large_protect_query() {
         let Qr::MappedUntracked { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntracked, got {:#x?}", qr);
         };
+        assert_eq!(pa, mapped_pa_of_va(va));
         assert_eq!(prop.flags, PageFlags::RW);
         let va = va - UNTRACKED_OFFSET;
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);

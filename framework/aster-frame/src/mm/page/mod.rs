@@ -20,18 +20,19 @@ pub(in crate::mm) mod meta;
 
 use core::{
     marker::PhantomData,
+    mem::ManuallyDrop,
+    panic,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
 
-use meta::{mapping, MetaSlot, PageMeta};
+use meta::{mapping, FrameMeta, MetaSlot, PageMeta, PageUsage};
 
-use super::PAGE_SIZE;
+use super::{Frame, PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
-/// Representing a page that has a statically-known usage purpose,
-/// whose metadata is represented by `M`.
+/// A page with a statically-known usage, whose metadata is represented by `M`.
 #[derive(Debug)]
 pub struct Page<M: PageMeta> {
     pub(super) ptr: *const MetaSlot,
@@ -55,15 +56,17 @@ impl<M: PageMeta> Page<M> {
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
         let usage = unsafe { &(*ptr).usage };
-        let get_ref_count = unsafe { &(*ptr).ref_count };
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        let ref_count = unsafe { &(*ptr).ref_count };
 
         usage
             .compare_exchange(0, M::USAGE as u8, Ordering::SeqCst, Ordering::Relaxed)
             .expect("page already in use when trying to get a new handle");
 
-        let old_get_ref_count = get_ref_count.fetch_add(1, Ordering::Relaxed);
-        debug_assert!(old_get_ref_count == 0);
+        let old_ref_count = ref_count.fetch_add(1, Ordering::Relaxed);
+        debug_assert_eq!(old_ref_count, 0);
 
         // Initialize the metadata
         // SAFETY: The pointer points to the first byte of the `MetaSlot`
@@ -84,6 +87,7 @@ impl<M: PageMeta> Page<M> {
     /// A physical address to the page is returned in case the page needs to be
     /// restored using [`Page::from_raw`] later. This is useful when some architectural
     /// data structures need to hold the page handle such as the page table.
+    #[allow(unused)]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         let paddr = self.paddr();
         core::mem::forget(self);
@@ -117,6 +121,22 @@ impl<M: PageMeta> Page<M> {
         mapping::meta_to_page::<PagingConsts>(self.ptr as Vaddr)
     }
 
+    /// Get the paging level of this page.
+    ///
+    /// This is the level of the page table entry that maps the frame,
+    /// which determines the size of the frame.
+    ///
+    /// Currently, the level is always 1, which means the frame is a regular
+    /// page frame.
+    pub const fn level(&self) -> PagingLevel {
+        1
+    }
+
+    /// Size of this page in bytes.
+    pub const fn size(&self) -> usize {
+        PAGE_SIZE
+    }
+
     /// Get the metadata of this page.
     pub fn meta(&self) -> &M {
         unsafe { &*(self.ptr as *const M) }
@@ -148,28 +168,157 @@ impl<M: PageMeta> Clone for Page<M> {
 
 impl<M: PageMeta> Drop for Page<M> {
     fn drop(&mut self) {
-        if self.get_ref_count().fetch_sub(1, Ordering::Release) == 1 {
+        let last_ref_cnt = self.get_ref_count().fetch_sub(1, Ordering::Release);
+        debug_assert!(last_ref_cnt > 0);
+        if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             core::sync::atomic::fence(Ordering::Acquire);
-            // Let the custom dropper handle the drop.
-            M::on_drop(self);
-            // Drop the metadata.
+            // SAFETY: this is the last reference and is about to be dropped.
             unsafe {
-                core::ptr::drop_in_place(self.ptr as *mut M);
+                meta::drop_as_last::<M>(self.ptr);
             }
-            // No handles means no usage. This also releases the page as unused for further
-            // calls to `Page::from_unused`.
-            unsafe { &*self.ptr }.usage.store(0, Ordering::Release);
-            // Deallocate the page.
-            // It would return the page to the allocator for further use. This would be done
-            // after the release of the metadata to avoid re-allocation before the metadata
-            // is reset.
-            allocator::PAGE_ALLOCATOR
-                .get()
-                .unwrap()
-                .lock()
-                .dealloc(self.paddr() / PAGE_SIZE, 1);
-        };
+        }
+    }
+}
+
+/// A page with a dynamically-known usage.
+///
+/// It can also be used when the user don't care about the usage of the page.
+#[derive(Debug)]
+pub struct DynPage {
+    ptr: *const MetaSlot,
+}
+
+unsafe impl Send for DynPage {}
+unsafe impl Sync for DynPage {}
+
+impl DynPage {
+    /// Forget the handle to the page.
+    ///
+    /// This is the same as [`Page::into_raw`].
+    ///
+    /// This will result in the page being leaked without calling the custom dropper.
+    ///
+    /// A physical address to the page is returned in case the page needs to be
+    /// restored using [`Self::from_raw`] later.
+    #[allow(unused)]
+    pub(in crate::mm) fn into_raw(self) -> Paddr {
+        let paddr = self.paddr();
+        core::mem::forget(self);
+        paddr
+    }
+
+    /// Restore a forgotten page from a physical address.
+    ///
+    /// # Safety
+    ///
+    /// The safety concerns are the same as [`Page::from_raw`].
+    pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
+        let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
+        let ptr = vaddr as *const MetaSlot;
+
+        Self { ptr }
+    }
+
+    /// Get the physical address of the start of the page
+    pub fn paddr(&self) -> Paddr {
+        mapping::meta_to_page::<PagingConsts>(self.ptr as Vaddr)
+    }
+
+    /// Get the paging level of this page.
+    pub fn level(&self) -> PagingLevel {
+        1
+    }
+
+    /// Size of this page in bytes.
+    pub fn size(&self) -> usize {
+        PAGE_SIZE
+    }
+
+    /// Get the usage of the page.
+    pub fn usage(&self) -> PageUsage {
+        // SAFETY: structure is safely created with a pointer that points
+        // to initialized [`MetaSlot`] memory.
+        let usage_raw = unsafe { (*self.ptr).usage.load(Ordering::Relaxed) };
+        num::FromPrimitive::from_u8(usage_raw).unwrap()
+    }
+
+    fn get_ref_count(&self) -> &AtomicU32 {
+        unsafe { &(*self.ptr).ref_count }
+    }
+}
+
+impl<M: PageMeta> TryFrom<DynPage> for Page<M> {
+    type Error = DynPage;
+
+    /// Try converting a [`DynPage`] into the statically-typed [`Page`].
+    ///
+    /// If the usage of the page is not the same as the expected usage, it will
+    /// return the dynamic page itself as is.
+    fn try_from(dyn_page: DynPage) -> Result<Self, Self::Error> {
+        if dyn_page.usage() == M::USAGE {
+            let result = Page {
+                ptr: dyn_page.ptr,
+                _marker: PhantomData,
+            };
+            let _ = ManuallyDrop::new(dyn_page);
+            Ok(result)
+        } else {
+            Err(dyn_page)
+        }
+    }
+}
+
+impl<M: PageMeta> From<Page<M>> for DynPage {
+    fn from(page: Page<M>) -> Self {
+        let result = Self { ptr: page.ptr };
+        let _ = ManuallyDrop::new(page);
+        result
+    }
+}
+
+impl From<Frame> for DynPage {
+    fn from(frame: Frame) -> Self {
+        Page::<FrameMeta>::from(frame).into()
+    }
+}
+
+impl Clone for DynPage {
+    fn clone(&self) -> Self {
+        self.get_ref_count().fetch_add(1, Ordering::Relaxed);
+        Self { ptr: self.ptr }
+    }
+}
+
+impl Drop for DynPage {
+    fn drop(&mut self) {
+        let last_ref_cnt = self.get_ref_count().fetch_sub(1, Ordering::Release);
+        debug_assert!(last_ref_cnt > 0);
+        if last_ref_cnt == 1 {
+            // A fence is needed here with the same reasons stated in the implementation of
+            // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
+            core::sync::atomic::fence(Ordering::Acquire);
+            // Drop the page and its metadata according to its usage.
+            // SAFETY: all `drop_as_last` calls in match arms operates on a last, about to be
+            // dropped page reference.
+            unsafe {
+                match self.usage() {
+                    PageUsage::Frame => {
+                        meta::drop_as_last::<meta::FrameMeta>(self.ptr);
+                    }
+                    PageUsage::PageTable => {
+                        meta::drop_as_last::<meta::PageTablePageMeta>(self.ptr);
+                    }
+                    // The following pages don't have metadata and can't be dropped.
+                    PageUsage::Unused
+                    | PageUsage::Reserved
+                    | PageUsage::Kernel
+                    | PageUsage::Meta => {
+                        panic!("dropping a dynamic page with usage {:?}", self.usage());
+                    }
+                }
+            }
+        }
     }
 }

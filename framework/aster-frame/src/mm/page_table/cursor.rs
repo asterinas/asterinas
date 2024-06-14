@@ -58,7 +58,7 @@ use super::{
     page_size, pte_index, Child, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
     PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel,
 };
-use crate::mm::{Frame, Paddr, PageProperty, Vaddr};
+use crate::mm::{page::DynPage, Paddr, PageProperty, Vaddr};
 
 #[derive(Clone, Debug)]
 pub(crate) enum PageTableQueryResult {
@@ -68,7 +68,7 @@ pub(crate) enum PageTableQueryResult {
     },
     Mapped {
         va: Vaddr,
-        frame: Frame,
+        page: DynPage,
         prop: PageProperty,
     },
     #[allow(dead_code)]
@@ -190,10 +190,10 @@ where
             }
 
             match self.cur_child() {
-                Child::Frame(frame) => {
+                Child::Page(page) => {
                     return Some(PageTableQueryResult::Mapped {
                         va,
-                        frame,
+                        page,
                         prop: pte.prop(),
                     });
                 }
@@ -214,8 +214,8 @@ where
 
     /// Traverses forward in the current level to the next PTE.
     ///
-    /// If reached the end of a page table node, it leads itself up to the next frame of the parent
-    /// frame if possible.
+    /// If reached the end of a page table node, it leads itself up to the next page of the parent
+    /// page if possible.
     fn move_forward(&mut self) {
         let page_size = page_size::<C>(self.level);
         let next_va = self.va.align_down(page_size) + page_size;
@@ -225,7 +225,7 @@ where
         self.va = next_va;
     }
 
-    /// Goes up a level. We release the current frame if it has no mappings since the cursor only moves
+    /// Goes up a level. We release the current page if it has no mappings since the cursor only moves
     /// forward. And if needed we will do the final cleanup using this method after re-walk when the
     /// cursor is dropped.
     ///
@@ -241,9 +241,9 @@ where
     fn level_down(&mut self) {
         debug_assert!(self.level > 1);
 
-        if let Child::PageTable(nxt_lvl_frame) = self.cur_child() {
+        if let Child::PageTable(nxt_lvl_ptn) = self.cur_child() {
             self.level -= 1;
-            self.guards[(C::NR_LEVELS - self.level) as usize] = Some(nxt_lvl_frame.lock());
+            self.guards[(C::NR_LEVELS - self.level) as usize] = Some(nxt_lvl_ptn.lock());
         } else {
             panic!("Trying to level down when it is not mapped to a page table");
         }
@@ -359,21 +359,21 @@ where
         }
     }
 
-    /// Maps the range starting from the current address to a [`Frame`].
+    /// Maps the range starting from the current address to a [`DynPage`].
     ///
     /// # Panics
     ///
     /// This function will panic if
     ///  - the virtual address range to be mapped is out of the range;
-    ///  - the alignment of the frame is not satisfied by the virtual address;
+    ///  - the alignment of the page is not satisfied by the virtual address;
     ///  - it is already mapped to a huge page while the caller wants to map a smaller one.
     ///
     /// # Safety
     ///
     /// The caller should ensure that the virtual range being mapped does
     /// not affect kernel's memory safety.
-    pub(crate) unsafe fn map(&mut self, frame: Frame, prop: PageProperty) {
-        let end = self.0.va + frame.size();
+    pub(crate) unsafe fn map(&mut self, page: DynPage, prop: PageProperty) {
+        let end = self.0.va + page.size();
         assert!(end <= self.0.barrier_va.end);
         debug_assert!(self.0.in_tracked_range());
 
@@ -392,12 +392,11 @@ where
             }
             continue;
         }
-        debug_assert_eq!(self.0.level, frame.level());
+        debug_assert_eq!(self.0.level, page.level());
 
         // Map the current page.
         let idx = self.0.cur_idx();
-        self.cur_node_mut().set_child_frame(idx, frame, prop);
-
+        self.cur_node_mut().set_child_page(idx, page, prop);
         self.0.move_forward();
     }
 
@@ -602,17 +601,16 @@ where
 
     /// Goes down a level assuming the current slot is absent.
     ///
-    /// This method will create a new child frame and go down to it.
+    /// This method will create a new child page table node and go down to it.
     fn level_down_create(&mut self) {
         debug_assert!(self.0.level > 1);
-
-        let new_frame = PageTableNode::<E, C>::alloc(self.0.level - 1);
+        let new_node = PageTableNode::<E, C>::alloc(self.0.level - 1);
         let idx = self.0.cur_idx();
         let is_tracked = self.0.in_tracked_range();
         self.cur_node_mut()
-            .set_child_pt(idx, new_frame.clone_raw(), is_tracked);
+            .set_child_pt(idx, new_node.clone_raw(), is_tracked);
         self.0.level -= 1;
-        self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_frame);
+        self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_node);
     }
 
     /// Goes down a level assuming the current slot is an untracked huge page.
@@ -625,11 +623,11 @@ where
         let idx = self.0.cur_idx();
         self.cur_node_mut().split_untracked_huge(idx);
 
-        let Child::PageTable(new_frame) = self.0.cur_child() else {
+        let Child::PageTable(new_node) = self.0.cur_child() else {
             unreachable!();
         };
         self.0.level -= 1;
-        self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_frame.lock());
+        self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_node.lock());
     }
 
     fn cur_node_mut(&mut self) -> &mut PageTableNode<E, C> {

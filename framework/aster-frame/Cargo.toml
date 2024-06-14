@@ -26,6 +26,9 @@ ktest = { path = "../libs/ktest" }
 id-alloc = { path = "../libs/id-alloc" }
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
 log = "0.4"
+num = { version = "0.4", default-features = false }
+num-derive = { version = "0.4", default-features = false }
+num-traits = { version = "0.2", default-features = false }
 pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 spin = "0.9.4"
 static_assertions = "1.1.0"
