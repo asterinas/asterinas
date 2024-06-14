@@ -144,7 +144,7 @@ impl PageTableEntryTrait for PageTableEntry {
         self.0 & PageTableFlags::PRESENT.bits() != 0
     }
 
-    fn new_frame(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
+    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         let mut pte = Self(
             paddr & Self::PHYS_ADDR_MASK
                 | ((level != 1) as usize) << PageTableFlags::HUGE.bits().ilog2(),

@@ -61,7 +61,7 @@ impl PageTableMode for KernelMode {
 
 // Here are some const values that are determined by the paging constants.
 
-/// The number of virtual address bits used to index a PTE in a frame.
+/// The number of virtual address bits used to index a PTE in a page.
 const fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize {
     nr_subpage_per_huge::<C>().ilog2() as usize
 }
@@ -73,7 +73,7 @@ const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize
 }
 
 /// A handle to a page table.
-/// A page table can track the lifetime of the mapped physical frames.
+/// A page table can track the lifetime of the mapped physical pages.
 #[derive(Debug)]
 pub(crate) struct PageTable<
     M: PageTableMode,
@@ -113,18 +113,18 @@ impl PageTable<UserMode> {
                 .unwrap();
         };
 
-        let root_frame = cursor.leak_root_guard().unwrap();
+        let root_node = cursor.leak_root_guard().unwrap();
 
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
-        let new_root_frame = unsafe {
-            root_frame.make_copy(
+        let new_root_node = unsafe {
+            root_node.make_copy(
                 0..NR_PTES_PER_NODE / 2,
                 NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE,
             )
         };
 
         PageTable::<UserMode> {
-            root: new_root_frame.into_raw(),
+            root: new_root_node.into_raw(),
             _phantom: PhantomData,
         }
     }
@@ -139,14 +139,14 @@ impl PageTable<KernelMode> {
     /// Then, one can use a user page table to call [`fork_copy_on_write`], creating
     /// other child page tables.
     pub(crate) fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let root_frame = self.root.clone_shallow().lock();
+        let root_node = self.root.clone_shallow().lock();
 
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
-        let new_root_frame =
-            unsafe { root_frame.make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE) };
+        let new_root_node =
+            unsafe { root_node.make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE) };
 
         PageTable::<UserMode> {
-            root: new_root_frame.into_raw(),
+            root: new_root_node.into_raw(),
             _phantom: PhantomData,
         }
     }
@@ -166,11 +166,11 @@ impl PageTable<KernelMode> {
         let end = root_index.end;
         debug_assert!(end <= NR_PTES_PER_NODE);
 
-        let mut root_frame = self.root.clone_shallow().lock();
+        let mut root_node = self.root.clone_shallow().lock();
         for i in start..end {
-            if !root_frame.read_pte(i).is_present() {
-                let frame = PageTableNode::alloc(PagingConsts::NR_LEVELS - 1);
-                root_frame.set_child_pt(i, frame.into_raw(), i < NR_PTES_PER_NODE * 3 / 4);
+            if !root_node.read_pte(i).is_present() {
+                let node = PageTableNode::alloc(PagingConsts::NR_LEVELS - 1);
+                root_node.set_child_pt(i, node.into_raw(), i < NR_PTES_PER_NODE * 3 / 4);
             }
         }
     }
@@ -232,7 +232,7 @@ where
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
     pub(crate) fn query(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
-        // SAFETY: The root frame is a valid page table node so the address is valid.
+        // SAFETY: The root node is a valid page table node so the address is valid.
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
     }
 
@@ -283,7 +283,7 @@ where
 /// Because neither the hardware MMU nor the software page walk method
 /// would get the locks of the page table while reading, they can enter
 /// a to-be-recycled page table node and read the page table entries
-/// after the frame is recycled and reused.
+/// after the node is recycled and reused.
 ///
 /// To mitigate this problem, the page table nodes are by default not
 /// actively recycled, until we find an appropriate solution.
@@ -297,10 +297,10 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {
-        let frame_addr = paddr_to_vaddr(root_paddr);
+        let node_addr = paddr_to_vaddr(root_paddr);
         let offset = pte_index::<C>(vaddr, cur_level);
         // SAFETY: The offset does not exceed the value of PAGE_SIZE.
-        unsafe { (frame_addr as *const E).add(offset).read() }
+        unsafe { (node_addr as *const E).add(offset).read() }
     };
 
     while cur_level > 1 {
@@ -315,10 +315,10 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 
         cur_level -= 1;
         cur_pte = {
-            let frame_addr = paddr_to_vaddr(cur_pte.paddr());
+            let node_addr = paddr_to_vaddr(cur_pte.paddr());
             let offset = pte_index::<C>(vaddr, cur_level);
             // SAFETY: The offset does not exceed the value of PAGE_SIZE.
-            unsafe { (frame_addr as *const E).add(offset).read() }
+            unsafe { (node_addr as *const E).add(offset).read() }
         };
     }
 
@@ -348,8 +348,8 @@ pub(crate) trait PageTableEntryTrait:
     /// If the flags are present with valid mappings.
     fn is_present(&self) -> bool;
 
-    /// Create a new PTE with the given physical address and flags that map to a frame.
-    fn new_frame(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self;
+    /// Create a new PTE with the given physical address and flags that map to a page.
+    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self;
 
     /// Create a new PTE that map to a child page table.
     fn new_pt(paddr: Paddr) -> Self;
@@ -357,7 +357,7 @@ pub(crate) trait PageTableEntryTrait:
     /// Get the physical address from the PTE.
     /// The physical address recorded in the PTE is either:
     /// - the physical address of the next level page table;
-    /// - or the physical address of the page frame it maps to.
+    /// - or the physical address of the page it maps to.
     fn paddr(&self) -> Paddr;
 
     fn prop(&self) -> PageProperty;

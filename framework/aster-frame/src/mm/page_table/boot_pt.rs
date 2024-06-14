@@ -79,10 +79,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         if pte.is_present() {
             panic!("mapping an already mapped page in the boot page table");
         }
-        unsafe { pte_ptr.write(E::new_frame(to * C::BASE_PAGE_SIZE, 1, prop)) };
+        unsafe { pte_ptr.write(E::new_page(to * C::BASE_PAGE_SIZE, 1, prop)) };
     }
 
-    /// Maps a base page to a frame.
+    /// Set protections of a base page mapping.
     ///
     /// This function may split a huge page into base pages, causing page allocations
     /// if the original mapping is a huge page.
@@ -117,7 +117,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
                     let nxt_ptr =
                         unsafe { (paddr_to_vaddr(frame * C::BASE_PAGE_SIZE) as *mut E).add(i) };
                     unsafe {
-                        nxt_ptr.write(E::new_frame(
+                        nxt_ptr.write(E::new_page(
                             huge_pa + i * C::BASE_PAGE_SIZE,
                             level - 1,
                             pte.prop(),
@@ -140,7 +140,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         }
         let mut prop = pte.prop();
         op(&mut prop);
-        unsafe { pte_ptr.write(E::new_frame(pte.paddr(), 1, prop)) };
+        unsafe { pte_ptr.write(E::new_page(pte.paddr(), 1, prop)) };
     }
 
     fn alloc_frame(&mut self) -> FrameNumber {

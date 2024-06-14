@@ -37,6 +37,7 @@ pub mod mapping {
 
 use alloc::vec::Vec;
 use core::{
+    marker::PhantomData,
     mem::{size_of, ManuallyDrop},
     ops::Range,
     panic,
@@ -44,20 +45,22 @@ use core::{
 };
 
 use log::info;
+use num_derive::FromPrimitive;
 use static_assertions::const_assert_eq;
 
-use super::Page;
+use super::{allocator, Page};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        kspace::BOOT_PAGE_TABLE, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, page_size,
-        page_table::PageTableEntryTrait, CachePolicy, Paddr, PageFlags, PageProperty,
-        PagingConstsTrait, PagingLevel, PrivilegedPageFlags, PAGE_SIZE,
+        kspace::BOOT_PAGE_TABLE, paddr_to_vaddr, page_size, page_table::PageTableEntryTrait,
+        CachePolicy, Paddr, PageFlags, PageProperty, PagingConstsTrait, PagingLevel,
+        PrivilegedPageFlags, Vaddr, PAGE_SIZE,
     },
 };
 
 /// Represents the usage of a page.
 #[repr(u8)]
+#[derive(Debug, FromPrimitive, PartialEq)]
 pub enum PageUsage {
     // The zero variant is reserved for the unused type. Only an unused page
     // can be designated for one of the other purposes.
@@ -95,8 +98,7 @@ pub(in crate::mm) struct MetaSlot {
 
 pub(super) union MetaSlotInner {
     _frame: ManuallyDrop<FrameMeta>,
-    // Make sure the the generic parameters don't effect the memory layout.
-    _pt: ManuallyDrop<PageTablePageMeta<PageTableEntry, PagingConsts>>,
+    _pt: ManuallyDrop<PageTablePageMeta>,
 }
 
 // Currently the sizes of the `MetaSlotInner` union variants are no larger
@@ -121,6 +123,38 @@ pub trait PageMeta: Default + Sync + private::Sealed + Sized {
     fn on_drop(page: &mut Page<Self>);
 }
 
+/// An internal routine in dropping implementations.
+///
+/// # Safety
+///
+/// The caller should ensure that the pointer points to a page's metadata slot. The
+/// page should have a last handle to the page, and the page is about to be dropped,
+/// as the metadata slot after this operation becomes uninitialized.
+pub(super) unsafe fn drop_as_last<M: PageMeta>(ptr: *const MetaSlot) {
+    // This would be guaranteed as a safety requirement.
+    debug_assert_eq!((*ptr).ref_count.load(Ordering::Relaxed), 0);
+    // Let the custom dropper handle the drop.
+    let mut page = Page::<M> {
+        ptr,
+        _marker: PhantomData,
+    };
+    M::on_drop(&mut page);
+    let _ = ManuallyDrop::new(page);
+    // Drop the metadata.
+    core::ptr::drop_in_place(ptr as *mut M);
+    // No handles means no usage. This also releases the page as unused for further
+    // calls to `Page::from_unused`.
+    (*ptr).usage.store(0, Ordering::Release);
+    // Deallocate the page.
+    // It would return the page to the allocator for further use. This would be done
+    // after the release of the metadata to avoid re-allocation before the metadata
+    // is reset.
+    allocator::PAGE_ALLOCATOR.get().unwrap().lock().dealloc(
+        mapping::meta_to_page::<PagingConsts>(ptr as Vaddr) / PAGE_SIZE,
+        1,
+    );
+}
+
 mod private {
     pub trait Sealed {}
 }
@@ -141,10 +175,14 @@ pub struct FrameMeta {
 
 impl Sealed for FrameMeta {}
 
+/// The metadata of any kinds of page table pages.
+/// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct PageTablePageMeta<E: PageTableEntryTrait, C: PagingConstsTrait>
-where
+pub struct PageTablePageMeta<
+    E: PageTableEntryTrait = PageTableEntry,
+    C: PagingConstsTrait = PagingConsts,
+> where
     [(); C::NR_LEVELS as usize]:,
 {
     pub lock: AtomicU8,
@@ -230,7 +268,13 @@ pub(crate) fn init() -> Vec<Range<Paddr>> {
 
 fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
     let mut meta_pages = Vec::new();
-    let start_frame = PAGE_ALLOCATOR.get().unwrap().lock().alloc(nframes).unwrap() * PAGE_SIZE;
+    let start_frame = allocator::PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .alloc(nframes)
+        .unwrap()
+        * PAGE_SIZE;
     // Zero them out as initialization.
     let vaddr = paddr_to_vaddr(start_frame) as *mut u8;
     unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };

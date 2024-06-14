@@ -19,12 +19,12 @@ pub use segment::Segment;
 
 use super::page::{
     meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
-    Page,
+    DynPage, Page,
 };
 use crate::{
     mm::{
         io::{VmIo, VmReader, VmWriter},
-        paddr_to_vaddr, HasPaddr, Paddr, PagingLevel, PAGE_SIZE,
+        paddr_to_vaddr, HasPaddr, Paddr, PAGE_SIZE,
     },
     Error, Result,
 };
@@ -43,24 +43,6 @@ pub struct Frame {
     page: Page<FrameMeta>,
 }
 
-impl From<Page<FrameMeta>> for Frame {
-    fn from(page: Page<FrameMeta>) -> Self {
-        Self { page }
-    }
-}
-
-impl From<Frame> for Page<FrameMeta> {
-    fn from(frame: Frame) -> Self {
-        frame.page
-    }
-}
-
-impl HasPaddr for Frame {
-    fn paddr(&self) -> Paddr {
-        self.start_paddr()
-    }
-}
-
 impl Frame {
     /// Returns the physical address of the page frame.
     pub fn start_paddr(&self) -> Paddr {
@@ -72,20 +54,9 @@ impl Frame {
         self.start_paddr() + PAGE_SIZE
     }
 
-    /// Gets the paging level of the frame.
-    ///
-    /// This is the level of the page table entry that maps the frame,
-    /// which determines the size of the frame.
-    ///
-    /// Currently, the level is always 1, which means the frame is a regular
-    /// page frame.
-    pub(crate) fn level(&self) -> PagingLevel {
-        1
-    }
-
     /// Returns the size of the frame
     pub const fn size(&self) -> usize {
-        PAGE_SIZE
+        self.page.size()
     }
 
     /// Returns a raw pointer to the starting virtual address of the frame.
@@ -107,6 +78,36 @@ impl Frame {
         unsafe {
             core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), self.size());
         }
+    }
+}
+
+impl From<Page<FrameMeta>> for Frame {
+    fn from(page: Page<FrameMeta>) -> Self {
+        Self { page }
+    }
+}
+
+impl TryFrom<DynPage> for Frame {
+    type Error = DynPage;
+
+    /// Try converting a [`DynPage`] into the statically-typed [`Frame`].
+    ///
+    /// If the dynamic page is not used as an untyped page frame, it will
+    /// return the dynamic page itself as is.
+    fn try_from(page: DynPage) -> core::result::Result<Self, Self::Error> {
+        page.try_into().map(|p: Page<FrameMeta>| p.into())
+    }
+}
+
+impl From<Frame> for Page<FrameMeta> {
+    fn from(frame: Frame) -> Self {
+        frame.page
+    }
+}
+
+impl HasPaddr for Frame {
+    fn paddr(&self) -> Paddr {
+        self.start_paddr()
     }
 }
 
@@ -152,8 +153,8 @@ impl PageMeta for FrameMeta {
     const USAGE: PageUsage = PageUsage::Frame;
 
     fn on_drop(_page: &mut Page<Self>) {
-        // Nothing should be done so far since the dropping the page would
-        // take all cared.
+        // Nothing should be done so far since dropping the page would
+        // have all taken care of.
     }
 }
 

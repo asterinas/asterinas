@@ -74,7 +74,7 @@ impl PageTableEntry {
 }
 
 impl PageTableEntryTrait for PageTableEntry {
-    fn new_frame(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
+    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         let mut pte = Self(paddr as u64 & Self::PHYS_MASK | PageTableFlags::LAST_PAGE.bits());
         pte.set_prop(prop);
         pte

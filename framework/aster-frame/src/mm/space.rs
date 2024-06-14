@@ -105,7 +105,7 @@ impl VmSpace {
         for frame in frames.into_iter() {
             // SAFETY: mapping in the user space with `Frame` is safe.
             unsafe {
-                cursor.map(frame, prop);
+                cursor.map(frame.into(), prop);
             }
         }
 
@@ -312,7 +312,11 @@ impl Iterator for VmQueryIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         self.cursor.next().map(|ptqr| match ptqr {
             PtQr::NotMapped { va, len } => VmQueryResult::NotMapped { va, len },
-            PtQr::Mapped { va, frame, prop } => VmQueryResult::Mapped { va, frame, prop },
+            PtQr::Mapped { va, page, prop } => VmQueryResult::Mapped {
+                va,
+                frame: page.try_into().unwrap(),
+                prop,
+            },
             // It is not possible to map untyped memory in user space.
             PtQr::MappedUntracked { .. } => unreachable!(),
         })
