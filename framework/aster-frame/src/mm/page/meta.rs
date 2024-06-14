@@ -50,7 +50,7 @@ use super::Page;
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        kspace::BOOT_PAGE_TABLE, paddr_to_vaddr, page::allocator::FRAME_ALLOCATOR, page_size,
+        kspace::BOOT_PAGE_TABLE, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, page_size,
         page_table::PageTableEntryTrait, CachePolicy, Paddr, PageFlags, PageProperty,
         PagingConstsTrait, PagingLevel, PrivilegedPageFlags, PAGE_SIZE,
     },
@@ -230,13 +230,7 @@ pub(crate) fn init() -> Vec<Range<Paddr>> {
 
 fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
     let mut meta_pages = Vec::new();
-    let start_frame = FRAME_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(nframes)
-        .unwrap()
-        * PAGE_SIZE;
+    let start_frame = PAGE_ALLOCATOR.get().unwrap().lock().alloc(nframes).unwrap() * PAGE_SIZE;
     // Zero them out as initialization.
     let vaddr = paddr_to_vaddr(start_frame) as *mut u8;
     unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };

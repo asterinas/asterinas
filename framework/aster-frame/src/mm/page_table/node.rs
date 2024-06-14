@@ -33,7 +33,7 @@ use crate::{
     mm::{
         paddr_to_vaddr,
         page::{
-            allocator::FRAME_ALLOCATOR,
+            allocator::PAGE_ALLOCATOR,
             meta::{FrameMeta, PageMeta, PageTablePageMeta, PageUsage},
             Page,
         },
@@ -216,8 +216,8 @@ where
     /// set the lock bit for performance as it is exclusive and unlocking is an
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel) -> Self {
-        let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap() * PAGE_SIZE;
-        let mut page = Page::<PageTablePageMeta<E, C>>::from_unused(frame);
+        let page_paddr = PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap() * PAGE_SIZE;
+        let mut page = Page::<PageTablePageMeta<E, C>>::from_unused(page_paddr);
 
         // The lock is initialized as held.
         page.meta().lock.store(1, Ordering::Relaxed);
@@ -293,7 +293,7 @@ where
                 // the reference count so we restore and forget a cloned one.
                 let page = unsafe { Page::<FrameMeta>::from_raw(paddr) };
                 core::mem::forget(page.clone());
-                Child::Frame(Frame { page })
+                Child::Frame(page.into())
             } else {
                 Child::Untracked(paddr)
             }
@@ -552,12 +552,5 @@ where
                 }
             }
         }
-
-        // Recycle this page table node.
-        FRAME_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .dealloc(paddr / PAGE_SIZE, 1);
     }
 }

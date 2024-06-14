@@ -8,7 +8,7 @@ use core::ops::Range;
 use super::Frame;
 use crate::{
     mm::{
-        page::{meta::FrameMeta, Page},
+        page::{cont_pages::ContPages, meta::FrameMeta, Page},
         HasPaddr, Paddr, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
     Error, Result,
@@ -35,31 +35,8 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct Segment {
-    inner: Arc<SegmentInner>,
+    inner: Arc<ContPages<FrameMeta>>,
     range: Range<usize>,
-}
-
-/// This behaves like a [`Frame`] that owns a list of frame handles.
-///
-/// The ownership is acheived by the reference counting mechanism of
-/// frames. When constructing a `SegmentInner`, the frame handles are
-/// forgotten. When dropping a `SegmentInner`, the frame handles are
-/// restored and dropped.
-#[derive(Debug)]
-struct SegmentInner {
-    start: Paddr,
-    nframes: usize,
-}
-
-impl Drop for SegmentInner {
-    fn drop(&mut self) {
-        for i in 0..self.nframes {
-            let pa_i = self.start + i * PAGE_SIZE;
-            // SAFETY: for each page there would be a forgotten handle
-            // when creating the `SegmentInner` object.
-            drop(unsafe { Page::<FrameMeta>::from_raw(pa_i) });
-        }
-    }
 }
 
 impl HasPaddr for Segment {
@@ -69,28 +46,6 @@ impl HasPaddr for Segment {
 }
 
 impl Segment {
-    /// Creates a new `Segment`.
-    ///
-    /// # Safety
-    ///
-    /// The given range of page frames must be contiguous and valid for use.
-    /// The given range of page frames must not have been allocated before,
-    /// as part of either a [`Frame`] or `Segment`.
-    pub(crate) unsafe fn new(paddr: Paddr, nframes: usize) -> Self {
-        for i in 0..nframes {
-            let pa_i = paddr + i * PAGE_SIZE;
-            let page = Page::<FrameMeta>::from_unused(pa_i);
-            core::mem::forget(page);
-        }
-        Self {
-            inner: Arc::new(SegmentInner {
-                start: paddr,
-                nframes,
-            }),
-            range: 0..nframes,
-        }
-    }
-
     /// Returns a part of the `Segment`.
     ///
     /// # Panics
@@ -129,7 +84,7 @@ impl Segment {
     }
 
     fn start_frame_index(&self) -> usize {
-        self.inner.start / PAGE_SIZE + self.range.start
+        self.inner.start_paddr() / PAGE_SIZE + self.range.start
     }
 
     /// Returns a raw pointer to the starting virtual address of the `Segment`.
@@ -183,14 +138,19 @@ impl VmIo for Segment {
 
 impl From<Frame> for Segment {
     fn from(frame: Frame) -> Self {
-        let paddr = frame.paddr();
-        core::mem::forget(frame);
         Self {
-            inner: Arc::new(SegmentInner {
-                start: paddr,
-                nframes: 1,
-            }),
+            inner: Arc::new(Page::<FrameMeta>::from(frame).into()),
             range: 0..1,
+        }
+    }
+}
+
+impl From<ContPages<FrameMeta>> for Segment {
+    fn from(cont_pages: ContPages<FrameMeta>) -> Self {
+        let len = cont_pages.len();
+        Self {
+            inner: Arc::new(cont_pages),
+            range: 0..len / PAGE_SIZE,
         }
     }
 }
