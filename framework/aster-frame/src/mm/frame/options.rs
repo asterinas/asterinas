@@ -3,7 +3,14 @@
 //! Options for allocating frames
 
 use super::{Frame, FrameVec, Segment};
-use crate::{mm::page::allocator, prelude::*, Error};
+use crate::{
+    mm::{
+        page::{self, meta::FrameMeta},
+        PAGE_SIZE,
+    },
+    prelude::*,
+    Error,
+};
 
 /// Options for allocating physical memory pages (or frames).
 ///
@@ -49,17 +56,14 @@ impl FrameAllocOptions {
 
     /// Allocates a collection of page frames according to the given options.
     pub fn alloc(&self) -> Result<FrameVec> {
-        let frames = if self.is_contiguous {
-            allocator::alloc(self.nframes).ok_or(Error::NoMemory)?
+        let pages = if self.is_contiguous {
+            page::allocator::alloc(self.nframes * PAGE_SIZE).ok_or(Error::NoMemory)?
         } else {
-            let mut frame_list = Vec::new();
-            for _ in 0..self.nframes {
-                let page = allocator::alloc_single().ok_or(Error::NoMemory)?;
-                let frame = Frame { page };
-                frame_list.push(frame);
-            }
-            FrameVec(frame_list)
+            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE)
+                .ok_or(Error::NoMemory)?
+                .into()
         };
+        let frames = FrameVec(pages.into_iter().map(|page| Frame { page }).collect());
         if !self.uninit {
             for frame in frames.iter() {
                 frame.writer().fill(0);
@@ -75,7 +79,7 @@ impl FrameAllocOptions {
             return Err(Error::InvalidArgs);
         }
 
-        let page = allocator::alloc_single().ok_or(Error::NoMemory)?;
+        let page = page::allocator::alloc_single().ok_or(Error::NoMemory)?;
         let frame = Frame { page };
         if !self.uninit {
             frame.writer().fill(0);
@@ -93,7 +97,10 @@ impl FrameAllocOptions {
             return Err(Error::InvalidArgs);
         }
 
-        let segment = allocator::alloc_contiguous(self.nframes).ok_or(Error::NoMemory)?;
+        let segment: Segment =
+            page::allocator::alloc_contiguous::<FrameMeta>(self.nframes * PAGE_SIZE)
+                .ok_or(Error::NoMemory)?
+                .into();
         if !self.uninit {
             segment.writer().fill(0);
         }

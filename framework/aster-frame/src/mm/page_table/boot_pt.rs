@@ -10,7 +10,7 @@ use super::{pte_index, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::FRAME_ALLOCATOR, PageProperty,
+        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, PageProperty,
         PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
 };
@@ -144,7 +144,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_frame(&mut self) -> FrameNumber {
-        let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
+        let frame = PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
         self.frames.push(frame);
         // Zero it out.
         let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
@@ -156,7 +156,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> {
     fn drop(&mut self) {
         for frame in &self.frames {
-            FRAME_ALLOCATOR.get().unwrap().lock().dealloc(*frame, 1);
+            PAGE_ALLOCATOR.get().unwrap().lock().dealloc(*frame, 1);
         }
     }
 }

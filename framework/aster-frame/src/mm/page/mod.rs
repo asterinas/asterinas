@@ -15,6 +15,7 @@
 //! the handle only a pointer to the metadata.
 
 pub(crate) mod allocator;
+pub(in crate::mm) mod cont_pages;
 pub(in crate::mm) mod meta;
 
 use core::{
@@ -40,51 +41,17 @@ pub struct Page<M: PageMeta> {
 unsafe impl<M: PageMeta> Send for Page<M> {}
 unsafe impl<M: PageMeta> Sync for Page<M> {}
 
-/// Errors that can occur when getting a page handle.
-#[derive(Debug)]
-pub enum PageHandleError {
-    /// The physical address is out of range.
-    OutOfRange,
-    /// The physical address is not aligned to the page size.
-    NotAligned,
-    /// The page is already in use.
-    InUse,
-}
-
 impl<M: PageMeta> Page<M> {
     /// Get a `Page` handle with a specific usage from a raw, unused page.
     ///
-    /// If the provided physical address is invalid or not aligned, this
-    /// function will panic.
+    /// # Panics
     ///
-    /// If the provided page is already in use this function will block
-    /// until the page is released. This is a workaround since the page
-    /// allocator is decoupled from metadata management and page would be
-    /// reusable in the page allocator before resetting all metadata.
-    ///
-    /// TODO: redesign the page allocator to be aware of metadata management.
+    /// The function panics if:
+    ///  - the physical address is out of bound or not aligned;
+    ///  - the page is already in use.
     pub fn from_unused(paddr: Paddr) -> Self {
-        loop {
-            match Self::try_from_unused(paddr) {
-                Ok(page) => return page,
-                Err(PageHandleError::InUse) => {
-                    // Wait for the page to be released.
-                    core::hint::spin_loop();
-                }
-                Err(e) => panic!("Failed to get a page handle: {:?}", e),
-            }
-        }
-    }
-
-    /// Get a `Page` handle with a specific usage from a raw, unused page.
-    pub(in crate::mm) fn try_from_unused(paddr: Paddr) -> Result<Self, PageHandleError> {
-        if paddr % PAGE_SIZE != 0 {
-            return Err(PageHandleError::NotAligned);
-        }
-        if paddr > MAX_PADDR.load(Ordering::Relaxed) {
-            return Err(PageHandleError::OutOfRange);
-        }
-
+        assert!(paddr % PAGE_SIZE == 0);
+        assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
@@ -93,18 +60,21 @@ impl<M: PageMeta> Page<M> {
 
         usage
             .compare_exchange(0, M::USAGE as u8, Ordering::SeqCst, Ordering::Relaxed)
-            .map_err(|_| PageHandleError::InUse)?;
+            .expect("page already in use when trying to get a new handle");
 
         let old_get_ref_count = get_ref_count.fetch_add(1, Ordering::Relaxed);
         debug_assert!(old_get_ref_count == 0);
 
         // Initialize the metadata
-        unsafe { (ptr as *mut M).write(M::default()) }
+        // SAFETY: The pointer points to the first byte of the `MetaSlot`
+        // structure, and layout ensured enoungh space for `M`. The original
+        // value does not represent any object that's needed to be dropped.
+        unsafe { (ptr as *mut M).write(M::default()) };
 
-        Ok(Self {
+        Self {
             ptr,
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Forget the handle to the page.
@@ -191,6 +161,15 @@ impl<M: PageMeta> Drop for Page<M> {
             // No handles means no usage. This also releases the page as unused for further
             // calls to `Page::from_unused`.
             unsafe { &*self.ptr }.usage.store(0, Ordering::Release);
+            // Deallocate the page.
+            // It would return the page to the allocator for further use. This would be done
+            // after the release of the metadata to avoid re-allocation before the metadata
+            // is reset.
+            allocator::PAGE_ALLOCATOR
+                .get()
+                .unwrap()
+                .lock()
+                .dealloc(self.paddr() / PAGE_SIZE, 1);
         };
     }
 }

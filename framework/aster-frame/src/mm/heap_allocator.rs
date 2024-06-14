@@ -11,7 +11,7 @@ use log::debug;
 
 use super::paddr_to_vaddr;
 use crate::{
-    mm::{page::allocator::FRAME_ALLOCATOR, PAGE_SIZE},
+    mm::{page::allocator::PAGE_ALLOCATOR, PAGE_SIZE},
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
@@ -105,12 +105,12 @@ fn rescue<const ORDER: usize>(heap: &LockedHeapWithRescue<ORDER>, layout: &Layou
     };
 
     let allocation_start = {
-        let mut frame_allocator = FRAME_ALLOCATOR.get().unwrap().lock();
+        let mut page_allocator = PAGE_ALLOCATOR.get().unwrap().lock();
         if num_frames >= MIN_NUM_FRAMES {
-            frame_allocator.alloc(num_frames).ok_or(Error::NoMemory)?
+            page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?
         } else {
-            match frame_allocator.alloc(MIN_NUM_FRAMES) {
-                None => frame_allocator.alloc(num_frames).ok_or(Error::NoMemory)?,
+            match page_allocator.alloc(MIN_NUM_FRAMES) {
+                None => page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?,
                 Some(start) => {
                     num_frames = MIN_NUM_FRAMES;
                     start

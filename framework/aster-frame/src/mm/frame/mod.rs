@@ -18,7 +18,6 @@ pub use frame_vec::{FrameVec, FrameVecIter};
 pub use segment::Segment;
 
 use super::page::{
-    allocator,
     meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
     Page,
 };
@@ -41,7 +40,19 @@ use crate::{
 /// will be globally freed.
 #[derive(Debug, Clone)]
 pub struct Frame {
-    pub(in crate::mm) page: Page<FrameMeta>,
+    page: Page<FrameMeta>,
+}
+
+impl From<Page<FrameMeta>> for Frame {
+    fn from(page: Page<FrameMeta>) -> Self {
+        Self { page }
+    }
+}
+
+impl From<Frame> for Page<FrameMeta> {
+    fn from(frame: Frame) -> Self {
+        frame.page
+    }
 }
 
 impl HasPaddr for Frame {
@@ -140,8 +151,9 @@ impl VmIo for Frame {
 impl PageMeta for FrameMeta {
     const USAGE: PageUsage = PageUsage::Frame;
 
-    fn on_drop(page: &mut Page<Self>) {
-        unsafe { allocator::dealloc(page.paddr() / PAGE_SIZE, 1) };
+    fn on_drop(_page: &mut Page<Self>) {
+        // Nothing should be done so far since the dropping the page would
+        // take all cared.
     }
 }
 
