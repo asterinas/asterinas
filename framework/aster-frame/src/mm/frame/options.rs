@@ -54,7 +54,9 @@ impl FrameAllocOptions {
         } else {
             let mut frame_list = Vec::new();
             for _ in 0..self.nframes {
-                frame_list.push(allocator::alloc_single().ok_or(Error::NoMemory)?);
+                let page = allocator::alloc_single().ok_or(Error::NoMemory)?;
+                let frame = Frame { page };
+                frame_list.push(frame);
             }
             FrameVec(frame_list)
         };
@@ -73,7 +75,8 @@ impl FrameAllocOptions {
             return Err(Error::InvalidArgs);
         }
 
-        let frame = allocator::alloc_single().ok_or(Error::NoMemory)?;
+        let page = allocator::alloc_single().ok_or(Error::NoMemory)?;
+        let frame = Frame { page };
         if !self.uninit {
             frame.writer().fill(0);
         }
