@@ -12,7 +12,10 @@ use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
-use super::{meta::FrameMeta, Page};
+use super::{
+    meta::{FrameMeta, PageMeta},
+    Page,
+};
 use crate::{
     boot::memory_region::MemoryRegionType,
     mm::{Frame, FrameVec, Segment, PAGE_SIZE},
@@ -40,12 +43,10 @@ pub(crate) fn alloc(nframes: usize) -> Option<FrameVec> {
         })
 }
 
-pub(crate) fn alloc_single() -> Option<Frame> {
+pub(crate) fn alloc_single<T: PageMeta>() -> Option<Page<T>> {
     FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx| {
         let paddr = idx * PAGE_SIZE;
-        Frame {
-            page: Page::<FrameMeta>::from_unused(paddr),
-        }
+        Page::<T>::from_unused(paddr)
     })
 }
 
