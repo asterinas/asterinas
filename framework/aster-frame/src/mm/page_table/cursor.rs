@@ -56,7 +56,7 @@ use align_ext::AlignExt;
 
 use super::{
     page_size, pte_index, Child, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
-    PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel,
+    PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel, UserMode,
 };
 use crate::mm::{page::DynPage, Paddr, PageProperty, Vaddr};
 
@@ -270,15 +270,19 @@ where
 
     /// Tells if the current virtual range must contain untracked mappings.
     ///
+    /// _Tracked mappings_ means that the mapped physical addresses (in PTEs) points to pages
+    /// tracked by the metadata system. _Tracked mappings_ must be created with page handles.
+    /// While _untracked mappings_ solely maps to plain physical addresses.
+    ///
     /// In the kernel mode, this is aligned with the definition in [`crate::mm::kspace`].
-    /// Only linear mappings in the kernel are considered as untracked mappings.
+    /// Only linear mappings in the kernel should be considered as untracked mappings.
     ///
     /// All mappings in the user mode are tracked. And all mappings in the IOMMU
     /// page table are untracked.
     fn in_tracked_range(&self) -> bool {
-        TypeId::of::<M>() != TypeId::of::<crate::arch::iommu::DeviceMode>()
-            && (TypeId::of::<M>() != TypeId::of::<KernelMode>()
-                || crate::mm::kspace::VMALLOC_VADDR_RANGE.contains(&self.va))
+        TypeId::of::<M>() == TypeId::of::<UserMode>()
+            || TypeId::of::<M>() == TypeId::of::<KernelMode>()
+                && !crate::mm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&self.va)
     }
 }
 

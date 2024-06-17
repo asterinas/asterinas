@@ -48,7 +48,7 @@ use spin::Once;
 use super::{
     nr_subpage_per_huge,
     page::{
-        meta::{mapping, KernelMeta},
+        meta::{mapping, KernelMeta, MetaPageMeta},
         Page,
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
@@ -128,7 +128,7 @@ pub(crate) fn init_boot_page_table() {
 ///
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
-pub fn init_kernel_page_table(meta_pages: Vec<Range<Paddr>>) {
+pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
     info!("Initializing the kernel page table");
 
     let regions = crate::boot::memory_regions();
@@ -168,10 +168,10 @@ pub fn init_kernel_page_table(meta_pages: Vec<Range<Paddr>>) {
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
-        for frame in meta_pages {
+        for meta_page in meta_pages {
             // SAFETY: we are doing the metadata mappings for the kernel.
             unsafe {
-                cursor.map_pa(&frame, prop);
+                cursor.map(meta_page.into(), prop);
             }
         }
     }
@@ -212,10 +212,9 @@ pub fn init_kernel_page_table(meta_pages: Vec<Range<Paddr>>) {
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
             let page = Page::<KernelMeta>::from_unused(frame_paddr);
-            let paddr = page.into_raw();
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
-                cursor.map_pa(&(paddr..paddr + PAGE_SIZE), prop);
+                cursor.map(page.into(), prop);
             }
         }
     }

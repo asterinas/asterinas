@@ -39,7 +39,6 @@ use alloc::vec::Vec;
 use core::{
     marker::PhantomData,
     mem::{size_of, ManuallyDrop},
-    ops::Range,
     panic,
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
@@ -225,7 +224,7 @@ impl PageMeta for KernelMeta {
 /// Initializes the metadata of all physical pages.
 ///
 /// The function returns a list of `Page`s containing the metadata.
-pub(crate) fn init() -> Vec<Range<Paddr>> {
+pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
     let max_paddr = {
         let regions = crate::boot::memory_regions();
         regions.iter().map(|r| r.base() + r.len()).max().unwrap()
@@ -259,10 +258,7 @@ pub(crate) fn init() -> Vec<Range<Paddr>> {
     // Now the metadata pages are mapped, we can initialize the metadata.
     meta_pages
         .into_iter()
-        .map(|paddr| {
-            let pa = Page::<MetaPageMeta>::from_unused(paddr).into_raw();
-            pa..pa + PAGE_SIZE
-        })
+        .map(Page::<MetaPageMeta>::from_unused)
         .collect()
 }
 
