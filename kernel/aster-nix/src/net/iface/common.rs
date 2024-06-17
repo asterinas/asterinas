@@ -165,8 +165,7 @@ impl IfaceCommon {
         if let Some(instant) = interface.poll_at(timestamp, &sockets) {
             let old_instant = self.next_poll_at_ms.load(Ordering::Acquire);
             let new_instant = instant.total_millis() as u64;
-            self.next_poll_at_ms
-                .store(instant.total_millis() as u64, Ordering::Relaxed);
+            self.next_poll_at_ms.store(new_instant, Ordering::Relaxed);
 
             if new_instant < old_instant {
                 self.polling_wait_queue.wake_all();
