@@ -29,7 +29,7 @@ pub trait Socket: FileLike + Send + Sync {
 
     /// Listen for connections on a socket
     fn listen(&self, backlog: usize) -> Result<()> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "connect() is not supported");
+        return_errno_with_message!(Errno::EOPNOTSUPP, "listen() is not supported");
     }
 
     /// Accept a connection on a socket
@@ -75,6 +75,6 @@ pub trait Socket: FileLike + Send + Sync {
         remote: Option<SocketAddr>,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "recvfrom() is not supported");
+        return_errno_with_message!(Errno::EOPNOTSUPP, "sendto() is not supported");
     }
 }
