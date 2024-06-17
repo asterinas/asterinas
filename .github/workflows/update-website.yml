@@ -1,12 +1,16 @@
 name: Update Website
 
 on:
+  pull_request:
+    paths:
+      - docs/**
+      - .github/workflows/update-website.yml
   push:
     branches:
       - main
     paths:
-      - 'docs/**'
-      - '.github/workflows/update-website.yml'
+      - docs/**
+      - .github/workflows/update-website.yml
 
 jobs:
   build_and_deploy:
@@ -25,6 +29,7 @@ jobs:
           mdbook build
 
       - name: Deploy website
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           BOOK_PUBLISH_KEY: ${{ secrets.BOOK_PUBLISH_KEY }}
         run: |
