@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use super::endpoint::Endpoint;
 use crate::{
     events::IoEvents,
@@ -25,10 +23,6 @@ impl Connected {
 
     pub(super) fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
         self.local_endpoint.peer_addr()
-    }
-
-    pub(super) fn is_bound(&self) -> bool {
-        self.addr().is_some()
     }
 
     pub(super) fn write(&self, buf: &[u8]) -> Result<usize> {

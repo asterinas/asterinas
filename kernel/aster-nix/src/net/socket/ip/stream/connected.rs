@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use alloc::sync::Weak;
 
 use smoltcp::socket::tcp::{RecvError, SendError};
@@ -45,7 +43,7 @@ impl ConnectedStream {
         }
     }
 
-    pub fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
+    pub fn shutdown(&self, _cmd: SockShutdownCmd) -> Result<()> {
         // TODO: deal with cmd
         self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
             socket.close();
@@ -53,7 +51,7 @@ impl ConnectedStream {
         Ok(())
     }
 
-    pub fn try_recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<usize> {
+    pub fn try_recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<usize> {
         let result = self
             .bound_socket
             .raw_with(|socket: &mut RawTcpSocket| socket.recv_slice(buf));
@@ -68,7 +66,7 @@ impl ConnectedStream {
         }
     }
 
-    pub fn try_send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+    pub fn try_send(&self, buf: &[u8], _flags: SendRecvFlags) -> Result<usize> {
         let result = self
             .bound_socket
             .raw_with(|socket: &mut RawTcpSocket| socket.send_slice(buf));

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use connected::ConnectedStream;
@@ -713,7 +711,7 @@ impl Socket for StreamSocket {
 }
 
 impl Observer<()> for StreamSocket {
-    fn on_events(&self, events: &()) {
+    fn on_events(&self, _events: &()) {
         let conn_ready = self.update_io_events();
 
         if conn_ready {

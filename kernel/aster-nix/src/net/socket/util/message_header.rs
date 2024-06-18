@@ -47,7 +47,7 @@ pub fn copy_message_from_user(io_vecs: &[IoVec]) -> Box<[u8]> {
         // FIXME: short read should be allowed here
         match io_vec.read_exact_from_user(dst) {
             Ok(()) => total_bytes += io_vec.len(),
-            Err(e) => {
+            Err(_) => {
                 warn!("fails to copy message from user");
                 break;
             }
@@ -84,7 +84,7 @@ pub fn copy_message_to_user(io_vecs: &[IoVec], message: &[u8]) -> usize {
         let src = &message[total_bytes..total_bytes + len];
         match io_vec.write_to_user(src) {
             Ok(len) => total_bytes += len,
-            Err(e) => {
+            Err(_) => {
                 warn!("fails to copy message to user");
                 break;
             }

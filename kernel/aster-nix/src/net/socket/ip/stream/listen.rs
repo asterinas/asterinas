@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use smoltcp::socket::tcp::ListenError;
 
 use super::connected::ConnectedStream;
@@ -66,9 +64,8 @@ impl ListenStream {
             })?;
         let active_backlog_socket = backlog_sockets.remove(index);
 
-        match BacklogSocket::new(&self.bound_socket) {
-            Ok(backlog_socket) => backlog_sockets.push(backlog_socket),
-            Err(err) => (),
+        if let Ok(backlog_socket) = BacklogSocket::new(&self.bound_socket) {
+            backlog_sockets.push(backlog_socket);
         }
 
         let remote_endpoint = active_backlog_socket.remote_endpoint().unwrap();

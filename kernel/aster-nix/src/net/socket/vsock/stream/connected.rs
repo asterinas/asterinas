@@ -92,7 +92,7 @@ impl Connected {
         connection.is_local_shutdown()
     }
 
-    pub fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
+    pub fn shutdown(&self, _cmd: SockShutdownCmd) -> Result<()> {
         // TODO: deal with cmd
         if self.should_close() {
             let mut connection = self.connection.lock_irq_disabled();

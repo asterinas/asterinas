@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use super::{Iface, IpAddress, IpEndpoint};
 use crate::{events::Observer, prelude::*};
 
 pub type RawTcpSocket = smoltcp::socket::tcp::Socket<'static>;
 pub type RawUdpSocket = smoltcp::socket::udp::Socket<'static>;
-pub type RawSocketHandle = smoltcp::iface::SocketHandle;
 
 pub struct AnyUnboundSocket {
     socket_family: AnyRawSocket,

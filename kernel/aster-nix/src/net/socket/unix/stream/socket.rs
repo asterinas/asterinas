@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use super::{
     connected::Connected,
     endpoint::Endpoint,
@@ -35,10 +32,6 @@ pub struct UnixStreamSocket(RwLock<State>);
 impl UnixStreamSocket {
     pub(super) fn new_init(init: Init) -> Self {
         Self(RwLock::new(State::Init(Arc::new(init))))
-    }
-
-    pub(super) fn new_listen(listen: Listener) -> Self {
-        Self(RwLock::new(State::Listen(Arc::new(listen))))
     }
 
     pub(super) fn new_connected(connected: Connected) -> Self {
@@ -91,7 +84,7 @@ impl UnixStreamSocket {
         status_flags.intersection(SUPPORTED_FLAGS)
     }
 
-    fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+    fn send(&self, buf: &[u8], _flags: SendRecvFlags) -> Result<usize> {
         let connected = match &*self.0.read() {
             State::Connected(connected) => connected.clone(),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
@@ -100,7 +93,7 @@ impl UnixStreamSocket {
         connected.write(buf)
     }
 
-    fn recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<usize> {
+    fn recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<usize> {
         let connected = match &*self.0.read() {
             State::Connected(connected) => connected.clone(),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::{connected::Connected, endpoint::Endpoint, listener::push_incoming};
@@ -67,10 +65,6 @@ impl Init {
 
         push_incoming(remote_addr, remote_end)?;
         Ok(Connected::new(this_end))
-    }
-
-    pub(super) fn is_bound(&self) -> bool {
-        self.addr.lock().is_some()
     }
 
     pub(super) fn addr(&self) -> Option<UnixSocketAddrBound> {

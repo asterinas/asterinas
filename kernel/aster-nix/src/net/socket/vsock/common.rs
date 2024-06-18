@@ -198,7 +198,6 @@ impl VsockSpace {
     /// Poll for each event from the driver
     pub fn poll(&self) -> Result<()> {
         let mut driver = self.driver.lock_irq_disabled();
-        let guest_cid = driver.guest_cid() as u32;
 
         while let Some(event) = self.poll_single(&mut driver)? {
             if !self.is_event_for_socket(&event) {
@@ -249,14 +248,14 @@ impl VsockSpace {
                     connecting.update_info(&event);
                     connecting.add_events(IoEvents::IN);
                 }
-                VsockEventType::Disconnected { reason } => {
+                VsockEventType::Disconnected { .. } => {
                     let connected_sockets = self.connected_sockets.read_irq_disabled();
                     let Some(connected) = connected_sockets.get(&event.into()) else {
                         return_errno_with_message!(Errno::ENOTCONN, "the socket hasn't connected");
                     };
                     connected.set_peer_requested_shutdown();
                 }
-                VsockEventType::Received { length } => {}
+                VsockEventType::Received { .. } => {}
                 VsockEventType::CreditRequest => {
                     let connected_sockets = self.connected_sockets.read_irq_disabled();
                     let Some(connected) = connected_sockets.get(&event.into()) else {
@@ -282,7 +281,7 @@ impl VsockSpace {
         driver
             .poll(|event, body| {
                 // Deal with Received before the buffer are recycled.
-                if let VsockEventType::Received { length } = event.event_type {
+                if let VsockEventType::Received { .. } = event.event_type {
                     // Only consider the connected socket and copy body to buffer
                     let connected_sockets = self.connected_sockets.read_irq_disabled();
                     let connected = connected_sockets.get(&event.into()).unwrap();
@@ -294,6 +293,6 @@ impl VsockSpace {
                 }
                 Ok(Some(event))
             })
-            .map_err(|e| Error::with_message(Errno::EIO, "driver poll failed"))
+            .map_err(|_| Error::with_message(Errno::EIO, "driver poll failed"))
     }
 }
