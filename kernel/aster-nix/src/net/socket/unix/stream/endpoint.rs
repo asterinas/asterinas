@@ -69,14 +69,14 @@ impl Endpoint {
     }
 
     pub(super) fn set_nonblocking(&self, is_nonblocking: bool) -> Result<()> {
-        let reader_flags = self.0.reader.status_flags();
-        self.0
-            .reader
-            .set_status_flags(reader_flags | StatusFlags::O_NONBLOCK)?;
-        let writer_flags = self.0.writer.status_flags();
-        self.0
-            .writer
-            .set_status_flags(writer_flags | StatusFlags::O_NONBLOCK)?;
+        let mut reader_flags = self.0.reader.status_flags();
+        reader_flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
+        self.0.reader.set_status_flags(reader_flags)?;
+
+        let mut writer_flags = self.0.writer.status_flags();
+        writer_flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
+        self.0.writer.set_status_flags(writer_flags)?;
+
         Ok(())
     }
 
