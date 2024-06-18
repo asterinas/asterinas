@@ -47,7 +47,7 @@ impl AnyUnboundSocket {
             );
             let tx_buffer = smoltcp::socket::udp::PacketBuffer::new(
                 vec![metadata; UDP_METADATA_LEN],
-                vec![0u8; UDP_RECEIVE_PAYLOAD_LEN],
+                vec![0u8; UDP_SEND_PAYLOAD_LEN],
             );
             RawUdpSocket::new(rx_buffer, tx_buffer)
         };
