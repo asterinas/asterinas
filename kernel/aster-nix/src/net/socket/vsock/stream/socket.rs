@@ -124,7 +124,7 @@ impl VsockStreamSocket {
         }
     }
 
-    fn try_recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+    fn try_recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
         let connected = match &*self.status.read() {
             Status::Connected(connected) => connected.clone(),
             Status::Init(_) | Status::Listen(_) => {
@@ -162,14 +162,12 @@ impl FileLike for VsockStreamSocket {
 
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
         self.recv(buf, SendRecvFlags::empty()).map(|(len, _)| len)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
         // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-        self.send(buf, flags)
+        self.send(buf, SendRecvFlags::empty())
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {

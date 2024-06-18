@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::time::Duration;
 
 use crate::{
@@ -19,7 +17,6 @@ pub struct SocketOptionSet {
     send_buf: u32,
     recv_buf: u32,
     linger: LingerOption,
-    keep_alive: bool,
 }
 
 impl SocketOptionSet {
@@ -32,7 +29,6 @@ impl SocketOptionSet {
             send_buf: SEND_BUF_LEN as u32,
             recv_buf: RECV_BUF_LEN as u32,
             linger: LingerOption::default(),
-            keep_alive: false,
         }
     }
 }

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use takeable::Takeable;
@@ -301,7 +299,7 @@ impl Socket for DatagramSocket {
     fn addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
         match inner.as_ref() {
-            Inner::Unbound(unbound_datagram) => Ok(UNSPECIFIED_LOCAL_ENDPOINT.into()),
+            Inner::Unbound(_) => Ok(UNSPECIFIED_LOCAL_ENDPOINT.into()),
             Inner::Bound(bound_datagram) => Ok(bound_datagram.local_endpoint().into()),
         }
     }
@@ -373,7 +371,7 @@ impl Socket for DatagramSocket {
 }
 
 impl Observer<()> for DatagramSocket {
-    fn on_events(&self, events: &()) {
+    fn on_events(&self, _events: &()) {
         self.update_io_events();
     }
 }

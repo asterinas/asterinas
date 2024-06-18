@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use aster_network::AnyNetworkDevice;
 use aster_virtio::device::network::DEVICE_NAME;
 use smoltcp::{
-    iface::{Config, Routes, SocketHandle, SocketSet},
+    iface::{Config, SocketHandle, SocketSet},
     socket::dhcpv4,
     wire::{self, IpCidr},
 };
@@ -26,7 +24,6 @@ impl IfaceVirtio {
         let interface = {
             let mac_addr = virtio_net.lock().mac_addr();
             let ip_addr = IpCidr::new(wire::IpAddress::Ipv4(wire::Ipv4Address::UNSPECIFIED), 0);
-            let routes = Routes::new();
             let config = {
                 let mut config = Config::new();
                 config.hardware_addr = Some(wire::HardwareAddress::Ethernet(

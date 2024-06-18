@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use smoltcp::{
-    iface::{Config, Routes},
+    iface::Config,
     phy::{Loopback, Medium},
     wire::IpCidr,
 };
@@ -27,7 +25,6 @@ impl IfaceLoopback {
     pub fn new() -> Arc<Self> {
         let mut loopback = Loopback::new(Medium::Ip);
         let interface = {
-            let routes = Routes::new();
             let config = Config::new();
             let mut interface = smoltcp::iface::Interface::new(config, &mut loopback);
             interface.update_ip_addrs(|ip_addrs| {

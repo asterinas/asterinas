@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use self::options::SocketOption;
 pub use self::util::{
     options::LingerOption, send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
@@ -18,17 +16,17 @@ pub mod vsock;
 /// Operations defined on a socket.
 pub trait Socket: FileLike + Send + Sync {
     /// Assign the address specified by socket_addr to the socket
-    fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
+    fn bind(&self, _socket_addr: SocketAddr) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "bind() is not supported");
     }
 
     /// Build connection for a given address
-    fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
+    fn connect(&self, _socket_addr: SocketAddr) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "connect() is not supported");
     }
 
     /// Listen for connections on a socket
-    fn listen(&self, backlog: usize) -> Result<()> {
+    fn listen(&self, _backlog: usize) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "listen() is not supported");
     }
 
@@ -38,7 +36,7 @@ pub trait Socket: FileLike + Send + Sync {
     }
 
     /// Shut down part of a full-duplex connection
-    fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
+    fn shutdown(&self, _cmd: SockShutdownCmd) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "shutdown() is not supported");
     }
 
@@ -54,12 +52,12 @@ pub trait Socket: FileLike + Send + Sync {
 
     /// Get options on the socket. The resulted option will put in the `option` parameter, if
     /// this method returns success.
-    fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+    fn get_option(&self, _option: &mut dyn SocketOption) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "getsockopt() is not supported");
     }
 
     /// Set options on the socket.
-    fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
+    fn set_option(&self, _option: &dyn SocketOption) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "setsockopt() is not supported");
     }
 
