@@ -1,6 +1,7 @@
 name: Update Online API Docs
 
 on:
+  workflow_dispatch:
   # Scheduled events for nightly API docs
   schedule:
     # UTC 00:00 everyday

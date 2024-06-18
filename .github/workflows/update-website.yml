@@ -1,6 +1,7 @@
 name: Update Website
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - docs/**
