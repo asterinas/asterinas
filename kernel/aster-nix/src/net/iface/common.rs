@@ -147,22 +147,30 @@ impl IfaceCommon {
 
     pub(super) fn poll<D: Device + ?Sized>(&self, device: &mut D) {
         let mut interface = self.interface.lock_irq_disabled();
-        let timestamp = get_network_timestamp();
-        let has_events = {
-            let mut sockets = self.sockets.lock_irq_disabled();
-            interface.poll(timestamp, device, &mut sockets)
-            // drop sockets here to avoid deadlock
-        };
-        if has_events {
-            self.bound_sockets.read().iter().for_each(|bound_socket| {
-                if let Some(bound_socket) = bound_socket.upgrade() {
-                    bound_socket.on_iface_events();
-                }
-            });
-        }
+        let mut sockets = self.sockets.lock_irq_disabled();
 
-        let sockets = self.sockets.lock_irq_disabled();
-        if let Some(instant) = interface.poll_at(timestamp, &sockets) {
+        let timestamp = get_network_timestamp();
+        let (has_events, poll_at) = {
+            let mut has_events = false;
+            let mut poll_at;
+            loop {
+                has_events |= interface.poll(timestamp, device, &mut sockets);
+                poll_at = interface.poll_at(timestamp, &sockets);
+                let Some(instant) = poll_at else {
+                    break;
+                };
+                if instant > timestamp {
+                    break;
+                }
+            }
+            (has_events, poll_at)
+        };
+
+        // drop sockets here to avoid deadlock
+        drop(sockets);
+        drop(interface);
+
+        if let Some(instant) = poll_at {
             let old_instant = self.next_poll_at_ms.load(Ordering::Acquire);
             let new_instant = instant.total_millis() as u64;
             self.next_poll_at_ms.store(new_instant, Ordering::Relaxed);
@@ -172,6 +180,14 @@ impl IfaceCommon {
             }
         } else {
             self.next_poll_at_ms.store(0, Ordering::Relaxed);
+        }
+
+        if has_events {
+            self.bound_sockets.read().iter().for_each(|bound_socket| {
+                if let Some(bound_socket) = bound_socket.upgrade() {
+                    bound_socket.on_iface_events();
+                }
+            });
         }
     }
 
