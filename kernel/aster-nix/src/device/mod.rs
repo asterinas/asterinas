@@ -12,6 +12,8 @@ mod zero;
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
 #[cfg(feature = "intel_tdx")]
+use tdx_guest::tdx_is_enabled;
+#[cfg(feature = "intel_tdx")]
 pub use tdxguest::TdxGuest;
 pub use urandom::Urandom;
 
@@ -35,7 +37,9 @@ pub fn init() -> Result<()> {
     #[cfg(feature = "intel_tdx")]
     let tdx_guest = Arc::new(tdxguest::TdxGuest);
     #[cfg(feature = "intel_tdx")]
-    add_node(tdx_guest, "tdx-guest")?;
+    if tdx_is_enabled() {
+        add_node(tdx_guest, "tdx_guest")?;
+    }
     let random = Arc::new(random::Random);
     add_node(random, "random")?;
     let urandom = Arc::new(urandom::Urandom);
