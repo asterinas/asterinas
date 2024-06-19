@@ -39,6 +39,7 @@ macro_rules! cpu_local {
 
     // multiple declarations
     ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty = $init:expr; $($rest:tt)*) => {
+        #[allow(clippy::macro_metavars_in_unsafe)]
         $(#[$attr])* $vis static $name: $crate::CpuLocal<$t> = unsafe { $crate::CpuLocal::new($init) };
         $crate::cpu_local!($($rest)*);
     };
