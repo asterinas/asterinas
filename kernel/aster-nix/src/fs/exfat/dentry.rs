@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use core::{fmt::Display, ops::Range};
 
 use aster_frame::mm::VmIo;
@@ -58,18 +55,25 @@ impl ExfatDentry {
 
 const EXFAT_UNUSED: u8 = 0x00;
 
+#[allow(dead_code)]
 const EXFAT_INVAL: u8 = 0x80;
 const EXFAT_BITMAP: u8 = 0x81;
+#[allow(dead_code)]
 const EXFAT_UPCASE: u8 = 0x82;
+#[allow(dead_code)]
 const EXFAT_VOLUME: u8 = 0x83;
 const EXFAT_FILE: u8 = 0x85;
 
+#[allow(dead_code)]
 const EXFAT_GUID: u8 = 0xA0;
+#[allow(dead_code)]
 const EXFAT_PADDING: u8 = 0xA1;
+#[allow(dead_code)]
 const EXFAT_ACLTAB: u8 = 0xA2;
 
 const EXFAT_STREAM: u8 = 0xC0;
 const EXFAT_NAME: u8 = 0xC1;
+#[allow(dead_code)]
 const EXFAT_ACL: u8 = 0xC2;
 
 const EXFAT_VENDOR_EXT: u8 = 0xE0;
@@ -201,6 +205,7 @@ impl ExfatDentrySet {
     /// Stream dentry index.
     const ES_IDX_STREAM: usize = 1;
     /// Name dentry index.
+    #[allow(dead_code)]
     const ES_IDX_FIRST_FILENAME: usize = 2;
 
     pub(super) fn new(dentries: Vec<ExfatDentry>, should_checksum_match: bool) -> Result<Self> {
@@ -216,7 +221,7 @@ impl ExfatDentrySet {
         fs: Arc<ExfatFS>,
         name: &str,
         inode_type: InodeType,
-        mode: InodeMode,
+        _mode: InodeMode,
     ) -> Result<Self> {
         let attrs = {
             if inode_type == InodeType::Dir {
@@ -298,7 +303,7 @@ impl ExfatDentrySet {
         let mut dentries = Vec::<ExfatDentry>::with_capacity(num_secondary + 1);
         dentries.push(ExfatDentry::File(*file_dentry));
 
-        for i in 0..num_secondary {
+        for _i in 0..num_secondary {
             let dentry_result = iter.next();
             if dentry_result.is_none() {
                 return_errno!(Errno::ENOENT);
@@ -477,7 +482,7 @@ impl Iterator for ExfatDentryIterator {
 
         let read_result = self.page_cache.read_bytes(byte_start, &mut dentry_buf);
 
-        if let Err(e) = read_result {
+        if let Err(_e) = read_result {
             return Some(Err(Error::with_message(
                 Errno::EIO,
                 "Unable to read dentry from page cache.",
@@ -656,7 +661,7 @@ impl ExfatName {
     fn push_char(
         &mut self,
         value: UTF16Char,
-        upcase_table: Arc<SpinLock<ExfatUpcaseTable>>,
+        _upcase_table: Arc<SpinLock<ExfatUpcaseTable>>,
     ) -> Result<()> {
         if !Self::is_valid_char(value) {
             return_errno_with_message!(Errno::EINVAL, "not a valid char")
@@ -682,10 +687,6 @@ impl ExfatName {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
     pub fn checksum(&self) -> u16 {
         let bytes = self
             .0
@@ -696,7 +697,7 @@ impl ExfatName {
         calc_checksum_16(&bytes, EMPTY_RANGE, 0)
     }
 
-    pub fn from_str(name: &str, upcase_table: Arc<SpinLock<ExfatUpcaseTable>>) -> Result<Self> {
+    pub fn from_str(name: &str, _upcase_table: Arc<SpinLock<ExfatUpcaseTable>>) -> Result<Self> {
         let name = ExfatName(name.encode_utf16().collect());
         // upcase_table.lock().transform_to_upcase(&mut name.0)?;
         name.verify()?;

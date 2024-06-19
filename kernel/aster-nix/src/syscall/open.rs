@@ -57,6 +57,7 @@ pub fn sys_creat(path_addr: Vaddr, mode: u16) -> Result<SyscallReturn> {
 }
 
 /// File for output busybox ash log.
+#[allow(dead_code)]
 struct BusyBoxTraceFile;
 
 impl FileLike for BusyBoxTraceFile {
