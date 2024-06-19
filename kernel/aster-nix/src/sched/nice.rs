@@ -30,12 +30,8 @@ impl Nice {
     /// Values given beyond the permissible range are automatically adjusted
     /// to the nearest boundary value.
     pub fn new(raw: i8) -> Self {
-        if raw > Self::MAX.to_raw() {
-            Self::MAX
-        } else if raw < Self::MIN.to_raw() {
-            Self::MIN
-        } else {
-            Self { value: raw }
+        Self {
+            value: raw.clamp(Self::MIN.to_raw(), Self::MAX.to_raw()),
         }
     }
 
@@ -87,12 +83,8 @@ impl Priority {
     /// Values given beyond the permissible range are automatically adjusted
     /// to the nearest boundary value.
     pub fn new(raw: u8) -> Self {
-        if raw > Self::MAX.to_raw() {
-            Self::MAX
-        } else if raw < Self::MIN.to_raw() {
-            Self::MIN
-        } else {
-            Self { value: raw }
+        Self {
+            value: raw.clamp(Self::MIN.to_raw(), Self::MAX.to_raw()),
         }
     }
 

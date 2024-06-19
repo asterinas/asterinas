@@ -12,13 +12,7 @@ use crate::{
 pub fn sys_set_priority(which: i32, who: u32, prio: i32) -> Result<SyscallReturn> {
     let prio_target = PriorityTarget::new(which, who)?;
     let new_nice = {
-        let norm_prio = if prio > i8::MAX as i32 {
-            i8::MAX
-        } else if prio < i8::MIN as i32 {
-            i8::MIN
-        } else {
-            prio as i8
-        };
+        let norm_prio = prio.clamp(i8::MIN as i32, i8::MAX as i32) as i8;
         Nice::new(norm_prio)
     };
 
