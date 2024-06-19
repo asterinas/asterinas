@@ -23,7 +23,7 @@
 #![feature(trait_upcasting)]
 #![register_tool(component_access_control)]
 
-use aster_frame::{
+use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
 };
@@ -91,7 +91,7 @@ fn init_thread() {
     thread::work_queue::init();
     // FIXME: Remove this if we move the step of mounting
     // the filesystems to be done within the init process.
-    aster_frame::trap::enable_local();
+    ostd::trap::enable_local();
     net::lazy_init();
     fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();

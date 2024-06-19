@@ -75,7 +75,7 @@ as [zero-cost abstractions](https://monomorph.is/posts/zero-cost-abstractions/).
 
 Fortunatelly, our efforts
 to design and implement an OS framework meeting these standards
-have borne fruit in the form of the [Asterinas Framework](../framework/).
+have borne fruit in the form of the [Asterinas OSTD](../ostd/).
 Using this framework as a foundation,
 we have developed the Asterinas Kernel;
 this framework also enables others to create their own framekernels,

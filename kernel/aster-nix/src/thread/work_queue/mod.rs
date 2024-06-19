@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use aster_frame::cpu::CpuSet;
+use ostd::cpu::CpuSet;
 use spin::Once;
 use work_item::WorkItem;
 use worker_pool::WorkerPool;
@@ -65,7 +65,7 @@ static WORKQUEUE_GLOBAL_HIGH_PRI: Once<Arc<WorkQueue>> = Once::new();
 /// Certainly, users can also create a dedicated WorkQueue and WorkerPool.
 ///
 /// ```rust
-/// use aster_frame::cpu::CpuSet;
+/// use ostd::cpu::CpuSet;
 /// use crate::thread::work_queue::{WorkQueue, WorkerPool, WorkItem};
 ///
 /// fn deferred_task(){

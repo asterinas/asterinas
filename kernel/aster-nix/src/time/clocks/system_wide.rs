@@ -3,8 +3,8 @@
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use aster_frame::{arch::timer::Jiffies, cpu_local, sync::SpinLock, CpuLocal};
 use aster_time::read_monotonic_time;
+use ostd::{arch::timer::Jiffies, cpu_local, sync::SpinLock, CpuLocal};
 use paste::paste;
 use spin::Once;
 

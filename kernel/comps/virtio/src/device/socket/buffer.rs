@@ -2,11 +2,11 @@
 
 use alloc::{collections::LinkedList, sync::Arc};
 
-use aster_frame::{
+use aster_network::dma_pool::DmaPool;
+use ostd::{
     mm::{DmaDirection, DmaStream},
     sync::SpinLock,
 };
-use aster_network::dma_pool::DmaPool;
 use spin::Once;
 
 const RX_BUFFER_LEN: usize = 4096;

@@ -4,14 +4,14 @@ use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
-use aster_frame::{
+use aster_util::safe_ptr::SafePtr;
+use log::debug;
+use ostd::{
     io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmReader},
     sync::{RwLock, SpinLock},
     trap::TrapFrame,
 };
-use aster_util::safe_ptr::SafePtr;
-use log::debug;
 
 use super::{config::VirtioConsoleConfig, DEVICE_NAME};
 use crate::{

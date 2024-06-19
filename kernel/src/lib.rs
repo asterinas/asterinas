@@ -3,13 +3,13 @@
 #![no_std]
 #![no_main]
 #![deny(unsafe_code)]
-extern crate aster_frame;
+extern crate ostd;
 
-use aster_frame::prelude::*;
+use ostd::prelude::*;
 
 #[aster_main]
 pub fn main() {
-    println!("[kernel] finish init aster_frame");
+    println!("[kernel] finish init ostd");
     component::init_all(component::parse_metadata!()).unwrap();
     aster_nix::init();
     aster_nix::run_first_process();

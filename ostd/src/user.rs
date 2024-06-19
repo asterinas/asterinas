@@ -50,7 +50,7 @@ impl UserSpace {
 
 /// Specific architectures need to implement this trait. This should only used in [`UserMode`]
 ///
-/// Only visible in aster-frame
+/// Only visible in `ostd`.
 pub(crate) trait UserContextApiInternal {
     /// Starts executing in the user mode.
     fn execute<F>(&mut self, has_kernel_event: F) -> ReturnReason
@@ -90,7 +90,7 @@ pub trait UserContextApi {
 /// Here is a sample code on how to use `UserMode`.
 ///  
 /// ```no_run
-/// use aster_frame::task::Task;
+/// use ostd::task::Task;
 ///
 /// let current = Task::current();
 /// let user_space = current.user_space()

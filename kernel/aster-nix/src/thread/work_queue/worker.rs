@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use aster_frame::{cpu::CpuSet, task::Priority};
+use ostd::{cpu::CpuSet, task::Priority};
 
 use super::worker_pool::WorkerPool;
 use crate::{

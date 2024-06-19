@@ -3,13 +3,13 @@
 use alloc::{boxed::Box, string::ToString, sync::Arc};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
-use aster_frame::{offset_of, sync::SpinLock, trap::TrapFrame};
 use aster_network::{
     AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError, RX_BUFFER_POOL,
     TX_BUFFER_POOL,
 };
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
+use ostd::{offset_of, sync::SpinLock, trap::TrapFrame};
 use smoltcp::phy::{DeviceCapabilities, Medium};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};

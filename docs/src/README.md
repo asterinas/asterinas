@@ -20,20 +20,20 @@ Asterinas Kernel implements Linux ABI in a safe and efficient way.
 This means it can seamlessly replace Linux,
 offering enhanced safety and security.
 
-#### [Part 2: Asterinas Framework](framework/)
+#### [Part 2: Asterinas OSTD](ostd/)
 
-The Framework lays down a minimalistic, powerful, and solid foundation
+Asterinas OSTD lays down a minimalistic, powerful, and solid foundation
 for OS development.
 It's akin to Rust's `std` crate
 but crafted for the demands of _safe_ Rust OS development.
-Asterinas Kernel is built on this very Framework.
+Asterinas Kernel is built on this very OSTD.
 
 #### [Part 3: Asterinas OSDK](osdk/guide/)
 
 The OSDK is a command-line tool
 that streamlines the workflow to 
 create, build, test, and run Rust OS projects
-that are built upon Asterinas Framework.
+that are built upon Asterinas OSTD.
 Developed specifically for OS developers,
 it extends Rust's Cargo tool to better suite their specific needs.
 OSDK is instrumental in the development of Asterinas Kernel.

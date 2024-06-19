@@ -81,7 +81,7 @@ impl SystemTime {
     }
 }
 
-/// convert aster_frame::time::Time to System time
+/// convert ostd::time::Time to System time
 fn convert_system_time(system_time: aster_time::SystemTime) -> Result<SystemTime> {
     let month = match Month::try_from(system_time.month) {
         Ok(month) => month,

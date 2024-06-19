@@ -67,7 +67,7 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// use aster_frame::sync::RwLock;
+/// use ostd::sync::RwLock;
 ///
 /// let lock = RwLock::new(5)
 ///

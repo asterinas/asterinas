@@ -53,7 +53,7 @@ use super::WaitQueue;
 /// # Examples
 ///
 /// ```
-/// use aster_frame::sync::RwMutex;
+/// use ostd::sync::RwMutex;
 ///
 /// let mutex = RwMutex::new(5)
 ///

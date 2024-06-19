@@ -3,7 +3,7 @@
 // ! #![feature(linked_list_cursors)]
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 
-use aster_frame::sync::SpinLock;
+use ostd::sync::SpinLock;
 use spin::Once;
 
 use self::device::SocketDevice;

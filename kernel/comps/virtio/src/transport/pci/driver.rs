@@ -2,7 +2,7 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use aster_frame::{
+use ostd::{
     bus::{
         pci::{
             bus::{PciDevice, PciDriver},

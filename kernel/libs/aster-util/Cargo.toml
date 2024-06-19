@@ -6,12 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aster-frame = { path = "../../../framework/aster-frame" }
+ostd = { path = "../../../ostd" }
 pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 typeflags-util = { path = "../typeflags-util" }
 aster-rights-proc = { path = "../aster-rights-proc" }
 aster-rights = { path = "../aster-rights" }
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
-ktest = { path = "../../../framework/libs/ktest" }
+ktest = { path = "../../../ostd/libs/ktest" }
 
 [features]

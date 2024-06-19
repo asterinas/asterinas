@@ -2,9 +2,9 @@
 
 use core::ops::Range;
 
-use aster_frame::mm::VmIo;
 use aster_rights::{Dup, Rights, TRightSet, TRights};
 use aster_rights_proc::require;
+use ostd::mm::VmIo;
 
 use super::{
     options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_,
@@ -180,13 +180,13 @@ impl<R: TRights> Vmar<TRightSet<R>> {
 }
 
 impl<R: TRights> VmIo for Vmar<TRightSet<R>> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> aster_frame::Result<()> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> ostd::Result<()> {
         self.check_rights(Rights::READ)?;
         self.0.read(offset, buf)?;
         Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> aster_frame::Result<()> {
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> ostd::Result<()> {
         self.check_rights(Rights::WRITE)?;
         self.0.write(offset, buf)?;
         Ok(())

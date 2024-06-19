@@ -3,13 +3,13 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
-use aster_frame::{
+use aster_rights::{ReadOp, TRightSet, WriteOp};
+use aster_util::safe_ptr::SafePtr;
+use ostd::{
     io_mem::IoMem,
     sync::RwLock,
     trap::{IrqCallbackFunction, IrqLine, TrapFrame},
 };
-use aster_rights::{ReadOp, TRightSet, WriteOp};
-use aster_util::safe_ptr::SafePtr;
 
 /// Multiplexing Irqs. The two interrupt types (configuration space change and queue interrupt)
 /// of the virtio-mmio device share the same IRQ, so `MultiplexIrq` are used to distinguish them.

@@ -6,12 +6,12 @@ use core::{
 };
 
 use aster_block::bio::BioWaiter;
-use aster_frame::{
+use aster_rights::Full;
+use aster_util::slot_vec::SlotVec;
+use ostd::{
     mm::{Frame, VmIo},
     sync::RwMutexWriteGuard,
 };
-use aster_rights::Full;
-use aster_util::slot_vec::SlotVec;
 
 use super::*;
 use crate::{

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::arch::timer::Jiffies;
+use ostd::arch::timer::Jiffies;
 
 pub(super) fn get_network_timestamp() -> smoltcp::time::Instant {
     let millis = Jiffies::elapsed().as_duration().as_millis();

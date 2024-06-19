@@ -17,13 +17,13 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::{mem::ManuallyDrop, time::Duration};
 
-use aster_frame::{
-    mm::{Frame, VmIo, PAGE_SIZE},
-    sync::SpinLock,
-};
 use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
+use ostd::{
+    mm::{Frame, VmIo, PAGE_SIZE},
+    sync::SpinLock,
+};
 use pod::Pod;
 use spin::Once;
 

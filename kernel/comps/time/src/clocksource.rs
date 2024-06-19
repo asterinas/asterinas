@@ -13,8 +13,8 @@
 use alloc::sync::Arc;
 use core::{cmp::max, ops::Add, time::Duration};
 
-use aster_frame::sync::RwLock;
 use aster_util::coeff::Coeff;
+use ostd::sync::RwLock;
 
 use crate::NANOS_PER_SECOND;
 

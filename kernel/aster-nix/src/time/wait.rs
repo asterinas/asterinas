@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use aster_frame::sync::{WaitQueue, Waiter};
+use ostd::sync::{WaitQueue, Waiter};
 
 use super::{clocks::JIFFIES_TIMER_MANAGER, timer::Timeout};
 

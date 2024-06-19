@@ -2,7 +2,7 @@
 
 //! Options for allocating child VMARs.
 
-use aster_frame::{mm::PAGE_SIZE, Error, Result};
+use ostd::{mm::PAGE_SIZE, Error, Result};
 
 use super::Vmar;
 
@@ -135,8 +135,8 @@ impl<R> VmarChildOptions<R> {
 
 #[cfg(ktest)]
 mod test {
-    use aster_frame::mm::VmIo;
     use aster_rights::Full;
+    use ostd::mm::VmIo;
 
     use super::*;
     use crate::vm::{

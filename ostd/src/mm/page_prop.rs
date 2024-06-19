@@ -119,7 +119,7 @@ bitflags! {
 }
 
 bitflags! {
-    /// Page property that are only accessible in the framework.
+    /// Page property that are only accessible in OSTD.
     pub(crate) struct PrivilegedPageFlags: u8 {
         /// Accessible from user mode.
         const USER      = 0b00000001;

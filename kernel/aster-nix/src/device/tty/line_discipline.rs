@@ -4,7 +4,7 @@
 
 use alloc::format;
 
-use aster_frame::trap::{disable_local, in_interrupt_context};
+use ostd::trap::{disable_local, in_interrupt_context};
 use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
 use super::termio::{KernelTermios, WinSize, CC_C_CHAR};

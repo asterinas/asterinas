@@ -11,7 +11,7 @@ repository = "https://github.com/asterinas/asterinas"
 
 [dependencies.linux-bzimage-builder]
 # The path for local development
-path = "../framework/libs/linux-bzimage/builder"
+path = "../ostd/libs/linux-bzimage/builder"
 # The version specified here is used for publishing on crates.io.
 # Please update this version when publishing the cargo-osdk crate
 # if there have been any changes to the dependent crate.

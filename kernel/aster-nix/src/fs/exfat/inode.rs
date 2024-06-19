@@ -12,8 +12,8 @@ use aster_block::{
     id::{Bid, BlockId},
     BLOCK_SIZE,
 };
-use aster_frame::mm::{Frame, FrameAllocOptions, VmIo};
 use aster_rights::Full;
+use ostd::mm::{Frame, FrameAllocOptions, VmIo};
 
 use super::{
     constants::*,

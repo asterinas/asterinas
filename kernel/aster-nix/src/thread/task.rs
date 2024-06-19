@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::{
+use ostd::{
     task::{preempt, Task, TaskOptions},
     user::{ReturnReason, UserContextApi, UserMode, UserSpace},
 };

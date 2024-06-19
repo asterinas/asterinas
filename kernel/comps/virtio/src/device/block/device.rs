@@ -7,15 +7,15 @@ use aster_block::{
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
-use aster_frame::{
+use aster_util::safe_ptr::SafePtr;
+use id_alloc::IdAlloc;
+use log::info;
+use ostd::{
     io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo},
     sync::SpinLock,
     trap::TrapFrame,
 };
-use aster_util::safe_ptr::SafePtr;
-use id_alloc::IdAlloc;
-use log::info;
 use pod::Pod;
 
 use super::{BlockFeatures, VirtioBlockConfig};

@@ -5,9 +5,9 @@
 use core::ops::Range;
 
 use aster_block::bio::{BioStatus, BioWaiter};
-use aster_frame::mm::{Frame, FrameAllocOptions};
 use aster_rights::Full;
 use lru::LruCache;
+use ostd::mm::{Frame, FrameAllocOptions};
 
 use crate::{
     prelude::*,

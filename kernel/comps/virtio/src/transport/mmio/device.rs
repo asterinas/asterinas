@@ -3,7 +3,10 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::mem::size_of;
 
-use aster_frame::{
+use aster_rights::{ReadOp, WriteOp};
+use aster_util::{field_ptr, safe_ptr::SafePtr};
+use log::warn;
+use ostd::{
     bus::mmio::{
         bus::MmioDevice,
         device::{MmioCommonDevice, VirtioMmioVersion},
@@ -14,9 +17,6 @@ use aster_frame::{
     sync::RwLock,
     trap::IrqCallbackFunction,
 };
-use aster_rights::{ReadOp, WriteOp};
-use aster_util::{field_ptr, safe_ptr::SafePtr};
-use log::warn;
 
 use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};
 use crate::{
@@ -34,7 +34,7 @@ pub struct VirtioMmioDevice {
 pub struct VirtioMmioTransport {
     layout: SafePtr<VirtioMmioLayout, IoMem>,
     device: Arc<VirtioMmioDevice>,
-    common_device: aster_frame::bus::mmio::device::MmioCommonDevice,
+    common_device: ostd::bus::mmio::device::MmioCommonDevice,
     multiplex: Arc<RwLock<MultiplexIrq>>,
 }
 

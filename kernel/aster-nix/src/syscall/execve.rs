@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::{cpu::UserContext, user::UserContextApi};
 use aster_rights::WriteOp;
+use ostd::{cpu::UserContext, user::UserContextApi};
 
 use super::{constants::*, SyscallReturn};
 use crate::{

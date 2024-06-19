@@ -7,12 +7,12 @@
 use core::{marker::PhantomData, ops::Range};
 
 use align_ext::AlignExt;
-use aster_frame::{
+use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
+use aster_rights_proc::require;
+use ostd::{
     collections::xarray::XArray,
     mm::{Frame, FrameAllocOptions},
 };
-use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
-use aster_rights_proc::require;
 use typeflags_util::{SetExtend, SetExtendOp};
 
 use super::{Pager, Pages, Vmo, VmoFlags, VmoMark, VmoRightsOp};
@@ -476,8 +476,8 @@ impl VmoChildType for VmoCowChild {}
 
 #[cfg(ktest)]
 mod test {
-    use aster_frame::mm::VmIo;
     use aster_rights::Full;
+    use ostd::mm::VmIo;
 
     use super::*;
 

@@ -72,7 +72,7 @@ pub fn new_base_crate(
         )+};
     }
     // TODO: currently just x86_64 works; add support for other architectures
-    // here when the framework is ready
+    // here when OSTD is ready
     include_linker_script!(["x86_64.ld"]);
 
     // Overrite the main.rs file

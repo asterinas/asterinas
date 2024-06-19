@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 //! The architecture-independent boot module, which provides a universal interface
-//! from the bootloader to the rest of the framework.
+//! from the bootloader to the rest of OSTD.
 //!
 
 pub mod kcmdline;
@@ -108,15 +108,15 @@ pub fn init() {
     call_all_boot_init_callbacks();
 }
 
-/// Calls the framework-user defined entrypoint of the actual kernel.
+/// Calls the OSTD-user defined entrypoint of the actual kernel.
 ///
-/// Any kernel that uses the aster-frame crate should define a function named
+/// Any kernel that uses the `ostd` crate should define a function named
 /// `aster_main` as the entrypoint.
 pub fn call_aster_main() -> ! {
     #[cfg(not(ktest))]
     unsafe {
         // The entry point of kernel code, which should be defined by the package that
-        // uses aster-frame.
+        // uses OSTD.
         extern "Rust" {
             fn __aster_main() -> !;
         }

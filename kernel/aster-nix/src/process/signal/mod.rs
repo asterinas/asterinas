@@ -16,9 +16,9 @@ pub mod signals;
 use core::{mem, sync::atomic::Ordering};
 
 use align_ext::AlignExt;
-use aster_frame::{cpu::UserContext, user::UserContextApi};
 use c_types::{siginfo_t, ucontext_t};
 pub use events::{SigEvents, SigEventsFilter};
+use ostd::{cpu::UserContext, user::UserContextApi};
 pub use pauser::Pauser;
 pub use poll::{Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};

@@ -2,8 +2,8 @@
 
 use core::time::Duration;
 
-use aster_frame::mm::VmIo;
 use aster_rights::Full;
+use ostd::mm::VmIo;
 
 use crate::{
     net::socket::{ip::stream::CongestionControl, LingerOption},

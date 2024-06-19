@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use aster_frame::user::UserSpace;
+use ostd::user::UserSpace;
 
 use super::PosixThread;
 use crate::{

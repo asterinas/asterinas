@@ -11,10 +11,10 @@
 * [Linux Compatibility](kernel/linux-compatibility.md)
 * [Roadmap](kernel/roadmap.md)
 
-# Asterinas Framework
+# Asterinas OSTD
 
-* [An Overview of the Framework](framework/README.md)
-* [Example: Writing a Kernel in 100 Lines of Safe Rust](framework/a-100-line-kernel.md)
+* [An Overview of OSTD](ostd/README.md)
+* [Example: Writing a Kernel in 100 Lines of Safe Rust](ostd/a-100-line-kernel.md)
 * [Example: Writing a Driver in 100 Lines of Safe Rust]()
 * [Soundness Analysis]()
 

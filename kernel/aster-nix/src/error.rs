@@ -188,17 +188,17 @@ impl AsRef<Error> for Error {
     }
 }
 
-impl From<aster_frame::Error> for Error {
-    fn from(frame_error: aster_frame::Error) -> Self {
+impl From<ostd::Error> for Error {
+    fn from(frame_error: ostd::Error) -> Self {
         match frame_error {
-            aster_frame::Error::AccessDenied => Error::new(Errno::EFAULT),
-            aster_frame::Error::NoMemory => Error::new(Errno::ENOMEM),
-            aster_frame::Error::InvalidArgs => Error::new(Errno::EINVAL),
-            aster_frame::Error::IoError => Error::new(Errno::EIO),
-            aster_frame::Error::NotEnoughResources => Error::new(Errno::EBUSY),
-            aster_frame::Error::PageFault => Error::new(Errno::EFAULT),
-            aster_frame::Error::Overflow => Error::new(Errno::EOVERFLOW),
-            aster_frame::Error::MapAlreadyMappedVaddr => Error::new(Errno::EINVAL),
+            ostd::Error::AccessDenied => Error::new(Errno::EFAULT),
+            ostd::Error::NoMemory => Error::new(Errno::ENOMEM),
+            ostd::Error::InvalidArgs => Error::new(Errno::EINVAL),
+            ostd::Error::IoError => Error::new(Errno::EIO),
+            ostd::Error::NotEnoughResources => Error::new(Errno::EBUSY),
+            ostd::Error::PageFault => Error::new(Errno::EFAULT),
+            ostd::Error::Overflow => Error::new(Errno::EOVERFLOW),
+            ostd::Error::MapAlreadyMappedVaddr => Error::new(Errno::EINVAL),
         }
     }
 }
@@ -288,16 +288,16 @@ impl From<cpio_decoder::error::Error> for Error {
     }
 }
 
-impl From<Error> for aster_frame::Error {
+impl From<Error> for ostd::Error {
     fn from(error: Error) -> Self {
         match error.errno {
-            Errno::EACCES => aster_frame::Error::AccessDenied,
-            Errno::EIO => aster_frame::Error::IoError,
-            Errno::ENOMEM => aster_frame::Error::NoMemory,
-            Errno::EFAULT => aster_frame::Error::PageFault,
-            Errno::EINVAL => aster_frame::Error::InvalidArgs,
-            Errno::EBUSY => aster_frame::Error::NotEnoughResources,
-            _ => aster_frame::Error::InvalidArgs,
+            Errno::EACCES => ostd::Error::AccessDenied,
+            Errno::EIO => ostd::Error::IoError,
+            Errno::ENOMEM => ostd::Error::NoMemory,
+            Errno::EFAULT => ostd::Error::PageFault,
+            Errno::EINVAL => ostd::Error::InvalidArgs,
+            Errno::EBUSY => ostd::Error::NotEnoughResources,
+            _ => ostd::Error::InvalidArgs,
         }
     }
 }

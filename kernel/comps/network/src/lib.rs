@@ -15,11 +15,11 @@ extern crate alloc;
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
-use aster_frame::sync::SpinLock;
 use aster_util::safe_ptr::Pod;
 pub use buffer::{RxBuffer, TxBuffer, RX_BUFFER_POOL, TX_BUFFER_POOL};
 use component::{init_component, ComponentInitError};
 pub use dma_pool::DmaSegment;
+use ostd::sync::SpinLock;
 use smoltcp::phy;
 use spin::Once;
 

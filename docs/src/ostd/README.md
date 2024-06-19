@@ -1,4 +1,4 @@
-# Asterinas Framework
+# Asterinas OSTD
 
 > Confucious remarked,
 > "I could follow whatever my heart desired
@@ -7,7 +7,7 @@
 > 子曰：
 > "从心所欲，不逾矩。"
 
-With Asterinas Framework,
+With Asterinas OSTD,
 you don't have to learn the dark art of unsafe Rust programming
 and risk shooting yourself in the foot.
 You will be doing whatever your heart desired
@@ -17,7 +17,7 @@ even if today marks your Day 1 as a Rust programmer.
 
 ## APIs
 
-Asterinas Framework stands
+Asterinas OSTD stands
 as a powerful and solid foundation for safe kernel development,
 providing high-level safe Rust APIs that are
 
@@ -38,14 +38,14 @@ Most of these APIs fall into the following categories:
 To explore how these APIs come into play,
 see [the example of a 100-line kernel in safe Rust](a-100-line-kernel.md).
 
-The framework APIs have been extensively documented.
+The OSTD APIs have been extensively documented.
 You can access the comprehensive API documentation for each release by visiting the [API docs](https://asterinas.github.io/api-docs).
 Additionally, you can refer to the latest nightly version API documentation at [API docs nightly](https://asterinas.github.io/api-docs-nightly),
 which remains in sync with the latest changes in the main branch.
 
 ## Four Requirements Satisfied
 
-In designing and implementing Asterinas Framework,
+In designing and implementing OSTD,
 we have risen to meet the challenge of
 fulfilling [the aforementioned four criteria as demanded by the framekernel architecture](../kernel/the-framekernel-architecture.md).
 
@@ -55,19 +55,19 @@ file systems,
 network protocols,
 and device drivers (e.g., Virtio drivers)
 have been implemented in safe Rust
-by leveraging the Framework.
+by leveraging OSTD.
 
 Adopting a minimalist philosophy,
-the Framework has a small codebase.
-At its core lies the `aster-frame` crate,
+OSTD has a small codebase.
+At its core lies the `ostd` crate,
 currently encompassing about 10K lines of code
 ---a figure that is even smaller than those of many microkernels.
-As the Framework evolves,
+As OSTD evolves,
 its codebase will expand,
 albeit at a relatively slow rate
 in comparison to the OS services layered atop it.
 
-The Framework's efficiency is measurable
+OSTD's efficiency is measurable
 through the performance metrics of its APIs
 and the system calls of Asterinas Kernel.
 No intrinsic limitations have been identified within Rust

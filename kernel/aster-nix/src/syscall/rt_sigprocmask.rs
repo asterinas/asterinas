@@ -2,7 +2,7 @@
 
 #![allow(unused_variables)]
 
-use aster_frame::mm::VmIo;
+use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{

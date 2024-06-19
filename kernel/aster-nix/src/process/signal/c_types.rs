@@ -5,8 +5,8 @@
 
 use core::mem::{self, size_of};
 
-use aster_frame::cpu::GeneralRegs;
 use aster_util::{read_union_fields, union_read_ptr::UnionReadPtr};
+use ostd::cpu::GeneralRegs;
 
 use super::sig_num::SigNum;
 use crate::{

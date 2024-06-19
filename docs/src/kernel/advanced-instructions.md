@@ -26,7 +26,7 @@ make ktest
 To test an individual crate in kernel mode, enter the directory of the crate and invoke `cargo osdk test`.
 
 ```bash
-cd asterinas/framework/aster-frame
+cd asterinas/ostd
 cargo osdk test
 ```
 

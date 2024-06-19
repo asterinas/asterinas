@@ -8,13 +8,6 @@ use alloc::{
 };
 use core::{fmt::Debug, iter, mem};
 
-use aster_frame::{
-    io_mem::IoMem,
-    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmIo, PAGE_SIZE},
-    offset_of,
-    sync::{RwLock, SpinLock},
-    trap::TrapFrame,
-};
 use aster_input::{
     key::{Key, KeyStatus},
     InputEvent,
@@ -22,6 +15,13 @@ use aster_input::{
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::{debug, info};
+use ostd::{
+    io_mem::IoMem,
+    mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmIo, PAGE_SIZE},
+    offset_of,
+    sync::{RwLock, SpinLock},
+    trap::TrapFrame,
+};
 
 use super::{InputConfigSelect, VirtioInputConfig, VirtioInputEvent, QUEUE_EVENT, QUEUE_STATUS};
 use crate::{

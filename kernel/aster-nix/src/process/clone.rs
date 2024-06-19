@@ -4,12 +4,12 @@
 
 use core::sync::atomic::Ordering;
 
-use aster_frame::{
+use aster_rights::Full;
+use ostd::{
     cpu::UserContext,
     mm::VmIo,
     user::{UserContextApi, UserSpace},
 };
-use aster_rights::Full;
 
 use super::{
     credentials,

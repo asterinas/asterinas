@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use aster_frame::early_print;
+use ostd::early_print;
 use spin::Once;
 
 use self::{driver::TtyDriver, line_discipline::LineDiscipline};

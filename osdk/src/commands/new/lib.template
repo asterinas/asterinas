@@ -3,13 +3,13 @@
 
 #[cfg_attr(ktest, macro_use)]
 extern crate ktest;
-extern crate aster_frame;
+extern crate ostd;
 
 #[cfg(ktest)]
 mod tests {
     #[ktest]
     fn it_works() {
-        let memory_regions = aster_frame::boot::memory_regions();
+        let memory_regions = ostd::boot::memory_regions();
         assert!(!memory_regions.is_empty());
     }
 }

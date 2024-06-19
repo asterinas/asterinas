@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use aster_frame::{arch::timer::Jiffies, task::Priority};
+use ostd::{arch::timer::Jiffies, task::Priority};
 
 use super::Iface;
 use crate::{

@@ -11,5 +11,5 @@
 /// _exclusively_ to one another. In other words, a type should not implement
 /// both traits.
 pub trait Dup: Sized {
-    fn dup(&self) -> aster_frame::Result<Self>;
+    fn dup(&self) -> ostd::Result<Self>;
 }
