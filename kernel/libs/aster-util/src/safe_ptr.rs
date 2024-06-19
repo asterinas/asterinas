@@ -2,13 +2,13 @@
 
 use core::{fmt::Debug, marker::PhantomData};
 
-use aster_frame::{
-    mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, VmIo},
-    Result,
-};
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use inherit_methods_macro::inherit_methods;
+use ostd::{
+    mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, VmIo},
+    Result,
+};
 pub use pod::Pod;
 pub use typeflags_util::SetContain;
 
@@ -381,8 +381,8 @@ impl<T, M: Debug, R> Debug for SafePtr<T, M, R> {
 #[macro_export]
 macro_rules! field_ptr {
     ($ptr:expr, $type:ty, $($field:tt)+) => {{
-        use aster_frame::offset_of;
-        use aster_frame::mm::VmIo;
+        use ostd::offset_of;
+        use ostd::mm::VmIo;
         use aster_rights::Dup;
         use aster_rights::TRightSet;
         use aster_rights::TRights;

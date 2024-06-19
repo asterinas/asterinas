@@ -1,7 +1,7 @@
 # Example: Writing a Kernel in About 100 Lines of Safe Rust
 
 To give you a sense of
-how Asterinas Framework enables writing kernels in safe Rust,
+how Asterinas OSTD enables writing kernels in safe Rust,
 we will show a new kernel in about 100 lines of safe Rust.
 
 Our new kernel will be able to run the following Hello World program.
@@ -39,7 +39,7 @@ The user program above requires our kernel to support three main features:
 
 A sample implementation of the kernel in safe Rust is given below.
 Comments are added
-to highlight how the APIs of Asterinas Framework enable safe kernel development.
+to highlight how the APIs of Asterinas OSTD enable safe kernel development.
 
 ```rust
 #![no_std]
@@ -52,13 +52,13 @@ use core::str;
 use alloc::sync::Arc;
 use alloc::vec;
 
-use aster_frame::cpu::UserContext;
-use aster_frame::prelude::*;
-use aster_frame::task::{Task, TaskOptions};
-use aster_frame::user::{ReturnReason, UserMode, UserSpace};
-use aster_frame::mm::{PageFlags, PAGE_SIZE, Vaddr, FrameAllocOptions, VmIo, VmMapOptions, VmSpace};
+use ostd::cpu::UserContext;
+use ostd::prelude::*;
+use ostd::task::{Task, TaskOptions};
+use ostd::user::{ReturnReason, UserMode, UserSpace};
+use ostd::mm::{PageFlags, PAGE_SIZE, Vaddr, FrameAllocOptions, VmIo, VmMapOptions, VmSpace};
 
-/// The kernel's boot and initialization process is managed by Asterinas Framework.
+/// The kernel's boot and initialization process is managed by Asterinas OSTD.
 /// After the process is done, the kernel's execution environment
 /// (e.g., stack, heap, tasks) will be ready for use and the entry function
 /// labeled as `#[aster_main]` will be called.
@@ -130,9 +130,9 @@ fn create_user_task(user_space: Arc<UserSpace>) -> Arc<Task> {
         }
     }
 
-    // Kernel tasks are managed by the Framework,
+    // Kernel tasks are managed by OSTD,
     // while scheduling algorithms for them can be
-    // determined by the users of the Framework.
+    // determined by the users of OSTD.
     TaskOptions::new(user_task)
         .user_space(Some(user_space))
         .data(0)

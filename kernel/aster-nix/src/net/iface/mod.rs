@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::sync::WaitQueue;
+use ostd::sync::WaitQueue;
 use smoltcp::iface::SocketSet;
 
 use self::common::IfaceCommon;

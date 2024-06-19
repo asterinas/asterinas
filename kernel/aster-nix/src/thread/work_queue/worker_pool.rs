@@ -7,7 +7,7 @@ use core::{
     time::Duration,
 };
 
-use aster_frame::{
+use ostd::{
     cpu::CpuSet,
     sync::WaitQueue,
     task::{add_task, Priority},

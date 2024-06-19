@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use aster_frame::bus::pci::{
+use ostd::bus::pci::{
     capability::vendor::CapabilityVndrData,
     cfg_space::{Bar, IoBar, MemoryBar},
     common_device::BarManager,

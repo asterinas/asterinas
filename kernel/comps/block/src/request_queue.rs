@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::sync::{Mutex, WaitQueue};
+use ostd::sync::{Mutex, WaitQueue};
 
 use super::{
     bio::{BioEnqueueError, BioType, SubmittedBio},

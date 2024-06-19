@@ -3,8 +3,8 @@
 use alloc::collections::btree_map::Entry;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use aster_frame::sync::WaitQueue;
 use keyable_arc::KeyableWeak;
+use ostd::sync::WaitQueue;
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     phy::Device,

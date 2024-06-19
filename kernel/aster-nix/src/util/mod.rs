@@ -2,8 +2,8 @@
 
 use core::mem;
 
-use aster_frame::mm::VmIo;
 use aster_rights::Full;
+use ostd::mm::VmIo;
 
 use crate::{prelude::*, vm::vmar::Vmar};
 mod iovec;

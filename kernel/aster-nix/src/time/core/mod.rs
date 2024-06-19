@@ -2,8 +2,8 @@
 
 use core::time::Duration;
 
-use aster_frame::arch::timer::TIMER_FREQ;
 use aster_time::NANOS_PER_SECOND;
+use ostd::arch::timer::TIMER_FREQ;
 
 pub mod timer;
 

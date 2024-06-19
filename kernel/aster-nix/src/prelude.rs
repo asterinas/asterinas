@@ -13,13 +13,13 @@ pub(crate) use alloc::{
 };
 pub(crate) use core::{any::Any, ffi::CStr, fmt::Debug};
 
-pub(crate) use aster_frame::{
-    mm::{Vaddr, PAGE_SIZE},
-    sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
-};
 pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
+pub(crate) use ostd::{
+    mm::{Vaddr, PAGE_SIZE},
+    sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
+};
 pub(crate) use pod::Pod;
 
 /// return current process

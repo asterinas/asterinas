@@ -6,8 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aster-frame = { path = "../../framework/aster-frame" }
-align_ext = { path = "../../framework/libs/align_ext" }
+ostd = { path = "../../ostd" }
+align_ext = { path = "../../ostd/libs/align_ext" }
 pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 aster-input = { path = "../comps/input" }
 aster-block = { path = "../comps/block" }
@@ -21,7 +21,7 @@ typeflags = { path = "../libs/typeflags" }
 typeflags-util = { path = "../libs/typeflags-util" }
 aster-rights-proc = { path = "../libs/aster-rights-proc" }
 aster-util = { path = "../libs/aster-util" }
-id-alloc = { path = "../../framework/libs/id-alloc" }
+id-alloc = { path = "../../ostd/libs/id-alloc" }
 int-to-c-enum = { path = "../libs/int-to-c-enum" }
 cpio-decoder = { path = "../libs/cpio-decoder" }
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }
@@ -42,7 +42,7 @@ smoltcp = { version = "0.9.1", default-features = false, features = [
     "socket-raw",
     "socket-dhcpv4",
 ] }
-ktest = { path = "../../framework/libs/ktest" }
+ktest = { path = "../../ostd/libs/ktest" }
 tdx-guest = { version = "0.1.0", optional = true }
 
 # parse elf file

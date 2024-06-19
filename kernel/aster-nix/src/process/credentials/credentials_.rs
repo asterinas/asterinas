@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::sync::{RwLockReadGuard, RwLockWriteGuard};
+use ostd::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use super::{group::AtomicGid, user::AtomicUid, Gid, Uid};
 use crate::{

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::mm::{Frame, FrameAllocOptions, Segment, VmIo};
+use ostd::mm::{Frame, FrameAllocOptions, Segment, VmIo};
 
 use super::{
     bio::{Bio, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter, SubmittedBio},
@@ -75,9 +75,9 @@ impl dyn BlockDevice {
 
 impl VmIo for dyn BlockDevice {
     /// Reads consecutive bytes of several sectors in size.
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> aster_frame::Result<()> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> ostd::Result<()> {
         if offset % SECTOR_SIZE != 0 || buf.len() % SECTOR_SIZE != 0 {
-            return Err(aster_frame::Error::InvalidArgs);
+            return Err(ostd::Error::InvalidArgs);
         }
         if buf.is_empty() {
             return Ok(());
@@ -111,14 +111,14 @@ impl VmIo for dyn BlockDevice {
                 let _ = bio_segment.reader().read(&mut buf.into());
                 Ok(())
             }
-            _ => Err(aster_frame::Error::IoError),
+            _ => Err(ostd::Error::IoError),
         }
     }
 
     /// Writes consecutive bytes of several sectors in size.
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> aster_frame::Result<()> {
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> ostd::Result<()> {
         if offset % SECTOR_SIZE != 0 || buf.len() % SECTOR_SIZE != 0 {
-            return Err(aster_frame::Error::InvalidArgs);
+            return Err(ostd::Error::InvalidArgs);
         }
         if buf.is_empty() {
             return Ok(());
@@ -150,16 +150,16 @@ impl VmIo for dyn BlockDevice {
         let status = bio.submit_sync(self)?;
         match status {
             BioStatus::Complete => Ok(()),
-            _ => Err(aster_frame::Error::IoError),
+            _ => Err(ostd::Error::IoError),
         }
     }
 }
 
 impl dyn BlockDevice {
     /// Asynchronously writes consecutive bytes of several sectors in size.
-    pub fn write_bytes_async(&self, offset: usize, buf: &[u8]) -> aster_frame::Result<BioWaiter> {
+    pub fn write_bytes_async(&self, offset: usize, buf: &[u8]) -> ostd::Result<BioWaiter> {
         if offset % SECTOR_SIZE != 0 || buf.len() % SECTOR_SIZE != 0 {
-            return Err(aster_frame::Error::InvalidArgs);
+            return Err(ostd::Error::InvalidArgs);
         }
         if buf.is_empty() {
             return Ok(BioWaiter::new());

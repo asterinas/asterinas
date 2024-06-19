@@ -119,7 +119,7 @@ impl Drop for IrqLine {
 /// # Example
 ///
 /// ```rust
-/// use aster_frame::irq;
+/// use ostd::irq;
 ///
 /// {
 ///     let _ = irq::disable_local();

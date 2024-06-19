@@ -21,7 +21,7 @@ mod test {
         bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
         BlockDevice,
     };
-    use aster_frame::mm::{FrameAllocOptions, Segment, VmIo};
+    use ostd::mm::{FrameAllocOptions, Segment, VmIo};
     use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
     use crate::{

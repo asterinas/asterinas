@@ -2,7 +2,7 @@
 
 #![allow(unused_variables)]
 
-use aster_frame::cpu::*;
+use ostd::cpu::*;
 
 use crate::{
     prelude::*, process::signal::signals::fault::FaultSignal,

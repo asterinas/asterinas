@@ -8,14 +8,14 @@ use alloc::{
 };
 use core::ops::Range;
 
-use aster_frame::{
+use bitvec::{array::BitArray, prelude::Lsb0};
+use ktest::ktest;
+use ostd::{
     mm::{
         Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmReader, VmWriter, PAGE_SIZE,
     },
     sync::{RwLock, SpinLock},
 };
-use bitvec::{array::BitArray, prelude::Lsb0};
-use ktest::ktest;
 
 /// `DmaPool` is responsible for allocating small streaming DMA segments
 /// (equal to or smaller than PAGE_SIZE),
@@ -95,7 +95,7 @@ impl DmaPool {
     }
 
     /// Allocates a `DmaSegment` from the pool
-    pub fn alloc_segment(self: &Arc<Self>) -> Result<DmaSegment, aster_frame::Error> {
+    pub fn alloc_segment(self: &Arc<Self>) -> Result<DmaSegment, ostd::Error> {
         // Lock order: pool.avail_pages -> pool.all_pages
         //             pool.avail_pages -> page.allocated_segments
         let mut avail_pages = self.avail_pages.lock_irq_disabled();
@@ -150,12 +150,12 @@ impl DmaPage {
         direction: DmaDirection,
         is_cache_coherent: bool,
         pool: Weak<DmaPool>,
-    ) -> Result<Self, aster_frame::Error> {
+    ) -> Result<Self, ostd::Error> {
         let dma_stream = {
             let vm_segment = FrameAllocOptions::new(1).alloc_contiguous()?;
 
             DmaStream::map(vm_segment, direction, is_cache_coherent)
-                .map_err(|_| aster_frame::Error::AccessDenied)?
+                .map_err(|_| ostd::Error::AccessDenied)?
         };
 
         Ok(Self {
@@ -234,17 +234,17 @@ impl DmaSegment {
         self.size
     }
 
-    pub fn reader(&self) -> Result<VmReader<'_>, aster_frame::Error> {
+    pub fn reader(&self) -> Result<VmReader<'_>, ostd::Error> {
         let offset = self.start_addr - self.dma_stream.daddr();
         Ok(self.dma_stream.reader()?.skip(offset).limit(self.size))
     }
 
-    pub fn writer(&self) -> Result<VmWriter<'_>, aster_frame::Error> {
+    pub fn writer(&self) -> Result<VmWriter<'_>, ostd::Error> {
         let offset = self.start_addr - self.dma_stream.daddr();
         Ok(self.dma_stream.writer()?.skip(offset).limit(self.size))
     }
 
-    pub fn sync(&self, byte_range: Range<usize>) -> Result<(), aster_frame::Error> {
+    pub fn sync(&self, byte_range: Range<usize>) -> Result<(), ostd::Error> {
         let offset = self.daddr() - self.dma_stream.daddr();
         let range = byte_range.start + offset..byte_range.end + offset;
         self.dma_stream.sync(range)

@@ -85,13 +85,13 @@ export
 # Basically, non-OSDK crates do not depend on Aster Frame and can be checked
 # or tested without OSDK.
 NON_OSDK_CRATES := \
-	framework/libs/align_ext \
-	framework/libs/aster-main \
-	framework/libs/id-alloc \
-	framework/libs/linux-bzimage/builder \
-	framework/libs/linux-bzimage/boot-params \
-	framework/libs/ktest \
-	framework/libs/ktest-proc-macro \
+	ostd/libs/align_ext \
+	ostd/libs/aster-main \
+	ostd/libs/id-alloc \
+	ostd/libs/linux-bzimage/builder \
+	ostd/libs/linux-bzimage/boot-params \
+	ostd/libs/ktest \
+	ostd/libs/ktest-proc-macro \
 	kernel/libs/cpio-decoder \
 	kernel/libs/int-to-c-enum \
 	kernel/libs/int-to-c-enum/derive \
@@ -101,11 +101,11 @@ NON_OSDK_CRATES := \
 	kernel/libs/typeflags \
 	kernel/libs/typeflags-util
 
-# In contrast, OSDK crates depend on Aster Frame (or being aster-frame itself)
+# In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.
 OSDK_CRATES := \
-	framework/aster-frame \
-	framework/libs/linux-bzimage/setup \
+	ostd \
+	ostd/libs/linux-bzimage/setup \
 	kernel \
 	kernel/aster-nix \
 	kernel/comps/block \
@@ -179,7 +179,7 @@ test:
 ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
-		[ $$dir = "framework/libs/linux-bzimage/setup" ] && continue; \
+		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
 		(cd $$dir && cargo osdk test) || exit 1; \
 	done
 

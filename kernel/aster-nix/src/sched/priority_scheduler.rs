@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::task::{set_scheduler, Scheduler, Task, TaskAdapter};
 use intrusive_collections::LinkedList;
+use ostd::task::{set_scheduler, Scheduler, Task, TaskAdapter};
 
 use crate::prelude::*;
 

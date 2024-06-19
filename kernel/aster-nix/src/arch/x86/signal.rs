@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::cpu::UserContext;
+use ostd::cpu::UserContext;
 
 use crate::process::signal::{sig_num::SigNum, SignalContext};
 

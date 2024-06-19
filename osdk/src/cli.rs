@@ -69,9 +69,7 @@ enum CargoSubcommand {
 
 #[derive(Debug, Parser)]
 pub enum OsdkSubcommand {
-    #[command(
-        about = "Create a new kernel package or library package which depends on aster-frame"
-    )]
+    #[command(about = "Create a new kernel package or library package which depends on OSTD")]
     New(NewArgs),
     #[command(about = "Compile the project and its dependencies")]
     Build(BuildArgs),

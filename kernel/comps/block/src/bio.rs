@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use align_ext::AlignExt;
-use aster_frame::{
+use int_to_c_enum::TryFromInt;
+use ostd::{
     mm::{Frame, Segment, VmReader, VmWriter},
     sync::WaitQueue,
 };
-use int_to_c_enum::TryFromInt;
 
 use super::{id::Sid, BlockDevice};
 use crate::prelude::*;
@@ -140,9 +140,9 @@ pub enum BioEnqueueError {
     TooBig,
 }
 
-impl From<BioEnqueueError> for aster_frame::Error {
+impl From<BioEnqueueError> for ostd::Error {
     fn from(_error: BioEnqueueError) -> Self {
-        aster_frame::Error::NotEnoughResources
+        ostd::Error::NotEnoughResources
     }
 }
 

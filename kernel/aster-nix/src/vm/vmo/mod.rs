@@ -8,11 +8,11 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use aster_frame::{
+use aster_rights::Rights;
+use ostd::{
     collections::xarray::{CursorMut, XArray, XMark},
     mm::{Frame, FrameAllocOptions, VmReader, VmWriter},
 };
-use aster_rights::Rights;
 
 use crate::prelude::*;
 
@@ -76,7 +76,7 @@ use self::options::ChildType;
 /// # Implementation
 ///
 /// `Vmo` provides high-level APIs for address space management by wrapping
-/// around its low-level counterpart `aster_frame::vm::VmFrames`.
+/// around its low-level counterpart `ostd::vm::VmFrames`.
 /// Compared with `VmFrames`,
 /// `Vmo` is easier to use (by offering more powerful APIs) and
 /// harder to misuse (thanks to its nature of being capability).

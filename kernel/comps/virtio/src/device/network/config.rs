@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::io_mem::IoMem;
 use aster_network::EthernetAddr;
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
+use ostd::io_mem::IoMem;
 use pod::Pod;
 
 use crate::transport::VirtioTransport;

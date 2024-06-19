@@ -2,7 +2,7 @@
 
 use alloc::vec;
 
-use aster_frame::mm::VmWriter;
+use ostd::mm::VmWriter;
 use smoltcp::{phy, time::Instant};
 
 use crate::{buffer::RxBuffer, AnyNetworkDevice};

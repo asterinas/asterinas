@@ -4,7 +4,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use aster_frame::cpu::num_cpus;
+use ostd::cpu::num_cpus;
 use spin::Once;
 
 use crate::{

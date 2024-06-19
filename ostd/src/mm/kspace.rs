@@ -74,7 +74,7 @@ pub const KERNEL_END_VADDR: Vaddr = 0xffff_ffff_ffff_0000 << ADDR_WIDTH_SHIFT;
 /// The kernel code is linear mapped to this address.
 ///
 /// FIXME: This offset should be randomly chosen by the loader or the
-/// boot compatibility layer. But we disabled it because the framework
+/// boot compatibility layer. But we disabled it because OSTD
 /// doesn't support relocatable kernel yet.
 pub fn kernel_loaded_offset() -> usize {
     KERNEL_CODE_BASE_VADDR
@@ -95,7 +95,7 @@ pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA
 pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000 << ADDR_WIDTH_SHIFT;
 pub const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> = LINEAR_MAPPING_BASE_VADDR..VMALLOC_BASE_VADDR;
 
-/// Convert physical address to virtual address using offset, only available inside aster-frame
+/// Convert physical address to virtual address using offset, only available inside `ostd`
 pub fn paddr_to_vaddr(pa: Paddr) -> usize {
     debug_assert!(pa < VMALLOC_BASE_VADDR - LINEAR_MAPPING_BASE_VADDR);
     pa + LINEAR_MAPPING_BASE_VADDR

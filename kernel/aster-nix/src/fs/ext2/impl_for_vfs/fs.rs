@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::sync::RwMutexReadGuard;
+use ostd::sync::RwMutexReadGuard;
 
 use crate::{
     fs::{

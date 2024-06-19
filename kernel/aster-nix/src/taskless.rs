@@ -8,8 +8,8 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use aster_frame::{cpu_local, sync::SpinLock, trap::SoftIrqLine, CpuLocal};
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
+use ostd::{cpu_local, sync::SpinLock, trap::SoftIrqLine, CpuLocal};
 
 use crate::softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID};
 
@@ -41,7 +41,7 @@ use crate::softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID};
 ///
 /// Users can create a `Taskless` and schedule it at any place.
 /// ```rust
-/// #use aster_frame::softirq::Taskless;
+/// #use ostd::softirq::Taskless;
 ///
 /// #fn my_func() {}
 ///
@@ -189,7 +189,7 @@ fn taskless_softirq_handler(
 mod test {
     use core::sync::atomic::AtomicUsize;
 
-    use aster_frame::trap::enable_local;
+    use ostd::trap::enable_local;
 
     use super::*;
 

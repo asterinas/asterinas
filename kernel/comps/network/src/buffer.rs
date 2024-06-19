@@ -3,7 +3,7 @@
 use alloc::{collections::LinkedList, sync::Arc};
 
 use align_ext::AlignExt;
-use aster_frame::{
+use ostd::{
     mm::{
         Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmReader, VmWriter, PAGE_SIZE,
     },

@@ -6,7 +6,7 @@
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use aster_frame::sync::{MutexGuard, SpinLock, WaitQueue};
+use ostd::sync::{MutexGuard, SpinLock, WaitQueue};
 
 use crate::time::wait::WaitTimeout;
 
@@ -51,7 +51,7 @@ impl<Guard> LockErr<Guard> {
 ///
 /// ```rust
 /// use alloc::sync::Arc;
-/// use aster_frame::sync::Mutex;
+/// use ostd::sync::Mutex;
 /// use crate::{process::sync::Condvar, thread::{kernel_thread::KernelThreadExt, Thread}};
 ///
 /// // Initializing a shared condition between threads
@@ -264,7 +264,7 @@ impl Condvar {
 
 #[cfg(ktest)]
 mod test {
-    use aster_frame::sync::Mutex;
+    use ostd::sync::Mutex;
 
     use super::*;
     use crate::thread::{

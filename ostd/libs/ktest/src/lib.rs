@@ -6,7 +6,7 @@
 //! `cargo test`-like experience for any `#![no_std]` bare metal crates.
 //!
 //! In Asterinas, all the tests written in the source tree of the crates will be run
-//! immediately after the initialization of aster-frame. Thus you can use any
+//! immediately after the initialization of `ostd`. Thus you can use any
 //! feature provided by the frame including the heap allocator, etc.
 //!
 //! By all means, ktest is an individule crate that only requires:
@@ -42,7 +42,7 @@
 //! }
 //! ```
 //!
-//! And also, any crates using the ktest framework should be linked with aster-frame
+//! And also, any crates using the ktest framework should be linked with ostd
 //! and import the `ktest` crate:
 //!
 //! ```toml
@@ -70,14 +70,14 @@
 //! This is achieved by a whitelist filter on the test name.
 //!
 //! ```bash
-//! make run KTEST=1 KTEST_WHITELIST=failing_assertion,aster_frame::test::expect_panic
+//! make run KTEST=1 KTEST_WHITELIST=failing_assertion,ostd::test::expect_panic
 //! ```
 //!
 //! `KTEST_CRATES` variable is used to specify in which crates the tests to be run.
 //! This is achieved by conditionally compiling the test module using the `#[cfg]`.
 //!
 //! ```bash
-//! make run KTEST=1 KTEST_CRATES=aster-frame
+//! make run KTEST=1 KTEST_CRATES=ostd
 //! ``
 //!
 //! We support the `#[should_panic]` attribute just in the same way as the standard

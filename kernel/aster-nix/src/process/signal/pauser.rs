@@ -7,7 +7,7 @@ use core::{
     time::Duration,
 };
 
-use aster_frame::sync::WaitQueue;
+use ostd::sync::WaitQueue;
 
 use super::{sig_mask::SigMask, SigEvents, SigEventsFilter};
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
 /// into one. Both putting the current thread to sleep and waking it up can be done through the
 /// same `Pauser` object, using its `pause`- and `resume`-family methods.
 ///
-/// [`Waiter`]: aster_frame::sync::Waiter
+/// [`Waiter`]: ostd::sync::Waiter
 ///
 /// # Example
 ///

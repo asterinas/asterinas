@@ -2,9 +2,9 @@
 
 #![allow(dead_code)]
 
-use aster_frame::sync::{RwLockReadGuard, RwLockWriteGuard};
 use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
+use ostd::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use super::{capabilities::CapSet, credentials_::Credentials_, Credentials, Gid, Uid};
 use crate::prelude::*;

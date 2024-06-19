@@ -40,8 +40,8 @@ fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &st
 
     let dependencies = manifest.get_mut("dependencies").unwrap();
 
-    let aster_frame_dep = toml::Table::from_str(&aster_crate_dep("aster-frame")).unwrap();
-    dependencies.as_table_mut().unwrap().extend(aster_frame_dep);
+    let ostd_dep = toml::Table::from_str(&aster_crate_dep("ostd")).unwrap();
+    dependencies.as_table_mut().unwrap().extend(ostd_dep);
     let ktest_dep = toml::Table::from_str(&aster_crate_dep("ktest")).unwrap();
     dependencies.as_table_mut().unwrap().extend(ktest_dep);
 

@@ -3,10 +3,10 @@
 use alloc::{boxed::Box, string::ToString, sync::Arc, vec, vec::Vec};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
-use aster_frame::{mm::VmWriter, offset_of, sync::SpinLock, trap::TrapFrame};
 use aster_network::{RxBuffer, TxBuffer};
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
+use ostd::{mm::VmWriter, offset_of, sync::SpinLock, trap::TrapFrame};
 use pod::Pod;
 
 use super::{

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! The framework part of Asterinas.
+//! The standard library for Asterinas and other Rust OSes.
 #![feature(alloc_error_handler)]
 #![feature(const_mut_refs)]
 #![feature(const_ptr_sub_ptr)]
@@ -49,10 +49,10 @@ use tdx_guest::init_tdx;
 
 pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
 
-/// Initialize the framework.
+/// Initialize OSTD.
 ///
 /// This function represents the first phase booting up the system. It makes
-/// all functionalities of the framework available after the call.
+/// all functionalities of OSTD available after the call.
 ///
 /// TODO: We need to refactor this function to make it more modular and
 /// make inter-initialization-dependencies more clear and reduce usages of

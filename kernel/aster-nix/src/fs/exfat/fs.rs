@@ -6,10 +6,10 @@
 use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 
 use aster_block::{bio::BioWaiter, id::BlockId, BlockDevice};
-use aster_frame::mm::Frame;
-pub(super) use aster_frame::mm::VmIo;
 use hashbrown::HashMap;
 use lru::LruCache;
+use ostd::mm::Frame;
+pub(super) use ostd::mm::VmIo;
 
 use super::{
     bitmap::ExfatBitmap,

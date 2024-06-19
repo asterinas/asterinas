@@ -5,7 +5,7 @@
 
 use core::ops::Range;
 
-use aster_frame::mm::{Frame, FrameVec, PageFlags, VmIo, VmMapOptions, VmSpace};
+use ostd::mm::{Frame, FrameVec, PageFlags, VmIo, VmMapOptions, VmSpace};
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
 use crate::{

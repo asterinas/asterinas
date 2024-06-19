@@ -4,8 +4,8 @@ version = "0.4.0"
 edition = "2021"
 
 [dependencies]
-id-alloc = { path = "../framework/libs/id-alloc" }
-aster-frame = { path = "../framework/aster-frame" }
+id-alloc = { path = "../ostd/libs/id-alloc" }
+ostd = { path = "../ostd" }
 aster-nix = { path = "aster-nix" }
 component = { path = "libs/comp-sys/component" }
 
@@ -15,4 +15,4 @@ aster-time = { path = "comps/time" }
 aster-framebuffer = { path = "comps/framebuffer" }
 
 [features]
-intel_tdx = ["aster-frame/intel_tdx", "aster-nix/intel_tdx"]
+intel_tdx = ["ostd/intel_tdx", "aster-nix/intel_tdx"]

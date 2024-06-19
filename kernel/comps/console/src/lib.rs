@@ -10,8 +10,8 @@ extern crate alloc;
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
-use aster_frame::{mm::VmReader, sync::SpinLock};
 use component::{init_component, ComponentInitError};
+use ostd::{mm::VmReader, sync::SpinLock};
 use spin::Once;
 
 pub type ConsoleCallback = dyn Fn(VmReader) + Send + Sync;

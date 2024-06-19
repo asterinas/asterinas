@@ -12,9 +12,9 @@ pub mod key;
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
-use aster_frame::sync::SpinLock;
 use component::{init_component, ComponentInitError};
 use key::{Key, KeyStatus};
+use ostd::sync::SpinLock;
 use spin::Once;
 
 #[derive(Debug, Clone, Copy)]

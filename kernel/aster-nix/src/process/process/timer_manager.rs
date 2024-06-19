@@ -7,14 +7,14 @@ use alloc::{
 };
 use core::time::Duration;
 
-use aster_frame::{
+use id_alloc::IdAlloc;
+use ostd::{
     arch::{
         timer::{self, TIMER_FREQ},
         x86::trap::is_kernel_interrupted,
     },
     sync::Mutex,
 };
-use id_alloc::IdAlloc;
 
 use super::Process;
 use crate::{

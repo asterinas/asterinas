@@ -8,15 +8,15 @@ use core::{
     sync::atomic::{fence, Ordering},
 };
 
-use aster_frame::{
-    io_mem::IoMem,
-    mm::{DmaCoherent, FrameAllocOptions},
-    offset_of,
-};
 use aster_rights::{Dup, TRightSet, TRights, Write};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::debug;
+use ostd::{
+    io_mem::IoMem,
+    mm::{DmaCoherent, FrameAllocOptions},
+    offset_of,
+};
 use pod::Pod;
 
 use crate::{dma_buf::DmaBuf, transport::VirtioTransport};

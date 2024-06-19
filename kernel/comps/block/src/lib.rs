@@ -41,8 +41,8 @@ mod impl_block_device;
 mod prelude;
 pub mod request_queue;
 
-use aster_frame::sync::SpinLock;
 use component::{init_component, ComponentInitError};
+use ostd::sync::SpinLock;
 use spin::Once;
 
 use self::{
@@ -50,7 +50,7 @@ use self::{
     prelude::*,
 };
 
-pub const BLOCK_SIZE: usize = aster_frame::mm::PAGE_SIZE;
+pub const BLOCK_SIZE: usize = ostd::mm::PAGE_SIZE;
 pub const SECTOR_SIZE: usize = 512;
 
 pub trait BlockDevice: Send + Sync + Any + Debug {

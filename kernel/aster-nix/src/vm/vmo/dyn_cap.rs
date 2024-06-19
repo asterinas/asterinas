@@ -2,8 +2,8 @@
 
 use core::ops::Range;
 
-use aster_frame::mm::{Frame, VmIo};
 use aster_rights::{Rights, TRights};
+use ostd::mm::{Frame, VmIo};
 
 use super::{
     options::{VmoCowChild, VmoSliceChild},
@@ -151,13 +151,13 @@ impl Vmo<Rights> {
 }
 
 impl VmIo for Vmo<Rights> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> aster_frame::Result<()> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> ostd::Result<()> {
         self.check_rights(Rights::READ)?;
         self.0.read_bytes(offset, buf)?;
         Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> aster_frame::Result<()> {
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> ostd::Result<()> {
         self.check_rights(Rights::WRITE)?;
         self.0.write_bytes(offset, buf)?;
         Ok(())

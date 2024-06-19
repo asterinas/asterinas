@@ -3,7 +3,9 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
-use aster_frame::{
+use aster_util::{field_ptr, safe_ptr::SafePtr};
+use log::{info, warn};
+use ostd::{
     bus::{
         pci::{
             bus::PciDevice, capability::CapabilityData, common_device::PciCommonDevice, PciDeviceId,
@@ -15,8 +17,6 @@ use aster_frame::{
     offset_of,
     trap::IrqCallbackFunction,
 };
-use aster_util::{field_ptr, safe_ptr::SafePtr};
-use log::{info, warn};
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};
 use crate::{

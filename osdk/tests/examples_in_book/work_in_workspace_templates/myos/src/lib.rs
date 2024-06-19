@@ -3,7 +3,7 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-use aster_frame::prelude::*;
+use ostd::prelude::*;
 
 #[aster_main]
 fn kernel_main() {

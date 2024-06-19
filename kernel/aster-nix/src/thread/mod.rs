@@ -4,7 +4,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use aster_frame::task::Task;
+use ostd::task::Task;
 
 use self::status::{AtomicThreadStatus, ThreadStatus};
 use crate::prelude::*;

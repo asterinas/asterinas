@@ -6,7 +6,7 @@
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use aster_frame::arch::{
+use ostd::arch::{
     read_tsc,
     timer::{self, TIMER_FREQ},
     x86::tsc_freq,

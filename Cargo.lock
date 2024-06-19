@@ -77,13 +77,13 @@ name = "aster-block"
 version = "0.1.0"
 dependencies = [
  "align_ext",
- "aster-frame",
  "aster-util",
  "bitflags 1.3.2",
  "component",
  "int-to-c-enum",
  "lazy_static",
  "log",
+ "ostd",
  "pod",
  "spin 0.9.8",
  "static_assertions",
@@ -93,63 +93,22 @@ dependencies = [
 name = "aster-console"
 version = "0.1.0"
 dependencies = [
- "aster-frame",
  "aster-util",
  "bitflags 1.3.2",
  "component",
  "log",
+ "ostd",
  "spin 0.9.8",
-]
-
-[[package]]
-name = "aster-frame"
-version = "0.1.0"
-dependencies = [
- "acpi",
- "align_ext",
- "aml",
- "array-init",
- "aster-main",
- "bit_field",
- "bitflags 1.3.2",
- "bitvec",
- "buddy_system_allocator",
- "cfg-if",
- "gimli",
- "iced-x86",
- "id-alloc",
- "inherit-methods-macro",
- "int-to-c-enum",
- "intrusive-collections",
- "ktest",
- "lazy_static",
- "linux-boot-params",
- "log",
- "multiboot2",
- "num",
- "num-derive",
- "num-traits",
- "pod",
- "rsdp",
- "spin 0.9.8",
- "static_assertions",
- "tdx-guest",
- "trapframe",
- "unwinding",
- "volatile",
- "x86",
- "x86_64",
- "xarray",
 ]
 
 [[package]]
 name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
- "aster-frame",
  "component",
  "font8x8",
  "log",
+ "ostd",
  "spin 0.9.8",
 ]
 
@@ -158,7 +117,6 @@ name = "aster-input"
 version = "0.1.0"
 dependencies = [
  "ascii",
- "aster-frame",
  "aster-rights",
  "aster-util",
  "bitflags 1.3.2",
@@ -166,6 +124,7 @@ dependencies = [
  "int-to-c-enum",
  "lazy_static",
  "log",
+ "ostd",
  "spin 0.9.8",
 ]
 
@@ -183,7 +142,6 @@ name = "aster-network"
 version = "0.1.0"
 dependencies = [
  "align_ext",
- "aster-frame",
  "aster-rights",
  "aster-util",
  "bitflags 1.3.2",
@@ -192,6 +150,7 @@ dependencies = [
  "int-to-c-enum",
  "ktest",
  "log",
+ "ostd",
  "pod",
  "ringbuf",
  "smoltcp",
@@ -206,7 +165,6 @@ dependencies = [
  "ascii",
  "aster-block",
  "aster-console",
- "aster-frame",
  "aster-input",
  "aster-network",
  "aster-rights",
@@ -237,6 +195,7 @@ dependencies = [
  "libflate",
  "log",
  "lru",
+ "ostd",
  "paste",
  "pod",
  "rand",
@@ -276,10 +235,10 @@ dependencies = [
 name = "aster-time"
 version = "0.1.0"
 dependencies = [
- "aster-frame",
  "aster-util",
  "component",
  "log",
+ "ostd",
  "spin 0.9.8",
 ]
 
@@ -287,11 +246,11 @@ dependencies = [
 name = "aster-util"
 version = "0.1.0"
 dependencies = [
- "aster-frame",
  "aster-rights",
  "aster-rights-proc",
  "inherit-methods-macro",
  "ktest",
+ "ostd",
  "pod",
  "typeflags-util",
 ]
@@ -303,7 +262,6 @@ dependencies = [
  "align_ext",
  "aster-block",
  "aster-console",
- "aster-frame",
  "aster-input",
  "aster-network",
  "aster-rights",
@@ -315,6 +273,7 @@ dependencies = [
  "id-alloc",
  "int-to-c-enum",
  "log",
+ "ostd",
  "pod",
  "smoltcp",
  "spin 0.9.8",
@@ -325,12 +284,12 @@ dependencies = [
 name = "asterinas"
 version = "0.4.0"
 dependencies = [
- "aster-frame",
  "aster-framebuffer",
  "aster-nix",
  "aster-time",
  "component",
  "id-alloc",
+ "ostd",
  "x86_64",
 ]
 
@@ -1133,6 +1092,47 @@ name = "once_cell"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
+
+[[package]]
+name = "ostd"
+version = "0.1.0"
+dependencies = [
+ "acpi",
+ "align_ext",
+ "aml",
+ "array-init",
+ "aster-main",
+ "bit_field",
+ "bitflags 1.3.2",
+ "bitvec",
+ "buddy_system_allocator",
+ "cfg-if",
+ "gimli",
+ "iced-x86",
+ "id-alloc",
+ "inherit-methods-macro",
+ "int-to-c-enum",
+ "intrusive-collections",
+ "ktest",
+ "lazy_static",
+ "linux-boot-params",
+ "log",
+ "multiboot2",
+ "num",
+ "num-derive",
+ "num-traits",
+ "pod",
+ "rsdp",
+ "spin 0.9.8",
+ "static_assertions",
+ "tdx-guest",
+ "trapframe",
+ "unwinding",
+ "volatile",
+ "x86",
+ "x86_64",
+ "xarray",
+]
 
 [[package]]
 name = "owo-colors"

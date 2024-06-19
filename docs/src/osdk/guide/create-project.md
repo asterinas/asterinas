@@ -77,11 +77,11 @@ and each test case is marked with `#[ktest]`.
 
 The `Cargo.toml` file is the Rust project manifest.
 In addition to the contents of a normal Rust project,
-OSDK will add the dependencies of the Asterinas framework to the file.
+OSDK will add the dependencies of the Asterinas OSTD to the file.
 The dependency version may change over time.
 
 ```toml
-[dependencies.aster_frame]
+[dependencies.ostd]
 git = "https://github.com/asterinas/asterinas"
 branch = "main"
 
@@ -116,4 +116,4 @@ The default manifest of a kernel project:
 ### `rust-toolchain.toml`
 
 The Rust toolchain for the kernel.
-It aligns with the toolchain of the Asterinas framework.
+It aligns with the toolchain of the Asterinas OSTD.

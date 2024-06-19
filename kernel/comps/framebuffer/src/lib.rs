@@ -13,14 +13,14 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use aster_frame::{
+use component::{init_component, ComponentInitError};
+use font8x8::UnicodeFonts;
+use ostd::{
     boot,
     io_mem::IoMem,
     mm::{VmIo, PAGE_SIZE},
     sync::SpinLock,
 };
-use component::{init_component, ComponentInitError};
-use font8x8::UnicodeFonts;
 use spin::Once;
 
 #[init_component]
@@ -39,7 +39,7 @@ pub(crate) fn init() {
     let mut writer = {
         let framebuffer = boot::framebuffer_arg();
         let mut size = 0;
-        for i in aster_frame::mm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
+        for i in ostd::mm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
             size = i.len();
         }
 

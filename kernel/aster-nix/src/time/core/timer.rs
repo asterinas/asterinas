@@ -11,7 +11,7 @@ use core::{
     time::Duration,
 };
 
-use aster_frame::sync::SpinLock;
+use ostd::sync::SpinLock;
 
 use super::Clock;
 

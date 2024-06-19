@@ -13,8 +13,8 @@ pub mod vm_mapping;
 use core::{cmp::min, ops::Range};
 
 use align_ext::AlignExt;
-use aster_frame::mm::{VmSpace, MAX_USERSPACE_VADDR};
 use aster_rights::Rights;
+use ostd::mm::{VmSpace, MAX_USERSPACE_VADDR};
 
 use self::{
     interval::{Interval, IntervalSet},

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::mm::PageFlags;
 use aster_rights::Rights;
 use bitflags::bitflags;
+use ostd::mm::PageFlags;
 
 bitflags! {
     /// The memory access permissions of memory mappings.
