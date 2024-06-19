@@ -83,6 +83,7 @@ pub fn sys_utimensat(
 
 trait UtimeExt {
     fn utime_now() -> Self;
+    #[allow(dead_code)]
     fn utime_omit() -> Self;
     fn is_utime_now(&self) -> bool;
     fn is_utime_omit(&self) -> bool;

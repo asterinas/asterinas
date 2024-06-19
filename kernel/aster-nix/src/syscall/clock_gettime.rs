@@ -63,6 +63,7 @@ pub enum ClockId {
 pub enum DynamicClockIdInfo {
     Pid(u32, DynamicClockType),
     Tid(u32, DynamicClockType),
+    #[allow(dead_code)]
     Fd(u32),
 }
 

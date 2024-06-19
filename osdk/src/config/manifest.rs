@@ -32,6 +32,7 @@ pub enum ProjectType {
 /// The osdk manifest from configuration file `OSDK.toml`.
 #[derive(Debug, Clone)]
 pub struct TomlManifest {
+    #[allow(dead_code)]
     pub project_type: Option<ProjectType>,
     pub default_scheme: Scheme,
     pub map: HashMap<String, Scheme>,
