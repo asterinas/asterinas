@@ -276,7 +276,7 @@ fn get_last_modified_time(path: impl AsRef<Path>) -> SystemTime {
 
         let metadata = entry.metadata().unwrap();
         if metadata.is_dir() {
-            last_modified = std::cmp::max(last_modified, get_last_modified_time(&entry.path()));
+            last_modified = std::cmp::max(last_modified, get_last_modified_time(entry.path()));
         } else {
             last_modified = std::cmp::max(last_modified, metadata.modified().unwrap());
         }
