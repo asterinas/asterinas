@@ -15,6 +15,7 @@
 //!    - a parent page table node,
 //!    - or a handle to a page table node,
 //!    - or a processor.
+//!
 //! This is implemented by using a reference counter in the frame metadata. If the above
 //! conditions are not met, the page table node is ensured to be freed upon dropping the last
 //! reference.

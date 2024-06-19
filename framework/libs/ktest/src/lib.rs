@@ -12,7 +12,8 @@
 //! By all means, ktest is an individule crate that only requires:
 //!  - a custom linker script section `.ktest_array`,
 //!  - and an alloc implementation.
-//! to work. And the frame happens to provide both of them. Thus, any crates depending
+//!
+//! And the frame happens to provide both of them. Thus, any crates depending
 //! on the frame can use ktest without any extra dependency.
 //!
 //! ## Usage

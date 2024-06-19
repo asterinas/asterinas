@@ -31,38 +31,38 @@ use self::options::ChildType;
 ///
 /// # Features
 ///
-/// * **I/O interface.** A VMO provides read and write methods to access the
-/// memory pages that it contain.
-/// * **On-demand paging.** The memory pages of a VMO (except for _contiguous_
-/// VMOs) are allocated lazily when the page is first accessed.
-/// * **Tree structure.** Given a VMO, one can create a child VMO from it.
-/// The child VMO can only access a subset of the parent's memory,
-/// which is a good thing for the perspective of access control.
-/// * **Copy-on-write (COW).** A child VMO may be created with COW semantics,
-/// which prevents any writes on the child from affecting the parent
-/// by duplicating memory pages only upon the first writes.
-/// * **Access control.** As capabilities, VMOs restrict the
-/// accessible range of memory and the allowed I/O operations.
-/// * **Device driver support.** If specified upon creation, VMOs will be
-/// backed by physically contiguous memory pages starting at a target address.
-/// * **File system support.** By default, a VMO's memory pages are initially
-/// all zeros. But if a VMO is attached to a pager (`Pager`) upon creation,
-/// then its memory pages will be populated by the pager.
-/// With this pager mechanism, file systems can easily implement page caches
-/// with VMOs by attaching the VMOs to pagers backed by inodes.
+///  * **I/O interface.** A VMO provides read and write methods to access the
+///    memory pages that it contain.
+///  * **On-demand paging.** The memory pages of a VMO (except for _contiguous_
+///    VMOs) are allocated lazily when the page is first accessed.
+///  * **Tree structure.** Given a VMO, one can create a child VMO from it.
+///    The child VMO can only access a subset of the parent's memory,
+///    which is a good thing for the perspective of access control.
+///  * **Copy-on-write (COW).** A child VMO may be created with COW semantics,
+///    which prevents any writes on the child from affecting the parent
+///    by duplicating memory pages only upon the first writes.
+///  * **Access control.** As capabilities, VMOs restrict the
+///    accessible range of memory and the allowed I/O operations.
+///  * **Device driver support.** If specified upon creation, VMOs will be
+///    backed by physically contiguous memory pages starting at a target address.
+///  * **File system support.** By default, a VMO's memory pages are initially
+///    all zeros. But if a VMO is attached to a pager (`Pager`) upon creation,
+///    then its memory pages will be populated by the pager.
+///    With this pager mechanism, file systems can easily implement page caches
+///    with VMOs by attaching the VMOs to pagers backed by inodes.
 ///
 /// # Capabilities
 ///
 /// As a capability, each VMO is associated with a set of access rights,
 /// whose semantics are explained below.
 ///
-/// * The Dup right allows duplicating a VMO and creating children out of
-/// a VMO.
-/// * The Read, Write, Exec rights allow creating memory mappings with
-/// readable, writable, and executable access permissions, respectively.
-/// * The Read and Write rights allow the VMO to be read from and written to
-/// directly.
-/// * The Write right allows resizing a resizable VMO.
+///  * The Dup right allows duplicating a VMO and creating children out of
+///    a VMO.
+///  * The Read, Write, Exec rights allow creating memory mappings with
+///    readable, writable, and executable access permissions, respectively.
+///  * The Read and Write rights allow the VMO to be read from and written to
+///    directly.
+///  * The Write right allows resizing a resizable VMO.
 ///
 /// VMOs are implemented with two flavors of capabilities:
 /// the dynamic one (`Vmo<Rights>`) and the static one (`Vmo<R: TRights>).
@@ -185,7 +185,7 @@ impl Pages {
 /// `Vmo_` is the structure that actually manages the content of VMO.
 /// Broadly speaking, there are two types of VMO:
 /// 1. File-backed VMO: the VMO backed by a file and resides in the `PageCache`,
-/// which includes a pager to provide it with actual pages.
+///    which includes a pager to provide it with actual pages.
 /// 2. Anonymous VMO: the VMO without a file backup, which does not have a pager.
 pub(super) struct Vmo_ {
     pager: Option<Arc<dyn Pager>>,

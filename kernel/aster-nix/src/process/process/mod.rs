@@ -337,8 +337,8 @@ impl Process {
     /// and moves the process to the session, returning the new session.
     ///
     /// This method may return the following errors:
-    /// * `EPERM`, if the process is a process group leader, or some existing session
-    /// or process group has the same ID as the process.
+    ///  * `EPERM`, if the process is a process group leader, or some existing session
+    ///    or process group has the same ID as the process.
     pub fn to_new_session(self: &Arc<Self>) -> Result<Arc<Session>> {
         if self.is_session_leader() {
             return Ok(self.session().unwrap());
@@ -405,14 +405,14 @@ impl Process {
 
     /// Moves the process to other process group.
     ///
-    /// * If the group already exists, the process and the group should belong to the same session.
-    /// * If the group does not exist, this method creates a new group for the process and move the
-    /// process to the group. The group is added to the session of the process.
+    ///  * If the group already exists, the process and the group should belong to the same session.
+    ///  * If the group does not exist, this method creates a new group for the process and move the
+    ///    process to the group. The group is added to the session of the process.
     ///
     /// This method may return `EPERM` in following cases:
-    /// * The process is session leader;
-    /// * The group already exists, but the group does not belong to the same session as the process;
-    /// * The group does not exist, but `pgid` is not equal to `pid` of the process.
+    ///  * The process is session leader;
+    ///  * The group already exists, but the group does not belong to the same session as the process;
+    ///  * The group does not exist, but `pgid` is not equal to `pid` of the process.
     pub fn to_other_group(self: &Arc<Self>, pgid: Pgid) -> Result<()> {
         // if the process already belongs to the process group
         if self.pgid() == pgid {

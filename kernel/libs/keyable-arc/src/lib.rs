@@ -10,9 +10,9 @@
 //!
 //! 1. It implements the `Eq` and `Hash` traits.
 //! 2. The two values of `k1` and `k2` of type `K` equal to each other,
-//! if and only if their hash values equal to each other.
+//!    if and only if their hash values equal to each other.
 //! 3. The hashes of a value of `k` of type `K` cannot change while it
-//! is in a map.
+//!    is in a map.
 //!
 //! Sometimes we want to use `Arc<T>` as the key type for a hash map but cannot do so
 //! since `T` does not satisfy the properties above. For example, a lot of types

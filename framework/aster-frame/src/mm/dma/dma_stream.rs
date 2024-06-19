@@ -125,10 +125,10 @@ impl DmaStream {
     ///
     /// This method should be called under one of the two conditions:
     /// 1. The data of the stream DMA mapping has been updated by the device side.
-    /// The CPU side needs to call the `sync` method before reading data (e.g., using [`read_bytes`]).
+    ///    The CPU side needs to call the `sync` method before reading data (e.g., using [`read_bytes`]).
     /// 2. The data of the stream DMA mapping has been updated by the CPU side
-    /// (e.g., using [`write_bytes`]).
-    /// Before the CPU side notifies the device side to read, it must call the `sync` method first.
+    ///    (e.g., using [`write_bytes`]).
+    ///    Before the CPU side notifies the device side to read, it must call the `sync` method first.
     ///
     /// [`read_bytes`]: Self::read_bytes
     /// [`write_bytes`]: Self::write_bytes

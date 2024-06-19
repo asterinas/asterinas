@@ -3,10 +3,10 @@
 //! Virtual memory (VM).
 //!
 //! There are two primary VM abstractions:
-//! * Virtual Memory Address Regions (VMARs) a type of capability that manages
-//! user address spaces.
-//! * Virtual Memory Objects (VMOs) are are a type of capability that
-//! represents a set of memory pages.
+//!  * Virtual Memory Address Regions (VMARs) a type of capability that manages
+//!    user address spaces.
+//!  * Virtual Memory Objects (VMOs) are are a type of capability that
+//!    represents a set of memory pages.
 //!
 //! The concepts of VMARs and VMOs are originally introduced by
 //! [Zircon](https://fuchsia.dev/fuchsia-src/reference/kernel_objects/vm_object).
