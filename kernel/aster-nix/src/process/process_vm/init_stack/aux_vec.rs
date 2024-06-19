@@ -10,10 +10,10 @@ use crate::prelude::*;
 ///
 /// Here is a concise description of Auxiliary Vector from GNU's manual:
 ///
-/// > When a program is executed, it receives information from the operating system
-/// about the environment in which it is operating. The form of this information
-/// is a table of key-value pairs, where the keys are from the set of ‘AT_’
-/// values in elf.h.
+///  > When a program is executed, it receives information from the operating system
+///  > about the environment in which it is operating. The form of this information
+///  > is a table of key-value pairs, where the keys are from the set of ‘AT_’
+///  > values in elf.h.
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

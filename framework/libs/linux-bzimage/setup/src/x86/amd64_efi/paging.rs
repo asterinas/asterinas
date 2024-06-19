@@ -8,6 +8,7 @@
 //!  - Level-3: Page Directory Pointer Table (PDPT);
 //!  - Level-2: Page Directory (PD);
 //!  - Level-1: Page Table (PT).
+//!
 //! We sometimes use "level-n" page table to refer to the page table described
 //! above, avoiding the use of complicated names in the Intel manual.
 

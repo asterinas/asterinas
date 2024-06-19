@@ -24,13 +24,13 @@ pub use typeflags_util::SetContain;
 /// More specifically, there are three major restrictions.
 ///
 /// 1. A safe pointer can only refer to a value of a POD type `T: Pod`,
-/// while raw pointers can do to a value of any type `T`.
+///    while raw pointers can do to a value of any type `T`.
 /// 2. A safe pointer can only refer to an address within a virtual memory object
-/// of type `M: VmIo` (e.g., VMAR and VMO), while raw pointers can do to
-/// an address within any virtual memory space.
+///    of type `M: VmIo` (e.g., VMAR and VMO), while raw pointers can do to
+///    an address within any virtual memory space.
 /// 3. A safe pointer only allows one to copy values to/from the target address,
-/// while a raw pointer allows one to borrow an immutable or mutable reference
-/// to the target address.
+///    while a raw pointer allows one to borrow an immutable or mutable reference
+///    to the target address.
 ///
 /// The expressiveness of safe pointers, although being less than that of
 /// raw pointers, is sufficient for our purpose of writing an OS kernel in safe

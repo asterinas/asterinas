@@ -32,12 +32,12 @@ use crate::{prelude::*, vm::perms::VmPerms};
 /// whose semantics are explained below.
 ///
 /// The semantics of each access rights for VMARs are described below:
-/// * The Dup right allows duplicating a VMAR and creating children out of
-/// a VMAR.
-/// * The Read, Write, Exec rights allow creating memory mappings with
-/// readable, writable, and executable access permissions, respectively.
-/// * The Read and Write rights allow the VMAR to be read from and written to
-/// directly.
+///  * The Dup right allows duplicating a VMAR and creating children out of
+///    a VMAR.
+///  * The Read, Write, Exec rights allow creating memory mappings with
+///    readable, writable, and executable access permissions, respectively.
+///  * The Read and Write rights allow the VMAR to be read from and written to
+///    directly.
 ///
 /// VMARs are implemented with two flavors of capabilities:
 /// the dynamic one (`Vmar<Rights>`) and the static one (`Vmar<R: TRights>).

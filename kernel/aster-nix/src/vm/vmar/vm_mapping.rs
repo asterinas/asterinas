@@ -384,12 +384,12 @@ impl VmMapping {
 
     /// Trim a range from the mapping.
     /// There are several cases.
-    /// 1. the trim_range is totally in the mapping. Then the mapping will split as two mappings.
-    /// 2. the trim_range covers the mapping. Then the mapping will be destroyed.
-    /// 3. the trim_range partly overlaps with the mapping, in left or right. Only overlapped part is trimmed.
-    /// If we create a mapping with a new map addr, we will add it to mappings_to_append.
-    /// If the mapping with map addr does not exist ever, the map addr will be added to mappings_to_remove.
-    /// Otherwise, we will directly modify self.
+    ///  1. the trim_range is totally in the mapping. Then the mapping will split as two mappings.
+    ///  2. the trim_range covers the mapping. Then the mapping will be destroyed.
+    ///  3. the trim_range partly overlaps with the mapping, in left or right. Only overlapped part is trimmed.
+    ///     If we create a mapping with a new map addr, we will add it to mappings_to_append.
+    ///     If the mapping with map addr does not exist ever, the map addr will be added to mappings_to_remove.
+    ///     Otherwise, we will directly modify self.
     pub fn trim_mapping(
         self: &Arc<Self>,
         trim_range: &Range<usize>,
@@ -674,12 +674,12 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
     /// part of the mapping that is not backed by the VMO.
     /// So you may wonder: what is the point of supporting such _oversized_
     /// mappings?  The reason is two-fold.
-    /// 1. VMOs are resizable. So even if a mapping is backed by a VMO whose
-    /// size is equal to that of the mapping initially, we cannot prevent
-    /// the VMO from shrinking.
-    /// 2. Mappings are not allowed to overlap by default. As a result,
-    /// oversized mappings can serve as a placeholder to prevent future
-    /// mappings from occupying some particular address ranges accidentally.
+    ///  1. VMOs are resizable. So even if a mapping is backed by a VMO whose
+    ///     size is equal to that of the mapping initially, we cannot prevent
+    ///     the VMO from shrinking.
+    ///  2. Mappings are not allowed to overlap by default. As a result,
+    ///     oversized mappings can serve as a placeholder to prevent future
+    ///     mappings from occupying some particular address ranges accidentally.
     ///
     /// The default value is the size of the VMO.
     pub fn size(mut self, size: usize) -> Self {

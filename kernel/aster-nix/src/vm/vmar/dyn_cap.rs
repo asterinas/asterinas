@@ -47,11 +47,11 @@ impl Vmar<Rights> {
     /// # Access rights
     ///
     /// This method requires the following access rights:
-    /// 1. The VMAR contains the rights corresponding to the memory permissions of
-    /// the mapping. For example, if `perms` contains `VmPerms::WRITE`,
-    /// then the VMAR must have the Write right.
-    /// 2. Similarly, the VMO contains the rights corresponding to the memory
-    /// permissions of the mapping.  
+    ///  1. The VMAR contains the rights corresponding to the memory permissions of
+    ///     the mapping. For example, if `perms` contains `VmPerms::WRITE`,
+    ///     then the VMAR must have the Write right.
+    ///  2. Similarly, the VMO contains the rights corresponding to the memory
+    ///     permissions of the mapping.  
     ///
     /// Memory permissions may be changed through the `protect` method,
     /// which ensures that any updated memory permissions do not go beyond
