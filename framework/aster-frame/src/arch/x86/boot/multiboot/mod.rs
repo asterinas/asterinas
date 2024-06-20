@@ -3,7 +3,6 @@
 use alloc::{string::String, vec::Vec};
 use core::arch::global_asm;
 
-use multiboot2::MemoryAreaType;
 use spin::Once;
 
 use crate::{
@@ -12,7 +11,10 @@ use crate::{
         memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    mm::kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
+    mm::{
+        kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
+        Paddr, Vaddr,
+    },
 };
 
 global_asm!(include_str!("header.S"));
@@ -107,20 +109,14 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     let info = MB1_INFO.get().unwrap();
 
     // Add the regions in the multiboot protocol.
-    let start = info.memory_map_addr as usize;
-    let length = info.memory_map_len as usize;
-    let mut current = start;
-    while current < start + length {
-        let entry = unsafe { &*(paddr_to_vaddr(current) as *const MemoryEntry) };
-        let start = entry.base_addr;
-        let area_type: MemoryRegionType = entry.memory_type.into();
+    for entry in info.get_memory_map() {
+        let start = entry.base_addr();
         let region = MemoryRegion::new(
             start.try_into().unwrap(),
-            entry.length.try_into().unwrap(),
-            area_type,
+            entry.length().try_into().unwrap(),
+            entry.memory_type(),
         );
         regions.push(region);
-        current += entry.size as usize + 4;
     }
 
     // Add the framebuffer region.
@@ -267,16 +263,6 @@ struct MultibootLegacyInfo {
     symbols: [u8; 16],
 
     memory_map_len: u32,
-    /// The start address of memory map list, each structure format:
-    /// ```text
-    ///         +-------------------+
-    /// -4      | size              |
-    ///         +-------------------+
-    /// 0       | base_addr         |
-    /// 8       | length            |
-    /// 16      | type              |
-    ///         +-------------------+
-    /// ```
     memory_map_addr: u32,
 
     drives_length: u32,
@@ -291,6 +277,17 @@ struct MultibootLegacyInfo {
     vbe_table: VbeTable,
 
     framebuffer_table: FramebufferTable,
+}
+
+impl MultibootLegacyInfo {
+    fn get_memory_map(&self) -> MemoryEntryIter {
+        let ptr = self.memory_map_addr as Paddr;
+        let end = ptr + self.memory_map_len as usize;
+        MemoryEntryIter {
+            cur_ptr: paddr_to_vaddr(ptr),
+            region_end: paddr_to_vaddr(end),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -316,13 +313,80 @@ struct FramebufferTable {
     color_info: [u8; 6],
 }
 
-#[derive(Debug, Copy, Clone)]
-#[repr(C, packed)]
+/// A memory entry in the memory map header info region.
+///
+/// The memory layout of the entry structure doesn't fit in any scheme
+/// provided by Rust:
+///
+/// ```text
+///         +-------------------+   <- start of the struct pointer
+/// -4      | size              |
+///         +-------------------+
+/// 0       | base_addr         |
+/// 8       | length            |
+/// 16      | type              |
+///         +-------------------+
+/// ```
+///
+/// The start of a entry is not 64-bit aligned. Although the boot
+/// protocol may provide the `mmap_addr` 64-bit aligned when added with
+/// 4, it is not guaranteed. So we need to use pointer arithmetic to
+/// access the fields.
 struct MemoryEntry {
-    size: u32,
-    base_addr: u64,
-    length: u64,
-    memory_type: MemoryAreaType,
+    ptr: Vaddr,
+}
+
+impl MemoryEntry {
+    fn size(&self) -> u32 {
+        // SAFETY: the entry can only be contructed from a valid address.
+        unsafe { (self.ptr as *const u32).read_unaligned() }
+    }
+
+    fn base_addr(&self) -> u64 {
+        // SAFETY: the entry can only be contructed from a valid address.
+        unsafe { ((self.ptr + 4) as *const u64).read_unaligned() }
+    }
+
+    fn length(&self) -> u64 {
+        // SAFETY: the entry can only be contructed from a valid address.
+        unsafe { ((self.ptr + 12) as *const u64).read_unaligned() }
+    }
+
+    fn memory_type(&self) -> MemoryRegionType {
+        // The multiboot (v1) manual doesn't specify the length of the type field.
+        // Experimental result shows that "u8" works. So be it.
+        // SAFETY: the entry can only be contructed from a valid address.
+        let typ_val = unsafe { ((self.ptr + 20) as *const u8).read_unaligned() };
+        // The meaning of the values are however documented clearly by the manual.
+        match typ_val {
+            1 => MemoryRegionType::Usable,
+            2 => MemoryRegionType::Reserved,
+            3 => MemoryRegionType::Reclaimable,
+            4 => MemoryRegionType::NonVolatileSleep,
+            5 => MemoryRegionType::BadMemory,
+            _ => MemoryRegionType::Reserved,
+        }
+    }
+}
+
+/// A memory entry iterator in the memory map header info region.
+#[derive(Debug, Copy, Clone)]
+struct MemoryEntryIter {
+    cur_ptr: Vaddr,
+    region_end: Vaddr,
+}
+
+impl Iterator for MemoryEntryIter {
+    type Item = MemoryEntry;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur_ptr >= self.region_end {
+            return None;
+        }
+        let entry = MemoryEntry { ptr: self.cur_ptr };
+        self.cur_ptr += entry.size() as usize + 4;
+        Some(entry)
+    }
 }
 
 static MB1_INFO: Once<&'static MultibootLegacyInfo> = Once::new();
