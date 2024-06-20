@@ -15,23 +15,7 @@ fn get_rela_array() -> &'static [Elf64Rela] {
     }
     let start = __rela_dyn_start as *const Elf64Rela;
     let end = __rela_dyn_end as *const Elf64Rela;
-    // FIXME: 2023/11/29
-    // There should be a Rust compiler bug that makes the calculation of len incorrect.
-    // The most sound implementation only works in debug mode.
-    // let len = unsafe { end.offset_from(start) } as usize;
-    // The inline asm solution is a workaround.
-    let len = unsafe {
-        let len: usize;
-        core::arch::asm!("
-                mov {len}, {end}
-                sub {len}, {start}
-            ",
-            len = out(reg) len,
-            end = in(reg) end,
-            start = in(reg) start,
-        );
-        len / core::mem::size_of::<Elf64Rela>()
-    };
+    let len = unsafe { end.offset_from(start) } as usize;
     #[cfg(feature = "debug_print")]
     unsafe {
         use crate::console::{print_hex, print_str};
