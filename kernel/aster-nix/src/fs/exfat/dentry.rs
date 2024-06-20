@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use core::ops::Range;
+use core::{fmt::Display, ops::Range};
 
 use aster_frame::mm::VmIo;
 use aster_rights::Full;
@@ -737,9 +737,9 @@ impl ExfatName {
     }
 }
 
-impl ToString for ExfatName {
-    fn to_string(&self) -> String {
-        String::from_utf16_lossy(&self.0)
+impl Display for ExfatName {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", String::from_utf16_lossy(&self.0))
     }
 }
 

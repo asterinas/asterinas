@@ -69,11 +69,15 @@ pub fn expand_require(item: RequireItem, mut require_attr: RequireAttr) -> Token
     match item {
         RequireItem::Impl(item_impl) => {
             let new_item_impl = require_attr.fold_item_impl(item_impl);
-            quote!(#new_item_impl)
+            quote!(
+                #[allow(clippy::multiple_bound_locations)]
+                #new_item_impl
+            )
         }
         RequireItem::Fn(item_fn) => {
             let new_item_fn = require_attr.fold_item_fn(item_fn);
             quote!(
+                #[allow(clippy::multiple_bound_locations)]
                 #new_item_fn
             )
         }

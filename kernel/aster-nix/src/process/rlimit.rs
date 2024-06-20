@@ -67,10 +67,7 @@ pub struct RLimit64 {
 
 impl RLimit64 {
     pub fn new(cur: u64) -> Self {
-        Self {
-            cur,
-            max: u64::max_value(),
-        }
+        Self { cur, max: u64::MAX }
     }
 
     pub fn get_cur(&self) -> u64 {
@@ -85,8 +82,8 @@ impl RLimit64 {
 impl Default for RLimit64 {
     fn default() -> Self {
         Self {
-            cur: u64::max_value(),
-            max: u64::max_value(),
+            cur: u64::MAX,
+            max: u64::MAX,
         }
     }
 }
