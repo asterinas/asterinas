@@ -153,7 +153,7 @@ fn install_setup_with_arch(
     let target_dir = std::fs::canonicalize(target_dir).unwrap();
 
     let mut cmd = Command::new("cargo");
-    cmd.env("RUSTFLAGS", "-Ccode-model=kernel -Crelocation-model=pie -Ctarget-feature=+crt-static -Zplt=yes -Zrelax-elf-relocations=yes -Zrelro-level=full");
+    cmd.env("RUSTFLAGS", "-Ccode-model=kernel -Crelocation-model=pie -Ctarget-feature=+crt-static -Zplt=yes -Zrelax-elf-relocations=yes -Crelro-level=full");
     cmd.arg("install").arg("linux-bzimage-setup");
     cmd.arg("--force");
     cmd.arg("--root").arg(install_dir.as_ref());

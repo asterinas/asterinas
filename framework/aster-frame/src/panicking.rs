@@ -30,7 +30,7 @@ use unwinding::{
 #[export_name = "__aster_panic_handler"]
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     let throw_info = ktest::PanicInfo {
-        message: info.message().unwrap().to_string(),
+        message: info.message().to_string(),
         file: info.location().unwrap().file().to_string(),
         line: info.location().unwrap().line() as usize,
         col: info.location().unwrap().column() as usize,
