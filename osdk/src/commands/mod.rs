@@ -24,6 +24,12 @@ pub fn execute_forwarded_command(subcommand: &str, args: &Vec<String>) -> ! {
         cargo.arg("--target").arg(get_default_arch().triple());
     }
     cargo.args(args);
+
+    let env_rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
+    let rustflags = env_rustflags + " --check-cfg cfg(ktest)";
+
+    cargo.env("RUSTFLAGS", rustflags);
+
     let status = cargo.status().expect("Failed to execute cargo");
     std::process::exit(status.code().unwrap_or(1));
 }
