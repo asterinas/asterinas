@@ -205,7 +205,7 @@ fn build_kernel_elf(
         &env_rustflags,
         &rustc_linker_script_arg,
         "-C relocation-model=static",
-        "-Z relro-level=off",
+        "-C relro-level=off",
         // We do not really allow unwinding except for kernel testing. However, we need to specify
         // this to show backtraces when panicking.
         "-C panic=unwind",

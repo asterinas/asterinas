@@ -8,7 +8,6 @@
 //! currently not needed by Asterinas.
 //!
 
-#![feature(offset_of)]
 #![cfg_attr(not(test), no_std)]
 
 /// Magic stored in the boot protocol header.

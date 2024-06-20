@@ -7,7 +7,6 @@
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
 #![feature(const_option)]
-#![feature(exclusive_range_pattern)]
 #![feature(extend_one)]
 #![feature(fn_traits)]
 #![feature(format_args_nl)]
@@ -21,6 +20,7 @@
 #![feature(specialization)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
+#![feature(trait_upcasting)]
 #![register_tool(component_access_control)]
 
 use aster_frame::{

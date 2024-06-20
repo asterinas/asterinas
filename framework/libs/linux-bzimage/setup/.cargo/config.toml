@@ -5,5 +5,5 @@ rustflags = [
     "-Ctarget-feature=+crt-static",
     "-Zplt=yes",
     "-Zrelax-elf-relocations=yes",
-    "-Zrelro-level=full",
+    "-Crelro-level=full",
 ]

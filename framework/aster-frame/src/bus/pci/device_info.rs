@@ -69,20 +69,23 @@ impl PciDeviceLocation {
 
     /// Returns an iterator that enumerates all possible PCI device locations.
     pub fn all() -> impl Iterator<Item = PciDeviceLocation> {
-        iter::from_coroutine(|| {
-            for bus in Self::MIN_BUS..=Self::MAX_BUS {
-                for device in Self::MIN_DEVICE..=Self::MAX_DEVICE {
-                    for function in Self::MIN_FUNCTION..=Self::MAX_FUNCTION {
-                        let loc = PciDeviceLocation {
-                            bus,
-                            device,
-                            function,
-                        };
-                        yield loc;
+        iter::from_coroutine(
+            #[coroutine]
+            || {
+                for bus in Self::MIN_BUS..=Self::MAX_BUS {
+                    for device in Self::MIN_DEVICE..=Self::MAX_DEVICE {
+                        for function in Self::MIN_FUNCTION..=Self::MAX_FUNCTION {
+                            let loc = PciDeviceLocation {
+                                bus,
+                                device,
+                                function,
+                            };
+                            yield loc;
+                        }
                     }
                 }
-            }
-        })
+            },
+        )
     }
 
     /// The page table of all devices is the same. So we can use any device ID.
