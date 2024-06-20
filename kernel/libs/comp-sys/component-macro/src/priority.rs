@@ -76,29 +76,29 @@ pub fn component_generate() -> Vec<ComponentInfo> {
     // priority calculation complete
     let mut components_info = Vec::new();
     for package in component_packages {
-        let temp_id = package["id"].as_str().unwrap();
-        // extract path, let's take `(path+file:///path/to/comps/pci)` as an example
         let path = {
-            // use the last element, `pci)`
-            let mut paths: Vec<&str> = temp_id.split(&workspace_root).collect();
-            // remove the last character
-            let mut path1 = paths.pop().unwrap().to_string();
-            path1.pop();
-            if path1.starts_with('/') {
-                path1.remove(0);
-            }
-            path1
+            // Parse the package ID <https://doc.rust-lang.org/cargo/reference/pkgid-spec.html>
+            // and extract the path. Let's take `path+file:///path/to/comps/pci#aster-pci@0.1.0`
+            // as an example package ID.
+            let id = package["id"].as_str().unwrap();
+            // Remove the prefix `path+file://`.
+            assert!(id.starts_with("path+file://"));
+            let id = id.trim_start_matches("path+file://");
+            // Remove the fragment part `#aster-pci@0.1.0`. Note that the package name part
+            // may be missing if the directory name is the same as the package name.
+            id.split(['#', '@']).next().unwrap()
         };
-        let component_info = ComponentInfo {
-            name: package["name"].as_str().unwrap().to_string(),
-            path: PathBuf::from(&workspace_root)
-                .join(path)
-                .to_str()
-                .unwrap()
-                .to_string(),
-            priority: *mapping
-                .get(&package["name"].as_str().unwrap().to_string())
-                .unwrap(),
+        let component_info = {
+            let package_name = package["name"].as_str().unwrap().to_string();
+            ComponentInfo {
+                name: package_name.clone(),
+                path: PathBuf::from(&workspace_root)
+                    .join(path)
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+                priority: *mapping.get(&package_name).unwrap(),
+            }
         };
         components_info.push(component_info)
     }
