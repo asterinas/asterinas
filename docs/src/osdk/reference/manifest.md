@@ -76,7 +76,7 @@ Here are some additional notes for the fields:
 1. The type of current crate.
 
     Optional. If not specified,
-    the default value is inferred from the usage of the macro `#[aster_main]`.
+    the default value is inferred from the usage of the macro `#[ostd::main]`.
     if the macro is used, the default value is `kernel`.
     Otherwise, the default value is `library`.
     

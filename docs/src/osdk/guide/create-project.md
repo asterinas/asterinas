@@ -51,7 +51,7 @@ myos/
 #### Kernel project
 
 The `src/lib.rs` file contains the code for a simple kernel.
-The function marked with the `#[aster_main]` macro
+The function marked with the `#[ostd::main]` macro
 is considered the kernel entry point by OSDK.
 The kernel 
 will print `Hello world from the guest kernel!`to the console 

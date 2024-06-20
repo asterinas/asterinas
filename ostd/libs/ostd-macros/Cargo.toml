@@ -1,5 +1,5 @@
 [package]
-name = "aster-main"
+name = "ostd-macros"
 version = "0.1.0"
 edition = "2021"
 

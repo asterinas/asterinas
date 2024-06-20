@@ -91,7 +91,7 @@ pub struct CrateInfo {
 /// If there are multiple kernel crates or no kernel crates in the workspace,
 /// this function will exit with an error.
 ///
-/// A crate is considered a kernel crate if it utilizes the `aster_main` macro.
+/// A crate is considered a kernel crate if it utilizes the `ostd::main` macro.
 fn get_default_member(metadata: &serde_json::Value) -> &str {
     let default_members = metadata
         .get("workspace_default_members")
@@ -127,7 +127,7 @@ fn get_default_member(metadata: &serde_json::Value) -> &str {
                     syn::parse_file(&content).unwrap()
                 };
 
-                contains_aster_main_macro(&file)
+                contains_ostd_main_macro(&file)
             })
             .collect()
     };
@@ -145,7 +145,7 @@ fn get_default_member(metadata: &serde_json::Value) -> &str {
     packages[0].get("id").unwrap().as_str().unwrap()
 }
 
-fn contains_aster_main_macro(file: &syn::File) -> bool {
+fn contains_ostd_main_macro(file: &syn::File) -> bool {
     for item in &file.items {
         let syn::Item::Fn(item_fn) = item else {
             continue;
@@ -153,7 +153,7 @@ fn contains_aster_main_macro(file: &syn::File) -> bool {
 
         for attr in &item_fn.attrs {
             let attr = format!("{}", attr.to_token_stream());
-            if attr.as_str() == "# [aster_main]" {
+            if attr.as_str() == "# [ostd :: main]" || attr.as_str() == "#[main]" {
                 return true;
             }
         }

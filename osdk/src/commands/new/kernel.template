@@ -3,7 +3,7 @@
 
 use ostd::prelude::*;
 
-#[aster_main]
+#[ostd::main]
 fn kernel_main() {
     println!("Hello world from guest kernel!");
 }

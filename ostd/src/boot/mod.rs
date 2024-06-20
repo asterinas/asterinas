@@ -67,7 +67,7 @@ macro_rules! define_global_static_boot_arguments {
         ///
         /// For the introduction of a new boot protocol, the entry point could be a novel
         /// one. The entry point function should register all the boot initialization
-        /// methods before `aster_main` is called. A boot initialization method takes a
+        /// methods before `ostd::main` is called. A boot initialization method takes a
         /// reference of the global static boot information variable and initialize it,
         /// so that the boot information it represents could be accessed in the kernel
         /// anywhere.
@@ -110,17 +110,17 @@ pub fn init() {
 
 /// Calls the OSTD-user defined entrypoint of the actual kernel.
 ///
-/// Any kernel that uses the `ostd` crate should define a function named
-/// `aster_main` as the entrypoint.
-pub fn call_aster_main() -> ! {
+/// Any kernel that uses the `ostd` crate should define a function marked with
+/// `ostd::main` as the entrypoint.
+pub fn call_ostd_main() -> ! {
     #[cfg(not(ktest))]
     unsafe {
         // The entry point of kernel code, which should be defined by the package that
         // uses OSTD.
         extern "Rust" {
-            fn __aster_main() -> !;
+            fn __ostd_main() -> !;
         }
-        __aster_main();
+        __ostd_main();
     }
     #[cfg(ktest)]
     unsafe {

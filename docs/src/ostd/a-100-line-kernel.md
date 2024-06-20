@@ -61,8 +61,8 @@ use ostd::mm::{PageFlags, PAGE_SIZE, Vaddr, FrameAllocOptions, VmIo, VmMapOption
 /// The kernel's boot and initialization process is managed by Asterinas OSTD.
 /// After the process is done, the kernel's execution environment
 /// (e.g., stack, heap, tasks) will be ready for use and the entry function
-/// labeled as `#[aster_main]` will be called.
-#[aster_main]
+/// labeled as `#[ostd::main]` will be called.
+#[ostd::main]
 pub fn main() {
     let program_binary = include_bytes!("../hello_world");
     let user_space = create_user_space(program_binary);

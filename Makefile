@@ -86,7 +86,7 @@ export
 # or tested without OSDK.
 NON_OSDK_CRATES := \
 	ostd/libs/align_ext \
-	ostd/libs/aster-main \
+	ostd/libs/ostd-macros \
 	ostd/libs/id-alloc \
 	ostd/libs/linux-bzimage/builder \
 	ostd/libs/linux-bzimage/boot-params \
