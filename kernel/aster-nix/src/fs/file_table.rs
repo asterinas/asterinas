@@ -198,6 +198,12 @@ impl FileTable {
     }
 }
 
+impl Default for FileTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Clone for FileTable {
     fn clone(&self) -> Self {
         Self {

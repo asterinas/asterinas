@@ -97,3 +97,9 @@ impl Clone for Heap {
         }
     }
 }
+
+impl Default for Heap {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -85,3 +85,9 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         });
     }
 }
+
+impl<E: Events> Default for Subject<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

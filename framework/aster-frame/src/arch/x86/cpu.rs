@@ -236,6 +236,7 @@ impl UserPreemption {
     const PREEMPTION_INTERVAL: u32 = 100;
 
     /// Creates a new instance of `UserPreemption`.
+    #[allow(clippy::new_without_default)]
     pub const fn new() -> Self {
         UserPreemption { count: 0 }
     }
