@@ -1,5 +1,5 @@
 # One should also update asterinas/rust-toolchain.toml when updating this.
 # The first two lines will be deleted when generating the user's toolchain file.
 [toolchain]
-channel = "nightly-2024-01-01"
+channel = "nightly-2024-06-20"
 components = ["rust-src", "rustc-dev", "llvm-tools-preview"]
