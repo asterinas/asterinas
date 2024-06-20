@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::{
-    env,
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -21,7 +20,6 @@ fn work_in_workspace() {
     }
 
     fs::create_dir_all(&workspace_dir).unwrap();
-    env::set_current_dir(&workspace_dir).unwrap();
 
     let workspace_toml = include_str!("work_in_workspace_templates/Cargo.toml");
     fs::write(workspace_dir.join("Cargo.toml"), workspace_toml).unwrap();
@@ -29,8 +27,14 @@ fn work_in_workspace() {
     // Create a kernel project and a library project
     let kernel = "myos";
     let module = "mylib";
-    cargo_osdk(&["new", "--kernel", kernel]).ok().unwrap();
-    cargo_osdk(&["new", module]).ok().unwrap();
+    cargo_osdk(&["new", "--kernel", kernel])
+        .current_dir(&workspace_dir)
+        .ok()
+        .unwrap();
+    cargo_osdk(&["new", module])
+        .current_dir(&workspace_dir)
+        .ok()
+        .unwrap();
 
     // Add a test function to mylib/src/lib.rs
     let module_src_path = workspace_dir.join(module).join("src").join("lib.rs");
@@ -75,13 +79,22 @@ fn work_in_workspace() {
     .unwrap();
 
     // Run subcommand build & run
-    cargo_osdk(&["build"]).ok().unwrap();
-    let output = cargo_osdk(&["run"]).output().unwrap();
+    cargo_osdk(&["build"])
+        .current_dir(&workspace_dir)
+        .ok()
+        .unwrap();
+    let output = cargo_osdk(&["run"])
+        .current_dir(&workspace_dir)
+        .output()
+        .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(stdout.contains("The available memory is"));
 
     // Run subcommand test
-    cargo_osdk(&["test"]).ok().unwrap();
+    cargo_osdk(&["test"])
+        .current_dir(&workspace_dir)
+        .ok()
+        .unwrap();
 
     // Remove the directory
     fs::remove_dir_all(&workspace_dir).unwrap();
