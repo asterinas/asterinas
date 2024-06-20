@@ -4,14 +4,12 @@
 
 use alloc::collections::VecDeque;
 
-use lazy_static::lazy_static;
-
 use crate::{prelude::*, sync::SpinLock, task::Task};
 
-lazy_static! {
-    pub(crate) static ref GLOBAL_SCHEDULER: SpinLock<GlobalScheduler> =
-        SpinLock::new(GlobalScheduler { scheduler: None });
-}
+static DEFAULT_SCHEDULER: FifoScheduler = FifoScheduler::new();
+pub(crate) static GLOBAL_SCHEDULER: SpinLock<GlobalScheduler> = SpinLock::new(GlobalScheduler {
+    scheduler: &DEFAULT_SCHEDULER,
+});
 
 /// A scheduler for tasks.
 ///
@@ -29,34 +27,37 @@ pub trait Scheduler: Sync + Send {
 }
 
 pub struct GlobalScheduler {
-    scheduler: Option<&'static dyn Scheduler>,
+    scheduler: &'static dyn Scheduler,
 }
 
 impl GlobalScheduler {
-    pub fn new() -> Self {
-        Self { scheduler: None }
+    pub const fn new(scheduler: &'static dyn Scheduler) -> Self {
+        Self { scheduler }
     }
 
     /// dequeue a task using scheduler
     /// require the scheduler is not none
     pub fn dequeue(&mut self) -> Option<Arc<Task>> {
-        self.scheduler.unwrap().dequeue()
+        self.scheduler.dequeue()
     }
     /// enqueue a task using scheduler
     /// require the scheduler is not none
     pub fn enqueue(&mut self, task: Arc<Task>) {
-        self.scheduler.unwrap().enqueue(task)
+        self.scheduler.enqueue(task)
     }
 
     pub fn should_preempt(&self, task: &Arc<Task>) -> bool {
-        self.scheduler.unwrap().should_preempt(task)
+        self.scheduler.should_preempt(task)
     }
 }
-/// Set the global task scheduler.
+/// Sets the global task scheduler.
 ///
 /// This must be called before invoking `Task::spawn`.
 pub fn set_scheduler(scheduler: &'static dyn Scheduler) {
-    GLOBAL_SCHEDULER.lock_irq_disabled().scheduler = Some(scheduler);
+    let mut global_scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
+    // When setting a new scheduler, the old scheduler should be empty
+    assert!(global_scheduler.dequeue().is_none());
+    global_scheduler.scheduler = scheduler;
 }
 
 pub fn fetch_task() -> Option<Arc<Task>> {
