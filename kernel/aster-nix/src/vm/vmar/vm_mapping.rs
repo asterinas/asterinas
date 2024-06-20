@@ -143,21 +143,16 @@ impl VmMapping {
 
     /// Add a new committed page and map it to vmspace. If copy on write is set, it's allowed to unmap the page at the same address.
     /// FIXME: This implementation based on the truth that we map one page at a time. If multiple pages are mapped together, this implementation may have problems
-    pub(super) fn map_one_page(
-        &self,
-        page_idx: usize,
-        frame: Frame,
-        is_readonly: bool,
-    ) -> Result<()> {
+    fn map_one_page(&self, page_idx: usize, frame: Frame, is_readonly: bool) -> Result<()> {
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
         self.inner
             .lock()
-            .map_one_page(&self.vmo, vm_space, page_idx, frame, is_readonly)
+            .map_one_page(vm_space, page_idx, frame, is_readonly)
     }
 
     /// unmap a page
-    pub(super) fn unmap_one_page(&self, page_idx: usize) -> Result<()> {
+    fn unmap_one_page(&self, page_idx: usize) -> Result<()> {
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
         self.inner.lock().unmap_one_page(vm_space, page_idx)
@@ -458,7 +453,6 @@ impl VmMapping {
 impl VmMappingInner {
     fn map_one_page(
         &mut self,
-        vmo: &Vmo<Rights>,
         vm_space: &VmSpace,
         page_idx: usize,
         frame: Frame,
@@ -469,7 +463,7 @@ impl VmMappingInner {
         let vm_perms = {
             let mut perms = self.perms;
             if is_readonly {
-                debug_assert!(vmo.is_cow_vmo());
+                // COW pages are forced to be read-only.
                 perms -= VmPerms::WRITE;
             }
             perms
@@ -479,13 +473,16 @@ impl VmMappingInner {
             let mut options = VmMapOptions::new();
             options.addr(Some(map_addr));
             options.flags(vm_perms.into());
+
+            // After `fork()`, the entire memory space of the parent and child processes is
+            // protected as read-only. Therefore, whether the pages need to be COWed (if the memory
+            // region is private) or not (if the memory region is shared), it is necessary to
+            // overwrite the page table entry to make the page writable again when the parent or
+            // child process first tries to write to the memory region.
+            options.can_overwrite(true);
+
             options
         };
-
-        // Cow child allows unmapping the mapped page.
-        if vmo.is_cow_vmo() && vm_space.query(map_addr)?.is_some() {
-            vm_space.unmap(&(map_addr..(map_addr + PAGE_SIZE))).unwrap();
-        }
 
         vm_space.map(FrameVec::from_one_frame(frame), &vm_map_options)?;
         self.mapped_pages.insert(page_idx);
