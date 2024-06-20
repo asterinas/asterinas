@@ -73,6 +73,12 @@ impl TtyDriver {
     }
 }
 
+impl Default for TtyDriver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn console_input_callback(mut reader: VmReader) {
     let tty_driver = get_tty_driver();
     while reader.remain() > 0 {

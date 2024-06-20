@@ -146,6 +146,12 @@ impl WaitQueue {
     }
 }
 
+impl Default for WaitQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A waiter that can put the current thread to sleep until it is woken up by the associated
 /// [`Waker`].
 ///
