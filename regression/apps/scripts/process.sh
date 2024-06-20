@@ -20,7 +20,7 @@ hello_pie/hello
 hello_world/hello_world
 itimer/setitimer
 itimer/timer_create
-mmap/map_shared_anon
+mmap/mmap_and_fork
 pthread/pthread_test
 pty/open_pty
 signal_c/parent_death_signal
