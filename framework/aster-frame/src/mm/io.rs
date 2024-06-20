@@ -48,7 +48,11 @@ pub trait VmIo: Send + Sync {
     ///
     /// [`read_bytes`]: VmIo::read_bytes
     fn read_slice<T: Pod>(&self, offset: usize, slice: &mut [T]) -> Result<()> {
-        let buf = unsafe { core::mem::transmute(slice) };
+        let len_in_bytes = core::mem::size_of_val(slice);
+        let ptr = slice as *mut [T] as *mut u8;
+        // SAFETY: the slice can be transmuted to a writable byte slice since the elements
+        // are all Plain-Old-Data (Pod) types.
+        let buf = unsafe { core::slice::from_raw_parts_mut(ptr, len_in_bytes) };
         self.read_bytes(offset, buf)
     }
 
@@ -75,7 +79,11 @@ pub trait VmIo: Send + Sync {
     ///
     /// [`write_bytes`]: VmIo::write_bytes
     fn write_slice<T: Pod>(&self, offset: usize, slice: &[T]) -> Result<()> {
-        let buf = unsafe { core::mem::transmute(slice) };
+        let len_in_bytes = core::mem::size_of_val(slice);
+        let ptr = slice as *const [T] as *const u8;
+        // SAFETY: the slice can be transmuted to a readable byte slice since the elements
+        // are all Plain-Old-Data (Pod) types.
+        let buf = unsafe { core::slice::from_raw_parts(ptr, len_in_bytes) };
         self.write_bytes(offset, buf)
     }
 
