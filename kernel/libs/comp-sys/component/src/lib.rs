@@ -152,7 +152,7 @@ fn match_and_call(
         } else {
             panic!("The path of {} cannot recognized by component system", str);
         }
-        str = str.trim_end_matches('/').to_owned();
+        let str = str.trim_end_matches('/').to_owned();
 
         let mut info = components
             .remove(&str)

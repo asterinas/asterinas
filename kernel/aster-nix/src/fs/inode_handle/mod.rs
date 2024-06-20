@@ -118,7 +118,7 @@ impl InodeHandle_ {
         let mut offset = self.offset.lock();
         let new_offset: isize = match pos {
             SeekFrom::Start(off /* as usize */) => {
-                if off > isize::max_value() as usize {
+                if off > isize::MAX as usize {
                     return_errno_with_message!(Errno::EINVAL, "file offset is too large");
                 }
                 off as isize
@@ -137,7 +137,7 @@ impl InodeHandle_ {
         if new_offset < 0 {
             return_errno_with_message!(Errno::EINVAL, "file offset must not be negative");
         }
-        // Invariant: 0 <= new_offset <= isize::max_value()
+        // Invariant: 0 <= new_offset <= isize::MAX
         let new_offset = new_offset as usize;
         *offset = new_offset;
         Ok(new_offset)

@@ -190,7 +190,9 @@ impl<T: ?Sized> Eq for KeyableArc<T> {}
 
 impl<T: ?Sized> Ord for KeyableArc<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        Arc::as_ptr(&self.0).cmp(&Arc::as_ptr(&other.0))
+        Arc::as_ptr(&self.0)
+            .cast::<()>()
+            .cmp(&Arc::as_ptr(&other.0).cast::<()>())
     }
 }
 
@@ -281,7 +283,10 @@ impl<T: ?Sized> Eq for KeyableWeak<T> {}
 
 impl<T: ?Sized> Ord for KeyableWeak<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.as_ptr().cmp(&other.0.as_ptr())
+        self.0
+            .as_ptr()
+            .cast::<()>()
+            .cmp(&other.0.as_ptr().cast::<()>())
     }
 }
 

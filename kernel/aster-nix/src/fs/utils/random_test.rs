@@ -351,12 +351,12 @@ impl DirInMemory {
             match old {
                 DentryInMemory::Dir(ref mut dir) => {
                     dir.inode = lookup_new_inode_result.unwrap();
-                    dir.name = new_name.clone();
+                    dir.name.clone_from(new_name);
                     dir.depth = self.depth + 1;
                 }
                 DentryInMemory::File(ref mut file) => {
                     file.inode = lookup_new_inode_result.unwrap();
-                    file.name = new_name.clone();
+                    file.name.clone_from(new_name);
                 }
             }
             if exist {

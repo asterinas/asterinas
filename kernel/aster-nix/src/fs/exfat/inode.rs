@@ -481,6 +481,8 @@ impl ExfatInodeInner {
             target_name.to_string()
         };
 
+        // FIXME: This isn't expected by the compiler.
+        #[allow(non_local_definitions)]
         impl DirentVisitor for Vec<(String, usize)> {
             fn visit(
                 &mut self,
@@ -992,6 +994,8 @@ impl ExfatInode {
         let new_parent_hash = self.hash_index();
         let sub_dir = inner.num_sub_inodes;
         let mut child_offsets: Vec<usize> = vec![];
+        // FIXME: This isn't expected by the compiler.
+        #[allow(non_local_definitions)]
         impl DirentVisitor for Vec<usize> {
             fn visit(
                 &mut self,
