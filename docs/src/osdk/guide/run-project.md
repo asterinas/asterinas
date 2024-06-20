@@ -40,7 +40,7 @@ and then hand over control to the kernel entry point
 to execute the kernel code.
 
 **Note**: Only kernel projects (the projects
-that defines the function marked with `#[aster_main]`)
+that defines the function marked with `#[ostd::main]`)
 can be run;
 library projects cannot.
 

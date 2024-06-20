@@ -404,5 +404,5 @@ unsafe extern "sysv64" fn __multiboot_entry(boot_magic: u32, boot_params: u64) -
         init_framebuffer_info,
         init_memory_regions,
     );
-    crate::boot::call_aster_main();
+    crate::boot::call_ostd_main();
 }

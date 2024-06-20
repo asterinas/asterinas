@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 align_ext = { path = "libs/align_ext" }
-aster-main = { path = "libs/aster-main" }
+ostd-macros = { path = "libs/ostd-macros" }
 bit_field = "0.10.1"
 bitflags = "1.3"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }

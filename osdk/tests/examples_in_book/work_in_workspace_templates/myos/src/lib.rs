@@ -5,7 +5,7 @@
 
 use ostd::prelude::*;
 
-#[aster_main]
+#[ostd::main]
 fn kernel_main() {
     let avail_mem_as_mb = mylib::available_memory() / 1_000_000;
     println!("The available memory is {} MB", avail_mem_as_mb);

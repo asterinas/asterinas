@@ -44,12 +44,13 @@ pub mod task;
 pub mod trap;
 pub mod user;
 
+pub use ostd_macros::main;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
 
 pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
 
-/// Initialize OSTD.
+/// Initializes OSTD.
 ///
 /// This function represents the first phase booting up the system. It makes
 /// all functionalities of OSTD available after the call.

@@ -7,7 +7,7 @@ extern crate ostd;
 
 use ostd::prelude::*;
 
-#[aster_main]
+#[ostd::main]
 pub fn main() {
     println!("[kernel] finish init ostd");
     component::init_all(component::parse_metadata!()).unwrap();

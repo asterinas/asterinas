@@ -160,5 +160,5 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
         init_framebuffer_info,
         init_memory_regions,
     );
-    crate::boot::call_aster_main();
+    crate::boot::call_ostd_main();
 }
