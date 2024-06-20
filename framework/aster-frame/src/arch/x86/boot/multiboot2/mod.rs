@@ -108,11 +108,10 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     let memory_regions_tag = mb2_info
         .memory_map_tag()
         .expect("Memory region not found from the Multiboot2 header!");
-    let num_memory_regions = memory_regions_tag.memory_areas().len();
-    for i in 0..num_memory_regions {
-        let start = memory_regions_tag.memory_areas()[i].start_address();
-        let end = memory_regions_tag.memory_areas()[i].end_address();
-        let area_typ: MemoryRegionType = memory_regions_tag.memory_areas()[i].typ().into();
+    for region in memory_regions_tag.memory_areas() {
+        let start = region.start_address();
+        let end = region.end_address();
+        let area_typ: MemoryRegionType = MemoryAreaType::from(region.typ()).into();
         let region = MemoryRegion::new(
             start.try_into().unwrap(),
             (end - start).try_into().unwrap(),
