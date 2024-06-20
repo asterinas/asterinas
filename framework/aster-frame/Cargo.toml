@@ -41,7 +41,7 @@ x86_64 = "0.14.2"
 x86 = "0.52.0"
 acpi = "4.1.1"
 aml = "0.16.3"
-multiboot2 = "0.16.0"
+multiboot2 = "0.20.2"
 rsdp = "2.0.0"
 iced-x86 = { version = "1.21.0", default-features = false, features = [ "no_std", "decoder", "gas" ], optional = true }
 

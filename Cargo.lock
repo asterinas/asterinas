@@ -1015,15 +1015,15 @@ dependencies = [
 
 [[package]]
 name = "multiboot2"
-version = "0.16.0"
+version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b624a7b3f704734d98d21455b617607eb7043d4509d1c34bf9e7ff7dd47b31a"
+checksum = "ad7ef048d4783355163fd0c874aac3db54b919dc6a86dc29bb13f67308b114b0"
 dependencies = [
  "bitflags 2.4.1",
  "derive_more",
  "log",
  "ptr_meta",
- "uefi-raw 0.3.0",
+ "uefi-raw",
 ]
 
 [[package]]
@@ -1526,7 +1526,7 @@ dependencies = [
  "ptr_meta",
  "ucs2",
  "uefi-macros",
- "uefi-raw 0.5.0",
+ "uefi-raw",
  "uguid",
 ]
 
@@ -1539,17 +1539,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.49",
-]
-
-[[package]]
-name = "uefi-raw"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62642516099c6441a5f41b0da8486d5fc3515a0603b0fdaea67b31600e22082e"
-dependencies = [
- "bitflags 2.4.1",
- "ptr_meta",
- "uguid",
 ]
 
 [[package]]
