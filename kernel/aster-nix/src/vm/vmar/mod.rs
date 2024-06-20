@@ -860,55 +860,37 @@ impl<'a, V: Interval<Vaddr> + 'a> IntervalSet<'a, Vaddr> for BTreeMap<Vaddr, V> 
     type Item = V;
     fn find(&'a self, range: &Range<Vaddr>) -> impl IntoIterator<Item = &'a Self::Item> + 'a {
         let mut res = Vec::new();
-        let mut start_cursor = self.lower_bound(core::ops::Bound::Excluded(&range.start));
-        let start_key = {
-            start_cursor.move_prev();
-            if start_cursor.key().is_none()
-                || start_cursor.value().unwrap().range().end <= range.start
-            {
-                // the start_cursor is pointing to the "ghost" non-element before the first element
-                // or not intersected
-                start_cursor.move_next();
+        let mut cursor = self.lower_bound(core::ops::Bound::Excluded(&range.start));
+        // There's one previous element that may intersect with the range.
+        if let Some((_, v)) = cursor.peek_prev() {
+            if v.range().end > range.start {
+                res.push(v);
             }
-            if start_cursor.key().is_none()
-                || start_cursor.value().unwrap().range().start >= range.end
-            {
-                // return None if the start_cursor is pointing to the "ghost" non-element after the last element
-                // or not intersected
-                return res;
-            }
-            start_cursor.key().unwrap()
-        };
-        let mut end_cursor = start_cursor.clone();
-        loop {
-            if end_cursor.key().is_none() || end_cursor.value().unwrap().range().start >= range.end
-            {
-                // the end_cursor is pointing to the "ghost" non-element after the last element
-                // or not intersected
+        }
+        // Find all intersected elements following it.
+        while let Some((_, v)) = cursor.next() {
+            if v.range().start >= range.end {
                 break;
             }
-            res.push(end_cursor.value().unwrap());
-            end_cursor.move_next();
+            res.push(v);
         }
 
         res
     }
 
     fn find_one(&'a self, point: &Vaddr) -> Option<&'a Self::Item> {
-        let mut cursor = self.lower_bound(core::ops::Bound::Excluded(point));
-        cursor.move_prev();
-        if cursor.key().is_none() || cursor.value().unwrap().range().end <= *point {
-            // the cursor is pointing to the "ghost" non-element before the first element
-            // or not intersected
-            cursor.move_next();
+        let cursor = self.lower_bound(core::ops::Bound::Excluded(point));
+        // There's one previous element and one following element that may
+        // contain the point. If they don't, there's no other chances.
+        if let Some((_, v)) = cursor.peek_prev() {
+            if v.range().end > *point {
+                return Some(v);
+            }
+        } else if let Some((_, v)) = cursor.peek_next() {
+            if v.range().start <= *point {
+                return Some(v);
+            }
         }
-        // return None if the cursor is pointing to the "ghost" non-element after the last element
-        cursor.key()?;
-
-        if cursor.value().unwrap().range().start > *point {
-            None
-        } else {
-            Some(cursor.value().unwrap())
-        }
+        None
     }
 }
