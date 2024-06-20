@@ -23,7 +23,10 @@ update_package_version() {
 # Update Docker image versions (`asterinas/asterinas:{version}`) in file $1
 update_image_versions() {
     echo "Updating file $1"
+    # Update the version of the development container
     sed -i "s/asterinas\/asterinas:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/asterinas\/asterinas:${new_version}/g" $1
+    # Update the test environment described in the OSDK manual
+    sed -i "s/asterinas\/osdk:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/asterinas\/osdk:${new_version}/g" $1
 }
 
 # Print the help message
