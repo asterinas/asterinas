@@ -54,7 +54,7 @@ ringbuf = { version = "0.3.2", default-features = false, features = ["alloc"] }
 keyable-arc = { path = "../libs/keyable-arc" }
 # unzip initramfs
 libflate = { version ="2", default-features = false }
-core2 = { version = "0.4", default_features = false, features = ["alloc"] }
+core2 = { version = "0.4", default-features = false, features = ["alloc"] }
 lending-iterator = "0.1.7"
 spin = "0.9.4"
 vte = "0.10"
