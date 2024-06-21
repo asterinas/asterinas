@@ -332,6 +332,8 @@ impl TaskOptions {
 
 #[cfg(ktest)]
 mod test {
+    use crate::prelude::*;
+
     #[ktest]
     fn create_task() {
         let task = || {

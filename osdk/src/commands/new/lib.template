@@ -1,12 +1,10 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-#[cfg_attr(ktest, macro_use)]
-extern crate ktest;
-extern crate ostd;
-
 #[cfg(ktest)]
 mod tests {
+    use ostd::prelude::*;
+
     #[ktest]
     fn it_works() {
         let memory_regions = ostd::boot::memory_regions();

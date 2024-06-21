@@ -477,7 +477,7 @@ impl VmoChildType for VmoCowChild {}
 #[cfg(ktest)]
 mod test {
     use aster_rights::Full;
-    use ostd::mm::VmIo;
+    use ostd::{mm::VmIo, prelude::*};
 
     use super::*;
 

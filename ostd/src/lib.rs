@@ -22,9 +22,6 @@
 #![warn(missing_docs)]
 
 extern crate alloc;
-#[cfg(ktest)]
-#[macro_use]
-extern crate ktest;
 extern crate static_assertions;
 
 pub mod arch;
@@ -109,6 +106,8 @@ fn invoke_ffi_init_funcs() {
 /// Simple unit tests for the ktest framework.
 #[cfg(ktest)]
 mod test {
+    use crate::prelude::*;
+
     #[ktest]
     fn trivial_assertion() {
         assert_eq!(0, 0);
@@ -125,4 +124,10 @@ mod test {
     fn expect_panic() {
         panic!("expected panic message");
     }
+}
+
+/// The module re-exports everything from the ktest crate
+#[cfg(ktest)]
+pub mod ktest {
+    pub use ktest::*;
 }

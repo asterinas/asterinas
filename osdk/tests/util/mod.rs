@@ -10,6 +10,7 @@ use std::{
 };
 
 use assert_cmd::Command;
+use toml::{Table, Value};
 
 pub fn cargo_osdk<T: AsRef<OsStr>, I: IntoIterator<Item = T>>(args: I) -> Command {
     let mut command = Command::cargo_bin("cargo-osdk").unwrap();
@@ -84,4 +85,36 @@ pub fn add_member_to_workspace(workspace: impl AsRef<Path>, new_member: &str) {
 
     let new_content = workspace_manifest.to_string();
     fs::write(&path, new_content).unwrap();
+}
+
+/// Makes crates created by `cargo ostd new` depends on ostd locally,
+/// instead of ostd from local branch.
+///
+/// Each crate created by `cargo ostd new` should add this patch.
+pub fn depends_on_local_ostd(manifest_path: impl AsRef<Path>) {
+    let crate_dir = env!("CARGO_MANIFEST_DIR");
+    let ostd_dir = PathBuf::from(crate_dir)
+        .join("..")
+        .join("ostd")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+
+    // FIXME: It may be more elegant to add `patch` section instead of replacing dependency.
+    // But adding `patch` section does not work in my local test, which is confusing.
+
+    let manifest_content = fs::read_to_string(&manifest_path).unwrap();
+    let mut manifest: Table = toml::from_str(&manifest_content).unwrap();
+    let dep = manifest
+        .get_mut("dependencies")
+        .map(Value::as_table_mut)
+        .flatten()
+        .unwrap();
+
+    let mut table = Table::new();
+    table.insert("path".to_string(), Value::String(ostd_dir));
+    dep.insert("ostd".to_string(), Value::Table(table));
+
+    fs::write(manifest_path, manifest.to_string().as_bytes()).unwrap();
 }

@@ -2,7 +2,7 @@
 
 use std::{fs, path::PathBuf};
 
-use crate::util::cargo_osdk;
+use crate::util::{cargo_osdk, depends_on_local_ostd};
 
 #[test]
 fn create_a_kernel_project() {
@@ -22,6 +22,8 @@ fn create_a_kernel_project() {
     assert!(kernel_path.is_dir());
     assert!(kernel_path.join("Cargo.toml").is_file());
     assert!(kernel_path.join("rust-toolchain.toml").is_file());
+
+    depends_on_local_ostd(kernel_path.join("Cargo.toml"));
 
     fs::remove_dir_all(&kernel_path).unwrap();
 }

@@ -293,6 +293,7 @@ impl fmt::Debug for AtomicBits {
 #[cfg(ktest)]
 mod test {
     use super::*;
+    use crate::prelude::*;
 
     #[ktest]
     fn new() {

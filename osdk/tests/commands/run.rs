@@ -21,6 +21,8 @@ mod workspace {
         cargo_osdk_new
             .ok()
             .expect("Failed to create kernel project");
+        let manifest_path = os_dir.join("Cargo.toml");
+        depends_on_local_ostd(manifest_path);
     }
 
     fn prepare_workspace(workspace: &str) {

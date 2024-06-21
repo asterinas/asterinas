@@ -310,7 +310,7 @@ mod test {
     use alloc::vec;
 
     use super::*;
-    use crate::mm::FrameAllocOptions;
+    use crate::{mm::FrameAllocOptions, prelude::*};
 
     #[ktest]
     fn streaming_map() {

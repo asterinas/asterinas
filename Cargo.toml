@@ -9,7 +9,6 @@ members = [
     "ostd/libs/linux-bzimage/boot-params",
     "ostd/libs/linux-bzimage/setup",
     "ostd/libs/ktest",
-    "ostd/libs/ktest-proc-macro",
     "kernel",
     "kernel/aster-nix",
     "kernel/comps/block",

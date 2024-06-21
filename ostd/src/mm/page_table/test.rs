@@ -3,10 +3,13 @@
 use core::mem::ManuallyDrop;
 
 use super::*;
-use crate::mm::{
-    kspace::LINEAR_MAPPING_BASE_VADDR,
-    page::{allocator, meta::FrameMeta},
-    page_prop::{CachePolicy, PageFlags},
+use crate::{
+    mm::{
+        kspace::LINEAR_MAPPING_BASE_VADDR,
+        page::{allocator, meta::FrameMeta},
+        page_prop::{CachePolicy, PageFlags},
+    },
+    prelude::*,
 };
 
 const PAGE_SIZE: usize = 4096;
