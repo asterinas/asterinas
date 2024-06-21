@@ -42,8 +42,6 @@ pub(crate) fn after_all_init() {
             kernel::pic::enable();
         }
     }
-    console::callback_init();
-    timer::init();
     #[cfg(feature = "intel_tdx")]
     if !tdx_is_enabled() {
         match iommu::init() {
@@ -56,6 +54,9 @@ pub(crate) fn after_all_init() {
         Ok(_) => {}
         Err(err) => warn!("IOMMU initialization error:{:?}", err),
     }
+    console::callback_init();
+    timer::init();
+
     // Some driver like serial may use PIC
     kernel::pic::init();
 }

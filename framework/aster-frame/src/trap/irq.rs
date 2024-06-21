@@ -28,7 +28,7 @@ pub type IrqCallbackFunction = dyn Fn(&TrapFrame) + Sync + Send + 'static;
 pub struct IrqLine {
     irq_num: u8,
     #[allow(clippy::redundant_allocation)]
-    irq: Arc<&'static irq::IrqLine>,
+    inner_irq: Arc<&'static irq::IrqLine>,
     callbacks: Vec<IrqCallbackHandle>,
 }
 
@@ -57,7 +57,7 @@ impl IrqLine {
         // IRQ is not one of the important IRQ like cpu exception IRQ.
         Self {
             irq_num,
-            irq: unsafe { irq::IrqLine::acquire(irq_num) },
+            inner_irq: unsafe { irq::IrqLine::acquire(irq_num) },
             callbacks: Vec::new(),
         }
     }
@@ -74,12 +74,16 @@ impl IrqLine {
     where
         F: Fn(&TrapFrame) + Sync + Send + 'static,
     {
-        self.callbacks.push(self.irq.on_active(callback))
+        self.callbacks.push(self.inner_irq.on_active(callback))
     }
 
     /// Checks if there are no registered callbacks.
     pub fn is_empty(&self) -> bool {
         self.callbacks.is_empty()
+    }
+
+    pub(crate) fn inner_irq(&self) -> &'static irq::IrqLine {
+        &self.inner_irq
     }
 }
 
@@ -87,7 +91,7 @@ impl Clone for IrqLine {
     fn clone(&self) -> Self {
         Self {
             irq_num: self.irq_num,
-            irq: self.irq.clone(),
+            inner_irq: self.inner_irq.clone(),
             callbacks: Vec::new(),
         }
     }
@@ -95,7 +99,7 @@ impl Clone for IrqLine {
 
 impl Drop for IrqLine {
     fn drop(&mut self) {
-        if Arc::strong_count(&self.irq) == 1 {
+        if Arc::strong_count(&self.inner_irq) == 1 {
             IRQ_ALLOCATOR
                 .get()
                 .unwrap()
