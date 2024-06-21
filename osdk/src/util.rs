@@ -16,11 +16,13 @@ use quote::ToTokens;
 /// and use the published version in the generated Cargo.toml.
 pub const ASTER_GIT_LINK: &str = "https://github.com/asterinas/asterinas";
 /// Make sure it syncs with the builder dependency in Cargo.toml.
-pub const ASTER_GIT_REV: &str = "ccc4e6e";
+/// We cannot use `include_str!("../../VERSION")` here
+/// because `cargo publish` does not allow using files outside of the crate directory.
+pub const ASTER_GIT_TAG: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 pub fn aster_crate_dep(crate_name: &str) -> String {
     format!(
-        "{} = {{ git = \"{}\", rev = \"{}\" }}",
-        crate_name, ASTER_GIT_LINK, ASTER_GIT_REV
+        "{} = {{ git = \"{}\", tag = \"{}\" }}",
+        crate_name, ASTER_GIT_LINK, ASTER_GIT_TAG
     )
 }
 
