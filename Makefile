@@ -142,13 +142,17 @@ run: build
 	@cargo osdk run $(CARGO_OSDK_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
-	@tail --lines 100 qemu.log | grep -q "^.* of .* test cases passed." || (echo "Syscall test failed" && exit 1)
+	@tail --lines 100 qemu.log | grep -q "^.* of .* test cases passed." \
+		|| (echo "Syscall test failed" && exit 1)
 else ifeq ($(AUTO_TEST), regression)
-	@tail --lines 100 qemu.log | grep -q "^All regression tests passed." || (echo "Regression test failed" && exit 1)
+	@tail --lines 100 qemu.log | grep -q "^All regression tests passed." \
+		|| (echo "Regression test failed" && exit 1)
 else ifeq ($(AUTO_TEST), boot)
-	@tail --lines 100 qemu.log | grep -q "^Successfully booted." || (echo "Boot test failed" && exit 1)
+	@tail --lines 100 qemu.log | grep -q "^Successfully booted." \
+		|| (echo "Boot test failed" && exit 1)
 else ifeq ($(AUTO_TEST), vsock)
-	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." || (echo "Vsock test failed" && exit 1)
+	@tail --lines 100 qemu.log | grep -q "^Vsock test passed." \
+		|| (echo "Vsock test failed" && exit 1)
 endif
 
 gdb_server: initramfs $(CARGO_OSDK)
@@ -179,7 +183,7 @@ docs: $(CARGO_OSDK)
 	@for dir in $(OSDK_CRATES); do \
 		(cd $$dir && cargo osdk doc --no-deps) || exit 1; \
 	done
-	@echo "" 								# Add a blank line
+	@echo "" 						# Add a blank line
 	@cd docs && mdbook build 				# Build mdBook
 
 .PHONY: format
@@ -196,7 +200,8 @@ check: $(CARGO_OSDK)
 		sort > /tmp/all_crates
 	@echo $(NON_OSDK_CRATES) $(OSDK_CRATES) | tr ' ' '\n' | sort > /tmp/combined_crates
 	@diff -B /tmp/all_crates /tmp/combined_crates || \
-		(echo "Error: STD_CRATES and NOSTD_CRATES combined is not the same as all workspace members" && exit 1)
+		(echo "Error: The combination of STD_CRATES and NOSTD_CRATES" \
+			"is not the same as all workspace members" && exit 1)
 	@rm /tmp/all_crates /tmp/combined_crates
 	@for dir in $(NON_OSDK_CRATES); do \
 		echo "Checking $$dir"; \

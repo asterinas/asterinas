@@ -78,7 +78,10 @@ jobs:
 
       - name: Syscall Test at Exfat
         id: syscall_test_at_exfat_linux
-        run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat ENABLE_KVM=0 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
+        run: |
+          make run AUTO_TEST=syscall \
+            SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat \
+            ENABLE_KVM=0 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
         
       - name: Regression Test (Linux EFI Handover Boot Protocol)
         id: regression_test_linux

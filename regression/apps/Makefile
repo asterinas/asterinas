@@ -34,7 +34,9 @@ TEST_APPS := \
 	vsock \
 
 # The C head and source files of all the apps, excluding the downloaded mongoose files
-C_SOURCES := $(shell find . -type f \( -name "*.c" -or -name "*.h" \) ! -name "mongoose.c" ! -name "mongoose.h")
+C_SOURCES := \
+	$(shell find . -type f \( -name "*.c" -or -name "*.h" \) \
+		! -name "mongoose.c" ! -name "mongoose.h")
 
 .PHONY: all
 all: $(TEST_APPS) scripts
