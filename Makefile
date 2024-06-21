@@ -155,6 +155,7 @@ else ifeq ($(AUTO_TEST), vsock)
 		|| (echo "Vsock test failed" && exit 1)
 endif
 
+.PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)
 	@cargo osdk run $(CARGO_OSDK_ARGS) -G --vsc --gdb-server-addr :$(GDB_TCP_PORT)
 
@@ -176,6 +177,7 @@ ktest: initramfs $(CARGO_OSDK)
 		(cd $$dir && cargo osdk test) || exit 1; \
 	done
 
+.PHONY: docs
 docs: $(CARGO_OSDK)
 	@for dir in $(NON_OSDK_CRATES); do \
 		(cd $$dir && cargo doc --no-deps) || exit 1; \
