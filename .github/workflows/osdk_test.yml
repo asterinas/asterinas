@@ -30,7 +30,10 @@ jobs:
         # of actions/checkout@v4
       - name: Unit test
         id: unit_test
-        run: cd osdk && RUSTUP_HOME=/root/.rustup cargo +stable build && RUSTUP_HOME=/root/.rustup cargo test
+        run: |
+          cd osdk
+          RUSTUP_HOME=/root/.rustup cargo +stable build
+          RUSTUP_HOME=/root/.rustup cargo test
   
   # Test OSDK in the same environment 
   # as described in the OSDK User Guide in the Asterinas Book.
@@ -50,5 +53,7 @@ jobs:
         # So the RUSTUP_HOME needs to be set here. 
         # This only breaks when we invoke Cargo in the integration test of OSDK 
         # since the OSDK toolchain is not nightly.
-        run: cd osdk && RUSTUP_HOME=/root/.rustup cargo +stable build && RUSTUP_HOME=/root/.rustup cargo test
-    
+        run: |
+          cd osdk
+          RUSTUP_HOME=/root/.rustup cargo +stable build
+          RUSTUP_HOME=/root/.rustup cargo test

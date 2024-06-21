@@ -39,7 +39,8 @@ jobs:
           ssh-keyscan -t rsa github.com >> ./known_hosts
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          GIT_SSH_COMMAND="ssh -i ./book_publish_key -o UserKnownHostsFile=./known_hosts" git clone git@github.com:asterinas/book.git temp_book
+          GIT_SSH_COMMAND="ssh -i ./book_publish_key -o UserKnownHostsFile=./known_hosts" \
+            git clone git@github.com:asterinas/book.git temp_book
           cd temp_book
           git checkout --orphan newBranch
           git rm -rf *
@@ -48,4 +49,5 @@ jobs:
           git commit -am "Update website"
           git branch -D main
           git branch -m main
-          GIT_SSH_COMMAND="ssh -i ../book_publish_key -o UserKnownHostsFile=../known_hosts" git push -f origin main
+          GIT_SSH_COMMAND="ssh -i ../book_publish_key -o UserKnownHostsFile=../known_hosts" \
+            git push -f origin main
