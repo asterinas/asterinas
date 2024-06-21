@@ -5,6 +5,7 @@
 mod dma_remapping;
 mod fault;
 mod registers;
+mod invalidate;
 
 pub(crate) use dma_remapping::{has_dma_remapping, map, second_stage::DeviceMode, unmap};
 
@@ -21,7 +22,7 @@ pub enum IommuError {
 
 pub(crate) fn init() -> Result<(), IommuError> {
     registers::init()?;
+    invalidate::init();
     dma_remapping::init();
-
     Ok(())
 }

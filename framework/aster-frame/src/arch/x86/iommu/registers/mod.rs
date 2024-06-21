@@ -9,12 +9,14 @@
 mod capability;
 mod command;
 mod extended_cap;
+mod invalidation;
 mod status;
 
 pub use capability::*;
 use command::GlobalCommand;
 pub use command::*;
 pub use extended_cap::*;
+use invalidation::InvalidationRegisters;
 use log::debug;
 use spin::Once;
 use status::GlobalStatus;
@@ -24,16 +26,17 @@ use volatile::{
     Volatile,
 };
 
-use super::{dma_remapping::context_table::RootTable, IommuError};
+use super::{dma_remapping::context_table::RootTable, invalidate::queue::Queue, IommuError};
 use crate::{
     arch::{
-        iommu::fault,
+        iommu::{fault, invalidate::QUEUE},
         x86::kernel::acpi::{
             dmar::{Dmar, Remapping},
             ACPI_TABLES,
         },
     },
     mm::paddr_to_vaddr,
+    prelude::Paddr,
     sync::SpinLock,
 };
 
@@ -47,6 +50,8 @@ pub struct IommuRegisters {
     global_status: Volatile<&'static u32, ReadOnly>,
     root_table_address: Volatile<&'static mut u64, ReadWrite>,
     context_command: Volatile<&'static mut u64, ReadWrite>,
+
+    invalidate: InvalidationRegisters,
 }
 
 impl IommuRegisters {
@@ -76,6 +81,55 @@ impl IommuRegisters {
         // Enable DMA remapping
         self.write_global_command(GlobalCommand::TE, true);
         while !self.global_status().contains(GlobalStatus::TES) {}
+    }
+
+    pub(super) fn enable_queued_invalidation(&mut self, queue: &Queue) {
+        assert!(self
+            .extended_capability()
+            .flags()
+            .contains(ExtendedCapabilityFlags::QI));
+        self.invalidate.queue_tail.write(0);
+
+        let mut write_value = queue.base_paddr() as u64;
+        // By default, we set descriptor width to 128-bit(0)
+        let descriptor_width = 0b0;
+        write_value |= descriptor_width << 11;
+
+        let mut queue_size = queue.size();
+        assert!(queue_size.is_power_of_two());
+        let mut size = 0;
+        if descriptor_width == 0 {
+            // 2^(X + 8) = number of entries
+            assert!(queue_size >= (1 << 8));
+            queue_size >>= 8;
+        } else {
+            // 2^(X + 7) = number of entries
+            assert!(queue_size >= (1 << 7));
+            queue_size >>= 7;
+        };
+        while queue_size & 0b1 == 0 {
+            queue_size >>= 1;
+            size += 1;
+        }
+        write_value |= size;
+
+        self.invalidate.queue_addr.write(write_value);
+
+        // Enable Queued invalidation
+        self.write_global_command(GlobalCommand::QIE, true);
+        while !self.global_status().contains(GlobalStatus::QIES) {}
+    }
+
+    fn global_invalidation(&mut self) {
+        self.context_command.write(0xA000_0000_0000_0000);
+        let mut value = 0x8000_0000_0000_0000;
+        while (value & 0x8000_0000_0000_0000) != 0 {
+            value = self.context_command.read();
+        }
+
+        self.invalidate
+            .iotlb_invalidate
+            .write(0x9000_0000_0000_0000);
     }
 
     /// Write value to the global command register. This function will not wait until the command
@@ -121,6 +175,7 @@ impl IommuRegisters {
             let global_status = Volatile::new_read_only(&*((vaddr + 0x1C) as *const u32));
             let root_table_address = Volatile::new(&mut *((vaddr + 0x20) as *mut u64));
             let context_command = Volatile::new(&mut *((vaddr + 0x28) as *mut u64));
+
             Self {
                 version,
                 capability,
@@ -129,6 +184,7 @@ impl IommuRegisters {
                 global_status,
                 root_table_address,
                 context_command,
+                invalidate: InvalidationRegisters::new(vaddr),
             }
         };
 
