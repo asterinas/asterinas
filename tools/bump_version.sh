@@ -129,6 +129,7 @@ GET_STARTED_PATH=${ASTER_SRC_DIR}/docs/src/kernel/README.md
 update_image_versions $GET_STARTED_PATH
 
 # Create or update VERSION
-echo "${new_version}" > ${VERSION_PATH}
+# `-n` is used to avoid adding a '\n' in the VERSION file.
+echo -n "${new_version}" > ${VERSION_PATH}
 
 echo "Bumped Asterinas & OSDK version to $new_version"
