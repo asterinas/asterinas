@@ -652,6 +652,8 @@ pub fn current() -> Arc<Process> {
 #[cfg(ktest)]
 mod test {
 
+    use ostd::prelude::*;
+
     use super::*;
 
     fn new_process(parent: Option<Arc<Process>>) -> Arc<Process> {

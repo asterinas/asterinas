@@ -22,9 +22,10 @@
 //! module, e.g.:
 //!
 //! ```rust
-//! use ktest::ktest;
 //! #[cfg(ktest)]
 //! mod test {
+//!     use ostd::prelude::*;
+//!
 //!     #[ktest]
 //!     fn trivial_assertion() {
 //!         assert_eq!(0, 0);
@@ -42,13 +43,12 @@
 //! }
 //! ```
 //!
-//! And also, any crates using the ktest framework should be linked with ostd
-//! and import the `ktest` crate:
+//! Any crates using the ktest framework should be linked with ostd.
 //!
 //! ```toml
 //! # Cargo.toml
 //! [dependencies]
-//! ktest = { path = "relative/path/to/ktest" }
+//! ostd = { path = "relative/path/to/ostd" }
 //! ```
 //!
 //! By the way, `#[ktest]` attribute along also works, but it hinders test control
@@ -96,8 +96,6 @@ pub mod tree;
 
 extern crate alloc;
 use alloc::{boxed::Box, string::String};
-
-pub use ktest_proc_macro::ktest;
 
 #[derive(Clone, Debug)]
 pub struct PanicInfo {

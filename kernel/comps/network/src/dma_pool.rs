@@ -9,7 +9,6 @@ use alloc::{
 use core::ops::Range;
 
 use bitvec::{array::BitArray, prelude::Lsb0};
-use ktest::ktest;
 use ostd::{
     mm::{
         Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmReader, VmWriter, PAGE_SIZE,
@@ -287,6 +286,8 @@ impl Drop for DmaSegment {
 #[cfg(ktest)]
 mod test {
     use alloc::vec::Vec;
+
+    use ostd::prelude::*;
 
     use super::*;
 

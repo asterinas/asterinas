@@ -84,10 +84,6 @@ The dependency version may change over time.
 [dependencies.ostd]
 git = "https://github.com/asterinas/asterinas"
 branch = "main"
-
-[dependencies.ktest]
-git = "https://github.com/asterinas/asterinas"
-branch = "main"
 ```
 
 OSDK will also exclude the directory 

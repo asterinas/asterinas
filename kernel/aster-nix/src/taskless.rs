@@ -189,7 +189,7 @@ fn taskless_softirq_handler(
 mod test {
     use core::sync::atomic::AtomicUsize;
 
-    use ostd::trap::enable_local;
+    use ostd::{prelude::*, trap::enable_local};
 
     use super::*;
 

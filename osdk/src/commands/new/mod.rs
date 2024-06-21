@@ -42,8 +42,6 @@ fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &st
 
     let ostd_dep = toml::Table::from_str(&aster_crate_dep("ostd")).unwrap();
     dependencies.as_table_mut().unwrap().extend(ostd_dep);
-    let ktest_dep = toml::Table::from_str(&aster_crate_dep("ktest")).unwrap();
-    dependencies.as_table_mut().unwrap().extend(ktest_dep);
 
     let content = toml::to_string(&manifest).unwrap();
     fs::write(mainfest_path, content).unwrap();

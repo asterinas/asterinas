@@ -264,7 +264,7 @@ impl Condvar {
 
 #[cfg(ktest)]
 mod test {
-    use ostd::sync::Mutex;
+    use ostd::{prelude::*, sync::Mutex};
 
     use super::*;
     use crate::thread::{

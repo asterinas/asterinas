@@ -86,12 +86,11 @@ export
 # or tested without OSDK.
 NON_OSDK_CRATES := \
 	ostd/libs/align_ext \
-	ostd/libs/ostd-macros \
 	ostd/libs/id-alloc \
 	ostd/libs/linux-bzimage/builder \
 	ostd/libs/linux-bzimage/boot-params \
 	ostd/libs/ktest \
-	ostd/libs/ktest-proc-macro \
+	ostd/libs/ostd-macros \
 	kernel/libs/cpio-decoder \
 	kernel/libs/int-to-c-enum \
 	kernel/libs/int-to-c-enum/derive \

@@ -190,7 +190,7 @@ mod test {
     use alloc::vec;
 
     use super::*;
-    use crate::mm::FrameAllocOptions;
+    use crate::{mm::FrameAllocOptions, prelude::*};
 
     #[ktest]
     fn map_with_coherent_device() {

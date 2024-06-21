@@ -18,16 +18,19 @@ fn create_kernel_in_workspace() {
     }
     create_workspace(WORKSPACE_NAME, &[KERNEL_NAME]);
     let kernel_path = PathBuf::from(WORKSPACE_NAME).join(KERNEL_NAME);
+    let manifest_path = kernel_path.join("Cargo.toml");
 
     let mut cmd = cargo_osdk(["new", "--kernel", KERNEL_NAME]);
     cmd.current_dir(WORKSPACE_NAME);
     let output = cmd.output().unwrap();
+    depends_on_local_ostd(&manifest_path);
     assert_success(&output);
     remove_dir_all(&kernel_path).unwrap();
 
     let mut cmd = cargo_osdk(["new", "-t", "kernel", KERNEL_NAME]);
     cmd.current_dir(WORKSPACE_NAME);
     let output = cmd.output().unwrap();
+    depends_on_local_ostd(&manifest_path);
     assert_success(&output);
     remove_dir_all(&kernel_path).unwrap();
 

@@ -541,6 +541,8 @@ impl<T> AsRef<Error> for (Error, T) {
 mod test {
     use alloc::sync::Arc;
 
+    use ostd::prelude::*;
+
     use crate::fs::utils::Channel;
 
     #[ktest]

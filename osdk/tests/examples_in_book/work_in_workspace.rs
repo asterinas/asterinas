@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::util::cargo_osdk;
+use crate::util::{cargo_osdk, depends_on_local_ostd};
 
 #[test]
 fn work_in_workspace() {
@@ -46,9 +46,14 @@ fn work_in_workspace() {
         .unwrap();
     module_src_file.flush().unwrap();
 
+    // Make module depends on local ostd
+    let module_manifest_path = workspace_dir.join(module).join("Cargo.toml");
+    depends_on_local_ostd(module_manifest_path);
+
     // Add dependency to myos/Cargo.toml
     let kernel_manifest_path = workspace_dir.join(kernel).join("Cargo.toml");
     assert!(kernel_manifest_path.is_file());
+    depends_on_local_ostd(&kernel_manifest_path);
     let mut kernel_manifest_file = OpenOptions::new()
         .append(true)
         .open(&kernel_manifest_path)

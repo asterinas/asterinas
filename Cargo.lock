@@ -139,7 +139,6 @@ dependencies = [
  "bitvec",
  "component",
  "int-to-c-enum",
- "ktest",
  "log",
  "ostd",
  "pod",
@@ -180,7 +179,6 @@ dependencies = [
  "int-to-c-enum",
  "intrusive-collections",
  "keyable-arc",
- "ktest",
  "lazy_static",
  "lending-iterator",
  "libflate",
@@ -240,7 +238,6 @@ dependencies = [
  "aster-rights",
  "aster-rights-proc",
  "inherit-methods-macro",
- "ktest",
  "ostd",
  "pod",
  "typeflags-util",
@@ -797,18 +794,7 @@ version = "0.1.0"
 name = "ktest"
 version = "0.1.0"
 dependencies = [
- "ktest-proc-macro",
  "owo-colors",
-]
-
-[[package]]
-name = "ktest-proc-macro"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "rand",
- "syn 2.0.49",
 ]
 
 [[package]]
@@ -1131,6 +1117,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
+ "rand",
  "syn 2.0.49",
 ]
 

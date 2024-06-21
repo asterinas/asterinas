@@ -298,7 +298,7 @@ impl Waker {
 #[cfg(ktest)]
 mod test {
     use super::*;
-    use crate::task::TaskOptions;
+    use crate::{prelude::*, task::TaskOptions};
 
     fn queue_wake<F>(wake: F)
     where
