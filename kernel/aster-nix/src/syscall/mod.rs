@@ -128,6 +128,8 @@ mod waitid;
 mod write;
 mod writev;
 
+mod heap_profile;
+
 /// This macro is used to define syscall handler.
 /// The first param is ths number of parameters,
 /// The second param is the function name of syscall handler,

@@ -29,6 +29,7 @@ use spin::Once;
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{options::FrameAllocOptions, Frame, FrameVec, FrameVecIter, Segment},
+    heap_allocator::{start_heap_profile, stop_heap_profile},
     io::{VmIo, VmReader, VmWriter},
     page_prop::{CachePolicy, PageFlags, PageProperty},
     space::{VmMapOptions, VmSpace},

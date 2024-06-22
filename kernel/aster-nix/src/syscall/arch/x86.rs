@@ -47,6 +47,7 @@ use crate::syscall::{
     gettid::sys_gettid,
     gettimeofday::sys_gettimeofday,
     getuid::sys_getuid,
+    heap_profile::{sys_start_heap_profile, sys_stop_heap_profile},
     impl_syscall_nums_and_dispatch_fn,
     ioctl::sys_ioctl,
     kill::sys_kill,
@@ -276,4 +277,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut context);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &context);
+
+    SYS_START_HEAP_PROF = 1024 => sys_start_heap_profile(args[..0]);
+    SYS_STOP_HEAP_PROF = 1025  => sys_stop_heap_profile(args[..0]);
 }
