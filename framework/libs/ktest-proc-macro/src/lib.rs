@@ -11,7 +11,7 @@ use syn::{parse_macro_input, Expr, Ident, ItemFn};
 
 /// The test attribute macro to mark a test function.
 #[proc_macro_attribute]
-pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn ktest(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Assuming that the item has type `fn() -> ()`, otherwise panics.
     let input = parse_macro_input!(item as ItemFn);
     assert!(
@@ -29,6 +29,10 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .take(8)
         .map(char::from)
         .collect();
+
+    // Parse the attribute arguments to check for `init`
+    let attr_args = attr.to_string();
+    let is_init = attr_args.contains("init");
 
     let fn_name = &input.sig.ident;
     let fn_ktest_item_name = Ident::new(
@@ -97,6 +101,7 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 fn_name: stringify!(#fn_name),
                 package: #package_name,
                 source: #source,
+                is_init: #is_init,
                 line: #line,
                 col: #col,
             },

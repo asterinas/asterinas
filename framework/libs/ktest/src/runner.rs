@@ -100,34 +100,39 @@ where
     let mut passed: usize = 0;
     let mut filtered: usize = 0;
     let mut failed_tests: Vec<(KtestItem, KtestError)> = Vec::new();
-    for module in crate_.iter() {
-        for test in module.iter() {
-            if let Some(trie) = whitelist {
-                let mut test_path = KtestPath::from(test.info().module_path);
-                test_path.push_back(test.info().fn_name);
-                if !trie.contains(test_path.iter()) {
-                    filtered += 1;
-                    continue;
-                }
+    let (init_tests, non_init_tests): (Vec<_>, Vec<_>) = crate_
+        .iter()
+        .flat_map(|module| module.iter())
+        .cloned()
+        .partition(|test| test.info().is_init);
+
+    for test in init_tests.iter().chain(non_init_tests.iter()) {
+        if let Some(trie) = whitelist {
+            let mut test_path = KtestPath::from(test.info().module_path);
+            test_path.push_back(test.info().fn_name);
+            if !trie.contains(test_path.iter()) {
+                filtered += 1;
+                continue;
             }
-            print!(
-                "test {}::{} ...",
-                test.info().module_path,
-                test.info().fn_name
-            );
-            debug_assert_eq!(test.info().package, crate_name);
-            match test.run(catch_unwind) {
-                Ok(()) => {
-                    print!(" {}\n", "ok".green());
-                    passed += 1;
-                }
-                Err(e) => {
-                    print!(" {}\n", "FAILED".red());
-                    failed_tests.push((test.clone(), e.clone()));
-                }
+        }
+        print!(
+            "test {}::{} ...",
+            test.info().module_path,
+            test.info().fn_name
+        );
+        debug_assert_eq!(test.info().package, crate_name);
+        match test.run(catch_unwind) {
+            Ok(()) => {
+                print!(" {}\n", "ok".green());
+                passed += 1;
+            }
+            Err(e) => {
+                print!(" {}\n", "FAILED".red());
+                failed_tests.push((test.clone(), e.clone()));
             }
         }
     }
+
     let failed = failed_tests.len();
     if failed == 0 {
         print!("\ntest result: {}.", "ok".green());
