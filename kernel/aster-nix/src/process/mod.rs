@@ -35,4 +35,5 @@ pub use wait::{wait_child_exit, WaitOptions};
 
 pub(super) fn init() {
     process::init();
+    posix_thread::futex::init();
 }

@@ -5,6 +5,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_frame::cpu::num_cpus;
+use spin::Once;
 
 use crate::{
     prelude::*,
@@ -36,7 +37,7 @@ pub fn futex_wait_bitset(
         futex_addr, futex_val, timeout, bitset
     );
     let futex_key = FutexKey::new(futex_addr);
-    let (_, futex_bucket_ref) = FUTEX_BUCKETS.get_bucket(futex_key);
+    let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
 
     // lock futex bucket ref here to avoid data race
     let mut futex_bucket = futex_bucket_ref.lock();
@@ -72,7 +73,7 @@ pub fn futex_wake_bitset(
     );
 
     let futex_key = FutexKey::new(futex_addr);
-    let (_, futex_bucket_ref) = FUTEX_BUCKETS.get_bucket(futex_key);
+    let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.dequeue_and_wake_items(futex_key, max_count, bitset);
     // debug!("futex wake bitset succeeds, res = {}", res);
@@ -96,8 +97,8 @@ pub fn futex_requeue(
 
     let futex_key = FutexKey::new(futex_addr);
     let futex_new_key = FutexKey::new(futex_new_addr);
-    let (bucket_idx, futex_bucket_ref) = FUTEX_BUCKETS.get_bucket(futex_key);
-    let (new_bucket_idx, futex_new_bucket_ref) = FUTEX_BUCKETS.get_bucket(futex_new_key);
+    let (bucket_idx, futex_bucket_ref) = get_futex_bucket(futex_key);
+    let (new_bucket_idx, futex_new_bucket_ref) = get_futex_bucket(futex_new_key);
 
     let nwakes = {
         if bucket_idx == new_bucket_idx {
@@ -135,11 +136,23 @@ pub fn futex_requeue(
     Ok(nwakes)
 }
 
-lazy_static! {
-    // Use the same count as linux kernel to keep the same performance
-    static ref BUCKET_COUNT: usize = ((1<<8)* num_cpus()).next_power_of_two() as _;
-    static ref BUCKET_MASK: usize = *BUCKET_COUNT - 1;
-    static ref FUTEX_BUCKETS: FutexBucketVec = FutexBucketVec::new(*BUCKET_COUNT);
+static FUTEX_BUCKETS: Once<FutexBucketVec> = Once::new();
+
+/// Get the futex hash bucket count.
+///
+/// This number is calculated the same way as Linux's:
+/// <https://github.com/torvalds/linux/blob/master/kernel/futex/core.c>
+fn get_bucket_count() -> usize {
+    ((1 << 8) * num_cpus()).next_power_of_two() as usize
+}
+
+fn get_futex_bucket(key: FutexKey) -> (usize, FutexBucketRef) {
+    FUTEX_BUCKETS.get().unwrap().get_bucket(key)
+}
+
+/// Initialize the futex system.
+pub fn init() {
+    FUTEX_BUCKETS.call_once(|| FutexBucketVec::new(get_bucket_count()));
 }
 
 #[derive(Debug, Clone)]
@@ -168,7 +181,7 @@ impl FutexBucketVec {
     }
 
     pub fn get_bucket(&self, key: FutexKey) -> (usize, FutexBucketRef) {
-        let index = *BUCKET_MASK & {
+        let index = (self.vec.len() - 1) & {
             // The addr is the multiples of 4, so we ignore the last 2 bits
             let addr = key.addr() >> 2;
             // simple hash
