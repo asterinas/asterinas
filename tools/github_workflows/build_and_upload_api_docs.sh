@@ -97,7 +97,7 @@ update_nightly_doc() {
 update_release_doc() {
     cd "${WORK_DIR}/${CLONED_REPO_DIR}"
     VERSION=$(cat "${ASTER_SRC_DIR}/VERSION")
-    git rm -rf "${VERSION}"
+    git rm -rf --ignore-unmatch "${VERSION}"
     mkdir "${VERSION}"
     cp -r ${ASTER_SRC_DIR}/target/x86_64-unknown-none/doc/* ${VERSION}/
     generate_redirect_index_html "https://asterinas.github.io/api-docs/${VERSION}/aster_frame"
