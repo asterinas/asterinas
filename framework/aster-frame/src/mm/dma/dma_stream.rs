@@ -32,6 +32,8 @@ pub struct DmaStream {
 struct DmaStreamInner {
     vm_segment: Segment,
     start_daddr: Daddr,
+    /// TODO: remove this field when on x86.
+    #[allow(unused)]
     is_cache_coherent: bool,
     direction: DmaDirection,
 }
