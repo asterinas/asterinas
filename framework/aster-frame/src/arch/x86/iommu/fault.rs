@@ -12,7 +12,7 @@ use spin::Once;
 use trapframe::TrapFrame;
 use volatile::{access::ReadWrite, Volatile};
 
-use super::remapping::Capability;
+use super::registers::Capability;
 use crate::{mm::Vaddr, trap::IrqLine};
 
 #[derive(Debug)]
@@ -33,14 +33,19 @@ impl FaultEventRegisters {
         FaultStatus::from_bits_truncate(self.status.read())
     }
 
+    /// Create an instance from base address.
+    ///
     /// # Safety
     ///
     /// User must ensure the base_register_vaddr is read from DRHD
     unsafe fn new(base_register_vaddr: Vaddr) -> Self {
-        let capability = Volatile::new_read_only(&*((base_register_vaddr + 0x08) as *const u64));
-        let length = ((capability.read() & Capability::NFR.bits()) >> 40) + 1;
+        let capability_reg =
+            Volatile::new_read_only(&*((base_register_vaddr + 0x08) as *const u64));
+        let capability = Capability::new(capability_reg.read());
+
+        let length = capability.fault_recording_number() + 1;
         let mut recordings = Vec::with_capacity(length as usize);
-        let offset = (capability.read() & 0x3_ff00_0000) >> 24;
+        let offset = capability.fault_recording_register_offset();
         for i in 0..length {
             recordings.push(Volatile::new(
                 &mut *((base_register_vaddr + 16 * (offset + i) as usize) as *mut u128),
@@ -196,6 +201,8 @@ bitflags! {
 
 pub(super) static FAULT_EVENT_REGS: Once<FaultEventRegisters> = Once::new();
 
+/// Initializes the fault reporting function.
+///
 /// # Safety
 ///
 /// User must ensure the base_register_vaddr is read from DRHD

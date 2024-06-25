@@ -14,8 +14,11 @@ use spin::Once;
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    arch::x86::kernel::acpi::ACPI_TABLES, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine, Error,
-    Result,
+    arch::{iommu::has_interrupt_remapping, x86::kernel::acpi::ACPI_TABLES},
+    mm::paddr_to_vaddr,
+    sync::SpinLock,
+    trap::IrqLine,
+    Error, Result,
 };
 
 /// I/O Advanced Programmable Interrupt Controller. It is used to distribute external interrupts
@@ -43,6 +46,24 @@ impl IoApic {
         if value.get_bits(0..8) as u8 != 0 {
             return Err(Error::AccessDenied);
         }
+
+        if has_interrupt_remapping() {
+            let mut handle = irq.inner_irq().bind_remapping_entry().unwrap().lock();
+            // Enable irt entry
+            let irt_entry_mut = handle.irt_entry_mut().unwrap();
+            irt_entry_mut.enable_default(irq.num() as u32);
+
+            let low = irq.num() as u32 | ((handle.index() & 0x8000) >> 4) as u32;
+            let high = (handle.index() as u32 & 0x7FFF) << 17 | 0x1_0000;
+            self.access.write(Self::TABLE_REG_BASE + 2 * index, low);
+            self.access
+                .write(Self::TABLE_REG_BASE + 2 * index + 1, high);
+
+            drop(handle);
+            self.irqs.push(irq);
+            return Ok(());
+        }
+
         self.access
             .write(Self::TABLE_REG_BASE + 2 * index, irq.num() as u32);
         self.access.write(Self::TABLE_REG_BASE + 2 * index + 1, 0);
