@@ -202,7 +202,6 @@ impl DynPage {
     ///
     /// A physical address to the page is returned in case the page needs to be
     /// restored using [`Self::from_raw`] later.
-    #[allow(unused)]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         let paddr = self.paddr();
         core::mem::forget(self);
