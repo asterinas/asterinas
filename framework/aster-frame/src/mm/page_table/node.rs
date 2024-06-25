@@ -382,10 +382,10 @@ where
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         debug_assert_eq!(page.level(), self.level());
 
-        let pte = Some(E::new_page(page.paddr(), self.level(), prop));
+        // Use the physical address rather than the page handle to track
+        // the page, and record the physical address in the PTE.
+        let pte = Some(E::new_page(page.into_raw(), self.level(), prop));
         self.overwrite_pte(idx, pte, true);
-        // The ownership is transferred to a raw PTE. Don't drop the handle.
-        let _ = ManuallyDrop::new(page);
     }
 
     /// Sets an untracked child page at a given index.
