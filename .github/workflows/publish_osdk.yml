@@ -1,15 +1,16 @@
 name: Publish OSDK
 
 on:
-  pull_request:
-    paths:
-      - VERSION
-      - osdk/Cargo.toml
-  push:
-    branches:
-      - main
-    paths: 
-      - VERSION
+  workflow_call:
+    inputs:
+      publish:
+        description: 'Whether to upload doc to online website'
+        required: true
+        type: 'boolean'
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: false
+  workflow_dispatch:
 
 jobs:
   osdk-publish:
@@ -21,14 +22,14 @@ jobs:
 
       - name: Check Publish
         # On pull request, set `--dry-run` to check whether OSDK can publish
-        if: github.event_name == 'pull_request'
+        if: ${{ !inputs.publish }}
         run: |
           cd osdk
           cargo publish --dry-run
         
       - name: Publish
         # On push, OSDK will be published
-        if: github.event_name == 'push'
+        if: ${{ inputs.publish }}
         env:
           REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
