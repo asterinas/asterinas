@@ -1,0 +1,76 @@
+# CI will be triggered when the code be merged into main branch.
+
+name: Push CI
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  check_changed_files:
+    runs-on: ubuntu-latest
+    outputs:
+      version_changed: ${{ steps.echo_results.outputs.version_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check Whether VERSION Changes
+        id: changed-version
+        uses: tj-actions/changed-files@v44
+        with:
+          files: VERSION
+
+      - name: Echo Results
+        id: echo_results
+        env:
+          VERSION_CHANGED: ${{ steps.changed-version.outputs.any_changed }}
+        run: |
+          echo "VERSION changed: $VERSION_CHANGED"
+          echo "version_changed=$VERSION_CHANGED" >> "$GITHUB_OUTPUT"
+
+  docker_push:
+    needs: check_changed_files
+    uses: ./.github/workflows/publish_docker_images.yml
+    with:
+      build: ${{ needs.check_changed_files.outputs.version_changed == 'true' }}
+      push: ${{ needs.check_changed_files.outputs.version_changed == 'true' }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  kernel_test:
+    needs: [docker_push]
+    uses: ./.github/workflows/test_asterinas.yml
+
+  osdk_test:
+    needs: [docker_push]
+    uses: ./.github/workflows/test_osdk.yml
+
+  update_website:
+    needs: [kernel_test, osdk_test]
+    uses: ./.github/workflows/publish_website.yml
+    with:
+      deploy: true
+    secrets:
+      BOOK_PUBLISH_KEY: ${{ secrets.BOOK_PUBLISH_KEY }}
+
+  release_tag:
+    needs: [kernel_test, osdk_test]
+    if: ${{ needs.check_changed_files.outputs.version_changed == 'true' }}
+    uses: ./.github/workflows/push_git_tag.yml
+
+  publish_osdk_and_ostd:
+    needs: [kernel_test, osdk_test]
+    uses: ./.github/workflows/publish_osdk_and_ostd.yml
+    with:
+      publish: true
+    # FIXME: Github allows inherit secrets from caller workflow,
+    # with a simple `secrets: inherit`.
+    # But this syntax is only supported for organization account
+    # Ref: <https://docs.github.com/en/actions/using-workflows/reusing-workflows#passing-inputs-and-secrets-to-a-reusable-workflow>
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

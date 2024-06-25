@@ -1,6 +1,7 @@
 name: Test Asterinas Vsock
 
 on:
+  workflow_call:
   workflow_dispatch:
 
 jobs:

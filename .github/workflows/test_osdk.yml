@@ -1,15 +1,14 @@
 name: Test OSDK
 
 on:
-  pull_request:
-    paths:
-      - osdk/**
-      - ostd/**
-      - tools/**
-      - Cargo.toml
-  push:
-    branches:
-      - main
+  workflow_call:
+    inputs:
+      skip: 
+        description: 'Whether to skip osdk test'
+        required: false
+        default: false
+        type: 'boolean'
+  workflow_dispatch:
 
 jobs:
   osdk-test:
@@ -17,18 +16,23 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        # asterinas/asterinas:0.6.2 container is the developing container of asterinas,
-        # asterinas/osdk:0.6.2 container is built with the intructions from Asterinas Book
-        container: ['asterinas/asterinas:0.6.2', 'asterinas/osdk:0.6.2']
-    container: ${{ matrix.container }}
+        # asterinas/asterinas container is the developing container of asterinas,
+        # asterinas/osdk container is built with the intructions from Asterinas Book
+        container: ['asterinas/asterinas', 'asterinas/osdk']
+    # GitHub status check requires `osdk_test / osdk-test (asterinas/asterinas)` 
+    # and `osdk_test / osdk-test (asterinas/osdk)` to be run successfully,
+    # so we can't skip the whole osdk-test job, 
+    # otherwise the two jobs on matrix values will not even be generated.
+    # ubuntu:22.04 is a randomly-chosen image which will be used to run echo.
+    container: ${{ !inputs.skip && format('{0}:0.2.0', matrix.container) || 'ubuntu:22.04' }}
     steps:
-      - run: echo "Running in ${{ matrix.container }}"
+      - run: echo "Running in ${{ !inputs.skip && format('{0}:0.2.0', matrix.container) || 'ubuntu:22.04' }}"
 
       - uses: actions/checkout@v4
 
       - name: Lint
         id: lint
-        if: matrix.container == 'asterinas/asterinas:0.6.2'
+        if: ${{ matrix.container == 'asterinas/asterinas' && !inputs.skip }}
         run: make check_osdk
 
       # Github's actions/checkout@v4 will result in a new user (not root) 
@@ -38,6 +42,7 @@ jobs:
       # since the OSDK toolchain is not nightly.
       - name: Unit test
         id: unit_test
+        if: ${{ !inputs.skip }}
         run: |
           cd osdk
           RUSTUP_HOME=/root/.rustup cargo +stable build

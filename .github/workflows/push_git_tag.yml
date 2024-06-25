@@ -3,11 +3,8 @@
 name: Push release tag
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - VERSION
+  workflow_dispatch:
+  workflow_call:
 
 jobs:
   tag_main_branch:
