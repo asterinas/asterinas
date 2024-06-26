@@ -50,7 +50,7 @@ jobs:
       - name: Generate Dockerfile for Intel TDX
         run: |
           pip install Jinja2
-          python3 ./tools/docker/gen_dockerfile.py
+          python3 ./tools/docker/gen_dockerfile.py --intel-tdx
 
       - name: Build and push development image for Intel TDX
         uses: docker/build-push-action@v4

@@ -16,9 +16,17 @@ RUN apt update && apt-get install -y --no-install-recommends \
     git-core \ 
     gnupg \ 
     libssl-dev \ 
+    jq \
     python3-pip \ 
     python-is-python3 \ 
     wget
+
+#= Download dependency =====================================================
+
+WORKDIR /root/dependency
+RUN wget https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so -O vdso64.so
+RUN wget https://raw.githubusercontent.com/asterinas/linux_kernel/9e66d28/vmlinuz-5.15.0-105-generic \
+        -O vmlinuz
 
 #= Build benchmark =========================================================
 
