@@ -2,6 +2,7 @@
 
 # Global options.
 ARCH ?= x86_64
+BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2
 BUILD_SYSCALL_TEST ?= 0
@@ -37,6 +38,11 @@ CARGO_OSDK_ARGS += --init-args="/regression/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
 export VSOCK=1
 CARGO_OSDK_ARGS += --init-args="/regression/run_vsock_test.sh"
+endif
+
+# If the BENCHMARK is set, we will run the benchmark in the kernel mode.
+ifneq ($(BENCHMARK), none)
+CARGO_OSDK_ARGS += --init-args="/benchmark/$(BENCHMARK)/run.sh"
 endif
 
 ifeq ($(RELEASE_LTO), 1)

@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: MPL-2.0
 
+VDSO_DIR := /root/dependency
+VDSO_LIB := $(VDSO_DIR)/vdso64.so
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
-VDSO_DIR := $(BUILD_DIR)/linux_vdso
 INITRAMFS := $(BUILD_DIR)/initramfs
+BENCHMARK_ENTRYPOINT := $(CUR_DIR)/benchmark/benchmark_entrypoint.sh
 INITRAMFS_FILELIST := $(BUILD_DIR)/initramfs.filelist
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
@@ -32,7 +34,7 @@ SYSCALL_TEST_DIR := $(INITRAMFS)/opt/syscall_test
 .PHONY: all
 all: build
 
-$(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_DIR)
+$(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@mkdir -p $@
 	@cp -L /lib/x86_64-linux-gnu/libc.so.6 $@
 	@cp -L /lib/x86_64-linux-gnu/libstdc++.so.6 $@
@@ -45,14 +47,15 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_DIR)
 	@cp -L /lib/x86_64-linux-gnu/libdl.so.2 $@
 	@cp -L /lib/x86_64-linux-gnu/libz.so.1 $@
 	@cp -L /usr/local/benchmark/iperf/lib/libiperf.so.0 $@
-	@cp -L $(VDSO_DIR)/vdso64.so $@
+	@cp -L $(VDSO_LIB) $@
+
+$(VDSO_LIB): | $(VDSO_DIR)
+	@# TODO: use a custom compiled vdso.so file in the future.
+	@wget https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so -O $@ 
 
 $(VDSO_DIR):
-	@# TODO: use a custom compiled vdso.so file in the future.
-	@rm -rf $@ && mkdir -p $@
-	@cd $@ && git clone https://github.com/asterinas/linux_vdso.git .
-	@cd $@ && git checkout 2a6d2db 2>/dev/null
-
+	@mkdir -p $@
+	
 $(INITRAMFS)/lib64:
 	@mkdir -p $@
 	@cp -L /lib64/ld-linux-x86-64.so.2 $@
@@ -75,11 +78,19 @@ $(INITRAMFS)/usr/bin: | $(INITRAMFS)/bin
 $(INITRAMFS)/regression:
 	@make --no-print-directory -C apps
 
-$(INITRAMFS)/benchmark:
+$(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin
+	@cp -rf $(CUR_DIR)/benchmark/* $@
+	@if [ -e $(BENCHMARK_ENTRYPOINT) ]; then \
+		cp $(BENCHMARK_ENTRYPOINT) $@; \
+	fi
+
+$(INITRAMFS)/benchmark/bin:
 	@mkdir -p $@
 	@cp /usr/local/benchmark/sysbench/bin/sysbench $@
 	@cp /usr/local/benchmark/iperf/bin/iperf3 $@
 	@cp /usr/local/benchmark/membench/membench $@
+	@# Replace the homebrewed getpid with a standard benchmark like UnixBench or LMbench.
+	@gcc -O2 $(CUR_DIR)/apps/getpid/getpid.c -o $@/getpid
 
 # Make necessary directories.
 $(INITRAMFS_EMPTY_DIRS):

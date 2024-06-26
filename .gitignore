@@ -21,3 +21,6 @@ virtio-net.pcap
 # vscode launch config file
 .vscode/launch.json
 .vscode/launch.bak
+
+# benchmark results
+/result_*.json
