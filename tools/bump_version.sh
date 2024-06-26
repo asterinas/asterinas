@@ -85,6 +85,7 @@ validate_bump_type() {
         exit 1
         ;;
     esac
+}
 
 # Update tag version (`v{version}`) in file $1
 update_tag_version() {
