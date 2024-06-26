@@ -1,0 +1,1029 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="390" onload="init(evt)" viewBox="0 0 1200 390" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="390.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="373" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="ignorecase" x="1174.00" y="24" >ic</text>
+<text id="matched" x="1090.00" y="373" > </text>
+<g id="frames">
+<g >
+<title>alloc::raw_vec::finish_grow (32 samples, 0.06%)</title><rect x="1105.0" y="165" width="0.6" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="1107.98" y="175.5" ></text>
+</g>
+<g >
+<title>::alloc (264 samples, 0.47%)</title><rect x="948.8" y="181" width="5.5" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="951.80" y="191.5" ></text>
+</g>
+<g >
+<title>xarray::entry::XEntry::as_node_mut_or_cow (2,800 samples, 4.95%)</title><rect x="1045.8" y="133" width="58.5" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="1048.85" y="143.5" >xarray..</text>
+</g>
+<g >
+<title>aster_frame::task::task::TaskOptions::data (8 samples, 0.01%)</title><rect x="882.9" y="181" width="0.2" height="15.0" fill="rgb(212,33,7)" rx="2" ry="2" />
+<text  x="885.94" y="191.5" ></text>
+</g>
+<g >
+<title>aster_nix::time::core::timer::Timer::set_timeout::{{closure}} (64 samples, 0.11%)</title><rect x="10.0" y="229" width="1.3" height="15.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="13.00" y="239.5" ></text>
+</g>
+<g >
+<title>aster_frame::sync::wait::Waiter::new_pair (32 samples, 0.06%)</title><rect x="1105.6" y="213" width="0.7" height="15.0" fill="rgb(253,221,53)" rx="2" ry="2" />
+<text  x="1108.65" y="223.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::signal::sig_queues::SigQueues::new (1,552 samples, 2.75%)</title><rect x="723.4" y="213" width="32.4" height="15.0" fill="rgb(221,75,18)" rx="2" ry="2" />
+<text  x="726.44" y="223.5" >as..</text>
+</g>
+<g >
+<title>::alloc (3,304 samples, 5.85%)</title><rect x="610.7" y="229" width="69.0" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="613.69" y="239.5" >::alloc</text>
+</g>
+<g >
+<title>alloc::raw_vec::RawVec::grow_one (32 samples, 0.06%)</title><rect x="857.4" y="213" width="0.7" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="860.39" y="223.5" ></text>
+</g>
+<g >
+<title>aster_nix::time::clocks::cpu_clock::ProfClock::new (112 samples, 0.20%)</title><rect x="891.1" y="197" width="2.4" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="894.13" y="207.5" ></text>
+</g>
+<g >
+<title>aster_frame::task::task::TaskOptions::build (232 samples, 0.41%)</title><rect x="878.1" y="181" width="4.8" height="15.0" fill="rgb(249,206,49)" rx="2" ry="2" />
+<text  x="881.10" y="191.5" ></text>
+</g>
+<g >
+<title>::alloc (28,672 samples, 50.73%)</title><rect x="12.0" y="181" width="598.7" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="15.00" y="191.5" >::alloc</text>
+</g>
+<g >
+<title>alloc::raw_vec::RawVec::grow_one (32 samples, 0.06%)</title><rect x="1105.0" y="181" width="0.6" height="15.0" fill="rgb(233,130,31)" rx="2" ry="2" />
+<text  x="1107.98" y="191.5" ></text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (400 samples, 0.71%)</title><rect x="848.6" y="85" width="8.3" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="851.55" y="95.5" ></text>
+</g>
+<g >
+<title>::alloc (8 samples, 0.01%)</title><rect x="882.9" y="165" width="0.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="885.94" y="175.5" ></text>
+</g>
+<g >
+<title>alloc::collections::vec_deque::VecDeque::grow (32 samples, 0.06%)</title><rect x="1105.0" y="197" width="0.6" height="15.0" fill="rgb(225,96,23)" rx="2" ry="2" />
+<text  x="1107.98" y="207.5" ></text>
+</g>
+<g >
+<title>aster_nix::syscall::wait4::sys_wait4 (376 samples, 0.67%)</title><rect x="1104.3" y="261" width="7.9" height="15.0" fill="rgb(252,217,51)" rx="2" ry="2" />
+<text  x="1107.31" y="271.5" ></text>
+</g>
+<g >
+<title>all (56,514 samples, 100%)</title><rect x="10.0" y="341" width="1180.0" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="351.5" ></text>
+</g>
+<g >
+<title>aster_nix::thread::task::create_new_user_task::user_task_entry (56,418 samples, 99.83%)</title><rect x="12.0" y="309" width="1178.0" height="15.0" fill="rgb(205,1,0)" rx="2" ry="2" />
+<text  x="15.00" y="319.5" >aster_nix::thread::task::create_new_user_task::user_task_entry</text>
+</g>
+<g >
+<title>::alloc (112 samples, 0.20%)</title><rect x="946.5" y="181" width="2.3" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="949.46" y="191.5" ></text>
+</g>
+<g >
+<title>alloc::collections::btree::node::Handle::insert_recursing (400 samples, 0.71%)</title><rect x="848.6" y="69" width="8.3" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="851.55" y="79.5" ></text>
+</g>
+<g >
+<title>alloc::collections::btree::node::Handle::insert_recursing (4,440 samples, 7.86%)</title><rect x="755.8" y="117" width="92.8" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="758.85" y="127.5" >alloc::coll..</text>
+</g>
+<g >
+<title>xarray::entry::XEntry::as_node_mut_or_cow (1,120 samples, 1.98%)</title><rect x="1166.6" y="181" width="23.4" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="1169.61" y="191.5" >x..</text>
+</g>
+<g >
+<title>::alloc (56 samples, 0.10%)</title><rect x="705.4" y="197" width="1.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="708.40" y="207.5" ></text>
+</g>
+<g >
+<title>xarray::cursor::CursorMut::exclusively_traverse_to_target (1,120 samples, 1.98%)</title><rect x="1166.6" y="197" width="23.4" height="15.0" fill="rgb(248,201,48)" rx="2" ry="2" />
+<text  x="1169.61" y="207.5" >x..</text>
+</g>
+<g >
+<title>::alloc (200 samples, 0.35%)</title><rect x="878.1" y="165" width="4.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="881.10" y="175.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::wait::wait_child_exit (376 samples, 0.67%)</title><rect x="1104.3" y="245" width="7.9" height="15.0" fill="rgb(213,38,9)" rx="2" ry="2" />
+<text  x="1107.31" y="255.5" ></text>
+</g>
+<g >
+<title>::alloc (1,552 samples, 2.75%)</title><rect x="723.4" y="197" width="32.4" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="726.44" y="207.5" >::..</text>
+</g>
+<g >
+<title>aster_frame::sync::wait::WaitQueue::enqueue (32 samples, 0.06%)</title><rect x="1105.0" y="213" width="0.6" height="15.0" fill="rgb(253,221,52)" rx="2" ry="2" />
+<text  x="1107.98" y="223.5" ></text>
+</g>
+<g >
+<title>::alloc (200 samples, 0.35%)</title><rect x="848.6" y="53" width="4.1" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="851.55" y="63.5" ></text>
+</g>
+<g >
+<title>::alloc (416 samples, 0.74%)</title><rect x="1112.2" y="229" width="8.6" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1115.16" y="239.5" ></text>
+</g>
+<g >
+<title>aster_nix::thread::exception::handle_exception (3,728 samples, 6.60%)</title><rect x="1112.2" y="293" width="77.8" height="15.0" fill="rgb(231,123,29)" rx="2" ry="2" />
+<text  x="1115.16" y="303.5" >aster_ni..</text>
+</g>
+<g >
+<title>aster_nix::vm::vmar::vm_mapping::VmMapping::write_bytes (664 samples, 1.17%)</title><rect x="706.6" y="197" width="13.8" height="15.0" fill="rgb(230,115,27)" rx="2" ry="2" />
+<text  x="709.57" y="207.5" ></text>
+</g>
+<g >
+<title>aster_frame::trap::softirq::process_pending (64 samples, 0.11%)</title><rect x="10.0" y="293" width="1.3" height="15.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="13.00" y="303.5" ></text>
+</g>
+<g >
+<title>aster_nix::thread::work_queue::work_item::WorkItem::new (8 samples, 0.01%)</title><rect x="946.3" y="197" width="0.2" height="15.0" fill="rgb(247,197,47)" rx="2" ry="2" />
+<text  x="949.29" y="207.5" ></text>
+</g>
+<g >
+<title>aster_frame::task::processor::switch_to_task (4,840 samples, 8.56%)</title><rect x="755.8" y="213" width="101.1" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="758.85" y="223.5" >aster_frame:..</text>
+</g>
+<g >
+<title>aster_nix::time::clocks::cpu_clock::ProfClock::new (112 samples, 0.20%)</title><rect x="946.5" y="197" width="2.3" height="15.0" fill="rgb(212,34,8)" rx="2" ry="2" />
+<text  x="949.46" y="207.5" ></text>
+</g>
+<g >
+<title>aster_frame::cpu::CpuLocal::borrow_with (4,840 samples, 8.56%)</title><rect x="755.8" y="197" width="101.1" height="15.0" fill="rgb(222,79,18)" rx="2" ry="2" />
+<text  x="758.85" y="207.5" >aster_frame:..</text>
+</g>
+<g >
+<title>aster_nix::process::process::Process::run (4,840 samples, 8.56%)</title><rect x="755.8" y="229" width="101.1" height="15.0" fill="rgb(220,70,16)" rx="2" ry="2" />
+<text  x="758.85" y="239.5" >aster_nix::p..</text>
+</g>
+<g >
+<title>aster_nix::syscall::handle_syscall (52,690 samples, 93.23%)</title><rect x="12.0" y="293" width="1100.2" height="15.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="15.00" y="303.5" >aster_nix::syscall::handle_syscall</text>
+</g>
+<g >
+<title>::alloc (560 samples, 0.99%)</title><rect x="708.7" y="85" width="11.7" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="711.74" y="95.5" ></text>
+</g>
+<g >
+<title>::alloc (280 samples, 0.50%)</title><rect x="1106.3" y="181" width="5.9" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1109.31" y="191.5" ></text>
+</g>
+<g >
+<title>aster_frame::cpu::CpuLocal::borrow_with (64 samples, 0.11%)</title><rect x="10.0" y="277" width="1.3" height="15.0" fill="rgb(222,79,18)" rx="2" ry="2" />
+<text  x="13.00" y="287.5" ></text>
+</g>
+<g >
+<title>aster_nix::time::core::timer::Timer::set_timeout (64 samples, 0.11%)</title><rect x="10.0" y="213" width="1.3" height="15.0" fill="rgb(252,217,52)" rx="2" ry="2" />
+<text  x="13.00" y="223.5" ></text>
+</g>
+<g >
+<title>aster_nix::syscall::clone::sys_clone (23,641 samples, 41.83%)</title><rect x="610.7" y="261" width="493.6" height="15.0" fill="rgb(235,140,33)" rx="2" ry="2" />
+<text  x="613.69" y="271.5" >aster_nix::syscall::clone::sys_clone</text>
+</g>
+<g >
+<title>aster_nix::process::posix_thread::futex::futex_wake_bitset (28,672 samples, 50.73%)</title><rect x="12.0" y="229" width="598.7" height="15.0" fill="rgb(237,149,35)" rx="2" ry="2" />
+<text  x="15.00" y="239.5" >aster_nix::process::posix_thread::futex::futex_wake_bitset</text>
+</g>
+<g >
+<title>aster_nix::vm::vmo::Vmo_::commit_page (2,800 samples, 4.95%)</title><rect x="1131.5" y="245" width="58.5" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1134.54" y="255.5" >aster_..</text>
+</g>
+<g >
+<title>alloc::collections::btree::node::Handle::insert_recursing (384 samples, 0.68%)</title><rect x="883.1" y="165" width="8.0" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="886.11" y="175.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::process::builder::ProcessBuilder::build (4,665 samples, 8.25%)</title><rect x="856.9" y="229" width="97.4" height="15.0" fill="rgb(220,70,16)" rx="2" ry="2" />
+<text  x="859.90" y="239.5" >aster_nix::..</text>
+</g>
+<g >
+<title>::alloc (32 samples, 0.06%)</title><rect x="882.3" y="133" width="0.6" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="885.27" y="143.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::posix_thread::exit::do_exit (28,672 samples, 50.73%)</title><rect x="12.0" y="245" width="598.7" height="15.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="15.00" y="255.5" >aster_nix::process::posix_thread::exit::do_exit</text>
+</g>
+<g >
+<title>alloc::sync::Arc::drop_slow (4,840 samples, 8.56%)</title><rect x="755.8" y="165" width="101.1" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="758.85" y="175.5" >alloc::sync:..</text>
+</g>
+<g >
+<title>::alloc (472 samples, 0.84%)</title><rect x="995.6" y="197" width="9.8" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="998.57" y="207.5" ></text>
+</g>
+<g >
+<title>::alloc (512 samples, 0.91%)</title><rect x="1120.8" y="165" width="10.7" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1123.85" y="175.5" ></text>
+</g>
+<g >
+<title>aster_frame::sync::wait::WaitQueue::wait_until (32 samples, 0.06%)</title><rect x="11.3" y="277" width="0.7" height="15.0" fill="rgb(234,134,32)" rx="2" ry="2" />
+<text  x="14.34" y="287.5" ></text>
+</g>
+<g >
+<title>::alloc (32 samples, 0.06%)</title><rect x="11.3" y="245" width="0.7" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="14.34" y="255.5" ></text>
+</g>
+<g >
+<title>::drop (400 samples, 0.71%)</title><rect x="848.6" y="133" width="8.3" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="851.55" y="143.5" ></text>
+</g>
+<g >
+<title>core::ops::function::Fn::call (64 samples, 0.11%)</title><rect x="10.0" y="261" width="1.3" height="15.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="13.00" y="271.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmar::vm_mapping::VmMapping::handle_page_fault (664 samples, 1.17%)</title><rect x="706.6" y="181" width="13.8" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="709.57" y="191.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::clone::set_parent_and_group (144 samples, 0.25%)</title><rect x="720.4" y="229" width="3.0" height="15.0" fill="rgb(242,170,40)" rx="2" ry="2" />
+<text  x="723.43" y="239.5" ></text>
+</g>
+<g >
+<title>::alloc (32 samples, 0.06%)</title><rect x="1105.0" y="149" width="0.6" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1107.98" y="159.5" ></text>
+</g>
+<g >
+<title>::alloc (8 samples, 0.01%)</title><rect x="946.3" y="181" width="0.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="949.29" y="191.5" ></text>
+</g>
+<g >
+<title>::alloc (32 samples, 0.06%)</title><rect x="857.4" y="181" width="0.7" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="860.39" y="191.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::posix_thread::builder::PosixThreadBuilder::build (1,696 samples, 3.00%)</title><rect x="858.1" y="213" width="35.4" height="15.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="861.05" y="223.5" >ast..</text>
+</g>
+<g >
+<title>::alloc (952 samples, 1.68%)</title><rect x="858.1" y="197" width="19.8" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="861.05" y="207.5" ></text>
+</g>
+<g >
+<title>::alloc (8 samples, 0.01%)</title><rect x="877.9" y="181" width="0.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="880.93" y="191.5" ></text>
+</g>
+<g >
+<title>::drop (400 samples, 0.71%)</title><rect x="848.6" y="101" width="8.3" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="851.55" y="111.5" ></text>
+</g>
+<g >
+<title>aster_nix::syscall::arch::x86::syscall_dispatch (52,690 samples, 93.23%)</title><rect x="12.0" y="277" width="1100.2" height="15.0" fill="rgb(221,73,17)" rx="2" ry="2" />
+<text  x="15.00" y="287.5" >aster_nix::syscall::arch::x86::syscall_dispatch</text>
+</g>
+<g >
+<title>::alloc (1,232 samples, 2.18%)</title><rect x="679.7" y="213" width="25.7" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="682.68" y="223.5" >:..</text>
+</g>
+<g >
+<title>aster_nix::process::clone::clone_child (23,641 samples, 41.83%)</title><rect x="610.7" y="245" width="493.6" height="15.0" fill="rgb(243,178,42)" rx="2" ry="2" />
+<text  x="613.69" y="255.5" >aster_nix::process::clone::clone_child</text>
+</g>
+<g >
+<title>::clone::clone_subtree (56 samples, 0.10%)</title><rect x="705.4" y="213" width="1.2" height="15.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="708.40" y="223.5" ></text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (144 samples, 0.25%)</title><rect x="720.4" y="213" width="3.0" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="723.43" y="223.5" ></text>
+</g>
+<g >
+<title>alloc::collections::btree::node::Handle::split (144 samples, 0.25%)</title><rect x="888.1" y="149" width="3.0" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="891.12" y="159.5" ></text>
+</g>
+<g >
+<title>aster_nix::thread::task::create_new_user_task (248 samples, 0.44%)</title><rect x="877.9" y="197" width="5.2" height="15.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="880.93" y="207.5" ></text>
+</g>
+<g >
+<title>::alloc (2,800 samples, 4.95%)</title><rect x="1045.8" y="117" width="58.5" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1048.85" y="127.5" >::alloc</text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (104 samples, 0.18%)</title><rect x="706.6" y="165" width="2.1" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="709.57" y="175.5" ></text>
+</g>
+<g >
+<title> (64 samples, 0.11%)</title><rect x="10.0" y="325" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="335.5" ></text>
+</g>
+<g >
+<title>xarray::cursor::CursorMut::ensure_exclusive_before_modification (560 samples, 0.99%)</title><rect x="708.7" y="117" width="11.7" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="711.74" y="127.5" ></text>
+</g>
+<g >
+<title>::alloc (240 samples, 0.42%)</title><rect x="883.1" y="149" width="5.0" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="886.11" y="159.5" ></text>
+</g>
+<g >
+<title>::alloc (1,976 samples, 3.50%)</title><rect x="954.3" y="213" width="41.3" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="957.31" y="223.5" >::a..</text>
+</g>
+<g >
+<title>aster_frame::mm::page_table::cursor::CursorMut::unmap (512 samples, 0.91%)</title><rect x="1120.8" y="229" width="10.7" height="15.0" fill="rgb(245,184,44)" rx="2" ry="2" />
+<text  x="1123.85" y="239.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmo::Vmo_::clone_pages_for_child (3,240 samples, 5.73%)</title><rect x="1036.7" y="181" width="67.6" height="15.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1039.66" y="191.5" >aster_n..</text>
+</g>
+<g >
+<title>aster_nix::vm::vmo::Vmo_::commit_with_cursor (560 samples, 0.99%)</title><rect x="708.7" y="149" width="11.7" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="711.74" y="159.5" ></text>
+</g>
+<g >
+<title>xarray::entry::XEntry::as_node_mut_or_cow (1,680 samples, 2.97%)</title><rect x="1131.5" y="181" width="35.1" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="1134.54" y="191.5" >xa..</text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (4,440 samples, 7.86%)</title><rect x="755.8" y="133" width="92.8" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="758.85" y="143.5" >alloc::coll..</text>
+</g>
+<g >
+<title>::alloc (104 samples, 0.18%)</title><rect x="706.6" y="149" width="2.1" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="709.57" y="159.5" ></text>
+</g>
+<g >
+<title>::alloc (400 samples, 0.71%)</title><rect x="840.2" y="85" width="8.4" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="843.20" y="95.5" ></text>
+</g>
+<g >
+<title>::alloc (440 samples, 0.78%)</title><rect x="1036.7" y="165" width="9.1" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1039.66" y="175.5" ></text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (472 samples, 0.84%)</title><rect x="995.6" y="213" width="9.8" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="998.57" y="223.5" ></text>
+</g>
+<g >
+<title>xarray::entry::XEntry::as_node_mut_or_cow (560 samples, 0.99%)</title><rect x="708.7" y="101" width="11.7" height="15.0" fill="rgb(221,76,18)" rx="2" ry="2" />
+<text  x="711.74" y="111.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmo::options::VmoChildOptions::alloc (4,736 samples, 8.38%)</title><rect x="1005.4" y="213" width="98.9" height="15.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="1008.42" y="223.5" >aster_nix::..</text>
+</g>
+<g >
+<title>::alloc (144 samples, 0.25%)</title><rect x="720.4" y="197" width="3.0" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="723.43" y="207.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmar::Vmar_::handle_page_fault (3,728 samples, 6.60%)</title><rect x="1112.2" y="277" width="77.8" height="15.0" fill="rgb(209,21,5)" rx="2" ry="2" />
+<text  x="1115.16" y="287.5" >aster_ni..</text>
+</g>
+<g >
+<title>alloc::raw_vec::finish_grow (32 samples, 0.06%)</title><rect x="857.4" y="197" width="0.7" height="15.0" fill="rgb(244,182,43)" rx="2" ry="2" />
+<text  x="860.39" y="207.5" ></text>
+</g>
+<g >
+<title>::alloc (112 samples, 0.20%)</title><rect x="891.1" y="181" width="2.4" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="894.13" y="191.5" ></text>
+</g>
+<g >
+<title>::alloc (200 samples, 0.35%)</title><rect x="852.7" y="37" width="4.2" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="855.73" y="47.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmo::options::alloc_child_vmo_ (3,240 samples, 5.73%)</title><rect x="1036.7" y="197" width="67.6" height="15.0" fill="rgb(205,3,0)" rx="2" ry="2" />
+<text  x="1039.66" y="207.5" >aster_n..</text>
+</g>
+<g >
+<title>alloc::collections::btree::node::Handle::insert_recursing (512 samples, 0.91%)</title><rect x="1120.8" y="181" width="10.7" height="15.0" fill="rgb(246,191,45)" rx="2" ry="2" />
+<text  x="1123.85" y="191.5" ></text>
+</g>
+<g >
+<title>alloc::collections::btree::node::Handle::split (400 samples, 0.71%)</title><rect x="840.2" y="101" width="8.4" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="843.20" y="111.5" ></text>
+</g>
+<g >
+<title>aster_frame::mm::space::VmSpace::unmap (512 samples, 0.91%)</title><rect x="1120.8" y="245" width="10.7" height="15.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="1123.85" y="255.5" ></text>
+</g>
+<g >
+<title>alloc::sync::Arc::drop_slow (400 samples, 0.71%)</title><rect x="848.6" y="149" width="8.3" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="851.55" y="159.5" ></text>
+</g>
+<g >
+<title>::alloc (144 samples, 0.25%)</title><rect x="888.1" y="133" width="3.0" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="891.12" y="143.5" ></text>
+</g>
+<g >
+<title>::clone (1,288 samples, 2.28%)</title><rect x="679.7" y="229" width="26.9" height="15.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="682.68" y="239.5" >:..</text>
+</g>
+<g >
+<title>aster_nix::vm::vmo::Vmo_::commit_page (560 samples, 0.99%)</title><rect x="708.7" y="165" width="11.7" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="711.74" y="175.5" ></text>
+</g>
+<g >
+<title>::alloc (23 samples, 0.04%)</title><rect x="856.9" y="213" width="0.5" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="859.90" y="223.5" ></text>
+</g>
+<g >
+<title>xarray::xarray::XArray::unset_mark_all (2,800 samples, 4.95%)</title><rect x="1045.8" y="149" width="58.5" height="15.0" fill="rgb(211,29,7)" rx="2" ry="2" />
+<text  x="1048.85" y="159.5" >xarray..</text>
+</g>
+<g >
+<title>aster_nix::time::core::timer::TimerManager::create_timer (264 samples, 0.47%)</title><rect x="948.8" y="197" width="5.5" height="15.0" fill="rgb(210,25,6)" rx="2" ry="2" />
+<text  x="951.80" y="207.5" ></text>
+</g>
+<g >
+<title> (64 samples, 0.11%)</title><rect x="10.0" y="309" width="1.3" height="15.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="319.5" ></text>
+</g>
+<g >
+<title>::alloc (1,496 samples, 2.65%)</title><rect x="1005.4" y="197" width="31.3" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1008.42" y="207.5" >::..</text>
+</g>
+<g >
+<title>::alloc (1,120 samples, 1.98%)</title><rect x="1166.6" y="165" width="23.4" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1169.61" y="175.5" >:..</text>
+</g>
+<g >
+<title>aster_frame::task::task::TaskOptions::build::kernel_task_entry (56,450 samples, 99.89%)</title><rect x="11.3" y="325" width="1178.7" height="15.0" fill="rgb(241,170,40)" rx="2" ry="2" />
+<text  x="14.34" y="335.5" >aster_frame::task::task::TaskOptions::build::kernel_task_entry</text>
+</g>
+<g >
+<title>aster_nix::process::signal::pauser::Pauser::do_pause (376 samples, 0.67%)</title><rect x="1104.3" y="229" width="7.9" height="15.0" fill="rgb(208,16,3)" rx="2" ry="2" />
+<text  x="1107.31" y="239.5" ></text>
+</g>
+<g >
+<title>::alloc (32 samples, 0.06%)</title><rect x="1105.6" y="197" width="0.7" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1108.65" y="207.5" ></text>
+</g>
+<g >
+<title>aster_nix::thread::work_queue::worker::Worker::new::{{closure}}::{{closure}} (32 samples, 0.06%)</title><rect x="11.3" y="293" width="0.7" height="15.0" fill="rgb(254,229,54)" rx="2" ry="2" />
+<text  x="14.34" y="303.5" ></text>
+</g>
+<g >
+<title>aster_frame::mm::page::allocator::alloc_contiguous (32 samples, 0.06%)</title><rect x="882.3" y="165" width="0.6" height="15.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="885.27" y="175.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmo::Vmo_::commit_with_cursor (2,800 samples, 4.95%)</title><rect x="1131.5" y="229" width="58.5" height="15.0" fill="rgb(224,88,21)" rx="2" ry="2" />
+<text  x="1134.54" y="239.5" >aster_..</text>
+</g>
+<g >
+<title>::alloc (32 samples, 0.06%)</title><rect x="1104.3" y="213" width="0.7" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1107.31" y="223.5" ></text>
+</g>
+<g >
+<title>::drop (4,440 samples, 7.86%)</title><rect x="755.8" y="149" width="92.8" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="758.85" y="159.5" >::drop</text>
+</g>
+<g >
+<title>aster_nix::vm::vmar::Vmar_::new_fork (7,184 samples, 12.71%)</title><rect x="954.3" y="229" width="150.0" height="15.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="957.31" y="239.5" >aster_nix::vm::vmar..</text>
+</g>
+<g >
+<title>::alloc (1,680 samples, 2.97%)</title><rect x="1131.5" y="165" width="35.1" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="1134.54" y="175.5" >::..</text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (384 samples, 0.68%)</title><rect x="883.1" y="181" width="8.0" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="886.11" y="191.5" ></text>
+</g>
+<g >
+<title>spin::once::Once::try_call_once_slow (28,672 samples, 50.73%)</title><rect x="12.0" y="213" width="598.7" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="15.00" y="223.5" >spin::once::Once::try_call_once_slow</text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (416 samples, 0.74%)</title><rect x="1112.2" y="245" width="8.6" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="1115.16" y="255.5" ></text>
+</g>
+<g >
+<title>aster_frame::sync::wait::Waiter::new_pair (32 samples, 0.06%)</title><rect x="11.3" y="261" width="0.7" height="15.0" fill="rgb(253,221,53)" rx="2" ry="2" />
+<text  x="14.34" y="271.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmo::Vmo_::clone_pages_for_child::{{closure}} (2,800 samples, 4.95%)</title><rect x="1045.8" y="165" width="58.5" height="15.0" fill="rgb(230,116,27)" rx="2" ry="2" />
+<text  x="1048.85" y="175.5" >aster_..</text>
+</g>
+<g >
+<title>alloc::sync::Arc::drop_slow (4,840 samples, 8.56%)</title><rect x="755.8" y="181" width="101.1" height="15.0" fill="rgb(253,223,53)" rx="2" ry="2" />
+<text  x="758.85" y="191.5" >alloc::sync:..</text>
+</g>
+<g >
+<title>aster_nix::thread::thread_table::add_thread (384 samples, 0.68%)</title><rect x="883.1" y="197" width="8.0" height="15.0" fill="rgb(226,101,24)" rx="2" ry="2" />
+<text  x="886.11" y="207.5" ></text>
+</g>
+<g >
+<title>::alloc (64 samples, 0.11%)</title><rect x="10.0" y="197" width="1.3" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="13.00" y="207.5" ></text>
+</g>
+<g >
+<title>aster_nix::time::core::timer::TimerManager::process_expired_timers (64 samples, 0.11%)</title><rect x="10.0" y="245" width="1.3" height="15.0" fill="rgb(241,168,40)" rx="2" ry="2" />
+<text  x="13.00" y="255.5" ></text>
+</g>
+<g >
+<title>xarray::cursor::CursorMut::store (560 samples, 0.99%)</title><rect x="708.7" y="133" width="11.7" height="15.0" fill="rgb(232,125,30)" rx="2" ry="2" />
+<text  x="711.74" y="143.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::clone::clone_child_settid (664 samples, 1.17%)</title><rect x="706.6" y="229" width="13.8" height="15.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="709.57" y="239.5" ></text>
+</g>
+<g >
+<title>xarray::cursor::CursorMut::ensure_exclusive_before_modification (1,680 samples, 2.97%)</title><rect x="1131.5" y="197" width="35.1" height="15.0" fill="rgb(227,105,25)" rx="2" ry="2" />
+<text  x="1134.54" y="207.5" >xa..</text>
+</g>
+<g >
+<title>aster_nix::process::posix_thread::builder::PosixThreadBuilder::new (1,552 samples, 2.75%)</title><rect x="723.4" y="229" width="32.4" height="15.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="726.44" y="239.5" >as..</text>
+</g>
+<g >
+<title>aster_nix::process::posix_thread::futex::FutexBucketVec::new (28,672 samples, 50.73%)</title><rect x="12.0" y="197" width="598.7" height="15.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="15.00" y="207.5" >aster_nix::process::posix_thread::futex::FutexBucketVec::new</text>
+</g>
+<g >
+<title>aster_frame::mm::page_table::node::PageTableNode::overwrite_pte (512 samples, 0.91%)</title><rect x="1120.8" y="213" width="10.7" height="15.0" fill="rgb(216,52,12)" rx="2" ry="2" />
+<text  x="1123.85" y="223.5" ></text>
+</g>
+<g >
+<title>alloc::collections::btree::node::Handle::split (200 samples, 0.35%)</title><rect x="852.7" y="53" width="4.2" height="15.0" fill="rgb(206,6,1)" rx="2" ry="2" />
+<text  x="855.73" y="63.5" ></text>
+</g>
+<g >
+<title>::alloc (2,530 samples, 4.48%)</title><rect x="893.5" y="197" width="52.8" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="896.47" y="207.5" >::alloc</text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (280 samples, 0.50%)</title><rect x="1106.3" y="197" width="5.9" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="1109.31" y="207.5" ></text>
+</g>
+<g >
+<title>xarray::cursor::CursorMut::store (2,800 samples, 4.95%)</title><rect x="1131.5" y="213" width="58.5" height="15.0" fill="rgb(232,125,30)" rx="2" ry="2" />
+<text  x="1134.54" y="223.5" >xarray..</text>
+</g>
+<g >
+<title>alloc::collections::btree::map::BTreeMap::insert (512 samples, 0.91%)</title><rect x="1120.8" y="197" width="10.7" height="15.0" fill="rgb(240,163,38)" rx="2" ry="2" />
+<text  x="1123.85" y="207.5" ></text>
+</g>
+<g >
+<title>::alloc (4,040 samples, 7.15%)</title><rect x="755.8" y="101" width="84.4" height="15.0" fill="rgb(235,141,33)" rx="2" ry="2" />
+<text  x="758.85" y="111.5" >::alloc</text>
+</g>
+<g >
+<title>aster_nix::events::subject::Subject::register_observer (280 samples, 0.50%)</title><rect x="1106.3" y="213" width="5.9" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="1109.31" y="223.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::process::Process::new (2,914 samples, 5.16%)</title><rect x="893.5" y="213" width="60.8" height="15.0" fill="rgb(241,167,40)" rx="2" ry="2" />
+<text  x="896.47" y="223.5" >aster_..</text>
+</g>
+<g >
+<title>::new_kernel_thread::{{closure}} (32 samples, 0.06%)</title><rect x="11.3" y="309" width="0.7" height="15.0" fill="rgb(236,144,34)" rx="2" ry="2" />
+<text  x="14.34" y="319.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmar::vm_mapping::VmMapping::handle_page_fault (3,728 samples, 6.60%)</title><rect x="1112.2" y="261" width="77.8" height="15.0" fill="rgb(249,205,49)" rx="2" ry="2" />
+<text  x="1115.16" y="271.5" >aster_ni..</text>
+</g>
+<g >
+<title>::drop (400 samples, 0.71%)</title><rect x="848.6" y="117" width="8.3" height="15.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="851.55" y="127.5" ></text>
+</g>
+<g >
+<title>aster_nix::process::exit::do_exit_group (28,673 samples, 50.74%)</title><rect x="12.0" y="261" width="598.7" height="15.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="15.00" y="271.5" >aster_nix::process::exit::do_exit_group</text>
+</g>
+<g >
+<title>aster_frame::mm::frame::segment::Segment::new (32 samples, 0.06%)</title><rect x="882.3" y="149" width="0.6" height="15.0" fill="rgb(250,209,50)" rx="2" ry="2" />
+<text  x="885.27" y="159.5" ></text>
+</g>
+<g >
+<title>aster_nix::vm::vmar::Vmar_::write (664 samples, 1.17%)</title><rect x="706.6" y="213" width="13.8" height="15.0" fill="rgb(213,37,9)" rx="2" ry="2" />
+<text  x="709.57" y="223.5" ></text>
+</g>
+</g>
+</svg>

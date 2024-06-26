@@ -31,6 +31,7 @@ TEST_APPS := \
 	pthread \
 	pty \
 	signal_c \
+	spawn \
 	vsock \
 
 # The C head and source files of all the apps, excluding the downloaded mongoose files

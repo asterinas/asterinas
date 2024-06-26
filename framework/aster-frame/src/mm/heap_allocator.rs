@@ -63,13 +63,108 @@ impl<const ORDER: usize> LockedHeapWithRescue<ORDER> {
             .add_to_heap(start, start + size)
     }
 }
+mod heap_profile {
+    use alloc::{alloc::Layout, collections::BTreeMap};
+
+    use crate::sync::SpinLock;
+
+    #[derive(Debug)]
+    pub struct AllocRecord {
+        pub layout: Layout,
+        pub stack: [usize; 20],
+    }
+
+    impl AllocRecord {
+        #[inline(always)]
+        pub fn new(layout: Layout) -> Self {
+            use core::ffi::c_void;
+
+            use unwinding::abi::{
+                UnwindContext, UnwindReasonCode, _Unwind_Backtrace, _Unwind_GetIP,
+            };
+
+            struct StackData {
+                stack: [usize; 20],
+                stack_top: usize,
+            }
+
+            extern "C" fn callback(
+                unwind_ctx: &UnwindContext<'_>,
+                arg: *mut c_void,
+            ) -> UnwindReasonCode {
+                let data = unsafe { &mut *(arg as *mut StackData) };
+                let pc = _Unwind_GetIP(unwind_ctx);
+                if data.stack_top < data.stack.len() {
+                    data.stack[data.stack_top] = pc;
+                    data.stack_top += 1;
+                }
+                UnwindReasonCode::NO_REASON
+            }
+
+            let mut data = StackData {
+                stack: [0; 20],
+                stack_top: 0,
+            };
+            _Unwind_Backtrace(callback, &mut data as *mut _ as _);
+            let StackData { stack, stack_top: _ } = data;
+
+            Self { layout, stack }
+        }
+    }
+
+    static PROFILE_DATA: SpinLock<Option<BTreeMap<usize, AllocRecord>>> = SpinLock::new(None);
+
+    /// Start heap profiling.
+    pub fn start_heap_profile() {
+        crate::early_println!("[kern] start heap profile");
+        let old = PROFILE_DATA.lock().replace(BTreeMap::new());
+        assert!(old.is_none());
+    }
+
+    /// Stop heap profiling and return the result.
+    pub fn stop_heap_profile() -> BTreeMap<usize, AllocRecord> {
+        crate::early_println!("[kern] stop heap profile");
+        let result = PROFILE_DATA.lock().take().unwrap();
+        result
+    }
+
+    #[inline(always)]
+    pub(super) fn debug_profile(ptr: usize, layout: Layout) {
+        if let Some(mut guard) = PROFILE_DATA.try_lock() {
+            if let Some(profile_data) = guard.as_mut() {
+                let record = AllocRecord::new(layout);
+                profile_data.insert(ptr, record);
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub(super) fn debug_remove_profile(ptr: usize) {
+        if let Some(mut guard) = PROFILE_DATA.try_lock() {
+            if let Some(profile_data) = guard.as_mut() {
+                let _ = profile_data.remove(&ptr);
+            }
+        }
+    }
+}
+pub use heap_profile::{start_heap_profile, stop_heap_profile};
 
 unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let _guard = disable_local();
 
-        if let Ok(allocation) = self.heap.lock().alloc(layout) {
-            return allocation.as_ptr();
+        let alloc_result = {
+            let mut lock_guard = self.heap.lock();
+            if let Ok(allocation) = lock_guard.alloc(layout) {
+                Some(allocation.as_ptr())
+            } else {
+                None
+            }
+        };
+
+        if let Some(ptr) = alloc_result {
+            heap_profile::debug_profile(ptr as usize, layout);
+            return ptr;
         }
 
         // Avoid locking self.heap when calling rescue.
@@ -87,6 +182,7 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         debug_assert!(ptr as usize != 0);
+        heap_profile::debug_remove_profile(ptr as usize);
         self.heap
             .lock_irq_disabled()
             .dealloc(NonNull::new_unchecked(ptr), layout)
