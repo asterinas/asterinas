@@ -2,17 +2,17 @@
 
 use crate::{
     cli::DebugArgs,
-    commands::util::{bin_file_name, profile_name_adapter},
-    util::get_target_directory,
+    commands::util::bin_file_name,
+    util::{get_current_crate_info, get_target_directory},
 };
 use std::process::Command;
 
-pub fn execute_debug_command(profile: &str, args: &DebugArgs) {
+pub fn execute_debug_command(_profile: &str, args: &DebugArgs) {
     let remote = &args.remote;
 
     let file_path = get_target_directory()
-        .join("x86_64-unknown-none")
-        .join(profile_name_adapter(profile))
+        .join("osdk")
+        .join(get_current_crate_info().name)
         .join(bin_file_name());
     println!("Debugging {}", file_path.display());
 

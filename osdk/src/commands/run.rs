@@ -56,17 +56,17 @@ pub fn execute_run_command(config: &Config, gdb_server_args: &GdbServerArgs) {
         config.run.qemu.args = splitted.join(" ");
 
         // Ensure debug info added when debugging in the release profile.
-        if config.run.build.profile == "release" {
+        if config.run.build.profile.contains("release") {
             config
                 .run
                 .build
                 .override_configs
-                .push("profile.release.debug=true".to_owned());
+                .push(format!("profile.{}.debug=true", config.run.build.profile));
         }
     }
     let _vsc_launch_file = gdb_server_args.vsc_launch_file.then(|| {
         vsc::check_gdb_config(gdb_server_args);
-        let profile = super::util::profile_name_adapter(&config.build.profile);
+        let profile = super::util::profile_name_adapter(&config.run.build.profile);
         vsc::VscLaunchConfig::new(profile, &gdb_server_args.gdb_server_addr)
     });
 
@@ -124,7 +124,11 @@ mod gdb {
 }
 
 mod vsc {
-    use crate::{cli::GdbServerArgs, commands::util::bin_file_name, util::get_cargo_metadata};
+    use crate::{
+        cli::GdbServerArgs,
+        commands::util::bin_file_name,
+        util::{get_cargo_metadata, get_current_crate_info},
+    };
     use serde_json::{from_str, Value};
     use std::{
         fs::{read_to_string, write as write_file},
@@ -242,6 +246,7 @@ mod vsc {
     ) -> Result<(), std::io::Error> {
         let contents = include_str!("launch.json.template")
             .replace("#PROFILE#", profile)
+            .replace("#CRATE_NAME#", &get_current_crate_info().name)
             .replace("#BIN_NAME#", &bin_file_name())
             .replace(
                 "#ADDR_PORT#",
