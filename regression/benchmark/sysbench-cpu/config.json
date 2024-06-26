@@ -1,0 +1,5 @@
+{
+    "alert_threshold": "130%",
+    "pattern": "avg:",
+    "field": "NF"
+}

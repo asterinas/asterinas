@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average Syscall Latency on Linux",
+        "unit": "ns",
+        "value": 0,
+        "extra": "linux_avg"
+    },
+    {
+        "name": "Average Syscall Latency on Asterinas",
+        "unit": "ns",
+        "value": 0,
+        "extra": "aster_avg"
+    }
+]

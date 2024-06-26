@@ -1,0 +1,64 @@
+name: Benchmarks Test
+on:
+  # In case of manual trigger, use workflow_dispatch
+  workflow_dispatch:
+  schedule:
+    # Schedule to run on every day at 00:00 UTC (08:00 CST)
+    - cron: '0 0 * * *'
+
+jobs:
+  Benchmarks:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        benchmark: [sysbench-cpu, sysbench-thread, getpid]
+      fail-fast: false
+    timeout-minutes: 60
+    container: 
+      image: asterinas/asterinas:0.5.1
+      options: --device=/dev/kvm
+    env:
+      # Need to set up proxy since the self-hosted CI server is located in China,
+      # which has poor network connection to the official Rust crate repositories.
+      RUSTUP_DIST_SERVER: https://mirrors.ustc.edu.cn/rust-static
+      RUSTUP_UPDATE_ROOT: https://mirrors.ustc.edu.cn/rust-static/rustup
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up the environment
+      run: |
+        chmod +x regression/benchmark/bench_linux_and_aster.sh
+        # Set up git due to the network issue on the self-hosted runner
+        git config --global --add safe.directory /__w/asterinas/asterinas
+        git config --global http.sslVerify false
+        git config --global http.version HTTP/1.1
+
+    - name: Run benchmark
+      uses: nick-invision/retry@v2 # Retry the benchmark command in case of failure
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: |
+          make install_osdk
+          bash regression/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }}
+        on_retry_command: make clean
+
+    - name: Prepare threshold values
+      run: |
+        echo "Configuring thresholds..."
+        ALERT_THRESHOLD=$(jq -r '.alert_threshold' regression/benchmark/${{ matrix.benchmark }}/config.json)
+        echo "ALERT_THRESHOLD=$ALERT_THRESHOLD" >> $GITHUB_ENV
+
+    - name: Store benchmark results
+      uses: asterinas/github-action-benchmark@v1
+      with:
+        name: ${{ matrix.benchmark }} Benchmark
+        tool: 'customSmallerIsBetter'
+        output-file-path: result_${{ matrix.benchmark }}.json
+        benchmark-data-dir-path: '' 
+        github-token: ${{ secrets.BENCHMARK_SECRET }}
+        gh-repository: 'github.com/asterinas/benchmark'
+        auto-push: true
+        alert-threshold: ${{ env.ALERT_THRESHOLD }} 
+        comment-on-alert: true
+        fail-on-alert: true
