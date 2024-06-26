@@ -46,6 +46,18 @@ fn handle_page_fault(trap_info: &CpuExceptionInfo) {
                 "page fault handler failed: addr: 0x{:x}, err: {:?}",
                 page_fault_addr, e
             );
+            {
+                static LAST_ERR_ADDR: SpinLock<(usize, usize)> = SpinLock::new((0, 0));
+                let mut last_err_addr = LAST_ERR_ADDR.lock();
+                if page_fault_addr == last_err_addr.0 {
+                    last_err_addr.1 += 1;
+                    if last_err_addr.1 > 5 {
+                        panic!("page fault loop");
+                    }
+                } else {
+                    *last_err_addr = (page_fault_addr, 0);
+                }
+            }
             generate_fault_signal(trap_info);
         }
     } else {

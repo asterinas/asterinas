@@ -212,6 +212,7 @@ fn build_kernel_elf(
         // This is to let rustc know that "cfg(ktest)" is our well-known configuration.
         // See the [Rust Blog](https://blog.rust-lang.org/2024/05/06/check-cfg.html) for details.
         "--check-cfg cfg(ktest)",
+        "-C debuginfo=full",
     ]);
 
     if matches!(arch, Arch::X86_64) {
