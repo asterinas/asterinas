@@ -10,7 +10,9 @@ use crate::{
     fs::{
         device::Device,
         ext2::{FilePerm, FileType, Inode as Ext2Inode},
-        utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata},
+        utils::{
+            DirentVisitor, Extension, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+        },
     },
     prelude::*,
     process::{Gid, Uid},
@@ -186,6 +188,10 @@ impl Inode for Ext2Inode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs()
+    }
+
+    fn extension(&self) -> Option<&Extension> {
+        self.extension()
     }
 }
 

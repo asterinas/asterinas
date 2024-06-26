@@ -10,7 +10,7 @@ pub use self::{
 };
 use super::{ProcFS, BLOCK_SIZE};
 use crate::{
-    fs::utils::{FileSystem, InodeMode, InodeType, Metadata},
+    fs::utils::{Extension, FileSystem, InodeMode, InodeType, Metadata},
     prelude::*,
     process::{Gid, Uid},
 };
@@ -24,6 +24,7 @@ struct Common {
     metadata: RwLock<Metadata>,
     fs: Weak<dyn FileSystem>,
     is_volatile: bool,
+    extension: Option<Extension>,
 }
 
 impl Common {
@@ -32,6 +33,7 @@ impl Common {
             metadata: RwLock::new(metadata),
             fs,
             is_volatile,
+            extension: Some(Extension::new()),
         }
     }
 

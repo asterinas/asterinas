@@ -9,10 +9,13 @@ pub use dirent_visitor::DirentVisitor;
 pub use direntry_vec::DirEntryVecExt;
 pub use file_creation_mask::FileCreationMask;
 pub use fs::{FileSystem, FsFlags, SuperBlock};
-pub use inode::{Inode, InodeMode, InodeType, Metadata};
+pub use inode::{Extension, Inode, InodeMode, InodeType, Metadata};
 pub use ioctl::IoctlCmd;
 pub use page_cache::{PageCache, PageCacheBackend};
 pub use random_test::{generate_random_operation, new_fs_in_memory};
+pub use range_lock::{
+    c_flock, FileRange, RangeLock, RangeLockBuilder, RangeLockList, RangeLockType, OFFSET_MAX,
+};
 pub use status_flags::StatusFlags;
 
 mod access_mode;
@@ -26,6 +29,7 @@ mod inode;
 mod ioctl;
 mod page_cache;
 mod random_test;
+mod range_lock;
 mod status_flags;
 
 use crate::prelude::*;

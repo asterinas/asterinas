@@ -12,6 +12,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 
+use super::utils::RangeLockType;
 use crate::{
     events::IoEvents,
     fs::{
@@ -19,8 +20,8 @@ use crate::{
         file_handle::FileLike,
         path::Dentry,
         utils::{
-            AccessMode, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
-            StatusFlags,
+            AccessMode, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, RangeLock,
+            RangeLockList, SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -190,6 +191,40 @@ impl InodeHandle_ {
         }
 
         self.dentry.inode().ioctl(cmd, arg)
+    }
+
+    fn check_advisory_lock_with_access_mode(&self, lock: &RangeLock) -> Result<()> {
+        match lock.type_() {
+            RangeLockType::F_RDLCK => {
+                if !self.access_mode.is_readable() {
+                    return_errno_with_message!(Errno::EBADF, "File not readable");
+                }
+            }
+            RangeLockType::F_WRLCK => {
+                if !self.access_mode.is_writable() {
+                    return_errno_with_message!(Errno::EBADF, "File not writable");
+                }
+            }
+            _ => (),
+        }
+        Ok(())
+    }
+
+    fn unlock_range_lock(&self, lock: &RangeLock) {
+        let extension = match self.dentry.inode().extension() {
+            Some(extension) => extension,
+            None => {
+                return;
+            }
+        };
+        let range_lock_list = match extension.get::<RangeLockList>() {
+            Some(list) => list,
+            None => {
+                return;
+            }
+        };
+
+        range_lock_list.unlock(lock)
     }
 }
 

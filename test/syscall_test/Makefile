@@ -15,6 +15,7 @@ TESTS ?= \
 	dup_test \
 	epoll_test \
 	eventfd_test \
+	fcntl_test \
 	fsync_test \
 	getdents_test \
 	link_test \

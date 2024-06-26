@@ -11,7 +11,7 @@ use super::{Common, ProcFS};
 use crate::{
     fs::{
         device::Device,
-        utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata},
+        utils::{DirentVisitor, Extension, FileSystem, Inode, InodeMode, InodeType, Metadata},
     },
     prelude::*,
     process::{Gid, Uid},
@@ -185,6 +185,10 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
 
     fn is_dentry_cacheable(&self) -> bool {
         !self.common.is_volatile()
+    }
+
+    fn extension(&self) -> Option<&Extension> {
+        self.common.extension.as_ref()
     }
 }
 

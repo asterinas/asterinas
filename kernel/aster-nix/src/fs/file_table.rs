@@ -160,6 +160,12 @@ impl FileTable {
     }
 
     pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
+        if fd < 0 {
+            return Err(Error::with_message(
+                Errno::EBADF,
+                "Invalid file descriptor: fd is negative",
+            ));
+        }
         self.table
             .get(fd as usize)
             .map(|entry| &entry.file)
@@ -174,6 +180,12 @@ impl FileTable {
     }
 
     pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
+        if fd < 0 {
+            return Err(Error::with_message(
+                Errno::EBADF,
+                "Invalid file descriptor: fd is negative",
+            ));
+        }
         self.table
             .get(fd as usize)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
