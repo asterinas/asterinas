@@ -39,6 +39,10 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
         let posix_thread = current_thread.as_posix_thread().unwrap();
         let has_kernel_event_fn = || posix_thread.has_pending();
         loop {
+            // Panics if in atomic mode
+            // Kernel should not return to user space when in atomic mode.
+            aster_frame::task::might_break_atomic_mode();
+
             let return_reason = user_mode.execute(has_kernel_event_fn);
             let context = user_mode.context_mut();
             // handle user event:
