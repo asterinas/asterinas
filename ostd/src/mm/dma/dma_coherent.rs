@@ -10,7 +10,7 @@ use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    arch::iommu,
+    arch::{iommu, mm::tlb_flush_addr_range},
     mm::{
         dma::{dma_type, Daddr, DmaType},
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
@@ -65,6 +65,7 @@ impl DmaCoherent {
                     .protect(&va_range, |p| p.cache = CachePolicy::Uncacheable)
                     .unwrap();
             }
+            tlb_flush_addr_range(&va_range);
         }
         let start_daddr = match dma_type() {
             DmaType::Direct => {
@@ -152,6 +153,7 @@ impl Drop for DmaCoherentInner {
                     .protect(&va_range, |p| p.cache = CachePolicy::Writeback)
                     .unwrap();
             }
+            tlb_flush_addr_range(&va_range);
         }
         remove_dma_mapping(start_paddr, frame_count);
     }
