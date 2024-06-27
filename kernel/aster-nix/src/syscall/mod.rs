@@ -73,7 +73,10 @@ mod pipe;
 mod poll;
 mod prctl;
 mod pread64;
+mod preadv;
 mod prlimit64;
+mod pwrite64;
+mod pwritev;
 mod read;
 mod readlink;
 mod recvfrom;
@@ -128,7 +131,6 @@ mod utimens;
 mod wait4;
 mod waitid;
 mod write;
-mod writev;
 
 /// This macro is used to define syscall handler.
 /// The first param is ths number of parameters,

@@ -24,19 +24,13 @@ TESTS ?= \
 	mount_test \
 	open_create_test \
 	open_test \
+	pread64_test \
+	preadv2_test \
+	pwrite64_test \
+	pwritev2_test \
 	pty_test \
 	read_test \
-	rename_test \
-	sendfile_test \
-	stat_test \
-	statfs_test \
-	symlink_test \
-	sync_test \
-	timers_test \
-	truncate_test \
-	uidgid_test \
-	unlink_test \
-	vdso_clock_gettime_test \
+	readv_test \
 	write_test \
 	utimes_test \
 	# The end of the list
