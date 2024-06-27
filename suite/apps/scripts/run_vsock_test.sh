@@ -8,7 +8,7 @@
 
 set -e
 
-VSOCK_DIR=/regression/vsock
+VSOCK_DIR=/suite/vsock
 cd ${VSOCK_DIR}
 
 echo "Start vsock test......"

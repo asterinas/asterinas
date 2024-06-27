@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
 /*
- * A framework for writing regression tests.
+ * A framework for writing suite tests.
  *
- * A regression test typically consists of two parts, the setup part and the
+ * A suite test typically consists of two parts, the setup part and the
  * test part. The setup part contains setup functions that set up the context
  * for the subsequent tests to run. The setup functions cannot fail, and if they
  * do, execution is aborted because the subsequent tests will not work as
  * expected either. The test functions, on the other hand, can fail, and if they
  * do, they are reported as test failures.
  *
- * The framework provides basic utilities for writing regression tests:
+ * The framework provides basic utilities for writing suite tests:
  *
  *  - To define a setup function or a test function, FN_SETUP() or FN_TEST() can
  * be used. These functions are automatically executed in the order of their

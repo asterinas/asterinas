@@ -31,13 +31,13 @@ BUILD_SYSCALL_TEST := 1
 CARGO_OSDK_ARGS += --kcmd-args="SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)"
 CARGO_OSDK_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
 CARGO_OSDK_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
-else ifeq ($(AUTO_TEST), regression)
-CARGO_OSDK_ARGS += --init-args="/regression/run_regression_test.sh"
+else ifeq ($(AUTO_TEST), suite)
+CARGO_OSDK_ARGS += --init-args="/suite/run_suite_test.sh"
 else ifeq ($(AUTO_TEST), boot)
-CARGO_OSDK_ARGS += --init-args="/regression/boot_hello.sh"
+CARGO_OSDK_ARGS += --init-args="/suite/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
 export VSOCK=1
-CARGO_OSDK_ARGS += --init-args="/regression/run_vsock_test.sh"
+CARGO_OSDK_ARGS += --init-args="/suite/run_vsock_test.sh"
 endif
 
 # If the BENCHMARK is set, we will run the benchmark in the kernel mode.
@@ -132,7 +132,7 @@ $(CARGO_OSDK):
 
 .PHONY: initramfs
 initramfs:
-	@make --no-print-directory -C regression
+	@make --no-print-directory -C suite
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
@@ -149,9 +149,9 @@ run: build
 ifeq ($(AUTO_TEST), syscall)
 	@tail --lines 100 qemu.log | grep -q "^.* of .* test cases passed." \
 		|| (echo "Syscall test failed" && exit 1)
-else ifeq ($(AUTO_TEST), regression)
-	@tail --lines 100 qemu.log | grep -q "^All regression tests passed." \
-		|| (echo "Regression test failed" && exit 1)
+else ifeq ($(AUTO_TEST), suite)
+	@tail --lines 100 qemu.log | grep -q "^All suite tests passed." \
+		|| (echo "Suite test failed" && exit 1)
 else ifeq ($(AUTO_TEST), boot)
 	@tail --lines 100 qemu.log | grep -q "^Successfully booted." \
 		|| (echo "Boot test failed" && exit 1)
@@ -196,7 +196,7 @@ docs: $(CARGO_OSDK)
 .PHONY: format
 format:
 	@./tools/format_all.sh
-	@make --no-print-directory -C regression format
+	@make --no-print-directory -C suite format
 
 .PHONY: check
 check: $(CARGO_OSDK)
@@ -218,7 +218,7 @@ check: $(CARGO_OSDK)
 		echo "Checking $$dir"; \
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
-	@make --no-print-directory -C regression check
+	@make --no-print-directory -C suite check
 
 .PHONY: check_osdk
 check_osdk:
@@ -228,5 +228,5 @@ check_osdk:
 clean:
 	@cargo clean
 	@cd docs && mdbook clean
-	@make --no-print-directory -C regression clean
+	@make --no-print-directory -C suite clean
 	@rm -f $(CARGO_OSDK)

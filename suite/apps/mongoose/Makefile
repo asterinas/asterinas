@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 CUR_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
-BUILD_DIR := $(CUR_DIR)/../../build/initramfs/regression/network
+BUILD_DIR := $(CUR_DIR)/../../build/initramfs/suite/network
 MONGOOSE_DIR := $(CUR_DIR)
 MONGOOSE_C := $(MONGOOSE_DIR)/mongoose.c
 MONGOOSE_H := $(MONGOOSE_DIR)/mongoose.h

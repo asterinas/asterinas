@@ -11,7 +11,7 @@ int main()
 	printf("Execve a new file /execve/hello:\n");
 	// flush the stdout content to ensure the content print to console
 	fflush(stdout);
-	execve("/regression/execve/hello", argv, envp);
+	execve("/suite/execve/hello", argv, envp);
 	printf("Should not print\n");
 	fflush(stdout);
 	return 0;

@@ -39,7 +39,7 @@ header:
       - '**/tests/duplicate_lib_name_test/**'
       - '**/tests/missing_toml_test/**'
       - '**/tests/reexport_test/**'
-      - '**/tests/regression_test/**'
+      - '**/tests/suite_test/**'
       - '**/tests/trait_method_test/**'
       - '**/tests/violate_policy_test/**'
       

@@ -5,7 +5,7 @@ INCLUDE_MAKEFILE := $(lastword $(MAKEFILE_LIST))
 CUR_DIR := $(shell dirname $(realpath $(MAIN_MAKEFILE)))
 CUR_DIR_NAME := $(shell basename $(realpath $(CUR_DIR)))
 BUILD_DIR := $(CUR_DIR)/../../build
-OBJ_OUTPUT_DIR := $(BUILD_DIR)/initramfs/regression/$(CUR_DIR_NAME)
+OBJ_OUTPUT_DIR := $(BUILD_DIR)/initramfs/suite/$(CUR_DIR_NAME)
 DEP_OUTPUT_DIR := $(BUILD_DIR)/dep/$(CUR_DIR_NAME)
 C_SRCS := $(wildcard *.c)
 C_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(C_SRCS:%.c=%))

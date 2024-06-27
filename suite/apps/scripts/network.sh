@@ -4,7 +4,7 @@
 
 set -e
 
-NETTEST_DIR=/regression/network
+NETTEST_DIR=/suite/network
 cd ${NETTEST_DIR}
 
 echo "Start network test......"

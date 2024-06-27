@@ -4,7 +4,7 @@
 
 set -e
 
-EPOLLTEST_DIR=/regression/epoll
+EPOLLTEST_DIR=/suite/epoll
 cd ${EPOLLTEST_DIR}
 
 echo "Start epoll_pwait test......"

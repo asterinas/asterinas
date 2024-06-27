@@ -26,7 +26,7 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/lib64 \
 	$(INITRAMFS)/bin \
 	$(INITRAMFS)/usr/bin \
-	$(INITRAMFS)/regression \
+	$(INITRAMFS)/suite \
 	$(INITRAMFS)/benchmark \
 	$(INITRAMFS_EMPTY_DIRS)
 SYSCALL_TEST_DIR := $(INITRAMFS)/opt/syscall_test
@@ -74,8 +74,8 @@ $(INITRAMFS)/usr/bin: | $(INITRAMFS)/bin
 	@mkdir -p $@
 	@cp /usr/bin/busybox $@
 
-.PHONY: $(INITRAMFS)/regression
-$(INITRAMFS)/regression:
+.PHONY: $(INITRAMFS)/suite
+$(INITRAMFS)/suite:
 	@make --no-print-directory -C apps
 
 $(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin

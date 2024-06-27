@@ -5,7 +5,7 @@
 set -e
 set -x
 
-SCRIPT_DIR=/regression
+SCRIPT_DIR=/suite
 cd ${SCRIPT_DIR}
 
 touch hello.txt

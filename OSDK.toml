@@ -22,7 +22,7 @@ kcmd_args = [
     "init=/usr/bin/busybox",
 ]
 init_args = ["sh", "-l"]
-initramfs = "regression/build/initramfs.cpio.gz"
+initramfs = "suite/build/initramfs.cpio.gz"
 
 # Special options for testing
 [test.boot]

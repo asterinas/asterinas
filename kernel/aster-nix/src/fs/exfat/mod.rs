@@ -104,7 +104,7 @@ mod test {
         }
     }
     /// Exfat disk image
-    static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../../regression/build/exfat.img");
+    static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../../suite/build/exfat.img");
 
     /// Read exfat disk image
     fn new_vm_segment_from_image() -> Segment {
