@@ -13,8 +13,6 @@ use crate::{
 };
 
 /// MMIO Common device.
-/// TODO: Implement universal access to MMIO devices since we are temporarily
-/// using specific virtio device as implementation of CommonDevice.
 #[derive(Debug)]
 pub struct MmioCommonDevice {
     io_mem: IoMem,
@@ -23,6 +21,9 @@ pub struct MmioCommonDevice {
 
 impl MmioCommonDevice {
     pub(super) fn new(paddr: Paddr, handle: IrqLine) -> Self {
+        // TODO: Implement universal access to MMIO devices since we are temporarily
+        // using specific virtio device as implementation of CommonDevice.
+
         // Read magic value
         // SAFETY: It only read the value and judge if the magic value fit 0x74726976
         unsafe {
@@ -58,8 +59,6 @@ impl MmioCommonDevice {
     }
 
     /// Version of the MMIO device.
-    ///
-    /// FIXME: This function can only used in Virtio-mmio devices.
     pub fn version(&self) -> VirtioMmioVersion {
         VirtioMmioVersion::try_from(self.io_mem.read_val::<u32>(4).unwrap()).unwrap()
     }

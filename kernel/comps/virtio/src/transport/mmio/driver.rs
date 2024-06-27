@@ -6,7 +6,7 @@ use ostd::{
     bus::{
         mmio::{
             bus::{MmioDevice, MmioDriver},
-            device::MmioCommonDevice,
+            common_device::MmioCommonDevice,
         },
         BusProbeError,
     },
