@@ -299,7 +299,8 @@ impl Dentry_ {
 #[inherit_methods(from = "self.inode")]
 impl Dentry_ {
     pub fn fs(&self) -> Arc<dyn FileSystem>;
-    pub fn sync(&self) -> Result<()>;
+    pub fn sync_all(&self) -> Result<()>;
+    pub fn sync_data(&self) -> Result<()>;
     pub fn metadata(&self) -> Metadata;
     pub fn type_(&self) -> InodeType;
     pub fn mode(&self) -> Result<InodeMode>;
@@ -680,7 +681,8 @@ impl Dentry {
 #[inherit_methods(from = "self.inner")]
 impl Dentry {
     pub fn fs(&self) -> Arc<dyn FileSystem>;
-    pub fn sync(&self) -> Result<()>;
+    pub fn sync_all(&self) -> Result<()>;
+    pub fn sync_data(&self) -> Result<()>;
     pub fn metadata(&self) -> Metadata;
     pub fn type_(&self) -> InodeType;
     pub fn mode(&self) -> Result<InodeMode>;

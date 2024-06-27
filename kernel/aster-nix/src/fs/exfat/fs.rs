@@ -135,7 +135,7 @@ impl ExfatFS {
             if inode.is_deleted() {
                 inode.reclaim_space()?;
             } else {
-                inode.sync()?;
+                inode.sync_all()?;
             }
         }
         self.inodes.write().remove(&hash);
@@ -392,7 +392,7 @@ impl PageCacheBackend for ExfatFS {
 impl FileSystem for ExfatFS {
     fn sync(&self) -> Result<()> {
         for inode in self.inodes.read().values() {
-            inode.sync()?;
+            inode.sync_all()?;
         }
         self.meta_cache.evict_range(0..self.fs_size())?;
         Ok(())

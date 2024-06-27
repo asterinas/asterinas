@@ -176,8 +176,12 @@ impl Inode for Ext2Inode {
         Err(Error::new(Errno::EINVAL))
     }
 
-    fn sync(&self) -> Result<()> {
+    fn sync_all(&self) -> Result<()> {
         self.sync_all()
+    }
+
+    fn sync_data(&self) -> Result<()> {
+        self.sync_data()
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

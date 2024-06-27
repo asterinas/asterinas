@@ -993,11 +993,6 @@ impl Inode for RamInode {
         }
     }
 
-    fn sync(&self) -> Result<()> {
-        // do nothing
-        Ok(())
-    }
-
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
         if let Some(device) = self.node.read().inner.as_device() {
             device.poll(mask, poller)

@@ -87,10 +87,6 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn sync(&self) -> Result<()> {
-        Ok(())
-    }
-
     fn is_dentry_cacheable(&self) -> bool {
         !self.common.is_volatile()
     }

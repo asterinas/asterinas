@@ -183,10 +183,6 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn sync(&self) -> Result<()> {
-        Ok(())
-    }
-
     fn is_dentry_cacheable(&self) -> bool {
         !self.common.is_volatile()
     }

@@ -340,7 +340,11 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn sync(&self) -> Result<()> {
+    fn sync_all(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn sync_data(&self) -> Result<()> {
         Ok(())
     }
 
