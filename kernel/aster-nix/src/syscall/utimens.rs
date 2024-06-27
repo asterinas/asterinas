@@ -202,9 +202,9 @@ fn read_time_from_user<T: Pod>(time_ptr: Vaddr) -> Result<(T, T)> {
     Ok((autime, mutime))
 }
 
+#[allow(dead_code)]
 trait UtimeExt {
     fn utime_now() -> Self;
-    #[allow(dead_code)]
     fn utime_omit() -> Self;
     fn is_utime_now(&self) -> bool;
     fn is_utime_omit(&self) -> bool;
