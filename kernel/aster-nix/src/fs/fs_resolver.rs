@@ -318,6 +318,31 @@ impl FsResolver {
 
         Ok((dir_dentry, base_name))
     }
+
+    /// The method used to create a new file using pathname.
+    ///
+    /// For example, mkdir, mknod, link, and symlink all need to create
+    /// new file and all need to perform unique processing on the last
+    /// component of the path name. It is used to provide a unified
+    /// method for pathname lookup and error handling.
+    ///
+    /// is_dir is used to determine whether a directory needs to be created.
+    pub fn lookup_dir_and_new_basename(
+        &self,
+        path: &FsPath,
+        is_dir: bool,
+    ) -> Result<(Arc<Dentry>, String)> {
+        let (dir_dentry, filename) = self.lookup_dir_and_base_name_inner(path, false)?;
+        if dir_dentry.lookup(filename.trim_end_matches('/')).is_ok() {
+            return_errno_with_message!(Errno::EEXIST, "file exists");
+        }
+
+        if !is_dir && filename.ends_with('/') {
+            return_errno_with_message!(Errno::ENOENT, "No such file or directory");
+        }
+
+        Ok((dir_dentry, filename))
+    }
 }
 
 pub const AT_FDCWD: FileDesc = -100;
