@@ -9,7 +9,7 @@ use log::warn;
 use ostd::{
     bus::mmio::{
         bus::MmioDevice,
-        device::{MmioCommonDevice, VirtioMmioVersion},
+        common_device::{MmioCommonDevice, VirtioMmioVersion},
     },
     io_mem::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
@@ -34,7 +34,7 @@ pub struct VirtioMmioDevice {
 pub struct VirtioMmioTransport {
     layout: SafePtr<VirtioMmioLayout, IoMem>,
     device: Arc<VirtioMmioDevice>,
-    common_device: ostd::bus::mmio::device::MmioCommonDevice,
+    common_device: ostd::bus::mmio::common_device::MmioCommonDevice,
     multiplex: Arc<RwLock<MultiplexIrq>>,
 }
 

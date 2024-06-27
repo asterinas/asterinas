@@ -1,19 +1,30 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! PCI device Information
+
 use core::iter;
 
 use super::cfg_space::PciDeviceCommonCfgOffset;
 use crate::arch::pci::{PCI_ADDRESS_PORT, PCI_DATA_PORT};
 
+/// PCI device ID
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PciDeviceId {
+    /// Vendor ID
     pub vendor_id: u16,
+    /// Device ID
     pub device_id: u16,
+    /// Revision ID
     pub revision_id: u8,
+    /// Programming Interface Byte
     pub prog_if: u8,
+    /// Specifies the specific function the device performs.
     pub subclass: u8,
+    /// Specifies the type of function the device performs.
     pub class: u8,
+    /// Subsystem Vendor ID
     pub subsystem_vendor_id: u16,
+    /// Subsystem ID
     pub subsystem_id: u16,
 }
 
@@ -41,22 +52,24 @@ impl PciDeviceId {
     }
 }
 
+/// PCI device Location
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PciDeviceLocation {
+    /// Bus number
     pub bus: u8,
-    /// Max 31
+    /// Device number with max 31
     pub device: u8,
-    /// Max 7
+    /// Deivce number with max 7
     pub function: u8,
 }
 
 impl PciDeviceLocation {
-    pub const MIN_BUS: u8 = 0;
-    pub const MAX_BUS: u8 = 255;
-    pub const MIN_DEVICE: u8 = 0;
-    pub const MAX_DEVICE: u8 = 31;
-    pub const MIN_FUNCTION: u8 = 0;
-    pub const MAX_FUNCTION: u8 = 7;
+    const MIN_BUS: u8 = 0;
+    const MAX_BUS: u8 = 255;
+    const MIN_DEVICE: u8 = 0;
+    const MAX_DEVICE: u8 = 31;
+    const MIN_FUNCTION: u8 = 0;
+    const MAX_FUNCTION: u8 = 7;
     /// By encoding bus, device, and function into u32, user can access a PCI device in x86 by passing in this value.
     #[inline(always)]
     pub fn encode_as_x86_address_value(self) -> u32 {

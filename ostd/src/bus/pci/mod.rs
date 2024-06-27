@@ -61,6 +61,7 @@ pub use device_info::{PciDeviceId, PciDeviceLocation};
 use self::{bus::PciBus, common_device::PciCommonDevice};
 use crate::sync::Mutex;
 
+/// PCI bus instance
 pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
 pub(crate) fn init() {
