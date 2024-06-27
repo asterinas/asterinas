@@ -81,6 +81,12 @@ impl From<DeviceId> for u64 {
     }
 }
 
+impl From<u64> for DeviceId {
+    fn from(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
 /// Add a device node to FS for the device.
 ///
 /// If the parent path is not existing, `mkdir -p` the parent path.

@@ -154,8 +154,6 @@ provided by Linux on x86-64 architecture.
 | 131     | sigaltstack      | ✅              |
 | 132     | utime            | ✅              |
 | 133     | mknod            | ✅              |
-| 132     | utime            | ❌              |
-| 133     | mknod            | ✅              |
 | 134     | uselib           | ❌              |
 | 135     | personality      | ❌              |
 | 136     | ustat            | ❌              |
