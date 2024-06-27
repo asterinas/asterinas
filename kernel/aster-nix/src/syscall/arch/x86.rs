@@ -2,7 +2,7 @@
 
 use crate::syscall::{
     accept::{sys_accept, sys_accept4},
-    access::sys_access,
+    access::{sys_access, sys_faccessat},
     alarm::sys_alarm,
     arch_prctl::sys_arch_prctl,
     bind::sys_bind,
@@ -272,6 +272,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SYMLINKAT = 266        => sys_symlinkat(args[..3]);
     SYS_READLINKAT = 267       => sys_readlinkat(args[..4]);
     SYS_FCHMODAT = 268         => sys_fchmodat(args[..3]);
+    SYS_FACCESSAT = 269        => sys_faccessat(args[..3]);
     SYS_SET_ROBUST_LIST = 273  => sys_set_robust_list(args[..2]);
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);
