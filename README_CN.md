@@ -1,9 +1,9 @@
 <p align="center">
     <img src="docs/src/images/logo_cn.svg" alt="asterinas-logo" width="620"><br>
     一个安全、快速、通用的操作系统内核，使用Rust编写，并与Linux兼容<br/>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/osdk_test.yml/badge.svg?event=push" alt="OSDK测试" style="max-width: 100%;"></a>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/kernel_test.yml/badge.svg?event=push" alt="Asterinas测试" style="max-width: 100%;"></a>
-    <a href="https://asterinas.github.io/benchmark/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmarks.yml/badge.svg" alt="Asterinas性能测试" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_osdk.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_osdk.yml/badge.svg?event=push" alt="Test OSDK" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_asterinas.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_asterinas.yml/badge.svg?event=push" alt="Test Asterinas" style="max-width: 100%;"></a>
+    <a href="https://asterinas.github.io/benchmark/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmark_asterinas.yml/badge.svg" alt="Benchmark Asterinas" style="max-width: 100%;"></a>
     <br/>
 </p>
 

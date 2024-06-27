@@ -1,4 +1,4 @@
-name: OSDK Publish
+name: Publish OSDK
 
 on:
   pull_request:

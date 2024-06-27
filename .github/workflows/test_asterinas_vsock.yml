@@ -1,4 +1,4 @@
-name: Vsock Interaction
+name: Test Asterinas Vsock
 
 on:
   workflow_dispatch:

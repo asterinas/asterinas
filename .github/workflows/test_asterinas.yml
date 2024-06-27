@@ -1,4 +1,4 @@
-name: Kernel Test
+name: Test Asterinas
 
 on:
   pull_request:

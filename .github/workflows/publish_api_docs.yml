@@ -1,4 +1,4 @@
-name: Update Online API Docs
+name: Update API docs
 
 on:
   # Scheduled events for nightly API docs

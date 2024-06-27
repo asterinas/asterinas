@@ -1,4 +1,4 @@
-name: Update Website
+name: Publish website
 
 on:
   pull_request:

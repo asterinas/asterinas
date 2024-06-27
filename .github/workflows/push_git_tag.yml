@@ -1,6 +1,6 @@
-# This workflow adds git tag to the main branch when version changes.
+# This workflow pushes a new Git tag to the main branch when the version bumps.
 
-name: Release Tag
+name: Push release tag
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
   tag_main_branch:
     runs-on: ubuntu-latest
     steps: 
-      - name: Add git tag 
+      - name: Add Git tag
         uses: pxpm/github-tag-action@1.0.1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}

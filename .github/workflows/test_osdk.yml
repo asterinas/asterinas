@@ -1,4 +1,4 @@
-name: OSDK Test
+name: Test OSDK
 
 on:
   pull_request:
