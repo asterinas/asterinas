@@ -32,7 +32,7 @@ pub trait FileLike: Send + Sync + Any {
     ///
     /// [`read`]: FileLike::read
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "read_at is not supported");
+        return_errno_with_message!(Errno::ESPIPE, "read_at is not supported");
     }
 
     /// Write at the given file offset.
@@ -43,7 +43,7 @@ pub trait FileLike: Send + Sync + Any {
     ///
     /// [`write`]: FileLike::write
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "write_at is not supported");
+        return_errno_with_message!(Errno::ESPIPE, "write_at is not supported");
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

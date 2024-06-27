@@ -38,8 +38,8 @@ provided by Linux on x86-64 architecture.
 | 15      | rt_sigreturn     | ✅              |
 | 16      | ioctl            | ✅              |
 | 17      | pread64          | ✅              |
-| 18      | pwrite64         | ❌              |
-| 19      | readv            | ❌              |
+| 18      | pwrite64         | ✅              |
+| 19      | readv            | ✅              |
 | 20      | writev           | ✅              |
 | 21      | access           | ✅              |
 | 22      | pipe             | ✅              |
@@ -315,8 +315,8 @@ provided by Linux on x86-64 architecture.
 | 292     | dup3             | ✅              |
 | 293     | pipe2            | ✅              |
 | 294     | inotify_init1    | ❌              |
-| 295     | preadv           | ❌              |
-| 296     | pwritev          | ❌              |
+| 295     | preadv           | ✅              |
+| 296     | pwritev          | ✅              |
 | 297     | rt_tgsigqueueinfo | ❌             |
 | 298     | perf_event_open  | ❌              |
 | 299     | recvmmsg         | ❌              |
@@ -336,6 +336,8 @@ provided by Linux on x86-64 architecture.
 | 313	  | finit_module     | ❌              |
 | 318	  | getrandom        | ✅              |
 | 322	  | execveat         | ✅              |
+| 327	  | preadv2          | ✅              |
+| 328	  | pwritev2         | ✅              |
 | 435	  | clone3           | ✅              |
 
 ## File Systems

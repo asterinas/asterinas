@@ -66,7 +66,10 @@ use crate::syscall::{
     poll::sys_poll,
     prctl::sys_prctl,
     pread64::sys_pread64,
+    preadv::{sys_preadv, sys_preadv2, sys_readv},
     prlimit64::sys_prlimit64,
+    pwrite64::sys_pwrite64,
+    pwritev::{sys_pwritev, sys_pwritev2, sys_writev},
     read::sys_read,
     readlink::{sys_readlink, sys_readlinkat},
     recvfrom::sys_recvfrom,
@@ -121,7 +124,6 @@ use crate::syscall::{
     wait4::sys_wait4,
     waitid::sys_waitid,
     write::sys_write,
-    writev::sys_writev,
 };
 
 impl_syscall_nums_and_dispatch_fn! {
@@ -143,6 +145,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_RT_SIGRETURN = 15      => sys_rt_sigreturn(args[..0], &mut context);
     SYS_IOCTL = 16             => sys_ioctl(args[..3]);
     SYS_PREAD64 = 17           => sys_pread64(args[..4]);
+    SYS_PWRITE64 = 18          => sys_pwrite64(args[..4]);
+    SYS_READV = 19             => sys_readv(args[..3]);
     SYS_WRITEV = 20            => sys_writev(args[..3]);
     SYS_ACCESS = 21            => sys_access(args[..2]);
     SYS_PIPE = 22              => sys_pipe(args[..1]);
@@ -282,8 +286,12 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EPOLL_CREATE1 = 291    => sys_epoll_create1(args[..1]);
     SYS_DUP3 = 292             => sys_dup3(args[..3]);
     SYS_PIPE2 = 293            => sys_pipe2(args[..2]);
+    SYS_PREADV = 295           => sys_preadv(args[..4]);
+    SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut context);
+    SYS_PREADV2 = 327          => sys_preadv2(args[..5]);
+    SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &context);
 }
