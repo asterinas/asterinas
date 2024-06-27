@@ -122,7 +122,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-osdk"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "assert_cmd",
  "clap",
