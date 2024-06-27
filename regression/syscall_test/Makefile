@@ -6,6 +6,7 @@
 #
 # Please keep the list sorted by name.
 TESTS ?= \
+	access_test \
 	alarm_test \
 	chmod_test \
 	chown_test \

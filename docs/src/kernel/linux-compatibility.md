@@ -289,7 +289,7 @@ provided by Linux on x86-64 architecture.
 | 266     | symlinkat        | ✅              |
 | 267     | readlinkat       | ✅              |
 | 268     | fchmodat         | ✅              |
-| 269     | faccessat        | ❌              |
+| 269     | faccessat        | ✅              |
 | 270     | pselect6         | ❌              |
 | 271     | ppoll            | ❌              |
 | 272     | unshare          | ❌              |
