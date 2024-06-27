@@ -165,14 +165,14 @@ fn get_fs(fs_type: CString, devname: CString) -> Result<Arc<dyn FileSystem>> {
 
 bitflags! {
     struct MountFlags: u32 {
-        const MS_RDONLY        =   1 << 0;       // Mount read-only */
-        const MS_NOSUID        =   1 << 1;       // Ignore suid and sgid bits */
-        const MS_NODEV         =   1 << 2;       // Disallow access to device special files */
-        const MS_NOEXEC        =   1 << 3;       // Disallow program execution */
-        const MS_SYNCHRONOUS   =   1 << 4;       // Writes are synced at once
+        const MS_RDONLY        =   1 << 0;       // Mount read-only.
+        const MS_NOSUID        =   1 << 1;       // Ignore suid and sgid bits.
+        const MS_NODEV         =   1 << 2;       // Disallow access to device special files.
+        const MS_NOEXEC        =   1 << 3;       // Disallow program execution.
+        const MS_SYNCHRONOUS   =   1 << 4;       // Writes are synced at once.
         const MS_REMOUNT       =   1 << 5;       // Alter flags of a mounted FS.
         const MS_MANDLOCK      =   1 << 6;       // Allow mandatory locks on an FS.
-        const MS_DIRSYNC       =   1 << 7;       // Directory modifications are synchronous
+        const MS_DIRSYNC       =   1 << 7;       // Directory modifications are synchronous.
         const MS_NOSYMFOLLOW   =   1 << 8;       // Do not follow symlinks.
         const MS_NOATIME       =   1 << 10;      // Do not update access times.
         const MS_NODIRATIME    =   1 << 11;      // Do not update directory access times.

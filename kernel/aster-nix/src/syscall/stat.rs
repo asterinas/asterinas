@@ -77,17 +77,35 @@ pub fn sys_fstatat(
     Ok(SyscallReturn::Return(0))
 }
 
-bitflags! {
-    /// File type.
-    pub struct FileTypeFlags: u16 {
-        const S_IFMT   = 0o170000; // File type mask.
-        const S_IFSOCK = 0o140000; // Socket.
-        const S_IFCHR  = 0o020000; // Character device.
-        const S_IFBLK  = 0o060000; // Block device.
-        const S_IFDIR  = 0o040000; // Directory.
-        const S_IFIFO  = 0o010000; // FIFO (named pipe).
-        const S_IFREG  = 0o100000; // Regular file.
-        const S_IFLNK  = 0o120000; // Symbolic link.
+/// File type mask.
+const S_IFMT: u16 = 0o170000;
+
+/// Enum representing different file types.
+#[derive(Debug, PartialEq)]
+pub enum FileType {
+    Socket,
+    CharacterDevice,
+    BlockDevice,
+    Directory,
+    Fifo,
+    RegularFile,
+    Symlink,
+    Unknown,
+}
+
+impl FileType {
+    /// Extract the file type from the mode.
+    pub fn from_mode(mode: u16) -> FileType {
+        match mode & S_IFMT {
+            0o140000 => FileType::Socket,          // Socket.
+            0o020000 => FileType::CharacterDevice, // Character device.
+            0o060000 => FileType::BlockDevice,     // Block device.
+            0o040000 => FileType::Directory,       // Directory.
+            0o010000 => FileType::Fifo,            // FIFO (named pipe).
+            0 | 0o100000 => FileType::RegularFile, // Regular file.
+            0o120000 => FileType::Symlink,         // Symbolic link.
+            _ => FileType::Unknown,                // Unkonwn file type.
+        }
     }
 }
 
