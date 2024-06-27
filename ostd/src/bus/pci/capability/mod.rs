@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! PCI device capabilities.
+
 #![allow(dead_code)]
 
 use alloc::vec::Vec;
@@ -14,6 +16,7 @@ use super::{
 pub mod msix;
 pub mod vendor;
 
+/// PCI Capability
 #[derive(Debug)]
 pub struct Capability {
     id: u8,
@@ -26,6 +29,7 @@ pub struct Capability {
     cap_data: CapabilityData,
 }
 
+/// PCI Capability data.
 #[derive(Debug, Clone)]
 pub enum CapabilityData {
     /// Id:0x01, Power Management
@@ -76,11 +80,12 @@ impl Capability {
     /// 0xFC, the top of the capability position.
     const CAPABILITY_TOP: u16 = 0xFC;
 
+    /// Gets the capability data
     pub fn capability_data(&self) -> &CapabilityData {
         &self.cap_data
     }
 
-    /// get the capabilities of one device
+    /// Gets the capabilities of one device
     pub(super) fn device_capabilities(dev: &mut PciCommonDevice) -> Vec<Self> {
         if !dev.status().contains(Status::CAPABILITIES_LIST) {
             return Vec::new();

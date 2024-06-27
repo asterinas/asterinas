@@ -2,9 +2,6 @@
 
 //! Bus operations
 
-// FIXME: remove this lint when the docs of the whole bus module are added.
-#![allow(missing_docs)]
-
 pub mod mmio;
 pub mod pci;
 
@@ -18,7 +15,7 @@ pub enum BusProbeError {
 }
 
 /// Initializes the bus
-pub fn init() {
+pub(crate) fn init() {
     pci::init();
     mmio::init();
 }

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! MSI-X capability support.
+
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
@@ -150,11 +152,13 @@ impl CapabilityMsixData {
         }
     }
 
+    /// MSI-X Table size
     pub fn table_size(&self) -> u16 {
         // bit 10:0 table size
         (self.loc.read16(self.ptr + 2) & 0b11_1111_1111) + 1
     }
 
+    /// Enables an interrupt line, it will replace the old handle with the new handle.
     pub fn set_interrupt_vector(&mut self, handle: IrqLine, index: u16) {
         if index >= self.table_size {
             return;
@@ -174,6 +178,7 @@ impl CapabilityMsixData {
             .unwrap();
     }
 
+    /// Gets mutable IrqLine. User can register callbacks by using this function.
     pub fn irq_mut(&mut self, index: usize) -> Option<&mut IrqLine> {
         self.irqs[index].as_mut()
     }

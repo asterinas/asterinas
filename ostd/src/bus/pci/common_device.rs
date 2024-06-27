@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! PCI device common definitions or functions.
+
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
@@ -21,22 +23,27 @@ pub struct PciCommonDevice {
 }
 
 impl PciCommonDevice {
+    /// PCI device ID
     pub fn device_id(&self) -> &PciDeviceId {
         &self.device_id
     }
 
+    /// PCI device location
     pub fn location(&self) -> &PciDeviceLocation {
         &self.location
     }
 
+    /// PCI Base Address Register (BAR) manager
     pub fn bar_manager(&self) -> &BarManager {
         &self.bar_manager
     }
 
+    /// PCI capabilities
     pub fn capabilities(&self) -> &Vec<Capability> {
         &self.capabilities
     }
 
+    /// Gets the PCI Command
     pub fn command(&self) -> Command {
         Command::from_bits_truncate(
             self.location
@@ -44,11 +51,13 @@ impl PciCommonDevice {
         )
     }
 
+    /// Sets the PCI Command
     pub fn set_command(&self, command: Command) {
         self.location
             .write16(PciDeviceCommonCfgOffset::Command as u16, command.bits())
     }
 
+    /// Gets the PCI status
     pub fn status(&self) -> Status {
         Status::from_bits_truncate(
             self.location
@@ -84,6 +93,7 @@ impl PciCommonDevice {
     }
 }
 
+/// Base Address Registers manager.
 #[derive(Debug)]
 pub struct BarManager {
     /// BARs, the bool indicate whether this bar should exposed to unprivileged part.

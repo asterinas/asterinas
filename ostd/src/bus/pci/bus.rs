@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! PCI bus
+
 #![allow(unused_variables)]
 
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
@@ -10,7 +12,9 @@ use log::{debug, error};
 use super::{device_info::PciDeviceId, PciCommonDevice};
 use crate::bus::BusProbeError;
 
+/// PciDevice trait.
 pub trait PciDevice: Sync + Send + Debug {
+    /// Gets device id.
     fn device_id(&self) -> PciDeviceId;
 }
 
@@ -42,6 +46,7 @@ pub struct PciBus {
 }
 
 impl PciBus {
+    /// Registers a PCI driver to the PCI bus.
     pub fn register_driver(&mut self, driver: Arc<dyn PciDriver>) {
         debug!("Register driver:{:#x?}", driver);
         let length = self.common_devices.len();
