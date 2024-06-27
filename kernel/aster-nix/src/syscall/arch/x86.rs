@@ -25,7 +25,7 @@ use crate::syscall::{
     exit_group::sys_exit_group,
     fcntl::sys_fcntl,
     fork::sys_fork,
-    fsync::sys_fsync,
+    fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
     getcwd::sys_getcwd,
     getdents64::{sys_getdents, sys_getdents64},
@@ -182,6 +182,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_UNAME = 63             => sys_uname(args[..1]);
     SYS_FCNTL = 72             => sys_fcntl(args[..3]);
     SYS_FSYNC = 74             => sys_fsync(args[..1]);
+    SYS_FDATASYNC = 75         => sys_fdatasync(args[..1]);
     SYS_TRUNCATE = 76          => sys_truncate(args[..2]);
     SYS_FTRUNCATE = 77         => sys_ftruncate(args[..2]);
     SYS_GETDENTS = 78          => sys_getdents(args[..3]);

@@ -93,10 +93,6 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn sync(&self) -> Result<()> {
-        Ok(())
-    }
-
     fn is_dentry_cacheable(&self) -> bool {
         !self.common.is_volatile()
     }

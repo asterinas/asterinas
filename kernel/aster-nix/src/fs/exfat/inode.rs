@@ -573,9 +573,14 @@ impl ExfatInodeInner {
         Ok(())
     }
 
-    fn sync(&self, fs_guard: &MutexGuard<()>) -> Result<()> {
+    fn sync_data(&self, fs_guard: &MutexGuard<()>) -> Result<()> {
         self.page_cache.evict_range(0..self.size)?;
+        Ok(())
+    }
+
+    fn sync_all(&self, fs_guard: &MutexGuard<()>) -> Result<()> {
         self.sync_metadata(fs_guard)?;
+        self.sync_data(fs_guard)?;
         Ok(())
     }
 
@@ -1320,7 +1325,7 @@ impl Inode for ExfatInode {
         if inner.is_sync() {
             let fs = inner.fs();
             let fs_guard = fs.lock();
-            inner.sync(&fs_guard)?;
+            inner.sync_all(&fs_guard)?;
         }
 
         Ok(buf.len())
@@ -1427,7 +1432,7 @@ impl Inode for ExfatInode {
         let inner = self.inner.read();
 
         if inner.is_sync() {
-            inner.sync(&fs_guard)?;
+            inner.sync_all(&fs_guard)?;
         }
 
         Ok(result)
@@ -1522,7 +1527,7 @@ impl Inode for ExfatInode {
 
         let inner = self.inner.read();
         if inner.is_sync() {
-            inner.sync(&fs_guard)?;
+            inner.sync_all(&fs_guard)?;
         }
 
         Ok(())
@@ -1559,7 +1564,7 @@ impl Inode for ExfatInode {
         let inner = self.inner.read();
         // Sync this inode since size has changed.
         if inner.is_sync() {
-            inner.sync(&fs_guard)?;
+            inner.sync_all(&fs_guard)?;
         }
 
         Ok(())
@@ -1648,9 +1653,9 @@ impl Inode for ExfatInode {
         // Sync
         if self.inner.read().is_sync() || target_.inner.read().is_sync() {
             // TODO: what if fs crashed between syncing?
-            old_inode.inner.read().sync(&fs_guard)?;
-            target_.inner.read().sync(&fs_guard)?;
-            self.inner.read().sync(&fs_guard)?;
+            old_inode.inner.read().sync_all(&fs_guard)?;
+            target_.inner.read().sync_all(&fs_guard)?;
+            self.inner.read().sync_all(&fs_guard)?;
         }
         Ok(())
     }
@@ -1667,11 +1672,20 @@ impl Inode for ExfatInode {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 
-    fn sync(&self) -> Result<()> {
+    fn sync_all(&self) -> Result<()> {
         let inner = self.inner.read();
         let fs = inner.fs();
         let fs_guard = fs.lock();
-        inner.sync(&fs_guard)?;
+        inner.sync_all(&fs_guard)?;
+
+        Ok(())
+    }
+
+    fn sync_data(&self) -> Result<()> {
+        let inner = self.inner.read();
+        let fs = inner.fs();
+        let fs_guard = fs.lock();
+        inner.sync_data(&fs_guard)?;
 
         Ok(())
     }

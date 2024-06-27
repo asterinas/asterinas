@@ -95,7 +95,7 @@ provided by Linux on x86-64 architecture.
 | 72      | fcntl            | ✅              |
 | 73      | flock            | ❌              |
 | 74      | fsync            | ✅              |
-| 75      | fdatasync        | ❌              |
+| 75      | fdatasync        | ✅              |
 | 76      | truncate         | ✅              |
 | 77      | ftruncate        | ✅              |
 | 78      | getdents         | ✅              |
