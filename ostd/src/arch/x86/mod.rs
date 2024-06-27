@@ -6,6 +6,7 @@ pub mod boot;
 pub mod console;
 pub(crate) mod cpu;
 pub mod device;
+pub(crate) mod ex_table;
 pub mod iommu;
 pub(crate) mod irq;
 pub(crate) mod kernel;

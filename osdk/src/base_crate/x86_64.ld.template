@@ -58,6 +58,16 @@ SECTIONS
         __bss_end = .;
     }
 
+    # The section to store exception table (ExTable).
+    # This table is used for recovering from specific exception handling faults
+    # occurring at known points in the code.
+    # Ref: /aster-frame/src/arch/x86/ex_table.rs
+    .ex_table               : AT(ADDR(.ex_table) - KERNEL_VMA) {
+        __ex_table = .;
+        KEEP(*(SORT(.ex_table)))
+        __ex_table_end = .;
+    }
+
     .ktest_array            : AT(ADDR(.ktest_array) - KERNEL_VMA) {
         __ktest_array = .;
         KEEP(*(SORT(.ktest_array)))
