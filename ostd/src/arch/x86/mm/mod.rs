@@ -63,20 +63,27 @@ bitflags::bitflags! {
     }
 }
 
+/// Flush any TLB entry that contains the map of the given virtual address.
+///
+/// This flush performs regardless of the global-page bit. So it can flush both global
+/// and non-global entries.
 pub(crate) fn tlb_flush_addr(vaddr: Vaddr) {
     tlb::flush(VirtAddr::new(vaddr as u64));
 }
 
+/// Flush any TLB entry that intersects with the given address range.
 pub(crate) fn tlb_flush_addr_range(range: &Range<Vaddr>) {
     for vaddr in range.clone().step_by(PAGE_SIZE) {
         tlb_flush_addr(vaddr);
     }
 }
 
+/// Flush all TLB entries except for the global-page entries.
 pub(crate) fn tlb_flush_all_excluding_global() {
     tlb::flush_all();
 }
 
+/// Flush all TLB entries, including global-page entries.
 pub(crate) fn tlb_flush_all_including_global() {
     // SAFETY: updates to CR4 here only change the global-page bit, the side effect
     // is only to invalidate the TLB, which doesn't affect the memory safety.
