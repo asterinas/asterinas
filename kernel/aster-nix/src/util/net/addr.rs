@@ -27,7 +27,10 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
             let bytes = {
                 let bytes_len = addr_len - core::mem::size_of::<u16>();
                 let mut bytes = vec![0u8; bytes_len];
-                read_bytes_from_user(addr + core::mem::size_of::<u16>(), &mut bytes)?;
+                read_bytes_from_user(
+                    addr + core::mem::size_of::<u16>(),
+                    &mut VmWriter::from(bytes.as_mut_slice()),
+                )?;
                 bytes
             };
 

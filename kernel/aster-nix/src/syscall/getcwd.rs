@@ -8,6 +8,6 @@ pub fn sys_getcwd(buf: Vaddr, len: usize) -> Result<SyscallReturn> {
     let fake_cwd = CString::new("/")?;
     let bytes = fake_cwd.as_bytes_with_nul();
     let write_len = len.min(bytes.len());
-    write_bytes_to_user(buf, &bytes[..write_len])?;
+    write_bytes_to_user(buf, &mut VmReader::from(&bytes[..write_len]))?;
     Ok(SyscallReturn::Return(write_len as _))
 }

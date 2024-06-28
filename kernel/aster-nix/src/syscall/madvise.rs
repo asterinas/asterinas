@@ -15,7 +15,7 @@ pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallRet
         | MadviseBehavior::MADV_WILLNEED => {
             // perform a read at first
             let mut buffer = vec![0u8; len];
-            read_bytes_from_user(start, &mut buffer)?;
+            read_bytes_from_user(start, &mut VmWriter::from(buffer.as_mut_slice()))?;
         }
         MadviseBehavior::MADV_DONTNEED => madv_dontneed(start, len)?,
         _ => todo!(),

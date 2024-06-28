@@ -35,7 +35,7 @@ pub fn sys_readlinkat(
     let linkpath = dentry.inode().read_link()?;
     let bytes = linkpath.as_bytes();
     let write_len = bytes.len().min(usr_buf_len);
-    write_bytes_to_user(usr_buf_addr, &bytes[..write_len])?;
+    write_bytes_to_user(usr_buf_addr, &mut VmReader::from(&bytes[..write_len]))?;
     Ok(SyscallReturn::Return(write_len as _))
 }
 

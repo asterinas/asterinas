@@ -39,7 +39,10 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
             let thread_name = posix_thread.thread_name().lock();
             if let Some(thread_name) = &*thread_name {
                 if let Some(thread_name) = thread_name.name()? {
-                    write_bytes_to_user(write_to_addr, thread_name.to_bytes_with_nul())?;
+                    write_bytes_to_user(
+                        write_to_addr,
+                        &mut VmReader::from(thread_name.to_bytes_with_nul()),
+                    )?;
                 }
             }
         }
