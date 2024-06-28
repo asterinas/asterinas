@@ -23,6 +23,7 @@ use crate::syscall::{
     execve::{sys_execve, sys_execveat},
     exit::sys_exit,
     exit_group::sys_exit_group,
+    fallocate::sys_fallocate,
     fcntl::sys_fcntl,
     fork::sys_fork,
     fsync::{sys_fdatasync, sys_fsync},
@@ -286,6 +287,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);
     SYS_EVENTFD = 284          => sys_eventfd(args[..1]);
+    SYS_FALLOCATE = 285        => sys_fallocate(args[..4]);
     SYS_ACCEPT4 = 288          => sys_accept4(args[..4]);
     SYS_EVENTFD2 = 290         => sys_eventfd2(args[..2]);
     SYS_EPOLL_CREATE1 = 291    => sys_epoll_create1(args[..1]);

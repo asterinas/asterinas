@@ -14,10 +14,10 @@ impl InodeHandle<Rights> {
     ) -> Result<Self> {
         let inode = dentry.inode();
         if access_mode.is_readable() && !inode.mode()?.is_readable() {
-            return_errno_with_message!(Errno::EACCES, "File is not readable");
+            return_errno_with_message!(Errno::EACCES, "file is not readable");
         }
         if access_mode.is_writable() && !inode.mode()?.is_writable() {
-            return_errno_with_message!(Errno::EACCES, "File is not writable");
+            return_errno_with_message!(Errno::EACCES, "file is not writable");
         }
 
         Self::new_unchecked_access(dentry, access_mode, status_flags)
@@ -30,7 +30,7 @@ impl InodeHandle<Rights> {
     ) -> Result<Self> {
         let inode = dentry.inode();
         if access_mode.is_writable() && inode.type_() == InodeType::Dir {
-            return_errno_with_message!(Errno::EISDIR, "Directory cannot open to write");
+            return_errno_with_message!(Errno::EISDIR, "directory cannot open to write");
         }
 
         let file_io = if let Some(device) = inode.as_device() {
@@ -59,7 +59,7 @@ impl InodeHandle<Rights> {
 
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
-            return_errno_with_message!(Errno::EBADF, "File is not readable");
+            return_errno_with_message!(Errno::EBADF, "file is not readable");
         }
 
         self.0.read_to_end(buf)
@@ -67,7 +67,7 @@ impl InodeHandle<Rights> {
 
     pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
-            return_errno_with_message!(Errno::EBADF, "File is not readable");
+            return_errno_with_message!(Errno::EBADF, "file is not readable");
         }
         self.0.readdir(visitor)
     }
@@ -100,14 +100,14 @@ impl FileLike for InodeHandle<Rights> {
 
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
-            return_errno_with_message!(Errno::EBADF, "File is not readable");
+            return_errno_with_message!(Errno::EBADF, "file is not readable");
         }
         self.0.read(buf)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
         if !self.1.contains(Rights::WRITE) {
-            return_errno_with_message!(Errno::EBADF, "File is not writable");
+            return_errno_with_message!(Errno::EBADF, "file is not writable");
         }
         self.0.write(buf)
     }
@@ -128,7 +128,7 @@ impl FileLike for InodeHandle<Rights> {
 
     fn resize(&self, new_size: usize) -> Result<()> {
         if !self.1.contains(Rights::WRITE) {
-            return_errno_with_message!(Errno::EINVAL, "File is not writable");
+            return_errno_with_message!(Errno::EINVAL, "file is not writable");
         }
         self.0.resize(new_size)
     }
@@ -136,6 +136,13 @@ impl FileLike for InodeHandle<Rights> {
     fn set_status_flags(&self, new_status_flags: StatusFlags) -> Result<()> {
         self.0.set_status_flags(new_status_flags);
         Ok(())
+    }
+
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        if !self.1.contains(Rights::WRITE) {
+            return_errno_with_message!(Errno::EBADF, "file is not writable");
+        }
+        self.0.fallocate(mode, offset, len)
     }
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {

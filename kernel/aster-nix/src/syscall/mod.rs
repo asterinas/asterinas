@@ -31,6 +31,7 @@ mod eventfd;
 mod execve;
 mod exit;
 mod exit_group;
+mod fallocate;
 mod fcntl;
 mod fork;
 mod fsync;

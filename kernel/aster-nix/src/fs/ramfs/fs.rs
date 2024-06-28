@@ -19,8 +19,8 @@ use crate::{
     fs::{
         device::Device,
         utils::{
-            CStr256, DirentVisitor, FileSystem, FsFlags, Inode, InodeMode, InodeType, IoctlCmd,
-            Metadata, PageCache, PageCacheBackend, SuperBlock,
+            CStr256, DirentVisitor, FallocMode, FileSystem, FsFlags, Inode, InodeMode, InodeType,
+            IoctlCmd, Metadata, PageCache, PageCacheBackend, SuperBlock,
         },
     },
     prelude::*,
@@ -1103,6 +1103,43 @@ impl Inode for RamInode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         Weak::upgrade(&self.fs).unwrap()
+    }
+
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        if self.typ != InodeType::File {
+            return_errno_with_message!(Errno::EISDIR, "not regular file");
+        }
+
+        // The support for flags is consistent with Linux
+        match mode {
+            FallocMode::Allocate => {
+                let new_size = offset + len;
+                if new_size > self.size() {
+                    self.resize(new_size)?;
+                }
+                Ok(())
+            }
+            FallocMode::AllocateKeepSize => {
+                // Do nothing
+                Ok(())
+            }
+            FallocMode::PunchHoleKeepSize => {
+                let node = self.node.read();
+                let file_size = node.metadata.size;
+                if offset >= file_size {
+                    return Ok(());
+                }
+                let range = offset..file_size.min(offset + len);
+                // TODO: Think of a more light-weight approach
+                node.inner.as_file().unwrap().fill_zeros(range)
+            }
+            _ => {
+                return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "fallocate with the specified flags is not supported"
+                );
+            }
+        }
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

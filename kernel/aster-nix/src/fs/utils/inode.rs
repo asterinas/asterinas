@@ -7,7 +7,7 @@ use core::time::Duration;
 use aster_rights::Full;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 
-use super::{DirentVisitor, FileSystem, IoctlCmd};
+use super::{DirentVisitor, FallocMode, FileSystem, IoctlCmd};
 use crate::{
     events::IoEvents,
     fs::device::{Device, DeviceType},
@@ -346,6 +346,12 @@ pub trait Inode: Any + Sync + Send {
 
     fn sync_data(&self) -> Result<()> {
         Ok(())
+    }
+
+    /// Manipulates a range of space of the file according to the specified allocate mode,
+    /// the manipulated range starts at `offset` and continues for `len` bytes.
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        return_errno!(Errno::EOPNOTSUPP);
     }
 
     fn poll(&self, mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
