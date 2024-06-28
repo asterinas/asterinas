@@ -2,23 +2,20 @@
 
 //! Logging support.
 
-use log::{Level, Metadata, Record};
+use log::{LevelFilter, Metadata, Record};
 
-use crate::early_println;
+use crate::{
+    boot::{kcmdline::ModuleArg, kernel_cmdline},
+    early_println,
+};
 
 const LOGGER: Logger = Logger {};
-
-/// The log level.
-///
-/// FIXME: The logs should be able to be read from files in the userspace,
-/// and the log level should be configurable.
-pub const INIT_LOG_LEVEL: Level = Level::Error;
 
 struct Logger {}
 
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= INIT_LOG_LEVEL
+        metadata.level() <= log::max_level()
     }
 
     fn log(&self, record: &Record) {
@@ -30,8 +27,31 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
+/// Initialize the logger. Users should avoid using the log macros before this function is called.
 pub(crate) fn init() {
-    log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(INIT_LOG_LEVEL.to_level_filter()))
-        .unwrap();
+    let module_args = kernel_cmdline().get_module_args("ostd");
+    let mut level = LevelFilter::Off;
+    if let Some(module_args) = module_args {
+        for arg in module_args.iter() {
+            match arg {
+                ModuleArg::Arg(_) => {}
+                ModuleArg::KeyVal(name, value) => {
+                    if name.as_bytes() == "log_level".as_bytes() {
+                        let value = value.as_c_str().to_str().unwrap();
+                        level = match value {
+                            "error" => LevelFilter::Error,
+                            "warn" => LevelFilter::Warn,
+                            "info" => LevelFilter::Info,
+                            "debug" => LevelFilter::Debug,
+                            "trace" => LevelFilter::Trace,
+                            // Otherwise, OFF
+                            _ => LevelFilter::Off,
+                        }
+                    }
+                }
+            }
+        }
+    }
+    log::set_max_level(level);
+    log::set_logger(&LOGGER).unwrap();
 }
