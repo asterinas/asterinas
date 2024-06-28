@@ -2,8 +2,8 @@
 
 use x86::msr::{
     rdmsr, wrmsr, IA32_APIC_BASE, IA32_X2APIC_APICID, IA32_X2APIC_CUR_COUNT, IA32_X2APIC_DIV_CONF,
-    IA32_X2APIC_EOI, IA32_X2APIC_INIT_COUNT, IA32_X2APIC_LVT_TIMER, IA32_X2APIC_SIVR,
-    IA32_X2APIC_VERSION,
+    IA32_X2APIC_EOI, IA32_X2APIC_ESR, IA32_X2APIC_ICR, IA32_X2APIC_INIT_COUNT,
+    IA32_X2APIC_LVT_TIMER, IA32_X2APIC_SIVR, IA32_X2APIC_VERSION,
 };
 
 use super::ApicTimer;
@@ -64,6 +64,20 @@ impl super::Apic for X2Apic {
     fn eoi(&mut self) {
         unsafe {
             wrmsr(IA32_X2APIC_EOI, 0);
+        }
+    }
+
+    unsafe fn send_ipi(&mut self, icr: super::Icr) {
+        wrmsr(IA32_X2APIC_ESR, 0);
+        wrmsr(IA32_X2APIC_ICR, icr.0);
+        loop {
+            let icr = rdmsr(IA32_X2APIC_ICR);
+            if (icr >> 12 & 0x1) == 0 {
+                break;
+            }
+            if rdmsr(IA32_X2APIC_ESR) > 0 {
+                break;
+            }
         }
     }
 }
