@@ -101,14 +101,20 @@ impl Segment {
 impl<'a> Segment {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
-        // SAFETY: the memory of the page frames is contiguous and is valid during `'a`.
-        unsafe { VmReader::from_raw_parts(self.as_ptr(), self.nbytes()) }
+        // SAFETY: the memory of the page frames is untyped, contiguous and is valid during `'a`.
+        // Currently, only slice can generate `VmWriter` with typed memory, and this `Segment` cannot
+        // generate or be generated from an alias slice, so the reader will not overlap with `VmWriter`
+        // with typed memory.
+        unsafe { VmReader::from_kernel_space(self.as_ptr(), self.nbytes()) }
     }
 
     /// Returns a writer to write data into it.
     pub fn writer(&'a self) -> VmWriter<'a> {
-        // SAFETY: the memory of the page frames is contiguous and is valid during `'a`.
-        unsafe { VmWriter::from_raw_parts_mut(self.as_mut_ptr(), self.nbytes()) }
+        // SAFETY: the memory of the page frames is untyped, contiguous and is valid during `'a`.
+        // Currently, only slice can generate `VmReader` with typed memory, and this `Segment` cannot
+        // generate or be generated from an alias slice, so the writer will not overlap with `VmReader`
+        // with typed memory.
+        unsafe { VmWriter::from_kernel_space(self.as_mut_ptr(), self.nbytes()) }
     }
 }
 

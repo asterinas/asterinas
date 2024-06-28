@@ -82,7 +82,7 @@ impl Default for TtyDriver {
 fn console_input_callback(mut reader: VmReader) {
     let tty_driver = get_tty_driver();
     while reader.remain() > 0 {
-        let ch = reader.read_val();
+        let ch = reader.read_val().unwrap();
         tty_driver.push_char(ch);
     }
 }
