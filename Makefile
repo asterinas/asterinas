@@ -12,6 +12,7 @@ INTEL_TDX ?= 0
 RELEASE ?= 0
 RELEASE_LTO ?= 0
 SCHEME ?= ""
+SMP ?= 1
 # End of global options.
 
 # The Makefile provides a way to run arbitrary tests in the kernel
@@ -25,6 +26,7 @@ SYSCALL_TEST_DIR ?= /tmp
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
 CARGO_OSDK_ARGS := --target-arch=$(ARCH)
+CARGO_OSDK_ARGS += --qemu-args="-smp $(SMP)"
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
