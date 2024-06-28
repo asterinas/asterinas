@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use alloc::sync::Arc;
 use core::{
     cell::RefCell,
@@ -13,7 +11,7 @@ use super::{
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{cpu_local, CpuLocal};
+use crate::cpu_local;
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -49,21 +47,16 @@ cpu_local! {
     static PROCESSOR: RefCell<Processor> = RefCell::new(Processor::new());
 }
 
-pub fn take_current_task() -> Option<Arc<Task>> {
-    CpuLocal::borrow_with(&PROCESSOR, |processor| {
-        processor.borrow_mut().take_current()
-    })
-}
-
 /// Retrieves the current task running on the processor.
 pub fn current_task() -> Option<Arc<Task>> {
-    CpuLocal::borrow_with(&PROCESSOR, |processor| processor.borrow().current())
+    PROCESSOR.borrow_irq_disabled().borrow().current()
 }
 
 pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
-    CpuLocal::borrow_with(&PROCESSOR, |processor| {
-        processor.borrow_mut().get_idle_task_ctx_ptr()
-    })
+    PROCESSOR
+        .borrow_irq_disabled()
+        .borrow_mut()
+        .get_idle_task_ctx_ptr()
 }
 
 /// Calls this function to switch to other task by using GLOBAL_SCHEDULER
@@ -134,15 +127,16 @@ fn switch_to_task(next_task: Arc<Task>) {
     }
 
     // Change the current task to the next task.
-    CpuLocal::borrow_with(&PROCESSOR, |processor| {
-        let mut processor = processor.borrow_mut();
+    {
+        let processor_guard = PROCESSOR.borrow_irq_disabled();
+        let mut processor = processor_guard.borrow_mut();
 
         // We cannot directly overwrite `current` at this point. Since we are running as `current`,
         // we must avoid dropping `current`. Otherwise, the kernel stack may be unmapped, leading
         // to soundness problems.
         let old_current = processor.current.replace(next_task);
         processor.prev_task = old_current;
-    });
+    }
 
     // SAFETY:
     // 1. `ctx` is only used in `schedule()`. We have exclusive access to both the current task
@@ -200,7 +194,7 @@ impl PreemptInfo {
 #[must_use]
 pub struct DisablePreemptGuard {
     // This private field prevents user from constructing values of this type directly.
-    private: (),
+    _private: (),
 }
 
 impl !Send for DisablePreemptGuard {}
@@ -208,7 +202,7 @@ impl !Send for DisablePreemptGuard {}
 impl DisablePreemptGuard {
     fn new() -> Self {
         PREEMPT_COUNT.increase_num_locks();
-        Self { private: () }
+        Self { _private: () }
     }
 
     /// Transfer this guard to a new guard.
