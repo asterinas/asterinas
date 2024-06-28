@@ -12,13 +12,13 @@ use crate::{
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(context: &UserContext) {
     let trap_info = context.trap_information();
-    let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
-    log_trap_info(exception, trap_info);
+    let exception = CpuException::from_num(trap_info.id as u16);
+    log_trap_info(&exception, trap_info);
     let current = current!();
     let root_vmar = current.root_vmar();
 
-    match *exception {
-        PAGE_FAULT => {
+    match exception {
+        CpuException::PageFault => {
             if handle_page_fault(root_vmar.vm_space(), trap_info).is_err() {
                 generate_fault_signal(trap_info);
             }
@@ -76,57 +76,18 @@ fn generate_fault_signal(trap_info: &CpuExceptionInfo) {
     current.enqueue_signal(signal);
 }
 
-macro_rules! log_trap_common {
-    ($exception_name: ident, $trap_info: ident) => {
-        trace!(
-            "[Trap][{}][err = {}]",
-            stringify!($exception_name),
-            $trap_info.error_code
-        )
-    };
-}
-
 fn log_trap_info(exception: &CpuException, trap_info: &CpuExceptionInfo) {
-    match *exception {
-        DIVIDE_BY_ZERO => log_trap_common!(DIVIDE_BY_ZERO, trap_info),
-        DEBUG => log_trap_common!(DEBUG, trap_info),
-        NON_MASKABLE_INTERRUPT => log_trap_common!(NON_MASKABLE_INTERRUPT, trap_info),
-        BREAKPOINT => log_trap_common!(BREAKPOINT, trap_info),
-        OVERFLOW => log_trap_common!(OVERFLOW, trap_info),
-        BOUND_RANGE_EXCEEDED => log_trap_common!(BOUND_RANGE_EXCEEDED, trap_info),
-        INVALID_OPCODE => log_trap_common!(INVALID_OPCODE, trap_info),
-        DEVICE_NOT_AVAILABLE => log_trap_common!(DEVICE_NOT_AVAILABLE, trap_info),
-        DOUBLE_FAULT => log_trap_common!(DOUBLE_FAULT, trap_info),
-        COPROCESSOR_SEGMENT_OVERRUN => log_trap_common!(COPROCESSOR_SEGMENT_OVERRUN, trap_info),
-        INVAILD_TSS => log_trap_common!(INVAILD_TSS, trap_info),
-        SEGMENT_NOT_PRESENT => log_trap_common!(SEGMENT_NOT_PRESENT, trap_info),
-        STACK_SEGMENT_FAULT => log_trap_common!(STACK_SEGMENT_FAULT, trap_info),
-        GENERAL_PROTECTION_FAULT => log_trap_common!(GENERAL_PROTECTION_FAULT, trap_info),
-        PAGE_FAULT => {
+    match exception {
+        CpuException::PageFault => {
             trace!(
-                "[Trap][{}][page fault addr = 0x{:x}, err = {}]",
-                stringify!(PAGE_FAULT),
+                "[Trap][{:?}][page fault addr = 0x{:x}, err = {}]",
+                exception,
                 trap_info.page_fault_addr,
                 trap_info.error_code
             );
         }
-        // 15 reserved
-        X87_FLOATING_POINT_EXCEPTION => log_trap_common!(X87_FLOATING_POINT_EXCEPTION, trap_info),
-        ALIGNMENT_CHECK => log_trap_common!(ALIGNMENT_CHECK, trap_info),
-        MACHINE_CHECK => log_trap_common!(MACHINE_CHECK, trap_info),
-        SIMD_FLOATING_POINT_EXCEPTION => log_trap_common!(SIMD_FLOATING_POINT_EXCEPTION, trap_info),
-        VIRTUALIZATION_EXCEPTION => log_trap_common!(VIRTUALIZATION_EXCEPTION, trap_info),
-        CONTROL_PROTECTION_EXCEPTION => log_trap_common!(CONTROL_PROTECTION_EXCEPTION, trap_info),
-        HYPERVISOR_INJECTION_EXCEPTION => {
-            log_trap_common!(HYPERVISOR_INJECTION_EXCEPTION, trap_info)
-        }
-        VMM_COMMUNICATION_EXCEPTION => log_trap_common!(VMM_COMMUNICATION_EXCEPTION, trap_info),
-        SECURITY_EXCEPTION => log_trap_common!(SECURITY_EXCEPTION, trap_info),
         _ => {
-            info!(
-                "[Trap][Unknown trap type][id = {}, err = {}]",
-                trap_info.id, trap_info.error_code
-            );
+            trace!("[Trap][{:?}][err = {}]", exception, trap_info.error_code);
         }
     }
 }

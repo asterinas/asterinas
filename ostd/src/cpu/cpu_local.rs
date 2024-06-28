@@ -22,7 +22,7 @@ use core::{cell::UnsafeCell, ops::Deref};
 
 use crate::{
     cpu::{get_cpu_local_base, set_cpu_local_base},
-    trap::{disable_local, DisabledLocalIrqGuard},
+    exception::{disable_local_irq, DisabledLocalIrqGuard},
 };
 
 /// Defines a CPU-local variable.
@@ -106,7 +106,7 @@ impl<T> CpuLocal<T> {
     pub fn borrow_irq_disabled(&self) -> CpuLocalDerefGuard<'_, T> {
         CpuLocalDerefGuard {
             cpu_local: self,
-            _guard: disable_local(),
+            _guard: disable_local_irq(),
         }
     }
 

@@ -99,7 +99,7 @@ static LINES: Once<[SoftIrqLine; SoftIrqLine::NR_LINES as usize]> = Once::new();
 
 pub(super) fn init() {
     let lines: [SoftIrqLine; SoftIrqLine::NR_LINES as usize] =
-        array_init::array_init(|i| SoftIrqLine::new(i as u8));
+        core::array::from_fn(|i| SoftIrqLine::new(i as u8));
     LINES.call_once(|| lines);
 }
 
@@ -141,15 +141,16 @@ pub(crate) fn process_pending() {
 
     for i in 0..SOFTIRQ_RUN_TIMES {
         let mut action_mask = {
-            let pending_mask = PENDING_MASK.fetch_and(0, Ordering::Acquire);
-            pending_mask & ENABLED_MASK.load(Ordering::Acquire)
+            let pending_mask = PENDING_MASK.load(Ordering::Acquire);
+            let enabled_mask = ENABLED_MASK.load(Ordering::Acquire);
+            pending_mask & enabled_mask
         };
 
         if action_mask == 0 {
             break;
         }
         while action_mask > 0 {
-            let action_id = u8::trailing_zeros(action_mask) as u8;
+            let action_id = action_mask.trailing_zeros() as u8;
             SoftIrqLine::get(action_id).callback.get().unwrap()();
             action_mask &= action_mask - 1;
         }

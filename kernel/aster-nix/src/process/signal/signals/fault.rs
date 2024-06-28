@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::cpu::{
-    CpuException, CpuExceptionInfo, ALIGNMENT_CHECK, BOUND_RANGE_EXCEEDED, DIVIDE_BY_ZERO,
-    GENERAL_PROTECTION_FAULT, INVALID_OPCODE, PAGE_FAULT, SIMD_FLOATING_POINT_EXCEPTION,
-    X87_FLOATING_POINT_EXCEPTION,
-};
+use ostd::cpu::{CpuException, CpuExceptionInfo};
 
 use super::Signal;
 use crate::{
@@ -21,17 +17,17 @@ pub struct FaultSignal {
 impl FaultSignal {
     pub fn new(trap_info: &CpuExceptionInfo) -> FaultSignal {
         debug!("Trap id: {}", trap_info.id);
-        let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
-        let (num, code, addr) = match *exception {
-            DIVIDE_BY_ZERO => (SIGFPE, FPE_INTDIV, None),
-            X87_FLOATING_POINT_EXCEPTION | SIMD_FLOATING_POINT_EXCEPTION => {
+        let exception = CpuException::from_num(trap_info.id as u16);
+        let (num, code, addr) = match exception {
+            CpuException::DivideByZero => (SIGFPE, FPE_INTDIV, None),
+            CpuException::X87FloatingPointException | CpuException::SimdFloatingPointException => {
                 (SIGFPE, FPE_FLTDIV, None)
             }
-            BOUND_RANGE_EXCEEDED => (SIGSEGV, SEGV_BNDERR, None),
-            ALIGNMENT_CHECK => (SIGBUS, BUS_ADRALN, None),
-            INVALID_OPCODE => (SIGILL, ILL_ILLOPC, None),
-            GENERAL_PROTECTION_FAULT => (SIGBUS, BUS_ADRERR, None),
-            PAGE_FAULT => {
+            CpuException::BoundRangeExceeded => (SIGSEGV, SEGV_BNDERR, None),
+            CpuException::AlignmentCheck => (SIGBUS, BUS_ADRALN, None),
+            CpuException::InvalidOpcode => (SIGILL, ILL_ILLOPC, None),
+            CpuException::GeneralProtectionFault => (SIGBUS, BUS_ADRERR, None),
+            CpuException::PageFault => {
                 const PF_ERR_FLAG_PRESENT: usize = 1usize << 0;
                 let code = if trap_info.error_code & PF_ERR_FLAG_PRESENT != 0 {
                     SEGV_ACCERR

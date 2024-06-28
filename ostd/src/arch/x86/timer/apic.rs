@@ -26,7 +26,7 @@ use crate::{
             tsc::TSC_FREQ,
         },
     },
-    trap::IrqLine,
+    exception::IrqLine,
 };
 
 /// Initializes APIC with tsc deadline mode or periodic mode.
