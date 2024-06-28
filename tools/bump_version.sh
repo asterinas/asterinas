@@ -96,7 +96,7 @@ update_tag_version() {
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 ASTER_SRC_DIR=${SCRIPT_DIR}/..
 DOCS_DIR=${ASTER_SRC_DIR}/docs
-CARGO_TOML_PATH=${ASTER_SRC_DIR}/Cargo.toml
+OSTD_CARGO_TOML_PATH=${ASTER_SRC_DIR}/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 
@@ -112,7 +112,7 @@ validate_bump_type
 new_version=$(bump_version ${current_version})
 
 # Update the package version in Cargo.toml
-update_package_version ${CARGO_TOML_PATH}
+update_package_version ${OSTD_CARGO_TOML_PATH}
 update_package_version ${OSDK_CARGO_TOML_PATH}
 
 # Automatically bump Cargo.lock file
@@ -131,7 +131,7 @@ for workflow in $WORKFLOWS; do
 done
 
 # Update tag version in release_tag workflow
-RELEASE_TAG_WORKFLOW=${ASTER_SRC_DIR}/.github/workflows/release_tag.yml
+RELEASE_TAG_WORKFLOW=${ASTER_SRC_DIR}/.github/workflows/push_git_tag.yml
 update_tag_version $RELEASE_TAG_WORKFLOW
 
 # Update Docker image versions in the documentation
