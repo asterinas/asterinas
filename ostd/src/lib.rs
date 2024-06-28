@@ -5,6 +5,7 @@
 #![feature(const_mut_refs)]
 #![feature(const_ptr_sub_ptr)]
 #![feature(const_trait_impl)]
+#![feature(core_intrinsics)]
 #![feature(coroutines)]
 #![feature(fn_traits)]
 #![feature(generic_const_exprs)]
@@ -18,6 +19,7 @@
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
 #![allow(incomplete_features)]
+#![allow(internal_features)]
 #![no_std]
 #![warn(missing_docs)]
 
