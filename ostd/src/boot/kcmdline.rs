@@ -18,7 +18,7 @@ use alloc::{
     vec::Vec,
 };
 
-use log::warn;
+use crate::early_println;
 
 #[derive(PartialEq, Debug)]
 struct InitprocArgs {
@@ -116,7 +116,10 @@ impl From<&str> for KCmdlineArg {
                 1 => (arg_pattern[0], None),
                 2 => (arg_pattern[0], Some(arg_pattern[1])),
                 _ => {
-                    warn!("Unable to parse kernel argument {}, skip for now", arg);
+                    early_println!(
+                        "[KCmdline] Unable to parse kernel argument {}, skip for now",
+                        arg
+                    );
                     continue;
                 }
             };
@@ -126,9 +129,10 @@ impl From<&str> for KCmdlineArg {
                 1 => (None, entry_pattern[0]),
                 2 => (Some(entry_pattern[0]), entry_pattern[1]),
                 _ => {
-                    warn!(
-                        "Unable to parse entry {} in argument {}, skip for now",
-                        entry, arg
+                    early_println!(
+                        "[KCmdline] Unable to parse entry {} in argument {}, skip for now",
+                        entry,
+                        arg
                     );
                     continue;
                 }

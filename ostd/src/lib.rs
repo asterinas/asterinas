@@ -59,7 +59,6 @@ pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
 /// boot stage only global variables.
 pub fn init() {
     arch::before_all_init();
-    logger::init();
 
     #[cfg(feature = "intel_tdx")]
     let td_info = init_tdx().unwrap();
@@ -73,6 +72,7 @@ pub fn init() {
     mm::heap_allocator::init();
 
     boot::init();
+    logger::init();
 
     mm::page::allocator::init();
     mm::kspace::init_boot_page_table();
