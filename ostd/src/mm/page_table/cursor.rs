@@ -109,11 +109,22 @@ pub(crate) struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
 where
     [(); C::NR_LEVELS as usize]:,
 {
+    /// The lock guards of the cursor. The level 1 page table lock guard is at
+    /// index 0, and the level N page table lock guard is at index N - 1.
+    ///
+    /// When destructing the cursor, the locks will be released in the order
+    /// from low to high, exactly the reverse order of the aquisition.
+    /// This behavior is ensured by the default drop implementation of Rust:
+    /// <https://doc.rust-lang.org/reference/destructors.html>.
     guards: [Option<PageTableNode<E, C>>; C::NR_LEVELS as usize],
-    level: PagingLevel,       // current level
-    guard_level: PagingLevel, // from guard_level to level, the locks are held
-    va: Vaddr,                // current virtual address
-    barrier_va: Range<Vaddr>, // virtual address range that is locked
+    /// The level of the page table that the cursor points to.
+    level: PagingLevel,
+    /// From `guard_level` to `level`, the locks are held in `guards`.
+    guard_level: PagingLevel,
+    /// The current virtual address that the cursor points to.
+    va: Vaddr,
+    /// The virtual address range that is locked.
+    barrier_va: Range<Vaddr>,
     phantom: PhantomData<&'a PageTable<M, E, C>>,
 }
 
@@ -142,7 +153,7 @@ where
 
         // Create a guard array that only hold the root node lock.
         let guards = core::array::from_fn(|i| {
-            if i == 0 {
+            if i == (C::NR_LEVELS - 1) as usize {
                 Some(pt.root.clone_shallow().lock())
             } else {
                 None
@@ -178,8 +189,8 @@ where
 
             cursor.level_down();
 
-            // Release the guard of the previous level.
-            cursor.guards[(C::NR_LEVELS - cursor.level) as usize - 1] = None;
+            // Release the guard of the previous (upper) level.
+            cursor.guards[cursor.level as usize] = None;
             cursor.guard_level -= 1;
         }
 
@@ -250,7 +261,7 @@ where
     ///
     /// This method requires locks acquired before calling it. The discarded level will be unlocked.
     fn level_up(&mut self) {
-        self.guards[(C::NR_LEVELS - self.level) as usize] = None;
+        self.guards[(self.level - 1) as usize] = None;
         self.level += 1;
 
         // TODO: Drop page tables if page tables become empty.
@@ -262,16 +273,14 @@ where
 
         if let Child::PageTable(nxt_lvl_ptn) = self.cur_child() {
             self.level -= 1;
-            self.guards[(C::NR_LEVELS - self.level) as usize] = Some(nxt_lvl_ptn.lock());
+            self.guards[(self.level - 1) as usize] = Some(nxt_lvl_ptn.lock());
         } else {
             panic!("Trying to level down when it is not mapped to a page table");
         }
     }
 
     fn cur_node(&self) -> &PageTableNode<E, C> {
-        self.guards[(C::NR_LEVELS - self.level) as usize]
-            .as_ref()
-            .unwrap()
+        self.guards[(self.level - 1) as usize].as_ref().unwrap()
     }
 
     fn cur_idx(&self) -> usize {
@@ -625,7 +634,7 @@ where
             self.0.level_up();
         }
 
-        self.0.guards[0].take()
+        self.0.guards[(C::NR_LEVELS - 1) as usize].take()
 
         // Ok to drop the cursor here because we ensure not to access the page table if the current
         // level is the root level when running the dropping method.
@@ -642,7 +651,7 @@ where
         self.cur_node_mut()
             .set_child_pt(idx, new_node.clone_raw(), is_tracked);
         self.0.level -= 1;
-        self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_node);
+        self.0.guards[(self.0.level - 1) as usize] = Some(new_node);
     }
 
     /// Goes down a level assuming the current slot is an untracked huge page.
@@ -659,12 +668,10 @@ where
             unreachable!();
         };
         self.0.level -= 1;
-        self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_node.lock());
+        self.0.guards[(self.0.level - 1) as usize] = Some(new_node.lock());
     }
 
     fn cur_node_mut(&mut self) -> &mut PageTableNode<E, C> {
-        self.0.guards[(C::NR_LEVELS - self.0.level) as usize]
-            .as_mut()
-            .unwrap()
+        self.0.guards[(self.0.level - 1) as usize].as_mut().unwrap()
     }
 }
