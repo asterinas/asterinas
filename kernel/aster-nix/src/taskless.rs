@@ -133,10 +133,10 @@ fn do_schedule(
     {
         return;
     }
-
-    CpuLocal::borrow_with(taskless_list, |list| {
-        list.lock_irq_disabled().push_front(taskless.clone());
-    });
+    taskless_list
+        .borrow_irq_disabled()
+        .lock()
+        .push_front(taskless.clone());
 }
 
 pub(super) fn init() {
@@ -158,10 +158,11 @@ fn taskless_softirq_handler(
     taskless_list: &'static CpuLocal<SpinLock<LinkedList<TasklessAdapter>>>,
     softirq_id: u8,
 ) {
-    let mut processing_list = CpuLocal::borrow_with(taskless_list, |list| {
-        let mut list_mut = list.lock_irq_disabled();
+    let mut processing_list = {
+        let guard = taskless_list.borrow_irq_disabled();
+        let mut list_mut = guard.lock();
         LinkedList::take(&mut list_mut)
-    });
+    };
 
     while let Some(taskless) = processing_list.pop_back() {
         if taskless
@@ -169,10 +170,11 @@ fn taskless_softirq_handler(
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            CpuLocal::borrow_with(taskless_list, |list| {
-                list.lock_irq_disabled().push_front(taskless);
-                SoftIrqLine::get(softirq_id).raise();
-            });
+            taskless_list
+                .borrow_irq_disabled()
+                .lock()
+                .push_front(taskless);
+            SoftIrqLine::get(softirq_id).raise();
             continue;
         }
 
