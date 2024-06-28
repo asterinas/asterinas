@@ -4,7 +4,7 @@
 
 set -e
 
-SCRIPT_DIR=/regression
+SCRIPT_DIR=/test
 cd ${SCRIPT_DIR}/..
 
 echo "Start process test......"

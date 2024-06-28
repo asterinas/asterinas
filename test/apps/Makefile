@@ -6,7 +6,7 @@ MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 
 INITRAMFS ?= $(CUR_DIR)/../build/initramfs
-REGRESSION_BUILD_DIR ?= $(INITRAMFS)/regression
+TEST_BUILD_DIR ?= $(INITRAMFS)/test
 
 # These test apps are sorted by name
 TEST_APPS := \
@@ -48,17 +48,17 @@ $(TEST_APPS):
 
 .PHONY: format
 format:
-	@echo "Fixing code format for regression tests..."
+	@echo "Fixing code format for general tests..."
 	@clang-format -i $(C_SOURCES)
 
 .PHONY: check
 check:
-	@echo "Checking code format for regression tests..."
+	@echo "Checking code format for general tests..."
 	@clang-format --dry-run --Werror $(C_SOURCES)
 
-$(REGRESSION_BUILD_DIR):
+$(TEST_BUILD_DIR):
 	@mkdir -p $@
 
 .PHONY: scripts
-scripts: | $(REGRESSION_BUILD_DIR)
-	@make --no-print-directory BUILD_DIR=$(REGRESSION_BUILD_DIR) -C scripts
+scripts: | $(TEST_BUILD_DIR)
+	@make --no-print-directory BUILD_DIR=$(TEST_BUILD_DIR) -C scripts

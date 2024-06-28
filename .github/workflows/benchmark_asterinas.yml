@@ -27,7 +27,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Set up the environment
       run: |
-        chmod +x regression/benchmark/bench_linux_and_aster.sh
+        chmod +x test/benchmark/bench_linux_and_aster.sh
         # Set up git due to the network issue on the self-hosted runner
         git config --global --add safe.directory /__w/asterinas/asterinas
         git config --global http.sslVerify false
@@ -40,13 +40,13 @@ jobs:
         max_attempts: 3
         command: |
           make install_osdk
-          bash regression/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }}
+          bash test/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }}
         on_retry_command: make clean
 
     - name: Prepare threshold values
       run: |
         echo "Configuring thresholds..."
-        ALERT_THRESHOLD=$(jq -r '.alert_threshold' regression/benchmark/${{ matrix.benchmark }}/config.json)
+        ALERT_THRESHOLD=$(jq -r '.alert_threshold' test/benchmark/${{ matrix.benchmark }}/config.json)
         echo "ALERT_THRESHOLD=$ALERT_THRESHOLD" >> $GITHUB_ENV
 
     - name: Store benchmark results

@@ -1,6 +1,6 @@
 # Ignore binaries to avoid performance issues
 target/
-regression/build/
+test/build/
 
 # QEMU log file
 qemu.log
