@@ -33,7 +33,7 @@ pub fn sys_pread64(
     let read_len = {
         let mut buffer = vec![0u8; user_buf_len];
         let read_len = file.read_at(offset as usize, &mut buffer)?;
-        write_bytes_to_user(user_buf_ptr, &buffer)?;
+        write_bytes_to_user(user_buf_ptr, &mut VmReader::from(buffer.as_slice()))?;
         read_len
     };
 

@@ -195,7 +195,7 @@ pub fn handle_user_signal(
         ];
         stack_pointer -= TRAMPOLINE.len() as u64;
         let trampoline_rip = stack_pointer;
-        write_bytes_to_user(stack_pointer as Vaddr, TRAMPOLINE)?;
+        write_bytes_to_user(stack_pointer as Vaddr, &mut VmReader::from(TRAMPOLINE))?;
         stack_pointer = write_u64_to_user_stack(stack_pointer, trampoline_rip)?;
     }
 

@@ -75,7 +75,7 @@ impl IoVec {
         assert_eq!(dst.len(), self.len);
         assert!(!self.is_empty());
 
-        read_bytes_from_user(self.base, dst)
+        read_bytes_from_user(self.base, &mut VmWriter::from(dst))
     }
 
     /// Writes bytes from the `src` buffer
@@ -92,7 +92,7 @@ impl IoVec {
         assert_eq!(src.len(), self.len);
         assert!(!self.is_empty());
 
-        write_bytes_to_user(self.base, src)
+        write_bytes_to_user(self.base, &mut VmReader::from(src))
     }
 
     /// Reads bytes to the `dst` buffer
@@ -101,7 +101,7 @@ impl IoVec {
     /// If successful, returns the length of actually read bytes.
     pub fn read_from_user(&self, dst: &mut [u8]) -> Result<usize> {
         let len = self.len.min(dst.len());
-        read_bytes_from_user(self.base, &mut dst[..len])?;
+        read_bytes_from_user(self.base, &mut VmWriter::from(&mut dst[..len]))?;
         Ok(len)
     }
 
@@ -111,7 +111,7 @@ impl IoVec {
     /// If successful, returns the length of actually written bytes.
     pub fn write_to_user(&self, src: &[u8]) -> Result<usize> {
         let len = self.len.min(src.len());
-        write_bytes_to_user(self.base, &src[..len])?;
+        write_bytes_to_user(self.base, &mut VmReader::from(&src[..len]))?;
         Ok(len)
     }
 }

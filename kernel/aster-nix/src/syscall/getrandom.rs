@@ -17,7 +17,7 @@ pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32) -> Result<SyscallRetu
     } else {
         device::Urandom::getrandom(&mut buffer)?
     };
-    write_bytes_to_user(buf, &buffer)?;
+    write_bytes_to_user(buf, &mut VmReader::from(buffer.as_slice()))?;
     Ok(SyscallReturn::Return(read_len as isize))
 }
 

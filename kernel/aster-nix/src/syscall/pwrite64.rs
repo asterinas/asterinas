@@ -30,7 +30,7 @@ pub fn sys_pwrite64(
     }
 
     let mut buffer = vec![0u8; user_buf_len];
-    read_bytes_from_user(user_buf_ptr, &mut buffer)?;
+    read_bytes_from_user(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
     let write_len = file.write_at(offset as _, &buffer)?;
     Ok(SyscallReturn::Return(write_len as _))
 }

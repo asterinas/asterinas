@@ -178,7 +178,7 @@ impl PreemptInfo {
         }
     }
 
-    fn incease_num_locks(&self) {
+    fn increase_num_locks(&self) {
         self.num_locks.fetch_add(1, Relaxed);
     }
 
@@ -205,7 +205,7 @@ impl !Send for DisablePreemptGuard {}
 
 impl DisablePreemptGuard {
     fn new() -> Self {
-        PREEMPT_COUNT.incease_num_locks();
+        PREEMPT_COUNT.increase_num_locks();
         Self { private: () }
     }
 
