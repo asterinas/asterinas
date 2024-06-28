@@ -6,6 +6,7 @@ use alloc::fmt;
 use core::ops::Range;
 
 use pod::Pod;
+pub(crate) use util::__memcpy_fallible;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
 use crate::mm::{
@@ -13,6 +14,8 @@ use crate::mm::{
     page_table::PageTableEntryTrait,
     Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
 };
+
+mod util;
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
