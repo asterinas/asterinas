@@ -193,12 +193,13 @@ pub struct KernelSpace;
 /// - If one of the memory represents typed memory, these two virtual
 ///   memory ranges and their corresponding physical pages should _not_ overlap.
 ///
-/// Operation on typed memory may be safe only if it is plain-old-data. Otherwise
-/// the safety requirements of [`core::ptr::copy`] should also be considered.
+/// Operation on typed memory may be safe only if it is plain-old-data. Otherwise,
+/// the safety requirements of [`core::ptr::copy`] should also be considered,
+/// except for the requirement that no concurrent access is allowed.
 ///
 /// [valid]: core::ptr#safety
-unsafe fn memcpy(src: *const u8, dst: *mut u8, len: usize) {
-    core::ptr::copy(src, dst, len);
+unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
+    core::intrinsics::volatile_copy_memory(dst, src, len);
 }
 
 /// Copies `len` bytes from `src` to `dst`.
@@ -217,7 +218,7 @@ unsafe fn memcpy(src: *const u8, dst: *mut u8, len: usize) {
 ///   should _not_ overlap if the kernel space memory represent typed memory.
 ///
 /// [valid]: core::ptr#safety
-unsafe fn memcpy_fallible(src: *const u8, dst: *mut u8, len: usize) -> usize {
+unsafe fn memcpy_fallible(dst: *mut u8, src: *const u8, len: usize) -> usize {
     let failed_bytes = __memcpy_fallible(dst, src, len);
     len - failed_bytes
 }
@@ -272,7 +273,7 @@ macro_rules! impl_read_fallible {
                 // not overlap with user space memory range in physical address level if it
                 // represents typed memory.
                 let copied_len = unsafe {
-                    let copied_len = memcpy_fallible(self.cursor, writer.cursor, copy_len);
+                    let copied_len = memcpy_fallible(writer.cursor, self.cursor, copy_len);
                     self.cursor = self.cursor.add(copied_len);
                     writer.cursor = writer.cursor.add(copied_len);
                     copied_len
@@ -353,7 +354,7 @@ impl<'a> VmReader<'a, KernelSpace> {
         // writer's available space, and will not overlap if one of them represents
         // typed memory.
         unsafe {
-            memcpy(self.cursor, writer.cursor, copy_len);
+            memcpy(writer.cursor, self.cursor, copy_len);
             self.cursor = self.cursor.add(copy_len);
             writer.cursor = writer.cursor.add(copy_len);
         }
