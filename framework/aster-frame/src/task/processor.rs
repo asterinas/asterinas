@@ -9,11 +9,9 @@ use core::{
 };
 
 use super::{
-    scheduler::{fetch_task, GLOBAL_SCHEDULER},
-    task::{context_switch, TaskContext},
-    Task, TaskStatus,
+    reschedule, task::{context_switch, TaskContext}, ReschedAction, Task, TaskStatus
 };
-use crate::{cpu_local, CpuLocal};
+use crate::{cpu_local, task::scheduler::SCHEDULER, CpuLocal};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -68,9 +66,7 @@ pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
 
 /// Calls this function to switch to other task by using GLOBAL_SCHEDULER
 pub fn schedule() {
-    if let Some(task) = fetch_task() {
-        switch_to_task(task);
-    }
+    Task::yield_now();
 }
 
 /// Preempts the `task`.
@@ -82,15 +78,19 @@ pub fn schedule() {
 pub fn preempt(task: &Arc<Task>) {
     // TODO: Refactor `preempt` and `schedule`
     // after the Atomic mode and `might_break` is enabled.
-    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(task) {
-        return;
-    }
-    let Some(next_task) = scheduler.dequeue() else {
-        return;
-    };
-    drop(scheduler);
-    switch_to_task(next_task);
+    SCHEDULER.get().unwrap().local_mut_rq_with(&mut |local_rq| {
+        if !local_rq.should_preempt() {
+            return;
+        }
+        local_rq.set_should_preempt(false);
+    });
+        reschedule(&mut |local_rq| {
+            if let Some(next_current) = local_rq.pick_next_current() {
+                ReschedAction::SwitchTo(next_current.clone())
+            } else {
+                ReschedAction::DoNothing
+            }
+        });
 }
 
 /// Calls this function to switch to other task
@@ -100,13 +100,13 @@ pub fn preempt(task: &Arc<Task>) {
 /// if current task status is exit, then it will not add to the scheduler
 ///
 /// before context switch, current task will switch to the next task
-fn switch_to_task(next_task: Arc<Task>) {
-    if !PREEMPT_COUNT.is_preemptive() {
+pub(super) fn switch_to_task(next_task: Arc<Task>) {
+    /*if !PREEMPT_COUNT.is_preemptive() {
         panic!(
             "Calling schedule() while holding {} locks",
             PREEMPT_COUNT.num_locks()
         );
-    }
+    }*/
 
     let current_task_ctx_ptr = match current_task() {
         None => get_idle_task_ctx_ptr(),
@@ -118,7 +118,7 @@ fn switch_to_task(next_task: Arc<Task>) {
             debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
             if task_inner.task_status == TaskStatus::Runnable {
                 drop(task_inner);
-                GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
+                // GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
             } else if task_inner.task_status == TaskStatus::Sleepy {
                 task_inner.task_status = TaskStatus::Sleeping;
             }

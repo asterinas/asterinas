@@ -248,6 +248,7 @@ impl Monitor {
     }
 
     fn run_monitor_loop(self: &Arc<Self>) {
+        // println!("monitor added");
         loop {
             let worker_pool = self.worker_pool.upgrade();
             let Some(worker_pool) = worker_pool else {
@@ -257,6 +258,7 @@ impl Monitor {
             for local_pool in worker_pool.local_pools.iter() {
                 local_pool.set_heartbeat(false);
             }
+            // println!("before yield");
             Thread::yield_now();
         }
     }

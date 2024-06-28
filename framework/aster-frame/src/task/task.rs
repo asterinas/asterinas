@@ -10,17 +10,11 @@ use core::cell::UnsafeCell;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
-    add_task,
-    priority::Priority,
-    processor::{current_task, schedule},
+    priority::Priority, processor::{current_task, schedule}, reschedule, scheduler::{add_task, EnqueueFlags}, ReschedAction, UpdateFlags
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
-    cpu::CpuSet,
-    mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
-    prelude::*,
-    sync::{SpinLock, SpinLockGuard},
-    user::UserSpace,
+    cpu::CpuSet, mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE}, prelude::*, sync::{SpinLock, SpinLockGuard}, task::scheduler::SCHEDULER, user::UserSpace
 };
 
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
@@ -154,13 +148,27 @@ impl Task {
     /// Note that this method cannot be simply named "yield" as the name is
     /// a Rust keyword.
     pub fn yield_now() {
-        schedule();
+        // println!("task yield");
+        reschedule(&mut |local_rq| {
+            if !local_rq.update_current(UpdateFlags::Yield) {
+                return ReschedAction::DoNothing;
+            }
+            // println!("after yield update_current");
+            //  println!("before yield pick_next_current");
+            if let Some(next_current) = local_rq.pick_next_current() {
+                // println!("after yield pick_next_current, switch_to");
+                ReschedAction::SwitchTo(next_current.clone())
+            } else {
+                // println!("after yield pick_next_current, do_nothing");
+                ReschedAction::DoNothing
+            }
+        })
     }
 
     /// Runs the task.
     pub fn run(self: &Arc<Self>) {
-        add_task(self.clone());
-        schedule();
+        // println!("before add task");
+        add_task(self, EnqueueFlags::Spawn);
     }
 
     /// Returns the task status.
@@ -194,8 +202,15 @@ impl Task {
         // `current_task()` still holds a strong reference, so nothing is destroyed at this point,
         // neither is the kernel stack.
         drop(self);
+        reschedule(&mut |local_rq| {
+            local_rq.dequeue_current();
 
-        schedule();
+            if let Some(next_current) = local_rq.pick_next_current() {
+                ReschedAction::SwitchTo(next_current.clone())
+            } else {
+                ReschedAction::Retry
+            }
+        });
         unreachable!()
     }
 

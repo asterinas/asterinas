@@ -2,32 +2,16 @@
 
 #![allow(dead_code)]
 
-use alloc::collections::VecDeque;
+use spin::Once;
 
-use crate::{prelude::*, sync::SpinLock, task::Task};
+use crate::{arch::timer::register_callback, prelude::*, sync::SpinLock, task::Task};
 
-static DEFAULT_SCHEDULER: FifoScheduler = FifoScheduler::new();
-pub(crate) static GLOBAL_SCHEDULER: SpinLock<GlobalScheduler> = SpinLock::new(GlobalScheduler {
-    scheduler: &DEFAULT_SCHEDULER,
-});
+use super::processor::switch_to_task;
 
-/// A scheduler for tasks.
-///
-/// An implementation of scheduler can attach scheduler-related information
-/// with the `TypeMap` returned from `task.data()`.
-pub trait Scheduler: Sync + Send {
-    /// Enqueues a task to the scheduler.
-    fn enqueue(&self, task: Arc<Task>);
+pub(crate) static SCHEDULER: Once<&'static dyn Scheduler<Task>> = Once::new();
 
-    /// Dequeues a task from the scheduler.
-    fn dequeue(&self) -> Option<Arc<Task>>;
-
-    /// Tells whether the given task should be preempted by other tasks in the queue.
-    fn should_preempt(&self, task: &Arc<Task>) -> bool;
-}
-
-pub struct GlobalScheduler {
-    scheduler: &'static dyn Scheduler,
+/*pub struct GlobalScheduler {
+    scheduler: &'static dyn Scheduler<Task>,
 }
 
 impl GlobalScheduler {
@@ -35,73 +19,142 @@ impl GlobalScheduler {
         Self { scheduler }
     }
 
-    /// dequeue a task using scheduler
-    /// require the scheduler is not none
-    pub fn dequeue(&mut self) -> Option<Arc<Task>> {
-        self.scheduler.dequeue()
+    fn enqueue(&mut self, runnable: Arc<Task>, flags: EnqueueFlags) -> bool {
+        self.scheduler.enqueue(runnable, flags)
     }
-    /// enqueue a task using scheduler
-    /// require the scheduler is not none
-    pub fn enqueue(&mut self, task: Arc<Task>) {
-        self.scheduler.enqueue(task)
-    }
+}*/
 
-    pub fn should_preempt(&self, task: &Arc<Task>) -> bool {
-        self.scheduler.should_preempt(task)
+pub fn inject_scheduler(scheduler: &'static dyn Scheduler) {
+    SCHEDULER.call_once(|| { scheduler });
+    register_callback(|| {
+        SCHEDULER.get().unwrap().local_mut_rq_with(&mut |local_rq| {
+            if local_rq.update_current(UpdateFlags::Tick) {
+                local_rq.set_should_preempt(true);
+            }
+        })
+    });
+}
+
+pub fn add_task(runnable: &Arc<Task>, flags: EnqueueFlags) {
+    // println!("add_task");
+    let should_reschedule = SCHEDULER.get().unwrap().enqueue(runnable.clone(), flags);
+    // println!("----------------------");
+    if !should_reschedule {
+        return;
+    }
+    // println!("should reschedule");
+    if flags == EnqueueFlags::Spawn {
+        reschedule(&mut |local_rq| {
+            if let Some(next_current) = local_rq.pick_next_current() {
+                ReschedAction::SwitchTo(next_current.clone())
+            } else {
+                ReschedAction::DoNothing
+            }
+        });
     }
 }
-/// Sets the global task scheduler.
+
+pub fn reschedule<F>(f: &mut F) 
+where
+    F: FnMut(&mut dyn LocalRunQueue) -> ReschedAction
+{
+    let mut next = None;
+    let mut flag = true;
+    while flag {
+        SCHEDULER.get().unwrap().local_mut_rq_with(&mut |local_rq| {
+            match f(local_rq) {
+                ReschedAction::DoNothing => { flag = false; },
+                ReschedAction::Retry => {},
+                ReschedAction::SwitchTo(next_task) => {
+                    flag = false;
+                    next = Some(next_task);
+                }
+            };
+        });
+    }
+    if let Some(next_task) = next {
+        switch_to_task(next_task);
+    }
+}
+
+pub enum ReschedAction {
+    DoNothing,
+    Retry,
+    SwitchTo(Arc<Task>),
+}
+
+/// Abstracts a task scheduler.
+pub trait Scheduler<T = Task>: Sync + Send {
+    /// Enqueue a runnable task.
+    fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> bool;
+
+    /// Get an immutable access to the local runqueue of the current CPU core.
+    fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>));
+
+    /// Get a mutable access to the local runqueue of the current CPU core.
+    fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>));
+}
+
+/// The _remote_ view of a per-CPU runqueue.
 ///
-/// This must be called before invoking `Task::spawn`.
-pub fn set_scheduler(scheduler: &'static dyn Scheduler) {
-    let mut global_scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    // When setting a new scheduler, the old scheduler should be empty
-    assert!(global_scheduler.dequeue().is_none());
-    global_scheduler.scheduler = scheduler;
+/// This remote view provides the interface for the runqueue of a CPU core
+/// to be inspected by the code running on an another CPU core.
+pub trait RunQueue: Sync + Send {
+    /// Returns whether there are any runnable tasks managed by the scheduler.
+    fn is_empty(&self) -> bool;
+
+    /// Returns whether the number of runnable tasks managed by the scheduler.
+    fn len(&self) -> usize;
 }
 
-pub fn fetch_task() -> Option<Arc<Task>> {
-    GLOBAL_SCHEDULER.lock_irq_disabled().dequeue()
+/// The _local_ view of a per-CPU runqueue.
+///
+/// This local view provides the interface for the runqueue of a CPU core
+/// to be inspected and manipulated by the code running on this particular CPU core.
+///
+/// Conceptually, a local runqueue consists of two parts:
+/// (1) a priority queue of runnable tasks;
+/// (2) the current running task.
+/// The exact definition of "priority" is left for the concrete implementation to decide.
+pub trait LocalRunQueue<T = Task>: RunQueue {
+    /// Update the current runnable task's time statistics and 
+    /// potentially its position in the queue.
+    fn update_current(&mut self, flags: UpdateFlags) -> bool;
+
+    /// Dequeue the current runnable task.
+    ///
+    /// The current task should be dequeued if it needs to go to sleep or has exited.
+    fn dequeue_current(&mut self) -> Option<Arc<T>>;
+
+    /// Pick the next current runnable task, returning the new currenet.
+    ///
+    /// If there is no runnable task, the method returns `None`.
+    fn pick_next_current(&mut self) -> Option<&Arc<T>>;
+
+    /// Gets the current task.
+    ///
+    /// The current task is the head of the queue.
+    /// If the queue is empty, the method returns `None`.
+    fn current(&self) -> Option<&Arc<T>>;
+
+    fn set_should_preempt(&mut self, should_preempt: bool);
+
+    fn should_preempt(&self) -> bool;
 }
 
-/// Adds a task to the global scheduler.
-pub fn add_task(task: Arc<Task>) {
-    GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(task);
+pub enum QueueReceipt {}
+
+#[derive(PartialEq, Copy, Clone)]
+pub enum EnqueueFlags {
+    Spawn,
+    Wake,
 }
 
-/// A simple FIFO (First-In-First-Out) task scheduler.
-pub struct FifoScheduler {
-    /// A thread-safe queue to hold tasks waiting to be executed.
-    task_queue: SpinLock<VecDeque<Arc<Task>>>,
+#[derive(PartialEq, Copy, Clone)]
+pub enum UpdateFlags {
+    Tick,
+    Wait,
+    Yield,
 }
 
-impl FifoScheduler {
-    /// Creates a new instance of `FifoScheduler`.
-    pub const fn new() -> Self {
-        FifoScheduler {
-            task_queue: SpinLock::new(VecDeque::new()),
-        }
-    }
-}
-
-impl Default for FifoScheduler {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Scheduler for FifoScheduler {
-    /// Enqueues a task to the end of the queue.
-    fn enqueue(&self, task: Arc<Task>) {
-        self.task_queue.lock_irq_disabled().push_back(task);
-    }
-    /// Dequeues a task from the front of the queue, if any.
-    fn dequeue(&self) -> Option<Arc<Task>> {
-        self.task_queue.lock_irq_disabled().pop_front()
-    }
-    /// In this simple implementation, task preemption is not supported.
-    /// Once a task starts running, it will continue to run until completion.
-    fn should_preempt(&self, _task: &Arc<Task>) -> bool {
-        false
-    }
-}
+pub struct CpuId;

@@ -4,7 +4,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::SpinLock;
-use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
+use crate::task::{add_task, current_task, reschedule, EnqueueFlags, ReschedAction, Task, TaskStatus, UpdateFlags};
 
 /// A wait queue.
 ///
@@ -235,7 +235,7 @@ impl Waker {
 
                 // Avoid holding the lock when doing `add_task`
                 drop(task);
-                add_task(self.task.clone());
+                add_task(&self.task, EnqueueFlags::Wake);
             }
             _ => (),
         }
@@ -253,7 +253,16 @@ impl Waker {
             task.task_status = TaskStatus::Sleepy;
             drop(task);
 
-            schedule();
+            reschedule(&mut |local_rq| {
+                local_rq.update_current(UpdateFlags::Wait);
+                local_rq.dequeue_current();
+
+                if let Some(next_current) = local_rq.pick_next_current() {
+                    ReschedAction::SwitchTo(next_current.clone())
+                } else {
+                    ReschedAction::Retry
+                }
+            })
         }
 
         self.has_woken.store(false, Ordering::Release);
