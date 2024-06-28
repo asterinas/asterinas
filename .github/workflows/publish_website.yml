@@ -1,16 +1,16 @@
 name: Publish website
 
 on:
-  pull_request:
-    paths:
-      - docs/**
-      - .github/workflows/update-website.yml
-  push:
-    branches:
-      - main
-    paths:
-      - docs/**
-      - .github/workflows/update-website.yml
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      deploy:
+        description: 'Whether to upload doc to online website'
+        required: true
+        type: 'boolean'
+    secrets:
+      BOOK_PUBLISH_KEY:
+        required: false
 
 jobs:
   build_and_deploy:
@@ -29,7 +29,7 @@ jobs:
           mdbook build
 
       - name: Deploy website
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: ${{ inputs.deploy }}
         env:
           BOOK_PUBLISH_KEY: ${{ secrets.BOOK_PUBLISH_KEY }}
         run: |

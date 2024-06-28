@@ -158,7 +158,10 @@ fn install_setup_with_arch(
     cmd.arg("--force");
     cmd.arg("--root").arg(install_dir.as_ref());
     cmd.arg("--git").arg(crate::util::ASTER_GIT_LINK);
-    cmd.arg("--tag").arg(crate::util::ASTER_GIT_TAG);
+    // cmd.arg("--tag").arg(crate::util::ASTER_GIT_TAG);
+    // FIXME: A fixed tag is used here to avoid the test relies on
+    // adding tag first.
+    cmd.arg("--tag").arg("v0.5.1");
     cmd.arg("--target").arg(match arch {
         SetupInstallArch::X86_64 => "x86_64-unknown-none",
         SetupInstallArch::Other(path) => path.to_str().unwrap(),

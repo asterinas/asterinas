@@ -2,11 +2,17 @@ name: Publish Docker images
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - VERSION
-    branches:
-      - main
+  workflow_call:
+    inputs:
+      push:
+        description: 'Whether to push image to docker hub'
+        required: true
+        type: 'boolean'
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
 
 jobs:
   docker:
@@ -16,6 +22,7 @@ jobs:
         uses: docker/setup-buildx-action@v2
 
       - name: Login to Docker Hub
+        if: ${{ inputs.push }}
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -42,7 +49,7 @@ jobs:
           context: .
           file: ./tools/docker/Dockerfile
           platforms: linux/amd64
-          push: true
+          push: ${{ inputs.push }}
           tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
@@ -58,7 +65,7 @@ jobs:
           context: .
           file: ./tools/docker/Dockerfile
           platforms: linux/amd64
-          push: true
+          push: ${{ inputs.push }}
           tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}-tdx
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
@@ -73,7 +80,7 @@ jobs:
           context: .
           file: ./osdk/tools/docker/Dockerfile
           platforms: linux/amd64
-          push: true
+          push: ${{ inputs.push }}
           tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
@@ -88,7 +95,7 @@ jobs:
           context: .
           file: ./osdk/tools/docker/Dockerfile
           platforms: linux/amd64
-          push: true
+          push: ${{ inputs.push }}
           tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}-tdx
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"

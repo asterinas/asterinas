@@ -5,12 +5,18 @@ on:
   schedule:
     # UTC 00:00 everyday
     - cron: "0 0 * * *"
-  # Events for API docs of new release
-  push:
-    branches:
-      - main
-    paths:
-      - VERSION
+  # Events 
+  workflow_call:
+    inputs:
+      upload:
+        description: 'Whether to upload doc to online website'
+        required: true
+        type: boolean
+    secrets:
+      API_DOCS_PUBLISH_KEY:
+        required: false
+
+  workflow_dispatch:
 
 jobs:
   build_and_upload:
@@ -24,6 +30,14 @@ jobs:
           repository: 'asterinas/asterinas'
           path: 'asterinas'
 
+      - name: Check Doc Build
+        if: github.event_name != 'schedule' && !inputs.upload
+        run: |
+          cd asterinas
+          make install_osdk
+          cd ostd
+          cargo osdk doc
+
       - name: Build & Upload Nightly API Docs
         if: github.event_name == 'schedule'
         env:
@@ -34,7 +48,7 @@ jobs:
           bash asterinas/tools/github_workflows/build_and_upload_api_docs.sh nightly ${KEY_FILE} 
 
       - name: Build & Upload Release API Docs
-        if: github.event_name == 'push'
+        if: github.event_name != 'schedule' && inputs.upload
         env:
           API_DOCS_PUBLISH_KEY: ${{ secrets.API_DOCS_PUBLISH_KEY }}
         run: |
