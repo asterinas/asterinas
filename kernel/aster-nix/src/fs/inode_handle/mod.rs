@@ -12,6 +12,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 
+use super::utils::FallocateMode;
 use crate::{
     events::IoEvents,
     fs::{
@@ -19,8 +20,8 @@ use crate::{
         file_handle::FileLike,
         path::Dentry,
         utils::{
-            AccessMode, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
-            StatusFlags,
+            AccessMode, DirentVisitor, FallocateFlags, InodeMode, InodeType, IoctlCmd, Metadata,
+            SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -182,6 +183,36 @@ impl InodeHandle_ {
         }
 
         self.dentry.inode().poll(mask, poller)
+    }
+
+    fn fallocate(&self, flags: FallocateFlags, offset: usize, len: usize) -> Result<()> {
+        let access_mode = self.access_mode();
+        if !access_mode.is_writable() {
+            return_errno_with_message!(Errno::EBADF, "try to fallocate a read-only file");
+        }
+
+        let status_flags = self.status_flags();
+        if status_flags.contains(StatusFlags::O_APPEND)
+            && (flags.contains(FallocateFlags::FALLOC_FL_PUNCH_HOLE)
+                || flags.contains(FallocateFlags::FALLOC_FL_COLLAPSE_RANGE)
+                || flags.contains(FallocateFlags::FALLOC_FL_INSERT_RANGE))
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the flags do not work on the append-only file"
+            );
+        }
+        if status_flags.contains(StatusFlags::O_DIRECT)
+            || status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(
+                Errno::EBADF,
+                "currently fallocate file with O_DIRECT or O_PATH is not supported"
+            );
+        }
+
+        let falloc_mode = FallocateMode::from(flags);
+        self.dentry.inode().fallocate(falloc_mode, offset, len)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

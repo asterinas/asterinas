@@ -10,7 +10,10 @@ use crate::{
     fs::{
         device::Device,
         ext2::{FilePerm, FileType, Inode as Ext2Inode},
-        utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata},
+        utils::{
+            DirentVisitor, FallocateMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd,
+            Metadata,
+        },
     },
     prelude::*,
     process::{Gid, Uid},
@@ -170,6 +173,10 @@ impl Inode for Ext2Inode {
 
     fn write_link(&self, target: &str) -> Result<()> {
         self.write_link(target)
+    }
+
+    fn fallocate(&self, mode: FallocateMode, offset: usize, len: usize) -> Result<()> {
+        self.fallocate(mode, offset, len)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

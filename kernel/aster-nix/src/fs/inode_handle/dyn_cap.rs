@@ -124,6 +124,10 @@ impl FileLike for InodeHandle<Rights> {
         Ok(())
     }
 
+    fn fallocate(&self, flags: FallocateFlags, offset: usize, len: usize) -> Result<()> {
+        self.0.fallocate(flags, offset, len)
+    }
+
     fn clean_for_close(&self) -> Result<()> {
         // Close does not guarantee that the data has been successfully saved to disk.
         Ok(())
