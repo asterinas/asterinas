@@ -4,7 +4,7 @@
 
 set -e
 
-SCRIPT_DIR=/regression
+SCRIPT_DIR=/test
 cd ${SCRIPT_DIR}
 
 ./shell_cmd.sh
@@ -13,4 +13,4 @@ cd ${SCRIPT_DIR}
 ./network.sh
 ./test_epoll_pwait.sh
 
-echo "All regression tests passed."
+echo "All general tests passed."

@@ -25,8 +25,8 @@ COMMON_QEMU_ARGS="\
     -netdev user,id=net01,hostfwd=tcp::$RAND_PORT_NUM1-:22,hostfwd=tcp::$RAND_PORT_NUM2-:8080 \
     -object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
-    -drive if=none,format=raw,id=x0,file=./regression/build/ext2.img \
-    -drive if=none,format=raw,id=x1,file=./regression/build/exfat.img \
+    -drive if=none,format=raw,id=x0,file=./test/build/ext2.img \
+    -drive if=none,format=raw,id=x1,file=./test/build/exfat.img \
 "
 
 if [ "$1" = "iommu" ]; then

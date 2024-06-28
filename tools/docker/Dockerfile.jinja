@@ -83,7 +83,7 @@ RUN rm -rf bazel
 FROM build-bazel as syscall_test
 
 # Build the syscall test binaries
-COPY regression/syscall_test /root/syscall_test
+COPY test/syscall_test /root/syscall_test
 WORKDIR /root/syscall_test
 RUN export BUILD_DIR=build && \ 
     make ${BUILD_DIR}/syscall_test_bins
@@ -233,7 +233,7 @@ FROM rust
 
 # Install all Asterinas dependent packages
 RUN apt update && apt-get install -y --no-install-recommends \ 
-    clang-format       `# formatting regression tests` \ 
+    clang-format       `# formatting general tests` \ 
     cpio \ 
     cpuid \ 
     exfatprogs \ 

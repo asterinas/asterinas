@@ -32,12 +32,12 @@ cargo osdk test
 
 ## Integration Test
 
-### Regression Test
+### General Test
 
-The following command builds and runs the test binaries in `regression/apps` directory on Asterinas.
+The following command builds and runs the test binaries in `test/apps` directory on Asterinas.
 
 ```bash
-make run AUTO_TEST=regression
+make run AUTO_TEST=test
 ```
 
 ### Syscall Test
