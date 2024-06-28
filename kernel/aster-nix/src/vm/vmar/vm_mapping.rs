@@ -752,6 +752,10 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
         if self.align % PAGE_SIZE != 0 || !self.align.is_power_of_two() {
             return_errno_with_message!(Errno::EINVAL, "invalid align");
         }
+        debug_assert!(self.size % self.align == 0);
+        if self.size % self.align != 0 {
+            return_errno_with_message!(Errno::EINVAL, "invalid mapping size");
+        }
         debug_assert!(self.vmo_offset % self.align == 0);
         if self.vmo_offset % self.align != 0 {
             return_errno_with_message!(Errno::EINVAL, "invalid vmo offset");

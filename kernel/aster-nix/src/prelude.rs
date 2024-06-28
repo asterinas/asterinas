@@ -17,7 +17,7 @@ pub(crate) use bitflags::bitflags;
 pub(crate) use int_to_c_enum::TryFromInt;
 pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
 pub(crate) use ostd::{
-    mm::{Vaddr, PAGE_SIZE},
+    mm::{Vaddr, VmReader, VmWriter, PAGE_SIZE},
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
 };
 pub(crate) use pod::Pod;

@@ -3,7 +3,10 @@
 use core::mem;
 
 use aster_rights::Full;
-use ostd::mm::VmIo;
+use ostd::{
+    mm::{KernelSpace, VmIo, VmReader, VmWriter},
+    task::current_task,
+};
 
 use crate::{prelude::*, vm::vmar::Vmar};
 mod iovec;
@@ -12,38 +15,87 @@ pub mod random;
 
 pub use iovec::{copy_iovs_from_user, IoVec};
 
-/// Read bytes into the `dest` buffer
+/// Reads bytes into the `dest` `VmWriter`
 /// from the user space of the current process.
-/// If successful,
-/// the `dest` buffer is filled with exact `dest.len` bytes.
-pub fn read_bytes_from_user(src: Vaddr, dest: &mut [u8]) -> Result<()> {
-    let current = current!();
-    let root_vmar = current.root_vmar();
-    Ok(root_vmar.read_bytes(src, dest)?)
+///
+/// If the reading is completely successful, returns `Ok`.
+/// Otherwise, returns `Err`.
+///
+/// TODO: this API can be discarded and replaced with the API of `VmReader`
+/// after replacing all related `buf` usages.
+pub fn read_bytes_from_user(src: Vaddr, dest: &mut VmWriter<'_>) -> Result<()> {
+    let current_task = current_task().ok_or(Error::with_message(
+        Errno::EFAULT,
+        "the current task is missing",
+    ))?;
+    let user_space = current_task.user_space().ok_or(Error::with_message(
+        Errno::EFAULT,
+        "the user space is missing",
+    ))?;
+    let copy_len = dest.avail();
+
+    let mut user_reader = user_space.vm_space().reader(src, copy_len)?;
+    user_reader.read_fallible(dest).map_err(|err| err.0)?;
+    Ok(())
 }
 
-/// Read a value of `Pod` type
+/// Reads a value of `Pod` type
 /// from the user space of the current process.
 pub fn read_val_from_user<T: Pod>(src: Vaddr) -> Result<T> {
-    let current = current!();
-    let root_vmar = current.root_vmar();
-    Ok(root_vmar.read_val(src)?)
+    let current_task = current_task().ok_or(Error::with_message(
+        Errno::EFAULT,
+        "the current task is missing",
+    ))?;
+    let user_space = current_task.user_space().ok_or(Error::with_message(
+        Errno::EFAULT,
+        "the user space is missing",
+    ))?;
+
+    let mut user_reader = user_space
+        .vm_space()
+        .reader(src, core::mem::size_of::<T>())?;
+    Ok(user_reader.read_val()?)
 }
 
-/// Write bytes from the `src` buffer
-/// to the user space of the current process. If successful,
-/// the write length will be equal to `src.len`.
-pub fn write_bytes_to_user(dest: Vaddr, src: &[u8]) -> Result<()> {
-    let current = current!();
-    let root_vmar = current.root_vmar();
-    Ok(root_vmar.write_bytes(dest, src)?)
+/// Writes bytes from the `src` `VmReader`
+/// to the user space of the current process.
+///
+/// If the writing is completely successful, returns `Ok`,
+/// Otherwise, returns `Err`.
+///
+/// TODO: this API can be discarded and replaced with the API of `VmWriter`
+/// after replacing all related `buf` usages.
+pub fn write_bytes_to_user(dest: Vaddr, src: &mut VmReader<'_, KernelSpace>) -> Result<()> {
+    let current_task = current_task().ok_or(Error::with_message(
+        Errno::EFAULT,
+        "the current task is missing",
+    ))?;
+    let user_space = current_task.user_space().ok_or(Error::with_message(
+        Errno::EFAULT,
+        "the user space is missing",
+    ))?;
+    let copy_len = src.remain();
+
+    let mut user_writer = user_space.vm_space().writer(dest, copy_len)?;
+    user_writer.write_fallible(src).map_err(|err| err.0)?;
+    Ok(())
 }
 
-/// Write `val` to the user space of the current process.
+/// Writes `val` to the user space of the current process.
 pub fn write_val_to_user<T: Pod>(dest: Vaddr, val: &T) -> Result<()> {
-    let current = current!();
-    let root_vmar = current.root_vmar();
-    Ok(root_vmar.write_val(dest, val)?)
+    let current_task = current_task().ok_or(Error::with_message(
+        Errno::EFAULT,
+        "the current task is missing",
+    ))?;
+    let user_space = current_task.user_space().ok_or(Error::with_message(
+        Errno::EFAULT,
+        "the user space is missing",
+    ))?;
+
+    let mut user_writer = user_space
+        .vm_space()
+        .writer(dest, core::mem::size_of::<T>())?;
+    Ok(user_writer.write_val(val)?)
 }
 
 /// Read a C string from the user space of the current process.
