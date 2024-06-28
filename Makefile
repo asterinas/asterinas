@@ -11,6 +11,7 @@ GDB_TCP_PORT ?= 1234
 INTEL_TDX ?= 0
 RELEASE ?= 0
 RELEASE_LTO ?= 0
+LOG_LEVEL ?= error
 SCHEME ?= ""
 # End of global options.
 
@@ -24,7 +25,7 @@ SYSCALL_TEST_DIR ?= /tmp
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
-CARGO_OSDK_ARGS := --target-arch=$(ARCH)
+CARGO_OSDK_ARGS := --target-arch=$(ARCH) --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
