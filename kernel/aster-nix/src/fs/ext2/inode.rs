@@ -16,6 +16,7 @@ use super::{
     prelude::*,
     utils::now,
 };
+use crate::fs::utils::FallocMode;
 
 /// Max length of file name.
 pub const MAX_FNAME_LEN: usize = 255;
@@ -733,6 +734,54 @@ impl Inode {
         let mut inner = self.inner.write();
         inner.set_gid(gid);
         inner.set_ctime(now());
+    }
+
+    pub fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        if self.file_type() != FileType::File {
+            return_errno_with_message!(Errno::EISDIR, "not regular file");
+        }
+
+        match mode {
+            FallocMode::PunchHoleKeepSize => {
+                // Make the whole operation atomic
+                let inner = self.inner.write();
+
+                let file_size = inner.file_size();
+                if offset >= file_size {
+                    return Ok(());
+                }
+                let end_offset = file_size.min(offset + len);
+
+                // TODO: Think of a more light-weight approach
+                inner.page_cache.fill_zeros(offset..end_offset)?;
+
+                // Mark the full blocks as holes
+                let inode_impl = inner.inode_impl.0.read();
+                let mut blocks_hole_desc = inode_impl.blocks_hole_desc.write();
+                for bid in Bid::from_offset(offset.align_up(BLOCK_SIZE))
+                    ..Bid::from_offset(end_offset.align_down(BLOCK_SIZE))
+                {
+                    blocks_hole_desc.set(bid.to_raw() as _);
+                }
+                Ok(())
+            }
+            // We extend the compatibility here since Ext2 in Linux
+            // does not natively support `Allocate` and `AllocateKeepSize`.
+            FallocMode::Allocate => {
+                let new_size = offset + len;
+                if new_size > self.file_size() {
+                    self.resize(new_size)?;
+                }
+                Ok(())
+            }
+            FallocMode::AllocateKeepSize => Ok(()),
+            _ => {
+                return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "fallocate with the specified flags is not supported"
+                );
+            }
+        }
     }
 }
 

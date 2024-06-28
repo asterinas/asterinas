@@ -8,7 +8,7 @@ use crate::{
     events::{IoEvents, Observer},
     fs::{
         device::Device,
-        utils::{AccessMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
+        utils::{AccessMode, FallocMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
     },
     net::socket::Socket,
     prelude::*,
@@ -96,6 +96,10 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
+    }
+
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        return_errno_with_message!(Errno::EOPNOTSUPP, "fallocate is not supported");
     }
 
     fn register_observer(

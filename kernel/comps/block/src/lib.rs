@@ -12,7 +12,7 @@
 //! and merge requests within the queue.
 //!
 //! This crate also offers the `Bio` related data structures and APIs to accomplish
-//! safe and convenient block I/O operations, for exmaple:
+//! safe and convenient block I/O operations, for example:
 //!
 //! ```no_run
 //! // Creates a bio request.

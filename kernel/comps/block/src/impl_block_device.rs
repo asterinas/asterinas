@@ -220,7 +220,7 @@ fn general_complete_fn(bio: &SubmittedBio) {
     match bio.status() {
         BioStatus::Complete => (),
         err_status => log::error!(
-            "faild to do {:?} on the device with error status: {:?}",
+            "failed to do {:?} on the device with error status: {:?}",
             bio.type_(),
             err_status
         ),

@@ -19,8 +19,8 @@ use crate::{
         file_handle::FileLike,
         path::Dentry,
         utils::{
-            AccessMode, DirentVisitor, InodeMode, InodeType, IoctlCmd, Metadata, SeekFrom,
-            StatusFlags,
+            AccessMode, DirentVisitor, FallocMode, InodeMode, InodeType, IoctlCmd, Metadata,
+            SeekFrom, StatusFlags,
         },
     },
     prelude::*,
@@ -182,6 +182,30 @@ impl InodeHandle_ {
         }
 
         self.dentry.inode().poll(mask, poller)
+    }
+
+    fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
+        let status_flags = self.status_flags();
+        if status_flags.contains(StatusFlags::O_APPEND)
+            && (mode == FallocMode::PunchHoleKeepSize
+                || mode == FallocMode::CollapseRange
+                || mode == FallocMode::InsertRange)
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the flags do not work on the append-only file"
+            );
+        }
+        if status_flags.contains(StatusFlags::O_DIRECT)
+            || status_flags.contains(StatusFlags::O_PATH)
+        {
+            return_errno_with_message!(
+                Errno::EBADF,
+                "currently fallocate file with O_DIRECT or O_PATH is not supported"
+            );
+        }
+
+        self.dentry.inode().fallocate(mode, offset, len)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
