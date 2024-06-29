@@ -8,6 +8,7 @@ use ostd::mm::VmIo;
 use crate::{
     net::socket::{ip::stream::CongestionControl, LingerOption},
     prelude::*,
+    time::timeval_t,
     vm::vmar::Vmar,
 };
 
@@ -137,6 +138,32 @@ impl WriteToUser for LingerOption {
 
         let linger = CLinger::from(*self);
         vmar.write_val(addr, &linger)?;
+        Ok(write_len)
+    }
+}
+
+impl ReadFromUser for Duration {
+    fn read_from_user(vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<Self> {
+        if (max_len as usize) < core::mem::size_of::<Duration>() {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+        let timeval: timeval_t = vmar.read_val(addr)?;
+
+        Ok(Duration::from(timeval))
+    }
+}
+
+impl WriteToUser for Duration {
+    fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = core::mem::size_of::<Duration>();
+
+        if (max_len as usize) < write_len {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        }
+
+        let timeval: timeval_t = timeval_t::from(*self);
+        vmar.write_val(addr, &timeval)?;
+
         Ok(write_len)
     }
 }

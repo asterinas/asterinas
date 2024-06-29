@@ -6,7 +6,8 @@ use super::RawSocketOption;
 use crate::{
     impl_raw_sock_option_get_only, impl_raw_socket_option,
     net::socket::options::{
-        Error, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
+        Error, KeepAlive, Linger, NoCheck, RcvTimeoOld, RecvBuf, ReuseAddr, ReusePort, SendBuf,
+        SndTimeoOld, SocketOption, TimestampOld,
     },
     prelude::*,
     vm::vmar::Vmar,
@@ -28,6 +29,9 @@ enum CSocketOptionName {
     BROADCAST = 6,
     SNDBUF = 7,
     RCVBUF = 8,
+    RCVTIMEO_OLD = 20,
+    SNDTIMEO_OLD = 21,
+    TIMESTAMP_OLD = 29,
     SNDBUFFORCE = 32,
     RCVBUFFORCE = 33,
     KEEPALIVE = 9,
@@ -46,19 +50,27 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     match name {
         CSocketOptionName::SNDBUF => Ok(Box::new(SendBuf::new())),
         CSocketOptionName::RCVBUF => Ok(Box::new(RecvBuf::new())),
+        CSocketOptionName::RCVTIMEO_OLD => Ok(Box::new(RcvTimeoOld::new())),
+        CSocketOptionName::SNDTIMEO_OLD => Ok(Box::new(SndTimeoOld::new())),
+        CSocketOptionName::TIMESTAMP_OLD => Ok(Box::new(TimestampOld::new())),
         CSocketOptionName::REUSEADDR => Ok(Box::new(ReuseAddr::new())),
         CSocketOptionName::ERROR => Ok(Box::new(Error::new())),
         CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
+        CSocketOptionName::NO_CHECK => Ok(Box::new(NoCheck::new())),
         _ => todo!(),
     }
 }
 
 impl_raw_socket_option!(SendBuf);
 impl_raw_socket_option!(RecvBuf);
+impl_raw_socket_option!(RcvTimeoOld);
+impl_raw_socket_option!(SndTimeoOld);
+impl_raw_socket_option!(TimestampOld);
 impl_raw_socket_option!(ReuseAddr);
 impl_raw_sock_option_get_only!(Error);
 impl_raw_socket_option!(ReusePort);
 impl_raw_socket_option!(Linger);
 impl_raw_socket_option!(KeepAlive);
+impl_raw_socket_option!(NoCheck);
