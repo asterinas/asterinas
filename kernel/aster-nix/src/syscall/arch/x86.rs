@@ -68,6 +68,7 @@ use crate::syscall::{
     pread64::sys_pread64,
     preadv::{sys_preadv, sys_preadv2, sys_readv},
     prlimit64::sys_prlimit64,
+    pselect6::sys_pselect6,
     pwrite64::sys_pwrite64,
     pwritev::{sys_pwritev, sys_pwritev2, sys_writev},
     read::sys_read,
@@ -277,6 +278,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_READLINKAT = 267       => sys_readlinkat(args[..4]);
     SYS_FCHMODAT = 268         => sys_fchmodat(args[..3]);
     SYS_FACCESSAT = 269        => sys_faccessat(args[..3]);
+    SYS_PSELECT6 = 270         => sys_pselect6(args[..6]);
     SYS_SET_ROBUST_LIST = 273  => sys_set_robust_list(args[..2]);
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);
