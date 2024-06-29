@@ -158,7 +158,7 @@ fn run_ktests(test_whitelist: Option<&[&str]>, crate_whitelist: Option<&[&str]>)
 
     use ktest::runner::{run_ktests, KtestResult};
     match run_ktests(
-        &crate::console::print,
+        &crate::console::early_print,
         fn_catch_unwind,
         test_whitelist.map(|s| s.iter().map(|s| s.to_string())),
         crate_whitelist,

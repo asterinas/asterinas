@@ -2,7 +2,6 @@
 
 #![allow(dead_code)]
 
-pub use ostd::arch::console;
 use ostd::mm::VmReader;
 use spin::Once;
 
