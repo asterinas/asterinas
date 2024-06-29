@@ -11,9 +11,7 @@ pub use trapframe::TrapFrame;
 
 pub use self::{
     handler::in_interrupt_context,
-    irq::{
-        disable_local_irq, enable_local_irq, DisabledLocalIrqGuard, IrqCallbackFunction, IrqLine,
-    },
+    irq::{disable_local_irq, DisabledLocalIrqGuard, IrqCallbackFunction, IrqLine},
 };
 
 pub(crate) fn init() {
