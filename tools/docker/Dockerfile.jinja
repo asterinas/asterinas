@@ -36,12 +36,18 @@ FROM build-base as build-benchmarks
 WORKDIR /root
 RUN apt install -y automake \ 
     libtool \ 
-    pkg-config
+    pkg-config \
+    libntirpc-dev 
+
 RUN wget https://github.com/akopytov/sysbench/archive/1.0.20.tar.gz \ 
     && tar -zxvf 1.0.20.tar.gz \ 
     && rm 1.0.20.tar.gz
 RUN git clone https://github.com/nicktehrany/membench.git
 RUN git clone https://github.com/esnet/iperf.git
+RUN git clone https://github.com/kdlucas/byte-unixbench.git
+RUN git clone https://github.com/asterinas/lmbench.git
+RUN wget https://www.iozone.org/src/current/iozone3_506.tar
+RUN tar -x -f iozone3_506.tar
 
 # Build sysbench
 WORKDIR /root/sysbench-1.0.20
@@ -62,10 +68,36 @@ RUN ./configure --prefix=/usr/local/benchmark/iperf \
     && make -j \ 
     && make install
 
+# Build lmbench
+WORKDIR /root/lmbench
+RUN make -j \
+    && mv bin/x86_64-linux-gnu /usr/local/benchmark/lmbench \
+    && rm /usr/local/benchmark/lmbench/*.o \
+    && rm /usr/local/benchmark/lmbench/*.a 
+
+# Build unixbench
+WORKDIR /root/byte-unixbench/UnixBench
+# Disable sse2
+RUN sed "s/-O3 -ffast-math/-O3 -ffast-math -mno-sse2/g" Makefile \
+    > Makefile.tmp \
+    && mv Makefile.tmp Makefile
+RUN make -j && mv pgms /usr/local/benchmark/unixbench 
+
+# Build iozone
+WORKDIR /root/iozone3_506/src/current
+RUN CFLAGS=-static make linux-AMD64 \
+    && mkdir /usr/local/benchmark/iozone \
+    && cp iozone /usr/local/benchmark/iozone/
+
+# Clear cached files
 WORKDIR /root
 RUN rm -rf sysbench-1.0.20 \ 
     membench \ 
-    iperf
+    iperf \
+    lmbench \
+    byte-unixbench \
+    iozone3_506.tar \
+    iozone3_506
 
 #= Build syscall test =========================================================
 
