@@ -15,7 +15,7 @@ use trapframe::TrapFrame;
 use super::{device::serial::SerialPort, kernel::IO_APIC};
 use crate::{sync::SpinLock, trap::IrqLine};
 
-/// Prints the formatted arguments to the standard output.
+/// Prints the formatted arguments to the standard output using the serial port.
 #[inline]
 pub fn print(args: fmt::Arguments) {
     Stdout.write_fmt(args).unwrap();
