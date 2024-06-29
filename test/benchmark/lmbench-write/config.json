@@ -1,0 +1,5 @@
+{
+    "alert_threshold": "150%",
+    "pattern": "Simple write:",
+    "field": "3"
+}

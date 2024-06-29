@@ -11,7 +11,11 @@ jobs:
     runs-on: self-hosted
     strategy:
       matrix:
-        benchmark: [sysbench-cpu, sysbench-thread, getpid]
+        benchmark: |
+          [
+          sysbench-cpu, sysbench-thread, getpid,
+          lmbench-getpid, lmbench-fork, lmbench-signal
+          ]
       fail-fast: false
     timeout-minutes: 60
     container: 
