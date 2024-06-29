@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Logging support.
+//!
+//! Currently the logger prints the logs to the console.
+//!
+//! This module guarantees _atomicity_ under concurrency: messages are always
+//! printed in their entirety without being mixed with messages generated
+//! concurrently on other cores.
+//!
+//! IRQs are disabled while printing. So do not print long log messages.
 
 use alloc::format;
 
@@ -47,6 +55,11 @@ impl log::Log for Logger {
             let record_str = record_str.default_color();
             (timestamp, level, record_str)
         };
+
+        // Use a global lock to prevent interleaving of log messages.
+        use crate::sync::SpinLock;
+        static RECORD_LOCK: SpinLock<()> = SpinLock::new(());
+        let _lock = RECORD_LOCK.lock_irq_disabled();
 
         early_println!("{} {}: {}", timestamp, level, record_str);
     }

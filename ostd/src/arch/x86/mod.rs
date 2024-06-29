@@ -3,7 +3,6 @@
 //! Platform-specific code for the x86 platform.
 
 pub mod boot;
-pub mod console;
 pub(crate) mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
@@ -13,6 +12,7 @@ pub(crate) mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
+pub mod serial;
 pub mod task;
 #[cfg(feature = "intel_tdx")]
 pub(crate) mod tdx_guest;
@@ -31,7 +31,7 @@ use log::{info, warn};
 
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
-    console::init();
+    serial::init();
 }
 
 pub(crate) fn after_all_init() {
@@ -46,7 +46,7 @@ pub(crate) fn after_all_init() {
             kernel::pic::enable();
         }
     }
-    console::callback_init();
+    serial::callback_init();
     timer::init();
     #[cfg(feature = "intel_tdx")]
     if !tdx_is_enabled() {
