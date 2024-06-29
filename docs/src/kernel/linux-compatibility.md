@@ -290,7 +290,7 @@ provided by Linux on x86-64 architecture.
 | 267     | readlinkat       | ✅              |
 | 268     | fchmodat         | ✅              |
 | 269     | faccessat        | ✅              |
-| 270     | pselect6         | ❌              |
+| 270     | pselect6         | ✅              |
 | 271     | ppoll            | ❌              |
 | 272     | unshare          | ❌              |
 | 273     | set_robust_list  | ✅              |
