@@ -199,6 +199,14 @@ pub struct KernelSpace;
 ///
 /// [valid]: core::ptr#safety
 unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
+    // Note that the "volatile" keyword does not help data races between concurrent access. If data
+    // races happen, volatile loads are undefined behavior in Rust and target-specific behavior in
+    // LLVM. This should be fixed when we find a better way in the future (FIXME).
+    //
+    // However, without introducing more assembly code, this is the best we can do given the
+    // current APIs provided by the Rust core library. For more details, see the discussion at
+    // <https://github.com/asterinas/asterinas/pull/895#discussion_r1656342489> as well as
+    // <https://github.com/rust-lang/unsafe-code-guidelines/issues/152>.
     core::intrinsics::volatile_copy_memory(dst, src, len);
 }
 
