@@ -199,6 +199,20 @@ pub struct KernelSpace;
 ///
 /// [valid]: core::ptr#safety
 unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
+    // The safety conditions of this method explicitly allow data races on untyped memory because
+    // this method can be used to copy data to/from a page that is also mapped to user space, so
+    // avoiding data races is not feasible in this case.
+    //
+    // This method is implemented by calling `volatile_copy_memory`. Note that even with the
+    // "volatile" keyword, data races are still considered undefined behavior (UB) in both the Rust
+    // documentation and the C/C++ standards. In general, UB makes the behavior of the entire
+    // program unpredictable, usually due to compiler optimizations that assume the absence of UB.
+    // However, in this particular case, considering that the Linux kernel uses the "volatile"
+    // keyword to implement `READ_ONCE` and `WRITE_ONCE`, the compiler is extremely unlikely to
+    // break our code unless it also breaks the Linux kernel.
+    //
+    // For more details and future possibilities, see
+    // <https://github.com/asterinas/asterinas/pull/1001#discussion_r1667317406>.
     core::intrinsics::volatile_copy_memory(dst, src, len);
 }
 
