@@ -36,12 +36,18 @@ FROM build-base as build-benchmarks
 WORKDIR /root
 RUN apt install -y automake \ 
     libtool \ 
-    pkg-config
+    pkg-config \
+    libntirpc-dev 
+
 RUN wget https://github.com/akopytov/sysbench/archive/1.0.20.tar.gz \ 
     && tar -zxvf 1.0.20.tar.gz \ 
     && rm 1.0.20.tar.gz
 RUN git clone https://github.com/nicktehrany/membench.git
 RUN git clone https://github.com/esnet/iperf.git
+RUN git clone https://github.com/kdlucas/byte-unixbench.git
+RUN git clone https://github.com/asterinas/lmbench.git
+RUN wget https://www.iozone.org/src/current/iozone3_506.tar
+RUN tar -x -f iozone3_506.tar
 
 # Build sysbench
 WORKDIR /root/sysbench-1.0.20
@@ -62,10 +68,31 @@ RUN ./configure --prefix=/usr/local/benchmark/iperf \
     && make -j \ 
     && make install
 
+# Build lmbench
+WORKDIR /root/lmbench
+RUN make -j \
+    && mv bin/x86_64-linux-gnu /usr/local/benchmark/lmbench \
+    && rm /usr/local/benchmark/lmbench/*.o \
+    && rm /usr/local/benchmark/lmbench/*.a 
+
+# Build unixbench
+WORKDIR /root/byte-unixbench/UnixBench
+RUN make UB_GCC_OPTIONS=-mno-sse2 -j && mv pgms /usr/local/benchmark/unixbench 
+
+# Build iozone
+WORKDIR /root/iozone3_506/src/current
+RUN CFLAGS=-static make linux-AMD64 \
+    && cp iozone /usr/local/benchmark/
+
+# Clear cached files
 WORKDIR /root
 RUN rm -rf sysbench-1.0.20 \ 
     membench \ 
-    iperf
+    iperf \
+    lmbench \
+    byte-unixbench \
+    iozone3_506.tar \
+    iozone3_506
 
 #= Build syscall test =========================================================
 
@@ -138,10 +165,10 @@ FROM build-ovmf as ovmf
 WORKDIR /root
 RUN git clone --depth 1 --branch edk2-stable202402 --recurse-submodules --shallow-submodules https://github.com/tianocore/edk2.git
 WORKDIR /root/edk2
-RUN source ./edksetup.sh \ 
+RUN /bin/bash -c "source ./edksetup.sh \ 
     && make -C BaseTools \ 
     && build -a X64 -t GCC5 -b DEBUG -p OvmfPkg/OvmfPkgX64.dsc -D DEBUG_ON_SERIAL_PORT \ 
-    && build -a X64 -t GCC5 -b RELEASE -p OvmfPkg/OvmfPkgX64.dsc
+    && build -a X64 -t GCC5 -b RELEASE -p OvmfPkg/OvmfPkgX64.dsc"
 
 #= Build GRUB =================================================================
 
