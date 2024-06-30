@@ -7,6 +7,7 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     process::{
+        namespaces::Namespaces,
         posix_thread::{PosixThreadBuilder, PosixThreadExt},
         process_vm::ProcessVm,
         rlimit::ResourceLimits,
@@ -31,6 +32,7 @@ pub struct ProcessBuilder<'a> {
     file_table: Option<Arc<Mutex<FileTable>>>,
     fs: Option<Arc<RwMutex<FsResolver>>>,
     umask: Option<Arc<RwLock<FileCreationMask>>>,
+    namespaces: Option<Arc<Mutex<Namespaces>>>,
     resource_limits: Option<ResourceLimits>,
     sig_dispositions: Option<Arc<Mutex<SigDispositions>>>,
     credentials: Option<Credentials>,
@@ -50,6 +52,7 @@ impl<'a> ProcessBuilder<'a> {
             file_table: None,
             fs: None,
             umask: None,
+            namespaces: None,
             resource_limits: None,
             sig_dispositions: None,
             credentials: None,
@@ -79,6 +82,11 @@ impl<'a> ProcessBuilder<'a> {
 
     pub fn umask(&mut self, umask: Arc<RwLock<FileCreationMask>>) -> &mut Self {
         self.umask = Some(umask);
+        self
+    }
+
+    pub fn namespaces(&mut self, namespaces: Arc<Mutex<Namespaces>>) -> &mut Self {
+        self.namespaces = Some(namespaces);
         self
     }
 
@@ -143,6 +151,7 @@ impl<'a> ProcessBuilder<'a> {
             file_table,
             fs,
             umask,
+            namespaces,
             resource_limits,
             sig_dispositions,
             credentials,
@@ -161,6 +170,10 @@ impl<'a> ProcessBuilder<'a> {
 
         let umask = umask
             .or_else(|| Some(Arc::new(RwLock::new(FileCreationMask::default()))))
+            .unwrap();
+
+        let namespaces = namespaces
+            .or_else(|| Some(Arc::new(Mutex::new(Namespaces::default()))))
             .unwrap();
 
         let resource_limits = resource_limits
@@ -184,6 +197,7 @@ impl<'a> ProcessBuilder<'a> {
                 fs,
                 file_table,
                 umask,
+                namespaces,
                 resource_limits,
                 nice,
                 sig_dispositions,
