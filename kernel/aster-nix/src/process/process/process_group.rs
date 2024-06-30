@@ -102,6 +102,8 @@ impl ProcessGroup {
 /// A scoped lock for a process group.
 ///
 /// It provides some public methods to prevent the exposure of the inner type.
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct ProcessGroupGuard<'a> {
     inner: MutexGuard<'a, Inner>,
 }

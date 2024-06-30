@@ -563,6 +563,8 @@ impl InnerGuard {
 }
 
 /// A guard that provides immutable data access.
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct RwLockReadGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
     inner_guard: InnerGuard,
     inner: R,
