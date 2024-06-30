@@ -60,3 +60,5 @@ echo "All ext2 fs test passed."
 echo "Start fdatasync test......"
 test_fdatasync
 echo "All fdatasync test passed."
+
+pipe/pipe_err
