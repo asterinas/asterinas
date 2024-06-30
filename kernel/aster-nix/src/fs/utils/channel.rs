@@ -121,7 +121,9 @@ impl<T> Producer<T> {
 
         let this_end = self.this_end();
         let rb = this_end.rb();
-        if rb.is_full() {
+        if self.is_shutdown() || self.is_peer_shutdown() {
+            // The POLLOUT event is always set in this case. Don't try to remove it.
+        } else if rb.is_full() {
             this_end.pollee.del_events(IoEvents::OUT);
         }
         drop(rb);
@@ -148,27 +150,28 @@ impl<T: Copy> Producer<T> {
         if self.is_nonblocking() {
             self.try_write(buf)
         } else {
+            // The POLLOUT event is set after shutdown, so waiting for the single event is enough.
             self.wait_events(IoEvents::OUT, || self.try_write(buf))
         }
     }
 
     fn try_write(&self, buf: &[T]) -> Result<usize> {
-        if self.is_shutdown() || self.is_peer_shutdown() {
-            return_errno!(Errno::EPIPE);
-        }
-
         if buf.is_empty() {
+            // Even after shutdown, writing an empty buffer is still fine.
             return Ok(0);
         }
 
-        let written_len = self.0.write(buf);
+        if self.is_shutdown() || self.is_peer_shutdown() {
+            return_errno_with_message!(Errno::EPIPE, "the channel is shut down");
+        }
 
+        let written_len = self.0.write(buf);
         self.update_pollee();
 
         if written_len > 0 {
             Ok(written_len)
         } else {
-            return_errno_with_message!(Errno::EAGAIN, "try write later");
+            return_errno_with_message!(Errno::EAGAIN, "the channel is full");
         }
     }
 }
@@ -185,6 +188,7 @@ impl<T> Producer<T> {
 
         let mut stored_item = Some(item);
 
+        // The POLLOUT event is set after shutdown, so waiting for the single event is enough.
         let result = self.wait_events(IoEvents::OUT, || {
             match self.try_push(stored_item.take().unwrap()) {
                 Ok(()) => Ok(()),
@@ -203,16 +207,16 @@ impl<T> Producer<T> {
 
     fn try_push(&self, item: T) -> core::result::Result<(), (Error, T)> {
         if self.is_shutdown() || self.is_peer_shutdown() {
-            let err = Error::with_message(Errno::EPIPE, "the pipe is shutdown");
+            let err = Error::with_message(Errno::EPIPE, "the channel is shut down");
             return Err((err, item));
         }
 
         self.0.push(item).map_err(|item| {
-            let err = Error::with_message(Errno::EAGAIN, "try push again");
+            let err = Error::with_message(Errno::EAGAIN, "the channel is full");
             (err, item)
         })?;
-
         self.update_pollee();
+
         Ok(())
     }
 }
@@ -221,8 +225,9 @@ impl<T> Drop for Producer<T> {
     fn drop(&mut self) {
         self.shutdown();
 
-        // When reading from a channel such as a pipe or a stream socket,
-        // POLLHUP merely indicates that the peer closed its end of the channel.
+        // The POLLHUP event indicates that the write end is shut down.
+        //
+        // No need to take a lock. There is no race because no one is modifying this particular event.
         self.peer_end().pollee.add_events(IoEvents::HUP);
     }
 }
@@ -271,62 +276,57 @@ impl<T: Copy> Consumer<T> {
         if self.is_nonblocking() {
             self.try_read(buf)
         } else {
+            // The POLLHUP event is in `IoEvents::ALWAYS_POLL`, which is not specified again.
             self.wait_events(IoEvents::IN, || self.try_read(buf))
         }
     }
 
     fn try_read(&self, buf: &mut [T]) -> Result<usize> {
-        if self.is_shutdown() {
-            return_errno!(Errno::EPIPE);
-        }
         if buf.is_empty() {
             return Ok(0);
         }
 
+        // This must be recorded before the actual operation to avoid race conditions.
+        let is_shutdown = self.is_shutdown() || self.is_peer_shutdown();
+
         let read_len = self.0.read(buf);
-
         self.update_pollee();
-
-        if self.is_peer_shutdown() {
-            return Ok(read_len);
-        }
 
         if read_len > 0 {
             Ok(read_len)
+        } else if is_shutdown {
+            Ok(0)
         } else {
-            return_errno_with_message!(Errno::EAGAIN, "try read later");
+            return_errno_with_message!(Errno::EAGAIN, "the channel is empty");
         }
     }
 }
 
 impl<T> Consumer<T> {
-    /// Pops an item from the consumer
-    pub fn pop(&self) -> Result<T> {
+    /// Pops an item from the consumer.
+    pub fn pop(&self) -> Result<Option<T>> {
         if self.is_nonblocking() {
             self.try_pop()
         } else {
+            // The POLLHUP event is in `IoEvents::ALWAYS_POLL`, which is not specified again.
             self.wait_events(IoEvents::IN, || self.try_pop())
         }
     }
 
-    fn try_pop(&self) -> Result<T> {
-        if self.is_shutdown() {
-            return_errno_with_message!(Errno::EPIPE, "this end is shut down");
-        }
+    fn try_pop(&self) -> Result<Option<T>> {
+        // This must be recorded before the actual operation to avoid race conditions.
+        let is_shutdown = self.is_shutdown() || self.is_peer_shutdown();
 
         let item = self.0.pop();
-
         self.update_pollee();
 
         if let Some(item) = item {
-            return Ok(item);
+            Ok(Some(item))
+        } else if is_shutdown {
+            Ok(None)
+        } else {
+            return_errno_with_message!(Errno::EAGAIN, "the channel is empty")
         }
-
-        if self.is_peer_shutdown() {
-            return_errno_with_message!(Errno::EPIPE, "remote end is shut down");
-        }
-
-        return_errno_with_message!(Errno::EAGAIN, "try pop again")
     }
 }
 
@@ -334,9 +334,14 @@ impl<T> Drop for Consumer<T> {
     fn drop(&mut self) {
         self.shutdown();
 
-        // POLLERR is also set for a file descriptor referring to the write end of a pipe
-        // when the read end has been closed.
-        self.peer_end().pollee.add_events(IoEvents::ERR);
+        // The POLLERR event indicates that the read end is closed (so any subsequent writes will
+        // fail with an `EPIPE` error).
+        //
+        // The lock is taken because we are also adding the POLLOUT event, which may have races
+        // with the event updates triggered by the writer.
+        let peer_end = self.peer_end();
+        let _rb = peer_end.rb();
+        peer_end.pollee.add_events(IoEvents::ERR | IoEvents::OUT);
     }
 }
 
@@ -396,7 +401,7 @@ impl<T> Common<T> {
         check_status_flags(flags)?;
 
         if capacity == 0 {
-            return_errno_with_message!(Errno::EINVAL, "capacity cannot be zero");
+            return_errno_with_message!(Errno::EINVAL, "the channel capacity cannot be zero");
         }
 
         let rb: HeapRb<T> = HeapRb::new(capacity);
@@ -456,12 +461,17 @@ impl<T> EndPointInner<T> {
 
 fn check_status_flags(flags: StatusFlags) -> Result<()> {
     let valid_flags: StatusFlags = StatusFlags::O_NONBLOCK | StatusFlags::O_DIRECT;
+
     if !valid_flags.contains(flags) {
-        return_errno_with_message!(Errno::EINVAL, "invalid flags");
+        // FIXME: Linux seems to silently ignore invalid flags. See
+        // <https://man7.org/linux/man-pages/man2/fcntl.2.html>.
+        return_errno_with_message!(Errno::EINVAL, "the flags are invalid");
     }
+
     if flags.contains(StatusFlags::O_DIRECT) {
-        return_errno_with_message!(Errno::EINVAL, "O_DIRECT is not supported");
+        return_errno_with_message!(Errno::EINVAL, "the `O_DIRECT` flag is not supported");
     }
+
     Ok(())
 }
 
@@ -489,7 +499,7 @@ mod test {
         }
 
         for _ in 0..3 {
-            let data = consumer.pop().unwrap();
+            let data = consumer.pop().unwrap().unwrap();
             assert_eq!(data, expected_data);
         }
     }

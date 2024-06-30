@@ -18,11 +18,11 @@ use crate::{
 /// The basic operations defined on a file
 pub trait FileLike: Pollable + Send + Sync + Any {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "read is not supported");
+        return_errno_with_message!(Errno::EBADF, "the file is not valid for reading");
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "write is not supported");
+        return_errno_with_message!(Errno::EBADF, "the file is not valid for writing");
     }
 
     /// Read at the given file offset.
