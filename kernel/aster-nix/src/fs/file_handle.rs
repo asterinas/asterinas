@@ -12,11 +12,11 @@ use crate::{
     },
     net::socket::Socket,
     prelude::*,
-    process::{signal::Poller, Gid, Uid},
+    process::{signal::Pollable, Gid, Uid},
 };
 
 /// The basic operations defined on a file
-pub trait FileLike: Send + Sync + Any {
+pub trait FileLike: Pollable + Send + Sync + Any {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "read is not supported");
     }
@@ -48,10 +48,6 @@ pub trait FileLike: Send + Sync + Any {
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
-    }
-
-    fn poll(&self, _mask: IoEvents, _poller: Option<&Poller>) -> IoEvents {
-        IoEvents::empty()
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {

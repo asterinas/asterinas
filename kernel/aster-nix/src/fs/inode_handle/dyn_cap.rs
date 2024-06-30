@@ -4,7 +4,7 @@ use aster_rights::TRights;
 use inherit_methods_macro::inherit_methods;
 
 use super::*;
-use crate::prelude::*;
+use crate::{prelude::*, process::signal::Pollable};
 
 impl InodeHandle<Rights> {
     pub fn new(
@@ -80,8 +80,12 @@ impl Clone for InodeHandle<Rights> {
 }
 
 #[inherit_methods(from = "self.0")]
-impl FileLike for InodeHandle<Rights> {
+impl Pollable for InodeHandle<Rights> {
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents;
+}
+
+#[inherit_methods(from = "self.0")]
+impl FileLike for InodeHandle<Rights> {
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32>;
     fn status_flags(&self) -> StatusFlags;
     fn access_mode(&self) -> AccessMode;

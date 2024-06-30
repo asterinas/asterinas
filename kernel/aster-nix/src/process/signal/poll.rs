@@ -242,3 +242,53 @@ impl EventCounter {
         self.pauser.resume_one();
     }
 }
+
+/// The `Pollable` trait allows for waiting for events and performing event-based operations.
+///
+/// Implementors are required to provide a method, [`Pollable::poll`], which is usually implemented
+/// by simply calling [`Pollee::poll`] on the internal [`Pollee`]. This trait provides another
+/// method, [`Pollable::wait_events`], to allow waiting for events and performing operations
+/// according to the events.
+///
+/// This trait is added instead of creating a new method in [`Pollee`] because sometimes we do not
+/// have access to the internal [`Pollee`], but there is a method that provides the same sematics
+/// as [`Pollee::poll`] and we need to perform event-based operations using that method.
+pub trait Pollable {
+    /// Returns the interesting events if there are any, or waits for them to happen if there are
+    /// none.
+    ///
+    /// This method has the same semantics as [`Pollee::poll`].
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents;
+
+    /// Waits for events and performs event-based operations.
+    ///
+    /// If a call to `cond()` succeeds or fails with an error code other than `EAGAIN`, the method
+    /// will return whatever the call to `cond()` returns. Otherwise, the method will wait for some
+    /// interesting events specified in `mask` to happen and try again.
+    ///
+    /// The user must ensure that a call to `cond()` does not fail with `EAGAIN` when the
+    /// interesting events occur. However, it is allowed to have spurious `EAGAIN` failures due to
+    /// race conditions where the events are consumed by another thread.
+    fn wait_events<F, R>(&self, mask: IoEvents, mut cond: F) -> Result<R>
+    where
+        Self: Sized,
+        F: FnMut() -> Result<R>,
+    {
+        let poller = Poller::new();
+
+        loop {
+            match cond() {
+                Err(err) if err.error() == Errno::EAGAIN => (),
+                result => return result,
+            };
+
+            let events = self.poll(mask, Some(&poller));
+            if !events.is_empty() {
+                continue;
+            }
+
+            // TODO: Support timeout
+            poller.wait()?;
+        }
+    }
+}

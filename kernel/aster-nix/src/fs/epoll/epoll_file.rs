@@ -12,7 +12,7 @@ use super::*;
 use crate::{
     events::Observer,
     fs::{file_handle::FileLike, file_table::FdEvents, utils::IoctlCmd},
-    process::signal::{Pollee, Poller},
+    process::signal::{Pollable, Pollee, Poller},
 };
 
 /// A file-like object that provides epoll API.
@@ -321,6 +321,12 @@ impl Drop for EpollFile {
     }
 }
 
+impl Pollable for EpollFile {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.pollee.poll(mask, poller)
+    }
+}
+
 // Implement the common methods required by FileHandle
 impl FileLike for EpollFile {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
@@ -333,10 +339,6 @@ impl FileLike for EpollFile {
 
     fn ioctl(&self, _cmd: IoctlCmd, _arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support ioctl");
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
     }
 
     fn register_observer(
