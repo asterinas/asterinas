@@ -52,7 +52,8 @@ impl UnixStreamSocket {
     }
 
     pub fn new_pair(nonblocking: bool) -> Result<(Arc<Self>, Arc<Self>)> {
-        let (end_a, end_b) = Endpoint::new_pair(nonblocking)?;
+        let (end_a, end_b) = Endpoint::new_pair(None, None, nonblocking)?;
+
         let connected_a = {
             let connected = Connected::new(end_a);
             Self::new_connected(connected)
@@ -61,6 +62,7 @@ impl UnixStreamSocket {
             let connected = Connected::new(end_b);
             Self::new_connected(connected)
         };
+
         Ok((Arc::new(connected_a), Arc::new(connected_b)))
     }
 
@@ -69,7 +71,7 @@ impl UnixStreamSocket {
         match &*status {
             State::Init(init) => init.addr(),
             State::Listen(listen) => Some(listen.addr().clone()),
-            State::Connected(connected) => connected.addr(),
+            State::Connected(connected) => connected.addr().cloned(),
         }
     }
 
@@ -250,7 +252,7 @@ impl Socket for UnixStreamSocket {
         let addr = match &*self.0.read() {
             State::Init(init) => init.addr(),
             State::Listen(listen) => Some(listen.addr().clone()),
-            State::Connected(connected) => connected.addr(),
+            State::Connected(connected) => connected.addr().cloned(),
         };
 
         addr.map(Into::<SocketAddr>::into)

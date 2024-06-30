@@ -9,19 +9,19 @@ use crate::{
 };
 
 pub(super) struct Connected {
-    local_endpoint: Arc<Endpoint>,
+    local_endpoint: Endpoint,
 }
 
 impl Connected {
-    pub(super) fn new(local_endpoint: Arc<Endpoint>) -> Self {
+    pub(super) fn new(local_endpoint: Endpoint) -> Self {
         Connected { local_endpoint }
     }
 
-    pub(super) fn addr(&self) -> Option<UnixSocketAddrBound> {
+    pub(super) fn addr(&self) -> Option<&UnixSocketAddrBound> {
         self.local_endpoint.addr()
     }
 
-    pub(super) fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
+    pub(super) fn peer_addr(&self) -> Option<&UnixSocketAddrBound> {
         self.local_endpoint.peer_addr()
     }
 

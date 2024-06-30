@@ -57,11 +57,8 @@ impl Init {
             }
         }
 
-        let (this_end, remote_end) = Endpoint::new_pair(self.is_nonblocking())?;
-        remote_end.set_addr(remote_addr.clone());
-        if let Some(addr) = addr {
-            this_end.set_addr(addr.clone());
-        };
+        let (this_end, remote_end) =
+            Endpoint::new_pair(addr, Some(remote_addr.clone()), self.is_nonblocking())?;
 
         push_incoming(remote_addr, remote_end)?;
         Ok(Connected::new(this_end))
