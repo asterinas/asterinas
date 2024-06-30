@@ -196,6 +196,8 @@ impl PreemptInfo {
 }
 
 /// A guard for disable preempt.
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct DisablePreemptGuard {
     // This private field prevents user from constructing values of this type directly.
     private: (),
@@ -223,7 +225,6 @@ impl Drop for DisablePreemptGuard {
 }
 
 /// Disables preemption.
-#[must_use]
 pub fn disable_preempt() -> DisablePreemptGuard {
     DisablePreemptGuard::new()
 }

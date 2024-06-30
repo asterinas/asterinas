@@ -49,6 +49,8 @@ impl<P: OwnerPtr + Send> Rcu<P> {
     }
 }
 
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct RcuReadGuard<'a, P: OwnerPtr> {
     obj: &'a <P as OwnerPtr>::Target,
     rcu: &'a Rcu<P>,

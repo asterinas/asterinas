@@ -145,6 +145,8 @@ pub type SpinLockGuard<'a, T> = SpinLockGuard_<T, &'a SpinLock<T>>;
 pub type ArcSpinLockGuard<T> = SpinLockGuard_<T, Arc<SpinLock<T>>>;
 
 /// The guard of a spin lock that disables the local IRQs.
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct SpinLockGuard_<T: ?Sized, R: Deref<Target = SpinLock<T>>> {
     inner_guard: InnerGuard,
     lock: R,

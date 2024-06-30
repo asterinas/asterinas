@@ -122,7 +122,7 @@ impl<T> Producer<T> {
         // Update the event of pollee in a critical region so that pollee
         // always reflects the _true_ state of the underlying ring buffer
         // regardless of any race conditions.
-        self.0.common.lock_event();
+        let _guard = self.0.common.lock_event();
 
         let rb = this_end.rb();
         if rb.is_full() {
@@ -237,7 +237,7 @@ impl<T> Drop for Producer<T> {
     fn drop(&mut self) {
         self.shutdown();
 
-        self.0.common.lock_event();
+        let _guard = self.0.common.lock_event();
 
         // When reading from a channel such as a pipe or a stream socket,
         // POLLHUP merely indicates that the peer closed its end of the channel.
@@ -261,7 +261,7 @@ impl<T> Consumer<T> {
         // Update the event of pollee in a critical region so that pollee
         // always reflects the _true_ state of the underlying ring buffer
         // regardless of any race conditions.
-        self.0.common.lock_event();
+        let _guard = self.0.common.lock_event();
 
         let rb = this_end.rb();
         if rb.is_empty() {
@@ -377,7 +377,7 @@ impl<T> Drop for Consumer<T> {
     fn drop(&mut self) {
         self.shutdown();
 
-        self.0.common.lock_event();
+        let _guard = self.0.common.lock_event();
 
         // POLLERR is also set for a file descriptor referring to the write end of a pipe
         // when the read end has been closed.

@@ -126,12 +126,13 @@ impl Drop for IrqLine {
 ///     todo!("do something when irqs are disabled");
 /// }
 /// ```
-#[must_use]
 pub fn disable_local() -> DisabledLocalIrqGuard {
     DisabledLocalIrqGuard::new()
 }
 
 /// A guard for disabled local IRQs.
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct DisabledLocalIrqGuard {
     was_enabled: bool,
     preempt_guard: DisablePreemptGuard,

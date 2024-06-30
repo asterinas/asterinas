@@ -92,6 +92,7 @@ unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
 unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
 
 #[clippy::has_significant_drop]
+#[must_use]
 pub struct MutexGuard_<T: ?Sized, R: Deref<Target = Mutex<T>>> {
     mutex: R,
 }

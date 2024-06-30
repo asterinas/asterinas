@@ -248,6 +248,8 @@ impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Drop for RwMutexReadGuard_<T, R> 
 }
 
 /// A guard that provides mutable data access.
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct RwMutexWriteGuard_<T: ?Sized, R: Deref<Target = RwMutex<T>>> {
     inner: R,
 }
