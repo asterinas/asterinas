@@ -21,7 +21,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{Pollable, Pollee, Poller},
     util::IoVec,
 };
 
@@ -170,34 +170,18 @@ impl DatagramSocket {
         sent_bytes
     }
 
-    // TODO: Support timeout
-    fn wait_events<F, R>(&self, mask: IoEvents, mut cond: F) -> Result<R>
-    where
-        F: FnMut() -> Result<R>,
-    {
-        let poller = Poller::new();
-
-        loop {
-            match cond() {
-                Err(err) if err.error() == Errno::EAGAIN => (),
-                result => return result,
-            };
-
-            let events = self.poll(mask, Some(&poller));
-            if !events.is_empty() {
-                continue;
-            }
-
-            poller.wait()?;
-        }
-    }
-
     fn update_io_events(&self) {
         let inner = self.inner.read();
         let Inner::Bound(bound_datagram) = inner.as_ref() else {
             return;
         };
         bound_datagram.update_io_events(&self.pollee);
+    }
+}
+
+impl Pollable for DatagramSocket {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.pollee.poll(mask, poller)
     }
 }
 
@@ -221,10 +205,6 @@ impl FileLike for DatagramSocket {
 
         // TODO: Block if send buffer is full
         self.try_send(buf, &remote, flags)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
     }
 
     fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {

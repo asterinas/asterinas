@@ -24,7 +24,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        signal::{Pauser, Pollee, Poller},
+        signal::{Pauser, Pollable, Pollee, Poller},
         Gid, Uid,
     },
     time::clocks::RealTimeClock,
@@ -150,6 +150,12 @@ impl EventFile {
     }
 }
 
+impl Pollable for EventFile {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.pollee.poll(mask, poller)
+    }
+}
+
 impl FileLike for EventFile {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         let read_len = core::mem::size_of::<u64>();
@@ -214,10 +220,6 @@ impl FileLike for EventFile {
             .pause_until(|| self.add_counter_val(supplied_value).ok())?;
 
         Ok(write_len)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
     }
 
     fn status_flags(&self) -> StatusFlags {

@@ -34,7 +34,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{Pollable, Pollee, Poller},
     util::IoVec,
 };
 
@@ -319,28 +319,6 @@ impl StreamSocket {
         }
     }
 
-    // TODO: Support timeout
-    fn wait_events<F, R>(&self, mask: IoEvents, mut cond: F) -> Result<R>
-    where
-        F: FnMut() -> Result<R>,
-    {
-        let poller = Poller::new();
-
-        loop {
-            match cond() {
-                Err(err) if err.error() == Errno::EAGAIN => (),
-                result => return result,
-            };
-
-            let events = self.poll(mask, Some(&poller));
-            if !events.is_empty() {
-                continue;
-            }
-
-            poller.wait()?;
-        }
-    }
-
     #[must_use]
     fn update_io_events(&self) -> bool {
         let state = self.state.read();
@@ -359,6 +337,12 @@ impl StreamSocket {
     }
 }
 
+impl Pollable for StreamSocket {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.pollee.poll(mask, poller)
+    }
+}
+
 impl FileLike for StreamSocket {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         // TODO: Set correct flags
@@ -370,10 +354,6 @@ impl FileLike for StreamSocket {
         // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
         self.send(buf, flags)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
     }
 
     fn status_flags(&self) -> StatusFlags {

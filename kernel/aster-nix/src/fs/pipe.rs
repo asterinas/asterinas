@@ -9,7 +9,10 @@ use super::{
 use crate::{
     events::{IoEvents, Observer},
     prelude::*,
-    process::{signal::Poller, Gid, Uid},
+    process::{
+        signal::{Pollable, Poller},
+        Gid, Uid,
+    },
     time::clocks::RealTimeCoarseClock,
 };
 
@@ -23,13 +26,15 @@ impl PipeReader {
     }
 }
 
+impl Pollable for PipeReader {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.consumer.poll(mask, poller)
+    }
+}
+
 impl FileLike for PipeReader {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         self.consumer.read(buf)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.consumer.poll(mask, poller)
     }
 
     fn status_flags(&self) -> StatusFlags {
@@ -90,13 +95,15 @@ impl PipeWriter {
     }
 }
 
+impl Pollable for PipeWriter {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        self.producer.poll(mask, poller)
+    }
+}
+
 impl FileLike for PipeWriter {
     fn write(&self, buf: &[u8]) -> Result<usize> {
         self.producer.write(buf)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        self.producer.poll(mask, poller)
     }
 
     fn status_flags(&self) -> StatusFlags {

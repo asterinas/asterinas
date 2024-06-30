@@ -23,7 +23,7 @@ use crate::{
         SockShutdownCmd, Socket,
     },
     prelude::*,
-    process::signal::Poller,
+    process::signal::{Pollable, Poller},
     util::IoVec,
 };
 
@@ -103,6 +103,17 @@ impl UnixStreamSocket {
     }
 }
 
+impl Pollable for UnixStreamSocket {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        let inner = self.0.read();
+        match &*inner {
+            State::Init(init) => init.poll(mask, poller),
+            State::Listen(listen) => listen.poll(mask, poller),
+            State::Connected(connected) => connected.poll(mask, poller),
+        }
+    }
+}
+
 impl FileLike for UnixStreamSocket {
     fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
         Some(self)
@@ -118,15 +129,6 @@ impl FileLike for UnixStreamSocket {
         // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
         self.send(buf, flags)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        let inner = self.0.read();
-        match &*inner {
-            State::Init(init) => init.poll(mask, poller),
-            State::Listen(listen) => listen.poll(mask, poller),
-            State::Connected(connected) => connected.poll(mask, poller),
-        }
     }
 
     fn status_flags(&self) -> StatusFlags {
