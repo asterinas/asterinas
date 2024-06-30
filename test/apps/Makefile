@@ -29,6 +29,7 @@ TEST_APPS := \
 	mmap \
 	mongoose \
 	network \
+	pipe \
 	pthread \
 	pty \
 	signal_c \
