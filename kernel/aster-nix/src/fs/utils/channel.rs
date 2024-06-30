@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use aster_rights::{Read, ReadOp, TRights, Write, WriteOp};
@@ -29,8 +27,8 @@ impl<T> Channel<T> {
 
     pub fn with_capacity_and_flags(capacity: usize, flags: StatusFlags) -> Result<Self> {
         let common = Arc::new(Common::with_capacity_and_flags(capacity, flags)?);
-        let producer = Producer(EndPoint::new(common.clone(), WriteOp::new()));
-        let consumer = Consumer(EndPoint::new(common, ReadOp::new()));
+        let producer = Producer(EndPoint::new(common.clone()));
+        let consumer = Consumer(EndPoint::new(common));
         Ok(Self { producer, consumer })
     }
 
@@ -387,12 +385,15 @@ impl<T> Drop for Consumer<T> {
 
 struct EndPoint<T, R: TRights> {
     common: Arc<Common<T>>,
-    rights: R,
+    _rights: R,
 }
 
 impl<T, R: TRights> EndPoint<T, R> {
-    pub fn new(common: Arc<Common<T>>, rights: R) -> Self {
-        Self { common, rights }
+    pub fn new(common: Arc<Common<T>>) -> Self {
+        Self {
+            common,
+            _rights: R::new(),
+        }
     }
 }
 
