@@ -25,24 +25,16 @@ impl Connected {
         self.local_endpoint.peer_addr()
     }
 
-    pub(super) fn write(&self, buf: &[u8]) -> Result<usize> {
-        self.local_endpoint.write(buf)
+    pub(super) fn try_write(&self, buf: &[u8]) -> Result<usize> {
+        self.local_endpoint.try_write(buf)
     }
 
-    pub(super) fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.local_endpoint.read(buf)
+    pub(super) fn try_read(&self, buf: &mut [u8]) -> Result<usize> {
+        self.local_endpoint.try_read(buf)
     }
 
     pub(super) fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
         self.local_endpoint.shutdown(cmd)
-    }
-
-    pub(super) fn is_nonblocking(&self) -> bool {
-        self.local_endpoint.is_nonblocking()
-    }
-
-    pub(super) fn set_nonblocking(&self, is_nonblocking: bool) {
-        self.local_endpoint.set_nonblocking(is_nonblocking).unwrap();
     }
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {

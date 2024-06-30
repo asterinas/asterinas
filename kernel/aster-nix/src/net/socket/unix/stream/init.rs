@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use super::{connected::Connected, endpoint::Endpoint, listener::push_incoming};
 use crate::{
     events::IoEvents,
@@ -18,15 +16,13 @@ use crate::{
 pub(super) struct Init {
     addr: Mutex<Option<UnixSocketAddrBound>>,
     pollee: Pollee,
-    is_nonblocking: AtomicBool,
 }
 
 impl Init {
-    pub(super) fn new(is_nonblocking: bool) -> Self {
+    pub(super) fn new() -> Self {
         Self {
             addr: Mutex::new(None),
             pollee: Pollee::new(IoEvents::empty()),
-            is_nonblocking: AtomicBool::new(is_nonblocking),
         }
     }
 
@@ -57,8 +53,7 @@ impl Init {
             }
         }
 
-        let (this_end, remote_end) =
-            Endpoint::new_pair(addr, Some(remote_addr.clone()), self.is_nonblocking());
+        let (this_end, remote_end) = Endpoint::new_pair(addr, Some(remote_addr.clone()));
 
         push_incoming(remote_addr, remote_end)?;
         Ok(Connected::new(this_end))
@@ -66,14 +61,6 @@ impl Init {
 
     pub(super) fn addr(&self) -> Option<UnixSocketAddrBound> {
         self.addr.lock().clone()
-    }
-
-    pub(super) fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    pub(super) fn set_nonblocking(&self, is_nonblocking: bool) {
-        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
     }
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {

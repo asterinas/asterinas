@@ -24,7 +24,7 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
     let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let file_like = match (domain, sock_type, protocol) {
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM, _) => {
-            Arc::new(UnixStreamSocket::new(nonblocking)) as Arc<dyn FileLike>
+            UnixStreamSocket::new(nonblocking) as Arc<dyn FileLike>
         }
         (
             CSocketAddrFamily::AF_INET,
