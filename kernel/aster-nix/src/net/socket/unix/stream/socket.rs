@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::AtomicBool;
+
+use atomic::Ordering;
+
 use super::{
     connected::Connected,
     endpoint::Endpoint,
@@ -27,87 +31,104 @@ use crate::{
     util::IoVec,
 };
 
-pub struct UnixStreamSocket(RwLock<State>);
+pub struct UnixStreamSocket {
+    state: RwLock<State>,
+    is_nonblocking: AtomicBool,
+}
 
 impl UnixStreamSocket {
-    pub(super) fn new_init(init: Init) -> Self {
-        Self(RwLock::new(State::Init(Arc::new(init))))
+    pub(super) fn new_init(init: Init, is_nonblocking: bool) -> Arc<Self> {
+        Arc::new(Self {
+            state: RwLock::new(State::Init(init)),
+            is_nonblocking: AtomicBool::new(is_nonblocking),
+        })
     }
 
-    pub(super) fn new_connected(connected: Connected) -> Self {
-        Self(RwLock::new(State::Connected(Arc::new(connected))))
+    pub(super) fn new_connected(connected: Connected, is_nonblocking: bool) -> Arc<Self> {
+        Arc::new(Self {
+            state: RwLock::new(State::Connected(connected)),
+            is_nonblocking: AtomicBool::new(is_nonblocking),
+        })
     }
 }
 
 enum State {
-    Init(Arc<Init>),
-    Listen(Arc<Listener>),
-    Connected(Arc<Connected>),
+    Init(Init),
+    Listen(Listener),
+    Connected(Connected),
 }
 
 impl UnixStreamSocket {
-    pub fn new(nonblocking: bool) -> Self {
-        let init = Init::new(nonblocking);
-        Self::new_init(init)
+    pub fn new(is_nonblocking: bool) -> Arc<Self> {
+        Self::new_init(Init::new(), is_nonblocking)
     }
 
-    pub fn new_pair(nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
-        let (end_a, end_b) = Endpoint::new_pair(None, None, nonblocking);
-
-        let connected_a = {
-            let connected = Connected::new(end_a);
-            Self::new_connected(connected)
-        };
-        let connected_b = {
-            let connected = Connected::new(end_b);
-            Self::new_connected(connected)
-        };
-
-        (Arc::new(connected_a), Arc::new(connected_b))
+    pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
+        let (end_a, end_b) = Endpoint::new_pair(None, None);
+        (
+            Self::new_connected(Connected::new(end_a), is_nonblocking),
+            Self::new_connected(Connected::new(end_b), is_nonblocking),
+        )
     }
 
     fn bound_addr(&self) -> Option<UnixSocketAddrBound> {
-        let status = self.0.read();
-        match &*status {
+        let state = self.state.read();
+        match &*state {
             State::Init(init) => init.addr(),
             State::Listen(listen) => Some(listen.addr().clone()),
             State::Connected(connected) => connected.addr().cloned(),
         }
     }
 
-    fn mask_flags(status_flags: &StatusFlags) -> StatusFlags {
-        const SUPPORTED_FLAGS: StatusFlags = StatusFlags::O_NONBLOCK;
-        const UNSUPPORTED_FLAGS: StatusFlags = SUPPORTED_FLAGS.complement();
-
-        if status_flags.intersects(UNSUPPORTED_FLAGS) {
-            warn!("ignore unsupported flags");
+    fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+        if self.is_nonblocking() {
+            self.try_send(buf, flags)
+        } else {
+            self.wait_events(IoEvents::OUT, || self.try_send(buf, flags))
         }
-
-        status_flags.intersection(SUPPORTED_FLAGS)
     }
 
-    fn send(&self, buf: &[u8], _flags: SendRecvFlags) -> Result<usize> {
-        let connected = match &*self.0.read() {
-            State::Connected(connected) => connected.clone(),
+    fn try_send(&self, buf: &[u8], _flags: SendRecvFlags) -> Result<usize> {
+        match &*self.state.read() {
+            State::Connected(connected) => connected.try_write(buf),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
-        };
-
-        connected.write(buf)
+        }
     }
 
-    fn recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<usize> {
-        let connected = match &*self.0.read() {
-            State::Connected(connected) => connected.clone(),
-            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
-        };
+    fn recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<usize> {
+        if self.is_nonblocking() {
+            self.try_recv(buf, flags)
+        } else {
+            self.wait_events(IoEvents::IN, || self.try_recv(buf, flags))
+        }
+    }
 
-        connected.read(buf)
+    fn try_recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<usize> {
+        match &*self.state.read() {
+            State::Connected(connected) => connected.try_read(buf),
+            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+        }
+    }
+
+    fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
+        match &*self.state.read() {
+            State::Listen(listen) => listen.try_accept() as _,
+            _ => return_errno_with_message!(Errno::EINVAL, "the socket is not listening"),
+        }
+    }
+
+    fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
+    }
+
+    fn set_nonblocking(&self, nonblocking: bool) {
+        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 }
 
 impl Pollable for UnixStreamSocket {
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        let inner = self.0.read();
+        let inner = self.state.read();
         match &*inner {
             State::Init(init) => init.poll(mask, poller),
             State::Listen(listen) => listen.poll(mask, poller),
@@ -134,15 +155,7 @@ impl FileLike for UnixStreamSocket {
     }
 
     fn status_flags(&self) -> StatusFlags {
-        let inner = self.0.read();
-        let is_nonblocking = match &*inner {
-            State::Init(init) => init.is_nonblocking(),
-            State::Listen(listen) => listen.is_nonblocking(),
-            State::Connected(connected) => connected.is_nonblocking(),
-        };
-
-        // TODO: when we fully support O_ASYNC, return the flag
-        if is_nonblocking {
+        if self.is_nonblocking() {
             StatusFlags::O_NONBLOCK
         } else {
             StatusFlags::empty()
@@ -150,17 +163,7 @@ impl FileLike for UnixStreamSocket {
     }
 
     fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        let is_nonblocking = {
-            let supported_flags = Self::mask_flags(&new_flags);
-            supported_flags.contains(StatusFlags::O_NONBLOCK)
-        };
-
-        let mut inner = self.0.write();
-        match &mut *inner {
-            State::Init(init) => init.set_nonblocking(is_nonblocking),
-            State::Listen(listen) => listen.set_nonblocking(is_nonblocking),
-            State::Connected(connected) => connected.set_nonblocking(is_nonblocking),
-        }
+        self.set_nonblocking(new_flags.contains(StatusFlags::O_NONBLOCK));
         Ok(())
     }
 }
@@ -169,16 +172,14 @@ impl Socket for UnixStreamSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let addr = UnixSocketAddr::try_from(socket_addr)?;
 
-        let init = match &*self.0.read() {
-            State::Init(init) => init.clone(),
+        match &*self.state.read() {
+            State::Init(init) => init.bind(&addr),
             _ => return_errno_with_message!(
                 Errno::EINVAL,
                 "cannot bind a listening or connected socket"
             ),
             // FIXME: Maybe binding a connected socket should also be allowed?
-        };
-
-        init.bind(&addr)
+        }
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
@@ -195,23 +196,27 @@ impl Socket for UnixStreamSocket {
             }
         };
 
-        let init = match &*self.0.read() {
-            State::Init(init) => init.clone(),
+        let connected = match &*self.state.read() {
+            State::Init(init) => init.connect(&remote_addr)?,
             State::Listen(_) => return_errno_with_message!(Errno::EINVAL, "the socket is listened"),
             State::Connected(_) => {
                 return_errno_with_message!(Errno::EISCONN, "the socket is connected")
             }
         };
 
-        let connected = init.connect(&remote_addr)?;
-
-        *self.0.write() = State::Connected(Arc::new(connected));
+        *self.state.write() = State::Connected(connected);
         Ok(())
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
-        let init = match &*self.0.read() {
-            State::Init(init) => init.clone(),
+        let addr = match &*self.state.read() {
+            State::Init(init) => init
+                .addr()
+                .ok_or(Error::with_message(
+                    Errno::EINVAL,
+                    "the socket is not bound",
+                ))?
+                .clone(),
             State::Listen(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is already listening")
             }
@@ -220,36 +225,28 @@ impl Socket for UnixStreamSocket {
             }
         };
 
-        let addr = init.addr().ok_or(Error::with_message(
-            Errno::EINVAL,
-            "the socket is not bound",
-        ))?;
-
-        let listener = Listener::new(addr.clone(), backlog, init.is_nonblocking())?;
-        *self.0.write() = State::Listen(Arc::new(listener));
+        let listener = Listener::new(addr, backlog)?;
+        *self.state.write() = State::Listen(listener);
         Ok(())
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        let listen = match &*self.0.read() {
-            State::Listen(listen) => listen.clone(),
-            _ => return_errno_with_message!(Errno::EINVAL, "the socket is not listening"),
-        };
-
-        listen.accept()
+        if self.is_nonblocking() {
+            self.try_accept()
+        } else {
+            self.wait_events(IoEvents::IN, || self.try_accept())
+        }
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
-        let connected = match &*self.0.read() {
-            State::Connected(connected) => connected.clone(),
+        match &*self.state.read() {
+            State::Connected(connected) => connected.shutdown(cmd),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socked is not connected"),
-        };
-
-        connected.shutdown(cmd)
+        }
     }
 
     fn addr(&self) -> Result<SocketAddr> {
-        let addr = match &*self.0.read() {
+        let addr = match &*self.state.read() {
             State::Init(init) => init.addr(),
             State::Listen(listen) => Some(listen.addr().clone()),
             State::Connected(connected) => connected.addr().cloned(),
@@ -263,14 +260,14 @@ impl Socket for UnixStreamSocket {
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
-        let connected = match &*self.0.read() {
-            State::Connected(connected) => connected.clone(),
+        let peer_addr = match &*self.state.read() {
+            State::Connected(connected) => connected.peer_addr().cloned(),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
         };
 
-        match connected.peer_addr() {
+        match peer_addr {
             None => Ok(SocketAddr::Unix(UnixSocketAddr::Path(String::new()))),
-            Some(peer_addr) => Ok(SocketAddr::from(peer_addr.clone())),
+            Some(peer_addr) => Ok(SocketAddr::from(peer_addr)),
         }
     }
 
@@ -323,7 +320,7 @@ impl Drop for UnixStreamSocket {
             return;
         };
 
-        if let State::Listen(_) = &*self.0.read() {
+        if let State::Listen(_) = &*self.state.read() {
             unregister_backlog(&bound_addr);
         }
     }
