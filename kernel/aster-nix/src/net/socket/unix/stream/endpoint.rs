@@ -8,118 +8,114 @@ use crate::{
     process::signal::Poller,
 };
 
-pub(super) struct Endpoint(Inner);
-
-struct Inner {
-    addr: RwLock<Option<UnixSocketAddrBound>>,
+pub(super) struct Endpoint {
+    addr: Option<UnixSocketAddrBound>,
+    peer_addr: Option<UnixSocketAddrBound>,
     reader: Consumer<u8>,
     writer: Producer<u8>,
-    peer: Weak<Endpoint>,
 }
 
 impl Endpoint {
-    pub(super) fn new_pair(is_nonblocking: bool) -> Result<(Arc<Endpoint>, Arc<Endpoint>)> {
+    pub(super) fn new_pair(
+        addr: Option<UnixSocketAddrBound>,
+        peer_addr: Option<UnixSocketAddrBound>,
+        is_nonblocking: bool,
+    ) -> Result<(Endpoint, Endpoint)> {
         let flags = if is_nonblocking {
             StatusFlags::O_NONBLOCK
         } else {
             StatusFlags::empty()
         };
-        let (writer_a, reader_b) =
+
+        let (writer_this, reader_peer) =
             Channel::with_capacity_and_flags(DAFAULT_BUF_SIZE, flags)?.split();
-        let (writer_b, reader_a) =
+        let (writer_peer, reader_this) =
             Channel::with_capacity_and_flags(DAFAULT_BUF_SIZE, flags)?.split();
-        let mut endpoint_b = None;
-        let endpoint_a = Arc::new_cyclic(|endpoint_a_ref| {
-            let peer = Arc::new(Endpoint::new(reader_b, writer_b, endpoint_a_ref.clone()));
-            let endpoint_a = Endpoint::new(reader_a, writer_a, Arc::downgrade(&peer));
-            endpoint_b = Some(peer);
-            endpoint_a
-        });
-        Ok((endpoint_a, endpoint_b.unwrap()))
+
+        let this = Endpoint {
+            addr: addr.clone(),
+            peer_addr: peer_addr.clone(),
+            reader: reader_this,
+            writer: writer_this,
+        };
+        let peer = Endpoint {
+            addr: peer_addr,
+            peer_addr: addr,
+            reader: reader_peer,
+            writer: writer_peer,
+        };
+
+        Ok((this, peer))
     }
 
-    fn new(reader: Consumer<u8>, writer: Producer<u8>, peer: Weak<Endpoint>) -> Self {
-        Self(Inner {
-            addr: RwLock::new(None),
-            reader,
-            writer,
-            peer,
-        })
+    pub(super) fn addr(&self) -> Option<&UnixSocketAddrBound> {
+        self.addr.as_ref()
     }
 
-    pub(super) fn addr(&self) -> Option<UnixSocketAddrBound> {
-        self.0.addr.read().clone()
-    }
-
-    pub(super) fn set_addr(&self, addr: UnixSocketAddrBound) {
-        *self.0.addr.write() = Some(addr);
-    }
-
-    pub(super) fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
-        self.0.peer.upgrade().and_then(|peer| peer.addr())
+    pub(super) fn peer_addr(&self) -> Option<&UnixSocketAddrBound> {
+        self.peer_addr.as_ref()
     }
 
     pub(super) fn is_nonblocking(&self) -> bool {
-        let reader_status = self.0.reader.is_nonblocking();
-        let writer_status = self.0.writer.is_nonblocking();
+        let reader_status = self.reader.is_nonblocking();
+        let writer_status = self.writer.is_nonblocking();
+
         debug_assert!(reader_status == writer_status);
+
         reader_status
     }
 
     pub(super) fn set_nonblocking(&self, is_nonblocking: bool) -> Result<()> {
-        let mut reader_flags = self.0.reader.status_flags();
+        let mut reader_flags = self.reader.status_flags();
         reader_flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
-        self.0.reader.set_status_flags(reader_flags)?;
+        self.reader.set_status_flags(reader_flags)?;
 
-        let mut writer_flags = self.0.writer.status_flags();
+        let mut writer_flags = self.writer.status_flags();
         writer_flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
-        self.0.writer.set_status_flags(writer_flags)?;
+        self.writer.set_status_flags(writer_flags)?;
 
         Ok(())
     }
 
     pub(super) fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.0.reader.read(buf)
+        self.reader.read(buf)
     }
 
     pub(super) fn write(&self, buf: &[u8]) -> Result<usize> {
-        self.0.writer.write(buf)
+        self.writer.write(buf)
     }
 
     pub(super) fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
-        if !self.is_connected() {
-            return_errno_with_message!(Errno::ENOTCONN, "The socket is not connected.");
-        }
+        // FIXME: If the socket has already been shut down, should we return an error code?
 
         if cmd.shut_read() {
-            self.0.reader.shutdown();
+            self.reader.shutdown();
         }
 
         if cmd.shut_write() {
-            self.0.writer.shutdown();
+            self.writer.shutdown();
         }
 
         Ok(())
     }
 
-    pub(super) fn is_connected(&self) -> bool {
-        self.0.peer.upgrade().is_some()
-    }
-
     pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
         let mut events = IoEvents::empty();
-        // FIXME: should reader and writer use the same mask?
-        let reader_events = self.0.reader.poll(mask, poller.as_deref_mut());
-        let writer_events = self.0.writer.poll(mask, poller);
 
-        if reader_events.contains(IoEvents::HUP) || self.0.reader.is_shutdown() {
+        // FIXME: should reader and writer use the same mask?
+        let reader_events = self.reader.poll(mask, poller.as_deref_mut());
+        let writer_events = self.writer.poll(mask, poller);
+
+        // FIXME: Check this logic later.
+        if reader_events.contains(IoEvents::HUP) || self.reader.is_shutdown() {
             events |= IoEvents::RDHUP | IoEvents::IN;
-            if writer_events.contains(IoEvents::ERR) || self.0.writer.is_shutdown() {
+            if writer_events.contains(IoEvents::ERR) || self.writer.is_shutdown() {
                 events |= IoEvents::HUP | IoEvents::OUT;
             }
         }
 
         events |= (reader_events & IoEvents::IN) | (writer_events & IoEvents::OUT);
+
         events
     }
 }
