@@ -7,6 +7,7 @@ use crate::{
         utils::StatusFlags,
     },
     prelude::*,
+    process::Uid,
 };
 
 pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64) -> Result<SyscallReturn> {
@@ -80,6 +81,24 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64) -> Result<SyscallReturn> {
             file.set_status_flags(new_status_flags)?;
             Ok(SyscallReturn::Return(0))
         }
+        FcntlCmd::F_SETOWN => {
+            let current = current!();
+            let file = {
+                let file_table = current.file_table().lock();
+                file_table.get_file(fd)?.clone()
+            };
+            file.set_owner(Uid::new(arg as _))?;
+            Ok(SyscallReturn::Return(0))
+        }
+        FcntlCmd::F_GETOWN => {
+            let current = current!();
+            let file = {
+                let file_table = current.file_table().lock();
+                file_table.get_file(fd)?.clone()
+            };
+            let uid = file.owner()?;
+            Ok(SyscallReturn::Return(uid.as_u32() as _))
+        }
     }
 }
 
@@ -92,5 +111,7 @@ enum FcntlCmd {
     F_SETFD = 2,
     F_GETFL = 3,
     F_SETFL = 4,
+    F_SETOWN = 8,
+    F_GETOWN = 9,
     F_DUPFD_CLOEXEC = 1030,
 }
