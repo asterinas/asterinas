@@ -4,6 +4,11 @@ use core::ops::MulAssign;
 
 use super::prelude::*;
 
+/// Returns the current time.
+pub fn now() -> Duration {
+    crate::time::clocks::RealTimeCoarseClock::get().read_time()
+}
+
 pub trait IsPowerOf: Copy + Sized + MulAssign + PartialOrd {
     /// Returns true if and only if `self == x^k` for some `k` where `k > 0`.
     ///
