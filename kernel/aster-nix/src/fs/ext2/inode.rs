@@ -14,8 +14,8 @@ use super::{
     fs::Ext2,
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
     prelude::*,
+    utils::now,
 };
-use crate::time::clocks::RealTimeCoarseClock;
 
 /// Max length of file name.
 pub const MAX_FNAME_LEN: usize = 255;
@@ -69,6 +69,10 @@ impl Inode {
 
         let mut inner = inner.upgrade();
         inner.resize(new_size)?;
+        let now = now();
+        inner.set_mtime(now);
+        inner.set_ctime(now);
+
         Ok(())
     }
 
@@ -112,6 +116,10 @@ impl Inode {
             self.fs().free_inode(inode.ino, is_dir).unwrap();
             return Err(e);
         }
+        let now = now();
+        inner.set_mtime(now);
+        inner.set_ctime(now);
+
         Ok(inode)
     }
 
@@ -158,9 +166,15 @@ impl Inode {
         let new_entry = DirEntry::new(inode.ino, name, inode_type);
         let mut inner = inner.upgrade();
         inner.append_entry(new_entry)?;
+        let now = now();
+        inner.set_mtime(now);
+        inner.set_ctime(now);
         drop(inner);
 
-        inode.inner.write().inc_hard_links();
+        let mut inode_inner = inode.inner.write();
+        inode_inner.inc_hard_links();
+        inode_inner.set_ctime(now);
+
         Ok(())
     }
 
@@ -193,6 +207,11 @@ impl Inode {
 
         self_inner.remove_entry_at(name, offset)?;
         file_inner.dec_hard_links();
+        let now = now();
+        self_inner.set_mtime(now);
+        self_inner.set_ctime(now);
+        file_inner.set_ctime(now);
+
         Ok(())
     }
 
@@ -238,8 +257,12 @@ impl Inode {
         }
 
         self_inner.remove_entry_at(name, offset)?;
+        let now = now();
+        self_inner.set_mtime(now);
+        self_inner.set_ctime(now);
         dir_inner.dec_hard_links();
         dir_inner.dec_hard_links(); // For "."
+
         Ok(())
     }
 
@@ -264,6 +287,12 @@ impl Inode {
         let Some(dst_ino) = self_inner.get_entry_ino(new_name) else {
             let mut self_inner = self_inner.upgrade();
             self_inner.rename_entry_at(old_name, new_name, src_offset)?;
+            let now = now();
+            self_inner.set_mtime(now);
+            self_inner.set_ctime(now);
+            drop(self_inner);
+
+            src_inode.set_ctime(now);
             return Ok(());
         };
         if src_inode.ino == dst_ino {
@@ -320,10 +349,19 @@ impl Inode {
 
         self_inner.remove_entry_at(new_name, dst_offset)?;
         self_inner.rename_entry_at(old_name, new_name, src_offset)?;
+        let now = now();
+        self_inner.set_mtime(now);
+        self_inner.set_ctime(now);
+
         dst_inner.dec_hard_links();
         if dst_inode_typ == FileType::Dir {
             dst_inner.dec_hard_links(); // For "."
         }
+        dst_inner.set_ctime(now);
+        drop(self_inner);
+        drop(dst_inner);
+
+        src_inode.set_ctime(now);
 
         Ok(())
     }
@@ -393,11 +431,22 @@ impl Inode {
             self_inner.remove_entry_at(old_name, src_offset)?;
             let new_entry = DirEntry::new(src_inode.ino, new_name, src_inode_typ);
             target_inner.append_entry(new_entry)?;
+            let now = now();
+            self_inner.set_mtime(now);
+            self_inner.set_ctime(now);
+            target_inner.set_mtime(now);
+            target_inner.set_ctime(now);
 
             if is_dir {
                 let mut src_inner = write_guards.pop().unwrap();
                 src_inner.set_parent_ino(target.ino)?;
+                src_inner.set_ctime(now);
+            } else {
+                drop(self_inner);
+                drop(target_inner);
+                src_inode.set_ctime(now);
             }
+
             return Ok(());
         };
         if src_inode.ino == dst_ino {
@@ -470,44 +519,63 @@ impl Inode {
         let new_entry = DirEntry::new(src_inode.ino, new_name, src_inode_typ);
         target_inner.append_entry(new_entry)?;
         dst_inner.dec_hard_links();
+        let now = now();
+        self_inner.set_mtime(now);
+        self_inner.set_ctime(now);
+        target_inner.set_mtime(now);
+        target_inner.set_ctime(now);
+        dst_inner.set_ctime(now);
+
         if is_dir {
             dst_inner.dec_hard_links(); // For "."
             let mut src_inner = write_guards.pop().unwrap();
             src_inner.set_parent_ino(target.ino)?;
+            src_inner.set_ctime(now);
+        } else {
+            drop(self_inner);
+            drop(target_inner);
+            drop(dst_inner);
+            src_inode.set_ctime(now);
         }
 
         Ok(())
     }
 
     pub fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        let inner = self.inner.read();
-        if inner.file_type() != FileType::Dir {
-            return_errno!(Errno::ENOTDIR);
-        }
-        if inner.hard_links() == 0 {
-            return_errno_with_message!(Errno::ENOENT, "dir removed");
-        }
-
-        let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
-            let dir_entry_reader = DirEntryReader::new(&inner.page_cache, *offset);
-            for (_, dir_entry) in dir_entry_reader {
-                visitor.visit(
-                    dir_entry.name(),
-                    dir_entry.ino() as u64,
-                    InodeType::from(dir_entry.type_()),
-                    dir_entry.record_len(),
-                )?;
-                *offset += dir_entry.record_len();
+        let offset_read = {
+            let inner = self.inner.read();
+            if inner.file_type() != FileType::Dir {
+                return_errno!(Errno::ENOTDIR);
+            }
+            if inner.hard_links() == 0 {
+                return_errno_with_message!(Errno::ENOENT, "dir removed");
             }
 
-            Ok(())
+            let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
+                let dir_entry_reader = DirEntryReader::new(&inner.page_cache, *offset);
+                for (_, dir_entry) in dir_entry_reader {
+                    visitor.visit(
+                        dir_entry.name(),
+                        dir_entry.ino() as u64,
+                        InodeType::from(dir_entry.type_()),
+                        dir_entry.record_len(),
+                    )?;
+                    *offset += dir_entry.record_len();
+                }
+
+                Ok(())
+            };
+
+            let mut iterate_offset = offset;
+            match try_readdir(&mut iterate_offset, visitor) {
+                Err(e) if iterate_offset == offset => Err(e),
+                _ => Ok(iterate_offset - offset),
+            }?
         };
 
-        let mut iterate_offset = offset;
-        match try_readdir(&mut iterate_offset, visitor) {
-            Err(e) if iterate_offset == offset => Err(e),
-            _ => Ok(iterate_offset - offset),
-        }
+        self.set_atime(now());
+
+        Ok(offset_read)
     }
 
     pub fn write_link(&self, target: &str) -> Result<()> {
@@ -550,58 +618,83 @@ impl Inode {
     }
 
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        let inner = self.inner.read();
-        if inner.file_type() != FileType::File {
-            return_errno!(Errno::EISDIR);
-        }
+        let bytes_read = {
+            let inner = self.inner.read();
+            if inner.file_type() != FileType::File {
+                return_errno!(Errno::EISDIR);
+            }
 
-        inner.read_at(offset, buf)
+            inner.read_at(offset, buf)?
+        };
+
+        self.set_atime(now());
+
+        Ok(bytes_read)
     }
 
     // The offset and the length of buffer must be multiples of the block size.
     pub fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        let inner = self.inner.read();
-        if inner.file_type() != FileType::File {
-            return_errno!(Errno::EISDIR);
-        }
-        if !is_block_aligned(offset) || !is_block_aligned(buf.len()) {
-            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
-        }
+        let bytes_read = {
+            let inner = self.inner.read();
+            if inner.file_type() != FileType::File {
+                return_errno!(Errno::EISDIR);
+            }
+            if !is_block_aligned(offset) || !is_block_aligned(buf.len()) {
+                return_errno_with_message!(Errno::EINVAL, "not block-aligned");
+            }
 
-        inner.read_direct_at(offset, buf)
+            inner.read_direct_at(offset, buf)?
+        };
+
+        self.set_atime(now());
+
+        Ok(bytes_read)
     }
 
     pub fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        let inner = self.inner.upread();
-        if inner.file_type() != FileType::File {
-            return_errno!(Errno::EISDIR);
-        }
+        let bytes_written = {
+            let inner = self.inner.upread();
+            if inner.file_type() != FileType::File {
+                return_errno!(Errno::EISDIR);
+            }
 
-        let file_size = inner.file_size();
-        let new_size = offset + buf.len();
-        if new_size > file_size {
-            let mut inner = inner.upgrade();
-            inner.extend_write_at(offset, buf)?;
-        } else {
-            inner.write_at(offset, buf)?;
-        }
+            let file_size = inner.file_size();
+            let new_size = offset + buf.len();
+            if new_size > file_size {
+                let mut inner = inner.upgrade();
+                inner.extend_write_at(offset, buf)?
+            } else {
+                inner.write_at(offset, buf)?
+            }
+        };
 
-        Ok(buf.len())
+        let now = now();
+        self.set_mtime(now);
+        self.set_ctime(now);
+
+        Ok(bytes_written)
     }
 
     // The offset and the length of buffer must be multiples of the block size.
     pub fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        let inner = self.inner.upread();
-        if inner.file_type() != FileType::File {
-            return_errno!(Errno::EISDIR);
-        }
-        if !is_block_aligned(offset) || !is_block_aligned(buf.len()) {
-            return_errno_with_message!(Errno::EINVAL, "not block aligned");
-        }
+        let bytes_written = {
+            let inner = self.inner.upread();
+            if inner.file_type() != FileType::File {
+                return_errno!(Errno::EISDIR);
+            }
+            if !is_block_aligned(offset) || !is_block_aligned(buf.len()) {
+                return_errno_with_message!(Errno::EINVAL, "not block aligned");
+            }
 
-        let mut inner = inner.upgrade();
-        inner.write_direct_at(offset, buf)?;
-        Ok(buf.len())
+            let mut inner = inner.upgrade();
+            inner.write_direct_at(offset, buf)?
+        };
+
+        let now = now();
+        self.set_mtime(now);
+        self.set_ctime(now);
+
+        Ok(bytes_written)
     }
 
     fn init(&self, dir_ino: u32) -> Result<()> {
@@ -622,6 +715,24 @@ impl Inode {
         inner.sync_data()?;
         inner.sync_metadata()?;
         Ok(())
+    }
+
+    pub fn set_file_perm(&self, perm: FilePerm) {
+        let mut inner = self.inner.write();
+        inner.set_file_perm(perm);
+        inner.set_ctime(now());
+    }
+
+    pub fn set_uid(&self, uid: u32) {
+        let mut inner = self.inner.write();
+        inner.set_uid(uid);
+        inner.set_ctime(now());
+    }
+
+    pub fn set_gid(&self, gid: u32) {
+        let mut inner = self.inner.write();
+        inner.set_gid(gid);
+        inner.set_ctime(now());
     }
 }
 
@@ -645,9 +756,6 @@ impl Inode {
 
 #[inherit_methods(from = "self.inner.write()")]
 impl Inode {
-    pub fn set_file_perm(&self, perm: FilePerm);
-    pub fn set_uid(&self, uid: u32);
-    pub fn set_gid(&self, gid: u32);
     pub fn set_atime(&self, time: Duration);
     pub fn set_mtime(&self, time: Duration);
     pub fn set_ctime(&self, time: Duration);
@@ -790,20 +898,20 @@ impl Inner {
         Ok(read_len)
     }
 
-    pub fn write_at(&self, offset: usize, buf: &[u8]) -> Result<()> {
+    pub fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         self.page_cache.pages().write_bytes(offset, buf)?;
-        Ok(())
+        Ok(buf.len())
     }
 
-    pub fn extend_write_at(&mut self, offset: usize, buf: &[u8]) -> Result<()> {
+    pub fn extend_write_at(&mut self, offset: usize, buf: &[u8]) -> Result<usize> {
         let new_size = offset + buf.len();
         self.page_cache.pages().resize(new_size)?;
         self.page_cache.pages().write_bytes(offset, buf)?;
         self.inode_impl.resize(new_size)?;
-        Ok(())
+        Ok(buf.len())
     }
 
-    pub fn write_direct_at(&mut self, offset: usize, buf: &[u8]) -> Result<()> {
+    pub fn write_direct_at(&mut self, offset: usize, buf: &[u8]) -> Result<usize> {
         let file_size = self.inode_impl.file_size();
         let end_offset = offset + buf.len();
 
@@ -831,7 +939,7 @@ impl Inner {
             buf_offset += BLOCK_SIZE;
         }
 
-        Ok(())
+        Ok(buf.len())
     }
 
     pub fn write_link(&mut self, target: &str) -> Result<()> {
@@ -1782,11 +1890,11 @@ pub(super) struct InodeDesc {
     gid: u32,
     /// Size in bytes.
     size: usize,
-    /// Access time.
+    /// Access time. This is the time when the file was last accessed.
     atime: Duration,
-    /// Creation time.
+    /// Change time. This timestamp gets updated when the file's metadata changes.
     ctime: Duration,
-    /// Modification time.
+    /// Modification time. This timestamp records the last modification of the file's content.
     mtime: Duration,
     /// Deletion time.
     dtime: Duration,
@@ -1837,7 +1945,7 @@ impl TryFrom<RawInode> for InodeDesc {
 
 impl InodeDesc {
     pub fn new(type_: FileType, perm: FilePerm) -> Dirty<Self> {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = now();
         Dirty::new_dirty(Self {
             type_,
             perm,
@@ -2002,7 +2110,7 @@ pub(super) struct RawInode {
     pub size_low: u32,
     /// Access time.
     pub atime: UnixTime,
-    /// Creation time.
+    /// Change time.
     pub ctime: UnixTime,
     /// Modification time.
     pub mtime: UnixTime,
