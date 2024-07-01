@@ -20,10 +20,6 @@ pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Resu
         file_table.get_file(fd)?.clone()
     };
 
-    if user_buf_len == 0 {
-        return Ok(SyscallReturn::Return(0));
-    }
-
     let mut buffer = vec![0u8; user_buf_len];
     read_bytes_from_user(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
     debug!("write content = {:?}", buffer);

@@ -15,7 +15,7 @@ use crate::{
     },
     prelude::*,
     process::signal::Poller,
-    util::IoVec,
+    util::{IoVec, Pollable},
 };
 
 pub struct VsockStreamSocket {
@@ -51,39 +51,6 @@ impl VsockStreamSocket {
 
     fn set_nonblocking(&self, nonblocking: bool) {
         self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
-    }
-
-    // TODO: Support timeout
-    fn wait_events<F, R>(&self, mask: IoEvents, mut cond: F) -> Result<R>
-    where
-        F: FnMut() -> Result<R>,
-    {
-        let poller = Poller::new();
-
-        loop {
-            match cond() {
-                Err(err) if err.error() == Errno::EAGAIN => (),
-                result => {
-                    if let Err(e) = result {
-                        debug!("The result of cond() is Error: {:?}", e);
-                    }
-                    return result;
-                }
-            };
-
-            let events = match &*self.status.read() {
-                Status::Init(init) => init.poll(mask, Some(&poller)),
-                Status::Listen(listen) => listen.poll(mask, Some(&poller)),
-                Status::Connected(connected) => connected.poll(mask, Some(&poller)),
-            };
-
-            debug!("events: {:?}", events);
-            if !events.is_empty() {
-                continue;
-            }
-
-            poller.wait()?;
-        }
     }
 
     fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
@@ -152,6 +119,12 @@ impl VsockStreamSocket {
         } else {
             self.wait_events(IoEvents::IN, || self.try_recv(buf, flags))
         }
+    }
+}
+
+impl Pollable for VsockStreamSocket {
+    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        <Self as FileLike>::poll(self, mask, poller)
     }
 }
 

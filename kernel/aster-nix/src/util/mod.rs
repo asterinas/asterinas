@@ -11,9 +11,11 @@ use ostd::{
 use crate::{prelude::*, vm::vmar::Vmar};
 mod iovec;
 pub mod net;
+mod pollable;
 pub mod random;
 
 pub use iovec::{copy_iovs_from_user, IoVec};
+pub use pollable::Pollable;
 
 /// Reads bytes into the `dest` `VmWriter`
 /// from the user space of the current process.
