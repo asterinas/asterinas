@@ -15,7 +15,6 @@ component = { path = "../../libs/comp-sys/component" }
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 log = "0.4"
 ostd = { path = "../../../ostd" }
-pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 ringbuf = { version = "0.3.2", default-features = false, features = ["alloc"] }
 smoltcp = { version = "0.9.1", default-features = false, features = ["alloc", "log", "medium-ethernet", "medium-ip", "proto-dhcpv4", "proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw", "socket-dhcpv4"] }
 spin = "0.9.4"

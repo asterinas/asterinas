@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! # The kernel mode testing framework of Asterinas.
+//! # The kernel mode testing framework of OSTD.
 //!
-//! `ktest` stands for kernel-mode testing framework. Its goal is to provide a
+//! `ostd-test` stands for kernel-mode testing framework for OSTD. Its goal is to provide a
 //! `cargo test`-like experience for any `#![no_std]` bare metal crates.
 //!
-//! In Asterinas, all the tests written in the source tree of the crates will be run
+//! In OSTD, all the tests written in the source tree of the crates will be run
 //! immediately after the initialization of `ostd`. Thus you can use any
 //! feature provided by the frame including the heap allocator, etc.
 //!
-//! By all means, ktest is an individule crate that only requires:
+//! By all means, ostd-test is an individule crate that only requires:
 //!  - a custom linker script section `.ktest_array`,
 //!  - and an alloc implementation.
 //!
-//! And the frame happens to provide both of them. Thus, any crates depending
-//! on the frame can use ktest without any extra dependency.
+//! And the OSTD happens to provide both of them. Thus, any crates depending
+//! on the OSTD can use ostd-test without any extra dependency.
 //!
 //! ## Usage
 //!
@@ -43,7 +43,7 @@
 //! }
 //! ```
 //!
-//! Any crates using the ktest framework should be linked with ostd.
+//! Any crates using the ostd-test framework should be linked with ostd.
 //!
 //! ```toml
 //! # Cargo.toml

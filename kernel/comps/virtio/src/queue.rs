@@ -15,9 +15,8 @@ use log::debug;
 use ostd::{
     io_mem::IoMem,
     mm::{DmaCoherent, FrameAllocOptions},
-    offset_of,
+    offset_of, Pod,
 };
-use pod::Pod;
 
 use crate::{dma_buf::DmaBuf, transport::VirtioTransport};
 

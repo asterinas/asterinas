@@ -2,14 +2,15 @@
 
 use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
-use pod::Pod;
-
 use super::{
     nr_subpage_per_huge, paddr_to_vaddr,
     page_prop::{PageFlags, PageProperty},
     page_size, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
 };
-use crate::arch::mm::{PageTableEntry, PagingConsts};
+use crate::{
+    arch::mm::{PageTableEntry, PagingConsts},
+    Pod,
+};
 
 mod node;
 use node::*;

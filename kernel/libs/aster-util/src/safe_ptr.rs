@@ -5,11 +5,11 @@ use core::{fmt::Debug, marker::PhantomData};
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use inherit_methods_macro::inherit_methods;
+pub use ostd::Pod;
 use ostd::{
     mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, VmIo},
     Result,
 };
-pub use pod::Pod;
 pub use typeflags_util::SetContain;
 
 /// Safe pointers.

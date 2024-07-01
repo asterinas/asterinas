@@ -27,7 +27,7 @@
 //
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
-use pod::Pod;
+use ostd::Pod;
 
 use super::error::{self, SocketError};
 

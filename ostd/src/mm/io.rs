@@ -6,7 +6,6 @@ use core::marker::PhantomData;
 
 use align_ext::AlignExt;
 use inherit_methods_macro::inherit_methods;
-use pod::Pod;
 
 use crate::{
     arch::mm::__memcpy_fallible,
@@ -15,7 +14,7 @@ use crate::{
         MAX_USERSPACE_VADDR,
     },
     prelude::*,
-    Error,
+    Error, Pod,
 };
 
 /// A trait that enables reading/writing data from/to a VM object,

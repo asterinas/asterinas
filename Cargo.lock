@@ -84,7 +84,6 @@ dependencies = [
  "lazy_static",
  "log",
  "ostd",
- "pod",
  "spin 0.9.8",
  "static_assertions",
 ]
@@ -141,7 +140,6 @@ dependencies = [
  "int-to-c-enum",
  "log",
  "ostd",
- "pod",
  "ringbuf",
  "smoltcp",
  "spin 0.9.8",
@@ -185,7 +183,6 @@ dependencies = [
  "lru",
  "ostd",
  "paste",
- "pod",
  "rand",
  "ringbuf",
  "smoltcp",
@@ -238,7 +235,6 @@ dependencies = [
  "aster-rights-proc",
  "inherit-methods-macro",
  "ostd",
- "pod",
  "typeflags-util",
 ]
 
@@ -261,7 +257,6 @@ dependencies = [
  "int-to-c-enum",
  "log",
  "ostd",
- "pod",
  "smoltcp",
  "spin 0.9.8",
  "typeflags-util",
@@ -277,7 +272,7 @@ dependencies = [
  "component",
  "id-alloc",
  "ostd",
- "x86_64",
+ "x86_64 0.14.11",
 ]
 
 [[package]]
@@ -760,9 +755,9 @@ dependencies = [
 
 [[package]]
 name = "intrusive-collections"
-version = "0.9.5"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f4f90afb01281fdeffb0f8e082d230cbe4f888f837cc90759696b858db1a700"
+checksum = "b694dc9f70c3bda874626d2aed13b780f137aab435f4e9814121955cf706122e"
 dependencies = [
  "memoffset",
 ]
@@ -794,13 +789,6 @@ checksum = "078e285eafdfb6c4b434e0d31e8cfcb5115b651496faca5749b88fafd4f23bfd"
 [[package]]
 name = "keyable-arc"
 version = "0.1.0"
-
-[[package]]
-name = "ktest"
-version = "0.1.0"
-dependencies = [
- "owo-colors",
-]
 
 [[package]]
 name = "lazy_static"
@@ -891,7 +879,7 @@ dependencies = [
  "uart_16550",
  "uefi",
  "uefi-services",
- "x86_64",
+ "x86_64 0.14.11",
  "xmas-elf 0.8.0",
 ]
 
@@ -950,9 +938,9 @@ checksum = "523dc4f511e55ab87b694dc30d0f820d60906ef06413f93d4d7a1385599cc149"
 
 [[package]]
 name = "memoffset"
-version = "0.8.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d61c719bcfbcf5d62b3a09efa6088de8c54bc0bfcd3ea7ae39fcc186108b8de1"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
 ]
@@ -1094,7 +1082,6 @@ dependencies = [
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
- "ktest",
  "lazy_static",
  "linux-boot-params",
  "log",
@@ -1103,8 +1090,9 @@ dependencies = [
  "num-derive",
  "num-traits",
  "ostd-macros",
+ "ostd-pod",
+ "ostd-test",
  "owo-colors",
- "pod",
  "rsdp",
  "spin 0.9.8",
  "static_assertions",
@@ -1113,18 +1101,43 @@ dependencies = [
  "unwinding",
  "volatile",
  "x86",
- "x86_64",
+ "x86_64 0.14.11",
  "xarray",
 ]
 
 [[package]]
 name = "ostd-macros"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "proc-macro2",
  "quote",
  "rand",
  "syn 2.0.49",
+]
+
+[[package]]
+name = "ostd-pod"
+version = "0.1.1"
+source = "git+https://github.com/asterinas/ostd-pod?rev=c4644be#c4644be401cae1e046a810574078b64e35924f5f"
+dependencies = [
+ "ostd-pod-derive",
+]
+
+[[package]]
+name = "ostd-pod-derive"
+version = "0.1.1"
+source = "git+https://github.com/asterinas/ostd-pod?rev=c4644be#c4644be401cae1e046a810574078b64e35924f5f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "ostd-test"
+version = "0.1.0"
+dependencies = [
+ "owo-colors",
 ]
 
 [[package]]
@@ -1138,24 +1151,6 @@ name = "paste"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
-
-[[package]]
-name = "pod"
-version = "0.1.0"
-source = "git+https://github.com/asterinas/pod?rev=d7dba56#d7dba56cc202a10d483b60aba4f734b1f49cb37b"
-dependencies = [
- "pod-derive",
-]
-
-[[package]]
-name = "pod-derive"
-version = "0.1.0"
-source = "git+https://github.com/asterinas/pod?rev=d7dba56#d7dba56cc202a10d483b60aba4f734b1f49cb37b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "polonius-the-crab"
@@ -1277,6 +1272,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "raw-cpuid"
+version = "11.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e29830cbb1290e404f24c73af91c5d8d631ce7e128691e9477556b540cd01ecd"
+dependencies = [
+ "bitflags 2.4.1",
+]
+
+[[package]]
 name = "ringbuf"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1358,9 +1362,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.13.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
+checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "smoltcp"
@@ -1462,8 +1466,8 @@ dependencies = [
  "bitflags 1.3.2",
  "iced-x86",
  "lazy_static",
- "raw-cpuid",
- "x86_64",
+ "raw-cpuid 10.7.0",
+ "x86_64 0.14.11",
 ]
 
 [[package]]
@@ -1539,13 +1543,12 @@ dependencies = [
 
 [[package]]
 name = "trapframe"
-version = "0.9.0"
-source = "git+https://github.com/asterinas/trapframe-rs?rev=4739428#4739428fd51685c74e6e88e73e5f04cb89f465ee"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "105000258ba41c463b63403c9341c55a298f35f6137b1cca08c10f0409ef8d3a"
 dependencies = [
- "log",
- "pod",
- "raw-cpuid",
- "x86_64",
+ "raw-cpuid 11.0.2",
+ "x86_64 0.15.1",
 ]
 
 [[package]]
@@ -1723,7 +1726,7 @@ checksum = "2781db97787217ad2a2845c396a5efe286f87467a5810836db6d74926e94a385"
 dependencies = [
  "bit_field",
  "bitflags 1.3.2",
- "raw-cpuid",
+ "raw-cpuid 10.7.0",
 ]
 
 [[package]]
@@ -1731,6 +1734,18 @@ name = "x86_64"
 version = "0.14.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b835097a84e4457323331ec5d6eb23d096066cbfb215d54096dcb4b2e85f500"
+dependencies = [
+ "bit_field",
+ "bitflags 2.4.1",
+ "rustversion",
+ "volatile",
+]
+
+[[package]]
+name = "x86_64"
+version = "0.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bc79523af8abf92fb1a970c3e086c5a343f6bcc1a0eb890f575cbb3b45743df"
 dependencies = [
  "bit_field",
  "bitflags 2.4.1",

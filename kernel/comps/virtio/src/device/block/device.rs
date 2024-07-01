@@ -15,8 +15,8 @@ use ostd::{
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo},
     sync::SpinLock,
     trap::TrapFrame,
+    Pod,
 };
-use pod::Pod;
 
 use super::{BlockFeatures, VirtioBlockConfig};
 use crate::{

@@ -6,10 +6,10 @@
 use core::mem::{self, size_of};
 
 use aster_util::{read_union_fields, union_read_ptr::UnionReadPtr};
-use ostd::cpu::GeneralRegs;
 
 use super::sig_num::SigNum;
 use crate::{
+    arch::cpu::GpRegs,
     prelude::*,
     process::{Pid, Uid},
 };
@@ -206,7 +206,7 @@ pub struct mcontext_t {
 #[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
 pub struct SignalCpuContext {
-    pub gp_regs: GeneralRegs,
+    pub gp_regs: GpRegs,
     pub fpregs_on_heap: u64,
     pub fpregs: Vaddr, // *mut FpRegs,
 }

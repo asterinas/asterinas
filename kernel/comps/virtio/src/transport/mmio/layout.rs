@@ -2,7 +2,7 @@
 
 use core::fmt::Debug;
 
-use pod::Pod;
+use ostd::Pod;
 
 #[derive(Clone, Copy, Pod)]
 #[repr(C)]

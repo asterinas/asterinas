@@ -91,8 +91,8 @@ NON_OSDK_CRATES := \
 	ostd/libs/id-alloc \
 	ostd/libs/linux-bzimage/builder \
 	ostd/libs/linux-bzimage/boot-params \
-	ostd/libs/ktest \
 	ostd/libs/ostd-macros \
+	ostd/libs/ostd-test \
 	kernel/libs/cpio-decoder \
 	kernel/libs/int-to-c-enum \
 	kernel/libs/int-to-c-enum/derive \

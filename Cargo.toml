@@ -8,7 +8,7 @@ members = [
     "ostd/libs/linux-bzimage/builder",
     "ostd/libs/linux-bzimage/boot-params",
     "ostd/libs/linux-bzimage/setup",
-    "ostd/libs/ktest",
+    "ostd/libs/ostd-test",
     "kernel",
     "kernel/aster-nix",
     "kernel/comps/block",

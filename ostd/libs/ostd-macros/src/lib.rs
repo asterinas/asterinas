@@ -11,7 +11,9 @@ use syn::{parse_macro_input, Expr, Ident, ItemFn};
 ///
 /// # Example
 ///
-/// ```norun
+/// ```ignore
+/// #![no_std]
+///
 /// use ostd::prelude::*;
 ///
 /// #[ostd::main]
@@ -44,7 +46,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// For crates other than ostd,
 /// this macro can be used in the following form.
 ///
-/// ```norun
+/// ```ignore
 /// use ostd::prelude::*;
 ///
 /// #[ktest]
@@ -56,7 +58,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// For ostd crate itself,
 /// this macro can be used in the form
 ///
-/// ```norun
+/// ```ignore
 /// use crate::prelude::*;
 ///
 /// #[ktest]
@@ -144,10 +146,10 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #[cfg(ktest)]
             #[used]
             #[link_section = ".ktest_array"]
-            static #fn_ktest_item_name: ktest::KtestItem = ktest::KtestItem::new(
+            static #fn_ktest_item_name: ostd_test::KtestItem = ostd_test::KtestItem::new(
                 #fn_name,
                 (#should_panic, #expectation_tokens),
-                ktest::KtestItemInfo {
+                ostd_test::KtestItemInfo {
                     module_path: module_path!(),
                     fn_name: stringify!(#fn_name),
                     package: #package_name,

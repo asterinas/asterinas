@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 
-use pod::Pod;
+use ostd::Pod;
 
 /// This ptr is designed to read union field safely.
 /// Write to union field is safe operation. While reading union field is UB.

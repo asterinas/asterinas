@@ -156,7 +156,7 @@ fn run_ktests(test_whitelist: Option<&[&str]>, crate_whitelist: Option<&[&str]>)
     let fn_catch_unwind = &(unwinding::panic::catch_unwind::<(), fn()>
         as fn(fn()) -> Result<(), Box<(dyn Any + Send + 'static)>>);
 
-    use ktest::runner::{run_ktests, KtestResult};
+    use ostd_test::runner::{run_ktests, KtestResult};
     match run_ktests(
         &crate::console::early_print,
         fn_catch_unwind,
