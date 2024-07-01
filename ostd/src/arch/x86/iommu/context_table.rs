@@ -6,7 +6,6 @@ use alloc::collections::BTreeMap;
 use core::mem::size_of;
 
 use log::warn;
-use pod::Pod;
 
 use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
 use crate::{
@@ -17,6 +16,7 @@ use crate::{
         page_table::PageTableError,
         Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
+    Pod,
 };
 
 /// Bit 0 is `Present` bit, indicating whether this entry is present.

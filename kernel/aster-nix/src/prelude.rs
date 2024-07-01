@@ -19,8 +19,8 @@ pub(crate) use log::{debug, error, info, log_enabled, trace, warn};
 pub(crate) use ostd::{
     mm::{Vaddr, VmReader, VmWriter, PAGE_SIZE},
     sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock, SpinLockGuard},
+    Pod,
 };
-pub(crate) use pod::Pod;
 
 /// return current process
 #[macro_export]

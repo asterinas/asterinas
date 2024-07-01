@@ -38,7 +38,11 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     } else {
         *sig_context = Some(ucontext.uc_link);
     };
-    *context.general_regs_mut() = ucontext.uc_mcontext.inner.gp_regs;
+    ucontext
+        .uc_mcontext
+        .inner
+        .gp_regs
+        .copy_to_raw(context.general_regs_mut());
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;
     posix_thread.sig_mask().lock().unblock(sig_mask);

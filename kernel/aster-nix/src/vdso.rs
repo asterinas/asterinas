@@ -23,8 +23,8 @@ use aster_util::coeff::Coeff;
 use ostd::{
     mm::{Frame, VmIo, PAGE_SIZE},
     sync::SpinLock,
+    Pod,
 };
-use pod::Pod;
 use spin::Once;
 
 use crate::{

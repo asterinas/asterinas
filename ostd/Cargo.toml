@@ -2,41 +2,48 @@
 name = "ostd"
 version = "0.6.2"
 edition = "2021"
+description = "Rust OS framework that facilitates the development of and innovation in OS kernels"
+license = "MPL-2.0"
+readme = "README.md"
+repository = "https://github.com/asterinas/asterinas"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# Settings for publishing docs in docs.rs
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-none"
+targets = ["x86_64-unknown-none"]
+
 [dependencies]
-align_ext = { path = "libs/align_ext" }
-ostd-macros = { path = "libs/ostd-macros" }
+align_ext = { path = "libs/align_ext", version = "0.1.0" }
+array-init = "2.0"
 bit_field = "0.10.1"
+buddy_system_allocator = "0.9.0"
 bitflags = "1.3"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
-linux-boot-params = { path = "libs/linux-bzimage/boot-params" }
-buddy_system_allocator = "0.9.0"
 cfg-if = "1.0"
 gimli = { version = "0.28", default-features = false, features = ["read-core"] }
-inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
-xarray = { git = "https://github.com/asterinas/xarray", rev = "72a4067" }
-int-to-c-enum = { path = "../kernel/libs/int-to-c-enum" }
-# instrusive-collections of version 0.9.6 fails to compile with current rust toolchain,
-# So we set a fixed version 0.9.5 for this crate
-intrusive-collections = { version = "=0.9.5", features = ["nightly"] }
-array-init = "2.0"
-ktest = { path = "libs/ktest" }
-id-alloc = { path = "libs/id-alloc" }
+id-alloc = { path = "libs/id-alloc", version = "0.1.0" }
+inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e", version = "0.1.0" }
+int-to-c-enum = { path = "../kernel/libs/int-to-c-enum", version = "0.1.0" }
+intrusive-collections = { version = "0.9.6", features = ["nightly"] }
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
+linux-boot-params = { path = "libs/linux-bzimage/boot-params", version = "0.1.0" }
 log = "0.4"
 num = { version = "0.4", default-features = false }
 num-derive = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
-pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
+ostd-macros = { path = "libs/ostd-macros", version = "0.1.4" }
+ostd-test = { path = "libs/ostd-test", version = "0.1.0" }
+owo-colors = { version = "3", optional = true }
+ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 spin = "0.9.4"
 static_assertions = "1.1.0"
 tdx-guest = { version = "0.1.5", optional = true }
-trapframe = { git = "https://github.com/asterinas/trapframe-rs", rev = "4739428" }
+trapframe = "0.10.0"
 unwinding = { version = "0.2.2", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = { version = "0.4.5", features = ["unstable"] }
-owo-colors = { version = "3", optional = true }
+xarray = { git = "https://github.com/asterinas/xarray", rev = "72a4067", version = "0.1.0" }
 
 [target.x86_64-unknown-none.dependencies]
 x86_64 = "0.14.2"

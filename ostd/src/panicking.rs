@@ -29,7 +29,7 @@ use unwinding::{
 /// panic handler in the binary crate.
 #[export_name = "__aster_panic_handler"]
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-    let throw_info = ktest::PanicInfo {
+    let throw_info = ostd_test::PanicInfo {
         message: info.message().to_string(),
         file: info.location().unwrap().file().to_string(),
         line: info.location().unwrap().line() as usize,

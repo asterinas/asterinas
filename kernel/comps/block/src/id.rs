@@ -5,7 +5,7 @@ use core::{
     ops::{Add, Sub},
 };
 
-use pod::Pod;
+use ostd::Pod;
 use static_assertions::const_assert;
 
 /// The block index used in the filesystem.

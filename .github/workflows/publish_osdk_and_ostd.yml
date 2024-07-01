@@ -1,0 +1,69 @@
+name: Publish OSDK and OSTD
+
+on:
+  pull_request:
+    paths:
+      - VERSION
+      - ostd/**
+      - osdk/**
+  push:
+    branches:
+      - main
+    paths: 
+      - VERSION
+
+jobs:
+  osdk-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: asterinas/asterinas:0.6.2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Publish OSDK
+        # On pull request, set `--dry-run` to check whether OSDK can publish
+        if: github.event_name == 'pull_request'
+        run: |
+          cd osdk
+          cargo publish --dry-run
+        
+      - name: Publish OSDK
+        # On push, OSDK will be published
+        if: github.event_name == 'push'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          cd osdk
+          cargo publish --token ${REGISTRY_TOKEN}
+
+  ostd-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: asterinas/asterinas:0.6.2
+    strategy:
+      matrix:
+        # All supported targets, this array should keep consistent with
+        # `package.metadata.docs.rs.targets` in `ostd/Cargo.toml`
+        target: ['x86_64-unknown-none']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Publish OSTD
+        # On pull request, set `--dry-run` to check whether OSDK can publish
+        if: github.event_name == 'pull_request'
+        run: |
+          cd ostd
+          cargo publish --target ${{ matrix.target }} --dry-run
+          cargo doc --target ${{ matrix.target }}
+      
+      - name: Publish OSTD
+        if: github.event_name == 'push'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        # Using any target that OSTD supports for publishing is ok.
+        # Here we use the same target as 
+        # `package.metadata.docs.rs.default-target` in `ostd/Cargo.toml`.
+        run: |
+          cd ostd
+          cargo publish --target x86_64-unknown-none --token ${REGISTRY_TOKEN}
+      

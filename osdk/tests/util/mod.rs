@@ -88,7 +88,7 @@ pub fn add_member_to_workspace(workspace: impl AsRef<Path>, new_member: &str) {
 }
 
 /// Makes crates created by `cargo ostd new` depends on ostd locally,
-/// instead of ostd from local branch.
+/// instead of ostd from remote source(git repo/crates.io).
 ///
 /// Each crate created by `cargo ostd new` should add this patch.
 pub fn depends_on_local_ostd(manifest_path: impl AsRef<Path>) {

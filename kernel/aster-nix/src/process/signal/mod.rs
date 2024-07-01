@@ -166,7 +166,11 @@ pub fn handle_user_signal(
         uc_sigmask: mask.as_u64(),
         ..Default::default()
     };
-    ucontext.uc_mcontext.inner.gp_regs = *context.general_regs();
+    ucontext
+        .uc_mcontext
+        .inner
+        .gp_regs
+        .copy_from_raw(context.general_regs());
     let mut sig_context = posix_thread.sig_context().lock();
     if let Some(sig_context_addr) = *sig_context {
         ucontext.uc_link = sig_context_addr;

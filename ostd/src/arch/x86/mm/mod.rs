@@ -5,14 +5,16 @@
 use alloc::fmt;
 use core::ops::Range;
 
-use pod::Pod;
 pub(crate) use util::__memcpy_fallible;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
-use crate::mm::{
-    page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
-    page_table::PageTableEntryTrait,
-    Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
+use crate::{
+    mm::{
+        page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
+        page_table::PageTableEntryTrait,
+        Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
+    },
+    Pod,
 };
 
 mod util;

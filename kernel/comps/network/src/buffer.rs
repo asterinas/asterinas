@@ -8,8 +8,8 @@ use ostd::{
         Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmReader, VmWriter, PAGE_SIZE,
     },
     sync::SpinLock,
+    Pod,
 };
-use pod::Pod;
 use spin::Once;
 
 use crate::dma_pool::{DmaPool, DmaSegment};

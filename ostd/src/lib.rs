@@ -44,6 +44,7 @@ pub mod trap;
 pub mod user;
 
 pub use ostd_macros::main;
+pub use ostd_pod::Pod;
 
 pub use self::{cpu::cpu_local::CpuLocal, error::Error, prelude::Result};
 
@@ -123,5 +124,5 @@ mod test {
 /// The module re-exports everything from the ktest crate
 #[cfg(ktest)]
 pub mod ktest {
-    pub use ktest::*;
+    pub use ostd_test::*;
 }

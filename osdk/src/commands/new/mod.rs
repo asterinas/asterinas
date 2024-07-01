@@ -7,7 +7,7 @@ use crate::{
     config::manifest::ProjectType,
     error::Errno,
     error_msg,
-    util::{aster_crate_dep, cargo_new_lib, get_cargo_metadata},
+    util::{cargo_new_lib, get_cargo_metadata, ostd_dep},
 };
 
 pub fn execute_new_command(args: &NewArgs) {
@@ -40,7 +40,7 @@ fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &st
 
     let dependencies = manifest.get_mut("dependencies").unwrap();
 
-    let ostd_dep = toml::Table::from_str(&aster_crate_dep("ostd")).unwrap();
+    let ostd_dep = toml::Table::from_str(&ostd_dep()).unwrap();
     dependencies.as_table_mut().unwrap().extend(ostd_dep);
 
     let content = toml::to_string(&manifest).unwrap();

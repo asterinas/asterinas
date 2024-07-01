@@ -19,7 +19,6 @@ aster-rights = { path = "../../libs/aster-rights" }
 id-alloc = { path = "../../../ostd/libs/id-alloc" }
 typeflags-util = { path = "../../libs/typeflags-util" }
 ostd = { path = "../../../ostd" }
-pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 bit_field = "0.10.1"

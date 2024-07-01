@@ -16,7 +16,8 @@ use bitvec::{
 use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
-use trapframe::{GeneralRegs, UserContext as RawUserContext};
+pub use trapframe::GeneralRegs as RawGeneralRegs;
+use trapframe::UserContext as RawUserContext;
 use x86_64::registers::{
     rflags::RFlags,
     segmentation::{Segment64, FS},
@@ -131,7 +132,7 @@ pub struct CpuExceptionInfo {
 }
 
 #[cfg(feature = "intel_tdx")]
-impl TdxTrapFrame for GeneralRegs {
+impl TdxTrapFrame for RawGeneralRegs {
     fn rax(&self) -> usize {
         self.rax
     }
@@ -258,12 +259,12 @@ impl UserPreemption {
 
 impl UserContext {
     /// Returns a reference to the general registers.
-    pub fn general_regs(&self) -> &GeneralRegs {
+    pub fn general_regs(&self) -> &RawGeneralRegs {
         &self.user_context.general
     }
 
     /// Returns a mutable reference to the general registers
-    pub fn general_regs_mut(&mut self) -> &mut GeneralRegs {
+    pub fn general_regs_mut(&mut self) -> &mut RawGeneralRegs {
         &mut self.user_context.general
     }
 

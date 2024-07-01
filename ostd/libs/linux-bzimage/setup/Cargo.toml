@@ -2,6 +2,9 @@
 name = "linux-bzimage-setup"
 version = "0.1.0"
 edition = "2021"
+description = "The linux bzImage setup binary"
+license = "MPL-2.0"
+repository = "https://github.com/asterinas/asterinas"
 
 [[bin]]
 name = "linux-bzimage-setup"
@@ -11,7 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 cfg-if = "1.0.0"
-linux-boot-params = { path = "../boot-params" }
+linux-boot-params = { path = "../boot-params", version = "0.1.0" }
 uart_16550 = "0.3.0"
 xmas-elf = "0.8.0"
 
