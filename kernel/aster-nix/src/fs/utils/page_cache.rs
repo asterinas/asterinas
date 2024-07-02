@@ -4,10 +4,11 @@
 
 use core::ops::Range;
 
+use align_ext::AlignExt;
 use aster_block::bio::{BioStatus, BioWaiter};
 use aster_rights::Full;
 use lru::LruCache;
-use ostd::mm::{Frame, FrameAllocOptions};
+use ostd::mm::{Frame, FrameAllocOptions, VmIo};
 
 use crate::{
     prelude::*,
@@ -65,6 +66,36 @@ impl PageCache {
     /// Returns the backend.
     pub fn backend(&self) -> Arc<dyn PageCacheBackend> {
         self.manager.backend()
+    }
+
+    /// Zeroing a range of cached data.
+    pub fn zero_range(&self, range: Range<usize>) -> Result<()> {
+        if range.is_empty() {
+            return Ok(());
+        }
+        let (start, end) = (range.start, range.end);
+        let zeroed_page_buf = vec![0u8; PAGE_SIZE];
+
+        // Write zeros to the first partial page if any
+        let first_page_end = start.align_up(PAGE_SIZE);
+        if first_page_end > start {
+            let zero_len = first_page_end.min(end) - start;
+            self.pages()
+                .write_bytes(start, &zeroed_page_buf[..zero_len])?;
+        }
+
+        // Write zeros to the last partial page if any
+        let last_page_start = end.align_down(PAGE_SIZE);
+        if last_page_start < end && last_page_start >= start {
+            let zero_len = end - last_page_start;
+            self.pages()
+                .write_bytes(last_page_start, &zeroed_page_buf[..zero_len])?;
+        }
+
+        for offset in (first_page_end..last_page_start).step_by(PAGE_SIZE) {
+            self.pages().write_bytes(offset, &zeroed_page_buf)?;
+        }
+        Ok(())
     }
 }
 
@@ -295,8 +326,9 @@ impl PageCacheManager {
     // Discard pages without writing them back to disk.
     pub fn discard_range(&self, range: Range<usize>) {
         let page_idx_range = get_page_idx_range(&range);
+        let mut pages = self.pages.lock();
         for idx in page_idx_range {
-            self.pages.lock().pop(&idx);
+            pages.pop(&idx);
         }
     }
 
