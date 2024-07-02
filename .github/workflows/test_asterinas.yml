@@ -10,9 +10,9 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: asterinas/asterinas:0.6.0
+    container: asterinas/asterinas:0.6.1
     steps:
-      - run: echo "Running in asterinas/asterinas:0.6.0"
+      - run: echo "Running in asterinas/asterinas:0.6.1"
 
       - uses: actions/checkout@v4
       
@@ -23,9 +23,9 @@ jobs:
   unit-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: asterinas/asterinas:0.6.0
+    container: asterinas/asterinas:0.6.1
     steps:
-      - run: echo "Running in asterinas/asterinas:0.6.0"
+      - run: echo "Running in asterinas/asterinas:0.6.1"
 
       - uses: actions/checkout@v4
 
@@ -42,9 +42,9 @@ jobs:
   integration-test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    container: asterinas/asterinas:0.6.0
+    container: asterinas/asterinas:0.6.1
     steps:
-      - run: echo "Running in asterinas/asterinas:0.6.0"
+      - run: echo "Running in asterinas/asterinas:0.6.1"
 
       - uses: actions/checkout@v4
 

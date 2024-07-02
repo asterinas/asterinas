@@ -16,7 +16,7 @@ jobs:
   build_and_upload:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: asterinas/asterinas:0.6.0
+    container: asterinas/asterinas:0.6.1
 
     steps:
       - uses: actions/checkout@v2
