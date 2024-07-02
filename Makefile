@@ -52,6 +52,7 @@ CARGO_OSDK_ARGS += --release
 endif
 
 ifeq ($(INTEL_TDX), 1)
+BOOT_METHOD = grub-qcow2
 BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_ARGS += --scheme tdx
 CARGO_OSDK_ARGS += --features intel_tdx
@@ -76,7 +77,9 @@ CARGO_OSDK_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif
 
 ifeq ($(ENABLE_KVM), 1)
+ifneq ($(INTEL_TDX), 1)
 CARGO_OSDK_ARGS += --qemu-args="--enable-kvm"
+endif
 endif
 
 # Pass make variables to all subdirectory makes
