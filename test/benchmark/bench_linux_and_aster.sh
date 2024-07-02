@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 set -e
+set -o pipefail
 
 # Ensure all dependencies are installed
 command -v jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Aborting."; exit 1; }
