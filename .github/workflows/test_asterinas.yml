@@ -86,3 +86,56 @@ jobs:
       - name: General Test (Linux EFI Handover Boot Protocol)
         id: test_linux
         run: make run AUTO_TEST=test ENABLE_KVM=0 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
+
+  integration-test-tdx:
+    runs-on: self-hosted
+    timeout-minutes: 30
+    container:
+      image: asterinas/asterinas:0.6.0-tdx
+      options: --device=/dev/kvm --privileged
+    env:
+      # Need to set up proxy since the self-hosted CI server is located in China,
+      # which has poor network connection to the official Rust crate repositories.
+      RUSTUP_DIST_SERVER: https://mirrors.ustc.edu.cn/rust-static
+      RUSTUP_UPDATE_ROOT: https://mirrors.ustc.edu.cn/rust-static/rustup
+    steps:
+      - run: echo "Running in asterinas/asterinas:0.6.0-tdx"
+      - uses: actions/checkout@v4
+      - name: Set up the environment
+        run: |
+          chmod +x test/benchmark/bench_linux_and_aster.sh
+          # Set up git due to the network issue on the self-hosted runner
+          git config --global --add safe.directory /__w/asterinas/asterinas
+          git config --global http.sslVerify false
+          git config --global http.version HTTP/1.1
+      - name: Boot Test (Linux EFI Handover Boot Protocol)
+        uses: nick-invision/retry@v2
+        id: boot_test_linux_efi_handover64
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: make run AUTO_TEST=boot INTEL_TDX=1
+
+      - name: Syscall Test (Linux EFI Handover Boot Protocol)
+        uses: nick-invision/retry@v2
+        id: syscall_test
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: make run AUTO_TEST=syscall INTEL_TDX=1
+
+      - name: Syscall Test at Exfat
+        uses: nick-invision/retry@v2
+        id: syscall_test_at_exfat_linux
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat INTEL_TDX=1
+
+      - name: Regression Test (Linux EFI Handover Boot Protocol)
+        uses: nick-invision/retry@v2
+        id: regression_test_linux
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: make run AUTO_TEST=test INTEL_TDX=1
