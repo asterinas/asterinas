@@ -319,31 +319,30 @@ impl PageCacheManager {
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let page_idx_range = get_page_idx_range(&range);
 
-        //TODO: When there are many pages, we should submit them in batches of folios rather than all at once.
-        let mut indices_and_waiters: Vec<(usize, BioWaiter)> = Vec::new();
-
-        for idx in page_idx_range {
-            if let Some(page) = self.pages.lock().get_mut(&idx) {
-                if let PageState::Dirty = page.state() {
-                    let backend = self.backend();
-                    if idx < backend.npages() {
-                        indices_and_waiters.push((idx, backend.write_page(idx, page.frame())?));
-                    }
+        let mut bio_waiter = BioWaiter::new();
+        let mut pages = self.pages.lock();
+        let backend = self.backend();
+        let backend_npages = backend.npages();
+        for idx in page_idx_range.clone() {
+            if let Some(page) = pages.peek(&idx) {
+                if *page.state() == PageState::Dirty && idx < backend_npages {
+                    let waiter = backend.write_page(idx, page.frame())?;
+                    bio_waiter.concat(waiter);
                 }
             }
         }
 
-        for (idx, waiter) in indices_and_waiters.iter() {
-            if matches!(waiter.wait(), Some(BioStatus::Complete)) {
-                if let Some(page) = self.pages.lock().get_mut(idx) {
-                    page.set_state(PageState::UpToDate)
-                }
-            } else {
-                // TODO: We may need an error handler here.
-                return_errno!(Errno::EIO)
-            }
+        if !matches!(bio_waiter.wait(), Some(BioStatus::Complete)) {
+            // Do not allow partial failure
+            return_errno!(Errno::EIO);
         }
 
+        for (_, page) in pages
+            .iter_mut()
+            .filter(|(idx, _)| page_idx_range.contains(idx))
+        {
+            page.set_state(PageState::UpToDate);
+        }
         Ok(())
     }
 
@@ -483,7 +482,7 @@ impl Page {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PageState {
     /// `Uninit` indicates a new allocated page which content has not been initialized.
     /// The page is available to write, not available to read.
