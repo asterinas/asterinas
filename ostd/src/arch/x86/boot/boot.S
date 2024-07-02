@@ -120,7 +120,7 @@ PTE_GLOBAL      = (1 << 8)
     //       0x00000000_80000000 ~ 0x00000000_bfffffff
     //       0x00000000_c0000000 ~ 0x00000000_ffffffff
     lea edi, [boot_pml4 - KERNEL_VMA]
-    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
@@ -130,14 +130,14 @@ PTE_GLOBAL      = (1 << 8)
     //       0xffff8000_c0000000 ~ 0xffff8000_ffffffff
     //       0xffff8008_00000000 ~ 0xffff8008_3fffffff
     lea edi, [boot_pml4 - KERNEL_VMA + 0x100 * 8]
-    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // PML4: 0xffffffff_80000000 ~ 0xffffffff_bfffffff
     //       0xffffffff_c0000000 ~ 0xffffffff_ffffffff
     lea edi, [boot_pml4 - KERNEL_VMA + 0x1ff * 8]
-    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 

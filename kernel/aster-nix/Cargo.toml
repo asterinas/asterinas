@@ -61,7 +61,7 @@ lru = "0.12.3"
 log = "0.4"
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 hashbrown = "0.14"
-rand = { version = "0.8.5", default-features = false, features = ["getrandom", "small_rng", "std_rng"] }
+rand = { version = "0.8.5", default-features = false, features = ["small_rng", "std_rng"] }
 static_assertions = "1.1.0"
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
 getset = "0.1.2"
@@ -70,11 +70,6 @@ bytemuck = "1.14.3"
 bytemuck_derive = "1.5.0"
 takeable = "0.2.2"
 cfg-if = "1.0"
-
-[target.x86_64-unknown-none.dependencies]
-getrandom = { version = "0.2.10", default-features = false, features = [
-    "rdrand",
-] }
 
 [dependencies.lazy_static]
 version = "1.0"

@@ -22,8 +22,22 @@ pub fn init() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "x86_64")] {
             use rand::SeedableRng;
+            use ostd::arch::read_random;
 
-            RNG.call_once(|| SpinLock::new(StdRng::from_entropy()));
+            let mut seed = <StdRng as SeedableRng>::Seed::default();
+            let mut chunks = seed.as_mut().chunks_exact_mut(size_of::<u64>());
+            for chunk in chunks.by_ref() {
+                let src = read_random().expect("read_random failed multiple times").to_ne_bytes();
+                chunk.copy_from_slice(&src);
+            }
+            let tail = chunks.into_remainder();
+            let n = tail.len();
+            if n > 0 {
+                let src = read_random().expect("read_random failed multiple times").to_ne_bytes();
+                tail.copy_from_slice(&src[..n]);
+            }
+
+            RNG.call_once(|| SpinLock::new(StdRng::from_seed(seed)));
         } else {
             compile_error!("unsupported target");
         }
