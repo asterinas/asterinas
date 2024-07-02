@@ -119,14 +119,14 @@ impl Drop for IrqLine {
 /// # Example
 ///
 /// ```rust
-/// use ostd::irq;
+/// use ostd::exception::disable_local_irq;
 ///
 /// {
-///     let _ = irq::disable_local();
+///     let _ = disable_local_irq();
 ///     todo!("do something when irqs are disabled");
 /// }
 /// ```
-pub fn disable_local() -> DisabledLocalIrqGuard {
+pub fn disable_local_irq() -> DisabledLocalIrqGuard {
     DisabledLocalIrqGuard::new()
 }
 
@@ -168,22 +168,8 @@ impl DisabledLocalIrqGuard {
 impl Drop for DisabledLocalIrqGuard {
     fn drop(&mut self) {
         if self.was_enabled {
+            debug_assert!(!irq::is_local_enabled());
             irq::enable_local();
         }
-    }
-}
-
-/// Enables all IRQs on the current CPU.
-///
-/// FIXME: The reason we need to add this API is that currently IRQs
-/// are enabled when the CPU enters the user space for the first time,
-/// which is too late. During the OS initialization phase,
-/// we need to get the block device working and mount the filesystems,
-/// thus requiring the IRQs should be enabled as early as possible.
-///
-/// FIXME: this method may be unsound.
-pub fn enable_local() {
-    if !crate::arch::irq::is_local_enabled() {
-        crate::arch::irq::enable_local();
     }
 }

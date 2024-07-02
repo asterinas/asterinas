@@ -4,7 +4,7 @@
 
 use alloc::format;
 
-use ostd::trap::{disable_local, in_interrupt_context};
+use ostd::exception::{disable_local_irq, in_interrupt_context};
 use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
 use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
@@ -335,7 +335,7 @@ impl LineDiscipline {
     // The read() blocks until the number of bytes requested or
     // at least vmin bytes are available, and returns the real read value.
     pub fn block_read(&self, dst: &mut [u8], vmin: u8) -> Result<usize> {
-        let _guard = disable_local();
+        let _guard = disable_local_irq();
         let buffer_len = self.read_buffer.lock().len();
         if buffer_len >= dst.len() {
             return Ok(self.poll_read(dst));

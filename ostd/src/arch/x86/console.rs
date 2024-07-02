@@ -13,7 +13,7 @@ use spin::Once;
 use trapframe::TrapFrame;
 
 use super::{device::serial::SerialPort, kernel::IO_APIC};
-use crate::{sync::SpinLock, trap::IrqLine};
+use crate::{exception::IrqLine, sync::SpinLock};
 
 /// Prints the formatted arguments to the standard output.
 #[inline]

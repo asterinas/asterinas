@@ -11,11 +11,11 @@ use ostd::{
         bus::MmioDevice,
         device::{MmioCommonDevice, VirtioMmioVersion},
     },
+    exception::IrqCallbackFunction,
     io_mem::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
     offset_of,
     sync::RwLock,
-    trap::IrqCallbackFunction,
 };
 
 use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};

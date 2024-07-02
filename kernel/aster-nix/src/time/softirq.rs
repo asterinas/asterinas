@@ -2,7 +2,7 @@
 
 use alloc::{boxed::Box, vec::Vec};
 
-use ostd::{arch::timer, sync::RwLock, trap::SoftIrqLine};
+use ostd::{arch::timer, exception::SoftIrqLine, sync::RwLock};
 
 use crate::softirq_id::TIMER_SOFTIRQ_ID;
 

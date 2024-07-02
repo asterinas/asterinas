@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use core::time::Duration;
 
 use aster_time::read_monotonic_time;
-use ostd::{arch::timer::Jiffies, cpu_local, sync::SpinLock, CpuLocal};
+use ostd::{arch::timer::Jiffies, cpu_local, sync::SpinLock};
 use paste::paste;
 use spin::Once;
 
@@ -215,9 +215,7 @@ macro_rules! define_timer_managers {
                 let clock = paste! {[<$clock_id _INSTANCE>].get().unwrap().clone()};
                 let clock_manager = TimerManager::new(clock);
                 paste! {
-                    CpuLocal::borrow_with(&[<$clock_id _MANAGER>], |manager| {
-                        manager.call_once(|| clock_manager.clone());
-                    });
+                    [<$clock_id _MANAGER>].call_once(|| clock_manager.clone());
                 }
                 let callback = move || {
                     clock_manager.process_expired_timers();

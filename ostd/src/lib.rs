@@ -33,6 +33,7 @@ pub mod collections;
 pub mod console;
 pub mod cpu;
 mod error;
+pub mod exception;
 pub mod io_mem;
 pub mod logger;
 pub mod mm;
@@ -40,14 +41,13 @@ pub mod panicking;
 pub mod prelude;
 pub mod sync;
 pub mod task;
-pub mod trap;
 pub mod user;
 
 pub use ostd_macros::main;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::init_tdx;
 
-pub use self::{cpu::CpuLocal, error::Error, prelude::Result};
+pub use self::{cpu::cpu_local::CpuLocal, error::Error, prelude::Result};
 
 /// Initializes OSTD.
 ///
@@ -77,9 +77,12 @@ pub fn init() {
     mm::page::allocator::init();
     mm::kspace::init_boot_page_table();
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
+    // SAFETY: no CPU local objects have been accessed by this far. And
+    // we are on the BSP.
+    unsafe { cpu::cpu_local::init_on_bsp() };
     mm::misc_init();
 
-    trap::init();
+    exception::init();
     arch::after_all_init();
     bus::init();
 
