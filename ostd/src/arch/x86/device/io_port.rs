@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! I/O port access.
+
 use core::marker::PhantomData;
 
 pub use x86_64::{
@@ -29,7 +31,7 @@ pub struct IoPort<T, A> {
 }
 
 impl<T, A> IoPort<T, A> {
-    /// Create an I/O port.
+    /// Creates an I/O port.
     ///
     /// # Safety
     ///
@@ -45,6 +47,7 @@ impl<T, A> IoPort<T, A> {
 }
 
 impl<T: PortRead, A: IoPortReadAccess> IoPort<T, A> {
+    /// Reads from the I/O port
     #[inline]
     pub fn read(&self) -> T {
         unsafe { PortRead::read_from_port(self.port) }
@@ -52,6 +55,7 @@ impl<T: PortRead, A: IoPortReadAccess> IoPort<T, A> {
 }
 
 impl<T: PortWrite, A: IoPortWriteAccess> IoPort<T, A> {
+    /// Writes to the I/O port
     #[inline]
     pub fn write(&self, value: T) {
         unsafe { PortWrite::write_to_port(self.port, value) }

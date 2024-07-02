@@ -96,7 +96,7 @@ fn handle_serial_input(trap_frame: &TrapFrame) {
 }
 
 fn line_sts() -> LineSts {
-    LineSts::from_bits_truncate(CONSOLE_COM1_PORT.line_status.read())
+    LineSts::from_bits_truncate(CONSOLE_COM1_PORT.line_status())
 }
 
 /// Sends a byte on the serial port.
@@ -104,15 +104,15 @@ pub fn send(data: u8) {
     match data {
         8 | 0x7F => {
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            CONSOLE_COM1_PORT.data.write(8);
+            CONSOLE_COM1_PORT.send(8);
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            CONSOLE_COM1_PORT.data.write(b' ');
+            CONSOLE_COM1_PORT.send(b' ');
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            CONSOLE_COM1_PORT.data.write(8);
+            CONSOLE_COM1_PORT.send(8);
         }
         _ => {
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
-            CONSOLE_COM1_PORT.data.write(data);
+            CONSOLE_COM1_PORT.send(data);
         }
     }
 }
@@ -120,7 +120,7 @@ pub fn send(data: u8) {
 /// Receives a byte on the serial port. non-blocking
 pub fn receive_char() -> Option<u8> {
     if line_sts().contains(LineSts::INPUT_FULL) {
-        Some(CONSOLE_COM1_PORT.data.read())
+        Some(CONSOLE_COM1_PORT.recv())
     } else {
         None
     }

@@ -5,7 +5,7 @@
 //! Virtio over MMIO
 
 pub mod bus;
-pub mod device;
+pub mod common_device;
 
 use alloc::vec::Vec;
 use core::ops::Range;
@@ -18,16 +18,17 @@ use self::bus::MmioBus;
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    arch::kernel::IO_APIC, bus::mmio::device::MmioCommonDevice, mm::paddr_to_vaddr, sync::SpinLock,
-    trap::IrqLine,
+    arch::kernel::IO_APIC, bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr,
+    sync::SpinLock, trap::IrqLine,
 };
 
 const VIRTIO_MMIO_MAGIC: u32 = 0x74726976;
 
+/// MMIO bus instance
 pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
-pub fn init() {
+pub(crate) fn init() {
     #[cfg(feature = "intel_tdx")]
     // SAFETY:
     // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.

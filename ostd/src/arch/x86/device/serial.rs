@@ -2,6 +2,8 @@
 
 //! A port-mapped UART. Copied from uart_16550.
 
+#![allow(dead_code)]
+
 use crate::arch::x86::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
 
 /// A serial port.
@@ -9,17 +11,24 @@ use crate::arch::x86::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess
 /// Serial ports are a legacy communications port common on IBM-PC compatible computers.
 /// Ref: <https://wiki.osdev.org/Serial_Ports>
 pub struct SerialPort {
-    pub data: IoPort<u8, ReadWriteAccess>,
-    pub int_en: IoPort<u8, WriteOnlyAccess>,
-    pub fifo_ctrl: IoPort<u8, WriteOnlyAccess>,
-    pub line_ctrl: IoPort<u8, WriteOnlyAccess>,
-    pub modem_ctrl: IoPort<u8, WriteOnlyAccess>,
-    pub line_status: IoPort<u8, ReadWriteAccess>,
-    pub modem_status: IoPort<u8, ReadWriteAccess>,
+    /// Data Register
+    data: IoPort<u8, ReadWriteAccess>,
+    /// Interrupt Enable Register
+    int_en: IoPort<u8, WriteOnlyAccess>,
+    /// First In First Out Control Register
+    fifo_ctrl: IoPort<u8, WriteOnlyAccess>,
+    /// Line control Register
+    line_ctrl: IoPort<u8, WriteOnlyAccess>,
+    /// Modem Control Register
+    modem_ctrl: IoPort<u8, WriteOnlyAccess>,
+    /// Line status Register
+    line_status: IoPort<u8, ReadWriteAccess>,
+    /// Modem Status Register
+    modem_status: IoPort<u8, ReadWriteAccess>,
 }
 
 impl SerialPort {
-    /// Create a serial port.
+    /// Creates a serial port.
     ///
     /// # Safety
     ///
@@ -43,6 +52,7 @@ impl SerialPort {
         }
     }
 
+    /// Initializes the serial port.
     pub fn init(&self) {
         // Disable interrupts
         self.int_en.write(0x00);
@@ -61,5 +71,23 @@ impl SerialPort {
         self.modem_ctrl.write(0x0B);
         // Enable interrupts
         self.int_en.write(0x01);
+    }
+
+    /// Sends data to the data port
+    #[inline]
+    pub fn send(&self, data: u8) {
+        self.data.write(data);
+    }
+
+    /// Receives data from the data port
+    #[inline]
+    pub fn recv(&self) -> u8 {
+        self.data.read()
+    }
+
+    /// Gets line status
+    #[inline]
+    pub fn line_status(&self) -> u8 {
+        self.line_status.read()
     }
 }
