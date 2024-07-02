@@ -19,7 +19,10 @@ pub(crate) mod tdx_guest;
 pub mod timer;
 pub mod trap;
 
-use core::{arch::x86_64::_rdtsc, sync::atomic::Ordering};
+use core::{
+    arch::x86_64::{_rdrand64_step, _rdtsc},
+    sync::atomic::Ordering,
+};
 
 #[cfg(feature = "intel_tdx")]
 use ::tdx_guest::tdx_is_enabled;
@@ -77,6 +80,25 @@ pub fn tsc_freq() -> u64 {
 pub fn read_tsc() -> u64 {
     // SAFETY: It is safe to read a time-related counter.
     unsafe { _rdtsc() }
+}
+
+/// Reads a hardware generated 64-bit random value.
+///
+/// Returns None if no random value was generated.
+pub fn read_random() -> Option<u64> {
+    // Recommendation from "Intel® Digital Random Number Generator (DRNG) Software
+    // Implementation Guide" - Section 5.2.1 and "Intel® 64 and IA-32 Architectures
+    // Software Developer’s Manual" - Volume 1 - Section 7.3.17.1.
+    const RETRY_LIMIT: usize = 10;
+
+    for _ in 0..RETRY_LIMIT {
+        let mut val = 0;
+        let generated = unsafe { _rdrand64_step(&mut val) };
+        if generated == 1 {
+            return Some(val);
+        }
+    }
+    None
 }
 
 fn enable_common_cpu_features() {

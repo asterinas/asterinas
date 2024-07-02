@@ -171,7 +171,6 @@ dependencies = [
  "controlled",
  "core2",
  "cpio-decoder",
- "getrandom",
  "getset",
  "hashbrown 0.14.3",
  "id-alloc",
