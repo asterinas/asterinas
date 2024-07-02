@@ -522,7 +522,7 @@ impl Inode for RamInode {
         let new_size = offset + buf.len();
         let should_expand_size = new_size > file_size;
         if should_expand_size {
-            page_cache.pages().resize(new_size)?;
+            page_cache.resize(new_size)?;
         }
         page_cache.pages().write_bytes(offset, buf)?;
         if should_expand_size {
@@ -556,7 +556,7 @@ impl Inode for RamInode {
         self_inode.resize(new_size);
         let self_inode = self_inode.downgrade();
         let page_cache = self_inode.inner.as_file().unwrap();
-        page_cache.pages().resize(new_size)?;
+        page_cache.resize(new_size)?;
 
         Ok(())
     }

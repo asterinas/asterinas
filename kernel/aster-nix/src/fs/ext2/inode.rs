@@ -748,8 +748,8 @@ impl Inner {
     }
 
     pub fn resize(&mut self, new_size: usize) -> Result<()> {
+        self.page_cache.resize(new_size)?;
         self.inode_impl.resize(new_size)?;
-        self.page_cache.pages().resize(new_size)?;
         Ok(())
     }
 
@@ -797,7 +797,7 @@ impl Inner {
 
     pub fn extend_write_at(&mut self, offset: usize, buf: &[u8]) -> Result<()> {
         let new_size = offset + buf.len();
-        self.page_cache.pages().resize(new_size)?;
+        self.page_cache.resize(new_size)?;
         self.page_cache.pages().write_bytes(offset, buf)?;
         self.inode_impl.resize(new_size)?;
         Ok(())
@@ -839,7 +839,7 @@ impl Inner {
             return self.inode_impl.write_link(target);
         }
 
-        self.page_cache.pages().resize(target.len())?;
+        self.page_cache.resize(target.len())?;
         self.page_cache.pages().write_bytes(0, target.as_bytes())?;
         let file_size = self.inode_impl.file_size();
         if file_size != target.len() {

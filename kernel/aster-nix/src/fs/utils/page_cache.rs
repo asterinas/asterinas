@@ -4,10 +4,11 @@
 
 use core::ops::Range;
 
+use align_ext::AlignExt;
 use aster_block::bio::{BioStatus, BioWaiter};
 use aster_rights::Full;
 use lru::LruCache;
-use ostd::mm::{Frame, FrameAllocOptions};
+use ostd::mm::{Frame, FrameAllocOptions, VmIo};
 
 use crate::{
     prelude::*,
@@ -65,6 +66,21 @@ impl PageCache {
     /// Returns the backend.
     pub fn backend(&self) -> Arc<dyn PageCacheBackend> {
         self.manager.backend()
+    }
+
+    /// Resizes the current page cache to a target size.
+    pub fn resize(&self, new_size: usize) -> Result<()> {
+        // If the new size is smaller and not page-aligned,
+        // first zero the gap between the new size and the
+        // next page boundry (or the old size), if such a gap exists.
+        let old_size = self.pages.size();
+        if old_size > new_size && new_size % PAGE_SIZE > 0 {
+            let gap_size = old_size.min(new_size.align_up(PAGE_SIZE)) - new_size;
+            if gap_size > 0 {
+                self.pages.write_bytes(new_size, &vec![0; gap_size])?;
+            }
+        }
+        self.pages.resize(new_size)
     }
 }
 
