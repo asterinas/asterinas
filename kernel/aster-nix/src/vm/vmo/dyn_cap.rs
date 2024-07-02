@@ -162,6 +162,7 @@ impl VmIo for Vmo<Rights> {
         self.0.write_bytes(offset, buf)?;
         Ok(())
     }
+    // TODO: Support efficient `write_vals()`
 }
 
 impl VmoRightsOp for Vmo<Rights> {
