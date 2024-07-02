@@ -32,6 +32,7 @@ mod execve;
 mod exit;
 mod exit_group;
 mod fcntl;
+mod flock;
 mod fork;
 mod fsync;
 mod futex;

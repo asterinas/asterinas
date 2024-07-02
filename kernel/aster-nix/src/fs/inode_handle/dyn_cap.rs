@@ -4,7 +4,10 @@ use aster_rights::TRights;
 use inherit_methods_macro::inherit_methods;
 
 use super::*;
-use crate::prelude::*;
+use crate::{
+    fs::utils::{FileRange, RangeLock, RangeLockBuilder, RangeLockList, RangeLockType, OFFSET_MAX},
+    prelude::*,
+};
 
 impl InodeHandle<Rights> {
     pub fn new(
@@ -60,6 +63,101 @@ impl InodeHandle<Rights> {
             return_errno_with_message!(Errno::EBADF, "File is not readable");
         }
         self.0.readdir(visitor)
+    }
+
+    pub fn position(&self) -> Result<i64> {
+        Ok(self.0.offset() as i64)
+    }
+
+    pub fn test_range_lock(&self, lock: &mut RangeLock) -> Result<()> {
+        let extension = match self.dentry().inode().extension() {
+            Some(extension) => extension,
+            None => {
+                warn!("Inode extension is not supportted, the lock could be placed");
+                lock.set_type(RangeLockType::F_UNLCK);
+                return Ok(());
+            }
+        };
+
+        match extension.get::<RangeLockList>() {
+            None => {
+                // The range lock could be placed if there is no lock list
+                lock.set_type(RangeLockType::F_UNLCK);
+            }
+            Some(range_lock_list) => {
+                range_lock_list.test_lock(lock);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn set_range_lock(&self, lock: &RangeLock, is_nonblocking: bool) -> Result<()> {
+        if RangeLockType::F_UNLCK == lock.type_() {
+            self.0.unlock_range_lock(lock);
+            return Ok(());
+        }
+
+        self.0.check_range_lock_with_access_mode(lock)?;
+        let extension = match self.dentry().inode().extension() {
+            Some(extension) => extension,
+            None => {
+                warn!(
+                    "Inode extension is not supported, let the lock could be acquired or released"
+                );
+                // TODO: Implement inode extension for FS
+                return Ok(());
+            }
+        };
+        let range_lock_list = match extension.get::<RangeLockList>() {
+            Some(list) => list,
+            None => extension.get_or_put_default::<RangeLockList>(),
+        };
+
+        range_lock_list.set_lock(lock, is_nonblocking)
+    }
+
+    pub fn release_range_locks(&self) {
+        let range_lock = RangeLockBuilder::new()
+            .type_(RangeLockType::F_UNLCK)
+            .range(FileRange::new(0, OFFSET_MAX).unwrap())
+            .build()
+            .unwrap();
+
+        self.0.unlock_range_lock(&range_lock)
+    }
+
+    pub fn set_flock(&self, lock: Flock, is_nonblocking: bool) -> Result<()> {
+        let extension = match self.dentry().inode().extension() {
+            Some(extension) => extension,
+            None => {
+                warn!("Inode extension is not supported, let the lock could be acquired");
+                // TODO: Implement inode extension for FS
+                return Ok(());
+            }
+        };
+        let flock_list = match extension.get::<FlockList>() {
+            Some(list) => list,
+            None => extension.get_or_put_default::<FlockList>(),
+        };
+
+        flock_list.set_lock(lock, is_nonblocking)
+    }
+
+    pub fn unlock_flock(&self) {
+        let extension = match self.dentry().inode().extension() {
+            Some(extension) => extension,
+            None => {
+                return;
+            }
+        };
+        let flock_list = match extension.get::<FlockList>() {
+            Some(list) => list,
+            None => {
+                return;
+            }
+        };
+
+        flock_list.unlock(self);
     }
 }
 
@@ -126,6 +224,8 @@ impl FileLike for InodeHandle<Rights> {
 
     fn clean_for_close(&self) -> Result<()> {
         // Close does not guarantee that the data has been successfully saved to disk.
+        self.release_range_locks();
+        self.unlock_flock();
         Ok(())
     }
 
