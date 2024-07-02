@@ -11,6 +11,7 @@ use crate::prelude::*;
 
 /// Implements several commonly used APIs for the block device to conveniently
 /// read and write block(s).
+// TODO: Add API to submit bio with multiple segments in scatter/gather manner.
 impl dyn BlockDevice {
     /// Synchronously reads contiguous blocks starting from the `bid`.
     pub fn read_blocks_sync(

@@ -165,7 +165,7 @@ impl Dentry_ {
     }
 
     /// Lookup a Dentry_ from filesystem.
-    pub fn lookuop_via_fs(&self, name: &str) -> Result<Arc<Dentry_>> {
+    pub fn lookup_via_fs(&self, name: &str) -> Result<Arc<Dentry_>> {
         let mut children = self.children.lock();
         let inode = self.inode.lookup(name)?;
         let inner = Self::new(
@@ -483,7 +483,7 @@ impl Dentry {
                 match children_inner {
                     Some(inner) => Self::new(self.mount_node().clone(), inner.clone()),
                     None => {
-                        let fs_inner = self.inner.lookuop_via_fs(name)?;
+                        let fs_inner = self.inner.lookup_via_fs(name)?;
                         Self::new(self.mount_node().clone(), fs_inner.clone())
                     }
                 }

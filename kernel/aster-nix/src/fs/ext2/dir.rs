@@ -250,7 +250,7 @@ impl<'a> DirEntryWriter<'a> {
             // Resize and append it at the new block.
             let old_size = self.page_cache.pages().size();
             let new_size = old_size + BLOCK_SIZE;
-            self.page_cache.pages().resize(new_size)?;
+            self.page_cache.resize(new_size)?;
             new_entry.set_record_len(BLOCK_SIZE);
             self.offset = old_size;
             self.write_entry(&new_entry)?;
@@ -285,7 +285,7 @@ impl<'a> DirEntryWriter<'a> {
         {
             // Shrink the size.
             let new_size = pre_offset.align_up(BLOCK_SIZE);
-            self.page_cache.pages().resize(new_size)?;
+            self.page_cache.resize(new_size)?;
             pre_entry.set_record_len(new_size - pre_offset);
             self.offset = pre_offset;
             self.write_entry(&pre_entry)?;
