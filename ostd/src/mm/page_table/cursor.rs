@@ -45,10 +45,25 @@
 //!  5. Map some pages in D;
 //!  6. `unlock(D)`, `lock_guard = [ locked(B) ]`;
 //!
-//! If all the mappings in `B` are cancelled when cursor finished it's traversal,
-//! and `B` need to be recycled, a page walk from the root page table to `B` is
-//! required. The cursor unlock all locks, then lock all the way down to `B`, then
-//! check if `B` is empty, and finally recycle all the resources on the way back.
+//!
+//! ## Validity
+//!
+//! The page table cursor API will guarentee that the page table, as a data
+//! structure, whose occupied memory will not suffer from data races. This is
+//! ensured by the page table lock protocol. In other words, any operations
+//! provided by the APIs (as long as safety requirements are met) will not
+//! break the page table data structure (or other memory).
+//!
+//! However, the page table cursor creation APIs, [`CursorMut::new`] or
+//! [`Cursor::new`], do not guarantee exclusive access to the virtual address
+//! area you claim. From the lock protocol, you can see that there are chances
+//! to create 2 cursors that claim the same virtual address range (one covers
+//! another). In this case, the greater cursor may block if it wants to modify
+//! the page table entries covered by the smaller cursor. Also, if the greater
+//! cursor destructs the smaller cursor's parent page table node, it won't block
+//! and the smaller cursor's change will not be visible. The user of the page
+//! table cursor should add additional entry point checks to prevent these defined
+//! behaviors if they are not wanted.
 
 use core::{any::TypeId, marker::PhantomData, ops::Range};
 
@@ -94,11 +109,22 @@ pub(crate) struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
 where
     [(); C::NR_LEVELS as usize]:,
 {
+    /// The lock guards of the cursor. The level 1 page table lock guard is at
+    /// index 0, and the level N page table lock guard is at index N - 1.
+    ///
+    /// When destructing the cursor, the locks will be released in the order
+    /// from low to high, exactly the reverse order of the aquisition.
+    /// This behavior is ensured by the default drop implementation of Rust:
+    /// <https://doc.rust-lang.org/reference/destructors.html>.
     guards: [Option<PageTableNode<E, C>>; C::NR_LEVELS as usize],
-    level: PagingLevel,       // current level
-    guard_level: PagingLevel, // from guard_level to level, the locks are held
-    va: Vaddr,                // current virtual address
-    barrier_va: Range<Vaddr>, // virtual address range that is locked
+    /// The level of the page table that the cursor points to.
+    level: PagingLevel,
+    /// From `guard_level` to `level`, the locks are held in `guards`.
+    guard_level: PagingLevel,
+    /// The current virtual address that the cursor points to.
+    va: Vaddr,
+    /// The virtual address range that is locked.
+    barrier_va: Range<Vaddr>,
     phantom: PhantomData<&'a PageTable<M, E, C>>,
 }
 
@@ -106,10 +132,14 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    /// Creates a cursor exclusively owning the locks for the given range.
+    /// Creates a cursor claiming the read access for the given range.
     ///
-    /// The cursor created will only be able to map, query or jump within the
-    /// given range.
+    /// The cursor created will only be able to query or jump within the given
+    /// range. Out-of-bound accesses will result in panics or errors as return values,
+    /// depending on the access method.
+    ///
+    /// Note that this function does not ensure exclusive access to the claimed
+    /// virtual address range. The accesses using this cursor may block or fail.
     pub(crate) fn new(
         pt: &'a PageTable<M, E, C>,
         va: &Range<Vaddr>,
@@ -123,7 +153,7 @@ where
 
         // Create a guard array that only hold the root node lock.
         let guards = core::array::from_fn(|i| {
-            if i == 0 {
+            if i == (C::NR_LEVELS - 1) as usize {
                 Some(pt.root.clone_shallow().lock())
             } else {
                 None
@@ -159,8 +189,8 @@ where
 
             cursor.level_down();
 
-            // Release the guard of the previous level.
-            cursor.guards[(C::NR_LEVELS - cursor.level) as usize - 1] = None;
+            // Release the guard of the previous (upper) level.
+            cursor.guards[cursor.level as usize] = None;
             cursor.guard_level -= 1;
         }
 
@@ -231,7 +261,7 @@ where
     ///
     /// This method requires locks acquired before calling it. The discarded level will be unlocked.
     fn level_up(&mut self) {
-        self.guards[(C::NR_LEVELS - self.level) as usize] = None;
+        self.guards[(self.level - 1) as usize] = None;
         self.level += 1;
 
         // TODO: Drop page tables if page tables become empty.
@@ -243,16 +273,14 @@ where
 
         if let Child::PageTable(nxt_lvl_ptn) = self.cur_child() {
             self.level -= 1;
-            self.guards[(C::NR_LEVELS - self.level) as usize] = Some(nxt_lvl_ptn.lock());
+            self.guards[(self.level - 1) as usize] = Some(nxt_lvl_ptn.lock());
         } else {
             panic!("Trying to level down when it is not mapped to a page table");
         }
     }
 
     fn cur_node(&self) -> &PageTableNode<E, C> {
-        self.guards[(C::NR_LEVELS - self.level) as usize]
-            .as_ref()
-            .unwrap()
+        self.guards[(self.level - 1) as usize].as_ref().unwrap()
     }
 
     fn cur_idx(&self) -> usize {
@@ -317,6 +345,15 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
 where
     [(); C::NR_LEVELS as usize]:,
 {
+    /// Creates a cursor claiming the write access for the given range.
+    ///
+    /// The cursor created will only be able to map, query or jump within the given
+    /// range. Out-of-bound accesses will result in panics or errors as return values,
+    /// depending on the access method.
+    ///
+    /// Note that this function, the same as [`Cursor::new`], does not ensure exclusive
+    /// access to the claimed virtual address range. The accesses using this cursor may
+    /// block or fail.
     pub(super) fn new(
         pt: &'a PageTable<M, E, C>,
         va: &Range<Vaddr>,
@@ -597,7 +634,7 @@ where
             self.0.level_up();
         }
 
-        self.0.guards[0].take()
+        self.0.guards[(C::NR_LEVELS - 1) as usize].take()
 
         // Ok to drop the cursor here because we ensure not to access the page table if the current
         // level is the root level when running the dropping method.
@@ -614,7 +651,7 @@ where
         self.cur_node_mut()
             .set_child_pt(idx, new_node.clone_raw(), is_tracked);
         self.0.level -= 1;
-        self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_node);
+        self.0.guards[(self.0.level - 1) as usize] = Some(new_node);
     }
 
     /// Goes down a level assuming the current slot is an untracked huge page.
@@ -631,12 +668,10 @@ where
             unreachable!();
         };
         self.0.level -= 1;
-        self.0.guards[(C::NR_LEVELS - self.0.level) as usize] = Some(new_node.lock());
+        self.0.guards[(self.0.level - 1) as usize] = Some(new_node.lock());
     }
 
     fn cur_node_mut(&mut self) -> &mut PageTableNode<E, C> {
-        self.0.guards[(C::NR_LEVELS - self.0.level) as usize]
-            .as_mut()
-            .unwrap()
+        self.0.guards[(self.0.level - 1) as usize].as_mut().unwrap()
     }
 }
