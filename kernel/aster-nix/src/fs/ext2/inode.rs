@@ -15,8 +15,7 @@ use super::{
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
     prelude::*,
 };
-use crate::time::clocks::RealTimeCoarseClock;
-use crate::fs::utils::Extension;
+use crate::{fs::utils::Extension, time::clocks::RealTimeCoarseClock};
 
 /// Max length of file name.
 pub const MAX_FNAME_LEN: usize = 255;
@@ -30,7 +29,7 @@ pub struct Inode {
     block_group_idx: usize,
     inner: RwMutex<Inner>,
     fs: Weak<Ext2>,
-    extension: Option<Extension>,
+    extension: Extension,
 }
 
 impl Inode {
@@ -45,7 +44,7 @@ impl Inode {
             block_group_idx,
             inner: RwMutex::new(Inner::new(desc, weak_self.clone(), fs.clone())),
             fs,
-            extension: Some(Extension::new()),
+            extension: Extension::new(),
         })
     }
 
@@ -627,8 +626,8 @@ impl Inode {
         Ok(())
     }
 
-    pub fn extension(&self) -> Option<&Extension> {
-        self.extension.as_ref()
+    pub fn extension(&self) -> &Extension {
+        &self.extension
     }
 }
 

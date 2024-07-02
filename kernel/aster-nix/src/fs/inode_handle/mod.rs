@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use aster_rights::Rights;
 use inherit_methods_macro::inherit_methods;
 
-use super::utils::RangeLockType;
+use super::utils::{Flock, FlockList, RangeLockType};
 use crate::{
     events::IoEvents,
     fs::{
@@ -193,7 +193,7 @@ impl InodeHandle_ {
         self.dentry.inode().ioctl(cmd, arg)
     }
 
-    fn check_advisory_lock_with_access_mode(&self, lock: &RangeLock) -> Result<()> {
+    fn check_range_lock_with_access_mode(&self, lock: &RangeLock) -> Result<()> {
         match lock.type_() {
             RangeLockType::F_RDLCK => {
                 if !self.access_mode.is_readable() {

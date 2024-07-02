@@ -16,7 +16,7 @@ impl FileRange {
     /// Create the range through C flock and opened file reference
     pub fn from_c_flock_and_file(lock: &c_flock, file: Arc<dyn FileLike>) -> Result<Self> {
         let start = {
-            let whence = RangeLockWhence::from_u16(lock.l_whence)?;
+            let whence = RangeLockWhence::try_from(lock.l_whence)?;
             match whence {
                 RangeLockWhence::SEEK_SET => lock.l_start,
                 RangeLockWhence::SEEK_CUR => file
@@ -164,21 +164,10 @@ pub enum OverlapWith {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, TryFromInt)]
 #[repr(u16)]
 pub enum RangeLockWhence {
     SEEK_SET = 0,
     SEEK_CUR = 1,
     SEEK_END = 2,
-}
-
-impl RangeLockWhence {
-    pub fn from_u16(whence: u16) -> Result<Self> {
-        Ok(match whence {
-            0 => RangeLockWhence::SEEK_SET,
-            1 => RangeLockWhence::SEEK_CUR,
-            2 => RangeLockWhence::SEEK_END,
-            _ => return_errno_with_message!(Errno::EINVAL, "Invalid whence"),
-        })
-    }
 }

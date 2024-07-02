@@ -456,6 +456,7 @@ impl Debug for dyn Inode {
 /// Each objects of an extension is of different types.
 /// In other words, types are used as the keys to get and
 /// set the objects in an extension.
+#[derive(Debug)]
 pub struct Extension {
     data: RwLock<BTreeMap<TypeId, Arc<dyn Any + Send + Sync>>>,
 }

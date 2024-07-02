@@ -95,7 +95,7 @@ fn handle_getlk(fd: FileDesc, arg: u64) -> Result<SyscallReturn> {
     };
     let lock_mut_ptr = arg as Vaddr;
     let mut lock_mut_c = read_val_from_user::<c_flock>(lock_mut_ptr)?;
-    let lock_type = RangeLockType::from_u16(lock_mut_c.l_type)?;
+    let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
     if lock_type == RangeLockType::F_UNLCK {
         return_errno_with_message!(Errno::EINVAL, "invalid flock type for getlk");
     }
@@ -106,7 +106,7 @@ fn handle_getlk(fd: FileDesc, arg: u64) -> Result<SyscallReturn> {
     let inode_file = file
         .downcast_ref::<InodeHandle>()
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-    inode_file.test_advisory_lock(&mut lock)?;
+    inode_file.test_range_lock(&mut lock)?;
     lock_mut_c.copy_from_range_lock(&lock);
     Ok(SyscallReturn::Return(0))
 }
@@ -119,7 +119,7 @@ fn handle_setlk(fd: FileDesc, arg: u64, is_nonblocking: bool) -> Result<SyscallR
     };
     let lock_mut_ptr = arg as Vaddr;
     let lock_mut_c = read_val_from_user::<c_flock>(lock_mut_ptr)?;
-    let lock_type = RangeLockType::from_u16(lock_mut_c.l_type)?;
+    let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
     let lock = RangeLockBuilder::new()
         .type_(lock_type)
         .range(FileRange::from_c_flock_and_file(&lock_mut_c, file.clone())?)
@@ -127,7 +127,7 @@ fn handle_setlk(fd: FileDesc, arg: u64, is_nonblocking: bool) -> Result<SyscallR
     let inode_file = file
         .downcast_ref::<InodeHandle>()
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-    inode_file.set_advisory_lock(&lock, is_nonblocking)?;
+    inode_file.set_range_lock(&lock, is_nonblocking)?;
     Ok(SyscallReturn::Return(0))
 }
 

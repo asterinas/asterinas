@@ -24,6 +24,7 @@ use crate::syscall::{
     exit::sys_exit,
     exit_group::sys_exit_group,
     fcntl::sys_fcntl,
+    flock::sys_flock,
     fork::sys_fork,
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
@@ -185,6 +186,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_KILL = 62              => sys_kill(args[..2]);
     SYS_UNAME = 63             => sys_uname(args[..1]);
     SYS_FCNTL = 72             => sys_fcntl(args[..3]);
+    SYS_FLOCK = 73             => sys_flock(args[..2]);
     SYS_FSYNC = 74             => sys_fsync(args[..1]);
     SYS_FDATASYNC = 75         => sys_fdatasync(args[..1]);
     SYS_TRUNCATE = 76          => sys_truncate(args[..2]);

@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use aster_frame::sync::{RwLockWriteGuard, WaitQueue};
+use ostd::sync::{RwLockWriteGuard, WaitQueue};
 
 use self::range::{off_t, FileRangeChange, RangeLockWhence};
 pub use self::{
@@ -363,21 +363,10 @@ impl Default for RangeLockList {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, TryFromInt)]
 #[repr(u16)]
 pub enum RangeLockType {
     F_RDLCK = 0,
     F_WRLCK = 1,
     F_UNLCK = 2,
-}
-
-impl RangeLockType {
-    pub fn from_u16(_type: u16) -> Result<Self> {
-        Ok(match _type {
-            0 => RangeLockType::F_RDLCK,
-            1 => RangeLockType::F_WRLCK,
-            2 => RangeLockType::F_UNLCK,
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid lock type"),
-        })
-    }
 }

@@ -8,7 +8,7 @@ use crate::{
     events::{IoEvents, Observer},
     fs::{
         device::Device,
-        utils::{AccessMode, InodeMode, IoctlCmd, Metadata, RangeLock, SeekFrom, StatusFlags},
+        utils::{AccessMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
     },
     net::socket::Socket,
     prelude::*,

@@ -24,7 +24,7 @@ struct Common {
     metadata: RwLock<Metadata>,
     fs: Weak<dyn FileSystem>,
     is_volatile: bool,
-    extension: Option<Extension>,
+    extension: Extension,
 }
 
 impl Common {
@@ -33,7 +33,7 @@ impl Common {
             metadata: RwLock::new(metadata),
             fs,
             is_volatile,
-            extension: Some(Extension::new()),
+            extension: Extension::new(),
         }
     }
 

@@ -69,7 +69,7 @@ impl InodeHandle<Rights> {
         Ok(self.0.offset() as i64)
     }
 
-    pub fn test_advisory_lock(&self, lock: &mut RangeLock) -> Result<()> {
+    pub fn test_range_lock(&self, lock: &mut RangeLock) -> Result<()> {
         let extension = match self.dentry().inode().extension() {
             Some(extension) => extension,
             None => {
@@ -81,7 +81,7 @@ impl InodeHandle<Rights> {
 
         match extension.get::<RangeLockList>() {
             None => {
-                // The advisory lock could be placed if there is no lock list
+                // The range lock could be placed if there is no lock list
                 lock.set_type(RangeLockType::F_UNLCK);
             }
             Some(range_lock_list) => {
@@ -91,13 +91,13 @@ impl InodeHandle<Rights> {
         Ok(())
     }
 
-    pub fn set_advisory_lock(&self, lock: &RangeLock, is_nonblocking: bool) -> Result<()> {
+    pub fn set_range_lock(&self, lock: &RangeLock, is_nonblocking: bool) -> Result<()> {
         if RangeLockType::F_UNLCK == lock.type_() {
             self.0.unlock_range_lock(lock);
             return Ok(());
         }
 
-        self.0.check_advisory_lock_with_access_mode(lock)?;
+        self.0.check_range_lock_with_access_mode(lock)?;
         let extension = match self.dentry().inode().extension() {
             Some(extension) => extension,
             None => {
@@ -116,7 +116,7 @@ impl InodeHandle<Rights> {
         range_lock_list.set_lock(lock, is_nonblocking)
     }
 
-    pub fn release_advisory_locks(&self) {
+    pub fn release_range_locks(&self) {
         let range_lock = RangeLockBuilder::new()
             .type_(RangeLockType::F_UNLCK)
             .range(FileRange::new(0, OFFSET_MAX).unwrap())
@@ -124,6 +124,40 @@ impl InodeHandle<Rights> {
             .unwrap();
 
         self.0.unlock_range_lock(&range_lock)
+    }
+
+    pub fn set_flock(&self, lock: Flock, is_nonblocking: bool) -> Result<()> {
+        let extension = match self.dentry().inode().extension() {
+            Some(extension) => extension,
+            None => {
+                warn!("Inode extension is not supported, let the lock could be acquired");
+                // TODO: Implement inode extension for FS
+                return Ok(());
+            }
+        };
+        let flock_list = match extension.get::<FlockList>() {
+            Some(list) => list,
+            None => extension.get_or_put_default::<FlockList>(),
+        };
+
+        flock_list.set_lock(lock, is_nonblocking)
+    }
+
+    pub fn unlock_flock(&self) {
+        let extension = match self.dentry().inode().extension() {
+            Some(extension) => extension,
+            None => {
+                return;
+            }
+        };
+        let flock_list = match extension.get::<FlockList>() {
+            Some(list) => list,
+            None => {
+                return;
+            }
+        };
+
+        flock_list.unlock(self);
     }
 }
 
@@ -190,6 +224,8 @@ impl FileLike for InodeHandle<Rights> {
 
     fn clean_for_close(&self) -> Result<()> {
         // Close does not guarantee that the data has been successfully saved to disk.
+        self.release_range_locks();
+        self.unlock_flock();
         Ok(())
     }
 

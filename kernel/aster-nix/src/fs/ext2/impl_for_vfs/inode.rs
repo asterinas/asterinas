@@ -191,7 +191,7 @@ impl Inode for Ext2Inode {
     }
 
     fn extension(&self) -> Option<&Extension> {
-        self.extension()
+        Some(self.extension())
     }
 }
 

@@ -188,7 +188,7 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
     }
 
     fn extension(&self) -> Option<&Extension> {
-        self.common.extension.as_ref()
+        Some(&self.common.extension)
     }
 }
 
