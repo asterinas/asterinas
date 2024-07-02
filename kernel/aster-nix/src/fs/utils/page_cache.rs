@@ -4,10 +4,11 @@
 
 use core::ops::Range;
 
+use align_ext::AlignExt;
 use aster_block::bio::{BioStatus, BioWaiter};
 use aster_rights::Full;
 use lru::LruCache;
-use ostd::mm::{Frame, FrameAllocOptions};
+use ostd::mm::{Frame, FrameAllocOptions, VmIo};
 
 use crate::{
     prelude::*,
@@ -65,6 +66,21 @@ impl PageCache {
     /// Returns the backend.
     pub fn backend(&self) -> Arc<dyn PageCacheBackend> {
         self.manager.backend()
+    }
+
+    /// Resizes the current page cache to a target size.
+    pub fn resize(&self, new_size: usize) -> Result<()> {
+        // If the new size is smaller and not page-aligned,
+        // first zero the gap between the new size and the
+        // next page boundry (or the old size), if such a gap exists.
+        let old_size = self.pages.size();
+        if old_size > new_size && new_size % PAGE_SIZE > 0 {
+            let gap_size = old_size.min(new_size.align_up(PAGE_SIZE)) - new_size;
+            if gap_size > 0 {
+                self.pages.write_bytes(new_size, &vec![0; gap_size])?;
+            }
+        }
+        self.pages.resize(new_size)
     }
 }
 
@@ -303,31 +319,30 @@ impl PageCacheManager {
     pub fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let page_idx_range = get_page_idx_range(&range);
 
-        //TODO: When there are many pages, we should submit them in batches of folios rather than all at once.
-        let mut indices_and_waiters: Vec<(usize, BioWaiter)> = Vec::new();
-
-        for idx in page_idx_range {
-            if let Some(page) = self.pages.lock().get_mut(&idx) {
-                if let PageState::Dirty = page.state() {
-                    let backend = self.backend();
-                    if idx < backend.npages() {
-                        indices_and_waiters.push((idx, backend.write_page(idx, page.frame())?));
-                    }
+        let mut bio_waiter = BioWaiter::new();
+        let mut pages = self.pages.lock();
+        let backend = self.backend();
+        let backend_npages = backend.npages();
+        for idx in page_idx_range.clone() {
+            if let Some(page) = pages.peek(&idx) {
+                if *page.state() == PageState::Dirty && idx < backend_npages {
+                    let waiter = backend.write_page(idx, page.frame())?;
+                    bio_waiter.concat(waiter);
                 }
             }
         }
 
-        for (idx, waiter) in indices_and_waiters.iter() {
-            if matches!(waiter.wait(), Some(BioStatus::Complete)) {
-                if let Some(page) = self.pages.lock().get_mut(idx) {
-                    page.set_state(PageState::UpToDate)
-                }
-            } else {
-                // TODO: We may need an error handler here.
-                return_errno!(Errno::EIO)
-            }
+        if !matches!(bio_waiter.wait(), Some(BioStatus::Complete)) {
+            // Do not allow partial failure
+            return_errno!(Errno::EIO);
         }
 
+        for (_, page) in pages
+            .iter_mut()
+            .filter(|(idx, _)| page_idx_range.contains(idx))
+        {
+            page.set_state(PageState::UpToDate);
+        }
         Ok(())
     }
 
@@ -467,7 +482,7 @@ impl Page {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PageState {
     /// `Uninit` indicates a new allocated page which content has not been initialized.
     /// The page is available to write, not available to read.

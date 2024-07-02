@@ -303,6 +303,14 @@ impl Ext2 {
         }
     }
 
+    /// Reads contiguous blocks starting from the `bid` asynchronously.
+    pub(super) fn read_blocks_async(&self, bid: Ext2Bid, segment: &Segment) -> Result<BioWaiter> {
+        let waiter = self
+            .block_device
+            .read_blocks(Bid::new(bid as u64), segment)?;
+        Ok(waiter)
+    }
+
     /// Reads one block indicated by the `bid` synchronously.
     pub(super) fn read_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
         let status = self
@@ -329,6 +337,14 @@ impl Ext2 {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
         }
+    }
+
+    /// Writes contiguous blocks starting from the `bid` asynchronously.
+    pub(super) fn write_blocks_async(&self, bid: Ext2Bid, segment: &Segment) -> Result<BioWaiter> {
+        let waiter = self
+            .block_device
+            .write_blocks(Bid::new(bid as u64), segment)?;
+        Ok(waiter)
     }
 
     /// Writes one block indicated by the `bid` synchronously.

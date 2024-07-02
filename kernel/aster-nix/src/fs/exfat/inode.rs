@@ -613,7 +613,7 @@ impl ExfatInode {
         let fs = inner.fs();
         let fs_guard = fs.lock();
         self.inner.write().resize(0, &fs_guard)?;
-        self.inner.read().page_cache.pages().resize(0)?;
+        self.inner.read().page_cache.resize(0)?;
         Ok(())
     }
 
@@ -860,7 +860,7 @@ impl ExfatInode {
             inner.size_allocated = new_size_allocated;
             inner.size = new_size_allocated;
 
-            inner.page_cache.pages().resize(new_size_allocated)?;
+            inner.page_cache.resize(new_size_allocated)?;
         }
         let inner = self.inner.read();
 
@@ -1040,7 +1040,7 @@ impl ExfatInode {
         if delete_contents {
             if is_dir {
                 inode.inner.write().resize(0, fs_guard)?;
-                inode.inner.read().page_cache.pages().resize(0)?;
+                inode.inner.read().page_cache.resize(0)?;
             }
             // Set the delete flag.
             inode.inner.write().is_deleted = true;
@@ -1110,7 +1110,7 @@ impl Inode for ExfatInode {
 
         // We will delay updating the page_cache size when enlarging an inode until the real write.
         if new_size < file_size {
-            self.inner.read().page_cache.pages().resize(new_size)?;
+            self.inner.read().page_cache.resize(new_size)?;
         }
 
         // Sync this inode since size has changed.
@@ -1310,7 +1310,7 @@ impl Inode for ExfatInode {
                 if new_size > file_allocated_size {
                     inner.resize(new_size, &fs_guard)?;
                 }
-                inner.page_cache.pages().resize(new_size)?;
+                inner.page_cache.resize(new_size)?;
             }
             new_size.max(file_size)
         };
@@ -1364,7 +1364,7 @@ impl Inode for ExfatInode {
                 if end_offset > file_allocated_size {
                     inner.resize(end_offset, &fs_guard)?;
                 }
-                inner.page_cache.pages().resize(end_offset)?;
+                inner.page_cache.resize(end_offset)?;
             }
             file_size.max(end_offset)
         };

@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use core::ops::Range;
+
 use bitvec::prelude::BitVec;
 
 /// A blocks hole descriptor implemented by the `BitVec`.
@@ -49,6 +51,17 @@ impl BlocksHoleDesc {
         self.0.set(idx, true);
     }
 
+    /// Marks all blocks within the `range` as holes.
+    ///
+    /// # Panic
+    ///
+    /// If the `range` is out of bounds, this method will panic.
+    pub fn set_range(&mut self, range: Range<usize>) {
+        for idx in range {
+            self.0.set(idx, true);
+        }
+    }
+
     /// Unmarks the block `idx` as a hole.
     ///
     /// # Panics
@@ -56,5 +69,16 @@ impl BlocksHoleDesc {
     /// If the `idx` is out of bounds, this method will panic.
     pub fn unset(&mut self, idx: usize) {
         self.0.set(idx, false);
+    }
+
+    /// Unmarks all blocks within the `range` as holes.
+    ///
+    /// # Panic
+    ///
+    /// If the `range` is out of bounds, this method will panic.
+    pub fn unset_range(&mut self, range: Range<usize>) {
+        for idx in range {
+            self.0.set(idx, false);
+        }
     }
 }
