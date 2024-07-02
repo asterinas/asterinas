@@ -9,7 +9,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use spin::Once;
 
-use crate::{cpu_local, task::disable_preempt, CpuLocal};
+use crate::{cpu_local, task::disable_preempt};
 
 /// A representation of a software interrupt (softirq) line.
 ///
@@ -70,9 +70,7 @@ impl SoftIrqLine {
     ///
     /// If this line is not enabled yet, the method has no effect.
     pub fn raise(&self) {
-        CpuLocal::borrow_with(&PENDING_MASK, |mask| {
-            mask.fetch_or(1 << self.id, Ordering::Release);
-        });
+        PENDING_MASK.fetch_or(1 << self.id, Ordering::Release);
     }
 
     /// Enables a softirq line by registering its callback.
@@ -114,21 +112,17 @@ cpu_local! {
 
 /// Enables softirq in current processor.
 fn enable_softirq_local() {
-    CpuLocal::borrow_with(&IS_ENABLED, |is_enabled| {
-        is_enabled.store(true, Ordering::Release)
-    })
+    IS_ENABLED.store(true, Ordering::Release);
 }
 
 /// Disables softirq in current processor.
 fn disable_softirq_local() {
-    CpuLocal::borrow_with(&IS_ENABLED, |is_enabled| {
-        is_enabled.store(false, Ordering::Release)
-    })
+    IS_ENABLED.store(false, Ordering::Release);
 }
 
 /// Checks whether the softirq is enabled in current processor.
 fn is_softirq_enabled() -> bool {
-    CpuLocal::borrow_with(&IS_ENABLED, |is_enabled| is_enabled.load(Ordering::Acquire))
+    IS_ENABLED.load(Ordering::Acquire)
 }
 
 /// Processes pending softirqs.
@@ -145,23 +139,21 @@ pub(crate) fn process_pending() {
     let preempt_guard = disable_preempt();
     disable_softirq_local();
 
-    CpuLocal::borrow_with(&PENDING_MASK, |mask| {
-        for i in 0..SOFTIRQ_RUN_TIMES {
-            // will not reactive in this handling.
-            let mut action_mask = {
-                let pending_mask = mask.fetch_and(0, Ordering::Acquire);
-                pending_mask & ENABLED_MASK.load(Ordering::Acquire)
-            };
+    for i in 0..SOFTIRQ_RUN_TIMES {
+        let mut action_mask = {
+            let pending_mask = PENDING_MASK.fetch_and(0, Ordering::Acquire);
+            pending_mask & ENABLED_MASK.load(Ordering::Acquire)
+        };
 
-            if action_mask == 0 {
-                return;
-            }
-            while action_mask > 0 {
-                let action_id = u8::trailing_zeros(action_mask) as u8;
-                SoftIrqLine::get(action_id).callback.get().unwrap()();
-                action_mask &= action_mask - 1;
-            }
+        if action_mask == 0 {
+            break;
         }
-    });
+        while action_mask > 0 {
+            let action_id = u8::trailing_zeros(action_mask) as u8;
+            SoftIrqLine::get(action_id).callback.get().unwrap()();
+            action_mask &= action_mask - 1;
+        }
+    }
+
     enable_softirq_local();
 }
