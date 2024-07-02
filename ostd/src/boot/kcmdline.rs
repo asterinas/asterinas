@@ -18,7 +18,9 @@ use alloc::{
     vec::Vec,
 };
 
-use log::warn;
+use log::Level;
+
+use crate::early_println;
 
 #[derive(PartialEq, Debug)]
 struct InitprocArgs {
@@ -40,6 +42,7 @@ pub enum ModuleArg {
 #[derive(Debug)]
 pub struct KCmdlineArg {
     initproc: InitprocArgs,
+    log_level: Option<Level>,
     module_args: BTreeMap<String, Vec<ModuleArg>>,
 }
 
@@ -56,6 +59,10 @@ impl KCmdlineArg {
     /// Gets the environment vector(envp) of the initprocess.
     pub fn get_initproc_envp(&self) -> &Vec<CString> {
         &self.initproc.envp
+    }
+    /// Gets the log level
+    pub fn get_log_level(&self) -> Option<Level> {
+        self.log_level
     }
     /// Gets the argument vector of a kernel module.
     pub fn get_module_args(&self, module: &str) -> Option<&Vec<ModuleArg>> {
@@ -88,6 +95,7 @@ impl From<&str> for KCmdlineArg {
                 envp: Vec::new(),
             },
             module_args: BTreeMap::new(),
+            log_level: None,
         };
 
         // Every thing after the "--" mark is the initproc arguments.
@@ -116,7 +124,10 @@ impl From<&str> for KCmdlineArg {
                 1 => (arg_pattern[0], None),
                 2 => (arg_pattern[0], Some(arg_pattern[1])),
                 _ => {
-                    warn!("Unable to parse kernel argument {}, skip for now", arg);
+                    early_println!(
+                        "[KCmdline] Unable to parse kernel argument {}, skip for now",
+                        arg
+                    );
                     continue;
                 }
             };
@@ -126,9 +137,10 @@ impl From<&str> for KCmdlineArg {
                 1 => (None, entry_pattern[0]),
                 2 => (Some(entry_pattern[0]), entry_pattern[1]),
                 _ => {
-                    warn!(
-                        "Unable to parse entry {} in argument {}, skip for now",
-                        entry, arg
+                    early_println!(
+                        "[KCmdline] Unable to parse entry {} in argument {}, skip for now",
+                        entry,
+                        arg
                     );
                     continue;
                 }
@@ -158,6 +170,21 @@ impl From<&str> for KCmdlineArg {
                             panic!("Initproc assigned twice in the command line!");
                         }
                         result.initproc.path = Some(value.to_string());
+                    }
+                    "loglevel" => {
+                        if result.log_level.is_some() {
+                            panic!("Loglevel assigned twice in the command line!");
+                        }
+                        result.log_level = Some(match value {
+                            "0" => Level::Error,
+                            "1" => Level::Warn,
+                            "2" => Level::Info,
+                            "3" => Level::Debug,
+                            "4" => Level::Trace,
+                            _ => {
+                                panic!("Invalid loglevel:{:?}", value);
+                            }
+                        });
                     }
                     _ => {
                         // If the option is not recognized, it is passed to the initproc.
