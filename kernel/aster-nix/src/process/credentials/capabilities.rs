@@ -52,6 +52,8 @@ bitflags! {
     }
 }
 
+pub const CAP_LAST_CAP: u64 = 40; // Number of the last capability (CAP_CHECKPOINT_RESTORE)
+
 impl CapSet {
     /// Converts the capability set to a `u32`. The higher bits are truncated.
     pub fn as_u32(&self) -> u32 {

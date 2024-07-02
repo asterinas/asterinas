@@ -6,14 +6,13 @@ use crate::{
     process::{
         credentials::{
             c_types::{cap_user_data_t, cap_user_header_t, LINUX_CAPABILITY_VERSION_3},
-            capabilities::CapSet,
+            capabilities::{CapSet, CAP_LAST_CAP},
         },
         credentials_mut,
     },
     util::read_val_from_user,
 };
 
-const CAP_LAST_CAP: u64 = 40; // Number of the last capability (CAP_CHECKPOINT_RESTORE)
 const CAP_VALID_MASK: u64 = (1u64 << (CAP_LAST_CAP + 1)) - 1;
 
 fn make_kernel_cap(low: u32, high: u32) -> u64 {

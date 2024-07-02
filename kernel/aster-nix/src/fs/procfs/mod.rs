@@ -2,6 +2,8 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use sys::SysDirOps;
+
 use self::{
     pid::PidDirOps,
     self_::SelfSymOps,
@@ -16,6 +18,7 @@ use crate::{
 
 mod pid;
 mod self_;
+mod sys;
 mod template;
 
 /// Magic number.
@@ -91,6 +94,8 @@ impl DirOps for RootDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let child = if name == "self" {
             SelfSymOps::new_inode(this_ptr.clone())
+        } else if name == "sys" {
+            SysDirOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
             let process_ref =
                 process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -108,6 +113,7 @@ impl DirOps for RootDirOps {
         };
         let mut cached_children = this.cached_children().write();
         cached_children.put_entry_if_not_found("self", || SelfSymOps::new_inode(this_ptr.clone()));
+        cached_children.put_entry_if_not_found("sys", || SysDirOps::new_inode(this_ptr.clone()));
 
         for process in process_table::process_table().iter() {
             let pid = process.pid().to_string();
