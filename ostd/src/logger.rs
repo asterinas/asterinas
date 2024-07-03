@@ -2,9 +2,12 @@
 
 //! Logging support.
 
+use alloc::format;
+
 use log::{LevelFilter, Metadata, Record};
 
 use crate::{
+    arch::timer::Jiffies,
     boot::{kcmdline::ModuleArg, kernel_cmdline},
     early_println,
 };
@@ -19,9 +22,33 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            early_println!("[{}]: {}", record.level(), record.args());
+        if !self.enabled(record.metadata()) {
+            return;
         }
+
+        let timestamp = format!("[{:>10?}]", Jiffies::elapsed().as_duration().as_secs_f64());
+        let level = format!("{:<5}", record.level());
+        let record_str = format!("{}", record.args());
+
+        #[cfg(feature = "log_color")]
+        let (timestamp, level, record_str) = {
+            use alloc::string::ToString;
+
+            use owo_colors::OwoColorize;
+
+            let timestamp = timestamp.green();
+            let level = match record.level() {
+                log::Level::Error => level.red().to_string(),
+                log::Level::Warn => level.bright_yellow().to_string(),
+                log::Level::Info => level.blue().to_string(),
+                log::Level::Debug => level.bright_green().to_string(),
+                log::Level::Trace => level.bright_black().to_string(),
+            };
+            let record_str = record_str.default_color();
+            (timestamp, level, record_str)
+        };
+
+        early_println!("{} {}: {}", timestamp, level, record_str);
     }
 
     fn flush(&self) {}
