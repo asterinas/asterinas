@@ -36,8 +36,15 @@ tdx-guest = { version = "0.1.0", optional = true }
 trapframe = { git = "https://github.com/asterinas/trapframe-rs", rev = "4739428" }
 # This version is in the upstream trunk branch which fixes a `r#try` usage.
 # We could switch back to "crates.io" when they publish a new version.
-unwinding = { git = "https://github.com/nbdd0121/unwinding.git", rev = "d7cd46e", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+unwinding = { git = "https://github.com/nbdd0121/unwinding.git", rev = "d7cd46e", default-features = false, features = [
+    "fde-gnu-eh-frame-hdr",
+    "hide-trace",
+    "panic",
+    "personality",
+    "unwinder",
+] }
 volatile = { version = "0.4.5", features = ["unstable"] }
+owo-colors = { version = "3", optional = true }
 
 [target.x86_64-unknown-none.dependencies]
 x86_64 = "0.14.2"
@@ -46,7 +53,13 @@ acpi = "4.1.1"
 aml = "0.16.3"
 multiboot2 = "0.20.2"
 rsdp = "2.0.0"
-iced-x86 = { version = "1.21.0", default-features = false, features = [ "no_std", "decoder", "gas" ], optional = true }
+iced-x86 = { version = "1.21.0", default-features = false, features = [
+    "no_std",
+    "decoder",
+    "gas",
+], optional = true }
 
 [features]
+default = ["log_color"]
+log_color = ["dep:owo-colors"]
 intel_tdx = ["dep:tdx-guest", "dep:iced-x86"]

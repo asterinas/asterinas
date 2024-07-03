@@ -1097,6 +1097,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "ostd-macros",
+ "owo-colors",
  "pod",
  "rsdp",
  "spin 0.9.8",
