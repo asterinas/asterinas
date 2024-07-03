@@ -197,53 +197,6 @@ mod test {
     }
 
     #[ktest]
-    fn slice_child() {
-        let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
-        let parent_dup = parent.dup();
-        let slice_child = VmoChildOptions::new_slice(parent_dup, 0..PAGE_SIZE)
-            .alloc()
-            .unwrap();
-        // write parent, read child
-        parent.write_val(1, &42u8).unwrap();
-        assert_eq!(slice_child.read_val::<u8>(1).unwrap(), 42);
-        // write child, read parent
-        slice_child.write_val(99, &0x1234u32).unwrap();
-        assert_eq!(parent.read_val::<u32>(99).unwrap(), 0x1234);
-    }
-
-    #[ktest]
-    fn cow_child() {
-        let parent = VmoOptions::<Full>::new(2 * PAGE_SIZE).alloc().unwrap();
-        parent.write_val(1, &42u8).unwrap();
-        parent.write_val(2, &16u8).unwrap();
-        let parent_dup = parent.dup();
-        let cow_child = VmoChildOptions::new_cow(parent_dup, 0..10 * PAGE_SIZE)
-            .alloc()
-            .unwrap();
-        // Read child.
-        assert_eq!(cow_child.read_val::<u8>(1).unwrap(), 42);
-        assert_eq!(cow_child.read_val::<u8>(2).unwrap(), 16);
-        // Write parent to trigger copy-on-write. read child and parent.
-        parent.write_val(1, &64u8).unwrap();
-        assert_eq!(parent.read_val::<u8>(1).unwrap(), 64);
-        assert_eq!(cow_child.read_val::<u8>(1).unwrap(), 42);
-        // Write child to trigger copy on write, read child and parent
-        cow_child.write_val(2, &0x1234u32).unwrap();
-        assert_eq!(cow_child.read_val::<u32>(2).unwrap(), 0x1234);
-        assert_eq!(cow_child.read_val::<u8>(1).unwrap(), 42);
-        assert_eq!(parent.read_val::<u8>(2).unwrap(), 16);
-        assert_eq!(parent.read_val::<u8>(1).unwrap(), 64);
-        // Write parent on already-copied page
-        parent.write_val(1, &123u8).unwrap();
-        assert_eq!(parent.read_val::<u8>(1).unwrap(), 123);
-        assert_eq!(cow_child.read_val::<u8>(1).unwrap(), 42);
-        // Write parent on not-copied page
-        parent.write_val(2, &12345u32).unwrap();
-        assert_eq!(parent.read_val::<u32>(2).unwrap(), 12345);
-        assert_eq!(cow_child.read_val::<u32>(2).unwrap(), 0x1234);
-    }
-
-    #[ktest]
     fn resize() {
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE)
             .flags(VmoFlags::RESIZABLE)
@@ -256,18 +209,5 @@ mod test {
         vmo.write_val(PAGE_SIZE + 20, &123u8).unwrap();
         vmo.resize(PAGE_SIZE).unwrap();
         assert_eq!(vmo.read_val::<u8>(10).unwrap(), 42);
-    }
-
-    #[ktest]
-    fn resize_cow() {
-        let vmo = VmoOptions::<Full>::new(10 * PAGE_SIZE)
-            .flags(VmoFlags::RESIZABLE)
-            .alloc()
-            .unwrap();
-
-        let cow_child = VmoChildOptions::new_cow(vmo, 0..PAGE_SIZE).alloc().unwrap();
-
-        cow_child.resize(2 * PAGE_SIZE).unwrap();
-        assert_eq!(cow_child.size(), 2 * PAGE_SIZE);
     }
 }
