@@ -109,7 +109,7 @@ struct Utimbuf {
 }
 
 fn vfs_utimes(dentry: &Arc<Dentry>, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
-    let (atime, mtime) = match times {
+    let (atime, mtime, ctime) = match times {
         Some(times) => {
             if !times.atime.is_valid() || !times.mtime.is_valid() {
                 return_errno_with_message!(Errno::EINVAL, "invalid time")
@@ -129,17 +129,18 @@ fn vfs_utimes(dentry: &Arc<Dentry>, times: Option<TimeSpecPair>) -> Result<Sysca
             } else {
                 Duration::from(times.mtime)
             };
-            (atime, mtime)
+            (atime, mtime, now)
         }
         None => {
             let now = RealTimeCoarseClock::get().read_time();
-            (now, now)
+            (now, now, now)
         }
     };
 
     // Update times
     dentry.set_atime(atime);
     dentry.set_mtime(mtime);
+    dentry.set_ctime(ctime);
 
     Ok(SyscallReturn::Return(0))
 }
