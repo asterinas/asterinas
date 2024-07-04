@@ -16,14 +16,9 @@ use crate::{
 
 /// A handle to a contiguous range of page frames (physical memory pages).
 ///
-/// The biggest difference between `Segment` and [`FrameVec`] is that
-/// the page frames must be contiguous for `Segment`.
-///
 /// A cloned `Segment` refers to the same page frames as the original.
 /// As the original and cloned instances point to the same physical address,  
 /// they are treated as equal to each other.
-///
-/// [`FrameVec`]: crate::mm::FrameVec
 ///
 /// #Example
 ///

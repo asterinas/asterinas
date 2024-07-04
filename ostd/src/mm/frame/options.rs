@@ -2,7 +2,7 @@
 
 //! Options for allocating frames
 
-use super::{Frame, FrameVec, Segment};
+use super::{Frame, Segment};
 use crate::{
     mm::{
         page::{self, meta::FrameMeta},
@@ -55,7 +55,7 @@ impl FrameAllocOptions {
     }
 
     /// Allocates a collection of page frames according to the given options.
-    pub fn alloc(&self) -> Result<FrameVec> {
+    pub fn alloc(&self) -> Result<Vec<Frame>> {
         let pages = if self.is_contiguous {
             page::allocator::alloc(self.nframes * PAGE_SIZE).ok_or(Error::NoMemory)?
         } else {
@@ -63,7 +63,7 @@ impl FrameAllocOptions {
                 .ok_or(Error::NoMemory)?
                 .into()
         };
-        let frames = FrameVec(pages.into_iter().map(|page| Frame { page }).collect());
+        let frames: Vec<_> = pages.into_iter().map(|page| Frame { page }).collect();
         if !self.uninit {
             for frame in frames.iter() {
                 frame.writer().fill(0);
