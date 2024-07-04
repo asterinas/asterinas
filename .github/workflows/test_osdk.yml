@@ -17,9 +17,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        # asterinas/asterinas:0.6.0 container is the developing container of asterinas,
-        # asterinas/osdk:0.6.0 container is built with the intructions from Asterinas Book
-        container: ['asterinas/asterinas:0.6.0', 'asterinas/osdk:0.6.0']
+        # asterinas/asterinas:0.6.1 container is the developing container of asterinas,
+        # asterinas/osdk:0.6.1 container is built with the intructions from Asterinas Book
+        container: ['asterinas/asterinas:0.6.1', 'asterinas/osdk:0.6.1']
     container: ${{ matrix.container }}
     steps:
       - run: echo "Running in ${{ matrix.container }}"
@@ -28,7 +28,7 @@ jobs:
 
       - name: Lint
         id: lint
-        if: matrix.container == 'asterinas/asterinas:0.6.0'
+        if: matrix.container == 'asterinas/asterinas:0.6.1'
         run: make check_osdk
 
       # Github's actions/checkout@v4 will result in a new user (not root) 
