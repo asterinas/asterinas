@@ -17,7 +17,7 @@ mod offset;
 pub(crate) mod page;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
-mod space;
+pub mod vm_space;
 
 use alloc::vec::Vec;
 use core::{fmt::Debug, ops::Range};
@@ -29,7 +29,7 @@ pub use self::{
     frame::{options::FrameAllocOptions, Frame, FrameVec, FrameVecIter, Segment},
     io::{KernelSpace, UserSpace, VmIo, VmReader, VmWriter},
     page_prop::{CachePolicy, PageFlags, PageProperty},
-    space::{VmMapOptions, VmSpace},
+    vm_space::VmSpace,
 };
 pub(crate) use self::{
     kspace::paddr_to_vaddr, page::meta::init as init_page_meta, page_prop::PrivilegedPageFlags,
