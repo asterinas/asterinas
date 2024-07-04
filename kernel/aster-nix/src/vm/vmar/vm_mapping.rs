@@ -5,7 +5,9 @@
 
 use core::ops::Range;
 
-use ostd::mm::{Frame, FrameVec, PageFlags, VmIo, VmMapOptions, VmSpace};
+use ostd::mm::{
+    vm_space::VmQueryResult, CachePolicy, Frame, PageFlags, PageProperty, VmIo, VmSpace,
+};
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
 use crate::{
@@ -194,22 +196,41 @@ impl VmMapping {
         let write_perms = VmPerms::WRITE;
         self.check_perms(&write_perms)?;
 
-        let mut page_addr =
-            self.map_to_addr() - self.vmo_offset() + page_idx_range.start * PAGE_SIZE;
-        for page_idx in page_idx_range {
-            let parent = self.parent.upgrade().unwrap();
-            let vm_space = parent.vm_space();
+        // We need to make sure the mapping exists.
+        //
+        // Also, if the `VmMapping` has the write permission but the corresponding
+        // PTE is present and is read-only, it would be a copy-on-write page. In
+        // this situation we need to trigger a page fault before writing at the
+        // VMO to guarantee the consistency between VMO and the page table.
+        {
+            let virt_addr =
+                self.map_to_addr() - self.vmo_offset() + page_idx_range.start * PAGE_SIZE;
+            let virt_range = virt_addr..virt_addr + page_idx_range.len() * PAGE_SIZE;
 
-            // The `VmMapping` has the write permission but the corresponding PTE is present and is read-only.
-            // This means this PTE is set to read-only due to the COW mechanism. In this situation we need to trigger a
-            // page fault before writing at the VMO to guarantee the consistency between VMO and the page table.
-            let need_page_fault = vm_space
-                .query(page_addr)?
-                .is_some_and(|prop| !prop.flags.contains(PageFlags::W));
-            if need_page_fault {
-                self.handle_page_fault(page_addr, false, true)?;
+            // FIXME: any sane developer would recommend using `parent.vm_space().cursor(&virt_range)`
+            // to lock the range and check the mapping status. However, this will cause a deadlock because
+            // `Self::handle_page_fault` would like to create a cursor again. The following implementation
+            // indeed introduces a TOCTOU bug.
+            for page_va in virt_range.step_by(PAGE_SIZE) {
+                let parent = self.parent.upgrade().unwrap();
+                let mut cursor = parent
+                    .vm_space()
+                    .cursor(&(page_va..page_va + PAGE_SIZE))
+                    .unwrap();
+                let map_info = cursor.query().unwrap();
+                drop(cursor);
+
+                match map_info {
+                    VmQueryResult::Mapped { va, prop, .. } => {
+                        if !prop.flags.contains(PageFlags::W) {
+                            self.handle_page_fault(va, false, true)?;
+                        }
+                    }
+                    VmQueryResult::NotMapped { va, .. } => {
+                        self.handle_page_fault(va, true, true)?;
+                    }
+                }
             }
-            page_addr += PAGE_SIZE;
         }
 
         self.vmo.write_bytes(vmo_write_offset, buf)?;
@@ -458,7 +479,8 @@ impl VmMappingInner {
         frame: Frame,
         is_readonly: bool,
     ) -> Result<()> {
-        let map_addr = self.page_map_addr(page_idx);
+        let map_va = self.page_map_addr(page_idx);
+        let map_va = map_va..map_va + PAGE_SIZE;
 
         let vm_perms = {
             let mut perms = self.perms;
@@ -468,23 +490,11 @@ impl VmMappingInner {
             }
             perms
         };
+        let map_prop = PageProperty::new(vm_perms.into(), CachePolicy::Writeback);
 
-        let vm_map_options = {
-            let mut options = VmMapOptions::new();
-            options.addr(Some(map_addr));
-            options.flags(vm_perms.into());
+        let mut cursor = vm_space.cursor_mut(&map_va).unwrap();
+        cursor.map(frame, map_prop);
 
-            // After `fork()`, the entire memory space of the parent and child processes is
-            // protected as read-only. Therefore, whether the pages need to be COWed (if the memory
-            // region is private) or not (if the memory region is shared), it is necessary to
-            // overwrite the page table entry to make the page writable again when the parent or
-            // child process first tries to write to the memory region.
-            options.can_overwrite(true);
-
-            options
-        };
-
-        vm_space.map(FrameVec::from_one_frame(frame), &vm_map_options)?;
         self.mapped_pages.insert(page_idx);
         Ok(())
     }
@@ -492,9 +502,10 @@ impl VmMappingInner {
     fn unmap_one_page(&mut self, vm_space: &VmSpace, page_idx: usize) -> Result<()> {
         let map_addr = self.page_map_addr(page_idx);
         let range = map_addr..(map_addr + PAGE_SIZE);
-        if vm_space.query(map_addr)?.is_some() {
-            vm_space.unmap(&range)?;
-        }
+
+        let mut cursor = vm_space.cursor_mut(&range).unwrap();
+        cursor.unmap(PAGE_SIZE);
+
         self.mapped_pages.remove(&page_idx);
         Ok(())
     }
@@ -528,17 +539,8 @@ impl VmMappingInner {
     ) -> Result<()> {
         debug_assert!(range.start % PAGE_SIZE == 0);
         debug_assert!(range.end % PAGE_SIZE == 0);
-        let start_page = (range.start - self.map_to_addr + self.vmo_offset) / PAGE_SIZE;
-        let end_page = (range.end - self.map_to_addr + self.vmo_offset) / PAGE_SIZE;
-        let flags: PageFlags = perms.into();
-        for page_idx in start_page..end_page {
-            let page_addr = self.page_map_addr(page_idx);
-            if vm_space.query(page_addr)?.is_some() {
-                // If the page is already mapped, we will modify page table
-                let page_range = page_addr..(page_addr + PAGE_SIZE);
-                vm_space.protect(&page_range, |p| p.flags = flags)?;
-            }
-        }
+        let mut cursor = vm_space.cursor_mut(&range).unwrap();
+        cursor.protect(range.len(), |p| p.flags = perms.into(), true)?;
         Ok(())
     }
 

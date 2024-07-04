@@ -3,7 +3,7 @@
 use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
 use super::{
-    nr_subpage_per_huge, paddr_to_vaddr,
+    nr_subpage_per_huge,
     page_prop::{PageFlags, PageProperty},
     page_size, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
 };
@@ -23,8 +23,10 @@ pub(in crate::mm) mod boot_pt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageTableError {
-    /// The virtual address range is invalid.
+    /// The provided virtual address range is invalid.
     InvalidVaddrRange(Vaddr, Vaddr),
+    /// The provided virtual address is invalid.
+    InvalidVaddr(Vaddr),
     /// Using virtual address not aligned.
     UnalignedVaddr,
     /// Protecting a mapping that does not exist.
@@ -232,6 +234,7 @@ where
     /// Note that this function may fail reflect an accurate result if there are
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
+    #[cfg(ktest)]
     pub(crate) fn query(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
         // SAFETY: The root node is a valid page table node so the address is valid.
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
@@ -288,13 +291,14 @@ where
 ///
 /// To mitigate this problem, the page table nodes are by default not
 /// actively recycled, until we find an appropriate solution.
+#[cfg(ktest)]
 pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
     root_paddr: Paddr,
     vaddr: Vaddr,
 ) -> Option<(Paddr, PageProperty)> {
-    // We disable preemt here to mimic the MMU walk, which will not be interrupted
-    // then must finish within a given time.
-    let _guard = crate::task::disable_preempt();
+    use super::paddr_to_vaddr;
+
+    let preempt_guard = crate::task::disable_preempt();
 
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {

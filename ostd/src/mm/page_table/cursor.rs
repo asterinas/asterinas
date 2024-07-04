@@ -198,9 +198,9 @@ where
     }
 
     /// Gets the information of the current slot.
-    pub(crate) fn query(&mut self) -> Option<PageTableQueryResult> {
+    pub(crate) fn query(&mut self) -> Result<PageTableQueryResult, PageTableError> {
         if self.va >= self.barrier_va.end {
-            return None;
+            return Err(PageTableError::InvalidVaddr(self.va));
         }
 
         loop {
@@ -209,7 +209,7 @@ where
 
             let pte = self.read_cur_pte();
             if !pte.is_present() {
-                return Some(PageTableQueryResult::NotMapped {
+                return Ok(PageTableQueryResult::NotMapped {
                     va,
                     len: page_size::<C>(level),
                 });
@@ -221,14 +221,14 @@ where
 
             match self.cur_child() {
                 Child::Page(page) => {
-                    return Some(PageTableQueryResult::Mapped {
+                    return Ok(PageTableQueryResult::Mapped {
                         va,
                         page,
                         prop: pte.prop(),
                     });
                 }
                 Child::Untracked(pa) => {
-                    return Some(PageTableQueryResult::MappedUntracked {
+                    return Ok(PageTableQueryResult::MappedUntracked {
                         va,
                         pa,
                         len: page_size::<C>(level),
@@ -246,13 +246,48 @@ where
     ///
     /// If reached the end of a page table node, it leads itself up to the next page of the parent
     /// page if possible.
-    fn move_forward(&mut self) {
+    pub(in crate::mm) fn move_forward(&mut self) {
         let page_size = page_size::<C>(self.level);
         let next_va = self.va.align_down(page_size) + page_size;
         while self.level < self.guard_level && pte_index::<C>(next_va, self.level) == 0 {
             self.level_up();
         }
         self.va = next_va;
+    }
+
+    /// Jumps to the given virtual address.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the address is out of the range where the cursor is required to operate,
+    /// or has bad alignment.
+    pub(crate) fn jump(&mut self, va: Vaddr) {
+        assert!(self.barrier_va.contains(&va));
+        assert!(va % C::BASE_PAGE_SIZE == 0);
+
+        loop {
+            let cur_node_start = self.va & !(page_size::<C>(self.level + 1) - 1);
+            let cur_node_end = cur_node_start + page_size::<C>(self.level + 1);
+            // If the address is within the current node, we can jump directly.
+            if cur_node_start <= va && va < cur_node_end {
+                self.va = va;
+                return;
+            }
+
+            // There is a corner case that the cursor is depleted, sitting at the start of the
+            // next node but the next node is not locked because the parent is not locked.
+            if self.va >= self.barrier_va.end && self.level == self.guard_level {
+                self.va = va;
+                return;
+            }
+
+            debug_assert!(self.level < self.guard_level);
+            self.level_up();
+        }
+    }
+
+    pub fn virt_addr(&self) -> Vaddr {
+        self.va
     }
 
     /// Goes up a level. We release the current page if it has no mappings since the cursor only moves
@@ -327,10 +362,10 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let result = self.query();
-        if result.is_some() {
+        if result.is_ok() {
             self.move_forward();
         }
-        result
+        result.ok()
     }
 }
 
@@ -365,43 +400,26 @@ where
         Cursor::new(pt, va).map(|inner| Self(inner))
     }
 
-    /// Gets the information of the current slot and go to the next slot.
-    ///
-    /// We choose not to implement `Iterator` or `IterMut` for [`CursorMut`]
-    /// because the mutable cursor is indeed not an iterator.
-    pub(crate) fn next(&mut self) -> Option<PageTableQueryResult> {
-        self.0.next()
-    }
-
     /// Jumps to the given virtual address.
+    ///
+    /// This is the same as [`Cursor::jump`].
     ///
     /// # Panics
     ///
     /// This method panics if the address is out of the range where the cursor is required to operate,
     /// or has bad alignment.
     pub(crate) fn jump(&mut self, va: Vaddr) {
-        assert!(self.0.barrier_va.contains(&va));
-        assert!(va % C::BASE_PAGE_SIZE == 0);
+        self.0.jump(va)
+    }
 
-        loop {
-            let cur_node_start = self.0.va & !(page_size::<C>(self.0.level + 1) - 1);
-            let cur_node_end = cur_node_start + page_size::<C>(self.0.level + 1);
-            // If the address is within the current node, we can jump directly.
-            if cur_node_start <= va && va < cur_node_end {
-                self.0.va = va;
-                return;
-            }
+    /// Gets the current virtual address.
+    pub fn virt_addr(&self) -> Vaddr {
+        self.0.virt_addr()
+    }
 
-            // There is a corner case that the cursor is depleted, sitting at the start of the
-            // next node but the next node is not locked because the parent is not locked.
-            if self.0.va >= self.0.barrier_va.end && self.0.level == self.0.guard_level {
-                self.0.va = va;
-                return;
-            }
-
-            debug_assert!(self.0.level < self.0.guard_level);
-            self.0.level_up();
-        }
+    /// Gets the information of the current slot.
+    pub(crate) fn query(&mut self) -> Result<PageTableQueryResult, PageTableError> {
+        self.0.query()
     }
 
     /// Maps the range starting from the current address to a [`DynPage`].
