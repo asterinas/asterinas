@@ -20,7 +20,6 @@ get_blocklist_subtests(){
         BLOCK=$(sed ':a;N;$!ba;s/\n/:/g' $BLOCKLIST_DIR/$1)
     else
         BLOCK=""
-        return 1
     fi
 
     for extra_dir in $EXTRA_BLOCKLISTS_DIRS ; do
