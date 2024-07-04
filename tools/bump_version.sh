@@ -96,7 +96,7 @@ update_tag_version() {
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 ASTER_SRC_DIR=${SCRIPT_DIR}/..
 DOCS_DIR=${ASTER_SRC_DIR}/docs
-OSTD_CARGO_TOML_PATH=${ASTER_SRC_DIR}/Cargo.toml
+OSTD_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 
