@@ -164,6 +164,30 @@ impl Node {
         self.metadata.blocks = (new_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
     }
 
+    pub fn atime(&self) -> Duration {
+        self.metadata.atime
+    }
+
+    pub fn set_atime(&mut self, time: Duration) {
+        self.metadata.atime = time;
+    }
+
+    pub fn mtime(&self) -> Duration {
+        self.metadata.mtime
+    }
+
+    pub fn set_mtime(&mut self, time: Duration) {
+        self.metadata.mtime = time;
+    }
+
+    pub fn ctime(&self) -> Duration {
+        self.metadata.ctime
+    }
+
+    pub fn set_ctime(&mut self, time: Duration) {
+        self.metadata.ctime = time;
+    }
+
     pub fn inc_nlinks(&mut self) {
         self.metadata.nlinks += 1;
     }
@@ -189,7 +213,7 @@ struct InodeMeta {
 
 impl InodeMeta {
     pub fn new(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = now();
         Self {
             size: 0,
             blocks: 0,
@@ -204,7 +228,7 @@ impl InodeMeta {
     }
 
     pub fn new_dir(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
-        let now = RealTimeCoarseClock::get().read_time();
+        let now = now();
         Self {
             size: 2,
             blocks: 1,
@@ -483,24 +507,30 @@ impl Inode for RamInode {
     }
 
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        let self_inode = self.node.read();
+        let read_len = {
+            let self_inode = self.node.read();
 
-        if let Some(device) = self_inode.inner.as_device() {
-            return device.read(buf);
-        }
+            if let Some(device) = self_inode.inner.as_device() {
+                device.read(buf)?
+            } else {
+                let Some(page_cache) = self_inode.inner.as_file() else {
+                    return_errno_with_message!(Errno::EISDIR, "read is not supported");
+                };
+                let (offset, read_len) = {
+                    let file_size = self_inode.metadata.size;
+                    let start = file_size.min(offset);
+                    let end = file_size.min(offset + buf.len());
+                    (start, end - start)
+                };
+                page_cache
+                    .pages()
+                    .read_bytes(offset, &mut buf[..read_len])?;
+                read_len
+            }
+        };
 
-        let Some(page_cache) = self_inode.inner.as_file() else {
-            return_errno_with_message!(Errno::EISDIR, "read is not supported");
-        };
-        let (offset, read_len) = {
-            let file_size = self_inode.metadata.size;
-            let start = file_size.min(offset);
-            let end = file_size.min(offset + buf.len());
-            (start, end - start)
-        };
-        page_cache
-            .pages()
-            .read_bytes(offset, &mut buf[..read_len])?;
+        self.set_atime(now());
+
         Ok(read_len)
     }
 
@@ -512,7 +542,12 @@ impl Inode for RamInode {
         let self_inode = self.node.upread();
 
         if let Some(device) = self_inode.inner.as_device() {
-            return device.write(buf);
+            let device_written_len = device.write(buf)?;
+            let mut self_inode = self_inode.upgrade();
+            let now = now();
+            self_inode.set_mtime(now);
+            self_inode.set_ctime(now);
+            return Ok(device_written_len);
         }
 
         let Some(page_cache) = self_inode.inner.as_file() else {
@@ -525,11 +560,15 @@ impl Inode for RamInode {
             page_cache.pages().resize(new_size)?;
         }
         page_cache.pages().write_bytes(offset, buf)?;
+
+        let mut self_inode = self_inode.upgrade();
+        let now = now();
+        self_inode.set_mtime(now);
+        self_inode.set_ctime(now);
         if should_expand_size {
-            // Turn the read guard into a write guard without releasing the lock.
-            let mut self_inode = self_inode.upgrade();
             self_inode.resize(new_size);
         }
+
         Ok(buf.len())
     }
 
@@ -554,6 +593,10 @@ impl Inode for RamInode {
 
         let mut self_inode = self_inode.upgrade();
         self_inode.resize(new_size);
+        let now = now();
+        self_inode.set_mtime(now);
+        self_inode.set_ctime(now);
+
         let self_inode = self_inode.downgrade();
         let page_cache = self_inode.inner.as_file().unwrap();
         page_cache.pages().resize(new_size)?;
@@ -562,27 +605,27 @@ impl Inode for RamInode {
     }
 
     fn atime(&self) -> Duration {
-        self.node.read().metadata.atime
+        self.node.read().atime()
     }
 
     fn set_atime(&self, time: Duration) {
-        self.node.write().metadata.atime = time;
+        self.node.write().set_atime(time)
     }
 
     fn mtime(&self) -> Duration {
-        self.node.read().metadata.mtime
+        self.node.read().mtime()
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.node.write().metadata.mtime = time;
+        self.node.write().set_mtime(time)
     }
 
     fn ctime(&self) -> Duration {
-        self.node.read().metadata.ctime
+        self.node.read().ctime()
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.node.write().metadata.ctime = time;
+        self.node.write().set_ctime(time)
     }
 
     fn ino(&self) -> u64 {
@@ -598,7 +641,9 @@ impl Inode for RamInode {
     }
 
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
-        self.node.write().metadata.mode = mode;
+        let mut self_inode = self.node.write();
+        self_inode.metadata.mode = mode;
+        self_inode.set_ctime(now());
         Ok(())
     }
 
@@ -607,7 +652,9 @@ impl Inode for RamInode {
     }
 
     fn set_owner(&self, uid: Uid) -> Result<()> {
-        self.node.write().metadata.uid = uid;
+        let mut self_inode = self.node.write();
+        self_inode.metadata.uid = uid;
+        self_inode.set_ctime(now());
         Ok(())
     }
 
@@ -616,7 +663,9 @@ impl Inode for RamInode {
     }
 
     fn set_group(&self, gid: Gid) -> Result<()> {
-        self.node.write().metadata.gid = gid;
+        let mut self_inode = self.node.write();
+        self_inode.metadata.gid = gid;
+        self_inode.set_ctime(now());
         Ok(())
     }
 
@@ -696,6 +745,10 @@ impl Inode for RamInode {
             .unwrap()
             .append_entry(name, new_inode.clone());
         self_inode.inc_size();
+        let now = now();
+        self_inode.set_mtime(now);
+        self_inode.set_ctime(now);
+
         Ok(new_inode)
     }
 
@@ -704,12 +757,16 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let self_inode = self.node.read();
-        let cnt = self_inode
+        let cnt = self
+            .node
+            .read()
             .inner
             .as_direntry()
             .unwrap()
             .visit_entry(offset, visitor)?;
+
+        self.set_atime(now());
+
         Ok(cnt)
     }
 
@@ -734,8 +791,14 @@ impl Inode for RamInode {
         }
         self_dir.append_entry(name, old.this.upgrade().unwrap());
         self_inode.inc_size();
+        let now = now();
+        self_inode.set_mtime(now);
+        self_inode.set_ctime(now);
         drop(self_inode);
-        old.node.write().inc_nlinks();
+
+        let mut old_inode = old.node.write();
+        old_inode.inc_nlinks();
+        old_inode.set_ctime(now);
 
         Ok(())
     }
@@ -761,6 +824,11 @@ impl Inode for RamInode {
         self_dir.remove_entry(idx);
         self_inode.dec_size();
         target_inode.dec_nlinks();
+        let now = now();
+        self_inode.set_mtime(now);
+        self_inode.set_ctime(now);
+        target_inode.set_ctime(now);
+
         Ok(())
     }
 
@@ -806,8 +874,12 @@ impl Inode for RamInode {
         self_dir.remove_entry(idx);
         self_inode.dec_size();
         self_inode.dec_nlinks();
+        let now = now();
+        self_inode.set_mtime(now);
+        self_inode.set_ctime(now);
         target_inode.dec_nlinks();
         target_inode.dec_nlinks();
+
         Ok(())
     }
 
@@ -886,8 +958,19 @@ impl Inode for RamInode {
                 if is_dir {
                     self_inode.dec_nlinks();
                 }
+                let now = now();
+                self_inode.set_mtime(now);
+                self_inode.set_ctime(now);
+                drop(self_inode);
+                dst_inode.set_ctime(now);
+                src_inode.set_ctime(now);
             } else {
                 self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+                let now = now();
+                self_inode.set_mtime(now);
+                self_inode.set_ctime(now);
+                drop(self_inode);
+                src_inode.set_ctime(now);
             }
         }
         // Or rename across different directories
@@ -919,6 +1002,15 @@ impl Inode for RamInode {
                 if is_dir {
                     self_inode.dec_nlinks();
                 }
+                let now = now();
+                self_inode.set_mtime(now);
+                self_inode.set_ctime(now);
+                target_inode.set_mtime(now);
+                target_inode.set_ctime(now);
+                drop(self_inode);
+                drop(target_inode);
+                dst_inode.set_ctime(now);
+                src_inode.set_ctime(now);
             } else {
                 self_dir.remove_entry(src_idx);
                 target_dir.append_entry(new_name, src_inode.clone());
@@ -928,9 +1020,16 @@ impl Inode for RamInode {
                     self_inode.dec_nlinks();
                     target_inode.inc_nlinks();
                 }
+                let now = now();
+                self_inode.set_mtime(now);
+                self_inode.set_ctime(now);
+                target_inode.set_mtime(now);
+                target_inode.set_ctime(now);
+                drop(self_inode);
+                drop(target_inode);
+                src_inode.set_ctime(now);
             }
-            drop(self_inode);
-            drop(target_inode);
+
             if is_dir {
                 src_inode
                     .node
@@ -1027,4 +1126,8 @@ fn write_lock_two_inodes<'a>(
         let this = this.node.write();
         (this, other)
     }
+}
+
+fn now() -> Duration {
+    RealTimeCoarseClock::get().read_time()
 }
