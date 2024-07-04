@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// A trait that enables reading/writing data from/to a VM object,
-/// e.g., [`VmSpace`], [`FrameVec`], and [`Frame`].
+/// e.g., [`Segment`], [`Vec<Frame>`] and [`Frame`].
 ///
 /// # Concurrency
 ///
@@ -27,8 +27,7 @@ use crate::{
 /// desire predictability or atomicity, the users should add extra mechanism
 /// for such properties.
 ///
-/// [`VmSpace`]: crate::mm::VmSpace
-/// [`FrameVec`]: crate::mm::FrameVec
+/// [`Segment`]: crate::mm::Segment
 /// [`Frame`]: crate::mm::Frame
 pub trait VmIo: Send + Sync {
     /// Reads a specified number of bytes at a specified offset into a given buffer.

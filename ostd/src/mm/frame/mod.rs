@@ -8,13 +8,11 @@
 //! frames. Frames, with all the properties of pages, can additionally be safely
 //! read and written by the kernel or the user.
 
-pub mod frame_vec;
 pub mod options;
 pub mod segment;
 
 use core::mem::ManuallyDrop;
 
-pub use frame_vec::{FrameVec, FrameVecIter};
 pub use segment::Segment;
 
 use super::page::{
@@ -151,6 +149,48 @@ impl VmIo for Frame {
         }
         let len = self.writer().skip(offset).write(&mut buf.into());
         debug_assert!(len == buf.len());
+        Ok(())
+    }
+}
+
+impl VmIo for alloc::vec::Vec<Frame> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > self.len() * PAGE_SIZE {
+            return Err(Error::InvalidArgs);
+        }
+
+        let num_skip_pages = offset / PAGE_SIZE;
+        let mut start = offset % PAGE_SIZE;
+        let mut buf_writer: VmWriter = buf.into();
+        for frame in self.iter().skip(num_skip_pages) {
+            let read_len = frame.reader().skip(start).read(&mut buf_writer);
+            if read_len == 0 {
+                break;
+            }
+            start = 0;
+        }
+        Ok(())
+    }
+
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > self.len() * PAGE_SIZE {
+            return Err(Error::InvalidArgs);
+        }
+
+        let num_skip_pages = offset / PAGE_SIZE;
+        let mut start = offset % PAGE_SIZE;
+        let mut buf_reader: VmReader = buf.into();
+        for frame in self.iter().skip(num_skip_pages) {
+            let write_len = frame.writer().skip(start).write(&mut buf_reader);
+            if write_len == 0 {
+                break;
+            }
+            start = 0;
+        }
         Ok(())
     }
 }
