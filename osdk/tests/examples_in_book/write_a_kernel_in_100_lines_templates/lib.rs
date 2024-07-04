@@ -13,7 +13,8 @@ use alloc::vec;
 use ostd::arch::qemu::{exit_qemu, QemuExitCode};
 use ostd::cpu::UserContext;
 use ostd::mm::{
-    FrameAllocOptions, PageFlags, Vaddr, VmIo, VmMapOptions, VmSpace, VmWriter, PAGE_SIZE,
+    CachePolicy, FrameAllocOptions, PageFlags, PageProperty, Vaddr, VmIo, VmSpace, VmWriter,
+    PAGE_SIZE,
 };
 use ostd::prelude::*;
 use ostd::task::{Task, TaskOptions};
@@ -32,8 +33,8 @@ pub fn main() {
 }
 
 fn create_user_space(program: &[u8]) -> UserSpace {
+    let nframes = program.len().align_up(PAGE_SIZE) / PAGE_SIZE;
     let user_pages = {
-        let nframes = program.len().align_up(PAGE_SIZE) / PAGE_SIZE;
         let vm_frames = FrameAllocOptions::new(nframes).alloc().unwrap();
         // Phyiscal memory pages can be only accessed
         // via the Frame abstraction.
@@ -45,11 +46,15 @@ fn create_user_space(program: &[u8]) -> UserSpace {
 
         // The page table of the user space can be
         // created and manipulated safely through
-        // the VmSpace abstraction.
+        // the `VmSpace` abstraction.
         let vm_space = VmSpace::new();
-        let mut options = VmMapOptions::new();
-        options.addr(Some(MAP_ADDR)).flags(PageFlags::RWX);
-        vm_space.map(user_pages, &options).unwrap();
+        let mut cursor = vm_space
+            .cursor_mut(&(MAP_ADDR..MAP_ADDR + nframes * PAGE_SIZE))
+            .unwrap();
+        let map_prop = PageProperty::new(PageFlags::RWX, CachePolicy::Writeback);
+        for frame in user_pages {
+            cursor.map(frame, map_prop);
+        }
         Arc::new(vm_space)
     };
     let user_cpu_state = {
