@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    ops::BitXor,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use connected::ConnectedStream;
 use connecting::ConnectingStream;
@@ -14,7 +17,10 @@ use util::{TcpOptionSet, DEFAULT_MAXSEG};
 use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::{IoEvents, Observer},
-    fs::{file_handle::FileLike, utils::StatusFlags},
+    fs::{
+        file_handle::FileLike,
+        utils::{IoctlCmd, StatusFlags},
+    },
     match_sock_option_mut, match_sock_option_ref,
     net::{
         poll_ifaces,
@@ -35,7 +41,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{Pollee, Poller},
-    util::IoVec,
+    util::{read_val_from_user, IoVec},
 };
 
 mod connected;
@@ -376,7 +382,34 @@ impl FileLike for StreamSocket {
         self.pollee.poll(mask, poller)
     }
 
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        match cmd {
+            IoctlCmd::FIONBIO => {
+                let is_nonblocking = read_val_from_user::<i32>(arg)? != 0;
+                let mut flags = self.status_flags();
+                flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
+                self.set_status_flags(flags)?;
+                Ok(0)
+            }
+            IoctlCmd::FIOASYNC => {
+                let is_async = read_val_from_user::<i32>(arg)? != 0;
+                let mut flags = self.status_flags();
+                // Did FASYNC state change ?
+                if flags.contains(StatusFlags::O_ASYNC).bitxor(is_async) {
+                    // TODO: send `SIGIO` signal to a process or a process group when
+                    // I/O is possible, user should call `fcntl(fd, F_SETOWN, pid)`
+                    // first to let the kernel know just whom to notify.
+                    flags.set(StatusFlags::O_ASYNC, is_async);
+                    self.set_status_flags(flags)?;
+                }
+                Ok(0)
+            }
+            _ => todo!(),
+        }
+    }
+
     fn status_flags(&self) -> StatusFlags {
+        // TODO: when we fully support O_ASYNC, return the flag
         if self.is_nonblocking() {
             StatusFlags::O_NONBLOCK
         } else {

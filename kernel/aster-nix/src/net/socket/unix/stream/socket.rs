@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ops::BitXor;
+
 use super::{
     connected::Connected,
     endpoint::Endpoint,
@@ -12,7 +14,7 @@ use crate::{
         file_handle::FileLike,
         fs_resolver::FsPath,
         path::Dentry,
-        utils::{InodeType, StatusFlags},
+        utils::{InodeType, IoctlCmd, StatusFlags},
     },
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
@@ -23,19 +25,28 @@ use crate::{
         SockShutdownCmd, Socket,
     },
     prelude::*,
-    process::signal::Poller,
-    util::IoVec,
+    process::{process_table, signal::Poller, Pid, Uid},
+    util::{read_val_from_user, IoVec},
 };
 
-pub struct UnixStreamSocket(RwLock<State>);
+pub struct UnixStreamSocket {
+    state: RwLock<State>,
+    owner: RwLock<Pid>,
+}
 
 impl UnixStreamSocket {
     pub(super) fn new_init(init: Init) -> Self {
-        Self(RwLock::new(State::Init(Arc::new(init))))
+        Self {
+            state: RwLock::new(State::Init(Arc::new(init))),
+            owner: RwLock::new(current!().pid()),
+        }
     }
 
     pub(super) fn new_connected(connected: Connected) -> Self {
-        Self(RwLock::new(State::Connected(Arc::new(connected))))
+        Self {
+            state: RwLock::new(State::Connected(Arc::new(connected))),
+            owner: RwLock::new(current!().pid()),
+        }
     }
 }
 
@@ -65,7 +76,7 @@ impl UnixStreamSocket {
     }
 
     fn bound_addr(&self) -> Option<UnixSocketAddrBound> {
-        let status = self.0.read();
+        let status = self.state.read();
         match &*status {
             State::Init(init) => init.addr(),
             State::Listen(listen) => Some(listen.addr().clone()),
@@ -85,7 +96,7 @@ impl UnixStreamSocket {
     }
 
     fn send(&self, buf: &[u8], _flags: SendRecvFlags) -> Result<usize> {
-        let connected = match &*self.0.read() {
+        let connected = match &*self.state.read() {
             State::Connected(connected) => connected.clone(),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
         };
@@ -94,7 +105,7 @@ impl UnixStreamSocket {
     }
 
     fn recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<usize> {
-        let connected = match &*self.0.read() {
+        let connected = match &*self.state.read() {
             State::Connected(connected) => connected.clone(),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
         };
@@ -121,7 +132,7 @@ impl FileLike for UnixStreamSocket {
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
-        let inner = self.0.read();
+        let inner = self.state.read();
         match &*inner {
             State::Init(init) => init.poll(mask, poller),
             State::Listen(listen) => listen.poll(mask, poller),
@@ -129,14 +140,59 @@ impl FileLike for UnixStreamSocket {
         }
     }
 
+    fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
+        match cmd {
+            IoctlCmd::FIONBIO => {
+                let is_nonblocking = read_val_from_user::<i32>(arg)? != 0;
+                let mut flags = self.status_flags();
+                flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
+                self.set_status_flags(flags)?;
+                Ok(0)
+            }
+            IoctlCmd::FIOASYNC => {
+                let is_async = read_val_from_user::<i32>(arg)? != 0;
+                let mut flags = self.status_flags();
+                // Did FASYNC state change ?
+                if flags.contains(StatusFlags::O_ASYNC).bitxor(is_async) {
+                    // TODO: send `SIGIO` signal to a process or a process group when
+                    // I/O is possible, user should call `fcntl(fd, F_SETOWN, pid)`
+                    // first to let the kernel know just whom to notify.
+                    flags.set(StatusFlags::O_ASYNC, is_async);
+                    self.set_status_flags(flags)?;
+                }
+                Ok(0)
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn owner(&self) -> Result<Uid> {
+        let pid = *self.owner.read();
+        Ok(Uid::new(pid))
+    }
+
+    fn set_owner(&self, pid: Uid) -> Result<()> {
+        // This method sets the process ID or process group ID that will
+        // receive `SIGIO` and `SIGURG` signals for events on the file
+        // descriptor.
+        let _ = process_table::get_process(pid.as_u32()).ok_or(Error::with_message(
+            Errno::ESRCH,
+            "cannot set_owner with an invalid pid",
+        ))?;
+
+        *self.owner.write() = pid.as_u32();
+        Ok(())
+    }
+
     fn status_flags(&self) -> StatusFlags {
-        let inner = self.0.read();
+        let inner = self.state.read();
         let is_nonblocking = match &*inner {
             State::Init(init) => init.is_nonblocking(),
             State::Listen(listen) => listen.is_nonblocking(),
             State::Connected(connected) => connected.is_nonblocking(),
         };
 
+        // TODO: when we fully support O_ASYNC, return the flag
         if is_nonblocking {
             StatusFlags::O_NONBLOCK
         } else {
@@ -150,7 +206,7 @@ impl FileLike for UnixStreamSocket {
             supported_flags.contains(StatusFlags::O_NONBLOCK)
         };
 
-        let mut inner = self.0.write();
+        let mut inner = self.state.write();
         match &mut *inner {
             State::Init(init) => init.set_nonblocking(is_nonblocking),
             State::Listen(listen) => listen.set_nonblocking(is_nonblocking),
@@ -164,7 +220,7 @@ impl Socket for UnixStreamSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let addr = UnixSocketAddr::try_from(socket_addr)?;
 
-        let init = match &*self.0.read() {
+        let init = match &*self.state.read() {
             State::Init(init) => init.clone(),
             _ => return_errno_with_message!(
                 Errno::EINVAL,
@@ -190,7 +246,7 @@ impl Socket for UnixStreamSocket {
             }
         };
 
-        let init = match &*self.0.read() {
+        let init = match &*self.state.read() {
             State::Init(init) => init.clone(),
             State::Listen(_) => return_errno_with_message!(Errno::EINVAL, "the socket is listened"),
             State::Connected(_) => {
@@ -200,12 +256,12 @@ impl Socket for UnixStreamSocket {
 
         let connected = init.connect(&remote_addr)?;
 
-        *self.0.write() = State::Connected(Arc::new(connected));
+        *self.state.write() = State::Connected(Arc::new(connected));
         Ok(())
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
-        let init = match &*self.0.read() {
+        let init = match &*self.state.read() {
             State::Init(init) => init.clone(),
             State::Listen(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is already listening")
@@ -221,12 +277,12 @@ impl Socket for UnixStreamSocket {
         ))?;
 
         let listener = Listener::new(addr.clone(), backlog, init.is_nonblocking())?;
-        *self.0.write() = State::Listen(Arc::new(listener));
+        *self.state.write() = State::Listen(Arc::new(listener));
         Ok(())
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        let listen = match &*self.0.read() {
+        let listen = match &*self.state.read() {
             State::Listen(listen) => listen.clone(),
             _ => return_errno_with_message!(Errno::EINVAL, "the socket is not listening"),
         };
@@ -235,7 +291,7 @@ impl Socket for UnixStreamSocket {
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
-        let connected = match &*self.0.read() {
+        let connected = match &*self.state.read() {
             State::Connected(connected) => connected.clone(),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socked is not connected"),
         };
@@ -244,7 +300,7 @@ impl Socket for UnixStreamSocket {
     }
 
     fn addr(&self) -> Result<SocketAddr> {
-        let addr = match &*self.0.read() {
+        let addr = match &*self.state.read() {
             State::Init(init) => init.addr(),
             State::Listen(listen) => Some(listen.addr().clone()),
             State::Connected(connected) => connected.addr(),
@@ -258,7 +314,7 @@ impl Socket for UnixStreamSocket {
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
-        let connected = match &*self.0.read() {
+        let connected = match &*self.state.read() {
             State::Connected(connected) => connected.clone(),
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
         };
@@ -318,7 +374,7 @@ impl Drop for UnixStreamSocket {
             return;
         };
 
-        if let State::Listen(_) = &*self.0.read() {
+        if let State::Listen(_) = &*self.state.read() {
             unregister_backlog(&bound_addr);
         }
     }
