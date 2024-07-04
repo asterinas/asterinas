@@ -14,7 +14,6 @@ jobs:
         benchmark: 
           - sysbench-cpu
           - sysbench-thread
-          - getpid
           - lmbench-getpid
           - lmbench-fork
           - lmbench-signal
