@@ -1,0 +1,17 @@
+# triagebot.toml
+
+[assign]
+
+[relabel]
+# Allow triagebot to label tags starting with C- and O-
+allow-unauthenticated = [
+    "C-*", # any C- prefixed label will be allowed for anyone
+    "!C-good-first-issue", # but not C-good-first-issue (order does not matter)
+    "O-*", # any O- prefixed label will be allowed for anyone
+    "S-stale"
+]
+
+[mentions.".github/ISSUE_TEMPLATE"]
+cc = ["@grief8"]
+
+[shortcut]
