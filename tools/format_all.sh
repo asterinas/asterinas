@@ -29,6 +29,14 @@ else
     cargo fmt
 fi
 
+# Format the 100-line kernel demo as well
+KERNEL_DEMO_FILE="$WORKSPACE_ROOT/osdk/tests/examples_in_book/write_a_kernel_in_100_lines_templates/lib.rs"
+if [ "$CHECK_MODE" = true ]; then
+    cargo fmt --check -- $KERNEL_DEMO_FILE
+else
+    cargo fmt -- $KERNEL_DEMO_FILE
+fi
+
 for CRATE in $EXCLUDED_CRATES; do
     CRATE_DIR="$WORKSPACE_ROOT/$CRATE"
 
