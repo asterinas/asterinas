@@ -92,7 +92,7 @@ where
 
     /// Creates a copy of the handle.
     pub(super) fn clone_shallow(&self) -> Self {
-        self.inc_ref();
+        self.inc_ref_count();
 
         Self {
             raw: self.raw,
@@ -127,7 +127,7 @@ where
         }
 
         // Increment the reference count of the current page table.
-        self.inc_ref();
+        self.inc_ref_count();
 
         // Restore and drop the last activated page table.
         drop(Self {
@@ -143,16 +143,16 @@ where
     pub(super) unsafe fn first_activate(&self) {
         use crate::{arch::mm::activate_page_table, mm::CachePolicy};
 
-        self.inc_ref();
+        self.inc_ref_count();
 
         activate_page_table(self.raw, CachePolicy::Writeback);
     }
 
-    fn inc_ref(&self) {
+    fn inc_ref_count(&self) {
         // SAFETY: We have a reference count to the page and can safely increase the reference
         // count by one more.
         unsafe {
-            Page::<PageTablePageMeta<E, C>>::inc_ref(self.paddr());
+            Page::<PageTablePageMeta<E, C>>::inc_ref_count(self.paddr());
         }
     }
 }
@@ -267,7 +267,7 @@ where
                 // SAFETY: We have a reference count to the page and can safely increase the reference
                 // count by one more.
                 unsafe {
-                    Page::<PageTablePageMeta<E, C>>::inc_ref(paddr);
+                    Page::<PageTablePageMeta<E, C>>::inc_ref_count(paddr);
                 }
                 Child::PageTable(RawPageTableNode {
                     raw: paddr,
@@ -277,7 +277,7 @@ where
                 // SAFETY: We have a reference count to the page and can safely increase the reference
                 // count by one more.
                 unsafe {
-                    DynPage::inc_ref(paddr);
+                    DynPage::inc_ref_count(paddr);
                 }
                 Child::Page(unsafe { DynPage::from_raw(paddr) })
             } else {

@@ -122,7 +122,7 @@ impl<M: PageMeta> Page<M> {
     ///
     /// The physical address must represent a valid page and the caller must already hold one
     /// reference count.
-    pub(in crate::mm) unsafe fn inc_ref(paddr: Paddr) {
+    pub(in crate::mm) unsafe fn inc_ref_count(paddr: Paddr) {
         let page = unsafe { ManuallyDrop::new(Self::from_raw(paddr)) };
         let _page = page.clone();
     }
@@ -228,7 +228,7 @@ impl DynPage {
     ///
     /// The physical address must represent a valid page and the caller must already hold one
     /// reference count.
-    pub(in crate::mm) unsafe fn inc_ref(paddr: Paddr) {
+    pub(in crate::mm) unsafe fn inc_ref_count(paddr: Paddr) {
         let page = unsafe { ManuallyDrop::new(Self::from_raw(paddr)) };
         let _page = page.clone();
     }
