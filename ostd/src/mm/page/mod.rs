@@ -153,14 +153,14 @@ impl<M: PageMeta> Page<M> {
         unsafe { &*(self.ptr as *const M) }
     }
 
-    fn get_ref_count(&self) -> &AtomicU32 {
+    fn ref_count(&self) -> &AtomicU32 {
         unsafe { &(*self.ptr).ref_count }
     }
 }
 
 impl<M: PageMeta> Clone for Page<M> {
     fn clone(&self) -> Self {
-        self.get_ref_count().fetch_add(1, Ordering::Relaxed);
+        self.ref_count().fetch_add(1, Ordering::Relaxed);
         Self {
             ptr: self.ptr,
             _marker: PhantomData,
@@ -170,7 +170,7 @@ impl<M: PageMeta> Clone for Page<M> {
 
 impl<M: PageMeta> Drop for Page<M> {
     fn drop(&mut self) {
-        let last_ref_cnt = self.get_ref_count().fetch_sub(1, Ordering::Release);
+        let last_ref_cnt = self.ref_count().fetch_sub(1, Ordering::Release);
         debug_assert!(last_ref_cnt > 0);
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
@@ -256,7 +256,7 @@ impl DynPage {
         num::FromPrimitive::from_u8(usage_raw).unwrap()
     }
 
-    fn get_ref_count(&self) -> &AtomicU32 {
+    fn ref_count(&self) -> &AtomicU32 {
         unsafe { &(*self.ptr).ref_count }
     }
 }
@@ -298,14 +298,14 @@ impl From<Frame> for DynPage {
 
 impl Clone for DynPage {
     fn clone(&self) -> Self {
-        self.get_ref_count().fetch_add(1, Ordering::Relaxed);
+        self.ref_count().fetch_add(1, Ordering::Relaxed);
         Self { ptr: self.ptr }
     }
 }
 
 impl Drop for DynPage {
     fn drop(&mut self) {
-        let last_ref_cnt = self.get_ref_count().fetch_sub(1, Ordering::Release);
+        let last_ref_cnt = self.ref_count().fetch_sub(1, Ordering::Release);
         debug_assert!(last_ref_cnt > 0);
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
