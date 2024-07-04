@@ -1,5 +1,0 @@
-{
-    "alert_threshold": "125%",
-    "pattern": "Syscall average latency:",
-    "field": "4"
-}
