@@ -32,6 +32,7 @@ TESTS ?= \
 	pty_test \
 	read_test \
 	readv_test \
+	stat_times_test \
 	write_test \
 	utimes_test \
 	# The end of the list
