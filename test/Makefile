@@ -4,6 +4,7 @@ VDSO_DIR := /root/dependency
 VDSO_LIB := $(VDSO_DIR)/vdso64.so
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
+ATOMIC_WGET := $(CUR_DIR)/../tools/atomic_wget.sh
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
 BENCHMARK_ENTRYPOINT := $(CUR_DIR)/benchmark/benchmark_entrypoint.sh
@@ -51,8 +52,8 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 
 $(VDSO_LIB): | $(VDSO_DIR)
 	@# TODO: use a custom compiled vdso.so file in the future.
-	@wget https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so -O $@ 
-
+	$(ATOMIC_WGET) $@ "https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so"
+	
 $(VDSO_DIR):
 	@mkdir -p $@
 	

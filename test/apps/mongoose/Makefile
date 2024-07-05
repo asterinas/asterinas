@@ -2,6 +2,7 @@
 
 CUR_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 BUILD_DIR := $(CUR_DIR)/../../build/initramfs/test/network
+ATOMIC_WGET := $(CUR_DIR)/../../../tools/atomic_wget.sh
 MONGOOSE_DIR := $(CUR_DIR)
 MONGOOSE_C := $(MONGOOSE_DIR)/mongoose.c
 MONGOOSE_H := $(MONGOOSE_DIR)/mongoose.h
@@ -28,7 +29,7 @@ $(MONGOOSE_O): $(MONGOOSE_FILES)
 	$(CC) -c $(MONGOOSE_C) $(CFLAGS) -o $@
 
 $(MONGOOSE_FILES): | $(MONGOOSE_DIR)
-	wget -O $@ "https://raw.githubusercontent.com/cesanta/mongoose/7.13/$(notdir $@)"
+	$(ATOMIC_WGET) $@ "https://raw.githubusercontent.com/cesanta/mongoose/7.13/$(notdir $@)"  
 
 $(BUILD_DIR) $(MONGOOSE_DIR):
 	@mkdir -p $@
