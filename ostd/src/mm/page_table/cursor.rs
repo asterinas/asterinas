@@ -76,7 +76,7 @@ use super::{
 use crate::mm::{page::DynPage, Paddr, PageProperty, Vaddr};
 
 #[derive(Clone, Debug)]
-pub(crate) enum PageTableQueryResult {
+pub enum PageTableQueryResult {
     NotMapped {
         va: Vaddr,
         len: usize,
@@ -105,7 +105,7 @@ pub(crate) enum PageTableQueryResult {
 /// simulate the recursion, and adpot a page table locking protocol to
 /// provide concurrency.
 #[derive(Debug)]
-pub(crate) struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
+pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -140,10 +140,7 @@ where
     ///
     /// Note that this function does not ensure exclusive access to the claimed
     /// virtual address range. The accesses using this cursor may block or fail.
-    pub(crate) fn new(
-        pt: &'a PageTable<M, E, C>,
-        va: &Range<Vaddr>,
-    ) -> Result<Self, PageTableError> {
+    pub fn new(pt: &'a PageTable<M, E, C>, va: &Range<Vaddr>) -> Result<Self, PageTableError> {
         if !M::covers(va) {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
         }
@@ -198,7 +195,7 @@ where
     }
 
     /// Gets the information of the current slot.
-    pub(crate) fn query(&mut self) -> Result<PageTableQueryResult, PageTableError> {
+    pub fn query(&mut self) -> Result<PageTableQueryResult, PageTableError> {
         if self.va >= self.barrier_va.end {
             return Err(PageTableError::InvalidVaddr(self.va));
         }
@@ -261,7 +258,7 @@ where
     ///
     /// This method panics if the address is out of the range where the cursor is required to operate,
     /// or has bad alignment.
-    pub(crate) fn jump(&mut self, va: Vaddr) {
+    pub fn jump(&mut self, va: Vaddr) {
         assert!(self.barrier_va.contains(&va));
         assert!(va % C::BASE_PAGE_SIZE == 0);
 
@@ -374,7 +371,7 @@ where
 /// Also, it has all the capabilities of a [`Cursor`]. A virtual address range
 /// in a page table can only be accessed by one cursor whether it is mutable or not.
 #[derive(Debug)]
-pub(crate) struct CursorMut<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>(
+pub struct CursorMut<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>(
     Cursor<'a, M, E, C>,
 )
 where
@@ -408,7 +405,7 @@ where
     ///
     /// This method panics if the address is out of the range where the cursor is required to operate,
     /// or has bad alignment.
-    pub(crate) fn jump(&mut self, va: Vaddr) {
+    pub fn jump(&mut self, va: Vaddr) {
         self.0.jump(va)
     }
 
@@ -418,7 +415,7 @@ where
     }
 
     /// Gets the information of the current slot.
-    pub(crate) fn query(&mut self) -> Result<PageTableQueryResult, PageTableError> {
+    pub fn query(&mut self) -> Result<PageTableQueryResult, PageTableError> {
         self.0.query()
     }
 
@@ -435,7 +432,7 @@ where
     ///
     /// The caller should ensure that the virtual range being mapped does
     /// not affect kernel's memory safety.
-    pub(crate) unsafe fn map(&mut self, page: DynPage, prop: PageProperty) {
+    pub unsafe fn map(&mut self, page: DynPage, prop: PageProperty) {
         let end = self.0.va + page.size();
         assert!(end <= self.0.barrier_va.end);
         debug_assert!(self.0.in_tracked_range());
@@ -490,7 +487,7 @@ where
     ///  - the range being mapped does not affect kernel's memory safety;
     ///  - the physical address to be mapped is valid and safe to use;
     ///  - it is allowed to map untracked pages in this virtual address range.
-    pub(crate) unsafe fn map_pa(&mut self, pa: &Range<Paddr>, prop: PageProperty) {
+    pub unsafe fn map_pa(&mut self, pa: &Range<Paddr>, prop: PageProperty) {
         let end = self.0.va + pa.len();
         let mut pa = pa.start;
         assert!(end <= self.0.barrier_va.end);
@@ -540,7 +537,7 @@ where
     /// This function will panic if:
     ///  - the range to be unmapped is out of the range where the cursor is required to operate;
     ///  - the range covers only a part of a page.
-    pub(crate) unsafe fn unmap(&mut self, len: usize) {
+    pub unsafe fn unmap(&mut self, len: usize) {
         let end = self.0.va + len;
         assert!(end <= self.0.barrier_va.end);
         assert!(end % C::BASE_PAGE_SIZE == 0);
@@ -597,7 +594,7 @@ where
     ///
     /// This function will panic if:
     ///  - the range to be protected is out of the range where the cursor is required to operate.
-    pub(crate) unsafe fn protect(
+    pub unsafe fn protect(
         &mut self,
         len: usize,
         mut op: impl FnMut(&mut PageProperty),
