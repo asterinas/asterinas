@@ -1,8 +1,5 @@
 # triagebot.toml
 
-[bot]
-name = "asterbot"
-
 [assign]
 # The issue assignment commands allows any user to assign themselves to a GitHub issue.
 # Restrict to teams later.
