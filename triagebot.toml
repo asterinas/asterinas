@@ -1,6 +1,14 @@
 # triagebot.toml
 
+[bot]
+name = "asterbot"
+
 [assign]
+# The issue assignment commands allows any user to assign themselves to a GitHub issue.
+# Restrict to teams later.
+# @rustbot claim — Assigns the issue to yourself.
+# @rustbot release-assignment — Removes the current assignee. Only the current assignee or a team member can release an assignment.
+# @rustbot assign @user — Assigns a specific user. Only team members can assign other users.
 
 [relabel]
 # Allow triagebot to label tags starting with C- and O-
@@ -15,3 +23,5 @@ allow-unauthenticated = [
 cc = ["@grief8"]
 
 [shortcut]
+# Shortcuts are simple commands for performing common tasks.
+# https://forge.rust-lang.org/triagebot/shortcuts.html
