@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 set -e
+set -o pipefail
 
 # Ensure all dependencies are installed
 command -v jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Aborting."; exit 1; }
@@ -12,6 +13,8 @@ BENCHMARK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 # Kernel image 
 KERNEL_DIR="/root/dependency"
 LINUX_KERNEL="${KERNEL_DIR}/vmlinuz"
+# Atomic wget script
+WGET_SCRIPT="${BENCHMARK_DIR}/../../tools/atomic_wget.sh"
 
 # Generate entrypoint script for Linux cases
 generate_entrypoint_script() {
@@ -61,9 +64,7 @@ run_benchmark() {
     if [ ! -f "${LINUX_KERNEL}" ]; then
         echo "Downloading the Linux kernel image..."
         mkdir -p "${KERNEL_DIR}"
-        curl -L -o "${LINUX_KERNEL}" \
-            -H "Accept: application/vnd.github.v3.raw" \
-            "https://api.github.com/repos/asterinas/linux_kernel/contents/vmlinuz-5.15.0-105-generic?ref=9e66d28"
+        ${WGET_SCRIPT} "${LINUX_KERNEL}" "https://raw.githubusercontent.com/asterinas/linux_kernel/9e66d28/vmlinuz-5.15.0-105-generic" 
     fi
 
     echo "Running benchmark ${benchmark} on Linux and Asterinas..."

@@ -3,8 +3,8 @@ on:
   # In case of manual trigger, use workflow_dispatch
   workflow_dispatch:
   schedule:
-    # Schedule to run on every day at 00:00 UTC (08:00 CST)
-    - cron: '0 0 * * *'
+    # Schedule to run on every day at 20:00 UTC (04:00 CST)
+    - cron: '0 20 * * *'
 
 jobs:
   Benchmarks:
@@ -41,7 +41,6 @@ jobs:
         command: |
           make install_osdk
           bash test/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }}
-        on_retry_command: make clean
 
     - name: Prepare threshold values
       run: |
