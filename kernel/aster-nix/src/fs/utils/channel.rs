@@ -27,8 +27,8 @@ impl<T> Channel<T> {
 
     pub fn with_capacity_and_flags(capacity: usize, flags: StatusFlags) -> Result<Self> {
         let common = Arc::new(Common::with_capacity_and_flags(capacity, flags)?);
-        let producer = Producer(EndPoint::new(common.clone()));
-        let consumer = Consumer(EndPoint::new(common));
+        let producer = Producer(Fifo::new(common.clone()));
+        let consumer = Consumer(Fifo::new(common));
         Ok(Self { producer, consumer })
     }
 
@@ -50,9 +50,9 @@ impl<T> Channel<T> {
     }
 }
 
-pub struct Producer<T>(EndPoint<T, WriteOp>);
+pub struct Producer<T>(Fifo<T, WriteOp>);
 
-pub struct Consumer<T>(EndPoint<T, ReadOp>);
+pub struct Consumer<T>(Fifo<T, ReadOp>);
 
 macro_rules! impl_common_methods_for_channel {
     () => {
@@ -105,11 +105,11 @@ macro_rules! impl_common_methods_for_channel {
 }
 
 impl<T> Producer<T> {
-    fn this_end(&self) -> &EndPointInner<HeapRbProducer<T>> {
+    fn this_end(&self) -> &FifoInner<HeapRbProducer<T>> {
         &self.0.common.producer
     }
 
-    fn peer_end(&self) -> &EndPointInner<HeapRbConsumer<T>> {
+    fn peer_end(&self) -> &FifoInner<HeapRbConsumer<T>> {
         &self.0.common.consumer
     }
 
@@ -233,11 +233,11 @@ impl<T> Drop for Producer<T> {
 }
 
 impl<T> Consumer<T> {
-    fn this_end(&self) -> &EndPointInner<HeapRbConsumer<T>> {
+    fn this_end(&self) -> &FifoInner<HeapRbConsumer<T>> {
         &self.0.common.consumer
     }
 
-    fn peer_end(&self) -> &EndPointInner<HeapRbProducer<T>> {
+    fn peer_end(&self) -> &FifoInner<HeapRbProducer<T>> {
         &self.0.common.producer
     }
 
@@ -345,12 +345,12 @@ impl<T> Drop for Consumer<T> {
     }
 }
 
-struct EndPoint<T, R: TRights> {
+struct Fifo<T, R: TRights> {
     common: Arc<Common<T>>,
     _rights: R,
 }
 
-impl<T, R: TRights> EndPoint<T, R> {
+impl<T, R: TRights> Fifo<T, R> {
     pub fn new(common: Arc<Common<T>>) -> Self {
         Self {
             common,
@@ -359,7 +359,7 @@ impl<T, R: TRights> EndPoint<T, R> {
     }
 }
 
-impl<T: Copy, R: TRights> EndPoint<T, R> {
+impl<T: Copy, R: TRights> Fifo<T, R> {
     #[require(R > Read)]
     pub fn read(&self, buf: &mut [T]) -> usize {
         let mut rb = self.common.consumer.rb();
@@ -373,7 +373,7 @@ impl<T: Copy, R: TRights> EndPoint<T, R> {
     }
 }
 
-impl<T, R: TRights> EndPoint<T, R> {
+impl<T, R: TRights> Fifo<T, R> {
     /// Pushes an item into the endpoint.
     /// If the `push` method failes, this method will return
     /// `Err` containing the item that hasn't been pushed
@@ -392,8 +392,8 @@ impl<T, R: TRights> EndPoint<T, R> {
 }
 
 struct Common<T> {
-    producer: EndPointInner<HeapRbProducer<T>>,
-    consumer: EndPointInner<HeapRbConsumer<T>>,
+    producer: FifoInner<HeapRbProducer<T>>,
+    consumer: FifoInner<HeapRbConsumer<T>>,
 }
 
 impl<T> Common<T> {
@@ -407,8 +407,8 @@ impl<T> Common<T> {
         let rb: HeapRb<T> = HeapRb::new(capacity);
         let (rb_producer, rb_consumer) = rb.split();
 
-        let producer = EndPointInner::new(rb_producer, IoEvents::OUT, flags);
-        let consumer = EndPointInner::new(rb_consumer, IoEvents::empty(), flags);
+        let producer = FifoInner::new(rb_producer, IoEvents::OUT, flags);
+        let consumer = FifoInner::new(rb_consumer, IoEvents::empty(), flags);
 
         Ok(Self { producer, consumer })
     }
@@ -418,14 +418,14 @@ impl<T> Common<T> {
     }
 }
 
-struct EndPointInner<T> {
+struct FifoInner<T> {
     rb: Mutex<T>,
     pollee: Pollee,
     is_shutdown: AtomicBool,
     status_flags: AtomicU32,
 }
 
-impl<T> EndPointInner<T> {
+impl<T> FifoInner<T> {
     pub fn new(rb: T, init_events: IoEvents, status_flags: StatusFlags) -> Self {
         Self {
             rb: Mutex::new(rb),
