@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
+// The boot routine excecuted by the bootstrap processor.
+
 // The boot header, initial boot setup code, temporary GDT and page tables are
 // in the boot section. The boot section is mapped writable since kernel may
 // modify the initial page table.
-.section ".boot", "awx"
+.section ".bsp_boot", "awx"
 .code32
 
 // With every entry types we could go through common paging or machine

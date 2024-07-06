@@ -2,12 +2,15 @@
 
 #![allow(dead_code)]
 
-//! The architecture-independent boot module, which provides a universal interface
-//! from the bootloader to the rest of OSTD.
-//!
+//! The architecture-independent boot module, which provides
+//!  1. a universal information getter interface from the bootloader to the
+//!     rest of OSTD;
+//!  2. the routine booting into the actual kernel;
+//!  3. the routine booting the other processors in the SMP context.
 
 pub mod kcmdline;
 pub mod memory_region;
+pub mod smp;
 
 use alloc::{string::String, vec::Vec};
 

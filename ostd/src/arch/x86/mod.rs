@@ -53,9 +53,13 @@ pub(crate) fn check_tdx_init() {
     }
 }
 
-pub(crate) fn after_all_init() {
+pub(crate) fn init_on_bsp() {
     irq::init();
     kernel::acpi::init();
+
+    // SAFETY: it is only called once and ACPI has been initialized.
+    unsafe { crate::cpu::init() };
+
     match kernel::apic::init() {
         Ok(_) => {
             ioapic::init();
@@ -66,7 +70,15 @@ pub(crate) fn after_all_init() {
         }
     }
     serial::callback_init();
+
+    // SAFETY: no CPU local objects have been accessed by this far. And
+    // we are on the BSP.
+    unsafe { crate::cpu::cpu_local::init_on_bsp() };
+
+    crate::boot::smp::boot_all_aps();
+
     timer::init();
+
     #[cfg(feature = "intel_tdx")]
     if !tdx_is_enabled() {
         match iommu::init() {
@@ -86,9 +98,9 @@ pub(crate) fn after_all_init() {
 pub(crate) fn interrupts_ack(irq_number: usize) {
     if !cpu::CpuException::is_cpu_exception(irq_number as u16) {
         kernel::pic::ack();
-        if let Some(apic) = kernel::apic::APIC_INSTANCE.get() {
-            apic.lock_irq_disabled().eoi();
-        }
+        kernel::apic::borrow(|apic| {
+            apic.eoi();
+        });
     }
 }
 

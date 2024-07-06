@@ -152,6 +152,13 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         ));
     }
 
+    // Add the AP boot code region that will be copied into by the BSP.
+    regions.push(MemoryRegion::new(
+        super::smp::AP_BOOT_START_PA,
+        super::smp::ap_boot_code_size(),
+        MemoryRegionType::Reclaimable,
+    ));
+
     // Initialize with non-overlapping regions.
     memory_regions.call_once(move || non_overlapping_regions_from(regions.as_ref()));
 }

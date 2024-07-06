@@ -14,9 +14,9 @@
 //! The reference count and usage of a page are stored in the metadata as well, leaving
 //! the handle only a pointer to the metadata.
 
-pub(crate) mod allocator;
-pub(in crate::mm) mod cont_pages;
-pub(in crate::mm) mod meta;
+pub mod allocator;
+pub mod cont_pages;
+pub mod meta;
 
 use core::{
     marker::PhantomData,
@@ -25,6 +25,7 @@ use core::{
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
 
+pub use cont_pages::ContPages;
 use meta::{mapping, FrameMeta, MetaSlot, PageMeta, PageUsage};
 
 use super::{Frame, PagingLevel, PAGE_SIZE};

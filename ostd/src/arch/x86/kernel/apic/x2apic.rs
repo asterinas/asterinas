@@ -18,7 +18,7 @@ impl X2Apic {
         Some(Self {})
     }
 
-    fn has_x2apic() -> bool {
+    pub(super) fn has_x2apic() -> bool {
         // x2apic::X2APIC::new()
         let value = unsafe { core::arch::x86_64::__cpuid(1) };
         value.ecx & 0x20_0000 != 0
