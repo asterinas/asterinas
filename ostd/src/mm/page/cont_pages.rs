@@ -63,6 +63,11 @@ impl<M: PageMeta> ContPages<M> {
         self.range.start
     }
 
+    /// Get the end physical address of the contiguous pages.
+    pub fn end_paddr(&self) -> Paddr {
+        self.range.end
+    }
+
     /// Get the length in bytes of the contiguous pages.
     pub fn len(&self) -> usize {
         self.range.end - self.range.start

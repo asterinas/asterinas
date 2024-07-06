@@ -26,4 +26,5 @@ pub mod smp;
 
 use core::arch::global_asm;
 
-global_asm!(include_str!("boot.S"));
+global_asm!(include_str!("bsp_boot.S"));
+global_asm!(include_str!("ap_boot.S"));

@@ -11,31 +11,34 @@ cfg_if::cfg_if! {
 }
 
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use bitvec::{
     prelude::{BitVec, Lsb0},
     slice::IterOnes,
 };
-use spin::Once;
 
-use crate::{arch::boot::smp::get_processor_info, cpu};
+use crate::{arch::boot::smp::get_num_processors, cpu};
 
-/// The number of CPUs.
-pub static NUM_CPUS: Once<u32> = Once::new();
+/// The number of CPUs. Zero means uninitialized.
+static NUM_CPUS: AtomicU32 = AtomicU32::new(0);
 
 /// Initializes the number of CPUs.
-pub fn init() {
-    let processor_info = get_processor_info();
-    let num_processors = match processor_info {
-        Some(info) => info.application_processors.len() + 1,
-        None => 1,
-    };
-    NUM_CPUS.call_once(|| num_processors as u32);
+///
+/// # Safety
+///
+/// The caller must ensure that this function is called only once at the
+/// correct time when the number of CPUs is available from the platform.
+pub unsafe fn init() {
+    let num_processors = get_num_processors().unwrap_or(1);
+    NUM_CPUS.store(num_processors, Ordering::Release)
 }
 
 /// Returns the number of CPUs.
 pub fn num_cpus() -> u32 {
-    *NUM_CPUS.get().unwrap()
+    let num = NUM_CPUS.load(Ordering::Acquire);
+    debug_assert_ne!(num, 0, "The number of CPUs is not initialized");
+    num
 }
 
 /// Returns the ID of this CPU.

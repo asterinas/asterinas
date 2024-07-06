@@ -74,15 +74,10 @@ pub fn init() {
     mm::page::allocator::init();
     mm::kspace::init_boot_page_table();
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
-    // SAFETY: no CPU local objects have been accessed by this far. And
-    // we are on the BSP.
-    unsafe { cpu::cpu_local::init_on_bsp() };
     mm::misc_init();
 
     trap::init();
-    arch::after_all_init();
-
-    cpu::init();
+    arch::init_on_bsp();
 
     bus::init();
 

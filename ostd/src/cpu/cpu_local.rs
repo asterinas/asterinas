@@ -18,10 +18,18 @@
 //! be directly used as a CPU-local object. Wrapping it in a type that has a
 //! constant constructor, like [`Option<T>`], can make it CPU-local.
 
+use alloc::vec::Vec;
 use core::ops::Deref;
 
+use align_ext::AlignExt;
+
 use crate::{
-    arch,
+    arch, cpu,
+    mm::{
+        paddr_to_vaddr,
+        page::{self, meta::KernelMeta, ContPages},
+        PAGE_SIZE,
+    },
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
@@ -200,6 +208,12 @@ pub(crate) unsafe fn early_init_bsp_local_base() {
     }
 }
 
+/// The BSP initializes the CPU-local areas for APs. Here we use a
+/// non-disabling preempt version of lock because the [`crate::sync`]
+/// version needs `cpu_local` to work. Preemption and interrupts are
+/// disabled in this phase so it is safe to use this lock.
+static CPU_LOCAL_STORAGES: spin::RwLock<Vec<ContPages<KernelMeta>>> = spin::RwLock::new(Vec::new());
+
 /// Initializes the CPU local data for the bootstrap processor (BSP).
 ///
 /// # Safety
@@ -209,13 +223,77 @@ pub(crate) unsafe fn early_init_bsp_local_base() {
 /// It must be guaranteed that the BSP will not access local data before
 /// this function being called, otherwise copying non-constant values
 /// will result in pretty bad undefined behavior.
-pub(crate) unsafe fn init_on_bsp() {
-    // TODO: allocate the pages for application processors and copy the
-    // CPU-local objects to the allocated pages.
+pub unsafe fn init_on_bsp() {
+    let bsp_base_va = __cpu_local_start as usize;
+    let bsp_end_va = __cpu_local_end as usize;
+
+    let num_cpus = super::num_cpus();
+
+    let mut cpu_local_storages = CPU_LOCAL_STORAGES.write();
+    for cpu_i in 1..num_cpus {
+        let ap_pages = {
+            let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
+            page::allocator::alloc_contiguous(nbytes, |_| KernelMeta::default()).unwrap()
+        };
+        let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u8;
+
+        // SAFETY: The BSP has not initialized the CPU-local area, so the objects in
+        // in the `.cpu_local` section can be bitwise bulk copied to the AP's local
+        // storage. The destination memory is allocated so it is valid to write to.
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                bsp_base_va as *const u8,
+                ap_pages_ptr,
+                bsp_end_va - bsp_base_va,
+            );
+        }
+
+        // SAFETY: the first 4 bytes is reserved for storing CPU ID.
+        unsafe {
+            (ap_pages_ptr as *mut u32).write(cpu_i);
+        }
+
+        // SAFETY: the second 4 bytes is reserved for storing the preemt count.
+        unsafe {
+            (ap_pages_ptr as *mut u32).add(1).write(0);
+        }
+
+        cpu_local_storages.push(ap_pages);
+    }
+
+    // Write the CPU ID of BSP to the first 4 bytes of the CPU-local area.
+    let bsp_cpu_id_ptr = bsp_base_va as *mut u32;
+    // SAFETY: the first 4 bytes is reserved for storing CPU ID.
+    unsafe {
+        bsp_cpu_id_ptr.write(0);
+    }
+
+    cpu::local::set_base(bsp_base_va as u64);
 
     #[cfg(debug_assertions)]
-    {
-        IS_INITIALIZED.store(true, Ordering::Relaxed);
+    IS_INITIALIZED.store(true, Ordering::Relaxed);
+}
+
+/// Initializes the CPU local data for the application processor (AP).
+///
+/// # Safety
+///
+/// This function can only called on the AP.
+pub unsafe fn init_on_ap(cpu_id: u32) {
+    let rlock = CPU_LOCAL_STORAGES.read();
+    let ap_pages = rlock.get(cpu_id as usize - 1).unwrap();
+
+    let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u32;
+
+    debug_assert_eq!(
+        cpu_id,
+        // SAFETY: the CPU ID is stored at the beginning of the CPU local area.
+        unsafe { ap_pages_ptr.read() }
+    );
+
+    // SAFETY: the memory will be dedicated to the AP. And we are on the AP.
+    unsafe {
+        cpu::local::set_base(ap_pages_ptr as u64);
     }
 }
 

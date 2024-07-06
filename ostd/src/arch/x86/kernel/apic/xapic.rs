@@ -2,19 +2,16 @@
 
 #![allow(dead_code)]
 
-use spin::Once;
 use x86::apic::xapic;
 
 use super::ApicTimer;
-use crate::{mm, sync::Mutex};
+use crate::mm;
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 const IA32_APIC_BASE_MSR_BSP: u32 = 0x100; // Processor is a BSP
 const IA32_APIC_BASE_MSR_ENABLE: u64 = 0x800;
 
 const APIC_LVT_MASK_BITS: u32 = 1 << 16;
-
-pub static XAPIC_INSTANCE: Once<Mutex<XApic>> = Once::new();
 
 #[derive(Debug)]
 pub struct XApic {
@@ -56,7 +53,7 @@ impl XApic {
         self.write(xapic::XAPIC_SVR, svr);
     }
 
-    pub fn has_xapic() -> bool {
+    pub(super) fn has_xapic() -> bool {
         let value = unsafe { core::arch::x86_64::__cpuid(1) };
         value.edx & 0x100 != 0
     }

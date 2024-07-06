@@ -1,21 +1,79 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
-use alloc::sync::Arc;
+use alloc::boxed::Box;
+use core::cell::RefCell;
 
 use bit_field::BitField;
-use log::info;
 use spin::Once;
 
-use crate::sync::SpinLock;
+use crate::cpu_local;
 
 pub mod ioapic;
 pub mod x2apic;
 pub mod xapic;
 
-pub static APIC_INSTANCE: Once<Arc<SpinLock<dyn Apic + 'static>>> = Once::new();
+cpu_local! {
+    static APIC_INSTANCE: Once<RefCell<Box<dyn Apic + 'static>>> = Once::new();
+}
+
 static APIC_TYPE: Once<ApicType> = Once::new();
+
+/// Do something over the APIC instance for the current CPU.
+///
+/// You should provide a closure operating on the given mutable borrow of the
+/// local APIC instance. During the execution of the closure, the interrupts
+/// are guarenteed to be disabled.
+///
+/// Example:
+/// ```rust
+/// use ostd::arch::x86::kernel::apic;
+///
+/// let ticks = apic::borrow(|apic| {
+///     let ticks = apic.timer_current_count();
+///     apic.set_timer_init_count(0);
+///     ticks
+/// });
+/// ```
+pub fn borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
+    let apic_guard = APIC_INSTANCE.borrow_irq_disabled();
+
+    // If it is not initialzed, lazily initialize it.
+    if !apic_guard.is_completed() {
+        apic_guard.call_once(|| match APIC_TYPE.get().unwrap() {
+            ApicType::XApic => {
+                let mut xapic = xapic::XApic::new().unwrap();
+                xapic.enable();
+                let version = xapic.version();
+                log::info!(
+                    "xAPIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                    xapic.id(),
+                    version & 0xff,
+                    (version >> 16) & 0xff
+                );
+                RefCell::new(Box::new(xapic))
+            }
+            ApicType::X2Apic => {
+                let mut x2apic = x2apic::X2Apic::new().unwrap();
+                x2apic.enable();
+                let version = x2apic.version();
+                log::info!(
+                    "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
+                    x2apic.id(),
+                    version & 0xff,
+                    (version >> 16) & 0xff
+                );
+                RefCell::new(Box::new(x2apic))
+            }
+        });
+    }
+
+    let apic_cell = apic_guard.get().unwrap();
+    let mut apic_ref = apic_cell.borrow_mut();
+
+    let ret = f.call_once((apic_ref.as_mut(),));
+
+    ret
+}
 
 pub trait Apic: ApicTimer + Sync + Send {
     fn id(&self) -> u32;
@@ -179,7 +237,9 @@ impl From<u32> for ApicId {
 /// in the system excluding the sender.
 #[repr(u64)]
 pub enum DestinationShorthand {
+    #[allow(dead_code)]
     NoShorthand = 0b00,
+    #[allow(dead_code)]
     MySelf = 0b01,
     AllIncludingSelf = 0b10,
     AllExcludingSelf = 0b11,
@@ -203,28 +263,34 @@ pub enum Level {
 #[repr(u64)]
 pub enum DeliveryStatus {
     Idle = 0,
+    #[allow(dead_code)]
     SendPending = 1,
 }
 
 #[repr(u64)]
 pub enum DestinationMode {
     Physical = 0,
+    #[allow(dead_code)]
     Logical = 1,
 }
 
 #[repr(u64)]
 pub enum DeliveryMode {
     /// Delivers the interrupt specified in the vector field to the target processor or processors.
+    #[allow(dead_code)]
     Fixed = 0b000,
     /// Same as fixed mode, except that the interrupt is delivered to the processor executing at
     /// the lowest priority among the set of processors specified in the destination field. The
     /// ability for a processor to send a lowest priority IPI is model specific and should be
     /// avoided by BIOS and operating system software.
+    #[allow(dead_code)]
     LowestPriority = 0b001,
     /// Non-Maskable Interrupt
+    #[allow(dead_code)]
     Smi = 0b010,
     _Reserved = 0b011,
     /// System Management Interrupt
+    #[allow(dead_code)]
     Nmi = 0b100,
     /// Delivers an INIT request to the target processor or processors, which causes them to
     /// perform an initialization.
@@ -241,6 +307,7 @@ pub enum ApicInitError {
 
 #[derive(Debug)]
 #[repr(u32)]
+#[allow(dead_code)]
 pub enum DivideConfig {
     Divide1 = 0b1011,
     Divide2 = 0b0000,
@@ -254,32 +321,20 @@ pub enum DivideConfig {
 
 pub fn init() -> Result<(), ApicInitError> {
     crate::arch::x86::kernel::pic::disable_temp();
-    if let Some(mut x2apic) = x2apic::X2Apic::new() {
-        x2apic.enable();
-        let version = x2apic.version();
-        info!(
-            "x2APIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
-            x2apic.id(),
-            version & 0xff,
-            (version >> 16) & 0xff
-        );
-        APIC_INSTANCE.call_once(|| Arc::new(SpinLock::new(x2apic)));
+    if x2apic::X2Apic::has_x2apic() {
+        log::info!("x2APIC found!");
         APIC_TYPE.call_once(|| ApicType::X2Apic);
         Ok(())
-    } else if let Some(mut xapic) = xapic::XApic::new() {
-        xapic.enable();
-        let version = xapic.version();
-        info!(
-            "xAPIC ID:{:x}, Version:{:x}, Max LVT:{:x}",
-            xapic.id(),
-            version & 0xff,
-            (version >> 16) & 0xff
-        );
-        APIC_INSTANCE.call_once(|| Arc::new(SpinLock::new(xapic)));
+    } else if xapic::XApic::has_xapic() {
+        log::info!("xAPIC found!");
         APIC_TYPE.call_once(|| ApicType::XApic);
         Ok(())
     } else {
         log::warn!("Neither x2APIC nor xAPIC found!");
         Err(ApicInitError::NoApic)
     }
+}
+
+pub fn exists() -> bool {
+    APIC_TYPE.is_completed()
 }

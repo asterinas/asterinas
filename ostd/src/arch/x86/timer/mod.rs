@@ -37,7 +37,7 @@ pub(super) fn init() {
     /// Ref: https://wiki.osdev.org/Programmable_Interval_Timer#Outputs.
     const PIT_MODE_TIMER_IRQ_NUM: u8 = 32;
 
-    let mut timer_irq = if kernel::apic::APIC_INSTANCE.is_completed() {
+    let mut timer_irq = if kernel::apic::exists() {
         apic::init()
     } else {
         pit::init(pit::OperatingMode::SquareWaveGenerator);
