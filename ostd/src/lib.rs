@@ -57,7 +57,11 @@ pub use self::{cpu::cpu_local::CpuLocal, error::Error, prelude::Result};
 /// make inter-initialization-dependencies more clear and reduce usages of
 /// boot stage only global variables.
 pub fn init() {
-    arch::before_all_init();
+    arch::enable_cpu_features();
+    arch::serial::init();
+
+    #[cfg(feature = "intel_tdx")]
+    arch::check_tdx_init();
 
     // SAFETY: This function is called only once and only on the BSP.
     unsafe { cpu::cpu_local::early_init_bsp_local_base() };
@@ -77,6 +81,9 @@ pub fn init() {
 
     trap::init();
     arch::after_all_init();
+
+    cpu::init();
+
     bus::init();
 
     mm::kspace::activate_kernel_page_table();
