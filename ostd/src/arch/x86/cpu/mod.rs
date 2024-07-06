@@ -4,17 +4,12 @@
 
 pub mod local;
 
-use alloc::vec::Vec;
 use core::{
     arch::x86_64::{_fxrstor, _fxsave},
     fmt::Debug,
 };
 
 use bitflags::bitflags;
-use bitvec::{
-    prelude::{BitVec, Lsb0},
-    slice::IterOnes,
-};
 use log::debug;
 #[cfg(feature = "intel_tdx")]
 use tdx_guest::tdcall;
@@ -28,86 +23,6 @@ use crate::{
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
-
-/// Returns the number of CPUs.
-pub fn num_cpus() -> u32 {
-    // FIXME: we only start one cpu now.
-    1
-}
-
-/// Returns the ID of this CPU.
-pub fn this_cpu() -> u32 {
-    // FIXME: we only start one cpu now.
-    0
-}
-
-/// A set of CPUs.
-#[derive(Default)]
-pub struct CpuSet {
-    bitset: BitVec,
-}
-
-impl CpuSet {
-    /// Creates a new `CpuSet` with all CPUs included.
-    pub fn new_full() -> Self {
-        let num_cpus = num_cpus();
-        let mut bitset = BitVec::with_capacity(num_cpus as usize);
-        bitset.resize(num_cpus as usize, true);
-        Self { bitset }
-    }
-
-    /// Creates a new `CpuSet` with no CPUs included.
-    pub fn new_empty() -> Self {
-        let num_cpus = num_cpus();
-        let mut bitset = BitVec::with_capacity(num_cpus as usize);
-        bitset.resize(num_cpus as usize, false);
-        Self { bitset }
-    }
-
-    /// Adds a CPU with identifier `cpu_id` to the `CpuSet`.
-    pub fn add(&mut self, cpu_id: u32) {
-        self.bitset.set(cpu_id as usize, true);
-    }
-
-    /// Adds multiple CPUs from `cpu_ids` to the `CpuSet`.
-    pub fn add_from_vec(&mut self, cpu_ids: Vec<u32>) {
-        for cpu_id in cpu_ids {
-            self.add(cpu_id)
-        }
-    }
-
-    /// Adds all available CPUs to the `CpuSet`.
-    pub fn add_all(&mut self) {
-        self.bitset.fill(true);
-    }
-
-    /// Removes a CPU with identifier `cpu_id` from the `CpuSet`.
-    pub fn remove(&mut self, cpu_id: u32) {
-        self.bitset.set(cpu_id as usize, false);
-    }
-
-    /// Removes multiple CPUs from `cpu_ids` from the `CpuSet`.
-    pub fn remove_from_vec(&mut self, cpu_ids: Vec<u32>) {
-        for cpu_id in cpu_ids {
-            self.remove(cpu_id);
-        }
-    }
-
-    /// Clears the `CpuSet`, removing all CPUs.
-    pub fn clear(&mut self) {
-        self.bitset.fill(false);
-    }
-
-    /// Checks if the `CpuSet` contains a specific CPU.
-    pub fn contains(&self, cpu_id: u32) -> bool {
-        self.bitset.get(cpu_id as usize).as_deref() == Some(&true)
-    }
-
-    /// Returns an iterator over the set CPUs.
-    pub fn iter(&self) -> IterOnes<'_, usize, Lsb0> {
-        self.bitset.iter_ones()
-    }
-}
 
 /// Cpu context, including both general-purpose registers and floating-point registers.
 #[derive(Clone, Default, Copy, Debug)]

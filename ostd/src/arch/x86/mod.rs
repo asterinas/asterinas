@@ -32,10 +32,8 @@ use {
     ::tdx_guest::{init_tdx, tdcall::InitError, tdx_is_enabled},
 };
 
-pub(crate) fn before_all_init() {
-    enable_common_cpu_features();
-    serial::init();
-    #[cfg(feature = "intel_tdx")]
+#[cfg(feature = "intel_tdx")]
+pub(crate) fn check_tdx_init() {
     match init_tdx() {
         Ok(td_info) => {
             early_println!(
@@ -138,7 +136,7 @@ fn has_avx512() -> bool {
     cpuid_result.ebx & (1 << 16) != 0
 }
 
-fn enable_common_cpu_features() {
+pub(crate) fn enable_cpu_features() {
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::FSGSBASE
