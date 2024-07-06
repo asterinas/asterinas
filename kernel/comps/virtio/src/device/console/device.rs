@@ -106,14 +106,7 @@ impl ConsoleDevice {
             callbacks: RwLock::new(Vec::new()),
         });
 
-        let mut receive_queue = device.receive_queue.lock_irq_disabled();
-        receive_queue
-            .add_dma_buf(&[], &[&device.receive_buffer])
-            .unwrap();
-        if receive_queue.should_notify() {
-            receive_queue.notify();
-        }
-        drop(receive_queue);
+        device.activate_receive_buffer(&mut device.receive_queue.lock_irq_disabled());
 
         // Register irq callbacks
         let mut transport = device.transport.lock_irq_disabled();
@@ -149,9 +142,22 @@ impl ConsoleDevice {
             let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
             callback(reader);
         }
+
+        self.activate_receive_buffer(&mut receive_queue);
+    }
+
+    fn activate_receive_buffer(&self, receive_queue: &mut VirtQueue) {
         receive_queue
-            .add_dma_buf(&[], &[&self.receive_buffer])
+            // We limit the buffer length to one to work around a QEMU bug that causes incorrect
+            // results when pasting more than 32 bytes into the virtio console. This has no
+            // performance penalty, since QEMU always gets one byte at a time, regardless of
+            // whether we have this limit or not.
+            //
+            // For the QEMU bug, see details at
+            // <https://lore.kernel.org/qemu-devel/20240707111940.232549-3-lrh2000@pku.edu.cn/T/#u>.
+            .add_dma_buf(&[], &[&DmaStreamSlice::new(&self.receive_buffer, 0, 1)])
             .unwrap();
+
         if receive_queue.should_notify() {
             receive_queue.notify();
         }
