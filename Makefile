@@ -9,10 +9,12 @@ BUILD_SYSCALL_TEST ?= 0
 ENABLE_KVM ?= 1
 GDB_TCP_PORT ?= 1234
 INTEL_TDX ?= 0
+MEM ?= 8G
 RELEASE ?= 0
 RELEASE_LTO ?= 0
 LOG_LEVEL ?= error
 SCHEME ?= ""
+SMP ?= 1
 # End of global options.
 
 # The Makefile provides a way to run arbitrary tests in the kernel

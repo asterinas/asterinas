@@ -56,13 +56,13 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - name: Boot Test (Multiboot)
+      - name: SMP Boot Test (Multiboot)
         id: boot_test_mb
-        run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=multiboot RELEASE=1
+        run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=multiboot RELEASE=1 SMP=4
 
-      - name: Boot Test (Linux Legacy 32-bit Boot Protocol)
+      - name: SMP Boot Test (Linux Legacy 32-bit Boot Protocol)
         id: boot_test_linux_legacy32
-        run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=linux-legacy32 RELEASE=1
+        run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=linux-legacy32 RELEASE=1 SMP=4
 
       - name: Syscall Test (Linux EFI Handover Boot Protocol) (Debug Build)
         id: syscall_test
