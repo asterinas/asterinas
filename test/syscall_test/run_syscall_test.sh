@@ -17,14 +17,14 @@ NC='\033[0m'
 
 get_blocklist_subtests(){
     if [ -f $BLOCKLIST_DIR/$1 ]; then
-        BLOCK=$(sed ':a;N;$!ba;s/\n/:/g' $BLOCKLIST_DIR/$1)
+        BLOCK=$(grep -v '^#' $BLOCKLIST_DIR/$1 | tr '\n' ':')
     else
         BLOCK=""
     fi
 
     for extra_dir in $EXTRA_BLOCKLISTS_DIRS ; do
         if [ -f $SCRIPT_DIR/$extra_dir/$1 ]; then
-            BLOCK="${BLOCK}:$(sed ':a;N;$!ba;s/\n/:/g' $SCRIPT_DIR/$extra_dir/$1)"
+            BLOCK="${BLOCK}:$(grep -v '^#' $SCRIPT_DIR/$extra_dir/$1 | tr '\n' ':')"
         fi
     done
 
