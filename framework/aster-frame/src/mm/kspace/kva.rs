@@ -1,11 +1,13 @@
 // aster-frame/mm/kspace/kva.rs
 use core::ops::{ Range, DerefMut};
-use crate::mm::{Vaddr, page_prop::PageProperty, page::{Page, meta::{PageMeta, PageUsage}}};
-use alloc::{vec::Vec, collections::BTreeMap};
+use crate::mm::{page::{meta::{PageMeta, PageUsage}, Page}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, PAGE_SIZE};
+use alloc::{collections::BTreeMap, vec::{self, Vec}};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     sync::SpinLock,
 };
+use super::KERNEL_PAGE_TABLE;
+
 pub struct KvaFreeNode {
     block: Range<Vaddr>,
 }
@@ -37,7 +39,7 @@ impl KvaInner {
     /// Allocate a kernel virtual area.
     /// This is a simple FIRST-FIT algorithm.
     /// Note that a newly allocated area is not backed by any physical pages.
-    fn alloc(&mut self, freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, size: usize) -> Result<Self, KvaAllocError> {
+    fn alloc(freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, size: usize) -> Result<Self, KvaAllocError> {
         // iterate through the free list, if find the first block that is larger than this allocation, do:
         //    1. consume the last part of this block as the allocated range.
         //    2. check if this block is empty (and not the first block), if so, remove it.
@@ -71,11 +73,15 @@ impl KvaInner {
             Err(KvaAllocError::OutOfMemory)
         }
     }
+
+    fn dealloc(&self, freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, range:Range<Vaddr>)  {
+        freelist.insert(range.start, KvaFreeNode::new(range.start..range.end));
+    }
     // /// Un-map pages mapped in kernel virtual area.
     // /// # Safety
     // /// The caller should ensure that the operation doesn't violate the memory safety of
     // /// kernel objects.
-    // unsafe fn unmap(&mut self, range: Range<Vaddr>, pages: Vec<Page>) {
+    // unsafe fn unmap<T>(&mut self, range: Range<Vaddr>, pages: Vec<Page<T>>) {
     //     // 
     //     todo!();
     // }
@@ -86,6 +92,7 @@ impl KvaInner {
     unsafe fn protect(&mut self, range: Range<Vaddr>, mut op: impl FnMut(&mut PageProperty)) {
         todo!();
     }
+
     // // `VmIo` counterparts
     // fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
     //     todo!() // implementation provided by this trait.
@@ -97,40 +104,81 @@ impl KvaInner {
 }
 
 // static KVA_FREELIST: SpinLock<BtreeMap<Vaddr, KvaFreeNode>> = SpinLock::new(BtreeMap::new(KvaFreeNode::new(kspace::TRACKED_MAPPED_PAGES_RANGE)));
-
-impl Drop for KvaInner {
-    fn drop(&mut self) {
-        // 0. unmap all mapped pages.
-        // 1. get the previous free block, check if we can merge this block with the free one
-        //     - if contiguous, merge this area with the free block.
-        //     - if not contiguous, create a new free block, insert it into the list.
-        // 2. check if we can merge the current block with the next block, if we can, do so.
-        todo!();
-        let freelist = KVA_FREELIST.lock().deref_mut();
-        freelist.insert(self.var.start, KvaFreeNode::new(self.var.start..self.var.end));
-    }
-}
-
 pub static KVA_FREELIST: SpinLock<BTreeMap<Vaddr, KvaFreeNode>> = SpinLock::new(BTreeMap::new());
+
+// impl Drop for KvaInner {
+//     fn drop(&mut self) {
+//         // // 0. unmap all mapped pages.
+//         // 1. get the previous free block, check if we can merge this block with the free one
+//         //     - if contiguous, merge this area with the free block.
+//         //     - if not contiguous, create a new free block, insert it into the list.
+//         // 2. check if we can merge the current block with the next block, if we can, do so.
+//         // todo!();  
+//         let mut lock_guard = KVA_FREELIST.lock();
+//         lock_guard.deref_mut().insert(self.var.start, KvaFreeNode::new(self.var.start..self.var.end));
+//     }
+// }
+
 pub struct Kva(KvaInner);
 
 impl Kva {
     // static KVA_FREELIST: SpinLock<BtreeMap<Vaddr, KvaFreeNode>> = SpinLock::new(BtreeMap::new(KvaFreeNode::new(kspace::KVMALLOC_START_VADDR, kspace::KVMALLOC_RANGE)));
-    
 
-    pub fn alloc(&mut self, size: usize) {
+    pub fn alloc(size: usize) -> Self {
         let mut lock_guard = KVA_FREELIST.lock();
-        self.0.alloc(lock_guard.deref_mut(), size);
+        let inner = KvaInner::alloc(lock_guard.deref_mut(), size).unwrap();
+        Kva(inner)
     }
+
+    pub fn start(& self) -> Vaddr {
+        self.0.var.start
+    }
+
+    pub fn end(& self) -> Vaddr {
+        self.0.var.end
+    }
+
     /// Map pages into the kernel virtual area.
     /// # Safety
     /// The caller should ensure either the mapped pages or the range to be used doesn't
     /// violate the memory safety of kernel objects.
     pub unsafe fn map_pages<T: PageMeta>(&mut self, range: Range<Vaddr>, pages: Vec<Page<T>>) {
-        // let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        todo!();
+        assert!( 
+            (range.end - range.start) == (pages.len() * PAGE_SIZE), 
+            "The allocated number of frames does not match the required number"
+        );
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        let prop = PageProperty {
+            flags: PageFlags::RW,
+            cache: CachePolicy::Writeback,
+            priv_flags: PrivilegedPageFlags::GLOBAL,
+        };
+        let mut va = range.start;
+        for page in &pages {
+            page_table
+                .map(
+                    &(va..va + PAGE_SIZE), 
+                    &(page.paddr()..page.paddr() + PAGE_SIZE), 
+                    prop
+                ).unwrap();
+            va += PAGE_SIZE;
+            // println!("Page data: {}", page.data);
+        }
     }
     /// Get the type of the mapped page.
+    pub unsafe fn unmap_pages(&mut self, range: Range<Vaddr>) {
+        assert!(
+            range.start < self.start() || range.end > self.end(),
+            "Unmapping from an invalid address range: start={}, end={}",
+            range.start,
+            range.end
+        );
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        unsafe {
+            page_table.unmap(&range); 
+        }
+    }
+
     pub fn get_page_type(&self, addr: Vaddr) -> PageUsage {
         todo!();
     }
@@ -141,6 +189,19 @@ impl Kva {
     // }
 }
 
+impl Drop for Kva {
+    fn drop(&mut self) {
+        // // 0. unmap all mapped pages.
+        // 1. get the previous free block, check if we can merge this block with the free one
+        //     - if contiguous, merge this area with the free block.
+        //     - if not contiguous, create a new free block, insert it into the list.
+        // 2. check if we can merge the current block with the next block, if we can, do so.
+        // todo!();  
+        let mut lock_guard = KVA_FREELIST.lock();
+        self.0.dealloc(lock_guard.deref_mut(), self.start()..self.end());
+        // lock_guard.deref_mut().insert(self.var.start, KvaFreeNode::new(self.var.start..self.var.end));
+    }
+}
 // pub struct IoVa(KvaInner);
 
 // impl IoVa {

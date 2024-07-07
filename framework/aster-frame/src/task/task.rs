@@ -7,6 +7,8 @@
 
 use core::cell::UnsafeCell;
 
+use gimli::Range;
+use core::ops::Range as CoreRange;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
@@ -16,11 +18,7 @@ use super::{
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
-    cpu::CpuSet,
-    mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
-    prelude::*,
-    sync::{SpinLock, SpinLockGuard},
-    user::UserSpace,
+    arch::kernel, cpu::CpuSet, mm::{frame::frame_vec, kspace::{kva::Kva, KERNEL_PAGE_TABLE}, page::{meta::KernelMeta, allocator}, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE}, prelude::*, sync::{SpinLock, SpinLockGuard}, user::UserSpace
 };
 
 pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
@@ -41,65 +39,70 @@ pub trait TaskContextApi {
 }
 
 pub struct KernelStack {
-    segment: Segment,
-    has_guard_page: bool,
+    kva : Kva,
+    mapped : CoreRange<Vaddr>,
+    has_guard_page: bool
 }
 
 impl KernelStack {
     pub fn new() -> Result<Self> {
+        let mut kva = Kva::alloc( KERNEL_STACK_SIZE);
+        let mapped_start = kva.start();
+        let mapped_end = kva.end();
+        let pages = allocator::alloc::<KernelMeta>(KERNEL_STACK_SIZE).unwrap();
+        unsafe {
+            kva.map_pages(mapped_start..mapped_end, pages)
+        }
         Ok(Self {
-            segment: FrameAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).alloc_contiguous()?,
-            has_guard_page: false,
+            kva:kva,
+            mapped:mapped_start..mapped_end,
+            has_guard_page:false
         })
     }
 
     /// Generates a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
-        let stack_segment =
-            FrameAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
-        // FIXME: modifying the the linear mapping is bad.
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let guard_page_vaddr = {
-            let guard_page_paddr = stack_segment.start_paddr();
-            crate::mm::paddr_to_vaddr(guard_page_paddr)
-        };
-        // SAFETY: the segment allocated is not used by others so we can protect it.
+        let mut kva = Kva::alloc( KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
+        let mapped_start = (kva.start() + 2 * PAGE_SIZE);
+        let mapped_end = mapped_start + KERNEL_STACK_SIZE;
+        // let frames = FrameAllocOptions::new(KERNEL_STACK_SIZE).uninit(true).alloc()?;
+        let pages = allocator::alloc::<KernelMeta>(KERNEL_STACK_SIZE).unwrap();
         unsafe {
-            page_table
-                .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
-                    p.flags -= PageFlags::RW
-                })
-                .unwrap();
+            kva.map_pages(mapped_start..mapped_end, pages);
         }
+        // let stack_segment =
+        //     FrameAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
+        // // FIXME: modifying the the linear mapping is bad.
+        // let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        // let guard_page_vaddr = {
+        //     let guard_page_paddr = stack_segment.start_paddr();
+        //     crate::mm::paddr_to_vaddr(guard_page_paddr)
+        // };
+        // // SAFETY: the segment allocated is not used by others so we can protect it.
+        // unsafe {
+        //     page_table
+        //         .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
+        //             p.flags -= PageFlags::RW
+        //         })
+        //         .unwrap();
+        // }
         Ok(Self {
-            segment: stack_segment,
-            has_guard_page: true,
+            kva:kva,
+            mapped:mapped_start..mapped_end,
+            has_guard_page:true
         })
     }
 
-    pub fn end_paddr(&self) -> Paddr {
-        self.segment.end_paddr()
+    pub fn end_vaddr(&self) -> Vaddr {
+        self.mapped.end
     }
 }
 
 impl Drop for KernelStack {
     fn drop(&mut self) {
-        if self.has_guard_page {
-            // FIXME: modifying the the linear mapping is bad.
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let guard_page_vaddr = {
-                let guard_page_paddr = self.segment.start_paddr();
-                crate::mm::paddr_to_vaddr(guard_page_paddr)
-            };
-            // SAFETY: the segment allocated is not used by others so we can protect it.
-            unsafe {
-                page_table
-                    .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
-                        p.flags |= PageFlags::RW
-                    })
-                    .unwrap();
-            }
+        unsafe {
+            self.kva.unmap_pages(self.mapped.start..self.mapped.end);
         }
     }
 }
@@ -317,7 +320,7 @@ impl TaskOptions {
         // to at least 16 bytes. And a larger alignment is needed if larger arguments
         // are passed to the function. The `kernel_task_entry` function does not
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        ctx.set_stack_pointer(crate::mm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16));
+        ctx.set_stack_pointer(new_task.kstack.end_vaddr() - 16);
 
         Ok(Arc::new(new_task))
     }

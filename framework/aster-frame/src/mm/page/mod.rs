@@ -16,7 +16,7 @@
 
 pub(crate) mod allocator;
 pub(in crate::mm) mod cont_pages;
-pub(in crate::mm) mod meta;
+pub mod meta;
 
 use core::{
     marker::PhantomData,
@@ -314,6 +314,7 @@ impl Drop for DynPage {
                     PageUsage::Unused
                     | PageUsage::Reserved
                     | PageUsage::Kernel
+                    | PageUsage::KernelStack
                     | PageUsage::Meta => {
                         panic!("dropping a dynamic page with usage {:?}", self.usage());
                     }
