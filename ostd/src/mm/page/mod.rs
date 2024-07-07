@@ -16,7 +16,7 @@
 
 pub(crate) mod allocator;
 pub(in crate::mm) mod cont_pages;
-pub(in crate::mm) mod meta;
+pub mod meta;
 
 use core::{
     marker::PhantomData,
@@ -308,6 +308,9 @@ impl Drop for DynPage {
                     }
                     PageUsage::PageTable => {
                         meta::drop_as_last::<meta::PageTablePageMeta>(self.ptr);
+                    }
+                    PageUsage::KernelStack => {
+                        meta::drop_as_last::<meta::KernelStackMeta>(self.ptr);
                     }
                     // The following pages don't have metadata and can't be dropped.
                     PageUsage::Unused

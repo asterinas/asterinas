@@ -17,17 +17,21 @@
 //! +-+ <- 0xffff_ffff_8000_0000
 //! | |
 //! | |         Unused hole.
-//! +-+ <- 0xffff_ff00_0000_0000
-//! | |         For frame metadata, 1 TiB.
-//! | |         Mapped frames are untracked.
-//! +-+ <- 0xffff_fe00_0000_0000
-//! | |         For vm alloc/io mappings, 1 TiB.
-//! | |         Mapped frames are tracked with handles.
-//! +-+ <- 0xffff_fd00_0000_0000
+//! +-+ <- 0xffff_e100_0000_0000
+//! | |         For frame metadata, 1 TiB. Mapped frames are untracked.
+//! +-+ <- 0xffff_e000_0000_0000
+//! | |
+//! | |         For [`kva::Kva`], 16 TiB. Mapped pages are tracked with handles.
+//! | |
+//! +-+ <- 0xffff_d000_0000_0000
+//! | |
+//! | |         For [`kva::IoVa`], 16 TiB. Mapped pages are untracked.
+//! | |
+//! +-+ <- the middle of the higher half (0xffff_c000_0000_0000)
 //! | |
 //! | |
 //! | |
-//! | |         For linear mappings.
+//! | |         For linear mappings, 64 TiB.
 //! | |         Mapped physical addresses are untracked.
 //! | |
 //! | |
@@ -39,13 +43,18 @@
 //! 39 bits or 57 bits, the memory space just adjust porportionally.
 
 use alloc::vec::Vec;
-use core::{mem::ManuallyDrop, ops::Range};
+use core::{
+    mem::ManuallyDrop,
+    ops::{DerefMut, Range},
+};
 
 use align_ext::AlignExt;
 use log::info;
 use spin::Once;
 
+pub(crate) mod kva;
 use super::{
+    kspace::kva::{KvaFreeNode, KVA_FREELIST},
     nr_subpage_per_huge,
     page::{
         meta::{mapping, KernelMeta, MetaPageMeta},
@@ -59,7 +68,6 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     sync::SpinLock,
 };
-
 /// The shortest supported address width is 39 bits. And the literal
 /// values are written for 48 bits address width. Adjust the values
 /// by arithmetic left shift.
@@ -82,13 +90,19 @@ pub fn kernel_loaded_offset() -> usize {
 
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
 
-const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_ff00_0000_0000 << ADDR_WIDTH_SHIFT;
-const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_fe00_0000_0000 << ADDR_WIDTH_SHIFT;
+// const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_ff00_0000_0000 << ADDR_WIDTH_SHIFT;
+// const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_fe00_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e100_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;
 pub(in crate::mm) const FRAME_METADATA_RANGE: Range<Vaddr> =
     FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
-const VMALLOC_BASE_VADDR: Vaddr = 0xffff_fd00_0000_0000 << ADDR_WIDTH_SHIFT;
-pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
+const TRACKED_MAPPED_PAGES_BASE_VADDR: Vaddr = 0xffff_d000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const TRACKED_MAPPED_PAGES_RANGE: Range<Vaddr> =
+    TRACKED_MAPPED_PAGES_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
+
+const VMALLOC_BASE_VADDR: Vaddr = 0xffff_c000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..TRACKED_MAPPED_PAGES_BASE_VADDR;
 
 /// The base address of the linear mapping of all physical
 /// memory in the kernel address space.
@@ -218,7 +232,10 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             }
         }
     }
-
+    KVA_FREELIST.lock().deref_mut().insert(
+        TRACKED_MAPPED_PAGES_BASE_VADDR,
+        KvaFreeNode::new(TRACKED_MAPPED_PAGES_RANGE),
+    );
     KERNEL_PAGE_TABLE.call_once(|| kpt);
 }
 

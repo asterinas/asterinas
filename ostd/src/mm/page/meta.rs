@@ -78,6 +78,9 @@ pub enum PageUsage {
     Meta = 65,
     /// The page stores the kernel such as kernel code, data, etc.
     Kernel = 66,
+
+    /// The page stores data for kernel stack.
+    KernelStack = 67,
 }
 
 #[repr(C)]
@@ -218,6 +221,16 @@ impl PageMeta for KernelMeta {
         panic!("Kernel pages are not allowed to be dropped");
     }
 }
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct KernelStackMeta {}
+impl PageMeta for KernelStackMeta {
+    const USAGE: PageUsage = PageUsage::KernelStack;
+    fn on_drop(_page: &mut Page<Self>) {}
+}
+
+impl Sealed for KernelStackMeta {}
 
 // ======== End of all the specific metadata structures definitions ===========
 
