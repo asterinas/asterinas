@@ -20,7 +20,7 @@ pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     arch::mm::tlb_flush_addr_range,
     cpu::CpuSet,
-    mm::{kspace::{KERNEL_PAGE_TABLE, kva::Kva}, page::{meta::KernelMeta, allocator},FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
+    mm::{kspace::{kva::Kva, KERNEL_PAGE_TABLE}, page::{allocator, meta::{FrameMeta, KernelMeta}},FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
@@ -54,7 +54,7 @@ impl KernelStack {
         let mut kva = Kva::alloc( KERNEL_STACK_SIZE);
         let mapped_start = kva.start();
         let mapped_end = kva.end();
-        let pages = allocator::alloc::<KernelMeta>(KERNEL_STACK_SIZE).unwrap();
+        let pages = allocator::alloc::<FrameMeta>(KERNEL_STACK_SIZE).unwrap();
         unsafe {
             kva.map_pages(mapped_start..mapped_end, pages)
         }
@@ -72,7 +72,7 @@ impl KernelStack {
         let mapped_start = (kva.start() + 2 * PAGE_SIZE);
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         // let frames = FrameAllocOptions::new(KERNEL_STACK_SIZE).uninit(true).alloc()?;
-        let pages = allocator::alloc::<KernelMeta>(KERNEL_STACK_SIZE).unwrap();
+        let pages = allocator::alloc::<FrameMeta>(KERNEL_STACK_SIZE).unwrap();
         unsafe {
             kva.map_pages(mapped_start..mapped_end, pages);
         }

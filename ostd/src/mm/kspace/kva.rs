@@ -175,7 +175,7 @@ impl Kva {
         );
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         unsafe {
-            page_table.unmap(&range); 
+            let _ = page_table.unmap(&range); 
         }
     }
 
