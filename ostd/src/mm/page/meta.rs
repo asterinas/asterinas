@@ -78,6 +78,9 @@ pub enum PageUsage {
     Meta = 65,
     /// The page stores the kernel such as kernel code, data, etc.
     Kernel = 66,
+    
+    /// The page stores data for kernel stack.
+    KernelStack = 67,
 }
 
 #[repr(C)]
