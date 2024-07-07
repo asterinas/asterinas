@@ -113,7 +113,14 @@ impl DeviceInner {
         );
         let num_queues = transport.num_queues();
         if num_queues != 1 {
-            return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
+            // FIXME: support Multi-Queue Block IO Queueing Mechanism
+            // (`BlkFeatures::MQ`) to accelerate multi-processor requests for
+            // block devices. When SMP is enabled on x86, the feature is on.
+            // We should also consider negotiating the feature in the future.
+            // return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));
+            log::warn!(
+                "Not supporting Multi-Queue Block IO Queueing Mechanism, only using the first queue"
+            );
         }
         let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())
             .expect("create virtqueue failed");
