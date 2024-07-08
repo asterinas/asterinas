@@ -39,9 +39,7 @@ To explore how these APIs come into play,
 see [the example of a 100-line kernel in safe Rust](a-100-line-kernel.md).
 
 The OSTD APIs have been extensively documented.
-You can access the comprehensive API documentation for each release by visiting the [API docs](https://asterinas.github.io/api-docs).
-Additionally, you can refer to the latest nightly version API documentation at [API docs nightly](https://asterinas.github.io/api-docs-nightly),
-which remains in sync with the latest changes in the main branch.
+You can access the comprehensive API documentation by visiting the [docs.rs](https://docs.rs/ostd/latest/ostd).
 
 ## Four Requirements Satisfied
 
