@@ -310,7 +310,8 @@ where
     fn in_tracked_range(&self) -> bool {
         TypeId::of::<M>() == TypeId::of::<UserMode>()
             || TypeId::of::<M>() == TypeId::of::<KernelMode>()
-                && !crate::mm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&self.va)
+                && (!crate::mm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&self.va)
+                && !crate::mm::kspace::TRACKED_MAPPED_PAGES_RANGE.contains(&self.va))
     }
 }
 
@@ -496,7 +497,7 @@ where
                 continue;
             }
 
-            // Map the current page.
+
             debug_assert!(!self.0.in_tracked_range());
             let idx = self.0.cur_idx();
             self.cur_node_mut().set_child_untracked(idx, pa, prop);
