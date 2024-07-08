@@ -109,7 +109,8 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
 
     assert!(
         LINEAR_MAPPING_VADDR_RANGE.contains(&(page_fault_vaddr as usize)),
-        "kernel page fault: the address is outside the range of the linear mapping",
+        "kernel page fault: the address {} is outside the range of the linear mapping",
+        page_fault_vaddr,
     );
 
     const SUPPORTED_ERROR_CODES: PageFaultErrorCode = PageFaultErrorCode::PRESENT
