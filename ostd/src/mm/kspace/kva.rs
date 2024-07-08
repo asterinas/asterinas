@@ -1,6 +1,6 @@
 // aster-frame/mm/kspace/kva.rs
 use core::ops::{ Range, DerefMut};
-use crate::mm::{page::{meta::{PageMeta, PageUsage}, Page}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, PAGE_SIZE};
+use crate::mm::{page::{meta::{PageMeta, PageUsage}, Page}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, VmIo, PAGE_SIZE};
 use alloc::{collections::BTreeMap, vec::{self, Vec}};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -100,6 +100,7 @@ impl KvaInner {
     // unsafe fn write_bytes(&mut self, offset: usize, buf: &[u8]) -> Result<()> {
     //     todo!() // implementation provided by this trait.
     // }
+ 
     // Maybe other advanced object R/W methods like what's offered in the safe version?
 }
 
