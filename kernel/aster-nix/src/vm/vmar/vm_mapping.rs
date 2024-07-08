@@ -669,7 +669,7 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
     /// The default value is false.
     ///
     /// If this value is set to true, the mapping will be shared with child
-    /// process (by creating slice child vmo) when forking.
+    /// process when forking.
     pub fn is_shared(mut self, is_shared: bool) -> Self {
         self.is_shared = is_shared;
         self
@@ -726,7 +726,7 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
         vmo.check_rights(perm_rights)
     }
 
-    /// Checks whether the vmo will overwrite with any existing vmo or vmar.
+    /// Checks whether the mapping will overwrite with any existing mapping or vmar.
     fn check_overwrite(&self) -> Result<()> {
         if self.can_overwrite {
             // If `can_overwrite` is set, the offset cannot be None.
@@ -744,11 +744,11 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
             return Ok(());
         }
         let offset = self.offset.unwrap();
-        // We should spare enough space at least for the whole vmo.
+        // We should spare enough space at least for the whole mapping.
         let size = self.size;
-        let vmo_range = offset..(offset + size);
+        let mapping_range = offset..(offset + size);
         self.parent
             .0
-            .check_vmo_overwrite(vmo_range, self.can_overwrite)
+            .check_overwrite(mapping_range, self.can_overwrite)
     }
 }
