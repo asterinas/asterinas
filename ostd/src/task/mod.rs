@@ -13,5 +13,5 @@ pub use self::{
         add_task, inject_scheduler, schedule, yield_now, EnqueueFlags, FifoScheduler,
         LocalRunQueue, Scheduler, UpdateFlags, YieldFlags,
     },
-    task::{Priority, Task, TaskAdapter, TaskContextApi, TaskOptions, TaskStatus},
+    task::{Task, TaskAdapter, TaskContextApi, TaskOptions, TaskStatus},
 };

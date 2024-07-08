@@ -10,12 +10,13 @@ use core::{
 use ostd::{
     cpu::CpuSet,
     sync::WaitQueue,
-    task::{add_task, EnqueueFlags, Priority},
+    task::{add_task, EnqueueFlags},
 };
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
     prelude::*,
+    sched::Priority,
     thread::kernel_thread::{KernelThreadExt, ThreadOptions},
     Thread,
 };
@@ -239,8 +240,8 @@ impl Monitor {
             });
             let cpu_affinity = CpuSet::new_full();
             let priority = match priority {
-                WorkPriority::High => Priority::high(),
-                WorkPriority::Normal => Priority::normal(),
+                WorkPriority::High => Priority::DEFAULT_RT_KTHREAD_PRIORITY,
+                WorkPriority::Normal => Priority::DEFAULT_NORMAL_KTHREAD_PRIORITY,
             };
             let bound_thread = Thread::new_kernel_thread(
                 ThreadOptions::new(task_fn)

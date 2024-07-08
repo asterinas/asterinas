@@ -6,6 +6,7 @@
 #![allow(incomplete_features)]
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
+#![feature(const_mut_refs)]
 #![feature(const_option)]
 #![feature(extend_one)]
 #![feature(fn_traits)]

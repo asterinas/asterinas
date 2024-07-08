@@ -12,6 +12,7 @@ use crate::{
         signal::{sig_mask::SigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
+    sched::Priority,
     thread::{status::ThreadStatus, task, thread_table, Thread, Tid},
     time::{clocks::ProfClock, TimerManager},
 };
@@ -30,6 +31,7 @@ pub struct PosixThreadBuilder {
     clear_child_tid: Vaddr,
     sig_mask: SigMask,
     sig_queues: SigQueues,
+    priority: Priority,
 }
 
 impl PosixThreadBuilder {
@@ -44,6 +46,7 @@ impl PosixThreadBuilder {
             clear_child_tid: 0,
             sig_mask: SigMask::new_empty(),
             sig_queues: SigQueues::new(),
+            priority: Priority::DEFAULT_PTHREAD_PRIORITY,
         }
     }
 
@@ -72,6 +75,11 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn priority(mut self, priority: Priority) -> Self {
+        self.priority = priority;
+        self
+    }
+
     pub fn build(self) -> Arc<Thread> {
         let Self {
             tid,
@@ -83,6 +91,7 @@ impl PosixThreadBuilder {
             clear_child_tid,
             sig_mask,
             sig_queues,
+            priority,
         } = self;
 
         let thread = Arc::new_cyclic(|thread_ref| {
@@ -109,7 +118,7 @@ impl PosixThreadBuilder {
                 prof_timer_manager,
             };
 
-            Thread::new(tid, task, posix_thread, status)
+            Thread::new(tid, task, posix_thread, status, priority)
         });
         thread_table::add_thread(thread.clone());
         thread

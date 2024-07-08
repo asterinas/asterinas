@@ -5,12 +5,9 @@
 #![allow(missing_docs)]
 #![allow(dead_code)]
 
-mod priority;
-
 use core::cell::UnsafeCell;
 
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
-pub use priority::Priority;
 
 use super::{
     processor::current_task,
@@ -121,7 +118,6 @@ pub struct Task {
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
-    priority: Priority,
     // TODO: add multiprocessor support
     cpu_affinity: CpuSet,
 }
@@ -177,16 +173,6 @@ impl Task {
         }
     }
 
-    /// Returns the priority.
-    pub fn priority(&self) -> Priority {
-        self.priority
-    }
-
-    /// Returns the cpu_affinity.
-    pub fn cpu_affinity(&self) -> &CpuSet {
-        &self.cpu_affinity
-    }
-
     /// Exits the current task.
     ///
     /// The task `self` must be the task that is currently running.
@@ -201,11 +187,6 @@ impl Task {
         drop(self);
         yield_now(YieldFlags::Exit);
         unreachable!()
-    }
-
-    /// Checks if the task has a real-time priority.
-    pub fn is_real_time(&self) -> bool {
-        self.priority.is_real_time()
     }
 }
 
@@ -227,7 +208,6 @@ pub struct TaskOptions {
     func: Option<Box<dyn Fn() + Send + Sync>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     user_space: Option<Arc<UserSpace>>,
-    priority: Priority,
     cpu_affinity: CpuSet,
 }
 
@@ -242,7 +222,6 @@ impl TaskOptions {
             func: Some(Box::new(func)),
             data: None,
             user_space: None,
-            priority: Priority::normal(),
             cpu_affinity,
         }
     }
@@ -268,12 +247,6 @@ impl TaskOptions {
     /// Sets the user space associated with the task.
     pub fn user_space(mut self, user_space: Option<Arc<UserSpace>>) -> Self {
         self.user_space = user_space;
-        self
-    }
-
-    /// Sets the priority of the task.
-    pub fn priority(mut self, priority: Priority) -> Self {
-        self.priority = priority;
         self
     }
 
@@ -307,7 +280,6 @@ impl TaskOptions {
             ctx: UnsafeCell::new(TaskContext::default()),
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
-            priority: self.priority,
             cpu_affinity: self.cpu_affinity,
         };
 

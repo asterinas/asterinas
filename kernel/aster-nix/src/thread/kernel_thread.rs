@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{
-    cpu::CpuSet,
-    task::{Priority, TaskOptions},
-};
+use ostd::{cpu::CpuSet, task::TaskOptions};
 
 use super::{allocate_tid, status::ThreadStatus, thread_table, Thread};
-use crate::prelude::*;
+use crate::{prelude::*, sched::Priority};
 
 /// The inner data of a kernel thread
 pub struct KernelThread;
@@ -44,13 +41,13 @@ impl KernelThreadExt for Thread {
             let weal_thread = thread_ref.clone();
             let task = TaskOptions::new(thread_fn)
                 .data(weal_thread)
-                .priority(thread_options.priority)
                 .cpu_affinity(thread_options.cpu_affinity)
                 .build()
                 .unwrap();
             let status = ThreadStatus::Init;
+            let priority = thread_options.priority;
             let kernel_thread = KernelThread;
-            Thread::new(tid, task, kernel_thread, status)
+            Thread::new(tid, task, kernel_thread, status, priority)
         });
         thread_table::add_thread(thread.clone());
         thread
@@ -79,11 +76,10 @@ impl ThreadOptions {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        let cpu_affinity = CpuSet::new_full();
         Self {
             func: Some(Box::new(func)),
-            priority: Priority::normal(),
-            cpu_affinity,
+            priority: Priority::DEFAULT_NORMAL_KTHREAD_PRIORITY,
+            cpu_affinity: CpuSet::new_full(),
         }
     }
 

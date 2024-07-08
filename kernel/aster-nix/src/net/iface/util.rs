@@ -2,11 +2,12 @@
 
 use core::time::Duration;
 
-use ostd::{arch::timer::Jiffies, task::Priority};
+use ostd::arch::timer::Jiffies;
 
 use super::Iface;
 use crate::{
     prelude::*,
+    sched::Priority,
     thread::{
         kernel_thread::{KernelThreadExt, ThreadOptions},
         Thread,
@@ -83,6 +84,6 @@ pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
         }
     };
 
-    let options = ThreadOptions::new(task_fn).priority(Priority::high());
+    let options = ThreadOptions::new(task_fn).priority(Priority::DEFAULT_RT_KTHREAD_PRIORITY);
     Thread::spawn_kernel_thread(options);
 }

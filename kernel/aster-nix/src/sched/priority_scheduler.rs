@@ -5,36 +5,41 @@ use ostd::{
     task::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, Task, UpdateFlags},
 };
 
-use crate::prelude::*;
+use super::Priority;
+use crate::{prelude::*, thread::Thread};
 
 pub fn init() {
-    let preempt_scheduler = Box::new(PreemptScheduler::new());
-    let scheduler = Box::<PreemptScheduler<Task>>::leak(preempt_scheduler);
+    let priority_scheduler = Box::new(PriorityScheduler::new());
+    let scheduler = Box::<PriorityScheduler<Task>>::leak(priority_scheduler);
     inject_scheduler(scheduler);
 }
 
-/// The preempt scheduler
+/// The priority scheduler
 ///
 /// Real-time tasks are placed in the `real_time_tasks` queue and
 /// are always prioritized during scheduling.
 /// Normal tasks are placed in the `normal_tasks` queue and are only
 /// scheduled for execution when there are no real-time tasks.
-struct PreemptScheduler<T: PreemptSchedEntity> {
+struct PriorityScheduler<T: PrioritySchedEntity> {
     idx: SpinLock<usize>,
-    rq: Vec<SpinLock<PreemptRunQueue<T>>>,
+    rq: Vec<SpinLock<PriorityRunQueue<T>>>,
 }
 
-trait PreemptSchedEntity {
-    const REAL_TIME_TASK_PRIORITY: u16 = 100;
-
+trait PrioritySchedEntity {
     fn is_real_time(&self) -> bool;
 
     fn can_run_on(&self, cpu_id: u32) -> bool;
 }
 
-impl PreemptSchedEntity for Task {
+impl PrioritySchedEntity for Task {
     fn is_real_time(&self) -> bool {
-        self.priority().get() < Self::REAL_TIME_TASK_PRIORITY
+        self.data()
+            .downcast_ref::<Weak<Thread>>()
+            .unwrap()
+            .upgrade()
+            .unwrap()
+            .priority()
+            < Priority::DEFAULT_NORMAL_KTHREAD_PRIORITY
     }
 
     fn can_run_on(&self, cpu_id: u32) -> bool {
@@ -42,11 +47,11 @@ impl PreemptSchedEntity for Task {
     }
 }
 
-impl<T: PreemptSchedEntity> PreemptScheduler<T> {
+impl<T: PrioritySchedEntity> PriorityScheduler<T> {
     pub fn new() -> Self {
         let mut rq = Vec::new();
         for _ in 0..num_cpus() {
-            rq.push(SpinLock::new(PreemptRunQueue::new()));
+            rq.push(SpinLock::new(PriorityRunQueue::new()));
         }
         Self {
             idx: SpinLock::new(0),
@@ -55,7 +60,7 @@ impl<T: PreemptSchedEntity> PreemptScheduler<T> {
     }
 }
 
-impl<T: Sync + Send + PreemptSchedEntity> Scheduler<T> for PreemptScheduler<T> {
+impl<T: Sync + Send + PrioritySchedEntity> Scheduler<T> for PriorityScheduler<T> {
     fn enqueue(&self, runnable: Arc<T>, _flags: EnqueueFlags) {
         let mut idx = self.idx.lock_irq_disabled();
         for _ in 0..self.rq.len() {
@@ -88,18 +93,18 @@ impl<T: Sync + Send + PreemptSchedEntity> Scheduler<T> for PreemptScheduler<T> {
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {
-        let local_rq: &PreemptRunQueue<T> = &self.rq[this_cpu() as usize].lock_irq_disabled();
+        let local_rq: &PriorityRunQueue<T> = &self.rq[this_cpu() as usize].lock_irq_disabled();
         f(local_rq);
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>)) {
-        let local_rq: &mut PreemptRunQueue<T> =
+        let local_rq: &mut PriorityRunQueue<T> =
             &mut self.rq[this_cpu() as usize].lock_irq_disabled();
         f(local_rq);
     }
 }
 
-struct PreemptRunQueue<T: PreemptSchedEntity> {
+struct PriorityRunQueue<T: PrioritySchedEntity> {
     current: Option<Arc<T>>,
     /// Tasks with a priority of less than 100 are regarded as real-time tasks.
     real_time_tasks: VecDeque<Arc<T>>,
@@ -108,7 +113,7 @@ struct PreemptRunQueue<T: PreemptSchedEntity> {
     should_preempt: bool,
 }
 
-impl<T: PreemptSchedEntity> PreemptRunQueue<T> {
+impl<T: PrioritySchedEntity> PriorityRunQueue<T> {
     pub fn new() -> Self {
         Self {
             current: None,
@@ -119,7 +124,7 @@ impl<T: PreemptSchedEntity> PreemptRunQueue<T> {
     }
 }
 
-impl<T: Sync + Send + PreemptSchedEntity> LocalRunQueue<T> for PreemptRunQueue<T> {
+impl<T: Sync + Send + PrioritySchedEntity> LocalRunQueue<T> for PriorityRunQueue<T> {
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
         match flags {
             UpdateFlags::Tick => {
