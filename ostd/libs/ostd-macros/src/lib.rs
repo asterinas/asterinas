@@ -29,8 +29,8 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(
         #[no_mangle]
         pub fn __ostd_main() -> ! {
-            ostd::init();
             #main_fn_name();
+            // The main function should never return.
             ostd::prelude::abort();
         }
 

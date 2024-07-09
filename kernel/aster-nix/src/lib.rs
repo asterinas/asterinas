@@ -26,6 +26,7 @@
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
+    task::Task,
 };
 use process::Process;
 
@@ -75,7 +76,7 @@ pub fn init() {
     device::init().unwrap();
     vdso::init();
     taskless::init();
-    process::init();
+    process::posix_thread::futex::init();
 }
 
 fn init_thread() {
@@ -83,28 +84,26 @@ fn init_thread() {
         "[kernel] Spawn init thread, tid = {}",
         current_thread!().tid()
     );
-    // Work queue should be initialized before interrupt is enabled,
-    // in case any irq handler uses work queue as bottom half
     thread::work_queue::init();
-    // FIXME: Remove this if we move the step of mounting
-    // the filesystems to be done within the init process.
-    ostd::exception::irq::enable_local();
     net::lazy_init();
     fs::lazy_init();
-    // driver::pci::virtio::block::block_device_test();
+
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
         let current = current_thread!();
         let tid = current.tid();
         debug!("current tid = {}", tid);
+
+        print_banner();
     }));
     thread.join();
+
+    process::timer_manager::init();
+
     info!(
         "[aster-nix/lib.rs] spawn kernel thread, tid = {}",
         thread.tid()
     );
-
-    print_banner();
 
     let karg = boot::kernel_cmdline();
 
@@ -130,11 +129,11 @@ fn init_thread() {
     exit_qemu(exit_code);
 }
 
-/// first process never return
 #[controlled]
 pub fn run_first_process() -> ! {
-    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread));
-    unreachable!()
+    Thread::new_kernel_thread(ThreadOptions::new(init_thread)).run();
+    // Rest in pease. Let the init thread do the following jobs.
+    Task::exit(Task::current());
 }
 
 fn print_banner() {

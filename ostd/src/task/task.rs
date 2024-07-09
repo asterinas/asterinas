@@ -189,7 +189,7 @@ impl Task {
     ///
     /// **NOTE:** If there is anything left on the stack, it will be forgotten. This behavior may
     /// lead to resource leakage.
-    fn exit(self: Arc<Self>) -> ! {
+    pub fn exit(self: Arc<Self>) -> ! {
         self.inner_exclusive_access().task_status = TaskStatus::Exited;
 
         // `current_task()` still holds a strong reference, so nothing is destroyed at this point,

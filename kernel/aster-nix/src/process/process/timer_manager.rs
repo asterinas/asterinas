@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Timer manager for a POSIX process.
+
 use alloc::{
     boxed::Box,
     sync::{Arc, Weak},
@@ -72,7 +74,7 @@ fn update_cpu_time() {
 
 /// Registers a function to update the CPU clock in processes and
 /// threads during the system timer interrupt.
-pub(super) fn init() {
+pub fn init() {
     timer::register_callback(update_cpu_time);
 }
 
