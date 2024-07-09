@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-VDSO_DIR := /root/dependency
+VDSO_DIR := ../target
 VDSO_LIB := $(VDSO_DIR)/vdso64.so
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
