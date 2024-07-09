@@ -27,6 +27,7 @@ COMMON_QEMU_ARGS="\
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -drive if=none,format=raw,id=x0,file=./test/build/ext2.img \
     -drive if=none,format=raw,id=x1,file=./test/build/exfat.img \
+    -drive if=none,format=raw,id=x2,file=./test/build/vda.img \
 "
 
 if [ "$1" = "iommu" ]; then
@@ -42,6 +43,7 @@ QEMU_ARGS="\
     -machine q35,kernel-irqchip=split \
     -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtio-blk-pci,bus=pcie.0,addr=0x7,drive=x1,serial=vexfat,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
+    -device virtio-blk-pci,bus=pcie.0,addr=0x8,drive=x2,serial=vda,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
@@ -56,6 +58,7 @@ MICROVM_QEMU_ARGS="\
     -no-user-config \
     -device virtio-blk-device,drive=x0,serial=vext2 \
     -device virtio-blk-device,drive=x1,serial=vexfat \
+    -device virtio-blk-device,drive=x2,serial=vda \
     -device virtio-keyboard-device \
     -device virtio-net-device,netdev=net01 \
     -device virtio-serial-device \
