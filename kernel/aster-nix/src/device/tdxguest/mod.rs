@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_frame::mm::{DmaCoherent, FrameAllocOptions, HasPaddr, VmIo};
+use ostd::mm::{DmaCoherent, FrameAllocOptions, HasPaddr, VmIo};
 use tdx_guest::tdcall::{get_report, TdCallError};
 
 use super::*;
@@ -53,6 +53,7 @@ impl From<TdCallError> for Error {
                 Error::with_message(Errno::EBUSY, "TdCallError::TdxOperandBusy")
             }
             TdCallError::Other => Error::with_message(Errno::EAGAIN, "TdCallError::Other"),
+            _ => todo!(),
         }
     }
 }
@@ -110,6 +111,7 @@ fn handle_get_report(arg: usize) -> Result<i32> {
     dma_coherent
         .read_bytes(1024, &mut generated_report)
         .unwrap();
-    write_bytes_to_user(tdx_report_vaddr, &generated_report)?;
+    let report_slice: &[u8] = &generated_report;
+    write_bytes_to_user(tdx_report_vaddr, &mut VmReader::from(report_slice))?;
     Ok(0)
 }

@@ -46,10 +46,8 @@ qemu.args = "$(./tools/qemu_args.sh iommu)"
 supported_archs = ["x86_64"]
 build.features = ["intel_tdx"]
 boot.method = "grub-qcow2"
-grub.mkrescue_path = "~/tdx-tools/grub"
 grub.protocol = "linux"
 qemu.args = """\
-    -accel kvm \
     -name process=tdxvm,debug-threads=on \
     -m ${MEM:-8G} \
     -smp ${SMP:-1} \
@@ -58,18 +56,18 @@ qemu.args = """\
     -monitor pty \
     -no-hpet \
     -nodefaults \
-    -monitor telnet:127.0.0.1:9003,server,nowait \
-    -object tdx-guest,sept-ve-disable,id=tdx,quote-generation-service=vsock:2:4050 \
-    -cpu host,-kvm-steal-time,pmu=off,tsc-freq=1000000000 \
-    -machine q35,kernel_irqchip=split,confidential-guest-support=tdx \
-    -device virtio-net-pci,netdev=mynet0,disable-legacy=on,disable-modern=off \
+    -bios /usr/share/qemu/OVMF.fd \
+    -object tdx-guest,sept-ve-disable=on,id=tdx,quote-generation-service=vsock:2:4050 \
+    -cpu host,-kvm-steal-time,pmu=off \
+    -machine q35,kernel_irqchip=split,confidential-guest-support=tdx,memory-backend=ram1 \
+    -object memory-backend-memfd-private,id=ram1,size=${MEM:-8G} \
+    -device virtio-net-pci,netdev=mynet0 \
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
-    -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,disable-legacy=on,disable-modern=off \
-    -drive file=fs.img,if=none,format=raw,id=x0 \
-    -netdev user,id=mynet0,hostfwd=tcp::10027-:22,hostfwd=tcp::54136-:8090 \
-    -chardev stdio,id=mux,mux=on,logfile=./$(date '+%Y-%m-%dT%H%M%S').log \
+    -netdev user,id=mynet0,hostfwd=tcp::10027-:22 \
+    -chardev stdio,id=mux,mux=on,logfile=qemu.log \
     -device virtio-serial,romfile= \
     -device virtconsole,chardev=mux \
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -monitor chardev:mux \
     -serial chardev:mux \
 """
