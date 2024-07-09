@@ -22,7 +22,7 @@ use core::ops::Deref;
 
 use crate::{
     cpu::{get_cpu_local_base, set_cpu_local_base},
-    trap::{disable_local, DisabledLocalIrqGuard},
+    exception::irq::{disable_local, DisabledLocalIrqGuard},
 };
 
 /// Defines a CPU-local variable.

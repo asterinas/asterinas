@@ -8,7 +8,7 @@ use log::info;
 
 use crate::{
     arch::x86::device::io_port::{IoPort, WriteOnlyAccess},
-    trap::IrqLine,
+    exception::irq::IrqLine,
 };
 
 static MASTER_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x20) };

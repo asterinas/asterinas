@@ -15,7 +15,7 @@ use crate::{
         timer::TIMER_FREQ,
         x86::device::io_port::{IoPort, WriteOnlyAccess},
     },
-    trap::IrqLine,
+    exception::irq::IrqLine,
 };
 
 /// PIT Operating Mode.

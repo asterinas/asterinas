@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+//! Interrupt Request (IRQ) handler registration and management.
 
 use core::fmt::Debug;
 
@@ -119,7 +119,7 @@ impl Drop for IrqLine {
 /// # Example
 ///
 /// ```rust
-/// use ostd::irq;
+/// use ostd::exception::irq;
 ///
 /// {
 ///     let _ = irq::disable_local();
@@ -135,7 +135,7 @@ pub fn disable_local() -> DisabledLocalIrqGuard {
 #[must_use]
 pub struct DisabledLocalIrqGuard {
     was_enabled: bool,
-    preempt_guard: DisablePreemptGuard,
+    _preempt_guard: DisablePreemptGuard,
 }
 
 impl !Send for DisabledLocalIrqGuard {}
@@ -146,10 +146,10 @@ impl DisabledLocalIrqGuard {
         if was_enabled {
             irq::disable_local();
         }
-        let preempt_guard = disable_preempt();
+        let guard = disable_preempt();
         Self {
             was_enabled,
-            preempt_guard,
+            _preempt_guard: guard,
         }
     }
 
@@ -160,7 +160,7 @@ impl DisabledLocalIrqGuard {
         self.was_enabled = false;
         Self {
             was_enabled,
-            preempt_guard: disable_preempt(),
+            _preempt_guard: disable_preempt(),
         }
     }
 }
@@ -168,6 +168,7 @@ impl DisabledLocalIrqGuard {
 impl Drop for DisabledLocalIrqGuard {
     fn drop(&mut self) {
         if self.was_enabled {
+            debug_assert!(!irq::is_local_enabled());
             irq::enable_local();
         }
     }

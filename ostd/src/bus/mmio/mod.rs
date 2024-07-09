@@ -18,8 +18,8 @@ use self::bus::MmioBus;
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    arch::kernel::IO_APIC, bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr,
-    sync::SpinLock, trap::IrqLine,
+    arch::kernel::IO_APIC, bus::mmio::common_device::MmioCommonDevice, exception::irq::IrqLine,
+    mm::paddr_to_vaddr, sync::SpinLock,
 };
 
 const VIRTIO_MMIO_MAGIC: u32 = 0x74726976;

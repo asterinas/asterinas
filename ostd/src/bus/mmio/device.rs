@@ -7,9 +7,9 @@ use log::info;
 
 use super::VIRTIO_MMIO_MAGIC;
 use crate::{
+    exception::irq::IrqLine,
     io_mem::IoMem,
     mm::{paddr_to_vaddr, Paddr, VmIo},
-    trap::IrqLine,
 };
 
 /// MMIO Common device.

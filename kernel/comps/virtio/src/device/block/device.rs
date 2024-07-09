@@ -11,10 +11,10 @@ use aster_util::safe_ptr::SafePtr;
 use id_alloc::IdAlloc;
 use log::info;
 use ostd::{
+    exception::TrapFrame,
     io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo},
     sync::SpinLock,
-    trap::TrapFrame,
     Pod,
 };
 

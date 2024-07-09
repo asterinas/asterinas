@@ -9,10 +9,8 @@ use core::time::Duration;
 
 use id_alloc::IdAlloc;
 use ostd::{
-    arch::{
-        timer::{self, TIMER_FREQ},
-        x86::trap::is_kernel_interrupted,
-    },
+    arch::timer::{self, TIMER_FREQ},
+    exception::in_interrupt_context,
     sync::Mutex,
 };
 
@@ -44,7 +42,7 @@ fn update_cpu_time() {
         // Based on whether the timer interrupt occurs in kernel mode or user mode,
         // the function will add the duration of one timer interrupt interval to the
         // corresponding CPU clocks.
-        if is_kernel_interrupted() {
+        if in_interrupt_context() {
             posix_thread
                 .prof_clock()
                 .kernel_clock()

@@ -14,8 +14,8 @@ use core::{
 };
 
 use crate::{
+    exception::irq::{self, DisabledLocalIrqGuard},
     task::{disable_preempt, DisablePreemptGuard},
-    trap::{disable_local, DisabledLocalIrqGuard},
 };
 
 /// Spin-based Read-write Lock
@@ -191,7 +191,7 @@ impl<T: ?Sized> RwLock<T> {
     /// does not guarantee any order. Interrupts will automatically be restored
     /// when acquiring fails.
     pub fn try_read_irq_disabled(&self) -> Option<RwLockReadGuard<T>> {
-        let irq_guard = disable_local();
+        let irq_guard = irq::disable_local();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(RwLockReadGuard {
@@ -211,7 +211,7 @@ impl<T: ?Sized> RwLock<T> {
     /// does not guarantee any order. Interrupts will automatically be restored
     /// when acquiring fails.
     pub fn try_write_irq_disabled(&self) -> Option<RwLockWriteGuard<T>> {
-        let irq_guard = disable_local();
+        let irq_guard = irq::disable_local();
         if self
             .lock
             .compare_exchange(0, WRITER, Acquire, Relaxed)
@@ -233,7 +233,7 @@ impl<T: ?Sized> RwLock<T> {
     /// does not guarantee any order. Interrupts will automatically be restored
     /// when acquiring fails.
     pub fn try_upread_irq_disabled(&self) -> Option<RwLockUpgradeableGuard<T>> {
-        let irq_guard = disable_local();
+        let irq_guard = irq::disable_local();
         let lock = self.lock.fetch_or(UPGRADEABLE_READER, Acquire) & (WRITER | UPGRADEABLE_READER);
         if lock == 0 {
             return Some(RwLockUpgradeableGuard {

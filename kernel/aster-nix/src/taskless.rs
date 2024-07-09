@@ -10,7 +10,7 @@ use core::{
 };
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
-use ostd::{cpu_local, trap::SoftIrqLine, CpuLocal};
+use ostd::{cpu_local, exception::softirq::SoftIrqLine, CpuLocal};
 
 use crate::softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID};
 

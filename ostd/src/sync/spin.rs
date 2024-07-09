@@ -11,8 +11,8 @@ use core::{
 };
 
 use crate::{
+    exception::irq::{self, DisabledLocalIrqGuard},
     task::{disable_preempt, DisablePreemptGuard},
-    trap::{disable_local, DisabledLocalIrqGuard},
 };
 
 /// A spin lock.
@@ -38,7 +38,7 @@ impl<T: ?Sized> SpinLock<T> {
     /// This method runs in a busy loop until the lock can be acquired.
     /// After acquiring the spin lock, all interrupts are disabled.
     pub fn lock_irq_disabled(&self) -> SpinLockGuard<T> {
-        let guard = disable_local();
+        let guard = irq::disable_local();
         self.acquire_lock();
         SpinLockGuard_ {
             lock: self,
@@ -48,7 +48,7 @@ impl<T: ?Sized> SpinLock<T> {
 
     /// Tries acquiring the spin lock immedidately with disabling the local IRQs.
     pub fn try_lock_irq_disabled(&self) -> Option<SpinLockGuard<T>> {
-        let irq_guard = disable_local();
+        let irq_guard = irq::disable_local();
         if self.try_acquire_lock() {
             let lock_guard = SpinLockGuard_ {
                 lock: self,

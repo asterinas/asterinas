@@ -15,7 +15,7 @@ use spin::Once;
 use trapframe::TrapFrame;
 
 use self::apic::APIC_TIMER_CALLBACK;
-use crate::{arch::x86::kernel, cpu_local, trap::IrqLine};
+use crate::{arch::x86::kernel, cpu_local, exception::irq::IrqLine};
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and
 /// convenient for timer. What's more, the frequency cannot be set too high or too low, 1000Hz is
