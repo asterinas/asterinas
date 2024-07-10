@@ -80,22 +80,7 @@ impl KernelStack {
         unsafe {
             kva.map_pages(mapped_start..mapped_end, pages);
         }
-        // let stack_segment =
-        //     FrameAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
-        // // FIXME: modifying the the linear mapping is bad.
-        // let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        // let guard_page_vaddr = {
-        //     let guard_page_paddr = stack_segment.start_paddr();
-        //     crate::mm::paddr_to_vaddr(guard_page_paddr)
-        // };
-        // // SAFETY: the segment allocated is not used by others so we can protect it.
-        // unsafe {
-        //     page_table
-        //         .protect(&(guard_page_vaddr..guard_page_vaddr + PAGE_SIZE), |p| {
-        //             p.flags -= PageFlags::RW
-        //         })
-        //         .unwrap();
-        // }
+        println!("Sucess ful map {:x} ~ {:x}", mapped_start, mapped_end);
         Ok(Self {
             kva:kva,
             mapped:mapped_start..mapped_end,
@@ -112,6 +97,7 @@ impl Drop for KernelStack {
     fn drop(&mut self) {
         unsafe {
             self.kva.unmap_pages(self.mapped.start..self.mapped.end);
+            println!("we unmap kernel stack for {:x} ~ {:x}", self.mapped.start, self.mapped.end);
         }
     }
 }
