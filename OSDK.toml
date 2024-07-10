@@ -46,7 +46,7 @@ qemu.args = "$(./tools/qemu_args.sh iommu)"
 supported_archs = ["x86_64"]
 build.features = ["cvm_guest"]
 boot.method = "grub-qcow2"
-grub.protocol = "linux"
+grub.boot_protocol = "linux"
 qemu.args = """\
     -name process=tdxvm,debug-threads=on \
     -m ${MEM:-8G} \
