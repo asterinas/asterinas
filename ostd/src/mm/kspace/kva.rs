@@ -169,9 +169,11 @@ impl Kva {
     pub unsafe fn unmap_pages(&mut self, range: Range<Vaddr>) {
         assert!(
             range.start < self.start() || range.end > self.end(),
-            "Unmapping from an invalid address range: start={}, end={}",
+            "Unmapping from an invalid address range: start={:x} < {:x}, end={:x} < {:x}",
             range.start,
-            range.end
+            self.start(),
+            range.end,
+            self.end()
         );
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let mut cursor = page_table.cursor_mut(&range).unwrap();
