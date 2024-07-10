@@ -1,6 +1,6 @@
 // aster-frame/mm/kspace/kva.rs
 use core::ops::{ Range, DerefMut};
-use crate::mm::{page::{meta::{PageMeta, PageUsage}, Page, cont_pages::ContPages}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, VmIo, PAGE_SIZE};
+use crate::mm::{page::{self, cont_pages::ContPages, meta::{PageMeta, PageUsage}, Page}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, VmIo, PAGE_SIZE};
 use alloc::{collections::BTreeMap, vec::{self, Vec}};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -143,7 +143,7 @@ impl Kva {
     /// # Safety
     /// The caller should ensure either the mapped pages or the range to be used doesn't
     /// violate the memory safety of kernel objects.
-    pub unsafe fn map_pages<T: PageMeta>(&mut self, range: Range<Vaddr>, pages: ContPages<T>) {
+    pub unsafe fn map_pages<T: PageMeta>(&mut self, range: Range<Vaddr>, pages: Vec<Page<T>>) {
         assert!( 
             (range.end - range.start) == (pages.len()), 
             "The allocated number of frames does not match the required number"
@@ -155,18 +155,18 @@ impl Kva {
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut va = range.start;
-        page_table
-                .map(&range, &(pages.start_paddr()..pages.start_paddr()+pages.len()), prop);
-        // for page in &pages {
-        //     page_table
-        //         .map(
-        //             &(va..va + PAGE_SIZE), 
-        //             &(page.paddr()..page.paddr() + PAGE_SIZE), 
-        //             prop
-        //         ).unwrap();
-        //     va += PAGE_SIZE;
-        //     // println!("Page data: {}", page.data);
-        // }
+        // page_table
+        //         .map(&range, &(pages.start_paddr()..pages.start_paddr()+pages.len()), prop);
+        for page in &pages {
+            page_table
+                .map(
+                    &(va..va + PAGE_SIZE), 
+                    &(page.paddr()..page.paddr() + PAGE_SIZE), 
+                    prop
+                ).unwrap();
+            va += PAGE_SIZE;
+            // println!("Page data: {}", page.data);
+        }
     }
     /// Get the type of the mapped page.
     pub unsafe fn unmap_pages(&mut self, range: Range<Vaddr>) {

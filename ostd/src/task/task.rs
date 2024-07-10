@@ -73,7 +73,8 @@ impl KernelStack {
         let mapped_start = (kva.start() + 2 * PAGE_SIZE);
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         // let frames = FrameAllocOptions::new(KERNEL_STACK_SIZE).uninit(true).alloc()?;
-        let pages = allocator::alloc_contiguous::<KernelStackMeta>((KERNEL_STACK_SIZE)).unwrap();
+        let pages = allocator::alloc::<KernelStackMeta>(KERNEL_STACK_SIZE).unwrap();
+        // let pages = allocator::alloc_contiguous::<KernelStackMeta>((KERNEL_STACK_SIZE)).unwrap();
         // let pages = allocator::alloc::<FrameMeta>(KERNEL_STACK_SIZE).unwrap();
         unsafe {
             kva.map_pages(mapped_start..mapped_end, pages);
