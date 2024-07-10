@@ -4,7 +4,8 @@
 
 use std::{
     ffi::OsStr,
-    fs::{self, create_dir_all},
+    fs::{self, create_dir_all, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
     process::Output,
 };
@@ -12,11 +13,22 @@ use std::{
 use assert_cmd::Command;
 use toml::{Table, Value};
 
-pub fn cargo_osdk<T: AsRef<OsStr>, I: IntoIterator<Item = T>>(args: I) -> Command {
+pub fn cargo_osdk<T: AsRef<OsStr>, I: IntoIterator<Item = T> + Copy>(args: I) -> Command {
     let mut command = Command::cargo_bin("cargo-osdk").unwrap();
     command.arg("osdk");
     command.args(args);
+    conditionally_add_tdx_args(&mut command, args);
     command
+}
+
+pub fn edit_config_files(dir: &Path) {
+    let manifest_path = dir.join("Cargo.toml");
+    assert!(manifest_path.is_file());
+    depends_on_local_ostd(manifest_path);
+    if is_tdx_enabled() {
+        let osdk_path = dir.join("OSDK.toml");
+        add_tdx_scheme(osdk_path).unwrap();
+    };
 }
 
 pub fn assert_success(output: &Output) {
@@ -91,7 +103,7 @@ pub fn add_member_to_workspace(workspace: impl AsRef<Path>, new_member: &str) {
 /// instead of ostd from remote source(git repo/crates.io).
 ///
 /// Each crate created by `cargo ostd new` should add this patch.
-pub fn depends_on_local_ostd(manifest_path: impl AsRef<Path>) {
+pub(crate) fn depends_on_local_ostd(manifest_path: impl AsRef<Path>) {
     let crate_dir = env!("CARGO_MANIFEST_DIR");
     let ostd_dir = PathBuf::from(crate_dir)
         .join("..")
@@ -117,4 +129,41 @@ pub fn depends_on_local_ostd(manifest_path: impl AsRef<Path>) {
     dep.insert("ostd".to_string(), Value::Table(table));
 
     fs::write(manifest_path, manifest.to_string().as_bytes()).unwrap();
+}
+
+pub(crate) fn add_tdx_scheme(osdk_path: impl AsRef<Path>) -> std::io::Result<()> {
+    let template_path = Path::new(file!())
+        .parent()
+        .unwrap()
+        .join("scheme.tdx.template");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(osdk_path)?;
+    let tdx_qemu_cfg = fs::read_to_string(template_path)?;
+    file.write_all(format!("\n\n{}", tdx_qemu_cfg).as_bytes())?;
+    Ok(())
+}
+
+pub(crate) fn is_tdx_enabled() -> bool {
+    std::env::var("INTEL_TDX").is_ok()
+}
+
+fn conditionally_add_tdx_args<T: AsRef<OsStr>, I: IntoIterator<Item = T> + Copy>(
+    command: &mut Command,
+    args: I,
+) {
+    if is_tdx_enabled() && contains_build_run_or_test(args) {
+        command.args(&["--scheme", "tdx"]);
+    }
+}
+
+fn contains_build_run_or_test<T: AsRef<OsStr>, I: IntoIterator<Item = T>>(args: I) -> bool {
+    args.into_iter().any(|arg| {
+        if let Some(arg_str) = arg.as_ref().to_str() {
+            arg_str == "build" || arg_str == "run" || arg_str == "test"
+        } else {
+            false
+        }
+    })
 }

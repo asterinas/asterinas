@@ -60,5 +60,5 @@ fn cli_new_crate_with_hyphen() {
         .unwrap();
     assert_success(&output);
     assert!(fs::metadata("my-first-os").is_ok());
-    fs::remove_dir_all("my-first-os");
+    let _ = fs::remove_dir_all("my-first-os");
 }

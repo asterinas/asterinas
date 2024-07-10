@@ -2,6 +2,8 @@
 
 //! Test the `run` command
 
+use crate::util::is_tdx_enabled;
+
 const WORKSPACE: &str = "/tmp/kernel_test_workspace/run_command";
 
 mod workspace {
@@ -67,6 +69,10 @@ mod qemu_gdb_feature {
 
     #[test]
     fn basic_debug() {
+        // Test skipped because TDX is enabled.
+        if is_tdx_enabled() {
+            return;
+        }
         let workspace = workspace::WorkSpace::new(WORKSPACE, "basic_debug");
         let unix_socket = {
             let path = Path::new(&workspace.os_dir()).join("qemu-gdb-sock");
@@ -109,6 +115,10 @@ mod qemu_gdb_feature {
 
         #[test]
         fn vsc_launch_file() {
+            // Test skipped because TDX is enabled.
+            if is_tdx_enabled() {
+                return;
+            }
             let kernel_name = "vsc_launch_file";
             let workspace = workspace::WorkSpace::new(WORKSPACE, kernel_name);
             let addr = ":50001";
