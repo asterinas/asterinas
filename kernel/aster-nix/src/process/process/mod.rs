@@ -641,7 +641,7 @@ impl Process {
 }
 
 pub fn current() -> Arc<Process> {
-    let current_thread = Thread::current();
+    let current_thread = current_thread!();
     if let Some(posix_thread) = current_thread.as_posix_thread() {
         posix_thread.process()
     } else {

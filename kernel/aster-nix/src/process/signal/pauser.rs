@@ -123,9 +123,9 @@ impl Pauser {
     where
         F: FnMut() -> Option<R>,
     {
-        let current_thread = current_thread!();
+        let current_thread = Thread::current();
         let sig_queue_waiter =
-            SigObserverRegistrar::new(&current_thread, self.sig_mask, self.clone());
+            SigObserverRegistrar::new(current_thread.as_ref(), self.sig_mask, self.clone());
 
         let cond = || {
             if let Some(res) = cond() {
@@ -174,8 +174,12 @@ enum SigObserverRegistrar<'a> {
 }
 
 impl<'a> SigObserverRegistrar<'a> {
-    fn new(current_thread: &'a Arc<Thread>, sig_mask: SigMask, pauser: Arc<Pauser>) -> Self {
-        let Some(thread) = current_thread.as_posix_thread() else {
+    fn new(
+        current_thread: Option<&'a Arc<Thread>>,
+        sig_mask: SigMask,
+        pauser: Arc<Pauser>,
+    ) -> Self {
+        let Some(thread) = current_thread.and_then(|thread| thread.as_posix_thread()) else {
             return Self::KernelThread;
         };
 
@@ -281,19 +285,17 @@ mod test {
         let boolean = Arc::new(AtomicBool::new(false));
         let boolean_cloned = boolean.clone();
 
-        let thread1 = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            pauser
-                .pause_until(|| boolean.load(Ordering::Relaxed).then_some(()))
-                .unwrap();
-        }));
-
-        let thread2 = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
+        let thread = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
             Thread::yield_now();
+
             boolean_cloned.store(true, Ordering::Relaxed);
             pauser_cloned.resume_all();
         }));
 
-        thread1.join();
-        thread2.join();
+        pauser
+            .pause_until(|| boolean.load(Ordering::Relaxed).then_some(()))
+            .unwrap();
+
+        thread.join();
     }
 }

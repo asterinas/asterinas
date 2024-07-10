@@ -9,7 +9,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{posix_thread::PosixThreadExt, process_table},
-    thread::{thread_table, Thread},
+    thread::thread_table,
     time::{
         clockid_t,
         clocks::{
@@ -121,7 +121,7 @@ pub fn read_clock(clockid: clockid_t) -> Result<Duration> {
                 Ok(process.prof_clock().read_time())
             }
             ClockId::CLOCK_THREAD_CPUTIME_ID => {
-                let thread = Thread::current();
+                let thread = current_thread!();
                 Ok(thread.as_posix_thread().unwrap().prof_clock().read_time())
             }
         }
