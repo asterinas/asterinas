@@ -50,15 +50,16 @@ impl Thread {
         }
     }
 
-    pub fn current() -> Arc<Self> {
-        let task = Task::current();
-        let thread = task
+    /// Returns the current thread, or `None` if the current task is not associated with a thread.
+    ///
+    /// Except for unit tests, all tasks should be associated with threads. This method is useful
+    /// when writing code that can be called directly by unit tests. If this isn't the case,
+    /// consider using [`current_thread!`] instead.
+    pub fn current() -> Option<Arc<Self>> {
+        Task::current()
             .data()
-            .downcast_ref::<Weak<Thread>>()
-            .expect("[Internal Error] task data should points to weak<thread>");
-        thread
+            .downcast_ref::<Weak<Thread>>()?
             .upgrade()
-            .expect("[Internal Error] current thread cannot be None")
     }
 
     pub(in crate::thread) fn task(&self) -> &Arc<Task> {

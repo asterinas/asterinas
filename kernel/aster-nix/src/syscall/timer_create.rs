@@ -20,7 +20,6 @@ use crate::{
     thread::{
         thread_table,
         work_queue::{submit_work_item, work_item::WorkItem},
-        Thread,
     },
     time::{
         clockid_t,
@@ -113,7 +112,7 @@ pub fn sys_timer_create(
         match clock_id {
             ClockId::CLOCK_PROCESS_CPUTIME_ID => process_timer_manager.create_prof_timer(func),
             ClockId::CLOCK_THREAD_CPUTIME_ID => {
-                let current_thread = Thread::current();
+                let current_thread = current_thread!();
                 current_thread
                     .as_posix_thread()
                     .unwrap()

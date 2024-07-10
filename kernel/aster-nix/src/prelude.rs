@@ -30,11 +30,20 @@ macro_rules! current {
     };
 }
 
-/// return current thread
+/// Returns the current thread.
+///
+/// # Panics
+///
+/// This macro will panic if the current task is not associated with a thread.
+///
+/// Except for unit tests, all tasks should be associated with threads. To write code that can be
+/// called directly in unit tests, consider using [`Thread::current`] instead.
+///
+/// [`Thread::current`]: crate::thread::Thread::current
 #[macro_export]
 macro_rules! current_thread {
     () => {
-        $crate::thread::Thread::current()
+        $crate::thread::Thread::current().expect("the current task is not associated with a thread")
     };
 }
 
