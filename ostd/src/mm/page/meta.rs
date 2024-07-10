@@ -222,6 +222,17 @@ impl PageMeta for KernelMeta {
     }
 }
 
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct KernelStackMeta {}
+impl PageMeta for KernelStackMeta {
+    const USAGE: PageUsage = PageUsage::KernelStack;
+    fn on_drop(_page: &mut Page<Self>) {
+    }
+}
+
+impl Sealed for KernelStackMeta {}
+
 // ======== End of all the specific metadata structures definitions ===========
 
 /// Initializes the metadata of all physical pages.
