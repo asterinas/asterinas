@@ -6,6 +6,7 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     sync::SpinLock,
 };
+use crate::prelude::println;
 use super::KERNEL_PAGE_TABLE;
 
 pub struct KvaFreeNode {
@@ -148,6 +149,7 @@ impl Kva {
             (range.end - range.start) == (pages.len()*PAGE_SIZE), 
             "The allocated number of frames does not match the required number"
         );
+        println!("range.end is : {:X} and range.start is: {:X}", range.end, range.start);
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let prop = PageProperty {
             flags: PageFlags::RW,
@@ -165,7 +167,7 @@ impl Kva {
                     prop
                 ).unwrap();
             va += PAGE_SIZE;
-            // println!("Page data: {}", page.data);
+            println!("Page data: {:X}", va);
         }
     }
     /// Get the type of the mapped page.
