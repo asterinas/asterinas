@@ -145,7 +145,7 @@ impl Kva {
     /// violate the memory safety of kernel objects.
     pub unsafe fn map_pages<T: PageMeta>(&mut self, range: Range<Vaddr>, pages: Vec<Page<T>>) {
         assert!( 
-            (range.end - range.start) == (pages.len()), 
+            (range.end - range.start) == (pages.len()*PAGE_SIZE), 
             "The allocated number of frames does not match the required number"
         );
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
