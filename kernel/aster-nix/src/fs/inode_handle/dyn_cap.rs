@@ -19,6 +19,16 @@ impl InodeHandle<Rights> {
         if access_mode.is_writable() && !inode.mode()?.is_writable() {
             return_errno_with_message!(Errno::EACCES, "File is not writable");
         }
+
+        Self::new_unchecked_access(dentry, access_mode, status_flags)
+    }
+
+    pub fn new_unchecked_access(
+        dentry: Arc<Dentry>,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Self> {
+        let inode = dentry.inode();
         if access_mode.is_writable() && inode.type_() == InodeType::Dir {
             return_errno_with_message!(Errno::EISDIR, "Directory cannot open to write");
         }
