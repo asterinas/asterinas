@@ -26,7 +26,7 @@ use crate::{
     user::UserSpace,
 };
 
-pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
+pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 128;
 
 /// Trait for manipulating the task context.
 pub trait TaskContextApi {
