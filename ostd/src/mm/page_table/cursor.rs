@@ -310,8 +310,7 @@ where
     fn in_tracked_range(&self) -> bool {
         TypeId::of::<M>() == TypeId::of::<UserMode>()
             || TypeId::of::<M>() == TypeId::of::<KernelMode>()
-                && (!crate::mm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&self.va)
-                && !crate::mm::kspace::TRACKED_MAPPED_PAGES_RANGE.contains(&self.va))
+                && !crate::mm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&self.va)
     }
 }
 
