@@ -70,7 +70,7 @@ impl FsResolver {
         let follow_tail_link = !(creation_flags.contains(CreationFlags::O_NOFOLLOW)
             || creation_flags.contains(CreationFlags::O_CREAT)
                 && creation_flags.contains(CreationFlags::O_EXCL));
-        let dentry = match self.lookup_inner(path, follow_tail_link) {
+        let inode_handle = match self.lookup_inner(path, follow_tail_link) {
             Ok(dentry) => {
                 let inode = dentry.inode();
                 if inode.type_() == InodeType::SymLink
@@ -92,7 +92,11 @@ impl FsResolver {
                         "O_DIRECTORY is specified but file is not a directory"
                     );
                 }
-                dentry
+
+                if creation_flags.contains(CreationFlags::O_TRUNC) {
+                    dentry.resize(0)?;
+                }
+                InodeHandle::new(dentry, access_mode, status_flags)?
             }
             Err(e)
                 if e.error() == Errno::ENOENT
@@ -109,16 +113,13 @@ impl FsResolver {
                 if !dir_dentry.mode()?.is_writable() {
                     return_errno_with_message!(Errno::EACCES, "file cannot be created");
                 }
-                dir_dentry.new_fs_child(&file_name, InodeType::File, inode_mode)?
+
+                let dentry = dir_dentry.new_fs_child(&file_name, InodeType::File, inode_mode)?;
+                // Don't check access mode for newly created file
+                InodeHandle::new_unchecked_access(dentry, access_mode, status_flags)?
             }
             Err(e) => return Err(e),
         };
-
-        if creation_flags.contains(CreationFlags::O_TRUNC) {
-            dentry.resize(0)?;
-        }
-
-        let inode_handle = InodeHandle::new(dentry, access_mode, status_flags)?;
 
         Ok(inode_handle)
     }
