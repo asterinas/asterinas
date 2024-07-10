@@ -8,6 +8,7 @@ use crate::{
 };
 use crate::prelude::println;
 use super::KERNEL_PAGE_TABLE;
+use crate::arch::mm::tlb_flush_addr_range;
 
 pub struct KvaFreeNode {
     block: Range<Vaddr>,
@@ -156,19 +157,13 @@ impl Kva {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        let mut va = range.start;
         // page_table
         //         .map(&range, &(pages.start_paddr()..pages.start_paddr()+pages.len()), prop);
-        for page in &pages {
-            page_table
-                .map(
-                    &(va..va + PAGE_SIZE), 
-                    &(page.paddr()..page.paddr() + PAGE_SIZE), 
-                    prop
-                ).unwrap();
-            va += PAGE_SIZE;
-            println!("Page data: {:X}", va);
+        let mut cursor = page_table.cursor_mut(&range).unwrap();
+        for page in pages.into_iter() {
+            cursor.map(page.into(), prop);
         }
+        tlb_flush_addr_range(&range);
     }
     /// Get the type of the mapped page.
     pub unsafe fn unmap_pages(&mut self, range: Range<Vaddr>) {
@@ -179,9 +174,11 @@ impl Kva {
             range.end
         );
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        let mut cursor = page_table.cursor_mut(&range).unwrap();
         unsafe {
-            let _ = page_table.unmap(&range); 
+            let _ = cursor.unmap(range.start - range.end);
         }
+        tlb_flush_addr_range(&range);
     }
 
     pub fn get_page_type(&self, addr: Vaddr) -> PageUsage {
