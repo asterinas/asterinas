@@ -1,0 +1,26 @@
+[scheme."tdx"]
+boot.method = "grub-qcow2"
+grub.boot_protocol = "linux"
+qemu.args = """
+    -accel kvm \
+    -name process=tdxvm,debug-threads=on \
+    -m 8G \
+    -smp 1 \
+    -vga none \
+    -nographic \
+    -monitor pty \
+    -no-hpet \
+    -nodefaults \
+    -bios /usr/share/qemu/OVMF.fd \
+    -object tdx-guest,sept-ve-disable=on,id=tdx,quote-generation-service=vsock:2:4050 \
+    -cpu host,-kvm-steal-time,pmu=off \
+    -machine q35,kernel_irqchip=split,confidential-guest-support=tdx,memory-backend=ram1 \
+    -object memory-backend-memfd-private,id=ram1,size=8G \
+    -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
+    -chardev stdio,id=mux,mux=on,logfile=qemu.log \
+    -device virtio-serial,romfile= \
+    -device virtconsole,chardev=mux \
+    -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+    -monitor chardev:mux \
+    -serial chardev:mux \
+"""
