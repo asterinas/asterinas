@@ -168,7 +168,7 @@ impl Kva {
     /// Get the type of the mapped page.
     pub unsafe fn unmap_pages(&mut self, range: Range<Vaddr>) {
         assert!(
-            range.start < self.start() || range.end > self.end(),
+            range.start >= self.start() && range.end <= self.end(),
             "Unmapping from an invalid address range: start={:x} < {:x}, end={:x} < {:x}",
             range.start,
             self.start(),
