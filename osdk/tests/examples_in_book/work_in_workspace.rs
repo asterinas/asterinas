@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::util::{cargo_osdk, depends_on_local_ostd};
+use crate::util::{add_tdx_scheme, cargo_osdk, depends_on_local_ostd, is_tdx_enabled};
 
 #[test]
 fn work_in_workspace() {
@@ -58,6 +58,12 @@ fn work_in_workspace() {
     let kernel_manifest_path = workspace_dir.join(kernel).join("Cargo.toml");
     assert!(kernel_manifest_path.is_file());
     depends_on_local_ostd(&kernel_manifest_path);
+
+    if is_tdx_enabled() {
+        add_tdx_scheme(workspace_dir.join("OSDK.toml")).unwrap();
+    }
+
+    let kernel_manifest_path = workspace_dir.join(kernel).join("Cargo.toml");
     let mut kernel_manifest_file = OpenOptions::new()
         .append(true)
         .open(&kernel_manifest_path)

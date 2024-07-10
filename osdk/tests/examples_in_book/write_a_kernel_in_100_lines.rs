@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf, process::Command};
 
 use assert_cmd::output::OutputOkExt;
 
-use crate::util::{cargo_osdk, depends_on_local_ostd};
+use crate::util::{cargo_osdk, edit_config_files};
 
 #[test]
 fn write_a_kernel_in_100_lines() {
@@ -23,9 +23,7 @@ fn write_a_kernel_in_100_lines() {
         .ok()
         .unwrap();
 
-    // Depends on local OSTD
-    let manifest_path = os_dir.join("Cargo.toml");
-    depends_on_local_ostd(manifest_path);
+    edit_config_files(&os_dir);
 
     // Copies the kernel content
     let kernel_contents = include_str!("write_a_kernel_in_100_lines_templates/lib.rs");
