@@ -4,7 +4,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use ostd::task::Task;
+use ostd::task::{yield_now, Task, YieldFlags};
 
 use self::status::{AtomicThreadStatus, ThreadStatus};
 use crate::prelude::*;
@@ -91,7 +91,7 @@ impl Thread {
     }
 
     pub fn yield_now() {
-        Task::yield_now()
+        yield_now(YieldFlags::Yield)
     }
 
     pub fn tid(&self) -> Tid {

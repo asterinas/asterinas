@@ -5,14 +5,16 @@
 #![allow(missing_docs)]
 #![allow(dead_code)]
 
+mod priority;
+
 use core::cell::UnsafeCell;
 
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
+pub use priority::Priority;
 
 use super::{
-    add_task,
-    priority::Priority,
-    processor::{current_task, schedule},
+    processor::current_task,
+    scheduler::{add_task, yield_now, EnqueueFlags, YieldFlags},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
@@ -150,18 +152,10 @@ impl Task {
         &self.ctx
     }
 
-    /// Yields execution so that another task may be scheduled.
-    ///
-    /// Note that this method cannot be simply named "yield" as the name is
-    /// a Rust keyword.
-    pub fn yield_now() {
-        schedule();
-    }
-
     /// Runs the task.
     pub fn run(self: &Arc<Self>) {
-        add_task(self.clone());
-        schedule();
+        add_task(self.clone(), EnqueueFlags::Spawn);
+        yield_now(YieldFlags::Yield);
     }
 
     /// Returns the task status.
@@ -183,6 +177,16 @@ impl Task {
         }
     }
 
+    /// Returns the priority.
+    pub fn priority(&self) -> Priority {
+        self.priority
+    }
+
+    /// Returns the cpu_affinity.
+    pub fn cpu_affinity(&self) -> &CpuSet {
+        &self.cpu_affinity
+    }
+
     /// Exits the current task.
     ///
     /// The task `self` must be the task that is currently running.
@@ -195,8 +199,7 @@ impl Task {
         // `current_task()` still holds a strong reference, so nothing is destroyed at this point,
         // neither is the kernel stack.
         drop(self);
-
-        schedule();
+        yield_now(YieldFlags::Exit);
         unreachable!()
     }
 

@@ -250,7 +250,7 @@ impl UserPreemption {
 
         if self.count == 0 {
             crate::arch::irq::enable_local();
-            crate::task::schedule();
+            crate::task::yield_now(crate::task::YieldFlags::Yield);
             crate::arch::irq::disable_local();
         }
     }

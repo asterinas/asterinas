@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
-    task::{preempt, Task, TaskOptions},
+    task::{schedule, Task, TaskOptions},
     user::{ReturnReason, UserContextApi, UserMode, UserSpace},
 };
 
@@ -63,7 +63,7 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
                 break;
             }
             // a preemption point after handling user event.
-            preempt(current_task);
+            schedule();
         }
         debug!("exit user loop");
     }

@@ -4,7 +4,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::SpinLock;
-use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
+use crate::task::{add_task, current_task, yield_now, EnqueueFlags, Task, TaskStatus, YieldFlags};
 
 // # Explanation on the memory orders
 //
@@ -266,7 +266,7 @@ impl Waker {
 
                 // Avoid holding the lock when doing `add_task`
                 drop(task);
-                add_task(self.task.clone());
+                add_task(self.task.clone(), EnqueueFlags::Wake);
             }
             _ => (),
         }
@@ -284,7 +284,7 @@ impl Waker {
             task.task_status = TaskStatus::Sleepy;
             drop(task);
 
-            schedule();
+            yield_now(YieldFlags::Wait);
         }
     }
 
@@ -311,7 +311,7 @@ mod test {
         let cond_cloned = cond.clone();
 
         TaskOptions::new(move || {
-            Task::yield_now();
+            yield_now(YieldFlags::Yield);
 
             cond_cloned.store(true, Ordering::Relaxed);
             wake(&*queue_cloned);
@@ -363,7 +363,7 @@ mod test {
         let cond_cloned = cond.clone();
 
         TaskOptions::new(move || {
-            Task::yield_now();
+            yield_now(YieldFlags::Yield);
 
             cond_cloned.store(true, Ordering::Relaxed);
             assert!(waker.wake_up());
@@ -390,12 +390,12 @@ mod test {
         let cond2_cloned = cond2.clone();
 
         TaskOptions::new(move || {
-            Task::yield_now();
+            yield_now(YieldFlags::Yield);
 
             cond2_cloned.store(true, Ordering::Relaxed);
             assert!(waker2.wake_up());
 
-            Task::yield_now();
+            yield_now(YieldFlags::Yield);
 
             cond_cloned.store(true, Ordering::Relaxed);
             assert!(waker.wake_up());

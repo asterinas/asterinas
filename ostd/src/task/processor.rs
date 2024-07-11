@@ -6,11 +6,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering::Relaxed},
 };
 
-use super::{
-    scheduler::{fetch_task, GLOBAL_SCHEDULER},
-    task::{context_switch, TaskContext},
-    Task, TaskStatus,
-};
+use super::task::{context_switch, Task, TaskContext};
 use crate::cpu_local;
 
 pub struct Processor {
@@ -59,33 +55,6 @@ pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
         .get_idle_task_ctx_ptr()
 }
 
-/// Calls this function to switch to other task by using GLOBAL_SCHEDULER
-pub fn schedule() {
-    if let Some(task) = fetch_task() {
-        switch_to_task(task);
-    }
-}
-
-/// Preempts the `task`.
-///
-/// TODO: This interface of this method is error prone.
-/// The method takes an argument for the current task to optimize its efficiency,
-/// but the argument provided by the caller may not be the current task, really.
-/// Thus, this method should be removed or reworked in the future.
-pub fn preempt(task: &Arc<Task>) {
-    // TODO: Refactor `preempt` and `schedule`
-    // after the Atomic mode and `might_break` is enabled.
-    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(task) {
-        return;
-    }
-    let Some(next_task) = scheduler.dequeue() else {
-        return;
-    };
-    drop(scheduler);
-    switch_to_task(next_task);
-}
-
 /// Calls this function to switch to other task
 ///
 /// if current task is none, then it will use the default task context and it will not return to this function again
@@ -93,7 +62,7 @@ pub fn preempt(task: &Arc<Task>) {
 /// if current task status is exit, then it will not add to the scheduler
 ///
 /// before context switch, current task will switch to the next task
-fn switch_to_task(next_task: Arc<Task>) {
+pub(super) fn switch_to_task(next_task: Arc<Task>) {
     if !PREEMPT_COUNT.is_preemptive() {
         panic!(
             "Calling schedule() while holding {} locks",
@@ -105,16 +74,6 @@ fn switch_to_task(next_task: Arc<Task>) {
         None => get_idle_task_ctx_ptr(),
         Some(current_task) => {
             let ctx_ptr = current_task.ctx().get();
-
-            let mut task_inner = current_task.inner_exclusive_access();
-
-            debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
-            if task_inner.task_status == TaskStatus::Runnable {
-                drop(task_inner);
-                GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
-            } else if task_inner.task_status == TaskStatus::Sleepy {
-                task_inner.task_status = TaskStatus::Sleeping;
-            }
 
             ctx_ptr
         }
