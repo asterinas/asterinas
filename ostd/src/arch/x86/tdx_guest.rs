@@ -16,7 +16,6 @@ use crate::{
         kspace::{BOOT_PAGE_TABLE, KERNEL_BASE_VADDR, KERNEL_END_VADDR, KERNEL_PAGE_TABLE},
         paddr_to_vaddr,
         page_prop::{PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableError,
         PAGE_SIZE,
     },
     prelude::Paddr,
@@ -78,14 +77,14 @@ enum MmioError {
     InvalidInstruction,
     InvalidAddress,
     DecodeFailed,
-    TdVmcallError(tdvmcall::TdVmcallError),
+    TdVmcallError,
 }
 
 #[derive(Debug)]
 pub enum PageConvertError {
-    PageTableError(PageTableError),
-    TdCallError(tdcall::TdCallError),
-    TdVmcallError((u64, tdvmcall::TdVmcallError)),
+    PageTable,
+    TdCall,
+    TdVmcall,
 }
 
 pub fn handle_virtual_exception(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) {
@@ -187,7 +186,7 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
                     // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
                     unsafe {
                         write_mmio(size, ve_info.guest_physical_address, value)
-                            .map_err(MmioError::TdVmcallError)?
+                            .map_err(|_| MmioError::TdVmcallError)?
                     }
                 }
                 InstrMmioType::WriteImm => {
@@ -195,14 +194,14 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
                     // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the value and size parsed from the instruction are valid.
                     unsafe {
                         write_mmio(size, ve_info.guest_physical_address, value)
-                            .map_err(MmioError::TdVmcallError)?
+                            .map_err(|_| MmioError::TdVmcallError)?
                     }
                 }
                 InstrMmioType::Read =>
                 // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
                 unsafe {
                     let read_res = read_mmio(size, ve_info.guest_physical_address)
-                        .map_err(MmioError::TdVmcallError)?
+                        .map_err(|_| MmioError::TdVmcallError)?
                         as usize;
                     match instr.op0_register() {
                         Register::RAX => trapframe.set_rax(read_res),
@@ -297,7 +296,7 @@ fn handle_mmio(trapframe: &mut dyn TdxTrapFrame, ve_info: &TdgVeInfo) -> Result<
                 // SAFETY: The mmio_gpa obtained from `ve_info` is valid, and the size parsed from the instruction is valid.
                 unsafe {
                     let read_res = read_mmio(size, ve_info.guest_physical_address)
-                        .map_err(MmioError::TdVmcallError)?
+                        .map_err(|_| MmioError::TdVmcallError)?
                         as usize;
                     match instr.op0_register() {
                         Register::RAX | Register::EAX | Register::AX | Register::AL => {
@@ -421,7 +420,7 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
     };
     let vaddr = paddr_to_vaddr(gpa);
     pt.protect(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
-        .map_err(PageConvertError::PageTableError)?;
+        .map_err(|_| PageConvertError::PageTable)?;
     // Protect the page in the boot page table if in the boot phase.
     {
         let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
@@ -436,7 +435,7 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
         (gpa & (!PAGE_MASK)) as u64 | SHARED_MASK,
         (page_num * PAGE_SIZE) as u64,
     )
-    .map_err(PageConvertError::TdVmcallError)
+    .map_err(|_| PageConvertError::TdVmcall)
 }
 
 /// Sets the given physical address range to Intel TDX private pages.
@@ -464,7 +463,7 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
     };
     let vaddr = paddr_to_vaddr(gpa);
     pt.protect(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
-        .map_err(PageConvertError::PageTableError)?;
+        .map_err(|_| PageConvertError::PageTable)?;
     // Protect the page in the boot page table if in the boot phase.
     {
         let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
@@ -476,10 +475,10 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
         }
     }
     map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)
-        .map_err(PageConvertError::TdVmcallError)?;
+        .map_err(|_| PageConvertError::TdVmcall)?;
     for i in 0..page_num {
         unsafe {
-            accept_page(0, (gpa + i * PAGE_SIZE) as u64).map_err(PageConvertError::TdCallError)?;
+            accept_page(0, (gpa + i * PAGE_SIZE) as u64).map_err(|_| PageConvertError::TdCall)?;
         }
     }
     Ok(())

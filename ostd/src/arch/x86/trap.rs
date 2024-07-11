@@ -7,7 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use align_ext::AlignExt;
 use log::debug;
 #[cfg(feature = "intel_tdx")]
-use tdx_guest::tdcall;
+use tdx_guest::{tdcall, tdx_is_enabled};
 use trapframe::TrapFrame;
 
 use super::ex_table::ExTable;
@@ -136,6 +136,14 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
+    #[cfg(not(feature = "intel_tdx"))]
+    let priv_flags = PrivFlags::GLOBAL;
+    #[cfg(feature = "intel_tdx")]
+    let priv_flags = if tdx_is_enabled() {
+        PrivFlags::SHARED | PrivFlags::GLOBAL
+    } else {
+        PrivFlags::GLOBAL
+    };
     // SAFETY:
     // 1. We have checked that the page fault address falls within the address range of the direct
     //    mapping of physical memory.
@@ -149,10 +157,7 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
                 PageProperty {
                     flags: PageFlags::RW,
                     cache: CachePolicy::Uncacheable,
-                    #[cfg(not(feature = "intel_tdx"))]
-                    priv_flags: PrivFlags::GLOBAL,
-                    #[cfg(feature = "intel_tdx")]
-                    priv_flags: PrivFlags::SHARED | PrivFlags::GLOBAL,
+                    priv_flags,
                 },
             )
             .unwrap();
