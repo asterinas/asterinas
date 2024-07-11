@@ -44,8 +44,6 @@ pub mod trap;
 pub mod user;
 
 pub use ostd_macros::main;
-#[cfg(feature = "intel_tdx")]
-use tdx_guest::init_tdx;
 
 pub use self::{cpu::cpu_local::CpuLocal, error::Error, prelude::Result};
 
@@ -59,15 +57,6 @@ pub use self::{cpu::cpu_local::CpuLocal, error::Error, prelude::Result};
 /// boot stage only global variables.
 pub fn init() {
     arch::before_all_init();
-
-    #[cfg(feature = "intel_tdx")]
-    let td_info = init_tdx().unwrap();
-    #[cfg(feature = "intel_tdx")]
-    early_println!(
-        "td gpaw: {}, td attributes: {:?}\nTDX guest is initialized",
-        td_info.gpaw,
-        td_info.attributes
-    );
 
     mm::heap_allocator::init();
 

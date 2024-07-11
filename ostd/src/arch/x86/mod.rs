@@ -24,14 +24,35 @@ use core::{
     sync::atomic::Ordering,
 };
 
-#[cfg(feature = "intel_tdx")]
-use ::tdx_guest::tdx_is_enabled;
 use kernel::apic::ioapic;
 use log::{info, warn};
+#[cfg(feature = "intel_tdx")]
+use {
+    crate::early_println,
+    ::tdx_guest::{init_tdx, tdcall::InitError, tdx_is_enabled},
+};
 
 pub(crate) fn before_all_init() {
     enable_common_cpu_features();
     serial::init();
+    #[cfg(feature = "intel_tdx")]
+    match init_tdx() {
+        Ok(td_info) => {
+            early_println!(
+                "Intel TDX initialized\ntd gpaw: {}, td attributes: {:?}",
+                td_info.gpaw,
+                td_info.attributes
+            );
+        }
+        Err(InitError::TdxGetVpInfoError(td_call_error)) => {
+            panic!(
+                "Intel TDX not initialized, Failed to get TD info: {:?}",
+                td_call_error
+            );
+        }
+        // The machine has no TDX support.
+        Err(_) => {}
+    }
 }
 
 pub(crate) fn after_all_init() {
