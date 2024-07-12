@@ -205,7 +205,7 @@ impl Task {
 
 impl Drop for Task {
     fn drop(&mut self) {
-        println!("drop task");
+        println!("drop task, task kernel stack is {:x}~{:x}", self.kstack.mapped.start, self.kstack.mapped.end);
     }
 }
 
