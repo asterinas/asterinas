@@ -74,7 +74,7 @@ use super::{
     PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel, UserMode,
 };
 use crate::mm::{page::DynPage, Paddr, PageProperty, Vaddr};
-
+use crate::prelude::println;
 #[derive(Clone, Debug)]
 pub(crate) enum PageTableQueryResult {
     NotMapped {
@@ -522,7 +522,7 @@ where
         let end = self.0.va + len;
         assert!(end <= self.0.barrier_va.end);
         assert!(end % C::BASE_PAGE_SIZE == 0);
-
+        println!("cursor unmap {:x} ~ {:x}", self.0.va, end);
         while self.0.va < end {
             let cur_pte = self.0.read_cur_pte();
             let is_tracked = self.0.in_tracked_range();
