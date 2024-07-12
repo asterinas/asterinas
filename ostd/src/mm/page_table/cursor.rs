@@ -524,6 +524,7 @@ where
         assert!(end % C::BASE_PAGE_SIZE == 0);
         println!("cursor unmap {:x} ~ {:x}", self.0.va, end);
         while self.0.va < end {
+            println!("cursor unmap unit : {:x}", self.0.va);
             let cur_pte = self.0.read_cur_pte();
             let is_tracked = self.0.in_tracked_range();
 
