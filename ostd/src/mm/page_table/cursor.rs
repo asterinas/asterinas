@@ -524,9 +524,9 @@ where
         assert!(end % C::BASE_PAGE_SIZE == 0);
         println!("cursor unmap {:x} ~ {:x}", self.0.va, end);
         while self.0.va < end {
-            println!("cursor unmap unit : {:x}", self.0.va);
             let cur_pte = self.0.read_cur_pte();
             let is_tracked = self.0.in_tracked_range();
+            println!("cursor unmap unit : {:x}, {:?}", self.0.va, is_tracked);
 
             // Skip if it is already invalid.
             if !cur_pte.is_present() {
@@ -554,7 +554,7 @@ where
                 }
                 continue;
             }
-
+            println!("we goto here");
             // Unmap the current page.
             let idx = self.0.cur_idx();
             self.cur_node_mut().unset_child(idx, is_tracked);
