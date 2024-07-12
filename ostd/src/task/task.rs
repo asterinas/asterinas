@@ -203,6 +203,12 @@ impl Task {
     }
 }
 
+impl Drop for Task {
+    fn drop(&mut self) {
+        println!("drop task");
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The status of a task.
 pub enum TaskStatus {
