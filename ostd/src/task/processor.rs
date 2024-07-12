@@ -136,7 +136,9 @@ fn switch_to_task(next_task: Arc<Task>) {
         // to soundness problems.
         let old_current = processor.current.replace(next_task);
         println!("replace suceesss");
-        processor.prev_task = old_current;
+        unsafe {
+            processor.prev_task = old_current; 
+        }
         println!("reset processor.prev_task");
         // processor.current = Some(next_task);
     }
