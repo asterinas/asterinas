@@ -187,7 +187,7 @@ impl Kva {
         let mut cursor = page_table.cursor_mut(&range).unwrap();
         println!("start cursor unmap");
         unsafe {
-            let _ = cursor.unmap(range.end - range.start);
+            let _ = cursor.unmap(range.len());
         }
         println!("end cursor unmap");
         tlb_flush_addr_range(&range);
