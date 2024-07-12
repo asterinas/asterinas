@@ -1,6 +1,6 @@
 // aster-frame/mm/kspace/kva.rs
 use core::ops::{ Range, DerefMut};
-use crate::{arch::console::print, mm::{page::{self, cont_pages::ContPages, meta::{PageMeta, PageUsage}, Page}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, VmIo, PAGE_SIZE}};
+use crate::{mm::{page::{self, cont_pages::ContPages, meta::{PageMeta, PageUsage}, Page}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, VmIo, PAGE_SIZE}};
 use alloc::{collections::BTreeMap, vec::{self, Vec}};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
