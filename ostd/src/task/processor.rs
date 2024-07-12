@@ -134,8 +134,9 @@ fn switch_to_task(next_task: Arc<Task>) {
         // We cannot directly overwrite `current` at this point. Since we are running as `current`,
         // we must avoid dropping `current`. Otherwise, the kernel stack may be unmapped, leading
         // to soundness problems.
-        let old_current = processor.current.replace(next_task);
-        processor.prev_task = old_current;
+        // let old_current = processor.current.replace(next_task);
+        // processor.prev_task = old_current;
+        processor.current = Some(next_task);
     }
 
     // SAFETY:
