@@ -12,7 +12,7 @@ use super::{
     Task, TaskStatus,
 };
 use crate::cpu_local;
-
+use crate::prelude::println;
 pub struct Processor {
     current: Option<Arc<Task>>,
     /// A temporary variable used in [`switch_to_task`] to avoid dropping `current` while running
@@ -109,6 +109,7 @@ fn switch_to_task(next_task: Arc<Task>) {
             let mut task_inner = current_task.inner_exclusive_access();
 
             debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
+            println!("{:?}", task_inner.task_status);
             if task_inner.task_status == TaskStatus::Runnable {
                 drop(task_inner);
                 GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
@@ -134,9 +135,9 @@ fn switch_to_task(next_task: Arc<Task>) {
         // We cannot directly overwrite `current` at this point. Since we are running as `current`,
         // we must avoid dropping `current`. Otherwise, the kernel stack may be unmapped, leading
         // to soundness problems.
-        // let old_current = processor.current.replace(next_task);
-        // processor.prev_task = old_current;
-        processor.current = Some(next_task);
+        let old_current = processor.current.replace(next_task);
+        processor.prev_task = old_current;
+        // processor.current = Some(next_task);
     }
 
     // SAFETY:
