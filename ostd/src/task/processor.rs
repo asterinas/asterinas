@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, task};
 use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicUsize, Ordering::Relaxed},
+    cell::RefCell, ops::DerefMut, sync::atomic::{AtomicUsize, Ordering::Relaxed}
 };
 
 use super::{
@@ -136,7 +135,9 @@ fn switch_to_task(next_task: Arc<Task>) {
         // we must avoid dropping `current`. Otherwise, the kernel stack may be unmapped, leading
         // to soundness problems.
         let old_current = processor.current.replace(next_task);
+        println!("replace suceesss");
         processor.prev_task = old_current;
+        println!("reset processor.prev_task");
         // processor.current = Some(next_task);
     }
 
