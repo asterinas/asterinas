@@ -95,6 +95,7 @@ impl KernelStack {
 
 impl Drop for KernelStack {
     fn drop(&mut self) {
+        println!("we start unmap kernel stack for {:x} ~ {:x}", self.mapped.start, self.mapped.end);
         unsafe {
             self.kva.unmap_pages(self.mapped.start..self.mapped.end);
             println!("we unmap kernel stack for {:x} ~ {:x}", self.mapped.start, self.mapped.end);
