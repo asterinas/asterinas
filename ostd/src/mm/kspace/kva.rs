@@ -1,6 +1,6 @@
 // aster-frame/mm/kspace/kva.rs
 use core::ops::{ Range, DerefMut};
-use crate::mm::{page::{self, cont_pages::ContPages, meta::{PageMeta, PageUsage}, Page}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, VmIo, PAGE_SIZE};
+use crate::{arch::console::print, mm::{page::{self, cont_pages::ContPages, meta::{PageMeta, PageUsage}, Page}, page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags}, Vaddr, VmIo, PAGE_SIZE}};
 use alloc::{collections::BTreeMap, vec::{self, Vec}};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -167,6 +167,12 @@ impl Kva {
     }
     /// Get the type of the mapped page.
     pub unsafe fn unmap_pages(&mut self, range: Range<Vaddr>) {
+        println!("start unmappages mapped start={:x}~end={:x}, larger is={:x}~end is ={:x}",
+            range.start,
+            range.end,
+            self.start(),
+            self.end()
+        );
         assert!(
             range.start >= self.start() && range.end <= self.end(),
             "Unmapping from an invalid address range: start={:x} < {:x}, end={:x} < {:x}",
@@ -175,11 +181,15 @@ impl Kva {
             range.end,
             self.end()
         );
+        
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        println!("start get cursor");
         let mut cursor = page_table.cursor_mut(&range).unwrap();
+        println!("start cursor unmap");
         unsafe {
             let _ = cursor.unmap(range.start - range.end);
         }
+        println!("end cursor unmap");
         tlb_flush_addr_range(&range);
     }
 
