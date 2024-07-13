@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 use core::{cell::UnsafeCell, ops::Range};
+
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
