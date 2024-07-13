@@ -5,9 +5,7 @@
 #![allow(missing_docs)]
 #![allow(dead_code)]
 
-use core::cell::UnsafeCell;
-
-use core::ops::Range;
+use core::{cell::UnsafeCell, ops::Range};
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
@@ -71,7 +69,7 @@ impl KernelStack {
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
         let mut kva = Kva::alloc(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
-        let mapped_start = (kva.start() + 2 * PAGE_SIZE);
+        let mapped_start = kva.start() + 2 * PAGE_SIZE;
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         // let frames = FrameAllocOptions::new(KERNEL_STACK_SIZE).uninit(true).alloc()?;
         let pages = allocator::alloc::<KernelStackMeta>(KERNEL_STACK_SIZE).unwrap();
