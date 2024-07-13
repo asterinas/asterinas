@@ -11,11 +11,15 @@ use self::{
 };
 use crate::{
     events::Observer,
-    fs::utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
+    fs::{
+        procfs::filesystems::FileSystemsFileOps,
+        utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
+    },
     prelude::*,
     process::{process_table, process_table::PidEvent, Pid},
 };
 
+mod filesystems;
 mod pid;
 mod self_;
 mod sys;
@@ -96,6 +100,8 @@ impl DirOps for RootDirOps {
             SelfSymOps::new_inode(this_ptr.clone())
         } else if name == "sys" {
             SysDirOps::new_inode(this_ptr.clone())
+        } else if name == "filesystems" {
+            FileSystemsFileOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
             let process_ref =
                 process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -114,6 +120,9 @@ impl DirOps for RootDirOps {
         let mut cached_children = this.cached_children().write();
         cached_children.put_entry_if_not_found("self", || SelfSymOps::new_inode(this_ptr.clone()));
         cached_children.put_entry_if_not_found("sys", || SysDirOps::new_inode(this_ptr.clone()));
+        cached_children.put_entry_if_not_found("filesystems", || {
+            FileSystemsFileOps::new_inode(this_ptr.clone())
+        });
 
         for process in process_table::process_table().iter() {
             let pid = process.pid().to_string();
