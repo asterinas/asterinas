@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, task};
+use alloc::sync::Arc;
 use core::{
-    cell::RefCell, ops::DerefMut, sync::atomic::{AtomicUsize, Ordering::Relaxed}
+    cell::RefCell, 
+    sync::atomic::{AtomicUsize, Ordering::Relaxed}
 };
 
 use super::{
@@ -11,7 +12,7 @@ use super::{
     Task, TaskStatus,
 };
 use crate::cpu_local;
-use crate::prelude::println;
+
 pub struct Processor {
     current: Option<Arc<Task>>,
     /// A temporary variable used in [`switch_to_task`] to avoid dropping `current` while running
@@ -108,7 +109,6 @@ fn switch_to_task(next_task: Arc<Task>) {
             let mut task_inner = current_task.inner_exclusive_access();
 
             debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
-            println!("{:?}", task_inner.task_status);
             if task_inner.task_status == TaskStatus::Runnable {
                 drop(task_inner);
                 GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
@@ -135,12 +135,7 @@ fn switch_to_task(next_task: Arc<Task>) {
         // we must avoid dropping `current`. Otherwise, the kernel stack may be unmapped, leading
         // to soundness problems.
         let old_current = processor.current.replace(next_task);
-        println!("replace suceesss");
-        unsafe {
-            processor.prev_task = old_current; 
-        }
-        println!("reset processor.prev_task");
-        // processor.current = Some(next_task);
+        processor.prev_task = old_current;
     }
 
     // SAFETY:

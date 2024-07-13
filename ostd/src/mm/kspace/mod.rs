@@ -17,7 +17,7 @@
 //! +-+ <- 0xffff_ffff_8000_0000
 //! | |
 //! | |         Unused hole.
-//! +-+ <- 0xffff_e100_0000_0000 
+//! +-+ <- 0xffff_e100_0000_0000
 //! | |         For frame metadata, 1 TiB. Mapped frames are untracked. 
 //! +-+ <- 0xffff_e000_0000_0000
 //! | |
@@ -28,14 +28,14 @@
 //! | |         For [`kva::IoVa`], 16 TiB. Mapped pages are untracked.
 //! | |
 //! +-+ <- the middle of the higher half (0xffff_c000_0000_0000)
-//! | | 
-//! | | 
-//! | | 
-//! | |         For linear mappings, 64 TiB. 
-//! | |         Mapped physical addresses are untracked. 
-//! | | 
-//! | | 
-//! | | 
+//! | |
+//! | |
+//! | |
+//! | |         For linear mappings, 64 TiB.
+//! | |         Mapped physical addresses are untracked.
+//! | |
+//! | |
+//! | |
 //! +-+ <- the base of high canonical address (0xffff_8000_0000_0000) 
 //! ```
 //!
@@ -43,7 +43,10 @@
 //! 39 bits or 57 bits, the memory space just adjust porportionally.
 
 use alloc::vec::Vec;
-use core::{mem::ManuallyDrop, ops:: {Range, DerefMut}};
+use core::{
+    mem::ManuallyDrop,
+    ops::{DerefMut, Range},
+};
 
 use align_ext::AlignExt;
 use log::info;
@@ -51,6 +54,7 @@ use spin::Once;
 
 pub(crate) mod kva;
 use super::{
+    kspace::kva::{KvaFreeNode, KVA_FREELIST},
     nr_subpage_per_huge,
     page::{
         meta::{mapping, KernelMeta, MetaPageMeta},
@@ -59,7 +63,6 @@ use super::{
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_table::{boot_pt::BootPageTable, KernelMode, PageTable},
     MemoryRegionType, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
-    kspace::kva::{ KVA_FREELIST, KvaFreeNode},
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -95,7 +98,8 @@ pub(in crate::mm) const FRAME_METADATA_RANGE: Range<Vaddr> =
     FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
 const TRACKED_MAPPED_PAGES_BASE_VADDR: Vaddr = 0xffff_d000_0000_0000 << ADDR_WIDTH_SHIFT;
-pub const TRACKED_MAPPED_PAGES_RANGE: Range<Vaddr> = TRACKED_MAPPED_PAGES_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
+pub const TRACKED_MAPPED_PAGES_RANGE: Range<Vaddr> =
+    TRACKED_MAPPED_PAGES_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
 
 const VMALLOC_BASE_VADDR: Vaddr = 0xffff_c000_0000_0000 << ADDR_WIDTH_SHIFT;
 pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..TRACKED_MAPPED_PAGES_BASE_VADDR;
@@ -228,7 +232,10 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             }
         }
     }
-    KVA_FREELIST.lock().deref_mut().insert(TRACKED_MAPPED_PAGES_BASE_VADDR, KvaFreeNode::new(TRACKED_MAPPED_PAGES_RANGE));
+    KVA_FREELIST.lock().deref_mut().insert(
+        TRACKED_MAPPED_PAGES_BASE_VADDR, 
+        KvaFreeNode::new(TRACKED_MAPPED_PAGES_RANGE)
+    );
     KERNEL_PAGE_TABLE.call_once(|| kpt);
 }
 

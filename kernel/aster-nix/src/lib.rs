@@ -86,15 +86,11 @@ fn init_thread() {
     // Work queue should be initialized before interrupt is enabled,
     // in case any irq handler uses work queue as bottom half
     thread::work_queue::init();
-    println!("END thread::work_queue::init()");
     // FIXME: Remove this if we move the step of mounting
     // the filesystems to be done within the init process.
     ostd::trap::enable_local();
-    println!("END ostd::trap::enable_local()");
     net::lazy_init();
-    println!("END net::lazy_init()");
     fs::lazy_init();
-    println!("END fs::lazy_init()");
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");

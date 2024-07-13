@@ -7,8 +7,7 @@
 
 use core::cell::UnsafeCell;
 
-use gimli::Range;
-use core::ops::Range as CoreRange;
+use core::ops::Range;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
@@ -18,15 +17,21 @@ use super::{
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
-    arch::mm::tlb_flush_addr_range,
     cpu::CpuSet,
-    mm::{kspace::{kva::Kva, KERNEL_PAGE_TABLE}, page::{allocator, meta::{FrameMeta, KernelMeta, KernelStackMeta}},FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
+    mm::{
+        kspace::kva::Kva,
+        page::{
+            allocator,
+            meta::KernelStackMeta,
+        },
+        PAGE_SIZE,
+    },
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
 };
 
-pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 128;
+pub const KERNEL_STACK_SIZE: usize = PAGE_SIZE * 64;
 
 /// Trait for manipulating the task context.
 pub trait TaskContextApi {
@@ -44,33 +49,31 @@ pub trait TaskContextApi {
 }
 
 pub struct KernelStack {
-    kva : Kva,
-    mapped : CoreRange<Vaddr>,
-    has_guard_page: bool
+    kva: Kva,
+    mapped: Range<Vaddr>,
+    has_guard_page: bool,
 }
 
 impl KernelStack {
     pub fn new() -> Result<Self> {
-        let mut kva = Kva::alloc( KERNEL_STACK_SIZE);
+        let mut kva = Kva::alloc(KERNEL_STACK_SIZE);
         let mapped_start = kva.start();
         let mapped_end = kva.end();
         // let pages = allocator::alloc::<FrameMeta>(KERNEL_STACK_SIZE).unwrap();
         // let pages = allocator::alloc_contiguous::<KernelStackMeta>((KERNEL_STACK_SIZE)).unwrap();
         let pages = allocator::alloc::<KernelStackMeta>(KERNEL_STACK_SIZE).unwrap();
-        unsafe {
-            kva.map_pages(mapped_start..mapped_end, pages)
-        }
+        unsafe { kva.map_pages(mapped_start..mapped_end, pages) }
         Ok(Self {
-            kva:kva,
-            mapped:mapped_start..mapped_end,
-            has_guard_page:false
+            kva: kva,
+            mapped: mapped_start..mapped_end,
+            has_guard_page: false,
         })
     }
 
     /// Generates a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
-        let mut kva = Kva::alloc( KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
+        let mut kva = Kva::alloc(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
         let mapped_start = (kva.start() + 2 * PAGE_SIZE);
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         // let frames = FrameAllocOptions::new(KERNEL_STACK_SIZE).uninit(true).alloc()?;
@@ -80,11 +83,10 @@ impl KernelStack {
         unsafe {
             kva.map_pages(mapped_start..mapped_end, pages);
         }
-        println!("Sucess ful map {:x} ~ {:x}", mapped_start, mapped_end);
         Ok(Self {
-            kva:kva,
-            mapped:mapped_start..mapped_end,
-            has_guard_page:true
+            kva: kva,
+            mapped: mapped_start..mapped_end,
+            has_guard_page: true,
         })
     }
 
@@ -95,10 +97,8 @@ impl KernelStack {
 
 impl Drop for KernelStack {
     fn drop(&mut self) {
-        println!("we start unmap kernel stack for {:x} ~ {:x}", self.mapped.start, self.mapped.end);
         unsafe {
             self.kva.unmap_pages(self.mapped.start..self.mapped.end);
-            println!("we unmap kernel stack for {:x} ~ {:x}", self.mapped.start, self.mapped.end);
         }
     }
 }
@@ -204,11 +204,6 @@ impl Task {
     }
 }
 
-impl Drop for Task {
-    fn drop(&mut self) {
-        println!("drop task, task kernel stack is {:x}~{:x}", self.kstack.mapped.start, self.kstack.mapped.end);
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The status of a task.
