@@ -172,7 +172,6 @@ impl Kva {
     /// Get the type of the mapped page.
     pub unsafe fn unmap_pages(&mut self, range: Range<Vaddr>) {
         assert!(range.start >= self.start() && range.end <= self.end());
-        
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let mut cursor = page_table.cursor_mut(&range).unwrap();
         unsafe {
