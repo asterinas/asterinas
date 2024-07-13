@@ -20,10 +20,7 @@ use crate::{
     cpu::CpuSet,
     mm::{
         kspace::kva::Kva,
-        page::{
-            allocator,
-            meta::KernelStackMeta,
-        },
+        page::{allocator, meta::KernelStackMeta},
         PAGE_SIZE,
     },
     prelude::*,
@@ -203,7 +200,6 @@ impl Task {
         self.priority.is_real_time()
     }
 }
-
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The status of a task.

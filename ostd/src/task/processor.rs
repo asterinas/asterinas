@@ -2,8 +2,8 @@
 
 use alloc::sync::Arc;
 use core::{
-    cell::RefCell, 
-    sync::atomic::{AtomicUsize, Ordering::Relaxed}
+    cell::RefCell,
+    sync::atomic::{AtomicUsize, Ordering::Relaxed},
 };
 
 use super::{

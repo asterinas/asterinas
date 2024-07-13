@@ -18,7 +18,7 @@
 //! | |
 //! | |         Unused hole.
 //! +-+ <- 0xffff_e100_0000_0000
-//! | |         For frame metadata, 1 TiB. Mapped frames are untracked. 
+//! | |         For frame metadata, 1 TiB. Mapped frames are untracked.
 //! +-+ <- 0xffff_e000_0000_0000
 //! | |
 //! | |         For [`kva::Kva`], 16 TiB. Mapped pages are tracked with handles.
@@ -36,7 +36,7 @@
 //! | |
 //! | |
 //! | |
-//! +-+ <- the base of high canonical address (0xffff_8000_0000_0000) 
+//! +-+ <- the base of high canonical address (0xffff_8000_0000_0000)
 //! ```
 //!
 //! If the address width is (according to [`crate::arch::mm::PagingConsts`])
@@ -233,8 +233,8 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
         }
     }
     KVA_FREELIST.lock().deref_mut().insert(
-        TRACKED_MAPPED_PAGES_BASE_VADDR, 
-        KvaFreeNode::new(TRACKED_MAPPED_PAGES_RANGE)
+        TRACKED_MAPPED_PAGES_BASE_VADDR,
+        KvaFreeNode::new(TRACKED_MAPPED_PAGES_RANGE),
     );
     KERNEL_PAGE_TABLE.call_once(|| kpt);
 }

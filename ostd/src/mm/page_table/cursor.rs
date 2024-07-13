@@ -495,6 +495,7 @@ where
                 continue;
             }
 
+            // Map the current page.
             debug_assert!(!self.0.in_tracked_range());
             let idx = self.0.cur_idx();
             self.cur_node_mut().set_child_untracked(idx, pa, prop);
@@ -551,6 +552,7 @@ where
                 }
                 continue;
             }
+
             // Unmap the current page.
             let idx = self.0.cur_idx();
             self.cur_node_mut().unset_child(idx, is_tracked);

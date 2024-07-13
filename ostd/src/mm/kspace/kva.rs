@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Kernel virtual memory allocation
-use alloc::{
-    collections::BTreeMap,
-    vec::Vec,
-};
+use alloc::{collections::BTreeMap, vec::Vec};
 use core::ops::{DerefMut, Range};
 
 use super::KERNEL_PAGE_TABLE;
@@ -50,8 +47,8 @@ impl KvaInner {
     /// This is a simple FIRST-FIT algorithm.
     /// Note that a newly allocated area is not backed by any physical pages.
     fn alloc(
-        freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, 
-        size: usize
+        freelist: &mut BTreeMap<Vaddr, KvaFreeNode>,
+        size: usize,
     ) -> Result<Self, KvaAllocError> {
         // iterate through the free list, if find the first block that is larger than this allocation, do:
         //    1. consume the last part of this block as the allocated range.
@@ -87,7 +84,7 @@ impl KvaInner {
         }
     }
 
-    fn dealloc(&self, freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, range: Range<Vaddr>)  {
+    fn dealloc(&self, freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, range: Range<Vaddr>) {
         freelist.insert(range.start, KvaFreeNode::new(range.start..range.end));
     }
     // /// Un-map pages mapped in kernel virtual area.
@@ -157,7 +154,7 @@ impl Kva {
     /// The caller should ensure either the mapped pages or the range to be used doesn't
     /// violate the memory safety of kernel objects.
     pub unsafe fn map_pages<T: PageMeta>(&mut self, range: Range<Vaddr>, pages: Vec<Page<T>>) {
-        assert!( range.len() == pages.len() * PAGE_SIZE);
+        assert!(range.len() == pages.len() * PAGE_SIZE);
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let prop = PageProperty {
             flags: PageFlags::RW,
@@ -174,14 +171,7 @@ impl Kva {
     }
     /// Get the type of the mapped page.
     pub unsafe fn unmap_pages(&mut self, range: Range<Vaddr>) {
-        assert!(
-            range.start >= self.start() && range.end <= self.end(),
-            "Unmapping from an invalid address range: start={:x} < {:x}, end={:x} < {:x}",
-            range.start,
-            self.start(),
-            range.end,
-            self.end()
-        );
+        assert!(range.start >= self.start() && range.end <= self.end());
         
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let mut cursor = page_table.cursor_mut(&range).unwrap();
