@@ -130,18 +130,18 @@ impl ConsoleDevice {
 
     fn handle_recv_irq(&self) {
         let mut receive_queue = self.receive_queue.lock_irq_disabled();
-        if !receive_queue.can_pop() {
+
+        let Ok((_, len)) = receive_queue.pop_used() else {
             return;
-        }
-        let (_, len) = receive_queue.pop_used().unwrap();
+        };
         self.receive_buffer.sync(0..len as usize).unwrap();
 
         let callbacks = self.callbacks.read_irq_disabled();
-
         for callback in callbacks.iter() {
             let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
             callback(reader);
         }
+        drop(callbacks);
 
         self.activate_receive_buffer(&mut receive_queue);
     }
