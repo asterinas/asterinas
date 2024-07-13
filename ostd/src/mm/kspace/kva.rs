@@ -175,7 +175,7 @@ impl Kva {
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let mut cursor = page_table.cursor_mut(&range).unwrap();
         unsafe {
-            let _ = cursor.unmap(range.len());
+            cursor.unmap(range.len());
         }
         tlb_flush_addr_range(&range);
     }
