@@ -50,7 +50,7 @@ impl Listen {
         Ok(connection)
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 

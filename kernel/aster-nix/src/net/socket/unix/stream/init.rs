@@ -79,7 +79,7 @@ impl Init {
         self.is_nonblocking.store(is_nonblocking, Ordering::Release);
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }

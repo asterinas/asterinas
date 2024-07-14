@@ -123,7 +123,7 @@ impl VsockStreamSocket {
 }
 
 impl Pollable for VsockStreamSocket {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         match &*self.status.read() {
             Status::Init(init) => init.poll(mask, poller),
             Status::Listen(listen) => listen.poll(mask, poller),
@@ -210,9 +210,9 @@ impl Socket for VsockStreamSocket {
         vsockspace.request(&connecting.info()).unwrap();
         // wait for response from driver
         // TODO: Add timeout
-        let poller = Poller::new();
+        let mut poller = Poller::new();
         if !connecting
-            .poll(IoEvents::IN, Some(&poller))
+            .poll(IoEvents::IN, Some(&mut poller))
             .contains(IoEvents::IN)
         {
             if let Err(e) = poller.wait() {

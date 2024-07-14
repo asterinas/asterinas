@@ -104,7 +104,7 @@ impl UnixStreamSocket {
 }
 
 impl Pollable for UnixStreamSocket {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         let inner = self.0.read();
         match &*inner {
             State::Init(init) => init.poll(mask, poller),

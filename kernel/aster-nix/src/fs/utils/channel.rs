@@ -82,7 +82,7 @@ macro_rules! impl_common_methods_for_channel {
                 .contains(StatusFlags::O_NONBLOCK)
         }
 
-        pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+        pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
             self.this_end().pollee.poll(mask, poller)
         }
 
@@ -140,7 +140,7 @@ impl<T> Producer<T> {
 }
 
 impl<T> Pollable for Producer<T> {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.poll(mask, poller)
     }
 }
@@ -266,7 +266,7 @@ impl<T> Consumer<T> {
 }
 
 impl<T> Pollable for Consumer<T> {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.poll(mask, poller)
     }
 }

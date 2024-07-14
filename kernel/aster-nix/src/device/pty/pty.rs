@@ -68,12 +68,12 @@ impl PtyMaster {
         self.update_state(&input);
     }
 
-    pub(super) fn slave_poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub(super) fn slave_poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
         let mut poll_status = IoEvents::empty();
 
         let poll_in_mask = mask & IoEvents::IN;
         if !poll_in_mask.is_empty() {
-            let poll_in_status = self.output.poll(poll_in_mask, poller);
+            let poll_in_status = self.output.poll(poll_in_mask, poller.as_deref_mut());
             poll_status |= poll_in_status;
         }
 
@@ -106,12 +106,12 @@ impl FileIo for PtyMaster {
             return Ok(0);
         }
 
-        let poller = Poller::new();
+        let mut poller = Poller::new();
         loop {
             let mut input = self.input.lock_irq_disabled();
 
             if input.is_empty() {
-                let events = self.pollee.poll(IoEvents::IN, Some(&poller));
+                let events = self.pollee.poll(IoEvents::IN, Some(&mut poller));
 
                 if events.contains(IoEvents::ERR) {
                     return_errno_with_message!(Errno::EACCES, "unexpected err");
@@ -245,12 +245,12 @@ impl FileIo for PtyMaster {
         }
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
         let mut poll_status = IoEvents::empty();
 
         let poll_in_mask = mask & IoEvents::IN;
         if !poll_in_mask.is_empty() {
-            let poll_in_status = self.pollee.poll(poll_in_mask, poller);
+            let poll_in_status = self.pollee.poll(poll_in_mask, poller.as_deref_mut());
             poll_status |= poll_in_status;
         }
 
@@ -348,7 +348,7 @@ impl FileIo for PtySlave {
         Ok(buf.len())
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.master().slave_poll(mask, poller)
     }
 

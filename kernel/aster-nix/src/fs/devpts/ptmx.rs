@@ -186,7 +186,7 @@ impl FileIo for Inner {
         return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         IoEvents::empty()
     }
 }

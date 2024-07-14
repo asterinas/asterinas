@@ -250,9 +250,9 @@ impl LineDiscipline {
                 Ok(len) => return Ok(len),
                 Err(e) if e.error() != Errno::EAGAIN => return Err(e),
                 Err(_) => {
-                    let poller = Some(Poller::new());
-                    if self.poll(IoEvents::IN, poller.as_ref()).is_empty() {
-                        poller.as_ref().unwrap().wait()?
+                    let mut poller = Poller::new();
+                    if self.poll(IoEvents::IN, Some(&mut poller)).is_empty() {
+                        poller.wait()?
                     }
                 }
             }
@@ -288,7 +288,7 @@ impl LineDiscipline {
         Ok(read_len)
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 

@@ -176,7 +176,7 @@ impl InodeHandle_ {
         Ok(read_cnt)
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         if let Some(ref file_io) = self.file_io {
             return file_io.poll(mask, poller);
         }
@@ -228,7 +228,7 @@ pub trait FileIo: Send + Sync + 'static {
 
     fn write(&self, buf: &[u8]) -> Result<usize>;
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents;
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");

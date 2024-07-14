@@ -49,7 +49,7 @@ impl FileIo for TtyDevice {
         return_errno_with_message!(Errno::EINVAL, "cannot write tty device");
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         IoEvents::empty()
     }
 }

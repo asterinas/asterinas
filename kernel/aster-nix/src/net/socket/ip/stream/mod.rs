@@ -338,7 +338,7 @@ impl StreamSocket {
 }
 
 impl Pollable for StreamSocket {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }

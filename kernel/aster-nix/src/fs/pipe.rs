@@ -27,7 +27,7 @@ impl PipeReader {
 }
 
 impl Pollable for PipeReader {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.consumer.poll(mask, poller)
     }
 }
@@ -96,7 +96,7 @@ impl PipeWriter {
 }
 
 impl Pollable for PipeWriter {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.producer.poll(mask, poller)
     }
 }

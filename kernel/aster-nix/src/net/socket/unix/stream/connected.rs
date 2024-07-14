@@ -45,7 +45,7 @@ impl Connected {
         self.local_endpoint.set_nonblocking(is_nonblocking).unwrap();
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.local_endpoint.poll(mask, poller)
     }
 }
