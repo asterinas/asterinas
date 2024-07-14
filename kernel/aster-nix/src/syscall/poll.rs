@@ -61,7 +61,7 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32) -> Result<SyscallReturn> {
 
 pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>) -> Result<usize> {
     // The main loop of polling
-    let poller = Poller::new();
+    let mut poller = Poller::new();
     loop {
         let mut num_revents = 0;
 
@@ -79,7 +79,7 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>) -> Result<usize> 
                 file_table.get_file(fd)?.clone()
             };
             let need_poller = if num_revents == 0 {
-                Some(&poller)
+                Some(&mut poller)
             } else {
                 None
             };

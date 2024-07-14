@@ -106,10 +106,10 @@ impl Endpoint {
         self.0.peer.upgrade().is_some()
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
         let mut events = IoEvents::empty();
         // FIXME: should reader and writer use the same mask?
-        let reader_events = self.0.reader.poll(mask, poller);
+        let reader_events = self.0.reader.poll(mask, poller.as_deref_mut());
         let writer_events = self.0.writer.poll(mask, poller);
 
         if reader_events.contains(IoEvents::HUP) || self.0.reader.is_shutdown() {

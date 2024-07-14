@@ -65,7 +65,7 @@ impl Listener {
         Ok((socket, peer_addr))
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         let addr = self.addr();
         let backlog = BACKLOG_TABLE.get_backlog(addr).unwrap();
         backlog.poll(mask, poller)
@@ -119,7 +119,7 @@ impl BacklogTable {
     }
 
     fn pop_incoming(&self, nonblocking: bool, addr: &UnixSocketAddrBound) -> Result<Arc<Endpoint>> {
-        let poller = Poller::new();
+        let mut poller = Poller::new();
         loop {
             let backlog = self.get_backlog(addr)?;
 
@@ -133,7 +133,7 @@ impl BacklogTable {
 
             let events = {
                 let mask = IoEvents::IN;
-                backlog.poll(mask, Some(&poller))
+                backlog.poll(mask, Some(&mut poller))
             };
 
             if events.contains(IoEvents::ERR) | events.contains(IoEvents::HUP) {
@@ -202,7 +202,7 @@ impl Backlog {
         endpoint
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         // Lock to avoid any events may change pollee state when we poll
         let _lock = self.incoming_endpoints.lock();
         self.pollee.poll(mask, poller)

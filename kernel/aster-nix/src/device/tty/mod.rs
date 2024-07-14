@@ -87,7 +87,7 @@ impl FileIo for Tty {
         Ok(buf.len())
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.ldisc.poll(mask, poller)
     }
 

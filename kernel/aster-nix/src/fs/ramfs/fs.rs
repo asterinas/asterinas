@@ -1092,7 +1092,7 @@ impl Inode for RamInode {
         }
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         if let Some(device) = self.node.read().inner.as_device() {
             device.poll(mask, poller)
         } else {

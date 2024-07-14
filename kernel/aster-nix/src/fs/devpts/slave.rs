@@ -133,7 +133,7 @@ impl Inode for PtySlaveInode {
         self.device.ioctl(cmd, arg)
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.device.poll(mask, poller)
     }
 

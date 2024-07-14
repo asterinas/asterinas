@@ -5,8 +5,6 @@ use core::{
     time::Duration,
 };
 
-use keyable_arc::KeyableWeak;
-
 use crate::{
     events::{IoEvents, Observer, Subject},
     prelude::*,
@@ -47,7 +45,7 @@ impl Pollee {
     ///
     /// This operation is _atomic_ in the sense that either some interesting
     /// events are returned or the poller is registered (if a poller is provided).
-    pub fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         let mask = mask | IoEvents::ALWAYS_POLL;
 
         // Fast path: return events immediately
@@ -63,12 +61,12 @@ impl Pollee {
         self.events() & mask
     }
 
-    fn register_poller(&self, poller: &Poller, mask: IoEvents) {
+    fn register_poller(&self, poller: &mut Poller, mask: IoEvents) {
         self.inner
             .subject
             .register_observer(poller.observer(), mask);
-        let mut pollees = poller.inner.pollees.lock();
-        pollees.insert(Arc::downgrade(&self.inner).into(), ());
+
+        poller.pollees.push(Arc::downgrade(&self.inner));
     }
 
     /// Register an IoEvents observer.
@@ -135,14 +133,10 @@ impl Pollee {
 
 /// A poller gets notified when its associated pollees have interesting events.
 pub struct Poller {
-    inner: Arc<PollerInner>,
-}
-
-struct PollerInner {
     // Use event counter to wait or wake up a poller
-    event_counter: EventCounter,
+    event_counter: Arc<EventCounter>,
     // All pollees that are interesting to this poller
-    pollees: Mutex<BTreeMap<KeyableWeak<PolleeInner>, ()>>,
+    pollees: Vec<Weak<PolleeInner>>,
 }
 
 impl Default for Poller {
@@ -154,53 +148,41 @@ impl Default for Poller {
 impl Poller {
     /// Constructs a new `Poller`.
     pub fn new() -> Self {
-        let inner = PollerInner {
-            event_counter: EventCounter::new(),
-            pollees: Mutex::new(BTreeMap::new()),
-        };
         Self {
-            inner: Arc::new(inner),
+            event_counter: Arc::new(EventCounter::new()),
+            pollees: Vec::new(),
         }
     }
 
     /// Wait until there are any interesting events happen since last `wait`. The `wait`
     /// can be interrupted by signal.
     pub fn wait(&self) -> Result<()> {
-        self.inner.event_counter.read(None)?;
+        self.event_counter.read(None)?;
         Ok(())
     }
 
     /// Wait until there are any interesting events happen since last `wait` or a given timeout
     /// is expired. This method can be interrupted by signal.
     pub fn wait_timeout(&self, timeout: &Duration) -> Result<()> {
-        self.inner.event_counter.read(Some(timeout))?;
+        self.event_counter.read(Some(timeout))?;
         Ok(())
     }
 
     fn observer(&self) -> Weak<dyn Observer<IoEvents>> {
-        Arc::downgrade(&self.inner) as _
-    }
-}
-
-impl Observer<IoEvents> for PollerInner {
-    fn on_events(&self, _events: &IoEvents) {
-        self.event_counter.write();
+        Arc::downgrade(&self.event_counter) as _
     }
 }
 
 impl Drop for Poller {
     fn drop(&mut self) {
-        let mut pollees = self.inner.pollees.lock();
-        if pollees.len() == 0 {
-            return;
-        }
+        let observer = self.observer();
 
-        let self_observer = self.observer();
-        for (weak_pollee, _) in pollees.extract_if(|_, _| true) {
-            if let Some(pollee) = weak_pollee.upgrade() {
-                pollee.subject.unregister_observer(&self_observer);
-            }
-        }
+        self.pollees
+            .iter()
+            .filter_map(Weak::upgrade)
+            .for_each(|pollee| {
+                pollee.subject.unregister_observer(&observer);
+            });
     }
 }
 
@@ -243,6 +225,12 @@ impl EventCounter {
     }
 }
 
+impl Observer<IoEvents> for EventCounter {
+    fn on_events(&self, _events: &IoEvents) {
+        self.write();
+    }
+}
+
 /// The `Pollable` trait allows for waiting for events and performing event-based operations.
 ///
 /// Implementors are required to provide a method, [`Pollable::poll`], which is usually implemented
@@ -258,7 +246,7 @@ pub trait Pollable {
     /// none.
     ///
     /// This method has the same semantics as [`Pollee::poll`].
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents;
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
 
     /// Waits for events and performs event-based operations.
     ///
@@ -274,7 +262,7 @@ pub trait Pollable {
         Self: Sized,
         F: FnMut() -> Result<R>,
     {
-        let poller = Poller::new();
+        let mut poller = Poller::new();
 
         loop {
             match cond() {
@@ -282,7 +270,7 @@ pub trait Pollable {
                 result => return result,
             };
 
-            let events = self.poll(mask, Some(&poller));
+            let events = self.poll(mask, Some(&mut poller));
             if !events.is_empty() {
                 continue;
             }

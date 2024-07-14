@@ -151,7 +151,7 @@ impl EventFile {
 }
 
 impl Pollable for EventFile {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }
@@ -175,8 +175,8 @@ impl FileLike for EventFile {
                 self.update_io_state(&counter);
                 drop(counter);
 
-                let poller = Poller::new();
-                if self.pollee.poll(IoEvents::IN, Some(&poller)).is_empty() {
+                let mut poller = Poller::new();
+                if self.pollee.poll(IoEvents::IN, Some(&mut poller)).is_empty() {
                     poller.wait()?;
                 }
                 continue;

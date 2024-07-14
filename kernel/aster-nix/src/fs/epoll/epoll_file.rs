@@ -187,7 +187,7 @@ impl EpollFile {
             // If no ready entries for now, wait for them
             if poller.is_none() {
                 poller = Some(Poller::new());
-                let events = self.pollee.poll(IoEvents::IN, poller.as_ref());
+                let events = self.pollee.poll(IoEvents::IN, poller.as_mut());
                 if !events.is_empty() {
                     continue;
                 }
@@ -322,7 +322,7 @@ impl Drop for EpollFile {
 }
 
 impl Pollable for EpollFile {
-    fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }

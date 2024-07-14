@@ -348,7 +348,7 @@ pub trait Inode: Any + Sync + Send {
         Ok(())
     }
 
-    fn poll(&self, mask: IoEvents, _poller: Option<&Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }
