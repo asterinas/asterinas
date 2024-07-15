@@ -16,17 +16,17 @@ use crate::{
 };
 
 pub(super) struct Init {
-    is_nonblocking: AtomicBool,
     addr: Mutex<Option<UnixSocketAddrBound>>,
     pollee: Pollee,
+    is_nonblocking: AtomicBool,
 }
 
 impl Init {
     pub(super) fn new(is_nonblocking: bool) -> Self {
         Self {
-            is_nonblocking: AtomicBool::new(is_nonblocking),
             addr: Mutex::new(None),
             pollee: Pollee::new(IoEvents::empty()),
+            is_nonblocking: AtomicBool::new(is_nonblocking),
         }
     }
 
@@ -58,7 +58,7 @@ impl Init {
         }
 
         let (this_end, remote_end) =
-            Endpoint::new_pair(addr, Some(remote_addr.clone()), self.is_nonblocking())?;
+            Endpoint::new_pair(addr, Some(remote_addr.clone()), self.is_nonblocking());
 
         push_incoming(remote_addr, remote_end)?;
         Ok(Connected::new(this_end))
@@ -69,11 +69,11 @@ impl Init {
     }
 
     pub(super) fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Acquire)
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
     pub(super) fn set_nonblocking(&self, is_nonblocking: bool) {
-        self.is_nonblocking.store(is_nonblocking, Ordering::Release);
+        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
     }
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {

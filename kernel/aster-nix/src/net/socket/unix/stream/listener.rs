@@ -39,11 +39,11 @@ impl Listener {
     }
 
     pub(super) fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Acquire)
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
     pub(super) fn set_nonblocking(&self, is_nonblocking: bool) {
-        self.is_nonblocking.store(is_nonblocking, Ordering::Release);
+        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
     }
 
     pub(super) fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
