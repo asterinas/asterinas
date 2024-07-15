@@ -8,23 +8,23 @@ use crate::{
         utils::{Channel, CreationFlags, StatusFlags},
     },
     prelude::*,
-    util::{read_val_from_user, write_val_to_user},
+    util::write_val_to_user,
 };
 
 pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
     debug!("flags: {:?}", flags);
 
-    let mut pipe_fds = read_val_from_user::<PipeFds>(fds)?;
-    let (reader, writer) = {
-        let (producer, consumer) = Channel::with_capacity_and_flags(
-            PIPE_BUF_SIZE,
-            StatusFlags::from_bits_truncate(flags),
-        )?
-        .split();
-        (PipeReader::new(consumer), PipeWriter::new(producer))
+    let (pipe_reader, pipe_writer) = {
+        let (producer, consumer) = Channel::new(PIPE_BUF_SIZE).split();
+
+        let status_flags = StatusFlags::from_bits_truncate(flags);
+
+        (
+            PipeReader::new(consumer, status_flags)?,
+            PipeWriter::new(producer, status_flags)?,
+        )
     };
-    let pipe_reader = Arc::new(reader);
-    let pipe_writer = Arc::new(writer);
+
     let fd_flags = if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
         FdFlags::CLOEXEC
     } else {
@@ -33,10 +33,18 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
 
     let current = current!();
     let mut file_table = current.file_table().lock();
-    pipe_fds.reader_fd = file_table.insert(pipe_reader, fd_flags);
-    pipe_fds.writer_fd = file_table.insert(pipe_writer, fd_flags);
+
+    let pipe_fds = PipeFds {
+        reader_fd: file_table.insert(pipe_reader, fd_flags),
+        writer_fd: file_table.insert(pipe_writer, fd_flags),
+    };
     debug!("pipe_fds: {:?}", pipe_fds);
-    write_val_to_user(fds, &pipe_fds)?;
+
+    if let Err(err) = write_val_to_user(fds, &pipe_fds) {
+        file_table.close_file(pipe_fds.reader_fd).unwrap();
+        file_table.close_file(pipe_fds.writer_fd).unwrap();
+        return Err(err);
+    }
 
     Ok(SyscallReturn::Return(0))
 }

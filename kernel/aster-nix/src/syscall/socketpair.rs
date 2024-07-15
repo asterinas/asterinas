@@ -25,7 +25,7 @@ pub fn sys_socketpair(domain: i32, type_: i32, protocol: i32, sv: Vaddr) -> Resu
     let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let (socket_a, socket_b) = match (domain, sock_type) {
         (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM) => {
-            UnixStreamSocket::new_pair(nonblocking)?
+            UnixStreamSocket::new_pair(nonblocking)
         }
         _ => return_errno_with_message!(
             Errno::EAFNOSUPPORT,

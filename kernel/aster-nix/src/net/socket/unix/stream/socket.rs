@@ -51,8 +51,8 @@ impl UnixStreamSocket {
         Self::new_init(init)
     }
 
-    pub fn new_pair(nonblocking: bool) -> Result<(Arc<Self>, Arc<Self>)> {
-        let (end_a, end_b) = Endpoint::new_pair(None, None, nonblocking)?;
+    pub fn new_pair(nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
+        let (end_a, end_b) = Endpoint::new_pair(None, None, nonblocking);
 
         let connected_a = {
             let connected = Connected::new(end_a);
@@ -63,7 +63,7 @@ impl UnixStreamSocket {
             Self::new_connected(connected)
         };
 
-        Ok((Arc::new(connected_a), Arc::new(connected_b)))
+        (Arc::new(connected_a), Arc::new(connected_b))
     }
 
     fn bound_addr(&self) -> Option<UnixSocketAddrBound> {
