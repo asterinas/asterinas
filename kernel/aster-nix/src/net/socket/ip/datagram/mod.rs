@@ -232,6 +232,7 @@ impl FileLike for DatagramSocket {
     }
 
     fn status_flags(&self) -> StatusFlags {
+        // TODO: when we fully support O_ASYNC, return the flag
         if self.is_nonblocking() {
             StatusFlags::O_NONBLOCK
         } else {

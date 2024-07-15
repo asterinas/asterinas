@@ -137,6 +137,7 @@ impl FileLike for UnixStreamSocket {
             State::Connected(connected) => connected.is_nonblocking(),
         };
 
+        // TODO: when we fully support O_ASYNC, return the flag
         if is_nonblocking {
             StatusFlags::O_NONBLOCK
         } else {
