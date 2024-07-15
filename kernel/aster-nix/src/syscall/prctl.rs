@@ -35,6 +35,17 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
 
             write_val_to_user(write_to_addr, &write_val)?;
         }
+        PrctlCmd::PR_GET_DUMPABLE => {
+            // TODO: when coredump is supported, return the actual value
+            return Ok(SyscallReturn::Return(Dumpable::Disable as _));
+        }
+        PrctlCmd::PR_SET_DUMPABLE(dumpable) => {
+            if dumpable != Dumpable::Disable && dumpable != Dumpable::User {
+                return_errno!(Errno::EINVAL)
+            }
+
+            // TODO: implement coredump
+        }
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
             let thread_name = posix_thread.thread_name().lock();
             if let Some(thread_name) = &*thread_name {
@@ -60,6 +71,8 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
 
 const PR_SET_PDEATHSIG: i32 = 1;
 const PR_GET_PDEATHSIG: i32 = 2;
+const PR_GET_DUMPABLE: i32 = 3;
+const PR_SET_DUMPABLE: i32 = 4;
 const PR_SET_NAME: i32 = 15;
 const PR_GET_NAME: i32 = 16;
 const PR_SET_TIMERSLACK: i32 = 29;
@@ -74,6 +87,16 @@ pub enum PrctlCmd {
     PR_GET_NAME(Vaddr),
     PR_SET_TIMERSLACK(u64),
     PR_GET_TIMERSLACK,
+    PR_SET_DUMPABLE(Dumpable),
+    PR_GET_DUMPABLE,
+}
+
+#[repr(u64)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
+pub enum Dumpable {
+    Disable = 0, /* No setuid dumping */
+    User = 1,    /* Dump as user of process */
+    Root = 2,    /* Dump as root */
 }
 
 impl PrctlCmd {
@@ -84,6 +107,8 @@ impl PrctlCmd {
                 Ok(PrctlCmd::PR_SET_PDEATHSIG(signum))
             }
             PR_GET_PDEATHSIG => Ok(PrctlCmd::PR_GET_PDEATHSIG(arg2 as _)),
+            PR_GET_DUMPABLE => Ok(PrctlCmd::PR_GET_DUMPABLE),
+            PR_SET_DUMPABLE => Ok(PrctlCmd::PR_SET_DUMPABLE(Dumpable::try_from(arg2)?)),
             PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
             PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
             PR_GET_TIMERSLACK => todo!(),
