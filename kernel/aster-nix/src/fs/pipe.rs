@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use super::{
     file_handle::FileLike,
     utils::{AccessMode, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags},
@@ -151,16 +149,5 @@ impl FileLike for PipeWriter {
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Option<Weak<dyn Observer<IoEvents>>> {
         self.producer.unregister_observer(observer)
-    }
-}
-
-fn should_io_return(res: &Result<usize>, is_nonblocking: bool) -> bool {
-    if is_nonblocking {
-        return true;
-    }
-    match res {
-        Ok(_) => true,
-        Err(e) if e.error() == Errno::EAGAIN => false,
-        Err(_) => true,
     }
 }
