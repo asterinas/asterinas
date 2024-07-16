@@ -109,9 +109,19 @@ fn do_epoll_wait(epfd: FileDesc, max_events: i32, timeout: i32) -> Result<Vec<Ep
         .get_file(epfd)?
         .downcast_ref::<EpollFile>()
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
-    let epoll_events = epoll_file.wait(max_events, timeout.as_ref())?;
+    let result = epoll_file.wait(max_events, timeout.as_ref());
 
-    Ok(epoll_events)
+    // As mentioned in the manual, the return value should be zero if no file descriptor becomes ready
+    // during the requested `timeout` milliseconds. So we ignore `Err(ETIME)` and return an empty vector.
+    //
+    // Manual: <https://www.man7.org/linux/man-pages/man2/epoll_wait.2.html>
+    if result
+        .as_ref()
+        .is_err_and(|err| err.error() == Errno::ETIME)
+    {
+        return Ok(Vec::new());
+    }
+    result
 }
 
 pub fn sys_epoll_wait(
