@@ -122,6 +122,20 @@ pub fn read_random() -> Option<u64> {
     None
 }
 
+fn has_avx512() -> bool {
+    use core::arch::x86_64::{__cpuid, __cpuid_count};
+
+    let cpuid_result = unsafe { __cpuid(0) };
+    if cpuid_result.eax < 7 {
+        // CPUID function 7 is not supported
+        return false;
+    }
+
+    let cpuid_result = unsafe { __cpuid_count(7, 0) };
+    // Check for AVX-512 Foundation (bit 16 of ebx)
+    cpuid_result.ebx & (1 << 16) != 0
+}
+
 fn enable_common_cpu_features() {
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
     let mut cr4 = x86_64::registers::control::Cr4::read();
@@ -135,10 +149,14 @@ fn enable_common_cpu_features() {
     }
 
     let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
-    // TODO: Ensure proper saving and restoring of floating-point states
-    // to correctly support advanced instructions like AVX-512.
-    let avx512 = XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
-    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE | avx512;
+    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
+
+    if has_avx512() {
+        // TODO: Ensure proper saving and restoring of floating-point states
+        // to correctly support advanced instructions like AVX-512.
+        xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
+    }
+
     unsafe {
         x86_64::registers::xcontrol::XCr0::write(xcr0);
     }
