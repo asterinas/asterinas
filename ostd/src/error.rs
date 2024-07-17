@@ -21,6 +21,8 @@ pub enum Error {
     Overflow,
     /// Memory mapping already exists for the given virtual address.
     MapAlreadyMappedVaddr,
+    /// Kva alloc out of memory.
+    KvaAllocError,
 }
 
 impl From<PageTableError> for Error {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Kernel virtual memory allocation
+use align_ext::AlignExt;
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::ops::{DerefMut, Range};
 
@@ -12,10 +13,11 @@ use crate::{
             meta::{PageMeta, PageUsage},
             Page,
         },
+        page_table::PageTableQueryResult,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        Vaddr, VmIo, PAGE_SIZE,
+        Vaddr, VmIo, PAGE_SIZE, VmReader, VmWriter,
     },
-    sync::SpinLock,
+    sync::SpinLock, Error, Result,
 };
 
 pub struct KvaFreeNode {
@@ -49,7 +51,7 @@ impl KvaInner {
     fn alloc(
         freelist: &mut BTreeMap<Vaddr, KvaFreeNode>,
         size: usize,
-    ) -> Result<Self, KvaAllocError> {
+    ) -> Result<Self> {
         // iterate through the free list, if find the first block that is larger than this allocation, do:
         //    1. consume the last part of this block as the allocated range.
         //    2. check if this block is empty (and not the first block), if so, remove it.
@@ -80,7 +82,7 @@ impl KvaInner {
         if let Some(range) = allocate_range {
             Ok(Self { var: range })
         } else {
-            Err(KvaAllocError::OutOfMemory)
+            Err(Error::KvaAllocError)
         }
     }
 
@@ -99,36 +101,55 @@ impl KvaInner {
     /// # Safety
     /// The caller should ensure that the protection doesn't violate the memory safety of
     /// kernel objects.
-    unsafe fn protect(&mut self, range: Range<Vaddr>, mut op: impl FnMut(&mut PageProperty)) {
-        todo!();
+    unsafe fn protect(&mut self, range: Range<Vaddr>, op: impl FnMut(&mut PageProperty)) {
+        assert!(range.start >= self.var.start && range.end <= self.var.end);
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        let mut cursor = page_table.cursor_mut(&range).unwrap();
+        cursor.protect(range.len(), op, true).unwrap();
     }
-
-    // // `VmIo` counterparts
-    // fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-    //     todo!() // implementation provided by this trait.
-    // }
-    // unsafe fn write_bytes(&mut self, offset: usize, buf: &[u8]) -> Result<()> {
-    //     todo!() // implementation provided by this trait.
-    // }
 
     // Maybe other advanced object R/W methods like what's offered in the safe version?
 }
 
+impl<'a> KvaInner {
+    /// Returns a reader to read data from it.
+    pub fn reader(&'a self) -> VmReader<'a> {
+        unsafe { VmReader::from_kernel_space(self.var.start as *const u8, self.var.len()) }
+    }
+
+    /// Returns a writer to write data into it.
+    pub fn writer(&'a self) -> VmWriter<'a> {
+        unsafe { VmWriter::from_kernel_space(self.var.start as *mut u8, self.var.len()) }
+    }
+}
+
+impl VmIo for KvaInner {
+    // `VmIo` counterparts
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > self.var.len() {
+            return Err(Error::InvalidArgs);
+        }
+        let len = self.reader().skip(offset).read(&mut buf.into());
+        debug_assert!(len == buf.len());
+        Ok(())
+    }
+
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+        // Do bound check with potential integer overflow in mind
+        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        if max_offset > self.var.len() {
+            return Err(Error::InvalidArgs);
+        }
+        let len = self.writer().skip(offset).write(&mut buf.into());
+        debug_assert!(len == buf.len());
+        Ok(())
+    }
+}
+
 // static KVA_FREELIST: SpinLock<BtreeMap<Vaddr, KvaFreeNode>> = SpinLock::new(BtreeMap::new(KvaFreeNode::new(kspace::TRACKED_MAPPED_PAGES_RANGE)));
 pub static KVA_FREELIST: SpinLock<BTreeMap<Vaddr, KvaFreeNode>> = SpinLock::new(BTreeMap::new());
-
-// impl Drop for KvaInner {
-//     fn drop(&mut self) {
-//         // // 0. unmap all mapped pages.
-//         // 1. get the previous free block, check if we can merge this block with the free one
-//         //     - if contiguous, merge this area with the free block.
-//         //     - if not contiguous, create a new free block, insert it into the list.
-//         // 2. check if we can merge the current block with the next block, if we can, do so.
-//         // todo!();
-//         let mut lock_guard = KVA_FREELIST.lock();
-//         lock_guard.deref_mut().insert(self.var.start, KvaFreeNode::new(self.var.start..self.var.end));
-//     }
-// }
 
 pub struct Kva(KvaInner);
 
@@ -181,13 +202,45 @@ impl Kva {
     }
 
     pub fn get_page_type(&self, addr: Vaddr) -> PageUsage {
-        todo!();
+        let start = addr.align_down(PAGE_SIZE);
+        let vaddr = start..start + PAGE_SIZE;
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        let mut cursor = page_table.cursor(&vaddr).unwrap();
+        let query_result = cursor.query().unwrap();
+        match query_result {
+            PageTableQueryResult::Mapped { va : _, page, prop : _  } => {
+               page.usage()
+            }
+            _ => {
+               //  MappedUntracked and NotMapped
+               panic!("Unexpected query result: Expected 'Mapped', found '{:?}'", query_result);
+            }
+        }
     }
-    // /// Get the mapped page.
-    // /// The method will fail if the provided page type doesn't match the actual mapped one.
-    // pub fn get_page<T: PageMeta>(&self, addr: Vaddr) -> Result<Page<T>> {
-    //     todo!();
-    // }
+    /// Get the mapped page.
+    /// The method will fail if the provided page type doesn't match the actual mapped one.
+    pub fn get_page<T: PageMeta>(&self, addr: Vaddr) -> Result<Page<T>> {
+        let start = addr.align_down(PAGE_SIZE);
+        let vaddr = start..start + PAGE_SIZE;
+        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
+        let mut cursor = page_table.cursor(&vaddr).unwrap();
+        // cannot obtain a page through querying the page table at next time?
+        let query_result = cursor.query().unwrap();
+        match query_result {
+            PageTableQueryResult::Mapped { va : _, page, prop : _  } => {
+                let result = Page::<T>::try_from(page);
+                if let Ok(page) = result {
+                    Ok(page)
+                } else {
+                    panic!("the provided page type doesn't match the actual mapped one");
+                }
+            }
+            _ => {
+               //  MappedUntracked and NotMapped
+               panic!("Unexpected query result: Expected 'Mapped', found '{:?}'", query_result);
+            }
+        }
+    }
 }
 
 impl Drop for Kva {
