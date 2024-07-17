@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Kernel virtual memory allocation
-use align_ext::AlignExt;
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::ops::{DerefMut, Range};
+use align_ext::AlignExt;
 
 use super::KERNEL_PAGE_TABLE;
 use crate::{
@@ -13,11 +13,12 @@ use crate::{
             meta::{PageMeta, PageUsage},
             Page,
         },
-        page_table::PageTableQueryResult,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        Vaddr, VmIo, PAGE_SIZE, VmReader, VmWriter,
+        page_table::PageTableQueryResult,
+        Vaddr, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
-    sync::SpinLock, Error, Result,
+    sync::SpinLock,
+    Error, Result,
 };
 
 pub struct KvaFreeNode {
@@ -30,10 +31,10 @@ impl KvaFreeNode {
     }
 }
 
-#[derive(Debug)]
-pub enum KvaAllocError {
-    OutOfMemory,
-}
+// #[derive(Debug)]
+// pub enum KvaAllocError {
+//     OutOfMemory,
+// }
 
 struct KvaInner {
     /// The virtual memory range.
@@ -48,10 +49,7 @@ impl KvaInner {
     /// Allocate a kernel virtual area.
     /// This is a simple FIRST-FIT algorithm.
     /// Note that a newly allocated area is not backed by any physical pages.
-    fn alloc(
-        freelist: &mut BTreeMap<Vaddr, KvaFreeNode>,
-        size: usize,
-    ) -> Result<Self> {
+    fn alloc(freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, size: usize) -> Result<Self> {
         // iterate through the free list, if find the first block that is larger than this allocation, do:
         //    1. consume the last part of this block as the allocated range.
         //    2. check if this block is empty (and not the first block), if so, remove it.
@@ -208,12 +206,17 @@ impl Kva {
         let mut cursor = page_table.cursor(&vaddr).unwrap();
         let query_result = cursor.query().unwrap();
         match query_result {
-            PageTableQueryResult::Mapped { va : _, page, prop : _  } => {
-               page.usage()
-            }
+            PageTableQueryResult::Mapped {
+                va: _,
+                page,
+                prop: _,
+            } => page.usage(),          
             _ => {
-               //  MappedUntracked and NotMapped
-               panic!("Unexpected query result: Expected 'Mapped', found '{:?}'", query_result);
+                //  MappedUntracked and NotMapped
+                panic!(
+                    "Unexpected query result: Expected 'Mapped', found '{:?}'",
+                    query_result
+                );
             }
         }
     }
@@ -227,7 +230,11 @@ impl Kva {
         // cannot obtain a page through querying the page table at next time?
         let query_result = cursor.query().unwrap();
         match query_result {
-            PageTableQueryResult::Mapped { va : _, page, prop : _  } => {
+            PageTableQueryResult::Mapped {
+                va: _,
+                page,
+                prop: _,
+            } => {
                 let result = Page::<T>::try_from(page);
                 if let Ok(page) = result {
                     Ok(page)
@@ -236,8 +243,11 @@ impl Kva {
                 }
             }
             _ => {
-               //  MappedUntracked and NotMapped
-               panic!("Unexpected query result: Expected 'Mapped', found '{:?}'", query_result);
+                //  MappedUntracked and NotMapped
+                panic!(
+                    "Unexpected query result: Expected 'Mapped', found '{:?}'",
+                    query_result
+                );
             }
         }
     }
