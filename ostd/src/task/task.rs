@@ -16,7 +16,6 @@ use super::{
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     arch::mm::tlb_flush_addr_range,
-    cpu::CpuSet,
     mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
@@ -118,8 +117,6 @@ pub struct Task {
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
-    // TODO: add multiprocessor support
-    cpu_affinity: CpuSet,
 }
 
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
@@ -208,7 +205,6 @@ pub struct TaskOptions {
     func: Option<Box<dyn Fn() + Send + Sync>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     user_space: Option<Arc<UserSpace>>,
-    cpu_affinity: CpuSet,
 }
 
 impl TaskOptions {
@@ -217,12 +213,10 @@ impl TaskOptions {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        let cpu_affinity = CpuSet::new_full();
         Self {
             func: Some(Box::new(func)),
             data: None,
             user_space: None,
-            cpu_affinity,
         }
     }
 
@@ -250,15 +244,6 @@ impl TaskOptions {
         self
     }
 
-    /// Sets the CPU affinity mask for the task.
-    ///
-    /// The `cpu_affinity` parameter represents
-    /// the desired set of CPUs to run the task on.
-    pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
-        self.cpu_affinity = cpu_affinity;
-        self
-    }
-
     /// Builds a new task without running it immediately.
     pub fn build(self) -> Result<Arc<Task>> {
         /// all task will entering this function
@@ -280,7 +265,6 @@ impl TaskOptions {
             ctx: UnsafeCell::new(TaskContext::default()),
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
-            cpu_affinity: self.cpu_affinity,
         };
 
         let ctx = new_task.ctx.get_mut();

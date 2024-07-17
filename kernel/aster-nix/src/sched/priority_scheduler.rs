@@ -43,7 +43,13 @@ impl PrioritySchedEntity for Task {
     }
 
     fn can_run_on(&self, cpu_id: u32) -> bool {
-        self.cpu_affinity().contains(cpu_id)
+        self.data()
+            .downcast_ref::<Weak<Thread>>()
+            .unwrap()
+            .upgrade()
+            .unwrap()
+            .cpu_affinity()
+            .contains(cpu_id)
     }
 }
 

@@ -8,13 +8,13 @@ use core::{
 };
 
 use ostd::{
-    cpu::CpuSet,
     sync::WaitQueue,
     task::{add_task, EnqueueFlags},
 };
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
+    cpu::CpuSet,
     prelude::*,
     sched::Priority,
     thread::kernel_thread::{KernelThreadExt, ThreadOptions},

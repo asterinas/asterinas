@@ -2,12 +2,11 @@
 
 #![allow(dead_code)]
 
-use ostd::cpu::CpuSet;
 use spin::Once;
 use work_item::WorkItem;
 use worker_pool::WorkerPool;
 
-use crate::prelude::*;
+use crate::{cpu::CpuSet, prelude::*};
 
 mod simple_scheduler;
 pub mod work_item;
@@ -65,8 +64,7 @@ static WORKQUEUE_GLOBAL_HIGH_PRI: Once<Arc<WorkQueue>> = Once::new();
 /// Certainly, users can also create a dedicated WorkQueue and WorkerPool.
 ///
 /// ```rust
-/// use ostd::cpu::CpuSet;
-/// use crate::thread::work_queue::{WorkQueue, WorkerPool, WorkItem};
+/// use crate::{cpu::CpuSet, thread::work_queue::{WorkQueue, WorkerPool, WorkItem}};
 ///
 /// fn deferred_task(){
 ///     // ...

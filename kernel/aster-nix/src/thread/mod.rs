@@ -8,6 +8,7 @@ use ostd::task::{yield_now, Task, YieldFlags};
 
 use self::status::{AtomicThreadStatus, ThreadStatus};
 use crate::{
+    cpu::CpuSet,
     prelude::*,
     sched::{AtomicPriority, Priority},
 };
@@ -38,6 +39,8 @@ pub struct Thread {
     status: AtomicThreadStatus,
     /// Thread priority
     priority: AtomicPriority,
+    /// Cpu affinity
+    cpu_affinity: SpinLock<CpuSet>,
 }
 
 impl Thread {
@@ -48,6 +51,7 @@ impl Thread {
         data: impl Send + Sync + Any,
         status: ThreadStatus,
         priority: Priority,
+        cpu_affinity: CpuSet,
     ) -> Self {
         Thread {
             tid,
@@ -55,6 +59,7 @@ impl Thread {
             data: Box::new(data),
             status: AtomicThreadStatus::new(status),
             priority: AtomicPriority::new(priority),
+            cpu_affinity: SpinLock::new(cpu_affinity),
         }
     }
 
@@ -111,6 +116,21 @@ impl Thread {
     /// Updates the priority with the `new` value.
     pub fn set_priority(&self, new_priority: Priority) {
         self.priority.store(new_priority, Ordering::Release);
+    }
+
+    /// Returns the reference to the atomic cpu affinty.
+    pub fn atomic_cpu_affinity(&self) -> &SpinLock<CpuSet> {
+        &self.cpu_affinity
+    }
+
+    /// Returns the current cpu affinity.
+    pub fn cpu_affinity(&self) -> CpuSet {
+        self.cpu_affinity.lock_irq_disabled().clone()
+    }
+
+    /// Updates the cpu affinity with the `new` value.
+    pub fn set_cpu_affinity(&self, new_cpu_affinity: CpuSet) {
+        *self.cpu_affinity.lock_irq_disabled() = new_cpu_affinity;
     }
 
     pub fn yield_now() {

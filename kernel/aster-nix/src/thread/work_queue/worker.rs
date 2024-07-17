@@ -2,10 +2,9 @@
 
 #![allow(dead_code)]
 
-use ostd::cpu::CpuSet;
-
 use super::worker_pool::WorkerPool;
 use crate::{
+    cpu::CpuSet,
     prelude::*,
     sched::Priority,
     thread::kernel_thread::{KernelThreadExt, ThreadOptions},

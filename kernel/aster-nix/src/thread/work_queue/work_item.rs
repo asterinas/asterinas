@@ -4,9 +4,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use ostd::cpu::CpuSet;
-
-use crate::prelude::*;
+use crate::{cpu::CpuSet, prelude::*};
 
 /// A task to be executed by a worker thread.
 pub struct WorkItem {
