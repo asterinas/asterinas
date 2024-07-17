@@ -52,15 +52,15 @@ pub struct KernelStack {
 
 impl KernelStack {
     pub fn new() -> Result<Self> {
-        let mut kva = Kva::alloc(KERNEL_STACK_SIZE);
-        let mapped_start = kva.start();
-        let mapped_end = kva.end();
+        let mut kva_alloc = Kva::alloc(KERNEL_STACK_SIZE);
+        let mapped_start = kva_alloc.start();
+        let mapped_end = kva_alloc.end();
         // let pages = allocator::alloc::<FrameMeta>(KERNEL_STACK_SIZE).unwrap();
         // let pages = allocator::alloc_contiguous::<KernelStackMeta>((KERNEL_STACK_SIZE)).unwrap();
         let pages = allocator::alloc::<KernelStackMeta>(KERNEL_STACK_SIZE).unwrap();
-        unsafe { kva.map_pages(mapped_start..mapped_end, pages) }
+        unsafe { kva_alloc.map_pages(mapped_start..mapped_end, pages) }
         Ok(Self {
-            kva: kva,
+            kva: kva_alloc,
             mapped: mapped_start..mapped_end,
             has_guard_page: false,
         })
@@ -69,18 +69,18 @@ impl KernelStack {
     /// Generates a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
-        let mut kva = Kva::alloc(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
-        let mapped_start = kva.start() + 2 * PAGE_SIZE;
+        let mut kva_alloc = Kva::alloc(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
+        let mapped_start = kva_alloc.start() + 2 * PAGE_SIZE;
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         // let frames = FrameAllocOptions::new(KERNEL_STACK_SIZE).uninit(true).alloc()?;
         let pages = allocator::alloc::<KernelStackMeta>(KERNEL_STACK_SIZE).unwrap();
         // let pages = allocator::alloc_contiguous::<KernelStackMeta>((KERNEL_STACK_SIZE)).unwrap();
         // let pages = allocator::alloc::<FrameMeta>(KERNEL_STACK_SIZE).unwrap();
         unsafe {
-            kva.map_pages(mapped_start..mapped_end, pages);
+            kva_alloc.map_pages(mapped_start..mapped_end, pages);
         }
         Ok(Self {
-            kva: kva,
+            kva: kva_alloc,
             mapped: mapped_start..mapped_end,
             has_guard_page: true,
         })
