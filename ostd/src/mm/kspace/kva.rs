@@ -3,6 +3,7 @@
 //! Kernel virtual memory allocation
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::ops::{DerefMut, Range};
+
 use align_ext::AlignExt;
 
 use super::KERNEL_PAGE_TABLE;
@@ -210,7 +211,7 @@ impl Kva {
                 va: _,
                 page,
                 prop: _,
-            } => page.usage(),          
+            } => page.usage(),
             _ => {
                 //  MappedUntracked and NotMapped
                 panic!(
