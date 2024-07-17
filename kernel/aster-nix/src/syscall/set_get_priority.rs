@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{credentials, posix_thread::PosixThreadExt, process_table, Pgid, Pid, Process, Uid},
-    sched::nice::Nice,
+    sched::Nice,
 };
 
 pub fn sys_set_priority(which: i32, who: u32, prio: i32) -> Result<SyscallReturn> {
@@ -46,7 +46,7 @@ pub fn sys_get_priority(which: i32, who: u32) -> Result<SyscallReturn> {
 
         // The system call returns nice values translated to the range 40 to 1,
         // since a negative return value would be interpreted as an error.
-        20 - nice.to_raw()
+        20 - nice.get()
     };
 
     Ok(SyscallReturn::Return(highest_prio as _))

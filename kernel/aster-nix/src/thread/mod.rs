@@ -4,10 +4,14 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use ostd::task::Task;
+use ostd::task::{yield_now, Task, YieldFlags};
 
 use self::status::{AtomicThreadStatus, ThreadStatus};
-use crate::prelude::*;
+use crate::{
+    cpu::CpuSet,
+    prelude::*,
+    sched::{AtomicPriority, Priority},
+};
 
 pub mod exception;
 pub mod kernel_thread;
@@ -31,7 +35,12 @@ pub struct Thread {
     data: Box<dyn Send + Sync + Any>,
 
     // mutable part
+    /// Thread status
     status: AtomicThreadStatus,
+    /// Thread priority
+    priority: AtomicPriority,
+    /// Cpu affinity
+    cpu_affinity: SpinLock<CpuSet>,
 }
 
 impl Thread {
@@ -41,12 +50,16 @@ impl Thread {
         task: Arc<Task>,
         data: impl Send + Sync + Any,
         status: ThreadStatus,
+        priority: Priority,
+        cpu_affinity: CpuSet,
     ) -> Self {
         Thread {
             tid,
             task,
             data: Box::new(data),
             status: AtomicThreadStatus::new(status),
+            priority: AtomicPriority::new(priority),
+            cpu_affinity: SpinLock::new(cpu_affinity),
         }
     }
 
@@ -91,8 +104,38 @@ impl Thread {
         self.status.store(new_status, Ordering::Release);
     }
 
+    /// Returns the reference to the atomic priority.
+    pub fn atomic_priority(&self) -> &AtomicPriority {
+        &self.priority
+    }
+
+    /// Returns the current priority.
+    pub fn priority(&self) -> Priority {
+        self.priority.load(Ordering::Acquire)
+    }
+
+    /// Updates the priority with the `new` value.
+    pub fn set_priority(&self, new_priority: Priority) {
+        self.priority.store(new_priority, Ordering::Release);
+    }
+
+    /// Returns the reference to the atomic cpu affinty.
+    pub fn atomic_cpu_affinity(&self) -> &SpinLock<CpuSet> {
+        &self.cpu_affinity
+    }
+
+    /// Returns the current cpu affinity.
+    pub fn cpu_affinity(&self) -> CpuSet {
+        self.cpu_affinity.lock_irq_disabled().clone()
+    }
+
+    /// Updates the cpu affinity with the `new` value.
+    pub fn set_cpu_affinity(&self, new_cpu_affinity: CpuSet) {
+        *self.cpu_affinity.lock_irq_disabled() = new_cpu_affinity;
+    }
+
     pub fn yield_now() {
-        Task::yield_now()
+        yield_now(YieldFlags::Yield)
     }
 
     pub fn tid(&self) -> Tid {

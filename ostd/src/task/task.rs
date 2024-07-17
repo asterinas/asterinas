@@ -10,14 +10,12 @@ use core::cell::UnsafeCell;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::{
-    add_task,
-    priority::Priority,
-    processor::{current_task, schedule},
+    processor::current_task,
+    scheduler::{add_task, yield_now, EnqueueFlags, YieldFlags},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     arch::mm::tlb_flush_addr_range,
-    cpu::CpuSet,
     mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
@@ -119,9 +117,6 @@ pub struct Task {
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
-    priority: Priority,
-    // TODO: add multiprocessor support
-    cpu_affinity: CpuSet,
 }
 
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
@@ -150,18 +145,10 @@ impl Task {
         &self.ctx
     }
 
-    /// Yields execution so that another task may be scheduled.
-    ///
-    /// Note that this method cannot be simply named "yield" as the name is
-    /// a Rust keyword.
-    pub fn yield_now() {
-        schedule();
-    }
-
     /// Runs the task.
     pub fn run(self: &Arc<Self>) {
-        add_task(self.clone());
-        schedule();
+        add_task(self.clone(), EnqueueFlags::Spawn);
+        yield_now(YieldFlags::Yield);
     }
 
     /// Returns the task status.
@@ -195,14 +182,8 @@ impl Task {
         // `current_task()` still holds a strong reference, so nothing is destroyed at this point,
         // neither is the kernel stack.
         drop(self);
-
-        schedule();
+        yield_now(YieldFlags::Exit);
         unreachable!()
-    }
-
-    /// Checks if the task has a real-time priority.
-    pub fn is_real_time(&self) -> bool {
-        self.priority.is_real_time()
     }
 }
 
@@ -224,8 +205,6 @@ pub struct TaskOptions {
     func: Option<Box<dyn Fn() + Send + Sync>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     user_space: Option<Arc<UserSpace>>,
-    priority: Priority,
-    cpu_affinity: CpuSet,
 }
 
 impl TaskOptions {
@@ -234,13 +213,10 @@ impl TaskOptions {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        let cpu_affinity = CpuSet::new_full();
         Self {
             func: Some(Box::new(func)),
             data: None,
             user_space: None,
-            priority: Priority::normal(),
-            cpu_affinity,
         }
     }
 
@@ -268,21 +244,6 @@ impl TaskOptions {
         self
     }
 
-    /// Sets the priority of the task.
-    pub fn priority(mut self, priority: Priority) -> Self {
-        self.priority = priority;
-        self
-    }
-
-    /// Sets the CPU affinity mask for the task.
-    ///
-    /// The `cpu_affinity` parameter represents
-    /// the desired set of CPUs to run the task on.
-    pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
-        self.cpu_affinity = cpu_affinity;
-        self
-    }
-
     /// Builds a new task without running it immediately.
     pub fn build(self) -> Result<Arc<Task>> {
         /// all task will entering this function
@@ -304,8 +265,6 @@ impl TaskOptions {
             ctx: UnsafeCell::new(TaskContext::default()),
             kstack: KernelStack::new_with_guard_page()?,
             link: LinkedListAtomicLink::new(),
-            priority: self.priority,
-            cpu_affinity: self.cpu_affinity,
         };
 
         let ctx = new_task.ctx.get_mut();

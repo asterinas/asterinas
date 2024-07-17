@@ -8,14 +8,15 @@ use core::{
 };
 
 use ostd::{
-    cpu::CpuSet,
     sync::WaitQueue,
-    task::{add_task, Priority},
+    task::{add_task, EnqueueFlags},
 };
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
+    cpu::CpuSet,
     prelude::*,
+    sched::Priority,
     thread::kernel_thread::{KernelThreadExt, ThreadOptions},
     Thread,
 };
@@ -81,7 +82,7 @@ impl LocalWorkerPool {
     fn add_worker(&self) {
         let worker = Worker::new(self.parent.clone(), self.cpu_id);
         self.workers.lock_irq_disabled().push_back(worker.clone());
-        add_task(worker.bound_thread().task().clone());
+        add_task(worker.bound_thread().task().clone(), EnqueueFlags::Spawn);
     }
 
     fn remove_worker(&self) {
@@ -239,8 +240,8 @@ impl Monitor {
             });
             let cpu_affinity = CpuSet::new_full();
             let priority = match priority {
-                WorkPriority::High => Priority::high(),
-                WorkPriority::Normal => Priority::normal(),
+                WorkPriority::High => Priority::DEFAULT_RT_KTHREAD_PRIORITY,
+                WorkPriority::Normal => Priority::DEFAULT_NORMAL_KTHREAD_PRIORITY,
             };
             let bound_thread = Thread::new_kernel_thread(
                 ThreadOptions::new(task_fn)

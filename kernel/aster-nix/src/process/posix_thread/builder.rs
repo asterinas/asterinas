@@ -6,12 +6,14 @@ use ostd::user::UserSpace;
 
 use super::PosixThread;
 use crate::{
+    cpu::CpuSet,
     prelude::*,
     process::{
         posix_thread::name::ThreadName,
         signal::{sig_mask::SigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
+    sched::Priority,
     thread::{status::ThreadStatus, task, thread_table, Thread, Tid},
     time::{clocks::ProfClock, TimerManager},
 };
@@ -30,6 +32,8 @@ pub struct PosixThreadBuilder {
     clear_child_tid: Vaddr,
     sig_mask: SigMask,
     sig_queues: SigQueues,
+    priority: Priority,
+    cpu_affinity: CpuSet,
 }
 
 impl PosixThreadBuilder {
@@ -44,6 +48,8 @@ impl PosixThreadBuilder {
             clear_child_tid: 0,
             sig_mask: SigMask::new_empty(),
             sig_queues: SigQueues::new(),
+            priority: Priority::DEFAULT_PTHREAD_PRIORITY,
+            cpu_affinity: CpuSet::new_full(),
         }
     }
 
@@ -72,6 +78,16 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn priority(mut self, priority: Priority) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
+        self.cpu_affinity = cpu_affinity;
+        self
+    }
+
     pub fn build(self) -> Arc<Thread> {
         let Self {
             tid,
@@ -83,6 +99,8 @@ impl PosixThreadBuilder {
             clear_child_tid,
             sig_mask,
             sig_queues,
+            priority,
+            cpu_affinity,
         } = self;
 
         let thread = Arc::new_cyclic(|thread_ref| {
@@ -109,7 +127,7 @@ impl PosixThreadBuilder {
                 prof_timer_manager,
             };
 
-            Thread::new(tid, task, posix_thread, status)
+            Thread::new(tid, task, posix_thread, status, priority, cpu_affinity)
         });
         thread_table::add_thread(thread.clone());
         thread

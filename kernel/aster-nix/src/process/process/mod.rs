@@ -21,7 +21,7 @@ use crate::{
     device::tty::open_ntty_as_controlling_terminal,
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
-    sched::nice::Nice,
+    sched::Nice,
     thread::{allocate_tid, Thread},
     time::clocks::ProfClock,
     vm::vmar::Vmar,

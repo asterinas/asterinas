@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+pub use crate::arch::cpu::*;
+
 pub trait LinuxAbi {
     /// Get number of syscall
     fn syscall_num(&self) -> usize;
