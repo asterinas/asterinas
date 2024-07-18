@@ -6,10 +6,12 @@ use std::{
 };
 
 use super::file::BundleFile;
+use crate::arch::Arch;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsterBin {
     path: PathBuf,
+    arch: Arch,
     typ: AsterBinType,
     version: String,
     sha256sum: String,
@@ -48,9 +50,16 @@ impl BundleFile for AsterBin {
 }
 
 impl AsterBin {
-    pub fn new(path: impl AsRef<Path>, typ: AsterBinType, version: String, stripped: bool) -> Self {
+    pub fn new(
+        path: impl AsRef<Path>,
+        arch: Arch,
+        typ: AsterBinType,
+        version: String,
+        stripped: bool,
+    ) -> Self {
         let created = Self {
             path: path.as_ref().to_path_buf(),
+            arch,
             typ,
             version,
             sha256sum: String::new(),
@@ -60,6 +69,10 @@ impl AsterBin {
             sha256sum: created.calculate_sha256sum(),
             ..created
         }
+    }
+
+    pub fn arch(&self) -> Arch {
+        self.arch
     }
 
     pub fn version(&self) -> &String {
@@ -78,6 +91,7 @@ impl AsterBin {
         fs::remove_file(&self.path).unwrap();
         Self {
             path: PathBuf::from(file_name),
+            arch: self.arch,
             typ: self.typ,
             version: self.version,
             sha256sum: self.sha256sum,
