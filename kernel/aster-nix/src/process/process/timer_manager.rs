@@ -18,12 +18,14 @@ use ostd::{
 
 use super::Process;
 use crate::{
-    prelude::*,
     process::{
         posix_thread::PosixThreadExt,
         signal::{constants::SIGALRM, signals::kernel::KernelSignal},
     },
-    thread::work_queue::{submit_work_item, work_item::WorkItem},
+    thread::{
+        work_queue::{submit_work_item, work_item::WorkItem},
+        Thread,
+    },
     time::{
         clocks::{ProfClock, RealTimeClock},
         Timer, TimerManager,
@@ -36,7 +38,9 @@ use crate::{
 /// invoke the callbacks of expired timers which are based on the updated
 /// CPU clock.
 fn update_cpu_time() {
-    let current_thread = current_thread!();
+    let Some(current_thread) = Thread::current() else {
+        return;
+    };
     if let Some(posix_thread) = current_thread.as_posix_thread() {
         let process = posix_thread.process();
         let timer_manager = process.timer_manager();

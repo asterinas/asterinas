@@ -13,7 +13,6 @@ extern crate alloc;
 use alloc::boxed::Box;
 
 use bitflags::bitflags;
-use component::{init_component, ComponentInitError};
 use device::{
     block::device::BlockDevice,
     console::device::ConsoleDevice,
@@ -23,6 +22,7 @@ use device::{
     VirtioDeviceType,
 };
 use log::{error, warn};
+use ostd::ComponentInitError;
 use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};
 
 use crate::transport::VirtioTransport;
@@ -32,7 +32,7 @@ mod dma_buf;
 pub mod queue;
 mod transport;
 
-#[init_component]
+#[ostd::init_comp]
 fn virtio_component_init() -> Result<(), ComponentInitError> {
     // Find all devices and register them to the corresponding crate
     transport::init();

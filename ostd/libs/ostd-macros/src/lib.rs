@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![feature(proc_macro_span)]
+#![feature(proc_macro_diagnostic)]
+#![allow(dead_code)]
+#![deny(unsafe_code)]
 
+mod comp;
+use comp::{component_generate, ComponentInitFunction};
 use proc_macro::TokenStream;
 use quote::quote;
 use rand::{distributions::Alphanumeric, Rng};
@@ -28,7 +33,12 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #[no_mangle]
         pub fn __ostd_main() -> ! {
             ostd::init();
-            #main_fn_name();
+            component::init_all(ostd::parse_metadata!(), true).unwrap();
+            let test_task = move || {
+                component::init_all(ostd::parse_metadata!(), false).unwrap();
+                #main_fn_name();
+            };
+            let _ = ostd::task::TaskOptions::new(test_task).data(()).spawn();
             ostd::prelude::abort();
         }
 
@@ -184,4 +194,94 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(output)
+}
+
+/// Register a function to be called when the component system is initialized. The function should not public.
+///
+/// Example:
+/// ```norun
+/// use ostd::prelude::*;
+/// #[init_comp]
+/// fn init() -> Result<(), component::ComponentInitError> {
+///     Ok(())
+/// }
+///
+/// ```
+///
+/// It will expand to
+/// ```rust
+/// fn init() -> Result<(), component::ComponentInitError> {
+///     Ok(())
+/// }
+///
+/// const fn file() -> &'static str{
+///     file!()
+/// }
+///
+/// component::submit!(component::ComponentRegistry::new(&init, file()));
+/// ```
+/// The priority will calculate automatically
+///
+#[proc_macro_attribute]
+pub fn init_comp(_: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
+    let function = parse_macro_input!(input as ComponentInitFunction);
+    let function_name = &function.function_name;
+
+    // Generate a unique identifier
+    let unique_id = format!("file_{}", function_name);
+    let unique_id = syn::Ident::new(&unique_id, proc_macro2::Span::call_site());
+
+    quote! {
+        #function
+
+        const fn #unique_id() -> &'static str {
+            file!()
+        }
+
+        component::submit!(component::ComponentRegistry::new(&#function_name, #unique_id()));
+    }
+    .into()
+}
+
+/// Automatically generate all component information required by the component system.
+///
+/// It mainly uses the output of the command `cargo metadata` to automatically generate information about all components, and also checks whether `Components.toml` contains all the components.
+///
+/// It is often used with `component::init_all`.
+///
+/// Example:
+///
+/// ```norun
+/// use ostd::prelude::*;
+/// component::init_all(parse_metadata!(), false);
+/// ```
+///
+#[proc_macro]
+pub fn parse_metadata(_: TokenStream) -> proc_macro::TokenStream {
+    let out = component_generate();
+    quote! {
+        {
+            extern crate alloc;
+            alloc::vec![
+                #(component::ComponentInfo::new #out),*
+            ]
+        }
+    }
+    .into()
+}
+
+#[proc_macro_attribute]
+pub fn init_scheduler(_: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
+    let function = parse_macro_input!(input as ComponentInitFunction);
+    let function_name = &function.function_name;
+    quote! {
+        #function
+
+        const fn file() -> &'static str{
+            file!()
+        }
+
+        component::submit!(component::SchedulerRegistry::new(&#function_name, file()));
+    }
+    .into()
 }

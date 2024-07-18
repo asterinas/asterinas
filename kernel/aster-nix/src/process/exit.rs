@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{process_table, Pid, Process, TermStatus};
+use super::{process_table, Process, TermStatus, INIT_PROCESS_PID};
 use crate::{
     prelude::*,
     process::{
@@ -64,13 +64,17 @@ pub fn do_exit_group(term_status: TermStatus) {
     }
 }
 
-const INIT_PROCESS_PID: Pid = 1;
-
 /// Gets the init process
 fn get_init_process() -> Option<Arc<Process>> {
-    process_table::get_process(INIT_PROCESS_PID)
+    INIT_PROCESS_PID
+        .get()
+        .map(|pid| process_table::get_process(*pid))?
 }
 
 fn is_init_process(process: &Process) -> bool {
-    process.pid() == INIT_PROCESS_PID
+    if let Some(pid) = INIT_PROCESS_PID.get() {
+        process.pid() == *pid
+    } else {
+        false
+    }
 }

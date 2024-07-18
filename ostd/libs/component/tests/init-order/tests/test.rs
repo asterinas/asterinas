@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use first_init::HAS_INIT;
-use component::init_component;
+use component::init;
 use std::sync::atomic::Ordering::Relaxed;
 
-#[init_component]
+#[ostd::init_comp]
 fn kernel_init() -> Result<(), component::ComponentInitError> {
     Ok(())
 }

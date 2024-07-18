@@ -11,8 +11,7 @@ use core::{sync::atomic::Ordering::Relaxed, time::Duration};
 
 use clocksource::ClockSource;
 pub use clocksource::Instant;
-use component::{init_component, ComponentInitError};
-use ostd::sync::Mutex;
+use ostd::{sync::Mutex, ComponentInitError};
 use rtc::{get_cmos, is_updating, CENTURY_REGISTER};
 use spin::Once;
 
@@ -24,7 +23,7 @@ pub const NANOS_PER_SECOND: u32 = 1_000_000_000;
 pub static VDSO_DATA_HIGH_RES_UPDATE_FN: Once<Arc<dyn Fn(Instant, u64) + Sync + Send>> =
     Once::new();
 
-#[init_component]
+#[ostd::init_comp]
 fn time_init() -> Result<(), ComponentInitError> {
     rtc::init();
     tsc::init();

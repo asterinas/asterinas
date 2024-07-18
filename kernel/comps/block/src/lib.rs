@@ -41,8 +41,7 @@ mod impl_block_device;
 mod prelude;
 pub mod request_queue;
 
-use component::{init_component, ComponentInitError};
-use ostd::sync::SpinLock;
+use ostd::{sync::SpinLock, ComponentInitError};
 use spin::Once;
 
 use self::{
@@ -95,7 +94,7 @@ pub fn all_devices() -> Vec<(String, Arc<dyn BlockDevice>)> {
 
 static COMPONENT: Once<Component> = Once::new();
 
-#[init_component]
+#[ostd::init_comp]
 fn component_init() -> Result<(), ComponentInitError> {
     let a = Component::init()?;
     COMPONENT.call_once(|| a);

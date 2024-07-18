@@ -7,7 +7,7 @@ edition = "2021"
 id-alloc = { path = "../ostd/libs/id-alloc" }
 ostd = { path = "../ostd" }
 aster-nix = { path = "aster-nix" }
-component = { path = "libs/comp-sys/component" }
+component = { path = "../ostd/libs/component" }
 
 [dev-dependencies]
 x86_64 = "0.14.2"

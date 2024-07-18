@@ -3,11 +3,11 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
-use component::init_component;
+use component::init;
 
 pub static HAS_INIT: AtomicBool = AtomicBool::new(false);
 
-#[init_component]
+#[ostd::init_comp]
 fn bar_init() -> Result<(), component::ComponentInitError> {
     assert_eq!(HAS_INIT.load(Relaxed), false);
     HAS_INIT.store(true, Relaxed);

@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 align_ext = { path = "libs/align_ext" }
+component = { path = "libs/component" }
 ostd-macros = { path = "libs/ostd-macros" }
 bit_field = "0.10.1"
 bitflags = "1.3"

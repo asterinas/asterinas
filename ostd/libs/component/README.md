@@ -7,7 +7,7 @@ This crate is used for the initialization of the component system, which provide
 
 ### Register component
 
-Registering a crate as component by marking a function in the lib.rs with `#[init_component]` macro. The specific definition of the function can refer to the comments in the macro.
+Registering a crate as component by marking a function in the lib.rs with `#[ostd::init_comp]` macro. The specific definition of the function can refer to the comments in the macro.
 
 ### Component initialization
 
@@ -20,11 +20,11 @@ Component system need to be initialized by calling `componet::init_all` function
 use std::sync::atomic::AtomicU16;
 use std::sync::atomic::Ordering::Relaxed;
 
-use component::init_component;
+use component::init;
 
 pub static INIT_COUNT : AtomicU16 = AtomicU16::new(0);
 
-#[init_component]
+#[ostd::init_comp]
 fn comp1_init() -> Result<(), component::ComponentInitError> {
     assert_eq!(INIT_COUNT.load(Relaxed),0);
     INIT_COUNT.fetch_add(1,Relaxed);
@@ -34,10 +34,10 @@ fn comp1_init() -> Result<(), component::ComponentInitError> {
 // src/main.rs
 use std::sync::atomic::Ordering::Relaxed;
 
-use component::init_component;
+use component::init;
 use comp1::INIT_COUNT;
 
-#[init_component]
+#[ostd::init_comp]
 fn init() -> Result<(), component::ComponentInitError> {
     assert_eq!(INIT_COUNT.load(Relaxed),1);
     INIT_COUNT.fetch_add(1,Relaxed);
@@ -54,4 +54,4 @@ fn main(){
 
 - Currently, initialization requires the presence of a `Components.toml` file, which stores some information about components and access control. The [tests](tests/kernel/Components.toml) provides a sample file of it. If the components declared inside `Components.toml` is inconsistent with the component found by `parse_metadata` macro (i.e. A crate depends on the component library but is not declared in `Components.toml`), then a compilation error will occur.
 
-- The `parse_metadata` macro will generate the information of all components. But ultimately which functions are called still depends on which `#[init_component]` macros are extended. If you want to test a component. Then, other components with a lower priority than it or other unused high-priority components will not be initialized at runtime.
+- The `parse_metadata` macro will generate the information of all components. But ultimately which functions are called still depends on which `#[ostd::init_comp]` macros are extended. If you want to test a component. Then, other components with a lower priority than it or other unused high-priority components will not be initialized at runtime.

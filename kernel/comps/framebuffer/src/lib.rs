@@ -13,17 +13,17 @@ use core::{
     ops::{Index, IndexMut},
 };
 
-use component::{init_component, ComponentInitError};
 use font8x8::UnicodeFonts;
 use ostd::{
     boot,
     io_mem::IoMem,
     mm::{VmIo, PAGE_SIZE},
     sync::SpinLock,
+    ComponentInitError,
 };
 use spin::Once;
 
-#[init_component]
+#[ostd::init_comp]
 fn framebuffer_init() -> Result<(), ComponentInitError> {
     init();
     Ok(())
