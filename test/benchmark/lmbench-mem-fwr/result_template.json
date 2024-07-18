@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average memory write bandwidth on Linux",
+        "unit": "MB/s",
+        "value": 0,
+        "extra": "linux_avg"
+    },
+    {
+        "name": "Average memory write bandwidth on Asterinas",
+        "unit": "MB/s",
+        "value": 0,
+        "extra": "aster_avg"
+    }
+]
