@@ -4,14 +4,10 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use ostd::cpu::num_cpus;
+use ostd::{cpu::num_cpus, sync::WaitQueue};
 use spin::Once;
 
-use crate::{
-    prelude::*,
-    thread::{Thread, Tid},
-    util::read_val_from_user,
-};
+use crate::{prelude::*, thread::Tid, util::read_val_from_user};
 
 type FutexBitSet = u32;
 type FutexBucketRef = Arc<Mutex<FutexBucket>>;
@@ -51,7 +47,7 @@ pub fn futex_wait_bitset(
     // drop lock
     drop(futex_bucket);
     // Wait on the futex item
-    futex_item.wait();
+    futex_item.wait(timeout.clone());
 
     Ok(())
 }
@@ -302,9 +298,9 @@ impl FutexItem {
         self.waiter.wake();
     }
 
-    pub fn wait(&self) {
+    pub fn wait(&self, timeout: Option<FutexTimeout>) {
         // debug!("wait on futex item, key = {:?}", self.key);
-        self.waiter.wait();
+        self.waiter.wait(timeout);
         // debug!("wait finished, key = {:?}", self.key);
     }
 
@@ -403,10 +399,19 @@ pub fn futex_op_and_flags_from_u32(bits: u32) -> Result<(FutexOp, FutexFlags)> {
 
 type FutexWaiterRef = Arc<FutexWaiter>;
 
-#[derive(Debug)]
 struct FutexWaiter {
     is_woken: AtomicBool,
+    wait_queue: WaitQueue,
     tid: Tid,
+}
+
+impl Debug for FutexWaiter {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("FutexWaiter")
+            .field("is_woken", &self.is_woken)
+            .field("tid", &self.tid)
+            .finish()
+    }
 }
 
 impl PartialEq for FutexWaiter {
@@ -420,26 +425,37 @@ impl FutexWaiter {
         Self {
             is_woken: AtomicBool::new(false),
             tid: current_thread!().tid(),
+            wait_queue: WaitQueue::new(),
         }
     }
 
-    pub fn wait(&self) {
+    pub fn wait(&self, timeout: Option<FutexTimeout>) {
         let current_thread = current_thread!();
         if current_thread.tid() != self.tid {
             return;
         }
+
         self.is_woken.store(false, Ordering::SeqCst);
-        while !self.is_woken() {
-            // debug!("futex is wait for waken, tid = {}", self.tid);
-            Thread::yield_now();
+        let wake_cond = || {
+            if self.is_woken() {
+                Some(())
+            } else {
+                None
+            }
+        };
+
+        if let Some(_timeout) = timeout {
+            todo!()
+        } else {
+            self.wait_queue.wait_until(wake_cond);
         }
-        // debug!("futex is waken, tid = {}", self.tid);
     }
 
     pub fn wake(&self) {
         if !self.is_woken() {
             // debug!("wake up futex, tid = {}", self.tid);
             self.is_woken.store(true, Ordering::SeqCst);
+            self.wait_queue.wake_all();
         }
     }
 
