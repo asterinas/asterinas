@@ -1,0 +1,5 @@
+{
+    "alert_threshold": "125%",
+    "pattern": "sock stream latency",
+    "field": "5"
+}
