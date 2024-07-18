@@ -6,6 +6,7 @@ use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 use aster_block::{
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     request_queue::{BioRequest, BioRequestSingleQueue},
+    BlockDeviceMeta,
 };
 use aster_util::safe_ptr::SafePtr;
 use id_alloc::IdAlloc;
@@ -79,8 +80,12 @@ impl aster_block::BlockDevice for BlockDevice {
         self.queue.enqueue(bio)
     }
 
-    fn max_nr_segments_per_bio(&self) -> usize {
-        self.queue.max_nr_segments_per_bio()
+    fn metadata(&self) -> BlockDeviceMeta {
+        let device_config = self.device.config.read().unwrap();
+        BlockDeviceMeta {
+            max_nr_segments_per_bio: self.queue.max_nr_segments_per_bio(),
+            nr_sectors: device_config.capacity_sectors(),
+        }
     }
 }
 
@@ -101,6 +106,11 @@ impl DeviceInner {
     /// Creates and inits the device.
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Arc<Self>, VirtioDeviceError> {
         let config = VirtioBlockConfig::new(transport.as_mut());
+        assert_eq!(
+            config.read().unwrap().block_size(),
+            VirtioBlockConfig::sector_size(),
+            "currently not support customized device logical block size"
+        );
         let num_queues = transport.num_queues();
         if num_queues != 1 {
             return Err(VirtioDeviceError::QueuesAmountDoNotMatch(num_queues, 1));

@@ -19,7 +19,7 @@ mod test {
 
     use aster_block::{
         bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
-        BlockDevice,
+        BlockDevice, BlockDeviceMeta,
     };
     use ostd::{
         mm::{FrameAllocOptions, Segment, VmIo},
@@ -99,8 +99,11 @@ mod test {
             Ok(())
         }
 
-        fn max_nr_segments_per_bio(&self) -> usize {
-            usize::MAX
+        fn metadata(&self) -> BlockDeviceMeta {
+            BlockDeviceMeta {
+                max_nr_segments_per_bio: usize::MAX,
+                nr_sectors: self.sectors_count(),
+            }
         }
     }
     /// Exfat disk image

@@ -36,7 +36,11 @@ impl Ext2 {
             let raw_super_block = block_device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?
         };
-        assert!(super_block.block_size() == BLOCK_SIZE);
+        assert_eq!(
+            super_block.block_size(),
+            BLOCK_SIZE,
+            "currently only support 4096-byte block size"
+        );
 
         let group_descriptors_segment = {
             let npages = ((super_block.block_groups_count() as usize)

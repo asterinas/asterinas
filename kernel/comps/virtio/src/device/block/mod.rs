@@ -2,6 +2,7 @@
 
 pub mod device;
 
+use aster_block::SECTOR_SIZE;
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
@@ -56,18 +57,32 @@ pub enum RespStatus {
 #[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
 pub struct VirtioBlockConfig {
+    /// The number of 512-byte sectors.
     capacity: u64,
+    /// The maximum segment size.
     size_max: u64,
+    /// The geometry of the device.
     geometry: VirtioBlockGeometry,
+    /// The block size. If `logical_block_size` is not given in qemu cmdline,
+    /// `blk_size` will be set to sector size (512 bytes) by default.
     blk_size: u32,
+    /// The topology of the device.
     topology: VirtioBlockTopology,
+    /// Writeback mode.
     writeback: u8,
     unused0: [u8; 3],
+    /// The maximum discard sectors for one segment.
     max_discard_sectors: u32,
+    /// The maximum number of discard segments in a discard command.
     max_discard_seg: u32,
+    /// Discard commands must be aligned to this number of sectors.
     discard_sector_alignment: u32,
+    /// The maximum number of write zeroes sectors in one segment.
     max_write_zeroes_sectors: u32,
+    /// The maximum number of segments in a write zeroes command.
     max_write_zeroes_seg: u32,
+    /// Set if a write zeroes command may result in the
+    /// deallocation of one or more of the sectors.
     write_zeros_may_unmap: u8,
     unused1: [u8; 3],
 }
@@ -83,9 +98,13 @@ pub struct VirtioBlockGeometry {
 #[derive(Debug, Copy, Clone, Pod)]
 #[repr(C)]
 pub struct VirtioBlockTopology {
+    /// Exponent for physical block per logical block.
     physical_block_exp: u8,
+    /// Alignment offset in logical blocks.
     alignment_offset: u8,
+    /// Minimum I/O size without performance penalty in logical blocks.
     min_io_size: u16,
+    /// Optimal sustained I/O size in logical blocks.
     opt_io_size: u32,
 }
 
@@ -93,5 +112,21 @@ impl VirtioBlockConfig {
     pub(self) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
         let memory = transport.device_config_memory();
         SafePtr::new(memory, 0)
+    }
+
+    pub(self) const fn sector_size() -> usize {
+        SECTOR_SIZE
+    }
+
+    pub(self) fn block_size(&self) -> usize {
+        self.blk_size as usize
+    }
+
+    pub(self) fn capacity_sectors(&self) -> usize {
+        self.capacity as usize
+    }
+
+    pub(self) fn capacity_bytes(&self) -> usize {
+        self.capacity_sectors() * Self::sector_size()
     }
 }
