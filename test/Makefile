@@ -49,6 +49,15 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@cp -L /lib/x86_64-linux-gnu/libz.so.1 $@
 	@cp -L /lib/x86_64-linux-gnu/libmvec.so.1 $@
 	@cp -L /usr/local/benchmark/iperf/lib/libiperf.so.0 $@
+	@# required for LMbench-network
+	@cp -L /lib/x86_64-linux-gnu/libtirpc.so.3 $@
+	@cp -L /lib/x86_64-linux-gnu/libgssapi_krb5.so.2 $@
+	@cp -L /lib/x86_64-linux-gnu/libkrb5.so.3 $@
+	@cp -L /lib/x86_64-linux-gnu/libk5crypto.so.3 $@
+	@cp -L /lib/x86_64-linux-gnu/libcom_err.so.2 $@
+	@cp -L /lib/x86_64-linux-gnu/libkrb5support.so.0 $@
+	@cp -L /lib/x86_64-linux-gnu/libkeyutils.so.1 $@
+	@cp -L /lib/x86_64-linux-gnu/libresolv.so.2 $@
 	@cp -L $(VDSO_LIB) $@
 
 $(VDSO_LIB): | $(VDSO_DIR)
