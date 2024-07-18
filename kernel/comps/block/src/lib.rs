@@ -56,8 +56,19 @@ pub const SECTOR_SIZE: usize = 512;
 pub trait BlockDevice: Send + Sync + Any + Debug {
     /// Enqueues a new `SubmittedBio` to the block device.
     fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError>;
-    /// Returns the upper limit for the number of segments per bio.
-    fn max_nr_segments_per_bio(&self) -> usize;
+
+    /// Returns the metadata of the block device.
+    fn metadata(&self) -> BlockDeviceMeta;
+}
+
+/// Metadata for a block device.
+#[derive(Debug, Clone, Copy)]
+pub struct BlockDeviceMeta {
+    /// The upper limit for the number of segments per bio.
+    pub max_nr_segments_per_bio: usize,
+    /// The total number of sectors of the block device.
+    pub nr_sectors: usize,
+    // Additional useful metadata can be added here in the future.
 }
 
 impl dyn BlockDevice {
