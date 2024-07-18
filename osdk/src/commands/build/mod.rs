@@ -150,7 +150,7 @@ pub fn do_build(
     };
 
     let aster_elf = build_kernel_elf(
-        &config.target_arch,
+        config.target_arch,
         &build.profile,
         &build.features[..],
         build.no_default_features,
@@ -187,7 +187,7 @@ pub fn do_build(
 }
 
 fn build_kernel_elf(
-    arch: &Arch,
+    arch: Arch,
     profile: &str,
     features: &[String],
     no_default_features: bool,
@@ -255,6 +255,7 @@ fn build_kernel_elf(
 
     AsterBin::new(
         aster_bin_path,
+        arch,
         AsterBinType::Elf(AsterElfMeta {
             has_linux_header: false,
             has_pvh_header: false,
