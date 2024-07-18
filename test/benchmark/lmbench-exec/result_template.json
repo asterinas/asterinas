@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average exec latency on Linux",
+        "unit": "ms",
+        "value": 0,
+        "extra": "linux_avg"
+    },
+    {
+        "name": "Average exec latency on Asterinas",
+        "unit": "ms",
+        "value": 0,
+        "extra": "aster_avg"
+    }
+]
