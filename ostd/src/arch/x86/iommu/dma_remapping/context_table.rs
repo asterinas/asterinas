@@ -6,6 +6,7 @@ use alloc::collections::BTreeMap;
 use core::mem::size_of;
 
 use log::warn;
+use ostd_pod::Pod;
 
 use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
 use crate::{
@@ -16,7 +17,6 @@ use crate::{
         page_table::{PageTableError, PageTableItem},
         Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
-    Pod,
 };
 
 /// Bit 0 is `Present` bit, indicating whether this entry is present.
@@ -51,18 +51,23 @@ pub enum ContextTableError {
 }
 
 impl RootTable {
-    pub fn new() -> Self {
+    pub fn root_paddr(&self) -> Paddr {
+        self.root_frame.start_paddr()
+    }
+
+    pub(super) fn new() -> Self {
         Self {
             root_frame: FrameAllocOptions::new(1).alloc_single().unwrap(),
             context_tables: BTreeMap::new(),
         }
     }
 
+    /// Mapping device address to physical address.
     ///
     /// # Safety
     ///
     /// User must ensure the given paddr is a valid one.
-    pub unsafe fn map(
+    pub(super) unsafe fn map(
         &mut self,
         device: PciDeviceLocation,
         daddr: Daddr,
@@ -78,7 +83,7 @@ impl RootTable {
         Ok(())
     }
 
-    pub fn unmap(
+    pub(super) fn unmap(
         &mut self,
         device: PciDeviceLocation,
         daddr: Daddr,
@@ -93,37 +98,11 @@ impl RootTable {
         Ok(())
     }
 
-    pub fn paddr(&self) -> Paddr {
-        self.root_frame.start_paddr()
-    }
-
-    fn get_or_create_context_table(&mut self, device_id: PciDeviceLocation) -> &mut ContextTable {
-        let bus_entry = self
-            .root_frame
-            .read_val::<RootEntry>(device_id.bus as usize * size_of::<RootEntry>())
-            .unwrap();
-
-        if !bus_entry.is_present() {
-            let table = ContextTable::new();
-            let address = table.paddr();
-            self.context_tables.insert(address, table);
-            let entry = RootEntry(address as u128 | 1);
-            self.root_frame
-                .write_val::<RootEntry>(device_id.bus as usize * size_of::<RootEntry>(), &entry)
-                .unwrap();
-            self.context_tables.get_mut(&address).unwrap()
-        } else {
-            self.context_tables
-                .get_mut(&(bus_entry.addr() as usize))
-                .unwrap()
-        }
-    }
-
     /// Specify the device page table instead of creating a page table if not exists.
     ///
     /// This will be useful if we want all the devices to use the same page table.
     /// The original page table will be overwritten.
-    pub fn specify_device_page_table(
+    pub(super) fn specify_device_page_table(
         &mut self,
         device_id: PciDeviceLocation,
         page_table: PageTable<DeviceMode, PageTableEntry, PagingConsts>,
@@ -152,6 +131,28 @@ impl RootTable {
             )
             .unwrap();
         context_table.page_tables.get_mut(&address).unwrap();
+    }
+
+    fn get_or_create_context_table(&mut self, device_id: PciDeviceLocation) -> &mut ContextTable {
+        let bus_entry = self
+            .root_frame
+            .read_val::<RootEntry>(device_id.bus as usize * size_of::<RootEntry>())
+            .unwrap();
+
+        if !bus_entry.is_present() {
+            let table = ContextTable::new();
+            let address = table.paddr();
+            self.context_tables.insert(address, table);
+            let entry = RootEntry(address as u128 | 1);
+            self.root_frame
+                .write_val::<RootEntry>(device_id.bus as usize * size_of::<RootEntry>(), &entry)
+                .unwrap();
+            self.context_tables.get_mut(&address).unwrap()
+        } else {
+            self.context_tables
+                .get_mut(&(bus_entry.addr() as usize))
+                .unwrap()
+        }
     }
 }
 
