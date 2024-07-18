@@ -72,11 +72,8 @@ pub fn futex_wake_bitset(
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.dequeue_and_wake_items(futex_key, max_count, bitset);
-    // debug!("futex wake bitset succeeds, res = {}", res);
     drop(futex_bucket);
-    // for _ in 0..res {
-    //     Thread::yield_now();
-    // }
+
     Ok(res)
 }
 
@@ -235,8 +232,6 @@ impl FutexBucket {
             }
         });
 
-        // debug!("items to wake len: {}", items_to_wake.len());
-
         FutexItem::batch_wake(&items_to_wake);
         count
     }
@@ -294,14 +289,11 @@ impl FutexItem {
     }
 
     pub fn wake(&self) {
-        // debug!("wake futex item, key = {:?}", self.key);
         self.waiter.wake();
     }
 
     pub fn wait(&self, timeout: Option<FutexTimeout>) {
-        // debug!("wait on futex item, key = {:?}", self.key);
         self.waiter.wait(timeout);
-        // debug!("wait finished, key = {:?}", self.key);
     }
 
     pub fn waiter(&self) -> &FutexWaiterRef {
@@ -453,7 +445,6 @@ impl FutexWaiter {
 
     pub fn wake(&self) {
         if !self.is_woken() {
-            // debug!("wake up futex, tid = {}", self.tid);
             self.is_woken.store(true, Ordering::SeqCst);
             self.wait_queue.wake_all();
         }
