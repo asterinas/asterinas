@@ -3,7 +3,6 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
         utils::{AccessMode, CreationFlags},
@@ -54,15 +53,4 @@ pub fn sys_creat(path_addr: Vaddr, mode: u16) -> Result<SyscallReturn> {
     let flags =
         AccessMode::O_WRONLY as u32 | CreationFlags::O_CREAT.bits() | CreationFlags::O_TRUNC.bits();
     self::sys_openat(AT_FDCWD, path_addr, flags, mode)
-}
-
-/// File for output busybox ash log.
-#[allow(dead_code)]
-struct BusyBoxTraceFile;
-
-impl FileLike for BusyBoxTraceFile {
-    fn write(&self, buf: &[u8]) -> Result<usize> {
-        debug!("ASH TRACE: {}", core::str::from_utf8(buf)?);
-        Ok(buf.len())
-    }
 }
