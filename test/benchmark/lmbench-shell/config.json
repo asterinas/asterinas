@@ -1,0 +1,5 @@
+{
+    "alert_threshold": "125%",
+    "pattern": "Process fork\\+\\/bin\\/sh",
+    "field": "4"
+}
