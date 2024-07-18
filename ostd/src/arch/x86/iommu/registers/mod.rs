@@ -19,7 +19,7 @@ use volatile::{
     Volatile,
 };
 
-use super::{dma_remapping::context_table::RootTable, IommuError};
+use super::{dma_remapping::RootTable, IommuError};
 use crate::{
     arch::{
         iommu::fault,
@@ -89,7 +89,7 @@ impl IommuRegisters {
     pub(super) fn enable_dma_remapping(&mut self, root_table: &'static SpinLock<RootTable>) {
         // Set root table address
         self.root_table_address
-            .write(root_table.lock().paddr() as u64);
+            .write(root_table.lock().root_paddr() as u64);
         self.write_global_command(GlobalCommand::SRTP, true);
         while !self.global_status().contains(GlobalStatus::RTPS) {}
 
