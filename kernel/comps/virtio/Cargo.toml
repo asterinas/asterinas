@@ -20,7 +20,7 @@ id-alloc = { path = "../../../ostd/libs/id-alloc" }
 typeflags-util = { path = "../../libs/typeflags-util" }
 ostd = { path = "../../../ostd" }
 pod = { git = "https://github.com/asterinas/pod", rev = "d7dba56" }
-component = { path = "../../libs/comp-sys/component" }
+component = { path = "../../../ostd/libs/component" }
 log = "0.4"
 bit_field = "0.10.1"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }

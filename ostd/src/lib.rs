@@ -43,7 +43,9 @@ pub mod task;
 pub mod trap;
 pub mod user;
 
-pub use ostd_macros::main;
+pub use component::ComponentInitError;
+use log::debug;
+pub use ostd_macros::{init_comp, init_scheduler, main, parse_metadata};
 
 pub use self::{cpu::cpu_local::CpuLocal, error::Error, prelude::Result};
 
@@ -78,6 +80,19 @@ pub fn init() {
     mm::kspace::activate_kernel_page_table();
 
     invoke_ffi_init_funcs();
+}
+
+#[init_scheduler]
+fn test() -> core::result::Result<(), component::ComponentInitError> {
+    use alloc::boxed::Box;
+
+    use crate::task::{set_scheduler, FifoScheduler, Scheduler};
+    // Set the global scheduler a FIFO scheduler.
+    let simple_scheduler = Box::new(FifoScheduler::new());
+    let static_scheduler: &'static dyn Scheduler = Box::leak(simple_scheduler);
+    set_scheduler(static_scheduler);
+    debug!("[fff] init FifoScheduler");
+    Ok(())
 }
 
 /// Invoke the initialization functions defined in the FFI.

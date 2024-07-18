@@ -10,8 +10,7 @@ extern crate alloc;
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
-use component::{init_component, ComponentInitError};
-use ostd::{mm::VmReader, sync::SpinLock};
+use ostd::{mm::VmReader, sync::SpinLock, ComponentInitError};
 use spin::Once;
 
 pub type ConsoleCallback = dyn Fn(VmReader) + Send + Sync;
@@ -49,7 +48,7 @@ pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
 
 static COMPONENT: Once<Component> = Once::new();
 
-#[init_component]
+#[ostd::init_comp]
 fn component_init() -> Result<(), ComponentInitError> {
     let a = Component::init()?;
     COMPONENT.call_once(|| a);

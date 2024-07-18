@@ -27,7 +27,7 @@ use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
 };
-use process::Process;
+use process::{Process, INIT_PROCESS_PID};
 
 use crate::{
     prelude::*,
@@ -65,33 +65,44 @@ mod util;
 pub(crate) mod vdso;
 pub mod vm;
 
-pub fn init() {
+#[ostd::init_scheduler]
+fn init_scheduler() -> core::result::Result<(), component::ComponentInitError> {
+    debug!("[fff] init PreemptScheduler");
+    sched::init();
+    Ok(())
+}
+
+#[ostd::init_comp]
+fn init() -> core::result::Result<(), component::ComponentInitError> {
+    debug!("init aster-nix");
     util::random::init();
     driver::init();
     time::init();
     net::init();
-    sched::init();
+    // sched::init();
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
     vdso::init();
     taskless::init();
     process::init();
+    let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
+        // Work queue should be initialized before interrupt is enabled,
+        // in case any irq handler uses work queue as bottom half
+        thread::work_queue::init();
+        // FIXME: Remove this if we move the step of mounting
+        // the filesystems to be done within the init process.
+        ostd::trap::enable_local();
+        net::lazy_init();
+        fs::lazy_init();
+        // driver::pci::virtio::block::block_device_test();
+    }));
+    thread.join();
+    Ok(())
 }
 
 fn init_thread() {
-    println!(
-        "[kernel] Spawn init thread, tid = {}",
-        current_thread!().tid()
-    );
-    // Work queue should be initialized before interrupt is enabled,
-    // in case any irq handler uses work queue as bottom half
-    thread::work_queue::init();
-    // FIXME: Remove this if we move the step of mounting
-    // the filesystems to be done within the init process.
-    ostd::trap::enable_local();
-    net::lazy_init();
-    fs::lazy_init();
-    // driver::pci::virtio::block::block_device_test();
+    INIT_PROCESS_PID.call_once(|| current_thread!().tid());
+
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
         let current = current_thread!();
@@ -132,9 +143,8 @@ fn init_thread() {
 
 /// first process never return
 #[controlled]
-pub fn run_first_process() -> ! {
+pub fn run_first_process() {
     Thread::spawn_kernel_thread(ThreadOptions::new(init_thread));
-    unreachable!()
 }
 
 fn print_banner() {

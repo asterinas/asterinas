@@ -9,7 +9,13 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
+component = { path = "../component" }
+itertools = "0.10.5"
+inventory = { git = "https://github.com/asterinas/inventory", rev = "9dce587" }
+log = "0.4"
+json = "0.12.4"
 proc-macro2 = "1.0.78"
 quote = "1.0.35"
 rand = "0.8.5"
 syn = { version = "2.0.48", features = ["full"] }
+toml = "0.7.2"

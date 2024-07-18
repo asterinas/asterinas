@@ -2,11 +2,11 @@
 
 use std::sync::atomic::{Ordering::Relaxed, AtomicBool};
 
-use component::init_component;
+use component::init;
 
 static HAS_INIT: AtomicBool = AtomicBool::new(false);
 
-#[init_component]
+#[ostd::init_comp]
 fn kernel_init() -> Result<(), component::ComponentInitError> {
     assert_eq!(first_init::HAS_INIT.load(Relaxed), true);
     assert_eq!(second_init::HAS_INIT.load(Relaxed), true);

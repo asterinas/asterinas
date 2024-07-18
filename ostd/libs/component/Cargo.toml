@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 inventory = { git = "https://github.com/asterinas/inventory", rev = "9dce587" }
 log = "0.4"
-component-macro = { path = "../component-macro" }
 
 [build-dependencies]
 json = "0.12.4"

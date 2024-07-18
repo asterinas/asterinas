@@ -17,9 +17,8 @@ use core::{any::Any, fmt::Debug};
 
 use aster_util::safe_ptr::Pod;
 pub use buffer::{RxBuffer, TxBuffer, RX_BUFFER_POOL, TX_BUFFER_POOL};
-use component::{init_component, ComponentInitError};
 pub use dma_pool::DmaSegment;
-use ostd::sync::SpinLock;
+use ostd::{sync::SpinLock, ComponentInitError};
 use smoltcp::phy;
 use spin::Once;
 
@@ -119,7 +118,7 @@ static COMPONENT: Once<Component> = Once::new();
 pub(crate) static NETWORK_IRQ_HANDLERS: Once<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>> =
     Once::new();
 
-#[init_component]
+#[ostd::init_comp]
 fn init() -> Result<(), ComponentInitError> {
     let a = Component::init()?;
     COMPONENT.call_once(|| a);

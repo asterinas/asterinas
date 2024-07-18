@@ -30,8 +30,11 @@ pub use process_filter::ProcessFilter;
 pub use process_vm::{MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN};
 pub use program_loader::{check_executable_file, load_program_to_vm};
 pub use rlimit::ResourceType;
+use spin::Once;
 pub use term_status::TermStatus;
 pub use wait::{wait_child_exit, WaitOptions};
+
+pub static INIT_PROCESS_PID: Once<Pid> = Once::new();
 
 pub(super) fn init() {
     process::init();

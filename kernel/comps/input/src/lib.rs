@@ -12,9 +12,8 @@ pub mod key;
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
-use component::{init_component, ComponentInitError};
 use key::{Key, KeyStatus};
-use ostd::sync::SpinLock;
+use ostd::{sync::SpinLock, ComponentInitError};
 use spin::Once;
 
 #[derive(Debug, Clone, Copy)]
@@ -55,7 +54,7 @@ pub fn all_devices() -> Vec<(String, Arc<dyn InputDevice>)> {
 
 static COMPONENT: Once<Component> = Once::new();
 
-#[init_component]
+#[ostd::init_comp]
 fn component_init() -> Result<(), ComponentInitError> {
     let a = Component::init()?;
     COMPONENT.call_once(|| a);

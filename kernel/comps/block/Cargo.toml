@@ -13,7 +13,7 @@ ostd = { path = "../../../ostd" }
 align_ext = { path = "../../../ostd/libs/align_ext" }
 aster-util = { path = "../../libs/aster-util" }
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
-component = { path = "../../libs/comp-sys/component" }
+component = { path = "../../../ostd/libs/component" }
 log = "0.4"
 static_assertions = "1.1.0"
 

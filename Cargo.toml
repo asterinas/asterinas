@@ -30,8 +30,6 @@ members = [
 ]
 exclude = [
     "kernel/libs/comp-sys/cargo-component",
-    "kernel/libs/comp-sys/component",
-    "kernel/libs/comp-sys/component-macro",
     "kernel/libs/comp-sys/controlled",
     "osdk",
     "target/osdk/base",

@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{
-    collections::HashMap, fs::File, io::Read, ops::Add, path::PathBuf, process::Command,
-    str::FromStr,
-};
+use std::{collections::HashMap, path::PathBuf, process::Command, str::FromStr};
 
 use json::JsonValue;
 use proc_macro2::{Group, TokenStream};
 use quote::{ToTokens, TokenStreamExt};
-
-use crate::COMPONENT_FILE_NAME;
 
 #[derive(Debug)]
 pub struct ComponentInfo {
@@ -38,7 +33,7 @@ pub fn component_generate() -> Vec<ComponentInfo> {
     let workspace_root = metadata["workspace_root"].as_str().unwrap();
     let workspace_root = String::from_str(workspace_root).unwrap().replace('\\', "/");
 
-    let comps_name = get_components_name(&workspace_root, &metadata["packages"]);
+    let comps_name = get_components_name(&metadata["packages"]);
     for package in metadata["packages"].members_mut() {
         let name = package["name"].as_str().unwrap();
         if comps_name.contains(&name.to_string()) {
@@ -106,20 +101,6 @@ pub fn component_generate() -> Vec<ComponentInfo> {
     components_info
 }
 
-/// Get the path to the Components.toml file
-pub fn get_component_toml_path() -> TokenStream {
-    let metadata = metadata();
-    let workspace_root = metadata["workspace_root"].as_str().unwrap();
-    let mut workspace_root = String::from_str(workspace_root)
-        .unwrap()
-        .replace('\\', "/")
-        .add("/")
-        .add(COMPONENT_FILE_NAME)
-        .add("\"");
-    workspace_root.insert(0, '\"');
-    TokenStream::from_str(workspace_root.as_str()).unwrap()
-}
-
 fn is_component(package: &JsonValue) -> bool {
     for depend in package["dependencies"].members() {
         if depend["name"].as_str().unwrap() == "component" {
@@ -130,57 +111,14 @@ fn is_component(package: &JsonValue) -> bool {
 }
 
 /// Get all the components name, this function will also check if the Components.toml contain all the components.
-fn get_components_name(workspace_root: &str, packages: &JsonValue) -> Vec<String> {
-    let file_components_name = read_component_file(workspace_root);
+fn get_components_name(packages: &JsonValue) -> Vec<String> {
     let mut comps_name = Vec::new();
     for package in packages.members() {
         if is_component(package) {
-            if !file_components_name.contains(&package["name"].as_str().unwrap().to_string()) {
-                // if the package is in the workspace_root
-                if package["id"].as_str().unwrap().contains(workspace_root) {
-                    panic!(
-                        "Package {} in the workspace that not written in the {} file",
-                        package["name"].as_str().unwrap(),
-                        COMPONENT_FILE_NAME
-                    );
-                }
-            }
             comps_name.push(package["name"].as_str().unwrap().to_string());
         }
     }
     comps_name
-}
-
-/// read component file, return all the components name
-fn read_component_file(workspace_root: &str) -> Vec<String> {
-    let component_toml: toml::Value = {
-        let mut component_file_path = workspace_root.to_owned();
-        component_file_path.push('/');
-        component_file_path.push_str(COMPONENT_FILE_NAME);
-        let mut file = File::open(component_file_path)
-            .expect("Components.toml file not found, please check if the file exists");
-        let mut str_val = String::new();
-        file.read_to_string(&mut str_val).unwrap();
-        toml::from_str(&str_val).unwrap()
-    };
-    for (name, value) in component_toml.as_table().unwrap() {
-        if name.as_str() == "components" {
-            return value
-                .as_table()
-                .unwrap()
-                .values()
-                .map(|value| {
-                    value
-                        .as_table()
-                        .unwrap()
-                        .values()
-                        .map(|str_val| str_val.as_str().unwrap().to_string())
-                        .collect()
-                })
-                .collect();
-        }
-    }
-    panic!("Componets.toml file not valid")
 }
 
 /// calculate the priority of one node
