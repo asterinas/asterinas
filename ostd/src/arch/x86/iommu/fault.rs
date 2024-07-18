@@ -33,6 +33,8 @@ impl FaultEventRegisters {
         FaultStatus::from_bits_truncate(self.status.read())
     }
 
+    /// Create an instance from base address.
+    ///
     /// # Safety
     ///
     /// User must ensure the base_register_vaddr is read from DRHD
@@ -199,6 +201,8 @@ bitflags! {
 
 pub(super) static FAULT_EVENT_REGS: Once<FaultEventRegisters> = Once::new();
 
+/// Initializes the fault reporting function.
+///
 /// # Safety
 ///
 /// User must ensure the base_register_vaddr is read from DRHD
