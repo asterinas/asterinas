@@ -14,15 +14,31 @@ jobs:
         benchmark: 
           - sysbench-cpu
           - sysbench-thread
-          - lmbench-getpid
+          # Process-related benchmarks
+          - lmbench-ctx
           - lmbench-fork
-          - lmbench-signal
+          - lmbench-exec
+          - lmbench-shell
+          # Memory-related benchmarks
+          - lmbench-mem-frd
+          - lmbench-mem-fwr
+          - lmbench-mem-fcp
+          # Network-related benchmarks
+          - lmbench-unix-latency
+          # Syscall-related benchmarks
+          - lmbench-getpid
+          - lmbench-fstat
+          - lmbench-open
+          - lmbench-stat
           # TODO: The following benchmarks are disabled now for some reasons.
           #
           # In Linux, lack of /dev/null device
           # - lmbench-write
           # In Linux, lack of /dev/zero device
           # - lmbench-read
+          #
+          # Signal-related benchmarks
+          - lmbench-signal
       fail-fast: false
     timeout-minutes: 60
     container: 
