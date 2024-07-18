@@ -4,7 +4,7 @@
 
 mod context_table;
 mod fault;
-mod remapping;
+mod registers;
 mod second_stage;
 
 use log::info;
@@ -65,6 +65,8 @@ pub(crate) fn unmap(daddr: Daddr) -> Result<(), IommuError> {
 }
 
 pub(crate) fn init() -> Result<(), IommuError> {
+    registers::init()?;
+
     let mut root_table = RootTable::new();
     // For all PCI Device, use the same page table.
     let page_table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
