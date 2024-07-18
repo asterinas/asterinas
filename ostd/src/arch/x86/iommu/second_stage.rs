@@ -82,7 +82,11 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     fn new_pt(paddr: Paddr) -> Self {
-        Self(paddr as u64 & Self::PHYS_MASK)
+        Self(
+            paddr as u64 & Self::PHYS_MASK
+                | PageTableFlags::READABLE.bits()
+                | PageTableFlags::WRITABLE.bits(),
+        )
     }
 
     fn paddr(&self) -> Paddr {
