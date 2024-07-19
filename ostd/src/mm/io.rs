@@ -340,8 +340,10 @@ impl<'a> VmReader<'a, KernelSpace> {
     /// it should _not_ overlap with other `VmWriter`s.
     /// The user space memory is treated as untyped.
     pub unsafe fn from_kernel_space(ptr: *const u8, len: usize) -> Self {
-        debug_assert!(KERNEL_BASE_VADDR <= ptr as usize);
-        debug_assert!(ptr.add(len) as usize <= KERNEL_END_VADDR);
+        // If casting a zero sized slice to a pointer, the pointer may be null
+        // and does not reside in our kernel space range.
+        debug_assert!(len == 0 || KERNEL_BASE_VADDR <= ptr as usize);
+        debug_assert!(len == 0 || ptr.add(len) as usize <= KERNEL_END_VADDR);
 
         Self {
             cursor: ptr,
@@ -516,8 +518,10 @@ impl<'a> VmWriter<'a, KernelSpace> {
     /// is typed, it should _not_ overlap with other `VmReader`s and `VmWriter`s.
     /// The user space memory is treated as untyped.
     pub unsafe fn from_kernel_space(ptr: *mut u8, len: usize) -> Self {
-        debug_assert!(KERNEL_BASE_VADDR <= ptr as usize);
-        debug_assert!(ptr.add(len) as usize <= KERNEL_END_VADDR);
+        // If casting a zero sized slice to a pointer, the pointer may be null
+        // and does not reside in our kernel space range.
+        debug_assert!(len == 0 || KERNEL_BASE_VADDR <= ptr as usize);
+        debug_assert!(len == 0 || ptr.add(len) as usize <= KERNEL_END_VADDR);
 
         Self {
             cursor: ptr,
