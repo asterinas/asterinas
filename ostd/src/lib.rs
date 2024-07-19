@@ -59,6 +59,9 @@ pub use self::{cpu::cpu_local::CpuLocal, error::Error, prelude::Result};
 pub fn init() {
     arch::before_all_init();
 
+    // SAFETY: This function is called only once and only on the BSP.
+    unsafe { cpu::cpu_local::early_init_bsp_local_base() };
+
     mm::heap_allocator::init();
 
     boot::init();
