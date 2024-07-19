@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
-    cpu::{CpuExceptionInfo, RawGeneralRegs, UserContext, PAGE_FAULT},
+    cpu::{CpuException, CpuExceptionInfo, RawGeneralRegs, UserContext},
     Pod,
 };
 
@@ -107,7 +107,7 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
     type Error = ();
 
     fn try_from(value: &CpuExceptionInfo) -> Result<Self, ()> {
-        if value.cpu_exception() != PAGE_FAULT {
+        if value.cpu_exception() != CpuException::PAGE_FAULT {
             return Err(());
         }
 

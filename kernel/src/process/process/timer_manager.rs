@@ -11,7 +11,7 @@ use id_alloc::IdAlloc;
 use ostd::{
     arch::{
         timer::{self, TIMER_FREQ},
-        x86::trap::is_kernel_interrupted,
+        trap::is_kernel_interrupted,
     },
     sync::Mutex,
 };
