@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicUsize, Ordering::Relaxed},
-};
+use core::cell::RefCell;
 
 use super::{
     scheduler::{fetch_task, GLOBAL_SCHEDULER},
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::cpu_local;
+use crate::{arch, cpu_local};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -154,38 +151,50 @@ fn switch_to_task(next_task: Arc<Task>) {
     // to the next task switching.
 }
 
-cpu_local! {
-    static PREEMPT_COUNT: PreemptInfo = PreemptInfo::new();
-}
+static PREEMPT_COUNT: PreemptInfo = PreemptInfo::new();
 
-/// Currently, ``PreemptInfo`` only holds the number of spin
-/// locks held by the current CPU. When it has a non-zero value,
-/// the CPU cannot call ``schedule()``.
-struct PreemptInfo {
-    num_locks: AtomicUsize,
-}
+/// Currently, it only holds the number of preemption locks held by the
+/// current CPU. When it has a non-zero value, the CPU cannot call
+/// [`schedule()`].
+///
+/// For per-CPU preemption lock count, we cannot afford two non-atomic
+/// operations to increment and decrement the count. The [`crate::cpu_local`]
+/// implementation is free to read the base register and then calculate the
+/// address of the per-CPU variable using an additional instruction. Interrupts
+/// can happen between the address calculation and modification to that
+/// address. If the task is preempted to another CPU by this interrupt, the
+/// count of the original CPU will be mistakenly modified. To avoid this, we
+/// introduce [`crate::arch::cpu::local::preempt_lock_count`]. For x86_64 we
+/// can implement this using one instruction. In other less expressive
+/// architectures, we may need to disable interrupts.
+///
+/// Also, the preemption count is reserved in the `.cpu_local` section
+/// specified in the linker script. The reason is that we need to access the
+/// preemption count before we can copy the section for application processors.
+/// So, the preemption count is not copied from bootstrap processor's section
+/// as the initialization. Instead it is initialized to zero for application
+/// processors.
+struct PreemptInfo {}
 
 impl PreemptInfo {
     const fn new() -> Self {
-        Self {
-            num_locks: AtomicUsize::new(0),
-        }
+        Self {}
     }
 
     fn increase_num_locks(&self) {
-        self.num_locks.fetch_add(1, Relaxed);
+        arch::cpu::local::preempt_lock_count::inc();
     }
 
     fn decrease_num_locks(&self) {
-        self.num_locks.fetch_sub(1, Relaxed);
+        arch::cpu::local::preempt_lock_count::dec();
     }
 
     fn is_preemptive(&self) -> bool {
-        self.num_locks.load(Relaxed) == 0
+        arch::cpu::local::preempt_lock_count::get() == 0
     }
 
     fn num_locks(&self) -> usize {
-        self.num_locks.load(Relaxed)
+        arch::cpu::local::preempt_lock_count::get() as usize
     }
 }
 

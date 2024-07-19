@@ -21,7 +21,7 @@
 use core::ops::Deref;
 
 use crate::{
-    cpu::{get_cpu_local_base, set_cpu_local_base},
+    arch,
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
@@ -82,6 +82,13 @@ impl<T> !Clone for CpuLocal<T> {}
 // other tasks as they should live on other CPUs to make sending useful.
 impl<T> !Send for CpuLocal<T> {}
 
+// A check to ensure that the CPU-local object is never accessed before the
+// initialization for all CPUs.
+#[cfg(debug_assertions)]
+use core::sync::atomic::{AtomicBool, Ordering};
+#[cfg(debug_assertions)]
+static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
 impl<T> CpuLocal<T> {
     /// Initialize a CPU-local object.
     ///
@@ -115,6 +122,11 @@ impl<T> CpuLocal<T> {
     /// This function calculates the virtual address of the CPU-local object based on the per-
     /// cpu base address and the offset in the BSP.
     fn get(&self) -> *const T {
+        // CPU-local objects should be initialized before being accessed. It should be ensured
+        // by the implementation of OSTD initialization.
+        #[cfg(debug_assertions)]
+        debug_assert!(IS_INITIALIZED.load(Ordering::Relaxed));
+
         let offset = {
             let bsp_va = self as *const _ as usize;
             let bsp_base = __cpu_local_start as usize;
@@ -124,7 +136,7 @@ impl<T> CpuLocal<T> {
             bsp_va - bsp_base as usize
         };
 
-        let local_base = get_cpu_local_base() as usize;
+        let local_base = arch::cpu::local::get_base() as usize;
         let local_va = local_base + offset;
 
         // A sanity check about the alignment.
@@ -170,6 +182,24 @@ impl<T> Deref for CpuLocalDerefGuard<'_, T> {
     }
 }
 
+/// Sets the base address of the CPU-local storage for the bootstrap processor.
+///
+/// It should be called early to let [`crate::task::disable_preempt`] work,
+/// which needs to update a CPU-local preempt lock count. Otherwise it may
+/// panic when calling [`crate::task::disable_preempt`].
+///
+/// # Safety
+///
+/// It should be called only once and only on the BSP.
+pub(crate) unsafe fn early_init_bsp_local_base() {
+    let start_base_va = __cpu_local_start as usize as u64;
+    // SAFETY: The base to be set is the start of the `.cpu_local` section,
+    // where accessing the CPU-local objects have defined behaviors.
+    unsafe {
+        arch::cpu::local::set_base(start_base_va);
+    }
+}
+
 /// Initializes the CPU local data for the bootstrap processor (BSP).
 ///
 /// # Safety
@@ -179,9 +209,14 @@ impl<T> Deref for CpuLocalDerefGuard<'_, T> {
 /// It must be guaranteed that the BSP will not access local data before
 /// this function being called, otherwise copying non-constant values
 /// will result in pretty bad undefined behavior.
-pub unsafe fn init_on_bsp() {
-    let start_base_va = __cpu_local_start as usize as u64;
-    set_cpu_local_base(start_base_va);
+pub(crate) unsafe fn init_on_bsp() {
+    // TODO: allocate the pages for application processors and copy the
+    // CPU-local objects to the allocated pages.
+
+    #[cfg(debug_assertions)]
+    {
+        IS_INITIALIZED.store(true, Ordering::Relaxed);
+    }
 }
 
 // These symbols are provided by the linker script.

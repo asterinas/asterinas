@@ -58,6 +58,16 @@ SECTIONS
     # areas for the application processors.
     .cpu_local              : AT(ADDR(.cpu_local) - KERNEL_VMA) {
         __cpu_local_start = .;
+
+        # These 4 bytes are used to store the CPU ID.
+        . += 4;
+
+        # These 4 bytes are used to store the number of preemption locks held.
+        # The reason is stated in the Rust documentation of
+        # [`ostd::task::processor::PreemptInfo`].
+        __cpu_local_preempt_lock_count = . - __cpu_local_start;
+        . += 4;
+
         KEEP(*(SORT(.cpu_local)))
         __cpu_local_end = .;
     }
