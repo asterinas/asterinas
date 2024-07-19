@@ -65,7 +65,7 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
         }
     } else {
         IS_KERNEL_INTERRUPTED.store(true, Ordering::Release);
-        call_irq_callback_functions(f);
+        call_irq_callback_functions(f, f.trap_num);
         IS_KERNEL_INTERRUPTED.store(false, Ordering::Release);
     }
 }

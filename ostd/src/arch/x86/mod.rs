@@ -85,10 +85,12 @@ pub(crate) fn after_all_init() {
     kernel::pic::init();
 }
 
-pub(crate) fn interrupts_ack() {
-    kernel::pic::ack();
-    if let Some(apic) = kernel::apic::APIC_INSTANCE.get() {
-        apic.lock_irq_disabled().eoi();
+pub(crate) fn interrupts_ack(irq_number: usize) {
+    if !cpu::CpuException::is_cpu_exception(irq_number as u16) {
+        kernel::pic::ack();
+        if let Some(apic) = kernel::apic::APIC_INSTANCE.get() {
+            apic.lock_irq_disabled().eoi();
+        }
     }
 }
 

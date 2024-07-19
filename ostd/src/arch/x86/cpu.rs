@@ -324,7 +324,7 @@ impl UserContextApiInternal for UserContext {
                     }
                 }
             };
-            call_irq_callback_functions(&self.as_trap_frame());
+            call_irq_callback_functions(&self.as_trap_frame(), self.as_trap_frame().trap_num);
             if has_kernel_event() {
                 return_reason = ReturnReason::KernelEvent;
                 break;
