@@ -26,7 +26,7 @@ use log::debug;
 
 use super::ex_table::ExTable;
 use crate::{
-    cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode, PAGE_FAULT},
+    cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
     cpu_local_cell,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
@@ -40,7 +40,7 @@ use crate::{
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
         use tdx_guest::{tdcall, tdx_is_enabled, handle_virtual_exception};
-        use crate::arch::{cpu::VIRTUALIZATION_EXCEPTION, tdx_guest::TrapFrameWrapper};
+        use crate::arch::tdx_guest::TrapFrameWrapper;
     }
 }
 
@@ -223,13 +223,13 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     if CpuException::is_cpu_exception(f.trap_num as u16) {
         match CpuException::to_cpu_exception(f.trap_num as u16).unwrap() {
             #[cfg(feature = "cvm_guest")]
-            &VIRTUALIZATION_EXCEPTION => {
+            CpuException::VIRTUALIZATION_EXCEPTION => {
                 let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
                 let mut trapframe_wrapper = TrapFrameWrapper(&mut *f);
                 handle_virtual_exception(&mut trapframe_wrapper, &ve_info);
                 *f = *trapframe_wrapper.0;
             }
-            &PAGE_FAULT => {
+            CpuException::PAGE_FAULT => {
                 let page_fault_addr = x86_64::registers::control::Cr2::read_raw();
                 // The actual user space implementation should be responsible
                 // for providing mechanism to treat the 0 virtual address.

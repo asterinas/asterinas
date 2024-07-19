@@ -12,6 +12,8 @@ use core::{
 use bitflags::bitflags;
 use cfg_if::cfg_if;
 use log::debug;
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use x86::bits64::segmentation::wrfsbase;
 use x86_64::registers::rflags::RFlags;
 
@@ -109,41 +111,37 @@ impl UserContextApiInternal for UserContext {
         // set ID flag which means cpu support CPUID instruction
         self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
 
-        let return_reason: ReturnReason;
         const SYSCALL_TRAPNUM: u16 = 0x100;
 
         // return when it is syscall or cpu exception type is Fault or Trap.
-        loop {
+        let return_reason = loop {
             scheduler::might_preempt();
             self.user_context.run();
             match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
                 Some(exception) => {
                     #[cfg(feature = "cvm_guest")]
-                    if *exception == VIRTUALIZATION_EXCEPTION {
+                    if exception == CpuException::VIRTUALIZATION_EXCEPTION {
                         handle_virtualization_exception(self);
                         continue;
                     }
-                    if exception.typ == CpuExceptionType::FaultOrTrap
-                        || exception.typ == CpuExceptionType::Fault
-                        || exception.typ == CpuExceptionType::Trap
-                    {
-                        return_reason = ReturnReason::UserException;
-                        break;
+                    match exception.typ() {
+                        CpuExceptionType::FaultOrTrap
+                        | CpuExceptionType::Trap
+                        | CpuExceptionType::Fault => break ReturnReason::UserException,
+                        _ => (),
                     }
                 }
                 None => {
                     if self.user_context.trap_num as u16 == SYSCALL_TRAPNUM {
-                        return_reason = ReturnReason::UserSyscall;
-                        break;
+                        break ReturnReason::UserSyscall;
                     }
                 }
             };
             call_irq_callback_functions(&self.as_trap_frame(), self.as_trap_frame().trap_num);
             if has_kernel_event() {
-                return_reason = ReturnReason::KernelEvent;
-                break;
+                break ReturnReason::KernelEvent;
             }
-        }
+        };
 
         crate::arch::irq::enable_local();
         if return_reason == ReturnReason::UserException {
@@ -212,39 +210,26 @@ pub enum CpuExceptionType {
     Reserved,
 }
 
-/// CPU exception.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct CpuException {
-    /// The ID of the CPU exception.
-    pub number: u16,
-    /// The type of the CPU exception.
-    pub typ: CpuExceptionType,
-}
-
-/// Copy from: https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#slice-length
-macro_rules! replace_expr {
-    ($_t:tt $sub:expr) => {
-        $sub
-    };
-}
-
-/// Copy from: https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#slice-length
-macro_rules! count_tts {
-    ($($tts:tt)*) => {<[()]>::len(&[$(replace_expr!($tts ())),*])};
-}
-
 macro_rules! define_cpu_exception {
-    ( $([ $name: ident = $exception_num:tt, $exception_type:tt]),* ) => {
-        const EXCEPTION_LIST : [CpuException;count_tts!($($name)*)] = [
-            $($name,)*
-        ];
-        $(
-            #[doc = concat!("The ", stringify!($name), " exception")]
-            pub const $name : CpuException = CpuException{
-                number: $exception_num,
-                typ: CpuExceptionType::$exception_type,
-            };
-        )*
+    ( $([ $name: ident = $exception_id:tt, $exception_type:tt]),* ) => {
+        /// CPU exception.
+        #[allow(non_camel_case_types)]
+        #[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive)]
+        pub enum CpuException {
+            $(
+                #[doc = concat!("The ", stringify!($name), " exception")]
+                $name = $exception_id,
+            )*
+        }
+
+        impl CpuException {
+            /// The type of the CPU exception.
+            pub fn typ(&self) -> CpuExceptionType {
+                match self {
+                    $( CpuException::$name => CpuExceptionType::$exception_type, )*
+                }
+            }
+        }
     }
 }
 
@@ -314,19 +299,19 @@ bitflags! {
 impl CpuException {
     /// Checks if the given `trap_num` is a valid CPU exception.
     pub fn is_cpu_exception(trap_num: u16) -> bool {
-        trap_num < EXCEPTION_LIST.len() as u16
+        Self::to_cpu_exception(trap_num).is_some()
     }
 
     /// Maps a `trap_num` to its corresponding CPU exception.
-    pub fn to_cpu_exception(trap_num: u16) -> Option<&'static CpuException> {
-        EXCEPTION_LIST.get(trap_num as usize)
+    pub fn to_cpu_exception(trap_num: u16) -> Option<CpuException> {
+        FromPrimitive::from_u16(trap_num)
     }
 }
 
 impl CpuExceptionInfo {
     /// Get corresponding CPU exception
     pub fn cpu_exception(&self) -> CpuException {
-        EXCEPTION_LIST[self.id]
+        CpuException::to_cpu_exception(self.id as u16).unwrap()
     }
 }
 
