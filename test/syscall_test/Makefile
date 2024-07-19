@@ -32,9 +32,20 @@ TESTS ?= \
 	pty_test \
 	read_test \
 	readv_test \
+	rename_test \
+	sendfile_test \
+	stat_test \
 	stat_times_test \
-	write_test \
+	statfs_test \
+	symlink_test \
+	sync_test \
+	timers_test \
+	truncate_test \
+	uidgid_test \
+	unlink_test \
 	utimes_test \
+	vdso_clock_gettime_test \
+	write_test \
 	# The end of the list
 
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
