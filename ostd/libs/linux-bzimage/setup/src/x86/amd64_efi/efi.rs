@@ -8,6 +8,7 @@ use uefi::{
 };
 
 use super::{
+    decoder::decode_payload,
     paging::{Ia32eFlags, PageNumber, PageTableCreator},
     relocation::apply_rela_dyn_relocations,
 };
@@ -55,9 +56,11 @@ fn efi_phase_boot(
 
     uefi_services::println!("[EFI stub] Relocations applied.");
 
-    uefi_services::println!("[EFI stub] Loading payload.");
     let payload = unsafe { crate::get_payload(&*boot_params_ptr) };
-    crate::loader::load_elf(payload);
+    let kernel = decode_payload(payload);
+
+    uefi_services::println!("[EFI stub] Loading payload.");
+    crate::loader::load_elf(&kernel);
 
     uefi_services::println!("[EFI stub] Exiting EFI boot services.");
     let memory_type = {

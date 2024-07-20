@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use linux_bzimage_builder::PayloadEncoding;
+
 use super::{inherit_optional, Boot, BootScheme, Grub, GrubScheme, Qemu, QemuScheme};
 
 use crate::{cli::CommonArgs, config::Arch};
@@ -23,6 +25,7 @@ pub struct BuildScheme {
     pub linux_x86_legacy_boot: bool,
     #[serde(default)]
     pub strip_elf: bool,
+    pub encoding: Option<PayloadEncoding>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +41,7 @@ pub struct Build {
     pub linux_x86_legacy_boot: bool,
     #[serde(default)]
     pub strip_elf: bool,
+    pub encoding: PayloadEncoding,
 }
 
 impl Default for Build {
@@ -49,6 +53,7 @@ impl Default for Build {
             override_configs: Vec::new(),
             linux_x86_legacy_boot: false,
             strip_elf: false,
+            encoding: PayloadEncoding::default(),
         }
     }
 }
@@ -71,6 +76,9 @@ impl Build {
         if common_args.strip_elf {
             self.strip_elf = true;
         }
+        if let Some(encoding) = common_args.encoding.clone() {
+            self.encoding.clone_from(&encoding);
+        }
     }
 }
 
@@ -91,6 +99,9 @@ impl BuildScheme {
         if parent.strip_elf {
             self.strip_elf = true;
         }
+        if self.encoding.is_none() {
+            self.encoding.clone_from(&parent.encoding);
+        }
     }
 
     pub fn finalize(self) -> Build {
@@ -101,6 +112,7 @@ impl BuildScheme {
             override_configs: Vec::new(),
             linux_x86_legacy_boot: self.linux_x86_legacy_boot,
             strip_elf: self.strip_elf,
+            encoding: self.encoding.unwrap_or_default(),
         }
     }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod decoder;
 mod efi;
 mod paging;
 mod relocation;

@@ -16,7 +16,10 @@ mod test;
 
 use std::{env, path::PathBuf};
 
-use scheme::{Action, ActionScheme, BootScheme, Build, GrubScheme, QemuScheme, Scheme};
+use linux_bzimage_builder::PayloadEncoding;
+use scheme::{
+    Action, ActionScheme, BootProtocol, BootScheme, Build, GrubScheme, QemuScheme, Scheme,
+};
 
 use crate::{
     arch::{get_default_arch, Arch},
@@ -88,6 +91,11 @@ fn apply_args_after_finalize(action: &mut Action, args: &CommonArgs) {
 
 impl Config {
     pub fn new(scheme: &Scheme, common_args: &CommonArgs) -> Self {
+        let check_compatibility = |protocol: BootProtocol, encoding: PayloadEncoding| {
+            if protocol != BootProtocol::Linux && encoding != PayloadEncoding::Raw {
+                panic!("The encoding format is not allowed to be specified if the boot protocol is not {:#?}", BootProtocol::Linux);
+            }
+        };
         let target_arch = common_args.target_arch.unwrap_or(get_default_arch());
         let default_scheme = ActionScheme {
             boot: scheme.boot.clone(),
@@ -95,12 +103,18 @@ impl Config {
             qemu: scheme.qemu.clone(),
             build: scheme.build.clone(),
         };
+        let build = {
+            let mut build = scheme.build.clone().unwrap_or_default().finalize();
+            build.apply_common_args(common_args);
+            build
+        };
         let run = {
             let mut run = scheme.run.clone().unwrap_or_default();
             run.inherit(&default_scheme);
             apply_args_before_finalize(&mut run, common_args);
             let mut run = run.finalize(target_arch);
             apply_args_after_finalize(&mut run, common_args);
+            check_compatibility(run.grub.boot_protocol, run.build.encoding.clone());
             run
         };
         let test = {
@@ -109,6 +123,7 @@ impl Config {
             apply_args_before_finalize(&mut test, common_args);
             let mut test = test.finalize(target_arch);
             apply_args_after_finalize(&mut test, common_args);
+            check_compatibility(test.grub.boot_protocol, test.build.encoding.clone());
             test
         };
         Self {
@@ -117,7 +132,7 @@ impl Config {
                 .clone()
                 .unwrap_or_else(|| env::current_dir().unwrap()),
             target_arch,
-            build: scheme.build.clone().unwrap_or_default().finalize(),
+            build,
             run,
             test,
         }

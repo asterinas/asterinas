@@ -17,6 +17,8 @@ use crate::{
     },
 };
 
+use linux_bzimage_builder::PayloadEncoding;
+
 pub fn main() {
     let load_config = |common_args: &CommonArgs| {
         let manifest = TomlManifest::load();
@@ -358,4 +360,11 @@ pub struct CommonArgs {
         global = true
     )]
     pub qemu_args: Vec<String>,
+    #[arg(
+        long = "encoding",
+        help = "Denote the encoding format for kernel self-decompression",
+        value_name = "FORMAT",
+        global = true
+    )]
+    pub encoding: Option<PayloadEncoding>,
 }

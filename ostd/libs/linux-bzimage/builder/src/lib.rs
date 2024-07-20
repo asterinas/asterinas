@@ -13,6 +13,7 @@
 //! The setup code should be built into the ELF target and we convert it to a flat binary
 //! in the builder.
 
+pub mod encoder;
 mod mapping;
 mod pe_header;
 
@@ -22,6 +23,8 @@ use std::{
     path::Path,
 };
 
+use encoder::encode_kernel;
+pub use encoder::PayloadEncoding;
 use mapping::{SetupFileOffset, SetupVA};
 use xmas_elf::program::SegmentData;
 
@@ -39,13 +42,15 @@ pub enum BzImageType {
 ///  - `target_image_path`: The path to the target bzImage;
 ///  - `image_type`: The type of the bzImage that we are building;
 ///  - `kernel_path`: The path to the kernel ELF;
-///  - `setup_elf_path`: The path to the setup ELF.
+///  - `setup_elf_path`: The path to the setup ELF;
+///  - `encoding`: The encoding format for compressing the kernel ELF.
 ///
 pub fn make_bzimage(
     target_image_path: &Path,
     image_type: BzImageType,
     kernel_path: &Path,
     setup_elf_path: &Path,
+    encoding: PayloadEncoding,
 ) {
     let mut setup_elf = Vec::new();
     File::open(setup_elf_path)
@@ -61,7 +66,10 @@ pub fn make_bzimage(
         .unwrap()
         .read_to_end(&mut kernel)
         .unwrap();
-    let payload = kernel;
+    let payload = match image_type {
+        BzImageType::Legacy32 => kernel,
+        BzImageType::Efi64 => encode_kernel(kernel, encoding),
+    };
 
     let setup_len = setup.len();
     let payload_len = payload.len();
