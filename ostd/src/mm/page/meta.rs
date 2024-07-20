@@ -83,30 +83,39 @@ pub enum PageUsage {
 
 #[repr(C)]
 pub(in crate::mm) struct MetaSlot {
-    /// The metadata of the page.
+    /// The dynamic metadata storage of the page.
     ///
     /// It is placed at the beginning of a slot because:
-    ///  - the implementation can simply cast a `*const MetaSlot`
-    ///    to a `*const PageMeta` for manipulation;
-    ///  - the subsequent fields can utilize the end padding of the
-    ///    the inner union to save space.
+    ///  - the implementation can simply cast a `*const MetaSlot` to a
+    ///    `*const PageMeta` for manipulation;
+    ///  - the subsequent fields can utilize the end padding of the the inner
+    ///    union to save space.
     _inner: MetaSlotInner,
-    /// To store [`PageUsage`].
+    /// To store [`PageUsage`]. The usage may be inspected without acquiring
+    /// a handle, so operations to it must be atomic.
     pub(super) usage: AtomicU8,
+    /// The reference count of the page. It is also used to ensure exclusive
+    /// access to the metadata during the initialization of the metadata
+    /// (by telling if the reference count is zero or one).
     pub(super) ref_count: AtomicU32,
 }
 
-pub(super) union MetaSlotInner {
-    _frame: ManuallyDrop<FrameMeta>,
+// An unused union just to determine the maximum size of dynamic metadata.
+#[repr(C)]
+union MetaSlotInner {
+    _static_frame: ManuallyDrop<FrameMeta>,
+    _dyn_frame: ManuallyDrop<FrameMeta<dyn FrameMetaExt>>,
     _pt: ManuallyDrop<PageTablePageMeta>,
 }
 
-// Currently the sizes of the `MetaSlotInner` union variants are no larger
-// than 8 bytes and aligned to 8 bytes. So the size of `MetaSlot` is 16 bytes.
-//
+// Currently the largest one among the `MetaSlotInner` union variants is a
+// [`Box`] of dynamic object, which is a fat pointer over the address and the
+// vtable. This is 16 bytes. So the size of `MetaSlot` is 24 bytes.
+const_assert_eq!(size_of::<MetaSlot>(), 24);
+
 // Note that the size of `MetaSlot` should be a multiple of 8 bytes to prevent
 // cross-page accesses.
-const_assert_eq!(size_of::<MetaSlot>(), 16);
+const_assert_eq!(size_of::<MetaSlot>() % 8, 0);
 
 /// All page metadata types must implemented this sealed trait,
 /// which ensures that each fields of `PageUsage` has one and only
@@ -117,9 +126,11 @@ const_assert_eq!(size_of::<MetaSlot>(), 16);
 /// If a page type needs specific drop behavior, it should specify
 /// when implementing this trait. When we drop the last handle to
 /// this page, the `on_drop` method will be called.
-pub trait PageMeta: Default + Sync + private::Sealed + Sized {
+pub trait PageMeta: Sized + Sync + private::Sealed {
+    /// The usage of the page. Must be unique.
     const USAGE: PageUsage;
 
+    /// The callback when the last reference to the page is dropped.
     fn on_drop(page: &mut Page<Self>);
 }
 
@@ -163,17 +174,14 @@ mod private {
 
 use private::Sealed;
 
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct FrameMeta {
-    // If not doing so, the page table metadata would fit
-    // in the front padding of meta slot and make it 12 bytes.
-    // We make it 16 bytes. Further usage of frame metadata
-    // is welcome to exploit this space.
-    _unused_for_layout_padding: [u8; 8],
-}
+use crate::mm::frame::{DefaultFrameMeta, FrameMetaExt};
 
-impl Sealed for FrameMeta {}
+// Note that the implementation of this structure should ensure consistent
+// memory layout over all generic parameters.
+/// The metadata of any kinds of untyped memory pages.
+pub type FrameMeta<M = DefaultFrameMeta> = alloc::boxed::Box<M>;
+
+impl<M: FrameMetaExt + ?Sized> Sealed for FrameMeta<M> {}
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -182,8 +190,9 @@ pub struct PageTablePageMetaInner {
     pub nr_children: u16,
 }
 
+// Note that the implementation of this structure should ensure consistent
+// memory layout over all generic parameters.
 /// The metadata of any kinds of page table pages.
-/// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct PageTablePageMeta<
@@ -275,7 +284,7 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
     // Now the metadata pages are mapped, we can initialize the metadata.
     meta_pages
         .into_iter()
-        .map(Page::<MetaPageMeta>::from_unused)
+        .map(|addr| Page::<MetaPageMeta>::from_unused(addr, MetaPageMeta::default()))
         .collect()
 }
 

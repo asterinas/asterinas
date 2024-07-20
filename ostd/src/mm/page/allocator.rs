@@ -18,10 +18,10 @@ use crate::{boot::memory_region::MemoryRegionType, mm::PAGE_SIZE, sync::SpinLock
 pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
 
 /// Allocate a single page.
-pub(crate) fn alloc_single<M: PageMeta>() -> Option<Page<M>> {
+pub(crate) fn alloc_single<M: PageMeta + Default>() -> Option<Page<M>> {
     PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx| {
         let paddr = idx * PAGE_SIZE;
-        Page::<M>::from_unused(paddr)
+        Page::<M>::from_unused(paddr, M::default())
     })
 }
 
@@ -30,14 +30,16 @@ pub(crate) fn alloc_single<M: PageMeta>() -> Option<Page<M>> {
 /// # Panics
 ///
 /// The function panics if the length is not base-page-aligned.
-pub(crate) fn alloc_contiguous<M: PageMeta>(len: usize) -> Option<ContPages<M>> {
+pub(crate) fn alloc_contiguous<M: PageMeta + Default>(len: usize) -> Option<ContPages<M>> {
     assert!(len % PAGE_SIZE == 0);
     PAGE_ALLOCATOR
         .get()
         .unwrap()
         .lock()
         .alloc(len / PAGE_SIZE)
-        .map(|start| ContPages::from_unused(start * PAGE_SIZE..start * PAGE_SIZE + len))
+        .map(|start| {
+            ContPages::from_unused(start * PAGE_SIZE..start * PAGE_SIZE + len, |_| M::default())
+        })
 }
 
 /// Allocate pages.
@@ -48,14 +50,14 @@ pub(crate) fn alloc_contiguous<M: PageMeta>(len: usize) -> Option<ContPages<M>> 
 /// # Panics
 ///
 /// The function panics if the length is not base-page-aligned.
-pub(crate) fn alloc<M: PageMeta>(len: usize) -> Option<Vec<Page<M>>> {
+pub(crate) fn alloc<M: PageMeta + Default>(len: usize) -> Option<Vec<Page<M>>> {
     assert!(len % PAGE_SIZE == 0);
     let nframes = len / PAGE_SIZE;
     let mut allocator = PAGE_ALLOCATOR.get().unwrap().lock();
     let mut vector = Vec::new();
     for _ in 0..nframes {
         let paddr = allocator.alloc(1)? * PAGE_SIZE;
-        let page = Page::<M>::from_unused(paddr);
+        let page = Page::<M>::from_unused(paddr, M::default());
         vector.push(page);
     }
     Some(vector)

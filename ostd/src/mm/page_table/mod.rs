@@ -296,7 +296,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 ) -> Option<(Paddr, PageProperty)> {
     use super::paddr_to_vaddr;
 
-    let preempt_guard = crate::task::disable_preempt();
+    let _preempt_guard = crate::task::disable_preempt();
 
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {

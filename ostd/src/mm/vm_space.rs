@@ -348,7 +348,7 @@ pub enum VmQueryResult {
         /// The virtual address of the slot.
         va: Vaddr,
         /// The mapped frame.
-        frame: Frame,
+        frame: Frame<dyn FrameMetaExt>,
         /// The property of the slot.
         prop: PageProperty,
     },
