@@ -60,36 +60,24 @@ jobs:
         id: boot_test_mb
         run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=multiboot RELEASE=1
 
-      - name: Boot Test (Multiboot2)
-        id: boot_test_mb2
-        run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1
-
-      - name: Boot Test (MicroVM)
-        id: boot_test_microvm
-        run: make run AUTO_TEST=boot ENABLE_KVM=1 SCHEME=microvm RELEASE=1
-
       - name: Boot Test (Linux Legacy 32-bit Boot Protocol)
         id: boot_test_linux_legacy32
         run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=linux-legacy32 RELEASE=1
 
-      - name: Boot Test (Linux EFI Handover Boot Protocol)
-        id: boot_test_linux_efi_handover64
-        run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
-
-      - name: Syscall Test (Linux EFI Handover Boot Protocol)
+      - name: Syscall Test (Linux EFI Handover Boot Protocol) (Debug Build)
         id: syscall_test
-        run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
+        run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=0
 
       - name: Syscall Test at Ext2 (MicroVM)
         id: syscall_test_at_ext2
         run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=1 SCHEME=microvm RELEASE=1
 
-      - name: Syscall Test at Exfat and without KVM enabled
+      - name: Syscall Test at Exfat (Multiboot2) (without KVM enabled)
         id: syscall_test_at_exfat_linux
         run: |
           make run AUTO_TEST=syscall \
             SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat \
-            ENABLE_KVM=0 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
+            ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE=1
 
       - name: General Test (Linux EFI Handover Boot Protocol)
         id: test_linux
