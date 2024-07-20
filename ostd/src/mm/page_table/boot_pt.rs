@@ -170,10 +170,10 @@ fn test_boot_pt_map_protect() {
     use super::page_walk;
     use crate::{
         arch::mm::{PageTableEntry, PagingConsts},
-        mm::{CachePolicy, FrameAllocOptions, PageFlags},
+        mm::{CachePolicy, Frame, FrameAllocOptions, PageFlags},
     };
 
-    let root_frame = FrameAllocOptions::new(1).alloc_single().unwrap();
+    let root_frame: Frame = FrameAllocOptions::new(1).alloc_single().unwrap();
     let root_paddr = root_frame.start_paddr();
 
     let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts> {

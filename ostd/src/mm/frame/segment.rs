@@ -5,7 +5,7 @@
 use alloc::sync::Arc;
 use core::ops::Range;
 
-use super::Frame;
+use super::{DefaultFrameMeta, Frame, FrameMetaExt};
 use crate::{
     mm::{
         page::{cont_pages::ContPages, meta::FrameMeta, Page},
@@ -23,24 +23,24 @@ use crate::{
 /// #Example
 ///
 /// ```rust
-/// let vm_segment = FrameAllocOptions::new(2)
+/// let segment = FrameAllocOptions::new(2)
 ///     .is_contiguous(true)
 ///     .alloc_contiguous()?;
-/// vm_segment.write_bytes(0, buf)?;
+/// segment.write_bytes(0, buf)?;
 /// ```
 #[derive(Debug, Clone)]
-pub struct Segment {
-    inner: Arc<ContPages<FrameMeta>>,
+pub struct Segment<M: FrameMetaExt = DefaultFrameMeta> {
+    inner: Arc<ContPages<FrameMeta<M>>>,
     range: Range<usize>,
 }
 
-impl HasPaddr for Segment {
+impl<M: FrameMetaExt> HasPaddr for Segment<M> {
     fn paddr(&self) -> Paddr {
         self.start_paddr()
     }
 }
 
-impl Segment {
+impl<M: FrameMetaExt> Segment<M> {
     /// Returns a part of the `Segment`.
     ///
     /// # Panics
@@ -93,7 +93,7 @@ impl Segment {
     }
 }
 
-impl<'a> Segment {
+impl<'a, M: FrameMetaExt> Segment<M> {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
         // SAFETY: the memory of the page frames is untyped, contiguous and is valid during `'a`.
@@ -113,7 +113,7 @@ impl<'a> Segment {
     }
 }
 
-impl VmIo for Segment {
+impl<M: FrameMetaExt + Send> VmIo for Segment<M> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
@@ -137,17 +137,17 @@ impl VmIo for Segment {
     }
 }
 
-impl From<Frame> for Segment {
-    fn from(frame: Frame) -> Self {
+impl<M: FrameMetaExt> From<Frame<M>> for Segment<M> {
+    fn from(frame: Frame<M>) -> Self {
         Self {
-            inner: Arc::new(Page::<FrameMeta>::from(frame).into()),
+            inner: Arc::new(Page::<FrameMeta<M>>::from(frame).into()),
             range: 0..1,
         }
     }
 }
 
-impl From<ContPages<FrameMeta>> for Segment {
-    fn from(cont_pages: ContPages<FrameMeta>) -> Self {
+impl<M: FrameMetaExt> From<ContPages<FrameMeta<M>>> for Segment<M> {
+    fn from(cont_pages: ContPages<FrameMeta<M>>) -> Self {
         let len = cont_pages.len();
         Self {
             inner: Arc::new(cont_pages),

@@ -27,8 +27,8 @@ use core::{
 
 use meta::{mapping, FrameMeta, MetaSlot, PageMeta, PageUsage};
 
-use super::{Frame, PagingLevel, PAGE_SIZE};
-use crate::mm::{Paddr, PagingConsts, Vaddr};
+use super::{frame::FrameMetaExt, Frame, PagingLevel, PAGE_SIZE};
+use crate::mm::{frame::DefaultFrameMeta, Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
@@ -268,6 +268,11 @@ impl<M: PageMeta> TryFrom<DynPage> for Page<M> {
     ///
     /// If the usage of the page is not the same as the expected usage, it will
     /// return the dynamic page itself as is.
+    ///
+    /// Note that if trying to use this function to convert a [`DynPage`] to a
+    /// [`Page<FrameMeta<M>>`], whether `M` matches the metadata of the page is
+    /// not tracked. If it is inconsistent, a [`core::mem::transmute`] over a
+    /// [`ostd_pod::Pod`] will happen.
     fn try_from(dyn_page: DynPage) -> Result<Self, Self::Error> {
         if dyn_page.usage() == M::USAGE {
             let result = Page {
@@ -290,9 +295,9 @@ impl<M: PageMeta> From<Page<M>> for DynPage {
     }
 }
 
-impl From<Frame> for DynPage {
-    fn from(frame: Frame) -> Self {
-        Page::<FrameMeta>::from(frame).into()
+impl<M: FrameMetaExt> From<Frame<M>> for DynPage {
+    fn from(frame: Frame<M>) -> Self {
+        Page::<FrameMeta<M>>::from(frame).into()
     }
 }
 
@@ -312,23 +317,25 @@ impl Drop for DynPage {
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             core::sync::atomic::fence(Ordering::Acquire);
             // Drop the page and its metadata according to its usage.
-            // SAFETY: all `drop_as_last` calls in match arms operates on a last, about to be
-            // dropped page reference.
-            unsafe {
-                match self.usage() {
-                    PageUsage::Frame => {
-                        meta::drop_as_last::<meta::FrameMeta>(self.ptr);
+            match self.usage() {
+                PageUsage::Frame => {
+                    // SAFETY: it operates on a last, about to be dropped page
+                    // table page handle. And the inner metadata implements
+                    // [`Pod`] so it is safe to drop as [`DefaultFrameMeta`].
+                    unsafe {
+                        meta::drop_as_last::<meta::FrameMeta<DefaultFrameMeta>>(self.ptr);
                     }
-                    PageUsage::PageTable => {
+                }
+                PageUsage::PageTable => {
+                    // SAFETY: it operates on a last, about to be dropped page
+                    // table page handle.
+                    unsafe {
                         meta::drop_as_last::<meta::PageTablePageMeta>(self.ptr);
                     }
-                    // The following pages don't have metadata and can't be dropped.
-                    PageUsage::Unused
-                    | PageUsage::Reserved
-                    | PageUsage::Kernel
-                    | PageUsage::Meta => {
-                        panic!("dropping a dynamic page with usage {:?}", self.usage());
-                    }
+                }
+                // The following pages don't have metadata and can't be dropped.
+                PageUsage::Unused | PageUsage::Reserved | PageUsage::Kernel | PageUsage::Meta => {
+                    panic!("dropping a dynamic page with usage {:?}", self.usage());
                 }
             }
         }

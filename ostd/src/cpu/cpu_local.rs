@@ -199,8 +199,6 @@ mod test {
 
     use ostd_macros::ktest;
 
-    use super::*;
-
     #[ktest]
     fn test_cpu_local() {
         cpu_local! {

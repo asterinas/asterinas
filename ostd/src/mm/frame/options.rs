@@ -5,6 +5,7 @@
 use super::{Frame, Segment};
 use crate::{
     mm::{
+        frame::{DefaultFrameMeta, FrameMetaExt},
         page::{self, meta::FrameMeta},
         PAGE_SIZE,
     },
@@ -19,19 +20,21 @@ use crate::{
 /// may store Rust objects or affect Rust memory safety, e.g.,
 /// the code and data segments of the OS kernel, the stack and heap
 /// allocated for the OS kernel.
-pub struct FrameAllocOptions {
+pub struct FrameAllocOptions<M: FrameMetaExt = DefaultFrameMeta> {
     nframes: usize,
     is_contiguous: bool,
     uninit: bool,
+    _type_of_ext_meta: core::marker::PhantomData<M>,
 }
 
-impl FrameAllocOptions {
+impl<M: FrameMetaExt> FrameAllocOptions<M> {
     /// Creates new options for allocating the specified number of frames.
     pub fn new(nframes: usize) -> Self {
         Self {
             nframes,
             is_contiguous: false,
             uninit: false,
+            _type_of_ext_meta: Default::default(),
         }
     }
 
@@ -55,7 +58,7 @@ impl FrameAllocOptions {
     }
 
     /// Allocates a collection of page frames according to the given options.
-    pub fn alloc(&self) -> Result<Vec<Frame>> {
+    pub fn alloc(&self) -> Result<Vec<Frame<M>>> {
         let pages = if self.is_contiguous {
             page::allocator::alloc(self.nframes * PAGE_SIZE).ok_or(Error::NoMemory)?
         } else {
@@ -63,7 +66,7 @@ impl FrameAllocOptions {
                 .ok_or(Error::NoMemory)?
                 .into()
         };
-        let frames: Vec<_> = pages.into_iter().map(|page| Frame { page }).collect();
+        let frames: Vec<_> = pages.into_iter().map(|page| Frame::<M> { page }).collect();
         if !self.uninit {
             for frame in frames.iter() {
                 frame.writer().fill(0);
@@ -74,13 +77,13 @@ impl FrameAllocOptions {
     }
 
     /// Allocates a single page frame according to the given options.
-    pub fn alloc_single(&self) -> Result<Frame> {
+    pub fn alloc_single(&self) -> Result<Frame<M>> {
         if self.nframes != 1 {
             return Err(Error::InvalidArgs);
         }
 
         let page = page::allocator::alloc_single().ok_or(Error::NoMemory)?;
-        let frame = Frame { page };
+        let frame = Frame::<M> { page };
         if !self.uninit {
             frame.writer().fill(0);
         }
@@ -91,14 +94,14 @@ impl FrameAllocOptions {
     /// Allocates a contiguous range of page frames according to the given options.
     ///
     /// The returned [`Segment`] contains at least one page frame.
-    pub fn alloc_contiguous(&self) -> Result<Segment> {
+    pub fn alloc_contiguous(&self) -> Result<Segment<M>> {
         // It's no use to checking `self.is_contiguous` here.
         if self.nframes == 0 {
             return Err(Error::InvalidArgs);
         }
 
-        let segment: Segment =
-            page::allocator::alloc_contiguous::<FrameMeta>(self.nframes * PAGE_SIZE)
+        let segment: Segment<M> =
+            page::allocator::alloc_contiguous::<FrameMeta<M>>(self.nframes * PAGE_SIZE)
                 .ok_or(Error::NoMemory)?
                 .into();
         if !self.uninit {
@@ -118,15 +121,15 @@ fn test_alloc_dealloc() {
     let multi_options = FrameAllocOptions::new(10);
     let mut contiguous_options = FrameAllocOptions::new(10);
     contiguous_options.is_contiguous(true);
-    let mut remember_vec = Vec::new();
-    for i in 0..10 {
+    let mut remember_vec = Vec::<Frame>::new();
+    for _ in 0..10 {
         for i in 0..10 {
             let single_frame = single_options.alloc_single().unwrap();
             if i % 3 == 0 {
                 remember_vec.push(single_frame);
             }
         }
-        let contiguous_segment = contiguous_options.alloc_contiguous().unwrap();
+        let contiguous_segment: Segment = contiguous_options.alloc_contiguous().unwrap();
         drop(contiguous_segment);
         let multi_frames = multi_options.alloc().unwrap();
         remember_vec.extend(multi_frames.into_iter());

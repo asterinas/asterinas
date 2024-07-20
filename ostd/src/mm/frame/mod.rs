@@ -13,6 +13,7 @@ pub mod segment;
 
 use core::mem::ManuallyDrop;
 
+use ostd_pod::Pod;
 pub use segment::Segment;
 
 use super::page::{
@@ -27,6 +28,36 @@ use crate::{
     Error, Result,
 };
 
+/// A trait for the metadata of a frame.
+///
+/// The type of the metadata decides the type of the [`Frame`]. You can define
+/// any type of frames by implementing this trait. The metadata is stored
+/// globally and will be accessible by all of the [`Frame`] handles.
+///
+/// A notable restriction is that the metadata must be [`Pod`]. We are not able
+/// to call [`drop`] on the metadata when the page table is the last owner of
+/// the frame. So the metadata attached to the frame must remain memory-safe
+/// if it vanished without dropping.
+pub trait FrameMetaExt: Default + Sized + Sync + Pod {}
+
+/// A default frame metadata if you want to attach nothing to the frame.
+#[derive(Debug, Default, Clone, Copy, Pod)]
+#[repr(C)]
+pub struct DefaultFrameMeta {
+    _pad: u8,
+}
+
+// Boilplate code to ensure allocated metadata sizes are within the limit.
+trait True {}
+struct Bool<const TERM: bool>();
+impl True for Bool<true> {}
+
+// Blanket implementation for any frame metadata.
+impl<T: Default + Sized + Sync + Pod> FrameMetaExt for T where
+    Bool<{ core::mem::size_of::<T>() <= crate::mm::page::meta::MAX_DYNAMIC_META_SIZE }>: True
+{
+}
+
 /// A handle to a physical memory page of untyped memory.
 ///
 /// An instance of `Frame` is a handle to a page frame (a physical memory
@@ -36,12 +67,35 @@ use crate::{
 /// counter is maintained for each page frame so that when all instances of
 /// `Frame` that refer to the same page frame are dropped, the page frame
 /// will be globally freed.
+///
+/// Any type of metadata can be attached to a frame by implementing the
+/// [`FrameMetaExt`] trait. The type of metadata also defines the type of
+/// the frame. For example, if you want a frame to store file cache data and
+/// call such type of frame "file cache frames", you can define the types
+/// as follows:
+///
+/// ```rust
+/// use ostd::mm::frame::{Frame, FrameMetaExt};
+///
+/// #[derive(Debug, Default, Clone, Copy, Pod)]
+/// #[repr(C)]
+/// struct FileCacheMeta {
+///     dirty: bool,
+/// }
+///
+/// type FileCacheFrame = Frame<FileCacheMeta>;
+/// ```
 #[derive(Debug, Clone)]
-pub struct Frame {
-    page: Page<FrameMeta>,
+pub struct Frame<M: FrameMetaExt = DefaultFrameMeta> {
+    page: Page<FrameMeta<M>>,
 }
 
-impl Frame {
+impl<M: FrameMetaExt> Frame<M> {
+    /// Gets the metadata of the frame.
+    pub fn meta(&self) -> &M {
+        &self.page.meta().inner
+    }
+
     /// Returns the physical address of the page frame.
     pub fn start_paddr(&self) -> Paddr {
         self.page.paddr()
@@ -68,7 +122,7 @@ impl Frame {
     }
 
     /// Copies the content of `src` to the frame.
-    pub fn copy_from(&self, src: &Frame) {
+    pub fn copy_from<MSrc: FrameMetaExt>(&self, src: &Frame<MSrc>) {
         if self.paddr() == src.paddr() {
             return;
         }
@@ -79,37 +133,41 @@ impl Frame {
     }
 }
 
-impl From<Page<FrameMeta>> for Frame {
-    fn from(page: Page<FrameMeta>) -> Self {
+impl<M: FrameMetaExt> From<Page<FrameMeta<M>>> for Frame<M> {
+    fn from(page: Page<FrameMeta<M>>) -> Self {
         Self { page }
     }
 }
 
-impl TryFrom<DynPage> for Frame {
+impl<M: FrameMetaExt> TryFrom<DynPage> for Frame<M> {
     type Error = DynPage;
 
     /// Try converting a [`DynPage`] into the statically-typed [`Frame`].
     ///
     /// If the dynamic page is not used as an untyped page frame, it will
     /// return the dynamic page itself as is.
+    ///
+    /// Note that whether `M` matches the metadata of the page is not tracked.
+    /// If it is inconsistent, a [`core::mem::transmute`] over a
+    /// [`ostd_pod::Pod`] will happen.
     fn try_from(page: DynPage) -> core::result::Result<Self, Self::Error> {
-        page.try_into().map(|p: Page<FrameMeta>| p.into())
+        page.try_into().map(|p: Page<FrameMeta<M>>| p.into())
     }
 }
 
-impl From<Frame> for Page<FrameMeta> {
-    fn from(frame: Frame) -> Self {
+impl<M: FrameMetaExt> From<Frame<M>> for Page<FrameMeta<M>> {
+    fn from(frame: Frame<M>) -> Self {
         frame.page
     }
 }
 
-impl HasPaddr for Frame {
+impl<M: FrameMetaExt> HasPaddr for Frame<M> {
     fn paddr(&self) -> Paddr {
         self.start_paddr()
     }
 }
 
-impl<'a> Frame {
+impl<'a, M: FrameMetaExt> Frame<M> {
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a> {
         // SAFETY: the memory of the page is untyped, contiguous and is valid during `'a`.
@@ -129,7 +187,7 @@ impl<'a> Frame {
     }
 }
 
-impl VmIo for Frame {
+impl<M: FrameMetaExt> VmIo for Frame<M> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
@@ -153,7 +211,7 @@ impl VmIo for Frame {
     }
 }
 
-impl VmIo for alloc::vec::Vec<Frame> {
+impl<M: FrameMetaExt + Send> VmIo for alloc::vec::Vec<Frame<M>> {
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
@@ -195,13 +253,10 @@ impl VmIo for alloc::vec::Vec<Frame> {
     }
 }
 
-impl PageMeta for FrameMeta {
+impl<M: FrameMetaExt> PageMeta for FrameMeta<M> {
     const USAGE: PageUsage = PageUsage::Frame;
 
-    fn on_drop(_page: &mut Page<Self>) {
-        // Nothing should be done so far since dropping the page would
-        // have all taken care of.
-    }
+    fn on_drop(_page: &mut Page<Self>) {}
 }
 
 // Here are implementations for `xarray`.
@@ -211,13 +266,13 @@ use core::{marker::PhantomData, ops::Deref};
 /// `FrameRef` is a struct that can work as `&'a Frame`.
 ///
 /// This is solely useful for [`crate::collections::xarray`].
-pub struct FrameRef<'a> {
-    inner: ManuallyDrop<Frame>,
-    _marker: PhantomData<&'a Frame>,
+pub struct FrameRef<'a, M: FrameMetaExt = DefaultFrameMeta> {
+    inner: ManuallyDrop<Frame<M>>,
+    _marker: PhantomData<&'a Frame<M>>,
 }
 
-impl<'a> Deref for FrameRef<'a> {
-    type Target = Frame;
+impl<'a, M: FrameMetaExt> Deref for FrameRef<'a, M> {
+    type Target = Frame<M>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -226,8 +281,8 @@ impl<'a> Deref for FrameRef<'a> {
 
 // SAFETY: `Frame` is essentially an `*const MetaSlot` that could be used as a `*const` pointer.
 // The pointer is also aligned to 4.
-unsafe impl xarray::ItemEntry for Frame {
-    type Ref<'a> = FrameRef<'a> where Self: 'a;
+unsafe impl<M: FrameMetaExt> xarray::ItemEntry for Frame<M> {
+    type Ref<'a> = FrameRef<'a, M> where Self: 'a;
 
     fn into_raw(self) -> *const () {
         let ptr = self.page.ptr;
@@ -237,7 +292,7 @@ unsafe impl xarray::ItemEntry for Frame {
 
     unsafe fn from_raw(raw: *const ()) -> Self {
         Self {
-            page: Page::<FrameMeta> {
+            page: Page::<FrameMeta<M>> {
                 ptr: raw as *mut MetaSlot,
                 _marker: PhantomData,
             },
@@ -246,7 +301,7 @@ unsafe impl xarray::ItemEntry for Frame {
 
     unsafe fn raw_as_ref<'a>(raw: *const ()) -> Self::Ref<'a> {
         Self::Ref {
-            inner: ManuallyDrop::new(Frame::from_raw(raw)),
+            inner: ManuallyDrop::new(Frame::<M>::from_raw(raw)),
             _marker: PhantomData,
         }
     }

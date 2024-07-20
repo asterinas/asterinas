@@ -96,10 +96,18 @@ pub(in crate::mm) struct MetaSlot {
     pub(super) ref_count: AtomicU32,
 }
 
-pub(super) union MetaSlotInner {
-    _frame: ManuallyDrop<FrameMeta>,
+// An unused union just to determine the maximum size of dynamic metadata.
+#[repr(C)]
+union MetaSlotInner {
     _pt: ManuallyDrop<PageTablePageMeta>,
+    // If not doing so, the page table metadata would fit
+    // in the front padding of meta slot and make it 12 bytes.
+    // We make it 16 bytes.
+    _layout_padding: [u8; 8],
 }
+
+/// The maximum size of dynamic metadata in a page.
+pub(crate) const MAX_DYNAMIC_META_SIZE: usize = size_of::<MetaSlot>() - 5;
 
 // Currently the sizes of the `MetaSlotInner` union variants are no larger
 // than 8 bytes and aligned to 8 bytes. So the size of `MetaSlot` is 16 bytes.
@@ -163,17 +171,15 @@ mod private {
 
 use private::Sealed;
 
+use crate::mm::frame::{DefaultFrameMeta, FrameMetaExt};
+
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct FrameMeta {
-    // If not doing so, the page table metadata would fit
-    // in the front padding of meta slot and make it 12 bytes.
-    // We make it 16 bytes. Further usage of frame metadata
-    // is welcome to exploit this space.
-    _unused_for_layout_padding: [u8; 8],
+pub struct FrameMeta<M: FrameMetaExt = DefaultFrameMeta> {
+    pub inner: M,
 }
 
-impl Sealed for FrameMeta {}
+impl<M: FrameMetaExt> Sealed for FrameMeta<M> {}
 
 #[derive(Debug, Default)]
 #[repr(C)]
