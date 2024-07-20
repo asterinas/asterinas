@@ -57,6 +57,7 @@ pub fn create_bootdev_image(
                 &target_dir,
                 aster_bin,
                 action.build.linux_x86_legacy_boot,
+                config.build.encoding.clone(),
             );
         }
         _ => {

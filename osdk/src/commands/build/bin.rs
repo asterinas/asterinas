@@ -7,7 +7,9 @@ use std::{
     process::Command,
 };
 
-use linux_bzimage_builder::{legacy32_rust_target_json, make_bzimage, BzImageType};
+use linux_bzimage_builder::{
+    legacy32_rust_target_json, make_bzimage, BzImageType, PayloadEncoding,
+};
 
 use crate::{
     arch::Arch,
@@ -23,6 +25,7 @@ pub fn make_install_bzimage(
     target_dir: impl AsRef<Path>,
     aster_elf: &AsterBin,
     linux_x86_legacy_boot: bool,
+    encoding: PayloadEncoding,
 ) -> AsterBin {
     let target_name = get_current_crate_info().name;
     let image_type = if linux_x86_legacy_boot {
@@ -55,7 +58,13 @@ pub fn make_install_bzimage(
     let install_path = install_dir.as_ref().join(target_name);
     info!("Building bzImage");
     println!("install_path: {:?}", install_path);
-    make_bzimage(&install_path, image_type, aster_elf.path(), &setup_bin);
+    make_bzimage(
+        &install_path,
+        image_type,
+        aster_elf.path(),
+        &setup_bin,
+        encoding,
+    );
 
     AsterBin::new(
         &install_path,
@@ -162,6 +171,10 @@ fn install_setup_with_arch(
     cmd.arg("install").arg("linux-bzimage-setup");
     cmd.arg("--force");
     cmd.arg("--root").arg(install_dir.as_ref());
+    if std::env::var("AUTO_TEST").is_ok() || std::env::var("OSDK_INTEGRATION_TEST").is_ok() {
+        cmd.arg("--path")
+            .arg("../../../ostd/libs/linux-bzimage/setup");
+    }
     // Remember to upgrade this version if new version of linux-bzimage-setup is released.
     const LINUX_BZIMAGE_SETUP_VERSION: &str = "0.1.0";
     cmd.arg("--version").arg(LINUX_BZIMAGE_SETUP_VERSION);

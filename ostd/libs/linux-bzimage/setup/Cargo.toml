@@ -14,6 +14,8 @@ path = "src/main.rs"
 
 [dependencies]
 cfg-if = "1.0.0"
+core2 = { version = "0.4.0", default-features = false, features = ["nightly"] }
+libflate = { version = "2.1.0", default-features = false }
 linux-boot-params = { path = "../boot-params", version = "0.1.0" }
 uart_16550 = "0.3.0"
 xmas-elf = "0.8.0"
