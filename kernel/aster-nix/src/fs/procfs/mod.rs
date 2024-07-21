@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use sys::SysDirOps;
 
 use self::{
+    meminfo::MemInfoFileOps,
     pid::PidDirOps,
     self_::SelfSymOps,
     template::{DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps},
@@ -20,6 +21,7 @@ use crate::{
 };
 
 mod filesystems;
+mod meminfo;
 mod pid;
 mod self_;
 mod sys;
@@ -102,6 +104,8 @@ impl DirOps for RootDirOps {
             SysDirOps::new_inode(this_ptr.clone())
         } else if name == "filesystems" {
             FileSystemsFileOps::new_inode(this_ptr.clone())
+        } else if name == "meminfo" {
+            MemInfoFileOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
             let process_ref =
                 process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -123,6 +127,8 @@ impl DirOps for RootDirOps {
         cached_children.put_entry_if_not_found("filesystems", || {
             FileSystemsFileOps::new_inode(this_ptr.clone())
         });
+        cached_children
+            .put_entry_if_not_found("meminfo", || MemInfoFileOps::new_inode(this_ptr.clone()));
 
         for process in process_table::process_table().iter() {
             let pid = process.pid().to_string();

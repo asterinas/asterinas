@@ -15,7 +15,47 @@ use spin::Once;
 use super::{cont_pages::ContPages, meta::PageMeta, Page};
 use crate::{boot::memory_region::MemoryRegionType, mm::PAGE_SIZE, sync::SpinLock};
 
-pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<FrameAllocator>> = Once::new();
+/// FrameAllocator with a counter for allocated memory
+pub(in crate::mm) struct CountingFrameAllocator {
+    allocator: FrameAllocator,
+    total: usize,
+    allocated: usize,
+}
+
+impl CountingFrameAllocator {
+    pub fn new(allocator: FrameAllocator, total: usize) -> Self {
+        CountingFrameAllocator {
+            allocator,
+            total,
+            allocated: 0,
+        }
+    }
+
+    pub fn alloc(&mut self, count: usize) -> Option<usize> {
+        match self.allocator.alloc(count) {
+            Some(value) => {
+                self.allocated += count * PAGE_SIZE;
+                Some(value)
+            }
+            None => None,
+        }
+    }
+
+    pub fn dealloc(&mut self, start_frame: usize, count: usize) {
+        self.allocator.dealloc(start_frame, count);
+        self.allocated -= count * PAGE_SIZE;
+    }
+
+    pub fn mem_total(&self) -> usize {
+        self.total
+    }
+
+    pub fn mem_available(&self) -> usize {
+        self.total - self.allocated
+    }
+}
+
+pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<CountingFrameAllocator>> = Once::new();
 
 /// Allocate a single page.
 pub(crate) fn alloc_single<M: PageMeta>() -> Option<Page<M>> {
@@ -63,6 +103,7 @@ pub(crate) fn alloc<M: PageMeta>(len: usize) -> Option<Vec<Page<M>>> {
 
 pub(crate) fn init() {
     let regions = crate::boot::memory_regions();
+    let mut total: usize = 0;
     let mut allocator = FrameAllocator::<32>::new();
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {
@@ -75,6 +116,7 @@ pub(crate) fn init() {
             }
             // Add global free pages to the frame allocator.
             allocator.add_frame(start, end);
+            total += (end - start) * PAGE_SIZE;
             info!(
                 "Found usable region, start:{:x}, end:{:x}",
                 region.base(),
@@ -82,5 +124,6 @@ pub(crate) fn init() {
             );
         }
     }
-    PAGE_ALLOCATOR.call_once(|| SpinLock::new(allocator));
+    let counting_allocator = CountingFrameAllocator::new(allocator, total);
+    PAGE_ALLOCATOR.call_once(|| SpinLock::new(counting_allocator));
 }
