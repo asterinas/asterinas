@@ -32,7 +32,7 @@ impl KvaFreeNode {
     }
 }
 
-pub trait KvaAlloc : Sized {
+pub trait KvaAlloc: Sized {
     /// Create a new kernel virtual area with the given allocated range.
     fn init(vaddr: Range<Vaddr>) -> Self;
 
@@ -47,7 +47,7 @@ pub trait KvaAlloc : Sized {
         self.range().end
     }
     /// Allocate a kernel virtual area.
-    /// 
+    ///
     /// This is currently implemented with a simple FIRST-FIT algorithm.
     fn alloc(freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, size: usize) -> Result<Self> {
         let mut allocate_range = None;
@@ -91,14 +91,15 @@ pub trait KvaAlloc : Sized {
         let mut cursor = page_table.cursor_mut(&range).unwrap();
         cursor.protect(range.len(), op, true).unwrap();
     }
-    
+
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
         if max_offset > self.range().len() {
             return Err(Error::InvalidArgs);
         }
-        let reader = unsafe { VmReader::from_kernel_space(self.start() as *const u8, self.range().len()) };
+        let reader =
+            unsafe { VmReader::from_kernel_space(self.start() as *const u8, self.range().len()) };
         let len = reader.skip(offset).read(&mut buf.into());
         debug_assert!(len == buf.len());
         Ok(())
@@ -110,7 +111,8 @@ pub trait KvaAlloc : Sized {
         if max_offset > self.range().len() {
             return Err(Error::InvalidArgs);
         }
-        let writer = unsafe { VmWriter::from_kernel_space(self.start() as *mut u8, self.range().len()) };
+        let writer =
+            unsafe { VmWriter::from_kernel_space(self.start() as *mut u8, self.range().len()) };
         let len = writer.skip(offset).write(&mut buf.into());
         debug_assert!(len == buf.len());
         Ok(())
@@ -120,15 +122,13 @@ pub trait KvaAlloc : Sized {
 pub static KVA_FREELIST: SpinLock<BTreeMap<Vaddr, KvaFreeNode>> = SpinLock::new(BTreeMap::new());
 
 pub struct Kva {
-    var:Range<Vaddr>,
+    var: Range<Vaddr>,
 }
 
 impl KvaAlloc for Kva {
     /// Create a new kernel virtual area with the given allocated range.
     fn init(vaddr: Range<Vaddr>) -> Self {
-        Self {
-            var : vaddr
-        }
+        Self { var: vaddr }
     }
 
     /// Get the range of the kernel virtual area.
@@ -138,7 +138,6 @@ impl KvaAlloc for Kva {
 }
 
 impl Kva {
-
     pub fn new(size: usize) -> Self {
         let mut lock_guard = KVA_FREELIST.lock();
         Self::alloc(lock_guard.deref_mut(), size).unwrap()
