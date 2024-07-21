@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Timer manager for a POSIX process.
+
 use alloc::{
     boxed::Box,
     sync::{Arc, Weak},
@@ -9,10 +11,8 @@ use core::time::Duration;
 
 use id_alloc::IdAlloc;
 use ostd::{
-    arch::{
-        timer::{self, TIMER_FREQ},
-        x86::trap::is_kernel_interrupted,
-    },
+    arch::timer::{self, TIMER_FREQ},
+    exception::in_interrupt_context,
     sync::Mutex,
 };
 
@@ -44,7 +44,7 @@ fn update_cpu_time() {
         // Based on whether the timer interrupt occurs in kernel mode or user mode,
         // the function will add the duration of one timer interrupt interval to the
         // corresponding CPU clocks.
-        if is_kernel_interrupted() {
+        if in_interrupt_context() {
             posix_thread
                 .prof_clock()
                 .kernel_clock()
@@ -74,7 +74,7 @@ fn update_cpu_time() {
 
 /// Registers a function to update the CPU clock in processes and
 /// threads during the system timer interrupt.
-pub(super) fn init() {
+pub fn init() {
     timer::register_callback(update_cpu_time);
 }
 

@@ -11,10 +11,10 @@ use log::debug;
 
 use super::paddr_to_vaddr;
 use crate::{
+    exception::irq,
     mm::{page::allocator::PAGE_ALLOCATOR, PAGE_SIZE},
     prelude::*,
     sync::SpinLock,
-    trap::disable_local,
     Error,
 };
 
@@ -66,7 +66,7 @@ impl<const ORDER: usize> LockedHeapWithRescue<ORDER> {
 
 unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let _guard = disable_local();
+        let _guard = irq::disable_local();
 
         if let Ok(allocation) = self.heap.lock().alloc(layout) {
             return allocation.as_ptr();

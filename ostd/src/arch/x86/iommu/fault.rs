@@ -13,7 +13,7 @@ use trapframe::TrapFrame;
 use volatile::{access::ReadWrite, Volatile};
 
 use super::remapping::Capability;
-use crate::{mm::Vaddr, trap::IrqLine};
+use crate::{exception::irq::IrqLine, mm::Vaddr};
 
 #[derive(Debug)]
 pub struct FaultEventRegisters {

@@ -14,8 +14,8 @@ use spin::Once;
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest;
 use crate::{
-    arch::x86::kernel::acpi::ACPI_TABLES, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine, Error,
-    Result,
+    arch::x86::kernel::acpi::ACPI_TABLES, exception::irq::IrqLine, mm::paddr_to_vaddr,
+    sync::SpinLock, Error, Result,
 };
 
 /// I/O Advanced Programmable Interrupt Controller. It is used to distribute external interrupts

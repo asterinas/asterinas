@@ -9,7 +9,7 @@ use aster_network::{
 };
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
-use ostd::{offset_of, sync::SpinLock, trap::TrapFrame};
+use ostd::{exception::TrapFrame, offset_of, sync::SpinLock};
 use smoltcp::phy::{DeviceCapabilities, Medium};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};

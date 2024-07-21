@@ -14,8 +14,6 @@ use bitvec::{
     slice::IterOnes,
 };
 use log::debug;
-#[cfg(feature = "intel_tdx")]
-use tdx_guest::tdcall;
 pub use trapframe::GeneralRegs as RawGeneralRegs;
 use trapframe::UserContext as RawUserContext;
 use x86_64::registers::{
@@ -23,10 +21,8 @@ use x86_64::registers::{
     segmentation::{Segment64, FS},
 };
 
-#[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
 use crate::{
-    trap::call_irq_callback_functions,
+    exception::user_mode_exception_handler,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -132,7 +128,7 @@ pub struct CpuExceptionInfo {
 }
 
 #[cfg(feature = "intel_tdx")]
-impl TdxTrapFrame for RawGeneralRegs {
+impl crate::arch::tdx_guest::TdxTrapFrame for RawGeneralRegs {
     fn rax(&self) -> usize {
         self.rax
     }
@@ -250,9 +246,7 @@ impl UserPreemption {
         self.count = (self.count + 1) % Self::PREEMPTION_INTERVAL;
 
         if self.count == 0 {
-            crate::arch::irq::enable_local();
             crate::task::schedule();
-            crate::arch::irq::disable_local();
         }
     }
 }
@@ -289,51 +283,33 @@ impl UserContextApiInternal for UserContext {
     where
         F: FnMut() -> bool,
     {
-        // set interrupt flag so that in user mode it can receive external interrupts
-        // set ID flag which means cpu support CPUID instruction
+        // Make sure that when when calling `execute`, the caller does not hold
+        // a guard disabling the local IRQ.
+        // TODO: we may introduce a compile time check here to forbid OSTD users
+        // doing so. This is currently a debug assertion to save performance.
+        debug_assert!(crate::arch::irq::is_local_enabled());
+
+        // Set interrupt flag so that in user mode it can receive external interrupts.
+        // Set ID flag which means cpu support CPUID instruction.
         self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
 
-        let return_reason: ReturnReason;
-        const SYSCALL_TRAPNUM: u16 = 0x100;
-
         let mut user_preemption = UserPreemption::new();
-        // return when it is syscall or cpu exception type is Fault or Trap.
-        loop {
+        // Go back to user when it is syscall or cpu exception type is an immediately
+        // recoverable Fault or Trap. Otherwise return to handle the exception.
+        let return_reason = loop {
             self.user_context.run();
-            match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
-                Some(exception) => {
-                    #[cfg(feature = "intel_tdx")]
-                    if *exception == VIRTUALIZATION_EXCEPTION {
-                        let ve_info =
-                            tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
-                        handle_virtual_exception(self.general_regs_mut(), &ve_info);
-                        continue;
-                    }
-                    if exception.typ == CpuExceptionType::FaultOrTrap
-                        || exception.typ == CpuExceptionType::Fault
-                        || exception.typ == CpuExceptionType::Trap
-                    {
-                        return_reason = ReturnReason::UserException;
-                        break;
-                    }
-                }
-                None => {
-                    if self.user_context.trap_num as u16 == SYSCALL_TRAPNUM {
-                        return_reason = ReturnReason::UserSyscall;
-                        break;
-                    }
-                }
-            };
-            call_irq_callback_functions(&self.as_trap_frame());
+
+            if let Some(return_reason) = user_mode_exception_handler(self) {
+                break return_reason;
+            }
+
             if has_kernel_event() {
-                return_reason = ReturnReason::KernelEvent;
-                break;
+                break ReturnReason::KernelEvent;
             }
 
             user_preemption.might_preempt();
-        }
+        };
 
-        crate::arch::irq::enable_local();
         if return_reason == ReturnReason::UserException {
             self.cpu_exception_info = CpuExceptionInfo {
                 page_fault_addr: unsafe { x86::controlregs::cr2() },
@@ -373,103 +349,108 @@ impl UserContextApiInternal for UserContext {
     }
 }
 
-/// As Osdev Wiki defines(<https://wiki.osdev.org/Exceptions>):
-/// CPU exceptions are classified as:
+/// CPU exceptions.
 ///
-/// Faults: These can be corrected and the program may continue as if nothing happened.
-///
-/// Traps: Traps are reported immediately after the execution of the trapping instruction.
-///
-/// Aborts: Some severe unrecoverable error.
-///
-/// But there exists some vector which are special. Vector 1 can be both fault or trap and vector 2 is interrupt.
-/// So here we also define FaultOrTrap and Interrupt
+/// This summarizes all the "abormal" control flow events that can occur in the
+/// CPU, which covers traps, faults and interrupts in the traditional sense.
 #[derive(PartialEq, Eq, Debug)]
 pub enum CpuExceptionType {
-    /// CPU faults. Faults can be corrected, and the program may continue as if nothing happened.
+    /// CPU faults.
+    ///
+    /// Faults can be corrected, and the program may continue as if nothing happened.
     Fault,
-    /// CPU traps. Traps are reported immediately after the execution of the trapping instruction
+    /// CPU traps.
+    ///
+    /// Traps are reported immediately after the execution of the trapping instruction.
     Trap,
-    /// Faults or traps
+    /// Faults or traps.
+    ///
+    /// This indicates that this event can be either a fault or a trap.
     FaultOrTrap,
-    /// CPU interrupts
+    /// User-interpreted interrupts caused by either hardwares or softwares.
     Interrupt,
-    /// Some severe unrecoverable error
+    /// Some severe unrecoverable error.
     Abort,
-    /// Reserved for future use
+    /// Reserved exception type.
+    ///
+    /// Such a type won't be used or allowed to become user-interpreted interrupts. It's
+    /// generally unacceptable if happening.
     Reserved,
 }
 
-/// CPU exception.
-#[derive(Debug, Eq, PartialEq)]
-pub struct CpuException {
-    /// The ID of the CPU exception.
-    pub number: u16,
-    /// The type of the CPU exception.
-    pub typ: CpuExceptionType,
-}
-
-/// Copy from: https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#slice-length
-macro_rules! replace_expr {
-    ($_t:tt $sub:expr) => {
-        $sub
-    };
-}
-
-/// Copy from: https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#slice-length
-macro_rules! count_tts {
-    ($($tts:tt)*) => {<[()]>::len(&[$(replace_expr!($tts ())),*])};
-}
-
 macro_rules! define_cpu_exception {
-    ( $([ $name: ident = $exception_num:tt, $exception_type:tt]),* ) => {
-        const EXCEPTION_LIST : [CpuException;count_tts!($($name)*)] = [
-            $($name,)*
-        ];
-        $(
-            #[doc = concat!("The ", stringify!($name), " exception")]
-            pub const $name : CpuException = CpuException{
-                number: $exception_num,
-                typ: CpuExceptionType::$exception_type,
-            };
-        )*
+    ( $([ $name: ident = $exception_num:expr, $exception_type:tt]),* ) => {
+        /// A CPU exception.
+        #[derive(Debug, Eq, PartialEq)]
+        pub enum CpuException {
+            $(
+                #[doc = concat!("The ", stringify!($name), " exception.")]
+                $name,
+            )*
+            /// This exception number is not explicitly defined in the ISA.
+            /// It may be interpreted as an user-defined interrupt.
+            NotExplicitInISA(u16),
+        }
+
+        impl CpuException {
+            /// Get the type of the exception.
+            pub fn get_type(&self) -> CpuExceptionType {
+                match self {
+                    $(
+                        Self::$name => CpuExceptionType::$exception_type,
+                    )*
+                    Self::NotExplicitInISA(n) => {
+                        if *n >= 32 && *n < 256 {
+                            CpuExceptionType::Interrupt
+                        } else {
+                            CpuExceptionType::Reserved
+                        }
+                    }
+                }
+            }
+
+            /// Get the exception from the exception number.
+            pub fn from_num(num: u16) -> Self {
+                match num {
+                    $(
+                        $exception_num => Self::$name,
+                    )*
+                    n => CpuException::NotExplicitInISA(n),
+                }
+            }
+        }
     }
 }
 
-// We also defined the RESERVED Exception so that we can easily use the index of EXCEPTION_LIST to get the Exception
+/// The exception number when `syscall` is executed by the user.
+pub static SYSCALL_EXCEPTION_NUM: u16 = 0x100;
+
 define_cpu_exception!(
-    [DIVIDE_BY_ZERO = 0, Fault],
-    [DEBUG = 1, FaultOrTrap],
-    [NON_MASKABLE_INTERRUPT = 2, Interrupt],
-    [BREAKPOINT = 3, Trap],
-    [OVERFLOW = 4, Trap],
-    [BOUND_RANGE_EXCEEDED = 5, Fault],
-    [INVALID_OPCODE = 6, Fault],
-    [DEVICE_NOT_AVAILABLE = 7, Fault],
-    [DOUBLE_FAULT = 8, Abort],
-    [COPROCESSOR_SEGMENT_OVERRUN = 9, Fault],
-    [INVAILD_TSS = 10, Fault],
-    [SEGMENT_NOT_PRESENT = 11, Fault],
-    [STACK_SEGMENT_FAULT = 12, Fault],
-    [GENERAL_PROTECTION_FAULT = 13, Fault],
-    [PAGE_FAULT = 14, Fault],
-    [RESERVED_15 = 15, Reserved],
-    [X87_FLOATING_POINT_EXCEPTION = 16, Fault],
-    [ALIGNMENT_CHECK = 17, Fault],
-    [MACHINE_CHECK = 18, Abort],
-    [SIMD_FLOATING_POINT_EXCEPTION = 19, Fault],
-    [VIRTUALIZATION_EXCEPTION = 20, Fault],
-    [CONTROL_PROTECTION_EXCEPTION = 21, Fault],
-    [RESERVED_22 = 22, Reserved],
-    [RESERVED_23 = 23, Reserved],
-    [RESERVED_24 = 24, Reserved],
-    [RESERVED_25 = 25, Reserved],
-    [RESERVED_26 = 26, Reserved],
-    [RESERVED_27 = 27, Reserved],
-    [HYPERVISOR_INJECTION_EXCEPTION = 28, Fault],
-    [VMM_COMMUNICATION_EXCEPTION = 29, Fault],
-    [SECURITY_EXCEPTION = 30, Fault],
-    [RESERVED_31 = 31, Reserved]
+    // Hardware exceptions
+    [DivideByZero = 0, Fault],
+    [Debug = 1, FaultOrTrap],
+    [NonMaskableInterrupt = 2, Abort],
+    [Breakpoint = 3, Trap],
+    [Overflow = 4, Trap],
+    [BoundRangeExceeded = 5, Fault],
+    [InvalidOpcode = 6, Fault],
+    [DeviceNotAvailable = 7, Fault],
+    [DoubleFault = 8, Abort],
+    [CoprocessorSegmentOverrun = 9, Fault], // Not supported on AMD64
+    [InvalidTss = 10, Fault],
+    [SegmentNotPresent = 11, Fault],
+    [StackSegmentFault = 12, Fault],
+    [GeneralProtectionFault = 13, Fault],
+    [PageFault = 14, Fault],
+    [X87FloatingPointException = 16, Fault],
+    [AlignmentCheck = 17, Fault],
+    [MachineCheck = 18, Abort],
+    [SimdFloatingPointException = 19, Fault],
+    [VirtualizationException = 20, Fault],
+    [ControlProtectionException = 21, Fault],
+    [HypervisorInjectionException = 28, Fault],
+    [VmmCommunicationException = 29, Fault],
+    [SecurityException = 30, Fault]
 );
 
 bitflags! {
@@ -496,18 +477,6 @@ bitflags! {
         /// 1 if the exception is unrelated to paging and resulted from violation of SGX-specific
         /// access-control requirements.
         const SGX           = 1 << 15;
-    }
-}
-
-impl CpuException {
-    /// Checks if the given `trap_num` is a valid CPU exception.
-    pub fn is_cpu_exception(trap_num: u16) -> bool {
-        trap_num < EXCEPTION_LIST.len() as u16
-    }
-
-    /// Maps a `trap_num` to its corresponding CPU exception.
-    pub fn to_cpu_exception(trap_num: u16) -> Option<&'static CpuException> {
-        EXCEPTION_LIST.get(trap_num as usize)
     }
 }
 

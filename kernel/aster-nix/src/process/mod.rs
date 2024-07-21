@@ -23,8 +23,8 @@ pub use credentials::{credentials, credentials_mut, Credentials, Gid, Uid};
 pub use exit::do_exit_group;
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use process::{
-    current, ExitCode, JobControl, Pgid, Pid, Process, ProcessBuilder, ProcessGroup, Session, Sid,
-    Terminal,
+    current, timer_manager, ExitCode, JobControl, Pgid, Pid, Process, ProcessBuilder, ProcessGroup,
+    Session, Sid, Terminal,
 };
 pub use process_filter::ProcessFilter;
 pub use process_vm::{MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN};
@@ -32,8 +32,3 @@ pub use program_loader::{check_executable_file, load_program_to_vm};
 pub use rlimit::ResourceType;
 pub use term_status::TermStatus;
 pub use wait::{wait_child_exit, WaitOptions};
-
-pub(super) fn init() {
-    process::init();
-    posix_thread::futex::init();
-}

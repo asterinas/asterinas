@@ -32,8 +32,7 @@ mod job_control;
 mod process_group;
 mod session;
 mod terminal;
-mod timer_manager;
-
+pub mod timer_manager;
 use aster_rights::Full;
 use atomic::Atomic;
 pub use builder::ProcessBuilder;
@@ -50,11 +49,6 @@ pub type Pgid = u32;
 pub type Sid = u32;
 
 pub type ExitCode = u32;
-
-pub(super) fn init() {
-    timer_manager::init();
-}
-
 /// Process stands for a set of threads that shares the same userspace.
 pub struct Process {
     // Immutable Part

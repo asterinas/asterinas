@@ -33,6 +33,7 @@ pub mod collections;
 pub mod console;
 pub mod cpu;
 mod error;
+pub mod exception;
 pub mod io_mem;
 pub mod logger;
 pub mod mm;
@@ -40,7 +41,6 @@ pub mod panicking;
 pub mod prelude;
 pub mod sync;
 pub mod task;
-pub mod trap;
 pub mod user;
 
 pub use ostd_macros::main;
@@ -72,7 +72,7 @@ pub fn init() {
     unsafe { cpu::cpu_local::init_on_bsp() };
     mm::misc_init();
 
-    trap::init();
+    exception::init();
     arch::after_all_init();
     bus::init();
 

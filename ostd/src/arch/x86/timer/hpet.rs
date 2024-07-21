@@ -13,8 +13,8 @@ use volatile::{
 
 use crate::{
     arch::x86::kernel::{acpi::ACPI_TABLES, apic::ioapic},
+    exception::irq::IrqLine,
     mm::paddr_to_vaddr,
-    trap::IrqLine,
 };
 static HPET_INSTANCE: Once<Hpet> = Once::new();
 

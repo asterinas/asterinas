@@ -10,7 +10,7 @@ use core::{
 };
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
-use ostd::{cpu_local, trap::SoftIrqLine, CpuLocal};
+use ostd::{cpu_local, exception::softirq::SoftIrqLine, CpuLocal};
 
 use crate::softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID};
 
@@ -192,7 +192,7 @@ fn taskless_softirq_handler(
 mod test {
     use core::sync::atomic::AtomicUsize;
 
-    use ostd::{prelude::*, trap::enable_local};
+    use ostd::prelude::*;
 
     use super::*;
 
@@ -200,7 +200,6 @@ mod test {
         static DONE: AtomicBool = AtomicBool::new(false);
         if !DONE.load(Ordering::SeqCst) {
             super::init();
-            enable_local();
             DONE.store(true, Ordering::SeqCst);
         }
     }

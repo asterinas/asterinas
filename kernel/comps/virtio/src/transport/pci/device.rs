@@ -12,10 +12,10 @@ use ostd::{
         },
         BusProbeError,
     },
+    exception::irq::IrqCallbackFunction,
     io_mem::IoMem,
     mm::DmaCoherent,
     offset_of,
-    trap::IrqCallbackFunction,
 };
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};

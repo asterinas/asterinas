@@ -7,10 +7,10 @@ use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use aster_util::safe_ptr::SafePtr;
 use log::debug;
 use ostd::{
+    exception::TrapFrame,
     io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmReader},
     sync::{RwLock, SpinLock},
-    trap::TrapFrame,
 };
 
 use super::{config::VirtioConsoleConfig, DEVICE_NAME};
