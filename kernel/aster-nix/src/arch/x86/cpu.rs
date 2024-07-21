@@ -69,7 +69,7 @@ pub struct GpRegs {
 macro_rules! copy_gp_regs {
     ($src: ident, $dst: ident) => {
         $dst.rax = $src.rax;
-        $dst.rbx = $src.rax;
+        $dst.rbx = $src.rbx;
         $dst.rcx = $src.rcx;
         $dst.rdx = $src.rdx;
         $dst.rsi = $src.rsi;
