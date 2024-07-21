@@ -53,8 +53,8 @@ use log::info;
 use spin::Once;
 
 pub(crate) mod kva;
+use kva::{KvaFreeNode, KVA_FREELIST};
 use super::{
-    kspace::kva::{KvaFreeNode, KVA_FREELIST},
     nr_subpage_per_huge,
     page::{
         meta::{mapping, KernelMeta, MetaPageMeta},

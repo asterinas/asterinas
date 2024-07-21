@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Kernel virtual memory allocation
+
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::ops::{DerefMut, Range};
 
@@ -56,9 +57,7 @@ pub trait KvaAlloc: Sized {
         for (key, value) in freelist.iter() {
             if value.block.end - value.block.start >= size {
                 allocate_range = Some((value.block.end - size)..value.block.end);
-                // if value.block.end - value.block.start == size {
                 to_remove = Some(*key);
-                // ß}
                 break;
             }
         }
@@ -92,6 +91,7 @@ pub trait KvaAlloc: Sized {
         cursor.protect(range.len(), op, true).unwrap();
     }
 
+    /// # Safety
     fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
@@ -105,6 +105,7 @@ pub trait KvaAlloc: Sized {
         Ok(())
     }
 
+    /// # Safety
     fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         // Do bound check with potential integer overflow in mind
         let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
@@ -163,6 +164,10 @@ impl Kva {
         tlb_flush_addr_range(&range);
     }
 
+    /// This function returns the page usage type based on the provided virtual address `addr`.
+    /// This function will fail in the following cases:
+    /// * If the address is not mapped (`NotMapped`), the function will fail.
+    /// * If the address is mapped to a `MappedUntracked` page, the function will fail.
     pub fn get_page_type(&self, addr: Vaddr) -> PageUsage {
         assert!(self.start() <= addr && self.end() >= addr);
         let start = addr.align_down(PAGE_SIZE);
@@ -176,8 +181,7 @@ impl Kva {
                 page,
                 prop: _,
             } => page.usage(),
-            _ => {
-                //  MappedUntracked and NotMapped
+            _ => { 
                 panic!(
                     "Unexpected query result: Expected 'Mapped', found '{:?}'",
                     query_result
@@ -185,8 +189,12 @@ impl Kva {
             }
         }
     }
+
     /// Get the mapped page.
-    /// The method will fail if the provided page type doesn't match the actual mapped one.
+    /// This function will fail in the following cases:
+    /// * if the provided page type doesn't match the actual mapped one.
+    /// * If the address is not mapped (`NotMapped`), the function will fail.
+    /// * If the address is mapped to a `MappedUntracked` page, the function will fail.
     pub fn get_page<T: PageMeta>(&self, addr: Vaddr) -> Result<Page<T>> {
         assert!(self.start() <= addr && self.end() >= addr);
         let start = addr.align_down(PAGE_SIZE);
@@ -208,7 +216,6 @@ impl Kva {
                 }
             }
             _ => {
-                //  MappedUntracked and NotMapped
                 panic!(
                     "Unexpected query result: Expected 'Mapped', found '{:?}'",
                     query_result

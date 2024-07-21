@@ -5,7 +5,7 @@
 #![allow(missing_docs)]
 #![allow(dead_code)]
 
-use core::{cell::UnsafeCell, ops::Range};
+use core::cell::UnsafeCell;
 
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
