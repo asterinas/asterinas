@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_rights::Full;
-
 use super::RawSocketOption;
 use crate::{
     impl_raw_sock_option_get_only, impl_raw_socket_option,
@@ -9,7 +7,6 @@ use crate::{
         Error, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
     },
     prelude::*,
-    vm::vmar::Vmar,
 };
 
 /// Socket level options.

@@ -2,13 +2,12 @@
 
 use core::mem;
 
-use aster_rights::Full;
 use ostd::{
-    mm::{KernelSpace, VmIo, VmReader, VmWriter},
+    mm::{KernelSpace, VmReader, VmWriter},
     task::current_task,
 };
 
-use crate::{prelude::*, vm::vmar::Vmar};
+use crate::prelude::*;
 mod iovec;
 pub mod net;
 pub mod random;
@@ -106,39 +105,32 @@ pub fn write_val_to_user<T: Pod>(dest: Vaddr, val: &T) -> Result<()> {
 /// the `do_strncpy_from_user` function in Linux kernel.
 /// The original Linux implementation can be found at:
 /// <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
-pub fn read_cstring_from_user(addr: Vaddr, max_len: usize) -> Result<CString> {
-    let current = current!();
-    let vmar = current.root_vmar();
-    read_cstring_from_vmar(vmar, addr, max_len)
-}
-
-/// Read CString from `vmar`. If possible, use `read_cstring_from_user` instead.
-pub fn read_cstring_from_vmar(vmar: &Vmar<Full>, addr: Vaddr, max_len: usize) -> Result<CString> {
+pub fn read_cstring_from_user(vaddr: Vaddr, max_len: usize) -> Result<CString> {
     let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
-    let mut cur_addr = addr;
+    let mut cur_vaddr = vaddr;
 
     macro_rules! read_one_byte_at_a_time_while {
         ($cond:expr) => {
             while $cond {
-                let byte = vmar.read_val::<u8>(cur_addr)?;
+                let byte = read_val_from_user::<u8>(cur_vaddr)?;
                 buffer.push(byte);
                 if byte == 0 {
                     return Ok(CString::from_vec_with_nul(buffer)
                         .expect("We provided 0 but no 0 is found"));
                 }
-                cur_addr += mem::size_of::<u8>();
+                cur_vaddr += mem::size_of::<u8>();
             }
         };
     }
 
     // Handle the first few bytes to make `cur_addr` aligned with `size_of::<usize>`
     read_one_byte_at_a_time_while!(
-        cur_addr % mem::size_of::<usize>() != 0 && buffer.len() < max_len
+        cur_vaddr % mem::size_of::<usize>() != 0 && buffer.len() < max_len
     );
 
     // Handle the rest of the bytes in bulk
     while (buffer.len() + mem::size_of::<usize>()) <= max_len {
-        let Ok(word) = vmar.read_val::<usize>(cur_addr) else {
+        let Ok(word) = read_val_from_user::<usize>(cur_vaddr) else {
             break;
         };
 
@@ -155,7 +147,7 @@ pub fn read_cstring_from_vmar(vmar: &Vmar<Full>, addr: Vaddr, max_len: usize) ->
 
         buffer.extend_from_slice(&word.to_ne_bytes());
 
-        cur_addr += mem::size_of::<usize>();
+        cur_vaddr += mem::size_of::<usize>();
     }
 
     // Handle the last few bytes that are not enough for a word
