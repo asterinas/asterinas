@@ -52,21 +52,13 @@ pub fn sys_select(
         nfds, readfds, writefds, exceptfds, timeout
     );
 
-    let num_revents = match do_select(
+    let num_revents = do_select(
         nfds,
         readfds.as_mut(),
         writefds.as_mut(),
         exceptfds.as_mut(),
         timeout,
-    ) {
-        Ok(num_revents) => num_revents,
-        Err(e) if e.error() == Errno::ETIME => {
-            // The return value is zero if the timeout expires
-            // before any file descriptors became ready
-            return Ok(SyscallReturn::Return(0));
-        }
-        Err(e) => return Err(e),
-    };
+    )?;
 
     // FIXME: The Linux select() and pselect6() system call
     // modifies its timeout argument to reflect the amount of time not slept.
