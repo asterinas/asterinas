@@ -36,16 +36,7 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32) -> Result<SyscallReturn> {
         poll_fds, nfds, timeout
     );
 
-    let num_revents = match do_poll(&poll_fds, timeout) {
-        Ok(num_events) => num_events,
-        Err(e) if e.error() == Errno::ETIME => {
-            // If the system call timed out
-            // before any file descriptors became ready,
-            // return 0.
-            return Ok(SyscallReturn::Return(0));
-        }
-        Err(e) => return Err(e),
-    };
+    let num_revents = do_poll(&poll_fds, timeout)?;
 
     // Write back
     let mut write_addr = fds;
