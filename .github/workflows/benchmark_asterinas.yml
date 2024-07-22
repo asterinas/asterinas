@@ -40,7 +40,7 @@ jobs:
           # Signal-related benchmarks
           - lmbench-signal
       fail-fast: false
-    timeout-minutes: 60
+    timeout-minutes: 90
     container: 
       image: asterinas/asterinas:0.6.2
       options: --device=/dev/kvm
