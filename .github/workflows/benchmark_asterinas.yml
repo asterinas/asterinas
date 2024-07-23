@@ -19,6 +19,8 @@ jobs:
           - lmbench-fork
           - lmbench-exec
           - lmbench-shell
+          - lmbench-pipe-latency
+          - lmbench-pipe-bandwidth
           # Memory-related benchmarks
           - lmbench-mem-frd
           - lmbench-mem-fwr
