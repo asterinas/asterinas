@@ -54,10 +54,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::EINVAL, "resize is not supported");
     }
 
-    fn flush(&self) -> Result<()> {
-        Ok(())
-    }
-
     fn metadata(&self) -> Metadata {
         panic!("metadata unsupported");
     }
@@ -100,11 +96,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
-    }
-
-    fn clean_for_close(&self) -> Result<()> {
-        self.flush()?;
-        Ok(())
     }
 
     fn register_observer(
