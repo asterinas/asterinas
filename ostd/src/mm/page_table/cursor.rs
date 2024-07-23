@@ -528,6 +528,9 @@ where
 
     /// Unmaps the range starting from the current address with the given length of virtual address.
     ///
+    /// Already-absent mappings encountered by the cursor will be skipped. It is valid to unmap a
+    /// range that is not mapped.
+    ///
     /// # Safety
     ///
     /// The caller should ensure that the range being unmapped does not affect kernel's memory safety.
@@ -546,7 +549,7 @@ where
             let cur_pte = self.0.read_cur_pte();
             let is_tracked = self.0.in_tracked_range();
 
-            // Skip if it is already invalid.
+            // Skip if it is already absent.
             if !cur_pte.is_present() {
                 if self.0.va + page_size::<C>(self.0.level) > end {
                     break;
@@ -565,6 +568,19 @@ where
             {
                 if cur_pte.is_present() && !cur_pte.is_last(self.0.level) {
                     self.0.level_down();
+
+                    // We have got down a level. If there's no mapped PTEs in
+                    // the current node, we can go back and skip to save time.
+                    if self.0.guards[(self.0.level - 1) as usize]
+                        .as_ref()
+                        .unwrap()
+                        .nr_children()
+                        == 0
+                    {
+                        self.0.level_up();
+                        self.0.move_forward();
+                        continue;
+                    }
                 } else if !is_tracked {
                     self.level_down_split();
                 } else {

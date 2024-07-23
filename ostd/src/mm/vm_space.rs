@@ -288,6 +288,9 @@ impl CursorMut<'_> {
     /// This method will bring the cursor forward by `len` bytes in the virtual
     /// address space after the modification.
     ///
+    /// Already-absent mappings encountered by the cursor will be skipped. It
+    /// is valid to unmap a range that is not mapped.
+    ///
     /// # Panics
     ///
     /// This method will panic if `len` is not page-aligned.
