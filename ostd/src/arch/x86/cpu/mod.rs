@@ -196,7 +196,7 @@ impl UserContextApiInternal for UserContext {
 ///
 /// But there exists some vector which are special. Vector 1 can be both fault or trap and vector 2 is interrupt.
 /// So here we also define FaultOrTrap and Interrupt
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum CpuExceptionType {
     /// CPU faults. Faults can be corrected, and the program may continue as if nothing happened.
     Fault,
@@ -213,7 +213,7 @@ pub enum CpuExceptionType {
 }
 
 /// CPU exception.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct CpuException {
     /// The ID of the CPU exception.
     pub number: u16,
@@ -320,6 +320,13 @@ impl CpuException {
     /// Maps a `trap_num` to its corresponding CPU exception.
     pub fn to_cpu_exception(trap_num: u16) -> Option<&'static CpuException> {
         EXCEPTION_LIST.get(trap_num as usize)
+    }
+}
+
+impl CpuExceptionInfo {
+    /// Get corresponding CPU exception
+    pub fn cpu_exception(&self) -> CpuException {
+        EXCEPTION_LIST[self.id]
     }
 }
 

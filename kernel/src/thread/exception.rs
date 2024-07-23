@@ -8,32 +8,41 @@ use ostd::{cpu::*, mm::VmSpace};
 use crate::{
     prelude::*,
     process::signal::signals::fault::FaultSignal,
-    vm::{page_fault_handler::PageFaultHandler, vmar::Vmar},
+    vm::{page_fault_handler::PageFaultHandler, perms::VmPerms, vmar::Vmar},
 };
+
+/// Page fault information converted from [`CpuExceptionInfo`].
+///
+/// `From<CpuExceptionInfo>` should be implemented for this struct.
+/// If `CpuExceptionInfo` is a page fault, `try_from` should return `Ok(PageFaultInfo)`,
+/// or `Err(())` (no error information) otherwise.
+pub struct PageFaultInfo {
+    /// The virtual address where a page fault occurred.
+    pub address: Vaddr,
+
+    /// The [`VmPerms`] required by the memory operation that causes page fault.
+    /// For example, a "store" operation may require `VmPerms::WRITE`.
+    pub required_perms: VmPerms,
+}
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
 pub fn handle_exception(ctx: &Context, context: &UserContext) {
     let trap_info = context.trap_information();
-    let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
-    log_trap_info(exception, trap_info);
+    log_trap_info(trap_info);
 
-    match *exception {
-        PAGE_FAULT => {
-            if handle_page_fault_from_vmar(ctx.process.root_vmar(), trap_info).is_err() {
-                generate_fault_signal(trap_info, ctx);
-            }
-        }
-        _ => {
-            // We current do nothing about other exceptions
-            generate_fault_signal(trap_info, ctx);
+    if let Ok(page_fault_info) = PageFaultInfo::try_from(trap_info) {
+        if handle_page_fault_from_vmar(ctx.process.root_vmar(), &page_fault_info).is_ok() {
+            return;
         }
     }
+
+    generate_fault_signal(trap_info, ctx);
 }
 
 /// Handles the page fault occurs in the input `VmSpace`.
 pub(crate) fn handle_page_fault_from_vm_space(
     vm_space: &VmSpace,
-    trap_info: &CpuExceptionInfo,
+    page_fault_info: &PageFaultInfo,
 ) -> core::result::Result<(), ()> {
     let current = current!();
     let root_vmar = current.root_vmar();
@@ -44,38 +53,22 @@ pub(crate) fn handle_page_fault_from_vm_space(
         vm_space as *const VmSpace
     );
 
-    handle_page_fault_from_vmar(root_vmar, trap_info)
+    handle_page_fault_from_vmar(root_vmar, page_fault_info)
 }
 
 /// Handles the page fault occurs in the input `Vmar`.
 pub(crate) fn handle_page_fault_from_vmar(
     root_vmar: &Vmar<Full>,
-    trap_info: &CpuExceptionInfo,
+    page_fault_info: &PageFaultInfo,
 ) -> core::result::Result<(), ()> {
-    const PAGE_NOT_PRESENT_ERROR_MASK: usize = 0x1 << 0;
-    const WRITE_ACCESS_MASK: usize = 0x1 << 1;
-    let page_fault_addr = trap_info.page_fault_addr as Vaddr;
-    trace!(
-        "page fault error code: 0x{:x}, Page fault address: 0x{:x}",
-        trap_info.error_code,
-        page_fault_addr
-    );
-
-    let not_present = trap_info.error_code & PAGE_NOT_PRESENT_ERROR_MASK == 0;
-    let write = trap_info.error_code & WRITE_ACCESS_MASK != 0;
-    if not_present || write {
-        if let Err(e) = root_vmar.handle_page_fault(page_fault_addr, not_present, write) {
-            warn!(
-                "page fault handler failed: addr: 0x{:x}, err: {:?}",
-                page_fault_addr, e
-            );
-            return Err(());
-        }
-        Ok(())
-    } else {
-        // Otherwise, the page fault cannot be handled
-        Err(())
+    if let Err(e) = root_vmar.handle_page_fault(page_fault_info) {
+        warn!(
+            "page fault handler failed: addr: 0x{:x}, err: {:?}",
+            page_fault_info.address, e
+        );
+        return Err(());
     }
+    Ok(())
 }
 
 /// generate a fault signal for current process.
@@ -94,8 +87,8 @@ macro_rules! log_trap_common {
     };
 }
 
-fn log_trap_info(exception: &CpuException, trap_info: &CpuExceptionInfo) {
-    match *exception {
+fn log_trap_info(trap_info: &CpuExceptionInfo) {
+    match trap_info.cpu_exception() {
         DIVIDE_BY_ZERO => log_trap_common!(DIVIDE_BY_ZERO, trap_info),
         DEBUG => log_trap_common!(DEBUG, trap_info),
         NON_MASKABLE_INTERRUPT => log_trap_common!(NON_MASKABLE_INTERRUPT, trap_info),

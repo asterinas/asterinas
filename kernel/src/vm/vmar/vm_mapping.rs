@@ -17,6 +17,7 @@ use ostd::mm::{
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
 use crate::{
     prelude::*,
+    thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
@@ -203,83 +204,80 @@ impl VmMapping {
         self.inner.lock().map_size += extra_size;
     }
 
-    pub fn handle_page_fault(
-        &self,
-        page_fault_addr: Vaddr,
-        not_present: bool,
-        write: bool,
-    ) -> Result<()> {
-        let required_perm = if write { VmPerms::WRITE } else { VmPerms::READ };
-        self.check_perms(&required_perm)?;
+    pub fn handle_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
+        self.check_perms(&page_fault_info.required_perms)?;
 
-        if !write && self.vmo.is_some() && self.handle_page_faults_around {
-            self.handle_page_faults_around(page_fault_addr)?;
+        let address = page_fault_info.address;
+
+        let page_aligned_addr = address.align_down(PAGE_SIZE);
+        let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
+
+        if !is_write && self.vmo.is_some() && self.handle_page_faults_around {
+            self.handle_page_faults_around(address)?;
             return Ok(());
         }
-
-        let page_aligned_addr = page_fault_addr.align_down(PAGE_SIZE);
 
         let root_vmar = self.parent.upgrade().unwrap();
         let mut cursor = root_vmar
             .vm_space()
             .cursor_mut(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
-        let current_mapping = cursor.query().unwrap();
 
-        // Perform COW if it is a write access to a shared mapping.
-        if write && !not_present {
-            let VmItem::Mapped {
+        match cursor.query().unwrap() {
+            VmItem::Mapped {
                 va: _,
                 frame,
                 mut prop,
-            } = current_mapping
-            else {
-                return Err(Error::new(Errno::EFAULT));
-            };
+            } if is_write => {
+                // Perform COW if it is a write access to a shared mapping.
 
-            // Skip if the page fault is already handled.
-            if prop.flags.contains(PageFlags::W) {
-                return Ok(());
-            }
-
-            // If the forked child or parent immediately unmaps the page after
-            // the fork without accessing it, we are the only reference to the
-            // frame. We can directly map the frame as writable without
-            // copying. In this case, the reference count of the frame is 2 (
-            // one for the mapping and one for the frame handle itself).
-            let only_reference = frame.reference_count() == 2;
-
-            if self.is_shared || only_reference {
-                cursor.protect(PAGE_SIZE, |p| p.flags |= PageFlags::W);
-            } else {
-                let new_frame = duplicate_frame(&frame)?;
-                prop.flags |= PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
-                cursor.map(new_frame, prop);
-            }
-            return Ok(());
-        }
-
-        // Map a new frame to the page fault address.
-        // Skip if the page fault is already handled.
-        if let VmItem::NotMapped { .. } = current_mapping {
-            let inner_lock = self.inner.lock();
-            let (frame, is_readonly) = self.prepare_page(&inner_lock, page_fault_addr, write)?;
-
-            let vm_perms = {
-                let mut perms = inner_lock.perms;
-                if is_readonly {
-                    // COW pages are forced to be read-only.
-                    perms -= VmPerms::WRITE;
+                // Skip if the page fault is already handled.
+                if prop.flags.contains(PageFlags::W) {
+                    return Ok(());
                 }
-                perms
-            };
-            let mut page_flags = vm_perms.into();
-            page_flags |= PageFlags::ACCESSED;
-            if write {
-                page_flags |= PageFlags::DIRTY;
-            }
-            let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
 
-            cursor.map(frame, map_prop);
+                // If the forked child or parent immediately unmaps the page after
+                // the fork without accessing it, we are the only reference to the
+                // frame. We can directly map the frame as writable without
+                // copying. In this case, the reference count of the frame is 2 (
+                // one for the mapping and one for the frame handle itself).
+                let only_reference = frame.reference_count() == 2;
+
+                let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
+
+                if self.is_shared || only_reference {
+                    cursor.protect(PAGE_SIZE, |p| p.flags |= new_flags);
+                } else {
+                    let new_frame = duplicate_frame(&frame)?;
+                    prop.flags |= new_flags;
+                    cursor.map(new_frame, prop);
+                }
+            }
+            VmItem::Mapped { .. } => {
+                panic!("non-COW page fault should not happen on mapped address")
+            }
+            VmItem::NotMapped { .. } => {
+                // Map a new frame to the page fault address.
+
+                let inner_lock = self.inner.lock();
+                let (frame, is_readonly) = self.prepare_page(&inner_lock, address, is_write)?;
+
+                let vm_perms = {
+                    let mut perms = inner_lock.perms;
+                    if is_readonly {
+                        // COW pages are forced to be read-only.
+                        perms -= VmPerms::WRITE;
+                    }
+                    perms
+                };
+                let mut page_flags = vm_perms.into();
+                page_flags |= PageFlags::ACCESSED;
+                if is_write {
+                    page_flags |= PageFlags::DIRTY;
+                }
+                let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
+
+                cursor.map(frame, map_prop);
+            }
         }
 
         Ok(())
