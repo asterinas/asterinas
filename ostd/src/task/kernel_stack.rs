@@ -41,7 +41,20 @@ impl KernelStack {
         let mut new_kvirt_area = KVirtArea::<Tracked>::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
         let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
-        let pages = allocator::alloc(KERNEL_STACK_SIZE, |_| KernelStackMeta::default()).unwrap();
+        // let pages = allocator::alloc_contiguous(
+        //     Layout::from_size_align(KERNEL_STACK_SIZE, PAGE_SIZE).unwrap(),
+        //     |_| KernelStackMeta::default(),
+        // )
+        // .unwrap();
+        let pages = {
+            let mut pages_vec = Vec::new();
+            let nframes = KERNEL_STACK_SIZE / PAGE_SIZE;
+            for _ in 0..nframes {
+                let page = allocator::alloc_single(PAGE_SIZE, KernelStackMeta::default()).unwrap();
+                pages_vec.push(page);
+            }
+            pages_vec
+        };
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
