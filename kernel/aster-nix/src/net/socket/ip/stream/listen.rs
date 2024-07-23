@@ -13,16 +13,16 @@ use crate::{
 pub struct ListenStream {
     backlog: usize,
     /// A bound socket held to ensure the TCP port cannot be released
-    bound_socket: Arc<AnyBoundSocket>,
+    bound_socket: AnyBoundSocket,
     /// Backlog sockets listening at the local endpoint
     backlog_sockets: RwLock<Vec<BacklogSocket>>,
 }
 
 impl ListenStream {
     pub fn new(
-        bound_socket: Arc<AnyBoundSocket>,
+        bound_socket: AnyBoundSocket,
         backlog: usize,
-    ) -> core::result::Result<Self, (Error, Arc<AnyBoundSocket>)> {
+    ) -> core::result::Result<Self, (Error, AnyBoundSocket)> {
         let listen_stream = Self {
             backlog,
             bound_socket,
@@ -99,13 +99,13 @@ impl ListenStream {
 }
 
 struct BacklogSocket {
-    bound_socket: Arc<AnyBoundSocket>,
+    bound_socket: AnyBoundSocket,
 }
 
 impl BacklogSocket {
     // FIXME: All of the error codes below seem to have no Linux equivalents, and I see no reason
     // why the error may occur. Perhaps it is better to call `unwrap()` directly?
-    fn new(bound_socket: &Arc<AnyBoundSocket>) -> Result<Self> {
+    fn new(bound_socket: &AnyBoundSocket) -> Result<Self> {
         let local_endpoint = bound_socket.local_endpoint().ok_or(Error::with_message(
             Errno::EINVAL,
             "the socket is not bound",
@@ -143,7 +143,7 @@ impl BacklogSocket {
             .raw_with(|socket: &mut RawTcpSocket| socket.remote_endpoint())
     }
 
-    fn into_bound_socket(self) -> Arc<AnyBoundSocket> {
+    fn into_bound_socket(self) -> AnyBoundSocket {
         self.bound_socket
     }
 }

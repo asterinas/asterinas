@@ -15,7 +15,7 @@ use crate::{
 
 pub enum InitStream {
     Unbound(Box<AnyUnboundSocket>),
-    Bound(Arc<AnyBoundSocket>),
+    Bound(AnyBoundSocket),
 }
 
 impl InitStream {
@@ -23,14 +23,14 @@ impl InitStream {
         InitStream::Unbound(Box::new(AnyUnboundSocket::new_tcp(observer)))
     }
 
-    pub fn new_bound(bound_socket: Arc<AnyBoundSocket>) -> Self {
+    pub fn new_bound(bound_socket: AnyBoundSocket) -> Self {
         InitStream::Bound(bound_socket)
     }
 
     pub fn bind(
         self,
         endpoint: &IpEndpoint,
-    ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Self)> {
+    ) -> core::result::Result<AnyBoundSocket, (Error, Self)> {
         let unbound_socket = match self {
             InitStream::Unbound(unbound_socket) => unbound_socket,
             InitStream::Bound(bound_socket) => {
@@ -50,7 +50,7 @@ impl InitStream {
     fn bind_to_ephemeral_endpoint(
         self,
         remote_endpoint: &IpEndpoint,
-    ) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Self)> {
+    ) -> core::result::Result<AnyBoundSocket, (Error, Self)> {
         let endpoint = get_ephemeral_endpoint(remote_endpoint);
         self.bind(&endpoint)
     }

@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub struct ConnectingStream {
-    bound_socket: Arc<AnyBoundSocket>,
+    bound_socket: AnyBoundSocket,
     remote_endpoint: IpEndpoint,
     conn_result: RwLock<Option<ConnResult>>,
 }
@@ -26,9 +26,9 @@ pub enum NonConnectedStream {
 
 impl ConnectingStream {
     pub fn new(
-        bound_socket: Arc<AnyBoundSocket>,
+        bound_socket: AnyBoundSocket,
         remote_endpoint: IpEndpoint,
-    ) -> core::result::Result<Self, (Error, Arc<AnyBoundSocket>)> {
+    ) -> core::result::Result<Self, (Error, AnyBoundSocket)> {
         if let Err(err) = bound_socket.do_connect(remote_endpoint) {
             return Err((err, bound_socket));
         }
