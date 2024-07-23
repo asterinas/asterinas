@@ -511,6 +511,13 @@ impl CpuException {
     }
 }
 
+impl CpuExceptionInfo {
+    /// Get corresponding CPU exception
+    pub fn cpu_exception(&self) -> &'static CpuException {
+        &EXCEPTION_LIST[self.id]
+    }
+}
+
 impl UserContextApi for UserContext {
     fn trap_number(&self) -> usize {
         self.user_context.trap_num

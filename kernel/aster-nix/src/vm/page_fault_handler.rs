@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use super::perms::VmPerms;
 use crate::prelude::*;
 
 /// This trait is implemented by structs which can handle a user space page fault.
@@ -10,5 +11,5 @@ pub trait PageFaultHandler {
     /// otherwise, the page fault is caused by a read access.
     /// If the page fault can be handled successfully, this function will return Ok(()).
     /// Otherwise, this function will return Err.
-    fn handle_page_fault(&self, offset: Vaddr, not_present: bool, write: bool) -> Result<()>;
+    fn handle_page_fault(&self, offset: Vaddr, required_perms: VmPerms) -> Result<()>;
 }

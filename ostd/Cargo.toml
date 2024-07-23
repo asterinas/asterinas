@@ -58,7 +58,12 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
     "gas",
 ], optional = true }
 
+[target.riscv64gc-unknown-none-elf.dependencies]
+riscv = { version = "0.11.1", features = ["s-mode"] }
+sbi-rt = "0.0.3"
+fdt = { version = "0.1.5", features = ["pretty-printing"] }
+
 [features]
-default = ["intel_tdx", "log_color"]
+default = ["log_color"]
 log_color = ["dep:owo-colors"]
 intel_tdx = ["dep:tdx-guest", "dep:iced-x86"]

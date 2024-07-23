@@ -223,11 +223,11 @@ impl VmMapping {
                 match map_info {
                     VmQueryResult::Mapped { va, prop, .. } => {
                         if !prop.flags.contains(PageFlags::W) {
-                            self.handle_page_fault(va, false, true)?;
+                            self.handle_page_fault(va, VmPerms::WRITE)?;
                         }
                     }
                     VmQueryResult::NotMapped { va, .. } => {
-                        self.handle_page_fault(va, true, true)?;
+                        self.handle_page_fault(va, VmPerms::WRITE)?;
                     }
                 }
             }
@@ -248,31 +248,22 @@ impl VmMapping {
         self.inner.lock().is_destroyed
     }
 
-    pub fn handle_page_fault(
-        &self,
-        page_fault_addr: Vaddr,
-        not_present: bool,
-        write: bool,
-    ) -> Result<()> {
+    pub fn handle_page_fault(&self, page_fault_addr: Vaddr, required_perms: VmPerms) -> Result<()> {
         let vmo_offset = self.vmo_offset() + page_fault_addr - self.map_to_addr();
         if vmo_offset >= self.vmo.size() {
             return_errno_with_message!(Errno::EACCES, "page fault addr is not backed up by a vmo");
         }
+
+        self.vmo.check_rights(required_perms.into())?;
+        self.check_perms(&required_perms)?;
+
+        let is_write = required_perms.contains(VmPerms::WRITE);
         let page_idx = vmo_offset / PAGE_SIZE;
-        if write {
-            self.vmo.check_rights(Rights::WRITE)?;
-        } else {
-            self.vmo.check_rights(Rights::READ)?;
-        }
-
-        let required_perm = if write { VmPerms::WRITE } else { VmPerms::READ };
-        self.check_perms(&required_perm)?;
-
-        let frame = self.vmo.get_committed_frame(page_idx, write)?;
+        let frame = self.vmo.get_committed_frame(page_idx, is_write)?;
 
         // If read access to cow vmo triggers page fault, the map should be readonly.
         // If user next tries to write to the frame, another page fault will be triggered.
-        let is_readonly = self.vmo.is_cow_vmo() && !write;
+        let is_readonly = self.vmo.is_cow_vmo() && !is_write;
         self.map_one_page(page_idx, frame, is_readonly)
     }
 

@@ -44,6 +44,9 @@ extern crate controlled;
 #[macro_use]
 extern crate getset;
 
+#[cfg(target_arch = "riscv64")]
+extern crate aster_goldfish as aster_time;
+
 pub mod arch;
 pub mod console;
 pub mod cpu;
@@ -69,6 +72,7 @@ pub fn init() {
     util::random::init();
     driver::init();
     time::init();
+    #[cfg(target_arch = "x86_64")]
     net::init();
     sched::init();
     fs::rootfs::init(boot::initramfs()).unwrap();
@@ -89,6 +93,7 @@ fn init_thread() {
     // FIXME: Remove this if we move the step of mounting
     // the filesystems to be done within the init process.
     ostd::trap::enable_local();
+    #[cfg(target_arch = "x86_64")]
     net::lazy_init();
     fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();

@@ -6,6 +6,7 @@ input = { name = "aster-input" }
 block = { name = "aster-block" }
 console = { name = "aster-console" }
 time = { name = "aster-time" }
+goldfish = { name = "aster-goldfish" }
 framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }
 main = { name = "asterinas" }
