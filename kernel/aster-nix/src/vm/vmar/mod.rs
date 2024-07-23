@@ -73,9 +73,8 @@ impl<R> VmarRightsOp for Vmar<R> {
 impl<R> PageFaultHandler for Vmar<R> {
     default fn handle_page_fault(
         &self,
-        page_fault_addr: Vaddr,
-        not_present: bool,
-        write: bool,
+        _page_fault_addr: Vaddr,
+        _required_perms: VmPerms,
     ) -> Result<()> {
         unimplemented!()
     }
@@ -243,32 +242,21 @@ impl Vmar_ {
     }
 
     /// Handle user space page fault, if the page fault is successfully handled ,return Ok(()).
-    pub fn handle_page_fault(
-        &self,
-        page_fault_addr: Vaddr,
-        not_present: bool,
-        write: bool,
-    ) -> Result<()> {
-        if page_fault_addr < self.base || page_fault_addr >= self.base + self.size {
+    pub fn handle_page_fault(&self, page_fault_addr: Vaddr, required_perms: VmPerms) -> Result<()> {
+        if !(self.base..self.base + self.size).contains(&page_fault_addr) {
             return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
         }
 
         let inner = self.inner.lock();
         if let Some(child_vmar) = inner.child_vmar_s.find_one(&page_fault_addr) {
-            debug_assert!(is_intersected(
-                &child_vmar.range(),
-                &(page_fault_addr..page_fault_addr + 1)
-            ));
-            return child_vmar.handle_page_fault(page_fault_addr, not_present, write);
+            debug_assert!(child_vmar.range().contains(&page_fault_addr));
+            return child_vmar.handle_page_fault(page_fault_addr, required_perms);
         }
 
         // FIXME: If multiple vmos are mapped to the addr, should we allow all vmos to handle page fault?
         if let Some(vm_mapping) = inner.vm_mappings.find_one(&page_fault_addr) {
-            debug_assert!(is_intersected(
-                &vm_mapping.range(),
-                &(page_fault_addr..page_fault_addr + 1)
-            ));
-            return vm_mapping.handle_page_fault(page_fault_addr, not_present, write);
+            debug_assert!(vm_mapping.range().contains(&page_fault_addr));
+            return vm_mapping.handle_page_fault(page_fault_addr, required_perms);
         }
 
         return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
@@ -754,10 +742,9 @@ impl Vmar_ {
     /// get mapped vmo at given offset
     fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
         let inner = self.inner.lock();
-        let range = offset..offset + 1;
 
         if let Some(vm_mapping) = inner.vm_mappings.find_one(&offset) {
-            debug_assert!(is_intersected(&vm_mapping.range(), &(offset..offset + 1)));
+            debug_assert!(vm_mapping.range().contains(&offset));
             return Ok(vm_mapping.clone());
         }
 

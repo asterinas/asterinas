@@ -202,7 +202,7 @@ mod test {
         const OFFSET: usize = 0x1000_0000;
         let root_vmar = Vmar::<Full>::new_root();
         // the page is not mapped by a vmo
-        assert!(root_vmar.handle_page_fault(OFFSET, true, true).is_err());
+        assert!(root_vmar.handle_page_fault(OFFSET, VmPerms::WRITE).is_err());
         // the page is mapped READ
         let vmo = VmoOptions::<Full>::new(PAGE_SIZE).alloc().unwrap().to_dyn();
         let perms = VmPerms::READ;
@@ -213,6 +213,6 @@ mod test {
             .offset(OFFSET)
             .build()
             .unwrap();
-        root_vmar.handle_page_fault(OFFSET, true, false).unwrap();
+        root_vmar.handle_page_fault(OFFSET, VmPerms::READ).unwrap();
     }
 }
