@@ -57,9 +57,10 @@ impl FrameAllocOptions {
     /// Allocates a collection of page frames according to the given options.
     pub fn alloc(&self) -> Result<Vec<Frame>> {
         let pages = if self.is_contiguous {
-            page::allocator::alloc(self.nframes * PAGE_SIZE).ok_or(Error::NoMemory)?
+            page::allocator::alloc(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
+                .ok_or(Error::NoMemory)?
         } else {
-            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE)
+            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
                 .ok_or(Error::NoMemory)?
                 .into()
         };
@@ -79,7 +80,7 @@ impl FrameAllocOptions {
             return Err(Error::InvalidArgs);
         }
 
-        let page = page::allocator::alloc_single().ok_or(Error::NoMemory)?;
+        let page = page::allocator::alloc_single(FrameMeta::default()).ok_or(Error::NoMemory)?;
         let frame = Frame { page };
         if !self.uninit {
             frame.writer().fill(0);
@@ -98,7 +99,7 @@ impl FrameAllocOptions {
         }
 
         let segment: Segment =
-            page::allocator::alloc_contiguous::<FrameMeta>(self.nframes * PAGE_SIZE)
+            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
                 .ok_or(Error::NoMemory)?
                 .into();
         if !self.uninit {

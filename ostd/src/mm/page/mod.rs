@@ -45,12 +45,14 @@ unsafe impl<M: PageMeta> Sync for Page<M> {}
 impl<M: PageMeta> Page<M> {
     /// Get a `Page` handle with a specific usage from a raw, unused page.
     ///
+    /// The caller should provide the initial metadata of the page.
+    ///
     /// # Panics
     ///
     /// The function panics if:
     ///  - the physical address is out of bound or not aligned;
     ///  - the page is already in use.
-    pub fn from_unused(paddr: Paddr) -> Self {
+    pub fn from_unused(paddr: Paddr, metadata: M) -> Self {
         assert!(paddr % PAGE_SIZE == 0);
         assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
@@ -72,7 +74,7 @@ impl<M: PageMeta> Page<M> {
         // SAFETY: The pointer points to the first byte of the `MetaSlot`
         // structure, and layout ensured enoungh space for `M`. The original
         // value does not represent any object that's needed to be dropped.
-        unsafe { (ptr as *mut M).write(M::default()) };
+        unsafe { (ptr as *mut M).write(metadata) };
 
         Self {
             ptr,
