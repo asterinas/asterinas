@@ -8,7 +8,9 @@ use aster_rights_proc::require;
 use super::{
     options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_,
 };
-use crate::{prelude::*, vm::page_fault_handler::PageFaultHandler};
+use crate::{
+    prelude::*, thread::exception::PageFaultInfo, vm::page_fault_handler::PageFaultHandler,
+};
 
 impl<R: TRights> Vmar<TRightSet<R>> {
     /// Creates a root VMAR.
@@ -169,19 +171,9 @@ impl<R: TRights> Vmar<TRightSet<R>> {
 }
 
 impl<R: TRights> PageFaultHandler for Vmar<TRightSet<R>> {
-    fn handle_page_fault(
-        &self,
-        page_fault_addr: Vaddr,
-        not_present: bool,
-        write: bool,
-    ) -> Result<()> {
-        if write {
-            self.check_rights(Rights::WRITE)?;
-        } else {
-            self.check_rights(Rights::READ)?;
-        }
-        self.0
-            .handle_page_fault(page_fault_addr, not_present, write)
+    fn handle_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
+        self.check_rights(page_fault_info.required_perms.into())?;
+        self.0.handle_page_fault(page_fault_info)
     }
 }
 

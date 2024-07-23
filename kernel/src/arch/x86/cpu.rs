@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
-    cpu::{RawGeneralRegs, UserContext},
+    cpu::{CpuExceptionInfo, RawGeneralRegs, UserContext, PAGE_FAULT},
     Pod,
 };
 
-use crate::cpu::LinuxAbi;
+use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
 
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
@@ -98,5 +98,33 @@ impl GpRegs {
 
     pub fn copy_from_raw(&mut self, src: &RawGeneralRegs) {
         copy_gp_regs!(src, self);
+    }
+}
+
+impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
+    // [`Err`] indicates that the [`CpuExceptionInfo`] is not a page fault,
+    // with no additional error information.
+    type Error = ();
+
+    fn try_from(value: &CpuExceptionInfo) -> Result<Self, ()> {
+        if value.cpu_exception() != PAGE_FAULT {
+            return Err(());
+        }
+
+        const WRITE_ACCESS_MASK: usize = 0x1 << 1;
+        const INSTRUCTION_FETCH_MASK: usize = 0x1 << 4;
+
+        let required_perms = if value.error_code & INSTRUCTION_FETCH_MASK != 0 {
+            VmPerms::EXEC
+        } else if value.error_code & WRITE_ACCESS_MASK != 0 {
+            VmPerms::WRITE
+        } else {
+            VmPerms::READ
+        };
+
+        Ok(PageFaultInfo {
+            address: value.page_fault_addr,
+            required_perms,
+        })
     }
 }

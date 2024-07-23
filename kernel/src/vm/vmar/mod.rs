@@ -14,14 +14,21 @@ use core::ops::Range;
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
-use ostd::mm::{VmSpace, MAX_USERSPACE_VADDR};
+use ostd::{
+    cpu::CpuExceptionInfo,
+    mm::{VmSpace, MAX_USERSPACE_VADDR},
+};
 
 use self::{
     interval::{Interval, IntervalSet},
     vm_mapping::VmMapping,
 };
 use super::page_fault_handler::PageFaultHandler;
-use crate::{prelude::*, thread::exception::handle_page_fault_from_vm_space, vm::perms::VmPerms};
+use crate::{
+    prelude::*,
+    thread::exception::{handle_page_fault_from_vm_space, PageFaultInfo},
+    vm::perms::VmPerms,
+};
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
 /// user address spaces.
@@ -72,12 +79,7 @@ impl<R> VmarRightsOp for Vmar<R> {
 
 // TODO: how page faults can be delivered to and handled by the current VMAR.
 impl<R> PageFaultHandler for Vmar<R> {
-    default fn handle_page_fault(
-        &self,
-        page_fault_addr: Vaddr,
-        not_present: bool,
-        write: bool,
-    ) -> Result<()> {
+    default fn handle_page_fault(&self, _page_fault_info: &PageFaultInfo) -> Result<()> {
         unimplemented!()
     }
 }
@@ -218,6 +220,13 @@ impl Vmar_ {
     }
 
     fn new_root() -> Arc<Self> {
+        fn handle_page_fault_wrapper(
+            vm_space: &VmSpace,
+            trap_info: &CpuExceptionInfo,
+        ) -> core::result::Result<(), ()> {
+            handle_page_fault_from_vm_space(vm_space, &trap_info.try_into().unwrap())
+        }
+
         let mut free_regions = BTreeMap::new();
         let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR);
         free_regions.insert(root_region.start(), root_region);
@@ -228,7 +237,7 @@ impl Vmar_ {
             free_regions,
         };
         let vm_space = VmSpace::new();
-        vm_space.register_page_fault_handler(handle_page_fault_from_vm_space);
+        vm_space.register_page_fault_handler(handle_page_fault_wrapper);
         Vmar_::new(vmar_inner, Arc::new(vm_space), 0, ROOT_VMAR_CAP_ADDR, None)
     }
 
@@ -298,33 +307,23 @@ impl Vmar_ {
         Ok(())
     }
 
-    /// Handles user space page fault, if the page fault is successfully handled ,return Ok(()).
-    fn handle_page_fault(
-        &self,
-        page_fault_addr: Vaddr,
-        not_present: bool,
-        write: bool,
-    ) -> Result<()> {
-        if page_fault_addr < self.base || page_fault_addr >= self.base + self.size {
+    /// Handles user space page fault, if the page fault is successfully handled, return Ok(()).
+    pub fn handle_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
+        let address = page_fault_info.address;
+        if !(self.base..self.base + self.size).contains(&address) {
             return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
         }
 
         let inner = self.inner.lock();
-        if let Some(child_vmar) = inner.child_vmar_s.find_one(&page_fault_addr) {
-            debug_assert!(is_intersected(
-                &child_vmar.range(),
-                &(page_fault_addr..page_fault_addr + 1)
-            ));
-            return child_vmar.handle_page_fault(page_fault_addr, not_present, write);
+        if let Some(child_vmar) = inner.child_vmar_s.find_one(&address) {
+            debug_assert!(child_vmar.range().contains(&address));
+            return child_vmar.handle_page_fault(page_fault_info);
         }
 
         // FIXME: If multiple VMOs are mapped to the addr, should we allow all VMOs to handle page fault?
-        if let Some(vm_mapping) = inner.vm_mappings.find_one(&page_fault_addr) {
-            debug_assert!(is_intersected(
-                &vm_mapping.range(),
-                &(page_fault_addr..page_fault_addr + 1)
-            ));
-            return vm_mapping.handle_page_fault(page_fault_addr, not_present, write);
+        if let Some(vm_mapping) = inner.vm_mappings.find_one(&address) {
+            debug_assert!(vm_mapping.range().contains(&address));
+            return vm_mapping.handle_page_fault(page_fault_info);
         }
 
         return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
