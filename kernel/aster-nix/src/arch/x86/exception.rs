@@ -14,8 +14,8 @@ macro_rules! log_trap_common {
     };
 }
 
-pub fn log_trap_info(exception: &CpuException, trap_info: &CpuExceptionInfo) {
-    match *exception {
+pub fn log_trap_info(trap_info: &CpuExceptionInfo) {
+    match *trap_info.cpu_exception() {
         DIVIDE_BY_ZERO => log_trap_common!(DIVIDE_BY_ZERO, trap_info),
         DEBUG => log_trap_common!(DEBUG, trap_info),
         NON_MASKABLE_INTERRUPT => log_trap_common!(NON_MASKABLE_INTERRUPT, trap_info),

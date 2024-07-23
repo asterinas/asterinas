@@ -512,7 +512,7 @@ impl CpuException {
 }
 
 impl CpuExceptionInfo {
-    /// Get corresponding CPU exception of a CPU exception info
+    /// Get corresponding CPU exception
     pub fn cpu_exception(&self) -> &'static CpuException {
         &EXCEPTION_LIST[self.id]
     }
