@@ -11,7 +11,7 @@ pub fn sys_set_tid_address(tidptr: Vaddr) -> Result<SyscallReturn> {
     if *clear_child_tid != 0 {
         // According to manuals at https://man7.org/linux/man-pages/man2/set_tid_address.2.html
         // We need to write 0 to clear_child_tid and do futex wake
-        todo!()
+        // todo!()
     } else {
         *clear_child_tid = tidptr;
     }
