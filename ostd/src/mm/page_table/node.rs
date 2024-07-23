@@ -231,14 +231,8 @@ where
     /// set the lock bit for performance as it is exclusive and unlocking is an
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel) -> Self {
-        let page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>().unwrap();
-
-        // The lock is initialized as held.
-        page.meta().lock.store(1, Ordering::Relaxed);
-
-        // SAFETY: here the page exclusively owned by the newly created handle.
-        let inner = unsafe { &mut *page.meta().inner.get() };
-        inner.level = level;
+        let meta = PageTablePageMeta::new_locked(level);
+        let page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>(meta).unwrap();
 
         // Zero out the page table node.
         let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;
