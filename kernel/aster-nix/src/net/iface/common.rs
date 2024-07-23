@@ -171,7 +171,7 @@ impl IfaceCommon {
         drop(interface);
 
         if let Some(instant) = poll_at {
-            let old_instant = self.next_poll_at_ms.load(Ordering::Acquire);
+            let old_instant = self.next_poll_at_ms.load(Ordering::Relaxed);
             let new_instant = instant.total_millis() as u64;
             self.next_poll_at_ms.store(new_instant, Ordering::Relaxed);
 
@@ -192,7 +192,7 @@ impl IfaceCommon {
     }
 
     pub(super) fn next_poll_at_ms(&self) -> Option<u64> {
-        let millis = self.next_poll_at_ms.load(Ordering::SeqCst);
+        let millis = self.next_poll_at_ms.load(Ordering::Relaxed);
         if millis == 0 {
             None
         } else {
