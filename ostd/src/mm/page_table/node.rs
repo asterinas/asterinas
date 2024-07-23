@@ -36,7 +36,7 @@ use crate::{
         paddr_to_vaddr,
         page::{
             self,
-            meta::{PageMeta, PageTablePageMeta, PageTablePageMetaInner, PageUsage},
+            meta::{PageMeta, PageTablePageMeta, PageUsage},
             DynPage, Page,
         },
         page_prop::PageProperty,
@@ -462,8 +462,16 @@ where
         unsafe { self.as_ptr().add(idx).read() }
     }
 
-    fn start_paddr(&self) -> Paddr {
-        self.page.paddr()
+    /// The number of valid PTEs.
+    pub(super) fn nr_children(&self) -> u16 {
+        // SAFETY: The lock is held so there is no mutable reference to it.
+        // It would be safe to read.
+        unsafe { *self.meta().nr_children.get() }
+    }
+
+    fn nr_children_mut(&mut self) -> &mut u16 {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe { &mut *self.meta().nr_children.get() }
     }
 
     /// Replaces a page table entry at a given index.
@@ -504,13 +512,13 @@ where
 
             // Update the child count.
             if pte.is_none() {
-                self.meta_mut().nr_children -= 1;
+                *self.nr_children_mut() -= 1;
             }
         } else if let Some(e) = pte {
             // SAFETY: This is safe as described in the above branch.
             unsafe { (self.as_ptr() as *mut E).add(idx).write(e) };
 
-            self.meta_mut().nr_children += 1;
+            *self.nr_children_mut() += 1;
         }
     }
 
@@ -518,16 +526,12 @@ where
         paddr_to_vaddr(self.start_paddr()) as *const E
     }
 
-    fn meta(&self) -> &PageTablePageMetaInner {
-        // SAFETY: We have exclusively locked the page, so we can derive an immutable reference
-        // from an immutable reference to the lock guard.
-        unsafe { &*self.page.meta().inner.get() }
+    fn start_paddr(&self) -> Paddr {
+        self.page.paddr()
     }
 
-    fn meta_mut(&mut self) -> &mut PageTablePageMetaInner {
-        // SAFETY: We have exclusively locked the page, so we can derive a mutable reference from a
-        // mutable reference to the lock guard.
-        unsafe { &mut *self.page.meta().inner.get() }
+    fn meta(&self) -> &PageTablePageMeta<E, C> {
+        self.page.meta()
     }
 }
 
@@ -549,9 +553,7 @@ where
 
     fn on_drop(page: &mut Page<Self>) {
         let paddr = page.paddr();
-
-        let inner = unsafe { &mut *page.meta().inner.get() };
-        let level = inner.level;
+        let level = page.meta().level;
 
         // Drop the children.
         for i in 0..nr_subpage_per_huge::<C>() {

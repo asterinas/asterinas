@@ -175,13 +175,6 @@ pub struct FrameMeta {
 
 impl Sealed for FrameMeta {}
 
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct PageTablePageMetaInner {
-    pub level: PagingLevel,
-    pub nr_children: u16,
-}
-
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug)]
@@ -192,9 +185,12 @@ pub struct PageTablePageMeta<
 > where
     [(); C::NR_LEVELS as usize]:,
 {
+    pub level: PagingLevel,
+    /// The lock for the page table page.
     pub lock: AtomicU8,
-    pub inner: UnsafeCell<PageTablePageMetaInner>,
-    _phantom: PhantomData<(E, C)>,
+    /// The number of valid PTEs. It is mutable if the lock is held.
+    pub nr_children: UnsafeCell<u16>,
+    _phantom: core::marker::PhantomData<(E, C)>,
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
@@ -203,11 +199,9 @@ where
 {
     pub fn new_locked(level: PagingLevel) -> Self {
         Self {
+            level,
             lock: AtomicU8::new(1),
-            inner: UnsafeCell::new(PageTablePageMetaInner {
-                level,
-                nr_children: 0,
-            }),
+            nr_children: UnsafeCell::new(0),
             _phantom: PhantomData,
         }
     }
