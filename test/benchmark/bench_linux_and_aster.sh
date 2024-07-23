@@ -46,8 +46,9 @@ run_benchmark() {
     local initramfs_entrypoint_script="${BENCHMARK_DIR}/benchmark_entrypoint.sh"
     generate_entrypoint_script "${benchmark}" > "${initramfs_entrypoint_script}"
     chmod +x "${initramfs_entrypoint_script}"
-        
-    # TODO: enable nopti for Linux to make the comparison more fair
+    
+    # The QEMU command to run benchmarks in Linux
+    # We would try to make these options the same as Asterinas' scripts
     local qemu_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
         -smp 1 \
@@ -57,7 +58,7 @@ run_benchmark() {
         --enable-kvm \
         -kernel ${LINUX_KERNEL} \
         -initrd ${BENCHMARK_DIR}/../build/initramfs.cpio.gz \
-        -append 'console=ttyS0 rdinit=/benchmark/benchmark_entrypoint.sh' \
+        -append 'console=ttyS0 nokaslr nopti rdinit=/benchmark/benchmark_entrypoint.sh' \
         -nographic \
         2>&1 | tee ${linux_output}" 
 
