@@ -131,7 +131,7 @@ int main(void)
 
 	for (backlog = 0; backlog <= MAX_TEST_BACKLOG; ++backlog) {
 		// Avoid "bind: Address already in use"
-		addr.sin_port = htons(8080 + backlog);
+		addr.sin_port = htons(10000 + backlog);
 
 		err = test_listen_backlog(&addr, backlog);
 		if (err != 0)

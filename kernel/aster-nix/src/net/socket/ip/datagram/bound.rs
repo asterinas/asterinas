@@ -13,12 +13,12 @@ use crate::{
 };
 
 pub struct BoundDatagram {
-    bound_socket: Arc<AnyBoundSocket>,
+    bound_socket: AnyBoundSocket,
     remote_endpoint: Option<IpEndpoint>,
 }
 
 impl BoundDatagram {
-    pub fn new(bound_socket: Arc<AnyBoundSocket>) -> Self {
+    pub fn new(bound_socket: AnyBoundSocket) -> Self {
         Self {
             bound_socket,
             remote_endpoint: None,

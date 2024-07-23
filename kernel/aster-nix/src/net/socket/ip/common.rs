@@ -46,7 +46,7 @@ pub(super) fn bind_socket(
     unbound_socket: Box<AnyUnboundSocket>,
     endpoint: &IpEndpoint,
     can_reuse: bool,
-) -> core::result::Result<Arc<AnyBoundSocket>, (Error, Box<AnyUnboundSocket>)> {
+) -> core::result::Result<AnyBoundSocket, (Error, Box<AnyUnboundSocket>)> {
     let iface = match get_iface_to_bind(&endpoint.addr) {
         Some(iface) => iface,
         None => {

@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub struct ConnectedStream {
-    bound_socket: Arc<AnyBoundSocket>,
+    bound_socket: AnyBoundSocket,
     remote_endpoint: IpEndpoint,
     /// Indicates whether this connection is "new" in a `connect()` system call.
     ///
@@ -32,7 +32,7 @@ pub struct ConnectedStream {
 
 impl ConnectedStream {
     pub fn new(
-        bound_socket: Arc<AnyBoundSocket>,
+        bound_socket: AnyBoundSocket,
         remote_endpoint: IpEndpoint,
         is_new_connection: bool,
     ) -> Self {

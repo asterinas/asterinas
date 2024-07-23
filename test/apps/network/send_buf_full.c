@@ -265,7 +265,7 @@ int main(void)
 	struct sockaddr_in addr;
 
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(8080);
+	addr.sin_port = htons(9999);
 	if (inet_aton("127.0.0.1", &addr.sin_addr) < 0) {
 		fprintf(stderr, "inet_aton cannot parse 127.0.0.1\n");
 		return -1;
