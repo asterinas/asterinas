@@ -884,17 +884,14 @@ impl Inner {
         };
         self.page_cache.discard_range(offset..offset + read_len);
 
-        let mut buf_offset = 0;
-        for bid in Bid::from_offset(offset)..Bid::from_offset(offset + read_len) {
-            let frame = FrameAllocOptions::new(1)
-                .uninit(true)
-                .alloc_single()
-                .unwrap();
-            self.inode_impl
-                .read_block_sync(bid.to_raw() as Ext2Bid, &frame)?;
-            frame.read_bytes(0, &mut buf[buf_offset..buf_offset + BLOCK_SIZE])?;
-            buf_offset += BLOCK_SIZE;
-        }
+        let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
+        let buf_nblocks = buf.len() / BLOCK_SIZE;
+        let segment = FrameAllocOptions::new(buf_nblocks)
+            .uninit(true)
+            .alloc_contiguous()?;
+
+        self.inode_impl.read_blocks(start_bid, &segment)?;
+        segment.read_bytes(0, buf)?;
         Ok(read_len)
     }
 
@@ -913,33 +910,29 @@ impl Inner {
 
     pub fn write_direct_at(&mut self, offset: usize, buf: &[u8]) -> Result<usize> {
         let file_size = self.inode_impl.file_size();
-        let end_offset = offset + buf.len();
+        let write_len = buf.len();
+        let end_offset = offset + write_len;
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
         self.page_cache.discard_range(start..end);
 
         if end_offset > file_size {
-            self.page_cache.pages().resize(end_offset)?;
             self.inode_impl.resize(end_offset)?;
         }
 
-        let mut buf_offset = 0;
-        for bid in Bid::from_offset(offset)..Bid::from_offset(end_offset) {
-            let frame = {
-                let frame = FrameAllocOptions::new(1)
-                    .uninit(true)
-                    .alloc_single()
-                    .unwrap();
-                frame.write_bytes(0, &buf[buf_offset..buf_offset + BLOCK_SIZE])?;
-                frame
-            };
-            self.inode_impl
-                .write_block_sync(bid.to_raw() as Ext2Bid, &frame)?;
-            buf_offset += BLOCK_SIZE;
-        }
+        let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
+        let buf_nblocks = write_len / BLOCK_SIZE;
+        let segment = {
+            let segment = FrameAllocOptions::new(buf_nblocks)
+                .uninit(true)
+                .alloc_contiguous()?;
+            segment.write_bytes(0, buf)?;
+            segment
+        };
 
-        Ok(buf.len())
+        self.inode_impl.write_blocks(start_bid, &segment)?;
+        Ok(write_len)
     }
 
     pub fn write_link(&mut self, target: &str) -> Result<()> {
@@ -1077,42 +1070,94 @@ impl InodeImpl_ {
         self.inode().fs()
     }
 
-    pub fn read_block_async(&self, bid: Ext2Bid, block: &Frame) -> Result<BioWaiter> {
-        if bid >= self.desc.blocks_count() {
-            return_errno!(Errno::EINVAL);
+    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &Segment) -> Result<BioWaiter> {
+        let nblocks = blocks.nframes();
+        let mut segments = Vec::new();
+
+        // Traverse all blocks to be read, handle any holes, and collect contiguous blocks in batches
+        let mut nth_bid = bid;
+        let mut blocks_offset = 0;
+        for dev_range in DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)? {
+            let first_bid = dev_range.start as Ext2Bid;
+            let range_len = dev_range.len();
+
+            let (mut curr_batch_start_bid, mut curr_batch_len) = (first_bid, 0);
+            let blocks_hole_desc = self.blocks_hole_desc.read();
+            for curr_bid in first_bid..first_bid + range_len as Ext2Bid {
+                if blocks_hole_desc.is_hole(nth_bid as usize) {
+                    if curr_batch_len > 0 {
+                        // Collect current batch
+                        let segment = blocks.range(blocks_offset..blocks_offset + curr_batch_len);
+                        segments.push((curr_batch_start_bid, segment));
+                        blocks_offset += curr_batch_len;
+                        curr_batch_len = 0;
+                    }
+
+                    // Zero the hole
+                    blocks
+                        .range(blocks_offset..blocks_offset + 1)
+                        .writer()
+                        .fill(0);
+                    blocks_offset += 1;
+                } else {
+                    if curr_batch_len == 0 {
+                        // Start to record next batch
+                        curr_batch_start_bid = curr_bid;
+                    }
+                    curr_batch_len += 1;
+                }
+                nth_bid += 1;
+            }
+            // Collect the last batch if present
+            if curr_batch_len > 0 {
+                let segment = blocks.range(blocks_offset..blocks_offset + curr_batch_len);
+                segments.push((curr_batch_start_bid, segment));
+                blocks_offset += curr_batch_len;
+            }
         }
 
-        if self.blocks_hole_desc.read().is_hole(bid as usize) {
-            block.writer().fill(0);
-            return Ok(BioWaiter::new());
+        // Read blocks in batches
+        let mut bio_waiter = BioWaiter::new();
+        for (start_bid, segment) in segments {
+            let waiter = self.fs().read_blocks_async(start_bid, &segment)?;
+            bio_waiter.concat(waiter);
         }
-
-        let device_range = DeviceRangeReader::new(self, bid..bid + 1)?.read()?;
-        self.fs().read_block_async(device_range.start, block)
+        Ok(bio_waiter)
     }
 
-    pub fn read_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
-        match self.read_block_async(bid, block)?.wait() {
+    pub fn read_blocks(&self, bid: Ext2Bid, blocks: &Segment) -> Result<()> {
+        match self.read_blocks_async(bid, blocks)?.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
         }
     }
 
-    pub fn write_block_async(&self, bid: Ext2Bid, block: &Frame) -> Result<BioWaiter> {
-        if bid >= self.desc.blocks_count() {
-            return_errno!(Errno::EINVAL);
+    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: &Segment) -> Result<BioWaiter> {
+        let nblocks = blocks.nframes();
+        let mut bio_waiter = BioWaiter::new();
+
+        let mut blocks_offset = 0;
+        for dev_range in DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)? {
+            let first_bid = dev_range.start as Ext2Bid;
+            let range_len = dev_range.len();
+            let segment = blocks.range(blocks_offset..blocks_offset + range_len);
+
+            let waiter = self.fs().write_blocks_async(first_bid, &segment)?;
+            bio_waiter.concat(waiter);
+
+            blocks_offset += range_len;
         }
 
-        let device_range = DeviceRangeReader::new(self, bid..bid + 1)?.read()?;
-        let waiter = self.fs().write_block_async(device_range.start, block)?;
-
         // FIXME: Unset the block hole in the callback function of bio.
-        self.blocks_hole_desc.write().unset(bid as usize);
-        Ok(waiter)
+        self.blocks_hole_desc
+            .write()
+            .unset_range((bid as usize)..bid as usize + nblocks);
+
+        Ok(bio_waiter)
     }
 
-    pub fn write_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
-        match self.write_block_async(bid, block)?.wait() {
+    pub fn write_blocks(&self, bid: Ext2Bid, blocks: &Segment) -> Result<()> {
+        match self.write_blocks_async(bid, blocks)?.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
         }
@@ -1769,20 +1814,22 @@ impl InodeImpl {
         inner.desc.ctime = time;
     }
 
-    pub fn read_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
-        self.0.read().read_block_sync(bid, block)
+    /// Reads one or multiple blocks to the segment start from `bid` asynchronously.
+    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &Segment) -> Result<BioWaiter> {
+        self.0.read().read_blocks_async(bid, blocks)
     }
 
-    pub fn read_block_async(&self, bid: Ext2Bid, block: &Frame) -> Result<BioWaiter> {
-        self.0.read().read_block_async(bid, block)
+    pub fn read_blocks(&self, bid: Ext2Bid, blocks: &Segment) -> Result<()> {
+        self.0.read().read_blocks(bid, blocks)
     }
 
-    pub fn write_block_sync(&self, bid: Ext2Bid, block: &Frame) -> Result<()> {
-        self.0.read().write_block_sync(bid, block)
+    /// Writes one or multiple blocks from the segment start from `bid` asynchronously.
+    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: &Segment) -> Result<BioWaiter> {
+        self.0.read().write_blocks_async(bid, blocks)
     }
 
-    pub fn write_block_async(&self, bid: Ext2Bid, block: &Frame) -> Result<BioWaiter> {
-        self.0.read().write_block_async(bid, block)
+    pub fn write_blocks(&self, bid: Ext2Bid, blocks: &Segment) -> Result<()> {
+        self.0.read().write_blocks(bid, blocks)
     }
 
     pub fn set_device_id(&self, device_id: u64) {
@@ -1816,12 +1863,50 @@ impl InodeImpl {
 
     pub fn sync_data_holes(&self) -> Result<()> {
         let inner = self.0.read();
-        let zero_frame = FrameAllocOptions::new(1).alloc_single().unwrap();
-        for bid in 0..inner.desc.blocks_count() {
-            let is_data_hole = inner.blocks_hole_desc.read().is_hole(bid as usize);
-            if is_data_hole {
-                inner.write_block_sync(bid, &zero_frame)?;
+        let blocks_hole_desc = inner.blocks_hole_desc.read();
+        // Collect contiguous data holes in batches
+        let (data_hole_batches, max_batch_len) = {
+            let mut data_hole_batches: Vec<(Ext2Bid, usize)> = Vec::new();
+            let mut max_batch_len = 0;
+            let mut prev_bid = None;
+            let (mut curr_batch_start_bid, mut curr_batch_len) = (0 as Ext2Bid, 0);
+
+            for bid in
+                (0..inner.desc.blocks_count()).filter(|bid| blocks_hole_desc.is_hole(*bid as _))
+            {
+                match prev_bid {
+                    Some(prev) if bid == prev + 1 => {
+                        curr_batch_len += 1;
+                    }
+                    _ => {
+                        if curr_batch_len > 0 {
+                            data_hole_batches.push((curr_batch_start_bid, curr_batch_len));
+                            max_batch_len = max_batch_len.max(curr_batch_len);
+                        }
+                        curr_batch_start_bid = bid;
+                        curr_batch_len = 1;
+                    }
+                }
+                prev_bid = Some(bid);
             }
+            // Collect the last batch if present
+            if curr_batch_len > 0 {
+                data_hole_batches.push((curr_batch_start_bid, curr_batch_len));
+                max_batch_len = max_batch_len.max(curr_batch_len);
+            }
+
+            (data_hole_batches, max_batch_len)
+        };
+        drop(blocks_hole_desc);
+        if data_hole_batches.is_empty() {
+            return Ok(());
+        }
+
+        // TODO: If we can persist the `blocks_hole_desc`, Can we avoid zeroing all the holes on the device?
+        debug_assert!(max_batch_len > 0);
+        let zeroed_segment = FrameAllocOptions::new(max_batch_len).alloc_contiguous()?;
+        for (start_bid, batch_len) in data_hole_batches {
+            inner.write_blocks(start_bid, &zeroed_segment.range(0..batch_len))?;
         }
         Ok(())
     }
@@ -1858,12 +1943,12 @@ impl InodeImpl {
 impl PageCacheBackend for InodeImpl {
     fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
-        self.read_block_async(bid, frame)
+        self.read_blocks_async(bid, &Segment::from(frame.clone()))
     }
 
     fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
-        self.write_block_async(bid, frame)
+        self.write_blocks_async(bid, &Segment::from(frame.clone()))
     }
 
     fn npages(&self) -> usize {
