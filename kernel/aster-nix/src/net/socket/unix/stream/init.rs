@@ -33,6 +33,7 @@ impl Init {
         }
 
         let bound_addr = match addr_to_bind {
+            UnixSocketAddr::Unnamed => todo!(),
             UnixSocketAddr::Abstract(_) => todo!(),
             UnixSocketAddr::Path(path) => {
                 let dentry = create_socket_file(path)?;

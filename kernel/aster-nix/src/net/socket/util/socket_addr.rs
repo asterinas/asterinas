@@ -13,6 +13,5 @@ use crate::{
 pub enum SocketAddr {
     Unix(UnixSocketAddr),
     IPv4(Ipv4Address, PortNum),
-    IPv6,
     Vsock(VsockSocketAddr),
 }
