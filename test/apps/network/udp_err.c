@@ -57,7 +57,10 @@ FN_TEST(getsockname)
 {
 	struct sockaddr_in saddr = { .sin_port = 0xbeef };
 	struct sockaddr *psaddr = (struct sockaddr *)&saddr;
-	socklen_t addrlen = sizeof(saddr);
+	socklen_t addrlen = 0;
+
+	TEST_RES(getsockname(sk_unbound, psaddr, &addrlen),
+		 addrlen == sizeof(saddr) && saddr.sin_port == 0xbeef);
 
 	TEST_RES(getsockname(sk_unbound, psaddr, &addrlen),
 		 addrlen == sizeof(saddr) && saddr.sin_port == 0);
@@ -142,6 +145,8 @@ FN_TEST(bind)
 {
 	struct sockaddr *psaddr = (struct sockaddr *)&sk_addr;
 	socklen_t addrlen = sizeof(sk_addr);
+
+	TEST_ERRNO(bind(sk_unbound, psaddr, addrlen - 1), EINVAL);
 
 	TEST_ERRNO(bind(sk_bound, psaddr, addrlen), EINVAL);
 

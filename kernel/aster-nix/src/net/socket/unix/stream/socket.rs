@@ -211,6 +211,7 @@ impl Socket for UnixStreamSocket {
         let remote_addr = {
             let unix_socket_addr = UnixSocketAddr::try_from(socket_addr)?;
             match unix_socket_addr {
+                UnixSocketAddr::Unnamed => todo!(),
                 UnixSocketAddr::Abstract(abstract_name) => {
                     UnixSocketAddrBound::Abstract(abstract_name)
                 }

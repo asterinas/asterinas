@@ -23,5 +23,6 @@ echo "Start network test......"
 ./http_client
 ./tcp_err
 ./udp_err
+./unix_err
 
 echo "All network test passed"

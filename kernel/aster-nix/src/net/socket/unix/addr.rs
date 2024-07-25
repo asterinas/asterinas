@@ -4,14 +4,15 @@ use crate::{fs::path::Dentry, net::socket::util::socket_addr::SocketAddr, prelud
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnixSocketAddr {
+    Unnamed,
     Path(String),
-    Abstract(String),
+    Abstract(Vec<u8>),
 }
 
 #[derive(Clone)]
 pub(super) enum UnixSocketAddrBound {
     Path(Arc<Dentry>),
-    Abstract(String),
+    Abstract(Vec<u8>),
 }
 
 impl PartialEq for UnixSocketAddrBound {
