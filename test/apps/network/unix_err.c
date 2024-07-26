@@ -76,3 +76,121 @@ FN_TEST(socket_addresses)
 	TEST_SUCC(close(sk));
 }
 END_TEST()
+
+static int sk_unbound;
+static int sk_bound;
+static int sk_listen;
+static int sk_connected;
+static int sk_accepted;
+
+#define UNNAMED_ADDR \
+	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "" })
+#define UNNAMED_ADDRLEN PATH_OFFSET
+
+#define BOUND_ADDR \
+	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "/tmp/B0" })
+#define BOUND_ADDRLEN (PATH_OFFSET + 8)
+
+#define LISTEN_ADDR \
+	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "/tmp/L0" })
+#define LISTEN_ADDRLEN (PATH_OFFSET + 8)
+
+FN_SETUP(unbound)
+{
+	sk_unbound = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
+}
+END_SETUP()
+
+FN_SETUP(bound)
+{
+	sk_bound = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
+
+	CHECK(bind(sk_bound, (struct sockaddr *)&BOUND_ADDR, BOUND_ADDRLEN));
+}
+END_SETUP()
+
+FN_SETUP(listen)
+{
+	sk_listen = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
+
+	CHECK(bind(sk_listen, (struct sockaddr *)&LISTEN_ADDR, LISTEN_ADDRLEN));
+
+	CHECK(listen(sk_listen, 1));
+}
+END_SETUP()
+
+FN_SETUP(connected)
+{
+	sk_connected = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
+
+	CHECK(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR,
+		      LISTEN_ADDRLEN));
+}
+END_SETUP()
+
+FN_SETUP(accepted)
+{
+	sk_accepted = CHECK(accept(sk_listen, NULL, NULL));
+}
+END_SETUP()
+
+FN_TEST(getsockname)
+{
+	struct sockaddr_un addr;
+	socklen_t addrlen;
+
+	addrlen = sizeof(addr);
+	TEST_RES(getsockname(sk_unbound, (struct sockaddr *)&addr, &addrlen),
+		 addrlen == UNNAMED_ADDRLEN &&
+			 memcmp(&addr, &UNNAMED_ADDR, UNNAMED_ADDRLEN) == 0);
+
+	addrlen = sizeof(addr);
+	TEST_RES(getsockname(sk_bound, (struct sockaddr *)&addr, &addrlen),
+		 addrlen == BOUND_ADDRLEN &&
+			 memcmp(&addr, &BOUND_ADDR, BOUND_ADDRLEN) == 0);
+
+	addrlen = sizeof(addr);
+	TEST_RES(getsockname(sk_listen, (struct sockaddr *)&addr, &addrlen),
+		 addrlen == LISTEN_ADDRLEN &&
+			 memcmp(&addr, &LISTEN_ADDR, LISTEN_ADDRLEN) == 0);
+
+	addrlen = sizeof(addr);
+	TEST_RES(getsockname(sk_connected, (struct sockaddr *)&addr, &addrlen),
+		 addrlen == UNNAMED_ADDRLEN &&
+			 memcmp(&addr, &UNNAMED_ADDR, UNNAMED_ADDRLEN) == 0);
+
+	addrlen = sizeof(addr);
+	TEST_RES(getsockname(sk_accepted, (struct sockaddr *)&addr, &addrlen),
+		 addrlen == LISTEN_ADDRLEN &&
+			 memcmp(&addr, &LISTEN_ADDR, LISTEN_ADDRLEN) == 0);
+}
+END_TEST()
+
+FN_TEST(getpeername)
+{
+	struct sockaddr_un addr;
+	socklen_t addrlen;
+
+	addrlen = sizeof(addr);
+	TEST_ERRNO(getpeername(sk_unbound, (struct sockaddr *)&addr, &addrlen),
+		   ENOTCONN);
+
+	addrlen = sizeof(addr);
+	TEST_ERRNO(getpeername(sk_bound, (struct sockaddr *)&addr, &addrlen),
+		   ENOTCONN);
+
+	addrlen = sizeof(addr);
+	TEST_ERRNO(getpeername(sk_listen, (struct sockaddr *)&addr, &addrlen),
+		   ENOTCONN);
+
+	addrlen = sizeof(addr);
+	TEST_RES(getpeername(sk_connected, (struct sockaddr *)&addr, &addrlen),
+		 addrlen == LISTEN_ADDRLEN &&
+			 memcmp(&addr, &LISTEN_ADDR, LISTEN_ADDRLEN) == 0);
+
+	addrlen = sizeof(addr);
+	TEST_RES(getpeername(sk_accepted, (struct sockaddr *)&addr, &addrlen),
+		 addrlen == UNNAMED_ADDRLEN &&
+			 memcmp(&addr, &UNNAMED_ADDR, UNNAMED_ADDRLEN) == 0);
+}
+END_TEST()

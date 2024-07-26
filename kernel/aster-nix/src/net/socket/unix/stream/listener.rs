@@ -6,10 +6,7 @@ use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
 use crate::{
     events::{IoEvents, Observer},
     fs::{file_handle::FileLike, path::Dentry, utils::Inode},
-    net::socket::{
-        unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
-        SocketAddr,
-    },
+    net::socket::{unix::addr::UnixSocketAddrBound, SocketAddr},
     prelude::*,
     process::signal::{Pollee, Poller},
 };
@@ -36,10 +33,7 @@ impl Listener {
             Connected::new(local_endpoint)
         };
 
-        let peer_addr = match connected.peer_addr() {
-            None => SocketAddr::Unix(UnixSocketAddr::Path(String::new())),
-            Some(addr) => SocketAddr::from(addr.clone()),
-        };
+        let peer_addr = connected.peer_addr().cloned().into();
 
         let socket = UnixStreamSocket::new_connected(connected, false);
 
