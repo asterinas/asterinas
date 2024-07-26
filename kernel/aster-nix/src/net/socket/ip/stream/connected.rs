@@ -4,10 +4,11 @@ use alloc::sync::Weak;
 
 use smoltcp::socket::tcp::{RecvError, SendError};
 
+use super::IpEndpoint;
 use crate::{
     events::{IoEvents, Observer},
     net::{
-        iface::{AnyBoundSocket, IpEndpoint, RawTcpSocket},
+        iface::{AnyBoundSocket, RawTcpSocket},
         socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
     },
     prelude::*,

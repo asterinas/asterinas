@@ -5,12 +5,11 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use takeable::Takeable;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
-use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
+use super::{common::get_ephemeral_endpoint, IpEndpoint, UNSPECIFIED_LOCAL_ENDPOINT};
 use crate::{
     events::{IoEvents, Observer},
     fs::{file_handle::FileLike, utils::StatusFlags},
     net::{
-        iface::IpEndpoint,
         poll_ifaces,
         socket::{
             util::{

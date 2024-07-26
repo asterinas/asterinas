@@ -17,9 +17,11 @@ pub use any_socket::{
     AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket, RECV_BUF_LEN, SEND_BUF_LEN,
 };
 pub use loopback::IfaceLoopback;
-pub use smoltcp::wire::{EthernetAddress, IpAddress, IpEndpoint, Ipv4Address};
+pub use smoltcp::wire::EthernetAddress;
 pub use util::{spawn_background_poll_thread, BindPortConfig};
 pub use virtio::IfaceVirtio;
+
+use crate::net::socket::ip::Ipv4Address;
 
 /// Network interface.
 ///

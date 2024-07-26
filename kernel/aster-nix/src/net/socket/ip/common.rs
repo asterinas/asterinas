@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use super::{IpAddress, IpEndpoint};
 use crate::{
     net::{
-        iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, Iface, IpAddress, IpEndpoint},
+        iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, Iface},
         IFACES,
     },
     prelude::*,

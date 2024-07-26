@@ -6,8 +6,11 @@ use smoltcp::{
     wire::IpCidr,
 };
 
-use super::{common::IfaceCommon, internal::IfaceInternal, Iface, IpAddress, Ipv4Address};
-use crate::prelude::*;
+use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
+use crate::{
+    net::socket::ip::{IpAddress, Ipv4Address},
+    prelude::*,
+};
 
 pub const LOOPBACK_ADDRESS: IpAddress = {
     let ipv4_addr = Ipv4Address::new(127, 0, 0, 1);

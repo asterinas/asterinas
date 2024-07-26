@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::net::iface::{IpAddress, IpEndpoint, Ipv4Address};
-
+mod addr;
 mod common;
 mod datagram;
 pub mod stream;
 
+pub use addr::{IpAddress, IpEndpoint, Ipv4Address, PortNum};
 pub use datagram::DatagramSocket;
 pub use stream::StreamSocket;
 

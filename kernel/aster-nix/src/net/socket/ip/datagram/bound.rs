@@ -2,10 +2,11 @@
 
 use smoltcp::socket::udp::{RecvError, SendError};
 
+use super::IpEndpoint;
 use crate::{
     events::IoEvents,
     net::{
-        iface::{AnyBoundSocket, IpEndpoint, RawUdpSocket},
+        iface::{AnyBoundSocket, RawUdpSocket},
         socket::util::send_recv_flags::SendRecvFlags,
     },
     prelude::*,
