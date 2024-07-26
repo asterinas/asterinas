@@ -14,21 +14,20 @@ use crate::{
 };
 
 pub(super) struct Init {
-    addr: Mutex<Option<UnixSocketAddrBound>>,
+    addr: Option<UnixSocketAddrBound>,
     pollee: Pollee,
 }
 
 impl Init {
     pub(super) fn new() -> Self {
         Self {
-            addr: Mutex::new(None),
+            addr: None,
             pollee: Pollee::new(IoEvents::empty()),
         }
     }
 
-    pub(super) fn bind(&self, addr_to_bind: &UnixSocketAddr) -> Result<()> {
-        let mut addr = self.addr.lock();
-        if addr.is_some() {
+    pub(super) fn bind(&mut self, addr_to_bind: &UnixSocketAddr) -> Result<()> {
+        if self.addr.is_some() {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound");
         }
 
@@ -40,28 +39,28 @@ impl Init {
                 UnixSocketAddrBound::Path(dentry)
             }
         };
+        self.addr = Some(bound_addr);
 
-        *addr = Some(bound_addr);
         Ok(())
     }
 
     pub(super) fn connect(&self, remote_addr: &UnixSocketAddrBound) -> Result<Connected> {
         let addr = self.addr();
 
-        if let Some(ref addr) = addr {
+        if let Some(addr) = addr {
             if *addr == *remote_addr {
                 return_errno_with_message!(Errno::EINVAL, "try to connect to self is invalid");
             }
         }
 
-        let (this_end, remote_end) = Endpoint::new_pair(addr, Some(remote_addr.clone()));
+        let (this_end, remote_end) = Endpoint::new_pair(addr.cloned(), Some(remote_addr.clone()));
 
         push_incoming(remote_addr, remote_end)?;
         Ok(Connected::new(this_end))
     }
 
-    pub(super) fn addr(&self) -> Option<UnixSocketAddrBound> {
-        self.addr.lock().clone()
+    pub(super) fn addr(&self) -> Option<&UnixSocketAddrBound> {
+        self.addr.as_ref()
     }
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
