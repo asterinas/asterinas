@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{connected::ConnectedStream, init::InitStream};
+use super::{connected::ConnectedStream, init::InitStream, IpEndpoint};
 use crate::{
-    net::iface::{AnyBoundSocket, IpEndpoint, RawTcpSocket},
+    net::iface::{AnyBoundSocket, RawTcpSocket},
     prelude::*,
     process::signal::Pollee,
 };

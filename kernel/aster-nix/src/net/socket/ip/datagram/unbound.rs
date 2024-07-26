@@ -2,11 +2,11 @@
 
 use alloc::sync::Weak;
 
-use super::bound::BoundDatagram;
+use super::{bound::BoundDatagram, IpEndpoint};
 use crate::{
     events::{IoEvents, Observer},
     net::{
-        iface::{AnyUnboundSocket, IpEndpoint, RawUdpSocket},
+        iface::{AnyUnboundSocket, RawUdpSocket},
         socket::ip::common::bind_socket,
     },
     prelude::*,

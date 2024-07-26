@@ -2,11 +2,11 @@
 
 use alloc::sync::Weak;
 
-use super::{connecting::ConnectingStream, listen::ListenStream};
+use super::{connecting::ConnectingStream, listen::ListenStream, IpEndpoint};
 use crate::{
     events::{IoEvents, Observer},
     net::{
-        iface::{AnyBoundSocket, AnyUnboundSocket, IpEndpoint},
+        iface::{AnyBoundSocket, AnyUnboundSocket},
         socket::ip::common::{bind_socket, get_ephemeral_endpoint},
     },
     prelude::*,

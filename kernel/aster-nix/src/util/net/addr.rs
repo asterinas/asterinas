@@ -4,10 +4,7 @@
 #![allow(unused_variables)]
 
 use crate::{
-    net::{
-        iface::Ipv4Address,
-        socket::{unix::UnixSocketAddr, vsock::VsockSocketAddr, SocketAddr},
-    },
+    net::socket::{ip::Ipv4Address, unix::UnixSocketAddr, vsock::VsockSocketAddr, SocketAddr},
     prelude::*,
     util::{read_bytes_from_user, read_val_from_user, write_val_to_user},
 };

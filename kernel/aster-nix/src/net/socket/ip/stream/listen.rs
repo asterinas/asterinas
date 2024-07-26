@@ -2,10 +2,10 @@
 
 use smoltcp::socket::tcp::ListenError;
 
-use super::connected::ConnectedStream;
+use super::{connected::ConnectedStream, IpEndpoint};
 use crate::{
     events::IoEvents,
-    net::iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, IpEndpoint, RawTcpSocket},
+    net::iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, RawTcpSocket},
     prelude::*,
     process::signal::Pollee,
 };

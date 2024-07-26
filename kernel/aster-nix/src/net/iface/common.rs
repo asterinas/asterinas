@@ -15,9 +15,9 @@ use super::{
     any_socket::{AnyBoundSocketInner, AnyRawSocket, AnyUnboundSocket, SocketFamily},
     time::get_network_timestamp,
     util::BindPortConfig,
-    AnyBoundSocket, Iface, Ipv4Address,
+    AnyBoundSocket, Iface,
 };
-use crate::prelude::*;
+use crate::{net::socket::ip::Ipv4Address, prelude::*};
 
 pub struct IfaceCommon {
     interface: SpinLock<smoltcp::iface::Interface>,
