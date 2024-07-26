@@ -222,9 +222,20 @@ impl Socket for UnixStreamSocket {
             }
         };
 
+        // Note that the Linux kernel implementation locks the remote socket and checks to see if
+        // it is listening first. This is different from our implementation, which locks the local
+        // socket and checks the state of the local socket first.
+        //
+        // The difference may result in different error codes, but it's doubtful that this will
+        // ever lead to real problems.
+        //
+        // See also <https://elixir.bootlin.com/linux/v6.10.4/source/net/unix/af_unix.c#L1527>.
+
         let connected = match &*self.state.read() {
             State::Init(init) => init.connect(&remote_addr)?,
-            State::Listen(_) => return_errno_with_message!(Errno::EINVAL, "the socket is listened"),
+            State::Listen(_) => {
+                return_errno_with_message!(Errno::EINVAL, "the socket is listening")
+            }
             State::Connected(_) => {
                 return_errno_with_message!(Errno::EISCONN, "the socket is connected")
             }

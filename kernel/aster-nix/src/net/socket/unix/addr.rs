@@ -9,20 +9,10 @@ pub enum UnixSocketAddr {
     Abstract(Vec<u8>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(super) enum UnixSocketAddrBound {
     Path(Arc<Dentry>),
     Abstract(Vec<u8>),
-}
-
-impl PartialEq for UnixSocketAddrBound {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Abstract(l0), Self::Abstract(r0)) => l0 == r0,
-            (Self::Path(l0), Self::Path(r0)) => Arc::ptr_eq(l0.inode(), r0.inode()),
-            _ => false,
-        }
-    }
 }
 
 impl TryFrom<SocketAddr> for UnixSocketAddr {
