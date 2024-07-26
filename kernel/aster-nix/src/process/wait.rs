@@ -78,7 +78,6 @@ pub fn wait_child_exit(
 fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
     let child_process = process.children().lock().remove(&pid).unwrap();
     assert!(child_process.is_zombie());
-    child_process.root_vmar().destroy_all().unwrap();
     for thread in &*child_process.threads().lock() {
         thread_table::remove_thread(thread.tid());
     }

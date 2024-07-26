@@ -101,6 +101,23 @@ pub(super) struct Vmar_ {
     parent: Weak<Vmar_>,
 }
 
+impl Drop for Vmar_ {
+    fn drop(&mut self) {
+        if self.is_root_vmar() {
+            self.vm_space.clear();
+        }
+        // Drop the child VMAR.
+        // FIXME: This branch can be removed once removing child VMAR usage from the code base.
+        else {
+            let mut cursor = self
+                .vm_space
+                .cursor_mut(&(self.base..self.base + self.size))
+                .unwrap();
+            cursor.unmap(self.size);
+        }
+    }
+}
+
 struct VmarInner {
     /// Whether the vmar is destroyed
     is_destroyed: bool,
@@ -290,32 +307,6 @@ impl Vmar_ {
         Ok(())
     }
 
-    pub fn destroy_all(&self) -> Result<()> {
-        let mut inner = self.inner.lock();
-        inner.is_destroyed = true;
-        let mut free_regions = BTreeMap::new();
-        for (child_vmar_base, child_vmar) in &inner.child_vmar_s {
-            child_vmar.destroy_all()?;
-            let free_region = FreeRegion::new(child_vmar.range());
-            free_regions.insert(free_region.start(), free_region);
-        }
-        inner.child_vmar_s.clear();
-        inner.free_regions.append(&mut free_regions);
-
-        for vm_mapping in inner.vm_mappings.values() {
-            vm_mapping.unmap(&vm_mapping.range(), true)?;
-            let free_region = FreeRegion::new(vm_mapping.range());
-            free_regions.insert(free_region.start(), free_region);
-        }
-        inner.vm_mappings.clear();
-        inner.free_regions.append(&mut free_regions);
-
-        drop(inner);
-        self.merge_continuous_regions();
-        self.vm_space.clear();
-        Ok(())
-    }
-
     pub fn destroy(&self, range: Range<usize>) -> Result<()> {
         self.check_destroy_range(&range)?;
         let mut inner = self.inner.lock();
@@ -324,7 +315,6 @@ impl Vmar_ {
         for child_vmar_ in inner.child_vmar_s.find(&range) {
             let child_vmar_range = child_vmar_.range();
             debug_assert!(is_intersected(&child_vmar_range, &range));
-            child_vmar_.destroy_all()?;
             let free_region = FreeRegion::new(child_vmar_range);
             free_regions.insert(free_region.start(), free_region);
         }
