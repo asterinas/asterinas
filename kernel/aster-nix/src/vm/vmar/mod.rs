@@ -123,7 +123,7 @@ impl VmarInner {
     }
 }
 
-const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
+pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
 const ROOT_VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
 
 impl Interval<usize> for Arc<Vmar_> {

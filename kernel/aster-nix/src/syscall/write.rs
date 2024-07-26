@@ -20,9 +20,17 @@ pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Resu
         file_table.get_file(fd)?.clone()
     };
 
-    let mut buffer = vec![0u8; user_buf_len];
-    read_bytes_from_user(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
-    debug!("write content = {:?}", buffer);
-    let write_len = file.write(&buffer)?;
+    // According to <https://man7.org/linux/man-pages/man2/write.2.html>, if
+    // the user specified an empty buffer, we should detect errors by checking
+    // the file discriptor. If no errors detected, return 0 successfully.
+    let write_len = if user_buf_len != 0 {
+        let mut buffer = vec![0u8; user_buf_len];
+        read_bytes_from_user(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
+        debug!("write content = {:?}", buffer);
+        file.write(&buffer)?
+    } else {
+        file.write(&[])?
+    };
+
     Ok(SyscallReturn::Return(write_len as _))
 }
