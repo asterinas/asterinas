@@ -16,9 +16,12 @@ use super::{
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
-    arch::mm::tlb_flush_addr_range,
     cpu::CpuSet,
-    mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
+    mm::{
+        kspace::kva::{Kva, KvaAlloc},
+        page::{allocator, meta::KernelStackMeta},
+        PAGE_SIZE,
+    },
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
@@ -42,14 +45,19 @@ pub trait TaskContextApi {
 }
 
 pub struct KernelStack {
-    segment: Segment,
+    kva: Kva,
+    end_vaddr: Vaddr,
     has_guard_page: bool,
 }
 
 impl KernelStack {
     pub fn new() -> Result<Self> {
+        let mut new_kva = Kva::new(KERNEL_STACK_SIZE);
+        let pages = allocator::alloc::<KernelStackMeta>(KERNEL_STACK_SIZE).unwrap();
+        unsafe { new_kva.map_pages(new_kva.range(), pages) }
         Ok(Self {
-            segment: FrameAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE).alloc_contiguous()?,
+            end_vaddr: new_kva.end(),
+            kva: new_kva,
             has_guard_page: false,
         })
     }
@@ -57,51 +65,22 @@ impl KernelStack {
     /// Generates a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
-        let stack_segment =
-            FrameAllocOptions::new(KERNEL_STACK_SIZE / PAGE_SIZE + 1).alloc_contiguous()?;
-        // FIXME: modifying the the linear mapping is bad.
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let guard_page_vaddr = {
-            let guard_page_paddr = stack_segment.start_paddr();
-            crate::mm::paddr_to_vaddr(guard_page_paddr)
-        };
-        // SAFETY: the segment allocated is not used by others so we can protect it.
+        let mut new_kva = Kva::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
+        let mapped_start = new_kva.range().start + 2 * PAGE_SIZE;
+        let mapped_end = mapped_start + KERNEL_STACK_SIZE;
+        let pages = allocator::alloc::<KernelStackMeta>(KERNEL_STACK_SIZE).unwrap();
         unsafe {
-            let vaddr_range = guard_page_vaddr..guard_page_vaddr + PAGE_SIZE;
-            page_table
-                .protect(&vaddr_range, |p| p.flags -= PageFlags::RW)
-                .unwrap();
-            tlb_flush_addr_range(&vaddr_range);
+            new_kva.map_pages(mapped_start..mapped_end, pages);
         }
         Ok(Self {
-            segment: stack_segment,
+            kva: new_kva,
+            end_vaddr: mapped_end,
             has_guard_page: true,
         })
     }
 
-    pub fn end_paddr(&self) -> Paddr {
-        self.segment.end_paddr()
-    }
-}
-
-impl Drop for KernelStack {
-    fn drop(&mut self) {
-        if self.has_guard_page {
-            // FIXME: modifying the the linear mapping is bad.
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let guard_page_vaddr = {
-                let guard_page_paddr = self.segment.start_paddr();
-                crate::mm::paddr_to_vaddr(guard_page_paddr)
-            };
-            // SAFETY: the segment allocated is not used by others so we can protect it.
-            unsafe {
-                let vaddr_range = guard_page_vaddr..guard_page_vaddr + PAGE_SIZE;
-                page_table
-                    .protect(&vaddr_range, |p| p.flags |= PageFlags::RW)
-                    .unwrap();
-                tlb_flush_addr_range(&vaddr_range);
-            }
-        }
+    pub fn end_vaddr(&self) -> Vaddr {
+        self.end_vaddr
     }
 }
 
@@ -318,7 +297,7 @@ impl TaskOptions {
         // to at least 16 bytes. And a larger alignment is needed if larger arguments
         // are passed to the function. The `kernel_task_entry` function does not
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        ctx.set_stack_pointer(crate::mm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16));
+        ctx.set_stack_pointer(new_task.kstack.end_vaddr() - 16);
 
         Ok(Arc::new(new_task))
     }
