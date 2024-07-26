@@ -48,9 +48,17 @@ impl From<UnixSocketAddrBound> for UnixSocketAddr {
     }
 }
 
-impl From<UnixSocketAddrBound> for SocketAddr {
-    fn from(value: UnixSocketAddrBound) -> Self {
-        let unix_socket_addr = UnixSocketAddr::from(value);
-        SocketAddr::Unix(unix_socket_addr)
+impl From<Option<UnixSocketAddrBound>> for UnixSocketAddr {
+    fn from(value: Option<UnixSocketAddrBound>) -> Self {
+        match value {
+            Some(addr) => addr.into(),
+            None => Self::Unnamed,
+        }
+    }
+}
+
+impl<T: Into<UnixSocketAddr>> From<T> for SocketAddr {
+    fn from(value: T) -> Self {
+        SocketAddr::Unix(value.into())
     }
 }

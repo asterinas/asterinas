@@ -278,11 +278,7 @@ impl Socket for UnixStreamSocket {
             State::Connected(connected) => connected.addr().cloned(),
         };
 
-        addr.map(Into::<SocketAddr>::into)
-            .ok_or(Error::with_message(
-                Errno::EINVAL,
-                "the socket does not bind to addr",
-            ))
+        Ok(addr.into())
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
@@ -291,10 +287,7 @@ impl Socket for UnixStreamSocket {
             _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
         };
 
-        match peer_addr {
-            None => Ok(SocketAddr::Unix(UnixSocketAddr::Path(String::new()))),
-            Some(peer_addr) => Ok(SocketAddr::from(peer_addr)),
-        }
+        Ok(peer_addr.into())
     }
 
     fn sendmsg(
