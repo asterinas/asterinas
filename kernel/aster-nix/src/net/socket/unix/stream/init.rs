@@ -2,7 +2,7 @@
 
 use super::{connected::Connected, endpoint::Endpoint, listener::push_incoming};
 use crate::{
-    events::IoEvents,
+    events::{IoEvents, Observer},
     fs::{
         fs_resolver::{split_path, FsPath},
         path::Dentry,
@@ -65,6 +65,22 @@ impl Init {
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.pollee.poll(mask, poller)
+    }
+
+    pub(super) fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        self.pollee.register_observer(observer, mask);
+        Ok(())
+    }
+
+    pub(super) fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
+        self.pollee.unregister_observer(observer)
     }
 }
 

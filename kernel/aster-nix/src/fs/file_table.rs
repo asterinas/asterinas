@@ -12,9 +12,15 @@ use super::{
     utils::{AccessMode, InodeMode},
 };
 use crate::{
-    events::{Events, Observer, Subject},
+    events::{Events, IoEvents, Observer, Subject},
+    fs::utils::StatusFlags,
     net::socket::Socket,
     prelude::*,
+    process::{
+        process_table,
+        signal::{constants::SIGIO, signals::kernel::KernelSignal},
+        Pid, Process,
+    },
 };
 
 pub type FileDesc = i32;
@@ -232,6 +238,7 @@ pub struct FileTableEntry {
     file: Arc<dyn FileLike>,
     flags: AtomicU8,
     subject: Subject<FdEvents>,
+    owner: RwLock<Option<Owner>>,
 }
 
 impl FileTableEntry {
@@ -240,11 +247,54 @@ impl FileTableEntry {
             file,
             flags: AtomicU8::new(flags.bits()),
             subject: Subject::new(),
+            owner: RwLock::new(None),
         }
     }
 
     pub fn file(&self) -> &Arc<dyn FileLike> {
         &self.file
+    }
+
+    pub fn owner(&self) -> Option<Pid> {
+        self.owner.read().as_ref().map(|(pid, _)| *pid)
+    }
+
+    /// Set a process (group) as owner of the file descriptor.
+    ///
+    /// Such that this process (group) will receive `SIGIO` and `SIGURG` signals
+    /// for I/O events on the file descriptor, if `O_ASYNC` status flag is set
+    /// on this file.
+    pub fn set_owner(&self, owner: Pid) -> Result<()> {
+        if self.owner().is_some_and(|pid| pid == owner) {
+            return Ok(());
+        }
+
+        // Unset the owner if the given pid is zero.
+        let new_owner = if owner == 0 {
+            None
+        } else {
+            let process = process_table::get_process(owner as _).ok_or(Error::with_message(
+                Errno::ESRCH,
+                "cannot set_owner with an invalid pid",
+            ))?;
+            let observer = OwnerObserver::new(self.file.clone(), Arc::downgrade(&process));
+            Some((owner, observer))
+        };
+
+        let mut self_owner = self.owner.write();
+        if let Some((_, observer)) = self_owner.as_ref() {
+            let _ = self.file.unregister_observer(&Arc::downgrade(observer));
+        }
+
+        *self_owner = match new_owner {
+            None => None,
+            Some((pid, observer)) => {
+                self.file
+                    .register_observer(observer.weak_self(), IoEvents::empty())?;
+                Some((pid, observer))
+            }
+        };
+        Ok(())
     }
 
     pub fn flags(&self) -> FdFlags {
@@ -274,6 +324,7 @@ impl Clone for FileTableEntry {
             file: self.file.clone(),
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             subject: Subject::new(),
+            owner: RwLock::new(self.owner.read().clone()),
         }
     }
 }
@@ -282,5 +333,37 @@ bitflags! {
     pub struct FdFlags: u8 {
         /// Close on exec
         const CLOEXEC = 1;
+    }
+}
+
+type Owner = (Pid, Arc<dyn Observer<IoEvents>>);
+
+struct OwnerObserver {
+    file: Arc<dyn FileLike>,
+    owner: Weak<Process>,
+    weak_self: Weak<Self>,
+}
+
+impl OwnerObserver {
+    pub fn new(file: Arc<dyn FileLike>, owner: Weak<Process>) -> Arc<Self> {
+        Arc::new_cyclic(|weak_ref| Self {
+            file,
+            owner,
+            weak_self: weak_ref.clone(),
+        })
+    }
+
+    pub fn weak_self(&self) -> Weak<Self> {
+        self.weak_self.clone()
+    }
+}
+
+impl Observer<IoEvents> for OwnerObserver {
+    fn on_events(&self, events: &IoEvents) {
+        if self.file.status_flags().contains(StatusFlags::O_ASYNC)
+            && let Some(process) = self.owner.upgrade()
+        {
+            process.enqueue_signal(KernelSignal::new(SIGIO));
+        }
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    events::IoEvents,
+    events::{IoEvents, Observer},
     fs::utils::{Channel, Consumer, Producer},
     net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd},
     prelude::*,
@@ -87,6 +87,38 @@ impl Endpoint {
         events |= (reader_events & IoEvents::IN) | (writer_events & IoEvents::OUT);
 
         events
+    }
+
+    pub(super) fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        if mask.contains(IoEvents::IN) {
+            self.reader.register_observer(observer.clone(), mask)?
+        }
+
+        if mask.contains(IoEvents::OUT) {
+            self.writer.register_observer(observer, mask)?
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
+        let observer0 = self.reader.unregister_observer(observer);
+        let observer1 = self.writer.unregister_observer(observer);
+
+        if observer0.is_some() {
+            observer0
+        } else if observer1.is_some() {
+            observer1
+        } else {
+            None
+        }
     }
 }
 
