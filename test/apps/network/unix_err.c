@@ -194,3 +194,27 @@ FN_TEST(getpeername)
 			 memcmp(&addr, &UNNAMED_ADDR, UNNAMED_ADDRLEN) == 0);
 }
 END_TEST()
+
+FN_TEST(connect)
+{
+	TEST_ERRNO(connect(sk_unbound, (struct sockaddr *)&BOUND_ADDR,
+			   BOUND_ADDRLEN),
+		   ECONNREFUSED);
+
+	TEST_ERRNO(connect(sk_bound, (struct sockaddr *)&BOUND_ADDR,
+			   BOUND_ADDRLEN),
+		   ECONNREFUSED);
+
+	TEST_ERRNO(connect(sk_listen, (struct sockaddr *)&LISTEN_ADDR,
+			   LISTEN_ADDRLEN),
+		   EINVAL);
+
+	TEST_ERRNO(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR,
+			   LISTEN_ADDRLEN),
+		   EISCONN);
+
+	TEST_ERRNO(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR,
+			   LISTEN_ADDRLEN),
+		   EISCONN);
+}
+END_TEST()

@@ -45,17 +45,11 @@ impl Init {
     }
 
     pub(super) fn connect(&self, remote_addr: &UnixSocketAddrBound) -> Result<Connected> {
-        let addr = self.addr();
-
-        if let Some(addr) = addr {
-            if *addr == *remote_addr {
-                return_errno_with_message!(Errno::EINVAL, "try to connect to self is invalid");
-            }
-        }
-
-        let (this_end, remote_end) = Endpoint::new_pair(addr.cloned(), Some(remote_addr.clone()));
+        let (this_end, remote_end) =
+            Endpoint::new_pair(self.addr.clone(), Some(remote_addr.clone()));
 
         push_incoming(remote_addr, remote_end)?;
+
         Ok(Connected::new(this_end))
     }
 
