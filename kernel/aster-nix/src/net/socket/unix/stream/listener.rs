@@ -82,7 +82,7 @@ impl BacklogTable {
 
     fn add_backlog(&self, addr: &UnixSocketAddrBound, backlog: usize) -> Result<()> {
         let inode = {
-            let UnixSocketAddrBound::Path(dentry) = addr else {
+            let UnixSocketAddrBound::Path(_, dentry) = addr else {
                 todo!()
             };
             create_keyable_inode(dentry)
@@ -99,7 +99,7 @@ impl BacklogTable {
 
     fn get_backlog(&self, addr: &UnixSocketAddrBound) -> Result<Arc<Backlog>> {
         let inode = {
-            let UnixSocketAddrBound::Path(dentry) = addr else {
+            let UnixSocketAddrBound::Path(_, dentry) = addr else {
                 todo!()
             };
             create_keyable_inode(dentry)
@@ -134,7 +134,7 @@ impl BacklogTable {
     }
 
     fn remove_backlog(&self, addr: &UnixSocketAddrBound) {
-        let UnixSocketAddrBound::Path(dentry) = addr else {
+        let UnixSocketAddrBound::Path(_, dentry) = addr else {
             todo!()
         };
 

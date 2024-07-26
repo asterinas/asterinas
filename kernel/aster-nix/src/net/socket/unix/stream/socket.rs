@@ -198,7 +198,7 @@ impl Socket for UnixStreamSocket {
         let addr = UnixSocketAddr::try_from(socket_addr)?;
 
         match &mut *self.state.write() {
-            State::Init(init) => init.bind(&addr),
+            State::Init(init) => init.bind(addr),
             _ => return_errno_with_message!(
                 Errno::EINVAL,
                 "cannot bind a listening or connected socket"
@@ -217,7 +217,7 @@ impl Socket for UnixStreamSocket {
                 }
                 UnixSocketAddr::Path(path) => {
                     let dentry = lookup_socket_file(&path)?;
-                    UnixSocketAddrBound::Path(dentry)
+                    UnixSocketAddrBound::Path(path, dentry)
                 }
             }
         };

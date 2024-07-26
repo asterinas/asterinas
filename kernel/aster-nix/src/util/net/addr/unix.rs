@@ -91,16 +91,16 @@ pub(super) fn from_c_bytes(bytes: &[u8]) -> Result<UnixSocketAddr> {
     }
 
     if sun_path[0] == 0 {
-        return Ok(UnixSocketAddr::Abstract(Vec::from(&sun_path[1..])));
+        return Ok(UnixSocketAddr::Abstract(Arc::from(&sun_path[1..])));
     }
 
     // Again, Linux always appends a null terminator to the pathname if none is supplied. So we
     // need to deal with the case where `CStr::from_bytes_until_nul` fails.
     if let Ok(c_str) = CStr::from_bytes_until_nul(sun_path) {
-        Ok(UnixSocketAddr::Path(c_str.to_string_lossy().to_string()))
+        Ok(UnixSocketAddr::Path(Arc::from(c_str.to_string_lossy())))
     } else {
-        Ok(UnixSocketAddr::Path(
-            String::from_utf8_lossy(sun_path).to_string(),
-        ))
+        Ok(UnixSocketAddr::Path(Arc::from(String::from_utf8_lossy(
+            sun_path,
+        ))))
     }
 }
