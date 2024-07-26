@@ -15,9 +15,12 @@ use core::mem::ManuallyDrop;
 
 pub use segment::Segment;
 
-use super::page::{
-    meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
-    DynPage, Page,
+use super::{
+    page::{
+        meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
+        DynPage, Page,
+    },
+    FrameAllocOptions,
 };
 use crate::{
     mm::{
@@ -76,6 +79,13 @@ impl Frame {
         unsafe {
             core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), self.size());
         }
+    }
+
+    /// Creates a new `Frame` and initializes it with the contents of the `src`.
+    pub fn new_from(src: &Frame) -> Result<Frame> {
+        let new_frame = FrameAllocOptions::new(1).uninit(true).alloc_single()?;
+        new_frame.copy_from(src);
+        Ok(new_frame)
     }
 }
 

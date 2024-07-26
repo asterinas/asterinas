@@ -2,8 +2,6 @@
 
 #![allow(unused_variables)]
 
-use ostd::mm::VmIo;
-
 use super::SyscallReturn;
 use crate::{
     prelude::*,
@@ -14,6 +12,7 @@ use crate::{
             sig_mask::SigMask,
         },
     },
+    util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_rt_sigprocmask(
@@ -43,15 +42,14 @@ fn do_rt_sigprocmask(
     let current = current!();
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
-    let root_vmar = current.root_vmar();
     let mut sig_mask = posix_thread.sig_mask().lock();
     let old_sig_mask_value = sig_mask.as_u64();
     debug!("old sig mask value: 0x{:x}", old_sig_mask_value);
     if oldset_ptr != 0 {
-        root_vmar.write_val(oldset_ptr, &old_sig_mask_value)?;
+        write_val_to_user(oldset_ptr, &old_sig_mask_value)?;
     }
     if set_ptr != 0 {
-        let new_set = root_vmar.read_val::<u64>(set_ptr)?;
+        let new_set = read_val_from_user::<u64>(set_ptr)?;
         match mask_op {
             MaskOp::Block => {
                 let mut new_sig_mask = SigMask::from(new_set);

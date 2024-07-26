@@ -32,11 +32,7 @@ pub fn sys_getsockopt(
 
     socket.get_option(raw_option.as_sock_option_mut())?;
 
-    let write_len = {
-        let current = current!();
-        let vmar = current.root_vmar();
-        raw_option.write_to_user(vmar, optval, optlen)?
-    };
+    let write_len = raw_option.write_to_user(optval, optlen)?;
 
     write_val_to_user(optlen_addr, &(write_len as u32))?;
 
