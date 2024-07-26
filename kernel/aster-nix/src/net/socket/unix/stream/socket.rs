@@ -74,7 +74,7 @@ impl UnixStreamSocket {
     fn bound_addr(&self) -> Option<UnixSocketAddrBound> {
         let state = self.state.read();
         match &*state {
-            State::Init(init) => init.addr(),
+            State::Init(init) => init.addr().cloned(),
             State::Listen(listen) => Some(listen.addr().clone()),
             State::Connected(connected) => connected.addr().cloned(),
         }
@@ -197,7 +197,7 @@ impl Socket for UnixStreamSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let addr = UnixSocketAddr::try_from(socket_addr)?;
 
-        match &*self.state.read() {
+        match &mut *self.state.write() {
             State::Init(init) => init.bind(&addr),
             _ => return_errno_with_message!(
                 Errno::EINVAL,
@@ -273,7 +273,7 @@ impl Socket for UnixStreamSocket {
 
     fn addr(&self) -> Result<SocketAddr> {
         let addr = match &*self.state.read() {
-            State::Init(init) => init.addr(),
+            State::Init(init) => init.addr().cloned(),
             State::Listen(listen) => Some(listen.addr().clone()),
             State::Connected(connected) => connected.addr().cloned(),
         };
