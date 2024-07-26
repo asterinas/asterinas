@@ -15,7 +15,7 @@ one is of the workspace
 (in the same directory as the workspace's `Cargo.toml`)
 and one of the crate
 (in the same directory as the crate's `Cargo.toml`).
-OSDK will firstly refer to the crate-level manifest, then
+OSDK will first refer to the crate-level manifest, then
 query the workspace-level manifest for undefined fields.
 In other words, missing fields of the crate manifest
 will inherit values from the workspace manifest.
@@ -103,7 +103,7 @@ Here are some additional notes for the fields:
 
     Optional. The default value is `dev`.
 
-    Possible values are `dev`, `release`, `test` and `bench` 
+    Possible values are `dev`, `release`, `test`, and `bench` 
     and other profiles defined in `Cargo.toml`.
 
 6. Whether to strip the built kernel ELF using `rust-strip`.
@@ -163,8 +163,8 @@ usually, the init shell.
 
     If the path is relative, it is relative to the manifest's enclosing directory.
 
-18. Additional arguments passed to QEMU that is organized in a single string that
-can have any POSIX shell compliant separators.
+18. Additional arguments passed to QEMU are organized in a single string that
+can include any POSIX shell compliant separators.
 
     Optional. The default value is empty.
 
@@ -196,7 +196,7 @@ can have any POSIX shell compliant separators.
 
     A customized schema has the same fields as the default schema. 
     By default, a customized schema will inherit all options from the default schema,
-    unless overrided by new options.
+    unless overridden by new options.
 
 ### Example
 
