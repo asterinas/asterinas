@@ -11,7 +11,7 @@ use super::{
     listener::{unregister_backlog, Listener},
 };
 use crate::{
-    events::IoEvents,
+    events::{IoEvents, Observer},
     fs::{
         file_handle::FileLike,
         fs_resolver::FsPath,
@@ -165,6 +165,31 @@ impl FileLike for UnixStreamSocket {
     fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
         self.set_nonblocking(new_flags.contains(StatusFlags::O_NONBLOCK));
         Ok(())
+    }
+
+    fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        let inner = self.state.write();
+        match &*inner {
+            State::Init(init) => init.register_observer(observer, mask),
+            State::Listen(listen) => listen.register_observer(observer, mask),
+            State::Connected(connected) => connected.register_observer(observer, mask),
+        }
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
+        let inner = self.state.write();
+        match &*inner {
+            State::Init(init) => init.unregister_observer(observer),
+            State::Listen(listen) => listen.unregister_observer(observer),
+            State::Connected(connected) => connected.unregister_observer(observer),
+        }
     }
 }
 

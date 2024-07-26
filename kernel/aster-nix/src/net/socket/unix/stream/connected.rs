@@ -2,7 +2,7 @@
 
 use super::endpoint::Endpoint;
 use crate::{
-    events::IoEvents,
+    events::{IoEvents, Observer},
     net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd},
     prelude::*,
     process::signal::Poller,
@@ -39,5 +39,20 @@ impl Connected {
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         self.local_endpoint.poll(mask, poller)
+    }
+
+    pub(super) fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        self.local_endpoint.register_observer(observer, mask)
+    }
+
+    pub(super) fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
+        self.local_endpoint.unregister_observer(observer)
     }
 }

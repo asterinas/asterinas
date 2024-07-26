@@ -23,7 +23,8 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
     );
     let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
     let file_like = match (domain, sock_type, protocol) {
-        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM, _) => {
+        // FIXME: SOCK_SEQPACKET is added to run fcntl_test, not supported yet.
+        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM | SockType::SOCK_SEQPACKET, _) => {
             UnixStreamSocket::new(nonblocking) as Arc<dyn FileLike>
         }
         (

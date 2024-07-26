@@ -7,6 +7,7 @@ use crate::{
         utils::StatusFlags,
     },
     prelude::*,
+    process::Pid,
 };
 
 pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64) -> Result<SyscallReturn> {
@@ -80,6 +81,27 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64) -> Result<SyscallReturn> {
             file.set_status_flags(new_status_flags)?;
             Ok(SyscallReturn::Return(0))
         }
+        FcntlCmd::F_SETOWN => {
+            let current = current!();
+            let file_table = current.file_table().lock();
+            let file_entry = file_table.get_entry(fd)?;
+            // A process ID is specified as a positive value; a process group ID is specified as a negative value.
+            let abs_arg = (arg as i32).unsigned_abs();
+            if abs_arg > i32::MAX as u32 {
+                return_errno_with_message!(Errno::EINVAL, "process (group) id overflowed");
+            }
+            let pid = Pid::try_from(abs_arg)
+                .map_err(|_| Error::with_message(Errno::EINVAL, "invalid process (group) id"))?;
+            file_entry.set_owner(pid)?;
+            Ok(SyscallReturn::Return(0))
+        }
+        FcntlCmd::F_GETOWN => {
+            let current = current!();
+            let file_table = current.file_table().lock();
+            let file_entry = file_table.get_entry(fd)?;
+            let pid = file_entry.owner().unwrap_or(0);
+            Ok(SyscallReturn::Return(pid as _))
+        }
     }
 }
 
@@ -92,5 +114,7 @@ enum FcntlCmd {
     F_SETFD = 2,
     F_GETFL = 3,
     F_SETFL = 4,
+    F_SETOWN = 8,
+    F_GETOWN = 9,
     F_DUPFD_CLOEXEC = 1030,
 }

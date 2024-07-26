@@ -1,0 +1,22 @@
+FcntlLockTest.*
+FcntlTest.GetAllFlags
+FcntlTest.SetFlags
+FcntlTest.GetO_ASYNC
+FcntlTest.SetFlO_ASYNC
+FcntlTest.SetFdO_ASYNC
+FcntlTest.DupAfterO_ASYNC
+# SetOwnPgrp is verified with F_GETOWN_EX, which is not supported now.
+FcntlTest.SetOwnPgrp
+FcntlTest.GetOwnExNone
+FcntlTest.GetOwnExTid
+FcntlTest.GetOwnExPid
+FcntlTest.GetOwnExPgrp
+FcntlTest.SetOwnExInvalidType
+FcntlTest.SetOwnExInvalidTid
+FcntlTest.SetOwnExInvalidPid
+FcntlTest.SetOwnExInvalidPgrp
+FcntlTest.SetOwnExTid
+FcntlTest.SetOwnExPid
+FcntlTest.SetOwnExPgrp
+FcntlTest.SetOwnExUnset
+FcntlTest.SetFlSetOwnDoNotRace
