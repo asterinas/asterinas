@@ -88,12 +88,12 @@ static int sk_accepted;
 #define UNNAMED_ADDRLEN PATH_OFFSET
 
 #define BOUND_ADDR \
-	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "/tmp/B0" })
-#define BOUND_ADDRLEN (PATH_OFFSET + 8)
+	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "//tmp/B0" })
+#define BOUND_ADDRLEN (PATH_OFFSET + 9)
 
 #define LISTEN_ADDR \
-	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "/tmp/L0" })
-#define LISTEN_ADDRLEN (PATH_OFFSET + 8)
+	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "/tmp//L0" })
+#define LISTEN_ADDRLEN (PATH_OFFSET + 9)
 
 FN_SETUP(unbound)
 {

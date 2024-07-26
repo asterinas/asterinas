@@ -26,7 +26,7 @@ impl Init {
         }
     }
 
-    pub(super) fn bind(&mut self, addr_to_bind: &UnixSocketAddr) -> Result<()> {
+    pub(super) fn bind(&mut self, addr_to_bind: UnixSocketAddr) -> Result<()> {
         if self.addr.is_some() {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound");
         }
@@ -35,8 +35,8 @@ impl Init {
             UnixSocketAddr::Unnamed => todo!(),
             UnixSocketAddr::Abstract(_) => todo!(),
             UnixSocketAddr::Path(path) => {
-                let dentry = create_socket_file(path)?;
-                UnixSocketAddrBound::Path(dentry)
+                let dentry = create_socket_file(&path)?;
+                UnixSocketAddrBound::Path(path, dentry)
             }
         };
         self.addr = Some(bound_addr);

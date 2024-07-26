@@ -5,14 +5,14 @@ use crate::{fs::path::Dentry, net::socket::util::socket_addr::SocketAddr, prelud
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnixSocketAddr {
     Unnamed,
-    Path(String),
-    Abstract(Vec<u8>),
+    Path(Arc<str>),
+    Abstract(Arc<[u8]>),
 }
 
 #[derive(Clone, Debug)]
 pub(super) enum UnixSocketAddrBound {
-    Path(Arc<Dentry>),
-    Abstract(Vec<u8>),
+    Path(Arc<str>, Arc<Dentry>),
+    Abstract(Arc<[u8]>),
 }
 
 impl TryFrom<SocketAddr> for UnixSocketAddr {
@@ -29,10 +29,7 @@ impl TryFrom<SocketAddr> for UnixSocketAddr {
 impl From<UnixSocketAddrBound> for UnixSocketAddr {
     fn from(value: UnixSocketAddrBound) -> Self {
         match value {
-            UnixSocketAddrBound::Path(dentry) => {
-                let abs_path = dentry.abs_path();
-                Self::Path(abs_path)
-            }
+            UnixSocketAddrBound::Path(path, _) => Self::Path(path),
             UnixSocketAddrBound::Abstract(name) => Self::Abstract(name),
         }
     }
