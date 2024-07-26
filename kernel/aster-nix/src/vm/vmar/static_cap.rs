@@ -120,14 +120,6 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         self.0.clear_root_vmar()
     }
 
-    /// Destroy a VMAR, including all its mappings and children VMARs.
-    ///
-    /// After being destroyed, the VMAR becomes useless and returns errors
-    /// for most of its methods.
-    pub fn destroy_all(&self) -> Result<()> {
-        self.0.destroy_all()
-    }
-
     /// Destroy all mappings and children VMARs that fall within the specified
     /// range in bytes.
     ///
