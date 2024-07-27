@@ -58,6 +58,12 @@ impl Listener {
     }
 }
 
+impl Drop for Listener {
+    fn drop(&mut self) {
+        unregister_backlog(self.backlog.addr())
+    }
+}
+
 static BACKLOG_TABLE: BacklogTable = BacklogTable::new();
 
 struct BacklogTable {
@@ -194,7 +200,7 @@ fn create_keyable_inode(dentry: &Arc<Dentry>) -> KeyableWeak<dyn Inode> {
     KeyableWeak::from(weak_inode)
 }
 
-pub(super) fn unregister_backlog(addr: &UnixSocketAddrBound) {
+fn unregister_backlog(addr: &UnixSocketAddrBound) {
     BACKLOG_TABLE.remove_backlog(addr);
 }
 

@@ -4,12 +4,7 @@ use core::sync::atomic::AtomicBool;
 
 use atomic::Ordering;
 
-use super::{
-    connected::Connected,
-    endpoint::Endpoint,
-    init::Init,
-    listener::{unregister_backlog, Listener},
-};
+use super::{connected::Connected, endpoint::Endpoint, init::Init, listener::Listener};
 use crate::{
     events::{IoEvents, Observer},
     fs::{
@@ -69,15 +64,6 @@ impl UnixStreamSocket {
             Self::new_connected(Connected::new(end_a), is_nonblocking),
             Self::new_connected(Connected::new(end_b), is_nonblocking),
         )
-    }
-
-    fn bound_addr(&self) -> Option<UnixSocketAddrBound> {
-        let state = self.state.read();
-        match &*state {
-            State::Init(init) => init.addr().cloned(),
-            State::Listen(listen) => Some(listen.addr().clone()),
-            State::Connected(connected) => connected.addr().cloned(),
-        }
     }
 
     fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
@@ -341,18 +327,6 @@ impl Socket for UnixStreamSocket {
         let message_header = MessageHeader::new(None, None);
 
         Ok((copied_bytes, message_header))
-    }
-}
-
-impl Drop for UnixStreamSocket {
-    fn drop(&mut self) {
-        let Some(bound_addr) = self.bound_addr() else {
-            return;
-        };
-
-        if let State::Listen(_) = &*self.state.read() {
-            unregister_backlog(&bound_addr);
-        }
     }
 }
 
