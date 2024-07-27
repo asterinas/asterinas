@@ -5,7 +5,7 @@ use crate::{
     fs::utils::{Channel, Consumer, Producer},
     net::socket::{unix::addr::UnixSocketAddrBound, SockShutdownCmd},
     prelude::*,
-    process::signal::Poller,
+    process::signal::{Pollee, Poller},
 };
 
 pub(super) struct Connected {
@@ -19,9 +19,13 @@ impl Connected {
     pub(super) fn new_pair(
         addr: Option<UnixSocketAddrBound>,
         peer_addr: Option<UnixSocketAddrBound>,
+        reader_pollee: Option<Pollee>,
+        writer_pollee: Option<Pollee>,
     ) -> (Connected, Connected) {
-        let (writer_this, reader_peer) = Channel::with_capacity(DEFAULT_BUF_SIZE).split();
-        let (writer_peer, reader_this) = Channel::with_capacity(DEFAULT_BUF_SIZE).split();
+        let (writer_peer, reader_this) =
+            Channel::with_capacity_and_pollees(DEFAULT_BUF_SIZE, None, reader_pollee).split();
+        let (writer_this, reader_peer) =
+            Channel::with_capacity_and_pollees(DEFAULT_BUF_SIZE, writer_pollee, None).split();
 
         let this = Connected {
             addr: addr.clone(),
