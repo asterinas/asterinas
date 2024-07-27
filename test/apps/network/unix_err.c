@@ -247,6 +247,42 @@ FN_TEST(listen)
 }
 END_TEST()
 
+FN_TEST(accept)
+{
+	TEST_ERRNO(accept(sk_unbound, NULL, NULL), EINVAL);
+
+	TEST_ERRNO(accept(sk_bound, NULL, NULL), EINVAL);
+
+	TEST_ERRNO(accept(sk_connected, NULL, NULL), EINVAL);
+
+	TEST_ERRNO(accept(sk_accepted, NULL, NULL), EINVAL);
+}
+END_TEST()
+
+FN_TEST(send)
+{
+	char buf[1] = { 'z' };
+
+	TEST_ERRNO(send(sk_unbound, buf, 1, 0), ENOTCONN);
+
+	TEST_ERRNO(send(sk_bound, buf, 1, 0), ENOTCONN);
+
+	TEST_ERRNO(send(sk_listen, buf, 1, 0), ENOTCONN);
+}
+END_TEST()
+
+FN_TEST(recv)
+{
+	char buf[1] = { 'z' };
+
+	TEST_ERRNO(recv(sk_unbound, buf, 1, 0), EINVAL);
+
+	TEST_ERRNO(recv(sk_bound, buf, 1, 0), EINVAL);
+
+	TEST_ERRNO(recv(sk_listen, buf, 1, 0), EINVAL);
+}
+END_TEST()
+
 FN_TEST(ns_path)
 {
 	int fd;

@@ -78,7 +78,9 @@ impl UnixStreamSocket {
     fn try_send(&self, buf: &[u8], _flags: SendRecvFlags) -> Result<usize> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_write(buf),
-            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+            State::Init(_) | State::Listen(_) => {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
+            }
         }
     }
 
@@ -93,7 +95,9 @@ impl UnixStreamSocket {
     fn try_recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<usize> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_read(buf),
-            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+            State::Init(_) | State::Listen(_) => {
+                return_errno_with_message!(Errno::EINVAL, "the socket is not connected")
+            }
         }
     }
 
@@ -135,7 +139,9 @@ impl UnixStreamSocket {
     fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         match self.state.read().as_ref() {
             State::Listen(listen) => listen.try_accept() as _,
-            _ => return_errno_with_message!(Errno::EINVAL, "the socket is not listening"),
+            State::Init(_) | State::Connected(_) => {
+                return_errno_with_message!(Errno::EINVAL, "the socket is not listening")
+            }
         }
     }
 
