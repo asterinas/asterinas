@@ -4,22 +4,23 @@
 // So we temporary allow missing_docs for this module.
 #![allow(missing_docs)]
 
-use alloc::{boxed::Box, sync::Arc};
-use core::{any::Any, cell::UnsafeCell};
+mod priority;
+
+use core::{
+    any::Any,
+    cell::UnsafeCell,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
+pub use priority::Priority;
 
-use super::{
-    add_task,
-    priority::Priority,
-    processor::{current_task, schedule},
-};
+use super::{processor::current_task, scheduler};
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     cpu::CpuSet,
     mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, Paddr, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
-    sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
 };
 
@@ -103,6 +104,41 @@ impl Drop for KernelStack {
     }
 }
 
+/// An atomic CPUID container.
+pub struct AtomicCpuId(AtomicU32);
+
+impl AtomicCpuId {
+    /// The null value of CPUID.
+    ///
+    /// An `AtomicCpuId` with `AtomicCpuId::NONE` as its inner value is empty.
+    const NONE: u32 = u32::MAX;
+
+    fn new(cpu_id: u32) -> Self {
+        Self(AtomicU32::new(cpu_id))
+    }
+
+    /// Sets the inner value of an `AtomicCpuId` if it's empty.
+    ///
+    /// The return value is a result indicating whether the new value was written
+    /// and containing the previous value.
+    pub fn set_if_is_none(&self, cpu_id: u32) -> core::result::Result<u32, u32> {
+        self.0
+            .compare_exchange(Self::NONE, cpu_id, Ordering::Relaxed, Ordering::Relaxed)
+    }
+
+    /// Sets the inner value of an `AtomicCpuId` to `AtomicCpuId::NONE`, i.e. makes
+    /// an `AtomicCpuId` empty.
+    pub fn set_to_none(&self) {
+        self.0.store(Self::NONE, Ordering::Relaxed);
+    }
+}
+
+impl Default for AtomicCpuId {
+    fn default() -> Self {
+        Self::new(Self::NONE)
+    }
+}
+
 /// A task that executes a function to the end.
 ///
 /// Each task is associated with per-task data and an optional user space.
@@ -112,11 +148,11 @@ pub struct Task {
     func: Box<dyn Fn() + Send + Sync>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
-    task_inner: SpinLock<TaskInner>,
     ctx: UnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
     link: LinkedListAtomicLink,
+    cpu: AtomicCpuId,
     priority: Priority,
     // TODO: add multiprocessor support
     #[allow(dead_code)]
@@ -130,22 +166,12 @@ intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLin
 // we have exclusive access to the field.
 unsafe impl Sync for Task {}
 
-#[derive(Debug)]
-pub(crate) struct TaskInner {
-    pub task_status: TaskStatus,
-}
-
 impl Task {
     /// Gets the current task.
     ///
     /// It returns `None` if the function is called in the bootstrap context.
     pub fn current() -> Option<Arc<Task>> {
         current_task()
-    }
-
-    /// Gets inner
-    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<TaskInner> {
-        self.task_inner.lock_irq_disabled()
     }
 
     pub(super) fn ctx(&self) -> &UnsafeCell<TaskContext> {
@@ -157,18 +183,14 @@ impl Task {
     /// Note that this method cannot be simply named "yield" as the name is
     /// a Rust keyword.
     pub fn yield_now() {
-        schedule();
+        scheduler::yield_now()
     }
 
     /// Runs the task.
+    ///
+    /// BUG: This method highly depends on the current scheduling policy.
     pub fn run(self: &Arc<Self>) {
-        add_task(self.clone());
-        schedule();
-    }
-
-    /// Returns the task status.
-    pub fn status(&self) -> TaskStatus {
-        self.task_inner.lock_irq_disabled().task_status
+        scheduler::run_new_task(self.clone());
     }
 
     /// Returns the task data.
@@ -185,6 +207,16 @@ impl Task {
         }
     }
 
+    // Returns the cpu of this task.
+    pub fn cpu(&self) -> &AtomicCpuId {
+        &self.cpu
+    }
+
+    /// Returns the priority.
+    pub fn priority(&self) -> Priority {
+        self.priority
+    }
+
     /// Exits the current task.
     ///
     /// The task `self` must be the task that is currently running.
@@ -192,13 +224,10 @@ impl Task {
     /// **NOTE:** If there is anything left on the stack, it will be forgotten. This behavior may
     /// lead to resource leakage.
     fn exit(self: Arc<Self>) -> ! {
-        self.inner_exclusive_access().task_status = TaskStatus::Exited;
-
         // `current_task()` still holds a strong reference, so nothing is destroyed at this point,
         // neither is the kernel stack.
         drop(self);
-
-        schedule();
+        scheduler::exit_current();
         unreachable!()
     }
 
@@ -206,19 +235,6 @@ impl Task {
     pub fn is_real_time(&self) -> bool {
         self.priority.is_real_time()
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-/// The status of a task.
-pub enum TaskStatus {
-    /// The task is runnable.
-    Runnable,
-    /// The task is running in the foreground but will sleep when it goes to the background.
-    Sleepy,
-    /// The task is sleeping in the background.
-    Sleeping,
-    /// The task has exited.
-    Exited,
 }
 
 /// Options to create or spawn a new task.
@@ -236,13 +252,12 @@ impl TaskOptions {
     where
         F: Fn() + Send + Sync + 'static,
     {
-        let cpu_affinity = CpuSet::new_full();
         Self {
             func: Some(Box::new(func)),
             data: None,
             user_space: None,
             priority: Priority::normal(),
-            cpu_affinity,
+            cpu_affinity: CpuSet::new_full(),
         }
     }
 
@@ -300,11 +315,9 @@ impl TaskOptions {
             func: self.func.unwrap(),
             data: self.data.unwrap(),
             user_space: self.user_space,
-            task_inner: SpinLock::new(TaskInner {
-                task_status: TaskStatus::Runnable,
-            }),
             ctx: UnsafeCell::new(TaskContext::default()),
             kstack: KernelStack::new_with_guard_page()?,
+            cpu: AtomicCpuId::default(),
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
             cpu_affinity: self.cpu_affinity,

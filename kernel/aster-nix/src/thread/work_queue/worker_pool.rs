@@ -7,11 +7,7 @@ use core::{
     time::Duration,
 };
 
-use ostd::{
-    cpu::CpuSet,
-    sync::WaitQueue,
-    task::{add_task, Priority},
-};
+use ostd::{cpu::CpuSet, sync::WaitQueue, task::Priority};
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
@@ -81,7 +77,7 @@ impl LocalWorkerPool {
     fn add_worker(&self) {
         let worker = Worker::new(self.parent.clone(), self.cpu_id);
         self.workers.lock_irq_disabled().push_back(worker.clone());
-        add_task(worker.bound_thread().task().clone());
+        worker.bound_thread().run();
     }
 
     fn remove_worker(&self) {
