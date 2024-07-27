@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{fs::path::Dentry, net::socket::util::socket_addr::SocketAddr, prelude::*};
+use keyable_arc::KeyableArc;
+
+use super::ns::{self, AbstractHandle};
+use crate::{
+    fs::{path::Dentry, utils::Inode},
+    net::socket::util::socket_addr::SocketAddr,
+    prelude::*,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnixSocketAddr {
@@ -9,10 +16,36 @@ pub enum UnixSocketAddr {
     Abstract(Arc<[u8]>),
 }
 
-#[derive(Clone, Debug)]
-pub(super) enum UnixSocketAddrBound {
-    Path(Arc<str>, Arc<Dentry>),
-    Abstract(Arc<[u8]>),
+impl UnixSocketAddr {
+    pub(super) fn bind(self) -> Result<UnixSocketAddrBound> {
+        let bound = match self {
+            Self::Unnamed => UnixSocketAddrBound::Abstract(ns::alloc_ephemeral_abstract_name()?),
+            Self::Path(path) => {
+                let dentry = ns::create_socket_file(&path)?;
+                UnixSocketAddrBound::Path(path, dentry)
+            }
+            Self::Abstract(name) => UnixSocketAddrBound::Abstract(ns::create_abstract_name(name)?),
+        };
+
+        Ok(bound)
+    }
+
+    pub(super) fn connect(&self) -> Result<UnixSocketAddrKey> {
+        let bound = match self {
+            Self::Unnamed => return_errno_with_message!(
+                Errno::EINVAL,
+                "the unnamed UNIX domain socket address is not valid for connecting"
+            ),
+            Self::Path(path) => UnixSocketAddrKey::Path(KeyableArc::from(
+                ns::lookup_socket_file(path)?.inode().clone(),
+            )),
+            Self::Abstract(name) => {
+                UnixSocketAddrKey::Abstract(KeyableArc::from(ns::lookup_abstract_name(name)?))
+            }
+        };
+
+        Ok(bound)
+    }
 }
 
 impl TryFrom<SocketAddr> for UnixSocketAddr {
@@ -26,11 +59,34 @@ impl TryFrom<SocketAddr> for UnixSocketAddr {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(super) enum UnixSocketAddrBound {
+    Path(Arc<str>, Arc<Dentry>),
+    Abstract(Arc<AbstractHandle>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub(super) enum UnixSocketAddrKey {
+    Path(KeyableArc<dyn Inode>),
+    Abstract(KeyableArc<AbstractHandle>),
+}
+
+impl UnixSocketAddrBound {
+    pub(super) fn to_key(&self) -> UnixSocketAddrKey {
+        match self {
+            Self::Path(_, dentry) => {
+                UnixSocketAddrKey::Path(KeyableArc::from(dentry.inode().clone()))
+            }
+            Self::Abstract(handle) => UnixSocketAddrKey::Abstract(KeyableArc::from(handle.clone())),
+        }
+    }
+}
+
 impl From<UnixSocketAddrBound> for UnixSocketAddr {
     fn from(value: UnixSocketAddrBound) -> Self {
         match value {
             UnixSocketAddrBound::Path(path, _) => Self::Path(path),
-            UnixSocketAddrBound::Abstract(name) => Self::Abstract(name),
+            UnixSocketAddrBound::Abstract(name) => Self::Abstract(name.name()),
         }
     }
 }
