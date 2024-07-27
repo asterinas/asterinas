@@ -26,7 +26,20 @@ impl<T> Channel<T> {
     ///
     /// This method will panic if the given capacity is zero.
     pub fn with_capacity(capacity: usize) -> Self {
-        let common = Arc::new(Common::new(capacity));
+        Self::with_capacity_and_pollees(capacity, None, None)
+    }
+
+    /// Creates a new channel with the given capacity and pollees.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the given capacity is zero.
+    pub fn with_capacity_and_pollees(
+        capacity: usize,
+        producer_pollee: Option<Pollee>,
+        consumer_pollee: Option<Pollee>,
+    ) -> Self {
+        let common = Arc::new(Common::new(capacity, producer_pollee, consumer_pollee));
 
         let producer = Producer(Fifo::new(common.clone()));
         let consumer = Consumer(Fifo::new(common));
@@ -332,12 +345,36 @@ struct Common<T> {
 }
 
 impl<T> Common<T> {
-    fn new(capacity: usize) -> Self {
+    fn new(
+        capacity: usize,
+        producer_pollee: Option<Pollee>,
+        consumer_pollee: Option<Pollee>,
+    ) -> Self {
         let rb: RingBuffer<T> = RingBuffer::new(capacity);
         let (rb_producer, rb_consumer) = rb.split();
 
-        let producer = FifoInner::new(rb_producer, IoEvents::OUT);
-        let consumer = FifoInner::new(rb_consumer, IoEvents::empty());
+        let producer = {
+            let polee = if let Some(pollee) = producer_pollee {
+                pollee.reset_events();
+                pollee.add_events(IoEvents::OUT);
+                pollee
+            } else {
+                Pollee::new(IoEvents::OUT)
+            };
+
+            FifoInner::new(rb_producer, polee)
+        };
+
+        let consumer = {
+            let pollee = if let Some(pollee) = consumer_pollee {
+                pollee.reset_events();
+                pollee
+            } else {
+                Pollee::new(IoEvents::empty())
+            };
+
+            FifoInner::new(rb_consumer, pollee)
+        };
 
         Self {
             producer,
@@ -382,10 +419,10 @@ struct FifoInner<T> {
 }
 
 impl<T> FifoInner<T> {
-    pub fn new(rb: T, init_events: IoEvents) -> Self {
+    pub fn new(rb: T, pollee: Pollee) -> Self {
         Self {
             rb: Mutex::new(rb),
-            pollee: Pollee::new(init_events),
+            pollee,
         }
     }
 

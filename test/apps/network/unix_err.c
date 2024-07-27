@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/poll.h>
+#include <sys/epoll.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stddef.h>
@@ -372,6 +373,61 @@ FN_TEST(poll_connected_shutdown)
 		  POLLIN | POLLOUT | POLLRDHUP | POLLHUP);
 
 #undef MAKE_TEST
+}
+END_TEST()
+
+FN_TEST(epoll)
+{
+	int sk2_listen, sk2_connected, sk2_accepted;
+	int epfd_listen, epfd_connected;
+	struct epoll_event ev;
+
+	// Setup
+
+	sk2_listen = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk2_connected = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+
+	epfd_listen = TEST_SUCC(epoll_create1(0));
+	ev.events = EPOLLIN;
+	ev.data.fd = sk2_listen;
+	TEST_SUCC(epoll_ctl(epfd_listen, EPOLL_CTL_ADD, sk2_listen, &ev));
+
+	epfd_connected = TEST_SUCC(epoll_create1(0));
+	ev.events = EPOLLIN;
+	ev.data.fd = sk2_connected;
+	TEST_SUCC(epoll_ctl(epfd_connected, EPOLL_CTL_ADD, sk2_connected, &ev));
+
+	// Test 1: Switch from the unbound state to the listening state
+
+	TEST_SUCC(bind(sk2_listen, (struct sockaddr *)&UNIX_ADDR("\0"),
+		       PATH_OFFSET + 1));
+	TEST_SUCC(listen(sk2_listen, 10));
+	TEST_RES(epoll_wait(epfd_listen, &ev, 1, 0), _ret == 0);
+
+	TEST_SUCC(connect(sk2_connected, (struct sockaddr *)&UNIX_ADDR("\0"),
+			  PATH_OFFSET + 1));
+	ev.data.fd = -1;
+	TEST_RES(epoll_wait(epfd_listen, &ev, 1, 0),
+		 _ret == 1 && ev.data.fd == sk2_listen);
+
+	// Test 2: Switch from the unbound state to the connected state
+
+	TEST_RES(epoll_wait(epfd_connected, &ev, 1, 0), _ret == 0);
+
+	sk2_accepted = TEST_SUCC(accept(sk2_listen, NULL, 0));
+	TEST_SUCC(write(sk2_accepted, "", 1));
+
+	ev.data.fd = -1;
+	TEST_RES(epoll_wait(epfd_connected, &ev, 1, 0),
+		 _ret == 1 && ev.data.fd == sk2_connected);
+
+	// Clean up
+
+	TEST_SUCC(close(epfd_listen));
+	TEST_SUCC(close(epfd_connected));
+	TEST_SUCC(close(sk2_connected));
+	TEST_SUCC(close(sk2_accepted));
+	TEST_SUCC(close(sk2_listen));
 }
 END_TEST()
 

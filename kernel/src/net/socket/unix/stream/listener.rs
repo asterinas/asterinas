@@ -2,7 +2,7 @@
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{connected::Connected, UnixStreamSocket};
+use super::{connected::Connected, init::Init, UnixStreamSocket};
 use crate::{
     events::{IoEvents, Observer},
     fs::file_handle::FileLike,
@@ -19,8 +19,8 @@ pub(super) struct Listener {
 }
 
 impl Listener {
-    pub(super) fn new(addr: UnixSocketAddrBound, backlog: usize) -> Self {
-        let backlog = BACKLOG_TABLE.add_backlog(addr, backlog).unwrap();
+    pub(super) fn new(addr: UnixSocketAddrBound, pollee: Pollee, backlog: usize) -> Self {
+        let backlog = BACKLOG_TABLE.add_backlog(addr, pollee, backlog).unwrap();
         Self { backlog }
     }
 
@@ -36,9 +36,8 @@ impl Listener {
         Ok((socket, peer_addr))
     }
 
-    pub(super) fn listen(&self, backlog: usize) -> Result<()> {
+    pub(super) fn listen(&self, backlog: usize) {
         self.backlog.set_backlog(backlog);
-        Ok(())
     }
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
@@ -80,7 +79,12 @@ impl BacklogTable {
         }
     }
 
-    fn add_backlog(&self, addr: UnixSocketAddrBound, backlog: usize) -> Option<Arc<Backlog>> {
+    fn add_backlog(
+        &self,
+        addr: UnixSocketAddrBound,
+        pollee: Pollee,
+        backlog: usize,
+    ) -> Option<Arc<Backlog>> {
         let addr_key = addr.to_key();
 
         let mut backlog_sockets = self.backlog_sockets.write();
@@ -89,7 +93,7 @@ impl BacklogTable {
             return None;
         }
 
-        let new_backlog = Arc::new(Backlog::new(addr, backlog));
+        let new_backlog = Arc::new(Backlog::new(addr, pollee, backlog));
         backlog_sockets.insert(addr_key, new_backlog.clone());
 
         Some(new_backlog)
@@ -102,16 +106,22 @@ impl BacklogTable {
     fn push_incoming(
         &self,
         server_key: &UnixSocketAddrKey,
-        client_addr: Option<UnixSocketAddrBound>,
-    ) -> Result<Connected> {
-        let backlog = self.get_backlog(server_key).ok_or_else(|| {
-            Error::with_message(
-                Errno::ECONNREFUSED,
-                "no socket is listening at the remote address",
-            )
-        })?;
+        init: Init,
+    ) -> core::result::Result<Connected, (Error, Init)> {
+        let backlog = match self.get_backlog(server_key) {
+            Some(backlog) => backlog,
+            None => {
+                return Err((
+                    Error::with_message(
+                        Errno::ECONNREFUSED,
+                        "no socket is listening at the remote address",
+                    ),
+                    init,
+                ))
+            }
+        };
 
-        backlog.push_incoming(client_addr)
+        backlog.push_incoming(init)
     }
 
     fn remove_backlog(&self, addr_key: &UnixSocketAddrKey) {
@@ -127,10 +137,12 @@ struct Backlog {
 }
 
 impl Backlog {
-    fn new(addr: UnixSocketAddrBound, backlog: usize) -> Self {
+    fn new(addr: UnixSocketAddrBound, pollee: Pollee, backlog: usize) -> Self {
+        pollee.reset_events();
+
         Self {
             addr,
-            pollee: Pollee::new(IoEvents::empty()),
+            pollee,
             backlog: AtomicUsize::new(backlog),
             incoming_conns: Mutex::new(VecDeque::with_capacity(backlog)),
         }
@@ -140,17 +152,20 @@ impl Backlog {
         &self.addr
     }
 
-    fn push_incoming(&self, client_addr: Option<UnixSocketAddrBound>) -> Result<Connected> {
+    fn push_incoming(&self, init: Init) -> core::result::Result<Connected, (Error, Init)> {
         let mut incoming_conns = self.incoming_conns.lock();
 
         if incoming_conns.len() >= self.backlog.load(Ordering::Relaxed) {
-            return_errno_with_message!(
-                Errno::EAGAIN,
-                "the pending connection queue on the listening socket is full"
-            );
+            return Err((
+                Error::with_message(
+                    Errno::EAGAIN,
+                    "the pending connection queue on the listening socket is full",
+                ),
+                init,
+            ));
         }
 
-        let (server_conn, client_conn) = Connected::new_pair(Some(self.addr.clone()), client_addr);
+        let (client_conn, server_conn) = init.into_connected(self.addr.clone());
         incoming_conns.push_back(server_conn);
 
         self.pollee.add_events(IoEvents::IN);
@@ -200,7 +215,7 @@ fn unregister_backlog(addr: &UnixSocketAddrKey) {
 
 pub(super) fn push_incoming(
     server_key: &UnixSocketAddrKey,
-    client_addr: Option<UnixSocketAddrBound>,
-) -> Result<Connected> {
-    BACKLOG_TABLE.push_incoming(server_key, client_addr)
+    init: Init,
+) -> core::result::Result<Connected, (Error, Init)> {
+    BACKLOG_TABLE.push_incoming(server_key, init)
 }
