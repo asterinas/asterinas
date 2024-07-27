@@ -83,17 +83,20 @@ static int sk_listen;
 static int sk_connected;
 static int sk_accepted;
 
-#define UNNAMED_ADDR \
-	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "" })
+#define UNIX_ADDR(path) \
+	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = path })
+
+#define UNNAMED_ADDR UNIX_ADDR("")
 #define UNNAMED_ADDRLEN PATH_OFFSET
 
-#define BOUND_ADDR \
-	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "//tmp/B0" })
+#define BOUND_ADDR UNIX_ADDR("//tmp/B0")
 #define BOUND_ADDRLEN (PATH_OFFSET + 9)
 
-#define LISTEN_ADDR \
-	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = "/tmp//L0" })
+#define LISTEN_ADDR UNIX_ADDR("/tmp//L0")
 #define LISTEN_ADDRLEN (PATH_OFFSET + 9)
+
+#define LISTEN_ADDR2 UNIX_ADDR("/tmp/L0")
+#define LISTEN_ADDRLEN2 (PATH_OFFSET + 8)
 
 FN_SETUP(unbound)
 {
@@ -123,8 +126,8 @@ FN_SETUP(connected)
 {
 	sk_connected = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
 
-	CHECK(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR,
-		      LISTEN_ADDRLEN));
+	CHECK(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR2,
+		      LISTEN_ADDRLEN2));
 }
 END_SETUP()
 

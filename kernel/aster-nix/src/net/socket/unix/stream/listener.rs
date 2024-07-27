@@ -118,15 +118,19 @@ impl BacklogTable {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "the socket is not listened"))
     }
 
-    fn push_incoming(&self, addr: &UnixSocketAddrBound, endpoint: Endpoint) -> Result<()> {
-        let backlog = self.get_backlog(addr).map_err(|_| {
+    fn push_incoming(
+        &self,
+        server_addr: &UnixSocketAddrBound,
+        client_addr: Option<UnixSocketAddrBound>,
+    ) -> Result<Endpoint> {
+        let backlog = self.get_backlog(server_addr).map_err(|_| {
             Error::with_message(
                 Errno::ECONNREFUSED,
                 "no socket is listened at the remote address",
             )
         })?;
 
-        backlog.push_incoming(endpoint)
+        backlog.push_incoming(client_addr)
     }
 
     fn remove_backlog(&self, addr: &UnixSocketAddrBound) {
@@ -160,14 +164,23 @@ impl Backlog {
         &self.addr
     }
 
-    fn push_incoming(&self, endpoint: Endpoint) -> Result<()> {
+    fn push_incoming(&self, client_addr: Option<UnixSocketAddrBound>) -> Result<Endpoint> {
         let mut endpoints = self.incoming_endpoints.lock();
+
         if endpoints.len() >= self.backlog.load(Ordering::Relaxed) {
-            return_errno_with_message!(Errno::ECONNREFUSED, "incoming_endpoints is full");
+            return_errno_with_message!(
+                Errno::ECONNREFUSED,
+                "the pending connection queue on the listening socket is full"
+            );
         }
-        endpoints.push_back(endpoint);
+
+        let (server_endpoint, client_endpoint) =
+            Endpoint::new_pair(Some(self.addr.clone()), client_addr);
+        endpoints.push_back(server_endpoint);
+
         self.pollee.add_events(IoEvents::IN);
-        Ok(())
+
+        Ok(client_endpoint)
     }
 
     fn pop_incoming(&self) -> Result<Endpoint> {
@@ -216,6 +229,9 @@ fn unregister_backlog(addr: &UnixSocketAddrBound) {
     BACKLOG_TABLE.remove_backlog(addr);
 }
 
-pub(super) fn push_incoming(remote_addr: &UnixSocketAddrBound, remote_end: Endpoint) -> Result<()> {
-    BACKLOG_TABLE.push_incoming(remote_addr, remote_end)
+pub(super) fn push_incoming(
+    server_addr: &UnixSocketAddrBound,
+    client_addr: Option<UnixSocketAddrBound>,
+) -> Result<Endpoint> {
+    BACKLOG_TABLE.push_incoming(server_addr, client_addr)
 }
