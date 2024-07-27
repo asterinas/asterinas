@@ -297,9 +297,12 @@ impl Socket for UnixStreamSocket {
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
         match self.state.read().as_ref() {
+            State::Init(init) => init.shutdown(cmd),
+            State::Listen(listen) => listen.shutdown(cmd),
             State::Connected(connected) => connected.shutdown(cmd),
-            _ => return_errno_with_message!(Errno::ENOTCONN, "the socked is not connected"),
         }
+
+        Ok(())
     }
 
     fn addr(&self) -> Result<SocketAddr> {

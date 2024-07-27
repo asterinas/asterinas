@@ -326,6 +326,59 @@ FN_TEST(shutdown_connected)
 }
 END_TEST()
 
+FN_TEST(poll_unbound)
+{
+	int sk;
+	struct pollfd pfd = { .events = POLLIN | POLLOUT | POLLRDHUP };
+
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	pfd.fd = sk;
+
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLOUT | POLLHUP));
+
+	TEST_SUCC(shutdown(sk, SHUT_WR));
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLOUT | POLLHUP));
+
+	TEST_SUCC(shutdown(sk, SHUT_RD));
+	TEST_RES(poll(&pfd, 1, 0),
+		 pfd.revents == (POLLIN | POLLOUT | POLLRDHUP | POLLHUP));
+
+	TEST_SUCC(
+		bind(sk, (struct sockaddr *)&UNIX_ADDR("\0"), PATH_OFFSET + 1));
+	TEST_SUCC(listen(sk, 10));
+
+	TEST_RES(poll(&pfd, 1, 0),
+		 pfd.revents == (POLLIN | POLLRDHUP | POLLHUP));
+
+	TEST_SUCC(close(sk));
+}
+END_TEST()
+
+FN_TEST(poll_listen)
+{
+	int sk;
+	struct pollfd pfd = { .events = POLLIN | POLLOUT | POLLRDHUP };
+
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	pfd.fd = sk;
+
+	TEST_SUCC(
+		bind(sk, (struct sockaddr *)&UNIX_ADDR("\0"), PATH_OFFSET + 1));
+	TEST_SUCC(listen(sk, 10));
+
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == 0);
+
+	TEST_SUCC(shutdown(sk, SHUT_RD));
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLIN | POLLRDHUP));
+
+	TEST_SUCC(shutdown(sk, SHUT_WR));
+	TEST_RES(poll(&pfd, 1, 0),
+		 pfd.revents == (POLLIN | POLLRDHUP | POLLHUP));
+
+	TEST_SUCC(close(sk));
+}
+END_TEST()
+
 FN_TEST(poll_connected_close)
 {
 	int fildes[2];

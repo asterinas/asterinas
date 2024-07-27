@@ -61,7 +61,7 @@ impl Connected {
         self.writer.try_write(&mut reader)
     }
 
-    pub(super) fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
+    pub(super) fn shutdown(&self, cmd: SockShutdownCmd) {
         if cmd.shut_read() {
             self.reader.shutdown();
         }
@@ -69,8 +69,6 @@ impl Connected {
         if cmd.shut_write() {
             self.writer.shutdown();
         }
-
-        Ok(())
     }
 
     pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
@@ -78,23 +76,7 @@ impl Connected {
         let reader_events = self.reader.poll(mask, poller.as_deref_mut());
         let writer_events = self.writer.poll(mask, poller);
 
-        let mut events = IoEvents::empty();
-
-        if reader_events.contains(IoEvents::HUP) {
-            // The socket is shut down in one direction: the remote socket has shut down for
-            // writing or the local socket has shut down for reading.
-            events |= IoEvents::RDHUP | IoEvents::IN;
-
-            if writer_events.contains(IoEvents::ERR) {
-                // The socket is shut down in both directions. Neither reading nor writing is
-                // possible.
-                events |= IoEvents::HUP;
-            }
-        }
-
-        events |= (reader_events & IoEvents::IN) | (writer_events & IoEvents::OUT);
-
-        events & (mask | IoEvents::ALWAYS_POLL)
+        combine_io_events(mask, reader_events, writer_events)
     }
 
     pub(super) fn register_observer(
@@ -115,6 +97,30 @@ impl Connected {
         let writer_observer = self.writer.unregister_observer(observer);
         reader_observer.or(writer_observer)
     }
+}
+
+pub(super) fn combine_io_events(
+    mask: IoEvents,
+    reader_events: IoEvents,
+    writer_events: IoEvents,
+) -> IoEvents {
+    let mut events = IoEvents::empty();
+
+    if reader_events.contains(IoEvents::HUP) {
+        // The socket is shut down in one direction: the remote socket has shut down for
+        // writing or the local socket has shut down for reading.
+        events |= IoEvents::RDHUP | IoEvents::IN;
+
+        if writer_events.contains(IoEvents::ERR) {
+            // The socket is shut down in both directions. Neither reading nor writing is
+            // possible.
+            events |= IoEvents::HUP;
+        }
+    }
+
+    events |= (reader_events & IoEvents::IN) | (writer_events & IoEvents::OUT);
+
+    events & (mask | IoEvents::ALWAYS_POLL)
 }
 
 const DEFAULT_BUF_SIZE: usize = 65536;
