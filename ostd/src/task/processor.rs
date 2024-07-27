@@ -2,12 +2,8 @@
 
 use alloc::sync::Arc;
 
-use super::{
-    scheduler::{fetch_task, GLOBAL_SCHEDULER},
-    task::{context_switch, TaskContext},
-    Task, TaskStatus,
-};
-use crate::{cpu::local::PREEMPT_LOCK_COUNT, cpu_local_cell};
+use super::task::{context_switch, Task, TaskContext};
+use crate::{cpu::local::PREEMPT_INFO, cpu_local_cell};
 
 cpu_local_cell! {
     /// The `Arc<Task>` (casted by [`Arc::into_raw`]) that is the current task.
@@ -37,52 +33,19 @@ pub(super) fn current_task() -> Option<Arc<Task>> {
     Some(restored)
 }
 
-/// Calls this function to switch to other task by using GLOBAL_SCHEDULER
-pub fn schedule() {
-    if let Some(task) = fetch_task() {
-        switch_to_task(task);
-    }
-}
-
-/// Preempts the `task`.
-///
-/// TODO: This interface of this method is error prone.
-/// The method takes an argument for the current task to optimize its efficiency,
-/// but the argument provided by the caller may not be the current task, really.
-/// Thus, this method should be removed or reworked in the future.
-pub fn preempt(task: &Arc<Task>) {
-    // TODO: Refactor `preempt` and `schedule`
-    // after the Atomic mode and `might_break` is enabled.
-    let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(task) {
-        return;
-    }
-    let Some(next_task) = scheduler.dequeue() else {
-        return;
-    };
-    drop(scheduler);
-    switch_to_task(next_task);
-}
-
 /// Calls this function to switch to other task
 ///
 /// If current task is none, then it will use the default task context and it
 /// will not return to this function again.
 ///
-/// If the current task's status not [`TaskStatus::Runnable`], it will not be
-/// added to the scheduler.
-///
 /// # Panics
 ///
 /// This function will panic if called while holding preemption locks or with
 /// local IRQ disabled.
-fn switch_to_task(next_task: Arc<Task>) {
-    let preemt_lock_count = PREEMPT_LOCK_COUNT.load();
-    if preemt_lock_count != 0 {
-        panic!(
-            "Calling schedule() while holding {} locks",
-            preemt_lock_count
-        );
+pub(super) fn switch_to_task(next_task: Arc<Task>) {
+    let preemt_count = PREEMPT_COUNT.get();
+    if preemt_count != 0 {
+        panic!("Switching task while holding {} locks", preemt_count);
     }
 
     assert!(
@@ -93,7 +56,6 @@ fn switch_to_task(next_task: Arc<Task>) {
     let irq_guard = crate::trap::disable_local();
 
     let current_task_ptr = CURRENT_TASK_PTR.load();
-
     let current_task_ctx_ptr = if current_task_ptr.is_null() {
         // SAFETY: Interrupts are disabled, so the pointer is safe to be fetched.
         unsafe { BOOTSTRAP_CONTEXT.as_ptr_mut() }
@@ -104,24 +66,12 @@ fn switch_to_task(next_task: Arc<Task>) {
             let _ = core::mem::ManuallyDrop::new(restored.clone());
             restored
         };
-
         let ctx_ptr = cur_task_arc.ctx().get();
-
-        let mut task_inner = cur_task_arc.inner_exclusive_access();
-
-        debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
-        if task_inner.task_status == TaskStatus::Runnable {
-            drop(task_inner);
-            GLOBAL_SCHEDULER.lock().enqueue(cur_task_arc);
-        } else if task_inner.task_status == TaskStatus::Sleepy {
-            task_inner.task_status = TaskStatus::Sleeping;
-        }
 
         ctx_ptr
     };
 
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
-
     if let Some(next_user_space) = next_task.user_space() {
         next_user_space.vm_space().activate();
     }
@@ -144,7 +94,7 @@ fn switch_to_task(next_task: Arc<Task>) {
     drop(irq_guard);
 
     // SAFETY:
-    // 1. `ctx` is only used in `schedule()`. We have exclusive access to both the current task
+    // 1. `ctx` is only used in `reschedule()`. We have exclusive access to both the current task
     //    context and the next task context.
     // 2. The next task context is a valid task context.
     unsafe {
@@ -159,6 +109,34 @@ fn switch_to_task(next_task: Arc<Task>) {
     // to the next task switching.
 }
 
+static PREEMPT_COUNT: PreemptCount = PreemptCount::new();
+
+struct PreemptCount {}
+
+impl PreemptCount {
+    const SHIFT: u8 = 0;
+
+    const BITS: u8 = 31;
+
+    const MASK: u32 = ((1 << Self::BITS) - 1) << Self::SHIFT;
+
+    const fn new() -> Self {
+        Self {}
+    }
+
+    fn inc(&self) {
+        PREEMPT_INFO.add_assign(1 << Self::SHIFT);
+    }
+
+    fn dec(&self) {
+        PREEMPT_INFO.sub_assign(1 << Self::SHIFT);
+    }
+
+    fn get(&self) -> u32 {
+        PREEMPT_INFO.load() & Self::MASK
+    }
+}
+
 /// A guard for disable preempt.
 #[clippy::has_significant_drop]
 #[must_use]
@@ -171,7 +149,7 @@ impl !Send for DisablePreemptGuard {}
 
 impl DisablePreemptGuard {
     fn new() -> Self {
-        PREEMPT_LOCK_COUNT.add_assign(1);
+        PREEMPT_COUNT.inc();
         Self { _private: () }
     }
 
@@ -184,7 +162,7 @@ impl DisablePreemptGuard {
 
 impl Drop for DisablePreemptGuard {
     fn drop(&mut self) {
-        PREEMPT_LOCK_COUNT.sub_assign(1);
+        PREEMPT_COUNT.dec();
     }
 }
 
