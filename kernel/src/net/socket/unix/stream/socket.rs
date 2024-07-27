@@ -11,14 +11,9 @@ use super::{
 };
 use crate::{
     events::{IoEvents, Observer},
-    fs::{
-        file_handle::FileLike,
-        fs_resolver::FsPath,
-        path::Dentry,
-        utils::{InodeType, StatusFlags},
-    },
+    fs::{file_handle::FileLike, utils::StatusFlags},
     net::socket::{
-        unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
+        unix::UnixSocketAddr,
         util::{
             copy_message_from_user, copy_message_to_user, create_message_buffer,
             send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader,
@@ -203,19 +198,7 @@ impl Socket for UnixStreamSocket {
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
-        let remote_addr = {
-            let unix_socket_addr = UnixSocketAddr::try_from(socket_addr)?;
-            match unix_socket_addr {
-                UnixSocketAddr::Unnamed => todo!(),
-                UnixSocketAddr::Abstract(abstract_name) => {
-                    UnixSocketAddrBound::Abstract(abstract_name)
-                }
-                UnixSocketAddr::Path(path) => {
-                    let dentry = lookup_socket_file(&path)?;
-                    UnixSocketAddrBound::Path(path, dentry)
-                }
-            }
-        };
+        let remote_addr = UnixSocketAddr::try_from(socket_addr)?.connect()?;
 
         // Note that the Linux kernel implementation locks the remote socket and checks to see if
         // it is listening first. This is different from our implementation, which locks the local
@@ -355,22 +338,4 @@ impl Socket for UnixStreamSocket {
 
         Ok((copied_bytes, message_header))
     }
-}
-
-fn lookup_socket_file(path: &str) -> Result<Arc<Dentry>> {
-    let dentry = {
-        let current = current!();
-        let fs = current.fs().read();
-        let fs_path = FsPath::try_from(path)?;
-        fs.lookup(&fs_path)?
-    };
-
-    if dentry.type_() != InodeType::Socket {
-        return_errno_with_message!(Errno::ENOTSOCK, "not a socket file")
-    }
-
-    if !dentry.mode()?.is_readable() || !dentry.mode()?.is_writable() {
-        return_errno_with_message!(Errno::EACCES, "the socket cannot be read or written")
-    }
-    Ok(dentry)
 }

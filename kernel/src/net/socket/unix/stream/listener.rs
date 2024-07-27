@@ -2,13 +2,14 @@
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use keyable_arc::KeyableWeak;
-
 use super::{connected::Connected, UnixStreamSocket};
 use crate::{
     events::{IoEvents, Observer},
-    fs::{file_handle::FileLike, path::Dentry, utils::Inode},
-    net::socket::{unix::addr::UnixSocketAddrBound, SocketAddr},
+    fs::file_handle::FileLike,
+    net::socket::{
+        unix::addr::{UnixSocketAddrBound, UnixSocketAddrKey},
+        SocketAddr,
+    },
     prelude::*,
     process::signal::{Pollee, Poller},
 };
@@ -62,15 +63,14 @@ impl Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
-        unregister_backlog(self.backlog.addr())
+        unregister_backlog(&self.backlog.addr().to_key())
     }
 }
 
 static BACKLOG_TABLE: BacklogTable = BacklogTable::new();
 
 struct BacklogTable {
-    backlog_sockets: RwLock<BTreeMap<KeyableWeak<dyn Inode>, Arc<Backlog>>>,
-    // TODO: For linux, there is also abstract socket domain that a socket addr is not bound to an inode.
+    backlog_sockets: RwLock<BTreeMap<UnixSocketAddrKey, Arc<Backlog>>>,
 }
 
 impl BacklogTable {
@@ -81,41 +81,30 @@ impl BacklogTable {
     }
 
     fn add_backlog(&self, addr: UnixSocketAddrBound, backlog: usize) -> Option<Arc<Backlog>> {
-        let inode = {
-            let UnixSocketAddrBound::Path(_, ref dentry) = addr else {
-                todo!()
-            };
-            create_keyable_inode(dentry)
-        };
-        let new_backlog = Arc::new(Backlog::new(addr, backlog));
+        let addr_key = addr.to_key();
 
         let mut backlog_sockets = self.backlog_sockets.write();
-        if backlog_sockets.contains_key(&inode) {
+
+        if backlog_sockets.contains_key(&addr_key) {
             return None;
         }
-        backlog_sockets.insert(inode, new_backlog.clone());
+
+        let new_backlog = Arc::new(Backlog::new(addr, backlog));
+        backlog_sockets.insert(addr_key, new_backlog.clone());
 
         Some(new_backlog)
     }
 
-    fn get_backlog(&self, addr: &UnixSocketAddrBound) -> Option<Arc<Backlog>> {
-        let inode = {
-            let UnixSocketAddrBound::Path(_, dentry) = addr else {
-                todo!()
-            };
-            create_keyable_inode(dentry)
-        };
-
-        let backlog_sockets = self.backlog_sockets.read();
-        backlog_sockets.get(&inode).cloned()
+    fn get_backlog(&self, addr: &UnixSocketAddrKey) -> Option<Arc<Backlog>> {
+        self.backlog_sockets.read().get(addr).cloned()
     }
 
     fn push_incoming(
         &self,
-        server_addr: &UnixSocketAddrBound,
+        server_key: &UnixSocketAddrKey,
         client_addr: Option<UnixSocketAddrBound>,
     ) -> Result<Connected> {
-        let backlog = self.get_backlog(server_addr).ok_or_else(|| {
+        let backlog = self.get_backlog(server_key).ok_or_else(|| {
             Error::with_message(
                 Errno::ECONNREFUSED,
                 "no socket is listening at the remote address",
@@ -125,13 +114,8 @@ impl BacklogTable {
         backlog.push_incoming(client_addr)
     }
 
-    fn remove_backlog(&self, addr: &UnixSocketAddrBound) {
-        let UnixSocketAddrBound::Path(_, dentry) = addr else {
-            todo!()
-        };
-
-        let inode = create_keyable_inode(dentry);
-        self.backlog_sockets.write().remove(&inode);
+    fn remove_backlog(&self, addr_key: &UnixSocketAddrKey) {
+        self.backlog_sockets.write().remove(addr_key);
     }
 }
 
@@ -210,18 +194,13 @@ impl Backlog {
     }
 }
 
-fn create_keyable_inode(dentry: &Arc<Dentry>) -> KeyableWeak<dyn Inode> {
-    let weak_inode = Arc::downgrade(dentry.inode());
-    KeyableWeak::from(weak_inode)
-}
-
-fn unregister_backlog(addr: &UnixSocketAddrBound) {
+fn unregister_backlog(addr: &UnixSocketAddrKey) {
     BACKLOG_TABLE.remove_backlog(addr);
 }
 
 pub(super) fn push_incoming(
-    server_addr: &UnixSocketAddrBound,
+    server_key: &UnixSocketAddrKey,
     client_addr: Option<UnixSocketAddrBound>,
 ) -> Result<Connected> {
-    BACKLOG_TABLE.push_incoming(server_addr, client_addr)
+    BACKLOG_TABLE.push_incoming(server_key, client_addr)
 }

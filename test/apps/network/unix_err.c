@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/poll.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <stddef.h>
 
@@ -231,5 +232,65 @@ FN_TEST(listen)
 	TEST_ERRNO(listen(sk_connected, 10), EINVAL);
 
 	TEST_ERRNO(listen(sk_accepted, 10), EINVAL);
+}
+END_TEST()
+
+FN_TEST(ns_path)
+{
+	int fd;
+
+	fd = TEST_SUCC(creat("/tmp/.good", 0644));
+	TEST_ERRNO(bind(sk_unbound, (struct sockaddr *)&UNIX_ADDR("/tmp/.good"),
+			sizeof(struct sockaddr)),
+		   EADDRINUSE);
+	TEST_ERRNO(connect(sk_unbound,
+			   (struct sockaddr *)&UNIX_ADDR("/tmp/.good"),
+			   sizeof(struct sockaddr)),
+		   ECONNREFUSED);
+	TEST_SUCC(close(fd));
+	TEST_SUCC(unlink("/tmp/.good"));
+
+	fd = TEST_SUCC(creat("/tmp/.bad", 0000));
+	TEST_ERRNO(bind(sk_unbound, (struct sockaddr *)&UNIX_ADDR("/tmp/.bad"),
+			sizeof(struct sockaddr)),
+		   EADDRINUSE);
+	TEST_ERRNO(connect(sk_unbound,
+			   (struct sockaddr *)&UNIX_ADDR("/tmp/.bad"),
+			   sizeof(struct sockaddr)),
+		   EACCES);
+	TEST_SUCC(close(fd));
+	TEST_SUCC(unlink("/tmp/.bad"));
+}
+END_TEST()
+
+FN_TEST(ns_abs)
+{
+	int sk, sk2;
+	struct sockaddr_un addr;
+	socklen_t addrlen;
+
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+
+	TEST_SUCC(bind(sk, (struct sockaddr *)&UNIX_ADDR(""), PATH_OFFSET));
+	addrlen = sizeof(addr);
+	TEST_RES(getsockname(sk, (struct sockaddr *)&addr, &addrlen),
+		 addrlen == PATH_OFFSET + 6 && addr.sun_path[0] == '\0');
+
+	sk2 = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+
+	TEST_ERRNO(bind(sk2, (struct sockaddr *)&addr, addrlen), EADDRINUSE);
+	TEST_ERRNO(connect(sk2, (struct sockaddr *)&addr, addrlen),
+		   ECONNREFUSED);
+	TEST_SUCC(listen(sk, 1));
+	TEST_SUCC(connect(sk2, (struct sockaddr *)&addr, addrlen));
+
+	TEST_SUCC(close(sk));
+	TEST_SUCC(close(sk2));
+
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	TEST_ERRNO(connect(sk, (struct sockaddr *)&addr, addrlen),
+		   ECONNREFUSED);
+	TEST_SUCC(bind(sk, (struct sockaddr *)&addr, addrlen));
+	TEST_SUCC(close(sk));
 }
 END_TEST()
