@@ -4,7 +4,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::SpinLock;
-use crate::task::{add_task, schedule, Task, TaskStatus};
+use crate::task::{scheduler, Task};
 
 // # Explanation on the memory orders
 //
@@ -255,36 +255,15 @@ impl Waker {
         if self.has_woken.swap(true, Ordering::Release) {
             return false;
         }
-
-        let mut task = self.task.inner_exclusive_access();
-        match task.task_status {
-            TaskStatus::Sleepy => {
-                task.task_status = TaskStatus::Runnable;
-            }
-            TaskStatus::Sleeping => {
-                task.task_status = TaskStatus::Runnable;
-
-                // Avoid holding the lock when doing `add_task`
-                drop(task);
-                add_task(self.task.clone());
-            }
-            _ => (),
-        }
+        scheduler::unpark_target(self.task.clone());
 
         true
     }
 
     fn do_wait(&self) {
-        while !self.has_woken.swap(false, Ordering::Acquire) {
-            let mut task = self.task.inner_exclusive_access();
-            // After holding the lock, check again to avoid races
-            if self.has_woken.swap(false, Ordering::Acquire) {
-                break;
-            }
-            task.task_status = TaskStatus::Sleepy;
-            drop(task);
-
-            schedule();
+        let has_woken = &self.has_woken;
+        while !has_woken.swap(false, Ordering::Acquire) {
+            scheduler::park_current(has_woken);
         }
     }
 
