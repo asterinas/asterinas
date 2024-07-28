@@ -4,7 +4,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::SpinLock;
-use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
+use crate::task::{add_task, current_task, processor, schedule, Task, TaskStatus};
 
 // # Explanation on the memory orders
 //
@@ -275,6 +275,7 @@ impl Waker {
     }
 
     fn do_wait(&self) {
+        processor::might_sleep();
         while !self.has_woken.swap(false, Ordering::Acquire) {
             let mut task = self.task.inner_exclusive_access();
             // After holding the lock, check again to avoid races

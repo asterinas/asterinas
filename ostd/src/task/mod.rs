@@ -3,7 +3,7 @@
 //! Tasks are the unit of code execution.
 
 mod priority;
-mod processor;
+pub(crate) mod processor;
 mod scheduler;
 #[allow(clippy::module_inception)]
 mod task;

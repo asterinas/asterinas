@@ -25,6 +25,7 @@ use x86_64::registers::rflags::RFlags;
 #[cfg(feature = "intel_tdx")]
 use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
 use crate::{
+    task::processor,
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
@@ -298,6 +299,7 @@ impl UserContextApiInternal for UserContext {
         let mut user_preemption = UserPreemption::new();
         // return when it is syscall or cpu exception type is Fault or Trap.
         loop {
+            processor::might_break_atomic_context();
             self.user_context.run();
             match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
                 Some(exception) => {
