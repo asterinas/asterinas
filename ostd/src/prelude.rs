@@ -12,6 +12,7 @@ pub(crate) use core::any::Any;
 
 #[cfg(ktest)]
 pub use ostd_macros::ktest;
+pub use ostd_macros::{might_break_atomic_context, might_sleep, should_in_atomic};
 
 pub use crate::{
     early_print as print, early_println as println,
