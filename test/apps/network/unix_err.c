@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#define _GNU_SOURCE
+
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/poll.h>
@@ -301,6 +303,75 @@ FN_TEST(ns_abs)
 		   ECONNREFUSED);
 	TEST_SUCC(bind(sk, (struct sockaddr *)&addr, addrlen));
 	TEST_SUCC(close(sk));
+}
+END_TEST()
+
+FN_TEST(shutdown_connected)
+{
+	int fildes[2];
+
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_STREAM, 0, fildes));
+
+	TEST_SUCC(shutdown(fildes[0], SHUT_RD));
+	TEST_SUCC(shutdown(fildes[0], SHUT_WR));
+	TEST_SUCC(shutdown(fildes[0], SHUT_RDWR));
+
+	TEST_SUCC(shutdown(fildes[0], SHUT_RD));
+	TEST_SUCC(shutdown(fildes[0], SHUT_WR));
+	TEST_SUCC(shutdown(fildes[0], SHUT_RDWR));
+
+	TEST_SUCC(close(fildes[0]));
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()
+
+FN_TEST(poll_connected_close)
+{
+	int fildes[2];
+	struct pollfd pfd = { .events = POLLIN | POLLOUT | POLLRDHUP };
+
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_STREAM, 0, fildes));
+
+	pfd.fd = fildes[1];
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == POLLOUT);
+
+	TEST_SUCC(close(fildes[0]));
+
+	pfd.fd = fildes[1];
+	TEST_RES(poll(&pfd, 1, 0),
+		 pfd.revents == (POLLIN | POLLOUT | POLLRDHUP | POLLHUP));
+
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()
+
+FN_TEST(poll_connected_shutdown)
+{
+	int fildes[2];
+	struct pollfd pfd = { .events = POLLIN | POLLOUT | POLLRDHUP };
+
+#define MAKE_TEST(shut, ev1, ev2)                               \
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_STREAM, 0, fildes)); \
+                                                                \
+	TEST_SUCC(shutdown(fildes[0], shut));                   \
+                                                                \
+	pfd.fd = fildes[0];                                     \
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (ev1));       \
+                                                                \
+	pfd.fd = fildes[1];                                     \
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (ev2));       \
+                                                                \
+	TEST_SUCC(close(fildes[0]));                            \
+	TEST_SUCC(close(fildes[1]));
+
+	MAKE_TEST(SHUT_RD, POLLIN | POLLOUT | POLLRDHUP, POLLOUT);
+
+	MAKE_TEST(SHUT_WR, POLLOUT, POLLIN | POLLOUT | POLLRDHUP);
+
+	MAKE_TEST(SHUT_RDWR, POLLIN | POLLOUT | POLLRDHUP | POLLHUP,
+		  POLLIN | POLLOUT | POLLRDHUP | POLLHUP);
+
+#undef MAKE_TEST
 }
 END_TEST()
 

@@ -58,8 +58,6 @@ impl Connected {
     }
 
     pub(super) fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
-        // FIXME: If the socket has already been shut down, should we return an error code?
-
         if cmd.shut_read() {
             self.reader.shutdown();
         }
@@ -72,23 +70,27 @@ impl Connected {
     }
 
     pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
-        let mut events = IoEvents::empty();
-
-        // FIXME: should reader and writer use the same mask?
+        // Note that `mask | IoEvents::ALWAYS_POLL` contains all the events we care about.
         let reader_events = self.reader.poll(mask, poller.as_deref_mut());
         let writer_events = self.writer.poll(mask, poller);
 
-        // FIXME: Check this logic later.
-        if reader_events.contains(IoEvents::HUP) || self.reader.is_shutdown() {
+        let mut events = IoEvents::empty();
+
+        if reader_events.contains(IoEvents::HUP) {
+            // The socket is shut down in one direction: the remote socket has shut down for
+            // writing or the local socket has shut down for reading.
             events |= IoEvents::RDHUP | IoEvents::IN;
-            if writer_events.contains(IoEvents::ERR) || self.writer.is_shutdown() {
-                events |= IoEvents::HUP | IoEvents::OUT;
+
+            if writer_events.contains(IoEvents::ERR) {
+                // The socket is shut down in both directions. Neither reading nor writing is
+                // possible.
+                events |= IoEvents::HUP;
             }
         }
 
         events |= (reader_events & IoEvents::IN) | (writer_events & IoEvents::OUT);
 
-        events
+        events & (mask | IoEvents::ALWAYS_POLL)
     }
 
     pub(super) fn register_observer(
@@ -96,14 +98,8 @@ impl Connected {
         observer: Weak<dyn Observer<IoEvents>>,
         mask: IoEvents,
     ) -> Result<()> {
-        if mask.contains(IoEvents::IN) {
-            self.reader.register_observer(observer.clone(), mask)?
-        }
-
-        if mask.contains(IoEvents::OUT) {
-            self.writer.register_observer(observer, mask)?
-        }
-
+        self.reader.register_observer(observer.clone(), mask)?;
+        self.writer.register_observer(observer, mask)?;
         Ok(())
     }
 
@@ -111,16 +107,9 @@ impl Connected {
         &self,
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        let observer0 = self.reader.unregister_observer(observer);
-        let observer1 = self.writer.unregister_observer(observer);
-
-        if observer0.is_some() {
-            observer0
-        } else if observer1.is_some() {
-            observer1
-        } else {
-            None
-        }
+        let reader_observer = self.reader.unregister_observer(observer);
+        let writer_observer = self.writer.unregister_observer(observer);
+        reader_observer.or(writer_observer)
     }
 }
 
