@@ -9,7 +9,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use ostd::arch::{
     read_tsc,
     timer::{self, TIMER_FREQ},
-    x86::tsc_freq,
+    tsc_freq,
 };
 use spin::Once;
 
