@@ -46,10 +46,16 @@ impl IfaceCommon {
         }
     }
 
+    /// Acquires the lock to the interface.
+    ///
+    /// *Lock ordering:* [`Self::sockets`] first, [`Self::interface`] second.
     pub(super) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface> {
         self.interface.lock_irq_disabled()
     }
 
+    /// Acuqires the lock to the sockets.
+    ///
+    /// *Lock ordering:* [`Self::sockets`] first, [`Self::interface`] second.
     pub(super) fn sockets(&self) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>> {
         self.sockets.lock_irq_disabled()
     }
@@ -148,8 +154,8 @@ impl IfaceCommon {
     }
 
     pub(super) fn poll<D: Device + ?Sized>(&self, device: &mut D) {
-        let mut interface = self.interface.lock_irq_disabled();
         let mut sockets = self.sockets.lock_irq_disabled();
+        let mut interface = self.interface.lock_irq_disabled();
 
         let timestamp = get_network_timestamp();
         let (has_events, poll_at) = {
@@ -169,8 +175,8 @@ impl IfaceCommon {
         };
 
         // drop sockets here to avoid deadlock
-        drop(sockets);
         drop(interface);
+        drop(sockets);
 
         if let Some(instant) = poll_at {
             let old_instant = self.next_poll_at_ms.load(Ordering::Relaxed);
