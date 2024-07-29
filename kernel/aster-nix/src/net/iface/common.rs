@@ -191,13 +191,15 @@ impl IfaceCommon {
         }
 
         if has_events {
+            // We never try to hold the write lock in the IRQ context, and we disable IRQ when
+            // holding the write lock. So we don't need to disable IRQ when holding the read lock.
             self.bound_sockets.read().iter().for_each(|bound_socket| {
                 bound_socket.on_iface_events();
             });
 
             let closed_sockets = self
                 .closing_sockets
-                .lock()
+                .lock_irq_disabled()
                 .extract_if(|closing_socket| closing_socket.is_closed())
                 .collect::<Vec<_>>();
             drop(closed_sockets);
@@ -216,24 +218,33 @@ impl IfaceCommon {
     fn insert_bound_socket(&self, socket: &Arc<AnyBoundSocketInner>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
-        let inserted = self.bound_sockets.write().insert(keyable_socket);
+        let inserted = self
+            .bound_sockets
+            .write_irq_disabled()
+            .insert(keyable_socket);
         assert!(inserted);
     }
 
     pub(super) fn remove_bound_socket_now(&self, socket: &Arc<AnyBoundSocketInner>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
-        let removed = self.bound_sockets.write().remove(&keyable_socket);
+        let removed = self
+            .bound_sockets
+            .write_irq_disabled()
+            .remove(&keyable_socket);
         assert!(removed);
     }
 
     pub(super) fn remove_bound_socket_when_closed(&self, socket: &Arc<AnyBoundSocketInner>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
-        let removed = self.bound_sockets.write().remove(&keyable_socket);
+        let removed = self
+            .bound_sockets
+            .write_irq_disabled()
+            .remove(&keyable_socket);
         assert!(removed);
 
-        let mut closing_sockets = self.closing_sockets.lock();
+        let mut closing_sockets = self.closing_sockets.lock_irq_disabled();
 
         // Check `is_closed` after holding the lock to avoid race conditions.
         if keyable_socket.is_closed() {
