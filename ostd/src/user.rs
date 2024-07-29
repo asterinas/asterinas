@@ -53,9 +53,7 @@ impl UserSpace {
 /// Only visible in `ostd`.
 pub(crate) trait UserContextApiInternal {
     /// Starts executing in the user mode.
-    fn execute<F>(&mut self, has_kernel_event: F) -> ReturnReason
-    where
-        F: FnMut() -> bool;
+    fn execute(&mut self) -> ReturnReason;
 
     /// Uses the information inside CpuContext to build a trapframe
     fn as_trap_frame(&self) -> TrapFrame;
@@ -121,23 +119,22 @@ impl<'a> UserMode<'a> {
         }
     }
 
-    /// Starts executing in the user mode. Make sure current task is the task in `UserMode`.
+    /// Starts executing in the user mode.
     ///
-    /// The method returns for one of three possible reasons indicated by [`ReturnReason`].
-    /// 1. A system call is issued by the user space;
-    /// 2. A CPU exception is triggered by the user space;
-    /// 3. A kernel event is pending, as indicated by the given closure.
+    /// Make sure current task is the task in `UserMode`.
     ///
-    /// After handling whatever user or kernel events that
-    /// cause the method to return
-    /// and updating the user-mode CPU context,
-    /// this method can be invoked again to go back to the user space.
-    pub fn execute<F>(&mut self, has_kernel_event: F) -> ReturnReason
-    where
-        F: FnMut() -> bool,
-    {
+    /// The method returns for one of three possible reasons indicated by
+    /// [`ReturnReason`]:
+    ///  1. A system call is issued by the user space;
+    ///  2. A CPU exception is triggered by the user space;
+    ///  3. The user is interrupted by an external source.
+    ///
+    /// After handling whatever user or kernel events that cause the method to
+    /// return and updating the user-mode CPU context, this method can be
+    /// invoked again to go back to the user space.
+    pub fn execute(&mut self) -> ReturnReason {
         debug_assert!(Arc::ptr_eq(&self.current, &Task::current()));
-        self.context.execute(has_kernel_event)
+        self.context.execute()
     }
 
     /// Returns an immutable reference the user-mode CPU context.
@@ -159,6 +156,6 @@ pub enum ReturnReason {
     UserSyscall,
     /// A CPU exception is triggered by the user space.
     UserException,
-    /// A kernel event is pending
-    KernelEvent,
+    /// Halted by pending external interrupt.
+    Interrupt,
 }

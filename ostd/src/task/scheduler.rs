@@ -4,7 +4,11 @@
 
 use alloc::collections::VecDeque;
 
-use crate::{prelude::*, sync::SpinLock, task::Task};
+use crate::{
+    prelude::*,
+    sync::SpinLock,
+    task::{SharedTaskInfo, Task},
+};
 
 static DEFAULT_SCHEDULER: FifoScheduler = FifoScheduler::new();
 pub(crate) static GLOBAL_SCHEDULER: SpinLock<GlobalScheduler> = SpinLock::new(GlobalScheduler {
@@ -23,7 +27,7 @@ pub trait Scheduler: Sync + Send {
     fn dequeue(&self) -> Option<Arc<Task>>;
 
     /// Tells whether the given task should be preempted by other tasks in the queue.
-    fn should_preempt(&self, task: &Arc<Task>) -> bool;
+    fn should_preempt(&self, task: &SharedTaskInfo) -> bool;
 }
 
 pub struct GlobalScheduler {
@@ -46,7 +50,7 @@ impl GlobalScheduler {
         self.scheduler.enqueue(task)
     }
 
-    pub fn should_preempt(&self, task: &Arc<Task>) -> bool {
+    pub fn should_preempt(&self, task: &SharedTaskInfo) -> bool {
         self.scheduler.should_preempt(task)
     }
 }
@@ -101,7 +105,7 @@ impl Scheduler for FifoScheduler {
     }
     /// In this simple implementation, task preemption is not supported.
     /// Once a task starts running, it will continue to run until completion.
-    fn should_preempt(&self, _task: &Arc<Task>) -> bool {
+    fn should_preempt(&self, _task: &SharedTaskInfo) -> bool {
         false
     }
 }

@@ -5,10 +5,15 @@ use core::cell::RefCell;
 
 use super::{
     scheduler::{fetch_task, GLOBAL_SCHEDULER},
-    task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{arch, cpu_local};
+use crate::{
+    arch::{
+        self,
+        task::{context_switch, TaskContext},
+    },
+    cpu_local,
+};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -69,7 +74,7 @@ pub fn schedule() {
 /// The method takes an argument for the current task to optimize its efficiency,
 /// but the argument provided by the caller may not be the current task, really.
 /// Thus, this method should be removed or reworked in the future.
-pub fn preempt(task: &Arc<Task>) {
+pub(super) fn preempt(task: &super::SharedTaskInfo) {
     // TODO: Refactor `preempt` and `schedule`
     // after the Atomic mode and `might_break` is enabled.
     let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
@@ -103,14 +108,14 @@ fn switch_to_task(next_task: Arc<Task>) {
         Some(current_task) => {
             let ctx_ptr = current_task.ctx().get();
 
-            let mut task_inner = current_task.inner_exclusive_access();
+            let mut task_status = current_task.status().lock_irq_disabled();
 
-            debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
-            if task_inner.task_status == TaskStatus::Runnable {
-                drop(task_inner);
+            debug_assert_ne!(*task_status, TaskStatus::Sleeping);
+            if *task_status == TaskStatus::Runnable {
+                drop(task_status);
                 GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
-            } else if task_inner.task_status == TaskStatus::Sleepy {
-                task_inner.task_status = TaskStatus::Sleeping;
+            } else if *task_status == TaskStatus::Sleepy {
+                *task_status = TaskStatus::Sleeping;
             }
 
             ctx_ptr

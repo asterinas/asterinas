@@ -199,10 +199,7 @@ impl UserContext {
 }
 
 impl UserContextApiInternal for UserContext {
-    fn execute<F>(&mut self, mut has_kernel_event: F) -> ReturnReason
-    where
-        F: FnMut() -> bool,
-    {
+    fn execute(&mut self) -> ReturnReason {
         // set interrupt flag so that in user mode it can receive external interrupts
         // set ID flag which means cpu support CPUID instruction
         self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
@@ -235,14 +232,16 @@ impl UserContextApiInternal for UserContext {
                     if self.user_context.trap_num as u16 == SYSCALL_TRAPNUM {
                         return_reason = ReturnReason::UserSyscall;
                         break;
+                    } else {
+                        call_irq_callback_functions(
+                            &self.as_trap_frame(),
+                            self.as_trap_frame().trap_num,
+                        );
+                        return_reason = ReturnReason::Interrupt;
+                        break;
                     }
                 }
             };
-            call_irq_callback_functions(&self.as_trap_frame(), self.as_trap_frame().trap_num);
-            if has_kernel_event() {
-                return_reason = ReturnReason::KernelEvent;
-                break;
-            }
 
             user_preemption.might_preempt();
         }

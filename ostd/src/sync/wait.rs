@@ -256,16 +256,16 @@ impl Waker {
             return false;
         }
 
-        let mut task = self.task.inner_exclusive_access();
-        match task.task_status {
+        let mut task_status = self.task.status().lock_irq_disabled();
+        match *task_status {
             TaskStatus::Sleepy => {
-                task.task_status = TaskStatus::Runnable;
+                *task_status = TaskStatus::Runnable;
             }
             TaskStatus::Sleeping => {
-                task.task_status = TaskStatus::Runnable;
+                *task_status = TaskStatus::Runnable;
 
                 // Avoid holding the lock when doing `add_task`
-                drop(task);
+                drop(task_status);
                 add_task(self.task.clone());
             }
             _ => (),
@@ -276,13 +276,13 @@ impl Waker {
 
     fn do_wait(&self) {
         while !self.has_woken.swap(false, Ordering::Acquire) {
-            let mut task = self.task.inner_exclusive_access();
+            let mut task_status = self.task.status().lock_irq_disabled();
             // After holding the lock, check again to avoid races
             if self.has_woken.swap(false, Ordering::Acquire) {
                 break;
             }
-            task.task_status = TaskStatus::Sleepy;
-            drop(task);
+            *task_status = TaskStatus::Sleepy;
+            drop(task_status);
 
             schedule();
         }
@@ -310,8 +310,8 @@ mod test {
         let cond = Arc::new(AtomicBool::new(false));
         let cond_cloned = cond.clone();
 
-        TaskOptions::new(move || {
-            Task::yield_now();
+        TaskOptions::new(move |tctx, _, _| {
+            tctx.yield_now();
 
             cond_cloned.store(true, Ordering::Relaxed);
             wake(&*queue_cloned);
@@ -362,8 +362,8 @@ mod test {
         let cond = Arc::new(AtomicBool::new(false));
         let cond_cloned = cond.clone();
 
-        TaskOptions::new(move || {
-            Task::yield_now();
+        TaskOptions::new(move |tctx, _, _| {
+            tctx.yield_now();
 
             cond_cloned.store(true, Ordering::Relaxed);
             assert!(waker.wake_up());
@@ -389,13 +389,13 @@ mod test {
         let cond2 = Arc::new(AtomicBool::new(false));
         let cond2_cloned = cond2.clone();
 
-        TaskOptions::new(move || {
-            Task::yield_now();
+        TaskOptions::new(move |tctx, _, _| {
+            tctx.yield_now();
 
             cond2_cloned.store(true, Ordering::Relaxed);
             assert!(waker2.wake_up());
 
-            Task::yield_now();
+            tctx.yield_now();
 
             cond_cloned.store(true, Ordering::Relaxed);
             assert!(waker.wake_up());
