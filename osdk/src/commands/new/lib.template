@@ -1,7 +1,6 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-#[cfg(ktest)]
 mod tests {
     use ostd::prelude::*;
 

@@ -197,7 +197,6 @@ fn check_status_flags(status_flags: StatusFlags) -> Result<()> {
     Ok(())
 }
 
-#[cfg(ktest)]
 mod test {
     use alloc::sync::Arc;
     use core::sync::atomic::{self, AtomicBool};
@@ -307,7 +306,7 @@ mod test {
     #[ktest]
     fn test_read_closed() {
         test_blocking(
-            |writer| drop(writer),
+            drop,
             |reader| {
                 let mut buf = [0; 1];
                 assert_eq!(reader.read(&mut buf).unwrap(), 0);
@@ -323,7 +322,7 @@ mod test {
                 assert_eq!(writer.write(&[1, 2]).unwrap(), 1);
                 assert_eq!(writer.write(&[2]).unwrap_err().error(), Errno::EPIPE);
             },
-            |reader| drop(reader),
+            drop,
             Ordering::WriteThenRead,
         );
     }

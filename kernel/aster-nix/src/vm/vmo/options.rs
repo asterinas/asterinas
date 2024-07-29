@@ -474,7 +474,6 @@ impl VmoChildType for VmoSliceChild {}
 pub struct VmoCowChild;
 impl VmoChildType for VmoCowChild {}
 
-#[cfg(ktest)]
 mod test {
     use aster_rights::Full;
     use ostd::{mm::VmIo, prelude::*};

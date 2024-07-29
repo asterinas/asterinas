@@ -280,7 +280,7 @@ pub(super) fn init() {
     init_coarse_clock();
 }
 
-#[cfg(ktest)]
+//
 /// Init `CLOCK_REALTIME_MANAGER` for process-related ktests.
 ///
 /// TODO: `ktest` may require a feature that allows the registration of initialization functions

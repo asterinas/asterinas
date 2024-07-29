@@ -16,7 +16,7 @@ mod node;
 use node::*;
 pub mod cursor;
 pub use cursor::{Cursor, CursorMut, PageTableQueryResult};
-#[cfg(ktest)]
+
 mod test;
 
 pub(in crate::mm) mod boot_pt;
@@ -234,7 +234,7 @@ where
     /// Note that this function may fail reflect an accurate result if there are
     /// cursors concurrently accessing the same virtual address range, just like what
     /// happens for the hardware MMU walk.
-    #[cfg(ktest)]
+
     pub fn query(&self, vaddr: Vaddr) -> Option<(Paddr, PageProperty)> {
         // SAFETY: The root node is a valid page table node so the address is valid.
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
@@ -289,14 +289,14 @@ where
 ///
 /// To mitigate this problem, the page table nodes are by default not
 /// actively recycled, until we find an appropriate solution.
-#[cfg(ktest)]
+
 pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
     root_paddr: Paddr,
     vaddr: Vaddr,
 ) -> Option<(Paddr, PageProperty)> {
     use super::paddr_to_vaddr;
 
-    let preempt_guard = crate::task::disable_preempt();
+    let _preempt_guard = crate::task::disable_preempt();
 
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {

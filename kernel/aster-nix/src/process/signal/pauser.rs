@@ -267,7 +267,6 @@ impl Observer<SigEvents> for SigQueueObserver {
     }
 }
 
-#[cfg(ktest)]
 mod test {
     use ostd::prelude::*;
 

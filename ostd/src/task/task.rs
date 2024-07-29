@@ -331,14 +331,13 @@ impl TaskOptions {
     }
 }
 
-#[cfg(ktest)]
 mod test {
     use crate::prelude::*;
 
     #[ktest]
     fn create_task() {
         let task = || {
-            assert_eq!(1, 1);
+            let _ = 1;
         };
         let task_option = crate::task::TaskOptions::new(task)
             .data(())
@@ -350,7 +349,7 @@ mod test {
     #[ktest]
     fn spawn_task() {
         let task = || {
-            assert_eq!(1, 1);
+            let _ = 1;
         };
         let _ = crate::task::TaskOptions::new(task).data(()).spawn();
     }

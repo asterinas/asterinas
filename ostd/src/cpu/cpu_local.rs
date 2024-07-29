@@ -225,7 +225,6 @@ extern "C" {
     fn __cpu_local_end();
 }
 
-#[cfg(ktest)]
 mod test {
     use core::{
         cell::RefCell,
@@ -233,8 +232,6 @@ mod test {
     };
 
     use ostd_macros::ktest;
-
-    use super::*;
 
     #[ktest]
     fn test_cpu_local() {
