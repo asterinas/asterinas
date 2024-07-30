@@ -7,10 +7,10 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-#[cfg(feature = "intel_tdx")]
+#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
 use ::tdx_guest::tdx_is_enabled;
 
-#[cfg(feature = "intel_tdx")]
+#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
 use crate::arch::tdx_guest;
 use crate::{
     bus::pci::{
@@ -100,7 +100,7 @@ impl CapabilityMsixData {
 
         // Set message address 0xFEE0_0000
         for i in 0..table_size {
-            #[cfg(feature = "intel_tdx")]
+            #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
             // SAFETY:
             // This is safe because we are ensuring that the physical address of the MSI-X table is valid before this operation.
             // We are also ensuring that we are only unprotecting a single page.

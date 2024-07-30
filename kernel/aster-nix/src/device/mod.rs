@@ -3,7 +3,7 @@
 mod null;
 mod pty;
 mod random;
-#[cfg(feature = "intel_tdx")]
+#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
 mod tdxguest;
 pub mod tty;
 mod urandom;
@@ -11,9 +11,9 @@ mod zero;
 
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
-#[cfg(feature = "intel_tdx")]
+#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
 use tdx_guest::tdx_is_enabled;
-#[cfg(feature = "intel_tdx")]
+#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
 pub use tdxguest::TdxGuest;
 pub use urandom::Urandom;
 
@@ -34,9 +34,9 @@ pub fn init() -> Result<()> {
     add_node(console, "console")?;
     let tty = Arc::new(tty::TtyDevice);
     add_node(tty, "tty")?;
-    #[cfg(feature = "intel_tdx")]
+    #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
     let tdx_guest = Arc::new(tdxguest::TdxGuest);
-    #[cfg(feature = "intel_tdx")]
+    #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
     if tdx_is_enabled() {
         add_node(tdx_guest, "tdx_guest")?;
     }
