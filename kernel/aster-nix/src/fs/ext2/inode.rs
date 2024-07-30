@@ -1941,12 +1941,12 @@ impl InodeImpl {
 }
 
 impl PageCacheBackend for InodeImpl {
-    fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.read_blocks_async(bid, &Segment::from(frame.clone()))
     }
 
-    fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.write_blocks_async(bid, &Segment::from(frame.clone()))
     }

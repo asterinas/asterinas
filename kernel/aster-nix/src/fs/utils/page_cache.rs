@@ -305,7 +305,7 @@ impl ReadaheadState {
         };
         for async_idx in window.readahead_range() {
             let mut async_page = Page::alloc()?;
-            let pg_waiter = backend.read_page(async_idx, async_page.frame())?;
+            let pg_waiter = backend.read_page_async(async_idx, async_page.frame())?;
             self.waiter.concat(pg_waiter);
             async_page.set_state(PageState::Uninit);
             pages.put(async_idx, async_page);
@@ -341,8 +341,9 @@ impl PageCacheManager {
     // Discard pages without writing them back to disk.
     pub fn discard_range(&self, range: Range<usize>) {
         let page_idx_range = get_page_idx_range(&range);
+        let mut pages = self.pages.lock();
         for idx in page_idx_range {
-            self.pages.lock().pop(&idx);
+            pages.pop(&idx);
         }
     }
 
@@ -356,7 +357,7 @@ impl PageCacheManager {
         for idx in page_idx_range.start..page_idx_range.end {
             if let Some(page) = pages.peek(&idx) {
                 if *page.state() == PageState::Dirty && idx < backend_npages {
-                    let waiter = backend.write_page(idx, page.frame())?;
+                    let waiter = backend.write_page_async(idx, page.frame())?;
                     bio_waiter.concat(waiter);
                 }
             }
@@ -407,7 +408,7 @@ impl PageCacheManager {
             // Conducts the sync read operation.
             let page = if idx < backend.npages() {
                 let mut page = Page::alloc()?;
-                backend.read_page_sync(idx, page.frame())?;
+                backend.read_page(idx, page.frame())?;
                 page.set_state(PageState::UpToDate);
                 page
             } else {
@@ -458,7 +459,7 @@ impl Pager for PageCacheManager {
                     return Ok(());
                 };
                 if idx < backend.npages() {
-                    backend.write_page_sync(idx, page.frame())?;
+                    backend.write_page(idx, page.frame())?;
                 }
             }
         }
@@ -528,25 +529,25 @@ enum PageState {
 /// This trait represents the backend for the page cache.
 pub trait PageCacheBackend: Sync + Send {
     /// Reads a page from the backend asynchronously.
-    fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter>;
+    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter>;
     /// Writes a page to the backend asynchronously.
-    fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter>;
+    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter>;
     /// Returns the number of pages in the backend.
     fn npages(&self) -> usize;
 }
 
 impl dyn PageCacheBackend {
     /// Reads a page from the backend synchronously.
-    fn read_page_sync(&self, idx: usize, frame: &Frame) -> Result<()> {
-        let waiter = self.read_page(idx, frame)?;
+    fn read_page(&self, idx: usize, frame: &Frame) -> Result<()> {
+        let waiter = self.read_page_async(idx, frame)?;
         match waiter.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
         }
     }
     /// Writes a page to the backend synchronously.
-    fn write_page_sync(&self, idx: usize, frame: &Frame) -> Result<()> {
-        let waiter = self.write_page(idx, frame)?;
+    fn write_page(&self, idx: usize, frame: &Frame) -> Result<()> {
+        let waiter = self.write_page_async(idx, frame)?;
         match waiter.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),

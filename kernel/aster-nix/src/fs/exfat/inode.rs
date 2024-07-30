@@ -135,20 +135,20 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-        let waiter = inner.fs().block_device().read_block(
+        let waiter = inner.fs().block_device().read_block_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             frame,
         )?;
         Ok(waiter)
     }
 
-    fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
@@ -156,7 +156,7 @@ impl PageCacheBackend for ExfatInode {
 
         // FIXME: We may need to truncate the file if write_page fails.
         // To fix this issue, we need to change the interface of the PageCacheBackend trait.
-        let waiter = inner.fs().block_device().write_block(
+        let waiter = inner.fs().block_device().write_block_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             frame,
         )?;
@@ -1274,10 +1274,7 @@ impl Inode for ExfatInode {
         for _ in Bid::from_offset(read_off)..Bid::from_offset(read_off + read_len) {
             let physical_bid =
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
-            inner
-                .fs()
-                .block_device()
-                .read_block_sync(physical_bid, &frame)?;
+            inner.fs().block_device().read_block(physical_bid, &frame)?;
 
             frame.read_bytes(0, &mut buf[buf_offset..buf_offset + BLOCK_SIZE])?;
             buf_offset += BLOCK_SIZE;
@@ -1388,7 +1385,7 @@ impl Inode for ExfatInode {
             let physical_bid =
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
             let fs = inner.fs();
-            fs.block_device().write_block_sync(physical_bid, &frame)?;
+            fs.block_device().write_block(physical_bid, &frame)?;
             buf_offset += BLOCK_SIZE;
 
             cur_offset += BLOCK_SIZE;

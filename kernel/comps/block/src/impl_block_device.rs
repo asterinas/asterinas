@@ -14,61 +14,61 @@ use crate::prelude::*;
 // TODO: Add API to submit bio with multiple segments in scatter/gather manner.
 impl dyn BlockDevice {
     /// Synchronously reads contiguous blocks starting from the `bid`.
-    pub fn read_blocks_sync(
-        &self,
-        bid: Bid,
-        segment: &Segment,
-    ) -> Result<BioStatus, BioEnqueueError> {
+    pub fn read_blocks(&self, bid: Bid, segment: &Segment) -> Result<BioStatus, BioEnqueueError> {
         let bio = create_bio_from_segment(BioType::Read, bid, segment);
-        let status = bio.submit_sync(self)?;
+        let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
 
     /// Asynchronously reads contiguous blocks starting from the `bid`.
-    pub fn read_blocks(&self, bid: Bid, segment: &Segment) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn read_blocks_async(
+        &self,
+        bid: Bid,
+        segment: &Segment,
+    ) -> Result<BioWaiter, BioEnqueueError> {
         let bio = create_bio_from_segment(BioType::Read, bid, segment);
         bio.submit(self)
     }
 
     /// Synchronously reads one block indicated by the `bid`.
-    pub fn read_block_sync(&self, bid: Bid, frame: &Frame) -> Result<BioStatus, BioEnqueueError> {
+    pub fn read_block(&self, bid: Bid, frame: &Frame) -> Result<BioStatus, BioEnqueueError> {
         let bio = create_bio_from_frame(BioType::Read, bid, frame);
-        let status = bio.submit_sync(self)?;
+        let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
 
     /// Asynchronously reads one block indicated by the `bid`.
-    pub fn read_block(&self, bid: Bid, frame: &Frame) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn read_block_async(&self, bid: Bid, frame: &Frame) -> Result<BioWaiter, BioEnqueueError> {
         let bio = create_bio_from_frame(BioType::Read, bid, frame);
         bio.submit(self)
     }
 
     /// Synchronously writes contiguous blocks starting from the `bid`.
-    pub fn write_blocks_sync(
-        &self,
-        bid: Bid,
-        segment: &Segment,
-    ) -> Result<BioStatus, BioEnqueueError> {
+    pub fn write_blocks(&self, bid: Bid, segment: &Segment) -> Result<BioStatus, BioEnqueueError> {
         let bio = create_bio_from_segment(BioType::Write, bid, segment);
-        let status = bio.submit_sync(self)?;
+        let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
 
     /// Asynchronously writes contiguous blocks starting from the `bid`.
-    pub fn write_blocks(&self, bid: Bid, segment: &Segment) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn write_blocks_async(
+        &self,
+        bid: Bid,
+        segment: &Segment,
+    ) -> Result<BioWaiter, BioEnqueueError> {
         let bio = create_bio_from_segment(BioType::Write, bid, segment);
         bio.submit(self)
     }
 
     /// Synchronously writes one block indicated by the `bid`.
-    pub fn write_block_sync(&self, bid: Bid, frame: &Frame) -> Result<BioStatus, BioEnqueueError> {
+    pub fn write_block(&self, bid: Bid, frame: &Frame) -> Result<BioStatus, BioEnqueueError> {
         let bio = create_bio_from_frame(BioType::Write, bid, frame);
-        let status = bio.submit_sync(self)?;
+        let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
 
     /// Asynchronously writes one block indicated by the `bid`.
-    pub fn write_block(&self, bid: Bid, frame: &Frame) -> Result<BioWaiter, BioEnqueueError> {
+    pub fn write_block_async(&self, bid: Bid, frame: &Frame) -> Result<BioWaiter, BioEnqueueError> {
         let bio = create_bio_from_frame(BioType::Write, bid, frame);
         bio.submit(self)
     }
@@ -106,7 +106,7 @@ impl VmIo for dyn BlockDevice {
             )
         };
 
-        let status = bio.submit_sync(self)?;
+        let status = bio.submit_and_wait(self)?;
         match status {
             BioStatus::Complete => {
                 let _ = bio_segment.reader().read(&mut buf.into());
@@ -148,7 +148,7 @@ impl VmIo for dyn BlockDevice {
             )
         };
 
-        let status = bio.submit_sync(self)?;
+        let status = bio.submit_and_wait(self)?;
         match status {
             BioStatus::Complete => Ok(()),
             _ => Err(ostd::Error::IoError),
