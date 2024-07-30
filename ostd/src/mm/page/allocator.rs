@@ -6,19 +6,15 @@
 //! allocating pages rather untyped memory from this module.
 
 use alloc::{boxed::Box, collections::btree_set::BTreeSet};
-use core::{
-    alloc::Layout,
-    array,
-    cmp::min,
-};
+use core::{alloc::Layout, array, cmp::min};
 
 use align_ext::AlignExt;
-use log::{debug, info, warn};
+use log::{info, warn};
 use spin::Once;
 
 use crate::{
     boot::memory_region::MemoryRegionType,
-    mm::{Paddr, PAGE_SIZE},
+    mm::{page, Paddr, PAGE_SIZE},
     sync::SpinLock,
 };
 
@@ -66,8 +62,6 @@ pub trait PageAlloc: Sync + Send {
 
 #[export_name = "PAGE_ALLOCATOR"]
 pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<Box<dyn PageAlloc>>> = Once::new();
-#[export_name = "BOOTSTRAP_PAGE_ALLOCATOR"]
-pub(in crate::mm) static BOOTSTRAP_PAGE_ALLOCATOR: Once<SpinLock<Box<dyn PageAlloc>>> = Once::new();
 
 ///////////////////////////////////////////////////////////////////////////////
 /// ## Bootstrap page allocator
@@ -201,6 +195,74 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
     }
 
     /// set_frames_allocated
+    /// 
+    /// # Description
+    /// 
+    /// Given frames, described by a range of **frame number** [start, end),
+    /// mark them as allocated. Make sure they can be correctly deallocated
+    /// afterwards, while will not be allocated before deallocation.
+    /// 
+    /// # Panics
+    /// 
+    /// The function panics if no suitable block found for the given range.
+    pub fn set_frames_allocated(&mut self, start: usize, end: usize) {
+        let mut current_start = start;
+        while current_start < end {
+            /*
+            Algorithm:
+
+            1. Find one free block(begin_frame, class) already in the free
+            list, which contains at least one frame described by
+            current_start. If not, panic.
+
+            2. Split the block corresponding to the buddy algorithm. Find
+            the biggest sub-block which begins with current_start. The end of sublock should be smaller than end.
+            */
+
+            let mut size = 0;
+            for i in (0..self.free_list.len()).rev() {
+                if self.free_list[i].is_empty() {
+                    continue;
+                }
+                // Traverse the blocks in the btree list
+                for block_iter in self.free_list[i].iter() {
+                    let block = *block_iter;
+                    // block means the start frame of the block
+                    if block > current_start {
+                        break;
+                    }
+                    if block <= current_start && block + (1 << i) > current_start {
+                        if block == current_start {
+                            size = 1 << i;
+                        } else if i > 0 {
+                            self.free_list[i - 1].insert(block);
+                            self.free_list[i - 1].insert(block + 1 << (i - 1));
+                            self.free_list[i].remove(&block);
+                        }
+                        break;
+                    }
+                }
+
+                if size != 0 {
+                    // Already found the suitable block
+                    break;
+                }
+            }
+
+            if size == 0 {
+                panic!(
+                    "No suitable block found for current_start: {:x}",
+                    current_start
+                );
+            }
+
+            current_start += size;
+            // Update statistics
+            self.allocated += size;
+        }
+    }
+
+    /// set_frames_allocated
     ///
     /// # Description
     ///
@@ -238,11 +300,12 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
                         break;
                     }
                     if block <= current_start && block + (1 << i) > current_start {
-                        if block == current_start {
+                        if block == current_start && block + (1 << i) <= end {
+                            self.free_list[i].remove(&block);
                             size = 1 << i;
                         } else if i > 0 {
                             self.free_list[i - 1].insert(block);
-                            self.free_list[i - 1].insert(block + 1 << (i - 1));
+                            self.free_list[i - 1].insert(block + (1 << (i - 1)));
                             self.free_list[i].remove(&block);
                         }
                         break;
@@ -312,8 +375,20 @@ pub(crate) fn init() {
                 region.base(),
                 region.base() + region.len()
             );
+
+            for frame in start..end {
+                if page::Page::<page::meta::FrameMeta>::check_page_status(frame * PAGE_SIZE) {
+                    allocator.set_frames_allocated(frame, frame + 1);
+                }
+            }
         }
     }
+    info!(
+        "Global page allocator is initialized, total memory: {}, allocated memory: {}",
+        (allocator.total_mem()) / PAGE_SIZE,
+        (allocator.total_mem() - allocator.free_mem()) / PAGE_SIZE
+    );
+
     PAGE_ALLOCATOR.call_once(|| SpinLock::new(allocator));
 }
 
@@ -325,6 +400,10 @@ pub(crate) struct BootstrapFrameAllocator {
     // allocated.
     frame_cursor: usize,
 }
+
+#[export_name = "BOOTSTRAP_PAGE_ALLOCATOR"]
+pub(in crate::mm) static BOOTSTRAP_PAGE_ALLOCATOR: Once<SpinLock<BootstrapFrameAllocator>> =
+    Once::new();
 
 impl BootstrapFrameAllocator {
     pub fn new() -> Self {
@@ -361,25 +440,21 @@ impl BootstrapFrameAllocator {
             frame_cursor: first_frame,
         }
     }
-
-    pub fn get_frame_cursor(self) -> usize {
-        self.frame_cursor
-    }
 }
 
 impl PageAlloc for BootstrapFrameAllocator {
-    fn add_frame(&mut self, start: usize, end: usize) {
+    fn add_frame(&mut self, _start: usize, _end: usize) {
         warn!("BootstrapFrameAllocator does not need to add frames");
     }
 
-    fn alloc(&mut self, layout: Layout) -> Option<Paddr> {
+    fn alloc(&mut self, _layout: Layout) -> Option<Paddr> {
         warn!("BootstrapFrameAllocator does not support to allocate memory described by range");
         None
     }
 
-    fn alloc_page(&mut self, align: usize) -> Option<Paddr> {
+    fn alloc_page(&mut self, _align: usize) -> Option<Paddr> {
         let frame = self.frame_cursor;
-        debug!("allocating frame: {:#x}", frame * PAGE_SIZE,);
+        // debug!("allocating frame: {:#x}", frame * PAGE_SIZE,);
         // Update idx and cursor
         let regions = crate::boot::memory_regions();
         self.frame_cursor += 1;
@@ -412,10 +487,10 @@ impl PageAlloc for BootstrapFrameAllocator {
                 panic!("no more usable memory regions for boot page table");
             }
         }
-        Some(frame)
+        Some(frame * PAGE_SIZE)
     }
 
-    fn dealloc(&mut self, addr: Paddr, nr_pages: usize) {
+    fn dealloc(&mut self, _addr: Paddr, _nr_pages: usize) {
         panic!("BootstrapFrameAllocator does support frames deallocation!");
     }
 
@@ -431,5 +506,6 @@ impl PageAlloc for BootstrapFrameAllocator {
 }
 
 pub(crate) fn bootstrap_init() {
-    BOOTSTRAP_PAGE_ALLOCATOR.call_once(|| SpinLock::new(Box::new(BootstrapFrameAllocator::new())));
+    info!("Initializing the bootstrap page allocator");
+    BOOTSTRAP_PAGE_ALLOCATOR.call_once(|| SpinLock::new(BootstrapFrameAllocator::new()));
 }

@@ -44,6 +44,7 @@ use core::{
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
 
+use allocator::{PageAlloc, BOOTSTRAP_PAGE_ALLOCATOR};
 use log::info;
 use num_derive::FromPrimitive;
 use static_assertions::const_assert_eq;
@@ -151,10 +152,11 @@ pub(super) unsafe fn drop_as_last<M: PageMeta>(ptr: *const MetaSlot) {
     // It would return the page to the allocator for further use. This would be done
     // after the release of the metadata to avoid re-allocation before the metadata
     // is reset.
-    allocator::PAGE_ALLOCATOR.get().unwrap().lock().dealloc(
-        mapping::meta_to_page::<PagingConsts>(ptr as Vaddr),
-        1,
-    );
+    allocator::PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .dealloc(mapping::meta_to_page::<PagingConsts>(ptr as Vaddr), 1);
 }
 
 mod private {
@@ -309,18 +311,15 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
 
 fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
     let mut meta_pages = Vec::new();
-    let start_frame = allocator::PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(core::alloc::Layout::from_size_align(nframes * PAGE_SIZE, PAGE_SIZE).unwrap())
-        .unwrap_or_else(|| panic!("Failed to allocate metadata pages"));
-    // Zero them out as initialization.
-    let vaddr = paddr_to_vaddr(start_frame) as *mut u8;
-    unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };
-    for i in 0..nframes {
-        let paddr = start_frame + i * PAGE_SIZE;
-        meta_pages.push(paddr);
+    let mut allocator = BOOTSTRAP_PAGE_ALLOCATOR.get().unwrap().lock();
+    for _ in 0..nframes {
+        let frame_paddr = allocator
+            .alloc_page(PAGE_SIZE)
+            .unwrap_or_else(|| panic!("Failed to allocate metadata pages"));
+        // Zero them out as initialization.
+        let vaddr = paddr_to_vaddr(frame_paddr) as *mut u8;
+        unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
+        meta_pages.push(frame_paddr);
     }
     meta_pages
 }
