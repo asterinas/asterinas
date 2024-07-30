@@ -32,13 +32,8 @@ jobs:
           - lmbench-fstat
           - lmbench-open
           - lmbench-stat
-          # TODO: The following benchmarks are disabled now for some reasons.
-          #
-          # In Linux, lack of /dev/null device
-          # - lmbench-write
-          # In Linux, lack of /dev/zero device
-          # - lmbench-read
-          #
+          - lmbench-write
+          - lmbench-read
           # Signal-related benchmarks
           - lmbench-signal
       fail-fast: false

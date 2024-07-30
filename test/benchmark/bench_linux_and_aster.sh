@@ -21,6 +21,7 @@ generate_entrypoint_script() {
     local benchmark="$1"
     local init_script=$(cat <<EOF
 #!/bin/sh
+mount -t devtmpfs devtmpfs /dev
 
 echo "Running ${benchmark}"
 chmod +x /benchmark/${benchmark}/run.sh
