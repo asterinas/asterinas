@@ -128,11 +128,11 @@ where
 
         let last_activated_paddr = current_page_table_paddr();
 
-        activate_page_table(self.raw, CachePolicy::Writeback);
-
         if last_activated_paddr == self.raw {
             return;
         }
+
+        activate_page_table(self.raw, CachePolicy::Writeback);
 
         // Increment the reference count of the current page table.
         self.inc_ref_count();
