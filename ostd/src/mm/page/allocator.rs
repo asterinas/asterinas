@@ -26,13 +26,13 @@ use alloc::{boxed::Box, collections::btree_set::BTreeSet};
 use core::{alloc::Layout, array, cmp::min, ops::Range};
 
 use align_ext::AlignExt;
-use log::{debug, info, warn};
+use log::{info, warn};
 use spin::Once;
 
 use crate::{
     boot::memory_region::MemoryRegionType,
     mm::{
-        page::{meta::PageMeta, ContPages, Page},
+        page::{self, meta::PageMeta, ContPages, Page},
         Paddr, PAGE_SIZE,
     },
     sync::SpinLock,
@@ -89,8 +89,6 @@ pub trait PageAlloc: Sync + Send {
 
 #[export_name = "PAGE_ALLOCATOR"]
 pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<Box<dyn PageAlloc>>> = Once::new();
-#[export_name = "BOOTSTRAP_PAGE_ALLOCATOR"]
-pub(in crate::mm) static BOOTSTRAP_PAGE_ALLOCATOR: Once<SpinLock<Box<dyn PageAlloc>>> = Once::new();
 
 /// Allocate a single page.
 ///
@@ -300,11 +298,12 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
                         break;
                     }
                     if block <= current_start && block + (1 << i) > current_start {
-                        if block == current_start {
+                        if block == current_start && block + (1 << i) <= end {
+                            self.free_list[i].remove(&block);
                             size = 1 << i;
                         } else if i > 0 {
                             self.free_list[i - 1].insert(block);
-                            self.free_list[i - 1].insert(block + 1 << (i - 1));
+                            self.free_list[i - 1].insert(block + (1 << (i - 1)));
                             self.free_list[i].remove(&block);
                         }
                         break;
@@ -373,8 +372,20 @@ pub(crate) fn init() {
                 region.base(),
                 region.base() + region.len()
             );
+
+            for frame in start..end {
+                if page::Page::<page::meta::FrameMeta>::check_page_status(frame * PAGE_SIZE) {
+                    allocator.set_frames_allocated(frame, frame + 1);
+                }
+            }
         }
     }
+    info!(
+        "Global page allocator is initialized, total memory: {}, allocated memory: {}",
+        (allocator.total_mem()) / PAGE_SIZE,
+        (allocator.total_mem() - allocator.free_mem()) / PAGE_SIZE
+    );
+
     PAGE_ALLOCATOR.call_once(|| SpinLock::new(allocator));
 }
 
@@ -387,6 +398,9 @@ pub(crate) struct BootstrapFrameAllocator {
     // allocated.
     frame_cursor: usize,
 }
+
+pub(in crate::mm) static BOOTSTRAP_PAGE_ALLOCATOR: Once<SpinLock<BootstrapFrameAllocator>> =
+    Once::new();
 
 impl BootstrapFrameAllocator {
     pub fn new() -> Self {
@@ -423,10 +437,6 @@ impl BootstrapFrameAllocator {
             frame_cursor: first_frame,
         }
     }
-
-    pub fn get_frame_cursor(self) -> usize {
-        self.frame_cursor
-    }
 }
 
 impl PageAlloc for BootstrapFrameAllocator {
@@ -441,7 +451,7 @@ impl PageAlloc for BootstrapFrameAllocator {
 
     fn alloc_page(&mut self, _align: usize) -> Option<Paddr> {
         let frame = self.frame_cursor;
-        debug!("allocating frame: {:#x}", frame * PAGE_SIZE,);
+        // debug!("allocating frame: {:#x}", frame * PAGE_SIZE,);
         // Update idx and cursor
         let regions = crate::boot::memory_regions();
         self.frame_cursor += 1;
@@ -474,7 +484,7 @@ impl PageAlloc for BootstrapFrameAllocator {
                 panic!("no more usable memory regions for boot page table");
             }
         }
-        Some(frame)
+        Some(frame * PAGE_SIZE)
     }
 
     fn dealloc(&mut self, _addr: Paddr, _nr_pages: usize) {
@@ -493,5 +503,6 @@ impl PageAlloc for BootstrapFrameAllocator {
 }
 
 pub(crate) fn bootstrap_init() {
-    BOOTSTRAP_PAGE_ALLOCATOR.call_once(|| SpinLock::new(Box::new(BootstrapFrameAllocator::new())));
+    info!("Initializing the bootstrap page allocator");
+    BOOTSTRAP_PAGE_ALLOCATOR.call_once(|| SpinLock::new(BootstrapFrameAllocator::new()));
 }
