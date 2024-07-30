@@ -82,8 +82,10 @@ unsafe fn init() {
     boot::init();
     logger::init();
 
+    mm::page::allocator::bootstrap_init();
+    let meta_vec = mm::init_page_meta();
     mm::page::allocator::init();
-    mm::kspace::init_kernel_page_table(mm::init_page_meta());
+    mm::kspace::init_kernel_page_table(meta_vec);
     mm::dma::init();
 
     arch::init_on_bsp();

@@ -83,6 +83,44 @@ impl<M: PageMeta> Page<M> {
         }
     }
 
+    /// Check whether the page described by paddr is allocated.
+    /// true if the page is allocated, false otherwise.
+    ///
+    /// # Warning
+    ///
+    /// Page status checked by this function may be outdated, since other running threads may change them after the atomic load.
+    ///
+    /// Caller should make sure that:
+    ///
+    /// 1. No other threads will do `from_unused` or `drop`.
+    ///
+    /// 2. Lock the global page allocator.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if:
+    ///
+    /// - the physical address is out of bound or not aligned.
+    ///
+    // # TODO
+    //
+    // Use a unique handle to check the page status.
+    // Current implementation is not safe in multi-threading environment.
+    pub fn check_page_status(paddr: Paddr) -> bool {
+        assert!(paddr % PAGE_SIZE == 0);
+        assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
+        let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
+        let ptr = vaddr as *const MetaSlot;
+
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        let usage = unsafe { &(*ptr).usage };
+
+        if let 0 = usage.load(Ordering::SeqCst) {
+            return false;
+        }
+        true
+    }
+
     /// Forget the handle to the page.
     ///
     /// This will result in the page being leaked without calling the custom dropper.
