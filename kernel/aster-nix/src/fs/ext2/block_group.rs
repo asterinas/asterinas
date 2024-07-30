@@ -318,12 +318,12 @@ impl Debug for BlockGroup {
 }
 
 impl PageCacheBackend for BlockGroupImpl {
-    fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
         self.fs.upgrade().unwrap().read_block_async(bid, frame)
     }
 
-    fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
         self.fs.upgrade().unwrap().write_block_async(bid, frame)
     }

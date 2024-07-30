@@ -364,23 +364,23 @@ impl ExfatFS {
 }
 
 impl PageCacheBackend for ExfatFS {
-    fn read_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
         let waiter = self
             .block_device
-            .read_block(BlockId::new(idx as u64), frame)?;
+            .read_block_async(BlockId::new(idx as u64), frame)?;
         Ok(waiter)
     }
 
-    fn write_page(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }
         let waiter = self
             .block_device
-            .write_block(BlockId::new(idx as u64), frame)?;
+            .write_block_async(BlockId::new(idx as u64), frame)?;
         Ok(waiter)
     }
 

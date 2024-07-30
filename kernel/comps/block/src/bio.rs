@@ -110,7 +110,7 @@ impl Bio {
     /// # Panics
     ///
     /// The caller must not submit a `Bio` more than once. Otherwise, a panic shall be triggered.
-    pub fn submit_sync(
+    pub fn submit_and_wait(
         &self,
         block_device: &dyn BlockDevice,
     ) -> Result<BioStatus, BioEnqueueError> {

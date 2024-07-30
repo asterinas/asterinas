@@ -49,7 +49,7 @@ impl Ext2 {
             let segment = FrameAllocOptions::new(npages)
                 .uninit(true)
                 .alloc_contiguous()?;
-            match block_device.read_blocks_sync(super_block.group_descriptors_bid(0), &segment)? {
+            match block_device.read_blocks(super_block.group_descriptors_bid(0), &segment)? {
                 BioStatus::Complete => (),
                 err_status => {
                     return Err(Error::from(err_status));
@@ -300,7 +300,7 @@ impl Ext2 {
     pub(super) fn read_blocks(&self, bid: Ext2Bid, segment: &Segment) -> Result<()> {
         let status = self
             .block_device
-            .read_blocks_sync(Bid::new(bid as u64), segment)?;
+            .read_blocks(Bid::new(bid as u64), segment)?;
         match status {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
@@ -311,15 +311,13 @@ impl Ext2 {
     pub(super) fn read_blocks_async(&self, bid: Ext2Bid, segment: &Segment) -> Result<BioWaiter> {
         let waiter = self
             .block_device
-            .read_blocks(Bid::new(bid as u64), segment)?;
+            .read_blocks_async(Bid::new(bid as u64), segment)?;
         Ok(waiter)
     }
 
     /// Reads one block indicated by the `bid` synchronously.
     pub(super) fn read_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
-        let status = self
-            .block_device
-            .read_block_sync(Bid::new(bid as u64), frame)?;
+        let status = self.block_device.read_block(Bid::new(bid as u64), frame)?;
         match status {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
@@ -328,7 +326,9 @@ impl Ext2 {
 
     /// Reads one block indicated by the `bid` asynchronously.
     pub(super) fn read_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
-        let waiter = self.block_device.read_block(Bid::new(bid as u64), frame)?;
+        let waiter = self
+            .block_device
+            .read_block_async(Bid::new(bid as u64), frame)?;
         Ok(waiter)
     }
 
@@ -336,7 +336,7 @@ impl Ext2 {
     pub(super) fn write_blocks(&self, bid: Ext2Bid, segment: &Segment) -> Result<()> {
         let status = self
             .block_device
-            .write_blocks_sync(Bid::new(bid as u64), segment)?;
+            .write_blocks(Bid::new(bid as u64), segment)?;
         match status {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
@@ -347,15 +347,13 @@ impl Ext2 {
     pub(super) fn write_blocks_async(&self, bid: Ext2Bid, segment: &Segment) -> Result<BioWaiter> {
         let waiter = self
             .block_device
-            .write_blocks(Bid::new(bid as u64), segment)?;
+            .write_blocks_async(Bid::new(bid as u64), segment)?;
         Ok(waiter)
     }
 
     /// Writes one block indicated by the `bid` synchronously.
     pub(super) fn write_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
-        let status = self
-            .block_device
-            .write_block_sync(Bid::new(bid as u64), frame)?;
+        let status = self.block_device.write_block(Bid::new(bid as u64), frame)?;
         match status {
             BioStatus::Complete => Ok(()),
             err_status => Err(Error::from(err_status)),
@@ -364,7 +362,9 @@ impl Ext2 {
 
     /// Writes one block indicated by the `bid` asynchronously.
     pub(super) fn write_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
-        let waiter = self.block_device.write_block(Bid::new(bid as u64), frame)?;
+        let waiter = self
+            .block_device
+            .write_block_async(Bid::new(bid as u64), frame)?;
         Ok(waiter)
     }
 
@@ -388,7 +388,7 @@ impl Ext2 {
             self.block_device
                 .write_bytes_async(SUPER_BLOCK_OFFSET, raw_super_block.as_bytes())?,
         );
-        bio_waiter.concat(self.block_device.write_blocks(
+        bio_waiter.concat(self.block_device.write_blocks_async(
             super_block.group_descriptors_bid(0),
             &self.group_descriptors_segment,
         )?);
@@ -407,7 +407,7 @@ impl Ext2 {
                     super_block.bid(idx as usize).to_offset(),
                     raw_super_block_backup.as_bytes(),
                 )?);
-                bio_waiter.concat(self.block_device.write_blocks(
+                bio_waiter.concat(self.block_device.write_blocks_async(
                     super_block.group_descriptors_bid(idx as usize),
                     &self.group_descriptors_segment,
                 )?);
