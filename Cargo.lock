@@ -399,6 +399,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "const-assert"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8298db53081b3a951cadb6e0f4ebbe36def7bcb591a34676708d0d7ac87dd86"
+
+[[package]]
 name = "controlled"
 version = "0.1.0"
 dependencies = [
@@ -1070,6 +1076,7 @@ dependencies = [
  "bitvec",
  "buddy_system_allocator",
  "cfg-if",
+ "const-assert",
  "gimli 0.28.0",
  "iced-x86",
  "id-alloc",
