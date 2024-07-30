@@ -5,6 +5,7 @@
 use core::marker::PhantomData;
 
 use align_ext::AlignExt;
+use const_assert::{Assert, IsTrue};
 use inherit_methods_macro::inherit_methods;
 
 use crate::{
@@ -155,7 +156,28 @@ pub trait VmIo: Send + Sync {
     }
 }
 
-macro_rules! impl_vmio_pointer {
+/// A trait that enables reading/writing data from/to a VM object using one non-tearing memory
+/// load/store.
+///
+/// See also [`VmIo`], which enables reading/writing data from/to a VM object without the guarantee
+/// of using one non-tearing memory load/store.
+pub trait VmIoOnce {
+    /// Reads a value of the `PodOnce` type at the specified offset using one non-tearing memory
+    /// load.
+    ///
+    /// Except that the offset is specified explicitly, the semantics of this method is the same as
+    /// [`VmReader::read_once`].
+    fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T>;
+
+    /// Writes a value of the `PodOnce` type at the specified offset using one non-tearing memory
+    /// store.
+    ///
+    /// Except that the offset is specified explicitly, the semantics of this method is the same as
+    /// [`VmWriter::write_once`].
+    fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()>;
+}
+
+macro_rules! impl_vm_io_pointer {
     ($typ:ty,$from:tt) => {
         #[inherit_methods(from = $from)]
         impl<T: VmIo> VmIo for $typ {
@@ -169,10 +191,25 @@ macro_rules! impl_vmio_pointer {
     };
 }
 
-impl_vmio_pointer!(&T, "(**self)");
-impl_vmio_pointer!(&mut T, "(**self)");
-impl_vmio_pointer!(Box<T>, "(**self)");
-impl_vmio_pointer!(Arc<T>, "(**self)");
+impl_vm_io_pointer!(&T, "(**self)");
+impl_vm_io_pointer!(&mut T, "(**self)");
+impl_vm_io_pointer!(Box<T>, "(**self)");
+impl_vm_io_pointer!(Arc<T>, "(**self)");
+
+macro_rules! impl_vm_io_once_pointer {
+    ($typ:ty,$from:tt) => {
+        #[inherit_methods(from = $from)]
+        impl<T: VmIoOnce> VmIoOnce for $typ {
+            fn read_once<F: PodOnce>(&self, offset: usize) -> Result<F>;
+            fn write_once<F: PodOnce>(&self, offset: usize, new_val: &F) -> Result<()>;
+        }
+    };
+}
+
+impl_vm_io_once_pointer!(&T, "(**self)");
+impl_vm_io_once_pointer!(&mut T, "(**self)");
+impl_vm_io_once_pointer!(Box<T>, "(**self)");
+impl_vm_io_once_pointer!(Arc<T>, "(**self)");
 
 /// A marker structure used for [`VmReader`] and [`VmWriter`],
 /// representing their operated memory scope is in user space.
@@ -391,6 +428,34 @@ impl<'a> VmReader<'a, KernelSpace> {
         self.read(&mut writer);
         Ok(val)
     }
+
+    /// Reads a value of the `PodOnce` type using one non-tearing memory load.
+    ///
+    /// If the length of the `PodOnce` type exceeds `self.remain()`, this method will return `Err`.
+    ///
+    /// This method will not compile if the `Pod` type is too large for the current architecture
+    /// and the operation must be tear into multiple memory loads.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the current position of the reader does not meet the alignment
+    /// requirements of type `T`.
+    pub fn read_once<T: PodOnce>(&mut self) -> Result<T> {
+        if self.remain() < core::mem::size_of::<T>() {
+            return Err(Error::InvalidArgs);
+        }
+
+        let cursor = self.cursor.cast::<T>();
+        assert!(cursor.is_aligned());
+
+        // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`
+        // and that the cursor is properly aligned with respect to the type `T`. All other safety
+        // requirements are the same as for `Self::read`.
+        let val = unsafe { cursor.read_volatile() };
+        self.cursor = unsafe { self.cursor.add(core::mem::size_of::<T>()) };
+
+        Ok(val)
+    }
 }
 
 impl<'a> VmReader<'a, UserSpace> {
@@ -553,6 +618,31 @@ impl<'a> VmWriter<'a, KernelSpace> {
         Ok(())
     }
 
+    /// Writes a value of the `PodOnce` type using one non-tearing memory store.
+    ///
+    /// If the length of the `PodOnce` type exceeds `self.remain()`, this method will return `Err`.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the current position of the writer does not meet the alignment
+    /// requirements of type `T`.
+    pub fn write_once<T: PodOnce>(&mut self, new_val: &T) -> Result<()> {
+        if self.avail() < core::mem::size_of::<T>() {
+            return Err(Error::InvalidArgs);
+        }
+
+        let cursor = self.cursor.cast::<T>();
+        assert!(cursor.is_aligned());
+
+        // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`
+        // and that the cursor is properly aligned with respect to the type `T`. All other safety
+        // requirements are the same as for `Self::writer`.
+        unsafe { cursor.cast::<T>().write_volatile(*new_val) };
+        self.cursor = unsafe { self.cursor.add(core::mem::size_of::<T>()) };
+
+        Ok(())
+    }
+
     /// Fills the available space by repeating `value`.
     ///
     /// Returns the number of values written.
@@ -671,4 +761,24 @@ impl<'a> From<&'a mut [u8]> for VmWriter<'a> {
         // generated from user space.
         unsafe { Self::from_kernel_space(slice.as_mut_ptr(), slice.len()) }
     }
+}
+
+/// A marker trait for POD types that can be read or written with one instruction.
+///
+/// We currently rely on this trait to ensure that the memory operation created by
+/// `ptr::read_volatile` and `ptr::write_volatile` doesn't tear. However, the Rust documentation
+/// makes no such guarantee, and even the wording in the LLVM LangRef is ambiguous.
+///
+/// At this point, we can only _hope_ that this doesn't break in future versions of the Rust or
+/// LLVM compilers. However, this is unlikely to happen in practice, since the Linux kernel also
+/// uses "volatile" semantics to implement `READ_ONCE`/`WRITE_ONCE`.
+pub trait PodOnce: Pod {}
+
+impl<T: Pod> PodOnce for T where Assert<{ is_pod_once::<T>() }>: IsTrue {}
+
+#[cfg(target_arch = "x86_64")]
+const fn is_pod_once<T: Pod>() -> bool {
+    let size = size_of::<T>();
+
+    size == 1 || size == 2 || size == 4 || size == 8
 }
