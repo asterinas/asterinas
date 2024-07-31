@@ -574,7 +574,7 @@ impl<'a> VmWriter<'a, KernelSpace> {
             // hence the `add` operation and `write` operation are valid and will only manipulate
             // the memory managed by this writer.
             unsafe {
-                (self.cursor as *mut T).add(i).write(value);
+                (self.cursor as *mut T).add(i).write_volatile(value);
             }
         }
 
