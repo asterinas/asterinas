@@ -18,7 +18,7 @@ pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     cpu::CpuSet,
     mm::{
-        kspace::kva::{Kva, KvaAlloc},
+        kspace::kva::Kva,
         page::{allocator, meta::KernelStackMeta},
         PAGE_SIZE,
     },

@@ -53,7 +53,6 @@ use log::info;
 use spin::Once;
 
 pub(crate) mod kva;
-use kva::{KvaFreeNode, KVA_FREELIST};
 use super::{
     nr_subpage_per_huge,
     page::{
@@ -232,10 +231,6 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             }
         }
     }
-    KVA_FREELIST.lock().deref_mut().insert(
-        TRACKED_MAPPED_PAGES_BASE_VADDR,
-        KvaFreeNode::new(TRACKED_MAPPED_PAGES_RANGE),
-    );
     KERNEL_PAGE_TABLE.call_once(|| kpt);
 }
 

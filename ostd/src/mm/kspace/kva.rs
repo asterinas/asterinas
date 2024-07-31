@@ -7,7 +7,7 @@ use core::ops::{DerefMut, Range};
 
 use align_ext::AlignExt;
 
-use super::KERNEL_PAGE_TABLE;
+use super::{KERNEL_PAGE_TABLE, TRACKED_MAPPED_PAGES_RANGE};
 use crate::{
     arch::mm::tlb_flush_addr_range,
     mm::{
@@ -17,11 +17,12 @@ use crate::{
         },
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
         page_table::PageTableQueryResult,
-        Vaddr, VmReader, VmWriter, PAGE_SIZE,
+        Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
     Error, Result,
 };
+pub(crate) use lazy_static::lazy_static;
 
 pub struct KvaFreeNode {
     block: Range<Vaddr>,
@@ -33,28 +34,24 @@ impl KvaFreeNode {
     }
 }
 
-pub trait KvaAlloc: Sized {
-    /// Create a new kernel virtual area with the given allocated range.
-    fn init(vaddr: Range<Vaddr>) -> Self;
+pub struct VirtAddrAllocator {
+    freelist: BTreeMap<Vaddr, KvaFreeNode>,
+}
 
-    /// Get the range of the kernel virtual area.
-    fn range(&self) -> Range<Vaddr>;
-
-    fn start(&self) -> Vaddr {
-        self.range().start
-    }
-
-    fn end(&self) -> Vaddr {
-        self.range().end
+impl VirtAddrAllocator {
+    fn new(range: Range<Vaddr>) -> Self {
+        let mut freelist:BTreeMap<Vaddr, KvaFreeNode> = BTreeMap::new();
+        freelist.insert(range.start, KvaFreeNode::new(range));
+        Self { freelist }
     }
     /// Allocate a kernel virtual area.
     ///
     /// This is currently implemented with a simple FIRST-FIT algorithm.
-    fn alloc(freelist: &mut BTreeMap<Vaddr, KvaFreeNode>, size: usize) -> Result<Self> {
+    fn alloc(&mut self, size: usize) -> Result<Range<Vaddr>> {
         let mut allocate_range = None;
         let mut to_remove = None;
 
-        for (key, value) in freelist.iter() {
+        for (key, value) in self.freelist.iter() {
             if value.block.end - value.block.start >= size {
                 allocate_range = Some((value.block.end - size)..value.block.end);
                 to_remove = Some(*key);
@@ -63,9 +60,9 @@ pub trait KvaAlloc: Sized {
         }
 
         if let Some(key) = to_remove {
-            if let Some(freenode) = freelist.get_mut(&key) {
+            if let Some(freenode) = self.freelist.get_mut(&key) {
                 if freenode.block.end - size == freenode.block.start {
-                    freelist.remove(&key);
+                    self.freelist.remove(&key);
                 } else {
                     freenode.block.end -= size;
                 }
@@ -73,75 +70,47 @@ pub trait KvaAlloc: Sized {
         }
 
         if let Some(range) = allocate_range {
-            Ok(Self::init(range))
+            Ok(range)
         } else {
             Err(Error::KvaAllocError)
         }
     }
 
     /// Free a kernel virtual area.
-    fn free(&mut self, freelist: &mut BTreeMap<Vaddr, KvaFreeNode>) {
-        freelist.insert(self.start(), KvaFreeNode::new(self.range()));
-    }
-
-    unsafe fn protect(&mut self, range: Range<Vaddr>, op: impl FnMut(&mut PageProperty)) {
-        assert!(range.start >= self.start() && range.end <= self.end());
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let mut cursor = page_table.cursor_mut(&range).unwrap();
-        cursor.protect(range.len(), op, true).unwrap();
-    }
-
-    /// # Safety
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        if max_offset > self.range().len() {
-            return Err(Error::InvalidArgs);
-        }
-        let reader =
-            unsafe { VmReader::from_kernel_space(self.start() as *const u8, self.range().len()) };
-        let len = reader.skip(offset).read(&mut buf.into());
-        debug_assert!(len == buf.len());
-        Ok(())
-    }
-
-    /// # Safety
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
-        if max_offset > self.range().len() {
-            return Err(Error::InvalidArgs);
-        }
-        let writer =
-            unsafe { VmWriter::from_kernel_space(self.start() as *mut u8, self.range().len()) };
-        let len = writer.skip(offset).write(&mut buf.into());
-        debug_assert!(len == buf.len());
-        Ok(())
+    fn free(&mut self, range: Range<Vaddr>) {
+        // 1. get the previous free block, check if we can merge this block with the free one
+        //     - if contiguous, merge this area with the free block.
+        //     - if not contiguous, create a new free block, insert it into the list.
+        // 2. check if we can merge the current block with the next block, if we can, do so.
+        self.freelist.insert(range.start, KvaFreeNode::new(range));
     }
 }
 
-pub static KVA_FREELIST: SpinLock<BTreeMap<Vaddr, KvaFreeNode>> = SpinLock::new(BTreeMap::new());
-
-pub struct Kva {
-    var: Range<Vaddr>,
+lazy_static! {
+    pub static ref KVA_ALLOCATOR: SpinLock<VirtAddrAllocator> = SpinLock::new(VirtAddrAllocator::new(TRACKED_MAPPED_PAGES_RANGE));
 }
 
-impl KvaAlloc for Kva {
-    /// Create a new kernel virtual area with the given allocated range.
-    fn init(vaddr: Range<Vaddr>) -> Self {
-        Self { var: vaddr }
-    }
-
-    /// Get the range of the kernel virtual area.
-    fn range(&self) -> Range<Vaddr> {
-        self.var.start..self.var.end
-    }
-}
+pub struct Kva(Range<Vaddr>);
 
 impl Kva {
+    // static KVA_FREELIST_2: SpinLock<BTreeMap<Vaddr, KvaFreeNode>> = SpinLock::new(BTreeMap::new());
+
     pub fn new(size: usize) -> Self {
-        let mut lock_guard = KVA_FREELIST.lock();
-        Self::alloc(lock_guard.deref_mut(), size).unwrap()
+        let mut lock_guard = KVA_ALLOCATOR.lock();
+        let var = lock_guard.deref_mut().alloc(size).unwrap();
+        Kva(var)
+    }
+
+    pub fn start(&self) -> Vaddr {
+        self.0.start
+    }
+
+    pub fn end(&self) -> Vaddr {
+        self.0.end
+    }
+
+    pub fn range(&self) -> Range<Vaddr> {
+        self.0.start..self.0.end
     }
 
     /// Map pages into the kernel virtual area.
@@ -227,19 +196,16 @@ impl Kva {
 
 impl Drop for Kva {
     fn drop(&mut self) {
-        // 0. unmap all mapped pages.
-        // 1. get the previous free block, check if we can merge this block with the free one
-        //     - if contiguous, merge this area with the free block.
-        //     - if not contiguous, create a new free block, insert it into the list.
-        // 2. check if we can merge the current block with the next block, if we can, do so.
+        // 1. unmap all mapped pages.
+        // 2. free the virtual block
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let range = self.range();
+        let range = self.start()..self.end();
         let mut cursor = page_table.cursor_mut(&range).unwrap();
         unsafe {
             cursor.unmap(range.len());
         }
         tlb_flush_addr_range(&range);
-        let mut lock_guard = KVA_FREELIST.lock();
-        self.free(lock_guard.deref_mut());
+        let mut lock_guard = KVA_ALLOCATOR.lock();
+        lock_guard.deref_mut().free(range);
     }
 }
