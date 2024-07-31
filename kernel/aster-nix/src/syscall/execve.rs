@@ -159,6 +159,10 @@ fn read_cstring_vec(
     max_string_len: usize,
 ) -> Result<Vec<CString>> {
     let mut res = Vec::new();
+    // On Linux, argv pointer and envp pointer can be specified as NULL.
+    if array_ptr == 0 {
+        return Ok(res);
+    }
     let mut read_addr = array_ptr;
     let mut find_null = false;
     for _ in 0..max_string_number {
