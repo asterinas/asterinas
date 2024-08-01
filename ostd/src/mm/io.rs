@@ -461,7 +461,7 @@ impl<'a, Space> VmReader<'a, Space> {
     /// Skips the first `nbytes` bytes of data.
     /// The length of remaining data is decreased accordingly.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If `nbytes` is greater than `self.remain()`, then the method panics.
     pub fn skip(mut self, nbytes: usize) -> Self {
@@ -557,7 +557,7 @@ impl<'a> VmWriter<'a, KernelSpace> {
     ///
     /// Returns the number of values written.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// The size of the available space must be a multiple of the size of `value`.
     /// Otherwise, the method would panic.
@@ -650,7 +650,7 @@ impl<'a, Space> VmWriter<'a, Space> {
     /// Skips the first `nbytes` bytes of data.
     /// The length of available space is decreased accordingly.
     ///
-    /// # Panic
+    /// # Panics
     ///
     /// If `nbytes` is greater than `self.avail()`, then the method panics.
     pub fn skip(mut self, nbytes: usize) -> Self {
