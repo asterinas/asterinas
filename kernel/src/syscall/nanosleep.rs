@@ -7,7 +7,14 @@ use ostd::sync::Waiter;
 use super::{clock_gettime::read_clock, ClockId, SyscallReturn};
 use crate::{
     prelude::*,
-    time::{clockid_t, timespec_t, TIMER_ABSTIME},
+    time::{
+        clockid_t,
+        clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
+        timer::Timeout,
+        timespec_t,
+        wait::TimerBuilder,
+        TIMER_ABSTIME,
+    },
 };
 
 pub fn sys_nanosleep(
@@ -70,7 +77,7 @@ fn do_clock_nanosleep(
     );
 
     let start_time = read_clock(clockid, ctx)?;
-    let timeout = if is_abs_time {
+    let duration = if is_abs_time {
         if request_time < start_time {
             return Ok(SyscallReturn::Return(0));
         }
@@ -84,18 +91,39 @@ fn do_clock_nanosleep(
     // current process. i.e., the signals that should be ignored will not interrupt sleeping thread.
     let waiter = Waiter::new_pair().0;
 
-    let res = waiter.pause_until_or_timeout(|| None, &timeout);
+    let timer_manager = {
+        let clock_id = ClockId::try_from(clockid)?;
+        match clock_id {
+            ClockId::CLOCK_BOOTTIME => BootTimeClock::timer_manager(),
+            ClockId::CLOCK_MONOTONIC => MonotonicClock::timer_manager(),
+            ClockId::CLOCK_REALTIME => RealTimeClock::timer_manager(),
+            // FIXME: We should better not expose this prof timer manager.
+            ClockId::CLOCK_PROCESS_CPUTIME_ID => {
+                ctx.process.timer_manager().prof_timer().timer_manager()
+            }
+            // FIXME: From the manual,
+            // the CPU clock IDs returned by clock_getcpuclockid(3)
+            // and pthread_getcpuclockid(3) can also be passed in clockid.
+            // But it's not covered here.
+            _ => return_errno_with_message!(Errno::EINVAL, "unknown clockid for clock_nanosleep"),
+        }
+    };
+
+    let timer_builder =
+        TimerBuilder::new_with_timer_manager(Timeout::After(duration), timer_manager);
+
+    let res = waiter.pause_until_or_timer_timeout(|| None, &timer_builder);
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
         Err(e) if e.error() == Errno::EINTR => {
             let end_time = read_clock(clockid, ctx)?;
 
-            if end_time >= start_time + timeout {
+            if end_time >= start_time + duration {
                 return Ok(SyscallReturn::Return(0));
             }
 
             if remain_timespec_addr != 0 && !is_abs_time {
-                let remaining_duration = (start_time + timeout) - end_time;
+                let remaining_duration = (start_time + duration) - end_time;
                 let remaining_timespec = timespec_t::from(remaining_duration);
                 ctx.get_user_space()
                     .write_val(remain_timespec_addr, &remaining_timespec)?;

@@ -18,6 +18,7 @@ TESTS ?= \
 	fcntl_test \
 	flock_test \
 	fsync_test \
+	futex_test \
 	getdents_test \
 	link_test \
 	lseek_test \

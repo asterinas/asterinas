@@ -9,7 +9,7 @@ use ostd::{
 };
 use spin::Once;
 
-use crate::prelude::*;
+use crate::{prelude::*, time::wait::TimerBuilder};
 
 type FutexBitSet = u32;
 type FutexBucketRef = Arc<Mutex<FutexBucket>>;
@@ -19,21 +19,38 @@ const FUTEX_FLAGS_MASK: u32 = 0xFFFF_FFF0;
 const FUTEX_BITSET_MATCH_ANY: FutexBitSet = 0xFFFF_FFFF;
 
 /// do futex wait
-pub fn futex_wait(futex_addr: u64, futex_val: i32, timeout: &Option<FutexTimeout>) -> Result<()> {
-    futex_wait_bitset(futex_addr as _, futex_val, timeout, FUTEX_BITSET_MATCH_ANY)
+pub fn futex_wait(
+    futex_addr: u64,
+    futex_val: i32,
+    timer_builder: Option<TimerBuilder>,
+    ctx: &Context,
+) -> Result<()> {
+    futex_wait_bitset(
+        futex_addr as _,
+        futex_val,
+        timer_builder,
+        FUTEX_BITSET_MATCH_ANY,
+        ctx,
+    )
 }
 
-/// do futex wait bitset
+/// Does futex wait bitset
 pub fn futex_wait_bitset(
     futex_addr: Vaddr,
     futex_val: i32,
-    timeout: &Option<FutexTimeout>,
+    timer_builder: Option<TimerBuilder>,
     bitset: FutexBitSet,
+    ctx: &Context,
 ) -> Result<()> {
     debug!(
-        "futex_wait_bitset addr: {:#x}, val: {}, timeout: {:?}, bitset: {:#x}",
-        futex_addr, futex_val, timeout, bitset
+        "futex_wait_bitset addr: {:#x}, val: {}, bitset: {:#x}",
+        futex_addr, futex_val, bitset
     );
+
+    if bitset == 0 {
+        return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
+    }
+
     let futex_key = FutexKey::new(futex_addr, bitset);
     let (futex_item, waiter) = FutexItem::create(futex_key);
 
@@ -41,7 +58,7 @@ pub fn futex_wait_bitset(
     // lock futex bucket ref here to avoid data race
     let mut futex_bucket = futex_bucket_ref.lock();
 
-    if !futex_key.load_val().is_ok_and(|val| val == futex_val) {
+    if !futex_key.load_val(ctx).is_ok_and(|val| val == futex_val) {
         return_errno_with_message!(
             Errno::EAGAIN,
             "futex value does not match or load_val failed"
@@ -53,18 +70,15 @@ pub fn futex_wait_bitset(
     // drop lock
     drop(futex_bucket);
 
-    // TODO: wait on the futex item with a timeout.
-    waiter.wait();
-
-    Ok(())
+    waiter.pause_timer_timeout(timer_builder.as_ref())
 }
 
-/// do futex wake
+/// Does futex wake
 pub fn futex_wake(futex_addr: Vaddr, max_count: usize) -> Result<usize> {
     futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY)
 }
 
-/// Do futex wake with bitset
+/// Does futex wake with bitset
 pub fn futex_wake_bitset(
     futex_addr: Vaddr,
     max_count: usize,
@@ -75,6 +89,10 @@ pub fn futex_wake_bitset(
         futex_addr, max_count, bitset
     );
 
+    if bitset == 0 {
+        return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
+    }
+
     let futex_key = FutexKey::new(futex_addr, bitset);
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
@@ -84,7 +102,7 @@ pub fn futex_wake_bitset(
     Ok(res)
 }
 
-/// Do futex requeue
+/// Does futex requeue
 pub fn futex_requeue(
     futex_addr: Vaddr,
     max_nwakes: usize,
@@ -151,15 +169,6 @@ fn get_futex_bucket(key: FutexKey) -> (usize, FutexBucketRef) {
 /// Initialize the futex system.
 pub fn init() {
     FUTEX_BUCKETS.call_once(|| FutexBucketVec::new(get_bucket_count()));
-}
-
-#[derive(Debug, Clone)]
-pub struct FutexTimeout {}
-
-impl FutexTimeout {
-    pub fn new() -> Self {
-        todo!()
-    }
 }
 
 struct FutexBucketVec {
@@ -330,10 +339,10 @@ impl FutexKey {
         Self { addr, bitset }
     }
 
-    pub fn load_val(&self) -> Result<i32> {
+    pub fn load_val(&self, ctx: &Context) -> Result<i32> {
         // FIXME: how to implement a atomic load?
         warn!("implement an atomic load");
-        CurrentUserSpace::get().read_val(self.addr)
+        ctx.get_user_space().read_val(self.addr)
     }
 
     pub fn addr(&self) -> Vaddr {
