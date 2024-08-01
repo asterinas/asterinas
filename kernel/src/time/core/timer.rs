@@ -16,6 +16,7 @@ use ostd::sync::SpinLock;
 use super::Clock;
 
 /// A timeout, represented in one of the two ways.
+#[derive(Debug, Clone)]
 pub enum Timeout {
     /// The timeout is reached _after_ the `Duration` time is elapsed.
     After(Duration),
@@ -157,6 +158,17 @@ impl TimerManager {
             clock,
             timer_callbacks: SpinLock::new(BinaryHeap::new()),
         })
+    }
+
+    /// Returns whether a given `timeout` is expired.
+    pub fn is_expired_timeout(&self, timeout: &Timeout) -> bool {
+        match timeout {
+            Timeout::After(duration) => *duration == Duration::ZERO,
+            Timeout::When(duration) => {
+                let now = self.clock.read_time();
+                now >= *duration
+            }
+        }
     }
 
     fn insert(&self, timer_callback: Arc<TimerCallback>) {
