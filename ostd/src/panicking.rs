@@ -2,11 +2,14 @@
 
 //! Panic support.
 
-use core::ffi::c_void;
+use core::{
+    ffi::c_void,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use crate::{
     arch::qemu::{exit_qemu, QemuExitCode},
-    early_print, early_println,
+    cpu_local, early_print, early_println,
 };
 
 extern crate cfg_if;
@@ -17,12 +20,25 @@ use unwinding::abi::{
     _Unwind_GetGR, _Unwind_GetIP,
 };
 
+cpu_local! {
+    static IN_PANIC: AtomicBool = AtomicBool::new(false);
+}
+
 /// The panic handler must be defined in the binary crate or in the crate that the binary
 /// crate explicity declares by `extern crate`. We cannot let the base crate depend on OSTD
 /// due to prismatic dependencies. That's why we export this symbol and state the
 /// panic handler in the binary crate.
 #[export_name = "__aster_panic_handler"]
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    if IN_PANIC
+        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        .is_err()
+    {
+        early_println!("{}", info);
+        early_println!("The panic handler panicked when processing the above panic. Aborting.");
+        abort();
+    }
+
     // If in ktest, we would like to catch the panics and resume the test.
     #[cfg(ktest)]
     {
@@ -35,12 +51,15 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
             file: info.location().unwrap().file().to_string(),
             line: info.location().unwrap().line() as usize,
             col: info.location().unwrap().column() as usize,
+            resolve_panic: || {
+                IN_PANIC.store(false, Ordering::Relaxed);
+            },
         };
         // Throw an exception and expecting it to be caught.
         begin_panic(Box::new(throw_info.clone()));
     }
     early_println!("{}", info);
-    early_println!("printing stack trace:");
+    early_println!("Printing stack trace:");
     print_stack_trace();
     abort();
 }

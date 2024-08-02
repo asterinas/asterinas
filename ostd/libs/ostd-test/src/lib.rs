@@ -103,6 +103,7 @@ pub struct PanicInfo {
     pub file: String,
     pub line: usize,
     pub col: usize,
+    pub resolve_panic: fn(),
 }
 
 impl core::fmt::Display for PanicInfo {
@@ -174,6 +175,7 @@ impl KtestItem {
                 Ok(()) => Err(KtestError::ShouldPanicButNoPanic),
                 Err(e) => match e.downcast::<PanicInfo>() {
                     Ok(s) => {
+                        (s.resolve_panic)();
                         if let Some(expected) = self.should_panic.1 {
                             if s.message == expected {
                                 Ok(())
