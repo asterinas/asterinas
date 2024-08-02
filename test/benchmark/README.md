@@ -77,17 +77,23 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
 2. **Create the Necessary Files:**
    - **config.json:**
      ```json
-     {
-         "alert_threshold": "125%",
-         "pattern": "Syscall average latency:",
-         "field": "4"
-     }
+      {
+        "alert_threshold": "125%",
+        "alert_tool": "customBiggerIsBetter",
+        "search_pattern": "134.22",
+        "result_index": "2",
+        "description": "The memory bandwidth for copying 128 MB of data on a single processor using the fcp (fast copy) method."
+      }
      ```
-     - `alert_threshold`: Set the threshold for alerting. If the benchmark result exceeds this threshold, an alert will be triggered.
-     - `pattern`: Define the pattern to extract the benchmark result from the output.
-     - `field`: Specify the index of the result in the extracted output.
-    
-      For example, if the benchmark output is "Syscall average latency: 1000 ns", the `pattern` is "Syscall average latency:", and the `field` is "4". `jq` will extract "1000" as the benchmark result.
+     
+    - `alert_threshold`: Set the threshold for alerting. If the benchmark result exceeds this threshold, an alert will be triggered. Note that the threshold should usually be greater than 100%.
+    - `alert_tool`: Choose the validation tool to use. The available options are `customBiggerIsBetter` and `customSmallerIsBetter`. Refer to [this](https://github.com/benchmark-action/github-action-benchmark?tab=readme-ov-file#tool-required) for more details. If using `customBiggerIsBetter`, the alert will be triggered when `prev.value / current.value` exceeds the threshold. If using `customSmallerIsBetter`, the alert will be triggered when `current.value / prev.value` exceeds the threshold.
+    - `search_pattern`: Define a regular expression to extract benchmark results from the output using `awk`. This regular expression is designed to match specific patterns in the output, effectively isolating the benchmark results and producing a set of fragments.
+    - `result_index`: Specify the index of the result in the extracted output. This field is aligned with `awk`'s action.
+    - `description`: Provide a brief description of the benchmark.
+
+    For example, if the benchmark output is "Syscall average latency: 1000 ns", the `search_pattern` is "Syscall average latency:", and the `result_index` is "4". `awk` will extract "1000" as the benchmark result. See the `awk` [manual](https://www.gnu.org/software/gawk/manual/gawk.html#Getting-Started) for more information.
+
 
    - **result_template.json:**
      ```json

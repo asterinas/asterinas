@@ -33,10 +33,11 @@ EOF
     echo "$init_script"
 }
 
+# Run the benchmark on Linux and Asterinas
 run_benchmark() {
     local benchmark="$1"
-    local avg_pattern="$2"
-    local avg_field="$3"
+    local search_pattern="$2"
+    local result_index="$3"
 
     local linux_output="${BENCHMARK_DIR}/linux_output.txt"
     local aster_output="${BENCHMARK_DIR}/aster_output.txt"
@@ -73,17 +74,17 @@ run_benchmark() {
     eval "$qemu_cmd"
 
     echo "Parsing results..."
-    local LINUX_AVG ASTER_AVG
-    LINUX_AVG=$(awk "/${avg_pattern}/{print \$$avg_field}" "${linux_output}" | tr -d '\r')
-    ASTER_AVG=$(awk "/${avg_pattern}/{print \$$avg_field}" "${aster_output}" | tr -d '\r')
+    local linux_avg aster_avg
+    linux_avg=$(awk "/${search_pattern}/{print \$$result_index}" "${linux_output}" | tr -d '\r')
+    aster_avg=$(awk "/${search_pattern}/{print \$$result_index}" "${aster_output}" | tr -d '\r')
 
-    if [ -z "${LINUX_AVG}" ] || [ -z "${ASTER_AVG}" ]; then
+    if [ -z "${linux_avg}" ] || [ -z "${aster_avg}" ]; then
         echo "Error: Failed to parse the average value from the benchmark output" >&2
         exit 1
     fi
 
     echo "Updating the result template with average values..."
-    jq --arg linux_avg "${LINUX_AVG}" --arg aster_avg "${ASTER_AVG}" \
+    jq --arg linux_avg "${linux_avg}" --arg aster_avg "${aster_avg}" \
         '(.[] | select(.extra == "linux_avg") | .value) |= $linux_avg |
          (.[] | select(.extra == "aster_avg") | .value) |= $aster_avg' \
         "${result_template}" > "${result_file}"
@@ -105,9 +106,9 @@ if [ ! -d "$BENCHMARK_DIR/$BENCHMARK" ]; then
     exit 1
 fi
 
-PATTERN=$(jq -r '.pattern' "$BENCHMARK_DIR/$BENCHMARK/config.json")
-FIELD=$(jq -r '.field' "$BENCHMARK_DIR/$BENCHMARK/config.json")
+search_pattern=$(jq -r '.search_pattern' "$BENCHMARK_DIR/$BENCHMARK/config.json")
+result_index=$(jq -r '.result_index' "$BENCHMARK_DIR/$BENCHMARK/config.json")
 
-run_benchmark "$BENCHMARK" "$PATTERN" "$FIELD"
+run_benchmark "$BENCHMARK" "$search_pattern" "$result_index"
 
 echo "Benchmark completed successfully."

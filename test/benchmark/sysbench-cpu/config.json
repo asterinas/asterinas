@@ -1,5 +1,7 @@
 {
     "alert_threshold": "130%",
-    "pattern": "avg:",
-    "field": "NF"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "avg:",
+    "result_index": "NF",
+    "description": "The average time it takes for each prime number calculation to complete during the sysbench CPU test."
 }

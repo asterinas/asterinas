@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "18 ",
-    "field": "2"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "18 ",
+    "result_index": "2",
+    "description": "The latency of context switching between 18 contexts on a single processor."
 }

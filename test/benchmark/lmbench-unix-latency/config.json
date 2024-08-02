@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "sock stream latency",
-    "field": "5"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "sock stream latency",
+    "result_index": "5",
+    "description": "The latency of UNIX domain socket communication on a single processor."
 }

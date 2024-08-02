@@ -66,17 +66,28 @@ jobs:
           make install_osdk
           bash test/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }}
 
-    - name: Prepare threshold values
+    - name: Set up benchmark configuration
       run: |
-        echo "Configuring thresholds..."
         ALERT_THRESHOLD=$(jq -r '.alert_threshold' test/benchmark/${{ matrix.benchmark }}/config.json)
         echo "ALERT_THRESHOLD=$ALERT_THRESHOLD" >> $GITHUB_ENV
+        
+        ALERT_TOOL=$(jq -r '.alert_tool' test/benchmark/${{ matrix.benchmark }}/config.json)
+        if [ "${ALERT_TOOL}" = "null" ]; then
+          ALERT_TOOL="customSmallerIsBetter"
+        fi
+        echo "ALERT_TOOL=$ALERT_TOOL" >> $GITHUB_ENV
+        
+        DESCRIPTION=$(jq -r '.description' test/benchmark/${{ matrix.benchmark }}/config.json)
+        if [ -z "$DESCRIPTION" ]; then
+          DESCRIPTION=""
+        fi
+        echo "DESCRIPTION=$DESCRIPTION" >> $GITHUB_ENV
 
     - name: Store benchmark results
-      uses: asterinas/github-action-benchmark@v1
+      uses: asterinas/github-action-benchmark@v2
       with:
         name: ${{ matrix.benchmark }} Benchmark
-        tool: 'customSmallerIsBetter'
+        tool: ${{ env.ALERT_TOOL }}
         output-file-path: result_${{ matrix.benchmark }}.json
         benchmark-data-dir-path: '' 
         github-token: ${{ secrets.BENCHMARK_SECRET }}
@@ -85,3 +96,4 @@ jobs:
         alert-threshold: ${{ env.ALERT_THRESHOLD }} 
         comment-on-alert: true
         fail-on-alert: true
+        chart-description: ${{ env.DESCRIPTION }}

@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "Simple fstat",
-    "field": "3"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Simple fstat",
+    "result_index": "3",
+    "description": "The latency of the fstat system call on a single processor."
 }

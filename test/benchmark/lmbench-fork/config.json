@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "Process fork",
-    "field": "3"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Process fork",
+    "result_index": "3",
+    "description": "The latency of the fork system call on a single processor."
 }
