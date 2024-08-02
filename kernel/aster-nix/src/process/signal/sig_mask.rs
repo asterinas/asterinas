@@ -1,84 +1,220 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Signal sets and atomic masks.
+//!
+//! A signal set is a bit-set of signals. A signal mask is a set of signals
+//! that are blocked from delivery to a thread. An atomic signal mask
+//! implementation is provided for shared access to signal masks.
+
+use core::{
+    fmt::LowerHex,
+    ops,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
 use super::{constants::MIN_STD_SIG_NUM, sig_num::SigNum};
 use crate::prelude::*;
 
 /// A signal mask.
+///
+/// This is an alias to the [`SigSet`]. All the signal in the set are blocked
+/// from the delivery to a thread.
 pub type SigMask = SigSet;
 
+/// A bit-set of signals.
+///
+/// Because that all the signal numbers are in the range of 1 to 64, casting
+/// a signal set from `u64` to `SigSet` will always succeed.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Pod)]
 #[repr(C)]
 pub struct SigSet {
     bits: u64,
 }
 
-impl From<u64> for SigMask {
+impl From<SigNum> for SigSet {
+    fn from(signum: SigNum) -> Self {
+        let idx = signum.as_u8() - MIN_STD_SIG_NUM;
+        Self { bits: 1_u64 << idx }
+    }
+}
+
+impl From<u64> for SigSet {
     fn from(bits: u64) -> Self {
-        SigMask { bits }
+        SigSet { bits }
     }
 }
 
-impl From<SigNum> for SigMask {
-    fn from(sig_num: SigNum) -> Self {
-        let idx = SigMask::num_to_idx(sig_num);
-        let bits = 1u64 << idx;
-        SigMask { bits }
+impl From<SigSet> for u64 {
+    fn from(set: SigSet) -> u64 {
+        set.bits
     }
 }
 
-impl SigMask {
+impl<T: Into<SigSet>> ops::BitAnd<T> for SigSet {
+    type Output = Self;
+
+    fn bitand(self, rhs: T) -> Self {
+        SigSet {
+            bits: self.bits & rhs.into().bits,
+        }
+    }
+}
+
+impl<T: Into<SigSet>> ops::BitAndAssign<T> for SigSet {
+    fn bitand_assign(&mut self, rhs: T) {
+        self.bits &= rhs.into().bits;
+    }
+}
+
+impl<T: Into<SigSet>> ops::BitOr<T> for SigSet {
+    type Output = Self;
+
+    fn bitor(self, rhs: T) -> Self {
+        SigSet {
+            bits: self.bits | rhs.into().bits,
+        }
+    }
+}
+
+impl<T: Into<SigSet>> ops::BitOrAssign<T> for SigSet {
+    fn bitor_assign(&mut self, rhs: T) {
+        self.bits |= rhs.into().bits;
+    }
+}
+
+#[allow(clippy::suspicious_arithmetic_impl)]
+impl<T: Into<SigSet>> ops::Add<T> for SigSet {
+    type Output = Self;
+
+    fn add(self, rhs: T) -> Self {
+        SigSet {
+            bits: self.bits | rhs.into().bits,
+        }
+    }
+}
+
+#[allow(clippy::suspicious_op_assign_impl)]
+impl<T: Into<SigSet>> ops::AddAssign<T> for SigSet {
+    fn add_assign(&mut self, rhs: T) {
+        self.bits |= rhs.into().bits;
+    }
+}
+
+impl<T: Into<SigSet>> ops::Sub<T> for SigSet {
+    type Output = Self;
+
+    fn sub(self, rhs: T) -> Self {
+        SigSet {
+            bits: self.bits & !rhs.into().bits,
+        }
+    }
+}
+
+impl<T: Into<SigSet>> ops::SubAssign<T> for SigSet {
+    fn sub_assign(&mut self, rhs: T) {
+        self.bits &= !rhs.into().bits;
+    }
+}
+
+impl SigSet {
     pub fn new_empty() -> Self {
-        SigMask::from(0u64)
+        SigSet { bits: 0 }
     }
 
     pub fn new_full() -> Self {
-        SigMask::from(!0u64)
+        SigSet { bits: !0 }
     }
 
-    pub const fn as_u64(&self) -> u64 {
-        self.bits
-    }
-
-    pub const fn empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.bits == 0
     }
 
-    pub const fn full(&self) -> bool {
+    pub const fn is_full(&self) -> bool {
         self.bits == !0
-    }
-
-    pub fn block(&mut self, block_sets: u64) {
-        self.bits |= block_sets;
-    }
-
-    pub fn unblock(&mut self, unblock_sets: u64) {
-        self.bits &= !unblock_sets;
-    }
-
-    pub fn set(&mut self, new_set: u64) {
-        self.bits = new_set;
     }
 
     pub fn count(&self) -> usize {
         self.bits.count_ones() as usize
     }
 
-    pub fn contains(&self, signum: SigNum) -> bool {
-        let idx = Self::num_to_idx(signum);
-        (self.bits & (1_u64 << idx)) != 0
+    pub fn contains(&self, set: impl Into<Self>) -> bool {
+        let set = set.into();
+        self.bits & set.bits == set.bits
+    }
+}
+
+// This is to allow hexadecimally formatting a `SigSet` when debug printing it.
+impl LowerHex for SigSet {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        LowerHex::fmt(&self.bits, f) // delegate to u64's implementation
+    }
+}
+
+/// An atomic signal mask.
+///
+/// This is an alias to the [`AtomicSigSet`]. All the signal in the set are
+/// blocked from the delivery to a thread.
+///
+/// [`Relaxed`]: core::sync::atomic::Ordering::Relaxed
+pub type AtomicSigMask = AtomicSigSet;
+
+/// An atomic signal set.
+pub struct AtomicSigSet(AtomicU64);
+
+impl From<SigSet> for AtomicSigSet {
+    fn from(set: SigSet) -> Self {
+        AtomicSigSet(AtomicU64::new(set.bits))
+    }
+}
+
+impl AtomicSigSet {
+    pub fn new_empty() -> Self {
+        AtomicSigSet(AtomicU64::new(0))
     }
 
-    fn num_to_idx(num: SigNum) -> usize {
-        (num.as_u8() - MIN_STD_SIG_NUM) as usize
+    pub fn new_full() -> Self {
+        AtomicSigSet(AtomicU64::new(!0))
     }
 
-    pub fn remove_signal(&mut self, signum: SigNum) {
-        let idx = Self::num_to_idx(signum);
-        self.bits &= !(1_u64 << idx);
+    pub fn load(&self, ordering: Ordering) -> SigSet {
+        SigSet {
+            bits: self.0.load(ordering),
+        }
     }
 
-    pub fn add_signal(&mut self, signum: SigNum) {
-        let idx = Self::num_to_idx(signum);
-        self.bits |= 1_u64 << idx;
+    pub fn store(&self, new_mask: impl Into<SigMask>, ordering: Ordering) {
+        self.0.store(new_mask.into().bits, ordering);
+    }
+
+    pub fn contains(&self, signals: impl Into<SigSet>, ordering: Ordering) -> bool {
+        SigSet {
+            bits: self.0.load(ordering),
+        }
+        .contains(signals.into())
+    }
+
+    /// Applies an update to the signal set.
+    ///
+    /// This is the same as [`AtomicU64::fetch_update`], but the closure `f`
+    /// operates on a [`SigMask`] instead of a `u64`.
+    ///
+    /// It would be a bit slow since it would check if the value is written by
+    /// another thread while evaluating the closure `f`. If you are confident
+    /// that there's no such race, don't use this method.
+    pub fn fetch_update<F>(
+        &self,
+        set_order: Ordering,
+        fetch_order: Ordering,
+        mut f: F,
+    ) -> core::result::Result<SigMask, SigMask>
+    where
+        F: FnMut(SigMask) -> Option<SigMask>,
+    {
+        self.0
+            .fetch_update(set_order, fetch_order, |bits| {
+                f(SigMask { bits }).map(|set| set.bits)
+            })
+            .map(SigMask::from)
+            .map_err(SigMask::from)
     }
 }

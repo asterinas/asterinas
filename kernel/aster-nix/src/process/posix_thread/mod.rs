@@ -2,12 +2,14 @@
 
 #![allow(dead_code)]
 
+use core::sync::atomic::Ordering;
+
 use aster_rights::{ReadOp, WriteOp};
 
 use super::{
     kill::SignalSenderIds,
     signal::{
-        sig_mask::{SigMask, SigSet},
+        sig_mask::{AtomicSigMask, SigMask, SigSet},
         sig_num::SigNum,
         sig_queues::SigQueues,
         signals::Signal,
@@ -55,7 +57,7 @@ pub struct PosixThread {
 
     // Signal
     /// Blocked signals
-    sig_mask: Mutex<SigMask>,
+    sig_mask: AtomicSigMask,
     /// Thread-directed sigqueue
     sig_queues: SigQueues,
     /// Signal handler ucontext address
@@ -90,7 +92,12 @@ impl PosixThread {
         &self.clear_child_tid
     }
 
-    pub fn sig_mask(&self) -> &Mutex<SigMask> {
+    /// Get the reference to the signal mask of the thread.
+    ///
+    /// Note that while this function offers mutable access to the signal mask,
+    /// it is not sound for callers other than the current thread to modify the
+    /// signal mask. They may only read the signal mask.
+    pub fn sig_mask(&self) -> &AtomicSigMask {
         &self.sig_mask
     }
 
@@ -101,14 +108,13 @@ impl PosixThread {
     /// Returns whether the thread has some pending signals
     /// that are not blocked.
     pub fn has_pending(&self) -> bool {
-        let blocked = *self.sig_mask().lock();
+        let blocked = self.sig_mask().load(Ordering::Relaxed);
         self.sig_queues.has_pending(blocked)
     }
 
     /// Returns whether the signal is blocked by the thread.
     pub(in crate::process) fn has_signal_blocked(&self, signal: &dyn Signal) -> bool {
-        let mask = self.sig_mask.lock();
-        mask.contains(signal.num())
+        self.sig_mask.contains(signal.num(), Ordering::Relaxed)
     }
 
     /// Checks whether the signal can be delivered to the thread.

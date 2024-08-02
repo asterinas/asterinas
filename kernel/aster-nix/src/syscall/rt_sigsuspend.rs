@@ -26,8 +26,8 @@ pub fn sys_rt_sigsuspend(sigmask_addr: Vaddr, sigmask_size: usize) -> Result<Sys
         let mut mask: SigMask = read_val_from_user(sigmask_addr)?;
         // It is not possible to block SIGKILL or SIGSTOP,
         // specifying these signals in mask has no effect.
-        mask.remove_signal(SIGKILL);
-        mask.remove_signal(SIGSTOP);
+        mask -= SIGKILL;
+        mask -= SIGSTOP;
         mask
     };
 

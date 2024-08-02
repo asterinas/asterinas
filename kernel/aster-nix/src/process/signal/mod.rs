@@ -49,7 +49,7 @@ pub fn handle_pending_signal(
     // We first deal with signal in current thread, then signal in current process.
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let signal = {
-        let sig_mask = *posix_thread.sig_mask().lock();
+        let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
         if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
             signal
         } else {
@@ -136,13 +136,15 @@ pub fn handle_user_signal(
     }
     if !flags.contains(SigActionFlags::SA_NODEFER) {
         // add current signal to mask
-        let current_mask = SigMask::from(sig_num);
-        mask.block(current_mask.as_u64());
+        mask += sig_num;
     }
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     // block signals in sigmask when running signal handler
-    posix_thread.sig_mask().lock().block(mask.as_u64());
+    let old_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
+    posix_thread
+        .sig_mask()
+        .store(old_mask + mask, Ordering::Relaxed);
 
     // Set up signal stack.
     let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(posix_thread) {
@@ -163,7 +165,7 @@ pub fn handle_user_signal(
     // 2. write ucontext_t.
     stack_pointer = alloc_aligned_in_user_stack(stack_pointer, mem::size_of::<ucontext_t>(), 16)?;
     let mut ucontext = ucontext_t {
-        uc_sigmask: mask.as_u64(),
+        uc_sigmask: mask.into(),
         ..Default::default()
     };
     ucontext

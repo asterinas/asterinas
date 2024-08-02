@@ -175,8 +175,10 @@ fn clone_child_thread(parent_context: &UserContext, clone_args: CloneArgs) -> Re
     let sig_mask = {
         let current_thread = current_thread!();
         let current_posix_thread = current_thread.as_posix_thread().unwrap();
-        let sigmask = current_posix_thread.sig_mask().lock();
-        *sigmask
+        current_posix_thread
+            .sig_mask()
+            .load(Ordering::Relaxed)
+            .into()
     };
 
     let child_tid = allocate_tid();
@@ -258,8 +260,7 @@ fn clone_child_process(
     let child_sig_mask = {
         let current_thread = current_thread!();
         let posix_thread = current_thread.as_posix_thread().unwrap();
-        let sigmask = posix_thread.sig_mask().lock();
-        *sigmask
+        posix_thread.sig_mask().load(Ordering::Relaxed).into()
     };
 
     // inherit parent's nice value

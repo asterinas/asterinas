@@ -9,7 +9,6 @@ use super::{
     signal::{
         constants::SIGCHLD,
         sig_disposition::SigDispositions,
-        sig_mask::SigMask,
         sig_num::{AtomicSigNum, SigNum},
         signals::Signal,
         Pauser,
@@ -120,12 +119,9 @@ impl Process {
         nice: Nice,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
     ) -> Arc<Self> {
-        let children_pauser = {
-            // SIGCHID does not interrupt pauser. Child process will
-            // resume paused parent when doing exit.
-            let sigmask = SigMask::from(SIGCHLD);
-            Pauser::new_with_mask(sigmask)
-        };
+        // SIGCHID does not interrupt pauser. Child process will
+        // resume paused parent when doing exit.
+        let children_pauser = Pauser::new_with_mask(SIGCHLD.into());
 
         let prof_clock = ProfClock::new();
 
