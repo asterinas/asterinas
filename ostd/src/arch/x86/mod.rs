@@ -73,7 +73,7 @@ pub(crate) fn init_on_bsp() {
 
     // SAFETY: no CPU local objects have been accessed by this far. And
     // we are on the BSP.
-    unsafe { crate::cpu::cpu_local::init_on_bsp() };
+    unsafe { crate::cpu::local::init_on_bsp() };
 
     crate::boot::smp::boot_all_aps();
 

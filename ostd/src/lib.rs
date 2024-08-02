@@ -46,7 +46,7 @@ pub mod user;
 pub use ostd_macros::main;
 pub use ostd_pod::Pod;
 
-pub use self::{cpu::cpu_local::CpuLocal, error::Error, prelude::Result};
+pub use self::{cpu::local::CpuLocal, error::Error, prelude::Result};
 
 /// Initializes OSTD.
 ///
@@ -64,7 +64,7 @@ pub fn init() {
     arch::check_tdx_init();
 
     // SAFETY: This function is called only once and only on the BSP.
-    unsafe { cpu::cpu_local::early_init_bsp_local_base() };
+    unsafe { cpu::local::early_init_bsp_local_base() };
 
     mm::heap_allocator::init();
 

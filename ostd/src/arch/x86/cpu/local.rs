@@ -23,65 +23,74 @@ pub(crate) fn get_base() -> u64 {
     FS::read_base().as_u64()
 }
 
-pub mod preempt_lock_count {
-    //! We need to increment/decrement the per-CPU preemption lock count using
-    //! a single instruction. This requirement is stated by
-    //! [`crate::task::processor::PreemptInfo`].
+use crate::cpu::local::SingleInstructionOps;
 
-    /// The GDT ensures that the FS segment is initialized to zero on boot.
-    /// This assertion checks that the base address has been set.
-    macro_rules! debug_assert_initialized {
-        () => {
-            // The compiler may think that [`super::get_base`] has side effects
-            // so it may not be optimized out. We make sure that it will be
-            // conditionally compiled only in debug builds.
-            #[cfg(debug_assertions)]
-            debug_assert_ne!(super::get_base(), 0);
-        };
-    }
-
-    /// Increments the per-CPU preemption lock count using one instruction.
-    pub(crate) fn inc() {
-        debug_assert_initialized!();
-
-        // SAFETY: The inline assembly increments the lock count in one
-        // instruction without side effects.
-        unsafe {
-            core::arch::asm!(
-                "add dword ptr fs:[__cpu_local_preempt_lock_count], 1",
-                options(nostack),
-            );
-        }
-    }
-
-    /// Decrements the per-CPU preemption lock count using one instruction.
-    pub(crate) fn dec() {
-        debug_assert_initialized!();
-
-        // SAFETY: The inline assembly decrements the lock count in one
-        // instruction without side effects.
-        unsafe {
-            core::arch::asm!(
-                "sub dword ptr fs:[__cpu_local_preempt_lock_count], 1",
-                options(nostack),
-            );
-        }
-    }
-
-    /// Gets the per-CPU preemption lock count using one instruction.
-    pub(crate) fn get() -> u32 {
-        debug_assert_initialized!();
-
-        let count: u32;
-        // SAFETY: The inline assembly reads the lock count in one instruction
-        // without side effects.
-        unsafe {
-            core::arch::asm!(
-                "mov {0:e}, fs:[__cpu_local_preempt_lock_count]",
-                out(reg) count,
-                options(nostack, readonly),
-            );
-        }
-        count
-    }
+/// The GDT ensures that the FS segment is initialized to zero on boot.
+/// This assertion checks that the base address has been set.
+macro_rules! debug_assert_initialized {
+    () => {
+        // The compiler may think that [`super::get_base`] has side effects
+        // so it may not be optimized out. We make sure that it will be
+        // conditionally compiled only in debug builds.
+        #[cfg(debug_assertions)]
+        debug_assert_ne!(get_base(), 0);
+    };
 }
+
+macro_rules! impl_single_instruction_for {
+    ($([$typ: ty, $register_format: expr]),*) => {$(
+
+        impl SingleInstructionOps for $typ {
+            type Rhs = $typ;
+
+            unsafe fn cpu_local_add_assign(offset: *mut Self, val: Self::Rhs) {
+                debug_assert_initialized!();
+
+                core::arch::asm!(
+                    concat!("add fs:[{0}], {1:", $register_format, "}"),
+                    in(reg) offset,
+                    in(reg) val,
+                    options(nostack),
+                );
+            }
+
+            unsafe fn cpu_local_sub_assign(offset: *mut Self, val: Self::Rhs) {
+                debug_assert_initialized!();
+
+                core::arch::asm!(
+                    concat!("sub fs:[{0}], {1:", $register_format, "}"),
+                    in(reg) offset,
+                    in(reg) val,
+                    options(nostack),
+                );
+            }
+
+            unsafe fn cpu_local_read(offset: *const Self) -> Self {
+                debug_assert_initialized!();
+
+                let val: Self;
+                core::arch::asm!(
+                    concat!("mov {0:", $register_format, "}, fs:[{1}]"),
+                    out(reg) val,
+                    in(reg) offset,
+                    options(nostack, readonly),
+                );
+                val
+            }
+
+            unsafe fn cpu_local_write(offset: *mut Self, val: Self) {
+                debug_assert_initialized!();
+
+                core::arch::asm!(
+                    concat!("mov fs:[{0}], {1:", $register_format, "}"),
+                    in(reg) offset,
+                    in(reg) val,
+                    options(nostack),
+                );
+            }
+        }
+
+    )*};
+}
+
+impl_single_instruction_for!([u64, "r"], [usize, "r"], [u32, "e"], [u16, "x"]);

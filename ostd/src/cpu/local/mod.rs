@@ -18,13 +18,15 @@
 //! be directly used as a CPU-local object. Wrapping it in a type that has a
 //! constant constructor, like [`Option<T>`], can make it CPU-local.
 
+pub(crate) mod single_instr;
 use alloc::vec::Vec;
 use core::ops::Deref;
 
 use align_ext::AlignExt;
+pub(crate) use single_instr::SingleInstructionOps;
 
 use crate::{
-    arch, cpu,
+    arch,
     mm::{
         paddr_to_vaddr,
         page::{self, meta::KernelMeta, ContPages},
@@ -190,6 +192,16 @@ impl<T> Deref for CpuLocalDerefGuard<'_, T> {
     }
 }
 
+cpu_local! {
+    /// The count of the preempt lock.
+    ///
+    /// We need to access the preemption count before we can copy the section
+    /// for application processors. So, the preemption count is not copied from
+    /// bootstrap processor's section as the initialization. Instead it is
+    /// initialized to zero for application processors.
+    pub(crate) static PREEMPT_LOCK_COUNT: usize = 0;
+}
+
 /// Sets the base address of the CPU-local storage for the bootstrap processor.
 ///
 /// It should be called early to let [`crate::task::disable_preempt`] work,
@@ -253,9 +265,15 @@ pub unsafe fn init_on_bsp() {
             (ap_pages_ptr as *mut u32).write(cpu_i);
         }
 
-        // SAFETY: the second 4 bytes is reserved for storing the preemt count.
+        // SAFETY: the `PREEMPT_LOCK_COUNT` may be dirty on the BSP, so we need
+        // to ensure that it is initialized to zero for APs. The safety
+        // requirements are met since the static is defined in the `.cpu_local`
+        // section and the pointer to that static is the offset in the CPU-
+        // local area. It is a `usize` so it is safe to be overwritten.
         unsafe {
-            (ap_pages_ptr as *mut u32).add(1).write(0);
+            let preempt_count_offset = &PREEMPT_LOCK_COUNT as *const _ as usize;
+            let ap_preempt_count_ptr = ap_pages_ptr.add(preempt_count_offset) as *mut usize;
+            ap_preempt_count_ptr.write(0);
         }
 
         cpu_local_storages.push(ap_pages);
@@ -268,7 +286,7 @@ pub unsafe fn init_on_bsp() {
         bsp_cpu_id_ptr.write(0);
     }
 
-    cpu::local::set_base(bsp_base_va as u64);
+    arch::cpu::local::set_base(bsp_base_va as u64);
 
     #[cfg(debug_assertions)]
     IS_INITIALIZED.store(true, Ordering::Relaxed);
@@ -293,7 +311,7 @@ pub unsafe fn init_on_ap(cpu_id: u32) {
 
     // SAFETY: the memory will be dedicated to the AP. And we are on the AP.
     unsafe {
-        cpu::local::set_base(ap_pages_ptr as u64);
+        arch::cpu::local::set_base(ap_pages_ptr as u64);
     }
 }
 
