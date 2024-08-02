@@ -22,10 +22,10 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: us
 
     crate::arch::interrupts_ack(irq_number);
 
-    IN_INTERRUPT_CONTEXT.store(false, Ordering::Release);
-
     crate::arch::irq::enable_local();
     crate::trap::softirq::process_pending();
+
+    IN_INTERRUPT_CONTEXT.store(false, Ordering::Release);
 }
 
 cpu_local! {
@@ -33,9 +33,6 @@ cpu_local! {
 }
 
 /// Returns whether we are in the interrupt context.
-///
-/// FIXME: Here only hardware irq is taken into account. According to linux implementation, if
-/// we are in softirq context, or bottom half is disabled, this function also returns true.
 pub fn in_interrupt_context() -> bool {
     IN_INTERRUPT_CONTEXT.load(Ordering::Acquire)
 }

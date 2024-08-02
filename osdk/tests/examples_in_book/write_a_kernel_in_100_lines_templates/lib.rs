@@ -77,7 +77,7 @@ fn create_user_task(user_space: Arc<UserSpace>) -> Arc<Task> {
         // performed via the UserMode abstraction.
         let mut user_mode = {
             let user_space = current.user_space().unwrap();
-            UserMode::new(user_space)
+            UserMode::new(&current, user_space)
         };
 
         loop {

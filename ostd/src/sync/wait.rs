@@ -4,7 +4,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::SpinLock;
-use crate::task::{add_task, current_task, schedule, Task, TaskStatus};
+use crate::task::{add_task, current_task_on_processor, schedule, Task, TaskStatus};
 
 // # Explanation on the memory orders
 //
@@ -209,7 +209,7 @@ impl Waiter {
     pub fn new_pair() -> (Self, Arc<Waker>) {
         let waker = Arc::new(Waker {
             has_woken: AtomicBool::new(false),
-            task: current_task().unwrap(),
+            task: current_task_on_processor().unwrap(),
         });
         let waiter = Self {
             waker: waker.clone(),

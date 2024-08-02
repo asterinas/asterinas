@@ -56,7 +56,7 @@ impl Thread {
     /// when writing code that can be called directly by unit tests. If this isn't the case,
     /// consider using [`current_thread!`] instead.
     pub fn current() -> Option<Arc<Self>> {
-        Task::current()
+        Task::current_on_processor()
             .data()
             .downcast_ref::<Weak<Thread>>()?
             .upgrade()

@@ -129,6 +129,13 @@ SECTIONS
         __cpu_local_preempt_lock_count = . - __cpu_local_start;
         . += 4;
 
+        # These 4 bytes are used to store the raw pointer form of
+        # `Arc<ostd::Task>`.
+        # It is to accelerate `ostd::Task::current()` accesses by using one
+        # instruction, then we don't need to disable interrupts or preemption.
+        __cpu_local_current_task_ptr = . - __cpu_local_start;
+        . += 8;
+
         KEEP(*(SORT(.cpu_local)))
         __cpu_local_end = .;
     }

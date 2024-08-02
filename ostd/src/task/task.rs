@@ -12,7 +12,7 @@ use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 use super::{
     add_task,
     priority::Priority,
-    processor::{current_task, schedule},
+    processor::{current_task, current_task_on_processor, schedule, CurrentTaskRef},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
@@ -41,6 +41,7 @@ pub trait TaskContextApi {
     fn stack_pointer(&self) -> usize;
 }
 
+#[derive(Debug)]
 pub struct KernelStack {
     segment: Segment,
     has_guard_page: bool,
@@ -131,14 +132,32 @@ intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLin
 // we have exclusive access to the field.
 unsafe impl Sync for Task {}
 
+#[derive(Debug)]
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
 }
 
 impl Task {
     /// Gets the current task.
-    pub fn current() -> Arc<Task> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no current task or called in an interrupt context.
+    pub fn current() -> CurrentTaskRef {
         current_task().unwrap()
+    }
+
+    /// Gets the current task on this processor.
+    ///
+    /// This method is only useful in interrupt contexts since it is
+    /// significantly slower than the [`Self::current`] counterpart, which is
+    /// not available in interrupt contexts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no current task on this processor.
+    pub fn current_on_processor() -> Arc<Self> {
+        current_task_on_processor().unwrap()
     }
 
     /// Gets inner
@@ -288,7 +307,7 @@ impl TaskOptions {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
         extern "C" fn kernel_task_entry() {
-            let current_task = current_task()
+            let current_task = current_task_on_processor()
                 .expect("no current task, it should have current task in kernel task entry");
             current_task.func.call(());
             current_task.exit();

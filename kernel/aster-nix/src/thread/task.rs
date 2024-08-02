@@ -22,7 +22,7 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
         let user_space = current_task
             .user_space()
             .expect("user task should have user space");
-        let mut user_mode = UserMode::new(user_space);
+        let mut user_mode = UserMode::new(&Task::current(), user_space);
         debug!(
             "[Task entry] rip = 0x{:x}",
             user_mode.context().instruction_pointer()

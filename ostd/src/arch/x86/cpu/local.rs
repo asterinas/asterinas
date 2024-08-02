@@ -68,6 +68,21 @@ pub mod preempt_lock_count {
         }
     }
 
+    /// Sets the per-CPU preemption lock count using one instruction.
+    pub(crate) fn set(val: u32) {
+        debug_assert_initialized!();
+
+        // SAFETY: The inline assembly sets the lock count in one instruction
+        // without side effects.
+        unsafe {
+            core::arch::asm!(
+                "mov fs:[__cpu_local_preempt_lock_count], {0:e}",
+                in(reg) val,
+                options(nostack),
+            );
+        }
+    }
+
     /// Gets the per-CPU preemption lock count using one instruction.
     pub(crate) fn get() -> u32 {
         debug_assert_initialized!();
@@ -83,5 +98,49 @@ pub mod preempt_lock_count {
             );
         }
         count
+    }
+}
+
+pub mod current_task_ptr {
+    //! We need to set/get the pointer to the current task using a single
+    //! instruction to accelerate the [`Task::current()`] operation.
+
+    use crate::task::Task;
+
+    /// Sets the pointer to the current task using one instruction.
+    ///
+    /// The pointer is CPU-local. So it is safe to set the pointer in the
+    /// current task. The validity of the given [`Task`] pointer is not
+    /// related to the implementation of this function.
+    pub(crate) fn set(ptr: *const Task) {
+        // SAFETY: The inline assembly writes the pointer to the current task
+        // to the preserved memory in one instruction without side effects.
+        // The operated memory is only accessed by the current CPU.
+        unsafe {
+            core::arch::asm!(
+                "mov fs:[__cpu_local_current_task_ptr], {0:r}",
+                in(reg) ptr,
+                options(nostack),
+            );
+        }
+    }
+
+    /// Gets the pointer to the current task using one instruction.
+    ///
+    /// The pointer is CPU-local. So it is safe to read the pointer in the
+    /// current task.
+    pub(crate) fn get() -> *const Task {
+        let ptr: *const Task;
+        // SAFETY: The inline assembly reads the pointer to the current task in
+        // the preserved memory using one instruction without side effects.
+        // The operated memory is only accessed by the current CPU.
+        unsafe {
+            core::arch::asm!(
+                "mov {0:r}, fs:[__cpu_local_current_task_ptr]",
+                out(reg) ptr,
+                options(nostack, readonly),
+            );
+        }
+        ptr
     }
 }

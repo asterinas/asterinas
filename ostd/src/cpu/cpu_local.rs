@@ -201,11 +201,15 @@ impl<T> Deref for CpuLocalDerefGuard<'_, T> {
 /// It should be called only once and only on the BSP.
 pub(crate) unsafe fn early_init_bsp_local_base() {
     let start_base_va = __cpu_local_start as usize as u64;
+
     // SAFETY: The base to be set is the start of the `.cpu_local` section,
     // where accessing the CPU-local objects have defined behaviors.
     unsafe {
         arch::cpu::local::set_base(start_base_va);
     }
+
+    arch::cpu::local::current_task_ptr::set(core::ptr::null());
+    arch::cpu::local::preempt_lock_count::set(0);
 }
 
 /// The BSP initializes the CPU-local areas for APs. Here we use a
@@ -248,14 +252,20 @@ pub unsafe fn init_on_bsp() {
             );
         }
 
-        // SAFETY: the first 4 bytes is reserved for storing CPU ID.
+        // SAFETY: bytes `0:4` are reserved for storing CPU ID.
         unsafe {
             (ap_pages_ptr as *mut u32).write(cpu_i);
         }
 
-        // SAFETY: the second 4 bytes is reserved for storing the preemt count.
+        // SAFETY: bytes `4:8` are reserved for storing the preemt count.
         unsafe {
             (ap_pages_ptr as *mut u32).add(1).write(0);
+        }
+
+        // SAFETY: bytes `8:16` are reserved for storing the pointer to the
+        // current task. We initialize it to null.
+        unsafe {
+            (ap_pages_ptr as *mut u64).add(1).write(0);
         }
 
         cpu_local_storages.push(ap_pages);

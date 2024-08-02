@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::cell::RefCell;
+use core::{cell::RefCell, ops::Deref};
 
 use super::{
     scheduler::{fetch_task, GLOBAL_SCHEDULER},
@@ -26,17 +26,13 @@ impl Processor {
             idle_task_ctx: TaskContext::new(),
         }
     }
+
     fn get_idle_task_ctx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_ctx as *mut _
     }
-    pub fn take_current(&mut self) -> Option<Arc<Task>> {
-        self.current.take()
-    }
+
     pub fn current(&self) -> Option<Arc<Task>> {
         self.current.as_ref().map(Arc::clone)
-    }
-    pub fn set_current_task(&mut self, task: Arc<Task>) {
-        self.current = Some(task.clone());
     }
 }
 
@@ -44,9 +40,68 @@ cpu_local! {
     static PROCESSOR: RefCell<Processor> = RefCell::new(Processor::new());
 }
 
-/// Retrieves the current task running on the processor.
-pub fn current_task() -> Option<Arc<Task>> {
+/// Retrieves an [`Arc`] of the current task running on the processor.
+///
+/// This function is only useful in interrupt contexts since it is
+/// significantly slower than the [`current_task`] counterpart, which is
+/// not available in interrupt contexts.
+pub fn current_task_on_processor() -> Option<Arc<Task>> {
     PROCESSOR.borrow_irq_disabled().borrow().current()
+}
+
+/// The error when getting the current task.
+#[derive(Debug)]
+pub enum CurrentTaskError {
+    /// The current task is not available.
+    NotAvailable,
+    /// The function is called in an interrupt context.
+    InInterruptContext,
+}
+
+/// Retrieves a reference to the current task running on the processor.
+///
+/// It returns error if the current task is not available, or if the function
+/// is called in an interrupt context.
+pub fn current_task() -> Result<CurrentTaskRef, CurrentTaskError> {
+    let ptr = crate::arch::cpu::local::current_task_ptr::get();
+    if ptr.is_null() {
+        return Err(CurrentTaskError::NotAvailable);
+    }
+    if crate::trap::in_interrupt_context() {
+        return Err(CurrentTaskError::InInterruptContext);
+    }
+    Ok(CurrentTaskRef { ptr })
+}
+
+/// A reference to the current task.
+#[derive(Clone)]
+pub struct CurrentTaskRef {
+    ptr: *const Task,
+}
+
+// `CurrentTaskRef` is not `Send` because it is only valid in the current task
+// context. This will forbid moving the reference to another task context or
+// a global static variable.
+impl !Send for CurrentTaskRef {}
+
+impl Deref for CurrentTaskRef {
+    type Target = Task;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: The task reference guard can only be created by the
+        // `current_task` function, which can only be called in the current
+        // task's  context. And the code running in the task context have a
+        // lifetime shorter than the task itself. So the pointer will never
+        // outlive the task reference guard.
+        unsafe { &*self.ptr }
+    }
+}
+
+impl CurrentTaskRef {
+    /// Returns true if the two `CurrentTaskRef` point to the same task.
+    pub fn ptr_eq(this: &Self, other: &Self) -> bool {
+        this.ptr == other.ptr
+    }
 }
 
 pub(crate) fn get_idle_task_ctx_ptr() -> *mut TaskContext {
@@ -98,7 +153,7 @@ fn switch_to_task(next_task: Arc<Task>) {
         );
     }
 
-    let current_task_ctx_ptr = match current_task() {
+    let current_task_ctx_ptr = match current_task_on_processor() {
         None => get_idle_task_ctx_ptr(),
         Some(current_task) => {
             let ctx_ptr = current_task.ctx().get();
@@ -131,6 +186,8 @@ fn switch_to_task(next_task: Arc<Task>) {
         // We cannot directly overwrite `current` at this point. Since we are running as `current`,
         // we must avoid dropping `current`. Otherwise, the kernel stack may be unmapped, leading
         // to soundness problems.
+        let next_task_ptr = Arc::as_ptr(&next_task);
+        crate::arch::cpu::local::current_task_ptr::set(next_task_ptr);
         let old_current = processor.current.replace(next_task);
         processor.prev_task = old_current;
     }
