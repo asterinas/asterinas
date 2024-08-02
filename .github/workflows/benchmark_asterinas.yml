@@ -19,14 +19,15 @@ jobs:
           - lmbench-fork
           - lmbench-exec
           - lmbench-shell
-          - lmbench-pipe-latency
-          - lmbench-pipe-bandwidth
           # Memory-related benchmarks
           - lmbench-mem-frd
           - lmbench-mem-fwr
           - lmbench-mem-fcp
-          # Network-related benchmarks
+          # IPC-related benchmarks
           - lmbench-unix-latency
+          - lmbench-unix-bandwidth
+          - lmbench-pipe-latency
+          - lmbench-pipe-bandwidth
           # Syscall-related benchmarks
           - lmbench-getpid
           - lmbench-fstat
@@ -36,6 +37,10 @@ jobs:
           - lmbench-read
           # Signal-related benchmarks
           - lmbench-signal
+          - lmbench-signal-install
+          # File-related benchmarks
+          - lmbench-file-rd-bandwidth
+          - lmbench-select-file
       fail-fast: false
     timeout-minutes: 60
     container: 
