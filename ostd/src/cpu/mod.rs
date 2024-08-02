@@ -2,7 +2,7 @@
 
 //! CPU-related definitions.
 
-pub mod cpu_local;
+pub mod local;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")]{
@@ -18,7 +18,7 @@ use bitvec::{
     slice::IterOnes,
 };
 
-use crate::{arch::boot::smp::get_num_processors, cpu};
+use crate::arch::{self, boot::smp::get_num_processors};
 
 /// The number of CPUs. Zero means uninitialized.
 static NUM_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -47,7 +47,7 @@ pub fn num_cpus() -> u32 {
 pub fn this_cpu() -> u32 {
     // SAFETY: the cpu ID is stored at the beginning of the cpu local area, provided
     // by the linker script.
-    unsafe { (cpu::local::get_base() as usize as *mut u32).read() }
+    unsafe { (arch::cpu::local::get_base() as usize as *mut u32).read() }
 }
 
 /// A subset of all CPUs in the system.

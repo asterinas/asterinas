@@ -2,8 +2,6 @@
 
 //! Handles trap.
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use align_ext::AlignExt;
 use log::debug;
 #[cfg(feature = "intel_tdx")]
@@ -15,7 +13,7 @@ use super::ex_table::ExTable;
 use crate::arch::{cpu::VIRTUALIZATION_EXCEPTION, tdx_guest::handle_virtual_exception};
 use crate::{
     cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode, PAGE_FAULT},
-    cpu_local,
+    cpu_local_cell,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
@@ -25,15 +23,15 @@ use crate::{
     trap::call_irq_callback_functions,
 };
 
-cpu_local! {
-    static IS_KERNEL_INTERRUPTED: AtomicBool = AtomicBool::new(false);
+cpu_local_cell! {
+    static IS_KERNEL_INTERRUPTED: bool = false;
 }
 
 /// Returns true if this function is called within the context of an IRQ handler
 /// and the IRQ occurs while the CPU is executing in the kernel mode.
 /// Otherwise, it returns false.
 pub fn is_kernel_interrupted() -> bool {
-    IS_KERNEL_INTERRUPTED.load(Ordering::Acquire)
+    IS_KERNEL_INTERRUPTED.load()
 }
 
 /// Only from kernel
@@ -64,9 +62,9 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             }
         }
     } else {
-        IS_KERNEL_INTERRUPTED.store(true, Ordering::Release);
+        IS_KERNEL_INTERRUPTED.store(true);
         call_irq_callback_functions(f, f.trap_num);
-        IS_KERNEL_INTERRUPTED.store(false, Ordering::Release);
+        IS_KERNEL_INTERRUPTED.store(false);
     }
 }
 

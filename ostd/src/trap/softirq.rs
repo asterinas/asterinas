@@ -2,14 +2,12 @@
 
 //! Software interrupt.
 
-#![allow(unused_variables)]
-
 use alloc::boxed::Box;
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use spin::Once;
 
-use crate::{cpu_local, task::disable_preempt};
+use crate::{cpu_local_cell, task::disable_preempt};
 
 /// A representation of a software interrupt (softirq) line.
 ///
@@ -70,7 +68,7 @@ impl SoftIrqLine {
     ///
     /// If this line is not enabled yet, the method has no effect.
     pub fn raise(&self) {
-        PENDING_MASK.fetch_or(1 << self.id, Ordering::Release);
+        PENDING_MASK.bitor_assign(1 << self.id);
     }
 
     /// Enables a softirq line by registering its callback.
@@ -105,24 +103,24 @@ pub(super) fn init() {
 
 static ENABLED_MASK: AtomicU8 = AtomicU8::new(0);
 
-cpu_local! {
-    static PENDING_MASK: AtomicU8 = AtomicU8::new(0);
-    static IS_ENABLED: AtomicBool = AtomicBool::new(true);
+cpu_local_cell! {
+    static PENDING_MASK: u8 = 0;
+    static IS_ENABLED: bool = true;
 }
 
 /// Enables softirq in current processor.
 fn enable_softirq_local() {
-    IS_ENABLED.store(true, Ordering::Release);
+    IS_ENABLED.store(true);
 }
 
 /// Disables softirq in current processor.
 fn disable_softirq_local() {
-    IS_ENABLED.store(false, Ordering::Release);
+    IS_ENABLED.store(false);
 }
 
 /// Checks whether the softirq is enabled in current processor.
 fn is_softirq_enabled() -> bool {
-    IS_ENABLED.load(Ordering::Acquire)
+    IS_ENABLED.load()
 }
 
 /// Processes pending softirqs.
@@ -136,12 +134,13 @@ pub(crate) fn process_pending() {
         return;
     }
 
-    let preempt_guard = disable_preempt();
+    let _preempt_guard = disable_preempt();
     disable_softirq_local();
 
-    for i in 0..SOFTIRQ_RUN_TIMES {
+    for _i in 0..SOFTIRQ_RUN_TIMES {
         let mut action_mask = {
-            let pending_mask = PENDING_MASK.fetch_and(0, Ordering::Acquire);
+            let pending_mask = PENDING_MASK.load();
+            PENDING_MASK.store(0);
             pending_mask & ENABLED_MASK.load(Ordering::Acquire)
         };
 
