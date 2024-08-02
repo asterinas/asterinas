@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "Pipe latency",
-    "field": "3"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Pipe latency",
+    "result_index": "3",
+    "description": "The latency of pipe on a single processor."
 }
