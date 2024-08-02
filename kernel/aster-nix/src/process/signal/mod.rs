@@ -22,15 +22,15 @@ use ostd::{cpu::UserContext, user::UserContextApi};
 pub use pauser::Pauser;
 pub use poll::{Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
-use sig_mask::SigMask;
+use sig_mask::SigSet;
 use sig_num::SigNum;
 pub use sig_stack::{SigStack, SigStackFlags};
 
-use super::posix_thread::{PosixThread, PosixThreadExt};
+use super::posix_thread::{MutPosixThreadInfo, SharedPosixThreadInfo};
 use crate::{
     prelude::*,
     process::{do_exit_group, TermStatus},
-    thread::{status::ThreadStatus, Thread},
+    thread::{status::ThreadStatus, ThreadContext},
     util::{write_bytes_to_user, write_val_to_user},
 };
 
@@ -39,90 +39,15 @@ pub trait SignalContext {
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize);
 }
 
-// TODO: This interface of this method is error prone.
-// The method takes an argument for the current thread to optimize its efficiency.
-/// Handle pending signal for current process.
-pub fn handle_pending_signal(
-    context: &mut UserContext,
-    current_thread: &Arc<Thread>,
-) -> Result<()> {
-    // We first deal with signal in current thread, then signal in current process.
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-    let signal = {
-        let sig_mask = *posix_thread.sig_mask().lock();
-        if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
-            signal
-        } else {
-            return Ok(());
-        }
-    };
-
-    let sig_num = signal.num();
-    trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
-    let current = posix_thread.process();
-    let sig_action = current.sig_dispositions().lock().get(sig_num);
-    trace!("sig action: {:x?}", sig_action);
-    match sig_action {
-        SigAction::Ign => {
-            trace!("Ignore signal {:?}", sig_num);
-        }
-        SigAction::User {
-            handler_addr,
-            flags,
-            restorer_addr,
-            mask,
-        } => handle_user_signal(
-            sig_num,
-            handler_addr,
-            flags,
-            restorer_addr,
-            mask,
-            context,
-            signal.to_info(),
-        )?,
-        SigAction::Dfl => {
-            let sig_default_action = SigDefaultAction::from_signum(sig_num);
-            trace!("sig_default_action: {:?}", sig_default_action);
-            match sig_default_action {
-                SigDefaultAction::Core | SigDefaultAction::Term => {
-                    warn!(
-                        "{:?}: terminating on signal {}",
-                        current.executable_path(),
-                        sig_num.sig_name()
-                    );
-                    // We should exit current here, since we cannot restore a valid status from trap now.
-                    do_exit_group(TermStatus::Killed(sig_num));
-                }
-                SigDefaultAction::Ign => {}
-                SigDefaultAction::Stop => {
-                    let _ = current_thread.atomic_status().compare_exchange(
-                        ThreadStatus::Running,
-                        ThreadStatus::Stopped,
-                        Ordering::AcqRel,
-                        Ordering::Relaxed,
-                    );
-                }
-                SigDefaultAction::Cont => {
-                    let _ = current_thread.atomic_status().compare_exchange(
-                        ThreadStatus::Stopped,
-                        ThreadStatus::Running,
-                        Ordering::AcqRel,
-                        Ordering::Relaxed,
-                    );
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 pub fn handle_user_signal(
+    context: &mut UserContext,
+    pthread_ctx_mut: &mut MutSharedPosixThreadInfo,
+    pthread_ctx: &SharedPosixThreadInfo,
     sig_num: SigNum,
     handler_addr: Vaddr,
     flags: SigActionFlags,
     restorer_addr: Vaddr,
-    mut mask: SigMask,
-    context: &mut UserContext,
+    mut mask: SigSet,
     sig_info: siginfo_t,
 ) -> Result<()> {
     debug!("sig_num = {:?}, signame = {}", sig_num, sig_num.sig_name());
@@ -136,16 +61,13 @@ pub fn handle_user_signal(
     }
     if !flags.contains(SigActionFlags::SA_NODEFER) {
         // add current signal to mask
-        let current_mask = SigMask::from(sig_num);
-        mask.block(current_mask.as_u64());
+        mask.add_signal(sig_num);
     }
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
     // block signals in sigmask when running signal handler
-    posix_thread.sig_mask().lock().block(mask.as_u64());
+    pthread_ctx.sig_mask.block(mask);
 
     // Set up signal stack.
-    let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(posix_thread) {
+    let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(pthread_ctx_mut) {
         sp as u64
     } else {
         // just use user stack
@@ -163,7 +85,7 @@ pub fn handle_user_signal(
     // 2. write ucontext_t.
     stack_pointer = alloc_aligned_in_user_stack(stack_pointer, mem::size_of::<ucontext_t>(), 16)?;
     let mut ucontext = ucontext_t {
-        uc_sigmask: mask.as_u64(),
+        uc_sigmask: mask.into(),
         ..Default::default()
     };
     ucontext
@@ -171,9 +93,9 @@ pub fn handle_user_signal(
         .inner
         .gp_regs
         .copy_from_raw(context.general_regs());
-    let mut sig_context = posix_thread.sig_context().lock();
-    if let Some(sig_context_addr) = *sig_context {
-        ucontext.uc_link = sig_context_addr;
+    let sig_context = &mut pthread_ctx_mut.sig_context;
+    if let Some(sig_context_addr) = sig_context {
+        ucontext.uc_link = *sig_context_addr;
     } else {
         ucontext.uc_link = 0;
     }
@@ -220,9 +142,8 @@ pub fn handle_user_signal(
 /// It the stack is already active, we just increase the handler counter and return None, since
 /// the stack pointer can be read from context.
 /// It the stack is not used by any handler, we will return the new sp in alternate signal stack.
-fn use_alternate_signal_stack(posix_thread: &PosixThread) -> Option<usize> {
-    let mut sig_stack = posix_thread.sig_stack().lock();
-    let sig_stack = (*sig_stack).as_mut()?;
+fn use_alternate_signal_stack(pthread_ctx_mut: &mut MutPosixThreadInfo) -> Option<usize> {
+    let sig_stack = pthread_ctx_mut.sig_stack.as_mut()?;
 
     if sig_stack.is_disabled() {
         return None;

@@ -3,9 +3,17 @@
 //! Read the Cpu context content then dispatch syscall to corrsponding handler
 //! The each sub module contains functions that handle real syscall logic.
 pub use clock_gettime::ClockId;
-use ostd::cpu::UserContext;
+use ostd::{
+    cpu::UserContext,
+    task::{MutTaskInfo, SharedTaskInfo},
+};
 
-use crate::{cpu::LinuxAbi, prelude::*};
+use crate::{
+    cpu::LinuxAbi,
+    prelude::*,
+    process::posix_thread::{MutPosixThreadInfo, SharedPosixThreadInfo},
+    thread::{MutThreadInfo, SharedThreadInfo},
+};
 
 mod accept;
 mod access;
@@ -134,39 +142,174 @@ mod wait4;
 mod waitid;
 mod write;
 
-/// This macro is used to define syscall handler.
-/// The first param is ths number of parameters,
-/// The second param is the function name of syscall handler,
-/// The third is optional, means the args(if parameter number > 0),
-/// The third is optional, means if cpu context is required.
+/// A group of thread context information that is passed to syscall handlers.
+pub struct CallingThreadInfo<'a, 'b, 'c, 'd, 'e, 'f> {
+    pub task_info_mut: &'a mut MutTaskInfo,
+    pub task_info: &'b SharedTaskInfo,
+    pub thread_info_mut: &'c mut MutThreadInfo,
+    pub thread_info: &'d SharedThreadInfo,
+    pub pthread_info_mut: &'e mut MutPosixThreadInfo,
+    pub pthread_info: &'f SharedPosixThreadInfo,
+}
+
+/// This macro is used to define the syscall handler.
+///
+/// Parameters:
+///  1. number of parameters of the system call;
+///  2. the function name of syscall handler;
+///  3. (if parameter number is not zero) the arguments;
+///  4. (optional) the thread info (if thread info is required);
+///  5. (optional) the CPU context (if CPU context is required).
 macro_rules! syscall_handler {
-    (0, $fn_name: ident, $args: ident) => { $fn_name() };
-    (0, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($context) };
-    (1, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _) };
-    (1, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $context) };
-    (2, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _)};
-    (2, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $context)};
-    (3, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _)};
-    (3, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $context)};
-    (4, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _)};
-    (4, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _), $context};
-    (5, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _, $args[4] as _)};
-    (5, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _, $args[4] as _, $context)};
-    (6, $fn_name: ident, $args: ident) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _, $args[4] as _, $args[5] as _)};
-    (6, $fn_name: ident, $args: ident, $context: expr) => { $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _, $args[4] as _, $args[5] as _, $context)};
+    (0, $fn_name: ident, $args: ident) => {
+        $fn_name()
+    };
+    (0, $fn_name: ident, $args: ident, $thread_info: expr) => {
+        $fn_name($thread_info)
+    };
+    (0, $fn_name: ident, $args: ident, $thread_info: expr, $context: expr) => {
+        $fn_name($thread_info, $context)
+    };
+
+    (1, $fn_name: ident, $args: ident) => {
+        $fn_name($args[0] as _)
+    };
+    (1, $fn_name: ident, $args: ident, $thread_info: expr) => {
+        $fn_name($args[0] as _, $thread_info)
+    };
+    (1, $fn_name: ident, $args: ident, $thread_info: expr, $context: expr) => {
+        $fn_name($args[0] as _, $thread_info, $context)
+    };
+
+    (2, $fn_name: ident, $args: ident) => {
+        $fn_name($args[0] as _, $args[1] as _)
+    };
+    (2, $fn_name: ident, $args: ident, $thread_info: expr) => {
+        $fn_name($args[0] as _, $args[1] as _, $thread_info)
+    };
+    (2, $fn_name: ident, $args: ident, $thread_info: expr, $context: expr) => {
+        $fn_name($args[0] as _, $args[1] as _, $thread_info, $context)
+    };
+
+    (3, $fn_name: ident, $args: ident) => {
+        $fn_name($args[0] as _, $args[1] as _, $args[2] as _)
+    };
+    (3, $fn_name: ident, $args: ident, $thread_info: expr) => {
+        $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $thread_info)
+    };
+    (3, $fn_name: ident, $args: ident, $thread_info: expr, $context: expr) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $thread_info,
+            $context,
+        )
+    };
+
+    (4, $fn_name: ident, $args: ident) => {
+        $fn_name($args[0] as _, $args[1] as _, $args[2] as _, $args[3] as _)
+    };
+    (4, $fn_name: ident, $args: ident, $thread_info: expr) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $args[3] as _,
+            $thread_info,
+        )
+    };
+    (4, $fn_name: ident, $args: ident, $thread_info: expr, $context: expr) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $args[3] as _,
+            $thread_info,
+            $context,
+        )
+    };
+
+    (5, $fn_name: ident, $args: ident) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $args[3] as _,
+            $args[4] as _,
+        )
+    };
+    (5, $fn_name: ident, $args: ident, $thread_info: expr) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $args[3] as _,
+            $args[4] as _,
+            $thread_info,
+        )
+    };
+    (5, $fn_name: ident, $args: ident, $thread_info: expr, $context: expr) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $args[3] as _,
+            $args[4] as _,
+            $thread_info,
+            $context,
+        )
+    };
+
+    (6, $fn_name: ident, $args: ident) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $args[3] as _,
+            $args[4] as _,
+            $args[5] as _,
+        )
+    };
+    (6, $fn_name: ident, $args: ident, $thread_info: expr) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $args[3] as _,
+            $args[4] as _,
+            $args[5] as _,
+            $thread_info,
+        )
+    };
+    (6, $fn_name: ident, $args: ident, $thread_info: expr, $context: expr) => {
+        $fn_name(
+            $args[0] as _,
+            $args[1] as _,
+            $args[2] as _,
+            $args[3] as _,
+            $args[4] as _,
+            $args[5] as _,
+            $thread_info,
+            $context,
+        )
+    };
 }
 
 macro_rules! dispatch_fn_inner {
-    ( $args: ident, $context: ident, $handler: ident ( args[ .. $cnt: tt ] ) ) => {
+    ( $args: ident, $context: ident, $thread_info: ident, $handler: ident ( args[ .. $cnt: tt ] ) ) => {
         $crate::syscall::syscall_handler!($cnt, $handler, $args)
     };
-    ( $args: ident, $context: ident, $handler: ident ( args[ .. $cnt: tt ] , &context ) ) => {
-        $crate::syscall::syscall_handler!($cnt, $handler, $args, &$context)
+    ( $args: ident, $context: ident, $thread_info: ident, $handler: ident ( args[ .. $cnt: tt ] , thread_info ) ) => {
+        $crate::syscall::syscall_handler!($cnt, $handler, $args, $thread_info)
     };
-    ( $args: ident, $context: ident, $handler: ident ( args[ .. $cnt: tt ] , &mut context ) ) => {
+    ( $args: ident, $context: ident, $thread_info: ident, $handler: ident ( args[ .. $cnt: tt ] , thread_info , &context ) ) => {
+        $crate::syscall::syscall_handler!($cnt, $handler, $args, $thread_info, &$context)
+    };
+    ( $args: ident, $context: ident, $thread_info: ident, $handler: ident ( args[ .. $cnt: tt ] , thread_info , &mut context ) ) => {
         // `$context` is already of type `&mut ostd::cpu::UserContext`,
         // so no need to take `&mut` again
-        $crate::syscall::syscall_handler!($cnt, $handler, $args, $context)
+        $crate::syscall::syscall_handler!($cnt, $handler, $args, $thread_info, $context)
     };
 }
 
@@ -183,12 +326,13 @@ macro_rules! impl_syscall_nums_and_dispatch_fn {
             syscall_number: u64,
             args: [u64; 6],
             context: &mut ostd::cpu::UserContext,
+            thread_info: CallingThreadInfo,
         ) -> $crate::prelude::Result<$crate::syscall::SyscallReturn> {
             match syscall_number {
                 $(
                     $num => {
                         $crate::log_syscall_entry!($name);
-                        $crate::syscall::dispatch_fn_inner!(args, context, $handler $args)
+                        $crate::syscall::dispatch_fn_inner!(args, context, thread_info, $handler $args)
                     }
                 )*
                 _ => {
@@ -230,10 +374,30 @@ impl SyscallArgument {
     }
 }
 
-pub fn handle_syscall(context: &mut UserContext) {
+pub fn handle_syscall(
+    context: &mut UserContext,
+    task_info_mut: &mut MutTaskInfo,
+    task_info: &SharedTaskInfo,
+    thread_info_mut: &mut MutThreadInfo,
+    thread_info: &SharedThreadInfo,
+    pthread_info_mut: &mut MutPosixThreadInfo,
+    pthread_info: &SharedPosixThreadInfo,
+) {
     let syscall_frame = SyscallArgument::new_from_context(context);
-    let syscall_return =
-        arch::syscall_dispatch(syscall_frame.syscall_number, syscall_frame.args, context);
+    let thread_info = CallingThreadInfo {
+        task_info_mut,
+        task_info,
+        thread_info_mut,
+        thread_info,
+        pthread_info_mut,
+        pthread_info,
+    };
+    let syscall_return = arch::syscall_dispatch(
+        syscall_frame.syscall_number,
+        syscall_frame.args,
+        context,
+        thread_info,
+    );
 
     match syscall_return {
         Ok(return_value) => {

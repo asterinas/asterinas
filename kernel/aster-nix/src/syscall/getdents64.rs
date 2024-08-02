@@ -4,7 +4,7 @@
 
 use core::marker::PhantomData;
 
-use super::SyscallReturn;
+use super::{CallingThreadInfo, SyscallReturn};
 use crate::{
     fs::{
         file_table::FileDesc,
@@ -15,14 +15,19 @@ use crate::{
     util::write_bytes_to_user,
 };
 
-pub fn sys_getdents(fd: FileDesc, buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
+pub fn sys_getdents(
+    fd: FileDesc,
+    buf_addr: Vaddr,
+    buf_len: usize,
+    info: CallingThreadInfo,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
         fd, buf_addr, buf_len
     );
 
     let file = {
-        let current = current!();
+        let current = info.pthread_info.process();
         let file_table = current.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
@@ -40,14 +45,19 @@ pub fn sys_getdents(fd: FileDesc, buf_addr: Vaddr, buf_len: usize) -> Result<Sys
     Ok(SyscallReturn::Return(read_len as _))
 }
 
-pub fn sys_getdents64(fd: FileDesc, buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
+pub fn sys_getdents64(
+    fd: FileDesc,
+    buf_addr: Vaddr,
+    buf_len: usize,
+    info: CallingThreadInfo,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
         fd, buf_addr, buf_len
     );
 
     let file = {
-        let current = current!();
+        let current = info.pthread_info.process();
         let file_table = current.file_table().lock();
         file_table.get_file(fd)?.clone()
     };

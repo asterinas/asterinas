@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{sig_mask::SigMask, sig_num::SigNum};
+use super::{sig_mask::SigSet, sig_num::SigNum};
 use crate::{
     events::{Events, EventsFilter},
     prelude::*,
@@ -18,10 +18,10 @@ impl SigEvents {
 impl Events for SigEvents {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SigEventsFilter(SigMask);
+pub struct SigEventsFilter(SigSet);
 
 impl SigEventsFilter {
-    pub fn new(mask: SigMask) -> Self {
+    pub fn new(mask: SigSet) -> Self {
         Self(mask)
     }
 }

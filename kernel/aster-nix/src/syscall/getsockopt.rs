@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
+use super::{CallingThreadInfo, SyscallReturn};
 use crate::{
     fs::file_table::FileDesc,
     prelude::*,
@@ -16,6 +16,7 @@ pub fn sys_getsockopt(
     optname: i32,
     optval: Vaddr,
     optlen_addr: Vaddr,
+    info: CallingThreadInfo,
 ) -> Result<SyscallReturn> {
     let level = CSocketOptionLevel::try_from(level)?;
     if optval == 0 || optlen_addr == 0 {
@@ -33,7 +34,7 @@ pub fn sys_getsockopt(
     socket.get_option(raw_option.as_sock_option_mut())?;
 
     let write_len = {
-        let current = current!();
+        let current = info.pthread_info.process();
         let vmar = current.root_vmar();
         raw_option.write_to_user(vmar, optval, optlen)?
     };

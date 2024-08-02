@@ -75,10 +75,10 @@ fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Process>>> {
                     let Some(main_thread) = process.main_thread() else {
                         return false;
                     };
-                    let Some(posix_thread) = main_thread.as_posix_thread() else {
+                    let Some(posix_thread) = main_thread.posix_thread_info() else {
                         return false;
                     };
-                    uid == posix_thread.credentials().ruid()
+                    uid == posix_thread.credentials.ruid()
                 })
                 .cloned()
                 .collect();

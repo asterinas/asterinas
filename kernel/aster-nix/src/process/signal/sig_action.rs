@@ -2,7 +2,7 @@
 
 use bitflags::bitflags;
 
-use super::{c_types::sigaction_t, constants::*, sig_mask::SigMask, sig_num::SigNum};
+use super::{c_types::sigaction_t, constants::*, sig_mask::SigSet, sig_num::SigNum};
 use crate::prelude::*;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -15,7 +15,7 @@ pub enum SigAction {
         handler_addr: usize,
         flags: SigActionFlags,
         restorer_addr: usize,
-        mask: SigMask,
+        mask: SigSet,
     },
 }
 
@@ -28,7 +28,7 @@ impl TryFrom<sigaction_t> for SigAction {
             SIG_IGN => SigAction::Ign,
             _ => {
                 let flags = SigActionFlags::from_bits_truncate(input.flags);
-                let mask = SigMask::from(input.mask);
+                let mask = SigSet::from(input.mask);
                 SigAction::User {
                     handler_addr: input.handler_ptr,
                     flags,

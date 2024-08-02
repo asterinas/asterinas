@@ -2,19 +2,29 @@
 
 #![allow(dead_code)]
 
-use super::{Pid, Process};
+use ostd::{
+    cpu::UserContext,
+    task::Task,
+    user::{UserContextApi, UserSpace},
+};
+
+use super::{
+    posix_thread::{PosixThreadBuilder, PosixThreadExt},
+    process_vm::ProcessVm,
+    program_loader::load_program_to_vm,
+    rlimit::ResourceLimits,
+    Credentials, Pid, Process,
+};
 use crate::{
-    fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
-    prelude::*,
-    process::{
-        posix_thread::{PosixThreadBuilder, PosixThreadExt},
-        process_vm::ProcessVm,
-        rlimit::ResourceLimits,
-        signal::sig_disposition::SigDispositions,
-        Credentials,
+    fs::{
+        file_table::FileTable,
+        fs_resolver::{FsPath, FsResolver, AT_FDCWD},
+        utils::FileCreationMask,
     },
+    prelude::*,
     sched::nice::Nice,
-    thread::Thread,
+    signal::sig_disposition::SigDispositions,
+    thread::Tid,
 };
 
 pub struct ProcessBuilder<'a> {
@@ -194,7 +204,7 @@ impl<'a> ProcessBuilder<'a> {
             let builder = thread_builder.process(Arc::downgrade(&process));
             builder.build()
         } else {
-            Thread::new_posix_thread_from_executable(
+            new_posix_thread_from_executable(
                 pid,
                 credentials.unwrap(),
                 process.vm(),
@@ -212,4 +222,32 @@ impl<'a> ProcessBuilder<'a> {
 
         Ok(process)
     }
+}
+
+fn new_posix_thread_from_executable(
+    tid: Tid,
+    credentials: Credentials,
+    process_vm: &ProcessVm,
+    fs_resolver: &FsResolver,
+    executable_path: &str,
+    process: Weak<Process>,
+    argv: Vec<CString>,
+    envp: Vec<CString>,
+) -> Result<Arc<Task>> {
+    let elf_file = {
+        let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
+        fs_resolver.lookup(&fs_path)?
+    };
+    let (_, elf_load_info) = load_program_to_vm(process_vm, elf_file, argv, envp, fs_resolver, 1)?;
+
+    let vm_space = process_vm.root_vmar().vm_space().clone();
+    let mut cpu_ctx = UserContext::default();
+    cpu_ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
+    cpu_ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
+    let user_space = Arc::new(UserSpace::new(vm_space, cpu_ctx));
+    let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
+    let thread_builder = PosixThreadBuilder::new(tid, user_space, credentials)
+        .thread_name(thread_name)
+        .process(process);
+    Ok(thread_builder.build())
 }

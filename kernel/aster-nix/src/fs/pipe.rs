@@ -205,13 +205,7 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
-    use crate::{
-        fs::utils::Channel,
-        thread::{
-            kernel_thread::{KernelThreadExt, ThreadOptions},
-            Thread,
-        },
-    };
+    use crate::{fs::utils::Channel, thread};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Ordering {
@@ -239,33 +233,41 @@ mod test {
         let signal_writer = Arc::new(AtomicBool::new(false));
         let signal_reader = signal_writer.clone();
 
-        let writer = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            let writer = writer_with_lock.lock().take().unwrap();
+        let writer = thread::new_kernel(
+            move |tctx, _, _| {
+                let writer = writer_with_lock.lock().take().unwrap();
 
-            if ordering == Ordering::ReadThenWrite {
-                while !signal_writer.load(atomic::Ordering::Relaxed) {
-                    Thread::yield_now();
+                if ordering == Ordering::ReadThenWrite {
+                    while !signal_writer.load(atomic::Ordering::Relaxed) {
+                        tctx.yield_now();
+                    }
+                } else {
+                    signal_writer.store(true, atomic::Ordering::Relaxed);
                 }
-            } else {
-                signal_writer.store(true, atomic::Ordering::Relaxed);
-            }
 
-            write(writer);
-        }));
+                write(writer);
+            },
+            Priority::normal(),
+            CpuSet::new_full(),
+        );
 
-        let reader = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            let reader = reader_with_lock.lock().take().unwrap();
+        let reader = thread::new_kernel(
+            move |tctx, _, _| {
+                let reader = reader_with_lock.lock().take().unwrap();
 
-            if ordering == Ordering::WriteThenRead {
-                while !signal_reader.load(atomic::Ordering::Relaxed) {
-                    Thread::yield_now();
+                if ordering == Ordering::WriteThenRead {
+                    while !signal_reader.load(atomic::Ordering::Relaxed) {
+                        tctx.yield_now();
+                    }
+                } else {
+                    signal_reader.store(true, atomic::Ordering::Relaxed);
                 }
-            } else {
-                signal_reader.store(true, atomic::Ordering::Relaxed);
-            }
 
-            read(reader);
-        }));
+                read(reader);
+            },
+            Priority::normal(),
+            CpuSet::new_full(),
+        );
 
         writer.join();
         reader.join();

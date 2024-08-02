@@ -2,17 +2,14 @@
 
 use ostd::{cpu::UserContext, user::UserContextApi};
 
-use super::SyscallReturn;
-use crate::{
-    prelude::*,
-    process::{posix_thread::PosixThreadExt, signal::c_types::ucontext_t},
-    util::read_val_from_user,
-};
+use super::{CallingThreadInfo, SyscallReturn};
+use crate::{prelude::*, process::signal::c_types::ucontext_t, util::read_val_from_user};
 
-pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-    let mut sig_context = posix_thread.sig_context().lock();
+pub fn sys_rt_sigreturn(
+    info: CallingThreadInfo,
+    context: &mut UserContext,
+) -> Result<SyscallReturn> {
+    let sig_context = &mut info.pthread_info_mut.sig_context;
     if (*sig_context).is_none() {
         return_errno_with_message!(Errno::EINVAL, "sigreturn should not been called");
     }
@@ -25,7 +22,7 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     let ucontext = read_val_from_user::<ucontext_t>(sig_context_addr)?;
 
     // If the sig stack is active and used by current handler, decrease handler counter.
-    if let Some(sig_stack) = posix_thread.sig_stack().lock().as_mut() {
+    if let Some(sig_stack) = &mut info.pthread_info_mut.sig_stack {
         let rsp = context.stack_pointer();
         if rsp >= sig_stack.base() && rsp <= sig_stack.base() + sig_stack.size() {
             sig_stack.decrease_handler_counter();
@@ -45,7 +42,7 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
         .copy_to_raw(context.general_regs_mut());
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;
-    posix_thread.sig_mask().lock().unblock(sig_mask);
+    info.pthread_info.sig_mask.unblock(sig_mask.into());
 
     Ok(SyscallReturn::NoReturn)
 }

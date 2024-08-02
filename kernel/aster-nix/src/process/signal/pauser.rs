@@ -7,13 +7,13 @@ use core::{
     time::Duration,
 };
 
-use ostd::sync::WaitQueue;
+use ostd::{sync::WaitQueue, task::Task};
 
-use super::{sig_mask::SigMask, SigEvents, SigEventsFilter};
+use super::{sig_mask::SigSet, SigEvents, SigEventsFilter};
 use crate::{
     events::Observer,
     prelude::*,
-    process::posix_thread::{PosixThread, PosixThreadExt},
+    process::posix_thread::{PosixThreadExt, SharedPosixThreadInfo},
     thread::Thread,
     time::wait::WaitTimeout,
 };
@@ -35,7 +35,7 @@ use crate::{
 /// Here is how the current thread can be put to sleep with a `Pauser`.
 ///
 /// ```no_run
-/// let pauser = Pauser::new(SigMask::new_full());
+/// let pauser = Pauser::new(SigSet::new_full());
 /// // Pause the execution of the current thread until a user-given condition is met
 /// // or the current thread is interrupted by a signal.
 /// let res = pauser.pause_until(|| {
@@ -65,7 +65,7 @@ use crate::{
 /// ```
 pub struct Pauser {
     wait_queue: WaitQueue,
-    sig_mask: SigMask,
+    sig_mask: SigSet,
 }
 
 impl Pauser {
@@ -74,14 +74,14 @@ impl Pauser {
     /// The `Pauser` can be interrupted by all signals
     /// except that are blocked by current thread.
     pub fn new() -> Arc<Self> {
-        Self::new_with_mask(SigMask::new_empty())
+        Self::new_with_mask(SigSet::new_empty())
     }
 
     /// Creates a new `Pauser` with specified `sig_mask`.
     ///
     /// The `Pauser` will ignore signals that are in `sig_mask`
     /// or blocked by current thread.
-    pub fn new_with_mask(sig_mask: SigMask) -> Arc<Self> {
+    pub fn new_with_mask(sig_mask: SigSet) -> Arc<Self> {
         let wait_queue = WaitQueue::new();
         Arc::new(Self {
             wait_queue,
@@ -165,8 +165,8 @@ impl Pauser {
 enum SigObserverRegistrar<'a> {
     // A POSIX thread may be interrupted by a signal if the signal is not masked.
     PosixThread {
-        thread: &'a PosixThread,
-        old_mask: SigMask,
+        thread: &'a SharedPosixThreadInfo,
+        old_mask: SigSet,
         observer: Arc<SigQueueObserver>,
     },
     // A kernel thread ignores all signals. It is not necessary to wait for them.
@@ -174,18 +174,14 @@ enum SigObserverRegistrar<'a> {
 }
 
 impl<'a> SigObserverRegistrar<'a> {
-    fn new(
-        current_thread: Option<&'a Arc<Thread>>,
-        sig_mask: SigMask,
-        pauser: Arc<Pauser>,
-    ) -> Self {
-        let Some(thread) = current_thread.and_then(|thread| thread.as_posix_thread()) else {
+    fn new(current_thread: Option<&'a Arc<Task>>, sig_mask: SigSet, pauser: Arc<Pauser>) -> Self {
+        let Some(thread) = current_thread.and_then(|thread| thread.posix_thread_info()) else {
             return Self::KernelThread;
         };
 
         // Block `sig_mask`.
         let (old_mask, filter) = {
-            let mut locked_mask = thread.sig_mask().lock();
+            let mut locked_mask = thread.sig_mask.write();
 
             let old_mask = *locked_mask;
             let new_mask = {
@@ -233,8 +229,10 @@ impl<'a> Drop for SigObserverRegistrar<'a> {
 
         // Restore the state, assuming no one else can modify the current thread's signal mask
         // during the pause.
-        thread.unregiser_sigqueue_observer(&(Arc::downgrade(observer) as _));
-        thread.sig_mask().lock().set(old_mask.as_u64());
+        thread
+            .sig_queues
+            .unregiser_observer(&(Arc::downgrade(observer) as _));
+        thread.sig_mask.write().set(old_mask.as_u64());
     }
 }
 
@@ -269,13 +267,10 @@ impl Observer<SigEvents> for SigQueueObserver {
 
 #[cfg(ktest)]
 mod test {
-    use ostd::prelude::*;
+    use ostd::{cpu::CpuSet, prelude::*, task::Priority};
 
     use super::*;
-    use crate::thread::{
-        kernel_thread::{KernelThreadExt, ThreadOptions},
-        Thread,
-    };
+    use crate::thread;
 
     #[ktest]
     fn test_pauser() {
@@ -285,12 +280,16 @@ mod test {
         let boolean = Arc::new(AtomicBool::new(false));
         let boolean_cloned = boolean.clone();
 
-        let thread = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            Thread::yield_now();
+        let thread = thread::new_kernel(
+            move |tctx, _, _| {
+                tctx.yield_now();
 
-            boolean_cloned.store(true, Ordering::Relaxed);
-            pauser_cloned.resume_all();
-        }));
+                boolean_cloned.store(true, Ordering::Relaxed);
+                pauser_cloned.resume_all();
+            },
+            Priority::normal(),
+            CpuSet::new_full(),
+        );
 
         pauser
             .pause_until(|| boolean.load(Ordering::Relaxed).then_some(()))

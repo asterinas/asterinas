@@ -19,10 +19,7 @@ use ostd::{
 use super::Process;
 use crate::{
     prelude::*,
-    process::{
-        posix_thread::PosixThreadExt,
-        signal::{constants::SIGALRM, signals::kernel::KernelSignal},
-    },
+    process::signal::{constants::SIGALRM, signals::kernel::KernelSignal},
     thread::work_queue::{submit_work_item, work_item::WorkItem},
     time::{
         clocks::{ProfClock, RealTimeClock},

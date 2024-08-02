@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::Ordering;
+
 use super::{
     credentials,
     posix_thread::PosixThreadExt,
@@ -9,7 +11,8 @@ use super::{
 };
 use crate::{
     prelude::*,
-    thread::{thread_table, Tid},
+    process::posix_thread::PosixThreadExt,
+    thread::{thread_table, ThreadExt, Tid},
 };
 
 /// Sends a signal to a process, using the current process as the sender.
@@ -55,11 +58,13 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>) -> Result<()> {
     let thread = thread_table::get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target thread does not exist"))?;
 
-    if thread.status().is_exited() {
+    let thread_info = thread.shared_info().expect("target task is not a thread");
+
+    if thread_info.status.load(Ordering::Acquire).is_exited() {
         return Ok(());
     }
 
-    let posix_thread = thread.as_posix_thread().unwrap();
+    let posix_thread = thread.posix_thread_info().unwrap();
 
     // Check tgid
     let pid = posix_thread.process().pid();
@@ -76,7 +81,7 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>) -> Result<()> {
     posix_thread.check_signal_perm(signum.as_ref(), &sender)?;
 
     if let Some(signal) = signal {
-        posix_thread.enqueue_signal(Box::new(signal));
+        posix_thread.sig_queues.enqueue(Box::new(signal));
     }
 
     Ok(())
@@ -104,7 +109,7 @@ fn kill_process(process: &Process, signal: Option<UserSignal>) -> Result<()> {
     let threads = process.threads().lock();
     let posix_threads = threads
         .iter()
-        .map(|thread| thread.as_posix_thread().unwrap());
+        .map(|thread| thread.posix_thread_info().unwrap());
 
     // First check permission
     let signum = signal.map(|signal| signal.num());
@@ -125,15 +130,16 @@ fn kill_process(process: &Process, signal: Option<UserSignal>) -> Result<()> {
 
     // Send signal to any thread that does not blocks the signal.
     for thread in permitted_threads.clone() {
-        if !thread.has_signal_blocked(&signal) {
-            thread.enqueue_signal(Box::new(signal));
+        let blocked = thread.sig_mask.read();
+        if !blocked.contains(&signal.num()) {
+            thread.sig_queues.enqueue(Box::new(signal));
             return Ok(());
         }
     }
 
     // If all threads block the signal, send signal to the first thread.
     let first_thread = permitted_threads.next().unwrap();
-    first_thread.enqueue_signal(Box::new(signal));
+    first_thread.sig_queues.enqueue(Box::new(signal));
 
     Ok(())
 }

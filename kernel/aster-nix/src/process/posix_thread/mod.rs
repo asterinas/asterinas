@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! POSIX thread information.
+//!
+//! A POSIX thread is a special kind of thread (defined in [`crate::thread`])
+//! that has POSIX-specific data. So it is also a special [`ostd::task::Task`].
+
 #![allow(dead_code)]
 
 use aster_rights::{ReadOp, WriteOp};
+use ostd::task::Task;
 
 use super::{
     kill::SignalSenderIds,
     signal::{
-        sig_mask::{SigMask, SigSet},
+        sig_mask::{AtomicSigMask, SigSet},
         sig_num::SigNum,
         sig_queues::SigQueues,
         signals::Signal,
@@ -27,88 +33,72 @@ mod builder;
 mod exit;
 pub mod futex;
 mod name;
-mod posix_thread_ext;
 mod robust_list;
 
 pub use builder::PosixThreadBuilder;
 pub use exit::do_exit;
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
-pub use posix_thread_ext::PosixThreadExt;
 pub use robust_list::RobustListHead;
 
-pub struct PosixThread {
-    // Immutable part
-    process: Weak<Process>,
+/// Extra operations that can be operated on tasks that are POSIX threads.
+pub trait PosixThreadExt {
+    fn posix_thread_info(&self) -> Option<&SharedPosixThreadInfo>;
+    fn posix_thread_info_mut(&mut self) -> Option<&mut MutPosixThreadInfo>;
+}
 
-    // Mutable part
-    name: Mutex<Option<ThreadName>>,
+impl PosixThreadExt for Task {
+    fn posix_thread_info(&self) -> Option<&SharedPosixThreadInfo> {
+        self.shared_data().downcast_ref::<SharedPosixThreadInfo>()
+    }
+
+    fn posix_thread_info_mut(&mut self) -> Option<&mut MutPosixThreadInfo> {
+        self.mut_data().downcast_mut::<MutPosixThreadInfo>()
+    }
+}
+
+pub struct SharedPosixThreadInfo {
+    // The process that the thread belongs to.
+    pub process: Weak<Process>,
+
+    // Thread name.
+    pub name: RwLock<Option<ThreadName>>,
 
     // Linux specific attributes.
     // https://man7.org/linux/man-pages/man2/set_tid_address.2.html
-    set_child_tid: Mutex<Vaddr>,
-    clear_child_tid: Mutex<Vaddr>,
+    pub set_child_tid: RwLock<Vaddr>,
+    pub clear_child_tid: RwLock<Vaddr>,
 
-    robust_list: Mutex<Option<RobustListHead>>,
+    pub robust_list: Mutex<Option<RobustListHead>>,
 
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
-    credentials: Credentials,
+    pub credentials: Credentials,
 
-    // Signal
     /// Blocked signals
-    sig_mask: Mutex<SigMask>,
-    /// Thread-directed sigqueue
-    sig_queues: SigQueues,
-    /// Signal handler ucontext address
-    /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
-    sig_context: Mutex<Option<Vaddr>>,
-    sig_stack: Mutex<Option<SigStack>>,
+    pub sig_mask: AtomicSigMask,
+
+    /// Thread-directed signal queues.
+    pub sig_queues: SigQueues,
 
     /// A profiling clock measures the user CPU time and kernel CPU time in the thread.
-    prof_clock: Arc<ProfClock>,
+    pub prof_clock: Arc<ProfClock>,
 
     /// A manager that manages timers based on the user CPU time of the current thread.
-    virtual_timer_manager: Arc<TimerManager>,
+    pub virtual_timer_manager: Arc<TimerManager>,
 
     /// A manager that manages timers based on the profiling clock of the current thread.
-    prof_timer_manager: Arc<TimerManager>,
+    pub prof_timer_manager: Arc<TimerManager>,
 }
 
-impl PosixThread {
+pub struct MutPosixThreadInfo {
+    /// Signal handler ucontext address
+    /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
+    pub sig_context: Option<Vaddr>,
+    pub sig_stack: Option<SigStack>,
+}
+
+impl SharedPosixThreadInfo {
     pub fn process(&self) -> Arc<Process> {
         self.process.upgrade().unwrap()
-    }
-
-    pub fn thread_name(&self) -> &Mutex<Option<ThreadName>> {
-        &self.name
-    }
-
-    pub fn set_child_tid(&self) -> &Mutex<Vaddr> {
-        &self.set_child_tid
-    }
-
-    pub fn clear_child_tid(&self) -> &Mutex<Vaddr> {
-        &self.clear_child_tid
-    }
-
-    pub fn sig_mask(&self) -> &Mutex<SigMask> {
-        &self.sig_mask
-    }
-
-    pub fn sig_pending(&self) -> SigSet {
-        self.sig_queues.sig_pending()
-    }
-
-    /// Returns whether the thread has some pending signals
-    /// that are not blocked.
-    pub fn has_pending(&self) -> bool {
-        let blocked = *self.sig_mask().lock();
-        self.sig_queues.has_pending(blocked)
-    }
-
-    /// Returns whether the signal is blocked by the thread.
-    pub(in crate::process) fn has_signal_blocked(&self, signal: &dyn Signal) -> bool {
-        let mask = self.sig_mask.lock();
-        mask.contains(signal.num())
     }
 
     /// Checks whether the signal can be delivered to the thread.
@@ -158,83 +148,6 @@ impl PosixThread {
         }
 
         return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
-    }
-
-    /// Enqueues a thread-directed signal. This method should only be used for enqueue kernel
-    /// signal and fault signal.
-    pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
-        self.sig_queues.enqueue(signal);
-    }
-
-    /// Returns a reference to the profiling clock of the current thread.
-    pub fn prof_clock(&self) -> &Arc<ProfClock> {
-        &self.prof_clock
-    }
-
-    /// Creates a timer based on the profiling CPU clock of the current thread.
-    pub fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        self.prof_timer_manager.create_timer(func)
-    }
-
-    /// Creates a timer based on the user CPU clock of the current thread.
-    pub fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        self.virtual_timer_manager.create_timer(func)
-    }
-
-    /// Checks the `TimerCallback`s that are managed by the `prof_timer_manager`.
-    /// If any have timed out, call the corresponding callback functions.
-    pub fn process_expired_timers(&self) {
-        self.prof_timer_manager.process_expired_timers();
-    }
-
-    pub fn dequeue_signal(&self, mask: &SigMask) -> Option<Box<dyn Signal>> {
-        self.sig_queues.dequeue(mask)
-    }
-
-    pub fn register_sigqueue_observer(
-        &self,
-        observer: Weak<dyn Observer<SigEvents>>,
-        filter: SigEventsFilter,
-    ) {
-        self.sig_queues.register_observer(observer, filter);
-    }
-
-    pub fn unregiser_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
-        self.sig_queues.unregister_observer(observer);
-    }
-
-    pub fn sig_context(&self) -> &Mutex<Option<Vaddr>> {
-        &self.sig_context
-    }
-
-    pub fn sig_stack(&self) -> &Mutex<Option<SigStack>> {
-        &self.sig_stack
-    }
-
-    pub fn robust_list(&self) -> &Mutex<Option<RobustListHead>> {
-        &self.robust_list
-    }
-
-    fn is_main_thread(&self, tid: Tid) -> bool {
-        let process = self.process();
-        let pid = process.pid();
-        tid == pid
-    }
-
-    fn is_last_thread(&self) -> bool {
-        let process = self.process.upgrade().unwrap();
-        let threads = process.threads().lock();
-        threads
-            .iter()
-            .filter(|thread| !thread.status().is_exited())
-            .count()
-            == 0
     }
 
     /// Gets the read-only credentials of the thread.

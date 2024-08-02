@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use intrusive_collections::LinkedList;
-use ostd::task::{set_scheduler, Scheduler, Task, TaskAdapter};
+use ostd::task::{set_scheduler, Scheduler, SharedTaskInfo, Task, TaskAdapter};
 
 use crate::prelude::*;
 
@@ -35,7 +35,7 @@ impl PreemptScheduler {
 
 impl Scheduler for PreemptScheduler {
     fn enqueue(&self, task: Arc<Task>) {
-        if task.is_real_time() {
+        if task.priority().is_real_time() {
             self.real_time_tasks.lock_irq_disabled().push_back(task);
         } else {
             self.normal_tasks.lock_irq_disabled().push_back(task);
@@ -50,7 +50,7 @@ impl Scheduler for PreemptScheduler {
         }
     }
 
-    fn should_preempt(&self, task: &Arc<Task>) -> bool {
-        !task.is_real_time() && !self.real_time_tasks.lock_irq_disabled().is_empty()
+    fn should_preempt(&self, task: &SharedTaskInfo) -> bool {
+        !task.priority.is_real_time() && !self.real_time_tasks.lock_irq_disabled().is_empty()
     }
 }

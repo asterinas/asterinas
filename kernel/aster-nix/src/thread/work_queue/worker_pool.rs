@@ -10,15 +10,11 @@ use core::{
 use ostd::{
     cpu::CpuSet,
     sync::WaitQueue,
-    task::{add_task, Priority},
+    task::{add_task, Priority, Task},
 };
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
-use crate::{
-    prelude::*,
-    thread::kernel_thread::{KernelThreadExt, ThreadOptions},
-    Thread,
-};
+use crate::{prelude::*, thread};
 
 /// A pool of workers.
 ///
@@ -64,7 +60,7 @@ pub trait WorkerScheduler: Sync + Send {
 /// are found processing in the pool.
 pub struct Monitor {
     worker_pool: Weak<WorkerPool>,
-    bound_thread: Arc<Thread>,
+    bound_thread: Arc<Task>,
 }
 
 impl LocalWorkerPool {
@@ -81,7 +77,7 @@ impl LocalWorkerPool {
     fn add_worker(&self) {
         let worker = Worker::new(self.parent.clone(), self.cpu_id);
         self.workers.lock_irq_disabled().push_back(worker.clone());
-        add_task(worker.bound_thread().task().clone());
+        add_task(worker.bound_thread().clone());
     }
 
     fn remove_worker(&self) {
@@ -232,21 +228,19 @@ impl Drop for WorkerPool {
 impl Monitor {
     pub fn new(worker_pool: Weak<WorkerPool>, priority: &WorkPriority) -> Arc<Self> {
         Arc::new_cyclic(|monitor_ref| {
-            let weal_monitor = monitor_ref.clone();
-            let task_fn = Box::new(move || {
-                let current_monitor: Arc<Monitor> = weal_monitor.upgrade().unwrap();
-                current_monitor.run_monitor_loop();
-            });
+            let weak_monitor = monitor_ref.clone();
+            let task_fn = Box::new(
+                move |_: &mut _, _: &_, _: &mut _, _: &_, _: &mut _, _: &_| {
+                    let current_monitor: Arc<Monitor> = weak_monitor.upgrade().unwrap();
+                    current_monitor.run_monitor_loop();
+                },
+            );
             let cpu_affinity = CpuSet::new_full();
             let priority = match priority {
                 WorkPriority::High => Priority::high(),
                 WorkPriority::Normal => Priority::normal(),
             };
-            let bound_thread = Thread::new_kernel_thread(
-                ThreadOptions::new(task_fn)
-                    .cpu_affinity(cpu_affinity)
-                    .priority(priority),
-            );
+            let bound_thread = thread::new_kernel(task_fn, priority, cpu_affinity);
             Self {
                 worker_pool,
                 bound_thread,

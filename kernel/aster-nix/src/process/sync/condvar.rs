@@ -51,21 +51,25 @@ impl<Guard> LockErr<Guard> {
 ///
 /// ```rust
 /// use alloc::sync::Arc;
-/// use ostd::sync::Mutex;
-/// use crate::{process::sync::Condvar, thread::{kernel_thread::KernelThreadExt, Thread}};
+/// use ostd::{sync::Mutex, cpu::CpuSet, task::Priority};
+/// use crate::{process::sync::Condvar, thread};
 ///
 /// // Initializing a shared condition between threads
 /// let pair = Arc::new((Mutex::new(false), Condvar::new()));
 /// let pair2 = Arc::clone(&pair);
 ///
 /// // Spawning a new kernel thread to change a shared state and notify the Condvar
-/// Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-///     let (lock, cvar) = &*pair2;
-///     Thread::yield_now();
-///     let mut started = lock.lock();
-///     *started = true; // Modifying the shared state
-///     cvar.notify_one(); // Notifying one waiting thread
-/// }));
+/// thread::new_kernel(
+///     move |tctx, _, _| {
+///         let (lock, cvar) = &*pair2;
+///         tctx.yield_now();
+///         let mut started = lock.lock();
+///         *started = true; // Modifying the shared state
+///         cvar.notify_one(); // Notifying one waiting thread
+///     },
+///     Priority::Normal,
+///     CpuSet::new_full(),
+/// );
 ///
 /// // Main thread waiting for the shared state to be set to true
 /// {
@@ -264,26 +268,27 @@ impl Condvar {
 
 #[cfg(ktest)]
 mod test {
-    use ostd::{prelude::*, sync::Mutex};
+    use ostd::{cpu::CpuSet, prelude::*, sync::Mutex, task::Priority};
 
     use super::*;
-    use crate::thread::{
-        kernel_thread::{KernelThreadExt, ThreadOptions},
-        Thread,
-    };
+    use crate::thread;
 
     #[ktest]
     fn test_condvar_wait() {
         let pair = Arc::new((Mutex::new(false), Condvar::new()));
         let pair2 = Arc::clone(&pair);
 
-        Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            Thread::yield_now();
-            let (lock, cvar) = &*pair2;
-            let mut started = lock.lock();
-            *started = true;
-            cvar.notify_one();
-        }));
+        thread::new_kernel(
+            move |tctx, _, _| {
+                tctx.yield_now();
+                let (lock, cvar) = &*pair2;
+                let mut started = lock.lock();
+                *started = true;
+                cvar.notify_one();
+            },
+            Priority::normal(),
+            CpuSet::new_full(),
+        );
 
         {
             let (lock, cvar) = &*pair;
@@ -300,13 +305,17 @@ mod test {
         let pair = Arc::new((Mutex::new(false), Condvar::new()));
         let pair2 = Arc::clone(&pair);
 
-        Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            Thread::yield_now();
-            let (lock, cvar) = &*pair2;
-            let mut started = lock.lock();
-            *started = true;
-            cvar.notify_one();
-        }));
+        thread::new_kernel(
+            move |tctx, _, _| {
+                tctx.yield_now();
+                let (lock, cvar) = &*pair2;
+                let mut started = lock.lock();
+                *started = true;
+                cvar.notify_one();
+            },
+            Priority::normal(),
+            CpuSet::new_full(),
+        );
 
         {
             let (lock, cvar) = &*pair;
@@ -325,13 +334,17 @@ mod test {
         let pair = Arc::new((Mutex::new(true), Condvar::new()));
         let pair2 = Arc::clone(&pair);
 
-        Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            Thread::yield_now();
-            let (lock, cvar) = &*pair2;
-            let mut started = lock.lock();
-            *started = false;
-            cvar.notify_one();
-        }));
+        thread::new_kernel(
+            move |tctx, _, _| {
+                tctx.yield_now();
+                let (lock, cvar) = &*pair2;
+                let mut started = lock.lock();
+                *started = false;
+                cvar.notify_one();
+            },
+            Priority::normal(),
+            CpuSet::new_full(),
+        );
 
         {
             let (lock, cvar) = &*pair;
@@ -347,13 +360,17 @@ mod test {
         let pair = Arc::new((Mutex::new(true), Condvar::new()));
         let pair2 = Arc::clone(&pair);
 
-        Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            Thread::yield_now();
-            let (lock, cvar) = &*pair2;
-            let mut started = lock.lock();
-            *started = false;
-            cvar.notify_one();
-        }));
+        thread::new_kernel(
+            move |tctx, _, _| {
+                tctx.yield_now();
+                let (lock, cvar) = &*pair2;
+                let mut started = lock.lock();
+                *started = false;
+                cvar.notify_one();
+            },
+            Priority::normal(),
+            CpuSet::new_full(),
+        );
 
         {
             let (lock, cvar) = &*pair;

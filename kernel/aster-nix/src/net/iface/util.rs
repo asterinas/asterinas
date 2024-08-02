@@ -2,15 +2,12 @@
 
 use core::time::Duration;
 
-use ostd::{arch::timer::Jiffies, task::Priority};
+use ostd::{arch::timer::Jiffies, cpu::CpuSet, task::Priority};
 
 use super::Iface;
 use crate::{
     prelude::*,
-    thread::{
-        kernel_thread::{KernelThreadExt, ThreadOptions},
-        Thread,
-    },
+    thread::{self, KernelThreadContext},
     time::wait::WaitTimeout,
 };
 
@@ -49,7 +46,7 @@ impl BindPortConfig {
 }
 
 pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
-    let task_fn = move || {
+    let task_fn = move |_: &mut KernelThreadContext| {
         trace!("spawn background poll thread for {}", iface.name());
         let wait_queue = iface.polling_wait_queue();
         loop {
@@ -83,6 +80,5 @@ pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
         }
     };
 
-    let options = ThreadOptions::new(task_fn).priority(Priority::high());
-    Thread::spawn_kernel_thread(options);
+    thread::new_kernel(task_fn, Priority::high(), CpuSet::new_full());
 }

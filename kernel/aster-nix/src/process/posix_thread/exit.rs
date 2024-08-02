@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{futex::futex_wake, robust_list::wake_robust_futex, PosixThread, PosixThreadExt};
+use super::{futex::futex_wake, robust_list::wake_robust_futex};
 use crate::{
     prelude::*,
     process::{do_exit_group, TermStatus},
-    thread::{thread_table, Thread, Tid},
+    thread::{thread_table, Tid},
     util::write_val_to_user,
 };
 
@@ -13,7 +13,7 @@ use crate::{
 /// # Panics
 ///
 /// If the thread is not a POSIX thread, this method will panic.
-pub fn do_exit(thread: Arc<Thread>, term_status: TermStatus) -> Result<()> {
+pub fn do_exit(thread: Arc<Task>, term_status: TermStatus) -> Result<()> {
     if thread.status().is_exited() {
         return Ok(());
     }

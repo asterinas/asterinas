@@ -5,11 +5,7 @@
 use ostd::{cpu::CpuSet, task::Priority};
 
 use super::worker_pool::WorkerPool;
-use crate::{
-    prelude::*,
-    thread::kernel_thread::{KernelThreadExt, ThreadOptions},
-    Thread,
-};
+use crate::{prelude::*, thread};
 
 /// A worker thread. A `Worker` will attempt to retrieve unfinished
 /// work items from its corresponding `WorkerPool`. If there are none,
@@ -17,7 +13,7 @@ use crate::{
 /// added to the `WorkerPool`.
 pub(super) struct Worker {
     worker_pool: Weak<WorkerPool>,
-    bound_thread: Arc<Thread>,
+    bound_thread: Arc<Task>,
     bound_cpu: u32,
     inner: SpinLock<WorkerInner>,
 }
@@ -40,22 +36,18 @@ impl Worker {
     /// Creates a new `Worker` to the given `worker_pool`.
     pub(super) fn new(worker_pool: Weak<WorkerPool>, bound_cpu: u32) -> Arc<Self> {
         Arc::new_cyclic(|worker_ref| {
-            let weal_worker = worker_ref.clone();
-            let task_fn = Box::new(move || {
-                let current_worker: Arc<Worker> = weal_worker.upgrade().unwrap();
+            let weak_worker = worker_ref.clone();
+            let task_fn = move |_, _, _, _, _, _| {
+                let current_worker: Arc<Worker> = weak_worker.upgrade().unwrap();
                 current_worker.run_worker_loop();
-            });
+            };
             let mut cpu_affinity = CpuSet::new_empty();
             cpu_affinity.add(bound_cpu);
             let mut priority = Priority::normal();
             if worker_pool.upgrade().unwrap().is_high_priority() {
                 priority = Priority::high();
             }
-            let bound_thread = Thread::new_kernel_thread(
-                ThreadOptions::new(task_fn)
-                    .cpu_affinity(cpu_affinity)
-                    .priority(priority),
-            );
+            let bound_thread = thread::new_kernel(task_fn, priority, cpu_affinity);
             Self {
                 worker_pool,
                 bound_thread,
@@ -97,7 +89,7 @@ impl Worker {
         self.exit();
     }
 
-    pub(super) fn bound_thread(&self) -> &Arc<Thread> {
+    pub(super) fn bound_thread(&self) -> &Arc<Task> {
         &self.bound_thread
     }
 

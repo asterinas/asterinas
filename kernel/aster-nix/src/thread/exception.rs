@@ -5,17 +5,18 @@
 use ostd::{cpu::*, mm::VmSpace};
 
 use crate::{
-    prelude::*, process::signal::signals::fault::FaultSignal,
+    prelude::*,
+    process::{posix_thread::SharedPosixThreadInfo, signal::signals::fault::FaultSignal},
     vm::page_fault_handler::PageFaultHandler,
 };
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
-pub fn handle_exception(context: &UserContext) {
+pub fn handle_exception(context: &UserContext, pthread_ctx: &SharedPosixThreadInfo) {
     let trap_info = context.trap_information();
     let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
     log_trap_info(exception, trap_info);
-    let current = current!();
-    let root_vmar = current.root_vmar();
+    let process = pthread_ctx.process();
+    let root_vmar = process.root_vmar();
 
     match *exception {
         PAGE_FAULT => {

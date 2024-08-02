@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
+use super::{CallingThreadInfo, SyscallReturn};
 use crate::{
     prelude::*,
     process::{process_table, Pid},
 };
 
-pub fn sys_getsid(pid: Pid) -> Result<SyscallReturn> {
+pub fn sys_getsid(pid: Pid, info: CallingThreadInfo) -> Result<SyscallReturn> {
     debug!("pid = {}", pid);
 
-    let session = current!().session().unwrap();
+    let session = info.pthread_info.process().session().unwrap();
     let sid = session.sid();
 
     if pid == 0 {

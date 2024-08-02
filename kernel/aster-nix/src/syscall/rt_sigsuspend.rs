@@ -5,7 +5,7 @@ use crate::{
     prelude::*,
     process::signal::{
         constants::{SIGKILL, SIGSTOP},
-        sig_mask::SigMask,
+        sig_mask::SigSet,
         Pauser,
     },
     util::read_val_from_user,
@@ -17,13 +17,13 @@ pub fn sys_rt_sigsuspend(sigmask_addr: Vaddr, sigmask_size: usize) -> Result<Sys
         sigmask_addr, sigmask_size
     );
 
-    debug_assert!(sigmask_size == core::mem::size_of::<SigMask>());
-    if sigmask_size != core::mem::size_of::<SigMask>() {
+    debug_assert!(sigmask_size == core::mem::size_of::<SigSet>());
+    if sigmask_size != core::mem::size_of::<SigSet>() {
         return_errno_with_message!(Errno::EINVAL, "invalid sigmask size");
     }
 
     let sigmask = {
-        let mut mask: SigMask = read_val_from_user(sigmask_addr)?;
+        let mut mask: SigSet = read_val_from_user(sigmask_addr)?;
         // It is not possible to block SIGKILL or SIGSTOP,
         // specifying these signals in mask has no effect.
         mask.remove_signal(SIGKILL);

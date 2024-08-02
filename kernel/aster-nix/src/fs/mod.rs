@@ -17,6 +17,7 @@ pub mod utils;
 
 use aster_block::BlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
+use ostd::{cpu::CpuSet, task::Priority};
 
 use crate::{
     fs::{
@@ -25,20 +26,21 @@ use crate::{
         fs_resolver::FsPath,
     },
     prelude::*,
-    thread::kernel_thread::KernelThreadExt,
+    thread::MutThreadInfo,
 };
 
 fn start_block_device(device_name: &str) -> Result<Arc<dyn BlockDevice>> {
     if let Some(device) = aster_block::get_device(device_name) {
         let cloned_device = device.clone();
-        let task_fn = move || {
+        let task_fn = move |_, _, thread_ctx: &mut MutThreadInfo, _, _, _| {
             info!("spawn the virt-io-block thread");
             let virtio_block_device = cloned_device.downcast_ref::<VirtIoBlockDevice>().unwrap();
             loop {
                 virtio_block_device.handle_requests();
+                thread_ctx.yield_now();
             }
         };
-        crate::Thread::spawn_kernel_thread(crate::ThreadOptions::new(task_fn));
+        crate::thread::new_kernel(task_fn, Priority::normal(), CpuSet::new_full());
         Ok(device)
     } else {
         return_errno_with_message!(Errno::ENOENT, "Device does not exist")

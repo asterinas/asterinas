@@ -4,15 +4,15 @@
 
 use ostd::user::UserSpace;
 
-use super::PosixThread;
+use super::{MutPosixThreadInfo, SharedPosixThreadInfo};
 use crate::{
     prelude::*,
     process::{
         posix_thread::name::ThreadName,
-        signal::{sig_mask::SigMask, sig_queues::SigQueues},
+        signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
-    thread::{status::ThreadStatus, task, thread_table, Thread, Tid},
+    thread::{self, Tid},
     time::{clocks::ProfClock, TimerManager},
 };
 
@@ -28,7 +28,7 @@ pub struct PosixThreadBuilder {
     thread_name: Option<ThreadName>,
     set_child_tid: Vaddr,
     clear_child_tid: Vaddr,
-    sig_mask: SigMask,
+    sig_mask: AtomicSigMask,
     sig_queues: SigQueues,
 }
 
@@ -42,7 +42,7 @@ impl PosixThreadBuilder {
             thread_name: None,
             set_child_tid: 0,
             clear_child_tid: 0,
-            sig_mask: SigMask::new_empty(),
+            sig_mask: AtomicSigMask::new_empty(),
             sig_queues: SigQueues::new(),
         }
     }
@@ -67,12 +67,12 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub fn sig_mask(mut self, sig_mask: SigMask) -> Self {
+    pub fn sig_mask(mut self, sig_mask: AtomicSigMask) -> Self {
         self.sig_mask = sig_mask;
         self
     }
 
-    pub fn build(self) -> Arc<Thread> {
+    pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
             user_space,
@@ -85,33 +85,30 @@ impl PosixThreadBuilder {
             sig_queues,
         } = self;
 
-        let thread = Arc::new_cyclic(|thread_ref| {
-            let task = task::create_new_user_task(user_space, thread_ref.clone());
-            let status = ThreadStatus::Init;
+        let shared_posix_thread_info = SharedPosixThreadInfo {
+            process,
+            name: RwLock::new(thread_name),
+            set_child_tid: RwLock::new(set_child_tid),
+            clear_child_tid: RwLock::new(clear_child_tid),
+            robust_list: Mutex::new(None),
+            credentials,
+            sig_queues,
+            sig_mask,
+            prof_clock: ProfClock::new(),
+            virtual_timer_manager: TimerManager::new(prof_clock.user_clock().clone()),
+            prof_timer_manager: TimerManager::new(prof_clock.clone()),
+        };
 
-            let prof_clock = ProfClock::new();
-            let virtual_timer_manager = TimerManager::new(prof_clock.user_clock().clone());
-            let prof_timer_manager = TimerManager::new(prof_clock.clone());
+        let mutable_posix_thread_info = MutPosixThreadInfo {
+            sig_context: None,
+            sig_stack: None,
+        };
 
-            let posix_thread = PosixThread {
-                process,
-                name: Mutex::new(thread_name),
-                set_child_tid: Mutex::new(set_child_tid),
-                clear_child_tid: Mutex::new(clear_child_tid),
-                credentials,
-                sig_mask: Mutex::new(sig_mask),
-                sig_queues,
-                sig_context: Mutex::new(None),
-                sig_stack: Mutex::new(None),
-                robust_list: Mutex::new(None),
-                prof_clock,
-                virtual_timer_manager,
-                prof_timer_manager,
-            };
-
-            Thread::new(tid, task, posix_thread, status)
-        });
-        thread_table::add_thread(thread.clone());
-        thread
+        thread::new_user(
+            user_space,
+            tid,
+            mutable_posix_thread_info,
+            shared_posix_thread_info,
+        )
     }
 }

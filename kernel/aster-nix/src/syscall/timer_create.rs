@@ -79,7 +79,7 @@ pub fn sys_timer_create(
                     let thread = thread_table::get_thread(tid).ok_or_else(|| {
                         Error::with_message(Errno::EINVAL, "target thread does not exist")
                     })?;
-                    let posix_thread = thread.as_posix_thread().unwrap();
+                    let posix_thread = thread.posix_thread_info().unwrap();
                     if posix_thread.process().pid() != current_process.pid() {
                         return_errno_with_message!(
                             Errno::EINVAL,
@@ -88,8 +88,8 @@ pub fn sys_timer_create(
                     }
                     let signal = KernelSignal::new(SigNum::try_from(signo as u8)?);
                     Box::new(move || {
-                        if let Some(thread) = thread.as_posix_thread() {
-                            thread.enqueue_signal(Box::new(signal));
+                        if let Some(ref thread) = thread.posix_thread_info() {
+                            thread.sig_queues.enqueue(Box::new(signal));
                         }
                     })
                 }
@@ -140,10 +140,14 @@ pub fn sys_timer_create(
             DynamicClockIdInfo::Tid(tid, clock_type) => {
                 let thread = thread_table::get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
-                let posix_thread = thread.as_posix_thread().unwrap();
+                let posix_thread = thread.posix_thread_info().unwrap();
                 match clock_type {
-                    DynamicClockType::Profiling => posix_thread.create_prof_timer(func),
-                    DynamicClockType::Virtual => posix_thread.create_virtual_timer(func),
+                    DynamicClockType::Profiling => {
+                        posix_thread.prof_timer_manager.create_timer(func)
+                    }
+                    DynamicClockType::Virtual => {
+                        posix_thread.virtual_timer_manager.create_timer(func)
+                    }
                     _ => unimplemented!(),
                 }
             }

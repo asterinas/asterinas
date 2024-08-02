@@ -27,16 +27,15 @@
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
+    cpu::CpuSet,
+    task::{MutTaskInfo, Priority, SharedTaskInfo},
 };
 use process::Process;
-
-use crate::{
-    prelude::*,
-    thread::{
-        kernel_thread::{KernelThreadExt, ThreadOptions},
-        Thread,
-    },
+use thread::{
+    MutKernelThreadInfo, MutThreadInfo, SharedKernelThreadInfo, SharedThreadInfo, ThreadExt,
 };
+
+use crate::prelude::*;
 
 extern crate alloc;
 extern crate lru;
@@ -79,11 +78,15 @@ pub fn init() {
     process::init();
 }
 
-fn init_thread() {
-    println!(
-        "[kernel] Spawn init thread, tid = {}",
-        current_thread!().tid()
-    );
+fn init_thread(
+    task_ctx_mut: &mut MutTaskInfo,
+    task_ctx: &SharedTaskInfo,
+    thread_ctx_mut: &mut MutThreadInfo,
+    thread_ctx: &SharedThreadInfo,
+    kthread_ctx_mut: &mut MutKernelThreadInfo,
+    kthread_ctx: &SharedKernelThreadInfo,
+) {
+    println!("[kernel] Spawn init thread, tid = {}", thread_ctx.tid);
     // Work queue should be initialized before interrupt is enabled,
     // in case any irq handler uses work queue as bottom half
     thread::work_queue::init();
@@ -93,16 +96,20 @@ fn init_thread() {
     net::lazy_init();
     fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();
-    let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
-        println!("[kernel] Hello world from kernel!");
-        let current = current_thread!();
-        let tid = current.tid();
-        debug!("current tid = {}", tid);
-    }));
-    thread.join();
+    let thread = thread::new_kernel(
+        |_, _, _, _, _, _| {
+            println!("[kernel] Hello world from kernel!");
+            let current = current_thread!();
+            let tid = current.tid();
+            debug!("current tid = {}", tid);
+        },
+        Priority::normal(),
+        CpuSet::new_full(),
+    );
+    thread_ctx_mut.join(task_ctx_mut, thread);
     info!(
         "[aster-nix/lib.rs] spawn kernel thread, tid = {}",
-        thread.tid()
+        thread.thread_info().unwrap().tid
     );
 
     print_banner();
@@ -119,7 +126,7 @@ fn init_thread() {
     while !initproc.is_zombie() {
         // We don't have preemptive scheduler now.
         // The long running init thread should yield its own execution to allow other tasks to go on.
-        Thread::yield_now();
+        task_ctx_mut.yield_now();
     }
 
     // TODO: exit via qemu isa debug device should not be the only way.
@@ -134,7 +141,7 @@ fn init_thread() {
 /// first process never return
 #[controlled]
 pub fn run_first_process() -> ! {
-    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread));
+    let _thread = thread::new_kernel(init_thread, Priority::normal(), CpuSet::new_full());
     unreachable!()
 }
 

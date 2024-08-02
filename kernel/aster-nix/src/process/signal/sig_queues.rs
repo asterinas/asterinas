@@ -3,11 +3,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use super::{
-    constants::*,
-    sig_mask::{SigMask, SigSet},
-    sig_num::SigNum,
-    signals::Signal,
-    SigEvents, SigEventsFilter,
+    constants::*, sig_mask::SigSet, sig_num::SigNum, signals::Signal, SigEvents, SigEventsFilter,
 };
 use crate::{
     events::{Observer, Subject},
@@ -47,7 +43,7 @@ impl SigQueues {
         }
     }
 
-    pub fn dequeue(&self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
+    pub fn dequeue(&self, blocked: &SigSet) -> Option<Box<dyn Signal>> {
         // Fast path for the common case of no pending signals
         if self.is_empty() {
             return None;
@@ -68,7 +64,7 @@ impl SigQueues {
     }
 
     /// Returns whether there's some pending signals that are not blocked
-    pub fn has_pending(&self, blocked: SigMask) -> bool {
+    pub fn has_pending(&self, blocked: SigSet) -> bool {
         self.queues.lock().has_pending(blocked)
     }
 
@@ -137,7 +133,7 @@ impl Queues {
         true
     }
 
-    fn dequeue(&mut self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
+    fn dequeue(&mut self, blocked: &SigSet) -> Option<Box<dyn Signal>> {
         // Deliver standard signals.
         //
         // According to signal(7):
@@ -196,7 +192,7 @@ impl Queues {
     }
 
     /// Returns whether the `SigQueues` has some pending signals which are not blocked
-    fn has_pending(&self, blocked: SigMask) -> bool {
+    fn has_pending(&self, blocked: SigSet) -> bool {
         self.std_queues.iter().any(|signal| {
             signal
                 .as_ref()

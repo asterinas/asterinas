@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::task::Task;
+
 use self::timer_manager::PosixTimerManager;
 use super::{
     posix_thread::PosixThreadExt,
@@ -9,7 +11,7 @@ use super::{
     signal::{
         constants::SIGCHLD,
         sig_disposition::SigDispositions,
-        sig_mask::SigMask,
+        sig_mask::SigSet,
         sig_num::{AtomicSigNum, SigNum},
         signals::Signal,
         Pauser,
@@ -22,7 +24,7 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     sched::nice::Nice,
-    thread::{allocate_tid, Thread},
+    thread::{allocate_tid, ThreadExt},
     time::clocks::ProfClock,
     vm::vmar::Vmar,
 };
@@ -68,7 +70,7 @@ pub struct Process {
     /// The executable path.
     executable_path: RwLock<String>,
     /// The threads
-    threads: Mutex<Vec<Arc<Thread>>>,
+    threads: Mutex<Vec<Arc<Task>>>,
     /// Process status
     status: Mutex<ProcessStatus>,
     /// Parent process
@@ -123,7 +125,7 @@ impl Process {
         let children_pauser = {
             // SIGCHID does not interrupt pauser. Child process will
             // resume paused parent when doing exit.
-            let sigmask = SigMask::from(SIGCHLD);
+            let sigmask = SigSet::from(SIGCHLD);
             Pauser::new_with_mask(sigmask)
         };
 
@@ -234,7 +236,7 @@ impl Process {
         &self.timer_manager
     }
 
-    pub fn threads(&self) -> &Mutex<Vec<Arc<Thread>>> {
+    pub fn threads(&self) -> &Mutex<Vec<Arc<Task>>> {
         &self.threads
     }
 
@@ -254,7 +256,7 @@ impl Process {
         &self.nice
     }
 
-    pub fn main_thread(&self) -> Option<Arc<Thread>> {
+    pub fn main_thread(&self) -> Option<Arc<Task>> {
         self.threads
             .lock()
             .iter()
@@ -583,17 +585,18 @@ impl Process {
         // Enqueue signal to the first thread that does not block the signal
         let threads = self.threads.lock();
         for thread in threads.iter() {
-            let posix_thread = thread.as_posix_thread().unwrap();
-            if !posix_thread.has_signal_blocked(&signal) {
-                posix_thread.enqueue_signal(Box::new(signal));
+            let posix_thread = thread.posix_thread_info().unwrap();
+            let blocked = posix_thread.sig_mask.read();
+            if !blocked.contains(&signal) {
+                posix_thread.sig_queues.enqueue(Box::new(signal));
                 return;
             }
         }
 
         // If all threads block the signal, enqueue signal to the first thread
         let thread = threads.iter().next().unwrap();
-        let posix_thread = thread.as_posix_thread().unwrap();
-        posix_thread.enqueue_signal(Box::new(signal));
+        let posix_thread = thread.posix_thread_info().unwrap();
+        posix_thread.sig_queues.enqueue(Box::new(signal));
     }
 
     /// Clears the parent death signal.
@@ -637,15 +640,6 @@ impl Process {
             ProcessStatus::Runnable | ProcessStatus::Uninit => None,
             ProcessStatus::Zombie(term_status) => Some(term_status.as_u32()),
         }
-    }
-}
-
-pub fn current() -> Arc<Process> {
-    let current_thread = current_thread!();
-    if let Some(posix_thread) = current_thread.as_posix_thread() {
-        posix_thread.process()
-    } else {
-        panic!("[Internal error]The current thread does not belong to a process");
     }
 }
 

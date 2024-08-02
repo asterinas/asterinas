@@ -2,110 +2,91 @@
 
 use ostd::{
     cpu::CpuSet,
-    task::{Priority, TaskOptions},
+    task::{MutTaskInfo, Priority, SharedTaskInfo, Task, TaskContext, TaskOptions},
 };
 
-use super::{allocate_tid, status::ThreadStatus, thread_table, Thread};
+use super::{
+    allocate_tid,
+    status::{AtomicThreadStatus, ThreadStatus},
+    thread_table, MutThreadInfo, MutThreadTaskData, ShareThreadTaskData, SharedThreadInfo,
+    ThreadContext,
+};
 use crate::prelude::*;
 
-/// The inner data of a kernel thread
-pub struct KernelThread;
+/// The part of the kernel thread data that is shared between all threads.
+pub struct SharedKernelThreadInfo;
 
-pub trait KernelThreadExt {
-    /// get the kernel_thread structure
-    fn as_kernel_thread(&self) -> Option<&KernelThread>;
-    /// create a new kernel thread structure, **NOT** run the thread.
-    fn new_kernel_thread(thread_options: ThreadOptions) -> Arc<Thread>;
-    /// create a new kernel thread structure, and then run the thread.
-    fn spawn_kernel_thread(thread_options: ThreadOptions) -> Arc<Thread> {
-        let thread = Self::new_kernel_thread(thread_options);
-        thread.run();
-        thread
-    }
-    /// join a kernel thread, returns if the kernel thread exit
-    fn join(&self);
-}
+/// The part of the  kernel thread data that is exclusive to the current thread.
+pub struct MutKernelThreadInfo;
 
-impl KernelThreadExt for Thread {
-    fn as_kernel_thread(&self) -> Option<&KernelThread> {
-        self.data().downcast_ref::<KernelThread>()
-    }
+pub trait KernelThreadFn = Fn(
+        &mut MutTaskInfo,
+        &SharedTaskInfo,
+        &mut MutThreadInfo,
+        &SharedThreadInfo,
+        &mut MutKernelThreadInfo,
+        &SharedKernelThreadInfo,
+    ) + 'static;
 
-    fn new_kernel_thread(mut thread_options: ThreadOptions) -> Arc<Self> {
-        let task_fn = thread_options.take_func();
-        let thread_fn = move || {
-            task_fn();
-            let current_thread = current_thread!();
-            // ensure the thread is exit
-            current_thread.exit();
-        };
-        let tid = allocate_tid();
-        let thread = Arc::new_cyclic(|thread_ref| {
-            let weal_thread = thread_ref.clone();
-            let task = TaskOptions::new(thread_fn)
-                .data(weal_thread)
-                .priority(thread_options.priority)
-                .cpu_affinity(thread_options.cpu_affinity)
-                .build()
-                .unwrap();
-            let status = ThreadStatus::Init;
-            let kernel_thread = KernelThread;
-            Thread::new(tid, task, kernel_thread, status)
-        });
-        thread_table::add_thread(thread.clone());
-        thread
-    }
-
-    fn join(&self) {
-        loop {
-            if self.status().is_exited() {
-                return;
-            } else {
-                Thread::yield_now();
-            }
-        }
-    }
-}
-
-/// Options to create or spawn a new thread.
-pub struct ThreadOptions {
-    func: Option<Box<dyn Fn() + Send + Sync>>,
+pub fn new_kernel(
+    func: impl KernelThreadFn,
     priority: Priority,
     cpu_affinity: CpuSet,
-}
+) -> Arc<Task> {
+    let kernel_task_entry = move |task_ctx_mut: &mut MutTaskInfo,
+                                  task_ctx: &SharedTaskInfo,
+                                  task_data_mut: &mut dyn Any,
+                                  task_data: &(dyn Any + Send + Sync)| {
+        let thread_data_mut = task_data_mut.downcast_mut::<MutThreadTaskData>().unwrap();
+        let thread_data = task_data.downcast_ref::<ShareThreadTaskData>().unwrap();
 
-impl ThreadOptions {
-    pub fn new<F>(func: F) -> Self
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        let cpu_affinity = CpuSet::new_full();
-        Self {
-            func: Some(Box::new(func)),
-            priority: Priority::normal(),
-            cpu_affinity,
-        }
-    }
+        let thread_ctx_mut = &mut thread_data_mut.info;
+        let thread_ctx = &thread_data.info;
 
-    pub fn func<F>(mut self, func: F) -> Self
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        self.func = Some(Box::new(func));
-        self
-    }
+        let kthread_ctx_mut = thread_data_mut
+            .ext_data
+            .downcast_mut::<MutKernelThreadInfo>()
+            .unwrap();
+        let kthread_ctx = thread_data
+            .ext_data
+            .downcast_ref::<SharedKernelThreadInfo>()
+            .unwrap();
 
-    fn take_func(&mut self) -> Box<dyn Fn() + Send + Sync> {
-        self.func.take().unwrap()
-    }
+        func(
+            task_ctx_mut,
+            task_ctx,
+            thread_ctx_mut,
+            thread_ctx,
+            kthread_ctx_mut,
+            kthread_ctx,
+        );
 
-    pub fn priority(mut self, priority: Priority) -> Self {
-        self.priority = priority;
-        self
-    }
+        // ensure the thread is exit
+        thread_ctx_mut.exit(thread_ctx);
+    };
 
-    pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
-        self.cpu_affinity = cpu_affinity;
-        self
-    }
+    let mut_data = MutThreadTaskData {
+        info: MutThreadInfo { _private: () },
+        ext_data: Box::new(MutKernelThreadInfo),
+    };
+
+    let shared_data = ShareThreadTaskData {
+        info: SharedThreadInfo {
+            tid: allocate_tid(),
+            status: AtomicThreadStatus::new(ThreadStatus::Init),
+        },
+        ext_data: Box::new(SharedKernelThreadInfo),
+    };
+
+    let thread = TaskOptions::new(kernel_task_entry)
+        .shared_data(shared_data)
+        .mut_data(mut_data)
+        .priority(priority)
+        .cpu_affinity(cpu_affinity)
+        .build()
+        .expect("Failed to build a user task");
+
+    thread_table::add_thread(thread.clone());
+
+    thread
 }
