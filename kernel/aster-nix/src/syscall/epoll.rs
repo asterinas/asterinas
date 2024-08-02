@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
+use core::{sync::atomic::Ordering, time::Duration};
 
 use super::SyscallReturn;
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
         utils::CreationFlags,
     },
     prelude::*,
-    process::posix_thread::PosixThreadExt,
+    process::{posix_thread::PosixThreadExt, signal::sig_mask::SigMask},
     util::{read_val_from_user, write_val_to_user},
 };
 
@@ -148,32 +148,31 @@ pub fn sys_epoll_wait(
     Ok(SyscallReturn::Return(epoll_events.len() as _))
 }
 
-fn set_signal_mask(set_ptr: Vaddr) -> Result<u64> {
-    let new_set: Option<u64> = if set_ptr != 0 {
-        Some(read_val_from_user::<u64>(set_ptr)?)
+fn set_signal_mask(set_ptr: Vaddr) -> Result<SigMask> {
+    let new_mask: Option<SigMask> = if set_ptr != 0 {
+        Some(read_val_from_user::<u64>(set_ptr)?.into())
     } else {
         None
     };
 
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
-    let mut sig_mask = posix_thread.sig_mask().lock();
 
-    let old_sig_mask_value = sig_mask.as_u64();
+    let old_sig_mask_value = posix_thread.sig_mask().load(Ordering::Relaxed);
 
-    if let Some(new_set) = new_set {
-        sig_mask.set(new_set);
+    if let Some(new_mask) = new_mask {
+        posix_thread.sig_mask().store(new_mask, Ordering::Relaxed);
     }
 
     Ok(old_sig_mask_value)
 }
 
-fn restore_signal_mask(sig_mask_val: u64) {
+fn restore_signal_mask(sig_mask_val: SigMask) {
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
-    let mut sig_mask = posix_thread.sig_mask().lock();
-
-    sig_mask.set(sig_mask_val);
+    posix_thread
+        .sig_mask()
+        .store(sig_mask_val, Ordering::Relaxed);
 }
 
 pub fn sys_epoll_pwait(

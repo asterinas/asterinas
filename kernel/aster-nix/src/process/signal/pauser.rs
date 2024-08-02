@@ -185,13 +185,9 @@ impl<'a> SigObserverRegistrar<'a> {
 
         // Block `sig_mask`.
         let (old_mask, filter) = {
-            let mut locked_mask = thread.sig_mask().lock();
-
-            let old_mask = *locked_mask;
-            let new_mask = {
-                locked_mask.block(sig_mask.as_u64());
-                *locked_mask
-            };
+            let old_mask = thread.sig_mask().load(Ordering::Relaxed);
+            let new_mask = old_mask + sig_mask;
+            thread.sig_mask().store(new_mask, Ordering::Relaxed);
 
             (old_mask, SigEventsFilter::new(new_mask))
         };
@@ -234,7 +230,7 @@ impl<'a> Drop for SigObserverRegistrar<'a> {
         // Restore the state, assuming no one else can modify the current thread's signal mask
         // during the pause.
         thread.unregiser_sigqueue_observer(&(Arc::downgrade(observer) as _));
-        thread.sig_mask().lock().set(old_mask.as_u64());
+        thread.sig_mask().store(*old_mask, Ordering::Relaxed);
     }
 }
 

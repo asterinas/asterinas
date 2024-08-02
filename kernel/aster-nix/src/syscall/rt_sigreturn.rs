@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::Ordering;
+
 use ostd::{cpu::UserContext, user::UserContextApi};
 
 use super::SyscallReturn;
@@ -45,7 +47,10 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
         .copy_to_raw(context.general_regs_mut());
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;
-    posix_thread.sig_mask().lock().unblock(sig_mask);
+    let old_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
+    posix_thread
+        .sig_mask()
+        .store(old_mask - sig_mask, Ordering::Relaxed);
 
     Ok(SyscallReturn::NoReturn)
 }

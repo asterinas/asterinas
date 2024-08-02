@@ -222,14 +222,14 @@ impl Queues {
         // Process standard signal queues
         for (idx, signal) in self.std_queues.iter().enumerate() {
             if signal.is_some() {
-                pending.add_signal(SigNum::from_u8(idx as u8 + MIN_STD_SIG_NUM));
+                pending += SigNum::from_u8(idx as u8 + MIN_STD_SIG_NUM);
             }
         }
 
         // Process real-time signal queues
         for (idx, signals) in self.rt_queues.iter().enumerate() {
             if !signals.is_empty() {
-                pending.add_signal(SigNum::from_u8(idx as u8 + MIN_RT_SIG_NUM));
+                pending += SigNum::from_u8(idx as u8 + MIN_RT_SIG_NUM);
             }
         }
 

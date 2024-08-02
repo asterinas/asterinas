@@ -9,7 +9,7 @@ use crate::{
     prelude::*,
     process::{
         posix_thread::name::ThreadName,
-        signal::{sig_mask::SigMask, sig_queues::SigQueues},
+        signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
     thread::{status::ThreadStatus, task, thread_table, Thread, Tid},
@@ -28,7 +28,7 @@ pub struct PosixThreadBuilder {
     thread_name: Option<ThreadName>,
     set_child_tid: Vaddr,
     clear_child_tid: Vaddr,
-    sig_mask: SigMask,
+    sig_mask: AtomicSigMask,
     sig_queues: SigQueues,
 }
 
@@ -42,7 +42,7 @@ impl PosixThreadBuilder {
             thread_name: None,
             set_child_tid: 0,
             clear_child_tid: 0,
-            sig_mask: SigMask::new_empty(),
+            sig_mask: AtomicSigMask::new_empty(),
             sig_queues: SigQueues::new(),
         }
     }
@@ -67,7 +67,7 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub fn sig_mask(mut self, sig_mask: SigMask) -> Self {
+    pub fn sig_mask(mut self, sig_mask: AtomicSigMask) -> Self {
         self.sig_mask = sig_mask;
         self
     }
@@ -99,7 +99,7 @@ impl PosixThreadBuilder {
                 set_child_tid: Mutex::new(set_child_tid),
                 clear_child_tid: Mutex::new(clear_child_tid),
                 credentials,
-                sig_mask: Mutex::new(sig_mask),
+                sig_mask,
                 sig_queues,
                 sig_context: Mutex::new(None),
                 sig_stack: Mutex::new(None),
