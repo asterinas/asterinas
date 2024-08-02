@@ -8,7 +8,7 @@ use super::{
     task::{context_switch, TaskContext},
     Task, TaskStatus,
 };
-use crate::{arch, cpu_local};
+use crate::{cpu::local::PREEMPT_LOCK_COUNT, cpu_local};
 
 pub struct Processor {
     current: Option<Arc<Task>>,
@@ -91,10 +91,11 @@ pub fn preempt(task: &Arc<Task>) {
 ///
 /// before context switch, current task will switch to the next task
 fn switch_to_task(next_task: Arc<Task>) {
-    if !PREEMPT_COUNT.is_preemptive() {
+    let preemt_lock_count = PREEMPT_LOCK_COUNT.load();
+    if preemt_lock_count != 0 {
         panic!(
             "Calling schedule() while holding {} locks",
-            PREEMPT_COUNT.num_locks()
+            preemt_lock_count
         );
     }
 
@@ -151,53 +152,6 @@ fn switch_to_task(next_task: Arc<Task>) {
     // to the next task switching.
 }
 
-static PREEMPT_COUNT: PreemptInfo = PreemptInfo::new();
-
-/// Currently, it only holds the number of preemption locks held by the
-/// current CPU. When it has a non-zero value, the CPU cannot call
-/// [`schedule()`].
-///
-/// For per-CPU preemption lock count, we cannot afford two non-atomic
-/// operations to increment and decrement the count. The [`crate::cpu_local`]
-/// implementation is free to read the base register and then calculate the
-/// address of the per-CPU variable using an additional instruction. Interrupts
-/// can happen between the address calculation and modification to that
-/// address. If the task is preempted to another CPU by this interrupt, the
-/// count of the original CPU will be mistakenly modified. To avoid this, we
-/// introduce [`crate::arch::cpu::local::preempt_lock_count`]. For x86_64 we
-/// can implement this using one instruction. In other less expressive
-/// architectures, we may need to disable interrupts.
-///
-/// Also, the preemption count is reserved in the `.cpu_local` section
-/// specified in the linker script. The reason is that we need to access the
-/// preemption count before we can copy the section for application processors.
-/// So, the preemption count is not copied from bootstrap processor's section
-/// as the initialization. Instead it is initialized to zero for application
-/// processors.
-struct PreemptInfo {}
-
-impl PreemptInfo {
-    const fn new() -> Self {
-        Self {}
-    }
-
-    fn increase_num_locks(&self) {
-        arch::cpu::local::preempt_lock_count::inc();
-    }
-
-    fn decrease_num_locks(&self) {
-        arch::cpu::local::preempt_lock_count::dec();
-    }
-
-    fn is_preemptive(&self) -> bool {
-        arch::cpu::local::preempt_lock_count::get() == 0
-    }
-
-    fn num_locks(&self) -> usize {
-        arch::cpu::local::preempt_lock_count::get() as usize
-    }
-}
-
 /// A guard for disable preempt.
 #[clippy::has_significant_drop]
 #[must_use]
@@ -210,7 +164,7 @@ impl !Send for DisablePreemptGuard {}
 
 impl DisablePreemptGuard {
     fn new() -> Self {
-        PREEMPT_COUNT.increase_num_locks();
+        PREEMPT_LOCK_COUNT.add_assign(1);
         Self { _private: () }
     }
 
@@ -223,7 +177,7 @@ impl DisablePreemptGuard {
 
 impl Drop for DisablePreemptGuard {
     fn drop(&mut self) {
-        PREEMPT_COUNT.decrease_num_locks();
+        PREEMPT_LOCK_COUNT.sub_assign(1);
     }
 }
 

@@ -115,7 +115,7 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
 
     // SAFETY: we are on the AP.
     unsafe {
-        cpu::cpu_local::init_on_ap(local_apic_id);
+        cpu::local::init_on_ap(local_apic_id);
     }
 
     trap::init();

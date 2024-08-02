@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use alloc::{boxed::Box, sync::Arc};
 use core::{
     cell::RefCell,
@@ -10,7 +8,7 @@ use core::{
 };
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
-use ostd::{cpu_local, trap::SoftIrqLine, CpuLocal};
+use ostd::{cpu::local::CpuLocal, cpu_local, trap::SoftIrqLine};
 
 use crate::softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID};
 
