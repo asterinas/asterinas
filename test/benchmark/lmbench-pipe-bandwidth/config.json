@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "Pipe bandwidth",
-    "field": "3"
+    "alert_tool": "customBiggerIsBetter",
+    "search_pattern": "Pipe bandwidth",
+    "result_index": "3",
+    "description": "The bandwidth of pipe on a single processor."
 }
