@@ -1,13 +1,13 @@
 [
     {
         "name": "Average Signal handler overhead on Linux",
-        "unit": "ms",
+        "unit": "µs",
         "value": 0,
         "extra": "linux_avg"
     },
     {
         "name": "Average Signal handler overhead on Asterinas",
-        "unit": "ms",
+        "unit": "µs",
         "value": 0,
         "extra": "aster_avg"
     }

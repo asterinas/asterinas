@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "134.22",
-    "field": "2"
+    "alert_tool": "customBiggerIsBetter",
+    "search_pattern": "134.22",
+    "result_index": "2",
+    "description": "The memory bandwidth for copying 128 MB of data on a single processor using the fcp (fast copy) method."
 }

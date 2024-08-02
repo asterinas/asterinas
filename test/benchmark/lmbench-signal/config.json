@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "Signal handler overhead:",
-    "field": "4"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Signal handler overhead:",
+    "result_index": "4",
+    "description": "The latency of signal handling on a single processor."
 }

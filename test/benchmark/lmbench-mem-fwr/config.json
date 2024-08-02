@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "268.44",
-    "field": "2"
+    "alert_tool": "customBiggerIsBetter",
+    "search_pattern": "268.44",
+    "result_index": "2",
+    "description": "The memory bandwidth for writing 256 MB of data on a single processor using the fwr (fast write) method."
 }

@@ -1,5 +1,7 @@
 {
     "alert_threshold": "125%",
-    "pattern": "Process fork\\+execve",
-    "field": "3"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Process fork\\+execve",
+    "result_index": "3",
+    "description": "The latency of creating and executing processes on a single processor."
 }

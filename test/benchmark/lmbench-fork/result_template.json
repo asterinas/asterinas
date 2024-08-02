@@ -1,13 +1,13 @@
 [
     {
         "name": "Average Fork latency on Linux",
-        "unit": "ms",
+        "unit": "µs",
         "value": 0,
         "extra": "linux_avg"
     },
     {
         "name": "Average Fork latency on Asterinas",
-        "unit": "ms",
+        "unit": "µs",
         "value": 0,
         "extra": "aster_avg"
     }

@@ -1,5 +1,7 @@
 {
     "alert_threshold": "130%",
-    "pattern": "avg:",
-    "field": "NF"
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "avg:",
+    "result_index": "NF",
+    "description": "The average latency it takes for each thread operation (creation, yielding, locking, etc.) to complete."
 }
