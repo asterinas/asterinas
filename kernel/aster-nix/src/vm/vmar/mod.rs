@@ -333,8 +333,8 @@ impl Vmar_ {
             .child_vmar_s
             .retain(|_, child_vmar_| !child_vmar_.is_destroyed());
 
-        let mut mappings_to_remove = BTreeSet::new();
-        let mut mappings_to_append = BTreeMap::new();
+        let mut mappings_to_remove = LinkedList::new();
+        let mut mappings_to_append = LinkedList::new();
 
         for vm_mapping in inner.vm_mappings.find(&range) {
             let vm_mapping_range = vm_mapping.range();
@@ -676,9 +676,9 @@ impl Vmar_ {
 
     fn trim_existing_mappings(&self, trim_range: Range<usize>) -> Result<()> {
         let mut inner = self.inner.lock();
-        let mut mappings_to_remove = BTreeSet::new();
-        let mut mappings_to_append = BTreeMap::new();
-        for vm_mapping in inner.vm_mappings.values() {
+        let mut mappings_to_remove = LinkedList::new();
+        let mut mappings_to_append = LinkedList::new();
+        for vm_mapping in inner.vm_mappings.find(&trim_range) {
             vm_mapping.trim_mapping(
                 &trim_range,
                 &mut mappings_to_remove,
