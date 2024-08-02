@@ -1,0 +1,31 @@
+# triagebot.toml
+# More information: https://forge.rust-lang.org/triagebot/index.html
+
+[assign]
+# The issue assignment commands allows any user to assign themselves to a GitHub issue.
+# Restrict to teams later.
+# @boterinas claim — Assigns the issue to yourself.
+# @boterinas release-assignment — Removes the current assignee. Only the current assignee or a team member can release an assignment.
+# @boterinas assign @user — Assigns a specific user. Only team members can assign other users.
+
+[relabel]
+# Allow triagebot to label tags starting with C- and O-
+# @boterinas label C-bug — Adds the C-bug label to the issue.
+# @boterinas label -C-bug — Removes the C-bug label from the issue.
+allow-unauthenticated = [
+    "C-*", # any C- prefixed label will be allowed for anyone
+    "!C-good-first-issue", # but not C-good-first-issue (order does not matter)
+    "O-*", # any O- prefixed label will be allowed for anyone
+    "S-stale"
+]
+
+[mentions.".github/ISSUE_TEMPLATE"]
+cc = ["@grief8"]
+
+[shortcut]
+# Shortcuts are simple commands for performing common tasks.
+# https://forge.rust-lang.org/triagebot/shortcuts.html
+# @boterinas author - This indicates that a PR is waiting on the author. This assigns the S-waiting-on-author label on the pull request and removes both S-waiting-on-review and S-blocked if present.
+# @boterinas blocked - This indicates that a PR is blocked on something. 
+# @boterinas ready - This indicates that a PR is ready for review. 
+# @boterinas review or @boterinas reviewer are aliases for ready.
