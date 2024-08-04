@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{prelude::*, thread::Thread};
 
-pub fn sys_sched_yield() -> Result<SyscallReturn> {
+pub fn sys_sched_yield(_ctx: &Context) -> Result<SyscallReturn> {
     Thread::yield_now();
     Ok(SyscallReturn::Return(0))
 }

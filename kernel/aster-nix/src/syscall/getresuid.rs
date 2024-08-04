@@ -3,7 +3,12 @@
 use super::SyscallReturn;
 use crate::{prelude::*, process::credentials};
 
-pub fn sys_getresuid(ruid_ptr: Vaddr, euid_ptr: Vaddr, suid_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_getresuid(
+    ruid_ptr: Vaddr,
+    euid_ptr: Vaddr,
+    suid_ptr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("ruid_ptr = 0x{ruid_ptr:x}, euid_ptr = 0x{euid_ptr:x}, suid_ptr = 0x{suid_ptr:x}");
 
     let credentials = credentials();

@@ -6,7 +6,7 @@ use crate::{
     process::{process_table, Pgid, Pid},
 };
 
-pub fn sys_setpgid(pid: Pid, pgid: Pgid) -> Result<SyscallReturn> {
+pub fn sys_setpgid(pid: Pid, pgid: Pgid, _ctx: &Context) -> Result<SyscallReturn> {
     let current = current!();
     // if pid is 0, pid should be the pid of current process
     let pid = if pid == 0 { current.pid() } else { pid };

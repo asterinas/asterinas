@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{prelude::*, process::posix_thread::PosixThreadExt};
 
-pub fn sys_set_tid_address(tidptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_set_tid_address(tidptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("tidptr = 0x{:x}", tidptr);
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();

@@ -10,11 +10,15 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_rmdir(path_addr: Vaddr) -> Result<SyscallReturn> {
-    self::sys_rmdirat(AT_FDCWD, path_addr)
+pub fn sys_rmdir(path_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+    self::sys_rmdirat(AT_FDCWD, path_addr, ctx)
 }
 
-pub(super) fn sys_rmdirat(dirfd: FileDesc, path_addr: Vaddr) -> Result<SyscallReturn> {
+pub(super) fn sys_rmdirat(
+    dirfd: FileDesc,
+    path_addr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     let path_addr = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path_addr = {:?}", dirfd, path_addr);
 

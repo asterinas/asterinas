@@ -22,6 +22,7 @@ pub fn sys_mmap(
     flags: u64,
     fd: u64,
     offset: u64,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let perms = VmPerms::from_posix_prot_bits(perms as u32).unwrap();
     let option = MMapOptions::try_from(flags as u32)?;

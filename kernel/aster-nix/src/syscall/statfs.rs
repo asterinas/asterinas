@@ -11,7 +11,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let path = user_space.read_cstring(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, statfs_buf_ptr = 0x{:x}", path, statfs_buf_ptr,);
@@ -27,7 +27,7 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr) -> Result<SyscallRetur
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, statfs_buf_addr = 0x{:x}", fd, statfs_buf_ptr);
 
     let current = current!();

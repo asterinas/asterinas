@@ -16,6 +16,7 @@ pub fn sys_futex(
     utime_addr: u64,
     futex_new_addr: u64,
     bitset: u64,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     // FIXME: we current ignore futex flags
     let (futex_op, futex_flags) = futex_op_and_flags_from_u32(futex_op as _).unwrap();

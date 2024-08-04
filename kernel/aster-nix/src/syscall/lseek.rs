@@ -6,7 +6,12 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32) -> Result<SyscallReturn> {
+pub fn sys_lseek(
+    fd: FileDesc,
+    offset: isize,
+    whence: u32,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("fd = {}, offset = {}, whence = {}", fd, offset, whence);
     let seek_from = match whence {
         0 => {

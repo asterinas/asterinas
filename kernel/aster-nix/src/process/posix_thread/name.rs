@@ -10,6 +10,12 @@ pub struct ThreadName {
     count: usize,
 }
 
+impl Default for ThreadName {
+    fn default() -> Self {
+        ThreadName::new()
+    }
+}
+
 impl ThreadName {
     pub fn new() -> Self {
         ThreadName {

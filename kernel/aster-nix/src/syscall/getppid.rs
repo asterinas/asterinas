@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_getppid() -> Result<SyscallReturn> {
+pub fn sys_getppid(_ctx: &Context) -> Result<SyscallReturn> {
     let current = current!();
     let parent = current.parent();
     match parent {

@@ -14,14 +14,14 @@ use crate::{
     process::{posix_thread::PosixThreadExt, signal::sig_mask::SigMask},
 };
 
-pub fn sys_epoll_create(size: i32) -> Result<SyscallReturn> {
+pub fn sys_epoll_create(size: i32, ctx: &Context) -> Result<SyscallReturn> {
     if size <= 0 {
         return_errno_with_message!(Errno::EINVAL, "size is not positive");
     }
-    sys_epoll_create1(0)
+    sys_epoll_create1(0, ctx)
 }
 
-pub fn sys_epoll_create1(flags: u32) -> Result<SyscallReturn> {
+pub fn sys_epoll_create1(flags: u32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("flags = 0x{:x}", flags);
 
     let fd_flags = {
@@ -49,6 +49,7 @@ pub fn sys_epoll_ctl(
     op: i32,
     fd: FileDesc,
     event_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "epfd = {}, op = {}, fd = {}, event_addr = 0x{:x}",
@@ -128,6 +129,7 @@ pub fn sys_epoll_wait(
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout = {:?}",
@@ -182,6 +184,7 @@ pub fn sys_epoll_pwait(
     timeout: i32,
     sigmask: Vaddr,
     sigset_size: usize,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout = {:?}, sigmask = 0x{:x}, sigset_size = {}",

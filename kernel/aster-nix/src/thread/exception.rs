@@ -10,12 +10,11 @@ use crate::{
 };
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
-pub fn handle_exception(context: &UserContext) {
+pub fn handle_exception(ctx: &Context, context: &UserContext) {
     let trap_info = context.trap_information();
     let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
     log_trap_info(exception, trap_info);
-    let current = current!();
-    let root_vmar = current.root_vmar();
+    let root_vmar = ctx.process.root_vmar();
 
     match *exception {
         PAGE_FAULT => {

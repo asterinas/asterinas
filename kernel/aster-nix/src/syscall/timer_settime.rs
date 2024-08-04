@@ -13,6 +13,7 @@ pub fn sys_timer_settime(
     flags: i32,
     new_itimerspec_addr: Vaddr,
     old_itimerspec_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     if new_itimerspec_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
@@ -56,7 +57,11 @@ pub fn sys_timer_settime(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_timer_gettime(timer_id: usize, itimerspec_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_timer_gettime(
+    timer_id: usize,
+    itimerspec_addr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     if itimerspec_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to return value");
     }

@@ -8,6 +8,7 @@ pub fn sys_pread64(
     user_buf_ptr: Vaddr,
     user_buf_len: usize,
     offset: i64,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, buf = 0x{:x}, user_buf_len = 0x{:x}, offset = 0x{:x}",

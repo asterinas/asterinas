@@ -16,6 +16,7 @@ pub fn sys_renameat(
     old_path_addr: Vaddr,
     new_dirfd: FileDesc,
     new_path_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let old_path = user_space.read_cstring(old_path_addr, MAX_FILENAME_LEN)?;
@@ -69,6 +70,10 @@ pub fn sys_renameat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_rename(old_path_addr: Vaddr, new_path_addr: Vaddr) -> Result<SyscallReturn> {
-    self::sys_renameat(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr)
+pub fn sys_rename(
+    old_path_addr: Vaddr,
+    new_path_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    self::sys_renameat(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, ctx)
 }

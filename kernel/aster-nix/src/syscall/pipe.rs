@@ -10,7 +10,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
+pub fn sys_pipe2(fds: Vaddr, flags: u32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("flags: {:?}", flags);
 
     let (pipe_reader, pipe_writer) = {
@@ -48,8 +48,8 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_pipe(fds: Vaddr) -> Result<SyscallReturn> {
-    self::sys_pipe2(fds, 0)
+pub fn sys_pipe(fds: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+    self::sys_pipe2(fds, 0, ctx)
 }
 
 #[derive(Debug, Clone, Copy, Pod)]

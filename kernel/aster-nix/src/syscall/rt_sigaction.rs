@@ -11,6 +11,7 @@ pub fn sys_rt_sigaction(
     sig_action_addr: Vaddr,
     old_sig_action_addr: Vaddr,
     sigset_size: u64,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let sig_num = SigNum::try_from(sig_num)?;
     debug!(

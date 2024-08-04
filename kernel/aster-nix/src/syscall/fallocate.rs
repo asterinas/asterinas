@@ -7,7 +7,13 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_fallocate(fd: FileDesc, mode: u64, offset: i64, len: i64) -> Result<SyscallReturn> {
+pub fn sys_fallocate(
+    fd: FileDesc,
+    mode: u64,
+    offset: i64,
+    len: i64,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, mode = {}, offset = {}, len = {}",
         fd, mode, offset, len

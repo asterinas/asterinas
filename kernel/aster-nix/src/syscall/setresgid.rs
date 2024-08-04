@@ -6,7 +6,7 @@ use crate::{
     process::{credentials_mut, Gid},
 };
 
-pub fn sys_setresgid(rgid: i32, egid: i32, sgid: i32) -> Result<SyscallReturn> {
+pub fn sys_setresgid(rgid: i32, egid: i32, sgid: i32, _ctx: &Context) -> Result<SyscallReturn> {
     let rgid = if rgid > 0 {
         Some(Gid::new(rgid as u32))
     } else {

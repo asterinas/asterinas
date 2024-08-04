@@ -8,7 +8,10 @@ use crate::{
 
 // The use of the timezone structure is obsolete.
 // Glibc sets the timezone_addr argument to NULL, so just ignore it.
-pub fn sys_gettimeofday(timeval_addr: Vaddr, /* timezone_addr: Vaddr */) -> Result<SyscallReturn> {
+pub fn sys_gettimeofday(
+    timeval_addr: Vaddr,
+    /* timezone_addr: Vaddr */ _ctx: &Context,
+) -> Result<SyscallReturn> {
     if timeval_addr == 0 {
         return Ok(SyscallReturn::Return(0));
     }

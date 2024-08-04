@@ -7,7 +7,12 @@ use crate::{
     util::net::{get_socket_from_fd, read_socket_addr_from_user},
 };
 
-pub fn sys_connect(sockfd: FileDesc, sockaddr_ptr: Vaddr, addr_len: u32) -> Result<SyscallReturn> {
+pub fn sys_connect(
+    sockfd: FileDesc,
+    sockaddr_ptr: Vaddr,
+    addr_len: u32,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     let socket_addr = read_socket_addr_from_user(sockaddr_ptr, addr_len as _)?;
     debug!("fd = {sockfd}, socket_addr = {socket_addr:?}");
 

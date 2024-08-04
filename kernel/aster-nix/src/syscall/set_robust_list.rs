@@ -6,7 +6,11 @@ use crate::{
     process::posix_thread::{PosixThreadExt, RobustListHead},
 };
 
-pub fn sys_set_robust_list(robust_list_head_ptr: Vaddr, len: usize) -> Result<SyscallReturn> {
+pub fn sys_set_robust_list(
+    robust_list_head_ptr: Vaddr,
+    len: usize,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "robust list head ptr: 0x{:x}, len = {}",
         robust_list_head_ptr, len

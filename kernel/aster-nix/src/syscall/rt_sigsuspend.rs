@@ -10,7 +10,11 @@ use crate::{
     },
 };
 
-pub fn sys_rt_sigsuspend(sigmask_addr: Vaddr, sigmask_size: usize) -> Result<SyscallReturn> {
+pub fn sys_rt_sigsuspend(
+    sigmask_addr: Vaddr,
+    sigmask_size: usize,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "sigmask_addr = 0x{:x}, sigmask_size = {}",
         sigmask_addr, sigmask_size

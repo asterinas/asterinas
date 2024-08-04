@@ -5,7 +5,11 @@ use core::sync::atomic::Ordering;
 use super::SyscallReturn;
 use crate::{prelude::*, process::posix_thread::PosixThreadExt};
 
-pub fn sys_rt_sigpending(u_set_ptr: Vaddr, sigset_size: usize) -> Result<SyscallReturn> {
+pub fn sys_rt_sigpending(
+    u_set_ptr: Vaddr,
+    sigset_size: usize,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "u_set_ptr = 0x{:x},  sigset_size = {}",
         u_set_ptr, sigset_size

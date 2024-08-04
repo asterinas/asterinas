@@ -16,7 +16,11 @@ fn make_kernel_cap(low: u32, high: u32) -> u64 {
     ((low as u64) | ((high as u64) << 32)) & ((1u64 << (CapSet::most_significant_bit() + 1)) - 1)
 }
 
-pub fn sys_capset(cap_user_header_addr: Vaddr, cap_user_data_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_capset(
+    cap_user_header_addr: Vaddr,
+    cap_user_data_addr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let cap_user_header: cap_user_header_t =
         user_space.read_val::<cap_user_header_t>(cap_user_header_addr)?;

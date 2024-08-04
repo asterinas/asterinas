@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// tgkill send a signal to a thread with pid as its thread id, and tgid as its thread group id.
-pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8) -> Result<SyscallReturn> {
+pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8, _ctx: &Context) -> Result<SyscallReturn> {
     let sig_num = if sig_num == 0 {
         None
     } else {

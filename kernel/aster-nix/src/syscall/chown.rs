@@ -11,7 +11,7 @@ use crate::{
     process::{Gid, Uid},
 };
 
-pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32) -> Result<SyscallReturn> {
+pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, uid = {}, gid = {}", fd, uid, gid);
 
     let uid = to_optional_id(uid, Uid::new)?;
@@ -32,17 +32,18 @@ pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_chown(path_ptr: Vaddr, uid: i32, gid: i32) -> Result<SyscallReturn> {
-    self::sys_fchownat(AT_FDCWD, path_ptr, uid, gid, 0)
+pub fn sys_chown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
+    self::sys_fchownat(AT_FDCWD, path_ptr, uid, gid, 0, ctx)
 }
 
-pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32) -> Result<SyscallReturn> {
+pub fn sys_lchown(path_ptr: Vaddr, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
     self::sys_fchownat(
         AT_FDCWD,
         path_ptr,
         uid,
         gid,
         ChownFlags::AT_SYMLINK_NOFOLLOW.bits(),
+        ctx,
     )
 }
 
@@ -52,6 +53,7 @@ pub fn sys_fchownat(
     uid: i32,
     gid: i32,
     flags: u32,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_ptr, PATH_MAX)?;
     let flags = ChownFlags::from_bits(flags)
@@ -65,7 +67,7 @@ pub fn sys_fchownat(
         if !flags.contains(ChownFlags::AT_EMPTY_PATH) {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
-        return self::sys_fchown(dirfd, uid, gid);
+        return self::sys_fchown(dirfd, uid, gid, ctx);
     }
 
     let uid = to_optional_id(uid, Uid::new)?;

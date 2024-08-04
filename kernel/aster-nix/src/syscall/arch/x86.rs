@@ -145,7 +145,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_BRK = 12               => sys_brk(args[..1]);
     SYS_RT_SIGACTION = 13      => sys_rt_sigaction(args[..4]);
     SYS_RT_SIGPROCMASK = 14    => sys_rt_sigprocmask(args[..4]);
-    SYS_RT_SIGRETURN = 15      => sys_rt_sigreturn(args[..0], &mut context);
+    SYS_RT_SIGRETURN = 15      => sys_rt_sigreturn(args[..0], &mut user_ctx);
     SYS_IOCTL = 16             => sys_ioctl(args[..3]);
     SYS_PREAD64 = 17           => sys_pread64(args[..4]);
     SYS_PWRITE64 = 18          => sys_pwrite64(args[..4]);
@@ -180,9 +180,9 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SOCKETPAIR = 53        => sys_socketpair(args[..4]);
     SYS_SETSOCKOPT = 54        => sys_setsockopt(args[..5]);
     SYS_GETSOCKOPT = 55        => sys_getsockopt(args[..5]);
-    SYS_CLONE = 56             => sys_clone(args[..5], &context);
-    SYS_FORK = 57              => sys_fork(args[..0], &context);
-    SYS_EXECVE = 59            => sys_execve(args[..3], &mut context);
+    SYS_CLONE = 56             => sys_clone(args[..5], &user_ctx);
+    SYS_FORK = 57              => sys_fork(args[..0], &user_ctx);
+    SYS_EXECVE = 59            => sys_execve(args[..3], &mut user_ctx);
     SYS_EXIT = 60              => sys_exit(args[..1]);
     SYS_WAIT4 = 61             => sys_wait4(args[..4]);
     SYS_KILL = 62              => sys_kill(args[..2]);
@@ -245,7 +245,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GET_PRIORITY = 140     => sys_get_priority(args[..2]);
     SYS_SET_PRIORITY = 141     => sys_set_priority(args[..3]);
     SYS_PRCTL = 157            => sys_prctl(args[..5]);
-    SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2], &mut context);
+    SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2], &mut user_ctx);
     SYS_CHROOT = 161           => sys_chroot(args[..1]);
     SYS_SYNC = 162             => sys_sync(args[..0]);
     SYS_MOUNT = 165            => sys_mount(args[..5]);
@@ -297,8 +297,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
-    SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut context);
+    SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 327          => sys_preadv2(args[..5]);
     SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
-    SYS_CLONE3 = 435           => sys_clone3(args[..2], &context);
+    SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
 }

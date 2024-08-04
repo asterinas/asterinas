@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_setsid() -> Result<SyscallReturn> {
+pub fn sys_setsid(_ctx: &Context) -> Result<SyscallReturn> {
     let current = current!();
     let session = current.to_new_session()?;
 

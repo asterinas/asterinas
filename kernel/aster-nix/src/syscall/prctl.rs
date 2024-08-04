@@ -9,7 +9,14 @@ use crate::{
     },
 };
 
-pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<SyscallReturn> {
+pub fn sys_prctl(
+    option: i32,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     let prctl_cmd = PrctlCmd::from_args(option, arg2, arg3, arg4, arg5)?;
     debug!("prctl cmd = {:x?}", prctl_cmd);
     let current_thread = current_thread!();

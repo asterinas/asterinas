@@ -30,7 +30,7 @@ use crate::{
     time::clocks::RealTimeClock,
 };
 
-pub fn sys_eventfd(init_val: u64) -> Result<SyscallReturn> {
+pub fn sys_eventfd(init_val: u64, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("init_val = 0x{:x}", init_val);
 
     let fd = do_sys_eventfd2(init_val, Flags::empty());
@@ -38,7 +38,7 @@ pub fn sys_eventfd(init_val: u64) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(fd as _))
 }
 
-pub fn sys_eventfd2(init_val: u64, flags: u32) -> Result<SyscallReturn> {
+pub fn sys_eventfd2(init_val: u64, flags: u32, _ctx: &Context) -> Result<SyscallReturn> {
     trace!("raw flags = {}", flags);
     let flags = Flags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;

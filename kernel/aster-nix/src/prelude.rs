@@ -50,11 +50,11 @@ macro_rules! current_thread {
 pub(crate) use lazy_static::lazy_static;
 
 pub(crate) use crate::{
+    context::{Context, CurrentUserSpace, ReadCString},
     current, current_thread,
     error::{Errno, Error},
     print, println,
     time::{wait::WaitTimeout, Clock},
-    util::{CurrentUserSpace, ReadCString},
 };
 pub(crate) type Result<T> = core::result::Result<T, Error>;
 pub(crate) use crate::{return_errno, return_errno_with_message};

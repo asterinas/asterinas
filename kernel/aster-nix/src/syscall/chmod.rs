@@ -10,7 +10,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fchmod(fd: FileDesc, mode: u16) -> Result<SyscallReturn> {
+pub fn sys_fchmod(fd: FileDesc, mode: u16, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, mode = 0o{:o}", fd, mode);
 
     let current = current!();
@@ -20,8 +20,8 @@ pub fn sys_fchmod(fd: FileDesc, mode: u16) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_chmod(path_ptr: Vaddr, mode: u16) -> Result<SyscallReturn> {
-    self::sys_fchmodat(AT_FDCWD, path_ptr, mode)
+pub fn sys_chmod(path_ptr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+    self::sys_fchmodat(AT_FDCWD, path_ptr, mode, ctx)
 }
 
 // Glibc handles the `flags` argument, so we just ignore it.
@@ -30,6 +30,7 @@ pub fn sys_fchmodat(
     path_ptr: Vaddr,
     mode: u16,
     /* flags: u32, */
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_ptr, PATH_MAX)?;
     debug!("dirfd = {}, path = {:?}, mode = 0o{:o}", dirfd, path, mode,);

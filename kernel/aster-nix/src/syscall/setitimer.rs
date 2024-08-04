@@ -22,6 +22,7 @@ pub fn sys_setitimer(
     itimer_type: i32,
     new_itimerval_addr: Vaddr,
     old_itimerval_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "itimer_type = {}, new_itimerval_addr = 0x{:x}, old_itimerval_addr = 0x{:x}, ",
@@ -65,7 +66,11 @@ pub fn sys_setitimer(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_getitimer(itimer_type: i32, itimerval_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_getitimer(
+    itimer_type: i32,
+    itimerval_addr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "itimer_type = {}, itimerval_addr = 0x{:x}",
         itimer_type, itimerval_addr

@@ -6,7 +6,7 @@ use crate::{
     process::{credentials_mut, Uid},
 };
 
-pub fn sys_setreuid(ruid: i32, euid: i32) -> Result<SyscallReturn> {
+pub fn sys_setreuid(ruid: i32, euid: i32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("ruid = {}, euid = {}", ruid, euid);
 
     let ruid = if ruid > 0 {

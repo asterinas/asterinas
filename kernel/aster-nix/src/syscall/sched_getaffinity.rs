@@ -18,6 +18,7 @@ pub fn sys_sched_getaffinity(
     pid: Pid,
     cpuset_size: usize,
     cpu_set_ptr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let num_cpus = get_num_cpus();
 

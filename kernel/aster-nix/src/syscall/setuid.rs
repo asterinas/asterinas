@@ -6,7 +6,7 @@ use crate::{
     process::{credentials_mut, Uid},
 };
 
-pub fn sys_setuid(uid: i32) -> Result<SyscallReturn> {
+pub fn sys_setuid(uid: i32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("uid = {}", uid);
 
     if uid < 0 {

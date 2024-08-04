@@ -31,6 +31,7 @@ pub fn sys_timer_create(
     clockid: clockid_t,
     sigevent_addr: Vaddr,
     timer_id_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     if timer_id_addr == 0 {
         return_errno_with_message!(
@@ -155,7 +156,7 @@ pub fn sys_timer_create(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_timer_delete(timer_id: usize) -> Result<SyscallReturn> {
+pub fn sys_timer_delete(timer_id: usize, _ctx: &Context) -> Result<SyscallReturn> {
     let current_process = current!();
     let Some(timer) = current_process.timer_manager().remove_posix_timer(timer_id) else {
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");

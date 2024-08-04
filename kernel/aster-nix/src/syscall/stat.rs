@@ -12,7 +12,7 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
     let current = current!();
@@ -23,16 +23,17 @@ pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_stat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
-    self::sys_fstatat(AT_FDCWD, filename_ptr, stat_buf_ptr, 0)
+pub fn sys_stat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+    self::sys_fstatat(AT_FDCWD, filename_ptr, stat_buf_ptr, 0, ctx)
 }
 
-pub fn sys_lstat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_lstat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     self::sys_fstatat(
         AT_FDCWD,
         filename_ptr,
         stat_buf_ptr,
         StatFlags::AT_SYMLINK_NOFOLLOW.bits(),
+        ctx,
     )
 }
 
@@ -41,6 +42,7 @@ pub fn sys_fstatat(
     filename_ptr: Vaddr,
     stat_buf_ptr: Vaddr,
     flags: u32,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let filename = user_space.read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
@@ -56,7 +58,7 @@ pub fn sys_fstatat(
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         // In this case, the behavior of fstatat() is similar to that of fstat().
-        return self::sys_fstat(dirfd, stat_buf_ptr);
+        return self::sys_fstat(dirfd, stat_buf_ptr, ctx);
     }
 
     let current = current!();

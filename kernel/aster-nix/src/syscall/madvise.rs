@@ -3,7 +3,12 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallReturn> {
+pub fn sys_madvise(
+    start: Vaddr,
+    len: usize,
+    behavior: i32,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     let behavior = MadviseBehavior::try_from(behavior)?;
     debug!(
         "start = 0x{:x}, len = 0x{:x}, behavior = {:?}",

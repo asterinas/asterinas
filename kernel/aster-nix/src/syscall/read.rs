@@ -5,7 +5,12 @@ use core::cmp::min;
 use super::SyscallReturn;
 use crate::{fs::file_table::FileDesc, prelude::*};
 
-pub fn sys_read(fd: FileDesc, user_buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
+pub fn sys_read(
+    fd: FileDesc,
+    user_buf_addr: Vaddr,
+    buf_len: usize,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, buf_len = 0x{:x}",
         fd, user_buf_addr, buf_len

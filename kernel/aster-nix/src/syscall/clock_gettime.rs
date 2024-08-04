@@ -19,7 +19,11 @@ use crate::{
     },
 };
 
-pub fn sys_clock_gettime(clockid: clockid_t, timespec_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_clock_gettime(
+    clockid: clockid_t,
+    timespec_addr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("clockid = {:?}", clockid);
 
     let time_duration = read_clock(clockid)?;

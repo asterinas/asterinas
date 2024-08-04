@@ -6,7 +6,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fsync(fd: FileDesc) -> Result<SyscallReturn> {
+pub fn sys_fsync(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let dentry = {
@@ -22,7 +22,7 @@ pub fn sys_fsync(fd: FileDesc) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fdatasync(fd: FileDesc) -> Result<SyscallReturn> {
+pub fn sys_fdatasync(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let dentry = {
