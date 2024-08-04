@@ -12,6 +12,7 @@ pub fn sys_waitid(
     _infoq_addr: u64,
     options: u64,
     _rusage_addr: u64,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     // FIXME: what does infoq and rusage use for?
     let process_filter = ProcessFilter::from_which_and_id(which, upid);

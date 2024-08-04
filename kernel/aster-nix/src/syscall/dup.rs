@@ -7,7 +7,7 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_dup(old_fd: FileDesc) -> Result<SyscallReturn> {
+pub fn sys_dup(old_fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}", old_fd);
 
     let current = current!();
@@ -17,7 +17,7 @@ pub fn sys_dup(old_fd: FileDesc) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(new_fd as _))
 }
 
-pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc) -> Result<SyscallReturn> {
+pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     if old_fd == new_fd {
@@ -30,7 +30,12 @@ pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc) -> Result<SyscallReturn> {
     do_dup3(old_fd, new_fd, FdFlags::empty())
 }
 
-pub fn sys_dup3(old_fd: FileDesc, new_fd: FileDesc, flags: u32) -> Result<SyscallReturn> {
+pub fn sys_dup3(
+    old_fd: FileDesc,
+    new_fd: FileDesc,
+    flags: u32,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     let fdflag = match flags {

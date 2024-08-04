@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_umask(mask: u16) -> Result<SyscallReturn> {
+pub fn sys_umask(mask: u16, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("mask = 0o{:o}", mask);
     let current = current!();
     let old_mask = current.umask().write().set(mask);

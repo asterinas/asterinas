@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_sync() -> Result<SyscallReturn> {
+pub fn sys_sync(_ctx: &Context) -> Result<SyscallReturn> {
     crate::fs::rootfs::root_mount().sync()?;
     Ok(SyscallReturn::Return(0))
 }

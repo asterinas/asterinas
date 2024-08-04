@@ -13,6 +13,7 @@ pub fn sys_setsockopt(
     optname: i32,
     optval: Vaddr,
     optlen: u32,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let level = CSocketOptionLevel::try_from(level)?;
     if optval == 0 {

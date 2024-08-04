@@ -5,7 +5,7 @@ use core::{cell::Cell, time::Duration};
 use super::SyscallReturn;
 use crate::{events::IoEvents, fs::file_table::FileDesc, prelude::*, process::signal::Poller};
 
-pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32) -> Result<SyscallReturn> {
+pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, _ctx: &Context) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let poll_fds = {
         let mut read_addr = fds;

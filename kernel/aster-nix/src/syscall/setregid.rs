@@ -6,7 +6,7 @@ use crate::{
     process::{credentials_mut, Gid},
 };
 
-pub fn sys_setregid(rgid: i32, egid: i32) -> Result<SyscallReturn> {
+pub fn sys_setregid(rgid: i32, egid: i32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("rgid = {}, egid = {}", rgid, egid);
 
     let rgid = if rgid > 0 {

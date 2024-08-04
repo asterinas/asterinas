@@ -14,6 +14,7 @@ pub fn sys_accept(
     sockfd: FileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!("sockfd = {sockfd}, sockaddr_ptr = 0x{sockaddr_ptr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
@@ -26,6 +27,7 @@ pub fn sys_accept4(
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
     flags: u32,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     trace!("raw flags = 0x{:x}", flags);
     let flags = Flags::from_bits_truncate(flags);

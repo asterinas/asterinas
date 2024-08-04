@@ -17,6 +17,7 @@ pub fn sys_mknodat(
     path_addr: Vaddr,
     mode: u16,
     dev: usize,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let current = current!();
@@ -59,6 +60,6 @@ pub fn sys_mknodat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_mknod(path_addr: Vaddr, mode: u16, dev: usize) -> Result<SyscallReturn> {
-    self::sys_mknodat(AT_FDCWD, path_addr, mode, dev)
+pub fn sys_mknod(path_addr: Vaddr, mode: u16, dev: usize, ctx: &Context) -> Result<SyscallReturn> {
+    self::sys_mknodat(AT_FDCWD, path_addr, mode, dev, ctx)
 }

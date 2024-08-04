@@ -3,7 +3,12 @@
 use super::SyscallReturn;
 use crate::{prelude::*, process::credentials};
 
-pub fn sys_getresgid(rgid_ptr: Vaddr, egid_ptr: Vaddr, sgid_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_getresgid(
+    rgid_ptr: Vaddr,
+    egid_ptr: Vaddr,
+    sgid_ptr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!("rgid_ptr = 0x{rgid_ptr:x}, egid_ptr = 0x{egid_ptr:x}, sgid_ptr = 0x{sgid_ptr:x}");
 
     let credentials = credentials();

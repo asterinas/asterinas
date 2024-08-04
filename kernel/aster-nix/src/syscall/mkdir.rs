@@ -11,7 +11,12 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_mkdirat(dirfd: FileDesc, path_addr: Vaddr, mode: u16) -> Result<SyscallReturn> {
+pub fn sys_mkdirat(
+    dirfd: FileDesc,
+    path_addr: Vaddr,
+    mode: u16,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}, mode = {}", dirfd, path, mode);
 
@@ -36,6 +41,6 @@ pub fn sys_mkdirat(dirfd: FileDesc, path_addr: Vaddr, mode: u16) -> Result<Sysca
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_mkdir(path_addr: Vaddr, mode: u16) -> Result<SyscallReturn> {
-    self::sys_mkdirat(AT_FDCWD, path_addr, mode)
+pub fn sys_mkdir(path_addr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
+    self::sys_mkdirat(AT_FDCWD, path_addr, mode, ctx)
 }

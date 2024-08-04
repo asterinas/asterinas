@@ -14,7 +14,7 @@ enum RusageTarget {
     Thread = 1,
 }
 
-pub fn sys_getrusage(target: i32, rusage_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_getrusage(target: i32, rusage_addr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     let rusage_target = RusageTarget::try_from(target)?;
 
     debug!(
@@ -86,7 +86,7 @@ pub struct rusage_t {
     pub ru_msgrcv: u64,
     /// signals received
     pub ru_nsignals: u64,
-    /// voluntary context switches
+    /// voluntary ctx switches
     pub ru_nvcsw: u64,
     /// involuntary
     pub ru_nivcsw: u64,

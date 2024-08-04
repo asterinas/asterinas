@@ -3,7 +3,12 @@
 use super::SyscallReturn;
 use crate::{fs::file_table::FileDesc, prelude::*};
 
-pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Result<SyscallReturn> {
+pub fn sys_write(
+    fd: FileDesc,
+    user_buf_ptr: Vaddr,
+    user_buf_len: usize,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}",
         fd, user_buf_ptr, user_buf_len

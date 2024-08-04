@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{prelude::*, process::credentials};
 
-pub fn sys_getgroups(size: i32, group_list_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_getgroups(size: i32, group_list_addr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
 
     if size < 0 {

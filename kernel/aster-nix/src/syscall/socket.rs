@@ -12,7 +12,7 @@ use crate::{
     util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK},
 };
 
-pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallReturn> {
+pub fn sys_socket(domain: i32, type_: i32, protocol: i32, _ctx: &Context) -> Result<SyscallReturn> {
     let domain = CSocketAddrFamily::try_from(domain)?;
     let sock_type = SockType::try_from(type_ & SOCK_TYPE_MASK)?;
     let sock_flags = SockFlags::from_bits_truncate(type_ & !SOCK_TYPE_MASK);

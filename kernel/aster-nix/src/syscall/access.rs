@@ -10,7 +10,12 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_faccessat(dirfd: FileDesc, path_ptr: Vaddr, mode: u16) -> Result<SyscallReturn> {
+pub fn sys_faccessat(
+    dirfd: FileDesc,
+    path_ptr: Vaddr,
+    mode: u16,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "faccessat: dirfd = {}, path_ptr = {:#x}, mode = {:o}",
         dirfd, path_ptr, mode
@@ -19,7 +24,7 @@ pub fn sys_faccessat(dirfd: FileDesc, path_ptr: Vaddr, mode: u16) -> Result<Sysc
     do_faccessat(dirfd, path_ptr, mode, 0)
 }
 
-pub fn sys_access(path_ptr: Vaddr, mode: u16) -> Result<SyscallReturn> {
+pub fn sys_access(path_ptr: Vaddr, mode: u16, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("access: path_ptr = {:#x}, mode = {:o}", path_ptr, mode);
 
     do_faccessat(AT_FDCWD, path_ptr, mode, 0)

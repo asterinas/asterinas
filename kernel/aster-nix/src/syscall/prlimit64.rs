@@ -11,6 +11,7 @@ pub fn sys_prlimit64(
     resource: u32,
     new_rlim_addr: Vaddr,
     old_rlim_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let resource = ResourceType::try_from(resource)?;
     debug!(

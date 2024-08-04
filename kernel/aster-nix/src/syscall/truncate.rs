@@ -11,7 +11,7 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
+pub fn sys_ftruncate(fd: FileDesc, len: isize, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, lentgh = {}", fd, len);
 
     check_length(len)?;
@@ -23,7 +23,7 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
+pub fn sys_truncate(path_ptr: Vaddr, len: isize, _ctx: &Context) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, length = {}", path, len);
 

@@ -16,6 +16,7 @@ pub fn sys_linkat(
     new_dirfd: FileDesc,
     new_path_addr: Vaddr,
     flags: u32,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
 
@@ -58,8 +59,12 @@ pub fn sys_linkat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_link(old_path_addr: Vaddr, new_path_addr: Vaddr) -> Result<SyscallReturn> {
-    self::sys_linkat(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, 0)
+pub fn sys_link(
+    old_path_addr: Vaddr,
+    new_path_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    self::sys_linkat(AT_FDCWD, old_path_addr, AT_FDCWD, new_path_addr, 0, ctx)
 }
 
 bitflags::bitflags! {

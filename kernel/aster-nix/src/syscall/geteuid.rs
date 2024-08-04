@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{prelude::*, process::credentials};
 
-pub fn sys_geteuid() -> Result<SyscallReturn> {
+pub fn sys_geteuid(_ctx: &Context) -> Result<SyscallReturn> {
     let euid = {
         let credentials = credentials();
         credentials.euid()

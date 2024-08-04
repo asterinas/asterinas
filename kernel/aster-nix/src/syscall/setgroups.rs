@@ -6,7 +6,7 @@ use crate::{
     process::{credentials_mut, Gid},
 };
 
-pub fn sys_setgroups(size: usize, group_list_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_setgroups(size: usize, group_list_addr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
 
     // TODO: check perm: the calling process should have the CAP_SETGID capability

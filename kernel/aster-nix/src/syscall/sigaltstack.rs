@@ -9,7 +9,11 @@ use crate::{
     },
 };
 
-pub fn sys_sigaltstack(sig_stack_addr: Vaddr, old_sig_stack_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_sigaltstack(
+    sig_stack_addr: Vaddr,
+    old_sig_stack_addr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "sig_stack_addr = 0x{:x}, old_sig_stack_addr: 0x{:x}",
         sig_stack_addr, old_sig_stack_addr

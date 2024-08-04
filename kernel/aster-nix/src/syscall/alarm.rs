@@ -5,7 +5,7 @@ use core::time::Duration;
 use super::SyscallReturn;
 use crate::{prelude::*, time::timer::Timeout};
 
-pub fn sys_alarm(seconds: u32) -> Result<SyscallReturn> {
+pub fn sys_alarm(seconds: u32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("seconds = {}", seconds);
 
     let current = current!();

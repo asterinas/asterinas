@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{prelude::*, process::credentials};
 
-pub fn sys_getgid() -> Result<SyscallReturn> {
+pub fn sys_getgid(_ctx: &Context) -> Result<SyscallReturn> {
     let gid = {
         let credentials = credentials();
         credentials.rgid()

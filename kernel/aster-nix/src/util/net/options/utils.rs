@@ -46,7 +46,7 @@ macro_rules! impl_read_write_for_pod_type {
                 if (max_len as usize) < core::mem::size_of::<$pod_ty>() {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
-                crate::util::CurrentUserSpace::get().read_val::<$pod_ty>(addr)
+                crate::context::CurrentUserSpace::get().read_val::<$pod_ty>(addr)
             }
         }
 
@@ -58,7 +58,7 @@ macro_rules! impl_read_write_for_pod_type {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
 
-                crate::util::CurrentUserSpace::get().write_val(addr, self)?;
+                crate::context::CurrentUserSpace::get().write_val(addr, self)?;
                 Ok(write_len)
             }
         }

@@ -7,7 +7,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_umount(path_addr: Vaddr, flags: u64) -> Result<SyscallReturn> {
+pub fn sys_umount(path_addr: Vaddr, flags: u64, _ctx: &Context) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let umount_flags = UmountFlags::from_bits_truncate(flags as u32);
     debug!("path = {:?}, flags = {:?}", path, umount_flags);

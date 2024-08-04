@@ -18,6 +18,7 @@ pub fn sys_sendto(
     flags: i32,
     dest_addr: Vaddr,
     addrlen: usize,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = SendRecvFlags::from_bits_truncate(flags);
     let socket_addr = if dest_addr == 0 {

@@ -15,6 +15,7 @@ pub fn sys_readlinkat(
     path_addr: Vaddr,
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let path = user_space.read_cstring(path_addr, MAX_FILENAME_LEN)?;
@@ -43,6 +44,7 @@ pub fn sys_readlink(
     path_addr: Vaddr,
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
-    self::sys_readlinkat(AT_FDCWD, path_addr, usr_buf_addr, usr_buf_len)
+    self::sys_readlinkat(AT_FDCWD, path_addr, usr_buf_addr, usr_buf_len, ctx)
 }

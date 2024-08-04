@@ -9,7 +9,11 @@ use crate::{
     },
 };
 
-pub fn sys_capget(cap_user_header_addr: Vaddr, cap_user_data_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_capget(
+    cap_user_header_addr: Vaddr,
+    cap_user_data_addr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let cap_user_header: cap_user_header_t =
         user_space.read_val::<cap_user_header_t>(cap_user_header_addr)?;

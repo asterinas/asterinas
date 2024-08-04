@@ -12,6 +12,7 @@ use crate::{
 pub fn sys_nanosleep(
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let clockid = ClockId::CLOCK_MONOTONIC;
 
@@ -28,6 +29,7 @@ pub fn sys_clock_nanosleep(
     flags: i32,
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let is_abs_time = if flags == 0 {
         false

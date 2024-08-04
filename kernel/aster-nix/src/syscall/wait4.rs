@@ -11,6 +11,7 @@ pub fn sys_wait4(
     exit_status_ptr: u64,
     wait_options: u32,
     rusage_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let wait_options = WaitOptions::from_bits(wait_options)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown wait option"))?;

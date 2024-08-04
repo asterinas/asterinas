@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{fs::file_table::FileDesc, prelude::*};
 
-pub fn sys_close(fd: FileDesc) -> Result<SyscallReturn> {
+pub fn sys_close(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let file = {

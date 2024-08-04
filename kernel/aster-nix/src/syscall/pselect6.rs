@@ -17,6 +17,7 @@ pub fn sys_pselect6(
     exceptfds_addr: Vaddr,
     timespec_addr: Vaddr,
     sigmask_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();

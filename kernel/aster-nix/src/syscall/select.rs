@@ -14,6 +14,7 @@ pub fn sys_select(
     writefds_addr: Vaddr,
     exceptfds_addr: Vaddr,
     timeval_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let timeout = if timeval_addr == 0 {
         None

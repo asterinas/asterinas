@@ -3,7 +3,12 @@
 use super::SyscallReturn;
 use crate::{fs::file_table::FileDesc, prelude::*, util::copy_iovs_from_user};
 
-pub fn sys_writev(fd: FileDesc, io_vec_ptr: Vaddr, io_vec_count: usize) -> Result<SyscallReturn> {
+pub fn sys_writev(
+    fd: FileDesc,
+    io_vec_ptr: Vaddr,
+    io_vec_count: usize,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     let res = do_sys_writev(fd, io_vec_ptr, io_vec_count)?;
     Ok(SyscallReturn::Return(res as _))
 }
@@ -13,6 +18,7 @@ pub fn sys_pwritev(
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset: i64,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let res = do_sys_pwritev(fd, io_vec_ptr, io_vec_count, offset, RWFFlag::empty())?;
     Ok(SyscallReturn::Return(res as _))
@@ -24,6 +30,7 @@ pub fn sys_pwritev2(
     io_vec_count: usize,
     offset: i64,
     flags: u32,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = match RWFFlag::from_bits(flags) {
         Some(flags) => flags,

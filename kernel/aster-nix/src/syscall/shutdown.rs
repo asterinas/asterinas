@@ -6,7 +6,7 @@ use crate::{
     util::net::get_socket_from_fd,
 };
 
-pub fn sys_shutdown(sockfd: FileDesc, how: i32) -> Result<SyscallReturn> {
+pub fn sys_shutdown(sockfd: FileDesc, how: i32, _ctx: &Context) -> Result<SyscallReturn> {
     let shutdown_cmd = SockShutdownCmd::try_from(how)?;
     debug!("sockfd = {sockfd}, cmd = {shutdown_cmd:?}");
 

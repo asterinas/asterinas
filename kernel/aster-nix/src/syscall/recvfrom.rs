@@ -18,6 +18,7 @@ pub fn sys_recvfrom(
     flags: i32,
     src_addr: Vaddr,
     addrlen_ptr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = SendRecvFlags::from_bits_truncate(flags);
     debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");

@@ -7,7 +7,7 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_chdir(path_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_chdir(path_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path = {:?}", path);
 
@@ -28,7 +28,7 @@ pub fn sys_chdir(path_ptr: Vaddr) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fchdir(fd: FileDesc) -> Result<SyscallReturn> {
+pub fn sys_fchdir(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let current = current!();

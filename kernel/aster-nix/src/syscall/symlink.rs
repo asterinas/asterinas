@@ -15,6 +15,7 @@ pub fn sys_symlinkat(
     target_addr: Vaddr,
     dirfd: FileDesc,
     linkpath_addr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let target = user_space.read_cstring(target_addr, MAX_FILENAME_LEN)?;
@@ -50,6 +51,10 @@ pub fn sys_symlinkat(
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_symlink(target_addr: Vaddr, linkpath_addr: Vaddr) -> Result<SyscallReturn> {
-    self::sys_symlinkat(target_addr, AT_FDCWD, linkpath_addr)
+pub fn sys_symlink(
+    target_addr: Vaddr,
+    linkpath_addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    self::sys_symlinkat(target_addr, AT_FDCWD, linkpath_addr, ctx)
 }

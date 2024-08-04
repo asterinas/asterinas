@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-pub fn sys_kill(process_filter: u64, sig_num: u64) -> Result<SyscallReturn> {
+pub fn sys_kill(process_filter: u64, sig_num: u64, _ctx: &Context) -> Result<SyscallReturn> {
     let process_filter = ProcessFilter::from_id(process_filter as _);
     let sig_num = if sig_num == 0 {
         None

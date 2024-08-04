@@ -23,6 +23,7 @@ pub fn sys_mount(
     fstype_addr: Vaddr,
     flags: u64,
     data: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let devname = user_space.read_cstring(devname_addr, MAX_FILENAME_LEN)?;

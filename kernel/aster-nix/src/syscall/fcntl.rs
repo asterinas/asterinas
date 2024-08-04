@@ -10,7 +10,7 @@ use crate::{
     process::Pid,
 };
 
-pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64) -> Result<SyscallReturn> {
+pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, _ctx: &Context) -> Result<SyscallReturn> {
     let fcntl_cmd = FcntlCmd::try_from(cmd)?;
     debug!("fd = {}, cmd = {:?}, arg = {}", fd, fcntl_cmd, arg);
     match fcntl_cmd {

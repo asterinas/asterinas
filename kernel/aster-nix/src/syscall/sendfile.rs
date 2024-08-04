@@ -8,6 +8,7 @@ pub fn sys_sendfile(
     in_fd: FileDesc,
     offset_ptr: Vaddr,
     count: isize,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     trace!("raw offset ptr = 0x{:x}", offset_ptr);
 

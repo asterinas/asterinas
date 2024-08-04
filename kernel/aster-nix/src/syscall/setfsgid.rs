@@ -6,7 +6,7 @@ use crate::{
     process::{credentials_mut, Gid},
 };
 
-pub fn sys_setfsgid(gid: i32) -> Result<SyscallReturn> {
+pub fn sys_setfsgid(gid: i32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("gid = {}", gid);
 
     let fsgid = if gid < 0 {

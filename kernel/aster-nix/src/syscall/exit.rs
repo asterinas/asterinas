@@ -6,7 +6,7 @@ use crate::{
     syscall::SyscallReturn,
 };
 
-pub fn sys_exit(exit_code: i32) -> Result<SyscallReturn> {
+pub fn sys_exit(exit_code: i32, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("exid code = {}", exit_code);
 
     let current_thread = current_thread!();

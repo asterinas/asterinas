@@ -9,7 +9,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     let ioctl_cmd = IoctlCmd::try_from(cmd)?;
     debug!(
         "fd = {}, ioctl_cmd = {:?}, arg = 0x{:x}",

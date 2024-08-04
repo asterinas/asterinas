@@ -23,6 +23,7 @@ pub fn sys_utimensat(
     pathname_ptr: Vaddr,
     timespecs_ptr: Vaddr,
     flags: u32,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "utimensat: dirfd: {}, pathname_ptr: {:#x}, timespecs_ptr: {:#x}, flags: {:#x}",
@@ -50,6 +51,7 @@ pub fn sys_futimesat(
     dirfd: FileDesc,
     pathname_ptr: Vaddr,
     timeval_ptr: Vaddr,
+    _ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "futimesat: dirfd: {}, pathname_ptr: {:#x}, timeval_ptr: {:#x}",
@@ -61,7 +63,11 @@ pub fn sys_futimesat(
 /// The 'sys_utimes' system call sets the access and modification times of a file.
 /// It receives time values in the form of timeval structures like 'sys_futimesat',
 /// but it uses the current working directory as the base directory.
-pub fn sys_utimes(pathname_ptr: Vaddr, timeval_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_utimes(
+    pathname_ptr: Vaddr,
+    timeval_ptr: Vaddr,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "utimes: pathname_ptr: {:#x}, timeval_ptr: {:#x}",
         pathname_ptr, timeval_ptr
@@ -70,7 +76,7 @@ pub fn sys_utimes(pathname_ptr: Vaddr, timeval_ptr: Vaddr) -> Result<SyscallRetu
 }
 
 /// The 'sys_utime' system call is similar to 'sys_utimes' but uses the older 'utimbuf' structure to specify times.
-pub fn sys_utime(pathname_ptr: Vaddr, utimbuf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_utime(pathname_ptr: Vaddr, utimbuf_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     debug!(
         "utime: pathname_ptr: {:#x}, utimbuf_ptr: {:#x}",
         pathname_ptr, utimbuf_ptr

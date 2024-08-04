@@ -6,7 +6,7 @@ use crate::{
     process::{process_table, Pid},
 };
 
-pub fn sys_getsid(pid: Pid) -> Result<SyscallReturn> {
+pub fn sys_getsid(pid: Pid, _ctx: &Context) -> Result<SyscallReturn> {
     debug!("pid = {}", pid);
 
     let session = current!().session().unwrap();

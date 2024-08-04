@@ -12,7 +12,12 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_getdents(fd: FileDesc, buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
+pub fn sys_getdents(
+    fd: FileDesc,
+    buf_addr: Vaddr,
+    buf_len: usize,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
         fd, buf_addr, buf_len
@@ -37,7 +42,12 @@ pub fn sys_getdents(fd: FileDesc, buf_addr: Vaddr, buf_len: usize) -> Result<Sys
     Ok(SyscallReturn::Return(read_len as _))
 }
 
-pub fn sys_getdents64(fd: FileDesc, buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
+pub fn sys_getdents64(
+    fd: FileDesc,
+    buf_addr: Vaddr,
+    buf_len: usize,
+    _ctx: &Context,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, buf_addr = 0x{:x}, buf_len = 0x{:x}",
         fd, buf_addr, buf_len

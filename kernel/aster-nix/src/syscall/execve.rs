@@ -14,8 +14,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        check_executable_file, credentials_mut, load_program_to_vm,
-        posix_thread::{PosixThreadExt, ThreadName},
+        check_executable_file, credentials_mut, load_program_to_vm, posix_thread::ThreadName,
         Credentials, Process, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
 };
@@ -24,14 +23,15 @@ pub fn sys_execve(
     filename_ptr: Vaddr,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
-    context: &mut UserContext,
+    ctx: &Context,
+    user_ctx: &mut UserContext,
 ) -> Result<SyscallReturn> {
     let elf_file = {
         let executable_path = read_filename(filename_ptr)?;
         lookup_executable_file(AT_FDCWD, executable_path, OpenFlags::empty())?
     };
 
-    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, context)?;
+    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_ctx)?;
     Ok(SyscallReturn::NoReturn)
 }
 
@@ -41,7 +41,8 @@ pub fn sys_execveat(
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     flags: u32,
-    context: &mut UserContext,
+    ctx: &Context,
+    user_ctx: &mut UserContext,
 ) -> Result<SyscallReturn> {
     let elf_file = {
         let flags = OpenFlags::from_bits_truncate(flags);
@@ -49,7 +50,7 @@ pub fn sys_execveat(
         lookup_executable_file(dfd, filename, flags)?
     };
 
-    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, context)?;
+    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_ctx)?;
     Ok(SyscallReturn::NoReturn)
 }
 
@@ -82,8 +83,16 @@ fn do_execve(
     elf_file: Arc<Dentry>,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
-    context: &mut UserContext,
+    ctx: &Context,
+    user_ctx: &mut UserContext,
 ) -> Result<()> {
+    let Context {
+        process,
+        posix_thread,
+        thread: _,
+        task: _,
+    } = ctx;
+
     let executable_path = elf_file.abs_path();
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;
@@ -92,24 +101,20 @@ fn do_execve(
         executable_path, argv, envp
     );
     // FIXME: should we set thread name in execve?
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
     *posix_thread.thread_name().lock() =
         Some(ThreadName::new_from_executable_path(&executable_path)?);
     // clear ctid
     // FIXME: should we clear ctid when execve?
     *posix_thread.clear_child_tid().lock() = 0;
 
-    let current = current!();
-
     // Ensure that the file descriptors with the close-on-exec flag are closed.
-    let closed_files = current.file_table().lock().close_files_on_exec();
+    let closed_files = process.file_table().lock().close_files_on_exec();
     drop(closed_files);
 
     debug!("load program to root vmar");
     let (new_executable_path, elf_load_info) = {
-        let fs_resolver = &*current.fs().read();
-        let process_vm = current.vm();
+        let fs_resolver = &*process.fs().read();
+        let process_vm = process.vm();
         load_program_to_vm(process_vm, elf_file.clone(), argv, envp, fs_resolver, 1)?
     };
 
@@ -119,23 +124,23 @@ fn do_execve(
     debug!("load elf in execve succeeds");
 
     let credentials = credentials_mut();
-    set_uid_from_elf(&current, &credentials, &elf_file)?;
-    set_gid_from_elf(&current, &credentials, &elf_file)?;
+    set_uid_from_elf(process, &credentials, &elf_file)?;
+    set_gid_from_elf(process, &credentials, &elf_file)?;
 
     // set executable path
-    current.set_executable_path(new_executable_path);
+    process.set_executable_path(new_executable_path);
     // set signal disposition to default
-    current.sig_dispositions().lock().inherit();
-    // set cpu context to default
+    process.sig_dispositions().lock().inherit();
+    // set cpu ctx to default
     let default_content = UserContext::default();
-    *context.general_regs_mut() = *default_content.general_regs();
-    context.set_tls_pointer(default_content.tls_pointer());
-    *context.fp_regs_mut() = *default_content.fp_regs();
+    *user_ctx.general_regs_mut() = *default_content.general_regs();
+    user_ctx.set_tls_pointer(default_content.tls_pointer());
+    *user_ctx.fp_regs_mut() = *default_content.fp_regs();
     // set new entry point
-    context.set_instruction_pointer(elf_load_info.entry_point() as _);
+    user_ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
     // set new user stack top
-    context.set_stack_pointer(elf_load_info.user_stack_top() as _);
+    user_ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
     Ok(())
 }
@@ -184,7 +189,7 @@ fn read_cstring_vec(
 
 /// Sets uid for credentials as the same of uid of elf file if elf file has `set_uid` bit.
 fn set_uid_from_elf(
-    current: &Arc<Process>,
+    current: &Process,
     credentials: &Credentials<WriteOp>,
     elf_file: &Arc<Dentry>,
 ) -> Result<()> {
@@ -202,7 +207,7 @@ fn set_uid_from_elf(
 
 /// Sets gid for credentials as the same of gid of elf file if elf file has `set_gid` bit.
 fn set_gid_from_elf(
-    current: &Arc<Process>,
+    current: &Process,
     credentials: &Credentials<WriteOp>,
     elf_file: &Arc<Dentry>,
 ) -> Result<()> {
