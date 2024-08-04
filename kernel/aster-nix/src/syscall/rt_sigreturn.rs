@@ -4,15 +4,16 @@ use core::sync::atomic::Ordering;
 
 use ostd::{cpu::UserContext, user::UserContextApi};
 
-use super::SyscallReturn;
-use crate::{
-    prelude::*,
-    process::{posix_thread::PosixThreadExt, signal::c_types::ucontext_t},
-};
+use super::{CurrentInfo, SyscallReturn};
+use crate::{prelude::*, process::signal::c_types::ucontext_t};
 
-pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
+pub fn sys_rt_sigreturn(current: CurrentInfo, context: &mut UserContext) -> Result<SyscallReturn> {
+    let CurrentInfo {
+        process: _,
+        posix_thread,
+        thread: _,
+        task: _,
+    } = current;
     let mut sig_context = posix_thread.sig_context().lock();
     if (*sig_context).is_none() {
         return_errno_with_message!(Errno::EINVAL, "sigreturn should not been called");

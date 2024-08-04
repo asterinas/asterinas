@@ -10,7 +10,7 @@ use crate::{
     cpu::LinuxAbi,
     prelude::*,
     process::{posix_thread::PosixThreadExt, signal::handle_pending_signal},
-    syscall::handle_syscall,
+    syscall::{handle_syscall, CurrentInfo},
     thread::exception::handle_exception,
     vm::vmar::is_userspace_vaddr,
 };
@@ -19,7 +19,10 @@ use crate::{
 pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>) -> Arc<Task> {
     fn user_task_entry() {
         let current_thread = current_thread!();
+        let current_posix_thread = current_thread.as_posix_thread().unwrap();
+        let current_process = current_posix_thread.process();
         let current_task = current_thread.task();
+
         let user_space = current_task
             .user_space()
             .expect("user task should have user space");
@@ -37,9 +40,7 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
             user_mode.context().syscall_ret()
         );
 
-        let posix_thread = current_thread.as_posix_thread().unwrap();
-
-        let child_tid_ptr = *posix_thread.set_child_tid().lock();
+        let child_tid_ptr = *current_posix_thread.set_child_tid().lock();
 
         // The `clone` syscall may require child process to write the thread pid to the specified address.
         // Make sure the store operation completes before the clone call returns control to user space
@@ -49,14 +50,23 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>
                 .write_val(child_tid_ptr, &current_thread.tid())
                 .unwrap();
         }
-        let has_kernel_event_fn = || posix_thread.has_pending();
+
+        let has_kernel_event_fn = || current_posix_thread.has_pending();
         loop {
             let return_reason = user_mode.execute(has_kernel_event_fn);
             let context = user_mode.context_mut();
             // handle user event:
             match return_reason {
-                ReturnReason::UserException => handle_exception(context),
-                ReturnReason::UserSyscall => handle_syscall(context),
+                ReturnReason::UserException => handle_exception(&current_process, context),
+                ReturnReason::UserSyscall => handle_syscall(
+                    CurrentInfo {
+                        process: current_process.as_ref(),
+                        posix_thread: current_posix_thread,
+                        thread: current_thread.as_ref(),
+                        task: current_task.as_ref(),
+                    },
+                    context,
+                ),
                 ReturnReason::KernelEvent => {}
             };
 
