@@ -2,14 +2,13 @@
 
 use core::time::Duration;
 
-use super::SyscallReturn;
+use super::{CurrentInfo, SyscallReturn};
 use crate::{prelude::*, time::timer::Timeout};
 
-pub fn sys_alarm(seconds: u32) -> Result<SyscallReturn> {
+pub fn sys_alarm(seconds: u32, current: CurrentInfo) -> Result<SyscallReturn> {
     debug!("seconds = {}", seconds);
 
-    let current = current!();
-    let alarm_timer = current.timer_manager().alarm_timer();
+    let alarm_timer = current.process.timer_manager().alarm_timer();
 
     let remaining = alarm_timer.remain();
     let mut remaining_secs = remaining.as_secs();

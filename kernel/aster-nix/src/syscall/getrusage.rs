@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(non_camel_case_types)]
-
 use int_to_c_enum::TryFromInt;
 
-use super::SyscallReturn;
-use crate::{prelude::*, process::posix_thread::PosixThreadExt, time::timeval_t};
+use super::{CurrentInfo, SyscallReturn};
+use crate::{prelude::*, time::timeval_t};
 
 #[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
+#[allow(non_camel_case_types)]
 enum RusageTarget {
     ForSelf = 0,
     Children = -1,
@@ -16,7 +15,18 @@ enum RusageTarget {
     Thread = 1,
 }
 
-pub fn sys_getrusage(target: i32, rusage_addr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_getrusage(
+    target: i32,
+    rusage_addr: Vaddr,
+    current: CurrentInfo,
+) -> Result<SyscallReturn> {
+    let CurrentInfo {
+        process,
+        posix_thread,
+        thread: _,
+        task: _,
+    } = current;
+
     let rusage_target = RusageTarget::try_from(target)?;
 
     debug!(
@@ -26,23 +36,16 @@ pub fn sys_getrusage(target: i32, rusage_addr: Vaddr) -> Result<SyscallReturn> {
 
     if rusage_addr != 0 {
         let rusage = match rusage_target {
-            RusageTarget::ForSelf => {
-                let process = current!();
-                rusage_t {
-                    ru_utime: process.prof_clock().user_clock().read_time().into(),
-                    ru_stime: process.prof_clock().kernel_clock().read_time().into(),
-                    ..Default::default()
-                }
-            }
-            RusageTarget::Thread => {
-                let thread = current_thread!();
-                let posix_thread = thread.as_posix_thread().unwrap();
-                rusage_t {
-                    ru_utime: posix_thread.prof_clock().user_clock().read_time().into(),
-                    ru_stime: posix_thread.prof_clock().kernel_clock().read_time().into(),
-                    ..Default::default()
-                }
-            }
+            RusageTarget::ForSelf => rusage_t {
+                ru_utime: process.prof_clock().user_clock().read_time().into(),
+                ru_stime: process.prof_clock().kernel_clock().read_time().into(),
+                ..Default::default()
+            },
+            RusageTarget::Thread => rusage_t {
+                ru_utime: posix_thread.prof_clock().user_clock().read_time().into(),
+                ru_stime: posix_thread.prof_clock().kernel_clock().read_time().into(),
+                ..Default::default()
+            },
             // To support `Children` and `Both` we need to implement the functionality to
             // accumulate the resources of a child process back to the parent process
             // upon the child's termination.

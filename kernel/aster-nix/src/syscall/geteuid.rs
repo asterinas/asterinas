@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
-use crate::{prelude::*, process::credentials};
+use super::{CurrentInfo, SyscallReturn};
+use crate::prelude::*;
 
-pub fn sys_geteuid() -> Result<SyscallReturn> {
-    let euid = {
-        let credentials = credentials();
-        credentials.euid()
-    };
+pub fn sys_geteuid(current: CurrentInfo) -> Result<SyscallReturn> {
+    let euid = current.posix_thread.credentials().euid();
 
     Ok(SyscallReturn::Return(euid.as_u32() as _))
 }

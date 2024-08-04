@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
+use super::{CurrentInfo, SyscallReturn};
 use crate::{
     fs::{
         file_table::{FdFlags, FileDesc},
@@ -10,7 +10,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
+pub fn sys_pipe2(fds: Vaddr, flags: u32, current: CurrentInfo) -> Result<SyscallReturn> {
     debug!("flags: {:?}", flags);
 
     let (pipe_reader, pipe_writer) = {
@@ -30,8 +30,7 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
         FdFlags::empty()
     };
 
-    let current = current!();
-    let mut file_table = current.file_table().lock();
+    let mut file_table = current.process.file_table().lock();
 
     let pipe_fds = PipeFds {
         reader_fd: file_table.insert(pipe_reader, fd_flags),
@@ -48,8 +47,8 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_pipe(fds: Vaddr) -> Result<SyscallReturn> {
-    self::sys_pipe2(fds, 0)
+pub fn sys_pipe(fds: Vaddr, current: CurrentInfo) -> Result<SyscallReturn> {
+    self::sys_pipe2(fds, 0, current)
 }
 
 #[derive(Debug, Clone, Copy, Pod)]

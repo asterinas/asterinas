@@ -2,18 +2,22 @@
 
 use core::cmp::min;
 
-use super::SyscallReturn;
+use super::{CurrentInfo, SyscallReturn};
 use crate::{fs::file_table::FileDesc, prelude::*};
 
-pub fn sys_read(fd: FileDesc, user_buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
+pub fn sys_read(
+    fd: FileDesc,
+    user_buf_addr: Vaddr,
+    buf_len: usize,
+    current: CurrentInfo,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, buf_len = 0x{:x}",
         fd, user_buf_addr, buf_len
     );
 
     let file = {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = current.process.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 
