@@ -73,10 +73,11 @@ pub fn preempt(task: &Arc<Task>) {
     // TODO: Refactor `preempt` and `schedule`
     // after the Atomic mode and `might_break` is enabled.
     let mut scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
-    if !scheduler.should_preempt(task) {
+    let scheduler_ref = scheduler.as_mut().unwrap();
+    if !scheduler_ref.should_preempt(task) {
         return;
     }
-    let Some(next_task) = scheduler.dequeue() else {
+    let Some(next_task) = scheduler_ref.dequeue() else {
         return;
     };
     drop(scheduler);
@@ -108,7 +109,11 @@ fn switch_to_task(next_task: Arc<Task>) {
             debug_assert_ne!(task_inner.task_status, TaskStatus::Sleeping);
             if task_inner.task_status == TaskStatus::Runnable {
                 drop(task_inner);
-                GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(current_task);
+                GLOBAL_SCHEDULER
+                    .lock_irq_disabled()
+                    .as_mut()
+                    .unwrap()
+                    .enqueue(current_task);
             } else if task_inner.task_status == TaskStatus::Sleepy {
                 task_inner.task_status = TaskStatus::Sleeping;
             }

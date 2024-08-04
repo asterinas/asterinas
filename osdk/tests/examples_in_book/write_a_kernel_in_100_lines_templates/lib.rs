@@ -7,18 +7,36 @@ extern crate alloc;
 use align_ext::AlignExt;
 use core::str;
 
-use alloc::sync::Arc;
-use alloc::vec;
+use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec};
 
-use ostd::arch::qemu::{exit_qemu, QemuExitCode};
-use ostd::cpu::UserContext;
-use ostd::mm::{
-    CachePolicy, FrameAllocOptions, PageFlags, PageProperty, Vaddr, VmIo, VmSpace, VmWriter,
-    PAGE_SIZE,
+use ostd::{
+    arch::qemu::{exit_qemu, QemuExitCode},
+    cpu::UserContext,
+    mm::{
+        CachePolicy, FrameAllocOptions, PageFlags, PageProperty, Vaddr, VmIo, VmSpace, VmWriter,
+        PAGE_SIZE,
+    },
+    prelude::*,
+    task::{set_scheduler, Scheduler, Task, TaskOptions},
+    user::{ReturnReason, UserMode, UserSpace},
 };
-use ostd::prelude::*;
-use ostd::task::{Task, TaskOptions};
-use ostd::user::{ReturnReason, UserMode, UserSpace};
+
+/// A simple FIFO (First-In-First-Out) task scheduler.
+struct GlobalScheduler(VecDeque<Arc<Task>>);
+
+impl Scheduler for GlobalScheduler {
+    fn enqueue(&mut self, task: Arc<Task>) {
+        self.0.push_back(task);
+    }
+    fn dequeue(&mut self) -> Option<Arc<Task>> {
+        self.0.pop_front()
+    }
+    /// In this simple implementation, task preemption is not supported.
+    /// Once a task starts running, it will continue to run until completion.
+    fn should_preempt(&mut self, _task: &Arc<Task>) -> bool {
+        false
+    }
+}
 
 /// The kernel's boot and initialization process is managed by OSTD.
 /// After the process is done, the kernel's execution environment
@@ -29,6 +47,7 @@ pub fn main() {
     let program_binary = include_bytes!("../hello");
     let user_space = create_user_space(program_binary);
     let user_task = create_user_task(Arc::new(user_space));
+    set_scheduler(Box::new(GlobalScheduler(VecDeque::<Arc<Task>>::new())));
     user_task.run();
 }
 
