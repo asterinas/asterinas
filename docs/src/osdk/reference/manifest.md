@@ -36,39 +36,40 @@ supported_archs = ["x86_64", "riscv64"]     # <2>
 features = ["no_std", "alloc"]              # <4>
 profile = "dev"                             # <5>
 strip_elf = false                           # <6>
-[boot]                                      # <7>
-method = "qemu-direct"                      # <8>
-kcmd_args = ["SHELL=/bin/sh", "HOME=/"]     # <9>
-init_args = ["sh", "-l"]                    # <10>
-initramfs = "path/to/it"                    # <11>
-[grub]                                      # <12>  
-mkrescue_path = "path/to/it"                # <13>
-protocol = "multiboot2"                     # <14> 
-display_grub_menu = false                   # <15>
-[qemu]                                      # <16>
-path = "path/to/it"                         # <17>
-args = "-machine q35 -m 2G"                 # <18>
+encoding = "raw"                            # <7>
+[boot]                                      # <8>
+method = "qemu-direct"                      # <9>
+kcmd_args = ["SHELL=/bin/sh", "HOME=/"]     # <10>
+init_args = ["sh", "-l"]                    # <11>
+initramfs = "path/to/it"                    # <12>
+[grub]                                      # <13>  
+mkrescue_path = "path/to/it"                # <14>
+protocol = "multiboot2"                     # <15> 
+display_grub_menu = false                   # <16>
+[qemu]                                      # <17>
+path = "path/to/it"                         # <18>
+args = "-machine q35 -m 2G"                 # <19>
 
 # Special options for run subcommand
-[run]                                       # <19>
+[run]                                       # <20>
 [run.build]                                 # <3>
-[run.boot]                                  # <7>
-[run.grub]                                  # <12>
-[run.qemu]                                  # <16>
+[run.boot]                                  # <8>
+[run.grub]                                  # <13>
+[run.qemu]                                  # <17>
 
 # Special options for test subcommand
-[test]                                      # <20>
+[test]                                      # <21>
 [test.build]                                # <3>
-[test.boot]                                 # <7>
-[test.grub]                                 # <12>
-[test.qemu]                                 # <16>
+[test.boot]                                 # <8>
+[test.grub]                                 # <13>
+[test.qemu]                                 # <17>
 # ----------------------- end of the default schema settings ----------------------------
 
 # A customized schema settings
-[schema."custom"]                           # <21>
+[schema."custom"]                           # <22>
 [schema."custom".build]                     # <3>
-[schema."custom".run]                       # <19>
-[schema."custom".test]                      # <20>
+[schema."custom".run]                       # <20>
+[schema."custom".test]                      # <21>
 ```
 
 Here are some additional notes for the fields:
@@ -110,15 +111,23 @@ Here are some additional notes for the fields:
 
     Optional. The default value is `false`.
 
-7. Options for booting the kernel.
+7. Denote the encoding format for kernel self-decompression
 
-8. The boot method.
+    Optional. The default value is `raw`.
+
+    Possible values are `raw`, `gzip` and `zlib`.
+
+    If the boot protocol is not `linux`, it is not allowed to specipy the econding format.
+
+8. Options for booting the kernel.
+
+9. The boot method.
 
     Optional. The default value is `qemu-direct`.
 
     Possible values are `grub-rescue-iso`, `grub-qcow2` and `qemu-direct`.
 
-9. The arguments provided will be passed to the guest kernel.
+10. The arguments provided will be passed to the guest kernel.
 
     Optional. The default value is empty.
 
@@ -126,44 +135,44 @@ Here are some additional notes for the fields:
     `KEY=VALUE` or `KEY` if no value is required.
     Each `KEY` can appear at most once.
 
-10. The arguments provided will be passed to the init process,
+11. The arguments provided will be passed to the init process,
 usually, the init shell.
 
     Optional. The default value is empty.
 
-11. The path to the initramfs.
+12. The path to the initramfs.
 
     Optional. The default value is empty.
 
     If the path is relative, it is relative to the manifest's enclosing directory.
 
-12. Grub options. Only take effect if boot method is `grub-rescue-iso` or `grub-qcow2`.
+13. Grub options. Only take effect if boot method is `grub-rescue-iso` or `grub-qcow2`.
 
-13. The path to the `grub-mkrescue` executable.
+14. The path to the `grub-mkrescue` executable.
 
     Optional. The default value is the executable in the system path, if any.
 
     If the path is relative, it is relative to the manifest's enclosing directory.
 
-14. The protocol GRUB used.
+15. The protocol GRUB used.
 
     Optional. The default value is `multiboot2`.
 
     Possible values are `linux`, `multiboot`, `multiboot2`.
 
-15. Whether to display the GRUB menu when booting with GRUB.
+16. Whether to display the GRUB menu when booting with GRUB.
 
     Optional. The default value is `false`.
 
-16. Options for finding and starting QEMU.
+17. Options for finding and starting QEMU.
 
-17. The path to the QEMU executable.
+18. The path to the QEMU executable.
 
     Optional. The default value is the executable in the system path, if any.
 
     If the path is relative, it is relative to the manifest's enclosing directory.
 
-18. Additional arguments passed to QEMU are organized in a single string that
+19. Additional arguments passed to QEMU are organized in a single string that
 can include any POSIX shell compliant separators.
 
     Optional. The default value is empty.
@@ -182,17 +191,17 @@ can include any POSIX shell compliant separators.
     even use this mechanism to read from files by using command replacement
     `$(cat path/to/your/custom/args/file)`.
 
-19. Special settings for running. Only take effect when running `cargo osdk run`.
+20. Special settings for running. Only take effect when running `cargo osdk run`.
 
     By default, it inherits common options. 
     
     Values set here are used to override common options.
 
-20. Special settings for testing. 
+21. Special settings for testing. 
 
-    Similar to `19`, but only take effect when running `cargo osdk test`.
+    Similar to `20`, but only take effect when running `cargo osdk test`.
 
-21. The definition of customized schema. 
+22. The definition of customized schema. 
 
     A customized schema has the same fields as the default schema. 
     By default, a customized schema will inherit all options from the default schema,
