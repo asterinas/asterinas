@@ -13,10 +13,12 @@ use crate::{
     arch::{iommu, mm::tlb_flush_addr_range},
     mm::{
         dma::{dma_type, Daddr, DmaType},
+        io::VmIoOnce,
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
         page_prop::CachePolicy,
-        HasPaddr, Paddr, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Paddr, PodOnce, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
+    prelude::*,
 };
 
 /// A coherent (or consistent) DMA mapping,
@@ -47,7 +49,10 @@ impl DmaCoherent {
     ///
     /// The method fails if any part of the given `vm_segment`
     /// already belongs to a DMA mapping.
-    pub fn map(vm_segment: Segment, is_cache_coherent: bool) -> Result<Self, DmaError> {
+    pub fn map(
+        vm_segment: Segment,
+        is_cache_coherent: bool,
+    ) -> core::result::Result<Self, DmaError> {
         let frame_count = vm_segment.nframes();
         let start_paddr = vm_segment.start_paddr();
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
@@ -160,12 +165,26 @@ impl Drop for DmaCoherentInner {
 }
 
 impl VmIo for DmaCoherent {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> crate::prelude::Result<()> {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         self.inner.vm_segment.read_bytes(offset, buf)
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> crate::prelude::Result<()> {
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
         self.inner.vm_segment.write_bytes(offset, buf)
+    }
+}
+
+impl VmIoOnce for DmaCoherent {
+    fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
+        self.inner.vm_segment.reader().skip(offset).read_once()
+    }
+
+    fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()> {
+        self.inner
+            .vm_segment
+            .writer()
+            .skip(offset)
+            .write_once(new_val)
     }
 }
 
@@ -192,7 +211,7 @@ mod test {
     use alloc::vec;
 
     use super::*;
-    use crate::{mm::FrameAllocOptions, prelude::*};
+    use crate::mm::FrameAllocOptions;
 
     #[ktest]
     fn map_with_coherent_device() {
