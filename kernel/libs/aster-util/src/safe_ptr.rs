@@ -7,7 +7,7 @@ use aster_rights_proc::require;
 use inherit_methods_macro::inherit_methods;
 pub use ostd::Pod;
 use ostd::{
-    mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, VmIo},
+    mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce},
     Result,
 };
 pub use typeflags_util::SetContain;
@@ -321,6 +321,28 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
             rights: TRightSet(R1::new()),
             phantom: PhantomData,
         }
+    }
+}
+
+impl<T: PodOnce, M: VmIoOnce, R: TRights> SafePtr<T, M, TRightSet<R>> {
+    /// Reads the value from the pointer using one non-tearing instruction.
+    ///
+    /// # Access rights
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn read_once(&self) -> Result<T> {
+        self.vm_obj.read_once(self.offset)
+    }
+
+    /// Overwrites the value at the pointer using one non-tearing instruction.
+    ///
+    /// # Access rights
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn write_once(&self, val: &T) -> Result<()> {
+        self.vm_obj.write_once(self.offset, val)
     }
 }
 
