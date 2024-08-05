@@ -15,7 +15,7 @@ path = "../ostd/libs/linux-bzimage/builder"
 # The version specified here is used for publishing on crates.io.
 # Please update this version when publishing the cargo-osdk crate
 # if there have been any changes to the dependent crate.
-version = "0.1.0"
+version = "0.2.0"
 
 [dependencies]
 clap = { version = "4.4.17", features = ["cargo", "derive"] }
