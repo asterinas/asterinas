@@ -68,7 +68,8 @@ Extra arguments for running QEMU
 Whether to strip the built kernel ELF using `rust-strip`
 - `--scheme <SCHEME>`:
 Select the specific configuration scheme provided in the OSDK manifest
-
+- `--encoding <FORMAT>`:
+Denote the encoding format for kernel self-decompression
 
 ## Examples
 
