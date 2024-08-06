@@ -230,7 +230,7 @@ pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
         .spawn()
         .unwrap();
     for line in lines.into_iter().rev() {
-        if line.contains("printing stack trace:") {
+        if line.contains("Printing stack trace:") {
             println!("[OSDK] The kernel seems panicked. Parsing stack trace for source lines:");
             trace_exists = true;
         }
