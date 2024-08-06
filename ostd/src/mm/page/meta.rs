@@ -79,6 +79,8 @@ pub enum PageUsage {
     Meta = 65,
     /// The page stores the kernel such as kernel code, data, etc.
     Kernel = 66,
+    /// The page is used by the boot page table.
+    BootPageTable = 67,
 }
 
 #[repr(C)]
@@ -246,6 +248,18 @@ impl PageMeta for KernelMeta {
     }
 }
 
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct BootPageTableMeta {}
+
+impl Sealed for BootPageTableMeta {}
+impl PageMeta for BootPageTableMeta {
+    const USAGE: PageUsage = PageUsage::BootPageTable;
+    fn on_drop(_page: &mut Page<Self>) {
+        // Do noting.
+    }
+}
+
 // ======== End of all the specific metadata structures definitions ===========
 
 /// Initializes the metadata of all physical pages.
@@ -282,6 +296,10 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
         // SAFETY: we are doing the metadata mappings for the kernel.
         unsafe { boot_pt.map_base_page(vaddr, frame_paddr / PAGE_SIZE, prop) };
     }
+
+    // add pages used by boot page table to the metadata
+    boot_pt.from_paddr_to_meta();
+
     // Now the metadata pages are mapped, we can initialize the metadata.
     meta_pages
         .into_iter()

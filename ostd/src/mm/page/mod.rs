@@ -325,6 +325,9 @@ impl Drop for DynPage {
                     PageUsage::PageTable => {
                         meta::drop_as_last::<meta::PageTablePageMeta>(self.ptr);
                     }
+                    PageUsage::BootPageTable => {
+                        meta::drop_as_last::<meta::BootPageTableMeta>(self.ptr);
+                    }
                     // The following pages don't have metadata and can't be dropped.
                     PageUsage::Unused
                     | PageUsage::Reserved
