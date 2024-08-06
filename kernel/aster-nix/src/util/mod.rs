@@ -5,7 +5,7 @@ use core::mem;
 use aster_rights::Full;
 use ostd::{
     mm::{KernelSpace, VmIo, VmReader, VmWriter},
-    task::current_task,
+    task::Task,
 };
 
 use crate::{prelude::*, vm::vmar::Vmar};
@@ -34,14 +34,8 @@ pub fn read_bytes_from_user(src: Vaddr, dest: &mut VmWriter<'_>) -> Result<()> {
         check_vaddr(src)?;
     }
 
-    let current_task = current_task().ok_or(Error::with_message(
-        Errno::EFAULT,
-        "the current task is missing",
-    ))?;
-    let user_space = current_task.user_space().ok_or(Error::with_message(
-        Errno::EFAULT,
-        "the user space is missing",
-    ))?;
+    let current_task = Task::current().unwrap();
+    let user_space = current_task.user_space().unwrap();
 
     let mut user_reader = user_space.vm_space().reader(src, copy_len)?;
     user_reader.read_fallible(dest).map_err(|err| err.0)?;
@@ -54,14 +48,8 @@ pub fn read_val_from_user<T: Pod>(src: Vaddr) -> Result<T> {
         check_vaddr(src)?;
     }
 
-    let current_task = current_task().ok_or(Error::with_message(
-        Errno::EFAULT,
-        "the current task is missing",
-    ))?;
-    let user_space = current_task.user_space().ok_or(Error::with_message(
-        Errno::EFAULT,
-        "the user space is missing",
-    ))?;
+    let current_task = Task::current().unwrap();
+    let user_space = current_task.user_space().unwrap();
 
     let mut user_reader = user_space
         .vm_space()
@@ -88,14 +76,8 @@ pub fn write_bytes_to_user(dest: Vaddr, src: &mut VmReader<'_, KernelSpace>) -> 
         check_vaddr(dest)?;
     }
 
-    let current_task = current_task().ok_or(Error::with_message(
-        Errno::EFAULT,
-        "the current task is missing",
-    ))?;
-    let user_space = current_task.user_space().ok_or(Error::with_message(
-        Errno::EFAULT,
-        "the user space is missing",
-    ))?;
+    let current_task = Task::current().unwrap();
+    let user_space = current_task.user_space().unwrap();
 
     let mut user_writer = user_space.vm_space().writer(dest, copy_len)?;
     user_writer.write_fallible(src).map_err(|err| err.0)?;
@@ -108,14 +90,8 @@ pub fn write_val_to_user<T: Pod>(dest: Vaddr, val: &T) -> Result<()> {
         check_vaddr(dest)?;
     }
 
-    let current_task = current_task().ok_or(Error::with_message(
-        Errno::EFAULT,
-        "the current task is missing",
-    ))?;
-    let user_space = current_task.user_space().ok_or(Error::with_message(
-        Errno::EFAULT,
-        "the user space is missing",
-    ))?;
+    let current_task = Task::current().unwrap();
+    let user_space = current_task.user_space().unwrap();
 
     let mut user_writer = user_space
         .vm_space()

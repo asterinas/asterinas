@@ -12,6 +12,7 @@ use crate::{cpu::UserContext, mm::VmSpace, prelude::*, task::Task};
 ///
 /// Each user space has a VM address space and allows a task to execute in
 /// user mode.
+#[derive(Debug)]
 pub struct UserSpace {
     /// vm space
     vm_space: Arc<VmSpace>,
@@ -94,7 +95,7 @@ pub trait UserContextApi {
 ///
 /// let current = Task::current();
 /// let user_space = current.user_space()
-///     .expect("the current task is associated with a user space");
+///     .expect("the current task is not associated with a user space");
 /// let mut user_mode = user_space.user_mode();
 /// loop {
 ///     // Execute in the user space until some interesting events occur.
@@ -108,14 +109,14 @@ pub struct UserMode<'a> {
     context: UserContext,
 }
 
-// An instance of `UserMode` is bound to the current task. So it cannot be
+// An instance of `UserMode` is bound to the current task. So it cannot be [`Send`].
 impl<'a> !Send for UserMode<'a> {}
 
 impl<'a> UserMode<'a> {
     /// Creates a new `UserMode`.
     pub fn new(user_space: &'a Arc<UserSpace>) -> Self {
         Self {
-            current: Task::current(),
+            current: Task::current().unwrap(),
             user_space,
             context: user_space.init_ctx,
         }
@@ -136,7 +137,7 @@ impl<'a> UserMode<'a> {
     where
         F: FnMut() -> bool,
     {
-        debug_assert!(Arc::ptr_eq(&self.current, &Task::current()));
+        debug_assert!(Arc::ptr_eq(&self.current, &Task::current().unwrap()));
         self.context.execute(has_kernel_event)
     }
 

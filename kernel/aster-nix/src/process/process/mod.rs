@@ -103,6 +103,15 @@ pub struct Process {
 }
 
 impl Process {
+    /// Returns the current process.
+    ///
+    /// It returns `None` if:
+    ///  - the function is called in the bootstrap context;
+    ///  - or if the current task is not associated with a process.
+    pub fn current() -> Option<Arc<Process>> {
+        Some(Thread::current()?.as_posix_thread()?.process())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(
         pid: Pid,
@@ -633,15 +642,6 @@ impl Process {
             ProcessStatus::Runnable | ProcessStatus::Uninit => None,
             ProcessStatus::Zombie(term_status) => Some(term_status.as_u32()),
         }
-    }
-}
-
-pub fn current() -> Arc<Process> {
-    let current_thread = current_thread!();
-    if let Some(posix_thread) = current_thread.as_posix_thread() {
-        posix_thread.process()
-    } else {
-        panic!("[Internal error]The current thread does not belong to a process");
     }
 }
 

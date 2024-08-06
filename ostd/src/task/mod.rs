@@ -10,7 +10,7 @@ mod task;
 
 pub use self::{
     priority::Priority,
-    processor::{current_task, disable_preempt, preempt, schedule, DisablePreemptGuard},
+    processor::{disable_preempt, preempt, schedule, DisablePreemptGuard},
     scheduler::{add_task, set_scheduler, FifoScheduler, Scheduler},
     task::{Task, TaskAdapter, TaskContextApi, TaskOptions, TaskStatus},
 };
