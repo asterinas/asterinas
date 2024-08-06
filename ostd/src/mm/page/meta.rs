@@ -83,6 +83,8 @@ pub enum PageUsage {
 
     /// The page stores data for kernel stack.
     KernelStack = 67,
+    /// The page is used by the boot page table.
+    BootPageTable = 68,
 }
 
 #[repr(C)]
@@ -281,6 +283,18 @@ impl Sealed for KernelStackMeta {}
 impl PageMeta for KernelStackMeta {
     const USAGE: PageUsage = PageUsage::KernelStack;
     fn on_drop(_page: &mut Page<Self>) {}
+}
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct BootPageTableMeta {}
+
+impl Sealed for BootPageTableMeta {}
+impl PageMeta for BootPageTableMeta {
+    const USAGE: PageUsage = PageUsage::BootPageTable;
+    fn on_drop(_page: &mut Page<Self>) {
+        // Do noting.
+    }
 }
 
 // ======== End of all the specific metadata structures definitions ===========
