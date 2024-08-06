@@ -3,6 +3,7 @@
 mod addr;
 mod common;
 mod datagram;
+pub mod options;
 pub mod stream;
 
 pub use addr::{IpAddress, IpEndpoint, Ipv4Address, PortNum};

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::time::Duration;
+
 use crate::{impl_socket_options, prelude::*};
 mod macros;
 
@@ -17,7 +19,11 @@ impl_socket_options!(
     pub struct ReusePort(bool);
     pub struct SendBuf(u32);
     pub struct RecvBuf(u32);
+    pub struct RcvTimeoOld(Duration);
+    pub struct SndTimeoOld(Duration);
+    pub struct TimestampOld(bool);
     pub struct Error(Option<crate::error::Error>);
     pub struct Linger(LingerOption);
     pub struct KeepAlive(bool);
+    pub struct NoCheck(bool);
 );
