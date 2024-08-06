@@ -72,7 +72,7 @@ fn create_user_space(program: &[u8]) -> UserSpace {
 
 fn create_user_task(user_space: Arc<UserSpace>) -> Arc<Task> {
     fn user_task() {
-        let current = Task::current();
+        let current = Task::current().unwrap();
         // Switching between user-kernel space is
         // performed via the UserMode abstraction.
         let mut user_mode = {

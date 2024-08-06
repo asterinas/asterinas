@@ -26,7 +26,7 @@ pub(crate) use ostd::{
 #[macro_export]
 macro_rules! current {
     () => {
-        $crate::process::current()
+        $crate::process::Process::current().unwrap()
     };
 }
 

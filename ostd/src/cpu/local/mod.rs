@@ -80,6 +80,7 @@ cpu_local_cell! {
 /// It should be called only once and only on the BSP.
 pub(crate) unsafe fn early_init_bsp_local_base() {
     let start_base_va = __cpu_local_start as usize as u64;
+
     // SAFETY: The base to be set is the start of the `.cpu_local` section,
     // where accessing the CPU-local objects have defined behaviors.
     unsafe {
@@ -127,7 +128,7 @@ pub unsafe fn init_on_bsp() {
             );
         }
 
-        // SAFETY: the first 4 bytes is reserved for storing CPU ID.
+        // SAFETY: bytes `0:4` are reserved for storing CPU ID.
         unsafe {
             (ap_pages_ptr as *mut u32).write(cpu_i);
         }
@@ -138,9 +139,16 @@ pub unsafe fn init_on_bsp() {
         // section and the pointer to that static is the offset in the CPU-
         // local area. It is a `usize` so it is safe to be overwritten.
         unsafe {
-            let preempt_count_offset = &PREEMPT_LOCK_COUNT as *const _ as usize;
+            let preempt_count_ptr = &PREEMPT_LOCK_COUNT as *const _ as usize;
+            let preempt_count_offset = preempt_count_ptr - __cpu_local_start as usize;
             let ap_preempt_count_ptr = ap_pages_ptr.add(preempt_count_offset) as *mut usize;
             ap_preempt_count_ptr.write(0);
+        }
+
+        // SAFETY: bytes `8:16` are reserved for storing the pointer to the
+        // current task. We initialize it to null.
+        unsafe {
+            (ap_pages_ptr as *mut u64).add(1).write(0);
         }
 
         cpu_local_storages.push(ap_pages);

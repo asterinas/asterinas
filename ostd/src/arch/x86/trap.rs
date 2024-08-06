@@ -19,7 +19,7 @@ use crate::{
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
-    task::current_task,
+    task::Task,
     trap::call_irq_callback_functions,
 };
 
@@ -70,7 +70,7 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
 
 /// Handles page fault from user space.
 fn handle_user_page_fault(f: &mut TrapFrame, page_fault_addr: u64) {
-    let current_task = current_task().unwrap();
+    let current_task = Task::current().unwrap();
     let user_space = current_task
         .user_space()
         .expect("the user space is missing when a page fault from the user happens.");

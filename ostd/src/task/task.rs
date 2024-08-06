@@ -3,9 +3,9 @@
 // FIXME: the `intrusive_adapter` macro will generate methods without docs.
 // So we temporary allow missing_docs for this module.
 #![allow(missing_docs)]
-#![allow(dead_code)]
 
-use core::cell::UnsafeCell;
+use alloc::{boxed::Box, sync::Arc};
+use core::{any::Any, cell::UnsafeCell};
 
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
@@ -18,7 +18,7 @@ pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
     arch::mm::tlb_flush_addr_range,
     cpu::CpuSet,
-    mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
+    mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, Paddr, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
     sync::{SpinLock, SpinLockGuard},
     user::UserSpace,
@@ -41,6 +41,7 @@ pub trait TaskContextApi {
     fn stack_pointer(&self) -> usize;
 }
 
+#[derive(Debug)]
 pub struct KernelStack {
     segment: Segment,
     has_guard_page: bool,
@@ -121,6 +122,7 @@ pub struct Task {
     link: LinkedListAtomicLink,
     priority: Priority,
     // TODO: add multiprocessor support
+    #[allow(dead_code)]
     cpu_affinity: CpuSet,
 }
 
@@ -131,14 +133,17 @@ intrusive_adapter!(pub TaskAdapter = Arc<Task>: Task { link: LinkedListAtomicLin
 // we have exclusive access to the field.
 unsafe impl Sync for Task {}
 
+#[derive(Debug)]
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
 }
 
 impl Task {
     /// Gets the current task.
-    pub fn current() -> Arc<Task> {
-        current_task().unwrap()
+    ///
+    /// It returns `None` if the function is called in the bootstrap context.
+    pub fn current() -> Option<Arc<Task>> {
+        current_task()
     }
 
     /// Gets inner

@@ -48,6 +48,7 @@ use crate::{
 /// A `VmSpace` can also attach a page fault handler, which will be invoked to
 /// handle page faults generated from user space.
 #[allow(clippy::type_complexity)]
+#[derive(Debug)]
 pub struct VmSpace {
     pt: PageTable<UserMode>,
     page_fault_handler: Once<fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>>,
