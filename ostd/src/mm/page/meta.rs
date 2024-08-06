@@ -80,6 +80,8 @@ pub enum PageUsage {
     Meta = 65,
     /// The page stores the kernel such as kernel code, data, etc.
     Kernel = 66,
+    /// The page is used by the boot page table.
+    BootPageTable = 67,
 }
 
 #[repr(C)]
@@ -266,6 +268,18 @@ impl PageMeta for KernelMeta {
     const USAGE: PageUsage = PageUsage::Kernel;
     fn on_drop(_page: &mut Page<Self>) {
         panic!("Kernel pages are not allowed to be dropped");
+    }
+}
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct BootPageTableMeta {}
+
+impl Sealed for BootPageTableMeta {}
+impl PageMeta for BootPageTableMeta {
+    const USAGE: PageUsage = PageUsage::BootPageTable;
+    fn on_drop(_page: &mut Page<Self>) {
+        // Do noting.
     }
 }
 
