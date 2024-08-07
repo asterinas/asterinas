@@ -21,14 +21,14 @@ pub mod mapping {
     use crate::mm::{kspace::FRAME_METADATA_RANGE, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
 
     /// Converts a physical address of a base page to the virtual address of the metadata slot.
-    pub const fn page_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
+    pub(crate) const fn page_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
         let base = FRAME_METADATA_RANGE.start;
         let offset = paddr / PAGE_SIZE;
         base + offset * size_of::<MetaSlot>()
     }
 
     /// Converts a virtual address of the metadata slot to the physical address of the page.
-    pub const fn meta_to_page<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
+    pub(crate) const fn meta_to_page<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
         let base = FRAME_METADATA_RANGE.start;
         let offset = (vaddr - base) / size_of::<MetaSlot>();
         offset * PAGE_SIZE
@@ -67,6 +67,7 @@ pub enum PageUsage {
     // The zero variant is reserved for the unused type. Only an unused page
     // can be designated for one of the other purposes.
     #[allow(dead_code)]
+    /// The page is unused.
     Unused = 0,
     /// The page is reserved or unusable. The kernel should not touch it.
     #[allow(dead_code)]
@@ -119,16 +120,19 @@ const_assert_eq!(size_of::<MetaSlot>(), 16);
 
 /// All page metadata types must implemented this sealed trait,
 /// which ensures that each fields of `PageUsage` has one and only
-/// one metadata type corresponding to the usage purpose. Any user
-/// outside this module won't be able to add more metadata types
+/// one metadata type corresponding to the usage purpose.
+///
+/// Any user outside this module won't be able to add more metadata types
 /// and break assumptions made by this module.
 ///
 /// If a page type needs specific drop behavior, it should specify
 /// when implementing this trait. When we drop the last handle to
 /// this page, the `on_drop` method will be called.
 pub trait PageMeta: Sync + private::Sealed + Sized {
+    /// The usage of the page.
     const USAGE: PageUsage;
 
+    /// The custom drop behavior of the page.
     fn on_drop(page: &mut Page<Self>);
 }
 
@@ -174,6 +178,8 @@ mod private {
 
 use private::Sealed;
 
+/// The metadata of the page used as a frame.
+/// i.e., The corresponding page is a page of untyped memory.
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct FrameMeta {
@@ -256,7 +262,7 @@ unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sync for PageTablePage
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct MetaPageMeta {}
+pub(crate) struct MetaPageMeta {}
 
 impl Sealed for MetaPageMeta {}
 impl PageMeta for MetaPageMeta {
@@ -268,7 +274,7 @@ impl PageMeta for MetaPageMeta {
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct KernelMeta {}
+pub(crate) struct KernelMeta {}
 
 impl Sealed for KernelMeta {}
 impl PageMeta for KernelMeta {
@@ -278,6 +284,7 @@ impl PageMeta for KernelMeta {
     }
 }
 
+/// Metadata of a kernel stack page.
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct KernelStackMeta {}
@@ -290,7 +297,7 @@ impl PageMeta for KernelStackMeta {
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct BootPageTableMeta {}
+pub(crate) struct BootPageTableMeta {}
 
 impl Sealed for BootPageTableMeta {}
 impl PageMeta for BootPageTableMeta {
