@@ -60,7 +60,8 @@ pub fn handle_pending_signal(
     let sig_num = signal.num();
     trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
     let current = posix_thread.process();
-    let sig_action = current.sig_dispositions().lock().get(sig_num);
+    let mut sig_dispositions = current.sig_dispositions().lock();
+    let sig_action = sig_dispositions.get(sig_num);
     trace!("sig action: {:x?}", sig_action);
     match sig_action {
         SigAction::Ign => {
@@ -71,16 +72,30 @@ pub fn handle_pending_signal(
             flags,
             restorer_addr,
             mask,
-        } => handle_user_signal(
-            sig_num,
-            handler_addr,
-            flags,
-            restorer_addr,
-            mask,
-            context,
-            signal.to_info(),
-        )?,
+        } => {
+            if flags.contains(SigActionFlags::SA_RESETHAND) {
+                // In Linux, SA_RESETHAND corresponds to SA_ONESHOT,
+                // which means the user handler will be executed only once and then reset to the default.
+                // Refer to https://elixir.bootlin.com/linux/v6.0.9/source/kernel/signal.c#L2761.
+                sig_dispositions.set_default(sig_num);
+            }
+
+            drop(sig_dispositions);
+
+            handle_user_signal(
+                posix_thread,
+                sig_num,
+                handler_addr,
+                flags,
+                restorer_addr,
+                mask,
+                context,
+                signal.to_info(),
+            )?
+        }
         SigAction::Dfl => {
+            drop(sig_dispositions);
+
             let sig_default_action = SigDefaultAction::from_signum(sig_num);
             trace!("sig_default_action: {:?}", sig_default_action);
             match sig_default_action {
@@ -116,7 +131,9 @@ pub fn handle_pending_signal(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_user_signal(
+    posix_thread: &PosixThread,
     sig_num: SigNum,
     handler_addr: Vaddr,
     flags: SigActionFlags,
@@ -131,15 +148,14 @@ pub fn handle_user_signal(
     debug!("restorer_addr = 0x{:x}", restorer_addr);
     // FIXME: How to respect flags?
     if flags.contains_unsupported_flag() {
-        println!("flags = {:?}", flags);
-        panic!("Unsupported Signal flags");
+        warn!("Unsupported Signal flags: {:?}", flags);
     }
+
     if !flags.contains(SigActionFlags::SA_NODEFER) {
         // add current signal to mask
         mask += sig_num;
     }
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
+
     // block signals in sigmask when running signal handler
     let old_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
     posix_thread
