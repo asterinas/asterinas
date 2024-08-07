@@ -259,8 +259,9 @@ where
     /// set the lock bit for performance as it is exclusive and unlocking is an
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
-        let page = allocator::alloc_single(PAGE_SIZE, PageTablePageMeta::new_locked(level, is_tracked))
-            .expect("Failed to allocate a page for a page table node");
+        let page =
+            allocator::alloc_single(PAGE_SIZE, PageTablePageMeta::new_locked(level, is_tracked))
+                .expect("Failed to allocate a page for a page table node");
 
         // Zero out the page table node.
         let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;

@@ -47,7 +47,7 @@ pub mod user;
 
 use core::sync::atomic::AtomicBool;
 
-pub use ostd_macros::main;
+pub use ostd_macros::{default_page_allocator_init_fn, main, page_allocator_init_fn};
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
