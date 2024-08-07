@@ -1,0 +1,10 @@
+[package]
+name = "aster-page-allocator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+align_ext = { path = "../../../ostd/libs/align_ext" }
+id-alloc = { path = "../../../ostd/libs/id-alloc" }
+log = "0.4"
+ostd = { path = "../../../ostd" }

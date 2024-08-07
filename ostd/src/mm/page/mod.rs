@@ -83,12 +83,13 @@ impl<M: PageMeta> Page<M> {
         }
     }
 
-    /// Check whether the page described by paddr is allocated.
-    /// true if the page is allocated, false otherwise.
+    /// Check whether the page described at the physical address is allocated.
+    /// True if the page is allocated, false otherwise.
     ///
     /// # Warning
     ///
-    /// Page status checked by this function may be outdated, since other running threads may change them after the atomic load.
+    /// Page status checked by this function may be outdated, since other
+    /// running threads may change them after the atomic load.
     ///
     /// Caller should make sure that:
     ///
@@ -104,9 +105,10 @@ impl<M: PageMeta> Page<M> {
     ///
     // # TODO
     //
-    // Use a unique handle to check the page status.
-    // Current implementation is not safe in multi-threading environment.
-    pub fn check_page_status(paddr: Paddr) -> bool {
+    // Use a unique handle `FreePage` to check the page status.
+    // Current implementation is not safe if checking page status and changing
+    // page status happens concurrently.
+    pub fn is_page_allocated(paddr: Paddr) -> bool {
         assert!(paddr % PAGE_SIZE == 0);
         assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);

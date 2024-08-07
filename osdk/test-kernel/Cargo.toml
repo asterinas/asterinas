@@ -11,3 +11,4 @@ repository ="https://github.com/asterinas/asterinas"
 [dependencies]
 ostd = { version = "0.10.1", path = "../../ostd" }
 owo-colors = "4.0.0"
+aster-page-allocator = { version = "0.1.0", path = "../../kernel/libs/aster-page-allocator" }
