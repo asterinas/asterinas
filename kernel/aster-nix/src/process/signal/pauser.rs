@@ -15,7 +15,7 @@ use crate::{
     prelude::*,
     process::posix_thread::{PosixThread, PosixThreadExt},
     thread::Thread,
-    time::wait::WaitTimeout,
+    time::wait::{WaitTimeout, WakerTimerCreater},
 };
 
 /// A `Pauser` allows pausing the execution of the current thread until certain conditions are reached.
@@ -116,10 +116,28 @@ impl Pauser {
     where
         F: FnMut() -> Option<R>,
     {
-        self.do_pause(cond, Some(timeout))
+        self.do_pause(cond, Some(&WakerTimerCreater::new(timeout)))
     }
 
-    fn do_pause<F, R>(self: &Arc<Self>, mut cond: F, timeout: Option<&Duration>) -> Result<R>
+    /// Similar to [`Pauser::pause_until_or_timeout`].
+    ///
+    /// The only difference is that the timeout is against the user-specified clock.
+    pub fn pause_until_or_timeout_against_clock<F, R>(
+        self: &Arc<Self>,
+        cond: F,
+        timer_creater: &WakerTimerCreater,
+    ) -> Result<R>
+    where
+        F: FnMut() -> Option<R>,
+    {
+        self.do_pause(cond, Some(timer_creater))
+    }
+
+    fn do_pause<F, R>(
+        self: &Arc<Self>,
+        mut cond: F,
+        timer_creater: Option<&WakerTimerCreater>,
+    ) -> Result<R>
     where
         F: FnMut() -> Option<R>,
     {
@@ -142,9 +160,9 @@ impl Pauser {
             None
         };
 
-        if let Some(timeout) = timeout {
+        if let Some(timer_creater) = timer_creater {
             self.wait_queue
-                .wait_until_or_timeout(cond, timeout)
+                .wait_until_or_timeout_against_clock(cond, timer_creater)
                 .ok_or_else(|| Error::with_message(Errno::ETIME, "the time limit is reached"))?
         } else {
             self.wait_queue.wait_until(cond)

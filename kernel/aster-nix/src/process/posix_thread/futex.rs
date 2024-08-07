@@ -4,10 +4,13 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use ostd::{cpu::num_cpus, sync::WaitQueue};
+use ostd::cpu::num_cpus;
 use spin::Once;
 
-use crate::{prelude::*, thread::Tid, util::read_val_from_user};
+use crate::{
+    prelude::*, process::signal::Pauser, thread::Tid, time::wait::WakerTimerCreater,
+    util::read_val_from_user,
+};
 
 type FutexBitSet = u32;
 type FutexBucketRef = Arc<Mutex<FutexBucket>>;
@@ -17,21 +20,35 @@ const FUTEX_FLAGS_MASK: u32 = 0xFFFF_FFF0;
 const FUTEX_BITSET_MATCH_ANY: FutexBitSet = 0xFFFF_FFFF;
 
 /// do futex wait
-pub fn futex_wait(futex_addr: u64, futex_val: i32, timeout: &Option<FutexTimeout>) -> Result<()> {
-    futex_wait_bitset(futex_addr as _, futex_val, timeout, FUTEX_BITSET_MATCH_ANY)
+pub fn futex_wait(
+    futex_addr: u64,
+    futex_val: i32,
+    timer_creater: Option<WakerTimerCreater>,
+) -> Result<()> {
+    futex_wait_bitset(
+        futex_addr as _,
+        futex_val,
+        timer_creater,
+        FUTEX_BITSET_MATCH_ANY,
+    )
 }
 
-/// do futex wait bitset
+/// Does futex wait bitset
 pub fn futex_wait_bitset(
     futex_addr: Vaddr,
     futex_val: i32,
-    timeout: &Option<FutexTimeout>,
+    timer_creater: Option<WakerTimerCreater>,
     bitset: FutexBitSet,
 ) -> Result<()> {
     debug!(
-        "futex_wait_bitset addr: {:#x}, val: {}, timeout: {:?}, bitset: {:#x}",
-        futex_addr, futex_val, timeout, bitset
+        "futex_wait_bitset addr: {:#x}, val: {}, bitset: {:#x}",
+        futex_addr, futex_val, bitset
     );
+
+    if bitset == 0 {
+        return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
+    }
+
     let futex_key = FutexKey::new(futex_addr);
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
 
@@ -39,7 +56,7 @@ pub fn futex_wait_bitset(
     let mut futex_bucket = futex_bucket_ref.lock();
 
     if futex_key.load_val() != futex_val {
-        return_errno_with_message!(Errno::EINVAL, "futex value does not match");
+        return_errno_with_message!(Errno::EAGAIN, "futex value does not match");
     }
     let futex_item = FutexItem::new(futex_key, bitset);
     futex_bucket.enqueue_item(futex_item.clone());
@@ -47,17 +64,15 @@ pub fn futex_wait_bitset(
     // drop lock
     drop(futex_bucket);
     // Wait on the futex item
-    futex_item.wait(timeout.clone());
-
-    Ok(())
+    futex_item.wait(timer_creater)
 }
 
-/// do futex wake
+/// Does futex wake
 pub fn futex_wake(futex_addr: Vaddr, max_count: usize) -> Result<usize> {
     futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY)
 }
 
-/// Do futex wake with bitset
+/// Does futex wake with bitset
 pub fn futex_wake_bitset(
     futex_addr: Vaddr,
     max_count: usize,
@@ -68,16 +83,22 @@ pub fn futex_wake_bitset(
         futex_addr, max_count, bitset
     );
 
+    if bitset == 0 {
+        return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
+    }
+
     let futex_key = FutexKey::new(futex_addr);
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
-    let mut futex_bucket = futex_bucket_ref.lock();
-    let res = futex_bucket.dequeue_and_wake_items(futex_key, max_count, bitset);
-    drop(futex_bucket);
+
+    let res = {
+        let mut futex_bucket = futex_bucket_ref.lock();
+        futex_bucket.dequeue_and_wake_items(futex_key, max_count, bitset)
+    };
 
     Ok(res)
 }
 
-/// Do futex requeue
+/// Does futex requeue
 pub fn futex_requeue(
     futex_addr: Vaddr,
     max_nwakes: usize,
@@ -146,15 +167,6 @@ fn get_futex_bucket(key: FutexKey) -> (usize, FutexBucketRef) {
 /// Initialize the futex system.
 pub fn init() {
     FUTEX_BUCKETS.call_once(|| FutexBucketVec::new(get_bucket_count()));
-}
-
-#[derive(Debug, Clone)]
-pub struct FutexTimeout {}
-
-impl FutexTimeout {
-    pub fn new() -> Self {
-        todo!()
-    }
 }
 
 struct FutexBucketVec {
@@ -292,8 +304,8 @@ impl FutexItem {
         self.waiter.wake();
     }
 
-    pub fn wait(&self, timeout: Option<FutexTimeout>) {
-        self.waiter.wait(timeout);
+    pub fn wait(&self, timer_creater: Option<WakerTimerCreater>) -> Result<()> {
+        self.waiter.wait(timer_creater)
     }
 
     pub fn waiter(&self) -> &FutexWaiterRef {
@@ -393,7 +405,7 @@ type FutexWaiterRef = Arc<FutexWaiter>;
 
 struct FutexWaiter {
     is_woken: AtomicBool,
-    wait_queue: WaitQueue,
+    pauser: Arc<Pauser>,
     tid: Tid,
 }
 
@@ -417,37 +429,33 @@ impl FutexWaiter {
         Self {
             is_woken: AtomicBool::new(false),
             tid: current_thread!().tid(),
-            wait_queue: WaitQueue::new(),
+            pauser: Pauser::new(),
         }
     }
 
-    pub fn wait(&self, timeout: Option<FutexTimeout>) {
+    pub fn wait(&self, timer_creater: Option<WakerTimerCreater>) -> Result<()> {
         let current_thread = current_thread!();
         if current_thread.tid() != self.tid {
-            return;
+            return Ok(());
         }
 
         self.is_woken.store(false, Ordering::SeqCst);
-        let wake_cond = || {
-            if self.is_woken() {
-                Some(())
-            } else {
-                None
-            }
+        let wake_cond = || self.is_woken().then_some(());
+
+        let Some(timer_creater) = timer_creater else {
+            return self.pauser.pause_until(wake_cond);
         };
 
-        if let Some(_timeout) = timeout {
-            todo!()
-        } else {
-            self.wait_queue.wait_until(wake_cond);
-        }
+        self.pauser
+            .pause_until_or_timeout_against_clock(wake_cond, &timer_creater)
     }
 
     pub fn wake(&self) {
-        if !self.is_woken() {
-            self.is_woken.store(true, Ordering::SeqCst);
-            self.wait_queue.wake_all();
+        if self.is_woken.swap(true, Ordering::Release) {
+            return;
         }
+
+        self.pauser.resume_all();
     }
 
     pub fn is_woken(&self) -> bool {
