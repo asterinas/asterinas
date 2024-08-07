@@ -103,11 +103,7 @@ impl SigActionFlags {
     }
 
     pub fn contains_unsupported_flag(&self) -> bool {
-        self.intersects(
-            SigActionFlags::SA_NOCLDSTOP
-                | SigActionFlags::SA_NOCLDWAIT
-                | SigActionFlags::SA_RESETHAND,
-        )
+        self.intersects(SigActionFlags::SA_NOCLDSTOP | SigActionFlags::SA_NOCLDWAIT)
     }
 }
 
