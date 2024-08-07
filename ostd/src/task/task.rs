@@ -122,6 +122,7 @@ pub struct Task {
     priority: Priority,
     // TODO: add multiprocessor support
     cpu_affinity: CpuSet,
+    non_block_count: UnsafeCell<NonBlockCnt>,
 }
 
 // TaskAdapter struct is implemented for building relationships between doubly linked list and Task struct
@@ -134,6 +135,8 @@ unsafe impl Sync for Task {}
 pub(crate) struct TaskInner {
     pub task_status: TaskStatus,
 }
+
+type NonBlockCnt = u8;
 
 impl Task {
     /// Gets the current task.
@@ -181,6 +184,11 @@ impl Task {
         } else {
             None
         }
+    }
+
+    /// Returns the non-block count of this task.
+    pub fn non_block_count(&self) -> &UnsafeCell<NonBlockCnt> {
+        &self.non_block_count
     }
 
     /// Exits the current task.
@@ -306,6 +314,7 @@ impl TaskOptions {
             link: LinkedListAtomicLink::new(),
             priority: self.priority,
             cpu_affinity: self.cpu_affinity,
+            non_block_count: UnsafeCell::new(0),
         };
 
         let ctx = new_task.ctx.get_mut();

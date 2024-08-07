@@ -132,6 +132,7 @@ impl<'a> UserMode<'a> {
     /// cause the method to return
     /// and updating the user-mode CPU context,
     /// this method can be invoked again to go back to the user space.
+    #[might_break_atomic_context]
     pub fn execute<F>(&mut self, has_kernel_event: F) -> ReturnReason
     where
         F: FnMut() -> bool,

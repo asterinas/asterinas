@@ -91,12 +91,7 @@ pub fn preempt(task: &Arc<Task>) {
 ///
 /// before context switch, current task will switch to the next task
 fn switch_to_task(next_task: Arc<Task>) {
-    if !PREEMPT_COUNT.is_preemptive() {
-        panic!(
-            "Calling schedule() while holding {} locks",
-            PREEMPT_COUNT.num_locks()
-        );
-    }
+    might_break_atomic_context();
 
     let current_task_ctx_ptr = match current_task() {
         None => get_idle_task_ctx_ptr(),
@@ -189,12 +184,8 @@ impl PreemptInfo {
         arch::cpu::local::preempt_lock_count::dec();
     }
 
-    fn is_preemptive(&self) -> bool {
+    fn is_preemptible(&self) -> bool {
         arch::cpu::local::preempt_lock_count::get() == 0
-    }
-
-    fn num_locks(&self) -> usize {
-        arch::cpu::local::preempt_lock_count::get() as usize
     }
 }
 
@@ -230,4 +221,182 @@ impl Drop for DisablePreemptGuard {
 /// Disables preemption.
 pub fn disable_preempt() -> DisablePreemptGuard {
     DisablePreemptGuard::new()
+}
+
+/// A guard for non-block section.
+///
+/// There are some cases when we'd like to run preemptibly but without being blocked.
+/// The `non_block_*` semantics are introduced to help catch sleep/block operations
+/// in those cases that would otherwise escape the classic atomic-mode check.
+pub struct NonBlockSectionGuard {
+    _privare: (),
+}
+
+impl NonBlockSectionGuard {
+    fn new() -> Self {
+        let non_block_count_ptr = current_task().unwrap().non_block_count().get();
+        // SAFETY: Nobody except the caller task itself will set or get the counter sequentially.
+        unsafe {
+            *non_block_count_ptr += 1;
+        }
+
+        Self { _privare: () }
+    }
+}
+
+impl Drop for NonBlockSectionGuard {
+    fn drop(&mut self) {
+        let non_block_count_ptr = current_task().unwrap().non_block_count().get();
+        // SAFETY: Nobody except the caller task itself will set or get the counter sequentially.
+        unsafe {
+            *non_block_count_ptr -= 1;
+        }
+    }
+}
+
+/// Enters non-block section.
+#[allow(unused)]
+pub fn non_block_start() -> NonBlockSectionGuard {
+    NonBlockSectionGuard::new()
+}
+
+/// Annotates a function as one that might sleep.
+pub(crate) fn might_sleep() {
+    if in_atomic() || in_non_block() {
+        panic!(
+            "Sleeping function called from invalid context.
+in_atomic: {:?}, in_non_block_section: {:?}",
+            in_atomic(),
+            in_non_block()
+        );
+    }
+}
+
+/// Annotates a function as one that might break atomic context.
+///
+/// Note: Logically, all that may break atomic context (e.g., sleep,
+/// schedule, go to userspace, ...) should be annotated with this function.
+/// However, one should always prefer `might_sleep` if possible since
+/// we transfer to `might_sleep` the responsibility for checking sleep/block
+/// operations in atomic context.
+pub(crate) fn might_break_atomic_context() {
+    if in_atomic() {
+        panic!("Context-switch invoked from atomic context.");
+    }
+}
+
+/// Annotates a function as one that must run to completion.
+pub(crate) fn should_in_atomic() {
+    // We check `is_local_enabled` to catch corner case during kernel initialization.
+    if !in_atomic() && arch::irq::is_local_enabled() {
+        panic!("Wrongly assuming in atomic context");
+    }
+}
+
+/// Checks if the current execution flow is in atomic context.
+fn in_atomic() -> bool {
+    !PREEMPT_COUNT.is_preemptible()
+}
+
+/// Checks if the current execution flow is in non-block section.
+fn in_non_block() -> bool {
+    let non_block_count_ptr = current_task().unwrap().non_block_count().get();
+    // SAFETY: Nobody except the caller task itself will set or get the counter sequentially.
+    unsafe { *non_block_count_ptr != 0 }
+}
+
+#[cfg(ktest)]
+mod test {
+    use super::*;
+    use crate::{arch, prelude::*, task::processor::in_non_block, trap};
+
+    #[ktest]
+    fn in_atomic_context() {
+        assert!(!in_atomic());
+
+        let preempt_guard = disable_preempt();
+        assert!(in_atomic());
+
+        drop(preempt_guard);
+        assert!(!in_atomic());
+
+        let irq_guard = trap::disable_local();
+        assert!(in_atomic());
+
+        drop(irq_guard);
+        assert!(!in_atomic());
+    }
+
+    #[ktest]
+    fn nested_atomic_context() {
+        assert!(!in_atomic());
+
+        let preempt_guard1 = disable_preempt();
+        let preempt_guard2 = disable_preempt();
+        assert!(in_atomic());
+
+        drop(preempt_guard1);
+        assert!(in_atomic());
+
+        drop(preempt_guard2);
+        assert!(!in_atomic());
+    }
+
+    #[ktest]
+    fn in_non_block_section() {
+        assert!(!in_non_block());
+
+        let non_block_section_guard = non_block_start();
+        assert!(in_non_block());
+
+        drop(non_block_section_guard);
+        assert!(!in_non_block())
+    }
+
+    #[ktest]
+    fn sleep() {
+        might_sleep();
+    }
+
+    #[ktest]
+    #[should_panic]
+    fn sleep_in_atomic_context() {
+        let preempt_guard = disable_preempt();
+        sleep();
+    }
+
+    #[ktest]
+    #[should_panic]
+    fn sleep_in_non_block_section() {
+        let non_block_section_guard = non_block_start();
+        sleep();
+    }
+
+    #[ktest]
+    fn atomic_context_breaker() {
+        might_break_atomic_context();
+    }
+
+    #[ktest]
+    #[should_panic]
+    fn break_atomic_context() {
+        let preempt_guard = disable_preempt();
+        atomic_context_breaker();
+    }
+
+    #[ktest]
+    #[should_panic]
+    fn run_to_completion() {
+        arch::irq::enable_local();
+        should_in_atomic();
+        arch::irq::disable_local();
+    }
+
+    #[ktest]
+    fn run_to_completion_in_atomic_context() {
+        arch::irq::enable_local();
+        let preempt_guard = disable_preempt();
+        should_in_atomic();
+        arch::irq::disable_local();
+    }
 }

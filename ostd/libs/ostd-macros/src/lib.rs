@@ -187,3 +187,176 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(output)
 }
+
+/// The attribute macro to mark a function that might sleep.
+///
+/// # Example
+///
+/// For crates other than ostd,
+/// this macro can be used in the following form.
+///
+/// ```ignore
+/// use ostd::prelude::*;
+///
+/// #[might_sleep]
+/// fn fn_that_might_sleep() {
+///     sleep();
+/// }
+/// ```
+///
+/// For ostd crate itself,
+/// this macro can be used in the form.
+///
+/// ```ignore
+/// use crate::prelude::*;
+///
+/// #[might_sleep]
+/// fn fn_that_might_sleep() {
+///     sleep();
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn might_sleep(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut input = parse_macro_input!(item as ItemFn);
+    let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
+    let check_stmt = if package_name.as_str() == "ostd" {
+        syn::parse(
+            quote!(
+                crate::task::processor::might_sleep();
+            )
+            .into(),
+        )
+        .unwrap()
+    } else {
+        syn::parse(
+            quote!(
+                ostd::task::processor::might_sleep();
+            )
+            .into(),
+        )
+        .unwrap()
+    };
+
+    input.block.stmts.insert(0, check_stmt);
+    let output = quote! {
+        #input
+    };
+
+    TokenStream::from(output)
+}
+
+/// The attribute macro to mark a function that might break atomic context.
+///
+/// Note: One should always prefer `might_sleep` over this marker if possible.
+///
+/// # Example
+///
+/// For crates other than ostd,
+/// this macro can be used in the following form.
+///
+/// ```ignore
+/// use ostd::prelude::*;
+///
+/// #[might_sleep]
+/// fn fn_that_might_break_atomic_context() {
+///     break_atomic_context();
+/// }
+/// ```
+///
+/// For ostd crate itself,
+/// this macro can be used in the form.
+///
+/// ```ignore
+/// use crate::prelude::*;
+///
+/// #[might_sleep]
+/// fn fn_that_might_break_atomic_context() {
+///     break_atomic_context();
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn might_break_atomic_context(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut input = parse_macro_input!(item as ItemFn);
+    let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
+    let check_stmt = if package_name.as_str() == "ostd" {
+        syn::parse(
+            quote!(
+                crate::task::processor::might_break_atomic_context();
+            )
+            .into(),
+        )
+        .unwrap()
+    } else {
+        syn::parse(
+            quote!(
+                ostd::task::processor::might_break_atomic_context();
+            )
+            .into(),
+        )
+        .unwrap()
+    };
+
+    input.block.stmts.insert(0, check_stmt);
+    let output = quote! {
+        #input
+    };
+
+    TokenStream::from(output)
+}
+
+/// The attribute macro to mark a function that should run in atomic context.
+///
+/// # Example
+///
+/// For crates other than ostd,
+/// this macro can be used in the following form.
+///
+/// ```ignore
+/// use ostd::prelude::*;
+///
+/// #[should_in_atomic]
+/// fn fn_that_should_run_in_atomic() {
+///     run_to_completion();
+/// }
+/// ```
+///
+/// For ostd crate itself,
+/// this macro can be used in the form.
+///
+/// ```ignore
+/// use crate::prelude::*;
+///
+/// #[should_in_atomic]
+/// fn fn_that_should_run_in_atomic() {
+///     run_to_completion();
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn should_in_atomic(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut input = parse_macro_input!(item as ItemFn);
+    let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
+    let check_stmt = if package_name.as_str() == "ostd" {
+        syn::parse(
+            quote!(
+                crate::task::processor::should_in_atomic();
+            )
+            .into(),
+        )
+        .unwrap()
+    } else {
+        syn::parse(
+            quote!(
+                ostd::task::processor::should_in_atomic();
+            )
+            .into(),
+        )
+        .unwrap()
+    };
+
+    input.block.stmts.insert(0, check_stmt);
+    let output = quote! {
+        #input
+    };
+
+    TokenStream::from(output)
+}

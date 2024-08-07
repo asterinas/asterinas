@@ -4,8 +4,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use trapframe::TrapFrame;
 
-use crate::{arch::irq::IRQ_LIST, cpu_local};
+use crate::{arch::irq::IRQ_LIST, cpu_local, prelude::should_in_atomic};
 
+#[should_in_atomic]
 pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: usize) {
     // For x86 CPUs, interrupts are not re-entrant. Local interrupts will be disabled when
     // an interrupt handler is called (Unless interrupts are re-enabled in an interrupt handler).
