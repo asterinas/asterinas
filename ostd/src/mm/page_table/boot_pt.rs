@@ -242,10 +242,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
 
     /// Converts the frame numbers to pages.
     ///
-    /// Boot page table is designed for supporting intialization of meta
+    /// Boot page table is designed for supporting initialization of meta
     /// utities. The pages used by the boot page table are not automatically
     /// managed by meta and it is manually managed by the boot page table in
-    /// the frame number form. To coodinate with later page manage utilities,
+    /// the frame number form. To coordinate with later page manage utilities,
     /// the boot page table should convert the aforementioned frame numbers to
     /// pages.
     pub fn manage_frames_with_meta(&mut self) {
@@ -254,8 +254,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
                 BootPageTableFrame::Number(frame) => {
                     BootPageTableFrame::Page(Page::<BootPageTableMeta>::from_unused(*frame * PAGE_SIZE, BootPageTableMeta::default()))
                 }
-                BootPageTableFrame::Page(_) => {
-                    panic!("Should not convert frame number to page while pages are already in the boot page table");
+                BootPageTableFrame::Page(page) => {
+                    panic!("Should not convert frame number to page while pages are already in the boot page table, page = {:?}", page);
                 }
             }
         }).collect::<Vec<BootPageTableFrame>>();
