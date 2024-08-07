@@ -181,18 +181,6 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 }
 
-// impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> {
-//     fn drop(&mut self) {
-//         for frame in &self.frames {
-//             PAGE_ALLOCATOR
-//                 .get()
-//                 .unwrap()
-//                 .lock()
-//                 .dealloc((*frame) * PAGE_SIZE, 1);
-//         }
-//     }
-// }
-
 #[cfg(ktest)]
 use crate::prelude::*;
 

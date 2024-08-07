@@ -187,3 +187,30 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(output)
 }
+
+/// This macro is used to mark the page allocator initialization function.
+///
+/// # Example
+///
+/// ```ignore
+/// #[ostd::page_allocator_init]
+/// pub fn init_page_allocator() {
+///
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn page_allocator_init(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let init_fn = parse_macro_input!(item as ItemFn);
+    let init_fn_name = &init_fn.sig.ident;
+
+    let output = quote! {
+        #[no_mangle]
+        pub fn __ostd_page_allocator_init() -> Box<dyn ostd::mm::page::allocator::PageAlloc> {
+            #init_fn_name()
+        }
+
+        #init_fn
+    };
+
+    TokenStream::from(output)
+}

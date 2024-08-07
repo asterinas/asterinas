@@ -85,11 +85,11 @@ impl<M: PageMeta> Page<M> {
 
     /// Check whether the page described by paddr is allocated.
     /// true if the page is allocated, false otherwise.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// The function panics if:
-    /// 
+    ///
     /// - the physical address is out of bound or not aligned.
     pub fn check_page_status(paddr: Paddr) -> bool {
         assert!(paddr % PAGE_SIZE == 0);
@@ -105,7 +105,6 @@ impl<M: PageMeta> Page<M> {
         }
         true
     }
-
 
     /// Forget the handle to the page.
     ///

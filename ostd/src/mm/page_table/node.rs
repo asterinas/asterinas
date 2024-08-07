@@ -231,11 +231,13 @@ where
     /// set the lock bit for performance as it is exclusive and unlocking is an
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel) -> Self {
-        let page = page::allocator::PAGE_ALLOCATOR.get().unwrap().lock().alloc_page(PAGE_SIZE).map(|paddr|{
-            Page::<PageTablePageMeta<E, C>>::from_unused(paddr)
-        }).unwrap_or_else(||{
-            panic!("Failed to allocate a page for a page table node")
-        });
+        let page = page::allocator::PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc_page(PAGE_SIZE)
+            .map(|paddr| Page::<PageTablePageMeta<E, C>>::from_unused(paddr))
+            .unwrap_or_else(|| panic!("Failed to allocate a page for a page table node"));
 
         // The lock is initialized as held.
         page.meta().lock.store(1, Ordering::Relaxed);

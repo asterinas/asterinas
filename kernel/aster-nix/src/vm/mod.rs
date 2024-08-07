@@ -16,6 +16,7 @@
 //! In Asterinas, VMARs and VMOs, as well as other capabilities, are implemented
 //! as zero-cost capabilities.
 
+pub mod page_allocator;
 pub mod page_fault_handler;
 pub mod perms;
 pub mod vmar;

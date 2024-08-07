@@ -45,6 +45,7 @@ pub mod trap;
 pub mod user;
 
 pub use ostd_macros::main;
+pub use ostd_macros::page_allocator_init;
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
