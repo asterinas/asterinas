@@ -56,12 +56,12 @@ Here we provide a simple demo to demonstrate how to create and run a simple kern
 
 With `cargo-osdk`, a kernel project can be created by one command
 ```bash
-cargo osdk new --kernel my-first-os
+cargo osdk new --kernel myos
 ```
 
 Then, you can run the kernel with
 ```bash
-cd my-first-os && cargo osdk run
+cd myos && cargo osdk run
 ```
 
 You will see `Hello world from guest kernel!` from your console. 
