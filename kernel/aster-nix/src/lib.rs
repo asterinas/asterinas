@@ -53,6 +53,7 @@ pub mod driver;
 pub mod error;
 pub mod events;
 pub mod fs;
+pub mod ipc;
 pub mod net;
 pub mod prelude;
 mod process;
@@ -92,6 +93,7 @@ fn init_thread() {
     ostd::trap::enable_local();
     net::lazy_init();
     fs::lazy_init();
+    ipc::init();
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
