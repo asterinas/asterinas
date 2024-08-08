@@ -283,7 +283,6 @@ impl Drop for DmaSegment {
     }
 }
 
-#[cfg(ktest)]
 mod test {
     use alloc::vec::Vec;
 

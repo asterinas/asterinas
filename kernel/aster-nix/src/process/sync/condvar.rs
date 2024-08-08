@@ -262,7 +262,6 @@ impl Condvar {
     }
 }
 
-#[cfg(ktest)]
 mod test {
     use ostd::{prelude::*, sync::Mutex};
 
@@ -291,7 +290,7 @@ mod test {
             while !*started {
                 started = cvar.wait(started).unwrap_or_else(|err| err.into_guard());
             }
-            assert_eq!(*started, true);
+            assert!(*started);
         }
     }
 
@@ -316,7 +315,7 @@ mod test {
                     .wait_timeout(started, Duration::from_secs(1))
                     .unwrap_or_else(|err| err.into_guard());
             }
-            assert_eq!(*started, true);
+            assert!(*started);
         }
     }
 
@@ -338,7 +337,7 @@ mod test {
             let started = cvar
                 .wait_while(lock.lock(), |started| *started)
                 .unwrap_or_else(|err| err.into_guard());
-            assert_eq!(*started, false);
+            assert!(!(*started));
         }
     }
 
@@ -360,7 +359,7 @@ mod test {
             let (started, _) = cvar
                 .wait_timeout_while(lock.lock(), Duration::from_secs(1), |started| *started)
                 .unwrap_or_else(|err| err.into_guard());
-            assert_eq!(*started, false);
+            assert!(!(*started));
         }
     }
 }

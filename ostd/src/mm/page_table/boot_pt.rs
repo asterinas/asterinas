@@ -161,10 +161,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> 
     }
 }
 
-#[cfg(ktest)]
 use crate::prelude::*;
 
-#[cfg(ktest)]
 #[ktest]
 fn test_boot_pt_map_protect() {
     use super::page_walk;

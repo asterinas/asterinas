@@ -66,8 +66,7 @@ and then abort.
 The `src/lib.rs` of library project only contains
 a simple kernel mode unit test.
 It follows a similar code pattern as user mode unit tests.
-The test module is marked with the `#[cfg(ktest)]` macro,
-and each test case is marked with `#[ktest]`.
+The test case is marked with `#[ktest]`.
 
 ```rust
 {{#include ../../../../osdk/src/commands/new/lib.template}}

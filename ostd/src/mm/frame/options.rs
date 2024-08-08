@@ -110,7 +110,6 @@ impl FrameAllocOptions {
     }
 }
 
-#[cfg(ktest)]
 #[ktest]
 fn test_alloc_dealloc() {
     // Here we allocate and deallocate frames in random orders to test the allocator.
@@ -120,7 +119,7 @@ fn test_alloc_dealloc() {
     let mut contiguous_options = FrameAllocOptions::new(10);
     contiguous_options.is_contiguous(true);
     let mut remember_vec = Vec::new();
-    for i in 0..10 {
+    for _i in 0..10 {
         for i in 0..10 {
             let single_frame = single_options.alloc_single().unwrap();
             if i % 3 == 0 {

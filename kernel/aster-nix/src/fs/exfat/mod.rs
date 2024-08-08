@@ -13,7 +13,6 @@ mod utils;
 pub use fs::{ExfatFS, ExfatMountOptions};
 pub use inode::ExfatInode;
 
-#[cfg(ktest)]
 mod test {
     use alloc::fmt::Debug;
 
@@ -107,8 +106,11 @@ mod test {
         }
     }
     /// Exfat disk image
+    /// FIXME: This is a temporary solution to load exfat disk image.
+    #[cfg(ktest)]
     static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../../test/build/exfat.img");
-
+    #[cfg(not(ktest))]
+    static EXFAT_IMAGE: &[u8] = &[];
     /// Read exfat disk image
     fn new_vm_segment_from_image() -> Segment {
         let vm_segment = {
@@ -433,7 +435,7 @@ mod test {
         let rmdir_empty_dir = root.rmdir(parent_name);
         assert!(rmdir_empty_dir.is_ok(), "Fail to remove an empty directory");
 
-        let parent_inode_again = create_folder(root.clone(), parent_name);
+        let _parent_inode_again = create_folder(root.clone(), parent_name);
         create_file(parent_inode.clone(), child_name);
         let lookup_result = parent_inode.lookup(child_name);
         assert!(
@@ -484,7 +486,7 @@ mod test {
         let mut read = vec![0u8; BUF_SIZE];
         let read_after_rename = a_inode_new.read_at(0, &mut read);
         assert!(
-            read_after_rename.is_ok() && read_after_rename.clone().unwrap() == BUF_SIZE,
+            read_after_rename.is_ok() && read_after_rename.unwrap() == BUF_SIZE,
             "Fail to read after rename: {:?}",
             read_after_rename.unwrap_err()
         );
@@ -495,8 +497,7 @@ mod test {
         let new_buf = vec![7u8; NEW_BUF_SIZE];
         let new_write_after_rename = a_inode_new.write_at(0, &new_buf);
         assert!(
-            new_write_after_rename.is_ok()
-                && new_write_after_rename.clone().unwrap() == NEW_BUF_SIZE,
+            new_write_after_rename.is_ok() && new_write_after_rename.unwrap() == NEW_BUF_SIZE,
             "Fail to write file after rename: {:?}",
             new_write_after_rename.unwrap_err()
         );
@@ -984,7 +985,7 @@ mod test {
         let mut file_names: Vec<String> = (0..file_num).map(|x| x.to_string()).collect();
         file_names.sort();
         let mut file_inodes: Vec<Arc<dyn Inode>> = Vec::new();
-        for (file_id, file_name) in file_names.iter().enumerate() {
+        for file_name in file_names.iter() {
             let inode = create_file(root.clone(), file_name);
             file_inodes.push(inode);
         }

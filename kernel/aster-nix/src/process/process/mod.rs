@@ -645,7 +645,7 @@ pub fn current() -> Arc<Process> {
     }
 }
 
-#[cfg(ktest)]
+//
 mod test {
 
     use ostd::prelude::*;
