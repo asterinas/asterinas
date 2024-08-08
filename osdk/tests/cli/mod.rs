@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use std::fs;
+
 use crate::util::*;
 
 #[test]
@@ -49,4 +51,14 @@ fn cli_clippy_help_message() {
     let output = cargo_osdk(&["clippy", "-h"]).output().unwrap();
     assert_success(&output);
     assert_stdout_contains_msg(&output, "cargo osdk clippy");
+}
+
+#[test]
+fn cli_new_crate_with_hyphen() {
+    let output = cargo_osdk(&["new", "--kernel", "my-first-os"])
+        .output()
+        .unwrap();
+    assert_success(&output);
+    assert!(fs::metadata("my-first-os").is_ok());
+    fs::remove_dir_all("my-first-os");
 }
