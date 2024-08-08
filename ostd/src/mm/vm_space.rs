@@ -21,8 +21,8 @@ use super::{
 };
 use crate::{
     arch::mm::{
-        current_page_table_paddr, tlb_flush_addr_range, tlb_flush_all_excluding_global,
-        PageTableEntry, PagingConsts,
+        current_page_table_paddr, tlb_flush_addr, tlb_flush_addr_range,
+        tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
     },
     cpu::CpuExceptionInfo,
     mm::{
@@ -125,12 +125,27 @@ impl VmSpace {
 
     /// Clears all mappings
     pub fn clear(&self) {
-        // SAFETY: unmapping user space is safe, and we don't care unmapping
-        // invalid ranges.
-        unsafe {
-            self.pt.unmap(&(0..MAX_USERSPACE_VADDR)).unwrap();
+        let mut cursor = self.pt.cursor_mut(&(0..MAX_USERSPACE_VADDR)).unwrap();
+        let end_va = MAX_USERSPACE_VADDR;
+        loop {
+            let cur_va = cursor.virt_addr();
+            if cur_va >= end_va {
+                break;
+            }
+            // SAFETY: unmapping user space is safe, and we don't care unmapping
+            // invalid ranges.
+            let result = unsafe { cursor.take_next() };
+            // Flush the TLB for the unmapped range.
+            match result {
+                PtQr::Mapped { va, .. } => {
+                    tlb_flush_addr(va);
+                }
+                PtQr::NotMapped { va: _, len: _ } => {}
+                PtQr::MappedUntracked { .. } => {
+                    panic!("found untracked memory mapped into `VmSpace`");
+                }
+            }
         }
-        tlb_flush_all_excluding_global();
     }
 
     /// Forks a new VM space with copy-on-write semantics.
@@ -300,12 +315,23 @@ impl CursorMut<'_> {
         let start_va = self.virt_addr();
         let end_va = start_va + len;
 
-        // SAFETY: It is safe to un-map memory in the userspace.
-        unsafe {
-            self.0.unmap(len);
+        loop {
+            let cur_va = self.virt_addr();
+            if cur_va >= end_va {
+                break;
+            }
+            // SAFETY: It is safe to un-map memory in the userspace.
+            let result = unsafe { self.0.take_next() };
+            match result {
+                PtQr::Mapped { va, .. } => {
+                    tlb_flush_addr(va);
+                }
+                PtQr::NotMapped { .. } => {}
+                PtQr::MappedUntracked { .. } => {
+                    panic!("found untracked memory mapped into `VmSpace`");
+                }
+            }
         }
-
-        tlb_flush_addr_range(&(start_va..end_va));
     }
 
     /// Change the mapping property starting from the current slot.

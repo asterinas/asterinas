@@ -213,11 +213,6 @@ where
         Ok(())
     }
 
-    pub unsafe fn unmap(&self, vaddr: &Range<Vaddr>) -> Result<(), PageTableError> {
-        self.cursor_mut(vaddr)?.unmap(vaddr.len());
-        Ok(())
-    }
-
     pub unsafe fn protect(
         &self,
         vaddr: &Range<Vaddr>,
@@ -296,7 +291,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 ) -> Option<(Paddr, PageProperty)> {
     use super::paddr_to_vaddr;
 
-    let preempt_guard = crate::task::disable_preempt();
+    let _guard = crate::trap::disable_local();
 
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {
