@@ -186,6 +186,11 @@ impl AtomicSigSet {
         self.0.store(new_mask.into().bits, ordering);
     }
 
+    pub fn swap(&self, new_mask: impl Into<SigMask>, ordering: Ordering) -> SigSet {
+        let bits = self.0.swap(new_mask.into().bits, ordering);
+        SigSet { bits }
+    }
+
     pub fn contains(&self, signals: impl Into<SigSet>, ordering: Ordering) -> bool {
         SigSet {
             bits: self.0.load(ordering),
