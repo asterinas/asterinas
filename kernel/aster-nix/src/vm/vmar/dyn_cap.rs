@@ -165,19 +165,9 @@ impl VmIo for Vmar<Rights> {
 }
 
 impl PageFaultHandler for Vmar<Rights> {
-    fn handle_page_fault(
-        &self,
-        page_fault_addr: Vaddr,
-        not_present: bool,
-        write: bool,
-    ) -> Result<()> {
-        if write {
-            self.check_rights(Rights::WRITE)?;
-        } else {
-            self.check_rights(Rights::READ)?;
-        }
-        self.0
-            .handle_page_fault(page_fault_addr, not_present, write)
+    fn handle_page_fault(&self, page_fault_addr: Vaddr, required_perms: VmPerms) -> Result<()> {
+        self.check_rights(required_perms.into())?;
+        self.0.handle_page_fault(page_fault_addr, required_perms)
     }
 }
 
