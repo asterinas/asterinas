@@ -312,6 +312,31 @@ where
         }
     }
 
+    /// Remove the child at the given index and return it.
+    pub(super) fn take_child(&mut self, idx: usize, in_tracked_range: bool) -> Child<E, C> {
+        debug_assert!(idx < nr_subpage_per_huge::<C>());
+
+        let pte = self.read_pte(idx);
+        if !pte.is_present() {
+            Child::None
+        } else {
+            let paddr = pte.paddr();
+            let is_last = pte.is_last(self.level());
+            *self.nr_children_mut() -= 1;
+            self.write_pte(idx, E::new_absent());
+            if !is_last {
+                Child::PageTable(RawPageTableNode {
+                    raw: paddr,
+                    _phantom: PhantomData,
+                })
+            } else if in_tracked_range {
+                Child::Page(unsafe { DynPage::from_raw(paddr) })
+            } else {
+                Child::Untracked(paddr)
+            }
+        }
+    }
+
     /// Makes a copy of the page table node.
     ///
     /// This function allows you to control about the way to copy the children.
@@ -363,13 +388,6 @@ where
         }
 
         new_pt
-    }
-
-    /// Removes a child if the child at the given index is present.
-    pub(super) fn unset_child(&mut self, idx: usize, in_tracked_range: bool) {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-
-        self.overwrite_pte(idx, None, in_tracked_range);
     }
 
     /// Sets a child page table at a given index.
@@ -462,6 +480,17 @@ where
         unsafe { self.as_ptr().add(idx).read() }
     }
 
+    /// Writes a page table entry at a given index.
+    ///
+    /// This operation will leak the old child if the PTE is present.
+    fn write_pte(&mut self, idx: usize, pte: E) {
+        // It should be ensured by the cursor.
+        debug_assert!(idx < nr_subpage_per_huge::<C>());
+
+        // SAFETY: the index is within the bound and PTE is plain-old-data.
+        unsafe { (self.as_ptr() as *mut E).add(idx).write(pte) };
+    }
+
     /// The number of valid PTEs.
     pub(super) fn nr_children(&self) -> u16 {
         // SAFETY: The lock is held so there is no mutable reference to it.
@@ -485,14 +514,7 @@ where
         let existing_pte = self.read_pte(idx);
 
         if existing_pte.is_present() {
-            // SAFETY: The index is within the bound and the address is aligned.
-            // The validity of the PTE is checked within this module.
-            // The safetiness also holds in the following branch.
-            unsafe {
-                (self.as_ptr() as *mut E)
-                    .add(idx)
-                    .write(pte.unwrap_or(E::new_absent()))
-            };
+            self.write_pte(idx, pte.unwrap_or(E::new_absent()));
 
             // Drop the child. We must set the PTE before dropping the child.
             // Just restore the handle and drop the handle.

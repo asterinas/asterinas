@@ -23,9 +23,6 @@ fn test_range_check() {
     assert!(pt.cursor_mut(&good_va).is_ok());
     assert!(pt.cursor_mut(&bad_va).is_err());
     assert!(pt.cursor_mut(&bad_va2).is_err());
-    assert!(unsafe { pt.unmap(&good_va) }.is_ok());
-    assert!(unsafe { pt.unmap(&bad_va) }.is_err());
-    assert!(unsafe { pt.unmap(&bad_va2) }.is_err());
 }
 
 #[ktest]
@@ -38,7 +35,10 @@ fn test_tracked_map_unmap() {
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(page.into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    unsafe { pt.unmap(&from).unwrap() };
+    assert!(matches!(
+        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
+        PageTableItem::Mapped { .. }
+    ));
     assert!(pt.query(from.start + 10).is_none());
 }
 
@@ -53,13 +53,18 @@ fn test_untracked_map_unmap() {
         UNTRACKED_OFFSET + PAGE_SIZE * from_ppn.start..UNTRACKED_OFFSET + PAGE_SIZE * from_ppn.end;
     let to = PAGE_SIZE * to_ppn.start..PAGE_SIZE * to_ppn.end;
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
+
     unsafe { pt.map(&from, &to, prop).unwrap() };
     for i in 0..100 {
         let offset = i * (PAGE_SIZE + 1000);
         assert_eq!(pt.query(from.start + offset).unwrap().0, to.start + offset);
     }
-    let unmap = UNTRACKED_OFFSET + PAGE_SIZE * 123..UNTRACKED_OFFSET + PAGE_SIZE * 3434;
-    unsafe { pt.unmap(&unmap).unwrap() };
+
+    let unmap = UNTRACKED_OFFSET + PAGE_SIZE * 13456..UNTRACKED_OFFSET + PAGE_SIZE * 15678;
+    assert!(matches!(
+        unsafe { pt.cursor_mut(&unmap).unwrap().take_next(unmap.len()) },
+        PageTableItem::MappedUntracked { .. }
+    ));
     for i in 0..100 {
         let offset = i * (PAGE_SIZE + 10);
         if unmap.start <= from.start + offset && from.start + offset < unmap.end {
@@ -82,7 +87,10 @@ fn test_user_copy_on_write() {
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    unsafe { pt.unmap(&from).unwrap() };
+    assert!(matches!(
+        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
+        PageTableItem::Mapped { .. }
+    ));
     assert!(pt.query(from.start + 10).is_none());
     unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
@@ -90,7 +98,10 @@ fn test_user_copy_on_write() {
     let child_pt = pt.fork_copy_on_write();
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    unsafe { pt.unmap(&from).unwrap() };
+    assert!(matches!(
+        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
+        PageTableItem::Mapped { .. }
+    ));
     assert!(pt.query(from.start + 10).is_none());
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
 
@@ -99,7 +110,10 @@ fn test_user_copy_on_write() {
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     drop(pt);
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    unsafe { child_pt.unmap(&from).unwrap() };
+    assert!(matches!(
+        unsafe { child_pt.cursor_mut(&from).unwrap().take_next(from.len()) },
+        PageTableItem::Mapped { .. }
+    ));
     assert!(child_pt.query(from.start + 10).is_none());
     unsafe {
         sibling_pt
