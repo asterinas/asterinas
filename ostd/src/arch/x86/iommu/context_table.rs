@@ -13,7 +13,7 @@ use crate::{
     mm::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::PageTableError,
+        page_table::{PageTableError, PageTableItem},
         Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
     Pod,
@@ -312,10 +312,11 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
+        let pt = self.get_or_create_page_table(device);
+        let mut cursor = pt.cursor_mut(&(daddr..daddr + PAGE_SIZE)).unwrap();
         unsafe {
-            self.get_or_create_page_table(device)
-                .unmap(&(daddr..daddr + PAGE_SIZE))
-                .unwrap();
+            let result = cursor.take_next(PAGE_SIZE);
+            debug_assert!(matches!(result, PageTableItem::MappedUntracked { .. }));
         }
         Ok(())
     }

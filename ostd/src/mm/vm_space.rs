@@ -21,8 +21,8 @@ use super::{
 };
 use crate::{
     arch::mm::{
-        current_page_table_paddr, tlb_flush_addr_range, tlb_flush_all_excluding_global,
-        PageTableEntry, PagingConsts,
+        current_page_table_paddr, tlb_flush_addr, tlb_flush_addr_range,
+        tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
     },
     cpu::CpuExceptionInfo,
     mm::{
@@ -121,16 +121,6 @@ impl VmSpace {
         func: fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>,
     ) {
         self.page_fault_handler.call_once(|| func);
-    }
-
-    /// Clears all mappings
-    pub fn clear(&self) {
-        // SAFETY: unmapping user space is safe, and we don't care unmapping
-        // invalid ranges.
-        unsafe {
-            self.pt.unmap(&(0..MAX_USERSPACE_VADDR)).unwrap();
-        }
-        tlb_flush_all_excluding_global();
     }
 
     /// Forks a new VM space with copy-on-write semantics.
@@ -297,15 +287,26 @@ impl CursorMut<'_> {
     /// This method will panic if `len` is not page-aligned.
     pub fn unmap(&mut self, len: usize) {
         assert!(len % super::PAGE_SIZE == 0);
-        let start_va = self.virt_addr();
-        let end_va = start_va + len;
+        let end_va = self.virt_addr() + len;
 
-        // SAFETY: It is safe to un-map memory in the userspace.
-        unsafe {
-            self.0.unmap(len);
+        loop {
+            // SAFETY: It is safe to un-map memory in the userspace.
+            let result = unsafe { self.0.take_next(end_va - self.virt_addr()) };
+            match result {
+                PageTableItem::Mapped { va, page, .. } => {
+                    // TODO: Ask other processors to flush the TLB before we
+                    // release the page back to the allocator.
+                    tlb_flush_addr(va);
+                    drop(page);
+                }
+                PageTableItem::NotMapped { .. } => {
+                    break;
+                }
+                PageTableItem::MappedUntracked { .. } => {
+                    panic!("found untracked memory mapped into `VmSpace`");
+                }
+            }
         }
-
-        tlb_flush_addr_range(&(start_va..end_va));
     }
 
     /// Change the mapping property starting from the current slot.
