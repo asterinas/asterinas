@@ -13,7 +13,7 @@ use crate::{
     mm::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::{PageTableError, PageTableQueryResult},
+        page_table::{PageTableError, PageTableItem},
         Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
     Pod,
@@ -316,10 +316,7 @@ impl ContextTable {
         let mut cursor = pt.cursor_mut(&(daddr..daddr + PAGE_SIZE)).unwrap();
         unsafe {
             let result = cursor.take_next();
-            debug_assert!(matches!(
-                result,
-                PageTableQueryResult::MappedUntracked { .. }
-            ));
+            debug_assert!(matches!(result, PageTableItem::MappedUntracked { .. }));
         }
         Ok(())
     }

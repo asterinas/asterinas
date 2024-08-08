@@ -76,7 +76,7 @@ use super::{
 use crate::mm::{page::DynPage, Paddr, PageProperty, Vaddr};
 
 #[derive(Clone, Debug)]
-pub enum PageTableQueryResult {
+pub enum PageTableItem {
     NotMapped {
         va: Vaddr,
         len: usize,
@@ -195,7 +195,7 @@ where
     }
 
     /// Gets the information of the current slot.
-    pub fn query(&mut self) -> Result<PageTableQueryResult, PageTableError> {
+    pub fn query(&mut self) -> Result<PageTableItem, PageTableError> {
         if self.va >= self.barrier_va.end {
             return Err(PageTableError::InvalidVaddr(self.va));
         }
@@ -206,7 +206,7 @@ where
 
             let pte = self.read_cur_pte();
             if !pte.is_present() {
-                return Ok(PageTableQueryResult::NotMapped {
+                return Ok(PageTableItem::NotMapped {
                     va,
                     len: page_size::<C>(level),
                 });
@@ -218,14 +218,14 @@ where
 
             match self.cur_child() {
                 Child::Page(page) => {
-                    return Ok(PageTableQueryResult::Mapped {
+                    return Ok(PageTableItem::Mapped {
                         va,
                         page,
                         prop: pte.prop(),
                     });
                 }
                 Child::Untracked(pa) => {
-                    return Ok(PageTableQueryResult::MappedUntracked {
+                    return Ok(PageTableItem::MappedUntracked {
                         va,
                         pa,
                         len: page_size::<C>(level),
@@ -355,7 +355,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Iterato
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    type Item = PageTableQueryResult;
+    type Item = PageTableItem;
 
     fn next(&mut self) -> Option<Self::Item> {
         let result = self.query();
@@ -415,7 +415,7 @@ where
     }
 
     /// Gets the information of the current slot.
-    pub fn query(&mut self) -> Result<PageTableQueryResult, PageTableError> {
+    pub fn query(&mut self) -> Result<PageTableItem, PageTableError> {
         self.0.query()
     }
 
@@ -546,7 +546,7 @@ where
     ///
     /// This function will panic if the end range of the cursor covers a part
     /// of a huge page and the next page is that huge page.
-    pub unsafe fn take_next(&mut self) -> PageTableQueryResult {
+    pub unsafe fn take_next(&mut self) -> PageTableItem {
         let start = self.0.va;
         let end = self.0.barrier_va.end;
 
@@ -602,12 +602,12 @@ where
             self.0.move_forward();
 
             return match ret {
-                Child::Page(page) => PageTableQueryResult::Mapped {
+                Child::Page(page) => PageTableItem::Mapped {
                     va: ret_page_va,
                     page,
                     prop: cur_pte.prop(),
                 },
-                Child::Untracked(pa) => PageTableQueryResult::MappedUntracked {
+                Child::Untracked(pa) => PageTableItem::MappedUntracked {
                     va: ret_page_va,
                     pa,
                     len: ret_page_size,
@@ -617,7 +617,7 @@ where
             };
         }
 
-        PageTableQueryResult::NotMapped {
+        PageTableItem::NotMapped {
             va: start,
             len: end - start,
         }

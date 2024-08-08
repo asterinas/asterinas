@@ -15,7 +15,7 @@ use crate::{
 mod node;
 use node::*;
 pub mod cursor;
-pub use cursor::{Cursor, CursorMut, PageTableQueryResult};
+pub use cursor::{Cursor, CursorMut, PageTableItem};
 #[cfg(ktest)]
 mod test;
 

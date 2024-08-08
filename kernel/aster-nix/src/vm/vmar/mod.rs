@@ -101,23 +101,6 @@ pub(super) struct Vmar_ {
     parent: Weak<Vmar_>,
 }
 
-impl Drop for Vmar_ {
-    fn drop(&mut self) {
-        if self.is_root_vmar() {
-            self.vm_space.clear();
-        }
-        // Drop the child VMAR.
-        // FIXME: This branch can be removed once removing child VMAR usage from the code base.
-        else {
-            let mut cursor = self
-                .vm_space
-                .cursor_mut(&(self.base..self.base + self.size))
-                .unwrap();
-            cursor.unmap(self.size);
-        }
-    }
-}
-
 struct VmarInner {
     /// Whether the vmar is destroyed
     is_destroyed: bool,
@@ -297,7 +280,12 @@ impl Vmar_ {
         if !self.is_root_vmar() {
             return_errno_with_message!(Errno::EACCES, "The vmar is not root vmar");
         }
-        self.vm_space.clear();
+        let mut cursor = self
+            .vm_space
+            .cursor_mut(&(self.base..self.base + self.size))
+            .unwrap();
+        cursor.unmap(self.size);
+        drop(cursor);
         let mut inner = self.inner.lock();
         inner.child_vmar_s.clear();
         inner.vm_mappings.clear();

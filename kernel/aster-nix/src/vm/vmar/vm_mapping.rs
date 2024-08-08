@@ -5,9 +5,7 @@
 
 use core::ops::Range;
 
-use ostd::mm::{
-    vm_space::VmQueryResult, CachePolicy, Frame, PageFlags, PageProperty, VmIo, VmSpace,
-};
+use ostd::mm::{vm_space::VmItem, CachePolicy, Frame, PageFlags, PageProperty, VmIo, VmSpace};
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
 use crate::{
@@ -221,12 +219,12 @@ impl VmMapping {
                 drop(cursor);
 
                 match map_info {
-                    VmQueryResult::Mapped { va, prop, .. } => {
+                    VmItem::Mapped { va, prop, .. } => {
                         if !prop.flags.contains(PageFlags::W) {
                             self.handle_page_fault(va, false, true)?;
                         }
                     }
-                    VmQueryResult::NotMapped { va, .. } => {
+                    VmItem::NotMapped { va, .. } => {
                         self.handle_page_fault(va, true, true)?;
                     }
                 }

@@ -37,7 +37,7 @@ fn test_tracked_map_unmap() {
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert!(matches!(
         unsafe { pt.cursor_mut(&from).unwrap().take_next() },
-        Qr::Mapped { .. }
+        PageTableItem::Mapped { .. }
     ));
     assert!(pt.query(from.start + 10).is_none());
 }
@@ -63,7 +63,7 @@ fn test_untracked_map_unmap() {
     let unmap = UNTRACKED_OFFSET + PAGE_SIZE * 13456..UNTRACKED_OFFSET + PAGE_SIZE * 15678;
     assert!(matches!(
         unsafe { pt.cursor_mut(&unmap).unwrap().take_next() },
-        Qr::MappedUntracked { .. }
+        PageTableItem::MappedUntracked { .. }
     ));
     for i in 0..100 {
         let offset = i * (PAGE_SIZE + 10);
@@ -89,7 +89,7 @@ fn test_user_copy_on_write() {
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert!(matches!(
         unsafe { pt.cursor_mut(&from).unwrap().take_next() },
-        Qr::Mapped { .. }
+        PageTableItem::Mapped { .. }
     ));
     assert!(pt.query(from.start + 10).is_none());
     unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
@@ -100,7 +100,7 @@ fn test_user_copy_on_write() {
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert!(matches!(
         unsafe { pt.cursor_mut(&from).unwrap().take_next() },
-        Qr::Mapped { .. }
+        PageTableItem::Mapped { .. }
     ));
     assert!(pt.query(from.start + 10).is_none());
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
@@ -112,7 +112,7 @@ fn test_user_copy_on_write() {
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert!(matches!(
         unsafe { child_pt.cursor_mut(&from).unwrap().take_next() },
-        Qr::Mapped { .. }
+        PageTableItem::Mapped { .. }
     ));
     assert!(child_pt.query(from.start + 10).is_none());
     unsafe {
@@ -127,8 +127,6 @@ fn test_user_copy_on_write() {
     );
     assert!(child_pt.query(from.start + 10).is_none());
 }
-
-type Qr = PageTableQueryResult;
 
 #[derive(Clone, Debug, Default)]
 struct BasePagingConsts {}
@@ -156,7 +154,7 @@ fn test_base_protect_query() {
         }
     }
     for (qr, i) in pt.cursor(&from).unwrap().zip(from_ppn) {
-        let Qr::Mapped { va, page, prop } = qr else {
+        let PageTableItem::Mapped { va, page, prop } = qr else {
             panic!("Expected Mapped, got {:#x?}", qr);
         };
         assert_eq!(prop.flags, PageFlags::RW);
@@ -166,7 +164,7 @@ fn test_base_protect_query() {
     let prot = PAGE_SIZE * 18..PAGE_SIZE * 20;
     unsafe { pt.protect(&prot, |p| p.flags -= PageFlags::W).unwrap() };
     for (qr, i) in pt.cursor(&prot).unwrap().zip(18..20) {
-        let Qr::Mapped { va, page, prop } = qr else {
+        let PageTableItem::Mapped { va, page, prop } = qr else {
             panic!("Expected Mapped, got {:#x?}", qr);
         };
         assert_eq!(prop.flags, PageFlags::R);
@@ -205,7 +203,7 @@ fn test_untracked_large_protect_query() {
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.map(&from, &to, prop).unwrap() };
     for (qr, i) in pt.cursor(&from).unwrap().zip(0..512 + 2 + 2) {
-        let Qr::MappedUntracked { va, pa, len, prop } = qr else {
+        let PageTableItem::MappedUntracked { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntracked, got {:#x?}", qr);
         };
         assert_eq!(pa, mapped_pa_of_va(va));
@@ -233,7 +231,7 @@ fn test_untracked_large_protect_query() {
         .unwrap()
         .zip(ppn.start - 1..ppn.start)
     {
-        let Qr::MappedUntracked { va, pa, len, prop } = qr else {
+        let PageTableItem::MappedUntracked { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntracked, got {:#x?}", qr);
         };
         assert_eq!(pa, mapped_pa_of_va(va));
@@ -242,7 +240,7 @@ fn test_untracked_large_protect_query() {
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
     for (qr, i) in pt.cursor(&va).unwrap().zip(ppn.clone()) {
-        let Qr::MappedUntracked { va, pa, len, prop } = qr else {
+        let PageTableItem::MappedUntracked { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntracked, got {:#x?}", qr);
         };
         assert_eq!(pa, mapped_pa_of_va(va));
@@ -255,7 +253,7 @@ fn test_untracked_large_protect_query() {
         .unwrap()
         .zip(ppn.end..ppn.end + 1)
     {
-        let Qr::MappedUntracked { va, pa, len, prop } = qr else {
+        let PageTableItem::MappedUntracked { va, pa, len, prop } = qr else {
             panic!("Expected MappedUntracked, got {:#x?}", qr);
         };
         assert_eq!(pa, mapped_pa_of_va(va));
