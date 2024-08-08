@@ -95,6 +95,7 @@ mod sched_getaffinity;
 mod sched_yield;
 mod select;
 mod semget;
+mod semop;
 mod sendfile;
 mod sendmsg;
 mod sendto;
