@@ -94,6 +94,7 @@ mod rt_sigsuspend;
 mod sched_getaffinity;
 mod sched_yield;
 mod select;
+mod semget;
 mod sendfile;
 mod sendmsg;
 mod sendto;

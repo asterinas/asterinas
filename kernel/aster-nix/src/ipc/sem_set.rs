@@ -110,6 +110,57 @@ impl SemaphoreSet {
     }
 }
 
+pub fn create_sem_set_with_id(id: key_t, nsems: usize, mode: u16) -> Result<()> {
+    debug_assert!(nsems <= SEMMSL);
+    debug_assert!(id > 0);
+
+    ID_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .alloc_specific(id as usize)
+        .ok_or(Error::new(Errno::EEXIST))?;
+
+    let mut sem_sets = SEMAPHORE_SETS.write();
+    sem_sets.insert(id, SemaphoreSet::new(id, nsems, mode)?);
+
+    Ok(())
+}
+
+/// Check the semaphore. Return Ok if the semaphore exists and pass the check.
+pub fn check_sem(id: key_t, nsems: usize) -> Result<()> {
+    debug_assert!(nsems <= SEMMSL);
+    debug_assert!(id > 0);
+
+    let sem_sets = sem_sets();
+    let sem_set = sem_sets.get(&id).ok_or(Error::new(Errno::ENOENT))?;
+
+    if nsems > sem_set.nsems() {
+        return_errno!(Errno::EINVAL);
+    }
+
+    // TODO: Support permission check
+    warn!("Semaphore get doesn't support permission check now");
+
+    Ok(())
+}
+
+pub fn create_sem_set(nsems: usize, mode: u16) -> Result<key_t> {
+    debug_assert!(nsems <= SEMMSL);
+
+    let id = ID_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .alloc()
+        .ok_or(Error::new(Errno::ENOSPC))? as i32;
+
+    let mut sem_sets = SEMAPHORE_SETS.write();
+    sem_sets.insert(id, SemaphoreSet::new(id, nsems, mode)?);
+
+    Ok(id)
+}
+
 pub fn sem_sets<'a>() -> RwMutexReadGuard<'a, BTreeMap<key_t, SemaphoreSet>> {
     SEMAPHORE_SETS.read()
 }
