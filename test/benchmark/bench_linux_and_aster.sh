@@ -13,15 +13,21 @@ BENCHMARK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 # Kernel image 
 KERNEL_DIR="/root/dependency"
 LINUX_KERNEL="${KERNEL_DIR}/vmlinuz"
+KERNEL_VERSION="5.15.0-105-generic"
+MODULES_DIR="${BENCHMARK_DIR}/../build/initramfs/lib/modules/${KERNEL_VERSION}/kernel"
 # Atomic wget script
 WGET_SCRIPT="${BENCHMARK_DIR}/../../tools/atomic_wget.sh"
 
 # Generate entrypoint script for Linux cases
+# TODO: Disable optimize-related features in Linux's ext2 using 'mkfs.ext2 -O ^[feature]'
 generate_entrypoint_script() {
     local benchmark="$1"
     local init_script=$(cat <<EOF
 #!/bin/sh
 mount -t devtmpfs devtmpfs /dev
+modprobe virtio_blk
+mkfs.ext2 -F /dev/vda
+mount -t ext2 /dev/vda /ext2
 
 echo "Running ${benchmark}"
 chmod +x /benchmark/${benchmark}/run.sh
@@ -59,6 +65,8 @@ run_benchmark() {
         --enable-kvm \
         -kernel ${LINUX_KERNEL} \
         -initrd ${BENCHMARK_DIR}/../build/initramfs.cpio.gz \
+        -drive if=none,format=raw,id=x0,file=${BENCHMARK_DIR}/../build/ext2.img \
+        -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,config-wce=off,request-merging=off,write-cache=off,backend_defaults=off,discard=off,event_idx=off,indirect_desc=off,ioeventfd=off,queue_reset=off \
         -append 'console=ttyS0 rdinit=/benchmark/benchmark_entrypoint.sh' \
         -nographic \
         2>&1 | tee ${linux_output}" 
@@ -66,7 +74,12 @@ run_benchmark() {
     if [ ! -f "${LINUX_KERNEL}" ]; then
         echo "Downloading the Linux kernel image..."
         mkdir -p "${KERNEL_DIR}"
-        ${WGET_SCRIPT} "${LINUX_KERNEL}" "https://raw.githubusercontent.com/asterinas/linux_kernel/9e66d28/vmlinuz-5.15.0-105-generic" 
+        ${WGET_SCRIPT} "${LINUX_KERNEL}" "https://raw.githubusercontent.com/asterinas/linux_kernel/9e66d28/vmlinuz-${KERNEL_VERSION}" 
+    fi
+    if [ ! -f "${MODULES_DIR}" ]; then
+        echo "Downloading additional kernel modules..."
+        mkdir -p "${MODULES_DIR}/drivers/block"
+        ${WGET_SCRIPT} "${MODULES_DIR}/drivers/block/virtio_blk.ko" "https://raw.githubusercontent.com/asterinas/linux_kernel/f938bde/modules/virtio_blk.ko"
     fi
 
     echo "Running benchmark ${benchmark} on Linux and Asterinas..."
