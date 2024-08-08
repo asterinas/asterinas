@@ -41,6 +41,8 @@ jobs:
           # File-related benchmarks
           - lmbench-file-rd-bandwidth
           - lmbench-select-file
+          # Semaphore benchmark
+          - lmbench-semaphore
       fail-fast: false
     timeout-minutes: 60
     container: 
