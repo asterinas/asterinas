@@ -8,13 +8,7 @@ use super::{
     poll::{do_poll, PollFd},
     SyscallReturn,
 };
-use crate::{
-    events::IoEvents,
-    fs::file_table::FileDesc,
-    prelude::*,
-    time::timeval_t,
-    util::{read_val_from_user, write_val_to_user},
-};
+use crate::{events::IoEvents, fs::file_table::FileDesc, prelude::*, time::timeval_t};
 
 pub fn sys_select(
     nfds: FileDesc,
@@ -26,7 +20,7 @@ pub fn sys_select(
     let timeout = if timeval_addr == 0 {
         None
     } else {
-        let timeval = read_val_from_user::<timeval_t>(timeval_addr)?;
+        let timeval = CurrentUserSpace::get().read_val::<timeval_t>(timeval_addr)?;
         Some(Duration::from(timeval))
     };
 
@@ -44,11 +38,12 @@ pub fn do_sys_select(
         return_errno_with_message!(Errno::EINVAL, "nfds is negative or exceeds the FD_SETSIZE");
     }
 
+    let user_space = CurrentUserSpace::get();
     let get_fdset = |fdset_addr: Vaddr| -> Result<Option<FdSet>> {
         let fdset = if fdset_addr == 0 {
             None
         } else {
-            let fdset = read_val_from_user::<FdSet>(fdset_addr)?;
+            let fdset = user_space.read_val::<FdSet>(fdset_addr)?;
             Some(fdset)
         };
         Ok(fdset)
@@ -78,7 +73,7 @@ pub fn do_sys_select(
     let set_fdset = |fdset_addr: Vaddr, fdset: Option<FdSet>| -> Result<()> {
         if let Some(fdset) = fdset {
             debug_assert!(fdset_addr != 0);
-            write_val_to_user(fdset_addr, &fdset)?;
+            user_space.write_val(fdset_addr, &fdset)?;
         }
         Ok(())
     };

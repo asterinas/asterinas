@@ -4,7 +4,6 @@ use super::{getrusage::rusage_t, SyscallReturn};
 use crate::{
     prelude::*,
     process::{wait_child_exit, ProcessFilter, WaitOptions},
-    util::write_val_to_user,
 };
 
 pub fn sys_wait4(
@@ -29,7 +28,7 @@ pub fn sys_wait4(
 
     let (return_pid, exit_code) = (process.pid(), process.exit_code().unwrap());
     if exit_status_ptr != 0 {
-        write_val_to_user(exit_status_ptr as _, &exit_code)?;
+        CurrentUserSpace::get().write_val(exit_status_ptr as _, &exit_code)?;
     }
 
     if rusage_addr != 0 {
@@ -39,7 +38,7 @@ pub fn sys_wait4(
             ..Default::default()
         };
 
-        write_val_to_user(rusage_addr, &rusage)?;
+        CurrentUserSpace::get().write_val(rusage_addr, &rusage)?;
     }
 
     Ok(SyscallReturn::Return(return_pid as _))

@@ -2,13 +2,9 @@
 
 use core::time::Duration;
 
-use aster_rights::Full;
-use ostd::mm::VmIo;
-
 use crate::{
     net::socket::{ip::stream::CongestionControl, LingerOption},
     prelude::*,
-    vm::vmar::Vmar,
 };
 
 /// Create an object by reading its C counterpart from the user space.
@@ -21,7 +17,7 @@ use crate::{
 /// from the user space must be validated by the kernel.
 pub trait ReadFromUser: Sized {
     /// Read a struct from user space by reading its C counterpart.
-    fn read_from_user(vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<Self>;
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self>;
 }
 
 /// Write an object to user space by writing its C counterpart.
@@ -32,7 +28,7 @@ pub trait ReadFromUser: Sized {
 /// and write value in user space should be of same type.
 pub trait WriteToUser {
     // Write a struct to user space by writing its C counterpart.
-    fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize>;
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize>;
 }
 
 /// This macro is used to implement `ReadFromUser` and `WriteToUser` for types that
@@ -46,23 +42,23 @@ pub trait WriteToUser {
 macro_rules! impl_read_write_for_pod_type {
     ($pod_ty: ty) => {
         impl ReadFromUser for $pod_ty {
-            fn read_from_user(vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<Self> {
+            fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
                 if (max_len as usize) < core::mem::size_of::<$pod_ty>() {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
-                Ok(vmar.read_val::<$pod_ty>(addr)?)
+                crate::util::CurrentUserSpace::get().read_val::<$pod_ty>(addr)
             }
         }
 
         impl WriteToUser for $pod_ty {
-            fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+            fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
                 let write_len = core::mem::size_of::<$pod_ty>();
 
                 if (max_len as usize) < write_len {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
 
-                vmar.write_val(addr, self)?;
+                crate::util::CurrentUserSpace::get().write_val(addr, self)?;
                 Ok(write_len)
             }
         }
@@ -72,19 +68,19 @@ macro_rules! impl_read_write_for_pod_type {
 impl_read_write_for_pod_type!(u32);
 
 impl ReadFromUser for bool {
-    fn read_from_user(vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<Self> {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
         if (max_len as usize) < core::mem::size_of::<i32>() {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
 
-        let val = vmar.read_val::<i32>(addr)?;
+        let val = CurrentUserSpace::get().read_val::<i32>(addr)?;
 
         Ok(val != 0)
     }
 }
 
 impl WriteToUser for bool {
-    fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
         let write_len = core::mem::size_of::<i32>();
 
         if (max_len as usize) < write_len {
@@ -92,13 +88,13 @@ impl WriteToUser for bool {
         }
 
         let val = if *self { 1i32 } else { 0i32 };
-        vmar.write_val(addr, &val)?;
+        CurrentUserSpace::get().write_val(addr, &val)?;
         Ok(write_len)
     }
 }
 
 impl WriteToUser for Option<Error> {
-    fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
         let write_len = core::mem::size_of::<i32>();
 
         if (max_len as usize) < write_len {
@@ -110,25 +106,25 @@ impl WriteToUser for Option<Error> {
             Some(error) => error.error() as i32,
         };
 
-        vmar.write_val(addr, &val)?;
+        CurrentUserSpace::get().write_val(addr, &val)?;
         Ok(write_len)
     }
 }
 
 impl ReadFromUser for LingerOption {
-    fn read_from_user(vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<Self> {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
         if (max_len as usize) < core::mem::size_of::<CLinger>() {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
 
-        let c_linger = vmar.read_val::<CLinger>(addr)?;
+        let c_linger = CurrentUserSpace::get().read_val::<CLinger>(addr)?;
 
         Ok(LingerOption::from(c_linger))
     }
 }
 
 impl WriteToUser for LingerOption {
-    fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
         let write_len = core::mem::size_of::<CLinger>();
 
         if (max_len as usize) < write_len {
@@ -136,22 +132,22 @@ impl WriteToUser for LingerOption {
         }
 
         let linger = CLinger::from(*self);
-        vmar.write_val(addr, &linger)?;
+        CurrentUserSpace::get().write_val(addr, &linger)?;
         Ok(write_len)
     }
 }
 
 impl ReadFromUser for CongestionControl {
-    fn read_from_user(vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<Self> {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
         let mut bytes = vec![0; max_len as usize];
-        vmar.read_bytes(addr, &mut bytes)?;
+        CurrentUserSpace::get().read_bytes(addr, &mut VmWriter::from(bytes.as_mut_slice()))?;
         let name = String::from_utf8(bytes).unwrap();
         CongestionControl::new(&name)
     }
 }
 
 impl WriteToUser for CongestionControl {
-    fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
         let name = self.name().as_bytes();
 
         let write_len = name.len();
@@ -159,7 +155,7 @@ impl WriteToUser for CongestionControl {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
 
-        vmar.write_bytes(addr, name)?;
+        CurrentUserSpace::get().write_bytes(addr, &mut VmReader::from(name))?;
 
         Ok(write_len)
     }

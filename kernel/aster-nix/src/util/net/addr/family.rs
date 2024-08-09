@@ -3,11 +3,7 @@
 use core::cmp::min;
 
 use super::{ip::CSocketAddrInet, unix, vsock::CSocketAddrVm};
-use crate::{
-    net::socket::SocketAddr,
-    prelude::*,
-    util::{read_bytes_from_user, read_val_from_user, write_bytes_to_user, write_val_to_user},
-};
+use crate::{net::socket::SocketAddr, prelude::*};
 
 /// Address family.
 ///
@@ -148,7 +144,7 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
     }
 
     let mut storage = Storage::new_zeroed();
-    read_bytes_from_user(
+    CurrentUserSpace::get().read_bytes(
         addr,
         &mut VmWriter::from(&mut storage.as_bytes_mut()[..addr_len]),
     )?;
@@ -204,11 +200,12 @@ pub fn write_socket_addr_to_user(
     dest: Vaddr,
     max_len_ptr: Vaddr,
 ) -> Result<()> {
-    let max_len = read_val_from_user::<i32>(max_len_ptr)?;
+    let user_space = CurrentUserSpace::get();
+    let max_len = user_space.read_val::<i32>(max_len_ptr)?;
 
     let actual_len = write_socket_addr_with_max_len(socket_addr, dest, max_len)?;
 
-    write_val_to_user(max_len_ptr, &actual_len)
+    user_space.write_val(max_len_ptr, &actual_len)
 }
 
 /// Writes a socket address to the user space.
@@ -238,12 +235,13 @@ pub fn write_socket_addr_with_max_len(
         );
     }
 
+    let user_space = CurrentUserSpace::get();
     let actual_len = match socket_addr {
         SocketAddr::IPv4(addr, port) => {
             let socket_addr = CSocketAddrInet::from((*addr, *port));
             let actual_len = size_of::<CSocketAddrInet>();
             let written_len = min(actual_len, max_len as _);
-            write_bytes_to_user(
+            user_space.write_bytes(
                 dest,
                 &mut VmReader::from(&socket_addr.as_bytes()[..written_len]),
             )?;
@@ -251,14 +249,14 @@ pub fn write_socket_addr_with_max_len(
         }
         SocketAddr::Unix(addr) => unix::into_c_bytes_and(addr, |bytes| {
             let written_len = min(bytes.len(), max_len as _);
-            write_bytes_to_user(dest, &mut VmReader::from(&bytes[..written_len]))?;
+            user_space.write_bytes(dest, &mut VmReader::from(&bytes[..written_len]))?;
             Ok::<usize, Error>(bytes.len())
         })?,
         SocketAddr::Vsock(addr) => {
             let socket_addr = CSocketAddrVm::from(*addr);
             let actual_len = size_of::<CSocketAddrVm>();
             let written_len = min(actual_len, max_len as _);
-            write_bytes_to_user(
+            user_space.write_bytes(
                 dest,
                 &mut VmReader::from(&socket_addr.as_bytes()[..written_len]),
             )?;

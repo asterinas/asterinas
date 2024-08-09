@@ -9,7 +9,6 @@ use crate::{
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_openat(
@@ -18,7 +17,7 @@ pub fn sys_openat(
     flags: u32,
     mode: u16,
 ) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
+    let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!(
         "dirfd = {}, path = {:?}, flags = {}, mode = {}",
         dirfd, path, flags, mode

@@ -12,7 +12,6 @@ use crate::{
             sig_mask::SigMask,
         },
     },
-    util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_rt_sigprocmask(
@@ -40,12 +39,12 @@ fn do_rt_sigprocmask(mask_op: MaskOp, set_ptr: Vaddr, oldset_ptr: Vaddr) -> Resu
     let old_sig_mask_value = posix_thread.sig_mask().load(Ordering::Relaxed);
     debug!("old sig mask value: 0x{:x}", old_sig_mask_value);
     if oldset_ptr != 0 {
-        write_val_to_user(oldset_ptr, &old_sig_mask_value)?;
+        CurrentUserSpace::get().write_val(oldset_ptr, &old_sig_mask_value)?;
     }
 
     let sig_mask_ref = posix_thread.sig_mask();
     if set_ptr != 0 {
-        let mut read_mask = read_val_from_user::<SigMask>(set_ptr)?;
+        let mut read_mask = CurrentUserSpace::get().read_val::<SigMask>(set_ptr)?;
         match mask_op {
             MaskOp::Block => {
                 // According to man pages, "it is not possible to block SIGKILL or SIGSTOP.

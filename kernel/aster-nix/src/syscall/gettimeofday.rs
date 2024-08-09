@@ -4,7 +4,6 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     time::{timeval_t, SystemTime},
-    util::write_val_to_user,
 };
 
 // The use of the timezone structure is obsolete.
@@ -19,7 +18,7 @@ pub fn sys_gettimeofday(timeval_addr: Vaddr, /* timezone_addr: Vaddr */) -> Resu
         let time_duration = now.duration_since(&SystemTime::UNIX_EPOCH)?;
         timeval_t::from(time_duration)
     };
-    write_val_to_user(timeval_addr, &time_val)?;
+    CurrentUserSpace::get().write_val(timeval_addr, &time_val)?;
 
     Ok(SyscallReturn::Return(0))
 }

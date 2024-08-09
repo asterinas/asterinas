@@ -10,7 +10,6 @@ use crate::{
     },
     prelude::*,
     syscall::{constants::MAX_FILENAME_LEN, stat::FileType},
-    util::read_cstring_from_user,
 };
 
 pub fn sys_mknodat(
@@ -19,7 +18,7 @@ pub fn sys_mknodat(
     mode: u16,
     dev: usize,
 ) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
+    let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let current = current!();
     let inode_mode = {
         let mask_mode = mode & !current.umask().read().get();

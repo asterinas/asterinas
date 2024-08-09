@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::read_val_from_user;
-use crate::{
-    prelude::*,
-    util::{read_bytes_from_user, write_bytes_to_user},
-};
+use crate::prelude::*;
 
 /// A kernel space IO vector.
 #[derive(Debug, Clone, Copy)]
@@ -75,7 +71,7 @@ impl IoVec {
         assert_eq!(dst.len(), self.len);
         assert!(!self.is_empty());
 
-        read_bytes_from_user(self.base, &mut VmWriter::from(dst))
+        CurrentUserSpace::get().read_bytes(self.base, &mut VmWriter::from(dst))
     }
 
     /// Writes bytes from the `src` buffer
@@ -92,7 +88,7 @@ impl IoVec {
         assert_eq!(src.len(), self.len);
         assert!(!self.is_empty());
 
-        write_bytes_to_user(self.base, &mut VmReader::from(src))
+        CurrentUserSpace::get().write_bytes(self.base, &mut VmReader::from(src))
     }
 
     /// Reads bytes to the `dst` buffer
@@ -101,7 +97,7 @@ impl IoVec {
     /// If successful, returns the length of actually read bytes.
     pub fn read_from_user(&self, dst: &mut [u8]) -> Result<usize> {
         let len = self.len.min(dst.len());
-        read_bytes_from_user(self.base, &mut VmWriter::from(&mut dst[..len]))?;
+        CurrentUserSpace::get().read_bytes(self.base, &mut VmWriter::from(&mut dst[..len]))?;
         Ok(len)
     }
 
@@ -111,7 +107,7 @@ impl IoVec {
     /// If successful, returns the length of actually written bytes.
     pub fn write_to_user(&self, src: &[u8]) -> Result<usize> {
         let len = self.len.min(src.len());
-        write_bytes_to_user(self.base, &mut VmReader::from(&src[..len]))?;
+        CurrentUserSpace::get().write_bytes(self.base, &mut VmReader::from(&src[..len]))?;
         Ok(len)
     }
 }
@@ -120,9 +116,10 @@ impl IoVec {
 pub fn copy_iovs_from_user(start_addr: Vaddr, count: usize) -> Result<Box<[IoVec]>> {
     let mut io_vecs = Vec::with_capacity(count);
 
+    let user_space = CurrentUserSpace::get();
     for idx in 0..count {
         let addr = start_addr + idx * core::mem::size_of::<UserIoVec>();
-        let uiov = read_val_from_user::<UserIoVec>(addr)?;
+        let uiov = user_space.read_val::<UserIoVec>(addr)?;
         let iov = IoVec::try_from(uiov)?;
         io_vecs.push(iov);
     }

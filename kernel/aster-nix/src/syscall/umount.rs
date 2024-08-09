@@ -5,11 +5,10 @@ use crate::{
     fs::fs_resolver::{FsPath, AT_FDCWD},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_umount(path_addr: Vaddr, flags: u64) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
+    let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let umount_flags = UmountFlags::from_bits_truncate(flags as u32);
     debug!("path = {:?}, flags = {:?}", path, umount_flags);
 

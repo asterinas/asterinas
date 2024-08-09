@@ -6,7 +6,6 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     time::{itimerspec_t, timer::Timeout, timespec_t, TIMER_ABSTIME},
-    util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_timer_settime(
@@ -19,7 +18,8 @@ pub fn sys_timer_settime(
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
     }
 
-    let new_itimerspec = read_val_from_user::<itimerspec_t>(new_itimerspec_addr)?;
+    let user_space = CurrentUserSpace::get();
+    let new_itimerspec = user_space.read_val::<itimerspec_t>(new_itimerspec_addr)?;
     let interval = Duration::try_from(new_itimerspec.it_interval)?;
     let expire_time = Duration::try_from(new_itimerspec.it_value)?;
 
@@ -35,7 +35,7 @@ pub fn sys_timer_settime(
             it_interval: old_interval,
             it_value: remain,
         };
-        write_val_to_user(old_itimerspec_addr, &old_itimerspec)?;
+        user_space.write_val(old_itimerspec_addr, &old_itimerspec)?;
     }
 
     timer.set_interval(interval);
@@ -71,7 +71,7 @@ pub fn sys_timer_gettime(timer_id: usize, itimerspec_addr: Vaddr) -> Result<Sysc
         it_interval: interval,
         it_value: remain,
     };
-    write_val_to_user(itimerspec_addr, &itimerspec)?;
+    CurrentUserSpace::get().write_val(itimerspec_addr, &itimerspec)?;
 
     Ok(SyscallReturn::Return(0))
 }

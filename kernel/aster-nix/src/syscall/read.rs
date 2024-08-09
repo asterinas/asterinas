@@ -3,7 +3,7 @@
 use core::cmp::min;
 
 use super::SyscallReturn;
-use crate::{fs::file_table::FileDesc, prelude::*, util::write_bytes_to_user};
+use crate::{fs::file_table::FileDesc, prelude::*};
 
 pub fn sys_read(fd: FileDesc, user_buf_addr: Vaddr, buf_len: usize) -> Result<SyscallReturn> {
     debug!(
@@ -23,7 +23,7 @@ pub fn sys_read(fd: FileDesc, user_buf_addr: Vaddr, buf_len: usize) -> Result<Sy
     let read_len = if buf_len != 0 {
         let mut read_buf = vec![0u8; buf_len];
         let read_len = file.read(&mut read_buf)?;
-        write_bytes_to_user(
+        CurrentUserSpace::get().write_bytes(
             user_buf_addr,
             &mut VmReader::from(&read_buf[..min(read_len, buf_len)]),
         )?;

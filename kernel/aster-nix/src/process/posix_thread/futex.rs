@@ -9,7 +9,7 @@ use ostd::{
 };
 use spin::Once;
 
-use crate::{prelude::*, util::read_val_from_user};
+use crate::prelude::*;
 
 type FutexBitSet = u32;
 type FutexBucketRef = Arc<Mutex<FutexBucket>>;
@@ -330,7 +330,7 @@ impl FutexKey {
     pub fn load_val(&self) -> i32 {
         // FIXME: how to implement a atomic load?
         warn!("implement an atomic load");
-        read_val_from_user(self.addr).unwrap()
+        CurrentUserSpace::get().read_val(self.addr).unwrap()
     }
 
     pub fn addr(&self) -> Vaddr {

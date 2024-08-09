@@ -18,7 +18,6 @@ use crate::{
         posix_thread::{PosixThreadExt, ThreadName},
         Credentials, Process, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
-    util::{read_cstring_from_user, read_val_from_user},
 };
 
 pub fn sys_execve(
@@ -149,7 +148,7 @@ bitflags::bitflags! {
 }
 
 fn read_filename(filename_ptr: Vaddr) -> Result<String> {
-    let filename = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
+    let filename = CurrentUserSpace::get().read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
     Ok(filename.into_string().unwrap())
 }
 
@@ -165,15 +164,16 @@ fn read_cstring_vec(
     }
     let mut read_addr = array_ptr;
     let mut find_null = false;
+    let user_space = CurrentUserSpace::get();
     for _ in 0..max_string_number {
-        let cstring_ptr = read_val_from_user::<usize>(read_addr)?;
+        let cstring_ptr = user_space.read_val::<usize>(read_addr)?;
         read_addr += 8;
         // read a null pointer
         if cstring_ptr == 0 {
             find_null = true;
             break;
         }
-        let cstring = read_cstring_from_user(cstring_ptr, max_string_len)?;
+        let cstring = user_space.read_cstring(cstring_ptr, max_string_len)?;
         res.push(cstring);
     }
     if !find_null {

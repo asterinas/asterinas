@@ -9,11 +9,11 @@ use crate::{
         utils::{SuperBlock, PATH_MAX},
     },
     prelude::*,
-    util::{read_cstring_from_user, write_val_to_user},
 };
 
 pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
+    let user_space = CurrentUserSpace::get();
+    let path = user_space.read_cstring(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, statfs_buf_ptr = 0x{:x}", path, statfs_buf_ptr,);
 
     let current = current!();
@@ -23,7 +23,7 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr) -> Result<SyscallRetur
         current.fs().read().lookup(&fs_path)?
     };
     let statfs = Statfs::from(dentry.fs().sb());
-    write_val_to_user(statfs_buf_ptr, &statfs)?;
+    user_space.write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -38,7 +38,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr) -> Result<SyscallReturn>
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
     let dentry = inode_handle.dentry();
     let statfs = Statfs::from(dentry.fs().sb());
-    write_val_to_user(statfs_buf_ptr, &statfs)?;
+    CurrentUserSpace::get().write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
 

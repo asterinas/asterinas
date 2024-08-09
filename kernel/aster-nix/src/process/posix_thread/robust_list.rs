@@ -5,7 +5,6 @@
 use crate::{
     prelude::*,
     process::{posix_thread::futex::futex_wake, Pid},
-    util::{read_val_from_user, write_val_to_user},
 };
 
 #[repr(C)]
@@ -105,7 +104,8 @@ impl<'a> Iterator for FutexIter<'a> {
             } else {
                 None
             };
-            let Ok(robust_list) = read_val_from_user::<RobustList>(self.entry_ptr) else {
+            let Ok(robust_list) = CurrentUserSpace::get().read_val::<RobustList>(self.entry_ptr)
+            else {
                 return None;
             };
             self.entry_ptr = robust_list.next;
@@ -126,11 +126,12 @@ const FUTEX_TID_MASK: u32 = 0x3FFF_FFFF;
 /// Wakeup one robust futex owned by the thread
 /// FIXME: requires atomic operations here
 pub fn wake_robust_futex(futex_addr: Vaddr, tid: Pid) -> Result<()> {
+    let user_space = CurrentUserSpace::get();
     let futex_val = {
         if futex_addr == 0 {
             return_errno_with_message!(Errno::EINVAL, "invalid futext addr");
         }
-        read_val_from_user::<u32>(futex_addr)?
+        user_space.read_val::<u32>(futex_addr)?
     };
     let mut old_val = futex_val;
     loop {
@@ -139,11 +140,11 @@ pub fn wake_robust_futex(futex_addr: Vaddr, tid: Pid) -> Result<()> {
             break;
         }
         let new_val = (old_val & FUTEX_WAITERS) | FUTEX_OWNER_DIED;
-        let cur_val = read_val_from_user(futex_addr)?;
+        let cur_val = user_space.read_val(futex_addr)?;
         if cur_val != new_val {
             // The futex value has changed, let's retry with current value
             old_val = cur_val;
-            write_val_to_user(futex_addr, &new_val)?;
+            user_space.write_val(futex_addr, &new_val)?;
             continue;
         }
         // Wakeup one waiter

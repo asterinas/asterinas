@@ -8,7 +8,6 @@ use crate::{
         utils::PATH_MAX,
     },
     prelude::*,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_faccessat(dirfd: FileDesc, path_ptr: Vaddr, mode: u16) -> Result<SyscallReturn> {
@@ -55,7 +54,7 @@ pub fn do_faccessat(
     let flags = FaccessatFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "Invalid flags"))?;
 
-    let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
+    let path = CurrentUserSpace::get().read_cstring(path_ptr, PATH_MAX)?;
     debug!(
         "dirfd = {}, path = {:?}, mode = {:o}, flags = {:?}",
         dirfd, path, mode, flags

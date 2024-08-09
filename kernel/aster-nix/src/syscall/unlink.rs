@@ -8,7 +8,6 @@ use crate::{
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_unlinkat(dirfd: FileDesc, path_addr: Vaddr, flags: u32) -> Result<SyscallReturn> {
@@ -18,7 +17,7 @@ pub fn sys_unlinkat(dirfd: FileDesc, path_addr: Vaddr, flags: u32) -> Result<Sys
         return super::rmdir::sys_rmdirat(dirfd, path_addr);
     }
 
-    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
+    let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}", dirfd, path);
 
     let current = current!();

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{prelude::*, time::SystemTime, util::write_val_to_user};
+use crate::{prelude::*, time::SystemTime};
 
 pub fn sys_time(tloc: Vaddr) -> Result<SyscallReturn> {
     debug!("tloc = 0x{tloc:x}");
@@ -12,7 +12,7 @@ pub fn sys_time(tloc: Vaddr) -> Result<SyscallReturn> {
     };
 
     if tloc != 0 {
-        write_val_to_user(tloc, &now_as_secs)?;
+        CurrentUserSpace::get().write_val(tloc, &now_as_secs)?;
     }
 
     Ok(SyscallReturn::Return(now_as_secs as _))

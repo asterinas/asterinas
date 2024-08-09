@@ -3,20 +3,15 @@
 use core::{cell::Cell, time::Duration};
 
 use super::SyscallReturn;
-use crate::{
-    events::IoEvents,
-    fs::file_table::FileDesc,
-    prelude::*,
-    process::signal::Poller,
-    util::{read_val_from_user, write_val_to_user},
-};
+use crate::{events::IoEvents, fs::file_table::FileDesc, prelude::*, process::signal::Poller};
 
 pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32) -> Result<SyscallReturn> {
+    let user_space = CurrentUserSpace::get();
     let poll_fds = {
         let mut read_addr = fds;
         let mut poll_fds = Vec::with_capacity(nfds as _);
         for _ in 0..nfds {
-            let c_poll_fd = read_val_from_user::<c_pollfd>(read_addr)?;
+            let c_poll_fd = user_space.read_val::<c_pollfd>(read_addr)?;
             let poll_fd = PollFd::from(c_poll_fd);
             // Always clear the revents fields first
             poll_fd.revents().set(IoEvents::empty());
@@ -42,7 +37,7 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32) -> Result<SyscallReturn> {
     let mut write_addr = fds;
     for pollfd in poll_fds {
         let c_poll_fd = c_pollfd::from(pollfd);
-        write_val_to_user(write_addr, &c_poll_fd)?;
+        user_space.write_val(write_addr, &c_poll_fd)?;
         // FIXME: do we need to respect align of c_pollfd here?
         write_addr += core::mem::size_of::<c_pollfd>();
     }

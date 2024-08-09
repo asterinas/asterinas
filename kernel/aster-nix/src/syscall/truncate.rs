@@ -9,7 +9,6 @@ use crate::{
     },
     prelude::*,
     process::ResourceType,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
@@ -25,7 +24,7 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize) -> Result<SyscallReturn> {
 }
 
 pub fn sys_truncate(path_ptr: Vaddr, len: isize) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
+    let path = CurrentUserSpace::get().read_cstring(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, length = {}", path, len);
 
     check_length(len)?;

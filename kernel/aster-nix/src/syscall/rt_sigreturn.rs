@@ -8,7 +8,6 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{posix_thread::PosixThreadExt, signal::c_types::ucontext_t},
-    util::read_val_from_user,
 };
 
 pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
@@ -24,7 +23,7 @@ pub fn sys_rt_sigreturn(context: &mut UserContext) -> Result<SyscallReturn> {
     // However, for most glibc applications, the restorer codes is provided by glibc and RESTORER flag is set.
     debug_assert!(sig_context_addr == context.stack_pointer() as Vaddr);
 
-    let ucontext = read_val_from_user::<ucontext_t>(sig_context_addr)?;
+    let ucontext = CurrentUserSpace::get().read_val::<ucontext_t>(sig_context_addr)?;
 
     // If the sig stack is active and used by current handler, decrease handler counter.
     if let Some(sig_stack) = posix_thread.sig_stack().lock().as_mut() {

@@ -12,7 +12,6 @@ use crate::{
     },
     prelude::*,
     process::{posix_thread::PosixThreadExt, signal::sig_mask::SigMask},
-    util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_epoll_create(size: i32) -> Result<SyscallReturn> {
@@ -62,14 +61,14 @@ pub fn sys_epoll_ctl(
 
     let cmd = match op {
         EPOLL_CTL_ADD => {
-            let c_epoll_event = read_val_from_user::<c_epoll_event>(event_addr)?;
+            let c_epoll_event = CurrentUserSpace::get().read_val::<c_epoll_event>(event_addr)?;
             let event = EpollEvent::from(&c_epoll_event);
             let flags = EpollFlags::from_bits_truncate(c_epoll_event.events);
             EpollCtl::Add(fd, event, flags)
         }
         EPOLL_CTL_DEL => EpollCtl::Del(fd),
         EPOLL_CTL_MOD => {
-            let c_epoll_event = read_val_from_user::<c_epoll_event>(event_addr)?;
+            let c_epoll_event = CurrentUserSpace::get().read_val::<c_epoll_event>(event_addr)?;
             let event = EpollEvent::from(&c_epoll_event);
             let flags = EpollFlags::from_bits_truncate(c_epoll_event.events);
             EpollCtl::Mod(fd, event, flags)
@@ -139,9 +138,10 @@ pub fn sys_epoll_wait(
 
     // Write back
     let mut write_addr = events_addr;
+    let user_space = CurrentUserSpace::get();
     for epoll_event in epoll_events.iter() {
         let c_epoll_event = c_epoll_event::from(epoll_event);
-        write_val_to_user(write_addr, &c_epoll_event)?;
+        user_space.write_val(write_addr, &c_epoll_event)?;
         write_addr += core::mem::size_of::<c_epoll_event>();
     }
 
@@ -150,7 +150,7 @@ pub fn sys_epoll_wait(
 
 fn set_signal_mask(set_ptr: Vaddr) -> Result<SigMask> {
     let new_mask: Option<SigMask> = if set_ptr != 0 {
-        Some(read_val_from_user::<u64>(set_ptr)?.into())
+        Some(CurrentUserSpace::get().read_val::<u64>(set_ptr)?.into())
     } else {
         None
     };
@@ -208,9 +208,10 @@ pub fn sys_epoll_pwait(
 
     // Write back
     let mut write_addr = events_addr;
+    let user_space = CurrentUserSpace::get();
     for event in ready_events.iter() {
         let c_event = c_epoll_event::from(event);
-        write_val_to_user(write_addr, &c_event)?;
+        user_space.write_val(write_addr, &c_event)?;
         write_addr += core::mem::size_of::<c_epoll_event>();
     }
 

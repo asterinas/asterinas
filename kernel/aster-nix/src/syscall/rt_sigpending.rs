@@ -3,7 +3,7 @@
 use core::sync::atomic::Ordering;
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::posix_thread::PosixThreadExt, util::write_val_to_user};
+use crate::{prelude::*, process::posix_thread::PosixThreadExt};
 
 pub fn sys_rt_sigpending(u_set_ptr: Vaddr, sigset_size: usize) -> Result<SyscallReturn> {
     debug!(
@@ -27,6 +27,6 @@ fn do_rt_sigpending(set_ptr: Vaddr) -> Result<()> {
         sig_mask_value & sig_pending_value
     };
 
-    write_val_to_user(set_ptr, &u64::from(combined_signals))?;
+    CurrentUserSpace::get().write_val(set_ptr, &u64::from(combined_signals))?;
     Ok(())
 }

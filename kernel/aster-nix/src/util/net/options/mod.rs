@@ -51,9 +51,7 @@
 //! At the syscall level, the interface is unified for all options and does not need to be modified.
 //!
 
-use aster_rights::Full;
-
-use crate::{net::socket::options::SocketOption, prelude::*, vm::vmar::Vmar};
+use crate::{net::socket::options::SocketOption, prelude::*};
 
 mod socket;
 mod tcp;
@@ -62,9 +60,9 @@ mod utils;
 use self::{socket::new_socket_option, tcp::new_tcp_option};
 
 pub trait RawSocketOption: SocketOption {
-    fn read_from_user(&mut self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<()>;
+    fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()>;
 
-    fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize>;
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize>;
 
     fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption;
 
@@ -76,24 +74,19 @@ pub trait RawSocketOption: SocketOption {
 macro_rules! impl_raw_socket_option {
     ($option:ty) => {
         impl RawSocketOption for $option {
-            fn read_from_user(
-                &mut self,
-                vmar: &Vmar<Full>,
-                addr: Vaddr,
-                max_len: u32,
-            ) -> Result<()> {
+            fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()> {
                 use $crate::util::net::options::utils::ReadFromUser;
 
-                let input = ReadFromUser::read_from_user(vmar, addr, max_len)?;
+                let input = ReadFromUser::read_from_user(addr, max_len)?;
                 self.set(input);
                 Ok(())
             }
 
-            fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+            fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
                 use $crate::util::net::options::utils::WriteToUser;
 
                 let output = self.get().unwrap();
-                output.write_to_user(vmar, addr, max_len)
+                output.write_to_user(addr, max_len)
             }
 
             fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
@@ -112,20 +105,15 @@ macro_rules! impl_raw_socket_option {
 macro_rules! impl_raw_sock_option_get_only {
     ($option:ty) => {
         impl RawSocketOption for $option {
-            fn read_from_user(
-                &mut self,
-                _vmar: &Vmar<Full>,
-                _addr: Vaddr,
-                _max_len: u32,
-            ) -> Result<()> {
+            fn read_from_user(&mut self, _addr: Vaddr, _max_len: u32) -> Result<()> {
                 return_errno_with_message!(Errno::ENOPROTOOPT, "the option is getter-only");
             }
 
-            fn write_to_user(&self, vmar: &Vmar<Full>, addr: Vaddr, max_len: u32) -> Result<usize> {
+            fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
                 use $crate::util::net::options::utils::WriteToUser;
 
                 let output = self.get().unwrap();
-                output.write_to_user(vmar, addr, max_len)
+                output.write_to_user(addr, max_len)
             }
 
             fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {

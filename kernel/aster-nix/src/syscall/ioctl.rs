@@ -7,7 +7,6 @@ use crate::{
         utils::{IoctlCmd, StatusFlags},
     },
     prelude::*,
-    util::read_val_from_user,
 };
 
 pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr) -> Result<SyscallReturn> {
@@ -21,14 +20,14 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr) -> Result<SyscallReturn> {
     let file = file_table.get_file(fd)?;
     let res = match ioctl_cmd {
         IoctlCmd::FIONBIO => {
-            let is_nonblocking = read_val_from_user::<i32>(arg)? != 0;
+            let is_nonblocking = CurrentUserSpace::get().read_val::<i32>(arg)? != 0;
             let mut flags = file.status_flags();
             flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
             file.set_status_flags(flags)?;
             0
         }
         IoctlCmd::FIOASYNC => {
-            let is_async = read_val_from_user::<i32>(arg)? != 0;
+            let is_async = CurrentUserSpace::get().read_val::<i32>(arg)? != 0;
             let mut flags = file.status_flags();
 
             // Set `O_ASYNC` flags will send `SIGIO` signal to a process when

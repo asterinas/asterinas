@@ -12,7 +12,6 @@ use crate::{
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
     time::timespec_t,
-    util::{read_cstring_from_user, write_val_to_user},
 };
 
 pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
@@ -22,7 +21,7 @@ pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
     let file_table = current.file_table().lock();
     let file = file_table.get_file(fd)?;
     let stat = Stat::from(file.metadata());
-    write_val_to_user(stat_buf_ptr, &stat)?;
+    CurrentUserSpace::get().write_val(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -45,7 +44,8 @@ pub fn sys_fstatat(
     stat_buf_ptr: Vaddr,
     flags: u32,
 ) -> Result<SyscallReturn> {
-    let filename = read_cstring_from_user(filename_ptr, MAX_FILENAME_LEN)?;
+    let user_space = CurrentUserSpace::get();
+    let filename = user_space.read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
     let flags =
         StatFlags::from_bits(flags).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(
@@ -73,7 +73,7 @@ pub fn sys_fstatat(
         }
     };
     let stat = Stat::from(dentry.metadata());
-    write_val_to_user(stat_buf_ptr, &stat)?;
+    user_space.write_val(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }
 

@@ -5,7 +5,6 @@ use crate::{
     prelude::*,
     process::{do_exit_group, TermStatus},
     thread::{thread_table, Thread, Tid},
-    util::write_val_to_user,
 };
 
 /// Exits the thread if the thread is a POSIX thread.
@@ -28,7 +27,9 @@ pub fn do_exit(thread: Arc<Thread>, term_status: TermStatus) -> Result<()> {
     if *clear_ctid != 0 {
         futex_wake(*clear_ctid, 1)?;
         // FIXME: the correct write length?
-        write_val_to_user(*clear_ctid, &0u32).unwrap();
+        CurrentUserSpace::get()
+            .write_val(*clear_ctid, &0u32)
+            .unwrap();
         *clear_ctid = 0;
     }
     // exit the robust list: walk the robust list; mark futex words as dead and do futex wake

@@ -25,7 +25,6 @@ use crate::{
         clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
     },
-    util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_timer_create(
@@ -51,7 +50,7 @@ pub fn sys_timer_create(
             })
         // Determine the timeout action through `sigevent`.
         } else {
-            let sig_event = read_val_from_user::<sigevent_t>(sigevent_addr)?;
+            let sig_event = CurrentUserSpace::get().read_val::<sigevent_t>(sigevent_addr)?;
             let sigev_notify = SigNotify::try_from(sig_event.sigev_notify)?;
             let signo = sig_event.sigev_signo;
             match sigev_notify {
@@ -152,7 +151,7 @@ pub fn sys_timer_create(
     };
 
     let timer_id = process_timer_manager.add_posix_timer(timer);
-    write_val_to_user(timer_id_addr, &timer_id)?;
+    CurrentUserSpace::get().write_val(timer_id_addr, &timer_id)?;
     Ok(SyscallReturn::Return(0))
 }
 
