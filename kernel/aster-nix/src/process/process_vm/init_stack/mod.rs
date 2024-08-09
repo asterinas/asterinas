@@ -19,14 +19,18 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use aster_rights::{Full, Rights};
+use aster_rights::Full;
 use ostd::mm::{VmIo, MAX_USERSPACE_VADDR};
 
 use self::aux_vec::{AuxKey, AuxVec};
 use crate::{
     prelude::*,
-    util::{random::getrandom, read_cstring_from_vmar},
-    vm::{perms::VmPerms, vmar::Vmar, vmo::VmoOptions},
+    util::random::getrandom,
+    vm::{
+        perms::VmPerms,
+        vmar::Vmar,
+        vmo::{Vmo, VmoOptions, VmoRightsOp},
+    },
 };
 
 pub mod aux_vec;
@@ -91,7 +95,6 @@ pub const MAX_ENV_LEN: usize = 128;
  */
 
 /// The initial portion of the main stack of a process.
-#[derive(Debug, Clone)]
 pub struct InitStack {
     /// The initial highest address.
     /// The stack grows down from this address
@@ -103,6 +106,18 @@ pub struct InitStack {
     /// After initialized, `pos` points to the user stack pointer(rsp)
     /// of the process.
     pos: Arc<AtomicUsize>,
+    vmo: Vmo<Full>,
+}
+
+impl Clone for InitStack {
+    fn clone(&self) -> Self {
+        Self {
+            initial_top: self.initial_top,
+            max_size: self.max_size,
+            pos: self.pos.clone(),
+            vmo: self.vmo.new_cow_child(0..self.max_size).alloc().unwrap(),
+        }
+    }
 }
 
 impl InitStack {
@@ -114,25 +129,28 @@ impl InitStack {
         };
         let initial_top = MAX_USERSPACE_VADDR - PAGE_SIZE * nr_pages_padding;
         let max_size = INIT_STACK_SIZE;
+
+        let vmo = {
+            let vmo_options = VmoOptions::<Full>::new(max_size);
+            vmo_options.alloc().unwrap()
+        };
         Self {
             initial_top,
             max_size,
             pos: Arc::new(AtomicUsize::new(initial_top)),
+            vmo,
         }
     }
 
-    /// Init and map the vmo for init stack
-    pub(super) fn alloc_and_map_vmo(&self, root_vmar: &Vmar<Full>) -> Result<()> {
-        let vmo = {
-            let vmo_options = VmoOptions::<Rights>::new(self.max_size);
-            vmo_options.alloc()?
-        };
-
+    /// Maps the vmo of the init stack.
+    pub(super) fn map_init_stack_vmo(&self, root_vmar: &Vmar<Full>) -> Result<()> {
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
             let map_addr = self.initial_top - self.max_size;
             debug_assert!(map_addr % PAGE_SIZE == 0);
-            root_vmar.new_map(vmo, perms)?.offset(map_addr)
+            root_vmar
+                .new_map(self.vmo.dup().to_dyn(), perms)?
+                .offset(map_addr)
         };
 
         vmar_map_options.build()?;
@@ -151,30 +169,33 @@ impl InitStack {
         stack_top
     }
 
-    pub(super) fn writer<'a>(
+    /// Constructs a writer to initialize the content of an `InitStack`.
+    pub(super) fn writer(
         &self,
-        vmar: &'a Vmar<Full>,
         argv: Vec<CString>,
         envp: Vec<CString>,
         auxvec: AuxVec,
-    ) -> InitStackWriter<'a> {
+    ) -> InitStackWriter<'_> {
         // The stack should be written only once.
         debug_assert!(!self.is_initialized());
         InitStackWriter {
             pos: self.pos.clone(),
-            vmar,
+            vmo: &self.vmo,
             argv,
             envp,
             auxvec,
+            map_addr: self.initial_top - self.max_size,
         }
     }
 
-    pub(super) fn reader<'a>(&self, vmar: &'a Vmar<Full>) -> InitStackReader<'a> {
-        // The stack should only be read after initialized
+    /// Constructs a reader to parse the content of an `InitStack`.
+    /// The `InitStack` should only be read after initialized
+    pub(super) fn reader(&self) -> InitStackReader<'_> {
         debug_assert!(self.is_initialized());
         InitStackReader {
             base: self.pos(),
-            vmar,
+            vmo: &self.vmo,
+            map_addr: self.initial_top - self.max_size,
         }
     }
 
@@ -194,10 +215,12 @@ impl InitStack {
 /// A writer to initialize the content of an `InitStack`.
 pub struct InitStackWriter<'a> {
     pos: Arc<AtomicUsize>,
-    vmar: &'a Vmar<Full>,
+    vmo: &'a Vmo<Full>,
     argv: Vec<CString>,
     envp: Vec<CString>,
     auxvec: AuxVec,
+    /// The mapping address of the `InitStack`.
+    map_addr: usize,
 }
 
 impl<'a> InitStackWriter<'a> {
@@ -314,7 +337,7 @@ impl<'a> InitStackWriter<'a> {
     fn write_u64(&self, val: u64) -> Result<u64> {
         let start_address = (self.pos() - 8).align_down(8);
         self.pos.store(start_address, Ordering::Relaxed);
-        self.vmar.write_val(start_address, &val)?;
+        self.vmo.write_val(start_address - self.map_addr, &val)?;
         Ok(self.pos() as u64)
     }
 
@@ -331,7 +354,7 @@ impl<'a> InitStackWriter<'a> {
         let len = bytes.len();
         self.pos.fetch_sub(len, Ordering::Relaxed);
         let pos = self.pos();
-        self.vmar.write_bytes(pos, bytes)?;
+        self.vmo.write_bytes(pos - self.map_addr, bytes)?;
         Ok(pos as u64)
     }
 
@@ -349,64 +372,71 @@ fn generate_random_for_aux_vec() -> [u8; 16] {
 /// A reader to parse the content of an `InitStack`.
 pub struct InitStackReader<'a> {
     base: Vaddr,
-    vmar: &'a Vmar<Full>,
+    vmo: &'a Vmo<Full>,
+    /// The mapping address of the `InitStack`.
+    map_addr: usize,
 }
 
 impl<'a> InitStackReader<'a> {
-    /// Read argc from the process init stack
+    /// Reads argc from the process init stack
     pub fn argc(&self) -> Result<u64> {
-        let stack_base = self.user_stack_top();
-        Ok(self.vmar.read_val(stack_base)?)
+        let stack_base = self.init_stack_bottom();
+        Ok(self.vmo.read_val(stack_base - self.map_addr)?)
     }
 
-    /// Read argv from the process init stack
+    /// Reads argv from the process init stack
     pub fn argv(&self) -> Result<Vec<CString>> {
         let argc = self.argc()? as usize;
-        // base = stack bottom + the size of argc
-        let base = self.user_stack_top() + 8;
+        // The reading offset in the initial stack is:
+        // the initial stack bottom address + the size of `argc` in memory
+        let read_offset = self.init_stack_bottom() + size_of::<usize>();
 
         let mut argv = Vec::with_capacity(argc);
-        for i in 0..argc {
-            let arg_ptr = {
-                let offset = base + i * 8;
-                self.vmar.read_val::<Vaddr>(offset)?
+        let user_space = CurrentUserSpace::get();
+        let mut argv_reader = user_space.reader(read_offset, argc * size_of::<usize>())?;
+        for _ in 0..argc {
+            let arg = {
+                let arg_ptr = argv_reader.read_val::<Vaddr>()?;
+                user_space.read_cstring(arg_ptr, MAX_ARG_LEN)?
             };
-
-            let arg = read_cstring_from_vmar(self.vmar, arg_ptr, MAX_ARG_LEN)?;
             argv.push(arg);
         }
 
         Ok(argv)
     }
 
-    /// Read envp from the process
+    /// Reads envp from the process
     pub fn envp(&self) -> Result<Vec<CString>> {
         let argc = self.argc()? as usize;
-        // base = stack bottom
+        // The reading offset in the initial stack is:
+        // the initial stack bottom address
         // + the size of argc(8)
         // + the size of arg pointer(8) * the number of arg(argc)
         // + the size of null pointer(8)
-        let base = self.user_stack_top() + 8 + 8 * argc + 8;
+        let read_offset = self.init_stack_bottom()
+            + size_of::<usize>()
+            + size_of::<usize>() * argc
+            + size_of::<usize>();
 
         let mut envp = Vec::new();
-        for i in 0..MAX_ENVP_NUMBER {
-            let envp_ptr = {
-                let offset = base + i * 8;
-                self.vmar.read_val::<Vaddr>(offset)?
-            };
+        let user_space = CurrentUserSpace::get();
+        let mut envp_reader = user_space.reader(read_offset, MAX_ENVP_NUMBER)?;
+        for _ in 0..MAX_ENVP_NUMBER {
+            let envp_ptr = envp_reader.read_val::<Vaddr>()?;
 
             if envp_ptr == 0 {
                 break;
             }
 
-            let env = read_cstring_from_vmar(self.vmar, envp_ptr, MAX_ENV_LEN)?;
+            let env = user_space.read_cstring(envp_ptr, MAX_ENV_LEN)?;
             envp.push(env);
         }
 
         Ok(envp)
     }
 
-    pub const fn user_stack_top(&self) -> Vaddr {
+    /// Returns the bottom address of the init stack (lowest address).
+    pub const fn init_stack_bottom(&self) -> Vaddr {
         self.base
     }
 }
