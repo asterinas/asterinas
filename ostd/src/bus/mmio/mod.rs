@@ -10,17 +10,21 @@ pub mod common_device;
 use alloc::vec::Vec;
 use core::ops::Range;
 
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use ::tdx_guest::tdx_is_enabled;
+use cfg_if::cfg_if;
 use log::debug;
 
 use self::bus::MmioBus;
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use crate::arch::tdx_guest;
 use crate::{
     arch::kernel::IO_APIC, bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr,
     sync::SpinLock, trap::IrqLine,
 };
+
+cfg_if! {
+    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+        use ::tdx_guest::tdx_is_enabled;
+        use crate::arch::tdx_guest;
+    }
+}
 
 const VIRTIO_MMIO_MAGIC: u32 = 0x74726976;
 

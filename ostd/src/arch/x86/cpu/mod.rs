@@ -10,19 +10,23 @@ use core::{
 };
 
 use bitflags::bitflags;
+use cfg_if::cfg_if;
 use log::debug;
-#[cfg(feature = "intel_tdx")]
-use tdx_guest::tdcall;
 pub use trapframe::GeneralRegs as RawGeneralRegs;
 use trapframe::UserContext as RawUserContext;
 use x86_64::registers::rflags::RFlags;
 
-#[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
 use crate::{
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
+
+cfg_if! {
+    if #[cfg(feature = "intel_tdx")] {
+        use tdx_guest::tdcall;
+        use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
+    }
+}
 
 /// Cpu context, including both general-purpose registers and floating-point registers.
 #[derive(Clone, Default, Copy, Debug)]

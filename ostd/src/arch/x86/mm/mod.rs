@@ -5,6 +5,7 @@
 use alloc::fmt;
 use core::ops::Range;
 
+use cfg_if::cfg_if;
 pub(crate) use util::__memcpy_fallible;
 use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
 
@@ -136,11 +137,13 @@ pub fn current_page_table_paddr() -> Paddr {
 }
 
 impl PageTableEntry {
-    /// 51:12
-    #[cfg(not(feature = "intel_tdx"))]
-    const PHYS_ADDR_MASK: usize = 0xF_FFFF_FFFF_F000;
-    #[cfg(feature = "intel_tdx")]
-    const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
+    cfg_if! {
+        if #[cfg(feature = "intel_tdx")] {
+            const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
+        } else {
+            const PHYS_ADDR_MASK: usize = 0xF_FFFF_FFFF_F000;
+        }
+    }
     const PROP_MASK: usize = !Self::PHYS_ADDR_MASK & !PageTableFlags::HUGE.bits();
 }
 
